@@ -2,7 +2,8 @@
 
 base: `acfa927b8bd2869e72ff16dbbe343c4c26680675` (origin/main `1dc132b` plus the claim skeleton; draft PR #310)
 
-Status: pending review (semengine-architect, 2026-10-18). Every cite is at the base commit.
+Status: `INVENTORY PASS` (semengine-reviewer, 2026-10-18, round 1 at `092c5e8`; cite drift fixed in round 2).
+Every cite is at the base commit.
 
 ## Question
 
@@ -23,8 +24,9 @@ Out: #291 (PR 3), #309, natsclient code, `internal/lifecycleguard/guard.go`, the
 This tree only. No sister repository is needed: `lifecycletest` is under `internal/`, so Go refuses any import of it
 from outside this module. No consumer in `docs/inventory-scope.md` imports semengine's `metric` or `component`; the
 table lists semvocab and semsparql as importing `vocabulary` and `graph` only. No production caller of
-`metric.NewServer` exists in this tree (`git grep -n "NewServer(" -- '*.go' ':!*_test.go'` finds only its definition,
-`metric/handler.go:37`). Pin: no package is carried, so no pin probes are owed. ADR-113's pin cites stand as written.
+`metric.NewServer` exists in this tree (`git grep -n "NewServer(" -- '*.go' ':!*_test.go'` finds only its
+definition, `metric/handler.go:37`, and comment lines in `metric/doc.go`). Pin: no package is carried, so no pin
+probes are owed. ADR-113's pin cites stand as written.
 
 ## 1. Claimed gap
 
@@ -51,6 +53,10 @@ Confirmed.
 - `metric/handler.go:54-55` "ctx is the exact base context for served requests"; `:145`
   `BaseContext: func(net.Listener) context.Context { return ctx },`.
 - `metric/README.md:209` "One-shot synchronous bind; context owns served requests".
+- `metric/handler_test.go:167` `require.Same(t, t.Context(), server.server.BaseContext(server.listener))`, a test
+  that pins the Start context as the request base; under D5 it would call a nil function.
+- `metric/README.md:71`, `:554`, `:565`, `:763` and `metric/doc.go:373-374` name the Start context
+  `runtimeCtx := context.Background()`; `metric/README.md:490` has `go g.processingLoop(ctx)`.
 - `processor/graph-ingest/component.go:974` `runCtx, cancel := context.WithCancel(ctx)`; `:547-548` "submission
   contexts are lexical children of Start"; `:951-956` the Start comment; `:973` the start comment.
 - `processor/graph-ingest/keyed_ingest.go:161` "Start-derived pool context"; `:204` "the pool context Start derives";
@@ -82,6 +88,8 @@ contract text.
   in `*_test.go` Stop, Close and Terminate calls, so the production-root exception is contract and review text only.
   `background-work` (`:20-22`) is unchanged.
 - ADRs: 113 (decides this change), 108 decision 3 and 3(e), 112 (natsclient's `Connect`).
+- The guard commits a `Start` without reading the context (`internal/lifecycleguard/guard.go:86-90`), so `start` is
+  the only place a Start context that ended during a run-context step can be seen (design D6).
 - Open issues (searches: lifecycletest, lifecycleguard, graph-ingest, metric, "start context", lifecycle):
   - #282: retired by this PR (`Closes #282`).
   - #196: stays open. It is the adoption tracker for each ported owner (its last comment); the PR body says
@@ -100,7 +108,7 @@ contract text.
 
 New exported symbols: `lifecycletest.CheckStartContextEndStopsNothing` and `CheckStopReturnsItsEndedContext`, which
 replace `CheckControlledStopUnderLiveStartAuthority` and `CheckAbortStopPreservesCause`. The package is test-only and
-internal. Readers: `Run` (`lifecycletest.go:97-106`) and the `checks` list (`refowner_test.go:213-225`). No other
+internal. Readers: `Run` (`lifecycletest.go:97-106`) and the `checks` list (`refowner_test.go:204-215`). No other
 reference to either old name exists outside the package (`git grep` finds only ADR-113 `:97`). No new production
 export.
 
@@ -156,8 +164,8 @@ Startup I/O:
   `initStorage` takes both contexts (design D6).
 - `startEntityStateGuard` `:999`: its watcher stops before return (#282 comment 6250135029).
 - `createStatusBucket` `:1005`.
-- Inside `setupSubscriptions` `:1011`: `waitForStream` `:1458`, `ValidateHeartbeatDeliveryPolicy` `:1508`,
-  `consumeStream` `:1522` (a setup-only context; `natsclient/stream.go:406-413`) and `recordBindBacklog` `:1609`.
+- Inside `setupSubscriptions` `:1011`: `waitForStream` `:1455`, `ValidateHeartbeatDeliveryPolicy` `:1508`,
+  `consumeStream` `:1522` (a setup-only context; `natsclient/stream.go:431-438`) and `recordBindBacklog` `:1609`.
 
 Continuing work:
 
@@ -190,13 +198,19 @@ and about 150 test lines.
 
 ## Issues to file (status:blocked on this branch, no closing keyword)
 
-1. natsclient: `SubscribeForRequests` uses one context for its setup wait and as every handler's parent
-   (`natsclient/request.go:322-329`), unlike `ConsumeStreamWithConfig` (`stream.go:406-413`, `:455-461`). A lifecycle
-   owner whose handlers must outlive `Start` passes its run context, so the PING/PONG setup wait is bounded by
-   `DefaultRequestTimeout` (5 s) per subscription, not by the Start context. MEDIUM under #185.
-2. graph-ingest's test owner keeps "Start authority live through Stop" (`test_owner_support_test.go:15-50`, used by
-   22 integration files), a rule ADR-113 retires, and `test_owner_test.go:22`, `:57`, `:76`, `:105` and
-   `test_owner_child_test.go:52` cite a spec `test-cleanup-policy` that does not exist.
-3. `metric/README.md:479-500` (`GPSService`) teaches the retired shape (`go g.processingLoop(ctx)` on the Start
-   context, a `Stop()` with no context, `time.Sleep`); `runtimeCtx := context.Background()` at `:71`, `:554`, `:763`
-   and `metric/doc.go:373` names the Start context a "runtime" context.
+1. natsclient: `SubscribeForRequests` uses one context for its setup wait and as every handler's parent. #9 comment
+   5994720412 item 2 ruled that the context that bounds setup must not parent handlers, and that this applies to "any
+   other function with the same shape". `ConsumeStreamWithConfig` follows the ruling (`natsclient/stream.go:431-438`,
+   `:455-461`); `SubscribeForRequests` does not (`natsclient/request.go:322-329`). A caller whose handlers outlive
+   `Start` (ADR-113) must therefore pass its run context, and the setup wait is then capped only by
+   `DefaultRequestTimeout` (5 s). graph-ingest's query and mutation subscriptions are the case today. MEDIUM.
+2. graph-ingest tests cite a spec that does not exist: `processor/graph-ingest/test_owner_test.go:22`, `:57`, `:76`,
+   `:105` and `test_owner_child_test.go:52` cite "spec: test-cleanup-policy / Lexical ownership of lifecycle test
+   fixtures", and there is no `openspec/specs/test-cleanup-policy/`. The test owner's keeping its Start context live
+   until Stop (`test_owner_support_test.go:38`) is harmless under ADR-113 and is reworded in this PR (design D6), not
+   filed.
+3. `metric/README.md`'s `GPSService` example takes no context in `Stop` (`:496`) and sleeps (`:483`). The parts of
+   that example that state the retired rule (`:490`; the `runtimeCtx` name at `:71`, `:554`, `:565`, `:763` and
+   `doc.go:373`) are fixed in this PR (design D5); the signature and the sleep are filed.
+4. `docs/admission-ledger.yaml:50` (the natsfixture row) lists "lifecycletest.Run over the fixture adapter" under
+   `proving_tests`, and no such call exists (`git grep -n lifecycletest -- internal/harness/natsfixture` is empty).

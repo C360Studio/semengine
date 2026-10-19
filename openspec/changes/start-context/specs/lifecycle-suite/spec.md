@@ -13,8 +13,9 @@ unresolved just after Start is still reported once a settle window after that co
 Stop under fresh finite authority returns nil and leaves nothing unresolved; a Stop whose own context has already ended
 returning an error that carries that context's error or cause; repeated Stop as a no-op within its bound; second Start
 refused unless the factory promises restart, in which case a full second cycle SHALL succeed; and a failed Start holding
-nothing. The settle window is the suite's only wait on a healthy owner: a correct owner passes for any window length, and
-an owner is judged only by what its Observe reports. `Run(t, factory, mustFail, promise)` SHALL drive them as subtests,
+nothing. The settle window is the suite's only wait on a healthy owner: an owner whose reported items last until
+Stop passes for any window length, and an owner is judged only by what its Observe reports. `Run(t, factory, mustFail,
+promise)` SHALL drive them as subtests,
 where `mustFail` is a required factory returning an owner whose Start returns an error; Run SHALL fail before any check,
 naming the argument, when `mustFail` is nil. The failed-start check SHALL require that Start returns a non-nil error,
 that the owner then reports nothing unresolved, and that a following Stop returns nil and changes no call count. No
@@ -32,7 +33,7 @@ check.
 #### Scenario: Owner whose work ends with its Start context
 
 - **WHEN** an owner's continuing work ends once the context given to Start ends, and its Observe stops listing that
-  work
+  work before the settle window has passed
 - **THEN** the Start-context check fails naming what the owner no longer holds
 
 #### Scenario: Failed start that holds a resource

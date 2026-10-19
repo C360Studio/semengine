@@ -8,38 +8,54 @@ at the base commit (`inventory.md`).
 
 Replaces `CheckControlledStopUnderLiveStartAuthority`, in the same slot of `Run`. Steps:
 
-1. Derive `startCtx` from the check's context; `Start(startCtx)` must return nil.
-2. `before := o.Observe()`; cancel `startCtx`.
-3. Re-read `Observe` until the settle window (D3) has passed. Fail if any item in `before.Unresolved` is no longer
-   listed, naming the missing items ("after the Start context ended the owner stopped holding …").
+1. Derive `startCtx` from the check's context. `Start(startCtx)` must return nil.
+2. Take `before := o.Observe()`, then cancel `startCtx`.
+3. Wait on a timer for the settle window (D3), then read `Observe` once. Fail if any item in `before.Unresolved` is
+   no longer listed, and name the missing items ("after the Start context ended the owner stopped holding …").
 4. `finish` (Stop under fresh finite authority) must return nil, and `Observe` must then list nothing.
 
-Only removals fail: an owner may add work while it runs. Proof: failpoint `workDiesWithStartContext` (D4) trips it.
-`stopReturnsNilWithWorkerRunning` stays mapped here (step 4).
+Only removals fail; an owner may add work while it runs. Proof: failpoint `workDiesWithStartContext` (D4) trips this
+check. `stopReturnsNilWithWorkerRunning` stays mapped here and fails at step 4.
 
 ## D2. Check `StopReturnsItsEndedContext`
 
-Replaces `CheckAbortStopPreservesCause`. Start under a live context (deferred cancel only). Stop with a context
-already cancelled with a cause must return promptly, with an error matching that context's error or cause. A nil
-return, or a return past the bound, fails as today. The Start context is not cancelled first. "A later Stop tries
-again" is held by Run's terminal `finish` and by `TestAbortStopThenFinishJoinsWorker` (D4); adding it to this check
-would make `stopReturnsNilWithWorkerRunning` trip two checks. Proof: `abortStopDropsCause` and
-`stopIgnoresCallerDeadline` (unchanged rows, renamed target).
+Replaces `CheckAbortStopPreservesCause`.
+
+1. Start under a live context; its cancel runs only when the check returns.
+2. Call Stop with a context already cancelled with a cause. It must return promptly, with an error matching that
+   context's error or cause. A nil return, or a return past the bound, fails as today.
+
+The check does not cancel the Start context first.
+
+For the double, `TestAbortStopThenFinishJoinsWorker` (D4) proves "a later Stop tries again": after that Stop, a later
+Stop joins the worker and leaves nothing held. For real owners, `Run`'s terminal Stop checks only the returned error
+(`lifecycletest.go:120-122`, `:128-132`). The suite does not check that a later Stop leaves nothing held; each owner's
+own tests carry that.
+
+Proof: `abortStopDropsCause` and `stopIgnoresCallerDeadline` trip this check (rows unchanged, check name updated).
 
 ## D3. The settle window
 
-This change's one real-clock interval, as `docs/testing.md:573` allows: 100 ms, a named constant beside `grace`,
-waited on with a timer, never `time.Sleep`.
+The window is 100 ms, a named constant beside `grace`. Step 3 of D1 blocks on its timer and then reads `Observe` once.
 
-- Its expiry can never fail a correct owner: a correct owner keeps everything for any window length.
-- Inside the sensitivity matrix (synctest) the window is exact, because the fake clock advances only once the dying
+- Inside the failpoint matrix (synctest) the result is exact: the fake clock fires the timer only once the dying
   worker has exited.
-- For real owners it only gives already-runnable goroutines a chance to run. Detection there is best-effort.
+- For a real owner outside a bubble, no explicit synchronization exists for a black-box owner. The window only lets
+  goroutines that are already runnable run, so detection is best-effort.
+- Why it cannot fail a correct owner today: it does not, for any `Observe` item that lasts until Stop. Some items end
+  on their own: metric's `admitted request` (`metric/lifecycle_test.go:50-52`) and natsclient's `message handler` and
+  `connection-loss timer armed` (`natsclient/client_lifecycle_test.go:73-81`). Those items appear only under traffic
+  or connection loss, and `Run` drives neither.
 - Cost: about 0.1 s per `Run`, about 2.5 s across `test:unit`, `test:repeat` and `test:integration`.
-- Rejected: reading `Observe` once with no wait. That detects nothing, even in the matrix, because the worker may not
-  have run yet.
-- Rejected: a new `Observation` field. That is new mechanism, and it tells the suite no more than an adapter that
-  reports whether work is running.
+
+`docs/testing.md:573` does not allow this wait: no interval defines "ending ctx stops nothing". The window is a new
+exception to the test rules, so it is owner question 2.
+
+Rejected alternatives:
+
+- Reading `Observe` once with no wait. That is insensitive even in the matrix.
+- A new `Observation` field. That is new mechanism, and it shows the suite nothing an adapter that reports whether
+  work is running does not.
 
 ## D4. The sensitivity double (`refowner_test.go`)
 
@@ -56,9 +72,14 @@ waited on with a timer, never `time.Sleep`.
 - Existing failpoints: `abortStopDropsCause` now means "Stop given an ended context returns nil" (before: "after Start
   authority was cancelled"); the code path is unchanged (`:150-155`). `stopIgnoresCallerDeadline`: unchanged code; it
   trips D2.
-- `TestAbortStopThenFinishJoinsWorker` (`:453-490`): the abort Stop no longer signals the clean worker, so
-  `<-o.workerExit.Entered()` (`:467`) would deadlock the bubble. Start `finish` first, then wait for `Entered`, then
-  `synctest.Wait`; the rest is unchanged. The exclusion at `:456` names the new check.
+- `TestAbortStopThenFinishJoinsWorker` (`:453-490`): the abort Stop no longer signals the clean double's worker.
+  1. Start `finish` in a goroutine.
+  2. Select on `o.workerExit.Entered()` against `finished`. If `finished` wins while `Observe` still lists `worker`,
+     a #40-shaped regression (an ended-context Stop that marks the owner stopped without signalling or joining) is
+     reported as a failure, not as a bubble deadlock.
+  3. Then `synctest.Wait` and the rest, unchanged.
+
+  The exclusion at `:456` names the new check.
 
 Proving tests: `TestEachFailpointTripsExactlyItsCheck`, `TestChecksPassAgainstCleanDouble`,
 `TestFailpointTableComplete`, `TestRunOverCleanDouble`, `TestAbortStopThenFinishJoinsWorker`,
@@ -66,22 +87,42 @@ Proving tests: `TestEachFailpointTripsExactlyItsCheck`, `TestChecksPassAgainstCl
 
 ## D5. `metric.Server`: stop handing the Start context to requests
 
-Measured: no handler reads the request context (inventory). Options:
+Option (a) is the reading ADR-113 gives: its Decision is stated as behaviour (`:59`); no constructor is named
+(`:71-75`); the run-context sentence (`:76-78`) bounds the exception to the root ban and is not a duty to create a
+context for work that reads none.
 
-- (a) Recommended: delete `BaseContext` (`handler.go:145`). Requests are served under `net/http`'s documented default
-  base. Stop's `Shutdown` and `Close` already end serving. No cancel to keep, and `metric` no longer holds any context
-  in a closure.
-- (b) A run context created in `start`, captured by `BaseContext`, its cancel kept privately and called where Stop
-  clears the handles (`:279-281`). This adds a field, a closure that holds a context, and a cancel on every failed
-  Start return (`:152`, `:164`), for a context nothing reads.
+Measured: no handler reads the request context (inventory).
 
-Behaviour either way: ending the Start context after Start returned stops nothing, and requests keep being served.
-Proof: new `TestServerServesAfterStartContextEnds`. `Start(startCtx)`, cancel, GET `/metrics` answers 200, Stop
-returns nil, nothing held. It passes before and after the change; it is a regression guard, with sensitivity shown
-by M5. The suite's D1 also covers the serve goroutine.
+The change: delete `BaseContext` (`handler.go:145`). Requests are then served under `net/http`'s documented default
+base context. Stop's `Shutdown` and `Close` already end serving. No cancel is kept, and no context is captured in a
+closure. Option (b), a run context with a private cancel, was not taken: it would add a field and a closure holding a
+context that nothing reads.
 
-Docs: `handler.go:54-55` becomes "ctx bounds Start only; ending it after Start returned stops nothing. Requests are
-served until Stop." `metric/README.md:209` becomes "One-shot synchronous bind; ctx bounds Start only".
+The adapter (`metric/lifecycle_test.go:47-49`) lists "serve goroutine" only while `s.serveDone != nil &&
+len(s.serveDone) == 0`. `Serve`'s goroutine sends its one result before it closes the channel, and Stop clears the
+field only after it has received that result. This follows the "Observe adapter contract" (goroutines are listed
+while they run), as D6 does for the status loop.
+
+Behaviour: ending the Start context after Start returned stops nothing, and requests keep being served.
+
+Proofs:
+
+- `TestServerServesAfterStartContextEnds`: `Start(startCtx)`, cancel, GET `/metrics` returns 200, Stop returns nil,
+  nothing is held. It passes before and after the change.
+- `TestServerLifecycleSuite/StartContextEndStopsNothing`. With the adapter change it detects M5.
+
+Test edit: delete `metric/handler_test.go:167` (`require.Same(t, t.Context(), server.server.BaseContext(…))`, which
+pins the old rule). The new test covers its behaviour.
+
+Docs:
+
+- `handler.go:54-55` becomes "ctx bounds Start only; ending it after Start returned stops nothing. Requests are
+  served until Stop."
+- `metric/README.md:209` becomes "// One-shot synchronous bind; ctx bounds Start only".
+- `runtimeCtx` becomes `ctx` at `metric/README.md:71-72`, `:554-555`, `:565`, `:763-764` and `metric/doc.go:373-374`.
+- `metric/README.md:490`: the example's `go g.processingLoop(ctx)` runs under a run context the example's `Start`
+  creates and its `Stop()` cancels first (a `cancel context.CancelFunc` field on the example struct). Issue 3 covers
+  the rest of that example.
 
 ## D6. graph-ingest `start`: startup under the Start context, the rest under run
 
@@ -122,6 +163,28 @@ Proofs:
   half (`waitForStream` retries about 50 s under any other context).
 - Existing: `TestGraphIngest_FailedBootSweepFailsStart` (`cancelDuringSweep`, `lifecycle_integration_test.go:184-240`)
   holds the sweep under the Start context.
+
+After `setupMutationHandlers` (`:1017-1019`) and before `startStatusMetricsLoop`, `start` adds one check, the same
+shape as `:983-985`:
+
+```go
+if err := ctx.Err(); err != nil {
+    return errs.Wrap(err, "Component", "Start", "context ended during startup")
+}
+```
+
+A Start context that ends while a run-context step runs (the request subscriptions' PONG wait) then fails Start; the
+guard's rollback runs `release`, which ends the run context. So "if ctx ends first, Start returns that error and holds
+nothing" holds. The guard itself commits without reading the context (`internal/lifecycleguard/guard.go:86-90`), so
+`start` is the only place this can be seen.
+
+- (T-G4) `TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup` (integration). Through the existing
+  `subscribeRequests` field (`component.go:425-427`, waived under #301), the test's subscribe function cancels
+  `startCtx` and then delegates to the client. Start must return an error matching `context.Canceled`; the adapter
+  must list nothing; Stop must return nil. This adds one test reader of a #301 field, recorded on #301.
+
+Also reword `processor/graph-ingest/test_owner_support_test.go:38`: "The fixture keeps its Start context live until
+Stop; ADR-113 no longer needs this, and it does no harm."
 
 Comments:
 
@@ -179,9 +242,12 @@ Replaced by:
   if `ctx` ends first it returns that context's error and a later `Stop` tries again. The callee must not replace
   Stop's context with its own timeout. Timeout or cancellation does not establish completed callback or worker
   joins."
-- Reviewer contract `:240-241`: "Verify startup work runs under the context given to `Start`, continuing work under
-  the one run context `Start` creates and `Stop` ends, and every task joins `Stop` (ADR-113); continuing work that
-  ends when the Start context ends is `BLOCKING`. A `Run` owner's work derives from `Run`."
+- Reviewer contract `:237-241`, the whole bullet: "Require context as the first argument; verify the exact received
+  or derived context passes directly into goroutines, callbacks, and helpers. A lifecycle owner may retain only a
+  private `context.CancelFunc`, with synchronization proven against its start/stop contract; it may not retain the
+  context itself. Verify startup work runs under the context given to `Start`, continuing work under the one run
+  context `Start` creates and `Stop` ends, and every task joins `Stop` (ADR-113); continuing work that ends when the
+  Start context ends is `BLOCKING`. A `Run` owner's work derives from `Run`."
 - Reviewer contract `:242`: "Root creation outside the process composition boundary is `BLOCKING`, except a lifecycle
   owner's one run context: created in `Start`, kept only as a cancel, ended inside `Stop` (ADR-113)."
 - Reviewer contract `:255`: "Direct use or any unbounded descendant of `context.WithoutCancel` is `BLOCKING`, except
@@ -193,11 +259,12 @@ Replaced by:
 - Architect contract `:405`: "**Root creation stays at composition**, except a lifecycle owner's one run context,
   created in `Start`, kept only as a cancel, and ended in `Stop` (ADR-113)."
 - `AGENTS.md:71`: "Production structs never retain `context.Context`; never invent roots (except a `Start`'s one run
-  context, ended in `Stop`, ADR-113) or nil defaults". Adds 58 bytes; `AGENTS.md` is 21,934 bytes, leaving 2,066; row
-  counts unchanged.
+  context, ended in `Stop`, ADR-113) or nil defaults". Adds 63 bytes; `AGENTS.md` becomes 21,997 of 24,000; row counts
+  unchanged.
 - `.agents/rules-index.md:17`: rule column as above; where column adds "ADR-113"; enforcement column becomes
-  "`TestNoRetainedContext` (`task test:unit`) for struct fields; `lifecycletest`'s `StartContextEndStopsNothing` for
-  owners whose tests run the suite; invented roots and nil defaults are review only".
+  "`TestNoRetainedContext` (`task test:unit`) for struct fields; invented roots and nil defaults are review only; the
+  exception's bound (continuing work outlives the Start context) is checked by `lifecycletest`'s
+  `StartContextEndStopsNothing` for owners whose tests run the suite".
 - `docs/setup-plan.md:291` adds ", except a lifecycle owner's one run context: created in `Start`, kept only as a
   cancel, ended in `Stop` (ADR-113)". `:293-294` becomes "The context given to `Start` bounds only `Start`; ending it
   later stops nothing. `Stop(ctx)` is the only stop: it uses the caller's exact finite context, returns nil only once
@@ -221,12 +288,14 @@ context).
 
 ## D11. Declared limits (#185: MEDIUM at most, no new mechanism)
 
-- graph-ingest's request subscriptions take the run context, because natsclient parents their handlers on it. A Start
-  context that ends during their setup wait does not cut it short; natsclient caps that wait at
-  `DefaultRequestTimeout` (5 s) per subscription (`request.go:293-296`). Filed as inventory issue 1.
-- No test can see which context builds the entity cache. Its expiry sweep has no observable outside `internal/cache`
-  without a hook, and `Get` checks expiry itself (`cache.go:131`) while Hybrid's LRU bounds size. The PR records it as
-  an uncovered case.
+- Request subscriptions: graph-ingest's request subscriptions take the run context, because natsclient parents their
+  handlers on it (`natsclient/request.go:322-329`). A Start context that ends during their setup wait does not cut
+  that wait short; natsclient caps it at `DefaultRequestTimeout`, 5 s per subscription (`request.go:293-296`). D6's
+  check then fails Start, so the cost is a bounded late return, not a broken contract. Issue 1 tracks the natsclient
+  shape.
+- Entity cache: no test can see which context builds it. Its expiry sweep has no observable outside `internal/cache`
+  without a hook. `Get` checks expiry itself (`cache.go:133`), and Hybrid's LRU bounds size. The PR records this as an
+  uncovered case.
 
 ## D12. #301 (the four test-only fields)
 
@@ -247,12 +316,15 @@ while #129 is open.
 - M3: the clean double builds its run context from `ctx`. Detected by `TestChecksPassAgainstCleanDouble`.
 - M4: D2 accepting a nil Stop. Detected by `TestEachFailpointTripsExactlyItsCheck/abortStopDropsCause`.
 - M5: metric's Start closes the server when `ctx` ends (`go func() { <-ctx.Done(); httpServer.Close() }()`).
-  Detected by `TestServerServesAfterStartContextEnds` and `TestServerLifecycleSuite/StartContextEndStopsNothing`.
+  Detected by `TestServerServesAfterStartContextEnds` (the GET fails) and
+  `TestServerLifecycleSuite/StartContextEndStopsNothing` (with the adapter's liveness reading, D5).
 - M6: graph-ingest's `runCtx` from `ctx` (today's `:974`). Detected by
   `TestGraphIngestLifecycleSuite/StartContextEndStopsNothing` and `TestComponent_StartContextEndStopsNothing`.
 - M7: graph-ingest's `setupSubscriptions(runCtx, …)`. Detected by `TestGraphIngest_StartBoundedByItsContext`.
-- M8: graph-ingest's adapter back to `statusDone != nil`. M6's suite subtest then passes: this is the adapter's
-  sensitivity, recorded as a survivor if so, which is expected.
+- M9: D6's `ctx.Err()` check deleted. Detected by T-G4.
+
+The adapter's liveness reading (D6) is test code, so it is not a mutant: T-G1's note records that it fails first on
+today's code (the status loop exits), shown with that reading.
 
 ## Merge order against PR 3 (#291)
 
@@ -264,8 +336,13 @@ point for change 3 only: the manager hands each `Start` a startup-bounded contex
 
 ## Owner questions
 
-1. Metric (D5): does ADR-113's "Start creates the one run context" bind an owner whose continuing work reads no
-   context? Recommended reading: no, so option (a) deletes `BaseContext`. If yes, option (b).
+1. Confirmation only: metric takes option (a) as ADR-113's reading (D5 cites).
+2. The settle window (D3). The choice:
+   - Accept a no-false-failure observation window. It never fails an owner whose reported items last until Stop.
+     Amend `docs/testing.md:573` to name it: "an observation window whose expiry cannot fail a correct
+     implementation, where no signal exists (the lifecycle suite's Start-context check)".
+   - Drop it. D1 then keeps only steps 1, 2 and 4. The `workDiesWithStartContext` row cannot be made to trip, so the
+     failpoint and the scenario "Owner whose work ends with its Start context" go. Adoption is then proved only by
+     the per-owner tests (T-G2, T-G4, the metric test).
 
-Otherwise none. The #282 point 4 premise correction (inventory, "`lifecycletest.Run` callers") is a record, not a
-question.
+The #282 point 4 premise correction (inventory, "`lifecycletest.Run` callers") is a record, not a question.

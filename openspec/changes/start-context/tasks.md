@@ -7,7 +7,9 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 ## 1. Design
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner, with owner question 1 answered. Gate: `task spec:check` and `task docs:check`.
+  owner, with owner questions 1 and 2 answered. Gate: `task spec:check` and `task docs:check`.
+- [ ] 1.2 Issues 1-4 filed (`status:blocked`, linked without a closing keyword), the #282 correction posted, and the
+  #301 answer (D12, plus T-G4's new reader) posted; numbers recorded here. Gate: `task docs:check`.
 
 ## 2. Suite (tests first)
 
@@ -21,10 +23,12 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 
 ## 3. Adopters
 
-- [ ] 3.1 metric (D5): `TestServerServesAfterStartContextEnds`, then the change, `handler.go:54-55`,
-  `README.md:209`. M5. Gate: `task verify`.
+- [ ] 3.1 metric (D5): adapter liveness for the serve goroutine; `TestServerServesAfterStartContextEnds`; delete
+  `handler_test.go:167`; drop `BaseContext`; edits to `handler.go:54-55`, `README.md:71`, `:209`, `:490`, `:554`,
+  `:565`, `:763`, `doc.go:373`. M5. Gate: `task verify`.
 - [ ] 3.2 graph-ingest (D6): the adapter reports the status loop while it runs; T-G2 replaces
-  `TestComponent_RespectsContext_Cancellation`; T-G3; then the `start` split and comments. M6-M8. Gate: `task verify`
+  `TestComponent_RespectsContext_Cancellation`; T-G3; T-G4 and the `ctx.Err()` check before the status loop; then
+  the `start` split and comments; reword `test_owner_support_test.go:38`. M6, M7, M9. Gate: `task verify`
   (integration included).
 - [ ] 3.3 The guard's test owner and natsclient pass unchanged (D7); the run recorded in `notes/3.3.md`. Gate:
   `task verify`.

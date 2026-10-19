@@ -30,11 +30,11 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 - [x] 3.1 metric (D5): adapter liveness for the serve goroutine; `TestServerServesAfterStartContextEnds`; delete
   `handler_test.go:167`; drop `BaseContext`; edits to `handler.go:54-55`, `README.md:71`, `:209`, `:490`, `:554`,
   `:565`, `:763`, `doc.go:373`. M5. Gate: `task verify`.
-- [ ] 3.2 graph-ingest (D6): the adapter reports the status loop while it runs; T-G2 replaces
+- [x] 3.2 graph-ingest (D6): the adapter reports the status loop while it runs; T-G2 replaces
   `TestComponent_RespectsContext_Cancellation`; T-G3; T-G4 and the `ctx.Err()` check before the status loop; then
   the `start` split and comments; reword `test_owner_support_test.go:38`. M6, M7, M9. Gate: `task verify`
   (integration included).
-- [ ] 3.3 The guard's test owner and natsclient pass unchanged (D7); the run recorded in `notes/3.3.md`. Gate:
+- [x] 3.3 The guard's test owner and natsclient pass unchanged (D7); the run recorded in `notes/3.3.md`. Gate:
   `task verify`.
 - [ ] 3.4 Review stop B (Codex) on 3.1-3.3.
 

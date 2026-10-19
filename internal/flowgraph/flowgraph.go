@@ -1,0 +1,986 @@
+package flowgraph
+
+import (
+	"cmp"
+	"fmt"
+	"maps"
+	"slices"
+	"strings"
+
+	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/internal/graphmutation"
+	"github.com/c360studio/semengine/pkg/errs"
+)
+
+// FlowGraph represents a directed graph of component connections
+type FlowGraph struct {
+	nodes map[string]*componentNode // componentName -> node
+	edges []FlowEdge                // all connections unified
+}
+
+// componentNode represents a component in the flow graph
+type componentNode struct {
+	ComponentName string
+	InputPorts    []portInfo
+	OutputPorts   []portInfo
+}
+
+// portInfo contains port metadata for graph analysis
+type portInfo struct {
+	Name         string
+	Direction    component.Direction
+	ConnectionID string // Subject, bucket, or network address
+	Pattern      component.InteractionPattern
+	Interface    *component.InterfaceContract
+	Required     bool // Whether this port is required for the component to function
+	kind         component.PortKind
+	exclusive    bool
+	natsSubjects []string
+}
+
+// FlowEdge represents a connection between two component ports
+type FlowEdge struct {
+	From         ComponentPortRef
+	To           ComponentPortRef
+	Pattern      component.InteractionPattern
+	ConnectionID string // Subject, bucket, or network addr
+}
+
+// ComponentPortRef references a specific port on a component
+type ComponentPortRef struct {
+	ComponentName string
+	PortName      string
+}
+
+// Issue type constants for orphaned port classification
+const (
+	IssueNoPublishers           = "no_publishers"
+	IssueNoSubscribers          = "no_subscribers"
+	IssueOptionalAPIUnused      = "optional_api_unused"
+	IssueOptionalIndexUnwatched = "optional_index_unwatched"
+)
+
+// newFlowGraph creates a new empty FlowGraph
+func newFlowGraph() *FlowGraph {
+	return &FlowGraph{
+		nodes: make(map[string]*componentNode),
+		edges: make([]FlowEdge, 0),
+	}
+}
+
+// GetEdges returns the edges in the graph
+func (g *FlowGraph) GetEdges() []FlowEdge {
+	// Return a copy to prevent external modification
+	result := make([]FlowEdge, len(g.edges))
+	copy(result, g.edges)
+	return result
+}
+
+// BuildFromDeclarations constructs and connects a flow graph from component
+// declarations — admitted (Registry snapshots) or declared offline
+// (Registry.Declare) — so the boot-time and the offline paths build the same
+// graph from the same interpreter.
+func BuildFromDeclarations(declarations []component.Declaration) (*FlowGraph, error) {
+	graph := newFlowGraph()
+	for _, declaration := range declarations {
+		if err := graph.addComponentNode(
+			declaration.InstanceName,
+			declaration.InputPorts, declaration.InputFacts,
+			declaration.OutputPorts, declaration.OutputFacts,
+		); err != nil {
+			return nil, fmt.Errorf("add component %q to flow graph: %w", declaration.InstanceName, err)
+		}
+	}
+	if err := graph.connectComponentsByPatterns(); err != nil {
+		return nil, fmt.Errorf("connect component flow graph: %w", err)
+	}
+	return graph, nil
+}
+
+// sortedNodeNames returns the graph's component names in a stable order so
+// edge derivation does not depend on map iteration.
+func (g *FlowGraph) sortedNodeNames() []string {
+	return slices.Sorted(maps.Keys(g.nodes))
+}
+
+func (g *FlowGraph) addComponentNode(
+	name string,
+	inputDeclaration []component.Port,
+	inputFacts []component.PortFacts,
+	outputDeclaration []component.Port,
+	outputFacts []component.PortFacts,
+) error {
+	if name == "" {
+		return fmt.Errorf("component name cannot be empty: %w", errs.ErrInvalidConfig)
+	}
+	if _, exists := g.nodes[name]; exists {
+		return fmt.Errorf("component %s already exists: %w", name, errs.ErrInvalidConfig)
+	}
+
+	inputPorts, err := g.extractPortInfo(inputDeclaration, inputFacts)
+	if err != nil {
+		return fmt.Errorf("component %q input ports: %w", name, err)
+	}
+	outputPorts, err := g.extractPortInfo(outputDeclaration, outputFacts)
+	if err != nil {
+		return fmt.Errorf("component %q output ports: %w", name, err)
+	}
+	node := &componentNode{
+		ComponentName: name,
+		InputPorts:    inputPorts,
+		OutputPorts:   outputPorts,
+	}
+
+	g.nodes[name] = node
+	return nil
+}
+
+// extractPortInfo converts component ports to portInfo for graph analysis
+func (g *FlowGraph) extractPortInfo(
+	ports []component.Port, retainedFacts []component.PortFacts,
+) ([]portInfo, error) {
+	if len(ports) != len(retainedFacts) {
+		return nil, fmt.Errorf("retained port/fact count mismatch: %d ports, %d facts", len(ports), len(retainedFacts))
+	}
+	result := make([]portInfo, 0, len(ports))
+
+	for index, port := range ports {
+		facts := retainedFacts[index]
+		connections := facts.ConnectionIDs()
+		if len(connections) == 0 {
+			return nil, fmt.Errorf("port %q has no connection identity", port.Name)
+		}
+		var interfaceContract *component.InterfaceContract
+		if contract, ok := facts.Interface(); ok {
+			interfaceContract = &contract
+		}
+		info := portInfo{
+			Name:         port.Name,
+			Direction:    port.Direction,
+			ConnectionID: connections[0],
+			Pattern:      facts.InteractionPattern(),
+			Interface:    interfaceContract,
+			Required:     port.Required,
+			kind:         facts.Kind(),
+			exclusive:    facts.IsExclusive(),
+			natsSubjects: facts.NATSSubjects(),
+		}
+
+		result = append(result, info)
+	}
+
+	return result, nil
+}
+
+// connectComponentsByPatterns builds edges by matching connection patterns
+func (g *FlowGraph) connectComponentsByPatterns() error {
+	// Clear existing edges
+	g.edges = g.edges[:0]
+	if err := g.validateGraphMutationProviders(); err != nil {
+		return err
+	}
+
+	// Build connection maps by pattern and connection ID
+	publishers := g.portsByConnection(component.DirectionOutput)
+	subscribers := g.portsByConnection(component.DirectionInput)
+
+	var warnings []string
+
+	// Connect based on interaction patterns
+	g.connectStreamPorts(publishers[component.PatternStream], subscribers[component.PatternStream])
+	g.connectRequestPorts(publishers[component.PatternRequest], subscribers[component.PatternRequest])
+	g.validateKVWriters(publishers[component.PatternWatch], &warnings)
+	g.connectKVPorts(publishers[component.PatternWatch], subscribers[component.PatternWatch], component.PatternWatch)
+	g.connectKVPorts(publishers[component.PatternWatch], subscribers[component.PatternRead], component.PatternRead)
+	g.connectStorePorts(publishers[component.PatternStore], subscribers[component.PatternStore])
+
+	// Validate network ports for conflicts
+	conflicts := g.validateNetworkPorts(publishers[component.PatternNetwork], subscribers[component.PatternNetwork])
+	warnings = append(warnings, conflicts...)
+
+	// Return error if there are critical warnings
+	if len(warnings) > 0 {
+		return fmt.Errorf("%s: %w", strings.Join(warnings, "; "), errs.ErrInvalidConfig)
+	}
+
+	return nil
+}
+
+// validateGraphMutationProviders validates only the declared component graph.
+// It does not inspect NATS subscriptions or processes and therefore makes no
+// leader-election or account-wide cardinality claim.
+func (g *FlowGraph) validateGraphMutationProviders() error {
+	candidates := 0
+	providers := 0
+	mutationPrefix := strings.TrimSuffix(graphmutation.SubjectFamily, ">")
+	for _, componentName := range g.sortedNodeNames() {
+		node := g.nodes[componentName]
+		for _, port := range append(append([]portInfo(nil), node.InputPorts...), node.OutputPorts...) {
+			isMutation := (port.Pattern == component.PatternRequest && strings.HasPrefix(port.ConnectionID, mutationPrefix)) ||
+				(port.Interface != nil && port.Interface.Type == graphmutation.InterfaceType)
+			if !isMutation {
+				continue
+			}
+			candidates++
+			if port.Pattern != component.PatternRequest || port.ConnectionID != graphmutation.SubjectFamily ||
+				port.Interface == nil || port.Interface.Type != graphmutation.InterfaceType ||
+				port.Interface.Version != graphmutation.InterfaceVersion || !port.Required {
+				return fmt.Errorf("component %s port %s is not a required nats-request %s %s port on %s: %w",
+					componentName, port.Name, graphmutation.InterfaceType, graphmutation.InterfaceVersion,
+					graphmutation.SubjectFamily, errs.ErrInvalidConfig)
+			}
+			if port.Direction == component.DirectionInput {
+				providers++
+			}
+		}
+	}
+	if candidates == 0 {
+		return nil
+	}
+	if providers != 1 {
+		return fmt.Errorf("graph mutation flow requires exactly one compatible provider, found %d: %w",
+			providers, errs.ErrInvalidConfig)
+	}
+	return nil
+}
+
+// portsByConnection maps each connection ID to the ports that use it, by
+// pattern, for one direction: output ports for DirectionOutput, input ports
+// otherwise. A JetStream port keyed by its stream name is also listed under
+// each of its subjects, so connectStreamPorts can match it by NATS pattern.
+func (g *FlowGraph) portsByConnection(direction component.Direction) map[component.InteractionPattern]map[string][]ComponentPortRef {
+	byPattern := make(map[component.InteractionPattern]map[string][]ComponentPortRef)
+
+	for _, componentName := range g.sortedNodeNames() {
+		node := g.nodes[componentName]
+		ports := node.InputPorts
+		if direction == component.DirectionOutput {
+			ports = node.OutputPorts
+		}
+		for _, port := range ports {
+			if byPattern[port.Pattern] == nil {
+				byPattern[port.Pattern] = make(map[string][]ComponentPortRef)
+			}
+			byConnection := byPattern[port.Pattern]
+
+			portRef := ComponentPortRef{
+				ComponentName: componentName,
+				PortName:      port.Name,
+			}
+			byConnection[port.ConnectionID] = append(byConnection[port.ConnectionID], portRef)
+
+			if port.kind == component.PortKindJetStream && port.ConnectionID != "" {
+				for _, subject := range port.natsSubjects {
+					if subject != "" && subject != port.ConnectionID {
+						byConnection[subject] = append(byConnection[subject], portRef)
+					}
+				}
+			}
+		}
+	}
+
+	return byPattern
+}
+
+// SubjectCovers reports whether filter COVERS pattern: every concrete subject
+// that matches pattern also matches filter under NATS wildcard semantics. It
+// is directional: `data.>` covers `data.*`, `data.*` does not cover `data.>`,
+// and `data.raw` does not cover `data.*`. Composition validation uses it to
+// decide whether an explicit stream's subjects feed a JetStream subscriber's
+// subjects. Edge derivation's unexported direct-match test is a different
+// question and is not exported: it answers "may these two ports be connected",
+// not "does this filter deliver every subject that one".
+func SubjectCovers(filter, pattern string) bool {
+	patternTokens := strings.Split(pattern, ".")
+	filterTokens := strings.Split(filter, ".")
+	if !validSubjectTokens(patternTokens) || !validSubjectTokens(filterTokens) {
+		return false
+	}
+	filterHasTail := filterTokens[len(filterTokens)-1] == ">"
+	if !filterHasTail {
+		if patternTokens[len(patternTokens)-1] == ">" || len(patternTokens) != len(filterTokens) {
+			return false
+		}
+		for index := range filterTokens {
+			if !tokenCovered(patternTokens[index], filterTokens[index]) {
+				return false
+			}
+		}
+		return true
+	}
+	// A trailing `>` consumes at least one token, so the pattern must reach
+	// the filter's prefix plus one.
+	prefix := len(filterTokens) - 1
+	if len(patternTokens) < prefix+1 {
+		return false
+	}
+	for index := 0; index < prefix; index++ {
+		token := patternTokens[index]
+		if token == ">" {
+			token = "*"
+		}
+		if !tokenCovered(token, filterTokens[index]) {
+			return false
+		}
+	}
+	return true
+}
+
+func validSubjectTokens(tokens []string) bool {
+	if len(tokens) == 0 {
+		return false
+	}
+	for index, token := range tokens {
+		if token == "" || (strings.ContainsAny(token, "*>") && token != "*" && token != ">") ||
+			(token == ">" && index != len(tokens)-1) {
+			return false
+		}
+	}
+	return true
+}
+
+func tokenCovered(patternToken, filterToken string) bool {
+	if filterToken == "*" {
+		return true
+	}
+	return patternToken != "*" && patternToken == filterToken
+}
+
+// matchNATSPattern checks if a subject matches a NATS pattern
+// Following NATS subject matching semantics:
+// * matches exactly one token
+// > matches one or more tokens
+// The answer does not depend on argument order (TestMatchNATSPatternIsSymmetric),
+// so a caller asks once per pair of connection IDs.
+func matchNATSPattern(subject, pattern string) bool {
+	// Handle exact match first (optimization)
+	if subject == pattern {
+		return true
+	}
+
+	// Check if subject has wildcards (pattern matching in reverse)
+	subjectHasWildcards := strings.Contains(subject, "*") || strings.Contains(subject, ">")
+	patternHasWildcards := strings.Contains(pattern, "*") || strings.Contains(pattern, ">")
+
+	// If neither has wildcards, we already checked exact match above
+	if !subjectHasWildcards && !patternHasWildcards {
+		return false
+	}
+
+	// If both have wildcards, do pattern matching in both directions
+	if subjectHasWildcards && patternHasWildcards {
+		subjectTokens := strings.Split(subject, ".")
+		patternTokens := strings.Split(pattern, ".")
+		return matchTokens(subjectTokens, patternTokens) || matchTokens(patternTokens, subjectTokens)
+	}
+
+	// One has wildcards, one doesn't - do normal pattern matching
+	if patternHasWildcards {
+		subjectTokens := strings.Split(subject, ".")
+		patternTokens := strings.Split(pattern, ".")
+		return matchTokens(subjectTokens, patternTokens)
+	}
+
+	// Subject has wildcards, pattern doesn't - swap them
+	subjectTokens := strings.Split(subject, ".")
+	patternTokens := strings.Split(pattern, ".")
+	return matchTokens(patternTokens, subjectTokens)
+}
+
+func matchTokens(subjectTokens, patternTokens []string) bool {
+	i, j := 0, 0
+
+	for i < len(patternTokens) {
+		if patternTokens[i] == ">" {
+			// '>' matches one or more remaining tokens, never none
+			return j < len(subjectTokens)
+		}
+
+		if j >= len(subjectTokens) {
+			// Pattern has more tokens than subject
+			return false
+		}
+
+		if patternTokens[i] == "*" {
+			// '*' matches any single token
+			i++
+			j++
+			continue
+		}
+
+		if patternTokens[i] != subjectTokens[j] {
+			// Literal token mismatch
+			return false
+		}
+
+		i++
+		j++
+	}
+
+	// Both must be exhausted for a match
+	return i == len(patternTokens) && j == len(subjectTokens)
+}
+
+// concreteID picks the connection ID an edge between two matching IDs carries:
+// a, unless a holds a wildcard, then b.
+func concreteID(a, b string) string {
+	if strings.ContainsAny(a, "*>") {
+		return b
+	}
+	return a
+}
+
+// connectStreamPorts connects stream pattern ports (NATS, JetStream).
+// A deduplication set prevents the same (publisher, subscriber) pair from
+// producing multiple edges when a JetStream port is indexed under both its
+// StreamName and its individual subjects.
+func (g *FlowGraph) connectStreamPorts(publishers, subscribers map[string][]ComponentPortRef) {
+	type edgeKey struct {
+		from, to ComponentPortRef
+	}
+	seen := make(map[edgeKey]bool)
+
+	// Stream pattern: publishers -> subscribers with NATS pattern matching.
+	// Connection IDs are visited in sorted order so the edge set — and the
+	// connection ID chosen for a pair reachable under both a stream name and a
+	// subject — is the same on every run.
+	for _, pubConnID := range slices.Sorted(maps.Keys(publishers)) {
+		pubs := publishers[pubConnID]
+		for _, subConnID := range slices.Sorted(maps.Keys(subscribers)) {
+			subs := subscribers[subConnID]
+			if matchNATSPattern(pubConnID, subConnID) {
+				connID := concreteID(pubConnID, subConnID)
+				// Connect all matching publishers to subscribers
+				for _, pub := range pubs {
+					for _, sub := range subs {
+						// Avoid self-connections and duplicate edges
+						if pub.ComponentName == sub.ComponentName {
+							continue
+						}
+						k := edgeKey{pub, sub}
+						if seen[k] {
+							continue
+						}
+						seen[k] = true
+						g.edges = append(g.edges, FlowEdge{
+							From:         pub,
+							To:           sub,
+							Pattern:      component.PatternStream,
+							ConnectionID: connID,
+						})
+					}
+				}
+			}
+		}
+	}
+}
+
+// connectStorePorts renders the ADR-063 store federation: every store-provide
+// (a storage component owning a StorageInstance) connects to every store-read (a
+// content-fetch consumer). Advisory/visibility only — a consumer resolves a
+// producer-chosen instance per-fetch at runtime and MAY read any registered
+// instance, so "can read from" is the honest edge; the exact pairing is dynamic
+// and deliberately not asserted here. The edge connID is the provider's
+// store:<instance>.
+func (g *FlowGraph) connectStorePorts(publishers, subscribers map[string][]ComponentPortRef) {
+	type edgeKey struct{ from, to ComponentPortRef }
+	seen := make(map[edgeKey]bool)
+
+	for _, pubConnID := range slices.Sorted(maps.Keys(publishers)) {
+		pubs := publishers[pubConnID]
+		for _, subConnID := range slices.Sorted(maps.Keys(subscribers)) {
+			subs := subscribers[subConnID]
+			for _, pub := range pubs {
+				for _, sub := range subs {
+					if pub.ComponentName == sub.ComponentName {
+						continue
+					}
+					k := edgeKey{pub, sub}
+					if seen[k] {
+						continue
+					}
+					seen[k] = true
+					g.edges = append(g.edges, FlowEdge{
+						From:         pub,
+						To:           sub,
+						Pattern:      component.PatternStore,
+						ConnectionID: pubConnID,
+					})
+				}
+			}
+		}
+	}
+}
+
+// connectRequestPorts connects request pattern ports (bidirectional NATS request-reply).
+// Unlike the original exact-key grouping, this uses NATS pattern matching across all
+// publisher/subscriber connection IDs so that wildcard subjects (e.g. graph.query.*)
+// and concrete subjects (e.g. graph.query.search) are recognised as the same endpoint.
+func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]ComponentPortRef) {
+	// Track edges we have already created to avoid duplicates. We key on a
+	// canonical (sorted) pair of ComponentPortRefs so the check is direction-agnostic.
+	type edgeKey struct {
+		a, b ComponentPortRef // a.ComponentName <= b.ComponentName (lexicographic)
+	}
+	seen := make(map[edgeKey]bool)
+
+	addEdge := func(p1, p2 ComponentPortRef, connID string) {
+		// Avoid self-connections
+		if p1.ComponentName == p2.ComponentName {
+			return
+		}
+		// Canonical ordering
+		a, b := p1, p2
+		if a.ComponentName > b.ComponentName ||
+			(a.ComponentName == b.ComponentName && a.PortName > b.PortName) {
+			a, b = b, a
+		}
+		k := edgeKey{a, b}
+		if seen[k] {
+			return
+		}
+		seen[k] = true
+		g.edges = append(g.edges, FlowEdge{
+			From:         p1,
+			To:           p2,
+			Pattern:      component.PatternRequest,
+			ConnectionID: connID,
+		})
+	}
+
+	// Cross-match every publisher connection ID against every subscriber connection
+	// ID using NATS pattern matching (handles * and > wildcards in either position).
+	publisherIDs := slices.Sorted(maps.Keys(publishers))
+	subscriberIDs := slices.Sorted(maps.Keys(subscribers))
+	for _, pubConnID := range publisherIDs {
+		pubs := publishers[pubConnID]
+		for _, subConnID := range subscriberIDs {
+			subs := subscribers[subConnID]
+			if matchNATSPattern(pubConnID, subConnID) {
+				connID := concreteID(pubConnID, subConnID)
+				for _, pub := range pubs {
+					for _, sub := range subs {
+						addEdge(pub, sub, connID)
+					}
+				}
+			}
+		}
+	}
+
+	// Also connect ports that are both publishers (output) and subscribers (input)
+	// on matching subjects — request ports are bidirectional so either side may
+	// appear in either map.
+	for _, pubConnID1 := range publisherIDs {
+		ports1 := publishers[pubConnID1]
+		for _, pubConnID2 := range publisherIDs {
+			ports2 := publishers[pubConnID2]
+			if pubConnID1 == pubConnID2 {
+				continue
+			}
+			if matchNATSPattern(pubConnID1, pubConnID2) {
+				connID := concreteID(pubConnID1, pubConnID2)
+				for _, p1 := range ports1 {
+					for _, p2 := range ports2 {
+						addEdge(p1, p2, connID)
+					}
+				}
+			}
+		}
+	}
+	for _, subConnID1 := range subscriberIDs {
+		ports1 := subscribers[subConnID1]
+		for _, subConnID2 := range subscriberIDs {
+			ports2 := subscribers[subConnID2]
+			if subConnID1 == subConnID2 {
+				continue
+			}
+			if matchNATSPattern(subConnID1, subConnID2) {
+				connID := concreteID(subConnID1, subConnID2)
+				for _, p1 := range ports1 {
+					for _, p2 := range ports2 {
+						addEdge(p1, p2, connID)
+					}
+				}
+			}
+		}
+	}
+}
+
+// validateKVWriters reports each KV bucket with more than one writer port.
+func (g *FlowGraph) validateKVWriters(publishers map[string][]ComponentPortRef, warnings *[]string) {
+	for _, connectionID := range slices.Sorted(maps.Keys(publishers)) {
+		if pubs := publishers[connectionID]; len(pubs) > 1 {
+			*warnings = append(*warnings, fmt.Sprintf("multiple writers to KV bucket %s: %s", connectionID, describePorts(pubs)))
+		}
+	}
+}
+
+// connectKVPorts connects KV writers to either change watchers or exact readers
+// without collapsing their distinct interaction semantics.
+func (g *FlowGraph) connectKVPorts(publishers, subscribers map[string][]ComponentPortRef, pattern component.InteractionPattern) {
+	for _, connectionID := range slices.Sorted(maps.Keys(publishers)) {
+		pubs := publishers[connectionID]
+		if subs, exists := subscribers[connectionID]; exists {
+			for _, pub := range pubs {
+				for _, sub := range subs {
+					edge := FlowEdge{
+						From:         pub,
+						To:           sub,
+						Pattern:      pattern,
+						ConnectionID: connectionID,
+					}
+					g.edges = append(g.edges, edge)
+				}
+			}
+		}
+	}
+}
+
+// validateNetworkPorts detects network port binding conflicts
+func (g *FlowGraph) validateNetworkPorts(publishers, subscribers map[string][]ComponentPortRef) []string {
+	// Network ports need exclusive binding - detect conflicts
+	conflicts := []string{}
+	allPorts := make(map[string][]ComponentPortRef)
+
+	// Check publishers for conflicts
+	for _, connID := range slices.Sorted(maps.Keys(publishers)) {
+		candidates := publishers[connID]
+		ports := g.exclusivePortRefs(candidates, component.DirectionOutput)
+		if len(ports) > 1 {
+			conflicts = append(conflicts,
+				fmt.Sprintf("network port conflict on %s: multiple components binding: %s", connID, describePorts(ports)))
+		}
+		if len(ports) != 0 {
+			allPorts[connID] = ports
+		}
+	}
+
+	// Check if subscribers conflict with publishers (both trying to bind same port)
+	for _, connID := range slices.Sorted(maps.Keys(subscribers)) {
+		candidates := subscribers[connID]
+		ports := g.exclusivePortRefs(candidates, component.DirectionInput)
+		if len(ports) == 0 {
+			continue
+		}
+		if existing, exists := allPorts[connID]; exists {
+			conflicts = append(conflicts,
+				fmt.Sprintf("network port conflict on %s: %s and %s both trying to bind", connID,
+					describePorts(existing), describePorts(ports)))
+		} else if len(ports) > 1 {
+			conflicts = append(conflicts,
+				fmt.Sprintf("network port conflict on %s: multiple components binding: %s", connID, describePorts(ports)))
+		}
+	}
+
+	// Network ports are external connections - no edges created in the graph
+	return conflicts
+}
+
+// describePorts names each port the way the other refusals do, "component X
+// port Y", so a conflict reads in the operator's words rather than Go's struct
+// formatting.
+func describePorts(refs []ComponentPortRef) string {
+	names := make([]string, len(refs))
+	for index, ref := range refs {
+		names[index] = fmt.Sprintf("component %s port %s", ref.ComponentName, ref.PortName)
+	}
+	return strings.Join(names, ", ")
+}
+
+func (g *FlowGraph) exclusivePortRefs(candidates []ComponentPortRef, direction component.Direction) []ComponentPortRef {
+	result := make([]ComponentPortRef, 0, len(candidates))
+	for _, candidate := range candidates {
+		node := g.nodes[candidate.ComponentName]
+		if node == nil {
+			continue
+		}
+		ports := node.InputPorts
+		if direction == component.DirectionOutput {
+			ports = node.OutputPorts
+		}
+		for _, port := range ports {
+			if port.Name == candidate.PortName && port.exclusive {
+				result = append(result, candidate)
+				break
+			}
+		}
+	}
+	return result
+}
+
+// AnalyzeConnectivity performs graph connectivity analysis. It reports what the
+// graph IS — connected components, disconnected nodes, orphaned ports — and
+// derives no severity of its own. Severity belongs to composition.Analyze,
+// which owns the one findings vocabulary (ADR-100 D3); a status computed here
+// would be a second judgment over the same walk, and the one that used to be
+// here treated every required stream port with no publisher as critical without
+// checking whether the operator declared it externally fed.
+func (g *FlowGraph) AnalyzeConnectivity() *FlowAnalysisResult {
+	result := &FlowAnalysisResult{
+		DisconnectedNodes:   []DisconnectedNode{}, // Initialize empty slice
+		ConnectedComponents: [][]string{},         // Initialize empty slice
+		OrphanedPorts:       []OrphanedPort{},     // Initialize empty slice
+	}
+
+	// Find connected components using standard graph algorithms
+	components := g.findConnectedComponents()
+	if components != nil {
+		result.ConnectedComponents = components
+	}
+
+	// Detect orphaned ports
+	orphans := g.findOrphanedPorts()
+	if orphans != nil {
+		result.OrphanedPorts = orphans
+	}
+
+	// Find disconnected nodes (nodes with no edges)
+	for _, name := range g.sortedNodeNames() {
+		hasConnection := false
+		for _, edge := range g.edges {
+			if edge.From.ComponentName == name || edge.To.ComponentName == name {
+				hasConnection = true
+				break
+			}
+		}
+		if !hasConnection {
+			result.DisconnectedNodes = append(result.DisconnectedNodes, DisconnectedNode{
+				ComponentName: name,
+				Issue:         "component has no connections",
+				Suggestions:   []string{"connect to other components", "verify component configuration"},
+			})
+		}
+	}
+
+	return result
+}
+
+// findConnectedComponents uses DFS to find connected components in the graph
+func (g *FlowGraph) findConnectedComponents() [][]string {
+	visited := make(map[string]bool)
+	var components [][]string
+
+	// Build adjacency list from edges (treat as undirected for connectivity)
+	adj := make(map[string][]string)
+	for _, edge := range g.edges {
+		from := edge.From.ComponentName
+		to := edge.To.ComponentName
+
+		adj[from] = append(adj[from], to)
+		adj[to] = append(adj[to], from)
+	}
+
+	// DFS to find connected components
+	for _, componentName := range g.sortedNodeNames() {
+		if !visited[componentName] {
+			var cluster []string
+			g.dfs(componentName, adj, visited, &cluster)
+			components = append(components, cluster)
+		}
+	}
+
+	return components
+}
+
+// dfs performs depth-first search for connected components
+func (g *FlowGraph) dfs(node string, adj map[string][]string, visited map[string]bool, cluster *[]string) {
+	visited[node] = true
+	*cluster = append(*cluster, node)
+
+	for _, neighbor := range adj[node] {
+		if !visited[neighbor] {
+			g.dfs(neighbor, adj, visited, cluster)
+		}
+	}
+}
+
+// findOrphanedPorts identifies ports with no connections
+// Network boundary ports are excluded as they are external interfaces
+// Request/Response and Watch ports are marked as optional
+func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
+	var orphaned []OrphanedPort
+
+	// Track which ports have connections
+	connectedPorts := make(map[string]map[string]bool) // component -> port -> connected
+
+	for _, edge := range g.edges {
+		// Mark ports as connected
+		if connectedPorts[edge.From.ComponentName] == nil {
+			connectedPorts[edge.From.ComponentName] = make(map[string]bool)
+		}
+		if connectedPorts[edge.To.ComponentName] == nil {
+			connectedPorts[edge.To.ComponentName] = make(map[string]bool)
+		}
+
+		connectedPorts[edge.From.ComponentName][edge.From.PortName] = true
+		connectedPorts[edge.To.ComponentName][edge.To.PortName] = true
+	}
+
+	// Check all ports for orphans
+	for _, componentName := range g.sortedNodeNames() {
+		node := g.nodes[componentName]
+		// Check input ports
+		for _, port := range node.InputPorts {
+			if connectedPorts[componentName] == nil || !connectedPorts[componentName][port.Name] {
+				// Skip external boundary inputs — they ARE the external source.
+				// component.PatternNetwork binds a local listener; component.PatternHTTPClient initiates
+				// an outbound connection. Both are legitimately unmatched in the
+				// internal graph because their "publisher" is outside the system.
+				// component.PatternStore (ADR-063) is a federation-capability declaration whose
+				// pairing is producer-chosen at runtime — an unmatched store-read is
+				// not orphaned. component.PatternTimer is a cadence/scheduler boundary that
+				// drives the component on an interval, not a data edge.
+				if port.Pattern == component.PatternNetwork || port.Pattern == component.PatternHTTPClient || port.Pattern == component.PatternStore || port.Pattern == component.PatternTimer {
+					continue // Not orphaned, it's an external/federation/cadence input
+				}
+
+				// Determine issue type based on pattern
+				issue := IssueNoPublishers
+				if port.Pattern == component.PatternRequest {
+					issue = IssueOptionalAPIUnused // Request APIs are optional
+				}
+
+				orphaned = append(orphaned, OrphanedPort{
+					ComponentName: componentName,
+					PortName:      port.Name,
+					Direction:     port.Direction,
+					ConnectionID:  port.ConnectionID,
+					Pattern:       port.Pattern,
+					Issue:         issue,
+					Required:      port.Required,
+				})
+			}
+		}
+
+		// Check output ports
+		for _, port := range node.OutputPorts {
+			if connectedPorts[componentName] == nil || !connectedPorts[componentName][port.Name] {
+				// Skip external boundary outputs — they ARE the external sink.
+				// component.PatternHTTPClient is also skipped: the component owns the
+				// outbound connection so no internal subscriber is expected.
+				// component.PatternStore (ADR-063): a store-provide with no consumer is a
+				// legitimately-unread store, not an orphan. component.PatternTimer is a
+				// cadence boundary, symmetric with the input side.
+				if port.Pattern == component.PatternNetwork || port.Pattern == component.PatternHTTPClient || port.Pattern == component.PatternStore || port.Pattern == component.PatternTimer {
+					continue // Not orphaned, it's an external/federation output
+				}
+
+				// Determine issue type based on pattern
+				issue := IssueNoSubscribers
+				if port.Pattern == component.PatternRequest {
+					issue = IssueOptionalAPIUnused // Request APIs are optional
+				}
+				if port.Pattern == component.PatternWatch {
+					issue = IssueOptionalIndexUnwatched // KV indexes may be intentionally unwatched
+				}
+
+				orphaned = append(orphaned, OrphanedPort{
+					ComponentName: componentName,
+					PortName:      port.Name,
+					Direction:     port.Direction,
+					ConnectionID:  port.ConnectionID,
+					Pattern:       port.Pattern,
+					Issue:         issue,
+					Required:      port.Required,
+				})
+			}
+		}
+	}
+
+	return orphaned
+}
+
+// ValidateStreamRequirements returns one warning for each JetStream input port
+// that a plain NATS output port feeds, naming each such publishing component
+// once, sorted by subscriber component and then port.
+func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
+	var warnings []StreamRequirementWarning
+
+	// For each edge, check if the subscriber is JetStream and publisher is NATS
+	for _, edge := range g.edges {
+		if edge.Pattern != component.PatternStream {
+			continue
+		}
+
+		// Get the subscriber's port info
+		subscriberNode, ok := g.nodes[edge.To.ComponentName]
+		if !ok {
+			continue
+		}
+
+		var subscriberPort *portInfo
+		for i := range subscriberNode.InputPorts {
+			if subscriberNode.InputPorts[i].Name == edge.To.PortName {
+				subscriberPort = &subscriberNode.InputPorts[i]
+				break
+			}
+		}
+		if subscriberPort == nil {
+			continue
+		}
+
+		// Check if subscriber is JetStream
+		if subscriberPort.kind != component.PortKindJetStream {
+			continue // Subscriber is not JetStream, no stream requirement
+		}
+
+		// Get the publisher's port info
+		publisherNode, ok := g.nodes[edge.From.ComponentName]
+		if !ok {
+			continue
+		}
+
+		var publisherPort *portInfo
+		for i := range publisherNode.OutputPorts {
+			if publisherNode.OutputPorts[i].Name == edge.From.PortName {
+				publisherPort = &publisherNode.OutputPorts[i]
+				break
+			}
+		}
+		if publisherPort == nil {
+			continue
+		}
+
+		// Check if publisher is NOT JetStream (i.e., won't create stream)
+		if publisherPort.kind == component.PortKindJetStream {
+			continue // Publisher is JetStream, will create stream - OK
+		}
+
+		// Publisher is NATS but subscriber expects JetStream - this is a problem!
+		warnings = append(warnings, StreamRequirementWarning{
+			SubscriberComp: edge.To.ComponentName,
+			SubscriberPort: edge.To.PortName,
+			Subjects:       append([]string(nil), subscriberPort.natsSubjects...),
+			PublisherComps: []string{edge.From.ComponentName},
+		})
+	}
+
+	// One warning per subscriber port, naming each publisher once: several
+	// publishers, or several ports of one publisher, may feed the same input.
+	type subscriberKey struct{ comp, port string }
+	deduped := make(map[subscriberKey]*StreamRequirementWarning)
+	for i := range warnings {
+		w := &warnings[i]
+		key := subscriberKey{w.SubscriberComp, w.SubscriberPort}
+		existing, ok := deduped[key]
+		if !ok {
+			deduped[key] = w
+			continue
+		}
+		for _, name := range w.PublisherComps {
+			if !slices.Contains(existing.PublisherComps, name) {
+				existing.PublisherComps = append(existing.PublisherComps, name)
+			}
+		}
+	}
+
+	result := make([]StreamRequirementWarning, 0, len(deduped))
+	for _, w := range deduped {
+		result = append(result, *w)
+	}
+	slices.SortFunc(result, func(a, b StreamRequirementWarning) int {
+		return cmp.Or(cmp.Compare(a.SubscriberComp, b.SubscriberComp), cmp.Compare(a.SubscriberPort, b.SubscriberPort))
+	})
+
+	return result
+}

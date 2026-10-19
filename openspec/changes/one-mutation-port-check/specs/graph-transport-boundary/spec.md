@@ -21,8 +21,8 @@ routes. Each caller keeps its own refusal texts, direction rule and provider cou
 
 #### Scenario: A JetStream input with one graph.mutation subject
 
-- **WHEN** graph-ingest's configuration declares the valid provider and a JetStream input whose subjects are
-  `entity.>` and `graph.mutation.entity.create`
+- **WHEN** graph-ingest's configuration declares the valid provider and a JetStream input on stream `EVENTS` whose
+  subjects are `events.>` and `graph.mutation.entity.create`
 - **THEN** `Config.Validate` refuses it with an invalid-class error containing `graph mutation provider port is
   ambiguous`
 

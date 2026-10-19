@@ -9,7 +9,8 @@ on a clean tree at its commit (#171).
   the existing rows; the multi-subject JetStream row red, the run recorded; the version mutant detected by
   `task mutate:check`. Gate: `go test -race ./processor/graph-ingest`.
 - [x] 1.2 `TestJetStreamSubjectMatching`'s subjects moved off `graph.mutation.`, green before and after; the `nats`
-  output row in `TestGraphMutationFlowRejectsInvalidProviderTopology` red, the run recorded; the required mutant
+  output and JetStream output rows of the new `TestGraphMutationFlowRejectsPrefixMembersOfEveryKind` red, the run
+  recorded (`notes/1.2.md` says why a new test); the required mutant
   detected by `task mutate:check`. Gate: `go test -race ./internal/flowgraph`.
 
 ## 2. The shared decision

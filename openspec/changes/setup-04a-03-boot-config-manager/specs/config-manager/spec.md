@@ -16,7 +16,8 @@ closed. The Manager SHALL pass the `lifecycle-suite` checks through a test-side 
 
 - **WHEN** a started Manager's Start context is cancelled and another writer then puts `services.x`
 - **THEN** the Manager still delivers the update, and a following Stop returns nil and leaves nothing running
-- **AND** the test that verifies this is `TestManagerPassesTheLifecycleSuite`
+- **AND** the tests that verify this are `TestStartContextEndingKeepsDelivering` (delivery) and
+  `TestManagerPassesTheLifecycleSuite` (held and released handles)
 
 #### Scenario: A model-registry watcher does not hold Stop
 
@@ -67,7 +68,9 @@ key or write the record (ADR-102 decision 7).
 ### Requirement: A refused Start leaves no writer armed
 
 Every Start that returns an error SHALL leave `PutComponentToKV`, `DeleteComponentFromKV` and every registered key
-family's reads and writes returning the not-acquired error, and SHALL leave the bucket's contents unchanged.
+family's reads and writes returning the not-acquired error. A Start refused before its first write (identity,
+retention policy, a refused component name, a stored entry that does not decode) SHALL leave the bucket's contents
+unchanged.
 
 #### Scenario: Foreign identity
 
@@ -80,7 +83,15 @@ family's reads and writes returning the not-acquired error, and SHALL leave the 
 On a first boot Start SHALL push the file configuration to the bucket. Otherwise, when the file's `version` is newer
 Start SHALL push the file. When it is equal, older, or cannot be compared, Start SHALL select the bucket: the
 effective `services` and `components` SHALL then be exactly the bucket's `services.*` and `components.*` entries. A
-missing stored `version` SHALL compare as `0.0.0`.
+missing stored `version` SHALL compare as `0.0.0`. A push SHALL check every component name before its first write
+and SHALL write `version` after every other key, so a push interrupted after its first write is followed, at the
+next boot with a newer file version, by a full push.
+
+#### Scenario: A failed push does not select a partial set
+
+- **WHEN** a push fails after its first write and the deployment reboots with a corrected file at the same version
+- **THEN** the effective components are the file's full set
+- **AND** the test that verifies this is `TestFailedPushThenRebootKeepsTheFilesComponents`
 
 #### Scenario: A deleted file component stays deleted
 
@@ -94,7 +105,7 @@ missing stored `version` SHALL compare as `0.0.0`.
 
 Start SHALL return an error naming the cause, hold nothing and arm no writer when:
 
-- the first-boot push fails;
+- the first-boot push fails, or the push when the file's version is newer fails;
 - listing or reading the bucket during arbitration fails;
 - reading the stored `version` fails other than as not-found;
 - a stored `services.*`, `components.*`, `nats` or `model_registry` entry does not decode;

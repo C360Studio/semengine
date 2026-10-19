@@ -111,7 +111,8 @@ Probes (scratch tests in the pin copy, nothing added to either tree):
   - `:427` `// Ignore errors for patterns that don't exist yet` claims nats.go behaviour, unprobed.
   - The Stop comment (`:487-490`) claims a nats.go race, unprobed.
   - `handleUpdate` logs and skips a malformed runtime write (`:578-583`).
-  - `notifySubscribers` does a blocking send under `mu.RLock` (`:1006-1012`). A concurrent watcher send could
+  - `notifySubscribers` (`:969-998`) does a blocking send under `mu.RLock` (`:998` `ch <- update`). A concurrent
+    watcher send could
     fill the buffer between drain and send. That needs a condition the code does not choose; MEDIUM at most (#185).
 - **Shapes 3 and 5:** `interface {`, `err.Error()`, `strings.Contains(err` in the three files: no hit. Errors are
   classified with `errors.Is`/`errors.As` (`:1177-1178`, `:1183`).
@@ -165,9 +166,10 @@ read for config, boot, lifecycle and identity records (094, 095, 102).
 - **#196** (lifecycleguard adoption): names `manager` as a word only; its list has no `config.Manager`.
 - Names the word, not the package: #198, #27, #280, #9, #134, #84, #281, #7, #25, #109, #129.
 - **Open pull requests** (`gh pr list --state open --json number,files`): #329 (this claim). Draft #327
-  `claude/one-exclusive-address-check` has 0 files today; its issue #324 changes `component/registry.go` and
-  `internal/flowgraph`, with no capability shared with `config`. Both may touch `docs/admission-ledger.yaml` and
-  `docs/repository-map.md`.
+  `claude/one-exclusive-address-check` (head `a65ceef`) has 21 files: `component/` (README, `registry.go`, a test),
+  `internal/flowgraph/` (five files), its own `openspec/changes/one-exclusive-address-check/` (with a
+  `component-registration` spec delta), `docs/admission-ledger.yaml` and `docs/repository-map.md`. No capability is
+  shared with `config`. The two shared docs are the only file overlap.
 
 ## 4. Callers
 

@@ -34,16 +34,27 @@ package (#159). `service` ports after it.
 ## D2. Lifecycle: Start bounds Start, Stop(ctx) stops (M1-M5; ADR-113; Q1)
 
 Observable behaviour, each proven by `TestManagerPassesTheLifecycleSuite` (`lifecycletest.Run` through a test-side
-adapter whose `Observe` lists each open watcher, each running goroutine and each open subscriber channel, and counts
-watcher stops) unless another test is named:
+adapter) unless another test is named. As in graph-ingest's adapter
+(`processor/graph-ingest/lifecycle_adapter_test.go:61-105`), `Observe` reads only state production code uses:
+
+- the Manager's watcher slice;
+- the subscriber map;
+- each done channel `Stop` waits on, listed while it is open.
+
+`Calls` counts the adapter's own `Start`/`Stop` calls. Watcher stops are counted on the server, through the KV
+backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190).
 
 - `Start(ctx)` does its startup work under `ctx`: acquire, identity, arbitration, opening the watches. It refuses
   nil, an ended context and a second call (`errs.ErrAlreadyStarted`). A refused or failed Start holds nothing and
   arms no writer (`TestRefusedStartDisarmsEveryExportedWriter`).
-- Ending Start's context after Start returned stops nothing: watches keep delivering (the suite's Start-context
-  check; P2 is the failing case).
+- Ending Start's context after Start returned stops nothing. The suite's Start-context check proves the handles are
+  still held. `TestStartContextEndingKeepsDelivering` cancels Start's context, then puts `services.x`, and requires
+  the subscriber to receive it (P2 is the failing case).
 - `Stop(ctx)` returns nil only after every watch is stopped, every Manager goroutine has exited and every subscriber
-  channel is closed. If `ctx` ends first it returns that error, and a later Stop tries again.
+  channel is closed. If `ctx` ends first it returns that error, and a later Stop tries again. A `ctx` that has
+  already ended stops nothing: Stop returns its error at once (`internal/lifecycleguard/guard.go:108-110`). A caller
+  on its shutdown path therefore passes a fresh bounded context, for example
+  `context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)`, not its ended signal context.
 - A live `WatchModelRegistry` subscriber does not hold Stop: `TestStopWithAModelRegistryWatcherReturnsPromptly`
   starts `model.Watch` on the Manager, then requires Stop to return nil under a 1 s context and the watch channel to
   be closed (P1 is the failing case).
@@ -54,28 +65,40 @@ The mechanism is the developer's. The closest instance is graph-ingest (`lifecyc
 created in Start and cancelled in Stop). Recommended: compose `internal/lifecycleguard` and drop
 `shutdownCh`/`stopped`. Alternative: keep the pin's fields and add the checks by hand, the copied shell M5 names.
 
-**Q1 (owner): confirm.** Consumer cost: semsource `run.go:163`, semteams `main.go:149`, semboids `main.go:155` change
-`Stop(5*time.Second)` to `Stop(ctx)`. The compile error tells them. Ending the Start context no longer stops the
+**Q1 (owner): confirm.** Consumer cost: semsource `run.go:163`, semteams `main.go:149` and semboids `main.go:155`
+change `Stop(5*time.Second)` to `Stop` with a fresh bounded context. The compile error tells them to change it, but
+not how. Passing the signal context they already hold, which has ended by shutdown, makes every Stop return
+`context.Canceled` and release nothing. semsource joins that error into `runErr`, so it would report a failure on
+every shutdown. Doc comment and README say so, with the example above. Ending the Start context no longer stops the
 Manager; all three call Stop on exit already.
 
 ## D3. A deleted component stays deleted (M8, M9, #17; Q2)
 
-- **Recommended:** when arbitration selects the bucket (equal or older file version, or an unreadable or
-  unparseable version), the effective `Components` are the bucket's `components.*` entries, as `Services` already
+- **Recommended:** when arbitration selects the bucket (equal or older file version, or an unparseable stored
+  version), the effective `Components` are the bucket's `components.*` entries, as `Services` already
   are at the pin (`manager.go:1327`). This is the smallest fix that mirrors what the code already does.
 - `pushToKV`, `PutComponentToKV` and `DeleteComponentFromKV` refuse a component name that is not one NATS KV literal
   token after the space mapping (`natsclient.ValidateKVLiteralToken`, as `KeyFamily.key` uses), naming the
   component. A dotted name would otherwise be written as a key the watches and the sync skip, and would vanish at
-  the next KV-selected boot.
+  the next KV-selected boot. `pushToKV` checks every name before its first write, so a refused name writes nothing.
+- `pushToKV` writes `version` last; the pin writes it first (`manager.go:882-894`). A push interrupted after its
+  first write leaves the bucket's old `version`, or none (`0.0.0`). The next boot's newer file then wins and pushes
+  again, instead of selecting a partial component set. Limit, retained: a file with no `version`, or `0.0.0`,
+  compares equal and is not protected.
 - **Proof:**
   - `TestDeletedFileComponentStaysDeletedAtNextBoot` is P4 as a test: fails at the base, passes after.
   - `TestConfigManagerKVSelectionReplacesOnlyServices` becomes `TestKVSelectionReplacesServicesAndComponents`.
   - `TestComponentNameThatIsNotOneKeyTokenIsRefused`.
+  - `TestFailedPushThenRebootKeepsTheFilesComponents`: a push that fails after its first write (driven as in D4),
+    then a reboot with a corrected file at the same version, ends with the file's full component set.
+  - #17 asks for its reproduction under `internal/harness`. It lives in `config/` beside the code it proves, because
+    it needs the package's shared NATS fixture and its unexported test helpers.
 - **Cost:**
   - A component added to the file without a version bump no longer appears while the bucket holds the same
     version, the rule services follow today.
   - semsource's `Enabled:false` workaround keeps working.
-  - 0 of 227 consumer component names are refused.
+  - 0 of 227 component names in the 28 consumer config files are refused. semsource's runtime names all pass
+    `entityid.SystemSlug` (`internal/sourcespawn/components.go:83-103`), which yields one token.
 - **Alternatives:**
   - Replay tombstones: the bucket keeps History 5, but a purge or compaction loses them, and it is more code.
   - Keep the pin: #17 stays open as a required correction, since its own body makes it an admission gate.
@@ -84,7 +107,8 @@ Manager; all three call Stop on exit already.
 ## D4. Start fails closed (M6, M7; Q3)
 
 - **Recommended:** Start returns the error, holds nothing and arms no writer when:
-  - the first-boot push fails;
+  - the first-boot push fails, or the push when the file's version is newer fails (pin `manager.go:385-387` only
+    logs it);
   - arbitration cannot list or read the bucket;
   - a stored `services.*`, `components.*`, `nats` or `model_registry` entry does not decode;
   - the stored `version` read fails for any reason other than not-found (a missing key stays `0.0.0`, the pin's
@@ -97,12 +121,16 @@ Manager; all three call Stop on exit already.
 - **Proof:**
   - `TestMalformedStoredServiceFailsStart` (P5);
   - `TestStoredNATSTokenFailsStart`;
-  - `TestFirstBootPushFailureFailsStart`, driven by a component whose name D3 refuses, so no fault injection is
-    needed;
+  - `TestFirstBootPushFailureFailsStart` and `TestNewerFilePushFailureFailsStart`. If Q2 is yes, a component whose
+    name D3 refuses drives both, and the refusal comes before the first write. If Q2 is no, a component named `a*`
+    drives them: nats.go v1.54.0 refuses it as a key mid-push. The test is the probe; if nats.go accepts the key,
+    the test fails at task 2.1 and the design returns for a driver. No fault injection is needed either way;
   - `TestVersionReadErrorFailsStart` is not written: it needs a mid-operation fault (#185), and the branch is one
     `errors.Is`.
-- **Cost:** a bucket holding a broken entry stops boot until an operator fixes or deletes the key. The message names
-  the key. Runtime writes after Start keep logging and skipping (`handleUpdate`, optional).
+- **Cost:** a bucket holding a broken entry, or a push that fails, stops boot until an operator fixes the key or the
+  file. The message names the key. A push that fails after its first write leaves those keys. The next boot
+  recovers them because `version` is written last (D3). Runtime writes after Start keep logging and skipping
+  (`handleUpdate`, optional).
 - **Alternative:** keep the pin, which leaves P5's silent service loss.
 
 ## D5. Tests
@@ -169,12 +197,12 @@ Manager; all three call Stop on exit already.
 
 - **Q1 (D2).** Should `Stop` take a context, `Start` refuse a second call, and the Manager keep running when the
   context passed to `Start` ends, as ADR-113 says for components? Cost: one line in each of semsource, semteams and
-  semboids. Recommended: yes.
+  semboids, which must hand `Stop` a fresh bounded context (an already-ended one stops nothing). Recommended: yes.
 - **Q2 (D3).** When the bucket's copy wins at boot, should its components replace the file's, as its services
   already do, so a deleted component stays deleted (#17)? Component names NATS cannot hold as one key would be
   refused. Cost: a component added to the file needs a version bump to appear, as a service does today. No consumer
-  name is refused. Recommended: yes.
-- **Q3 (D4).** Should Start fail with the real error when it cannot write the first-boot configuration, read the
-  bucket, or decode a stored entry, including a stored `nats` setting that loading refuses, instead of logging and
-  continuing? Cost: a broken stored entry stops boot until it is fixed. Today it silently disappears. Recommended:
-  yes.
+  config file name and no semsource runtime name is refused. Recommended: yes.
+- **Q3 (D4).** Should Start fail with the real error when it cannot write the file's configuration to the bucket (on
+  a first boot or when the file is newer), read the bucket, or decode a stored entry, including a stored `nats`
+  setting that loading refuses, instead of logging and continuing? Cost: a broken stored entry or a failed push
+  stops boot until it is fixed. Today the entry silently disappears or the push is lost. Recommended: yes.

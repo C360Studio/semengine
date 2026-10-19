@@ -17,7 +17,8 @@ needs it in the tree before its component manager ports.
 
 ## Capabilities
 
-- To be named by the design.
+- New: `config-manager` (`specs/config-manager/spec.md`): Start/Stop under ADR-113, the bucket name, platform
+  identity, arbitration, fail-closed Start, component writes and key families.
 
 ## Impact
 

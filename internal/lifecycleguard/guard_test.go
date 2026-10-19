@@ -285,7 +285,8 @@ func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 		return func(err error) bool { return errs.IsInvalid(err) && errors.Is(err, target) }
 	}
 	contextsOwn := func(target error) func(error) bool {
-		return func(err error) bool { return errs.IsTransient(err) && errors.Is(err, target) }
+		// The context's own error, unwrapped, as Stop's doc promises: identity, not errors.Is.
+		return func(err error) bool { return err == target }
 	}
 	rows := []struct {
 		method   string // "Start" on a fresh guard, or "Stop" on a started one

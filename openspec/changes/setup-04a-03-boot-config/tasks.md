@@ -11,7 +11,7 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
 
 ## 2. Port (D1-D5)
 
-- [ ] 2.1 Tests first, in `config/`:
+- [x] 2.1 Tests first, in `config/`:
   - the pin's in-scope test files with the module path rewritten, adapted and dropped per D5;
   - `fixture_client_integration_test.go` copied from `graph/kvcatalog`;
   - new tests per D5 (refused keys for both loaders, the `SEMENGINE_` env names, both malformed documents, the
@@ -19,7 +19,7 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
   - `example_config.json` carried.
 
   Gate: the tests fail on the base (the package does not exist; note the compile error).
-- [ ] 2.2 `config.go`, `security.go`, `streams.go` from the pin with the module path rewritten, D1's surface removed,
+- [x] 2.2 `config.go`, `security.go`, `streams.go` from the pin with the module path rewritten, D1's surface removed,
   and D2 (Q1 ruled yes), D3 (Q2 ruled yes) and the `SEMENGINE_` prefix, which the 2.1 tests require;
   `stream_bounds.go` and `stream_drift.go` byte-equal; the pin's `config/README.md` carried (rewrapped to 120
   columns) as `readme_example_test.go`'s input until 3.1 cuts it. Gate: `go test -race ./config/` and

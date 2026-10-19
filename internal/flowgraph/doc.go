@@ -24,8 +24,10 @@
 //
 //   - stream: an output joins every input on another component whose subject
 //     matches. A JetStream port also matches on each of its stream's subjects.
-//   - request: ports on different components with matching subjects join,
-//     whatever their direction.
+//   - request: an output and an input on different components with matching
+//     subjects join. Two ports of the same direction on different components
+//     join only when their subjects differ and still match (one holds a
+//     wildcard); two ports of one direction on the same subject do not join.
 //   - watch and read: a watch output (a KV writer) joins every watch or read
 //     input on the same bucket, its own component's included. A bucket with
 //     more than one writer port is refused.

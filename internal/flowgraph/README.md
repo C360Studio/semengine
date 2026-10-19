@@ -41,7 +41,7 @@ the two ports, the pattern and the connection ID (subject, bucket or address) th
 | Pattern | What joins |
 | --- | --- |
 | `stream` | An output joins every input on another component whose subject matches. A JetStream port also matches on each of its stream's subjects. |
-| `request` | Ports on different components with matching subjects join, whatever their direction. |
+| `request` | An output and an input on different components with matching subjects join. Two ports of one direction on different components join only when their subjects differ and still match (one holds a wildcard); on the same subject they do not. |
 | `watch` | A watch output (a KV writer) joins every watch input on the same bucket, its own component's included. |
 | `read` | A watch output joins every read input on the same bucket, its own component's included. |
 | `store` | Every store output joins every store input on another component. |

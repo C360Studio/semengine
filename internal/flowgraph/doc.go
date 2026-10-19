@@ -4,10 +4,10 @@
 //
 // # Building a graph
 //
-// [BuildFromDeclarations] builds a graph from the [component.Declaration] of
-// every component instance (the port shape the component Registry records when
-// it admits an instance, or derives offline from a configuration). It adds one
-// node per instance and connects the ports. It returns an error when the
+// [BuildFromDeclarations] is the one way to build a graph. It takes the
+// [component.Declaration] of every component instance (the port shape the
+// component Registry records when it admits an instance, or derives offline from
+// a configuration), adds one node per instance and connects the ports. It returns an error when the
 // declarations cannot form a valid graph: an empty or repeated instance name, a
 // port with no connection identity, more than one writer port on a KV bucket,
 // two exclusive binds on one network address, or a graph-mutation port that is

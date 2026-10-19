@@ -9,13 +9,13 @@ import (
 )
 
 func TestGraphMutationFlowAllowsManyRequestersAndOneProvider(t *testing.T) {
-	flow := NewFlowGraph()
+	flow := newFlowGraph()
 	addMutationProvider(t, flow, "graph-ingest", mutationPort(component.DirectionInput))
 	for _, name := range []string{"rules", "lifecycle", "tools"} {
 		addMutationRequester(t, flow, name, mutationPort(component.DirectionOutput))
 	}
-	if err := flow.ConnectComponentsByPatterns(); err != nil {
-		t.Fatalf("ConnectComponentsByPatterns: %v", err)
+	if err := flow.connectComponentsByPatterns(); err != nil {
+		t.Fatalf("connectComponentsByPatterns: %v", err)
 	}
 	if got := len(flow.GetEdges()); got != 3 {
 		t.Fatalf("mutation edges = %d, want 3", got)
@@ -37,12 +37,12 @@ func TestGraphMutationFlowRejectsInvalidProviderTopology(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			flow := NewFlowGraph()
+			flow := newFlowGraph()
 			addMutationRequester(t, flow, "requester", mutationPort(component.DirectionOutput))
 			for index, port := range tt.providers {
 				addMutationProvider(t, flow, "provider-"+string(rune('a'+index)), port)
 			}
-			err := flow.ConnectComponentsByPatterns()
+			err := flow.connectComponentsByPatterns()
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error = %v, want containing %q", err, tt.want)
 			}
@@ -53,7 +53,7 @@ func TestGraphMutationFlowRejectsInvalidProviderTopology(t *testing.T) {
 func TestGraphMutationFlowRejectsUntypedLegacyRequester(t *testing.T) {
 	for _, subject := range []string{"graph.mutation.*", "graph.mutation.entity.create"} {
 		t.Run(subject, func(t *testing.T) {
-			flow := NewFlowGraph()
+			flow := newFlowGraph()
 			addMutationProvider(t, flow, "graph-ingest", mutationPort(component.DirectionInput))
 			legacy := component.Port{
 				Name:      "legacy",
@@ -62,7 +62,7 @@ func TestGraphMutationFlowRejectsUntypedLegacyRequester(t *testing.T) {
 				Config:    component.NATSRequestPort{Subject: subject},
 			}
 			addMutationRequester(t, flow, "requester", legacy)
-			err := flow.ConnectComponentsByPatterns()
+			err := flow.connectComponentsByPatterns()
 			if err == nil || !strings.Contains(err.Error(), "not a required nats-request") {
 				t.Fatalf("error = %v, want typed-port rejection", err)
 			}

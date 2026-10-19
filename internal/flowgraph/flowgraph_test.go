@@ -12,7 +12,7 @@ import (
 // TestFlowGraphConstruction tests basic FlowGraph creation and structure
 func TestFlowGraphConstruction(t *testing.T) {
 	t.Run("create empty FlowGraph", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		assert.NotNil(t, graph)
 		assert.Empty(t, graph.AnalyzeConnectivity().DisconnectedNodes)
@@ -20,7 +20,7 @@ func TestFlowGraphConstruction(t *testing.T) {
 	})
 
 	t.Run("add component node", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		mockComponent := createMockComponent("test-component", "processor")
 
 		err := addTestComponentNode(graph, "test-component", mockComponent)
@@ -33,7 +33,7 @@ func TestFlowGraphConstruction(t *testing.T) {
 	})
 
 	t.Run("add duplicate component node returns error", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		mockComponent := createMockComponent("test-component", "processor")
 
 		err := addTestComponentNode(graph, "test-component", mockComponent)
@@ -49,7 +49,7 @@ func TestFlowGraphConstruction(t *testing.T) {
 // TestStreamPatternConnections tests stream pattern edge detection and connection
 func TestStreamPatternConnections(t *testing.T) {
 	t.Run("connect stream pattern components", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create publisher component
 		publisher := createMockComponentWithPorts("publisher", "processor",
@@ -78,7 +78,7 @@ func TestStreamPatternConnections(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Verify connection was created
@@ -95,7 +95,7 @@ func TestStreamPatternConnections(t *testing.T) {
 	})
 
 	t.Run("no connection when subjects don't match", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create publisher with different subject
 		publisher := createMockComponentWithPorts("publisher", "processor",
@@ -121,7 +121,7 @@ func TestStreamPatternConnections(t *testing.T) {
 		addTestComponentNode(graph, "publisher", publisher)
 		addTestComponentNode(graph, "subscriber", subscriber)
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Should have no connections
@@ -130,7 +130,7 @@ func TestStreamPatternConnections(t *testing.T) {
 	})
 
 	t.Run("fan-out connection - one publisher, multiple subscribers", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create one publisher
 		publisher := createMockComponentWithPorts("publisher", "processor",
@@ -166,7 +166,7 @@ func TestStreamPatternConnections(t *testing.T) {
 		addTestComponentNode(graph, "subscriber1", subscriber1)
 		addTestComponentNode(graph, "subscriber2", subscriber2)
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Should have two connections (fan-out)
@@ -187,7 +187,7 @@ func TestStreamPatternConnections(t *testing.T) {
 // TestFlowGraphAnalysis tests connectivity analysis algorithms
 func TestFlowGraphAnalysis(t *testing.T) {
 	t.Run("analyze connected components", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create a simple connected flow: input -> processor -> output
 		input := createMockComponentWithPorts("input", "input",
@@ -225,7 +225,7 @@ func TestFlowGraphAnalysis(t *testing.T) {
 		addTestComponentNode(graph, "input", input)
 		addTestComponentNode(graph, "processor", processor)
 		addTestComponentNode(graph, "output", output)
-		graph.ConnectComponentsByPatterns()
+		graph.connectComponentsByPatterns()
 
 		// Analyze connectivity
 		result := graph.AnalyzeConnectivity()
@@ -244,7 +244,7 @@ func TestFlowGraphAnalysis(t *testing.T) {
 	})
 
 	t.Run("detect disconnected nodes", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create connected pair
 		connected1 := createMockComponentWithPorts("connected1", "processor",
@@ -279,7 +279,7 @@ func TestFlowGraphAnalysis(t *testing.T) {
 		addTestComponentNode(graph, "connected1", connected1)
 		addTestComponentNode(graph, "connected2", connected2)
 		addTestComponentNode(graph, "isolated", isolated)
-		graph.ConnectComponentsByPatterns()
+		graph.connectComponentsByPatterns()
 
 		// Analyze connectivity
 		result := graph.AnalyzeConnectivity()
@@ -345,7 +345,7 @@ func TestHTTPClientPortFlowGraph(t *testing.T) {
 				Config:    component.NATSPort{Subject: "alerts.cap.>"},
 			}},
 		)
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		require.NoError(t, addTestComponentNode(graph, "cap_poller", comp))
 
 		orphans := graph.findOrphanedPorts()
@@ -409,7 +409,7 @@ func TestTimerPortFlowGraph(t *testing.T) {
 				Config:    component.NATSPort{Subject: "alerts.cap.>"},
 			}},
 		)
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		require.NoError(t, addTestComponentNode(graph, "cap_poller", comp))
 
 		orphans := graph.findOrphanedPorts()
@@ -435,7 +435,7 @@ func TestTimerPortFlowGraph(t *testing.T) {
 			}},
 			nil,
 		)
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		require.NoError(t, addTestComponentNode(graph, "cap_poller", comp))
 
 		node := graph.nodes["cap_poller"]

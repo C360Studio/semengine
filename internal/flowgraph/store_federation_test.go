@@ -40,10 +40,10 @@ func storeOrphans(res *FlowAnalysisResult) []OrphanedPort {
 }
 
 func TestStoreFederation_ProviderToConsumerEdge(t *testing.T) {
-	graph := NewFlowGraph()
+	graph := newFlowGraph()
 	require.NoError(t, addTestComponentNode(graph, "objectstore", storeProvider("objectstore", "objectstore")))
 	require.NoError(t, addTestComponentNode(graph, "graph-embedding", federationConsumer("graph-embedding")))
-	require.NoError(t, graph.ConnectComponentsByPatterns())
+	require.NoError(t, graph.connectComponentsByPatterns())
 
 	edges := graph.GetEdges()
 	require.Len(t, edges, 1)
@@ -57,9 +57,9 @@ func TestStoreFederation_ProviderToConsumerEdge(t *testing.T) {
 }
 
 func TestStoreFederation_LoneProviderNotOrphaned(t *testing.T) {
-	graph := NewFlowGraph()
+	graph := newFlowGraph()
 	require.NoError(t, addTestComponentNode(graph, "objectstore", storeProvider("objectstore", "objectstore")))
-	require.NoError(t, graph.ConnectComponentsByPatterns())
+	require.NoError(t, graph.connectComponentsByPatterns())
 
 	assert.Empty(t, graph.GetEdges(), "no consumer → no edge")
 	// A store with no reader is legitimate, not an orphan (this was the L1 wart).
@@ -70,11 +70,11 @@ func TestStoreFederation_LoneProviderNotOrphaned(t *testing.T) {
 func TestStoreFederation_FanIn(t *testing.T) {
 	// Two providers + one federation consumer → the consumer connects to BOTH
 	// (advisory: it may resolve any registered instance at runtime).
-	graph := NewFlowGraph()
+	graph := newFlowGraph()
 	require.NoError(t, addTestComponentNode(graph, "objectstore", storeProvider("objectstore", "objectstore")))
 	require.NoError(t, addTestComponentNode(graph, "filestore", storeProvider("filestore", "filestore-media")))
 	require.NoError(t, addTestComponentNode(graph, "graph-embedding", federationConsumer("graph-embedding")))
-	require.NoError(t, graph.ConnectComponentsByPatterns())
+	require.NoError(t, graph.connectComponentsByPatterns())
 
 	edges := graph.GetEdges()
 	require.Len(t, edges, 2, "federation consumer connects to both providers")

@@ -12,9 +12,9 @@ to SemEngine in a later change. Until then this package's tests are its only cal
 
 ## Building a graph
 
-`BuildFromDeclarations` takes the `component.Declaration` of every component instance: the port shape the component
-`Registry` records when it admits an instance, or derives offline from a configuration (`Registry.Declare`). It adds
-one node per instance and connects the ports.
+`BuildFromDeclarations` is the one way to build a graph. It takes the `component.Declaration` of every component
+instance: the port shape the component `Registry` records when it admits an instance, or derives offline from a
+configuration (`Registry.Declare`). It adds one node per instance and connects the ports.
 
 ```go
 graph, err := flowgraph.BuildFromDeclarations(declarations)

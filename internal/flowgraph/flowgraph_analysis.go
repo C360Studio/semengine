@@ -4,33 +4,33 @@ import "github.com/c360studio/semengine/component"
 
 // FlowAnalysisResult contains the results of connectivity analysis
 type FlowAnalysisResult struct {
-	ConnectedComponents [][]string         `json:"connected_components"`
-	DisconnectedNodes   []DisconnectedNode `json:"disconnected_nodes"`
-	OrphanedPorts       []OrphanedPort     `json:"orphaned_ports"`
+	ConnectedComponents [][]string
+	DisconnectedNodes   []DisconnectedNode
+	OrphanedPorts       []OrphanedPort
 }
 
 // DisconnectedNode represents a component with no connections
 type DisconnectedNode struct {
-	ComponentName string   `json:"component_name"`
-	Issue         string   `json:"issue"`
-	Suggestions   []string `json:"suggestions,omitempty"`
+	ComponentName string
+	Issue         string
+	Suggestions   []string
 }
 
 // OrphanedPort represents a port with no connections
 type OrphanedPort struct {
-	ComponentName string                       `json:"component_name"`
-	PortName      string                       `json:"port_name"`
-	Direction     component.Direction          `json:"direction"`
-	ConnectionID  string                       `json:"connection_id"`
-	Pattern       component.InteractionPattern `json:"pattern"`
-	Issue         string                       `json:"issue"`
-	Required      bool                         `json:"required"`
+	ComponentName string
+	PortName      string
+	Direction     component.Direction
+	ConnectionID  string
+	Pattern       component.InteractionPattern
+	Issue         string
+	Required      bool
 }
 
 // StreamRequirementWarning represents a mismatch between JetStream subscriber and NATS publisher
 type StreamRequirementWarning struct {
-	SubscriberComp string   `json:"subscriber_component"`
-	SubscriberPort string   `json:"subscriber_port"`
-	Subjects       []string `json:"subjects"`
-	PublisherComps []string `json:"publisher_components"`
+	SubscriberComp string
+	SubscriberPort string
+	Subjects       []string
+	PublisherComps []string
 }

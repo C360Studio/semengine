@@ -11,7 +11,7 @@ import (
 // TestFlowGraphPatterns tests all connection pattern implementations
 func TestFlowGraphPatterns(t *testing.T) {
 	t.Run("nil checks in AddComponentNode", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Test nil component
 		err := addTestComponentNode(graph, "test", nil)
@@ -26,7 +26,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("Request pattern connects bidirectionally", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create components with request ports on same subject
 		clientPorts := []component.Port{
@@ -51,7 +51,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "api-server", server))
 
 		// Connect by patterns
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		assert.NoError(t, err)
 
 		// Check that bidirectional edge was created
@@ -70,7 +70,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("Watch pattern connects and warns on multiple writers", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create two writers to same KV bucket
 		writer1Ports := []component.Port{
@@ -104,7 +104,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "watcher", watcher))
 
 		// Connect by patterns - should get warning about multiple writers
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		assert.Error(t, err, "Should warn about multiple writers")
 		if err != nil {
 			assert.Contains(t, err.Error(), "multiple writers to KV bucket")
@@ -120,7 +120,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("Network pattern detects port conflicts", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create two components trying to bind to same network port
 		server1Ports := []component.Port{
@@ -145,7 +145,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "server2", server2))
 
 		// Connect by patterns - should detect conflict
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		assert.Error(t, err, "Should detect network port conflict")
 		if err != nil {
 			assert.Contains(t, err.Error(), "network port conflict")
@@ -160,7 +160,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("exact KV read remains a read dependency", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		writer := createPatternTestComponent("writer", nil, []component.Port{{
 			Name: "states", Direction: component.DirectionOutput, Config: component.KVWritePort{Bucket: "ENTITY_STATES"},
 		}})
@@ -169,7 +169,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		}}, nil)
 		require.NoError(t, addTestComponentNode(graph, "writer", writer))
 		require.NoError(t, addTestComponentNode(graph, "reader", reader))
-		require.NoError(t, graph.ConnectComponentsByPatterns())
+		require.NoError(t, graph.connectComponentsByPatterns())
 		edges := graph.GetEdges()
 		require.Len(t, edges, 1)
 		assert.Equal(t, component.PatternRead, edges[0].Pattern)
@@ -178,7 +178,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("shared file paths are not exclusive network binds", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 		first := createPatternTestComponent("first", []component.Port{{
 			Name: "file", Direction: component.DirectionInput, Config: component.FilePort{Path: "/shared/events.jsonl"},
 		}}, nil)
@@ -187,11 +187,11 @@ func TestFlowGraphPatterns(t *testing.T) {
 		}}, nil)
 		require.NoError(t, addTestComponentNode(graph, "first", first))
 		require.NoError(t, addTestComponentNode(graph, "second", second))
-		require.NoError(t, graph.ConnectComponentsByPatterns())
+		require.NoError(t, graph.connectComponentsByPatterns())
 	})
 
 	t.Run("Stream pattern still works", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Traditional NATS pub/sub
 		pubPorts := []component.Port{
@@ -216,7 +216,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "subscriber", sub))
 
 		// Connect by patterns
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		assert.NoError(t, err)
 
 		// Check edge
@@ -232,7 +232,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("KVWritePort to KVWatchPort connections work correctly", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create graph processor (writer) using KVWritePort
 		writerPorts := []component.Port{
@@ -268,7 +268,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "rule-processor", watcher))
 
 		// Connect by patterns - should work without warnings
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		assert.NoError(t, err, "KVWritePort -> KVWatchPort should connect cleanly")
 
 		// Check that edge was created correctly
@@ -326,7 +326,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 	})
 
 	t.Run("Stream pattern with wildcard connections", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// UDP input publishes to concrete subject
 		pubPorts := []component.Port{
@@ -353,7 +353,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "robotics-processor", sub))
 
 		// Connect by patterns
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		assert.NoError(t, err)
 
 		// Check that wildcard match created edge

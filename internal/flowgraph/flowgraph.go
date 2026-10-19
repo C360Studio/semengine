@@ -39,16 +39,16 @@ type portInfo struct {
 
 // FlowEdge represents a connection between two component ports
 type FlowEdge struct {
-	From         ComponentPortRef             `json:"from"`
-	To           ComponentPortRef             `json:"to"`
-	Pattern      component.InteractionPattern `json:"pattern"`
-	ConnectionID string                       `json:"connection_id"` // Subject, bucket, or network addr
+	From         ComponentPortRef
+	To           ComponentPortRef
+	Pattern      component.InteractionPattern
+	ConnectionID string // Subject, bucket, or network addr
 }
 
 // ComponentPortRef references a specific port on a component
 type ComponentPortRef struct {
-	ComponentName string `json:"component_name"`
-	PortName      string `json:"port_name"`
+	ComponentName string
+	PortName      string
 }
 
 // Issue type constants for orphaned port classification
@@ -60,8 +60,8 @@ const (
 	IssueOptionalInterfaceUnused = "optional_interface_unused"
 )
 
-// NewFlowGraph creates a new empty FlowGraph
-func NewFlowGraph() *FlowGraph {
+// newFlowGraph creates a new empty FlowGraph
+func newFlowGraph() *FlowGraph {
 	return &FlowGraph{
 		nodes: make(map[string]*componentNode),
 		edges: make([]FlowEdge, 0),
@@ -81,7 +81,7 @@ func (g *FlowGraph) GetEdges() []FlowEdge {
 // (Registry.Declare) — so the boot-time and the offline paths build the same
 // graph from the same interpreter.
 func BuildFromDeclarations(declarations []component.Declaration) (*FlowGraph, error) {
-	graph := NewFlowGraph()
+	graph := newFlowGraph()
 	for _, declaration := range declarations {
 		if err := graph.addComponentNode(
 			declaration.InstanceName,
@@ -91,7 +91,7 @@ func BuildFromDeclarations(declarations []component.Declaration) (*FlowGraph, er
 			return nil, fmt.Errorf("add component %q to flow graph: %w", declaration.InstanceName, err)
 		}
 	}
-	if err := graph.ConnectComponentsByPatterns(); err != nil {
+	if err := graph.connectComponentsByPatterns(); err != nil {
 		return nil, fmt.Errorf("connect component flow graph: %w", err)
 	}
 	return graph, nil
@@ -172,8 +172,8 @@ func (g *FlowGraph) extractPortInfo(
 	return result, nil
 }
 
-// ConnectComponentsByPatterns builds edges by matching connection patterns
-func (g *FlowGraph) ConnectComponentsByPatterns() error {
+// connectComponentsByPatterns builds edges by matching connection patterns
+func (g *FlowGraph) connectComponentsByPatterns() error {
 	// Clear existing edges
 	g.edges = g.edges[:0]
 	if err := g.validateGraphMutationProviders(); err != nil {
@@ -181,8 +181,8 @@ func (g *FlowGraph) ConnectComponentsByPatterns() error {
 	}
 
 	// Build connection maps by pattern and connection ID
-	publishers := g.buildPublisherMap()   // Output ports
-	subscribers := g.buildSubscriberMap() // Input ports
+	publishers := g.portsByConnection(component.DirectionOutput)
+	subscribers := g.portsByConnection(component.DirectionInput)
 
 	var warnings []string
 
@@ -245,92 +245,42 @@ func (g *FlowGraph) validateGraphMutationProviders() error {
 	return nil
 }
 
-// buildPublisherMap creates a map of connection IDs to output ports by pattern.
-// For JetStream ports that have a StreamName connection ID, extra entries are
-// added for each Subject in the Subjects list so that NATS subject pattern
-// matching in connectStreamPorts can find them.
-func (g *FlowGraph) buildPublisherMap() map[component.InteractionPattern]map[string][]ComponentPortRef {
-	publishers := make(map[component.InteractionPattern]map[string][]ComponentPortRef)
+// portsByConnection maps each connection ID to the ports that use it, by
+// pattern, for one direction: output ports for DirectionOutput, input ports
+// otherwise. A JetStream port keyed by its stream name is also listed under
+// each of its subjects, so connectStreamPorts can match it by NATS pattern.
+func (g *FlowGraph) portsByConnection(direction component.Direction) map[component.InteractionPattern]map[string][]ComponentPortRef {
+	byPattern := make(map[component.InteractionPattern]map[string][]ComponentPortRef)
 
 	for _, componentName := range g.sortedNodeNames() {
 		node := g.nodes[componentName]
-		for _, port := range node.OutputPorts {
-			if publishers[port.Pattern] == nil {
-				publishers[port.Pattern] = make(map[string][]ComponentPortRef)
+		ports := node.InputPorts
+		if direction == component.DirectionOutput {
+			ports = node.OutputPorts
+		}
+		for _, port := range ports {
+			if byPattern[port.Pattern] == nil {
+				byPattern[port.Pattern] = make(map[string][]ComponentPortRef)
 			}
+			byConnection := byPattern[port.Pattern]
 
 			portRef := ComponentPortRef{
 				ComponentName: componentName,
 				PortName:      port.Name,
 			}
+			byConnection[port.ConnectionID] = append(byConnection[port.ConnectionID], portRef)
 
-			publishers[port.Pattern][port.ConnectionID] = append(
-				publishers[port.Pattern][port.ConnectionID],
-				portRef,
-			)
-
-			// For JetStream ports keyed by StreamName, also add entries for each
-			// subject so connectStreamPorts can match them via NATS pattern matching.
-			if port.kind == component.PortKindJetStream {
-				if port.ConnectionID != "" {
-					for _, subject := range port.natsSubjects {
-						if subject != "" && subject != port.ConnectionID {
-							publishers[port.Pattern][subject] = append(
-								publishers[port.Pattern][subject],
-								portRef,
-							)
-						}
+			if port.kind == component.PortKindJetStream && port.ConnectionID != "" {
+				for _, subject := range port.natsSubjects {
+					if subject != "" && subject != port.ConnectionID {
+						byConnection[subject] = append(byConnection[subject], portRef)
 					}
 				}
 			}
 		}
 	}
 
-	return publishers
-}
-
-// buildSubscriberMap creates a map of connection IDs to input ports by pattern.
-// For JetStream ports that have a StreamName connection ID, extra entries are
-// added for each Subject in the Subjects list so that NATS subject pattern
-// matching in connectStreamPorts can find them.
-func (g *FlowGraph) buildSubscriberMap() map[component.InteractionPattern]map[string][]ComponentPortRef {
-	subscribers := make(map[component.InteractionPattern]map[string][]ComponentPortRef)
-
-	for _, componentName := range g.sortedNodeNames() {
-		node := g.nodes[componentName]
-		for _, port := range node.InputPorts {
-			if subscribers[port.Pattern] == nil {
-				subscribers[port.Pattern] = make(map[string][]ComponentPortRef)
-			}
-
-			portRef := ComponentPortRef{
-				ComponentName: componentName,
-				PortName:      port.Name,
-			}
-
-			subscribers[port.Pattern][port.ConnectionID] = append(
-				subscribers[port.Pattern][port.ConnectionID],
-				portRef,
-			)
-
-			// For JetStream ports keyed by StreamName, also add entries for each
-			// subject so connectStreamPorts can match them via NATS pattern matching.
-			if port.kind == component.PortKindJetStream {
-				if port.ConnectionID != "" {
-					for _, subject := range port.natsSubjects {
-						if subject != "" && subject != port.ConnectionID {
-							subscribers[port.Pattern][subject] = append(
-								subscribers[port.Pattern][subject],
-								portRef,
-							)
-						}
-					}
-				}
-			}
-		}
-	}
-
-	return subscribers
+	return byPattern
 }
 
 // SubjectCovers reports whether filter COVERS pattern: every concrete subject
@@ -401,7 +351,8 @@ func tokenCovered(patternToken, filterToken string) bool {
 // Following NATS subject matching semantics:
 // * matches exactly one token
 // > matches one or more tokens
-// This function works bidirectionally - either parameter can be the pattern
+// The answer does not depend on argument order (TestMatchNATSPatternIsSymmetric),
+// so a caller asks once per pair of connection IDs.
 func matchNATSPattern(subject, pattern string) bool {
 	// Handle exact match first (optimization)
 	if subject == pattern {
@@ -471,6 +422,15 @@ func matchTokens(subjectTokens, patternTokens []string) bool {
 	return i == len(patternTokens) && j == len(subjectTokens)
 }
 
+// concreteID picks the connection ID an edge between two matching IDs carries:
+// a, unless a holds a wildcard, then b.
+func concreteID(a, b string) string {
+	if strings.ContainsAny(a, "*>") {
+		return b
+	}
+	return a
+}
+
 // connectStreamPorts connects stream pattern ports (NATS, JetStream).
 // A deduplication set prevents the same (publisher, subscriber) pair from
 // producing multiple edges when a JetStream port is indexed under both its
@@ -489,13 +449,8 @@ func (g *FlowGraph) connectStreamPorts(publishers, subscribers map[string][]Comp
 		pubs := publishers[pubConnID]
 		for _, subConnID := range slices.Sorted(maps.Keys(subscribers)) {
 			subs := subscribers[subConnID]
-			// Check if publisher subject matches subscriber pattern or vice versa
-			if matchNATSPattern(pubConnID, subConnID) || matchNATSPattern(subConnID, pubConnID) {
-				// Use the more concrete (non-wildcard) connection ID for the edge.
-				connID := pubConnID
-				if strings.Contains(pubConnID, "*") || strings.Contains(pubConnID, ">") {
-					connID = subConnID
-				}
+			if matchNATSPattern(pubConnID, subConnID) {
+				connID := concreteID(pubConnID, subConnID)
 				// Connect all matching publishers to subscribers
 				for _, pub := range pubs {
 					for _, sub := range subs {
@@ -602,12 +557,8 @@ func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]Com
 		pubs := publishers[pubConnID]
 		for _, subConnID := range subscriberIDs {
 			subs := subscribers[subConnID]
-			if matchNATSPattern(pubConnID, subConnID) || matchNATSPattern(subConnID, pubConnID) {
-				// Use the more concrete (non-wildcard) ID as the edge connection ID.
-				connID := pubConnID
-				if strings.Contains(pubConnID, "*") || strings.Contains(pubConnID, ">") {
-					connID = subConnID
-				}
+			if matchNATSPattern(pubConnID, subConnID) {
+				connID := concreteID(pubConnID, subConnID)
 				for _, pub := range pubs {
 					for _, sub := range subs {
 						addEdge(pub, sub, connID)
@@ -627,11 +578,8 @@ func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]Com
 			if pubConnID1 == pubConnID2 {
 				continue
 			}
-			if matchNATSPattern(pubConnID1, pubConnID2) || matchNATSPattern(pubConnID2, pubConnID1) {
-				connID := pubConnID1
-				if strings.Contains(pubConnID1, "*") || strings.Contains(pubConnID1, ">") {
-					connID = pubConnID2
-				}
+			if matchNATSPattern(pubConnID1, pubConnID2) {
+				connID := concreteID(pubConnID1, pubConnID2)
 				for _, p1 := range ports1 {
 					for _, p2 := range ports2 {
 						addEdge(p1, p2, connID)
@@ -647,11 +595,8 @@ func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]Com
 			if subConnID1 == subConnID2 {
 				continue
 			}
-			if matchNATSPattern(subConnID1, subConnID2) || matchNATSPattern(subConnID2, subConnID1) {
-				connID := subConnID1
-				if strings.Contains(subConnID1, "*") || strings.Contains(subConnID1, ">") {
-					connID = subConnID2
-				}
+			if matchNATSPattern(subConnID1, subConnID2) {
+				connID := concreteID(subConnID1, subConnID2)
 				for _, p1 := range ports1 {
 					for _, p2 := range ports2 {
 						addEdge(p1, p2, connID)

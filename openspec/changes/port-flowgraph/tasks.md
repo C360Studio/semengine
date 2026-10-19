@@ -18,7 +18,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   Gate: `go test -race ./internal/flowgraph ./internal/harness/contract` and `task lint`.
 - [x] 2.2 Dead surface and docs: R4's removals and renames, R5's corrections (`README.md`, `doc.go`, the
   `component_node_test.go` comment). Gate: `task docs:check`, `go test -race ./internal/flowgraph` and `task lint`.
-- [ ] 2.3 Same behaviour, less code: R8 (`TestMatchNATSPatternIsSymmetric` first, green on the pin's matcher, then
+- [x] 2.3 Same behaviour, less code: R8 (`TestMatchNATSPatternIsSymmetric` first, green on the pin's matcher, then
   each caller asks once), R9 (the `events.*` case of `TestBuildFromDeclarationsConnectsDeclaredPorts` first, then
   one port-map builder and one `concreteID`), R11 (tags removed) and R12 (constructors unexported). The pin's edge
   tests pass unchanged except for R12's renames. Gate: `go test -race ./internal/flowgraph` and `task lint`.

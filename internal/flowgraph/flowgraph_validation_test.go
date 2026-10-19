@@ -13,7 +13,7 @@ import (
 func TestFlowGraphPortValidationRefinement(t *testing.T) {
 	t.Run("network boundary input ports should not be orphaned", func(t *testing.T) {
 		// Network input ports (like UDP) are external sources and don't need publishers
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create UDP input component with network port
 		udpPorts := []component.Port{
@@ -42,7 +42,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Analyze connectivity
@@ -58,7 +58,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 
 	t.Run("network boundary output ports should not be orphaned", func(t *testing.T) {
 		// Network output ports (like WebSocket) are external sinks and don't need subscribers
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create WebSocket output component
 		wsInputPorts := []component.Port{
@@ -87,7 +87,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Analyze connectivity
@@ -102,7 +102,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 	})
 
 	t.Run("request/response ports should be marked as optional not critical", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create component with request/response API
 		apiPorts := []component.Port{
@@ -121,7 +121,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Analyze connectivity
@@ -143,7 +143,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 	})
 
 	t.Run("KV watch output ports can be intentionally unwatched", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create component with KV watch output
 		kvOutputPorts := []component.Port{
@@ -161,7 +161,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Analyze connectivity
@@ -183,7 +183,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 	})
 
 	t.Run("stream ports without connections should be marked as critical", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create component with unconnected stream port
 		streamPorts := []component.Port{
@@ -201,7 +201,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Analyze connectivity
@@ -222,7 +222,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 	})
 
 	t.Run("validation should categorize issues by severity", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Add various components with different port patterns
 
@@ -272,7 +272,7 @@ func TestFlowGraphPortValidationRefinement(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect and analyze
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 		analysis := graph.AnalyzeConnectivity()
 
@@ -371,7 +371,7 @@ func getOrphanedPortSeverity(port OrphanedPort) string {
 // TestFlowGraphInterfaceAlternatives tests the detection of interface-specific alternative ports
 func TestFlowGraphInterfaceAlternatives(t *testing.T) {
 	t.Run("interface-specific alternatives should be marked as optional", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Create ObjectStore-like component with two write ports
 		storageInputPorts := []component.Port{
@@ -402,7 +402,7 @@ func TestFlowGraphInterfaceAlternatives(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect components by patterns
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		// Analyze connectivity
@@ -438,7 +438,7 @@ func TestFlowGraphInterfaceAlternatives(t *testing.T) {
 	})
 
 	t.Run("interface alternatives with naming pattern should be detected", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Test various naming patterns that suggest interface alternatives
 		testPorts := []component.Port{
@@ -471,7 +471,7 @@ func TestFlowGraphInterfaceAlternatives(t *testing.T) {
 		require.NoError(t, err)
 
 		// Connect and analyze
-		err = graph.ConnectComponentsByPatterns()
+		err = graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 		analysis := graph.AnalyzeConnectivity()
 
@@ -491,7 +491,7 @@ func TestFlowGraphInterfaceAlternatives(t *testing.T) {
 // list overlaps with the NATSPort subject.
 func TestJetStreamSubjectMatching(t *testing.T) {
 	t.Run("NATSPort subscriber matches JetStream publisher via subjects list", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// JetStream publisher: StreamName="GRAPH", Subjects=["graph.ingest.entity"]
 		// extractConnectionID will return "GRAPH" (StreamName), but the extra subject
@@ -525,7 +525,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "graph-ingestor", jsPublisher))
 		require.NoError(t, addTestComponentNode(graph, "graph-processor", natsSubscriber))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		edges := graph.GetEdges()
@@ -540,7 +540,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 	})
 
 	t.Run("NATSPort wildcard subscriber matches JetStream publisher via subjects list", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// JetStream publisher with wildcard subject
 		jsPublisher := createMockComponentWithPorts("event-source", "processor",
@@ -572,7 +572,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "event-source", jsPublisher))
 		require.NoError(t, addTestComponentNode(graph, "entity-handler", natsSubscriber))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		edges := graph.GetEdges()
@@ -585,7 +585,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 	})
 
 	t.Run("no duplicate edges when JetStream port indexed under StreamName and subjects", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Publisher indexed under both "GRAPH" and "graph.mutation.write"
 		jsPublisher := createMockComponentWithPorts("writer", "processor",
@@ -616,7 +616,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "writer", jsPublisher))
 		require.NoError(t, addTestComponentNode(graph, "reader", natsSubscriber))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		edges := graph.GetEdges()
@@ -629,7 +629,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 // wildcard pattern (e.g. graph.query.search vs graph.query.*).
 func TestRequestPortWildcardMatching(t *testing.T) {
 	t.Run("concrete request port connects to wildcard request port", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Client publishes a request to a concrete subject
 		clientComponent := createMockComponentWithPorts("query-client", "processor",
@@ -658,7 +658,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "query-client", clientComponent))
 		require.NoError(t, addTestComponentNode(graph, "query-server", serverComponent))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		edges := graph.GetEdges()
@@ -677,7 +677,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 	})
 
 	t.Run("gt-wildcard request port connects to concrete request subject", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		clientComponent := createMockComponentWithPorts("mutation-client", "processor",
 			nil,
@@ -704,7 +704,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "mutation-client", clientComponent))
 		require.NoError(t, addTestComponentNode(graph, "mutation-server", serverComponent))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		edges := graph.GetEdges()
@@ -716,7 +716,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 	})
 
 	t.Run("no self-connection when single component has both request port sides", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// A component with both an outgoing and incoming request port on matching subjects
 		selfComponent := createMockComponentWithPorts("self-component", "processor",
@@ -738,7 +738,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 
 		require.NoError(t, addTestComponentNode(graph, "self-component", selfComponent))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		for _, edge := range graph.GetEdges() {
@@ -748,7 +748,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 	})
 
 	t.Run("exact match request ports still work after wildcard fix", func(t *testing.T) {
-		graph := NewFlowGraph()
+		graph := newFlowGraph()
 
 		// Both ports on the same exact subject (regression test)
 		clientComponent := createMockComponentWithPorts("exact-client", "processor",
@@ -776,7 +776,7 @@ func TestRequestPortWildcardMatching(t *testing.T) {
 		require.NoError(t, addTestComponentNode(graph, "exact-client", clientComponent))
 		require.NoError(t, addTestComponentNode(graph, "exact-server", serverComponent))
 
-		err := graph.ConnectComponentsByPatterns()
+		err := graph.connectComponentsByPatterns()
 		require.NoError(t, err)
 
 		edges := graph.GetEdges()

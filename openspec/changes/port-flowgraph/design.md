@@ -65,7 +65,7 @@ Required corrections, each with its basis:
 - R7. `TestGraphMutationFlowRejectsInvalidProviderTopology` gains a provider row with `Required: false`, so the
   required-port condition (`:272`), which carries ADR-091 §2's one-provider rule, is shown able to fail.
 
-Simple fixes the owner made required on 2026-10-19 ("let's fix them so we do not create debt on simple fixes as
+Simple fixes the owner made required on 2026-10-19 ("let’s fix them so we do not create debt on simople fixes as
 we port"). Each keeps every behaviour `composition` reads at the pin (inventory, shape finding 4) unless it says
 otherwise:
 
@@ -82,8 +82,12 @@ otherwise:
   `concreteID(a, b string) string`. Proof: the existing edge tests, which assert each edge's connection ID
   (`flowgraph_patterns_test.go:365`, "Should use concrete subject, not pattern"; `flowgraph_validation_test.go:670`).
 - R10 (interface-alternative heuristic). `isInterfaceAlternativePort` (`:991-1025`) and `IssueOptionalInterfaceUnused`
-  go: an unconnected input that is not required reports `no_publishers` like any other. Its only effect at the pin is
-  composition's suggestion text (pin `composition/analyze.go:195-196`); severity is a warning either way (pin
+  go: an unconnected input that is not required reports `no_publishers` like any other. At the pin this changes
+  three things in composition, none a severity: its suggestion text (pin `composition/analyze.go:195-196`); the
+  finding's message, which ends in `no_publishers`; and such an input declared `external` now raises no finding,
+  where it raised a warning (composition skips an external `no_publishers` port, pin `analyze.go:71`), so a
+  "warnings" result can become "valid". That last change matches the pin spec ("An input declared `external` SHALL
+  raise no `orphaned_port` finding", `composition-validation/spec.md:95-96`). Severity is a warning either way (pin
   `composition/findings.go:73-78`), and no pin spec names the issue. Composition's PR drops that one `case`.
   Proof: `TestFlowGraphInterfaceAlternatives` (`flowgraph_validation_test.go:372-491`) becomes
   `TestUnconnectedOptionalInterfacePortReportsNoPublishers`: the pin's `write-graphable` and `.graphable` ports
@@ -245,7 +249,7 @@ Accepted by the owner on 2026-10-19: the design ("Accept").
 - Notice: the package moves to `internal/flowgraph` under the 2026-10-02 rule (#9 comment 5953295358).
 - Q1 (decision records), answered 2026-10-19: "Yes, and file the ADR-063 issue". ADR-100 comes with
   `composition`, ADR-091 stays covered by ADR-110, and ADR-063 is #321.
-- Q2 (optional findings), answered 2026-10-19: "let's fix them so we do not create debt on simple fixes as we
+- Q2 (optional findings), answered 2026-10-19: "let’s fix them so we do not create debt on simople fixes as we
   port". R8 to R14 are those fixes; Q3 and Q4 are the two that are not simple inside this package.
 
 Open, in plain words:

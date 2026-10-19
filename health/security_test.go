@@ -33,8 +33,8 @@ func TestSanitizeErrorMessage(t *testing.T) {
 			expected: "connection failed to [URL]",
 		},
 		{
-			name:     "NATS URL",
 			// Not the pin's localhost:4222: the T-B6 guard refuses a fixed broker address in a test.
+			name:     "NATS URL",
 			input:    "cannot connect to nats://broker.example.com:4223",
 			expected: "cannot connect to [URL]",
 		},

@@ -10,7 +10,7 @@ Tasks 2.1-2.6 are steps 1-6 of the design's "Change". Each task ends when its ga
 
 ## 2. Implement
 
-- [ ] 2.1 `TestRegistryRefusesASecondComponentOnATakenAddress` with its sensitivity pair, green; M1 detected by
+- [x] 2.1 `TestRegistryRefusesASecondComponentOnATakenAddress` with its sensitivity pair, green; M1 detected by
   `task mutate:check`. Gate: `go test -race ./component`.
 - [ ] 2.2 `TestRegistryRefusesOneComponentClaimingAnAddressTwice`, red on the current code, the run recorded.
 - [ ] 2.3 The refusal in `exclusiveResources`; `compactStrings`, the self-skip and its parameter deleted; 2.2 green;

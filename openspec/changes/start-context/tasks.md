@@ -6,9 +6,9 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`, round 1 at `092c5e8`); proposal and design pass pre-owner review
-  (`DESIGN REVIEW PASS`, round 2 at `3e5e1b5`) and are accepted by the owner, with owner questions 1 and 2 answered.
-  Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`, round 1 at `092c5e8`); proposal and design pass pre-owner review
+  (`DESIGN REVIEW PASS`, round 2 at `3e5e1b5`) and are accepted by the owner, with owner questions 1 and 2 answered
+  (2026-10-18: option (a); keep the window; design.md "Owner answers"). Gate: `task spec:check` and `task docs:check`.
 - [x] 1.2 Issues 1-4 filed (`status:blocked`, linked without a closing keyword): #311 (natsclient
   `SubscribeForRequests`), #312 (dangling `test-cleanup-policy` cites), #313 (metric README `GPSService`), #314
   (ledger natsfixture row). The #282 correction posted (comment 6258533687) and the #301 answer posted (comment
@@ -41,8 +41,8 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 
 - [ ] 4.1 `component/lifecycle.go` (D8), `pkg/errs/shutdown.go:17`, the `keyed_ingest.go` and `component.go`
   comments (D6). Gate: `task verify`.
-- [ ] 4.2 Contracts, `AGENTS.md:71`, `.agents/rules-index.md:17`, `docs/setup-plan.md`, the ledger row, the ADR-108
-  note (D9). Gate: `task verify` (`TestAgentSetupParity`, the `AGENTS.md` size and row counts) and `task docs:check`.
+- [ ] 4.2 Contracts, `AGENTS.md:71`, `.agents/rules-index.md:17`, `docs/setup-plan.md`, `docs/testing.md:573` (the
+  observation-window exception, owner answer 2), the ledger row, the ADR-108 note (D9). Gate: `task verify` (`TestAgentSetupParity`, the `AGENTS.md` size and row counts) and `task docs:check`.
 - [ ] 4.3 Review stop C (Codex) on 4.1-4.2.
 
 ## 5. Archive

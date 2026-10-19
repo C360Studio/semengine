@@ -338,12 +338,12 @@ point for change 3 only: the manager hands each `Start` a startup-bounded contex
 ## Owner questions
 
 1. Confirmation only: metric takes option (a) as ADR-113's reading (D5 cites).
-2. The settle window (D3). The choice:
-   - Accept a no-false-failure observation window. It never fails an owner whose reported items last until Stop.
-     Amend `docs/testing.md:573` to name it: "an observation window whose expiry cannot fail a correct
-     implementation, where no signal exists (the lifecycle suite's Start-context check)".
-   - Drop it. D1 then keeps only steps 1, 2 and 4. The `workDiesWithStartContext` row cannot be made to trip, so the
-     failpoint and the scenario "Owner whose work ends with its Start context" go. Adoption is then proved only by
-     the per-owner tests (T-G2, T-G4, the metric test).
+2. The settle window (D3): accept a no-false-failure observation window and amend `docs/testing.md:573` to name it,
+   or drop it (D1 keeps steps 1, 2 and 4; the `workDiesWithStartContext` failpoint and its scenario go).
+
+Owner answers (2026-10-18, Enjoy conversation; recorded on PR #310): (1) confirmed, option (a); (2) keep the 100 ms
+observation window and name the exception in `docs/testing.md`. Task 4.2 adds to `docs/testing.md:573`'s list of
+allowed real-clock intervals: "an observation window whose expiry cannot fail a correct implementation, where no
+signal exists (the lifecycle suite's Start-context check, `internal/harness/lifecycletest`)".
 
 The #282 point 4 premise correction (inventory, "`lifecycletest.Run` callers") is a record, not a question.

@@ -22,8 +22,9 @@ design keeps those endpoints as at the pin
   Their tests go with them, including the two `time.Sleep` calls in `monitor_test.go` that `task verify` refuses.
 - Rewrite `doc.go` and `README.md` so they describe only what the code does (inventory § 1, S5).
 - Behaviour is as at the pin, including the owner's 2026-10-19 ruling: a component with `Healthy=false` is reported
-  `unhealthy`, whatever its own status word says (#318 comment 6271450376). Pending owner question Q3 (design), one
-  message changes: an unhealthy component with no error text reads "Component unhealthy", not "Component healthy".
+  `unhealthy`, whatever its own status word says (#318 comment 6271450376). By the owner's Q3 ruling (#318 comment
+  6271710866), one message changes: an unhealthy component with no error text reads "Component unhealthy", not
+  "Component healthy".
 
 ## Capabilities
 
@@ -34,7 +35,7 @@ design keeps those endpoints as at the pin
 - New package `health`; it imports `component` (already in the tree). Nothing in the tree imports it yet. It waits
   for `service`, the last pull request of change 3 (architect contract: a package nothing imports yet is carried).
 - No wire change: the JSON field names of `health.Status` and `health.Metrics` are as at the pin, and so are the
-  values, except the one message Q3 changes if the owner says fix. The dropped `messages_processed` field was
+  values, except the one message Q3 changes. The dropped `messages_processed` field was
   `omitempty` and never set, so it never appeared in output.
 - `docs/admission-ledger.yaml`: one new row, `health`.
 - No coverage floor: the 03B design lists `health` as not gated (`design.md:461`).

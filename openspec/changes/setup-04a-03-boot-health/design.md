@@ -67,16 +67,16 @@ readiness, not this package (inventory § 2). Records this design touches:
   on the pin copy (inventory § 1, S3) shows it over-redacts: `at 12:30:45` becomes `at 12[PORT][PORT]`, and
   `key=<entity id>` becomes `[REDACTED]`. Operators list poisoned entities through DebugStatus (pin ADR-079 `:70`), so
   nothing is lost that has no other home. The doc states what the sanitizer replaces and that it can over-redact.
-- **Q3 (owner question, recommended fix).** A component with `Healthy=false` and an empty `LastError` gets the
+- **Q3 (owner ruled 2026-10-19: fix; #318 comment 6271710866).** A component with `Healthy=false` and an empty
+  `LastError` gets the
   message "Component healthy" (pin `status.go:123-126`, pinned by `status_test.go:208-218`). Trigger in the tree:
   graph-ingest's `Health()` collects stuck states only while running (`processor/graph-ingest/component.go:853-871`),
   so a graph-ingest that is not yet started, failed to start or is stopping reports `Healthy=false`, an empty
   `LastError` and `Status:"stopped"`, and `/components/health` shows `unhealthy` with "Component healthy". The status
   and HTTP code are right; only the text contradicts them. It is the owner's call because the 03B design keeps
   `/components/health` "served as at the pin" (`design.md:725`) and the pin's test pins the message. Recommended:
-  "Component unhealthy" when `Healthy` is false. The status, the HTTP code and the JSON fields stay as at the pin. If
-  the owner says keep it, the spec scenario "An unhealthy component with no error text" and the requirement's last
-  sentence go, and the defect is filed as an issue (protocol, File).
+  "Component unhealthy" when `Healthy` is false. The status, the HTTP code and the JSON fields stay as at the pin. The
+  owner accepted the recommendation.
 - **Tests:** `TestFromComponentHealth` gains a row (`Healthy=false`, `Status:"degraded"` gives `unhealthy`), plus,
   under Q3's recommendation, a changed row at `:208-218`. `TestAggregate` gains rows for an unknown word and `""`
   (both give healthy). Sensitivity: `task mutate:check` detects one mutant per rule: a `FromComponentHealth` that
@@ -121,7 +121,8 @@ agent contracts and skills carry no `health` guidance, and the package builds no
     Status.WithSubStatus, Status.IsHealthy, Metrics.MessagesProcessed, with their tests; doc.go and
     README.md rewritten (S5). Retained and optional: Healthy beside Status (S1), Aggregate counts an
     unknown word as healthy (S1b), the text sanitizer over-redacts (S3). Pin ADR-079 D3's degraded
-    signal is not carried (#110 item 3). [Q3 outcome: message fix, or the filed issue]
+    signal is not carried (#110 item 3). One change from the pin (Q3, owner ruling #318 comment
+    6271710866): an unhealthy component with no error text reads "Component unhealthy".
   proving_tests: health/helpers_test.go, health/status_test.go, health/security_test.go
   owner: "setup-04a-03-boot-health developer"
   disposition: adapt

@@ -215,9 +215,9 @@ func CheckStartContextEndStopsNothing(ctx context.Context, o Owner) error {
 }
 
 // CheckStopReturnsItsEndedContext checks that a Stop handed an already-ended context returns
-// promptly with an error carrying that context's error or cause. The Start context stays live: a
-// nil return would claim a completed join the owner had no time to make; not returning at all is
-// reported with the owner's retained state instead of hanging the test.
+// promptly with an error carrying that context's error or cause. The Start context stays live
+// throughout. A nil return would claim a completed join the owner had no time to make; not
+// returning at all is reported with the owner's retained state instead of hanging the test.
 func CheckStopReturnsItsEndedContext(ctx context.Context, o Owner) error {
 	startCtx, cancelStart := context.WithCancel(ctx)
 	defer cancelStart()
@@ -397,19 +397,14 @@ func call(ctx context.Context, o Owner, op string, bound time.Duration, fn func(
 	}
 }
 
-// missing returns the items of before that after no longer lists, counting repeats.
+// missing returns the items of before that after no longer lists. Adapters name each retained
+// kind once, so a plain membership test is enough.
 func missing(before, after []string) []string {
-	left := map[string]int{}
-	for _, item := range after {
-		left[item]++
-	}
 	var gone []string
 	for _, item := range before {
-		if left[item] == 0 {
+		if !slices.Contains(after, item) {
 			gone = append(gone, item)
-			continue
 		}
-		left[item]--
 	}
 	return gone
 }

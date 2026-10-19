@@ -458,7 +458,8 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 // has returned is decided by the double's code, not by timing: a Stop that returned while the worker
 // is still held claimed a join it never made. The cases are the clean double and every row of
 // failpointTable except those whose expected check is StartContextEndStopsNothing: a Stop that
-// returns nil ahead of its join is stopReturnsNilWithWorkerRunning's declared defect.
+// returns nil ahead of its join is stopReturnsNilWithWorkerRunning's declared defect, and
+// workDiesWithStartContext is left out only because it shares that check (it would pass here).
 func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 	fps := []failpoint{clean}
 	for _, tc := range failpointTable {
@@ -479,10 +480,10 @@ func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 				select {
 				case <-o.workerExit.Entered():
 				case err := <-finished:
-					// Block ignores its context and the worker is not yet released, so the worker
-					// is still running: this Stop returned without joining it. End it before failing,
-					// or the bubble would wait on it forever; the run context no longer ends with the
-					// test's.
+					// This Stop returned without joining the worker, which is still running: either it
+					// has not reached Block yet, or it is in Block, which ignores its context and waits
+					// for a Release. End it before failing, or the bubble would wait on it forever; the
+					// run context no longer ends with the test's.
 					held := o.Observe().Unresolved
 					o.mu.Lock()
 					cancel, done := o.cancel, o.workerDone

@@ -2,6 +2,10 @@
 
 ## Status
 
+**Decision 3's 'controlled and abort Stop' superseded by ADR-113 (2026-10-18).** The context given to `Start` bounds
+only `Start`; `Stop(ctx)` is the only stop, and a `Stop` whose context ends first returns that error so a later `Stop`
+tries again.
+
 **Accepted (2026-10-10).** Ruled by the owner on #9 (comment 6097814764): every decision, and each of the three owner
 questions as recommended. Drafted on draft PR #163 (`Addresses #109`) under "Ruled 2" (#9 comment 6085243841). It does
 not close #109, which stays the refactor. Change 3's design and the follower ports (changes 4, 5 and 7) cite it.

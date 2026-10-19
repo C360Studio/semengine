@@ -157,8 +157,9 @@ func guardKey(entityID, stream string) string {
 }
 
 // buildIngestPool constructs the keyed-concurrent ingest pool + the in-memory
-// guard shards. Called from Start BEFORE subscriptions (SemStreams ADR-072 M3). The exact
-// Start-derived pool context is supplied lexically and never retained.
+// guard shards. Called from Start BEFORE subscriptions (SemStreams ADR-072 M3). The pool
+// context, a child of the run context Start creates, is supplied lexically and never
+// retained.
 func (c *Component) buildIngestPool(poolCtx context.Context) error {
 	lanes := c.config.IngestLanes
 	if lanes < 1 {
@@ -201,7 +202,7 @@ func (c *Component) buildIngestPool(poolCtx context.Context) error {
 
 // processIngest is the keyed pool's per-item handler (buildIngestPool's Process
 // calls it and logs a returned error at Debug), run on lane `lane`'s goroutine
-// with the lane context, the pool context Start derives. It runs the
+// with the lane context, the pool context. It runs the
 // input's application (applyIngest) inside natsclient.ConsumeDeliveryWithHeartbeat
 // (design D8, "Long apply"): while the application runs, the server is told every
 // heartbeat interval that the input is still in progress, and when it returns,
@@ -217,8 +218,8 @@ func (c *Component) processIngest(ctx context.Context, lane int, work ingestWork
 		})
 	if err != nil {
 		// Start checked the port's pair before it created the consumer, so the policy is
-		// refused only once the lane context has ended: when Start's context ends, or at
-		// Stop, which ends it after the pool's Shutdown returns or runs out of time. Ending
+		// refused only once the lane context has ended, at Stop, which ends it after the
+		// pool's Shutdown returns or runs out of time. Ending
 		// it stops no lane, so every input still queued reaches here. Nothing is applied;
 		// the input is negatively acknowledged, the shutdown disposition, and delivered
 		// again.

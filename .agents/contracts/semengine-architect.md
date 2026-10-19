@@ -398,22 +398,23 @@ yes, the framework absorbing the failure IS the design, and the adopter-facing k
 - **Context retention is prohibited.** Inventory production code for `context.Context` retention whenever designing
   lifecycle or concurrency work. Include embedded fields, renamed imports, aliases, wrappers, interface containers,
   getters, provider closures, and configuration knobs that hide or recover one. Treat each hit as a violation whose
-  target state removes it, never as precedent. Contexts enter operations as the first argument. An owning `Start` or
-  `Run` may derive a lifecycle child context locally; the design passes the exact received or derived operation
-  context directly to goroutines, callbacks, and helpers. Component work derives from `Start` or `Run`, and every
-  spawned task joins `Stop`.
-- **Root creation stays at composition.** Inventory constructors, factories, callbacks, watchers, goroutines,
+  target state removes it, never as precedent. Contexts enter operations as the first argument. A lifecycle
+  owner's `Start` does startup work under the context it is given and creates the one run context for its continuing
+  work, which `Stop` ends (ADR-113); a `Run` owner's work derives from `Run`. The design passes the exact received or
+  derived context directly to goroutines, callbacks, and helpers, and every spawned task joins `Stop`.
+- **Root creation stays at composition**, except a lifecycle owner's one run context, created in `Start`, kept only
+  as a cancel, and ended in `Stop` (ADR-113). Inventory constructors, factories, callbacks, watchers, goroutines,
   `context.Background`, `context.TODO`, nil fallback, and `context.WithoutCancel`. Blocking or cancelable operations
   use context-aware standard APIs when available. Callers never pass nil. Exported context-taking boundaries reject
   nil when they can return an error; private helpers rely on the caller invariant. Nothing defaults nil to
   `context.Background`.
-- **Detachment is terminal and bounded.** Permit it only for terminal cleanup or finalization, or an already-accepted
-  durability operation whose invariant requires bounded completion after owner cancellation. `context.WithTimeout`
-  is the immediate boundary. With a parent, use `context.WithTimeout(context.WithoutCancel(parent), budget)`. A
-  timeout-only `Stop` or equivalent terminal finalizer with no parent contract may use
-  `context.WithTimeout(context.Background(), budget)`. Work completes synchronously or joins before return and never
-  feeds `Start`, `Run`, `Watch`, or continuing work. Nested child cancellation is allowed beneath the bounded context
-  only when all tasks join.
+- **Detachment is terminal and bounded.** Permit it only for terminal cleanup or finalization (a lifecycle owner's one
+  run context is the exception stated above), or an already-accepted durability operation whose invariant requires
+  bounded completion after owner cancellation. `context.WithTimeout` is the immediate boundary. With a parent, use
+  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A timeout-only `Stop` or equivalent terminal finalizer
+  with no parent contract may use `context.WithTimeout(context.Background(), budget)`. Work completes synchronously or
+  joins before return and never feeds `Start`, `Run`, `Watch`, or continuing work. Nested child cancellation is allowed
+  beneath the bounded context only when all tasks join.
 - **Cancellation authority stays private.** A lifecycle owner may retain only a private, correctly synchronized
   `context.CancelFunc`; it may not retain the context itself. Design exported `context.CancelFunc` hits out.
 - **Specify behaviour, not mechanism.** For concurrent and lifecycle work the design states what a caller can

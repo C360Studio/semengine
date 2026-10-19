@@ -19,13 +19,19 @@ import (
 	"time"
 )
 
-// Bounds for the checks' own calls. stopBound is the fresh finite authority a controlled Stop gets;
-// startBound caps a Start that never returns; grace is how long past a call's own deadline the check
-// waits before reporting that the owner ignored it. They bound failure, not the healthy path.
+// Bounds for the checks' own calls. stopBound is the fresh finite authority a Stop gets; startBound
+// caps a Start that never returns; grace is how long past a call's own deadline the check waits
+// before reporting that the owner ignored it. They bound failure, not the healthy path.
+//
+// settleWindow is the one timed wait on a healthy owner: how long after the Start context ends the
+// owner is given to drop work it should have kept. It observes and never bounds, so its expiry
+// cannot fail an owner whose reported work lasts until Stop. Inside synctest the result is exact;
+// for a real owner it is best-effort, which the owner accepted (start-context design D3).
 const (
-	startBound = 2 * time.Minute
-	stopBound  = 30 * time.Second
-	grace      = 2 * time.Second
+	startBound   = 2 * time.Minute
+	stopBound    = 30 * time.Second
+	grace        = 2 * time.Second
+	settleWindow = 100 * time.Millisecond
 )
 
 // Owner is anything with a Start/Stop lifecycle whose retained state the checks can read. Observe
@@ -68,7 +74,7 @@ type runT interface {
 	Run(name string, f func(*testing.T)) bool
 }
 
-var errAbortCause = errors.New("lifecycletest: abort")
+var errStopCause = errors.New("lifecycletest: Stop context ended")
 
 // Run drives every check as a subtest against a fresh owner, then stops that owner under a fresh
 // bound derived from the test's context so a check that left it running leaks nothing. mustFail is
@@ -97,8 +103,8 @@ func run(t runT, factory Factory, mustFail Factory, promise Promise) {
 		{"NilContextsRefused", CheckNilContextsRefused, nil},
 		{"PreCancelledStartRefused", CheckPreCancelledStartRefused, nil},
 		{"StopBeforeStartSafe", CheckStopBeforeStartSafe, nil},
-		{"ControlledStopUnderLiveStartAuthority", CheckControlledStopUnderLiveStartAuthority, nil},
-		{"AbortStopPreservesCause", CheckAbortStopPreservesCause, nil},
+		{"StartContextEndStopsNothing", CheckStartContextEndStopsNothing, nil},
+		{"StopReturnsItsEndedContext", CheckStopReturnsItsEndedContext, nil},
 		{"RepeatedStopIsNoOp", CheckRepeatedStopIsNoOp, nil},
 		{"SecondStartRefusedOrRestartCycle", func(ctx context.Context, o Owner) error {
 			return CheckSecondStartRefusedOrRestartCycle(ctx, o, promise)
@@ -180,38 +186,46 @@ func CheckStopBeforeStartSafe(ctx context.Context, o Owner) error {
 	return requireNothingRetained(o, "after Stop before Start")
 }
 
-// CheckControlledStopUnderLiveStartAuthority checks that with Start's context still live, Stop under fresh
-// finite authority returns nil within its bound and has released everything. The check never
-// cancels Start authority first; an owner that needs its caller to cancel before it can stop is
-// not controlled.
-func CheckControlledStopUnderLiveStartAuthority(ctx context.Context, o Owner) error {
+// CheckStartContextEndStopsNothing checks that ending the context Start was given, after Start
+// returned, stops nothing: every item the owner reported unresolved just after Start is still
+// reported once the settle window has passed, and a Stop under fresh finite authority then returns
+// nil and leaves nothing unresolved. Only removals fail; an owner may add work while it runs.
+func CheckStartContextEndStopsNothing(ctx context.Context, o Owner) error {
 	startCtx, cancelStart := context.WithCancel(ctx)
 	defer cancelStart()
 	if err := call(ctx, o, "Start", startBound, func() error { return o.Start(startCtx) }); err != nil {
 		return fmt.Errorf("Start: %w", err)
 	}
+	before := o.Observe()
+	cancelStart()
+	timer := time.NewTimer(settleWindow)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+	case <-ctx.Done():
+		return fmt.Errorf("settle window: test context ended while waiting: %w", ctx.Err())
+	}
+	if gone := missing(before.Unresolved, o.Observe().Unresolved); len(gone) > 0 {
+		return fmt.Errorf("after the Start context ended the owner stopped holding %v", gone)
+	}
 	if err := finish(ctx, o); err != nil {
-		return fmt.Errorf("controlled Stop: %w", err)
+		return fmt.Errorf("Stop: %w", err)
 	}
-	if startCtx.Err() != nil {
-		return fmt.Errorf("Start authority ended during controlled Stop: %w", startCtx.Err())
-	}
-	return requireNothingRetained(o, "after a controlled Stop returned nil")
+	return requireNothingRetained(o, "after a Stop returned nil")
 }
 
-// CheckAbortStopPreservesCause checks that after Start authority is cancelled (abort), a Stop handed an
-// already-ended context returns promptly with an error carrying that context's error or cause. A
-// nil return would claim a completed join the owner had no authority to wait for; not returning at
-// all is reported with the owner's retained state instead of hanging the test.
-func CheckAbortStopPreservesCause(ctx context.Context, o Owner) error {
+// CheckStopReturnsItsEndedContext checks that a Stop handed an already-ended context returns
+// promptly with an error carrying that context's error or cause. The Start context stays live
+// throughout. A nil return would claim a completed join the owner had no time to make; not
+// returning at all is reported with the owner's retained state instead of hanging the test.
+func CheckStopReturnsItsEndedContext(ctx context.Context, o Owner) error {
 	startCtx, cancelStart := context.WithCancel(ctx)
+	defer cancelStart()
 	if err := call(ctx, o, "Start", startBound, func() error { return o.Start(startCtx) }); err != nil {
-		cancelStart()
 		return fmt.Errorf("Start: %w", err)
 	}
-	cancelStart()
 	stopCtx, cancelStop := context.WithCancelCause(ctx)
-	cancelStop(errAbortCause)
+	cancelStop(errStopCause)
 	err := stop(ctx, stopCtx, o)
 	var bound *boundError
 	switch {
@@ -219,7 +233,7 @@ func CheckAbortStopPreservesCause(ctx context.Context, o Owner) error {
 		return err
 	case !errors.Is(err, stopCtx.Err()) && !errors.Is(err, context.Cause(stopCtx)):
 		// Includes a nil Stop, which stop already reports as a claimed join past the bound.
-		return fmt.Errorf("abort Stop did not preserve its context's %v: %w", stopCtx.Err(), err)
+		return fmt.Errorf("Stop given an ended context did not return its context's %v: %w", stopCtx.Err(), err)
 	}
 	return nil
 }
@@ -381,6 +395,18 @@ func call(ctx context.Context, o Owner, op string, bound time.Duration, fn func(
 	case <-ctx.Done():
 		return fmt.Errorf("%s: test context ended while waiting: %w", op, ctx.Err())
 	}
+}
+
+// missing returns the items of before that after no longer lists. Adapters name each retained
+// kind once, so a plain membership test is enough.
+func missing(before, after []string) []string {
+	var gone []string
+	for _, item := range before {
+		if !slices.Contains(after, item) {
+			gone = append(gone, item)
+		}
+	}
+	return gone
 }
 
 func requireNothingRetained(o Owner, when string) error {

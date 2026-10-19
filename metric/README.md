@@ -68,8 +68,8 @@ securityCfg := security.Config{}
 
 // Start metrics HTTP server
 server := metric.NewServer(9090, "/metrics", registry, securityCfg)
-runtimeCtx := context.Background()
-if err := server.Start(runtimeCtx); err != nil {
+ctx := context.Background()
+if err := server.Start(ctx); err != nil {
     log.Fatalf("Failed to start metrics server: %v", err)
 }
 defer func() {
@@ -206,7 +206,7 @@ type Server struct {
 }
 
 func NewServer(port int, path string, registry *MetricsRegistry, security security.Config) *Server
-func (s *Server) Start(context.Context) error // One-shot synchronous bind; context owns served requests
+func (s *Server) Start(context.Context) error // One-shot synchronous bind; ctx bounds Start only
 func (s *Server) StartWithListener(context.Context, net.Listener) error // Start on a caller-bound listener
 func (s *Server) Stop(context.Context) error  // Caller-bounded graceful attempt, then bounded force-close/join
 func (s *Server) Address() string              // Get server address
@@ -422,6 +422,8 @@ type GPSService struct {
     coordinatesProcessed prometheus.Counter
     processingLatency    prometheus.Histogram
     queueSize           prometheus.Gauge
+
+    cancel context.CancelFunc // ends the processing loop's run context
 }
 
 func NewGPSService(registry *metric.MetricsRegistry) (*GPSService, error) {
@@ -486,14 +488,18 @@ func (g *GPSService) Start(ctx context.Context) error {
     g.coreMetrics.RecordServiceStatus(g.name, 2) // running
     g.coreMetrics.RecordHealthStatus(g.name, true)
 
-    // Start processing loop
-    go g.processingLoop(ctx)
+    // Start the processing loop under a run context Start creates: ending ctx
+    // after Start returned stops nothing, and Stop cancels the run context.
+    runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+    g.cancel = cancel
+    go g.processingLoop(runCtx)
 
     log.Printf("GPS service started")
     return nil
 }
 
 func (g *GPSService) Stop() error {
+    g.cancel() // end the processing loop first
     g.coreMetrics.RecordServiceStatus(g.name, 3) // stopping
 
     // Cleanup custom metrics
@@ -551,8 +557,8 @@ func main() {
     // Start metrics server
     server := metric.NewServer(9090, "/metrics", registry, security.Config{})
     log.Printf("Starting metrics server on %s", server.Address())
-    runtimeCtx := context.Background()
-    if err := server.Start(runtimeCtx); err != nil {
+    ctx := context.Background()
+    if err := server.Start(ctx); err != nil {
         log.Fatalf("Failed to start metrics server: %v", err)
     }
 
@@ -562,7 +568,7 @@ func main() {
         log.Fatalf("Failed to create GPS service: %v", err)
     }
 
-    if err := gpsService.Start(runtimeCtx); err != nil {
+    if err := gpsService.Start(ctx); err != nil {
         log.Fatalf("Failed to start GPS service: %v", err)
     }
 
@@ -760,8 +766,8 @@ func main() {
 
     server := metric.NewServer(9090, "/metrics", registry, security.Config{})
     log.Printf("Metrics server running at %s", server.Address())
-    runtimeCtx := context.Background()
-    if err := server.Start(runtimeCtx); err != nil {
+    ctx := context.Background()
+    if err := server.Start(ctx); err != nil {
         log.Fatalf("Failed to start metrics server: %v", err)
     }
 

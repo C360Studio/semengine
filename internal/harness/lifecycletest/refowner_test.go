@@ -33,6 +33,7 @@ const (
 	abortStopDropsCause             failpoint = "abortStopDropsCause"
 	nilStartPanics                  failpoint = "nilStartPanics"
 	startFailsButHolds              failpoint = "startFailsButHolds"
+	workDiesWithStartContext        failpoint = "workDiesWithStartContext"
 )
 
 var (
@@ -40,10 +41,10 @@ var (
 	errRefownerMustFail = errors.New("refowner: must-fail Start")
 )
 
-// refowner is a reference owner with one worker goroutine derived from Start authority. Clean, it
-// satisfies the floor; each failpoint breaks exactly one rule. Its retained state (workerDone,
-// cleanups) is what the checks read through Observe, so a check that passes on the returned error
-// alone cannot pass here.
+// refowner is a reference owner with one worker goroutine under the run context Start creates.
+// Clean, it satisfies the floor; each failpoint breaks exactly one rule. Its retained state
+// (workerDone, cleanups) is what the checks read through Observe, so a check that passes on the
+// returned error alone cannot pass here.
 type refowner struct {
 	fp          failpoint
 	restartable bool
@@ -83,7 +84,7 @@ func (o *refowner) Start(ctx context.Context) error {
 	if o.mustFail {
 		if o.fp == startFailsButHolds {
 			// The defect under test: Start fails but leaves the worker it started running. The worker
-			// selects on Start authority, so finalize ends it through that, with no exemption.
+			// selects on its run context, so finalize ends it through that, with no exemption.
 			runCtx, cancel := context.WithCancel(ctx)
 			o.cancel, o.stopCh, o.stopOnce, o.workerDone = cancel, make(chan struct{}), &sync.Once{}, make(chan struct{})
 			done := o.workerDone
@@ -107,7 +108,12 @@ func (o *refowner) Start(ctx context.Context) error {
 	if o.used && (!o.restartable || o.fp == restartPromisedButRefused) && o.fp != startTwiceAllowed {
 		return errRefownerUsed
 	}
-	runCtx, cancel := context.WithCancel(ctx)
+	// The run context outlives Start's context: only Stop ends the worker (ADR-113).
+	parent := context.WithoutCancel(ctx)
+	if o.fp == workDiesWithStartContext {
+		parent = ctx // the defect under test: continuing work ends when Start's context ends
+	}
+	runCtx, cancel := context.WithCancel(parent)
 	o.used, o.running, o.stopped = true, true, false
 	o.cancel, o.stopCh, o.stopOnce, o.workerDone = cancel, make(chan struct{}), &sync.Once{}, make(chan struct{})
 	stopCh, done, exit := o.stopCh, o.workerDone, o.workerExit
@@ -205,10 +211,12 @@ var checks = []check{
 	{"NilContextsRefused", func(ctx context.Context, o Owner, _ Promise) error { return CheckNilContextsRefused(ctx, o) }},
 	{"PreCancelledStartRefused", func(ctx context.Context, o Owner, _ Promise) error { return CheckPreCancelledStartRefused(ctx, o) }},
 	{"StopBeforeStartSafe", func(ctx context.Context, o Owner, _ Promise) error { return CheckStopBeforeStartSafe(ctx, o) }},
-	{"ControlledStopUnderLiveStartAuthority", func(ctx context.Context, o Owner, _ Promise) error {
-		return CheckControlledStopUnderLiveStartAuthority(ctx, o)
+	{"StartContextEndStopsNothing", func(ctx context.Context, o Owner, _ Promise) error {
+		return CheckStartContextEndStopsNothing(ctx, o)
 	}},
-	{"AbortStopPreservesCause", func(ctx context.Context, o Owner, _ Promise) error { return CheckAbortStopPreservesCause(ctx, o) }},
+	{"StopReturnsItsEndedContext", func(ctx context.Context, o Owner, _ Promise) error {
+		return CheckStopReturnsItsEndedContext(ctx, o)
+	}},
 	{"RepeatedStopIsNoOp", func(ctx context.Context, o Owner, _ Promise) error { return CheckRepeatedStopIsNoOp(ctx, o) }},
 	{"SecondStartRefusedOrRestartCycle", CheckSecondStartRefusedOrRestartCycle},
 	{"FailedStartHoldsNothing", func(ctx context.Context, o Owner, _ Promise) error { return CheckFailedStartHoldsNothing(ctx, o) }},
@@ -240,7 +248,7 @@ func newRefowner(t *testing.T, fp failpoint, restartable bool) *refowner {
 // A Stop that signalled its worker and returned nil claims a join: the requirement is checked
 // before finalize waits, so a Stop that returned ahead of its worker's exit (issue #40) is reported,
 // not rescued. A double whose Stop never signalled its worker (stopReturnsNilWithWorkerRunning's
-// declared defect) has that worker ended through Start authority and joined first; the assertion
+// declared defect) has that worker ended through its run context and joined first; the assertion
 // then holds for it too, with no exemption.
 func finalize(t *testing.T, o *refowner) {
 	t.Helper()
@@ -261,7 +269,7 @@ func finalizeVerdict(ctx context.Context, o *refowner) error {
 	}
 	select {
 	case <-stopCh:
-	default: // Stop never signalled the worker: end it through Start authority and join it
+	default: // Stop never signalled the worker: end it through its run context and join it
 		cancel()
 		<-done
 	}
@@ -270,7 +278,7 @@ func finalizeVerdict(ctx context.Context, o *refowner) error {
 		verdict = fmt.Errorf("finalize refowner (%s): still holds %v", o.fp, obs.Unresolved)
 	}
 	cancel()
-	<-done // the worker selects on its Start context, so cancel ends it
+	<-done // the worker selects on its run context, so cancel ends it
 	return verdict
 }
 
@@ -300,14 +308,15 @@ var failpointTable = []failpointCase{
 	{acceptNilCtx, "NilContextsRefused", Promise{}},
 	{ignorePreCancelled, "PreCancelledStartRefused", Promise{}},
 	{stopBeforeStartPanics, "StopBeforeStartSafe", Promise{}},
-	{stopReturnsNilWithWorkerRunning, "ControlledStopUnderLiveStartAuthority", Promise{}},
-	{stopIgnoresCallerDeadline, "AbortStopPreservesCause", Promise{}},
-	{abortStopDropsCause, "AbortStopPreservesCause", Promise{}},
+	{stopReturnsNilWithWorkerRunning, "StartContextEndStopsNothing", Promise{}},
+	{stopIgnoresCallerDeadline, "StopReturnsItsEndedContext", Promise{}},
+	{abortStopDropsCause, "StopReturnsItsEndedContext", Promise{}},
 	{secondStopReruns, "RepeatedStopIsNoOp", Promise{}},
 	{startTwiceAllowed, "SecondStartRefusedOrRestartCycle", Promise{}},
 	{restartPromisedButRefused, "SecondStartRefusedOrRestartCycle", Promise{Restart: true}},
 	{nilStartPanics, "NilContextsRefused", Promise{}},
 	{startFailsButHolds, "FailedStartHoldsNothing", Promise{}},
+	{workDiesWithStartContext, "StartContextEndStopsNothing", Promise{}},
 }
 
 // failpointGaps reports every declared failpoint that the table does not map to exactly one check
@@ -443,17 +452,18 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 }
 
 // TestAbortStopThenFinishJoinsWorker forces issue #40's interleaving instead of waiting for the
-// scheduler to produce it: after CheckAbortStopPreservesCause, the worker has been signalled but is
-// held before it closes workerDone, and finalize's Stop runs. In a synctest bubble, Wait returns only
-// once every goroutine is durably blocked, so whether that Stop has returned is decided by the
-// double's code, not by timing: a Stop that returned while the worker is still held claimed a join
-// it never made. The cases are the clean double and every row of failpointTable except those whose
-// expected check is ControlledStopUnderLiveStartAuthority: a Stop that returns nil ahead of its join
-// is that failpoint's declared defect.
+// scheduler to produce it: a Stop given an ended context has returned without signalling the worker,
+// then finalize's Stop runs and signals it, and the worker is held before it closes workerDone. In a
+// synctest bubble, Wait returns only once every goroutine is durably blocked, so whether that Stop
+// has returned is decided by the double's code, not by timing: a Stop that returned while the worker
+// is still held claimed a join it never made. The cases are the clean double and every row of
+// failpointTable except those whose expected check is StartContextEndStopsNothing: a Stop that
+// returns nil ahead of its join is stopReturnsNilWithWorkerRunning's declared defect, and
+// workDiesWithStartContext is left out only because it shares that check (it would pass here).
 func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 	fps := []failpoint{clean}
 	for _, tc := range failpointTable {
-		if tc.want != "ControlledStopUnderLiveStartAuthority" {
+		if tc.want != "StartContextEndStopsNothing" {
 			fps = append(fps, tc.fp)
 		}
 	}
@@ -463,11 +473,26 @@ func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 				o := newRefowner(t, fp, false)
 				o.workerExit = probe.NewCallback()
 				defer o.workerExit.Release()
-				_ = CheckAbortStopPreservesCause(t.Context(), o) // its verdict is the matrix's concern
-				<-o.workerExit.Entered()
+				_ = CheckStopReturnsItsEndedContext(t.Context(), o) // its verdict is the matrix's concern
 
 				finished := make(chan error, 1)
 				go func() { finished <- finish(t.Context(), o) }()
+				select {
+				case <-o.workerExit.Entered():
+				case err := <-finished:
+					// This Stop returned without joining the worker, which is still running: either it
+					// has not reached Block yet, or it is in Block, which ignores its context and waits
+					// for a Release. End it before failing, or the bubble would wait on it forever; the
+					// run context no longer ends with the test's.
+					held := o.Observe().Unresolved
+					o.mu.Lock()
+					cancel, done := o.cancel, o.workerDone
+					o.mu.Unlock()
+					cancel()
+					o.workerExit.Release()
+					<-done
+					t.Fatalf("finalize's Stop returned %v before the worker exited; the owner still held %v", err, held)
+				}
 				synctest.Wait()
 				select {
 				case <-finished:

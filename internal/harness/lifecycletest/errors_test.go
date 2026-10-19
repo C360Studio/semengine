@@ -48,9 +48,9 @@ func TestChecksPropagateOwnerFailures(t *testing.T) {
 		check func(context.Context, Owner) error
 		want  error
 	}{
-		{"controlled start", &observedScripted{scripted: scripted{startErr: startFails}}, CheckControlledStopUnderLiveStartAuthority, startFails},
-		{"controlled stop", &observedScripted{scripted: scripted{stopErr: stopFails}}, CheckControlledStopUnderLiveStartAuthority, stopFails},
-		{"abort start", &observedScripted{scripted: scripted{startErr: startFails}}, CheckAbortStopPreservesCause, startFails},
+		{"start context end: start", &observedScripted{scripted: scripted{startErr: startFails}}, CheckStartContextEndStopsNothing, startFails},
+		{"start context end: stop", &observedScripted{scripted: scripted{stopErr: stopFails}}, CheckStartContextEndStopsNothing, stopFails},
+		{"ended stop context: start", &observedScripted{scripted: scripted{startErr: startFails}}, CheckStopReturnsItsEndedContext, startFails},
 		{"repeated start", &observedScripted{scripted: scripted{startErr: startFails}}, CheckRepeatedStopIsNoOp, startFails},
 		{"repeated first stop", &observedScripted{scripted: scripted{stopErr: stopFails}}, CheckRepeatedStopIsNoOp, stopFails},
 		{"stop before start", &observedScripted{scripted: scripted{stopErr: stopFails}}, CheckStopBeforeStartSafe, stopFails},

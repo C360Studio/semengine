@@ -14,7 +14,7 @@ const (
 	PhaseDrainSubscriptions ShutdownPhase = "drain_subscriptions"
 	// PhaseShutdownListener identifies graceful network-listener shutdown.
 	PhaseShutdownListener ShutdownPhase = "shutdown_listener"
-	// PhaseJoinRuntime identifies waiting for Start-owned runtime completion.
+	// PhaseJoinRuntime identifies waiting for an owner's continuing work to finish.
 	PhaseJoinRuntime ShutdownPhase = "join_runtime"
 	// PhaseCloseTransport identifies final transport closure.
 	PhaseCloseTransport ShutdownPhase = "close_transport"

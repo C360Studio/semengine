@@ -68,7 +68,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 
 | Gate | Rule | Where |
 | --- | --- | --- |
-| `verify+review` | Production structs never retain `context.Context`; never invent roots or nil defaults | `dev`; `harness-boundaries` spec |
+| `verify+review` | Production structs never retain `context.Context`; never invent roots (except a `Start`'s one run context, ended in `Stop`, ADR-113) or nil defaults | `dev`; `harness-boundaries` spec |
 | `review` | State travels as an argument, field, or stored entry, never `context.WithValue` / `ctx.Value` (#91) | `dev`, `rev` (`BLOCKING`) |
 | `verify+review` | Deployment authority is spelled once (`config.Manager.Start` -> `deps.Platform` -> `FrameworkIdentityFamily.EntityID`); no `Federation\|GlobalID\|EntityIRI` or second `Org`/`Platform` field (#72) | `harness-boundaries` spec; ADR-102, ADR-104 |
 | `verify+review` | Background work outside a service uses `Run(ctx)`, joining `Close()`, or `Shutdown(ctx)`: no fixed timeout, nil ctx refused | `background-work` spec; `dev`, `rev` |

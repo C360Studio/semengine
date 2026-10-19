@@ -370,8 +370,8 @@
 //	    // Start metrics server
 //	    securityCfg := security.Config{} // Platform security config
 //	    server := metric.NewServer(9090, "/metrics", registry, securityCfg)
-//	    runtimeCtx := context.Background()
-//	    if err := server.Start(runtimeCtx); err != nil {
+//	    ctx := context.Background()
+//	    if err := server.Start(ctx); err != nil {
 //	        log.Fatalf("Failed to start metrics server: %v", err)
 //	    }
 //	    defer func() {

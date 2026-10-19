@@ -234,26 +234,29 @@ Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams
 - Any production struct retaining `context.Context` is `BLOCKING`, including embedded fields, renamed imports, type
   aliases, wrapper types, and interface containers. A getter, provider closure, public knob, or other indirect path
   that hides or recovers a stored context is the same blocking finding.
-- Require context as the first argument. An owning `Start` or `Run` may derive a lifecycle child context locally;
-  verify the exact received or derived operation context passes directly into goroutines, callbacks, and helpers. A
-  lifecycle owner may retain only a private `context.CancelFunc`, with synchronization proven against its start/stop
-  contract; it may not retain the context itself. Verify component tasks derive from `Start` or `Run` and join
-  `Stop`.
-- Root creation outside the process composition boundary is `BLOCKING`. Check constructors, factories, callbacks,
+- Require context as the first argument; verify the exact received or derived context passes directly into
+  goroutines, callbacks, and helpers. A lifecycle owner may retain only a private `context.CancelFunc`, with
+  synchronization proven against its start/stop contract; it may not retain the context itself. Verify startup work
+  runs under the context given to `Start`, continuing work under the one run context `Start` creates and `Stop` ends,
+  and every task joins `Stop` (ADR-113); continuing work that ends when the Start context ends is `BLOCKING`. A `Run`
+  owner's work derives from `Run`.
+- Root creation outside the process composition boundary is `BLOCKING`, except a lifecycle owner's one run context:
+  created in `Start`, kept only as a cancel, ended inside `Stop` (ADR-113). Check constructors, factories, callbacks,
   watchers, goroutines, `context.Background`, `context.TODO`, nil fallback, and `context.WithoutCancel`. Require
   context-aware variants for blocking or cancelable operations when available. In carried code, a root is acceptable
   only as a ledger-recorded legitimate root with its reason; one that breaks an admission gate is a repair.
 - Callers must never pass nil. Exported context-taking boundaries reject nil when able to return an error; private
   helpers rely on that invariant. Any nil-to-`context.Background` default is `BLOCKING`.
-- Detachment is allowed only for terminal cleanup or finalization, or an already-accepted durability operation whose
-  invariant requires bounded completion after owner cancellation. Require `context.WithTimeout` as the immediate
-  boundary. With a parent, require `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no
-  caller context, such as a test cleanup (`natsfixture/fixture.go:75-81`), may use
-  `context.WithTimeout(context.Background(), budget)`. The budget bounds the work through its context and never
-  replaces a join: work must complete synchronously or join before return, with no timer in place of the join, and
-  never feed `Start`, `Run`, `Watch`, or continuing work.
-- Direct use or any unbounded descendant of `context.WithoutCancel` is `BLOCKING`. Nested child cancellation is
-  allowed beneath the bounded context only when all tasks join before the terminal operation returns.
+- Detachment is allowed only for terminal cleanup or finalization (a lifecycle owner's one run context is the exception
+  stated below), or an already-accepted durability operation whose invariant requires bounded completion after owner
+  cancellation. Require `context.WithTimeout` as the immediate boundary. With a parent, require
+  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A finalizer with no caller context, such as a test
+  cleanup (`natsfixture/fixture.go:75-81`), may use `context.WithTimeout(context.Background(), budget)`. The budget
+  bounds the work through its context and never replaces a join: work must complete synchronously or join before return,
+  with no timer in place of the join, and never feed `Start`, `Run`, `Watch`, or continuing work.
+- Direct use or any unbounded descendant of `context.WithoutCancel` is `BLOCKING`, except as that one run context.
+  Nested child cancellation is allowed beneath the bounded context only when all tasks join before the terminal
+  operation returns.
 - An exported lifecycle record exposing `context.CancelFunc` is `BLOCKING`.
 - A `Stop` that replaces the caller's finite context with its own timeout, or that treats timeout or cancellation as
   proof of completed callback or worker joins, is a finding.

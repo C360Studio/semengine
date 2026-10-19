@@ -86,7 +86,10 @@ func (o *suiteOwner) Observe() lifecycletest.Observation {
 	if len(c.subscriptions) > 0 {
 		held = append(held, "request subscriptions")
 	}
-	if c.statusDone != nil {
+	// The status loop is listed while its goroutine runs: statusDone is set and not yet
+	// closed. A set but closed channel means the loop has returned, which is not held
+	// work, so a loop that ends with the Start context is not reported as running.
+	if c.statusDone != nil && !isClosed(c.statusDone) {
 		held = append(held, "status loop")
 	}
 	if c.statusPublisher != nil {
@@ -99,6 +102,16 @@ func (o *suiteOwner) Observe() lifecycletest.Observation {
 		held = append(held, "readiness bound consumers")
 	}
 	return lifecycletest.Observation{Unresolved: held, Calls: calls}
+}
+
+// isClosed reports whether done has been closed, without waiting.
+func isClosed(done <-chan struct{}) bool {
+	select {
+	case <-done:
+		return true
+	default:
+		return false
+	}
 }
 
 // countedConsumeContext counts the cleanup calls the Component makes on one consumer.

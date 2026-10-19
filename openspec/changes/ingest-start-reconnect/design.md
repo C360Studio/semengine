@@ -72,8 +72,8 @@ The developer records the fail-first runs in `notes/2.1.md`.
 
 ## D3. Mutants
 
-`GOFLAGS=-tags=integration task mutate:check -- -pkg ./processor/graph-ingest -file processor/graph-ingest/component.go
--mutant <copy outside the repo> -test <name> -expect-text <text>`.
+`GOFLAGS=-tags=integration task mutate:check -- -pkg ./processor/graph-ingest -file component.go -mutant <copy outside
+the repo> -test <name> -expect-text <text>`.
 
 - M1: the tolerance removed (today's code). Detected by T2 (and T1).
 - M2: `WaitForConnection` under `runCtx`. Detected by T2: `Start` does not end with its context.
@@ -122,7 +122,7 @@ No overlapping PR. #311 may touch `component.go` later; its region (`:1016-1021`
 
 Round 1 (semengine-reviewer, 2026-10-19, at `c0299fd`): `INVENTORY PASS`; design `CHANGES REQUESTED` (HIGH: T2's
 cleanup would fail a correct implementation while the client is still reconnecting; MEDIUMs: M3 framing, the
-proposal's trigger, task 3.1's gate, defects A and B unfiled; LOWs). All applied in round 2; defects filed as #317.
+proposal's trigger, task 3.1's gate, defects A and B unfiled; LOWs). All applied in round 2; defects filed as #317. Round 2 at `a5d7d52`: `DESIGN REVIEW PASS`.
 
 ## Owner questions
 

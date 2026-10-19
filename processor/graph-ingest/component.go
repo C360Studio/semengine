@@ -955,11 +955,11 @@ func (c *Component) Initialize() error {
 // An uninitialized component, or one with no NATS client, is refused before the guard
 // is consulted, so a later Start after Initialize is still admitted.
 //
-// ctx bounds Start only. Connecting, bucket setup, the ENTITY_STATES sweep and consumer
-// setup run under it, and a ctx that ends first fails Start. Subscriptions, request
-// handlers, the ingest pool, the entity cache's expiry sweep and the status loop run
-// under a run context start creates and release ends, so ending ctx after Start
-// returned stops nothing (ADR-113).
+// ctx bounds Start only. Connecting, or waiting for a reconnecting client, bucket setup,
+// the ENTITY_STATES sweep and consumer setup run under it, and a ctx that ends first
+// fails Start. Subscriptions, request handlers, the ingest pool, the entity cache's
+// expiry sweep and the status loop run under a run context start creates and release
+// ends, so ending ctx after Start returned stops nothing (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	c.mu.RLock()
 	initialized := c.initialized
@@ -986,7 +986,9 @@ func (c *Component) start(ctx context.Context) error {
 	c.ingestSubmitCancel = submitCancel
 
 	if c.natsClient.Status() != natsclient.StatusConnected {
-		if err := c.natsClient.Connect(ctx); err != nil {
+		// Connect refuses a client whose connection is installed, as it is while nats.go
+		// reconnects it; Start then waits for that connection (#291).
+		if err := c.natsClient.Connect(ctx); err != nil && !errors.Is(err, errs.ErrAlreadyStarted) {
 			if ctx.Err() != nil {
 				return errs.Wrap(ctx.Err(), "Component", "Start", "context cancelled during NATS connection")
 			}

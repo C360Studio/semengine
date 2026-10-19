@@ -697,27 +697,50 @@ var (
 )
 
 // rejectUnappliedNATSKeys fails the load when the document sets an unapplied
-// NATS key. A nats block that is not an object is left to the decoder.
+// NATS key. Keys match in any letter case, as encoding/json matches field
+// names; the error names the canonical key. A nats block that is not an
+// object is left to the decoder.
 func rejectUnappliedNATSKeys(raw map[string]any) error {
-	nats, ok := raw["nats"].(map[string]any)
-	if !ok {
-		return nil
-	}
+	nats := objectsFolded([]map[string]any{raw}, "nats")
 	for _, key := range unappliedNATSKeys {
-		if _, found := nats[key]; found {
+		if hasKeyFolded(nats, key) {
 			return fmt.Errorf("config key nats.%s is not applied yet: remove it", key)
 		}
 	}
-	jetStream, ok := nats["jetstream"].(map[string]any)
-	if !ok {
-		return nil
-	}
+	jetStream := objectsFolded(nats, "jetstream")
 	for _, key := range unappliedJetStreamKeys {
-		if _, found := jetStream[key]; found {
+		if hasKeyFolded(jetStream, key) {
 			return fmt.Errorf("config key nats.jetstream.%s is not applied yet: remove it", key)
 		}
 	}
 	return nil
+}
+
+// objectsFolded returns every object in the given maps stored under a key
+// equal to name in any letter case.
+func objectsFolded(maps []map[string]any, name string) []map[string]any {
+	var found []map[string]any
+	for _, m := range maps {
+		for k, v := range m {
+			if obj, ok := v.(map[string]any); ok && strings.EqualFold(k, name) {
+				found = append(found, obj)
+			}
+		}
+	}
+	return found
+}
+
+// hasKeyFolded reports whether any of the maps has a key equal to name in any
+// letter case.
+func hasKeyFolded(maps []map[string]any, name string) bool {
+	for _, m := range maps {
+		for k := range m {
+			if strings.EqualFold(k, name) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // CompareVersions compares two semver version strings

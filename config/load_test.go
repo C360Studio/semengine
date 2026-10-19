@@ -38,7 +38,7 @@ const validDocument = `{"platform":{"org":"acme","id":"p1","type":"vessel"}}`
 // TestLoad_RefusesUnappliedNATSKeys pins D2 (Q1, #9 comment 6275744386): a
 // NATS setting nothing in SemEngine applies yet is refused at load, naming the
 // key, so an operator who sets one is never silently ignored (#74). A key is
-// refused when present, whatever its value.
+// refused when present, whatever its value, and in any letter case.
 func TestLoad_RefusesUnappliedNATSKeys(t *testing.T) {
 	cases := []struct {
 		key      string
@@ -56,6 +56,12 @@ func TestLoad_RefusesUnappliedNATSKeys(t *testing.T) {
 			`{"platform":{"org":"acme","id":"p1"},"nats":{"jetstream":{"retention_policy":"limits"}}}`},
 		{"nats.jetstream.replication_factor",
 			`{"platform":{"org":"acme","id":"p1"},"nats":{"jetstream":{"replication_factor":3}}}`},
+		// encoding/json matches field names case-insensitively, so a case
+		// variant is the same key and is refused the same way.
+		{"nats.tls", `{"platform":{"org":"acme","id":"p1"},"nats":{"TLS":{"enabled":true}}}`},
+		{"nats.token", `{"platform":{"org":"acme","id":"p1"},"nats":{"Token":"x"}}`},
+		{"nats.token", `{"platform":{"org":"acme","id":"p1"},"NATS":{"token":"x"}}`},
+		{"nats.jetstream.domain", `{"platform":{"org":"acme","id":"p1"},"nats":{"JetStream":{"Domain":"hub"}}}`},
 	}
 	for _, path := range loadPaths {
 		for _, tc := range cases {

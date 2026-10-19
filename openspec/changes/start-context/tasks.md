@@ -27,7 +27,7 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 
 ## 3. Adopters
 
-- [ ] 3.1 metric (D5): adapter liveness for the serve goroutine; `TestServerServesAfterStartContextEnds`; delete
+- [x] 3.1 metric (D5): adapter liveness for the serve goroutine; `TestServerServesAfterStartContextEnds`; delete
   `handler_test.go:167`; drop `BaseContext`; edits to `handler.go:54-55`, `README.md:71`, `:209`, `:490`, `:554`,
   `:565`, `:763`, `doc.go:373`. M5. Gate: `task verify`.
 - [ ] 3.2 graph-ingest (D6): the adapter reports the status loop while it runs; T-G2 replaces

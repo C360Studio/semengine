@@ -21,7 +21,7 @@ at its commit (#171).
   - the D1 test's `Start(nil)` row and its nil message check fail;
   - the D1 ended rows and the D3 test pass on the base, because they pin behaviour that already exists; their
     sensitivity is M4 and M3, checked in 2.3.
-- [ ] 2.2 D1's nil-context helper, called first in `Start` and `Stop`; D5's sentences on the refusals and on what a
+- [x] 2.2 D1's nil-context helper, called first in `Start` and `Stop`; D5's sentences on the refusals and on what a
   panicking cleanup leaves behind (#309, D7). Gate: `go test -race -count=1 ./internal/lifecycleguard/
   ./internal/harness/lifecycletest/ ./processor/graph-ingest/`.
 - [ ] 2.3 D2: `Stop(ctx)` runs the cleanup the admitted `Start` recorded. Also:

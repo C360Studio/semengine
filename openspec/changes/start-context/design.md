@@ -75,6 +75,7 @@ Rejected alternatives:
 - `TestAbortStopThenFinishJoinsWorker` (`:453-490`): the abort Stop no longer signals the clean double's worker.
   1. Start `finish` in a goroutine.
   2. Select on `o.workerExit.Entered()` against `finished`. If `finished` wins while `Observe` still lists `worker`,
+     end the worker first (the double's cancel, then join, as `finalizeVerdict` does at `:265-266`) and then fail:
      a #40-shaped regression (an ended-context Stop that marks the owner stopped without signalling or joining) is
      reported as a failure, not as a bubble deadlock.
   3. Then `synctest.Wait` and the rest, unchanged.

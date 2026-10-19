@@ -15,9 +15,9 @@ returning an error that carries that context's error or cause; repeated Stop as 
 refused unless the factory promises restart, in which case a full second cycle SHALL succeed; and a failed Start holding
 nothing. The settle window is the suite's only wait on a healthy owner: an owner whose reported items last until
 Stop passes for any window length, and an owner is judged only by what its Observe reports. `Run(t, factory, mustFail,
-promise)` SHALL drive them as subtests,
-where `mustFail` is a required factory returning an owner whose Start returns an error; Run SHALL fail before any check,
-naming the argument, when `mustFail` is nil. The failed-start check SHALL require that Start returns a non-nil error,
+promise)` SHALL drive them as subtests, where `mustFail` is a required factory returning an owner whose Start returns
+an error; Run SHALL fail before any check, naming the argument, when `mustFail` is nil. The failed-start check SHALL
+require that Start returns a non-nil error,
 that the owner then reports nothing unresolved, and that a following Stop returns nil and changes no call count. No
 check SHALL count a panic as a refusal. The suite SHALL NOT use aggregate goroutine or memory counts as proof of joins,
 and SHALL NOT read readiness from the owner. The failed-start check judges a failed Start whose own cleanup succeeded; a

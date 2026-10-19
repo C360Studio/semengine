@@ -6,10 +6,13 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner, with owner questions 1 and 2 answered. Gate: `task spec:check` and `task docs:check`.
-- [ ] 1.2 Issues 1-4 filed (`status:blocked`, linked without a closing keyword), the #282 correction posted, and the
-  #301 answer (D12, plus T-G4's new reader) posted; numbers recorded here. Gate: `task docs:check`.
+- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`, round 1 at `092c5e8`); proposal and design pass pre-owner review
+  (`DESIGN REVIEW PASS`, round 2 at `3e5e1b5`) and are accepted by the owner, with owner questions 1 and 2 answered.
+  Gate: `task spec:check` and `task docs:check`.
+- [x] 1.2 Issues 1-4 filed (`status:blocked`, linked without a closing keyword): #311 (natsclient
+  `SubscribeForRequests`), #312 (dangling `test-cleanup-policy` cites), #313 (metric README `GPSService`), #314
+  (ledger natsfixture row). The #282 correction posted (comment 6258533687) and the #301 answer posted (comment
+  6258561493). Gate: `task docs:check`.
 
 ## 2. Suite (tests first)
 

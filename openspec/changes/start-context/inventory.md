@@ -196,21 +196,21 @@ and about 150 test lines.
    a gap.
 4. What they should have to know: nothing more. The gap stands because the suite is internal; no new finding.
 
-## Issues to file (status:blocked on this branch, no closing keyword)
+## Issues filed (status:blocked on this branch, no closing keyword)
 
-1. natsclient: `SubscribeForRequests` uses one context for its setup wait and as every handler's parent. #9 comment
+1. #311. natsclient: `SubscribeForRequests` uses one context for its setup wait and as every handler's parent. #9 comment
    5994720412 item 2 ruled that the context that bounds setup must not parent handlers, and that this applies to "any
    other function with the same shape". `ConsumeStreamWithConfig` follows the ruling (`natsclient/stream.go:431-438`,
    `:455-461`); `SubscribeForRequests` does not (`natsclient/request.go:322-329`). A caller whose handlers outlive
    `Start` (ADR-113) must therefore pass its run context, and the setup wait is then capped only by
    `DefaultRequestTimeout` (5 s). graph-ingest's query and mutation subscriptions are the case today. MEDIUM.
-2. graph-ingest tests cite a spec that does not exist: `processor/graph-ingest/test_owner_test.go:22`, `:57`, `:76`,
+2. #312. graph-ingest tests cite a spec that does not exist: `processor/graph-ingest/test_owner_test.go:22`, `:57`, `:76`,
    `:105` and `test_owner_child_test.go:52` cite "spec: test-cleanup-policy / Lexical ownership of lifecycle test
    fixtures", and there is no `openspec/specs/test-cleanup-policy/`. The test owner's keeping its Start context live
    until Stop (`test_owner_support_test.go:38`) is harmless under ADR-113 and is reworded in this PR (design D6), not
    filed.
-3. `metric/README.md`'s `GPSService` example takes no context in `Stop` (`:496`) and sleeps (`:483`). The parts of
+3. #313. `metric/README.md`'s `GPSService` example takes no context in `Stop` (`:496`) and sleeps (`:483`). The parts of
    that example that state the retired rule (`:490`; the `runtimeCtx` name at `:71`, `:554`, `:565`, `:763` and
    `doc.go:373`) are fixed in this PR (design D5); the signature and the sleep are filed.
-4. `docs/admission-ledger.yaml:50` (the natsfixture row) lists "lifecycletest.Run over the fixture adapter" under
+4. #314. `docs/admission-ledger.yaml:50` (the natsfixture row) lists "lifecycletest.Run over the fixture adapter" under
    `proving_tests`, and no such call exists (`git grep -n lifecycletest -- internal/harness/natsfixture` is empty).

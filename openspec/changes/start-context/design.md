@@ -308,13 +308,16 @@ field.
 
 ## Generated checks: examples suffice
 
-This change reorders a short, fixed history: Start returns, the Start context ends, Stop runs with an ended context,
-and a later Stop runs. Every interleaving that matters is named and forced, not sampled. The failpoint matrix runs each
+This change reorders a short, fixed history: Start returns, the Start context ends, Stop runs with an ended context, and
+a later Stop runs. Every interleaving that matters is named and forced, not sampled. The failpoint matrix runs each
 check against one defect at a time inside a synctest bubble, where the fake clock settles every goroutine before an
-assertion, so each ordering is deterministic. `TestAbortStopThenFinishJoinsWorker` forces the one race the history
-has (a Stop returning before its worker exits) with an explicit probe instead of the scheduler. There is no input
-space to generate over: the owner takes no data, only the four calls in that order. So no generator is added
-(`docs/testing.md`, "Decide whether generated checks are needed").
+assertion, so each ordering is deterministic. `TestAbortStopThenFinishJoinsWorker` forces the one race the history has
+(a Stop returning before its worker exits) with an explicit probe instead of the scheduler. There is no input space to
+generate over: the owner takes no data, only the four calls in that order. The adopters' interacting input is which
+startup step the Start context ends in. That is enumerated at the three places the step's context changes: the boot
+sweep (`cancelDuringSweep`), consumer setup (T-G3) and handler setup (T-G4); every other startup step (connect, buckets,
+the status bucket) shares the same context-error path. The history after Start (cancel, ingest, query, Stop) is fixed
+and is T-G2. So no generator is added (`docs/testing.md`, "Decide whether generated checks are needed").
 
 ## Mutants
 

@@ -416,8 +416,8 @@ func TestGraphIngest_StartBoundedByItsContext(t *testing.T) {
 	case startErr = <-startResult:
 	case <-bound.C:
 		t.Errorf("Start had not returned %s after its 1 s deadline", failureBound)
-		// Start's own wait is bounded (waitForStream's retries); join it so nothing it
-		// logs outlives the test.
+		// Start's own wait is bounded by waitForStream's retry budget (about 50 s, as mutant M7
+		// showed); join it so nothing it logs outlives the test.
 		startErr = <-startResult
 	}
 	if !errors.Is(startErr, context.DeadlineExceeded) {

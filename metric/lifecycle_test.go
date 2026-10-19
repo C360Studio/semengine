@@ -90,6 +90,7 @@ func TestServerServesAfterStartContextEnds(t *testing.T) {
 	owner := newServerOwner(s)
 	startCtx, cancelStart := context.WithCancel(t.Context())
 	require.NoError(t, s.Start(startCtx))
+	registerServerCleanup(t, s) // a failed GET still stops the server; a second Stop is a no-op
 	cancelStart()
 
 	for i := range 2 {

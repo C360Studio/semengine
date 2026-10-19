@@ -211,10 +211,12 @@ var checks = []check{
 	{"NilContextsRefused", func(ctx context.Context, o Owner, _ Promise) error { return CheckNilContextsRefused(ctx, o) }},
 	{"PreCancelledStartRefused", func(ctx context.Context, o Owner, _ Promise) error { return CheckPreCancelledStartRefused(ctx, o) }},
 	{"StopBeforeStartSafe", func(ctx context.Context, o Owner, _ Promise) error { return CheckStopBeforeStartSafe(ctx, o) }},
-	{"ControlledStopUnderLiveStartAuthority", func(ctx context.Context, o Owner, _ Promise) error {
-		return CheckControlledStopUnderLiveStartAuthority(ctx, o)
+	{"StartContextEndStopsNothing", func(ctx context.Context, o Owner, _ Promise) error {
+		return CheckStartContextEndStopsNothing(ctx, o)
 	}},
-	{"AbortStopPreservesCause", func(ctx context.Context, o Owner, _ Promise) error { return CheckAbortStopPreservesCause(ctx, o) }},
+	{"StopReturnsItsEndedContext", func(ctx context.Context, o Owner, _ Promise) error {
+		return CheckStopReturnsItsEndedContext(ctx, o)
+	}},
 	{"RepeatedStopIsNoOp", func(ctx context.Context, o Owner, _ Promise) error { return CheckRepeatedStopIsNoOp(ctx, o) }},
 	{"SecondStartRefusedOrRestartCycle", CheckSecondStartRefusedOrRestartCycle},
 	{"FailedStartHoldsNothing", func(ctx context.Context, o Owner, _ Promise) error { return CheckFailedStartHoldsNothing(ctx, o) }},
@@ -470,7 +472,7 @@ func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 				o := newRefowner(t, fp, false)
 				o.workerExit = probe.NewCallback()
 				defer o.workerExit.Release()
-				_ = CheckAbortStopPreservesCause(t.Context(), o) // its verdict is the matrix's concern
+				_ = CheckStopReturnsItsEndedContext(t.Context(), o) // its verdict is the matrix's concern
 
 				finished := make(chan error, 1)
 				go func() { finished <- finish(t.Context(), o) }()

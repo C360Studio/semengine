@@ -13,14 +13,19 @@ Start context. It retires #291.
 
 ## What Changes
 
-Claim skeleton. The design fills this section once the inventory passes review. Expected, from #291 and its plan
-note: `Start` calls `Connect` only when no connection is installed, and otherwise waits for the connection under the
-Start context.
+- `Start` tolerates `Connect`'s "already connected" refusal (`errs.ErrAlreadyStarted`): a client whose connection is
+  installed but reconnecting is waited for under the Start context by the existing `WaitForConnection` call. A Start
+  context that ends first fails `Start` with that error and holds nothing (design D1).
+- Two integration tests through a test-local relay to the shared broker: `Start` waits for a reconnecting client and
+  returns nil once the broker is reachable again; `Start` returns its context's error when it ends during the wait
+  (D2).
+- `Start`'s doc comment names the wait.
 
 ## Capabilities
 
-- None expected to change; the design says if a `graph-ingest-recovery` delta is needed.
+- None. No spec states `Start`'s connect behaviour (design D6); `skip_specs: true` stays.
 
 ## Impact
 
-- `processor/graph-ingest` (the connect block of `start`) and its tests. No exported signature changes are expected.
+- `processor/graph-ingest/component.go` (about two lines and a comment) and `lifecycle_integration_test.go`. No
+  exported change; natsclient unchanged.

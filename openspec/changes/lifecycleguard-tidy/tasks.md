@@ -24,7 +24,7 @@ at its commit (#171).
 - [x] 2.2 D1's nil-context helper, called first in `Start` and `Stop`; D5's sentences on the refusals and on what a
   panicking cleanup leaves behind (#309, D7). Gate: `go test -race -count=1 ./internal/lifecycleguard/
   ./internal/harness/lifecycletest/ ./processor/graph-ingest/`.
-- [ ] 2.3 D2: `Stop(ctx)` runs the cleanup the admitted `Start` recorded. Also:
+- [x] 2.3 D2: `Stop(ctx)` runs the cleanup the admitted `Start` recorded. Also:
   - `TestGuardStopRunsTheCleanupStartWasGiven`;
   - the two tests of 2.1 rewritten for `Stop(ctx)`, with the cleanup given to `Start`;
   - the existing guard tests D2 lists;

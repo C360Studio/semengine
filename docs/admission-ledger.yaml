@@ -2595,6 +2595,59 @@
   owner: "setup-04a-03-boot-health developer"
   disposition: adapt
 
+# Change port-flowgraph (PR #320, epic #9): component/flowgraph ported to internal/flowgraph ahead of its
+# importer, composition (owner, 2026-10-19: Decision A, Q2 "let's fix them").
+
+- source_path: component/flowgraph
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the flow-graph analysis composition.Analyze runs over component declarations (pin composition/analyze.go:42,
+    :59, :81, :125; composition/graph.go:93), ported later in change 3 (setup-04a-foundation design D2 row 3);
+    carried ahead of its importer in the owner's order (#9 comment 6270875286); internal because no consumer
+    imports it and no exported signature in a public package names its types (#9 comment 5953295358)
+  destination: internal/flowgraph
+  contract: >-
+    as at the pin, except: (1) the graph-mutation prefix comes from graphmutation.SubjectFamily; (2) the
+    graph-mutation check and the connected-component walk visit components in name order, so equal declarations
+    give equal refusals and equal results; (3) removed as dead: GetNodes, EdgeMetadata and FlowEdge.Metadata,
+    FlowAnalysisResult.ConnectedEdges, StreamRequirementWarning.Severity and Issue; ComponentNode, PortInfo,
+    NewFlowGraph and ConnectComponentsByPatterns unexported (componentNode, portInfo, newFlowGraph,
+    connectComponentsByPatterns); no JSON tags; (4) README.md and doc.go describe the code; (5) one port-map
+    builder, one concrete-subject choice, and matchNATSPattern asked once per pair, which it answers both ways;
+    (6) the interface-alternative heuristic and IssueOptionalInterfaceUnused removed, so an unconnected input
+    that is not required reports no_publishers; (7) the empty or duplicate name, KV-writer, network-bind and
+    graph-mutation refusals are plain text wrapping errs.ErrInvalidConfig and name no internal function (the
+    port/fact count and connection-identity refusals are plain text with no sentinel, as at the pin); (8) a `>`
+    in a subject matches one or more trailing tokens, never none, so `events.>` and `events` do not match (at the
+    pin they did; #326).
+    BuildFromDeclarations refuses an empty or duplicate instance name, a port/fact count mismatch and a port
+    with no connection identity, then derives edges: stream and request by wildcard subject match, recording
+    the side without a wildcard, watch and read by exact bucket, store as fan-in from every provider to every
+    reader on another component; it refuses more than one writer to a KV bucket, more than one exclusive bind on
+    a network address (an input and an output of one component included), and, once any graph-mutation port is
+    declared, any port of that family that is not a required nats-request port for semengine.graph.mutation v1
+    on graph.mutation.>, or a count of such inputs (providers) other than one (ADR-091 §2, kept by ADR-110).
+    AnalyzeConnectivity reports connected components, disconnected nodes and orphaned ports with an issue type and
+    derives no severity; ValidateStreamRequirements reports each JetStream input fed by core-NATS publishers, with
+    those publishers, each named once; SubjectCovers reports whether one subject filter covers another
+  dependencies_and_side_effects: >-
+    component, internal/graphmutation, pkg/errs (in-set); stdlib (cmp, fmt, maps, slices, strings); no goroutine, no I/O
+  known_risks: >-
+    no importer until composition lands, whose port drops its IssueOptionalInterfaceUnused case; the
+    graph-mutation port shape is also checked in processor/graph-ingest and exclusive network addresses also in
+    component.Registry (design Q3, Q4; #323, #324); refusals are no longer errs-classified invalid
+    (errs.IsInvalid is false; nothing at the pin reads the class); uncovered cases in notes/2.5.md
+  proving_tests: >-
+    internal/flowgraph/declarations_test.go (TestBuildFromDeclarationsConnectsDeclaredPorts,
+    TestBuildFromDeclarationsRefusesExtraFacts, TestBuildFromDeclarationsRefusesMalformedDeclarations,
+    TestBuildFromDeclarationsRefusesNetworkBindConflicts, TestValidateStreamRequirementsFlagsCoreNATSPublishers,
+    TestFlowGraphOutputIsTheSameEveryRun, TestMatchNATSPatternIsSymmetric, TestRefusalsNameNoInternalFunction,
+    TestTailWildcardNeedsATrailingToken),
+    flowgraph_validation_test.go (TestUnconnectedOptionalInterfacePortReportsNoPublishers and the pin's tests),
+    graph_mutation_contract_test.go, subject_cover_test.go, flowgraph_test.go, flowgraph_patterns_test.go,
+    store_federation_test.go; internal/harness/contract (TestReservedSubjectsDeclaredOnce)
+  owner: port-flowgraph developer
+  disposition: adapt
 # Change setup-04a-03-boot-config (PR #322, epic #9): config, part 1 of 2 (config.Manager is part 2),
 # under the owner's waiver of about 3,150 pin lines (#9 comment 6274501134).
 

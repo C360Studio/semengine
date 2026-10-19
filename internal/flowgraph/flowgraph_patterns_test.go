@@ -1,0 +1,378 @@
+package flowgraph
+
+import (
+	"testing"
+
+	"github.com/c360studio/semengine/component"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+// TestFlowGraphPatterns tests all connection pattern implementations
+func TestFlowGraphPatterns(t *testing.T) {
+	t.Run("nil checks in AddComponentNode", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// Test nil component
+		err := addTestComponentNode(graph, "test", nil)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "component cannot be nil")
+
+		// Test empty name
+		mockComp := createPatternTestComponent("mock", []component.Port{}, []component.Port{})
+		err = addTestComponentNode(graph, "", mockComp)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "component name cannot be empty")
+	})
+
+	t.Run("Request pattern connects bidirectionally", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// Create components with request ports on same subject
+		clientPorts := []component.Port{
+			{
+				Name:      "api_request",
+				Direction: component.DirectionOutput,
+				Config:    component.NATSRequestPort{Subject: "api.v1"},
+			},
+		}
+		serverPorts := []component.Port{
+			{
+				Name:      "api_handler",
+				Direction: component.DirectionInput,
+				Config:    component.NATSRequestPort{Subject: "api.v1"},
+			},
+		}
+
+		client := createPatternTestComponent("api-client", []component.Port{}, clientPorts)
+		server := createPatternTestComponent("api-server", serverPorts, []component.Port{})
+
+		require.NoError(t, addTestComponentNode(graph, "api-client", client))
+		require.NoError(t, addTestComponentNode(graph, "api-server", server))
+
+		// Connect by patterns
+		err := graph.connectComponentsByPatterns()
+		assert.NoError(t, err)
+
+		// Check that bidirectional edge was created
+		edges := graph.GetEdges()
+		assert.Len(t, edges, 1, "Should have one edge for bidirectional request")
+		if len(edges) > 0 {
+			edge := edges[0]
+			assert.Equal(t, component.PatternRequest, edge.Pattern)
+			assert.Equal(t, "api.v1", edge.ConnectionID)
+			// Should connect the two components
+			assert.True(t,
+				(edge.From.ComponentName == "api-client" && edge.To.ComponentName == "api-server") ||
+					(edge.From.ComponentName == "api-server" && edge.To.ComponentName == "api-client"),
+				"Edge should connect client and server bidirectionally")
+		}
+	})
+
+	t.Run("Watch pattern connects and warns on multiple writers", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// Create two writers to same KV bucket
+		writer1Ports := []component.Port{
+			{
+				Name:      "state_writer",
+				Direction: component.DirectionOutput,
+				Config:    component.KVWritePort{Bucket: "entity_states"},
+			},
+		}
+		writer2Ports := []component.Port{
+			{
+				Name:      "state_writer2",
+				Direction: component.DirectionOutput,
+				Config:    component.KVWritePort{Bucket: "entity_states"},
+			},
+		}
+		watcherPorts := []component.Port{
+			{
+				Name:      "state_watcher",
+				Direction: component.DirectionInput,
+				Config:    component.KVWatchPort{Bucket: "entity_states"},
+			},
+		}
+
+		writer1 := createPatternTestComponent("writer1", []component.Port{}, writer1Ports)
+		writer2 := createPatternTestComponent("writer2", []component.Port{}, writer2Ports)
+		watcher := createPatternTestComponent("watcher", watcherPorts, []component.Port{})
+
+		require.NoError(t, addTestComponentNode(graph, "writer1", writer1))
+		require.NoError(t, addTestComponentNode(graph, "writer2", writer2))
+		require.NoError(t, addTestComponentNode(graph, "watcher", watcher))
+
+		// Connect by patterns - should get warning about multiple writers
+		err := graph.connectComponentsByPatterns()
+		assert.Error(t, err, "Should warn about multiple writers")
+		if err != nil {
+			assert.Contains(t, err.Error(), "multiple writers to KV bucket")
+		}
+
+		// But edges should still be created
+		edges := graph.GetEdges()
+		assert.Len(t, edges, 2, "Should have edges from both writers to watcher")
+		for _, edge := range edges {
+			assert.Equal(t, component.PatternWatch, edge.Pattern)
+			assert.Equal(t, "kv:entity_states", edge.ConnectionID)
+		}
+	})
+
+	t.Run("Network pattern detects port conflicts", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// Create two components trying to bind to same network port
+		server1Ports := []component.Port{
+			{
+				Name:      "http_server",
+				Direction: component.DirectionInput,
+				Config:    component.NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
+			},
+		}
+		server2Ports := []component.Port{
+			{
+				Name:      "http_server2",
+				Direction: component.DirectionInput,
+				Config:    component.NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
+			},
+		}
+
+		server1 := createPatternTestComponent("server1", server1Ports, []component.Port{})
+		server2 := createPatternTestComponent("server2", server2Ports, []component.Port{})
+
+		require.NoError(t, addTestComponentNode(graph, "server1", server1))
+		require.NoError(t, addTestComponentNode(graph, "server2", server2))
+
+		// Connect by patterns - should detect conflict
+		err := graph.connectComponentsByPatterns()
+		assert.Error(t, err, "Should detect network port conflict")
+		if err != nil {
+			assert.Contains(t, err.Error(), "network port conflict")
+			assert.Contains(t, err.Error(), "tcp:0.0.0.0:8080")
+		}
+
+		// No edges should be created for network ports
+		edges := graph.GetEdges()
+		for _, edge := range edges {
+			assert.NotEqual(t, component.PatternNetwork, edge.Pattern, "Network ports don't create edges")
+		}
+	})
+
+	t.Run("exact KV read remains a read dependency", func(t *testing.T) {
+		graph := newFlowGraph()
+		writer := createPatternTestComponent("writer", nil, []component.Port{{
+			Name: "states", Direction: component.DirectionOutput, Config: component.KVWritePort{Bucket: "ENTITY_STATES"},
+		}})
+		reader := createPatternTestComponent("reader", []component.Port{{
+			Name: "states", Direction: component.DirectionInput, Config: component.KVReadPort{Bucket: "ENTITY_STATES"},
+		}}, nil)
+		require.NoError(t, addTestComponentNode(graph, "writer", writer))
+		require.NoError(t, addTestComponentNode(graph, "reader", reader))
+		require.NoError(t, graph.connectComponentsByPatterns())
+		edges := graph.GetEdges()
+		require.Len(t, edges, 1)
+		assert.Equal(t, component.PatternRead, edges[0].Pattern)
+		assert.NotEqual(t, component.PatternWatch, edges[0].Pattern)
+		assert.Equal(t, "kv:ENTITY_STATES", edges[0].ConnectionID)
+	})
+
+	t.Run("shared file paths are not exclusive network binds", func(t *testing.T) {
+		graph := newFlowGraph()
+		first := createPatternTestComponent("first", []component.Port{{
+			Name: "file", Direction: component.DirectionInput, Config: component.FilePort{Path: "/shared/events.jsonl"},
+		}}, nil)
+		second := createPatternTestComponent("second", []component.Port{{
+			Name: "file", Direction: component.DirectionInput, Config: component.FilePort{Path: "/shared/events.jsonl"},
+		}}, nil)
+		require.NoError(t, addTestComponentNode(graph, "first", first))
+		require.NoError(t, addTestComponentNode(graph, "second", second))
+		require.NoError(t, graph.connectComponentsByPatterns())
+	})
+
+	t.Run("Stream pattern still works", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// Traditional NATS pub/sub
+		pubPorts := []component.Port{
+			{
+				Name:      "events",
+				Direction: component.DirectionOutput,
+				Config:    component.NATSPort{Subject: "events.data"},
+			},
+		}
+		subPorts := []component.Port{
+			{
+				Name:      "events",
+				Direction: component.DirectionInput,
+				Config:    component.NATSPort{Subject: "events.data"},
+			},
+		}
+
+		pub := createPatternTestComponent("publisher", []component.Port{}, pubPorts)
+		sub := createPatternTestComponent("subscriber", subPorts, []component.Port{})
+
+		require.NoError(t, addTestComponentNode(graph, "publisher", pub))
+		require.NoError(t, addTestComponentNode(graph, "subscriber", sub))
+
+		// Connect by patterns
+		err := graph.connectComponentsByPatterns()
+		assert.NoError(t, err)
+
+		// Check edge
+		edges := graph.GetEdges()
+		assert.Len(t, edges, 1)
+		if len(edges) > 0 {
+			edge := edges[0]
+			assert.Equal(t, component.PatternStream, edge.Pattern)
+			assert.Equal(t, "events.data", edge.ConnectionID)
+			assert.Equal(t, "publisher", edge.From.ComponentName)
+			assert.Equal(t, "subscriber", edge.To.ComponentName)
+		}
+	})
+
+	t.Run("KVWritePort to KVWatchPort connections work correctly", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// Create graph processor (writer) using KVWritePort
+		writerPorts := []component.Port{
+			{
+				Name:      "entity_states",
+				Direction: component.DirectionOutput,
+				Config: component.KVWritePort{
+					Bucket: "ENTITY_STATES",
+					Interface: &component.InterfaceContract{
+						Type:    "graph.EntityState",
+						Version: "v1",
+					},
+				},
+			},
+		}
+
+		// Create rule processor (watcher) using KVWatchPort
+		watcherPorts := []component.Port{
+			{
+				Name:      "entity_states",
+				Direction: component.DirectionInput,
+				Config: component.KVWatchPort{
+					Bucket: "ENTITY_STATES",
+					Keys:   []string{},
+				},
+			},
+		}
+
+		writer := createPatternTestComponent("graph-processor", []component.Port{}, writerPorts)
+		watcher := createPatternTestComponent("rule-processor", watcherPorts, []component.Port{})
+
+		require.NoError(t, addTestComponentNode(graph, "graph-processor", writer))
+		require.NoError(t, addTestComponentNode(graph, "rule-processor", watcher))
+
+		// Connect by patterns - should work without warnings
+		err := graph.connectComponentsByPatterns()
+		assert.NoError(t, err, "KVWritePort -> KVWatchPort should connect cleanly")
+
+		// Check that edge was created correctly
+		edges := graph.GetEdges()
+		assert.Len(t, edges, 1, "Should have one edge from writer to watcher")
+		if len(edges) > 0 {
+			edge := edges[0]
+			assert.Equal(t, component.PatternWatch, edge.Pattern)
+			assert.Equal(t, "kv:ENTITY_STATES", edge.ConnectionID)
+			assert.Equal(t, "graph-processor", edge.From.ComponentName)
+			assert.Equal(t, "rule-processor", edge.To.ComponentName)
+		}
+	})
+
+	t.Run("invalid ports fail strict fact resolution", func(t *testing.T) {
+		ports := []component.Port{
+			{Name: "nil", Direction: component.DirectionInput},
+			{Name: "nats", Direction: component.DirectionInput, Config: component.NATSPort{}},
+			{Name: "watch", Direction: component.DirectionInput, Config: component.KVWatchPort{}},
+			{Name: "write", Direction: component.DirectionOutput, Config: component.KVWritePort{}},
+			{Name: "network", Direction: component.DirectionInput, Config: component.NetworkPort{Protocol: "tcp"}},
+		}
+		for _, port := range ports {
+			if _, err := port.Facts(); err == nil {
+				t.Errorf("port %q unexpectedly resolved", port.Name)
+			}
+		}
+	})
+
+	t.Run("NATS wildcard pattern matching", func(t *testing.T) {
+		// Test exact match
+		assert.True(t, matchNATSPattern("foo.bar", "foo.bar"), "Exact match should work")
+
+		// Test single token wildcard (*)
+		assert.True(t, matchNATSPattern("input.udp.mavlink", "input.*.mavlink"), "* should match single token")
+		assert.True(t, matchNATSPattern("foo.bar.baz", "foo.*.baz"), "* should match middle token")
+		assert.True(t, matchNATSPattern("foo.bar", "*.bar"), "* should match first token")
+		assert.True(t, matchNATSPattern("foo.bar", "foo.*"), "* should match last token")
+
+		// Test multi-token wildcard (>)
+		assert.True(t, matchNATSPattern("foo.bar.baz.qux", "foo.>"), "> should match multiple tokens")
+		assert.False(t, matchNATSPattern("foo", "foo.>"), "> needs at least one trailing token")
+
+		// Test non-matches
+		assert.False(t, matchNATSPattern("foo.bar.baz", "foo.*.qux"), "* shouldn't match wrong token")
+		assert.False(t, matchNATSPattern("foo.bar.baz", "foo.*"), "* requires exact token count")
+		assert.False(t, matchNATSPattern("foo", "foo.bar"), "No match with more pattern tokens")
+
+		// Test bidirectional matching (pattern in either position)
+		assert.True(
+			t,
+			matchNATSPattern("input.*.mavlink", "input.udp.mavlink"),
+			"Pattern should match concrete subject",
+		)
+	})
+
+	t.Run("Stream pattern with wildcard connections", func(t *testing.T) {
+		graph := newFlowGraph()
+
+		// UDP input publishes to concrete subject
+		pubPorts := []component.Port{
+			{
+				Name:      "output",
+				Direction: component.DirectionOutput,
+				Config:    component.NATSPort{Subject: "input.udp.mavlink"},
+			},
+		}
+
+		// Robotics processor subscribes with wildcard
+		subPorts := []component.Port{
+			{
+				Name:      "input",
+				Direction: component.DirectionInput,
+				Config:    component.NATSPort{Subject: "input.*.mavlink"},
+			},
+		}
+
+		pub := createPatternTestComponent("udp-input", []component.Port{}, pubPorts)
+		sub := createPatternTestComponent("robotics-processor", subPorts, []component.Port{})
+
+		require.NoError(t, addTestComponentNode(graph, "udp-input", pub))
+		require.NoError(t, addTestComponentNode(graph, "robotics-processor", sub))
+
+		// Connect by patterns
+		err := graph.connectComponentsByPatterns()
+		assert.NoError(t, err)
+
+		// Check that wildcard match created edge
+		edges := graph.GetEdges()
+		assert.Len(t, edges, 1, "Wildcard pattern should match concrete subject")
+		if len(edges) > 0 {
+			edge := edges[0]
+			assert.Equal(t, component.PatternStream, edge.Pattern)
+			assert.Equal(t, "input.udp.mavlink", edge.ConnectionID, "Should use concrete subject, not pattern")
+			assert.Equal(t, "udp-input", edge.From.ComponentName)
+			assert.Equal(t, "robotics-processor", edge.To.ComponentName)
+		}
+	})
+}
+
+// Helper function to create mock components for pattern tests
+func createPatternTestComponent(_ string, inputs []component.Port, outputs []component.Port) component.Discoverable {
+	return &mockFlowGraphComponent{
+		inputPorts:  inputs,
+		outputPorts: outputs,
+	}
+}

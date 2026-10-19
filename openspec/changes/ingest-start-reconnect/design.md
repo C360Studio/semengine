@@ -120,9 +120,10 @@ No overlapping PR. #311 may touch `component.go` later; its region (`:1016-1021`
 
 ## Review record
 
-Round 1 (semengine-reviewer, 2026-10-19, at `c0299fd`): `INVENTORY PASS`; design `CHANGES REQUESTED` (HIGH: T2's
-cleanup would fail a correct implementation while the client is still reconnecting; MEDIUMs: M3 framing, the
-proposal's trigger, task 3.1's gate, defects A and B unfiled; LOWs). All applied in round 2; defects filed as #317. Round 2 at `a5d7d52`: `DESIGN REVIEW PASS`.
+Round 1 (semengine-reviewer, 2026-10-19, at `c0299fd`): `INVENTORY PASS`; design `CHANGES REQUESTED` (HIGH: T2's cleanup
+would fail a correct implementation while the client is still reconnecting; MEDIUMs: M3 framing, the proposal's trigger,
+task 3.1's gate, defects A and B unfiled; LOWs). All applied in round 2; defects filed as #317. Round 2 at `a5d7d52`:
+`DESIGN REVIEW PASS`.
 
 ## Owner questions
 

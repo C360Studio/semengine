@@ -26,6 +26,11 @@ if err := cfg.Validate(); err != nil {
 2. Lay it over the defaults. A key the document sets replaces the default; a key it leaves out keeps the default.
    Objects merge key by key, so `{"platform":{"id":"p1"}}` keeps the default `platform.region`. A value written in
    the document, including `false`, `0` or an empty list, replaces the default.
+
+Write every key in lowercase, exactly as shown in this README. A key in another letter case is not reliably applied:
+where the defaults carry that key, it is silently ignored. `{"Components":{...}}` loads no components, `"URLs"` keeps
+the default URL, and `"JetStream":{"enabled":false}` leaves JetStream enabled (#325). The refused keys listed below
+are the exception: they are refused in any letter case.
 3. Apply the environment overrides.
 4. Check that `platform.org` and `platform.id` together leave room for the entity IDs this deployment will create
    (ADR-104).
@@ -100,7 +105,8 @@ The sections:
 
 Loading fails, and returns no `Config`, when:
 
-- The document is not exactly one JSON object, is larger than 10 MB, or nests deeper than 100 levels.
+- The document is not exactly one JSON object (a document that is `null` is refused too), is larger than 10 MB, or
+  nests deeper than 100 levels.
 - A value does not fit its field: for example `"urls": "nats://a:4222"` (a string where a list is expected), a
   fraction in `max_memory`, or an unknown key inside a `services` entry. The error carries the decoder's message.
 - The document sets a NATS setting that nothing in SemEngine applies yet. These keys are refused when present,
@@ -111,7 +117,8 @@ Loading fails, and returns no `Config`, when:
   for the same reason.
 - The document sets `platform.instance_id`, in any letter case.
 
-Other unknown keys at the top level, or inside `platform` or `nats`, are accepted and ignored.
+Other unknown keys at the top level, or inside `platform` or `nats`, are accepted and ignored, and so is a key in
+another letter case where the defaults carry that key (above).
 
 ### Which files LoadFile reads
 
@@ -129,7 +136,7 @@ These variables, when set and not empty, replace the document's value:
 | `SEMENGINE_PLATFORM_ID` | `platform.id` |
 | `SEMENGINE_PLATFORM_TYPE` | `platform.type` |
 | `SEMENGINE_PLATFORM_REGION` | `platform.region` |
-| `SEMENGINE_NATS_URLS` | `nats.urls`, split at commas |
+| `SEMENGINE_NATS_URLS` | `nats.urls`, split at commas; spaces are not trimmed, so write `a,b`, not `a, b` |
 
 An empty variable is the same as an unset one, so an override cannot set a value to empty.
 

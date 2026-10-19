@@ -435,6 +435,9 @@ func decodeObject(data []byte) (map[string]any, error) {
 	if err := dec.Decode(&m); err != nil {
 		return nil, err
 	}
+	if m == nil {
+		return nil, errors.New("the document is null, not a JSON object")
+	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return nil, errors.New("unexpected data after the JSON document")
 	}

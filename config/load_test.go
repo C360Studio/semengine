@@ -301,3 +301,16 @@ func TestLoad_RefusesTrailingData(t *testing.T) {
 		}
 	}
 }
+
+// TestLoad_RefusesNullDocument pins that a document is a JSON object: `null`
+// decodes into a nil map without error, and must not load as the defaults.
+func TestLoad_RefusesNullDocument(t *testing.T) {
+	for _, path := range loadPaths {
+		t.Run(path.name, func(t *testing.T) {
+			cfg, err := path.load(t, `null`)
+			require.Error(t, err, "a null document must not load as the defaults")
+			assert.Nil(t, cfg)
+			assert.Contains(t, err.Error(), "not a JSON object")
+		})
+	}
+}

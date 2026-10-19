@@ -20,9 +20,15 @@
 // document sets replaces the default, including false, 0 or an empty list; a
 // key it leaves out keeps the default; objects merge key by key.
 //
+// Write every key in lowercase, as the README shows it. A key in another
+// letter case is not reliably applied: where the defaults carry that key it is
+// silently ignored, so "Components", nats "URLs" or nats "JetStream" leave the
+// defaults in place (#325). The refused keys below are the exception: they are
+// refused in any letter case.
+//
 // Loading fails, returning no Config, when the document:
-//   - is not exactly one JSON object, is larger than 10 MB, or nests deeper
-//     than 100 levels;
+//   - is not exactly one JSON object (null is refused too), is larger than
+//     10 MB, or nests deeper than 100 levels;
 //   - has a value that does not fit its field, such as a string where a list
 //     is expected, or an unknown key inside a services entry (the error
 //     carries the decoder's message);
@@ -34,13 +40,15 @@
 //     These are refused when present, whatever their value and in any letter
 //     case, so a setting an operator wrote is never silently ignored (#74).
 //
-// Other unknown keys are accepted and ignored.
+// Other unknown keys are accepted and ignored, as are keys in another letter
+// case where the defaults carry that key (#325).
 //
 // # Environment overrides
 //
 // When set and not empty, SEMENGINE_PLATFORM_ID, SEMENGINE_PLATFORM_TYPE,
-// SEMENGINE_PLATFORM_REGION and SEMENGINE_NATS_URLS (comma-separated) replace
-// the document's platform.id, platform.type, platform.region and nats.urls.
+// SEMENGINE_PLATFORM_REGION and SEMENGINE_NATS_URLS replace the document's
+// platform.id, platform.type, platform.region and nats.urls. The URL list is
+// split at commas and spaces are not trimmed, so write a,b, not a, b.
 // Loading fails when SEMENGINE_NATS_USERNAME, SEMENGINE_NATS_PASSWORD or
 // SEMENGINE_NATS_TOKEN is set and not empty, naming the variable: those
 // credentials are not applied yet.

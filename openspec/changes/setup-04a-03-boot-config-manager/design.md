@@ -42,8 +42,8 @@ adapter) unless another test is named. As in graph-ingest's adapter
 - each done channel `Stop` waits on, listed while it is open.
 
 `Calls` is left empty: the suite compares whole observations around a call (`lifecycletest.go:243-294`), so a
-count the call itself bumps would always differ (task 2.1 finding). Watcher stops are counted on the server, through the KV
-backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190). This rests on
+count the call itself bumps would always differ (task 2.1 finding). Watcher stops are counted on the server,
+through the KV backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190). This rests on
 nats.go v1.54.0 behaviour (ADR-112, #170):
 
 - a KV watch is an ordered consumer created to be deleted on unsubscribe (`js.go:2026`);
@@ -152,7 +152,8 @@ Manager; all three call Stop on exit already.
   - `TestPushEncodingFailureFailsStart`, in a first-boot case and a newer-file case. It is driven by a service
     whose `config` is `json.RawMessage("{")`, which `encoding/json` refuses to marshal; the test is the probe. (A
     component with that config is refused earlier, when Start validates the configuration for the identity, so it
-    never reaches the push; task 2.1 finding.) Start fails naming the service, and the bucket holds no `services.*`, `components.*` or `version` key the push
+    never reaches the push; task 2.1 finding.) Start fails naming the service, and the bucket holds no
+    `services.*`, `components.*` or `version` key the push
     would have written. A push failing between two writes, from a broker fault, has no deterministic driver without
     fault injection or a test-only hook. It is not tested; its recovery is `TestRecoveryFromAnInterruptedPush` (D3);
   - `TestVersionReadErrorFailsStart` is not written: it needs a mid-operation fault (#185), and the branch is one

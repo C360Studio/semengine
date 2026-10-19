@@ -11,12 +11,12 @@ only when `task verify` passes on a clean tree at its commit (#171).
 
 ## 2. Port (D1, D2)
 
-- [ ] 2.1 Tests first, in `health/`: the pin's `helpers_test.go`, `status_test.go` and `security_test.go` with the
+- [x] 2.1 Tests first, in `health/`: the pin's `helpers_test.go`, `status_test.go` and `security_test.go` with the
   module path rewritten and D1's dropped tests removed; `helpers_test.go:30` checks the `Status` word; new rows in
   `TestFromComponentHealth` (`Healthy=false`, `Status:"degraded"` gives `unhealthy`) and `TestAggregate` (an unknown
   word and `""` give healthy); the row at the pin's `status_test.go:208-218` expects "Component unhealthy" (Q3, fix).
   Gate: the tests fail on the base (the package does not exist; note the compile error).
-- [ ] 2.2 `health/status.go`, `health/helpers.go` and `health/doc.go` from the pin with the module path rewritten;
+- [x] 2.2 `health/status.go`, `health/helpers.go` and `health/doc.go` from the pin with the module path rewritten;
   `monitor.go` not ported; `WithMetrics`, `WithSubStatus`, `IsHealthy` and `Metrics.MessagesProcessed` removed;
   the Q3 message change. Gate: `go test -race ./health/`; `task mutate:check` detects each
   mutant D2's Tests line names; `task verify` passes on a clean tree.

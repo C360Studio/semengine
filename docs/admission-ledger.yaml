@@ -2280,7 +2280,8 @@
   proving_tests: >-
     internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage),
     component/registry_boot_admission_test.go (TestRegistryRefusesASecondComponentOnATakenAddress,
-    TestRegistryRefusesOneComponentClaimingAnAddressTwice), registry_test.go, registry_integration_test.go,
+    TestRegistryRefusesOneComponentClaimingAnAddressTwice,
+    TestRegistryAdmitsComponentsOnDistinctOrSharedResources), registry_test.go, registry_integration_test.go,
     register_test.go, validation_test.go, schema_words_test.go, discovery_test.go
     (TestDiscoverableNeedsOnlyPortsHealthAndFlow)
   owner: setup-04a-02-ingest-kernel developer

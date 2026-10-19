@@ -4,7 +4,7 @@ base: `9ad64071e42ffeee734c6b25bcd1f37baf9873c2` (origin/main `e45977b` plus the
 `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, read from the pin tarball
 (`gh api repos/C360Studio/semstreams/tarball/8b99efe9`).
 
-Status: pending review (semengine-architect, 2026-10-19).
+Status: INVENTORY PASS (semengine-reviewer, 5fe3231).
 
 ## Admission
 

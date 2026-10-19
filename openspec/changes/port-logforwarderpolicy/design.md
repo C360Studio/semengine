@@ -97,3 +97,6 @@ and this package (the `internal/componentadmission` precedent)? The same PR deci
 (`058-boot-lifecycle-phases.md:56`) and ADR-098 decision 3 (logs carry substrate observability). Answers (a) and (b)
 keep Decision A. Answer (c) switches this PR to option D before task 2.1: a `defer-exclude` ledger row, as
 `model/wire` has, and no code lands.
+
+Owner answer, 2026-10-19: design accepted (Decision A); Q1 answered (b): `service`'s log-forwarder PR ports
+`LogForwarder` and says plainly that it forwards nothing yet.

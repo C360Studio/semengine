@@ -88,8 +88,7 @@ for _, w := range graph.ValidateStreamRequirements() {
 ```
 
 `ValidateStreamRequirements` returns one warning for each JetStream input port that a plain NATS output port feeds,
-naming every such publisher, sorted by subscriber component and port. A JetStream consumer reads from a stream, and a
-plain NATS publisher does not create one.
+naming each publishing component once, sorted by subscriber component and then port.
 
 ## Concurrency
 

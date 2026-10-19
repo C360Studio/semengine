@@ -179,6 +179,49 @@ func TestValidateStreamRequirementsFlagsCoreNATSPublishers(t *testing.T) {
 		assert.Equal(t, []string{"alpha", "bravo"}, warnings[0].PublisherComps)
 	})
 
+	t.Run("one publisher with two feeding ports is named once", func(t *testing.T) {
+		graph, err := BuildFromDeclarations([]component.Declaration{
+			declaration(t, "alpha", nil, []component.Port{
+				natsPort("new", component.DirectionOutput, "orders.new"),
+				natsPort("paid", component.DirectionOutput, "orders.paid"),
+			}),
+			declaration(t, "ledger", []component.Port{jetStreamInput}, nil),
+		})
+		require.NoError(t, err)
+		// Both ports feed the input, so a single name is the dedup, not a
+		// missing edge.
+		require.Len(t, graph.GetEdges(), 2)
+
+		warnings := graph.ValidateStreamRequirements()
+
+		require.Len(t, warnings, 1)
+		assert.Equal(t, []string{"alpha"}, warnings[0].PublisherComps)
+	})
+
+	t.Run("warnings sort by subscriber component, then port", func(t *testing.T) {
+		// "graph-index-spatial" sorts before "graph-index:" as a joined
+		// string ('-' < ':'), so only a component-first sort passes.
+		second := jetStreamInput
+		second.Name = "later"
+		graph, err := BuildFromDeclarations([]component.Declaration{
+			declaration(t, "alpha", nil, []component.Port{natsPort("out", component.DirectionOutput, "orders.new")}),
+			declaration(t, "graph-index-spatial", []component.Port{jetStreamInput}, nil),
+			declaration(t, "graph-index", []component.Port{second, jetStreamInput}, nil),
+		})
+		require.NoError(t, err)
+
+		var got [][2]string
+		for _, w := range graph.ValidateStreamRequirements() {
+			got = append(got, [2]string{w.SubscriberComp, w.SubscriberPort})
+		}
+
+		assert.Equal(t, [][2]string{
+			{"graph-index", "later"},
+			{"graph-index", "orders"},
+			{"graph-index-spatial", "orders"},
+		}, got)
+	})
+
 	t.Run("JetStream publisher", func(t *testing.T) {
 		jetStreamOutput := component.Port{
 			Name:      "out",

@@ -49,9 +49,8 @@
 // component is a problem is the reader's judgment.
 //
 // [FlowGraph.ValidateStreamRequirements] returns one warning for each
-// JetStream input port that a plain NATS output port feeds, naming the
-// publishing components. A JetStream consumer reads from a stream, and a plain
-// NATS publisher does not create one.
+// JetStream input port that a plain NATS output port feeds, naming each
+// publishing component once.
 //
 // # Concurrency
 //

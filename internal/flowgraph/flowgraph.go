@@ -1,6 +1,7 @@
 package flowgraph
 
 import (
+	"cmp"
 	"fmt"
 	"maps"
 	"slices"
@@ -605,7 +606,7 @@ func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]Com
 	}
 }
 
-// connectWatchPorts connects watch pattern ports (KV bucket observation)
+// validateKVWriters reports each KV bucket with more than one writer port.
 func (g *FlowGraph) validateKVWriters(publishers map[string][]ComponentPortRef, warnings *[]string) {
 	for _, connectionID := range slices.Sorted(maps.Keys(publishers)) {
 		if pubs := publishers[connectionID]; len(pubs) > 1 {
@@ -890,8 +891,8 @@ func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 }
 
 // ValidateStreamRequirements returns one warning for each JetStream input port
-// that a plain NATS output port feeds, naming every such publisher. A JetStream
-// consumer reads from a stream, and a plain NATS publisher does not create one.
+// that a plain NATS output port feeds, naming each such publishing component
+// once, sorted by subscriber component and then port.
 func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 	var warnings []StreamRequirementWarning
 
@@ -954,23 +955,32 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 		})
 	}
 
-	// Deduplicate warnings by subscriber port (multiple publishers may connect to same subscriber)
-	deduped := make(map[string]*StreamRequirementWarning)
+	// One warning per subscriber port, naming each publisher once: several
+	// publishers, or several ports of one publisher, may feed the same input.
+	type subscriberKey struct{ comp, port string }
+	deduped := make(map[subscriberKey]*StreamRequirementWarning)
 	for i := range warnings {
 		w := &warnings[i]
-		key := fmt.Sprintf("%s:%s", w.SubscriberComp, w.SubscriberPort)
-		if existing, ok := deduped[key]; ok {
-			// Merge publisher components
-			existing.PublisherComps = append(existing.PublisherComps, w.PublisherComps...)
-		} else {
+		key := subscriberKey{w.SubscriberComp, w.SubscriberPort}
+		existing, ok := deduped[key]
+		if !ok {
 			deduped[key] = w
+			continue
+		}
+		for _, name := range w.PublisherComps {
+			if !slices.Contains(existing.PublisherComps, name) {
+				existing.PublisherComps = append(existing.PublisherComps, name)
+			}
 		}
 	}
 
 	result := make([]StreamRequirementWarning, 0, len(deduped))
-	for _, key := range slices.Sorted(maps.Keys(deduped)) {
-		result = append(result, *deduped[key])
+	for _, w := range deduped {
+		result = append(result, *w)
 	}
+	slices.SortFunc(result, func(a, b StreamRequirementWarning) int {
+		return cmp.Or(cmp.Compare(a.SubscriberComp, b.SubscriberComp), cmp.Compare(a.SubscriberPort, b.SubscriberPort))
+	})
 
 	return result
 }

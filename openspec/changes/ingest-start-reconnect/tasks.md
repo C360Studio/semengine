@@ -5,8 +5,9 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`, round 1 at `c0299fd`); proposal and design pass pre-owner review
-  (`DESIGN REVIEW PASS`, round 2 at `a5d7d52`) and are accepted by the owner. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`, round 1 at `c0299fd`); proposal and design pass pre-owner review
+  (`DESIGN REVIEW PASS`, round 2 at `a5d7d52`) and are accepted by the owner
+  (2026-10-19, Enjoy conversation: "Accept as designed; no spec requirement"). Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Implementation
 

@@ -127,5 +127,7 @@ task 3.1's gate, defects A and B unfiled; LOWs). All applied in round 2; defects
 
 ## Owner questions
 
+Owner answer (2026-10-19): accepted as designed; no `graph-ingest-recovery` requirement.
+
 None required. Optional: should "Start waits for a reconnecting client" become a `graph-ingest-recovery`
 requirement? The default is no (D6).

@@ -112,7 +112,7 @@ otherwise:
   each of the five refusals and checks that `errors.Is(err, errs.ErrInvalidConfig)` holds and that the text holds
   none of `FlowGraph.`, `AddComponentNode`, `ConnectComponentsByPatterns`, `validateGraphMutationProviders`.
 
-Not designed, because the fix crosses the one-package boundary (owner questions Q3 and Q4 below):
+Not designed, because the fix crosses the one-package boundary (owner questions Q3 and Q4; filed as #323 and #324):
 
 - Finding 1a, the graph-mutation port shape checked in two places. `flowgraph`'s check stays in any case: it alone
   sees the whole graph, so it alone can count providers (ADR-091 §2). One home for "is this a valid provider port"
@@ -235,7 +235,7 @@ survivor is predicted. Results, any survivors (reported as survivors) and uncove
 ## Findings and filing
 
 R3 is fixed here, so nothing is filed for it. ADR-063 not being in `docs/adr` is #321, filed on the owner's word of
-2026-10-19. Findings 1a and 1b wait on Q3 and Q4.
+2026-10-19. Findings 1a and 1b are #323 and #324 (Q3, Q4).
 
 ## Merge order
 
@@ -251,16 +251,7 @@ Accepted by the owner on 2026-10-19: the design ("Accept").
   `composition`, ADR-091 stays covered by ADR-110, and ADR-063 is #321.
 - Q2 (optional findings), answered 2026-10-19: "let’s fix them so we do not create debt on simople fixes as we
   port". R8 to R14 are those fixes; Q3 and Q4 are the two that are not simple inside this package.
-
-Open, in plain words:
-
-- Q3. The check that a graph-mutation port has the right shape is written twice: once here, across the whole
-  graph, and once in graph-ingest, for its own port. Making it one function means editing `internal/graphmutation`
-  and graph-ingest as well as this package. Do it in this PR, or file an issue and do it in its own small PR? I
-  recommend the issue: it keeps this PR to one package.
-- Q4. The check that two components do not claim the same network address is written twice: here and in the
-  component registry, which runs first, when components are admitted. I would keep the registry's and delete this
-  one, but that needs a new test in `component` (none shows the registry refusing today), and it would start
-  accepting one component that lists the same address as both an input and an output, which this package refuses
-  today. Do it here, as its own issue, or keep both? I recommend its own issue, with the test added in `component`
-  first.
+- Q3 (graph-mutation port shape checked twice), answered 2026-10-19: "File an issue, separate small PR". Filed as
+  #323, blocked on this PR.
+- Q4 (exclusive network address checked twice), answered 2026-10-19: "Its own issue, component test first". Filed
+  as #324, blocked on this PR.

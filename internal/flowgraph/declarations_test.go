@@ -235,3 +235,35 @@ func TestFlowGraphOutputIsTheSameEveryRun(t *testing.T) {
 		}
 	})
 }
+
+// TestMatchNATSPatternIsSymmetric checks the one law edge derivation relies on
+// when it asks the matcher once per pair of connection IDs: the answer does not
+// depend on argument order. The subjects reach each case the matcher branches
+// on: equal, literal only, `*` and `>` on either or both sides, and different
+// lengths.
+func TestMatchNATSPatternIsSymmetric(t *testing.T) {
+	subjects := []string{
+		"a", "a.b", "a.c", "a.b.c",
+		"*", "a.*", "*.b", "a.*.c", "*.*",
+		">", "a.>", "a.b.>", "*.>",
+	}
+	var matched, unmatched int
+	for _, a := range subjects {
+		for _, b := range subjects {
+			forward, reverse := matchNATSPattern(a, b), matchNATSPattern(b, a)
+			if forward != reverse {
+				t.Errorf("matchNATSPattern(%q, %q) = %v, but matchNATSPattern(%q, %q) = %v",
+					a, b, forward, b, a, reverse)
+			}
+			if a != b && forward {
+				matched++
+			} else if !forward {
+				unmatched++
+			}
+		}
+	}
+	// The law is not checked over a set that never matches or always does.
+	if matched == 0 || unmatched == 0 {
+		t.Fatalf("the set must give both answers: %d distinct pairs matched, %d did not", matched, unmatched)
+	}
+}

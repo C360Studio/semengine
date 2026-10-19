@@ -259,9 +259,11 @@ func (g *FlowGraph) ConnectComponentsByPatterns() error {
 func (g *FlowGraph) validateGraphMutationProviders() error {
 	candidates := 0
 	providers := 0
-	for componentName, node := range g.nodes {
+	mutationPrefix := strings.TrimSuffix(graphmutation.SubjectFamily, ">")
+	for _, componentName := range g.sortedNodeNames() {
+		node := g.nodes[componentName]
 		for _, port := range append(append([]PortInfo(nil), node.InputPorts...), node.OutputPorts...) {
-			isMutation := (port.Pattern == component.PatternRequest && strings.HasPrefix(port.ConnectionID, "graph.mutation.")) ||
+			isMutation := (port.Pattern == component.PatternRequest && strings.HasPrefix(port.ConnectionID, mutationPrefix)) ||
 				(port.Interface != nil && port.Interface.Type == graphmutation.InterfaceType)
 			if !isMutation {
 				continue
@@ -865,7 +867,7 @@ func (g *FlowGraph) findConnectedComponents() [][]string {
 	}
 
 	// DFS to find connected components
-	for componentName := range g.nodes {
+	for _, componentName := range g.sortedNodeNames() {
 		if !visited[componentName] {
 			var cluster []string
 			g.dfs(componentName, adj, visited, &cluster)

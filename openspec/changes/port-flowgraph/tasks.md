@@ -11,7 +11,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 2. Port
 
-- [ ] 2.1 Tests first: the pin's seven test files in `internal/flowgraph` with the mock fitted (R2), the `GetNodes`
+- [x] 2.1 Tests first: the pin's seven test files in `internal/flowgraph` with the mock fitted (R2), the `GetNodes`
   test and reads and the `ConnectedEdges` assert changed as the design says (R4), R7's provider row, and the new
   `declarations_test.go` (R6, R3's test); then the pin's three `.go` files unchanged, the run recorded:
   `TestFlowGraphOutputIsTheSameEveryRun` and `TestReservedSubjectsDeclaredOnce` red. Then R1 and R3, both green.

@@ -15,7 +15,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   `go test -race ./internal/logforwarderpolicy` and `task ledger:check`.
 - [x] 2.2 `task mutate:check` for M1-M7 (detections) and S1-S5 (survivors recorded) in `notes/2.2.md`; `task verify`
   passes on a clean tree.
-- [ ] 2.3 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
+- [x] 2.3 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 
 ## 3. Close
 

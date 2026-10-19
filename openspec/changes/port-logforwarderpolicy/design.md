@@ -83,8 +83,8 @@ the retired flow-service source (`policy.go:14`, pin `service-composition` spec 
 
 ## Merge order
 
-The health port (#318) merges first, per the owner's order. This PR then merges `origin/main` and resolves the
-ledger append.
+Planned: the health port (#318) first. Done: the owner asked for this PR's merge on 2026-10-19 while #318 was still
+a draft, so this PR merged first and #318 resolves the ledger append when it merges `origin/main`.
 
 ## Owner question
 

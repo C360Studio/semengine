@@ -19,11 +19,13 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
   - `example_config.json` carried.
 
   Gate: the tests fail on the base (the package does not exist; note the compile error).
-- [ ] 2.2 `config.go`, `security.go`, `streams.go` from the pin with the module path rewritten and D1's surface
-  removed; `stream_bounds.go` and `stream_drift.go` byte-equal. Gate: `go test -race ./config/` and
+- [ ] 2.2 `config.go`, `security.go`, `streams.go` from the pin with the module path rewritten, D1's surface removed,
+  and D2 (Q1 ruled yes), D3 (Q2 ruled yes) and the `SEMENGINE_` prefix, which the 2.1 tests require;
+  `stream_bounds.go` and `stream_drift.go` byte-equal; the pin's `config/README.md` carried (rewrapped to 120
+  columns) as `readme_example_test.go`'s input until 3.1 cuts it. Gate: `go test -race ./config/` and
   `go test -tags integration ./config/` pass; `task verify` passes on a clean tree (review stop).
-- [ ] 2.3 D2 (as Q1 ruled), D3 (as Q2 ruled) and the `SEMENGINE_` prefix. Gate: `task mutate:check` detects each
-  mutant D5 names; `task verify` passes on a clean tree. If Q1 is answered yes, the PR body carries `Closes #74`.
+- [ ] 2.3 Sensitivity for D2, D3 and the prefix. Gate: `task mutate:check` detects each of the five mutants D5 names,
+  recorded in `notes/2.3.md`; `task verify` passes on a clean tree; the PR body carries `Closes #74`.
 
 ## 3. Text and ledger (D4, D6)
 

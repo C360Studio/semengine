@@ -16,7 +16,7 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 
 ## 2. Suite (tests first)
 
-- [ ] 2.1 `refowner_test.go` (D4): failpoint `workDiesWithStartContext` and its table row; the clean double's run
+- [x] 2.1 `refowner_test.go` (D4): failpoint `workDiesWithStartContext` and its table row; the clean double's run
   context survives the Start context; `TestAbortStopThenFinishJoinsWorker` reordered; `finalize` comments. The
   matrix is red until 2.2. Gate: `go test -race -count=1 ./internal/harness/lifecycletest/`, failures named in the
   note.

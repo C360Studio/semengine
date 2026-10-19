@@ -34,5 +34,5 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 3. Close
 
-- [ ] 3.1 Archive (`openspec archive port-flowgraph`) as the last content commit. Gate: `task spec:check` and
+- [x] 3.1 Archive (`openspec archive port-flowgraph`) as the last content commit. Gate: `task spec:check` and
   `task docs:check`.

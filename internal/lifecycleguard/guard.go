@@ -5,6 +5,9 @@
 // component acquires and releases stays in the functions it passes in, and a failed Start is rolled
 // back through pkg/lifecyclecleanup.
 //
+// The owner gives its cleanup once, to Start. A failed Start's rollback and every Stop run that
+// one function.
+//
 // Start and Stop refuse a nil context the same way, as invalid data. They answer a context that
 // has already ended differently: Start refuses it as invalid, since a Start given an ended context
 // cannot begin, while Stop returns the context's own error, as it does whenever its context ends
@@ -24,11 +27,14 @@ import (
 // is single use: once Start has been attempted past its refusals, or Stop has been called, a later
 // Start is refused with errs.ErrAlreadyStarted. From an admitted Start until a cleanup succeeds,
 // whether Start's rollback or a Stop's, the guard holds something to release and each Stop runs
-// cleanup again.
+// the recorded cleanup again.
 type Guard struct {
 	mu sync.Mutex
 	// used is set by the first admitted Start or the first Stop.
 	used bool
+	// cleanup is the function the admitted Start was given, set together with used. A Stop
+	// before any Start sets used and terminal at once, so Stop never runs an unset cleanup.
+	cleanup func(context.Context) error
 	// terminal is set once nothing is left to release: by a Stop before any Start, or by a
 	// rollback or cleanup that succeeded. Stop then returns nil and calls nothing.
 	terminal bool
@@ -38,12 +44,14 @@ type Guard struct {
 	startDone chan struct{}
 }
 
-// Start admits one Start and runs start, which acquires the owner's resources. Before start runs it
-// refuses a nil context as invalid data, a context already ended as invalid (the error wraps the
-// context's own), and a second Start with errs.ErrAlreadyStarted; a refused Start runs nothing and
-// leaves the guard as it was. When start returns an error or panics, cleanup runs through
-// lifecyclecleanup.RollbackFailedStart with ctx, and its error is joined into Start's; if that
-// rollback fails, the cleanup stays pending and the next Stop runs it again.
+// Start admits one Start, records cleanup as the owner's one cleanup, and runs start, which
+// acquires the owner's resources. Before start runs it refuses a nil context as invalid data, a
+// context already ended as invalid (the error wraps the context's own), and a second Start with
+// errs.ErrAlreadyStarted; a refused Start runs nothing, records nothing and leaves the guard as it
+// was, so the admitted Start's cleanup stays the one every Stop runs. When start returns an error
+// or panics, cleanup runs through lifecyclecleanup.RollbackFailedStart with ctx, and its error is
+// joined into Start's; if that rollback fails, the cleanup stays pending and the next Stop runs it
+// again.
 func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) error) (startErr error) {
 	if ctx == nil {
 		return nilContextError("Start")
@@ -57,7 +65,7 @@ func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) 
 		return errs.WrapFatal(errs.ErrAlreadyStarted, "lifecycleguard", "Start", "lifecycle already used")
 	}
 	done := make(chan struct{})
-	g.used, g.startDone = true, done
+	g.used, g.cleanup, g.startDone = true, cleanup, done
 	g.mu.Unlock()
 
 	committed := false
@@ -82,18 +90,19 @@ func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) 
 	return nil
 }
 
-// Stop runs cleanup and returns its result. A nil context is refused as invalid data, as Start
-// refuses it, and a context already ended returns the context's own error, unwrapped. Stop before
-// any Start runs nothing, returns nil and uses up the guard. Stop during a Start waits for that
-// Start to finish, or returns ctx's error first. When cleanup fails, it stays pending and the next
-// Stop runs it again. Once a cleanup or a failed Start's rollback has succeeded, Stop returns nil
-// and runs nothing. A Stop while another Stop runs cleanup is refused as transient.
+// Stop runs the cleanup the admitted Start recorded and returns its result. A nil context is
+// refused as invalid data, as Start refuses it, and a context already ended returns the context's
+// own error, unwrapped. Stop before any Start runs nothing, returns nil and uses up the guard. Stop
+// during a Start waits for that Start to finish, or returns ctx's error first. When cleanup fails,
+// it stays pending and the next Stop runs it again. Once a cleanup or a failed Start's rollback has
+// succeeded, Stop returns nil and runs nothing. A Stop while another Stop runs cleanup is refused
+// as transient.
 //
 // A cleanup that panics is not recovered, and it leaves the guard stuck: after a panic in a Stop's
 // cleanup every later Stop is refused as concurrent, and after a panic in a failed Start's rollback
 // every later Stop waits until its own context ends. This is the open defect #309; no caller
 // triggers it today.
-func (g *Guard) Stop(ctx context.Context, cleanup func(context.Context) error) error {
+func (g *Guard) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return nilContextError("Stop")
 	}
@@ -125,6 +134,7 @@ func (g *Guard) Stop(ctx context.Context, cleanup func(context.Context) error) e
 			return errs.WrapTransient(errors.New("stop already in progress"), "lifecycleguard", "Stop", "concurrent Stop is unsupported")
 		}
 		g.stopping = true
+		cleanup := g.cleanup
 		g.mu.Unlock()
 
 		err := cleanup(ctx)

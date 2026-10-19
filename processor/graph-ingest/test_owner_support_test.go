@@ -85,14 +85,22 @@ func startGuardAcquiringNothing(tb testing.TB, c *Component) {
 // leaveGuardCleanupPending puts c's lifecycle guard where the pin's struct literal put
 // a component whose Start failed and whose rollback failed (lifecycleUsed: true,
 // cleanupPending: true): the guard is used, and the next Stop runs c's cleanup (design
-// D22, guard.go's Start).
+// D22, guard.go's Start). The guard runs the one cleanup Start was given, so that
+// cleanup fails on its first call, the rollback, and runs c.release after that.
 func leaveGuardCleanupPending(tb testing.TB, c *Component) {
 	tb.Helper()
 	errStart := errors.New("setup: start fails")
 	errRollback := errors.New("setup: rollback fails")
+	rolledBack := false // the guard runs the cleanup one call at a time
 	err := c.lifecycle.Start(tb.Context(),
 		func(context.Context) error { return errStart },
-		func(context.Context) error { return errRollback })
+		func(ctx context.Context) error {
+			if !rolledBack {
+				rolledBack = true
+				return errRollback
+			}
+			return c.release(ctx)
+		})
 	if !errors.Is(err, errStart) || !errors.Is(err, errRollback) {
 		tb.Fatalf("guard Start that fails with a failing rollback = %v, want both causes", err)
 	}

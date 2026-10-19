@@ -41,7 +41,7 @@ func (o *owner) Start(ctx context.Context) error {
 }
 
 func (o *owner) Stop(ctx context.Context) error {
-	return o.g.Stop(ctx, o.release)
+	return o.g.Stop(ctx)
 }
 
 func (o *owner) acquire(context.Context) error {
@@ -185,7 +185,8 @@ func TestGuardFailedStopLeavesCleanupForNextStop(t *testing.T) {
 }
 
 // A Stop that arrives while Start is still acquiring waits for that Start to finish and then
-// releases what it acquired; a Stop whose own context ends first returns that context's error.
+// runs the cleanup that Start was given; a Stop whose own context ends first returns that
+// context's error.
 //
 // Requirement: lifecycle-suite/Portable floor
 func TestGuardStopWaitsForAnInFlightStart(t *testing.T) {
@@ -199,13 +200,13 @@ func TestGuardStopWaitsForAnInFlightStart(t *testing.T) {
 				close(entered)
 				<-proceed
 				return nil
-			}, func(context.Context) error { return nil })
+			}, func(context.Context) error { released++; return nil })
 		}()
 		<-entered
 
 		short, cancel := context.WithCancel(t.Context())
 		stopped := make(chan error, 1)
-		go func() { stopped <- g.Stop(short, func(context.Context) error { released++; return nil }) }()
+		go func() { stopped <- g.Stop(short) }()
 		synctest.Wait()
 		select {
 		case err := <-stopped:
@@ -217,7 +218,7 @@ func TestGuardStopWaitsForAnInFlightStart(t *testing.T) {
 			t.Fatalf("Stop whose context ended first = %v, want context.Canceled", err)
 		}
 
-		go func() { stopped <- g.Stop(t.Context(), func(context.Context) error { released++; return nil }) }()
+		go func() { stopped <- g.Stop(t.Context()) }()
 		synctest.Wait()
 		close(proceed)
 		if err := <-started; err != nil {
@@ -229,10 +230,11 @@ func TestGuardStopWaitsForAnInFlightStart(t *testing.T) {
 	})
 }
 
-// A Start whose acquisition panics still rolls back what it acquired before the panic continues.
+// A Start whose acquisition panics still rolls back what it acquired before the panic continues,
+// and once that rollback has succeeded a Stop does not run the cleanup again: it runs once in all.
 func TestGuardRollsBackAPanickingStart(t *testing.T) {
 	var g Guard
-	rolledBack := false
+	cleanups := 0
 	func() {
 		defer func() {
 			if recover() == nil {
@@ -240,26 +242,23 @@ func TestGuardRollsBackAPanickingStart(t *testing.T) {
 			}
 		}()
 		_ = g.Start(t.Context(), func(context.Context) error { panic("acquire") },
-			func(context.Context) error { rolledBack = true; return nil })
+			func(context.Context) error { cleanups++; return nil })
 	}()
-	if !rolledBack {
-		t.Fatal("a panicking Start did not roll back")
+	if cleanups != 1 {
+		t.Fatalf("a panicking Start ran its cleanup %d time(s), want one rollback", cleanups)
 	}
-	if err := g.Stop(t.Context(), func(context.Context) error {
-		t.Fatal("Stop ran cleanup after a rollback that succeeded")
-		return nil
-	}); err != nil {
+	if err := g.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop after the rolled-back Start = %v", err)
+	}
+	if cleanups != 1 {
+		t.Fatalf("Start's rollback and a later Stop ran the cleanup %d time(s) in all, want 1", cleanups)
 	}
 }
 
 // Stop before Start uses up the guard: a later Start is refused before acquiring anything.
 func TestGuardStopBeforeStartRefusesLaterStart(t *testing.T) {
 	var g Guard
-	if err := g.Stop(t.Context(), func(context.Context) error {
-		t.Fatal("Stop before Start ran cleanup")
-		return nil
-	}); err != nil {
+	if err := g.Stop(t.Context()); err != nil {
 		t.Fatalf("Stop before Start = %v", err)
 	}
 	err := g.Start(t.Context(), func(context.Context) error {
@@ -323,7 +322,7 @@ func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 			if err := g.Start(t.Context(), none, counted); err != nil {
 				t.Fatalf("Start before %s = %v", call, err)
 			}
-			err = g.Stop(r.ctx, counted)
+			err = g.Stop(r.ctx)
 		}
 		if r.ctx == nil {
 			nilErrs[r.method] = err
@@ -338,7 +337,7 @@ func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 		if r.method == "Start" {
 			err = g.Start(t.Context(), counted, none)
 		} else {
-			err = g.Stop(t.Context(), counted)
+			err = g.Stop(t.Context())
 		}
 		if err != nil || runs != 1 {
 			t.Errorf("live %s after %s = %v with %d run(s), want nil and one", r.method, call, err, runs)
@@ -372,11 +371,11 @@ func TestGuardRefusesAConcurrentStop(t *testing.T) {
 		}
 
 		stopA := make(chan error, 1)
-		go func() { stopA <- g.Stop(t.Context(), cleanup) }()
+		go func() { stopA <- g.Stop(t.Context()) }()
 		<-entered
 
 		stopB := make(chan error, 1)
-		go func() { stopB <- g.Stop(t.Context(), cleanup) }()
+		go func() { stopB <- g.Stop(t.Context()) }()
 		synctest.Wait()
 		select {
 		case err := <-stopB:
@@ -394,11 +393,42 @@ func TestGuardRefusesAConcurrentStop(t *testing.T) {
 		if err := <-stopA; err != nil {
 			t.Errorf("first Stop = %v, want nil", err)
 		}
-		if err := g.Stop(t.Context(), cleanup); err != nil {
+		if err := g.Stop(t.Context()); err != nil {
 			t.Errorf("third Stop = %v, want nil", err)
 		}
 		if n := runs.Load(); n != 1 {
 			t.Errorf("cleanup ran %d time(s), want 1", n)
 		}
 	})
+}
+
+// Stop runs the cleanup the admitted Start was given. A second Start is refused and records
+// nothing, so its cleanup never runs: Stop runs the first Start's cleanup once, and a repeated
+// Stop runs nothing.
+func TestGuardStopRunsTheCleanupStartWasGiven(t *testing.T) {
+	var g Guard
+	callsA, callsB := 0, 0
+	acquire := func(context.Context) error { return nil }
+	if err := g.Start(t.Context(), acquire, func(context.Context) error { callsA++; return nil }); err != nil {
+		t.Fatalf("first Start = %v, want nil", err)
+	}
+	err := g.Start(t.Context(), acquire, func(context.Context) error { callsB++; return nil })
+	if !errors.Is(err, errs.ErrAlreadyStarted) {
+		t.Errorf("second Start = %v, want ErrAlreadyStarted", err)
+	}
+
+	if err := g.Stop(t.Context()); err != nil {
+		t.Errorf("Stop = %v, want nil", err)
+	}
+	// B's count first, and t.Errorf for both: the refused Start's line prints whatever else fails.
+	if callsB != 0 {
+		t.Errorf("Stop ran the refused Start's cleanup %d time(s), want 0", callsB)
+	}
+	if callsA != 1 {
+		t.Errorf("Stop ran the admitted Start's cleanup %d time(s), want 1", callsA)
+	}
+
+	if err := g.Stop(t.Context()); err != nil || callsA != 1 || callsB != 0 {
+		t.Errorf("repeated Stop = %v with calls A %d, B %d, want nil, 1, 0", err, callsA, callsB)
+	}
 }

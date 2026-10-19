@@ -1066,24 +1066,22 @@ func (c *Component) startStatusMetricsLoop(ctx context.Context) {
 	}()
 }
 
-// Stop gracefully shuts down the component through the guard: Stop before Start
-// releases nothing; Stop during Start waits for it, or returns ctx's error first; a
-// Stop whose release fails keeps it pending, and the next Stop runs it again; after a
-// release that succeeded, Stop returns nil and runs nothing.
+// Stop gracefully shuts down the component through the guard, which runs release, the
+// cleanup Start gave it: Stop before Start releases nothing; Stop during Start waits for
+// it, or returns ctx's error first; a Stop whose release fails keeps it pending, and the
+// next Stop runs it again; after a release that succeeded, Stop returns nil and runs
+// nothing. Stop logs nothing itself: release logs "component stopped gracefully" when
+// it succeeds.
 func (c *Component) Stop(ctx context.Context) error {
-	return c.lifecycle.Stop(ctx, func(ctx context.Context) error {
-		if err := c.release(ctx); err != nil {
-			return err
-		}
-		c.logger.Info("component stopped gracefully", slog.String("component", "graph-ingest"))
-		return nil
-	})
+	return c.lifecycle.Stop(ctx)
 }
 
 // release is the cleanup the guard runs, for a Stop or for a failed Start's rollback.
 // The handles stay set when cleanup fails, so the next Stop releases them again; they
 // are cleared only by a cleanup that succeeded (design D22). A consumer whose drain was
-// already issued is not drained again (drainIssued).
+// already issued is not drained again (drainIssued). Each release that succeeds logs
+// "component stopped gracefully" once, after the handles are cleared, whether it ran
+// for a Stop or for a failed Start's rollback; one that fails logs nothing.
 func (c *Component) release(ctx context.Context) error {
 	c.mu.Lock()
 	c.running = false
@@ -1092,6 +1090,7 @@ func (c *Component) release(ctx context.Context) error {
 		return err
 	}
 	c.clearLifecycleHandles()
+	c.logger.Info("component stopped gracefully", slog.String("component", "graph-ingest"))
 	return nil
 }
 

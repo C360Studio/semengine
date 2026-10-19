@@ -24,7 +24,7 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
   `stream_bounds.go` and `stream_drift.go` byte-equal; the pin's `config/README.md` carried (rewrapped to 120
   columns) as `readme_example_test.go`'s input until 3.1 cuts it. Gate: `go test -race ./config/` and
   `go test -tags integration ./config/` pass; `task verify` passes on a clean tree (review stop).
-- [ ] 2.3 Sensitivity for D2, D3 and the prefix. Gate: `task mutate:check` detects each of the five mutants D5 names,
+- [x] 2.3 Sensitivity for D2, D3 and the prefix. Gate: `task mutate:check` detects each of the five mutants D5 names,
   recorded in `notes/2.3.md`; `task verify` passes on a clean tree; the PR body carries `Closes #74`.
 
 ## 3. Text and ledger (D4, D6)

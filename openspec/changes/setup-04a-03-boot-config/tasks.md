@@ -6,7 +6,7 @@ ends only when `task verify` passes on a clean tree at its commit (#171).
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`). Proposal, design and spec delta pass pre-owner review and are
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`). Proposal, design and spec delta pass pre-owner review and are
   accepted by the owner, with Q1 and Q2 answered. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Port (D1-D5)

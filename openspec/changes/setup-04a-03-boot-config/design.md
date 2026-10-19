@@ -215,6 +215,8 @@ How `ledger:check` reads these rows:
 
 ## Owner questions
 
+Both answered yes by the owner on 2026-10-19, and the design accepted (#9 comment 6275744386).
+
 - **Q1 (D2).** Should loading refuse the NATS username, password, token, TLS block, reconnect settings and the three
   unused JetStream keys, in the file or in the `SEMENGINE_` environment, naming each key or variable, until boot wires
   them? Cost: none of the 28 consumer config files sets these keys, and no consumer sets these variables.

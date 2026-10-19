@@ -27,7 +27,7 @@ Pin `8b99efe9`. Ledger row: `internal/logforwarderpolicy` (below).
   ruling names them): the two level spellings, the copied strict decode, the ignored `ValidateFields` parameter and
   the doc comment naming boot composition. Retained; the cost is recorded here.
 - The `flow-service.websocket` default is dead behaviour. It is carried because the pin spec requires it and its home
-  is `service`'s log-forwarder PR; filed as an issue, not fixed here.
+  is `service`'s log-forwarder PR; raised with the owner in Q1, not fixed here.
 - No spec capability: the package has no observable surface outside the module until `service` lands. The contract
   line is the ledger row's `contract` field; the requirement belongs in `service`'s PR (the pin keeps it in
   `service-composition`). Examples suffice over generated checks: the code is carried with its tests unchanged, and

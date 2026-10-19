@@ -53,8 +53,11 @@ Two caveats:
 
 - An ordered-consumer reset deletes the old consumer in the background (`js.go:2390`, `:2425`). The adapter
   therefore polls the count with `probe.Await` under a bound, and never reads it once.
-- The pin ignores `Stop`'s error (`manager.go:509`). The port's `Stop` joins each watcher's stop error into its
-  result, so a failed unsubscribe is reported, not counted as a stop.
+- The pin ignores a watcher's stop error (`manager.go:509`). The port keeps that and logs the error at WARN; `Stop`
+  does not return it (owner ruling Q4, #9 comment 6278986482). Returning it would make every later `Stop` fail after
+  one failed unsubscribe during a broker outage, because a second `Unsubscribe` returns `ErrBadSubscription`
+  (`nats.go:5400-5404`). A watcher whose unsubscribe failed leaves its consumer on the server, so the count still
+  shows it.
 
 - `Start(ctx)` does its startup work under `ctx`: acquire, identity, arbitration, opening the watches. It refuses
   nil, an ended context and a second call (`errs.ErrAlreadyStarted`). A refused or failed Start holds nothing and
@@ -218,6 +221,9 @@ Manager; all three call Stop on exit already.
 (`ComponentManager`) follows this PR.
 
 ## Owner questions
+
+All answered on 2026-10-19 (#9 comment 6278986482): Q1, Q2 and Q3 yes; the Stop-error question (Q4, the open
+MEDIUM after three review rounds) kept as at the pin. The design is accepted.
 
 - **Q1 (D2).** Should `Stop` take a context, `Start` refuse a second call, and the Manager keep running when the
   context passed to `Start` ends, as ADR-113 says for components? Cost: one line in each of semsource, semteams and

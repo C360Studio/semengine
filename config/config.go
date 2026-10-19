@@ -1,9 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -395,8 +397,8 @@ func (l *Loader) applyEnvAndReserve(cfg *Config) (*Config, error) {
 	return cfg, nil
 }
 
-// loadRawJSONFromBytes parses JSON bytes into a configuration map.
-// This follows the same validation as loadRawJSON but without file I/O.
+// loadRawJSONFromBytes parses JSON bytes into a configuration map. Both
+// loaders parse through it, so their rules cannot diverge.
 func (l *Loader) loadRawJSONFromBytes(data []byte) (map[string]any, error) {
 	// Validate size to prevent DoS
 	if len(data) > maxConfigSize {
@@ -408,9 +410,8 @@ func (l *Loader) loadRawJSONFromBytes(data []byte) (map[string]any, error) {
 		return nil, fmt.Errorf("invalid JSON structure: %w", err)
 	}
 
-	// Unmarshal into map
-	var rawConfig map[string]any
-	if err := json.Unmarshal(data, &rawConfig); err != nil {
+	rawConfig, err := decodeObject(data)
+	if err != nil {
 		return nil, err
 	}
 	if err := rejectRemovedPlatformFields(rawConfig); err != nil {
@@ -421,6 +422,23 @@ func (l *Loader) loadRawJSONFromBytes(data []byte) (map[string]any, error) {
 	}
 
 	return rawConfig, nil
+}
+
+// decodeObject decodes exactly one JSON value into a map, keeping each number
+// as written (json.Number). A float64 would round an integer above 2^53 in a
+// component's raw config, and would round 1.0000000000000001 to an integer an
+// int64 field accepts, before the merge's typed decode sees it.
+func decodeObject(data []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(data))
+	dec.UseNumber()
+	var m map[string]any
+	if err := dec.Decode(&m); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return nil, errors.New("unexpected data after the JSON document")
+	}
+	return m, nil
 }
 
 // getDefaults returns default configuration
@@ -449,32 +467,13 @@ func (l *Loader) getDefaults() *Config {
 	}
 }
 
-// loadRawJSON loads configuration from a JSON file as a map
+// loadRawJSON loads configuration from a JSON file as a map.
 func (l *Loader) loadRawJSON(path string) (map[string]any, error) {
-	// Use secure file reading with validation
 	data, err := safeReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-
-	// Validate JSON depth to prevent DoS
-	if err := validateJSONDepth(data); err != nil {
-		return nil, fmt.Errorf("invalid JSON structure: %w", err)
-	}
-
-	// Unmarshal into map
-	var rawConfig map[string]any
-	if err := json.Unmarshal(data, &rawConfig); err != nil {
-		return nil, err
-	}
-	if err := rejectRemovedPlatformFields(rawConfig); err != nil {
-		return nil, err
-	}
-	if err := rejectUnappliedNATSKeys(rawConfig); err != nil {
-		return nil, err
-	}
-
-	return rawConfig, nil
+	return l.loadRawJSONFromBytes(data)
 }
 
 // mergeFromMap merges configuration from a raw map, only overriding fields
@@ -485,8 +484,8 @@ func (l *Loader) mergeFromMap(base *Config, override map[string]any) (*Config, e
 	if err != nil {
 		return nil, err
 	}
-	var baseMap map[string]any
-	if err := json.Unmarshal(baseJSON, &baseMap); err != nil {
+	baseMap, err := decodeObject(baseJSON)
+	if err != nil {
 		return nil, err
 	}
 
@@ -673,13 +672,12 @@ var removedPlatformFields = map[string]string{
 
 // rejectRemovedPlatformFields fails the load when a withdrawn platform field is
 // present, naming its replacement.
+//
+// Keys match in any letter case, as encoding/json matches field names.
 func rejectRemovedPlatformFields(raw map[string]any) error {
-	platform, ok := raw["platform"].(map[string]any)
-	if !ok {
-		return nil
-	}
+	platform := objectsFolded([]map[string]any{raw}, "platform")
 	for field, guidance := range removedPlatformFields {
-		if _, found := platform[field]; found {
+		if hasKeyFolded(platform, field) {
 			return fmt.Errorf("config field platform.%s was %s", field, guidance)
 		}
 	}

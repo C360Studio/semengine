@@ -217,3 +217,87 @@ func TestLoadFromBytes_RoundTrip(t *testing.T) {
 	require.NoError(t, err, "a loaded Config, marshalled, must load again")
 	assert.Equal(t, loaded, reloaded)
 }
+
+// TestLoad_RefusesRemovedInstanceIDInAnyCase pins the ADR-102 refusal against
+// letter case: encoding/json matches field names case-insensitively, so a case
+// variant of platform or instance_id is the same withdrawn field, and it must
+// fail the load rather than be dropped.
+func TestLoad_RefusesRemovedInstanceIDInAnyCase(t *testing.T) {
+	documents := map[string]string{
+		"field in capitals":  `{"platform":{"org":"acme","id":"p1","INSTANCE_ID":"x"}}`,
+		"parent capitalised": `{"Platform":{"org":"acme","id":"p1","instance_id":"x"}}`,
+		"second platform key": `{"platform":{"org":"acme","id":"p1"},` +
+			`"PLATFORM":{"Instance_Id":"x"}}`,
+	}
+	for _, path := range loadPaths {
+		for name, document := range documents {
+			t.Run(path.name+"/"+name, func(t *testing.T) {
+				cfg, err := path.load(t, document)
+				require.Error(t, err, "a case variant of platform.instance_id must not load")
+				assert.Nil(t, cfg)
+				assert.Contains(t, err.Error(), "instance_id")
+				assert.Contains(t, err.Error(), "platform.id")
+			})
+		}
+	}
+}
+
+// TestLoad_PreservesNumbers pins that the merge keeps each JSON number as
+// written. Component and service payloads are carried as raw JSON for their
+// owners to decode, so an integer above 2^53 must arrive exactly, not rounded
+// through a float64; and an int64 field takes its full range.
+func TestLoad_PreservesNumbers(t *testing.T) {
+	const document = `{
+		"platform": {"org": "acme", "id": "p1"},
+		"nats": {"jetstream": {"max_memory": 9223372036854775807}},
+		"services": {"metrics": {"enabled": true, "config": {"offset": 9007199254740993}}},
+		"components": {"x": {"type": "input", "name": "udp", "enabled": true, "config": {"offset": 9007199254740993}}}
+	}`
+	for _, path := range loadPaths {
+		t.Run(path.name, func(t *testing.T) {
+			cfg, err := path.load(t, document)
+			require.NoError(t, err)
+			assert.Equal(t, `{"offset":9007199254740993}`, string(cfg.Components["x"].Config))
+			assert.Equal(t, `{"offset":9007199254740993}`, string(cfg.Services["metrics"].Config))
+			assert.Equal(t, int64(9223372036854775807), cfg.NATS.JetStream.MaxMemory)
+		})
+	}
+}
+
+// TestLoad_RefusesNumberThatDoesNotFitItsField pins D3 for numbers: a value
+// json.Unmarshal into the field refuses must not load, even where a float64
+// would round it to one that fits.
+func TestLoad_RefusesNumberThatDoesNotFitItsField(t *testing.T) {
+	documents := map[string]string{
+		"nonintegral just above 1": `{"platform":{"org":"acme","id":"p1"},` +
+			`"nats":{"jetstream":{"max_memory":1.0000000000000001}}}`,
+		"nonintegral": `{"platform":{"org":"acme","id":"p1"},"nats":{"jetstream":{"max_memory":1.5}}}`,
+	}
+	for _, path := range loadPaths {
+		for name, document := range documents {
+			t.Run(path.name+"/"+name, func(t *testing.T) {
+				cfg, err := path.load(t, document)
+				require.Error(t, err, "a nonintegral value in an integer field must not load")
+				assert.Nil(t, cfg)
+				assert.Contains(t, err.Error(), "max_memory")
+			})
+		}
+	}
+}
+
+// TestLoad_RefusesTrailingData pins that a document is exactly one JSON value.
+func TestLoad_RefusesTrailingData(t *testing.T) {
+	documents := map[string]string{
+		"second document": validDocument + ` {}`,
+		"trailing text":   validDocument + ` x`,
+	}
+	for _, path := range loadPaths {
+		for name, document := range documents {
+			t.Run(path.name+"/"+name, func(t *testing.T) {
+				cfg, err := path.load(t, document)
+				require.Error(t, err, "data after the document must not load")
+				assert.Nil(t, cfg)
+			})
+		}
+	}
+}

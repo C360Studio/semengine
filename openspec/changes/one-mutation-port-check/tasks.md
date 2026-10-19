@@ -28,7 +28,7 @@ on a clean tree at its commit (#171).
 
 ## 4. Docs
 
-- [ ] 4.1 Docs, the three ledger rows and the spec delta are true of the code; `task verify` passes on a clean tree.
+- [x] 4.1 Docs, the three ledger rows and the spec delta are true of the code; `task verify` passes on a clean tree.
   Gate: `task verify`.
 
 ## 5. Review and close

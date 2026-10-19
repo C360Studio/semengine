@@ -79,11 +79,11 @@ Line numbers in this table are at the commit that lands task 4.1.
 
 | Ruling (#323 comment 6279624359) | Where it is implemented | Where it is proved |
 | --- | --- | --- |
-| Q1: membership is the interface type, or any NATS subject on `graph.mutation.` | `internal/graphmutation/port.go:28-35` | `internal/graphmutation/port_test.go`, `TestClassifyPort` |
-| Q1: graph-ingest refuses a prefix member that is not valid | `processor/graph-ingest/canonical_mutations.go:115-124` | `processor/graph-ingest/mutation_port_contract_test.go`, `TestConfigValidateMutationProviderRefusals`, row "jetstream input with one graph.mutation subject" |
-| Q1: flowgraph refuses a prefix member that is not valid | `internal/flowgraph/flowgraph.go:205-216` | `internal/flowgraph/graph_mutation_contract_test.go`, `TestGraphMutationFlowRejectsInvalidProviderTopology`, rows "nats output on a graph.mutation subject" and "jetstream output with one graph.mutation subject" |
-| Q2: graph-ingest's texts unchanged | `processor/graph-ingest/canonical_mutations.go:106,119,124,129` | `TestConfigValidateMutationProviderRefusals`, literal texts |
-| Q2: flowgraph's texts unchanged | `internal/flowgraph/flowgraph.go:214,230` | `declarations_test.go`, `TestRefusalsNameNoInternalFunction`, literal texts |
+| Q1: membership is the interface type, or any NATS subject on `graph.mutation.` | `internal/graphmutation/port.go:27-28` (member), `:32-34` (valid) | `internal/graphmutation/port_test.go:13`, `TestClassifyPort` |
+| Q1: graph-ingest refuses a prefix member that is not valid | `processor/graph-ingest/canonical_mutations.go:117-129` | `processor/graph-ingest/mutation_port_contract_test.go:85`, `TestConfigValidateMutationProviderRefusals`, row "jetstream input with one graph.mutation subject" |
+| Q1: flowgraph refuses a prefix member that is not valid | `internal/flowgraph/flowgraph.go:204-212` | `internal/flowgraph/graph_mutation_contract_test.go:76`, `TestGraphMutationFlowRejectsPrefixMembersOfEveryKind`, a `nats` output and a JetStream output |
+| Q2: graph-ingest's texts unchanged | `processor/graph-ingest/canonical_mutations.go:105,122,126,133` | `TestConfigValidateMutationProviderRefusals`, literal texts |
+| Q2: flowgraph's texts unchanged | `internal/flowgraph/flowgraph.go:210,223` | `internal/flowgraph/declarations_test.go:370,378`, `TestRefusalsNameNoInternalFunction`, literal texts |
 | Q2: graph-ingest's text naming no port is out of scope | not changed | filed as #331, which stays open |
 
 ## Tasks
@@ -105,7 +105,7 @@ has the prefix; valid when member and five shape conditions all hold. It has no 
 (each port is classified on its own, and each caller's count is a plain tally). The input does interact, so the
 example tests cover it this way:
 
-- **Membership.** Each way in is a row of `TestClassifyPort`: the interface type alone (an untyped subject outside the
+- **Membership.** Each way in is a row of `TestClassifyPort`: the interface type alone (a typed port off the
   family), the prefix alone (an untyped `graph.mutation.entity.create`), the prefix as the second subject of a
   JetStream port, and neither (an unrelated port, not a member). A wrong interface type with a family subject is a
   member through the prefix.

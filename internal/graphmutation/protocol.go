@@ -1,5 +1,7 @@
 // Package graphmutation owns the in-repository graph mutation protocol identity.
 // Application callers use narrow typed clients rather than subjects directly.
+// ClassifyPort decides whether a component port is a graph-mutation port and
+// whether it has the valid shape; flowgraph and graph-ingest both call it.
 package graphmutation
 
 import (

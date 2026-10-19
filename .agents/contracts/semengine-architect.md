@@ -408,13 +408,13 @@ yes, the framework absorbing the failure IS the design, and the adopter-facing k
   use context-aware standard APIs when available. Callers never pass nil. Exported context-taking boundaries reject
   nil when they can return an error; private helpers rely on the caller invariant. Nothing defaults nil to
   `context.Background`.
-- **Detachment is terminal and bounded.** Permit it only for terminal cleanup or finalization, or an already-accepted
-  durability operation whose invariant requires bounded completion after owner cancellation. `context.WithTimeout`
-  is the immediate boundary. With a parent, use `context.WithTimeout(context.WithoutCancel(parent), budget)`. A
-  timeout-only `Stop` or equivalent terminal finalizer with no parent contract may use
-  `context.WithTimeout(context.Background(), budget)`. Work completes synchronously or joins before return and never
-  feeds `Start`, `Run`, `Watch`, or continuing work. Nested child cancellation is allowed beneath the bounded context
-  only when all tasks join.
+- **Detachment is terminal and bounded.** Permit it only for terminal cleanup or finalization (a lifecycle owner's one
+  run context is the exception stated above), or an already-accepted durability operation whose invariant requires
+  bounded completion after owner cancellation. `context.WithTimeout` is the immediate boundary. With a parent, use
+  `context.WithTimeout(context.WithoutCancel(parent), budget)`. A timeout-only `Stop` or equivalent terminal finalizer
+  with no parent contract may use `context.WithTimeout(context.Background(), budget)`. Work completes synchronously or
+  joins before return and never feeds `Start`, `Run`, `Watch`, or continuing work. Nested child cancellation is allowed
+  beneath the bounded context only when all tasks join.
 - **Cancellation authority stays private.** A lifecycle owner may retain only a private, correctly synchronized
   `context.CancelFunc`; it may not retain the context itself. Design exported `context.CancelFunc` hits out.
 - **Specify behaviour, not mechanism.** For concurrent and lifecycle work the design states what a caller can

@@ -14,8 +14,8 @@ on a clean tree at its commit (#171).
 
 ## 2. The shared decision
 
-- [ ] 2.1 `TestClassifyPort`, red (does not compile), the run recorded.
-- [ ] 2.2 `ClassifyPort` implemented; 2.1 green; mutants (a) and (b) detected by `task mutate:check`; the coverage
+- [x] 2.1 `TestClassifyPort`, red (does not compile), the run recorded.
+- [x] 2.2 `ClassifyPort` implemented; 2.1 green; mutants (a) and (b) detected by `task mutate:check`; the coverage
   floor holds. Gate: `go test -race ./internal/graphmutation` and `task cover:check`.
 
 ## 3. Callers

@@ -31,10 +31,8 @@ type portInfo struct {
 	Direction    component.Direction
 	ConnectionID string // Subject, bucket, or network address
 	Pattern      component.InteractionPattern
-	Interface    *component.InterfaceContract
 	Required     bool // Whether this port is required for the component to function
-	kind         component.PortKind
-	natsSubjects []string
+	facts        component.PortFacts
 }
 
 // FlowEdge represents a connection between two component ports
@@ -149,19 +147,13 @@ func (g *FlowGraph) extractPortInfo(
 		if len(connections) == 0 {
 			return nil, fmt.Errorf("port %q has no connection identity", port.Name)
 		}
-		var interfaceContract *component.InterfaceContract
-		if contract, ok := facts.Interface(); ok {
-			interfaceContract = &contract
-		}
 		info := portInfo{
 			Name:         port.Name,
 			Direction:    port.Direction,
 			ConnectionID: connections[0],
 			Pattern:      facts.InteractionPattern(),
-			Interface:    interfaceContract,
 			Required:     port.Required,
-			kind:         facts.Kind(),
-			natsSubjects: facts.NATSSubjects(),
+			facts:        facts,
 		}
 
 		result = append(result, info)
@@ -206,19 +198,15 @@ func (g *FlowGraph) connectComponentsByPatterns() error {
 func (g *FlowGraph) validateGraphMutationProviders() error {
 	candidates := 0
 	providers := 0
-	mutationPrefix := strings.TrimSuffix(graphmutation.SubjectFamily, ">")
 	for _, componentName := range g.sortedNodeNames() {
 		node := g.nodes[componentName]
 		for _, port := range append(append([]portInfo(nil), node.InputPorts...), node.OutputPorts...) {
-			isMutation := (port.Pattern == component.PatternRequest && strings.HasPrefix(port.ConnectionID, mutationPrefix)) ||
-				(port.Interface != nil && port.Interface.Type == graphmutation.InterfaceType)
-			if !isMutation {
+			member, valid := graphmutation.ClassifyPort(port.facts, port.Required)
+			if !member {
 				continue
 			}
 			candidates++
-			if port.Pattern != component.PatternRequest || port.ConnectionID != graphmutation.SubjectFamily ||
-				port.Interface == nil || port.Interface.Type != graphmutation.InterfaceType ||
-				port.Interface.Version != graphmutation.InterfaceVersion || !port.Required {
+			if !valid {
 				return fmt.Errorf("component %s port %s is not a required nats-request %s %s port on %s: %w",
 					componentName, port.Name, graphmutation.InterfaceType, graphmutation.InterfaceVersion,
 					graphmutation.SubjectFamily, errs.ErrInvalidConfig)
@@ -263,8 +251,8 @@ func (g *FlowGraph) portsByConnection(direction component.Direction) map[compone
 			}
 			byConnection[port.ConnectionID] = append(byConnection[port.ConnectionID], portRef)
 
-			if port.kind == component.PortKindJetStream && port.ConnectionID != "" {
-				for _, subject := range port.natsSubjects {
+			if port.facts.Kind() == component.PortKindJetStream && port.ConnectionID != "" {
+				for _, subject := range port.facts.NATSSubjects() {
 					if subject != "" && subject != port.ConnectionID {
 						byConnection[subject] = append(byConnection[subject], portRef)
 					}
@@ -853,7 +841,7 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 		}
 
 		// Check if subscriber is JetStream
-		if subscriberPort.kind != component.PortKindJetStream {
+		if subscriberPort.facts.Kind() != component.PortKindJetStream {
 			continue // Subscriber is not JetStream, no stream requirement
 		}
 
@@ -875,7 +863,7 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 		}
 
 		// Check if publisher is NOT JetStream (i.e., won't create stream)
-		if publisherPort.kind == component.PortKindJetStream {
+		if publisherPort.facts.Kind() == component.PortKindJetStream {
 			continue // Publisher is JetStream, will create stream - OK
 		}
 
@@ -883,7 +871,7 @@ func (g *FlowGraph) ValidateStreamRequirements() []StreamRequirementWarning {
 		warnings = append(warnings, StreamRequirementWarning{
 			SubscriberComp: edge.To.ComponentName,
 			SubscriberPort: edge.To.PortName,
-			Subjects:       append([]string(nil), subscriberPort.natsSubjects...),
+			Subjects:       subscriberPort.facts.NATSSubjects(),
 			PublisherComps: []string{edge.From.ComponentName},
 		})
 	}

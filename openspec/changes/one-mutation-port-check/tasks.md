@@ -8,7 +8,7 @@ on a clean tree at its commit (#171).
 - [x] 1.1 `TestConfigValidateMutationProviderRefusals` (graph-ingest) through `Config.Validate`, green on main for
   the existing rows; the multi-subject JetStream row red, the run recorded; the version mutant detected by
   `task mutate:check`. Gate: `go test -race ./processor/graph-ingest`.
-- [ ] 1.2 `TestJetStreamSubjectMatching`'s subjects moved off `graph.mutation.`, green before and after; the `nats`
+- [x] 1.2 `TestJetStreamSubjectMatching`'s subjects moved off `graph.mutation.`, green before and after; the `nats`
   output row in `TestGraphMutationFlowRejectsInvalidProviderTopology` red, the run recorded; the required mutant
   detected by `task mutate:check`. Gate: `go test -race ./internal/flowgraph`.
 
@@ -22,7 +22,7 @@ on a clean tree at its commit (#171).
 
 - [x] 3.1 graph-ingest calls `ClassifyPort`; 1.1 green; the `!valid` mutant detected by `task mutate:check`. Gate:
   `go test -race ./processor/graph-ingest` and `task lint`.
-- [ ] 3.2 flowgraph calls `ClassifyPort`; `portInfo` carries `facts` and loses `Interface`, `kind`, `natsSubjects`;
+- [x] 3.2 flowgraph calls `ClassifyPort`; `portInfo` carries `facts` and loses `Interface`, `kind`, `natsSubjects`;
   1.2 green; the `!valid` mutant detected by `task mutate:check`. Gate: `go test -race ./internal/flowgraph` and
   `task lint`.
 

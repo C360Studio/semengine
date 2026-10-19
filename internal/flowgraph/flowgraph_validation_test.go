@@ -468,7 +468,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 	t.Run("no duplicate edges when JetStream port indexed under StreamName and subjects", func(t *testing.T) {
 		graph := newFlowGraph()
 
-		// Publisher indexed under both "GRAPH" and "graph.mutation.write"
+		// Publisher indexed under both "EVENTS" and "events.write"
 		jsPublisher := createMockComponentWithPorts("writer", "processor",
 			nil,
 			[]component.Port{
@@ -476,8 +476,8 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 					Name:      "out",
 					Direction: component.DirectionOutput,
 					Config: component.JetStreamPort{
-						StreamName: "GRAPH",
-						Subjects:   []string{"graph.mutation.write"},
+						StreamName: "EVENTS",
+						Subjects:   []string{"events.write"},
 					},
 				},
 			},
@@ -488,7 +488,7 @@ func TestJetStreamSubjectMatching(t *testing.T) {
 				{
 					Name:      "in",
 					Direction: component.DirectionInput,
-					Config:    component.NATSPort{Subject: "graph.mutation.write"},
+					Config:    component.NATSPort{Subject: "events.write"},
 				},
 			},
 			nil,

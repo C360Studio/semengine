@@ -46,11 +46,14 @@ func (cs State) String() string {
 //   - Start and Stop refuse a nil context, and Start refuses a context that has
 //     already ended.
 //   - Stop before Start is safe.
-//   - Stop is controlled while the Start context is still live: it drains,
-//     joins and cleans up within its own context's bound. Ending the Start
-//     context first makes Stop an abort: it makes what progress it can within
-//     that bound and may return the cleanup or deadline error; if the bound
-//     ends first, no complete join is promised.
+//   - Start(ctx) does its startup work under ctx and returns once the
+//     component is ready; if ctx ends first, Start returns that error and
+//     holds nothing. Ending ctx after Start returned stops nothing: the
+//     component runs its continuing work under a context of its own, which
+//     Stop ends (ADR-113).
+//   - Stop(ctx) is the only stop. It drains, joins and cleans up within ctx's
+//     bound and returns nil only once everything is released; if ctx ends
+//     first, it returns that context's error and a later Stop tries again.
 //   - A repeated Stop is a no-op once an earlier Stop's cleanup succeeded;
 //     after a failed cleanup, what is left stays pending for a later Stop.
 //   - A second Start is refused. An instance never restarts; a host that needs

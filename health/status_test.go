@@ -156,6 +156,10 @@ func TestFromComponentHealth(t *testing.T) {
 				t.Errorf("Expected status %s, got %s", tt.wantStatus, result.Status)
 			}
 
+			if result.Healthy != tt.componentHealth.Healthy {
+				t.Errorf("Expected Healthy %v, got %v", tt.componentHealth.Healthy, result.Healthy)
+			}
+
 			if result.Message != tt.wantMessage {
 				t.Errorf("Expected message %s, got %s", tt.wantMessage, result.Message)
 			}

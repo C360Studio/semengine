@@ -30,6 +30,10 @@ func TestNewHealthy(t *testing.T) {
 	if status.Status != "healthy" {
 		t.Errorf("Expected Status to be %q, got %q", "healthy", status.Status)
 	}
+
+	if !status.Healthy {
+		t.Error("Expected Healthy to be true")
+	}
 }
 
 func TestNewUnhealthy(t *testing.T) {
@@ -57,6 +61,10 @@ func TestNewUnhealthy(t *testing.T) {
 	if !status.IsUnhealthy() {
 		t.Error("Expected IsUnhealthy() to return true")
 	}
+
+	if status.Healthy {
+		t.Error("Expected Healthy to be false")
+	}
 }
 
 func TestNewDegraded(t *testing.T) {
@@ -83,6 +91,10 @@ func TestNewDegraded(t *testing.T) {
 
 	if !status.IsDegraded() {
 		t.Error("Expected IsDegraded() to return true")
+	}
+
+	if status.Healthy {
+		t.Error("Expected Healthy to be false")
 	}
 }
 
@@ -208,6 +220,11 @@ func TestAggregate(t *testing.T) {
 
 			if result.Status != tt.wantStatus {
 				t.Errorf("Expected status %s, got %s", tt.wantStatus, result.Status)
+			}
+
+			// health-status spec: the result's Healthy is true only when its word is healthy.
+			if wantHealthy := tt.wantStatus == "healthy"; result.Healthy != wantHealthy {
+				t.Errorf("Expected Healthy %v, got %v", wantHealthy, result.Healthy)
 			}
 
 			if result.Message != tt.wantMessage {

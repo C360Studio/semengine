@@ -24,14 +24,12 @@ only when `task verify` passes on a clean tree at its commit (#171).
 ## 3. Text and ledger (D3, D4)
 
 - [ ] 3.1 `health/doc.go` and `health/README.md` rewritten per D3; the `health` row in `docs/admission-ledger.yaml`
-  per D4, its `known_risks` naming the Q3 message change. Gate: `go doc ./health` lists only the kept surface; `task
-  verify`
-  passes on a clean tree, which runs `ledger:check` and `docs:check` (review stop).
+  per D4, its `known_risks` naming the Q3 message change. Gate: `go doc ./health` lists only the kept surface;
+  `task verify` passes on a clean tree, which runs `ledger:check` and `docs:check` (review stop).
 
 ## 4. Verify, review and close
 
 - [ ] 4.1 `task verify` passes on a clean tree at the implementation head.
 - [ ] 4.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 4.3 Any defect found and not fixed is filed ;
-  then the change is archived (`openspec archive setup-04a-03-boot-health`) as the last content commit. Gate:
-  `task spec:check`.
+- [ ] 4.3 Any defect found and not fixed is filed; then the change is archived
+  (`openspec archive setup-04a-03-boot-health`) as the last content commit. Gate: `task spec:check`.

@@ -72,6 +72,12 @@ integration files pass on `natsfixture` (§ 7). Coverage, merged profile: 75.3%.
 
   Real trigger: an operator writes a list as a string. `Validate` then says "platform.org is required" about a file
   that sets it. The semteams and semboids loaders call no `Validate` after loading.
+
+  Second real trigger: a `services.<name>` entry with an unknown field. `types.ServiceConfig` refuses it (pin
+  `types/service.go:24`, `decoder.DisallowUnknownFields()`), but `mergeFromMap` swallows that refusal and loads the
+  defaults. Reviewer measurement (round 3): 26 of the 28 consumer config files decode cleanly into the pin
+  `config.Config`. The 2 that fail (semteams `pathrag-graph-traversal.json`, `bm25-semantic-search.json`, "unknown
+  field name") are already refused at the pin for `platform.instance_id`.
 - **S5, required (#69 ruling 1): the env prefix.** `config.go:388` `envPrefix:  "STREAMKIT",`. The #69 ruling
   (closed, 2026-10-06) moves every outward-facing env var to `SEMENGINE_` and names these overrides. Note that the
   pin's prefix is `STREAMKIT_`, not the `SEMSTREAMS_` #69 assumed.
@@ -94,8 +100,9 @@ integration files pass on `natsfixture` (§ 7). Coverage, merged profile: 75.3%.
   - `config.go:1026-1070`: the custom `UnmarshalJSON` exists for `ReconnectWait` parsing. It becomes dead if S3's
     fields go.
   - `streams.go:67` `DeriveStreamName` is exported and read only in-package (`stream_bounds.go:378`).
-  - Unknown keys are accepted silently anywhere in the file, which is surface audit item b. Measured: semteams carries
-    an unknown top-level `tier` in 25 of its 28 config files.
+  - Unknown keys are accepted silently at the top level and in the `platform`, `nats` and component blocks (surface
+    audit item b). `services.<name>` entries are the exception: they refuse unknown fields, though S4's fail-open
+    merge hides that refusal. Measured: semteams carries an unknown top-level `tier` in 25 of its 28 config files.
   - `GOVERNANCE_VERDICT_AUDIT` and `MAX_DELIVERY_EVENTS` are provisioned at every boot (`streams.go:174-197`,
     `:279-292`), though their writers (rule core, change 6; `internal/maxdelivery`, change 7) are not ported yet.
 - **Shapes 2, 3 and 5** (copied shell, a layered interface with one implementation, an error classified by its text):
@@ -126,8 +133,11 @@ records.
   and §5 T1 (the duplicates window: `:46`, `:480`). **ADR-039** names the same stream. **ADR-070** mentions
   `EnsureStreams` in passing.
 - `streams.go`: **ADR-068** (graph retention, deletion and GC lifecycle; status Proposed 2026-07-04, design-only,
-  amended by ADR-091). It decides that graph buckets carry no lifecycle retention, with no TTL, MaxAge or MaxBytes
-  (`068-graph-retention-deletion-lifecycle.md:95-98`). The pin spec gives the retention contract of `KV_` and `OBJ_`
+  amended by ADR-091). Decision 1 says the live graph never uses NATS KV TTL, MaxBytes or MaxAge, or stream
+  retention, for entity lifecycle. Storage caps are non-binding catastrophe backstops only
+  (`068-graph-retention-deletion-lifecycle.md:56-60`, restated for the live graph buckets at `:194-199`). The ban on
+  every `MaxBytes>0` on graph KV is ADR-073's (`073-graph-ingestion-retention-contract.md:60-62`), not ADR-068's.
+  The pin spec gives the retention contract of `KV_` and `OBJ_`
   backing streams to graph-retention, "ADR-068/073" (`stream-provisioning/spec.md:13-17`). The carried code that
   enforces it: `streams.go:374-378` `ErrBackingStreamNotProvisionable`, `:394-396` `checkOrdinaryStream`, and the
   guard first in `createStream` (`:588-606`). Not in `docs/adr`. In the tree, `natsclient/backing_stream_prefix.go:90`,

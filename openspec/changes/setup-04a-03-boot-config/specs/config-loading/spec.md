@@ -7,9 +7,9 @@
 `config.NewLoader().LoadFile(path)` and `LoadFromBytes(data)` SHALL start from the loader's defaults, deep-merge
 one JSON document over them, apply the environment overrides, and refuse an authority pair over its declared budget
 or a `platform.instance_id` key (ADR-102, ADR-104). They SHALL NOT run `Config.Validate`; a caller that needs a
-validated configuration SHALL call `Validate` on the result. `LoadFile` SHALL refuse a path outside the working
-directory when the path is relative, a file that is not regular after following links, a file over 10 MB, and a
-document nested deeper than 100 levels.
+validated configuration SHALL call `Validate` on the result. Both loaders SHALL refuse a document over 10 MB or
+nested deeper than 100 levels. `LoadFile` SHALL also refuse a path outside the working directory when the path is
+relative, and a file that is not regular after following links.
 
 #### Scenario: A document that omits nats keeps the default URL
 

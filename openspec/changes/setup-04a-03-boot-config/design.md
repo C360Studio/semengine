@@ -12,7 +12,8 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
   unchanged. ADR-055 is not copied to `docs/adr`: its normative content (envelopes, verdict publishing) is implemented
   in `processor/rule` and graph-ingest, and is raised when the rule core ports (change 6).
 - ADR-100 binds `composition`, not this slice.
-- ADR-068 (graph buckets carry no lifecycle retention) binds the backing-stream refusal in `streams.go`
+- ADR-068 Decision 1 (the live graph never uses storage retention for entity lifecycle; caps are non-binding
+  backstops only, `:56-60`, `:194-199`) binds the backing-stream refusal in `streams.go`
   (`:374-396`, `:588-606`). ADR-073 §1 (firehose streams take `MaxAge` plus a `MaxBytes` backstop) binds the bounds
   rule in `stream_bounds.go` (`:482`). Both decisions are kept unchanged: `stream_bounds.go` is carried byte-equal,
   and `streams.go` changes only by D1's drops. Neither record is copied to `docs/adr`, for three reasons. Both are
@@ -76,14 +77,21 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
   `JetStream.Enabled` in code.
 - Unknown keys elsewhere stay accepted (S7, optional): semteams' `tier` key is in 25 files, and a general refusal is
   a separate owner decision.
+- The env refusal changes the pin's behaviour too: the pin applied `_NATS_USERNAME`, `_PASSWORD` and `_TOKEN`
+  (`config.go:761-769`). Consumer cost: none. No consumer tarball sets any of these variables (reviewer sweep,
+  round 3).
 
 ## D3. Fail closed on a malformed document (S4, Q2)
 
 - **Recommended:** `mergeFromMap` returns its error, and `LoadFile`/`LoadFromBytes` fail with
   `failed to load <path>: <decode error>` (or `failed to parse config: ...`) instead of returning the defaults.
 - This is a change from the pin's behaviour, so it waits for the owner's answer.
-- Real trigger: `"urls": "nats://x:4222"` today loads as `org=""` and `urls=[nats://localhost:4222]` with no error
-  (inventory § 1, S4).
+- Real triggers (inventory § 1, S4):
+  - `"urls": "nats://x:4222"` today loads as `org=""` and `urls=[nats://localhost:4222]` with no error.
+  - A `services.<name>` entry with an unknown field: `types.ServiceConfig` refuses it, and the merge swallows the
+    refusal.
+- Consumer cost: none. 26 of the 28 consumer config files decode cleanly. The 2 that do not are already refused at
+  the pin for `platform.instance_id` (reviewer measurement, round 3).
 
 ## D4. Environment prefix and true text (S5, S6, required)
 
@@ -120,14 +128,18 @@ about 3,150 (#9 comment 6274501134). The drops below lower the count.
 - **New:** one test per refused key and per refused env var (D2), for both `LoadFile` and `LoadFromBytes`; one for
   the `SEMENGINE_` override names (D4). One test for
   the malformed document (D3). A `LoadFromBytes` round trip, because semboids reads it as framework API.
-- **Sensitivity:** `task mutate:check` detects four mutants:
+- **Sensitivity:** `task mutate:check` detects five mutants:
   - removing one key from the refusal table;
+  - dropping one variable from the env refusal;
   - `mergeFromMap` returning `base` on error;
   - the prefix reverted to `STREAMKIT`;
   - `LoadFromBytes` skipping the refusal.
 - Examples suffice for these checks: each rule is a fixed list or one branch.
-- **Coverage:** measured and recorded on the PR. `config` joins `scripts/cover-check.sh` (80%, merged profile) in PR
-  2, when the package is whole (03B D10; architect contract, One package per pull request).
+- **Coverage:** measured and recorded on the PR, not gated here. The basis is 03B D10
+  (`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:469-470`): "The gate applies to a
+  package when it is admitted at its tier; code carried dormant is not gated until it is admitted". Nothing imports
+  `config` until `service` ports. The floor PR 2 must meet: 80% on the merged profile, with `config` added to
+  `scripts/cover-check.sh` in PR 2.
 
 ## D6. Ledger rows
 
@@ -203,6 +215,9 @@ How `ledger:check` reads these rows:
 ## Owner questions
 
 - **Q1 (D2).** Should loading refuse the NATS username, password, token, TLS block, reconnect settings and the three
-  unused JetStream keys, naming each key, until boot wires them? Recommended: yes, which closes #74.
-- **Q2 (D3).** Should a file with a wrong-typed value fail to load, instead of being silently replaced by defaults?
+  unused JetStream keys, in the file or in the `SEMENGINE_` environment, naming each key or variable, until boot wires
+  them? Cost: none of the 28 consumer config files sets these keys, and no consumer sets these variables.
+  Recommended: yes, which closes #74.
+- **Q2 (D3).** Should a file with a wrong-typed value, or a service entry with an unknown field, fail to load,
+  instead of being silently replaced by defaults? Cost: no consumer config file that loads today would stop loading.
   Recommended: yes.

@@ -15,7 +15,7 @@ Tasks 2.1-2.6 are steps 1-6 of the design's "Change". Each task ends when its ga
 - [x] 2.2 `TestRegistryRefusesOneComponentClaimingAnAddressTwice`, red on the current code, the run recorded.
 - [x] 2.3 The refusal in `exclusiveResources`; `compactStrings`, the self-skip and its parameter deleted; 2.2 green;
   M2 detected by `task mutate:check`. Gate: `go test -race ./component` and `task lint`.
-- [ ] 2.4 Flowgraph's copy and its tests deleted; "two conflicts at once" rewritten with two KV buckets. Gate:
+- [x] 2.4 Flowgraph's copy and its tests deleted; "two conflicts at once" rewritten with two KV buckets. Gate:
   `go test -race ./internal/flowgraph` and `task lint`.
 - [ ] 2.5 The spec delta is true of the code: each scenario names the test that drives it. Gate: `task spec:check`.
 - [ ] 2.6 Docs and both ledger rows updated; `task verify` passes on a clean tree. Gate: `task verify`.

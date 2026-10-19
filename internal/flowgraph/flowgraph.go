@@ -34,7 +34,6 @@ type portInfo struct {
 	Interface    *component.InterfaceContract
 	Required     bool // Whether this port is required for the component to function
 	kind         component.PortKind
-	exclusive    bool
 	natsSubjects []string
 }
 
@@ -162,7 +161,6 @@ func (g *FlowGraph) extractPortInfo(
 			Interface:    interfaceContract,
 			Required:     port.Required,
 			kind:         facts.Kind(),
-			exclusive:    facts.IsExclusive(),
 			natsSubjects: facts.NATSSubjects(),
 		}
 
@@ -193,10 +191,6 @@ func (g *FlowGraph) connectComponentsByPatterns() error {
 	g.connectKVPorts(publishers[component.PatternWatch], subscribers[component.PatternWatch], component.PatternWatch)
 	g.connectKVPorts(publishers[component.PatternWatch], subscribers[component.PatternRead], component.PatternRead)
 	g.connectStorePorts(publishers[component.PatternStore], subscribers[component.PatternStore])
-
-	// Validate network ports for conflicts
-	conflicts := g.validateNetworkPorts(publishers[component.PatternNetwork], subscribers[component.PatternNetwork])
-	warnings = append(warnings, conflicts...)
 
 	// Return error if there are critical warnings
 	if len(warnings) > 0 {
@@ -636,46 +630,6 @@ func (g *FlowGraph) connectKVPorts(publishers, subscribers map[string][]Componen
 	}
 }
 
-// validateNetworkPorts detects network port binding conflicts
-func (g *FlowGraph) validateNetworkPorts(publishers, subscribers map[string][]ComponentPortRef) []string {
-	// Network ports need exclusive binding - detect conflicts
-	conflicts := []string{}
-	allPorts := make(map[string][]ComponentPortRef)
-
-	// Check publishers for conflicts
-	for _, connID := range slices.Sorted(maps.Keys(publishers)) {
-		candidates := publishers[connID]
-		ports := g.exclusivePortRefs(candidates, component.DirectionOutput)
-		if len(ports) > 1 {
-			conflicts = append(conflicts,
-				fmt.Sprintf("network port conflict on %s: multiple components binding: %s", connID, describePorts(ports)))
-		}
-		if len(ports) != 0 {
-			allPorts[connID] = ports
-		}
-	}
-
-	// Check if subscribers conflict with publishers (both trying to bind same port)
-	for _, connID := range slices.Sorted(maps.Keys(subscribers)) {
-		candidates := subscribers[connID]
-		ports := g.exclusivePortRefs(candidates, component.DirectionInput)
-		if len(ports) == 0 {
-			continue
-		}
-		if existing, exists := allPorts[connID]; exists {
-			conflicts = append(conflicts,
-				fmt.Sprintf("network port conflict on %s: %s and %s both trying to bind", connID,
-					describePorts(existing), describePorts(ports)))
-		} else if len(ports) > 1 {
-			conflicts = append(conflicts,
-				fmt.Sprintf("network port conflict on %s: multiple components binding: %s", connID, describePorts(ports)))
-		}
-	}
-
-	// Network ports are external connections - no edges created in the graph
-	return conflicts
-}
-
 // describePorts names each port the way the other refusals do, "component X
 // port Y", so a conflict reads in the operator's words rather than Go's struct
 // formatting.
@@ -685,27 +639,6 @@ func describePorts(refs []ComponentPortRef) string {
 		names[index] = fmt.Sprintf("component %s port %s", ref.ComponentName, ref.PortName)
 	}
 	return strings.Join(names, ", ")
-}
-
-func (g *FlowGraph) exclusivePortRefs(candidates []ComponentPortRef, direction component.Direction) []ComponentPortRef {
-	result := make([]ComponentPortRef, 0, len(candidates))
-	for _, candidate := range candidates {
-		node := g.nodes[candidate.ComponentName]
-		if node == nil {
-			continue
-		}
-		ports := node.InputPorts
-		if direction == component.DirectionOutput {
-			ports = node.OutputPorts
-		}
-		for _, port := range ports {
-			if port.Name == candidate.PortName && port.exclusive {
-				result = append(result, candidate)
-				break
-			}
-		}
-	}
-	return result
 }
 
 // AnalyzeConnectivity performs graph connectivity analysis. It reports what the

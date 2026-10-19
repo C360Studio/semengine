@@ -49,6 +49,17 @@ The refusal goes in `exclusiveResources`, which both `Declare` (`:310`) and `Cre
 
 It names no port: `exclusiveResources` sees port facts, not port names. That is accepted as is.
 
+### Ruling to implementation
+
+Line numbers in this table are at `a65ceef`.
+
+| Ruling (#324 comment 6278113073) | Where it is implemented | Where it is proved |
+| --- | --- | --- |
+| Refuse one component claiming one exclusive address on two of its own ports, as invalid, with the text above | `component/registry.go:628`, the adjacent-duplicate check in `exclusiveResources` | `component/registry_boot_admission_test.go:250`, input and output, two inputs, two outputs |
+| The refusal holds through `Declare` | `component/registry.go:302` | the same test, its `Declare` path |
+| The refusal holds through `CreateComponent` | `component/registry.go:600`, in `captureComponentDeclaration` | the same test, its `CreateComponent` path |
+| Two protocols on one port (`http:`, `tcp:`) are out of scope | not changed | filed as #328, which stays open |
+
 ## Change
 
 1. Test that the registry refuses a second component on a taken address,
@@ -72,6 +83,25 @@ It names no port: `exclusiveResources` sees port facts, not port names. That is 
    refusals are joined. No new flowgraph test: `flowgraph_validation_test.go:13` already uses network ports.
 5. Spec delta: ADDED to `component-registration`, "Admission refuses a second claim on an exclusive resource".
 6. Docs, then `task verify`.
+
+### Generated checks: not used
+
+The rule is that no exclusive resource is held twice, whether by two components or by two ports of one component. The
+example tests cover every combination that matters, for these reasons:
+
+- **Repetition inside one component.** Inputs and outputs are pooled into one list and sorted before the check, so any
+  repeat, of any count, puts two equal entries next to each other. Where a port sits (input or output) is the only
+  other variable. `TestRegistryRefusesOneComponentClaimingAnAddressTwice` covers all three pairings (input and
+  output, two inputs, two outputs) through both `Declare` and `CreateComponent`.
+- **Order of admission.** The registry only adds components: there is no replacement or removal
+  (`component/registry_boot_admission_test.go:88`), and a repeated name is refused before the check. The only history
+  is therefore "a first component holds the address, then a second asks for it".
+  `TestRegistryRefusesASecondComponentOnATakenAddress` covers that history and checks that the refused component
+  leaves the admitted set unchanged (`Snapshots()` holds only `first`).
+- **Kinds that are not exclusive.** `TestRegistryAdmitsComponentsOnDistinctOrSharedResources` shows that two different
+  addresses, and two file ports on one path, are both admitted.
+
+No input format, size limit or stated transformation law is involved.
 
 ## Docs
 

@@ -803,8 +803,8 @@ func restoreUntilConnected(t *testing.T, relay *brokerRelay, client *natsclient.
 // must return nil and nothing is held.
 func TestGraphIngest_StartWaitsForAReconnectingClient(t *testing.T) {
 	owner, client, relay := newRelayedComponent(t)
+	defer restoreUntilConnected(t, relay, client) // registered first: a failed cut still restores
 	cutUntilReconnecting(t, relay, client)
-	defer restoreUntilConnected(t, relay, client)
 
 	startCtx, cancelStart := context.WithCancel(t.Context())
 	defer cancelStart()
@@ -858,8 +858,8 @@ func TestGraphIngest_StartWaitsForAReconnectingClient(t *testing.T) {
 // context.DeadlineExceeded within 10 s, hold nothing, and Stop must then return nil.
 func TestGraphIngest_StartContextEndsWhileWaitingForReconnect(t *testing.T) {
 	owner, client, relay := newRelayedComponent(t)
+	defer restoreUntilConnected(t, relay, client) // registered first: a failed cut still restores
 	cutUntilReconnecting(t, relay, client)
-	defer restoreUntilConnected(t, relay, client)
 
 	startCtx, cancelStart := context.WithTimeout(t.Context(), time.Second)
 	defer cancelStart()

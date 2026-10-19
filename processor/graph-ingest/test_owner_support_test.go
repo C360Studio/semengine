@@ -35,7 +35,9 @@ func (o *graphIngestTestOwner) stop(operationCtx context.Context) error {
 	}
 	o.attempted = true // A returned error or panic never grants an implicit second attempt.
 	if o.cancelStart != nil {
-		defer o.cancelStart() // Accepted Start authority stays live through concrete Stop.
+		// The fixture keeps its Start context live until Stop; ADR-113 no longer needs
+		// this, and it does no harm.
+		defer o.cancelStart()
 	}
 	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(operationCtx), 5*time.Second)
 	defer cancelStop()

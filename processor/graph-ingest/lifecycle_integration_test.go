@@ -382,6 +382,95 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 	})
 }
 
+// TestGraphIngest_StartBoundedByItsContext: the Start context bounds startup, including
+// the consumer setup's wait for its input stream (ADR-113; design D6, T-G3). No input
+// stream exists, so that wait, which retries for about 50 s under any other context,
+// can end only by the Start context's 1 s deadline. Start must return that deadline
+// well inside 10 s and hold nothing, and Stop must then return nil.
+func TestGraphIngest_StartBoundedByItsContext(t *testing.T) {
+	configJSON, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	created, err := CreateGraphIngest(configJSON, testDependencies(t, newFixtureClient(t)))
+	if err != nil {
+		t.Fatalf("CreateGraphIngest: %v", err)
+	}
+	comp := created.(*Component)
+	if err := comp.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	owner := newSuiteOwner(comp)
+
+	startCtx, cancelStart := context.WithTimeout(t.Context(), time.Second)
+	defer cancelStart()
+	startResult := make(chan error, 1)
+	go func() { startResult <- owner.Start(startCtx) }()
+	// failureBound is the real-clock bound past which Start is reported as not bounded
+	// by its context; the deadline it must honour is 1 s.
+	const failureBound = 10 * time.Second
+	bound := time.NewTimer(failureBound)
+	defer bound.Stop()
+	var startErr error
+	select {
+	case startErr = <-startResult:
+	case <-bound.C:
+		t.Errorf("Start had not returned %s after its 1 s deadline", failureBound)
+		// Start's own wait is bounded (waitForStream's retries); join it so nothing it
+		// logs outlives the test.
+		startErr = <-startResult
+	}
+	if !errors.Is(startErr, context.DeadlineExceeded) {
+		t.Fatalf("Start error = %v, want it to wrap context.DeadlineExceeded", startErr)
+	}
+	if held := owner.Observe().Unresolved; len(held) != 0 {
+		t.Errorf("held after a Start whose context ended = %v, want nothing", held)
+	}
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancelStop()
+	if err := owner.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop after a failed Start: %v", err)
+	}
+}
+
+// TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup: a Start context that
+// ends while the request handlers are being registered fails Start (ADR-113: if ctx ends
+// first, Start returns that error and holds nothing; design D6, T-G4). The handlers
+// register under the run context, so the registration itself does not see the ending;
+// start's check of its context before the status loop does. The test's subscribe
+// function, through the subscribeRequests field (#301), cancels the Start context at the
+// first registration and then registers as the client would.
+func TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup(t *testing.T) {
+	comp := createTestComponentForLifecycle(t)
+	if err := comp.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	owner := newSuiteOwner(comp)
+	startCtx, cancelStart := context.WithCancel(t.Context())
+	defer cancelStart()
+	comp.subscribeRequests = func(
+		ctx context.Context,
+		subject string,
+		handler func(context.Context, []byte) ([]byte, error),
+	) (*natsclient.Subscription, error) {
+		cancelStart()
+		return comp.natsClient.SubscribeForRequests(ctx, subject, handler)
+	}
+
+	startErr := owner.Start(startCtx)
+	if !errors.Is(startErr, context.Canceled) {
+		t.Fatalf("Start error = %v, want it to wrap context.Canceled", startErr)
+	}
+	if held := owner.Observe().Unresolved; len(held) != 0 {
+		t.Errorf("held after a Start whose context ended = %v, want nothing", held)
+	}
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), 30*time.Second)
+	defer cancelStop()
+	if err := owner.Stop(stopCtx); err != nil {
+		t.Fatalf("Stop after a failed Start: %v", err)
+	}
+}
+
 // refusingBrokerURL returns the NATS URL of a loopback listener that stays bound for the
 // test's life and closes every connection it accepts before sending the server's INFO, so
 // a client's Connect to it fails on the handshake. A port that was bound and released can

@@ -544,7 +544,7 @@ type Component struct {
 	// ingest by entity ID so same-entity updates stay ordered while different
 	// entities ingest in parallel. Built in Start BEFORE subscriptions (M3);
 	// drained in Stop after every native consumer reports Closed. The pool and
-	// submission contexts are lexical children of Start; only their cancel
+	// submission contexts are children of the run context Start creates; only their cancel
 	// functions are retained so no production struct stores context authority.
 	ingestPool         *dispatch.KeyedPool[ingestWork]
 	ingestPoolCancel   context.CancelFunc
@@ -954,6 +954,12 @@ func (c *Component) Initialize() error {
 // through release, and a rollback that fails leaves release pending for the next Stop.
 // An uninitialized component, or one with no NATS client, is refused before the guard
 // is consulted, so a later Start after Initialize is still admitted.
+//
+// ctx bounds Start only. Connecting, bucket setup, the ENTITY_STATES sweep and consumer
+// setup run under it, and a ctx that ends first fails Start. Subscriptions, request
+// handlers, the ingest pool, the entity cache's expiry sweep and the status loop run
+// under a run context start creates and release ends, so ending ctx after Start
+// returned stops nothing (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	c.mu.RLock()
 	initialized := c.initialized
@@ -971,7 +977,8 @@ func (c *Component) Start(ctx context.Context) error {
 // recorded before the next acquisition, so release can return whatever a failed start
 // left behind.
 func (c *Component) start(ctx context.Context) error {
-	runCtx, cancel := context.WithCancel(ctx)
+	// The run context: Start's values without its cancellation, ended only by release.
+	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	poolCtx, poolCancel := context.WithCancel(runCtx)
 	submitCtx, submitCancel := context.WithCancel(runCtx)
 	c.cancel = cancel
@@ -979,36 +986,36 @@ func (c *Component) start(ctx context.Context) error {
 	c.ingestSubmitCancel = submitCancel
 
 	if c.natsClient.Status() != natsclient.StatusConnected {
-		if err := c.natsClient.Connect(runCtx); err != nil {
-			if runCtx.Err() != nil {
-				return errs.Wrap(runCtx.Err(), "Component", "Start", "context cancelled during NATS connection")
+		if err := c.natsClient.Connect(ctx); err != nil {
+			if ctx.Err() != nil {
+				return errs.Wrap(ctx.Err(), "Component", "Start", "context cancelled during NATS connection")
 			}
 			return errs.Wrap(err, "Component", "Start", "NATS connection failed")
 		}
-		if err := c.natsClient.WaitForConnection(runCtx); err != nil {
-			if runCtx.Err() != nil {
-				return errs.Wrap(runCtx.Err(), "Component", "Start", "context cancelled waiting for NATS")
+		if err := c.natsClient.WaitForConnection(ctx); err != nil {
+			if ctx.Err() != nil {
+				return errs.Wrap(ctx.Err(), "Component", "Start", "context cancelled waiting for NATS")
 			}
 			return errs.Wrap(err, "Component", "Start", "wait for NATS connection")
 		}
 	}
 
-	if err := c.initStorage(runCtx); err != nil {
+	if err := c.initStorage(ctx, runCtx); err != nil {
 		return err
 	}
-	if err := c.startEntityStateGuard(runCtx, c.entityBucket); err != nil {
+	if err := c.startEntityStateGuard(ctx, c.entityBucket); err != nil {
 		return errs.Wrap(err, "Component", "Start", "ENTITY_STATES snapshot sweep")
 	}
 	if err := c.initHierarchyInference(); err != nil {
 		return errs.Wrap(err, "Component", "Start", "hierarchy inference")
 	}
-	if err := c.createStatusBucket(runCtx); err != nil {
+	if err := c.createStatusBucket(ctx); err != nil {
 		return errs.Wrap(err, "Component", "Start", "readiness status bucket")
 	}
 	if err := c.buildIngestPool(poolCtx); err != nil {
 		return errs.Wrap(err, "Component", "Start", "keyed ingest pool")
 	}
-	if err := c.setupSubscriptions(runCtx, submitCtx); err != nil {
+	if err := c.setupSubscriptions(ctx, submitCtx); err != nil {
 		return errs.Wrap(err, "Component", "Start", "subscription setup")
 	}
 	if err := c.setupQueryHandlers(runCtx); err != nil {
@@ -1016,6 +1023,11 @@ func (c *Component) start(ctx context.Context) error {
 	}
 	if err := c.setupMutationHandlers(runCtx); err != nil {
 		return errs.Wrap(err, "Component", "Start", "mutation handler setup")
+	}
+	// The request handlers register under the run context, so a ctx that ended during
+	// their registration is seen here; the guard's rollback then runs release.
+	if err := ctx.Err(); err != nil {
+		return errs.Wrap(err, "Component", "Start", "context ended during startup")
 	}
 
 	c.startStatusMetricsLoop(runCtx)
@@ -1160,8 +1172,10 @@ func (c *Component) clearLifecycleHandles() {
 // (natsclient.EnsureFrameworkBucket): create-or-open, reconcile to the
 // declared policy (a foreign TTL is stripped, an adopted divergent History is
 // converged), verify, or fail this Start closed — which the composition
-// root's component-start barrier turns into a failed boot.
-func (c *Component) initStorage(ctx context.Context) error {
+// root's component-start barrier turns into a failed boot. The buckets are
+// acquired under ctx, the Start context; the entity cache is built under runCtx,
+// the run context, because its expiry sweep runs until that context ends.
+func (c *Component) initStorage(ctx, runCtx context.Context) error {
 	// Entity states KV bucket - we are the WRITER (catalog owner).
 	bucket, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketEntityStates)
 	if err != nil {
@@ -1170,7 +1184,7 @@ func (c *Component) initStorage(ctx context.Context) error {
 	c.entityBucket = c.natsClient.NewKVStore(bucket)
 
 	// Entity query cache (HybridCache: LRU capacity + TTL freshness)
-	entityCache, err := cache.NewFromConfig[graph.EntityState](ctx, cache.Config{
+	entityCache, err := cache.NewFromConfig[graph.EntityState](runCtx, cache.Config{
 		Enabled:         true,
 		Strategy:        cache.StrategyHybrid,
 		MaxSize:         5000,

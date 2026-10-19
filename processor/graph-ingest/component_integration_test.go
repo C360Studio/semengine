@@ -11,8 +11,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/harness/probe"
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -126,33 +130,70 @@ func TestComponent_Stop_Timeout(t *testing.T) {
 	assert.Equal(t, "stopped", comp.Health().Status)
 }
 
-// TestComponent_RespectsContext_Cancellation: the pin built this component on a mock KV
-// bucket, which Start's initStorage replaces with the broker's; here it is built on the
-// broker alone.
-func TestComponent_RespectsContext_Cancellation(t *testing.T) {
+// TestComponent_StartContextEndStopsNothing replaces the pin's
+// TestComponent_RespectsContext_Cancellation, which asserted the old rule: that ending
+// Start's context ends the component's work. Under ADR-113 the Start context bounds Start
+// only. After Start returns and its context is cancelled, the component still ingests an
+// entity from its input stream into ENTITY_STATES and answers an entity query; only Stop
+// ends its work, and Stop joins the status loop. The oracle is the bucket itself, read
+// through the test's own JetStream handle.
+func TestComponent_StartContextEndStopsNothing(t *testing.T) {
 	comp := startableComponent(t)
-	startCtx, cancelStart := context.WithCancel(t.Context())
-
-	require.NoError(t, comp.Initialize())
-	require.NoError(t, comp.Start(startCtx))
-
-	// Cancel context
-	cancelStart()
-
-	// The pin slept 100ms here to "allow time for cancellation to propagate". The test
-	// waits for it instead: the status loop Start runs under its context returns once
-	// that context is cancelled.
-	statusDone := comp.statusDone // written by Start, which has returned
-	require.NotNil(t, statusDone, "Start must establish a status producer")
 	ctx, cancel := context.WithTimeout(t.Context(), componentTestTimeout)
 	defer cancel()
+	startCtx, cancelStart := context.WithCancel(ctx)
+	defer cancelStart()
+
+	require.NoError(t, comp.Initialize())
+	registerMergeTestPayload(t, comp) // decoder before Start: no consumer race
+	require.NoError(t, comp.Start(startCtx))
+	stopped := false
+	defer func() {
+		if !stopped {
+			stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), componentTestTimeout)
+			defer cancelStop()
+			assert.NoError(t, comp.Stop(stopCtx), "terminal Stop")
+		}
+	}()
+	statusDone := comp.statusDone // written by Start, which has returned
+	require.NotNil(t, statusDone, "Start must establish a status producer")
+
+	cancelStart()
+
+	const entityID = "c360.platform.robotics.mav1.drone.startctx001"
+	payload := &mergeTestGraphable{entityID: entityID, triples: []message.Triple{{
+		Subject: entityID, Predicate: "test.startctx.value", Object: "v", Source: "start-context-test",
+		Timestamp: time.Now(), Confidence: 1.0,
+	}}}
+	data, err := json.Marshal(message.NewBaseMessage(payload.Schema(), payload, "start-context-test"))
+	require.NoError(t, err)
+	require.NoError(t, comp.natsClient.PublishToStream(ctx, "entity."+entityID, data))
+
+	js, err := comp.natsClient.JetStream()
+	require.NoError(t, err)
+	entities, err := js.KeyValue(ctx, graph.BucketEntityStates)
+	require.NoError(t, err)
+	_, err = probe.Await(ctx,
+		func(ctx context.Context) (jetstream.KeyValueEntry, error) { return entities.Get(ctx, entityID) },
+		func(entry jetstream.KeyValueEntry) bool { return entry != nil })
+	require.NoError(t, err, "the entity published after the Start context ended never reached ENTITY_STATES")
+
+	queryData, err := json.Marshal(map[string]string{"id": entityID})
+	require.NoError(t, err)
+	_, err = comp.natsClient.RequestClassified(ctx, "graph.ingest.query.entity", queryData, wireRequestTimeout)
+	require.NoError(t, err, "an entity query after the Start context ended")
+
 	select {
 	case <-statusDone:
-	case <-ctx.Done():
-		t.Fatalf("the status loop had not returned %s after Start's context was cancelled", componentTestTimeout)
+		t.Fatal("the status loop returned when the Start context ended")
+	default:
 	}
 
-	// Component should handle cancellation gracefully
-	err := comp.Stop(ctx)
-	assert.NoError(t, err)
+	stopped = true
+	require.NoError(t, comp.Stop(ctx), "Stop")
+	select {
+	case <-statusDone:
+	default:
+		t.Fatal("Stop returned nil while the status loop still ran")
+	}
 }

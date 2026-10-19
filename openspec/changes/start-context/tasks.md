@@ -20,7 +20,7 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
   context survives the Start context; `TestAbortStopThenFinishJoinsWorker` reordered; `finalize` comments. The
   matrix is red until 2.2. Gate: `go test -race -count=1 ./internal/harness/lifecycletest/`, failures named in the
   note.
-- [ ] 2.2 `lifecycletest.go` (D1-D3): `CheckStartContextEndStopsNothing`, `CheckStopReturnsItsEndedContext`, the
+- [x] 2.2 `lifecycletest.go` (D1-D3): `CheckStartContextEndStopsNothing`, `CheckStopReturnsItsEndedContext`, the
   settle window; the spec delta matches. Mutants M1-M4. Gate: `task verify`.
 - [ ] 2.3 Review stop A (Codex) on 2.1-2.2.
 

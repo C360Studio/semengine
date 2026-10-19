@@ -3,9 +3,13 @@ package lifecycleguard
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -265,4 +269,136 @@ func TestGuardStopBeforeStartRefusesLaterStart(t *testing.T) {
 	if !errors.Is(err, errs.ErrAlreadyStarted) {
 		t.Fatalf("Start after Stop = %v, want ErrAlreadyStarted", err)
 	}
+}
+
+// Start and Stop refuse a nil context alike, as invalid data, before running anything. They answer
+// an ended context differently on purpose: Start refuses it as invalid, since a Start given an ended
+// context cannot begin, and Stop returns the context's own error, as the tree's other stop methods
+// do. A refusal leaves the guard as it was: after a refused Start a live Start is admitted, and
+// after a refused Stop a live Stop runs the cleanup once.
+func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(0, 0))
+	defer cancelExpired()
+
+	invalidMatching := func(target error) func(error) bool {
+		return func(err error) bool { return errs.IsInvalid(err) && errors.Is(err, target) }
+	}
+	contextsOwn := func(target error) func(error) bool {
+		return func(err error) bool { return errs.IsTransient(err) && errors.Is(err, target) }
+	}
+	rows := []struct {
+		method   string // "Start" on a fresh guard, or "Stop" on a started one
+		ctxName  string
+		ctx      context.Context
+		requires func(error) bool
+		want     string // what requires checks, as the failure line words it
+	}{
+		{"Start", "nil", nil, invalidMatching(errs.ErrInvalidData),
+			"want an invalid refusal matching errs.ErrInvalidData"},
+		{"Start", "cancelled", cancelled, invalidMatching(context.Canceled),
+			fmt.Sprintf("want an invalid refusal matching %v", context.Canceled)},
+		{"Start", "expired", expired, invalidMatching(context.DeadlineExceeded),
+			fmt.Sprintf("want an invalid refusal matching %v", context.DeadlineExceeded)},
+		{"Stop", "nil", nil, invalidMatching(errs.ErrInvalidData),
+			"want an invalid refusal matching errs.ErrInvalidData"},
+		{"Stop", "cancelled", cancelled, contextsOwn(context.Canceled),
+			fmt.Sprintf("want the context's own error %v", context.Canceled)},
+		{"Stop", "expired", expired, contextsOwn(context.DeadlineExceeded),
+			fmt.Sprintf("want the context's own error %v", context.DeadlineExceeded)},
+	}
+	nilErrs := map[string]error{}
+	for _, r := range rows {
+		var g Guard
+		call := r.method + "(" + r.ctxName + ")"
+		runs := 0 // runs of start in a Start row, of the cleanup in a Stop row
+		counted := func(context.Context) error { runs++; return nil }
+		none := func(context.Context) error { return nil }
+
+		var err error
+		if r.method == "Start" {
+			err = g.Start(r.ctx, counted, none)
+		} else {
+			if err := g.Start(t.Context(), none, counted); err != nil {
+				t.Fatalf("Start before %s = %v", call, err)
+			}
+			err = g.Stop(r.ctx, counted)
+		}
+		if r.ctx == nil {
+			nilErrs[r.method] = err
+		}
+		if !r.requires(err) {
+			t.Errorf("%s = %v, %s", call, err, r.want)
+		}
+		if runs != 0 {
+			t.Errorf("refused %s ran its function %d time(s), want none", call, runs)
+		}
+
+		if r.method == "Start" {
+			err = g.Start(t.Context(), counted, none)
+		} else {
+			err = g.Stop(t.Context(), counted)
+		}
+		if err != nil || runs != 1 {
+			t.Errorf("live %s after %s = %v with %d run(s), want nil and one", r.method, call, err, runs)
+		}
+	}
+
+	startMsg, stopMsg := fmt.Sprint(nilErrs["Start"]), fmt.Sprint(nilErrs["Stop"])
+	if strings.ReplaceAll(startMsg, "Start", "Stop") != stopMsg {
+		t.Errorf("Start(nil) and Stop(nil) messages %q and %q differ beyond the method name", startMsg, stopMsg)
+	}
+}
+
+// A Stop that arrives while another Stop runs the cleanup is refused as transient at once, without
+// running the cleanup; the first Stop then finishes, and a later Stop returns nil and runs nothing.
+// The test learns that the first Stop is inside the cleanup from the cleanup's own signal, not from
+// the guard's state.
+func TestGuardRefusesAConcurrentStop(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var g Guard
+		var runs atomic.Int32
+		entered, release := make(chan struct{}), make(chan struct{})
+		cleanup := func(context.Context) error {
+			if runs.Add(1) == 1 {
+				close(entered)
+				<-release
+			}
+			return nil
+		}
+		if err := g.Start(t.Context(), func(context.Context) error { return nil }, cleanup); err != nil {
+			t.Fatalf("Start = %v", err)
+		}
+
+		stopA := make(chan error, 1)
+		go func() { stopA <- g.Stop(t.Context(), cleanup) }()
+		<-entered
+
+		stopB := make(chan error, 1)
+		go func() { stopB <- g.Stop(t.Context(), cleanup) }()
+		synctest.Wait()
+		select {
+		case err := <-stopB:
+			if !errs.IsTransient(err) {
+				t.Errorf("Stop while another Stop runs cleanup = %v, want a transient refusal", err)
+			}
+		default:
+			t.Errorf("second Stop did not return while the first ran cleanup")
+		}
+		if n := runs.Load(); n != 1 {
+			t.Errorf("cleanup ran %d time(s), want 1", n)
+		}
+
+		close(release)
+		if err := <-stopA; err != nil {
+			t.Errorf("first Stop = %v, want nil", err)
+		}
+		if err := g.Stop(t.Context(), cleanup); err != nil {
+			t.Errorf("third Stop = %v, want nil", err)
+		}
+		if n := runs.Load(); n != 1 {
+			t.Errorf("cleanup ran %d time(s), want 1", n)
+		}
+	})
 }

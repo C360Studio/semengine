@@ -9,13 +9,14 @@ pin lines at SemStreams `8b99efe9`). `health` is another session's draft (#318).
 
 ## What Changes
 
-Claim skeleton. The design fills this section once the inventory (shape sweep, pin ADR list, open-issue listing)
-passes review.
+- Carry `internal/logforwarderpolicy` (`policy.go`, `policy_test.go`) unchanged from the pin, with its admission-ledger
+  row (`disposition: carry`). No production importer until `service`'s log-forwarder PR (design, Decision).
 
 ## Capabilities
 
-- To be decided by the design.
+- None changed. The contract line is the ledger row; the requirement lands with `service`.
 
 ## Impact
 
-- New package `internal/logforwarderpolicy` and its admission-ledger row.
+- New package `internal/logforwarderpolicy` (105 production lines, 54 test lines), its ledger row and a
+  `docs/repository-map.md` row.

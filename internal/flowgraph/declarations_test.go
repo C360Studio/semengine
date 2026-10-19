@@ -331,7 +331,8 @@ func TestRefusalsNameNoInternalFunction(t *testing.T) {
 		},
 	}
 	internalNames := []string{
-		"FlowGraph.", "AddComponentNode", "ConnectComponentsByPatterns", "validateGraphMutationProviders",
+		"FlowGraph.", "AddComponentNode", "addComponentNode", "ConnectComponentsByPatterns",
+		"connectComponentsByPatterns", "validateGraphMutationProviders",
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

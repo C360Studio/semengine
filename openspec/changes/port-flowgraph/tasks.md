@@ -22,7 +22,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   each caller asks once), R9 (the `events.*` case of `TestBuildFromDeclarationsConnectsDeclaredPorts` first, then
   one port-map builder and one `concreteID`), R11 (tags removed) and R12 (constructors unexported). The pin's edge
   tests pass unchanged except for R12's renames. Gate: `go test -race ./internal/flowgraph` and `task lint`.
-- [ ] 2.4 Owner-ruled behaviour changes: R10 (`TestUnconnectedOptionalInterfacePortReportsNoPublishers` red, then
+- [x] 2.4 Owner-ruled behaviour changes: R10 (`TestUnconnectedOptionalInterfacePortReportsNoPublishers` red, then
   the heuristic and its constant removed), R13 (the severity test and its helper removed) and R14
   (`TestRefusalsNameNoInternalFunction` red, then plain-text refusals); then the ledger row and a
   `docs/repository-map.md` row, now true of the code. Gate: `task ledger:check`, `task docs:check` and

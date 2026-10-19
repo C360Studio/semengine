@@ -43,7 +43,7 @@ at its commit (#171).
 
 ## 3. Verify, review and close
 
-- [ ] 3.1 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body. The body says
+- [x] 3.1 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body. The body says
   `Addresses #196` and declares no close. Check with `gh pr view 308 --json closingIssuesReferences --jq
   '[.closingIssuesReferences[].number]'`, which must print `[]`.
-- [ ] 3.2 Archive (`openspec archive lifecycleguard-tidy`) as the last content commit. Gate: `task spec:check`.
+- [x] 3.2 Archive (`openspec archive lifecycleguard-tidy`) as the last content commit. Gate: `task spec:check`.

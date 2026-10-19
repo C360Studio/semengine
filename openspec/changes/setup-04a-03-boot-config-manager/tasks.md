@@ -16,12 +16,12 @@ when `task verify` passes on a clean tree at its commit (#171).
   subtests); the new tests D2, D3 and D4 name, including the lifecycle-suite adapter. Gate: the tests fail on the
   base (the symbols do not exist; note the compile error).
 - [ ] 2.2 `manager.go`, `key_family.go`, `bucket_name.go` from the pin with the module path and the four renames, D1's
-  surface change and D2's lifecycle. Gate: `go test -race ./config/` and `go test -tags integration ./config/` pass,
-  `TestManagerPassesTheLifecycleSuite` and `TestStopWithAModelRegistryWatcherReturnsPromptly` included; `task verify`
+  surface change, D2's lifecycle, and D3 and D4 (Q2 and Q3 ruled yes), whose tests 2.1 already wrote. Gate:
+  `go test -race ./config/` and `go test -tags integration ./config/` pass, `TestManagerPassesTheLifecycleSuite`,
+  `TestStopWithAModelRegistryWatcherReturnsPromptly` and `TestKVSelectionReplacesServicesAndComponents` (replacing the
+  pin's `TestConfigManagerKVSelectionReplacesOnlyServices`) included; the PR body carries `Closes #17`; `task verify`
   passes on a clean tree (review stop).
-- [ ] 2.3 D3 (if Q2 is yes) and D4 (if Q3 is yes). Gate: D3's and D4's tests pass, and the pin's
-  `TestConfigManagerKVSelectionReplacesOnlyServices` is replaced by `TestKVSelectionReplacesServicesAndComponents`;
-  the PR body carries `Closes #17` if Q2 is yes; `task verify` passes on a clean tree.
+- [x] 2.3 Folded into 2.2: the 2.1 tests cover D3 and D4, so 2.2's gate cannot pass without them.
 - [ ] 2.4 Sensitivity by hand (#129): each mutant D5 lists, applied to the working tree, makes its named test fail
   under `go test -tags integration -run <name> ./config/`, and the revert makes it pass, recorded in `notes/2.4.md`.
   Gate: `task verify` passes on a clean tree.

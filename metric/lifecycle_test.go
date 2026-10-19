@@ -44,7 +44,10 @@ func (o *serverOwner) Observe() lifecycletest.Observation {
 	if o.s.server != nil {
 		held = append(held, "http.Server")
 	}
-	if o.s.serveDone != nil {
+	// Serve's goroutine sends its one result into the 1-slot serveDone and then closes it, and
+	// Stop clears the field only after receiving that result, so an empty, set channel means
+	// Serve has not returned. A result waiting in the channel means Serve has ended on its own.
+	if o.s.serveDone != nil && len(o.s.serveDone) == 0 {
 		held = append(held, "serve goroutine")
 	}
 	if o.s.requests != nil && o.s.requests.pending() > 0 {
@@ -75,6 +78,31 @@ func TestServerLifecycleSuite(t *testing.T) {
 	}
 	lifecycletest.Run(t, func() lifecycletest.Owner { return newServerOwner(newEphemeralServer()) }, mustFail,
 		lifecycletest.Promise{})
+}
+
+// TestServerServesAfterStartContextEnds: the Start context bounds Start only (ADR-113). Ending
+// it after Start returned stops nothing: requests are still served, and Stop then releases
+// everything. Two requests run in sequence so that work Start left waiting on its context, such
+// as a goroutine closing the server once the context ends, has had a full round trip in which
+// to run before the second one.
+func TestServerServesAfterStartContextEnds(t *testing.T) {
+	s := newEphemeralServer()
+	owner := newServerOwner(s)
+	startCtx, cancelStart := context.WithCancel(t.Context())
+	require.NoError(t, s.Start(startCtx))
+	cancelStart()
+
+	for i := range 2 {
+		response, err := testServerGET(t, s.Address(), nil)
+		require.NoError(t, err, "GET %d after the Start context ended", i+1)
+		require.NoError(t, response.Body.Close())
+		require.Equal(t, http.StatusOK, response.StatusCode, "GET %d after the Start context ended", i+1)
+	}
+
+	stopCtx, cancelStop := context.WithTimeout(t.Context(), failureBound)
+	defer cancelStop()
+	require.NoError(t, s.Stop(stopCtx))
+	require.Empty(t, owner.Observe().Unresolved, "after a Stop returned nil")
 }
 
 // TestServerAbortStopReportsContext is metric-abort-stop-reports-context (design D3). On an idle

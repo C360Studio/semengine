@@ -66,11 +66,11 @@ readiness, not this package (inventory § 2). Records this design touches:
 - S3 is optional and retained: `FromComponentHealth` passes `LastError` through the pin's text sanitizer. The probe
   on the pin copy (inventory § 1, S3) shows it over-redacts: `at 12:30:45` becomes `at 12[PORT][PORT]`, and
   `key=acme.prod.sensor.device.unit.one` becomes `[REDACTED]`. Operators list poisoned entities through DebugStatus
-  (pin ADR-079 `:70`), so nothing is lost that has no other home. The doc states what the sanitizer replaces and that it can over-redact.
+  (pin ADR-079 `:70`), so nothing is lost that has no other home. The doc states what the sanitizer replaces and
+  that it can over-redact.
 - **Q3 (owner ruled 2026-10-19: fix; #318 comment 6271710866).** A component with `Healthy=false` and an empty
-  `LastError` gets the
-  message "Component healthy" (pin `status.go:123-126`, pinned by `status_test.go:208-218`). Trigger in the tree:
-  graph-ingest's `Health()` collects stuck states only while running (`processor/graph-ingest/component.go:853-871`),
+  `LastError` gets the message "Component healthy" (pin `status.go:123-126`, pinned by `status_test.go:208-218`).
+  Trigger in the tree: graph-ingest's `Health()` collects stuck states only while running (`processor/graph-ingest/component.go:853-871`),
   so a graph-ingest that is not yet started, failed to start or is stopping reports `Healthy=false`, an empty
   `LastError` and `Status:"stopped"`, and `/components/health` shows `unhealthy` with "Component healthy". The status
   and HTTP code are right; only the text contradicts them. It is the owner's call because the 03B design keeps

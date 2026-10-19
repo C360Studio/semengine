@@ -42,7 +42,19 @@ adapter) unless another test is named. As in graph-ingest's adapter
 - each done channel `Stop` waits on, listed while it is open.
 
 `Calls` counts the adapter's own `Start`/`Stop` calls. Watcher stops are counted on the server, through the KV
-backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190).
+backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190). This rests on
+nats.go v1.54.0 behaviour (ADR-112, #170):
+
+- a KV watch is an ordered consumer created to be deleted on unsubscribe (`js.go:2026`);
+- `KeyWatcher.Stop` unsubscribes (`jetstream/kv.go:1239`);
+- a successful `Unsubscribe` deletes that consumer before it returns (`nats.go:5409-5411`).
+
+Two caveats:
+
+- An ordered-consumer reset deletes the old consumer in the background (`js.go:2390`, `:2425`). The adapter
+  therefore polls the count with `probe.Await` under a bound, and never reads it once.
+- The pin ignores `Stop`'s error (`manager.go:509`). The port's `Stop` joins each watcher's stop error into its
+  result, so a failed unsubscribe is reported, not counted as a stop.
 
 - `Start(ctx)` does its startup work under `ctx`: acquire, identity, arbitration, opening the watches. It refuses
   nil, an ended context and a second call (`errs.ErrAlreadyStarted`). A refused or failed Start holds nothing and
@@ -77,10 +89,13 @@ Manager; all three call Stop on exit already.
 - **Recommended:** when arbitration selects the bucket (equal or older file version, or an unparseable stored
   version), the effective `Components` are the bucket's `components.*` entries, as `Services` already
   are at the pin (`manager.go:1327`). This is the smallest fix that mirrors what the code already does.
-- `pushToKV`, `PutComponentToKV` and `DeleteComponentFromKV` refuse a component name that is not one NATS KV literal
-  token after the space mapping (`natsclient.ValidateKVLiteralToken`, as `KeyFamily.key` uses), naming the
-  component. A dotted name would otherwise be written as a key the watches and the sync skip, and would vanish at
-  the next KV-selected boot. `pushToKV` checks every name before its first write, so a refused name writes nothing.
+- Service and component names must each be one NATS KV literal token after the space mapping
+  (`natsclient.ValidateKVLiteralToken`, as `KeyFamily.key` uses). Otherwise a name is written as a key the watches
+  and the sync skip (pin `:1336-1339`), and vanishes at the next bucket-selected boot. Services already do this at
+  the pin, since `syncFromKV` replaces their set (`:1327`). `Start` checks every name in the file configuration
+  before it acquires the bucket. A refused name fails Start naming the service or component, and nothing is written,
+  not even the identity record. `PutComponentToKV` and `DeleteComponentFromKV` check their name before any write.
+- `pushToKV` encodes every value before its first write, so a value that cannot be encoded writes nothing.
 - `pushToKV` writes `version` last; the pin writes it first (`manager.go:882-894`). A push interrupted after its
   first write leaves the bucket's old `version`, or none (`0.0.0`). The next boot's newer file then wins and pushes
   again, instead of selecting a partial component set. Limit, retained: a file with no `version`, or `0.0.0`,
@@ -88,15 +103,23 @@ Manager; all three call Stop on exit already.
 - **Proof:**
   - `TestDeletedFileComponentStaysDeletedAtNextBoot` is P4 as a test: fails at the base, passes after.
   - `TestConfigManagerKVSelectionReplacesOnlyServices` becomes `TestKVSelectionReplacesServicesAndComponents`.
-  - `TestComponentNameThatIsNotOneKeyTokenIsRefused`.
-  - `TestFailedPushThenRebootKeepsTheFilesComponents`: a push that fails after its first write (driven as in D4),
-    then a reboot with a corrected file at the same version, ends with the file's full component set.
+  - `TestNameThatIsNotOneKeyTokenIsRefused`: a service `a.b` and a component `a.b` in the file each fail `Start`
+    with the bucket left as it was (no identity record), and `PutComponentToKV("a.b", ...)` fails with no write.
+  - `TestRecoveryFromAnInterruptedPush` proves recovery from the leftover state such a push can leave. It does not
+    drive the failure itself, which would need fault injection. It seeds the bucket through the KV API with the
+    identity record and some `services.*`/`components.*` keys, in two cases: no `version`, and an older `version`.
+    It then starts with the file and requires the effective services and components to be the file's full set, and
+    the bucket to hold the full push with the file's `version`.
+  - `TestPushWritesVersionLast`: after a successful push, the revision of `version` is greater than the revision of
+    every other key the push wrote.
   - #17 asks for its reproduction under `internal/harness`. It lives in `config/` beside the code it proves, because
     it needs the package's shared NATS fixture and its unexported test helpers.
 - **Cost:**
   - A component added to the file without a version bump no longer appears while the bucket holds the same
     version, the rule services follow today.
   - semsource's `Enabled:false` workaround keeps working.
+  - 0 of 156 service names in the 28 consumer config files, and none of semsource's four built-in service names
+    (`cmd/semsource/run.go:1104-1122`: `service-manager`, `component-manager`, `metrics`, `heartbeat`), is refused.
   - 0 of 227 component names in the 28 consumer config files are refused. semsource's runtime names all pass
     `entityid.SystemSlug` (`internal/sourcespawn/components.go:83-103`), which yields one token.
 - **Alternatives:**
@@ -121,10 +144,11 @@ Manager; all three call Stop on exit already.
 - **Proof:**
   - `TestMalformedStoredServiceFailsStart` (P5);
   - `TestStoredNATSTokenFailsStart`;
-  - `TestFirstBootPushFailureFailsStart` and `TestNewerFilePushFailureFailsStart`. If Q2 is yes, a component whose
-    name D3 refuses drives both, and the refusal comes before the first write. If Q2 is no, a component named `a*`
-    drives them: nats.go v1.54.0 refuses it as a key mid-push. The test is the probe; if nats.go accepts the key,
-    the test fails at task 2.1 and the design returns for a driver. No fault injection is needed either way;
+  - `TestPushEncodingFailureFailsStart`, in a first-boot case and a newer-file case. It is driven by a component
+    whose `config` is `json.RawMessage("{")`, which `encoding/json` refuses to marshal; the test is the probe. Start
+    fails naming the component, and the bucket holds no `services.*`, `components.*` or `version` key the push
+    would have written. A push failing between two writes, from a broker fault, has no deterministic driver without
+    fault injection or a test-only hook. It is not tested; its recovery is `TestRecoveryFromAnInterruptedPush` (D3);
   - `TestVersionReadErrorFailsStart` is not written: it needs a mid-operation fault (#185), and the branch is one
     `errors.Is`.
 - **Cost:** a bucket holding a broken entry, or a push that fails, stops boot until an operator fixes the key or the
@@ -199,9 +223,11 @@ Manager; all three call Stop on exit already.
   context passed to `Start` ends, as ADR-113 says for components? Cost: one line in each of semsource, semteams and
   semboids, which must hand `Stop` a fresh bounded context (an already-ended one stops nothing). Recommended: yes.
 - **Q2 (D3).** When the bucket's copy wins at boot, should its components replace the file's, as its services
-  already do, so a deleted component stays deleted (#17)? Component names NATS cannot hold as one key would be
-  refused. Cost: a component added to the file needs a version bump to appear, as a service does today. No consumer
-  config file name and no semsource runtime name is refused. Recommended: yes.
+  already do, so a deleted component stays deleted (#17)? Service and component names that NATS cannot hold as one
+  key (a dot, `*` or `>`) would be refused when `Start` begins and by the component writes, because such a name is
+  written as a key the boot never reads back, and a service named that way already vanishes at the pin today. Cost:
+  a component added to the file needs a version bump to appear, as a service does today. No name in the consumer
+  config files (227 components, 156 services) and no semsource runtime name is refused. Recommended: yes.
 - **Q3 (D4).** Should Start fail with the real error when it cannot write the file's configuration to the bucket (on
   a first boot or when the file is newer), read the bucket, or decode a stored entry, including a stored `nats`
   setting that loading refuses, instead of logging and continuing? Cost: a broken stored entry or a failed push

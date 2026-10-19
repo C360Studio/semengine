@@ -69,7 +69,8 @@ key or write the record (ADR-102 decision 7).
 
 Every Start that returns an error SHALL leave `PutComponentToKV`, `DeleteComponentFromKV` and every registered key
 family's reads and writes returning the not-acquired error. A Start refused before its first write (identity,
-retention policy, a refused component name, a stored entry that does not decode) SHALL leave the bucket's contents
+retention policy, a refused service or component name, a value that cannot be encoded, a stored entry that does not
+decode) SHALL leave the bucket's contents
 unchanged.
 
 #### Scenario: Foreign identity
@@ -83,15 +84,23 @@ unchanged.
 On a first boot Start SHALL push the file configuration to the bucket. Otherwise, when the file's `version` is newer
 Start SHALL push the file. When it is equal, older, or cannot be compared, Start SHALL select the bucket: the
 effective `services` and `components` SHALL then be exactly the bucket's `services.*` and `components.*` entries. A
-missing stored `version` SHALL compare as `0.0.0`. A push SHALL check every component name before its first write
-and SHALL write `version` after every other key, so a push interrupted after its first write is followed, at the
-next boot with a newer file version, by a full push.
+missing stored `version` SHALL compare as `0.0.0`. Before acquiring the bucket, Start SHALL refuse a file
+configuration holding a service or component name that is not one NATS KV literal token after the space mapping,
+naming it. A push SHALL encode every value before its first write and SHALL write `version` after every other key.
 
-#### Scenario: A failed push does not select a partial set
+#### Scenario: Leftovers of an interrupted push do not select a partial set
 
-- **WHEN** a push fails after its first write and the deployment reboots with a corrected file at the same version
-- **THEN** the effective components are the file's full set
-- **AND** the test that verifies this is `TestFailedPushThenRebootKeepsTheFilesComponents`
+- **WHEN** the bucket holds the identity record and some `services.*`/`components.*` keys with no `version`, or with
+  a `version` older than the file's, and a Manager starts with the file
+- **THEN** the effective services and components are the file's full set, and the bucket holds the full push with the
+  file's `version`
+- **AND** the tests that verify this are `TestRecoveryFromAnInterruptedPush` and `TestPushWritesVersionLast`
+
+#### Scenario: A name the bucket cannot hold as one key
+
+- **WHEN** the file declares a service or component named `a.b`
+- **THEN** Start fails naming it, and the bucket is unchanged
+- **AND** the test that verifies this is `TestNameThatIsNotOneKeyTokenIsRefused`
 
 #### Scenario: A deleted file component stays deleted
 
@@ -105,7 +114,8 @@ next boot with a newer file version, by a full push.
 
 Start SHALL return an error naming the cause, hold nothing and arm no writer when:
 
-- the first-boot push fails, or the push when the file's version is newer fails;
+- the first-boot push fails, or the push when the file's version is newer fails, including a value that cannot be
+  encoded (`TestPushEncodingFailureFailsStart`);
 - listing or reading the bucket during arbitration fails;
 - reading the stored `version` fails other than as not-found;
 - a stored `services.*`, `components.*`, `nats` or `model_registry` entry does not decode;
@@ -136,7 +146,7 @@ be re-applied in memory but SHALL still notify subscribers.
 
 - **WHEN** `PutComponentToKV` is called with `a.b`
 - **THEN** it returns an error naming `a.b` and the bucket is unchanged
-- **AND** the test that verifies this is `TestComponentNameThatIsNotOneKeyTokenIsRefused`
+- **AND** the test that verifies this is `TestNameThatIsNotOneKeyTokenIsRefused`
 
 #### Scenario: Engine-owned revision still notifies
 

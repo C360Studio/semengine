@@ -15,9 +15,10 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   `notes/2.1.md`. Gate: both fail as D2 states; `go vet -tags integration ./processor/graph-ingest/`.
 - [x] 2.2 The fix and the doc comment (D1); mutants M1-M3 (D3) recorded in `notes/2.2.md`. Gate: `task verify` on a
   clean tree.
-- [ ] 2.3 Review stop (Codex) on 2.1-2.2; `reviewed-by:` in the PR body.
+- [x] 2.3 Review stop (Codex) on 2.1-2.2: APPROVE at `7c6e4b5` (2026-10-19, no findings); `reviewed-by:` in the PR
+  body.
 
 ## 3. Archive
 
-- [ ] 3.1 Archive the change (`skip_specs`). Gate: `task spec:check` and `task docs:check`. `task merge:check -- 316`
+- [x] 3.1 Archive the change (`skip_specs`). Gate: `task spec:check` and `task docs:check`. `task merge:check -- 316`
   is recorded on PR #316 after the archive; no task claims it.

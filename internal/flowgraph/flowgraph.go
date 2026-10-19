@@ -609,7 +609,7 @@ func (g *FlowGraph) connectRequestPorts(publishers, subscribers map[string][]Com
 func (g *FlowGraph) validateKVWriters(publishers map[string][]ComponentPortRef, warnings *[]string) {
 	for _, connectionID := range slices.Sorted(maps.Keys(publishers)) {
 		if pubs := publishers[connectionID]; len(pubs) > 1 {
-			*warnings = append(*warnings, fmt.Sprintf("multiple writers to KV bucket %s: %v", connectionID, pubs))
+			*warnings = append(*warnings, fmt.Sprintf("multiple writers to KV bucket %s: %s", connectionID, describePorts(pubs)))
 		}
 	}
 }
@@ -647,7 +647,7 @@ func (g *FlowGraph) validateNetworkPorts(publishers, subscribers map[string][]Co
 		ports := g.exclusivePortRefs(candidates, component.DirectionOutput)
 		if len(ports) > 1 {
 			conflicts = append(conflicts,
-				fmt.Sprintf("network port conflict on %s: multiple components binding: %v", connID, ports))
+				fmt.Sprintf("network port conflict on %s: multiple components binding: %s", connID, describePorts(ports)))
 		}
 		if len(ports) != 0 {
 			allPorts[connID] = ports
@@ -663,15 +663,27 @@ func (g *FlowGraph) validateNetworkPorts(publishers, subscribers map[string][]Co
 		}
 		if existing, exists := allPorts[connID]; exists {
 			conflicts = append(conflicts,
-				fmt.Sprintf("network port conflict on %s: %v and %v both trying to bind", connID, existing, ports))
+				fmt.Sprintf("network port conflict on %s: %s and %s both trying to bind", connID,
+					describePorts(existing), describePorts(ports)))
 		} else if len(ports) > 1 {
 			conflicts = append(conflicts,
-				fmt.Sprintf("network port conflict on %s: multiple components binding: %v", connID, ports))
+				fmt.Sprintf("network port conflict on %s: multiple components binding: %s", connID, describePorts(ports)))
 		}
 	}
 
 	// Network ports are external connections - no edges created in the graph
 	return conflicts
+}
+
+// describePorts names each port the way the other refusals do, "component X
+// port Y", so a conflict reads in the operator's words rather than Go's struct
+// formatting.
+func describePorts(refs []ComponentPortRef) string {
+	names := make([]string, len(refs))
+	for index, ref := range refs {
+		names[index] = fmt.Sprintf("component %s port %s", ref.ComponentName, ref.PortName)
+	}
+	return strings.Join(names, ", ")
 }
 
 func (g *FlowGraph) exclusivePortRefs(candidates []ComponentPortRef, direction component.Direction) []ComponentPortRef {

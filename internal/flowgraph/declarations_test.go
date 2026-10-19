@@ -140,7 +140,8 @@ func TestBuildFromDeclarationsRefusesNetworkBindConflicts(t *testing.T) {
 						[]component.Port{networkPort("serve", component.DirectionOutput)}),
 				}
 			},
-			want: "network port conflict on tcp:0.0.0.0:8080: [{gateway serve}] and [{gateway accept}] both trying to bind",
+			want: "network port conflict on tcp:0.0.0.0:8080: component gateway port serve and " +
+				"component gateway port accept both trying to bind",
 		},
 	}
 	for _, tt := range tests {
@@ -309,7 +310,30 @@ func TestRefusalsNameNoInternalFunction(t *testing.T) {
 				}
 			},
 			want: "connect component flow graph: network port conflict on tcp:0.0.0.0:8080: " +
-				"multiple components binding: [{first listen} {second listen}]: invalid configuration",
+				"multiple components binding: component first port listen, component second port listen: " +
+				"invalid configuration",
+		},
+		{
+			name: "two conflicts at once",
+			declarations: func(t *testing.T) []component.Declaration {
+				writer := func(name string) component.Port {
+					return component.Port{
+						Name: name, Direction: component.DirectionOutput,
+						Config: component.KVWritePort{Bucket: "entity_states"},
+					}
+				}
+				return []component.Declaration{
+					declaration(t, "first", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
+					declaration(t, "second", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
+					declaration(t, "writer1", nil, []component.Port{writer("state")}),
+					declaration(t, "writer2", nil, []component.Port{writer("state")}),
+				}
+			},
+			want: "connect component flow graph: multiple writers to KV bucket kv:entity_states: " +
+				"component writer1 port state, component writer2 port state; " +
+				"network port conflict on tcp:0.0.0.0:8080: " +
+				"multiple components binding: component first port listen, component second port listen: " +
+				"invalid configuration",
 		},
 		{
 			name: "malformed graph mutation port",

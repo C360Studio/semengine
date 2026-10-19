@@ -117,6 +117,8 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 // The guard is reached through its Start (design D22): a start function that fails, and a
 // rollback that is the component's own release under a context that has already ended,
 // as a rollback budget that expires before the consumer reports Closed would leave it.
+// The guard runs the one cleanup Start was given, so that cleanup fails on its first
+// call, the rollback, and runs release with the later Stop's context after that.
 func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T) {
 	consumer := &graphIngestLifecycleConsumeContext{
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
@@ -133,9 +135,16 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 	errStart := errors.New("start fails after acquiring")
 	expired, expire := context.WithCancel(t.Context())
 	expire()
+	rolledBack := false // the guard runs the cleanup one call at a time
 	err := component.lifecycle.Start(t.Context(),
 		func(context.Context) error { return errStart },
-		func(context.Context) error { return component.release(expired) })
+		func(ctx context.Context) error {
+			if !rolledBack { // the rollback: release under the ended context fails
+				rolledBack = true
+				return component.release(expired)
+			}
+			return component.release(ctx)
+		})
 	if !errors.Is(err, errStart) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("failed Start whose cleanup fails = %v, want the start failure and context.Canceled", err)
 	}

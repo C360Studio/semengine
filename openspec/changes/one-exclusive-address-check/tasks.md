@@ -17,8 +17,8 @@ Tasks 2.1-2.6 are steps 1-6 of the design's "Change". Each task ends when its ga
   M2 detected by `task mutate:check`. Gate: `go test -race ./component` and `task lint`.
 - [x] 2.4 Flowgraph's copy and its tests deleted; "two conflicts at once" rewritten with two KV buckets. Gate:
   `go test -race ./internal/flowgraph` and `task lint`.
-- [ ] 2.5 The spec delta is true of the code: each scenario names the test that drives it. Gate: `task spec:check`.
-- [ ] 2.6 Docs and both ledger rows updated; `task verify` passes on a clean tree. Gate: `task verify`.
+- [x] 2.5 The spec delta is true of the code: each scenario names the test that drives it. Gate: `task spec:check`.
+- [x] 2.6 Docs and both ledger rows updated; `task verify` passes on a clean tree. Gate: `task verify`.
 
 ## 3. Review and close
 

@@ -1,122 +1,75 @@
-// Package config provides configuration management for StreamKit applications.
+// Package config reads a SemEngine process's configuration and declares the
+// JetStream streams it needs.
 //
-// This package handles loading, validation, and dynamic updates of application
-// configuration from JSON files, environment variables, and NATS KV store.
+// # Loading
 //
-// # Core Components
+// A Loader reads one JSON document, lays it over built-in defaults, applies
+// the environment overrides, and checks that platform.org and platform.id leave
+// room for the entity IDs the deployment will create (ADR-104). It does not
+// call Validate; the caller does:
 //
-// Config: Main configuration structure containing platform settings, NATS
-// connection details, service configurations, and component definitions.
-//
-// SafeConfig: Thread-safe wrapper using RWMutex and deep cloning to prevent
-// concurrent access issues and accidental mutations.
-//
-// Manager: Manages the complete lifecycle of configuration including
-// initialization, NATS KV watching, change notifications via channels, and
-// graceful shutdown with timeout handling.
-//
-// Loader: Loads configuration with layer merging (base + overrides) and
-// environment variable substitution for flexible deployment scenarios.
-//
-// # Basic Usage
-//
-// Loading configuration from files with layer merging:
-//
-//	loader := config.NewLoader()
-//	loader.AddLayer("config/base.json")
-//	loader.AddLayer("config/production.json") // Overrides base
-//	loader.EnableValidation(true)
-//
-//	cfg, err := loader.Load()
+//	cfg, err := config.NewLoader().LoadFile("config.json")
 //	if err != nil {
-//		log.Fatal(err)
+//		return err
+//	}
+//	if err := cfg.Validate(); err != nil {
+//		return err
 //	}
 //
-// # Dynamic Configuration
+// LoadFromBytes does the same for a document already in memory. A key the
+// document sets replaces the default, including false, 0 or an empty list; a
+// key it leaves out keeps the default; objects merge key by key.
 //
-// Using Manager for runtime updates via NATS KV:
+// Loading fails, returning no Config, when the document:
+//   - is not exactly one JSON object, is larger than 10 MB, or nests deeper
+//     than 100 levels;
+//   - has a value that does not fit its field, such as a string where a list
+//     is expected, or an unknown key inside a services entry (the error
+//     carries the decoder's message);
+//   - sets platform.instance_id, which was removed (ADR-102);
+//   - sets a NATS setting nothing in SemEngine applies yet: nats.username,
+//     nats.password, nats.token, nats.tls, nats.max_reconnects,
+//     nats.reconnect_wait, nats.jetstream.domain,
+//     nats.jetstream.retention_policy or nats.jetstream.replication_factor.
+//     These are refused when present, whatever their value and in any letter
+//     case, so a setting an operator wrote is never silently ignored (#74).
 //
-//	cm, err := config.NewConfigManager(cfg, natsClient, logger)
-//	if err != nil {
-//		log.Fatal(err)
-//	}
+// Other unknown keys are accepted and ignored.
 //
-//	// Start watching for config changes
-//	if err := cm.Start(ctx); err != nil {
-//		log.Fatal(err)
-//	}
-//	defer cm.Stop(5 * time.Second)
+// # Environment overrides
 //
-//	// Subscribe to specific config changes
-//	updates := cm.OnChange("services.*")
-//	for update := range updates {
-//		log.Printf("Service config changed: %s", update.Key)
-//	}
+// When set and not empty, SEMENGINE_PLATFORM_ID, SEMENGINE_PLATFORM_TYPE,
+// SEMENGINE_PLATFORM_REGION and SEMENGINE_NATS_URLS (comma-separated) replace
+// the document's platform.id, platform.type, platform.region and nats.urls.
+// Loading fails when SEMENGINE_NATS_USERNAME, SEMENGINE_NATS_PASSWORD or
+// SEMENGINE_NATS_TOKEN is set and not empty, naming the variable: those
+// credentials are not applied yet.
 //
-// # Thread-Safe Access
+// # Which files LoadFile reads
 //
-// SafeConfig ensures thread-safe access to configuration:
+// The path must end in .json or .json5; the content is read as plain JSON
+// either way. A relative path must stay inside the current working directory
+// once . and .. are resolved. An absolute path is not confined to any
+// directory, but is refused if a name in it contains "..". Symbolic links are
+// followed, so a link to a regular file is read wherever that file is. A
+// directory or device is refused.
 //
-//	safeConfig := cm.GetConfig()
+// # Sharing a configuration
 //
-//	// Read config (deep copy returned, safe to use)
-//	cfg := safeConfig.Get()
+// SafeConfig wraps a Config for concurrent use. Get returns a deep copy.
+// Mutate holds the write lock from the read to the swap, so use it, not Get
+// followed by Update, to change part of a configuration another goroutine may
+// also change.
 //
-//	// Read-modify-write atomically: Mutate holds the write lock across the whole
-//	// clone → mutate → swap so concurrent mutations cannot lose one another's
-//	// change (gh#515). Do NOT do Get() → mutate → Update() — the lock is released
-//	// between the read and the swap, so a concurrent writer can clobber you.
-//	safeConfig.Mutate(func(cfg *Config) error {
-//		c := cfg.Components["my-component"]
-//		c.Enabled = true
-//		cfg.Components["my-component"] = c
-//		return nil
-//	})
+// # Streams
 //
-//	// Push updates to NATS KV
-//	cm.PushToKV(ctx)
+// StreamsManager.EnsureStreams creates or repairs the JetStream streams a
+// Config needs: the framework's own, those in its streams section, and those
+// its components' JetStream output ports imply. Every stream must declare a
+// finite max_age, a max_bytes above zero and a discard policy, unless it is
+// declared archival, or it already exists and has an unexpired migration
+// override. Config.Validate checks those declarations without a server
+// (ValidateStreamDeclarations).
 //
-// # Environment Variable Overrides
-//
-// Configuration values can be overridden using environment variables:
-//
-//	# Override platform ID
-//	export STREAMKIT_PLATFORM_ID="prod-cluster-01"
-//
-//	# Override NATS URLs (comma-separated)
-//	export STREAMKIT_NATS_URLS="nats://server1:4222,nats://server2:4222"
-//
-// # Layer Merging
-//
-// Configuration layers are merged with last-wins semantics:
-//
-//	base.json:
-//	  {"platform": {"id": "dev", "log_level": "debug"}}
-//
-//	production.json:
-//	  {"platform": {"id": "prod"}}
-//
-//	Result:
-//	  {"platform": {"id": "prod", "log_level": "debug"}}
-//
-// # Security
-//
-// The package includes security validation:
-//   - File size limits (10MB max) to prevent memory exhaustion
-//   - JSON depth validation (100 levels max) to prevent DoS attacks
-//   - Path validation to prevent directory traversal
-//   - Regular file checks (no symlinks or device files)
-//
-// # Configuration Structure
-//
-// The main Config struct contains:
-//
-//	type Config struct {
-//	    Platform   PlatformConfig           // Platform metadata
-//	    NATS       NATSConfig              // Message bus connection
-//	    Services   map[string]any  // Service configurations
-//	    Components map[string]ComponentConfig // Component definitions
-//	}
-//
-// See the README.md file for detailed examples and configuration patterns.
+// The package README gives an example document and the rules in full.
 package config

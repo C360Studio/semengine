@@ -47,9 +47,10 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 - [x] 4.2 Contracts, `AGENTS.md:71`, `.agents/rules-index.md:17`, `docs/setup-plan.md`, `docs/testing.md:573` (the
   observation-window exception, owner answer 2), the ledger row, the ADR-108 note (D9). Gate: `task verify`
   (`TestAgentSetupParity`, the `AGENTS.md` size and row counts) and `task docs:check`.
-- [ ] 4.3 Review stop C (Codex) on 4.1-4.2.
+- [x] 4.3 Review stop C (Codex) on 4.1-4.2: APPROVE at `7903860` (2026-10-19) with one MEDIUM, applied (the
+  architect contract's detachment rule points at the run-context exception).
 
 ## 5. Archive
 
-- [ ] 5.1 Sync `lifecycle-suite`, archive the change (the last content commit). Gate: `task spec:check` and
+- [x] 5.1 Sync `lifecycle-suite`, archive the change (the last content commit). Gate: `task spec:check` and
   `task docs:check`.

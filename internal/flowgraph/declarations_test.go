@@ -1,12 +1,15 @@
 package flowgraph
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // declaration builds a component.Declaration the way the registry does: each
@@ -265,5 +268,82 @@ func TestMatchNATSPatternIsSymmetric(t *testing.T) {
 	// The law is not checked over a set that never matches or always does.
 	if matched == 0 || unmatched == 0 {
 		t.Fatalf("the set must give both answers: %d distinct pairs matched, %d did not", matched, unmatched)
+	}
+}
+
+// TestRefusalsNameNoInternalFunction drives each of the package's five
+// configuration refusals through BuildFromDeclarations. Each one wraps
+// errs.ErrInvalidConfig, and its text says what is wrong in the operator's
+// words, naming no function of this package.
+func TestRefusalsNameNoInternalFunction(t *testing.T) {
+	legacyRequester := component.Port{
+		Name:      "legacy",
+		Direction: component.DirectionOutput,
+		Config:    component.NATSRequestPort{Subject: "graph.mutation.entity.create"},
+	}
+	tests := []struct {
+		name         string
+		declarations func(t *testing.T) []component.Declaration
+		want         string
+	}{
+		{
+			name: "empty instance name",
+			declarations: func(t *testing.T) []component.Declaration {
+				return []component.Declaration{declaration(t, "", nil, nil)}
+			},
+			want: `add component "" to flow graph: component name cannot be empty: invalid configuration`,
+		},
+		{
+			name: "duplicate instance name",
+			declarations: func(t *testing.T) []component.Declaration {
+				return []component.Declaration{declaration(t, "twin", nil, nil), declaration(t, "twin", nil, nil)}
+			},
+			want: `add component "twin" to flow graph: component twin already exists: invalid configuration`,
+		},
+		{
+			name: "network bind conflict",
+			declarations: func(t *testing.T) []component.Declaration {
+				return []component.Declaration{
+					declaration(t, "first", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
+					declaration(t, "second", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
+				}
+			},
+			want: "connect component flow graph: network port conflict on tcp:0.0.0.0:8080: " +
+				"multiple components binding: [{first listen} {second listen}]: invalid configuration",
+		},
+		{
+			name: "malformed graph mutation port",
+			declarations: func(t *testing.T) []component.Declaration {
+				return []component.Declaration{declaration(t, "requester", nil, []component.Port{legacyRequester})}
+			},
+			want: "connect component flow graph: component requester port legacy is not a required nats-request " +
+				"semengine.graph.mutation v1 port on graph.mutation.>: invalid configuration",
+		},
+		{
+			name: "no graph mutation provider",
+			declarations: func(t *testing.T) []component.Declaration {
+				return []component.Declaration{
+					declaration(t, "requester", nil, []component.Port{mutationPort(component.DirectionOutput)}),
+				}
+			},
+			want: "connect component flow graph: graph mutation flow requires exactly one compatible provider, " +
+				"found 0: invalid configuration",
+		},
+	}
+	internalNames := []string{
+		"FlowGraph.", "AddComponentNode", "ConnectComponentsByPatterns", "validateGraphMutationProviders",
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			graph, err := BuildFromDeclarations(tt.declarations(t))
+
+			require.Error(t, err)
+			assert.Nil(t, graph)
+			assert.True(t, errors.Is(err, errs.ErrInvalidConfig), "error %q does not wrap errs.ErrInvalidConfig", err)
+			for _, internal := range internalNames {
+				assert.False(t, strings.Contains(err.Error(), internal), "error %q names %s", err, internal)
+			}
+			assert.EqualError(t, err, tt.want)
+		})
 	}
 }

@@ -110,10 +110,10 @@ func (g *FlowGraph) addComponentNode(
 	outputFacts []component.PortFacts,
 ) error {
 	if name == "" {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "FlowGraph", "AddComponentNode", "component name cannot be empty")
+		return fmt.Errorf("component name cannot be empty: %w", errs.ErrInvalidConfig)
 	}
 	if _, exists := g.nodes[name]; exists {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "FlowGraph", "AddComponentNode", fmt.Sprintf("component %s already exists", name))
+		return fmt.Errorf("component %s already exists: %w", name, errs.ErrInvalidConfig)
 	}
 
 	inputPorts, err := g.extractPortInfo(inputDeclaration, inputFacts)
@@ -199,7 +199,7 @@ func (g *FlowGraph) connectComponentsByPatterns() error {
 
 	// Return error if there are critical warnings
 	if len(warnings) > 0 {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "FlowGraph", "ConnectComponentsByPatterns", fmt.Sprintf("validation warnings: %v", warnings))
+		return fmt.Errorf("%s: %w", strings.Join(warnings, "; "), errs.ErrInvalidConfig)
 	}
 
 	return nil
@@ -224,10 +224,9 @@ func (g *FlowGraph) validateGraphMutationProviders() error {
 			if port.Pattern != component.PatternRequest || port.ConnectionID != graphmutation.SubjectFamily ||
 				port.Interface == nil || port.Interface.Type != graphmutation.InterfaceType ||
 				port.Interface.Version != graphmutation.InterfaceVersion || !port.Required {
-				return errs.WrapInvalid(errs.ErrInvalidConfig, "FlowGraph", "validateGraphMutationProviders",
-					fmt.Sprintf("component %s port %s is not a required nats-request %s %s port on %s",
-						componentName, port.Name, graphmutation.InterfaceType, graphmutation.InterfaceVersion,
-						graphmutation.SubjectFamily))
+				return fmt.Errorf("component %s port %s is not a required nats-request %s %s port on %s: %w",
+					componentName, port.Name, graphmutation.InterfaceType, graphmutation.InterfaceVersion,
+					graphmutation.SubjectFamily, errs.ErrInvalidConfig)
 			}
 			if port.Direction == component.DirectionInput {
 				providers++
@@ -238,8 +237,8 @@ func (g *FlowGraph) validateGraphMutationProviders() error {
 		return nil
 	}
 	if providers != 1 {
-		return errs.WrapInvalid(errs.ErrInvalidConfig, "FlowGraph", "validateGraphMutationProviders",
-			fmt.Sprintf("graph mutation flow requires exactly one compatible provider, found %d", providers))
+		return fmt.Errorf("graph mutation flow requires exactly one compatible provider, found %d: %w",
+			providers, errs.ErrInvalidConfig)
 	}
 	return nil
 }

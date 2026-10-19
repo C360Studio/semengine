@@ -392,8 +392,8 @@ func matchTokens(subjectTokens, patternTokens []string) bool {
 
 	for i < len(patternTokens) {
 		if patternTokens[i] == ">" {
-			// '>' matches everything remaining
-			return true
+			// '>' matches one or more remaining tokens, never none
+			return j < len(subjectTokens)
 		}
 
 		if j >= len(subjectTokens) {

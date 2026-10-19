@@ -310,7 +310,7 @@ func TestFlowGraphPatterns(t *testing.T) {
 
 		// Test multi-token wildcard (>)
 		assert.True(t, matchNATSPattern("foo.bar.baz.qux", "foo.>"), "> should match multiple tokens")
-		assert.True(t, matchNATSPattern("foo", "foo.>"), "> should match zero tokens")
+		assert.False(t, matchNATSPattern("foo", "foo.>"), "> needs at least one trailing token")
 
 		// Test non-matches
 		assert.False(t, matchNATSPattern("foo.bar.baz", "foo.*.qux"), "* shouldn't match wrong token")

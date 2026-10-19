@@ -2617,7 +2617,9 @@
     (6) the interface-alternative heuristic and IssueOptionalInterfaceUnused removed, so an unconnected input
     that is not required reports no_publishers; (7) the empty or duplicate name, KV-writer, network-bind and
     graph-mutation refusals are plain text wrapping errs.ErrInvalidConfig and name no internal function (the
-    port/fact count and connection-identity refusals are plain text with no sentinel, as at the pin).
+    port/fact count and connection-identity refusals are plain text with no sentinel, as at the pin); (8) a `>`
+    in a subject matches one or more trailing tokens, never none, so `events.>` and `events` do not match (at the
+    pin they did; #326).
     BuildFromDeclarations refuses an empty or duplicate instance name, a port/fact count mismatch and a port
     with no connection identity, then derives edges: stream and request by wildcard subject match, recording
     the side without a wildcard, watch and read by exact bucket, store as fan-in from every provider to every
@@ -2639,7 +2641,8 @@
     internal/flowgraph/declarations_test.go (TestBuildFromDeclarationsConnectsDeclaredPorts,
     TestBuildFromDeclarationsRefusesExtraFacts, TestBuildFromDeclarationsRefusesMalformedDeclarations,
     TestBuildFromDeclarationsRefusesNetworkBindConflicts, TestValidateStreamRequirementsFlagsCoreNATSPublishers,
-    TestFlowGraphOutputIsTheSameEveryRun, TestMatchNATSPatternIsSymmetric, TestRefusalsNameNoInternalFunction),
+    TestFlowGraphOutputIsTheSameEveryRun, TestMatchNATSPatternIsSymmetric, TestRefusalsNameNoInternalFunction,
+    TestTailWildcardNeedsATrailingToken),
     flowgraph_validation_test.go (TestUnconnectedOptionalInterfacePortReportsNoPublishers and the pin's tests),
     graph_mutation_contract_test.go, subject_cover_test.go, flowgraph_test.go, flowgraph_patterns_test.go,
     store_federation_test.go; internal/harness/contract (TestReservedSubjectsDeclaredOnce)

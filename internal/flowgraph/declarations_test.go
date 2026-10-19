@@ -68,6 +68,51 @@ func TestBuildFromDeclarationsConnectsDeclaredPorts(t *testing.T) {
 	}
 }
 
+// TestTailWildcardNeedsATrailingToken checks the documented `>` rule through
+// the production seam: `events.>` stands for one or more tokens after
+// `events`, so a publisher on `events` itself leaves a required subscriber on
+// `events.>` unconnected, while a publisher on `events.created` reaches it.
+func TestTailWildcardNeedsATrailingToken(t *testing.T) {
+	build := func(t *testing.T, pubSubject string) *FlowGraph {
+		t.Helper()
+		input := natsPort("in", component.DirectionInput, "events.>")
+		input.Required = true
+		graph, err := BuildFromDeclarations([]component.Declaration{
+			declaration(t, "publisher", nil, []component.Port{
+				natsPort("out", component.DirectionOutput, pubSubject),
+			}),
+			declaration(t, "subscriber", []component.Port{input}, nil),
+		})
+		require.NoError(t, err)
+		return graph
+	}
+
+	t.Run("no trailing token", func(t *testing.T) {
+		graph := build(t, "events")
+		assert.Empty(t, graph.GetEdges())
+		assert.Contains(t, graph.AnalyzeConnectivity().OrphanedPorts, OrphanedPort{
+			ComponentName: "subscriber",
+			PortName:      "in",
+			Direction:     component.DirectionInput,
+			ConnectionID:  "events.>",
+			Pattern:       component.PatternStream,
+			Issue:         IssueNoPublishers,
+			Required:      true,
+		})
+	})
+
+	t.Run("one trailing token", func(t *testing.T) {
+		graph := build(t, "events.created")
+		assert.Equal(t, []FlowEdge{{
+			From:         ComponentPortRef{ComponentName: "publisher", PortName: "out"},
+			To:           ComponentPortRef{ComponentName: "subscriber", PortName: "in"},
+			Pattern:      component.PatternStream,
+			ConnectionID: "events.created",
+		}}, graph.GetEdges())
+		assert.Empty(t, graph.AnalyzeConnectivity().OrphanedPorts)
+	})
+}
+
 func TestBuildFromDeclarationsRefusesExtraFacts(t *testing.T) {
 	facts, err := natsPort("in", component.DirectionInput, "data.raw").Facts()
 	require.NoError(t, err)

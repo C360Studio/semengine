@@ -43,8 +43,8 @@ adapter) unless another test is named. As in graph-ingest's adapter
 
 `Calls` is left empty: the suite compares whole observations around a call (`lifecycletest.go:243-294`), so a
 count the call itself bumps would always differ (task 2.1 finding). Watcher stops are counted on the server,
-through the KV backing stream's consumer count, never through a counter, hook or field added for tests (#186, #190). This rests on
-nats.go v1.54.0 behaviour (ADR-112, #170):
+through the KV backing stream's consumer count, never through a counter, hook or field added for tests
+(#186, #190). This rests on nats.go v1.54.0 behaviour (ADR-112, #170):
 
 - a KV watch is an ordered consumer created to be deleted on unsubscribe (`js.go:2026`);
 - `KeyWatcher.Stop` unsubscribes (`jetstream/kv.go:1239`);

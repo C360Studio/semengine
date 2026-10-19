@@ -4,7 +4,10 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strings"
 	"testing"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 func TestRegistryCapturesPortsOnceAndReturnsDefensiveDeclarationSnapshots(t *testing.T) {
@@ -155,5 +158,139 @@ func TestRegistrySnapshotReportsCompleteBootSetAndSealRejectsLaterAdmission(t *t
 	}
 	if snapshots := registry.Snapshots(); len(snapshots) != 2 {
 		t.Fatalf("post-seal snapshots = %#v, want unchanged two-declaration set", snapshots)
+	}
+}
+
+// registerPortsFactory registers a factory whose component reports exactly
+// these ports, with a declarer that declares the same ones.
+func registerPortsFactory(t *testing.T, registry *Registry, factory string, inputs, outputs []Port) {
+	t.Helper()
+	built := &declarationTestComponent{inputs: inputs, outputs: outputs}
+	requireNoError(t, registry.Register(Registration{
+		Name: factory, Type: "processor",
+		Factory: func(json.RawMessage, Dependencies) (Discoverable, error) { return built, nil },
+		Ports:   built.declarePorts,
+	}))
+}
+
+func networkTestPort(name string, direction Direction, port int) Port {
+	return Port{
+		Name: name, Direction: direction, Required: true,
+		Config: NetworkPort{Protocol: "tcp", Host: "127.0.0.1", Port: port},
+	}
+}
+
+func admittedNames(registry *Registry) []string {
+	names := []string{}
+	for _, declaration := range registry.Snapshots() {
+		names = append(names, declaration.InstanceName)
+	}
+	return names
+}
+
+func TestRegistryRefusesASecondComponentOnATakenAddress(t *testing.T) {
+	registry := NewRegistry()
+	registerPortsFactory(t, registry, "listener", nil, []Port{networkTestPort("listen", DirectionOutput, 8080)})
+	registerPortsFactory(t, registry, "acceptor", []Port{networkTestPort("accept", DirectionInput, 8080)}, nil)
+	_, err := registry.CreateComponent("first", declarationTestConfig("listener", `{}`), declarationTestDeps(), nil)
+	requireNoError(t, err)
+
+	_, err = registry.CreateComponent("second", declarationTestConfig("acceptor", `{}`), declarationTestDeps(), nil)
+
+	if err == nil || !errs.IsInvalid(err) ||
+		!strings.Contains(err.Error(), "resource conflict: tcp:127.0.0.1:8080 already used by component 'first'") {
+		t.Fatalf("second component on a taken address: error = %v, "+
+			"want an invalid-class refusal naming tcp:127.0.0.1:8080 and its holder first", err)
+	}
+	if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"first"}) {
+		t.Fatalf("admitted after the refusal = %v, want [first]", got)
+	}
+}
+
+// TestRegistryAdmitsComponentsOnDistinctOrSharedResources is the sensitivity
+// pair of the refusal above: what is not one exclusive address is admitted.
+func TestRegistryAdmitsComponentsOnDistinctOrSharedResources(t *testing.T) {
+	tests := []struct {
+		name          string
+		first, second Port
+	}{
+		{
+			name:   "two different addresses",
+			first:  networkTestPort("listen", DirectionOutput, 8080),
+			second: networkTestPort("listen", DirectionOutput, 8081),
+		},
+		{
+			name:   "two file ports on one path",
+			first:  Port{Name: "file", Direction: DirectionOutput, Config: FilePort{Path: "/shared/events.jsonl"}},
+			second: Port{Name: "file", Direction: DirectionOutput, Config: FilePort{Path: "/shared/events.jsonl"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			registry := NewRegistry()
+			registerPortsFactory(t, registry, "first-factory", nil, []Port{tt.first})
+			registerPortsFactory(t, registry, "second-factory", nil, []Port{tt.second})
+			_, err := registry.CreateComponent(
+				"first", declarationTestConfig("first-factory", `{}`), declarationTestDeps(), nil)
+			requireNoError(t, err)
+			_, err = registry.CreateComponent(
+				"second", declarationTestConfig("second-factory", `{}`), declarationTestDeps(), nil)
+			requireNoError(t, err)
+			if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"first", "second"}) {
+				t.Fatalf("admitted = %v, want [first second]", got)
+			}
+		})
+	}
+}
+
+// TestRegistryRefusesOneComponentClaimingAnAddressTwice: a socket that both
+// reads and writes is one port, so two ports of one component on one exclusive
+// address are refused, through Declare and through CreateComponent (owner
+// ruling, #324 comment 6278113073).
+func TestRegistryRefusesOneComponentClaimingAnAddressTwice(t *testing.T) {
+	const want = "resource conflict: tcp:0.0.0.0:8080 already used by another port of component 'gateway'"
+	bind := func(name string, direction Direction) Port {
+		return Port{
+			Name: name, Direction: direction, Required: true,
+			Config: NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
+		}
+	}
+	tests := []struct {
+		name            string
+		inputs, outputs []Port
+	}{
+		{
+			name:    "an input and an output",
+			inputs:  []Port{bind("accept", DirectionInput)},
+			outputs: []Port{bind("serve", DirectionOutput)},
+		},
+		{name: "two inputs", inputs: []Port{bind("accept", DirectionInput), bind("accept2", DirectionInput)}},
+		{name: "two outputs", outputs: []Port{bind("serve", DirectionOutput), bind("serve2", DirectionOutput)}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name+" through Declare", func(t *testing.T) {
+			registry := NewRegistry()
+			registerPortsFactory(t, registry, "gateway-factory", tt.inputs, tt.outputs)
+
+			_, err := registry.Declare("gateway", declarationTestConfig("gateway-factory", `{}`))
+
+			if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+				t.Fatalf("Declare: error = %v, want an invalid-class refusal containing %q", err, want)
+			}
+		})
+		t.Run(tt.name+" through CreateComponent", func(t *testing.T) {
+			registry := NewRegistry()
+			registerPortsFactory(t, registry, "gateway-factory", tt.inputs, tt.outputs)
+
+			_, err := registry.CreateComponent(
+				"gateway", declarationTestConfig("gateway-factory", `{}`), declarationTestDeps(), nil)
+
+			if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+				t.Fatalf("CreateComponent: error = %v, want an invalid-class refusal containing %q", err, want)
+			}
+			if got := admittedNames(registry); len(got) != 0 {
+				t.Fatalf("admitted after the refusal = %v, want none", got)
+			}
+		})
 	}
 }

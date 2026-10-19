@@ -299,6 +299,10 @@ func declare(registration *Registration, instanceName string, config types.Compo
 	if err != nil {
 		return Declaration{}, fmt.Errorf("declared output ports: %w", err)
 	}
+	resources, err := exclusiveResources(instanceName, inputFacts, outputFacts)
+	if err != nil {
+		return Declaration{}, err
+	}
 	return Declaration{
 		InstanceName:       instanceName,
 		FactoryIdentity:    config.Name,
@@ -307,7 +311,7 @@ func declare(registration *Registration, instanceName string, config types.Compo
 		OutputPorts:        outputs,
 		InputFacts:         inputFacts,
 		OutputFacts:        outputFacts,
-		ExclusiveResources: exclusiveResources(inputFacts, outputFacts),
+		ExclusiveResources: resources,
 	}, nil
 }
 
@@ -399,7 +403,7 @@ func (r *Registry) admitPrepared(prepared Declaration) error {
 			fmt.Errorf("instance '%s' is already registered", prepared.InstanceName),
 			"Registry", "admitPrepared", "duplicate instance check")
 	}
-	if err := r.checkResourceConflictsLocked(prepared.InstanceName, prepared.ExclusiveResources); err != nil {
+	if err := r.checkResourceConflictsLocked(prepared.ExclusiveResources); err != nil {
 		return errs.Wrap(err, "Registry", "admitPrepared", "resource conflict check")
 	}
 	r.declarations[prepared.InstanceName] = prepared
@@ -568,11 +572,8 @@ func ValidateComponentName(name string) error {
 	return nil
 }
 
-func (r *Registry) checkResourceConflictsLocked(instanceName string, resources []string) error {
+func (r *Registry) checkResourceConflictsLocked(resources []string) error {
 	for existingName, declaration := range r.declarations {
-		if existingName == instanceName {
-			continue
-		}
 		for _, existingResource := range declaration.ExclusiveResources {
 			for _, resource := range resources {
 				if resource == existingResource {
@@ -596,6 +597,10 @@ func captureComponentDeclaration(
 	if err != nil {
 		return Declaration{}, err
 	}
+	resources, err := exclusiveResources(instanceName, inputFacts, outputFacts)
+	if err != nil {
+		return Declaration{}, err
+	}
 	return Declaration{
 		InstanceName:       instanceName,
 		FactoryIdentity:    config.Name,
@@ -604,11 +609,14 @@ func captureComponentDeclaration(
 		OutputPorts:        outputs,
 		InputFacts:         inputFacts,
 		OutputFacts:        outputFacts,
-		ExclusiveResources: exclusiveResources(inputFacts, outputFacts),
+		ExclusiveResources: resources,
 	}, nil
 }
 
-func exclusiveResources(inputFacts, outputFacts []PortFacts) []string {
+// exclusiveResources lists, sorted, the exclusive resources a component's
+// ports claim, and refuses one resource claimed by two of its ports: a socket
+// that both reads and writes is one port, not two (#324).
+func exclusiveResources(instanceName string, inputFacts, outputFacts []PortFacts) ([]string, error) {
 	resources := make([]string, 0, len(inputFacts)+len(outputFacts))
 	for _, facts := range append(append([]PortFacts(nil), inputFacts...), outputFacts...) {
 		if facts.IsExclusive() {
@@ -616,7 +624,14 @@ func exclusiveResources(inputFacts, outputFacts []PortFacts) []string {
 		}
 	}
 	sort.Strings(resources)
-	return compactStrings(resources)
+	for i := 1; i < len(resources); i++ {
+		if resources[i] == resources[i-1] {
+			msg := fmt.Errorf("resource conflict: %s already used by another port of component '%s'",
+				resources[i], instanceName)
+			return nil, errs.WrapInvalid(msg, "Registry", "exclusiveResources", "exclusive resource check")
+		}
+	}
+	return resources, nil
 }
 
 func cloneAndProjectPorts(ports []Port) ([]Port, []PortFacts, error) {
@@ -631,21 +646,6 @@ func cloneAndProjectPorts(ports []Port) ([]Port, []PortFacts, error) {
 		facts[index] = projected
 	}
 	return cloned, facts, nil
-}
-
-func compactStrings(values []string) []string {
-	if len(values) < 2 {
-		return values
-	}
-	write := 1
-	for read := 1; read < len(values); read++ {
-		if values[read] == values[write-1] {
-			continue
-		}
-		values[write] = values[read]
-		write++
-	}
-	return values[:write]
 }
 
 // Snapshots returns the admitted declarations, sorted by instance name. Each

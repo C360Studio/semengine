@@ -119,46 +119,6 @@ func TestFlowGraphPatterns(t *testing.T) {
 		}
 	})
 
-	t.Run("Network pattern detects port conflicts", func(t *testing.T) {
-		graph := newFlowGraph()
-
-		// Create two components trying to bind to same network port
-		server1Ports := []component.Port{
-			{
-				Name:      "http_server",
-				Direction: component.DirectionInput,
-				Config:    component.NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
-			},
-		}
-		server2Ports := []component.Port{
-			{
-				Name:      "http_server2",
-				Direction: component.DirectionInput,
-				Config:    component.NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
-			},
-		}
-
-		server1 := createPatternTestComponent("server1", server1Ports, []component.Port{})
-		server2 := createPatternTestComponent("server2", server2Ports, []component.Port{})
-
-		require.NoError(t, addTestComponentNode(graph, "server1", server1))
-		require.NoError(t, addTestComponentNode(graph, "server2", server2))
-
-		// Connect by patterns - should detect conflict
-		err := graph.connectComponentsByPatterns()
-		assert.Error(t, err, "Should detect network port conflict")
-		if err != nil {
-			assert.Contains(t, err.Error(), "network port conflict")
-			assert.Contains(t, err.Error(), "tcp:0.0.0.0:8080")
-		}
-
-		// No edges should be created for network ports
-		edges := graph.GetEdges()
-		for _, edge := range edges {
-			assert.NotEqual(t, component.PatternNetwork, edge.Pattern, "Network ports don't create edges")
-		}
-	})
-
 	t.Run("exact KV read remains a read dependency", func(t *testing.T) {
 		graph := newFlowGraph()
 		writer := createPatternTestComponent("writer", nil, []component.Port{{
@@ -175,19 +135,6 @@ func TestFlowGraphPatterns(t *testing.T) {
 		assert.Equal(t, component.PatternRead, edges[0].Pattern)
 		assert.NotEqual(t, component.PatternWatch, edges[0].Pattern)
 		assert.Equal(t, "kv:ENTITY_STATES", edges[0].ConnectionID)
-	})
-
-	t.Run("shared file paths are not exclusive network binds", func(t *testing.T) {
-		graph := newFlowGraph()
-		first := createPatternTestComponent("first", []component.Port{{
-			Name: "file", Direction: component.DirectionInput, Config: component.FilePort{Path: "/shared/events.jsonl"},
-		}}, nil)
-		second := createPatternTestComponent("second", []component.Port{{
-			Name: "file", Direction: component.DirectionInput, Config: component.FilePort{Path: "/shared/events.jsonl"},
-		}}, nil)
-		require.NoError(t, addTestComponentNode(graph, "first", first))
-		require.NoError(t, addTestComponentNode(graph, "second", second))
-		require.NoError(t, graph.connectComponentsByPatterns())
 	})
 
 	t.Run("Stream pattern still works", func(t *testing.T) {

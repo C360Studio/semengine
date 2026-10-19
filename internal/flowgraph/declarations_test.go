@@ -33,14 +33,6 @@ func natsPort(name string, direction component.Direction, subject string) compon
 	return component.Port{Name: name, Direction: direction, Config: component.NATSPort{Subject: subject}}
 }
 
-func networkPort(name string, direction component.Direction) component.Port {
-	return component.Port{
-		Name:      name,
-		Direction: direction,
-		Config:    component.NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
-	}
-}
-
 func TestBuildFromDeclarationsConnectsDeclaredPorts(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -155,46 +147,6 @@ func TestBuildFromDeclarationsRefusesMalformedDeclarations(t *testing.T) {
 			}})
 
 			require.EqualError(t, err, tt.want)
-			assert.Nil(t, graph)
-		})
-	}
-}
-
-func TestBuildFromDeclarationsRefusesNetworkBindConflicts(t *testing.T) {
-	tests := []struct {
-		name         string
-		declarations func(t *testing.T) []component.Declaration
-		want         string
-	}{
-		{
-			name: "two outputs",
-			declarations: func(t *testing.T) []component.Declaration {
-				return []component.Declaration{
-					declaration(t, "first", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
-					declaration(t, "second", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
-				}
-			},
-			want: "network port conflict on tcp:0.0.0.0:8080: multiple components binding",
-		},
-		{
-			name: "one input and one output",
-			declarations: func(t *testing.T) []component.Declaration {
-				return []component.Declaration{
-					declaration(t, "gateway",
-						[]component.Port{networkPort("accept", component.DirectionInput)},
-						[]component.Port{networkPort("serve", component.DirectionOutput)}),
-				}
-			},
-			want: "network port conflict on tcp:0.0.0.0:8080: component gateway port serve and " +
-				"component gateway port accept both trying to bind",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			graph, err := BuildFromDeclarations(tt.declarations(t))
-
-			require.Error(t, err)
-			assert.Contains(t, err.Error(), tt.want)
 			assert.Nil(t, graph)
 		})
 	}
@@ -390,37 +342,28 @@ func TestRefusalsNameNoInternalFunction(t *testing.T) {
 			want: `add component "twin" to flow graph: component twin already exists: invalid configuration`,
 		},
 		{
-			name: "network bind conflict",
-			declarations: func(t *testing.T) []component.Declaration {
-				return []component.Declaration{
-					declaration(t, "first", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
-					declaration(t, "second", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
-				}
-			},
-			want: "connect component flow graph: network port conflict on tcp:0.0.0.0:8080: " +
-				"multiple components binding: component first port listen, component second port listen: " +
-				"invalid configuration",
-		},
-		{
+			// Two KV-writer refusals, one per bucket, in bucket order: the
+			// case checks that two refusals are joined with "; " under one
+			// errs.ErrInvalidConfig.
 			name: "two conflicts at once",
 			declarations: func(t *testing.T) []component.Declaration {
-				writer := func(name string) component.Port {
+				writer := func(bucket string) component.Port {
 					return component.Port{
-						Name: name, Direction: component.DirectionOutput,
-						Config: component.KVWritePort{Bucket: "entity_states"},
+						Name: "state", Direction: component.DirectionOutput,
+						Config: component.KVWritePort{Bucket: bucket},
 					}
 				}
 				return []component.Declaration{
-					declaration(t, "first", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
-					declaration(t, "second", nil, []component.Port{networkPort("listen", component.DirectionOutput)}),
-					declaration(t, "writer1", nil, []component.Port{writer("state")}),
-					declaration(t, "writer2", nil, []component.Port{writer("state")}),
+					declaration(t, "writer1", nil, []component.Port{writer("entity_states")}),
+					declaration(t, "writer2", nil, []component.Port{writer("entity_states")}),
+					declaration(t, "auditor1", nil, []component.Port{writer("audit_log")}),
+					declaration(t, "auditor2", nil, []component.Port{writer("audit_log")}),
 				}
 			},
-			want: "connect component flow graph: multiple writers to KV bucket kv:entity_states: " +
-				"component writer1 port state, component writer2 port state; " +
-				"network port conflict on tcp:0.0.0.0:8080: " +
-				"multiple components binding: component first port listen, component second port listen: " +
+			want: "connect component flow graph: multiple writers to KV bucket kv:audit_log: " +
+				"component auditor1 port state, component auditor2 port state; " +
+				"multiple writers to KV bucket kv:entity_states: " +
+				"component writer1 port state, component writer2 port state: " +
 				"invalid configuration",
 		},
 		{

@@ -28,7 +28,6 @@ It returns an error, and no graph, when the declarations cannot form a valid one
 - an empty or repeated instance name;
 - a port with no connection identity (no subject, bucket or address);
 - more than one writer port on one KV bucket;
-- two exclusive binds on one network address, including an input and an output of the same component;
 - a graph-mutation port that is not a required request port on the graph-mutation subject family with the
   graph-mutation interface type and version, or graph-mutation ports with not exactly one input (the provider) among
   them.
@@ -45,7 +44,7 @@ the two ports, the pattern and the connection ID (subject, bucket or address) th
 | `watch` | A watch output (a KV writer) joins every watch input on the same bucket, its own component's included. |
 | `read` | A watch output joins every read input on the same bucket, its own component's included. |
 | `store` | Every store output joins every store input on another component. |
-| `network` | Never joined. Exclusive binds are checked for conflicts. |
+| `network` | Never joined. Two binds on one network address are refused by `component.Registry` when it admits a component, not here. |
 | `http-client` | Never joined. |
 | `timer` | Never joined. |
 

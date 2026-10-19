@@ -205,14 +205,15 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 - `ListFactories()` returns a copy of each registration's metadata, without its factory function; it returns no live
   component.
 - `Declare(instanceName, config)` runs a factory's port declarer for one configured instance and returns its
-  `Declaration`, without building the component.
+  `Declaration`, without building the component. It refuses a component that claims one exclusive address (a
+  `NetworkPort`'s) on two of its own ports.
 - `CreateComponent(instanceName, config, deps, prepare)`, `SealComposition()` and `Snapshots()` exist for the component
   manager. `Snapshots()` returns a copy of every admitted `Declaration`, sorted by instance name; changing one changes
   nothing in the registry. A consumer creates and composes components through that manager; a direct call is not
   refused, but it bypasses the manager's bookkeeping. `CreateComponent` refuses a disabled instance, a nil
   `Dependencies.NATSClient`, a port declaration that differs from the ports the built component reports, an instance
-  name already admitted, an exclusive resource another instance holds, and any call after `SealComposition`. `prepare`
-  may be nil.
+  name already admitted, an exclusive resource another instance holds or one address on two of its own ports, and any
+  call after `SealComposition`. `prepare` may be nil.
 
 ### Decoding a configuration
 

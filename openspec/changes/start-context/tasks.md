@@ -42,7 +42,8 @@ Each stop's task ends only when `task verify` passes on a clean tree at its comm
 - [ ] 4.1 `component/lifecycle.go` (D8), `pkg/errs/shutdown.go:17`, the `keyed_ingest.go` and `component.go`
   comments (D6). Gate: `task verify`.
 - [ ] 4.2 Contracts, `AGENTS.md:71`, `.agents/rules-index.md:17`, `docs/setup-plan.md`, `docs/testing.md:573` (the
-  observation-window exception, owner answer 2), the ledger row, the ADR-108 note (D9). Gate: `task verify` (`TestAgentSetupParity`, the `AGENTS.md` size and row counts) and `task docs:check`.
+  observation-window exception, owner answer 2), the ledger row, the ADR-108 note (D9). Gate: `task verify`
+  (`TestAgentSetupParity`, the `AGENTS.md` size and row counts) and `task docs:check`.
 - [ ] 4.3 Review stop C (Codex) on 4.1-4.2.
 
 ## 5. Archive

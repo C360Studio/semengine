@@ -5,13 +5,19 @@ base: `1ba011ba5f3922c9b0c8c636c7cd19d91d79aea5` (origin/main `4621b4b` plus the
 (`gh api repos/C360Studio/semstreams/tarball/8b99efe9`). "Scratch copy" below means this tree at the base
 (`git archive`) with the pin's `component/flowgraph` copied in and the module path rewritten, outside the repository.
 
-Status: awaiting inventory review.
+Status: INVENTORY PASS (semengine-reviewer, round 1, at `8783daa`); I1 and I2 applied.
 
 ## Admission
 
 - `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:216`: `composition` (914) +
   `component/flowgraph` (1,324), disposition carry, "ADR-100 boot validation".
 - `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:165`: change 3 lists `component/flowgraph`.
+- Same 03B design, D15 (`:635`): "Metric names and the flowgraph response are tested contracts". The response is the
+  `<components>/flowgraph` endpoint, which serves `composition.Graph` (pin `service/component_manager_http.go:581`),
+  not this package's types; it arrives with `service`.
+- Same 03B design, D16 (Q17, `:651-660`): packages are "internal by default and public only where a starter
+  consumer imports them"; the owner's public-signature rule (#9 comment 5953295358, 2026-10-02) adds "or if an
+  exported signature in a public package names one of its types", and is "meant to stand for later changes".
 - Order: #9 comment 6270875286 (third of seven); next after #319 per #9 comment 6273449243. No ledger row exists
   (`git grep -n flowgraph docs/admission-ledger.yaml` gives only `:2274`, the `component` row's "not ported").
 - Size at the pin: `flowgraph.go` 1,119, `doc.go` 165, `flowgraph_analysis.go` 40 = 1,324 non-test lines; seven
@@ -22,8 +28,9 @@ Status: awaiting inventory review.
 `flowgraph.go:10-12`: `component`, `internal/graphmutation`, `pkg/errs`; stdlib `fmt`, `maps`, `slices`,
 `strings`. Tests add testify (already in `go.mod`). All three are in the tree with `adapt` rows
 (`docs/admission-ledger.yaml:437`, `:2073`, `:2245`). On the scratch copy `go build ./component/flowgraph` passes
-unchanged; `go vet` fails only in tests: `flowgraph_test.go:500:24: undefined: component.Metadata` (the mock's
-`Meta()` and `ConfigSchema()`, removed from `Discoverable` by the `component` row's adaptation 9).
+unchanged; `go vet` fails only in tests, stopping at the first error, `flowgraph_test.go:500:24: undefined:
+component.Metadata` (the mock's `Meta()` and `ConfigSchema()`, removed from `Discoverable` by the `component` row's
+adaptation 9). The same type is used at `flowgraph_patterns_test.go:375`, which breaks the same way.
 
 ## Pin probe
 

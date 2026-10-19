@@ -10,13 +10,16 @@ session's draft (#318); `internal/logforwarderpolicy` merged in #319.
 
 ## What Changes
 
-- Port the package to `internal/flowgraph` (owner question Q1; `component/flowgraph` if the owner keeps the pin
-  path), ahead of its importer `composition`, with one `adapt` ledger row.
-- Required corrections (design R1-R6): the graph-mutation subject prefix taken from its one declaration; the tests'
-  mock fitted to this tree's `component.Discoverable`; the graph-mutation refusal made the same on every run;
-  dead surface removed (`GetNodes`, `EdgeMetadata`, `FlowAnalysisResult.ConnectedEdges`,
-  `StreamRequirementWarning.Severity` and `.Issue`); `README.md` and `doc.go` rewritten to what the code does; new
-  tests for `BuildFromDeclarations` and `ValidateStreamRequirements`, which the pin's package tests never call.
+- Port the package to `internal/flowgraph`, as the owner's public-signature rule places it (#9 comment
+  5953295358: no consumer imports it, no public signature names its types), ahead of its importer `composition`,
+  with one `adapt` ledger row.
+- Required corrections (design R1-R7): the graph-mutation subject prefix taken from its one declaration; the
+  tests' mock fitted to this tree's `component.Discoverable`; the graph-mutation refusal and the connected
+  components made the same on every run; dead surface removed (`GetNodes`, `EdgeMetadata`,
+  `FlowAnalysisResult.ConnectedEdges`, `StreamRequirementWarning.Severity` and `.Issue`; `ComponentNode` and
+  `PortInfo` unexported); each wrong statement in `README.md`, `doc.go` and one test comment corrected; new tests
+  for `BuildFromDeclarations`, `ValidateStreamRequirements`, three unreached refusals and the non-required
+  mutation provider.
 
 ## Capabilities
 

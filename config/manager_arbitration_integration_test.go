@@ -5,15 +5,12 @@ package config
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
 
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/types"
 )
 
@@ -287,8 +284,9 @@ func TestPushEncodingFailureFailsStart(t *testing.T) {
 		err = manager.Start(ctx)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "broken")
-		require.Empty(t, sectionKeys(bucketEntriesOrNone(t, ctx, tc, manager.bucketName)),
-			"a push that cannot encode a value writes no services.*, components.* or version key")
+		// Refused before the bucket is acquired: no bucket, so no identity record either.
+		_, bucketErr := tc.GetKeyValueBucket(ctx, manager.bucketName)
+		require.Error(t, bucketErr, "a push that cannot encode a value must be refused before the bucket is acquired")
 	})
 
 	t.Run("newer file", func(t *testing.T) {
@@ -308,13 +306,4 @@ func TestPushEncodingFailureFailsStart(t *testing.T) {
 		require.Equal(t, before, bucketEntries(t, ctx, tc, newer.bucketName),
 			"a newer file's push that cannot encode a value leaves the bucket unchanged")
 	})
-}
-
-// bucketEntriesOrNone is bucketEntries, except that a bucket that does not exist has no entries.
-func bucketEntriesOrNone(t *testing.T, ctx context.Context, client *natsclient.Client, name string) map[string]string {
-	t.Helper()
-	if _, err := client.GetKeyValueBucket(ctx, name); errors.Is(err, jetstream.ErrBucketNotFound) {
-		return map[string]string{}
-	}
-	return bucketEntries(t, ctx, client, name)
 }

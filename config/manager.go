@@ -709,6 +709,24 @@ func (cm *Manager) matchesPattern(key, pattern string) bool {
 
 // updateConfig updates the internal configuration based on KV update
 func (cm *Manager) updateConfig(key string, value []byte) error {
+	// Apply the update as a single serialized read-modify-write so a concurrent
+	// mutation (the watcher goroutine vs a caller-goroutine PutComponentToKV /
+	// DeleteComponentFromKV, or an engine deploy) cannot drop this change (gh#515).
+	// Returning errNoConfigChange from the mutation signals an ignored key without
+	// swapping — surfaced as a nil error to the caller.
+	err := cm.config.Mutate(func(currentConfig *Config) error {
+		return applyConfigKey(currentConfig, key, value)
+	})
+	if errors.Is(err, errNoConfigChange) {
+		return nil
+	}
+	return err
+}
+
+// applyConfigKey applies one KV entry to currentConfig, a SafeConfig.Mutate
+// draft. An empty value deletes. It returns errNoConfigChange for a key it
+// ignores.
+func applyConfigKey(currentConfig *Config, key string, value []byte) error {
 	// Validate JSON structure if value is not empty (deletion)
 	if len(value) > 0 {
 		// Check size limits
@@ -728,92 +746,81 @@ func (cm *Manager) updateConfig(key string, value []byte) error {
 		return fmt.Errorf("invalid key format: %s", key)
 	}
 
-	// Apply the update as a single serialized read-modify-write so a concurrent
-	// mutation (the watcher goroutine vs a caller-goroutine PutComponentToKV /
-	// DeleteComponentFromKV, or an engine deploy) cannot drop this change (gh#515).
-	// Returning errNoConfigChange from the mutation signals an ignored key without
-	// swapping — surfaced as a nil error to the caller.
-	err := cm.config.Mutate(func(currentConfig *Config) error {
-		switch parts[0] {
-		case "services":
-			if len(parts) != 2 {
-				return fmt.Errorf("invalid service key format: %s", key)
-			}
-			serviceName := parts[1]
-
-			// Handle deletion
-			if len(value) == 0 {
-				delete(currentConfig.Services, serviceName)
-			} else {
-				if currentConfig.Services == nil {
-					currentConfig.Services = make(types.ServiceConfigs)
-				}
-				// Parse the value as ServiceConfig (already validated above)
-				var svcConfig types.ServiceConfig
-				if err := json.Unmarshal(value, &svcConfig); err != nil {
-					return fmt.Errorf("failed to parse service config: %w", err)
-				}
-				currentConfig.Services[serviceName] = svcConfig
-			}
-
-		case "components":
-			if len(parts) != 2 {
-				return fmt.Errorf("invalid component key format: %s", key)
-			}
-			componentName := parts[1]
-
-			// Handle deletion
-			if len(value) == 0 {
-				delete(currentConfig.Components, componentName)
-			} else {
-				// Parse component config (already validated above)
-				var compConfig types.ComponentConfig
-				if err := json.Unmarshal(value, &compConfig); err != nil {
-					return fmt.Errorf("parse component config: %w", err)
-				}
-				if currentConfig.Components == nil {
-					currentConfig.Components = make(ComponentConfigs)
-				}
-				currentConfig.Components[componentName] = compConfig
-			}
-
-		// The KV `platform` key is a PUBLISHED MIRROR, never a source. It is
-		// pushed for readers (the UI) and deliberately has no case here:
-		// applying it would unmarshal a foreign or stale block — platform.ID
-		// included — straight over the authority every identity this process
-		// mints is composed from, after Start established it (ADR-104).
-		// Unknown keys fall through to the default and change nothing, while
-		// subscribers are still notified.
-
-		case "nats":
-			// Update NATS config (already validated above)
-			if err := json.Unmarshal(value, &currentConfig.NATS); err != nil {
-				return fmt.Errorf("parse NATS config: %w", err)
-			}
-
-		case "model_registry":
-			if len(value) == 0 {
-				currentConfig.ModelRegistry = nil
-			} else {
-				var registry model.Registry
-				if err := json.Unmarshal(value, &registry); err != nil {
-					return fmt.Errorf("parse model_registry config: %w", err)
-				}
-				currentConfig.ModelRegistry = &registry
-			}
-
-		// Graph and ObjectStore config moved to components
-
-		default:
-			// Unknown top-level key, ignore — no config change.
-			return errNoConfigChange
+	switch parts[0] {
+	case "services":
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid service key format: %s", key)
 		}
-		return nil
-	})
-	if errors.Is(err, errNoConfigChange) {
-		return nil
+		serviceName := parts[1]
+
+		// Handle deletion
+		if len(value) == 0 {
+			delete(currentConfig.Services, serviceName)
+		} else {
+			if currentConfig.Services == nil {
+				currentConfig.Services = make(types.ServiceConfigs)
+			}
+			// Parse the value as ServiceConfig (already validated above)
+			var svcConfig types.ServiceConfig
+			if err := json.Unmarshal(value, &svcConfig); err != nil {
+				return fmt.Errorf("failed to parse service config: %w", err)
+			}
+			currentConfig.Services[serviceName] = svcConfig
+		}
+
+	case "components":
+		if len(parts) != 2 {
+			return fmt.Errorf("invalid component key format: %s", key)
+		}
+		componentName := parts[1]
+
+		// Handle deletion
+		if len(value) == 0 {
+			delete(currentConfig.Components, componentName)
+		} else {
+			// Parse component config (already validated above)
+			var compConfig types.ComponentConfig
+			if err := json.Unmarshal(value, &compConfig); err != nil {
+				return fmt.Errorf("parse component config: %w", err)
+			}
+			if currentConfig.Components == nil {
+				currentConfig.Components = make(ComponentConfigs)
+			}
+			currentConfig.Components[componentName] = compConfig
+		}
+
+	// The KV `platform` key is a PUBLISHED MIRROR, never a source. It is
+	// pushed for readers (the UI) and deliberately has no case here:
+	// applying it would unmarshal a foreign or stale block — platform.ID
+	// included — straight over the authority every identity this process
+	// mints is composed from, after Start established it (ADR-104).
+	// Unknown keys fall through to the default and change nothing, while
+	// subscribers are still notified.
+
+	case "nats":
+		// Update NATS config (already validated above)
+		if err := json.Unmarshal(value, &currentConfig.NATS); err != nil {
+			return fmt.Errorf("parse NATS config: %w", err)
+		}
+
+	case "model_registry":
+		if len(value) == 0 {
+			currentConfig.ModelRegistry = nil
+		} else {
+			var registry model.Registry
+			if err := json.Unmarshal(value, &registry); err != nil {
+				return fmt.Errorf("parse model_registry config: %w", err)
+			}
+			currentConfig.ModelRegistry = &registry
+		}
+
+	// Graph and ObjectStore config moved to components
+
+	default:
+		// Unknown top-level key, ignore — no config change.
+		return errNoConfigChange
 	}
-	return err
+	return nil
 }
 
 // errNoConfigChange is returned by an updateConfig mutation for an ignored
@@ -1409,27 +1416,14 @@ func (cm *Manager) syncFromKV(ctx context.Context, kvStore *natsclient.KVStore) 
 		return fmt.Errorf("list the keys of config bucket %q: %w", cm.bucketName, err)
 	}
 
-	// Services and components are whole-entry desired next-boot state, so the
-	// current services.* and components.* keys replace the file maps instead of
-	// overlaying them. Other top-level sections overlay as at the pin.
-	if err := cm.config.Mutate(func(current *Config) error {
-		current.Services = make(types.ServiceConfigs)
-		current.Components = make(ComponentConfigs)
-		return nil
-	}); err != nil {
-		return fmt.Errorf("reset services and components before KV sync: %w", err)
-	}
-
-	// Process each key
+	// Read every entry before changing anything.
+	var entries []kvWrite
 	for _, key := range keys {
 		// Skip property-level keys (3+ parts)
-		parts := strings.Split(key, ".")
-		if len(parts) > 2 {
+		if strings.Count(key, ".") > 1 {
 			cm.logger.Debug("Skipping property-level key during sync", "key", key)
 			continue
 		}
-
-		// Get the value
 		entry, err := kvStore.Get(ctx, key)
 		if err != nil {
 			return fmt.Errorf("read %q of config bucket %q: %w", key, cm.bucketName, err)
@@ -1439,11 +1433,25 @@ func (cm *Manager) syncFromKV(ctx context.Context, kvStore *natsclient.KVStore) 
 				return fmt.Errorf("stored %q of config bucket %q: %w", key, cm.bucketName, err)
 			}
 		}
+		entries = append(entries, kvWrite{key, entry.Value})
+	}
 
-		// Apply the update
-		if err := cm.updateConfig(key, entry.Value); err != nil {
-			return fmt.Errorf("apply stored %q of config bucket %q: %w", key, cm.bucketName, err)
+	// Apply them in one mutation, so a Start that fails here leaves GetConfig as
+	// it was. Services and components are whole-entry desired next-boot state, so
+	// the bucket's services.* and components.* keys replace the file maps instead
+	// of overlaying them. Other top-level sections overlay as at the pin.
+	if err := cm.config.Mutate(func(current *Config) error {
+		current.Services = make(types.ServiceConfigs)
+		current.Components = make(ComponentConfigs)
+		for _, entry := range entries {
+			err := applyConfigKey(current, entry.key, entry.value)
+			if err != nil && !errors.Is(err, errNoConfigChange) {
+				return fmt.Errorf("apply stored %q of config bucket %q: %w", entry.key, cm.bucketName, err)
+			}
 		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	cm.logger.Info("Synced configuration from KV", "keys", len(keys))

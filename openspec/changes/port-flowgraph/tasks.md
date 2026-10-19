@@ -27,7 +27,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   (`TestRefusalsNameNoInternalFunction` red, then plain-text refusals); then the ledger row and a
   `docs/repository-map.md` row, now true of the code. Gate: `task ledger:check`, `task docs:check` and
   `go test -race ./internal/flowgraph ./internal/harness/contract`.
-- [ ] 2.5 `task mutate:check` for M1-M7 and M9-M16 (detections; M8 recorded as not run, with its reason) in
+- [x] 2.5 `task mutate:check` for M1-M7 and M9-M16 (detections; M8 recorded as not run, with its reason) in
   `notes/2.5.md`, with any survivors and the uncovered cases; `task verify` passes on a clean tree.
 - [ ] 2.6 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 

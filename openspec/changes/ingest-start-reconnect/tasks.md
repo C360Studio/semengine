@@ -18,5 +18,5 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 3. Archive
 
-- [ ] 3.1 Archive the change (`skip_specs`). Gate: `task spec:check` and `task docs:check`; `task merge:check -- 316`
-  before the merge.
+- [ ] 3.1 Archive the change (`skip_specs`). Gate: `task spec:check` and `task docs:check`. `task merge:check -- 316`
+  is recorded on PR #316 after the archive; no task claims it.

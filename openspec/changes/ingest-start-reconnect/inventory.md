@@ -3,7 +3,8 @@
 base: `b46cab4fccc383325213cdd5e64bb4fb283c46e5` (origin/main `63328c4` plus the claim commit, which adds only files
 under `openspec/changes/ingest-start-reconnect/`)
 
-Status: pending review (semengine-architect, 2026-10-19). Every cite is at the base commit.
+Status: `INVENTORY PASS` (semengine-reviewer, 2026-10-19, round 1 at `c0299fd`; four LOW cite fixes applied).
+Every cite is at the base commit.
 
 ## Question
 
@@ -22,7 +23,9 @@ Repositories read: this tree only. No statement depends on the pin, and the chan
 
 graph-ingest is one-shot: a `Start` after `Stop` is refused (`lifecycle_integration_test.go:72-74`). So the trigger
 that #291 names ("a component restart, Stop then Start") is a `Start` of a fresh component instance on a client that was
-already connected and is now reconnecting. graph-ingest never closes its client; the client belongs to the
+already connected and is now reconnecting. A second trigger needs no restart at all: with the default `HealthInterval`
+of 10 s, one failed RTT flips an installed, live connection to Reconnecting (`client.go:1918-1919`), so a slow broker
+fails `Start` today. Posted on #291 (2026-10-19). graph-ingest never closes its client; the client belongs to the
 composition (no `natsClient.Close` anywhere in `processor/graph-ingest/*.go`).
 
 ## The connect block
@@ -38,12 +41,12 @@ composition (no `natsClient.Close` anywhere in `processor/graph-ingest/*.go`).
 
 PR #290 merged 2026-10-17: the circuit breaker is gone and four statuses remain (`natsclient/client.go:26-29`:
 `StatusDisconnected`, `StatusConnecting`, `StatusConnected`, `StatusReconnecting`). `Status()` at `:342-343` reads an
-atomic. "Installed" means `m.conn != nil`. Only `Close`'s cleanup clears it (`:723-724` region, `m.conn = nil`). A
+atomic. "Installed" means `m.conn != nil`. Only `Close`'s cleanup clears it (`:738`, `m.conn = nil`). A
 connection is installed at admission (`:549`, `m.conn = conn`).
 
 | Status | When it is written | Installed? | What `Connect` does |
 | --- | --- | --- | --- |
-| Disconnected | `NewClient` `:329`; failed Connect `connectFailed` `:582-586`; Close cleanup `:745` | no | dials (`:476-552`) |
+| Disconnected | `NewClient` `:329`; failed Connect `connectFailed` `:582-586` or the `jetstream.New` failure `:520`; Close cleanup `:745` | no | dials (`:476-552`) |
 | Disconnected | `handleClosed` `:1815-1818`: nats.go closed the installed connection (a finite MaxReconnects ran out) | yes (closed) | refuses `:466-467`, `errs.ErrAlreadyStarted`, "already connected" |
 | Connecting | `:481`, a Connect in progress before admission | no | dials; loses admission at `:543-547` and returns `ErrAlreadyStarted` |
 | Connected | admission `:552`; `handleReconnect` `:1726`; health monitor `:1916-1917` | yes | refuses `:467` |
@@ -63,7 +66,8 @@ it reachable by `errors.Is` (`pkg/errs/errs.go:117`, `Unwrap`).
 ## Other `Connect` callers after a `Status` check
 
 `git grep -n "\.Connect(" -- '*.go' ':!*_test.go'` finds one production caller, `component.go:989`; the other hits are
-doc examples (`pkg/errs/doc.go:263`, `pkg/retry/doc.go:24`). `WaitForConnection` likewise has one production caller,
+doc examples (`pkg/errs/doc.go:263`, `pkg/retry/doc.go:24`, `natsclient/doc.go:35`, `:296`, `:458`) and nats.go's own
+`nats.Connect` at `client.go:496`. `WaitForConnection` likewise has one production caller,
 `component.go:995`. Nobody else shares the bug. `GetConnection()` (`client.go:347`) has no production caller.
 natsclient's own calls check `Status() != StatusConnected` and refuse with `ErrNotConnected` (e.g. `client.go:1228`),
 a refusal, not a Connect.
@@ -107,6 +111,8 @@ instance in the same package is `component.go:2287`:
   and `setupMutationHandlers`, not the connect block.
 - #301 (retire the test-only NATS fault fields on `Component`): a constraint only; the tests add no field.
 - #216, #196, #300, #9 match the words "reconnect" or "Start" but not the connect block.
+- #270 (a one-off failure in this package's integration tests, unlabelled) and #306 (Stop clears the entity cache):
+  neither touches the connect block.
 - #309, #312, #314 are out of scope.
 - Searches run: "already connected", "connect block", `ErrAlreadyStarted`, `Reconnecting`, `WaitForConnection`,
   natsclient, "graph-ingest Start". No open `class:flake` issue exists.
@@ -128,14 +134,15 @@ instance in the same package is `component.go:2287`:
 Production: about 2 changed lines plus 2 doc-comment lines in `component.go`. Tests: about 50 lines of relay helper
 plus two tests of about 50 lines each. One package; no exported change.
 
-## Defects found, not fixed here
+## Defects found, not fixed here (filed as #317, `status:blocked`)
 
-- A (candidate, for the owner's call): natsclient's `Connect` refuses "already connected" on a client whose
+- A: natsclient's `Connect` refuses "already connected" on a client whose
   connection nats.go has closed. When a finite `WithMaxReconnects` runs out, `handleClosed` writes
   `StatusDisconnected` (`natsclient/client.go:1815-1818`) but leaves `m.conn` set, so every later `Connect` returns
   `ErrAlreadyStarted` (`:466-467`) and `WaitForConnection` waits until its context ends. The only recovery is a new
   client, which `TestIntegration_ReconnectionIsRedial` (`natsclient/integration_test.go:53`) does. No production code
-  sets a finite MaxReconnects (default -1, `client.go:308`), so MEDIUM at most (#185). If it is the intended
-  "re-dial with a new client" contract, it is a doc sentence, not a fix.
+  sets a finite MaxReconnects (default -1, `client.go:308`), so MEDIUM at most (#185). The behaviour matches
+  the re-dial-with-a-new-client contract (`natsclient/integration_test.go:46-52`); the doc (`client.go:440-441`) and the
+  error text do not, so the fix is a doc sentence and the error text.
 - B (minor): ADR-112 section 5 (`docs/adr/112-natsclient-contract.md:203`) cites `client.go:355-356` for the
   reconnect defaults; at base those lines are in `MaxPayload`, and the defaults are at `:308-309`. Cite drift.

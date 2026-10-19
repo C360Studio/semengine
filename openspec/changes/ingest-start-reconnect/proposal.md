@@ -5,8 +5,9 @@
 Issue #291 (found by the inventory for wave PR 6c, #290; owner's plan note of 2026-10-18: PR 3 of the lifecycle
 contract order recorded on #282). graph-ingest's `Start` calls `Connect` whenever the client's status is not
 `Connected`. While nats.go is reconnecting, a connection is installed but the status reads `Reconnecting`, so
-`Connect` refuses with "already connected" and `Start` fails. The real-world trigger is a component restart while the
-broker is restarting or the link is down long enough for nats.go to be reconnecting.
+`Connect` refuses with "already connected" and `Start` fails. The real-world trigger is a fresh component instance
+started on a shared client that is reconnecting: a broker restart, a dropped link, or a failed health RTT (graph-ingest
+is one-shot, so the "Stop then Start" of #291's body cannot be the same instance; inventory, "The trigger, corrected").
 
 This is PR 3 of the order on #282, after PR 2 (#310, ADR-113, merged `63328c4`), which put the connect block under the
 Start context. It retires #291.

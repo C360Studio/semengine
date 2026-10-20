@@ -2,8 +2,8 @@
 
 ## Purpose
 
-`service` is the layer every SemEngine process boots: services that embed `BaseService`, the managers that start and
-stop them, and the helpers they share. This capability states what `BaseService` promises an embedding service
+`service` is the layer a SemEngine process will boot on: services that embed `BaseService`, the managers that start
+and stop them, and the helpers they share. This capability states what `BaseService` promises an embedding service
 (Start bounds Start, `Stop(ctx)` is the only stop, a health check every 30 seconds, ADR-113), what the profiling
 server promises its caller (`MaybeStartPProf` then `Shutdown`), and what `WireGraphRuntime` does before it builds
 the graph mutation client (the catalog-retention backstop, pin ADR-068 D1). The service and component managers and

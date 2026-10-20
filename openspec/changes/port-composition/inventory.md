@@ -44,9 +44,10 @@ go1.26.4 darwin/arm64, package only. The lifecycle suite does not apply because 
 - Behaviour probe (a throwaway test in the pin copy, then removed) for two components on one port, counting
   `exclusive_resource_conflict` errors: `http:0.0.0.0:8080`/`websocket:0.0.0.0:8080` 0; `http:0.0.0.0`/`http:::` 0;
   `0.0.0.0`/`127.0.0.1` 0; `UDP`/`udp` 0; same text 1; `udp`/`http` on one port 0, which the registry also admits.
-  No other error finding is emitted in the five zero cases. One component claiming the same text twice: no finding
-  (read from the pin code, `validate.go:58-64`; the tree's `Declare` refuses it). The tree's registry refuses the
-  first four (`openspec/specs/component-registration/spec.md:149-200`).
+  No other error finding is emitted in the five zero cases. One component claiming `tcp:0.0.0.0:8080` on an input
+  and an output: one `connection_pattern_error` from the pin flowgraph's bind refusal, not from composition
+  (probe in `design.md`, "Inventory correction"; an earlier reading of `validate.go:58-64` alone said no finding).
+  The tree's registry refuses the first four (`openspec/specs/component-registration/spec.md:149-200`).
 
 ## Shape sweep (pin `composition`)
 
@@ -172,12 +173,11 @@ land in any order relative to this one.
 Admit-or-refuse at a seam, as an offline prediction of boot admission. The closest instance in the tree is
 `component/registry.go:579` — `func (r *Registry) checkResourceConflictsLocked(candidate Declaration) error {`,
 which uses `claimsClash` `:659`, and `exclusiveResources` `:626` (refuses within one component, so `Declare`
-already refuses a component that clashes with itself). At the pin a self-clash yields no finding (the pin's
-`component/registry.go:763-772` only sorts and compacts the claim text, and `composition/validate.go:58-64` checks
-`claimed` before adding the component's own claims); on the tree it is `port_declaration_error`, an outcome that
-changes from the pin. No other reader would adopt an exported
-clash rule: flowgraph dropped its bind refusal (#324), and the pin's `service` reads no `ExclusiveResources`. No
-collision table is needed for the clash rule.
+already refuses a component that clashes with itself). At the pin a self-clash yields a `connection_pattern_error`
+from flowgraph's bind refusal (composition's own check, `validate.go:58-64`, never sees it); on the tree it is
+`port_declaration_error`, an outcome that changes from the pin (`design.md`, "Inventory correction"). No other
+reader would adopt an exported clash rule: flowgraph dropped its bind refusal (#324), and the pin's `service` reads no
+`ExclusiveResources`. No collision table is needed for the clash rule.
 
 For #16's refusal (a stream filter covering a reserved request subject) the tree already has: the matcher
 `internal/flowgraph/flowgraph.go:275` `SubjectCovers`, which pin composition already calls at `analyze.go:125`; the

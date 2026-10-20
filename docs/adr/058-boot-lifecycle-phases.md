@@ -27,8 +27,9 @@
 > - Not ported: `cmd/semstreams`, `cmd/e2e-semstreams` and their `run()` (this module has no binary), `internal/boot`,
 >   `service.Manager` and `RegisterInstance` (the service manager comes in the next pull request of the port), the
 >   Status amendment's `service.ConfigureRulePackMutations` (not in this pull request),
->   `HeartbeatService`, `Metrics`, `LogForwarder`, `MessageLogger`, `FlowService`, the milestone subscriber, and the
->   lifecycle `Manager`'s ownership calls (`AttachOwnership`, `WaitOwnership`). ADR-047 and ADR-056 are not ported.
+>   `FlowService`, the milestone subscriber, and the lifecycle `Manager`'s ownership calls (`AttachOwnership`,
+>   `WaitOwnership`). ADR-047 and ADR-056 are not ported. Not yet ported (later pull requests of the `service`
+>   port): `HeartbeatService`, `Metrics`, `LogForwarder`, `MessageLogger`.
 > - `path:line` cites below are the pin's; issue numbers (`gh#279`) are SemStreams'.
 
 - **Status**: Draft; ownership-specific boot service, watcher, heartbeat, and shutdown sections superseded by ADR-091

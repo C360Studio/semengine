@@ -32,7 +32,7 @@ svc := &ruleConfigService{
 | --- | --- |
 | `WithNATS(client)` | the health check also fails while `client.IsHealthy()` is false |
 | `WithMetrics(registry)` | every status change is recorded on `registry` (`CoreMetrics().RecordServiceStatus`) |
-| `WithLogger(logger)` | replaces the default logger, `slog.Default()` with a `service` attribute; `nil` keeps the default |
+| `WithLogger(logger)` | replaces the default logger, `slog.Default()` with a `service` attribute; `nil` keeps the default. `BaseService` itself logs nothing; the services in this package log through it |
 
 ### Start and Stop
 

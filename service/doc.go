@@ -26,7 +26,8 @@
 //
 // WithNATS adds the client's health to the health check, WithMetrics records
 // every status change on that registry, and WithLogger replaces the default
-// logger (slog.Default() with a "service" attribute).
+// logger (slog.Default() with a "service" attribute). BaseService itself logs
+// nothing; the services in this package log through it.
 //
 // Start(ctx) reports StatusRunning and runs the health check at once and then
 // every 30 seconds. It refuses a nil or ended ctx, a second Start, and a Start

@@ -4,6 +4,8 @@ base: `e626b6f7e8bb8378852d7a2adbdc368059bc9902` (origin/main `69436f0` plus the
 `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, read from the pin tarball
 (`gh api repos/C360Studio/semstreams/tarball/8b99efe9`).
 
+Status: INVENTORY PASS (semengine-reviewer, d83f876).
+
 ## Admission
 
 - `openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:212`: `pkg/rulepack` (143), readers

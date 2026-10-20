@@ -1,6 +1,7 @@
 # Design: port-rulepack
 
-Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). This design depends on `INVENTORY PASS` for `inventory.md`.
+Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). Pre-owner design review: PASS (semengine-reviewer, round 2 at
+`0fab444`); waits for the owner's answers to Q1 and Q2.
 
 ## Options
 
@@ -73,10 +74,9 @@ accepted bytes, so its assertions are shown to run.
 `TestValidateID` (pin, unchanged); new `TestValidateIDEveryByte`, `TestValidateIDBounds` (literals 246 and 247), and
 `TestValidateIDKVTokenRefusal` (`pack.one` gives a `*errs.ClassifiedError` with `Code` `kv_token_invalid` via
 `errors.As`). Predicted detections: M1 delete the length check (pin `:33-38`), M2 `>` to `>=` `:33`, M3 246 to 247
-`:21`, M4 delete the empty check `:30-32`, M5 delete the KV call `:39-44`, M6 `%w` to `%v` `:43`, M7 `PackIDCharset`
-to `[A-Za-z0-9_=/-]` (a `/` appended after `-` makes the invalid range `=-/`, so `MustCompile` panics at init and
-the run is inconclusive, not a detection), M8 drop `=` from it, M9 delete the pattern check, M10 drop `$` from the
-pattern. Predicted survivor:
+`:21`, M4 delete the empty check `:30-32`, M5 delete the KV call `:39-44`, M6 `%w` to `%v` `:43`, M7 add `/` as
+`[A-Za-z0-9_=/-]` (not after `-`: that spelling makes the invalid range `=-/`, panics at init and is inconclusive),
+M8 drop `=` from it, M9 delete the pattern check, M10 drop `$` from the pattern. Predicted survivor:
 S1 the `/` message reworded (anything keeping `invalid pack_id`). At the pin, `TestValidateID` alone lets every
 `PackIDCharset` edit survive, and loop edits adding a byte outside the KV alphabet are equivalent (unreachable).
 

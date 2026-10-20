@@ -9,9 +9,9 @@ Whether a component port is a graph-mutation port, and whether it has the valid 
 port SHALL be a member when its interface type is `semengine.graph.mutation`, or when any one of its NATS subjects
 starts with `graph.mutation.`. A member SHALL be valid only when it is a required `nats-request` port whose subjects
 are exactly `graph.mutation.>` and whose interface is `semengine.graph.mutation` `v1`. Flowgraph SHALL refuse a
-member that is not valid, on an input or an output, with an error of the invalid class naming the component and the
-port. graph-ingest SHALL refuse a member input that is not valid, in `Config.Validate` and when it builds its mutation
-routes. Each caller keeps its own refusal texts, direction rule and provider count.
+member that is not valid, on an input or an output, with an error wrapping `errs.ErrInvalidConfig` that names the
+component and the port. graph-ingest SHALL refuse a member input that is not valid, in `Config.Validate` and when it
+builds its mutation routes. Each caller keeps its own refusal texts, direction rule and provider count.
 
 #### Scenario: A nats port on a graph.mutation subject
 

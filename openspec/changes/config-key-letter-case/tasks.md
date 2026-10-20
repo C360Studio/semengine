@@ -27,7 +27,7 @@ for one. Each task ends only when `task verify` passes on a clean tree at its co
 
 ## 3. Docs (D4)
 
-- [ ] 3.1 `config/README.md` and `config/doc.go` per D4. Gate: `task verify` passes on a clean tree, including
+- [x] 3.1 `config/README.md` and `config/doc.go` per D4. Gate: `task verify` passes on a clean tree, including
   `docs:check` and the README example test (review stop).
 
 ## 4. Verify, review and close

@@ -4,8 +4,8 @@ Each task ends when its gate passes; 2.4 ends when `task verify` passes on a cle
 
 ## 1. Design
 
-- [ ] 1.1 Inventory passed, design reviewed, and accepted by the owner, with answers to the three owner questions.
-  Hold: owner acceptance on #328. Gate: `task spec:check`.
+- [x] 1.1 Inventory passed, design reviewed, and accepted by the owner, #328 comment 6290643374 (Q1 refuse everywhere,
+  Q2 `udp` in any letter case, Q3 the refused component named). Gate: `task spec:check`.
 - [x] 1.2 The probe (`notes/probe.md`: source, commands, versions, output) posted as a comment on PR #332. Gate: the
   comment URL recorded here:
   <https://github.com/C360Studio/semengine/pull/332#issuecomment-6290561084>
@@ -13,11 +13,11 @@ Each task ends when its gate passes; 2.4 ends when `task verify` passes on a cle
 ## 2. Implement
 
 - [ ] 2.1 The two existing tests' texts updated, the label row added, and the three new tests written; red on the
-  current code (R1-R13, the label row, the holder-order test, and the two updated literals), the run recorded; A1-A7
+  current code (R1-R13, the label row, the holder-order test, and the two updated literals), the run recorded; A1-A8
   green before and after. Gate: `go test -race ./component`, run recorded.
-- [ ] 2.2 `transport`, `clashes`, `hostAddr`, `exclusiveClaims` and `claimsClash`; both checks use `claimsClash`; 2.1
-  green; M1-M6 detected by `task mutate:check`; the ruling table's lines rewritten at this commit. Gate:
-  `go test -race ./component` and `task lint`.
+- [ ] 2.2 `transport`, `clashes`, `hostAddr`, `exclusiveClaims` and `claimsClash`; both checks use `claimsClash` and
+  the new refusal texts; 2.1 green; M1-M7 detected by `task mutate:check`; the ruling table's lines rewritten at this
+  commit. Gate: `go test -race ./component` and `task lint`.
 - [ ] 2.3 The spec delta is true of the code, each scenario's literal matching its test. Gate: `task spec:check`.
 - [ ] 2.4 README, `port_network.go` comment and the ledger `component` row updated. Gate: `task verify`.
 

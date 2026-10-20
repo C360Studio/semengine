@@ -133,6 +133,14 @@ func TestNameThatIsNotOneKeyTokenIsRefused(t *testing.T) {
 		require.NoError(t, manager.Start(ctx))
 		defer stopManager(t, manager)
 		before := bucketEntries(t, ctx, tc, manager.bucketName)
+		// The entry map alone cannot show a refused write: a put of components.a.b followed by its
+		// delete leaves the same live keys. Every put and delete adds a message to the bucket's
+		// stream, so its message count must not move either (task 2.4).
+		bucket, err := tc.GetKeyValueBucket(ctx, manager.bucketName)
+		require.NoError(t, err)
+		status, err := bucket.Status(ctx)
+		require.NoError(t, err)
+		messagesBefore := status.Values()
 
 		for _, name := range []string{"a.b", "a*", ">"} {
 			err := manager.PutComponentToKV(ctx, name, types.ComponentConfig{Type: "input", Name: "udp", Enabled: true})
@@ -144,10 +152,13 @@ func TestNameThatIsNotOneKeyTokenIsRefused(t *testing.T) {
 		}
 		require.Equal(t, before, bucketEntries(t, ctx, tc, manager.bucketName),
 			"a refused component name must not reach the bucket")
+		status, err = bucket.Status(ctx)
+		require.NoError(t, err)
+		require.Equal(t, messagesBefore, status.Values(), "a refused component write must add no message to the bucket")
 
 		// A space is mapped to '_' and is one token after the mapping: it is accepted.
 		require.NoError(t, manager.PutComponentToKV(ctx, "a b", types.ComponentConfig{Type: "input", Name: "udp", Enabled: true}))
-		_, err := mustStore(t, manager).Get(ctx, "components.a_b")
+		_, err = mustStore(t, manager).Get(ctx, "components.a_b")
 		require.NoError(t, err)
 	})
 }

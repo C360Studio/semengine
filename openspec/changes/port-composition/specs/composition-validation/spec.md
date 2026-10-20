@@ -19,9 +19,9 @@ an optional `port`, a non-empty `message` and a non-nil `suggestions`.
 `missing_interface`, `empty_composition` and for every `orphaned_port` except a required stream input with no publisher.
 Severity SHALL be error for every other type.
 
-Two enabled components whose exclusive claims clash under `component.Declaration.ConflictWith` SHALL yield one
-`exclusive_resource_conflict` error on the component later in instance-name order, with that method's message. A
-component whose own claims clash SHALL yield `port_declaration_error`. A JetStream input SHALL NOT be a
+Two enabled components whose exclusive claims clash SHALL yield one `exclusive_resource_conflict` error, on the
+component later in instance-name order. Its message SHALL be the error text `component.Declaration.ConflictWith`
+returns. A component whose own claims clash SHALL yield `port_declaration_error`. A JetStream input SHALL NOT be a
 `stream_requirement` finding when an explicit stream that it binds to by name has subjects that cover each of the
 input's subjects. An input declared `external` SHALL raise no `orphaned_port` finding for a missing publisher.
 Components SHALL be visited in instance-name order and edges emitted in a stable order, so equal inputs marshal to
@@ -35,11 +35,11 @@ byte-equal JSON.
 
 #### Scenario: Offline clash judgment matches admission
 
-- **WHEN** two components declare `http:0.0.0.0:8080` and `websocket:0.0.0.0:8080`, or `0.0.0.0` and `::` on one
-  port, or `UDP` and `udp` on one port, or a wildcard and `127.0.0.1` on one port
-- **THEN** `Validate` reports one `exclusive_resource_conflict` whose message equals the text
-  `Registry.CreateComponent` refuses with for the same pair, and two claims on different transports are not reported
-  (`TestValidateExclusiveClashMatchesAdmission`)
+- **WHEN** two components declare one of these pairs: `http:0.0.0.0:8080` and `websocket:0.0.0.0:8080`; `0.0.0.0`
+  and `::` on one port; `UDP` and `udp` on one port; a wildcard and `127.0.0.1` on one port
+- **THEN** `Validate` reports one `exclusive_resource_conflict` whose message equals the literal expected text, and
+  the error `Registry.CreateComponent` refuses the same pair with contains that text
+- **AND** two claims on different transports are reported by neither (`TestValidateExclusiveClashMatchesAdmission`)
 
 #### Scenario: A component clashing with itself
 

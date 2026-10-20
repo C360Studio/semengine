@@ -9,10 +9,11 @@ listener whose claim is its protocol, host and port, shown as its resource text 
 
 Two network claims clash when they have the same transport and the same port, and either host is a wildcard (an
 unspecified address such as `0.0.0.0`, `::` or `::ffff:0.0.0.0`), or both hosts are IP addresses naming one address (an
-IPv4-mapped IPv6 address names its IPv4 address), or both hosts are the same text. The transport is UDP when the
-protocol is `udp` in any letter case and TCP for every other protocol. A host name is not resolved at admission, so a
-name beside an address that resolves to the same address is not refused here; the bind at `Start` decides it (not
-promised).
+IPv4-mapped IPv6 address names its IPv4 address; an IPv6 zone is ignored except on a link-local address, where two
+zone texts are two addresses), or both hosts are the same text. The transport is UDP when the protocol is `udp` in
+any letter case and TCP for every other protocol. A host name or an interface name is not resolved at admission, so
+a name beside an address, or an interface's name beside its index, that the system takes as one is not refused here;
+the bind at `Start` decides it (not promised).
 
 `component.Registry.CreateComponent` SHALL refuse, with an error of the invalid class, a component with a claim that
 clashes with a claim an admitted component holds. The error SHALL name the refused component, its claim, the holder
@@ -73,6 +74,19 @@ shared.
 
 - **WHEN** component `first` is admitted with a network port on `tcp:localhost:8080`, and component `second` is then
   created with a network port on `tcp:127.0.0.1:8080`
+- **THEN** both are admitted, and `Snapshots` holds `first` and `second`
+
+#### Scenario: A zone on an address that is not link-local
+
+- **WHEN** component `first` is admitted with a network port on `tcp:::1:8080`, and component `second` is then
+  created with a network port on `tcp:::1%lo0:8080`
+- **THEN** creation fails with an invalid-class error reading
+  `resource conflict: component 'second' claims tcp:::1%lo0:8080, held by component 'first' as tcp:::1:8080`
+
+#### Scenario: Link-local addresses on two interfaces
+
+- **WHEN** component `first` is admitted with a network port on `tcp:fe80::1%en0:8080`, and component `second` is
+  then created with a network port on `tcp:fe80::1%en1:8080`
 - **THEN** both are admitted, and `Snapshots` holds `first` and `second`
 
 #### Scenario: Several holders clash

@@ -36,7 +36,8 @@ Two claims clash when they have the same transport and the same port, and one of
 
 1. Either host is a wildcard.
 2. Both hosts are IP literals naming the same address. An IPv4-mapped IPv6 address names its IPv4 address, and
-   `0:0:0:0:0:0:0:1` names `::1`.
+   `0:0:0:0:0:0:0:1` names `::1`. An IPv6 zone is ignored except on a link-local address, where it names the
+   interface: `::1%lo0` names `::1`, but `fe80::1%en0` and `fe80::1%en1` are two addresses (#339).
 3. Both hosts are the same text.
 
 A host name (anything that is not an IP literal) is not resolved.
@@ -48,13 +49,19 @@ Evidence (`notes/probe.md`, Go 1.26.9 on macOS 26.5.2 and Linux 7.0.14):
 - On UDP, a wildcard clashes with every host on both systems. On TCP it clashes on Linux, including with `::1` and
   `localhost`, but not on macOS.
 - `127.0.0.1` and `::1` bind together on both systems, and so do `127.0.0.1` and `127.0.0.2` on Linux.
+- A zone on an address that is not link-local is ignored by both systems: `::1`, `::1%lo0`, `::1%1` and `::1%en0`
+  all bind `[::1]` (`notes/probe-339.md`). On a link-local address the same zone text clashes. An unzoned link-local
+  address never binds.
 
 **Where the systems disagree.** On macOS, a wildcard and a specific host on one TCP port both bind. The rule refuses
 them anyway, because the same composition fails on Linux (ruled Q1). This is the one case where admission refuses
 what one OS allows.
 
 **Not promised.** Admission does not resolve names. So `localhost` beside `127.0.0.1`, or two different names for
-one address, pass admission, and the bind at `Start` decides them. Also not promised: listeners opened with
+one address, pass admission, and the bind at `Start` decides them. Admission also does not resolve interface names:
+`fe80::1%lo0` beside `fe80::1%1` (one interface by name and by index) passes admission, and both probed systems
+refuse the second bind at `Start`. An unzoned link-local address passes too; it never binds on either system. That
+one link-local address on two interfaces binds twice was not probed. Also not promised: listeners opened with
 `tcp4`/`tcp6`/`udp4`/`udp6` or `SO_REUSEPORT`, other OSes, other Go versions. The OS never sees the protocol label:
 the component maps it to a network, and this rule assumes it maps `udp` (any case) to `udp` and every other label to
 `tcp`.
@@ -118,13 +125,19 @@ func (f NetworkFacts) clashes(other NetworkFacts) bool {
 }
 
 // hostAddr returns the IP address a host spells, unmapping an IPv4-mapped IPv6
-// address; for a host name it returns the zero Addr.
+// address and dropping an IPv6 zone except on a link-local address, where the
+// zone names the interface (probe, #339); for a host name it returns the zero
+// Addr.
 func hostAddr(host string) netip.Addr {
     addr, err := netip.ParseAddr(host)
     if err != nil {
         return netip.Addr{}
     }
-    return addr.Unmap()
+    addr = addr.Unmap()
+    if !addr.IsLinkLocalUnicast() {
+        addr = addr.WithZone("")
+    }
+    return addr
 }
 ```
 
@@ -156,6 +169,7 @@ below).
 | #328 hosts and Q1 (6290643374): a wildcard clashes with any host, on every OS | `component/port_facts.go:170`, `NetworkFacts.clashes`, the `IsUnspecified` branch | R4-R8, R11, R13 (`T:389-397`, `:403`, `:407`); A3-A5 (`T:445-449`) show that specific hosts do not clash |
 | One address in two spellings clashes, the wildcard included | `component/port_facts.go:186` (`hostAddr`, `Unmap`) and `:174` (`a == b`) | R9, R10, R13 (`T:399`, `:401`, `:407`) |
 | Names are not resolved (not promised) | `component/port_facts.go:176`, `NetworkFacts.clashes`, the text branch | R12 (`T:405`, same text refused), A7 (`T:453`, `localhost` beside `127.0.0.1` admitted) |
+| #339 (MEDIUM, owner rule: simple leftovers are fixed): a zone is ignored except on a link-local address; interface names are not resolved | `component/port_facts.go`, `hostAddr` (lines filled at task 2.5's commit) | R14-R17; A9 (link-local zones on two interfaces admitted), A10 (name beside index admitted, not promised) |
 | Q3 (6290643374): between components, invalid class, refused component, holder and both claims named | `component/registry.go:579-594`, `checkResourceConflictsLocked` (`claimsClash` at `:585`, text at `:586`) | `TestRegistryRefusesASecondComponentOnATakenAddress` (`T:192`); R rows, paths (a) and (b) |
 | Q3 (6290643374): within one component, through `Declare` and `CreateComponent`, component and both claims named | `component/registry.go:626-641`, `exclusiveResources` (`claimsClash` at `:631`, text at `:632`); `exclusiveClaims` at `:645`; `claimsClash` at `:659` | `TestRegistryRefusesOneComponentClaimingAnAddressTwice` (`T:252`, label row `T:280`); R rows, path (c) |
 | One holder named, deterministically | `component/registry.go:581`, the sorted holder loop | `TestRegistryNamesTheFirstClashingHolderByName` (`T:497`) |
@@ -192,6 +206,10 @@ taken from the probe table and the rulings, never computed from `NetworkFacts`.
   - R11: tcp `0.0.0.0` / tcp `localhost`
   - R12: tcp `localhost` / tcp `localhost`
   - R13: tcp `::ffff:0.0.0.0` / tcp `127.0.0.1` (a wildcard in its IPv4-mapped spelling; Linux refuses)
+  - R14: tcp `::1` / tcp `::1%lo0`
+  - R15: tcp `::1%lo0` / tcp `::1%1`
+  - R16: udp `::1%lo0` / udp `::1%en0`
+  - R17: tcp `fe80::1%lo0` / tcp `fe80::1%lo0`
   - Port 8080 unless shown.
 - `TestRegistryAdmitsNetworkClaimsThatCanBothBind` (new, the sensitivity pair). The same three paths (a), (b) and (c)
   with the same instance names; each admits both claims (`Snapshots` holds `first` and `second`; `Declare` succeeds).
@@ -203,6 +221,8 @@ taken from the probe table and the rulings, never computed from `NetworkFacts`.
   - A6: tcp `0.0.0.0:8080` / tcp `0.0.0.0:8081`
   - A7: tcp `localhost` / tcp `127.0.0.1` (pins the declared "names are not resolved")
   - A8: `UDP` `0.0.0.0` / tcp `0.0.0.0`
+  - A9: tcp `fe80::1%en0` / tcp `fe80::1%en1` (two interfaces; not probed, see "Not promised")
+  - A10: tcp `fe80::1%lo0` / tcp `fe80::1%1` (pins the declared "interface names are not resolved")
 - `TestRegistryNamesTheFirstClashingHolderByName` (new): `beta` on tcp `127.0.0.1:8080` and `alpha` on tcp
   `::1:8080` are admitted. `gamma` on tcp `0.0.0.0:8080` is then created 20 times. A refusal leaves the admitted set
   unchanged, so every attempt meets the same two holders. Every attempt must be refused with exactly
@@ -217,11 +237,13 @@ These tests bind nothing, so the fixed-port guard does not apply; the existing t
 | --- | --- | --- |
 | M1 | `if strings.EqualFold(f.protocol, "udp") {` becomes `if !strings.EqualFold(f.protocol, "tcp") {` | R2 |
 | M2 | `if a.IsUnspecified() \|\| b.IsUnspecified() {` becomes `if false && (a.IsUnspecified() \|\| b.IsUnspecified()) {` | R4 |
-| M3 | `return addr.Unmap()` becomes `return addr` | R9, R13 |
+| M3 | `addr = addr.Unmap()` becomes `_ = addr.Unmap()` | R9, R13 |
 | M4 | in `checkResourceConflictsLocked`, `if claimsClash(claim, heldClaim) {` becomes `if claim.ResourceID() == heldClaim.ResourceID() {` | R1, paths (a) and (b) |
 | M5 | in `exclusiveResources`, `if claimsClash(claim, earlier) {` becomes `if claim.ResourceID() == earlier.ResourceID() {` | R1, path (c) |
 | M6 | `for _, holder := range slices.Sorted(maps.Keys(r.declarations)) {` becomes `for holder := range maps.Keys(r.declarations) {` (`slices` is still used at `registry.go:377`) | `TestRegistryNamesTheFirstClashingHolderByName` |
 | M7 | `if strings.EqualFold(f.protocol, "udp") {` becomes `if strings.EqualFold(f.protocol, "udp") && f.protocol == "udp" {` (`strings` stays used) | R3 |
+| M8 | `if !addr.IsLinkLocalUnicast() {` becomes `if false && !addr.IsLinkLocalUnicast() {` | R14 |
+| M9 | `if !addr.IsLinkLocalUnicast() {` becomes `if true \|\| !addr.IsLinkLocalUnicast() {` | A9 |
 
 M6 makes the named holder depend on map order. The test makes 20 attempts in one run; the reviewer measured unsorted
 iteration over the two holders naming `alpha` first in about 1 of 8 attempts (Go 1.26, 100,000 trials; map order is
@@ -232,6 +254,8 @@ measured, not promised), so the chance all 20 pass is negligible and one `task m
 
 - `claimsClash`'s text fallback: no exclusive kind other than network exists.
 - Two different host names for one address: the outcome depends on the resolver, and it is not promised.
+- One link-local address on two interfaces (A9): admitted by design, but neither probe environment could place one
+  address on two interfaces, so whether both bind is not promised.
 
 ### Generated checks: not used
 
@@ -240,11 +264,13 @@ The rule is a symmetric predicate over two claims plus an add-only history. The 
 - **Interacting inputs.** The predicate reads three things:
   - transport: same or different, including two TCP labels, and `UDP` beside both `udp` and `tcp`;
   - port: same or different;
-  - host relation: wildcard on either side, one address in two spellings, two distinct addresses, same name, name
-    beside an address.
+  - host relation: wildcard on either side, one address in two spellings (mapped, long form, zoned off link-local),
+    two distinct addresses, link-local zones (same text, two interfaces, name beside index), same name, name beside
+    an address.
 
-  Each combination that changes the outcome is a row: R1-R13 refuse and A1-A8 admit. Each transport branch (M1, M7),
-  the wildcard branch (M2), the address branch (M3) and the text branch (A7) is proved separately.
+  Each combination that changes the outcome is a row: R1-R17 refuse and A1-A10 admit. Each transport branch (M1, M7),
+  the wildcard branch (M2), the address branch (M3), the zone branch (M8, M9) and the text branch (A7) is proved
+  separately.
 - **Symmetry.** Every row runs in both orders, and within one component as well.
 - **History.** The registry only adds components, and a repeated name is refused before the clash check
   (`component/registry.go:401-404`). The only histories are "a holder, then a claimant" (both orders per row)

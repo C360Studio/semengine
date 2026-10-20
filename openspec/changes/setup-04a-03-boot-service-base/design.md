@@ -98,7 +98,7 @@ observable behaviour, each item proven by `TestBaseServicePassesTheLifecycleSuit
   (`synctest`): it cancels the Start context and advances the bubble's clock 60 s. Status stays running and two
   more checks have run.
 - `Stop(ctx)` refuses nil. A context that has already ended stops nothing: Stop returns its error at once, the
-  status stays `StatusRunning` and checks go on. This is the guard's reading (`internal/lifecycleguard/guard.go:108-110`
+  status stays `StatusRunning` and checks go on. This is the guard's reading (`internal/lifecycleguard/guard.go:109-111`
   returns before cleanup), and the suite's `StopReturnsItsEndedContext` accepts it.
   `TestStopWithAnEndedContextStopsNothing`.
 - A Stop with a live context begins the stop: `Status()` becomes `StatusStopping` and no new check starts. It returns
@@ -262,6 +262,8 @@ decoders of S6 are PR 5's and PR 6's.
   | Shutdown returns before the in-flight request | `TestPProfShutdownWaitsForAnInFlightRequest` |
   | the bind moved back into the goroutine, or its failure not logged | `TestMaybeStartPProfLogsABindFailure` |
   | the retention call removed | `TestWireGraphRuntimeStripsAForeignTTL` |
+  | a Stop under an ended context cancels the run (the pin's behaviour) | `TestStopWithAnEndedContextStopsNothing` |
+  | the health check's error ignored | `TestFailingHealthCheckMakesTheServiceUnhealthy` |
 
 ## Ruling to implementation
 
@@ -374,6 +376,8 @@ in the probe comment on #343, which task 2.1 cites):
   health check returns nil with the status `stopping`; the first returns only after the check is released.
 
 ## Owner questions
+
+Status: DESIGN REVIEW PASS (semengine-reviewer, round 2, `515f1c7`); waiting for the owner on Q1 and Q2.
 
 - **Q1. Recommended: yes.** May `NewBaseServiceWithOptions` lose the configuration argument that it never reads and
   every caller passes as `nil`, so semteams deletes `nil,` from two calls and semboids from one? (D1; `base.go:85`,

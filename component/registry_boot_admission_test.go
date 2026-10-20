@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -197,10 +198,11 @@ func TestRegistryRefusesASecondComponentOnATakenAddress(t *testing.T) {
 
 	_, err = registry.CreateComponent("second", declarationTestConfig("acceptor", `{}`), declarationTestDeps(), nil)
 
-	if err == nil || !errs.IsInvalid(err) ||
-		!strings.Contains(err.Error(), "resource conflict: tcp:127.0.0.1:8080 already used by component 'first'") {
-		t.Fatalf("second component on a taken address: error = %v, "+
-			"want an invalid-class refusal naming tcp:127.0.0.1:8080 and its holder first", err)
+	const want = "resource conflict: component 'second' claims tcp:127.0.0.1:8080, " +
+		"held by component 'first' as tcp:127.0.0.1:8080"
+	if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+		t.Fatalf("second component on a taken address: error = %v, want an invalid-class refusal containing %q",
+			err, want)
 	}
 	if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"first"}) {
 		t.Fatalf("admitted after the refusal = %v, want [first]", got)
@@ -248,26 +250,42 @@ func TestRegistryAdmitsComponentsOnDistinctOrSharedResources(t *testing.T) {
 // address are refused, through Declare and through CreateComponent (owner
 // ruling, #324 comment 6278113073).
 func TestRegistryRefusesOneComponentClaimingAnAddressTwice(t *testing.T) {
-	const want = "resource conflict: tcp:0.0.0.0:8080 already used by another port of component 'gateway'"
+	const sameText = "resource conflict: component 'gateway' claims tcp:0.0.0.0:8080, " +
+		"held by another of its ports as tcp:0.0.0.0:8080"
 	bind := func(name string, direction Direction) Port {
-		return Port{
-			Name: name, Direction: direction, Required: true,
-			Config: NetworkPort{Protocol: "tcp", Host: "0.0.0.0", Port: 8080},
-		}
+		return networkClaimPort(name, direction, "tcp", "0.0.0.0", 8080)
 	}
 	tests := []struct {
 		name            string
 		inputs, outputs []Port
+		want            string
 	}{
 		{
 			name:    "an input and an output",
 			inputs:  []Port{bind("accept", DirectionInput)},
 			outputs: []Port{bind("serve", DirectionOutput)},
+			want:    sameText,
 		},
-		{name: "two inputs", inputs: []Port{bind("accept", DirectionInput), bind("accept2", DirectionInput)}},
-		{name: "two outputs", outputs: []Port{bind("serve", DirectionOutput), bind("serve2", DirectionOutput)}},
+		{
+			name:   "two inputs",
+			inputs: []Port{bind("accept", DirectionInput), bind("accept2", DirectionInput)},
+			want:   sameText,
+		},
+		{
+			name:    "two outputs",
+			outputs: []Port{bind("serve", DirectionOutput), bind("serve2", DirectionOutput)},
+			want:    sameText,
+		},
+		{
+			name:    "an http input and a ws output",
+			inputs:  []Port{networkClaimPort("accept", DirectionInput, "http", "0.0.0.0", 8080)},
+			outputs: []Port{networkClaimPort("serve", DirectionOutput, "ws", "0.0.0.0", 8080)},
+			want: "resource conflict: component 'gateway' claims ws:0.0.0.0:8080, " +
+				"held by another of its ports as http:0.0.0.0:8080",
+		},
 	}
 	for _, tt := range tests {
+		want := tt.want
 		t.Run(tt.name+" through Declare", func(t *testing.T) {
 			registry := NewRegistry()
 			registerPortsFactory(t, registry, "gateway-factory", tt.inputs, tt.outputs)
@@ -292,5 +310,213 @@ func TestRegistryRefusesOneComponentClaimingAnAddressTwice(t *testing.T) {
 				t.Fatalf("admitted after the refusal = %v, want none", got)
 			}
 		})
+	}
+}
+
+func networkClaimPort(name string, direction Direction, protocol, host string, port int) Port {
+	return Port{
+		Name: name, Direction: direction, Required: true,
+		Config: NetworkPort{Protocol: protocol, Host: host, Port: port},
+	}
+}
+
+// networkClaimRow is two network claims and their resource texts, written as
+// literals so the expected refusal text never comes from the code under test.
+type networkClaimRow struct {
+	name           string
+	firstProtocol  string
+	firstHost      string
+	firstPort      int
+	firstID        string
+	secondProtocol string
+	secondHost     string
+	secondPort     int
+	secondID       string
+}
+
+func (row networkClaimRow) firstClaim(name string, direction Direction) Port {
+	return networkClaimPort(name, direction, row.firstProtocol, row.firstHost, row.firstPort)
+}
+
+func (row networkClaimRow) secondClaim(name string, direction Direction) Port {
+	return networkClaimPort(name, direction, row.secondProtocol, row.secondHost, row.secondPort)
+}
+
+// createHolderThenClaimant admits component first with holder's port, then
+// creates component second with claimant's port, and returns the second
+// creation's error.
+func createHolderThenClaimant(t *testing.T, holder, claimant Port) (*Registry, error) {
+	t.Helper()
+	registry := NewRegistry()
+	registerPortsFactory(t, registry, "first-factory", nil, []Port{holder})
+	registerPortsFactory(t, registry, "second-factory", nil, []Port{claimant})
+	_, err := registry.CreateComponent("first", declarationTestConfig("first-factory", `{}`), declarationTestDeps(), nil)
+	requireNoError(t, err)
+	_, err = registry.CreateComponent(
+		"second", declarationTestConfig("second-factory", `{}`), declarationTestDeps(), nil)
+	return registry, err
+}
+
+// declareGateway declares component gateway with input as its input port and
+// output as its output port.
+func declareGateway(t *testing.T, input, output Port) error {
+	t.Helper()
+	registry := NewRegistry()
+	registerPortsFactory(t, registry, "gateway-factory", []Port{input}, []Port{output})
+	_, err := registry.Declare("gateway", declarationTestConfig("gateway-factory", `{}`))
+	return err
+}
+
+func requireInvalidRefusal(t *testing.T, err error, want string) {
+	t.Helper()
+	if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+		t.Fatalf("error = %v, want an invalid-class refusal containing %q", err, want)
+	}
+}
+
+// TestRegistryRefusesNetworkClaimsThatCannotBothBind: two listeners that
+// cannot both bind are refused, whichever comes first and within one
+// component (owner rulings, #328 and comment 6290643374; probe in
+// openspec/changes/one-network-address-clash/notes/probe.md).
+func TestRegistryRefusesNetworkClaimsThatCannotBothBind(t *testing.T) {
+	rows := []networkClaimRow{
+		{"R1 http and websocket on one TCP port",
+			"http", "0.0.0.0", 8080, "http:0.0.0.0:8080", "websocket", "0.0.0.0", 8080, "websocket:0.0.0.0:8080"},
+		{"R2 http and tcp on one TCP port",
+			"http", "0.0.0.0", 8080, "http:0.0.0.0:8080", "tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080"},
+		{"R3 UDP and udp",
+			"UDP", "0.0.0.0", 8080, "UDP:0.0.0.0:8080", "udp", "0.0.0.0", 8080, "udp:0.0.0.0:8080"},
+		{"R4 tcp wildcard and loopback",
+			"tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080", "tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080"},
+		{"R5 udp wildcard and loopback",
+			"udp", "0.0.0.0", 14550, "udp:0.0.0.0:14550", "udp", "127.0.0.1", 14550, "udp:127.0.0.1:14550"},
+		{"R6 IPv4 and IPv6 wildcards",
+			"tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080", "tcp", "::", 8080, "tcp::::8080"},
+		{"R7 IPv6 wildcard and IPv6 loopback",
+			"tcp", "::", 8080, "tcp::::8080", "tcp", "::1", 8080, "tcp:::1:8080"},
+		{"R8 IPv4 wildcard and IPv6 loopback",
+			"tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080", "tcp", "::1", 8080, "tcp:::1:8080"},
+		{"R9 IPv4-mapped and IPv4 loopback",
+			"tcp", "::ffff:127.0.0.1", 8080, "tcp:::ffff:127.0.0.1:8080", "tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080"},
+		{"R10 two spellings of IPv6 loopback",
+			"tcp", "0:0:0:0:0:0:0:1", 8080, "tcp:0:0:0:0:0:0:0:1:8080", "tcp", "::1", 8080, "tcp:::1:8080"},
+		{"R11 wildcard and a host name",
+			"tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080", "tcp", "localhost", 8080, "tcp:localhost:8080"},
+		{"R12 one host name twice",
+			"tcp", "localhost", 8080, "tcp:localhost:8080", "tcp", "localhost", 8080, "tcp:localhost:8080"},
+		{"R13 IPv4-mapped wildcard and loopback",
+			"tcp", "::ffff:0.0.0.0", 8080, "tcp:::ffff:0.0.0.0:8080", "tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080"},
+	}
+	for _, row := range rows {
+		t.Run(row.name+" (a) first claim held", func(t *testing.T) {
+			registry, err := createHolderThenClaimant(t,
+				row.firstClaim("listen", DirectionOutput), row.secondClaim("listen", DirectionOutput))
+			requireInvalidRefusal(t, err, "resource conflict: component 'second' claims "+row.secondID+
+				", held by component 'first' as "+row.firstID)
+			if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"first"}) {
+				t.Fatalf("admitted after the refusal = %v, want [first]", got)
+			}
+		})
+		t.Run(row.name+" (b) second claim held", func(t *testing.T) {
+			registry, err := createHolderThenClaimant(t,
+				row.secondClaim("listen", DirectionOutput), row.firstClaim("listen", DirectionOutput))
+			requireInvalidRefusal(t, err, "resource conflict: component 'second' claims "+row.firstID+
+				", held by component 'first' as "+row.secondID)
+			if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"first"}) {
+				t.Fatalf("admitted after the refusal = %v, want [first]", got)
+			}
+		})
+		t.Run(row.name+" (c) one component", func(t *testing.T) {
+			err := declareGateway(t, row.firstClaim("accept", DirectionInput), row.secondClaim("serve", DirectionOutput))
+			requireInvalidRefusal(t, err, "resource conflict: component 'gateway' claims "+row.secondID+
+				", held by another of its ports as "+row.firstID)
+		})
+	}
+}
+
+// TestRegistryAdmitsNetworkClaimsThatCanBothBind is the sensitivity pair of
+// the refusals above: listeners that both bind are admitted.
+func TestRegistryAdmitsNetworkClaimsThatCanBothBind(t *testing.T) {
+	rows := []networkClaimRow{
+		{"A1 tcp and udp wildcards",
+			"tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080", "udp", "0.0.0.0", 8080, "udp:0.0.0.0:8080"},
+		{"A2 http and udp wildcards",
+			"http", "0.0.0.0", 8080, "http:0.0.0.0:8080", "udp", "0.0.0.0", 8080, "udp:0.0.0.0:8080"},
+		{"A3 tcp IPv4 and IPv6 loopback",
+			"tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080", "tcp", "::1", 8080, "tcp:::1:8080"},
+		{"A4 udp IPv4 and IPv6 loopback",
+			"udp", "127.0.0.1", 8080, "udp:127.0.0.1:8080", "udp", "::1", 8080, "udp:::1:8080"},
+		{"A5 two IPv4 loopback addresses",
+			"tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080", "tcp", "127.0.0.2", 8080, "tcp:127.0.0.2:8080"},
+		{"A6 two ports",
+			"tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080", "tcp", "0.0.0.0", 8081, "tcp:0.0.0.0:8081"},
+		{"A7 a host name is not resolved",
+			"tcp", "localhost", 8080, "tcp:localhost:8080", "tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080"},
+		{"A8 UDP and tcp wildcards",
+			"UDP", "0.0.0.0", 8080, "UDP:0.0.0.0:8080", "tcp", "0.0.0.0", 8080, "tcp:0.0.0.0:8080"},
+	}
+	for _, row := range rows {
+		t.Run(row.name+" (a) first claim held", func(t *testing.T) {
+			registry, err := createHolderThenClaimant(t,
+				row.firstClaim("listen", DirectionOutput), row.secondClaim("listen", DirectionOutput))
+			requireNoError(t, err)
+			assertAdmittedBoth(t, registry, row)
+		})
+		t.Run(row.name+" (b) second claim held", func(t *testing.T) {
+			registry, err := createHolderThenClaimant(t,
+				row.secondClaim("listen", DirectionOutput), row.firstClaim("listen", DirectionOutput))
+			requireNoError(t, err)
+			assertAdmittedBoth(t, registry, row)
+		})
+		t.Run(row.name+" (c) one component", func(t *testing.T) {
+			requireNoError(t, declareGateway(t,
+				row.firstClaim("accept", DirectionInput), row.secondClaim("serve", DirectionOutput)))
+		})
+	}
+}
+
+func assertAdmittedBoth(t *testing.T, registry *Registry, row networkClaimRow) {
+	t.Helper()
+	if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"first", "second"}) {
+		t.Fatalf("admitted = %v, want [first second]", got)
+	}
+	var resources []string
+	for _, declaration := range registry.Snapshots() {
+		resources = append(resources, declaration.ExclusiveResources...)
+	}
+	if want := []string{row.firstID, row.secondID}; !reflect.DeepEqual(slices.Sorted(slices.Values(resources)),
+		slices.Sorted(slices.Values(want))) {
+		t.Fatalf("exclusive resources = %v, want %v", resources, want)
+	}
+}
+
+// TestRegistryNamesTheFirstClashingHolderByName: when several admitted
+// components clash with a claim, the refusal names the first in instance-name
+// order, on every attempt. A refusal leaves the admitted set unchanged, so
+// each attempt meets the same two holders.
+func TestRegistryNamesTheFirstClashingHolderByName(t *testing.T) {
+	const want = "resource conflict: component 'gamma' claims tcp:0.0.0.0:8080, " +
+		"held by component 'alpha' as tcp:::1:8080"
+	registry := NewRegistry()
+	registerPortsFactory(t, registry, "beta-factory", nil,
+		[]Port{networkClaimPort("listen", DirectionOutput, "tcp", "127.0.0.1", 8080)})
+	registerPortsFactory(t, registry, "alpha-factory", nil,
+		[]Port{networkClaimPort("listen", DirectionOutput, "tcp", "::1", 8080)})
+	registerPortsFactory(t, registry, "gamma-factory", nil,
+		[]Port{networkClaimPort("listen", DirectionOutput, "tcp", "0.0.0.0", 8080)})
+	_, err := registry.CreateComponent("beta", declarationTestConfig("beta-factory", `{}`), declarationTestDeps(), nil)
+	requireNoError(t, err)
+	_, err = registry.CreateComponent("alpha", declarationTestConfig("alpha-factory", `{}`), declarationTestDeps(), nil)
+	requireNoError(t, err)
+
+	for attempt := range 20 {
+		_, err := registry.CreateComponent(
+			"gamma", declarationTestConfig("gamma-factory", `{}`), declarationTestDeps(), nil)
+		if err == nil || !errs.IsInvalid(err) || !strings.Contains(err.Error(), want) {
+			t.Fatalf("attempt %d: error = %v, want an invalid-class refusal containing %q", attempt, err, want)
+		}
+	}
+	if got := admittedNames(registry); !reflect.DeepEqual(got, []string{"alpha", "beta"}) {
+		t.Fatalf("admitted after the refusals = %v, want [alpha beta]", got)
 	}
 }

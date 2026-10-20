@@ -243,8 +243,8 @@ func TestLoader_ExampleConfig(t *testing.T) {
 
 	// The platform and services blocks
 	assert.Equal(t, "c360", cfg.Platform.Org)
-	assert.Equal(t, "mavlink-demo", cfg.Platform.ID)
-	assert.Equal(t, "ground-station", cfg.Platform.Type)
+	assert.Equal(t, "graph-demo", cfg.Platform.ID)
+	assert.Equal(t, "edge", cfg.Platform.Type)
 	// Parse service config from types.ServiceConfigs
 	msgLoggerEnabled := getServiceEnabled(cfg.Services["message-logger"])
 	discoveryEnabled := getServiceEnabled(cfg.Services["discovery"])

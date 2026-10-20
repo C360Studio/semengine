@@ -126,11 +126,11 @@ func reservedSubjects() []string {
 
 // reservedCaptureFindings reports each stream subject filter that overlaps a
 // reserved request subject (#16): a stream on such a filter would store the
-// requests, which belong to their responders alone. The streams checked are the ones provisioning creates from the composition: the
-// explicit block, named by key, and each JetStream output, named as
-// provisioning names it (its stream name, else config.DeriveStreamName of its
-// first subject). One finding per filter names the first reserved subject it
-// captures.
+// requests, which belong to their responders alone. The streams checked are
+// the ones provisioning creates from the composition: the explicit block,
+// named by key, and each JetStream output, named as provisioning names it (its
+// stream name, else config.DeriveStreamName of its first subject). One finding
+// per filter names the first reserved subject it captures.
 func reservedCaptureFindings(declarations []component.Declaration, streams config.StreamConfigs) []Finding {
 	reserved := reservedSubjects()
 	var findings []Finding

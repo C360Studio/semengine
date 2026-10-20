@@ -1,8 +1,8 @@
 {
   "platform": {
     "org": "c360",
-    "id": "mavlink-demo",
-    "type": "ground-station"
+    "id": "graph-demo",
+    "type": "edge"
   },
   "nats": {
     "urls": ["nats://localhost:4222"],

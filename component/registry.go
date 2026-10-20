@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"sort"
 	"sync"
@@ -403,7 +404,7 @@ func (r *Registry) admitPrepared(prepared Declaration) error {
 			fmt.Errorf("instance '%s' is already registered", prepared.InstanceName),
 			"Registry", "admitPrepared", "duplicate instance check")
 	}
-	if err := r.checkResourceConflictsLocked(prepared.ExclusiveResources); err != nil {
+	if err := r.checkResourceConflictsLocked(prepared); err != nil {
 		return errs.Wrap(err, "Registry", "admitPrepared", "resource conflict check")
 	}
 	r.declarations[prepared.InstanceName] = prepared
@@ -572,12 +573,18 @@ func ValidateComponentName(name string) error {
 	return nil
 }
 
-func (r *Registry) checkResourceConflictsLocked(resources []string) error {
-	for existingName, declaration := range r.declarations {
-		for _, existingResource := range declaration.ExclusiveResources {
-			for _, resource := range resources {
-				if resource == existingResource {
-					msg := fmt.Errorf("resource conflict: %s already used by component '%s'", resource, existingName)
+// checkResourceConflictsLocked refuses a candidate one of whose exclusive
+// claims clashes with a claim an admitted component holds. Holders are visited
+// in instance-name order, so the holder named is the same on every run.
+func (r *Registry) checkResourceConflictsLocked(candidate Declaration) error {
+	claims := exclusiveClaims(candidate.InputFacts, candidate.OutputFacts)
+	for _, holder := range slices.Sorted(maps.Keys(r.declarations)) {
+		held := r.declarations[holder]
+		for _, heldClaim := range exclusiveClaims(held.InputFacts, held.OutputFacts) {
+			for _, claim := range claims {
+				if claimsClash(claim, heldClaim) {
+					msg := fmt.Errorf("resource conflict: component '%s' claims %s, held by component '%s' as %s",
+						candidate.InstanceName, claim.ResourceID(), holder, heldClaim.ResourceID())
 					return errs.WrapInvalid(msg, "Registry", "checkResourceConflicts", "exclusive resource check")
 				}
 			}
@@ -614,24 +621,48 @@ func captureComponentDeclaration(
 }
 
 // exclusiveResources lists, sorted, the exclusive resources a component's
-// ports claim, and refuses one resource claimed by two of its ports: a socket
-// that both reads and writes is one port, not two (#324).
+// ports claim, and refuses two of its own claims that clash: a socket that
+// both reads and writes is one port, not two (#324, #328).
 func exclusiveResources(instanceName string, inputFacts, outputFacts []PortFacts) ([]string, error) {
-	resources := make([]string, 0, len(inputFacts)+len(outputFacts))
-	for _, facts := range append(append([]PortFacts(nil), inputFacts...), outputFacts...) {
-		if facts.IsExclusive() {
-			resources = append(resources, facts.ResourceID())
+	claims := exclusiveClaims(inputFacts, outputFacts)
+	resources := make([]string, 0, len(claims))
+	for i, claim := range claims {
+		for _, earlier := range claims[:i] {
+			if claimsClash(claim, earlier) {
+				msg := fmt.Errorf("resource conflict: component '%s' claims %s, held by another of its ports as %s",
+					instanceName, claim.ResourceID(), earlier.ResourceID())
+				return nil, errs.WrapInvalid(msg, "Registry", "exclusiveResources", "exclusive resource check")
+			}
 		}
+		resources = append(resources, claim.ResourceID())
 	}
 	sort.Strings(resources)
-	for i := 1; i < len(resources); i++ {
-		if resources[i] == resources[i-1] {
-			msg := fmt.Errorf("resource conflict: %s already used by another port of component '%s'",
-				resources[i], instanceName)
-			return nil, errs.WrapInvalid(msg, "Registry", "exclusiveResources", "exclusive resource check")
+	return resources, nil
+}
+
+// exclusiveClaims returns the exclusive port facts, inputs first, then
+// outputs, each in declaration order.
+func exclusiveClaims(inputFacts, outputFacts []PortFacts) []PortFacts {
+	claims := make([]PortFacts, 0, len(inputFacts)+len(outputFacts))
+	for _, facts := range slices.Concat(inputFacts, outputFacts) {
+		if facts.IsExclusive() {
+			claims = append(claims, facts)
 		}
 	}
-	return resources, nil
+	return claims
+}
+
+// claimsClash is the one rule for two exclusive claims that cannot both be
+// held. Two network claims clash by NetworkFacts.clashes; any other pair
+// compares resource text, so an exclusive kind added later stays refused on
+// an exact match until it states its own rule.
+func claimsClash(a, b PortFacts) bool {
+	aNetwork, aOK := a.Network()
+	bNetwork, bOK := b.Network()
+	if aOK && bOK {
+		return aNetwork.clashes(bNetwork)
+	}
+	return a.ResourceID() == b.ResourceID()
 }
 
 func cloneAndProjectPorts(ports []Port) ([]Port, []PortFacts, error) {

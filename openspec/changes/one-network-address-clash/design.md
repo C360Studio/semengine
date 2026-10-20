@@ -146,18 +146,19 @@ func hostAddr(host string) netip.Addr {
 
 ## Ruling to implementation
 
-Line numbers are rewritten at the commit that lands task 2.2.
+Line numbers are at the commit that lands task 2.2. Tests are in `component/registry_boot_admission_test.go` (`T:`
+below).
 
 | Ruling | Implemented | Proved |
 | --- | --- | --- |
-| #328: every label other than `udp` is TCP | `component/port_facts.go`, `NetworkFacts.transport` | `TestRegistryRefusesNetworkClaimsThatCannotBothBind` rows R1, R2; `TestRegistryAdmitsNetworkClaimsThatCanBothBind` rows A1, A2 |
-| Q2 (6290643374): `udp` in any letter case is UDP | `NetworkFacts.transport`, `strings.EqualFold` | R3 (`UDP` beside `udp` refused); A8 (`UDP` beside `tcp` admitted) |
-| #328 hosts and Q1 (6290643374): a wildcard clashes with any host, on every OS | `NetworkFacts.clashes`, the `IsUnspecified` branch | R4-R8, R11, R13; A3-A5 show that specific hosts do not clash |
-| One address in two spellings clashes, the wildcard included | `hostAddr` (`Unmap`) and `a == b` | R9, R10, R13 |
-| Names are not resolved (not promised) | `NetworkFacts.clashes`, the text branch | R12 (same text refused), A7 (`localhost` beside `127.0.0.1` admitted) |
-| Q3 (6290643374): between components, invalid class, refused component, holder and both claims named | `component/registry.go` `checkResourceConflictsLocked` | `TestRegistryRefusesASecondComponentOnATakenAddress`; R rows, paths (a) and (b) |
-| Q3 (6290643374): within one component, through `Declare` and `CreateComponent`, component and both claims named | `component/registry.go` `exclusiveResources` | `TestRegistryRefusesOneComponentClaimingAnAddressTwice`; R rows, path (c) |
-| One holder named, deterministically | the sorted holder loop | `TestRegistryNamesTheFirstClashingHolderByName` |
+| #328: every label other than `udp` is TCP | `component/port_facts.go:155-160`, `NetworkFacts.transport` | `TestRegistryRefusesNetworkClaimsThatCannotBothBind` (`T:381`) rows R1, R2 (`T:383`, `:385`); `TestRegistryAdmitsNetworkClaimsThatCanBothBind` (`T:439`) rows A1, A2 (`T:441`, `:443`) |
+| Q2 (6290643374): `udp` in any letter case is UDP | `component/port_facts.go:156`, `strings.EqualFold` | R3 (`T:387`, `UDP` beside `udp` refused); A8 (`T:455`, `UDP` beside `tcp` admitted) |
+| #328 hosts and Q1 (6290643374): a wildcard clashes with any host, on every OS | `component/port_facts.go:170`, `NetworkFacts.clashes`, the `IsUnspecified` branch | R4-R8, R11, R13 (`T:389-397`, `:403`, `:407`); A3-A5 (`T:445-449`) show that specific hosts do not clash |
+| One address in two spellings clashes, the wildcard included | `component/port_facts.go:186` (`hostAddr`, `Unmap`) and `:174` (`a == b`) | R9, R10, R13 (`T:399`, `:401`, `:407`) |
+| Names are not resolved (not promised) | `component/port_facts.go:176`, `NetworkFacts.clashes`, the text branch | R12 (`T:405`, same text refused), A7 (`T:453`, `localhost` beside `127.0.0.1` admitted) |
+| Q3 (6290643374): between components, invalid class, refused component, holder and both claims named | `component/registry.go:579-594`, `checkResourceConflictsLocked` (`claimsClash` at `:585`, text at `:586`) | `TestRegistryRefusesASecondComponentOnATakenAddress` (`T:192`); R rows, paths (a) and (b) |
+| Q3 (6290643374): within one component, through `Declare` and `CreateComponent`, component and both claims named | `component/registry.go:626-641`, `exclusiveResources` (`claimsClash` at `:631`, text at `:632`); `exclusiveClaims` at `:645`; `claimsClash` at `:659` | `TestRegistryRefusesOneComponentClaimingAnAddressTwice` (`T:252`, label row `T:280`); R rows, path (c) |
+| One holder named, deterministically | `component/registry.go:581`, the sorted holder loop | `TestRegistryNamesTheFirstClashingHolderByName` (`T:497`) |
 
 ## Tests
 

@@ -12,10 +12,10 @@ Each task ends when its gate passes; 2.4 ends when `task verify` passes on a cle
 
 ## 2. Implement
 
-- [ ] 2.1 The two existing tests' texts updated, the label row added, and the three new tests written; red on the
+- [x] 2.1 The two existing tests' texts updated, the label row added, and the three new tests written; red on the
   current code (R1-R13, the label row, the holder-order test, and the two updated literals), the run recorded; A1-A8
   green before and after. Gate: `go test -race ./component`, run recorded.
-- [ ] 2.2 `transport`, `clashes`, `hostAddr`, `exclusiveClaims` and `claimsClash`; both checks use `claimsClash` and
+- [x] 2.2 `transport`, `clashes`, `hostAddr`, `exclusiveClaims` and `claimsClash`; both checks use `claimsClash` and
   the new refusal texts; 2.1 green; M1-M7 detected by `task mutate:check`; the ruling table's lines rewritten at this
   commit. Gate: `go test -race ./component` and `task lint`.
 - [ ] 2.3 The spec delta is true of the code, each scenario's literal matching its test. Gate: `task spec:check`.

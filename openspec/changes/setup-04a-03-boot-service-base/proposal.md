@@ -15,8 +15,9 @@ later owners share (1,475 pin lines, under the ~3,000-line cap).
   `openapi_registry.go` and `configurable.go` into `service`, with a rewritten `doc.go` and `README.md` covering only
   this surface. Dispositions per file are in the design (D1).
 - `BaseService` follows ADR-113: ending Start's context stops nothing, and `Stop(ctx)` is the only stop (D2).
-- `MaybeStartPProf` returns a server that `Shutdown(ctx)` stops and waits for, as the owner ruled (D3). This changes
-  the call in semsource, semteams and semboids.
+- `MaybeStartPProf` takes a logger, logs a bind failure instead of printing it, and returns a server that
+  `Shutdown(ctx)` stops and waits for, as the owner ruled (D3). The call in semsource, semteams and semboids no
+  longer compiles until they change it.
 - Unread surface is dropped: three options, `OnHealthChange`, `RegisterMetrics`, three OpenAPI helpers,
   `GetOpenAPISpec`, `Configurable`, the second `ErrAlreadyStopped`, and `NewBaseServiceWithOptions`' unread
   configuration argument (Q1).
@@ -30,5 +31,6 @@ later owners share (1,475 pin lines, under the ~3,000-line cap).
 
 ## Impact
 
-- New package `service` (PR 1 of 7). semsource, semteams and semboids change their `MaybeStartPProf` call; semteams
-  and semboids drop one `nil` from `NewBaseServiceWithOptions` if Q1 is yes.
+- New package `service` (PR 1 of 7). semsource, semteams and semboids change their `MaybeStartPProf` call and add a
+  Shutdown on exit; semteams (two calls) and semboids (one) drop a `nil` from `NewBaseServiceWithOptions` if Q1 is
+  yes. Q2 asks the owner to accept a substitute for the stop-sentinel proof change 3 promised.

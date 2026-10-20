@@ -1,10 +1,10 @@
 # Design: setup-04a-03-boot-service-base
 
-This design depends on `INVENTORY PASS` for `inventory.md` (round 2 at `ad946b7`) and on the owner's split ruling
-(#9 comment 6296023694: option B; `MaybeStartPProf` gains a stop in this PR). Its spec delta is
-`specs/service-lifecycle/spec.md`. Pin paths are at `8b99efe9`; repository lines are at `988e640`. Size: 1,475
-non-test pin lines (inventory § 2.3 row 1), under the ~3,000 cap; no waiver. This is PR 1 of 7: `BaseService`, the
-`Service` interface and the shared files. `Manager` + `Metrics` (PR 2) follow it.
+This design depends on `INVENTORY PASS` for `inventory.md` (round 2 at `ad946b7`) and on the owner's split ruling (#9
+comment 6296023694: option B; `MaybeStartPProf` gains a stop in this PR). Its spec delta is
+`specs/service-lifecycle/spec.md`. Pin paths are at `8b99efe9`; repository lines are at `a2758da` (`main` merged, #341
+included). Size: 1,475 non-test pin lines (inventory § 2.3 row 1), under the ~3,000 cap; no waiver. This is PR 1 of 7:
+`BaseService`, the `Service` interface and the shared files. `Manager` + `Metrics` (PR 2) follow it.
 
 **Decision records.**
 
@@ -57,10 +57,10 @@ non-test pin lines (inventory § 2.3 row 1), under the ~3,000 cap; no waiver. Th
   `metric.RegisterOrGet` (ledger `metric`, `:732`). `BaseService` registers no collector of its own. It records its
   status through `CoreMetrics().RecordServiceStatus` (`metric/core.go:114`) on the injected registry, as at the pin, so
   the `metric-registry` spec holds unchanged.
-- **Dropped parameter, read by nothing** (found here, § 5 (b)'s class; Q1): `NewBaseServiceWithOptions(name, cfg,
-  opts...)` stores `cfg` (`base.go:85`) and never reads it. Every caller passes `nil`: 11 in the pin's `service`,
-  semteams `rule_config_service.go:41`, semboids `internal/api/service.go:93`. The new signature is
-  `NewBaseServiceWithOptions(name string, opts ...Option)`, and `base.go` no longer imports `config`.
+- **Dropped parameter, read by nothing** (found here, § 5 (b)'s class; Q1): `NewBaseServiceWithOptions` stores its
+  `cfg` argument (`base.go:85`) and never reads it. Every caller passes `nil`: 11 in the pin's `service`, semteams
+  `rule_config_service.go:41` and `rule_config_service_test.go:38`, semboids `internal/api/service.go:93`. The new
+  signature is `NewBaseServiceWithOptions(name string, opts ...Option)`, and `base.go` no longer imports `config`.
 - **Text:** `configurable.go:13` says "The Discovery service exists"; it does not, so the sentence goes.
   `openapi_registry.go:13` says to call `RegisterOpenAPISpec` from `init()`. That breaks the "imports register nothing"
   rule (`AGENTS.md` § 1), so the text says to call it from the composition root. The pin's `init()` callers arrive
@@ -69,12 +69,15 @@ non-test pin lines (inventory § 2.3 row 1), under the ~3,000 cap; no waiver. Th
   - `BaseService`, `NewBaseServiceWithOptions`, `WithLogger`, `WithMetrics`, `WithNATS`, `Service`, `Status`:
     embedded and called by semteams (`rule_config_service.go:32`, `:41`) and semboids (`internal/api/service.go:72`,
     `:93-98`);
-  - `OpenAPISpec`, `PathSpec`, `OperationSpec`, `ParameterSpec`, `ResponseSpec`, `TagSpec`, `HTTPHandler`: semboids
-    `:171-197`;
+  - `OpenAPISpec`, `PathSpec`, `OperationSpec`, `ParameterSpec`, `ResponseSpec`, `TagSpec`, `Schema`, `HTTPHandler`:
+    semboids `:171-197` (`Schema` at `:195`);
   - `MaybeStartPProf` (D3); `WireGraphRuntime` (D4; semteams `main.go:840`).
 
-  The rest (`service_configs.go`, `schema.go`, `ConfigSchema`, `PropertySchema`, `NewConfigSchema`,
-  `RegisterOpenAPISpec`, `GetAllOpenAPISpecs`) is read by later PRs' files (inventory § 2.2) and kept as at the pin.
+  The rest (`service_configs.go`, `schema.go`, `RegisterOpenAPISpec`, `GetAllOpenAPISpecs`) is read by later PRs'
+  files (inventory § 2.2) and kept as at the pin. `ConfigSchema`, `PropertySchema` and `NewConfigSchema` are kept
+  too, but their only readers are `Metrics.ConfigSchema` (`metrics.go:356`) and `MessageLogger.ConfigSchema`
+  (`message_logger.go:1196`), which exist to satisfy the dropped `Configurable`. PRs 2 and 4 re-audit those two
+  methods; if both go, the three names go with the last of them.
 - **Options:** (a) chosen; (b) keep the dropped surface: exported names with no reader and no contract line
   (#186, #190); (c) keep `cfg`: one unread parameter in a framework signature, to spare two consumers a one-word
   edit.
@@ -94,11 +97,16 @@ observable behaviour, each item proven by `TestBaseServicePassesTheLifecycleSuit
 - Ending Start's context after Start returned stops nothing. `TestStartContextEndingKeepsHealthChecksRunning`
   (`synctest`): it cancels the Start context and advances the bubble's clock 60 s. Status stays running and two
   more checks have run.
-- `Stop(ctx)` refuses nil. It returns nil only once the health goroutine has exited, with `Status()`
-  `StatusStopped` and `IsHealthy()` false. If `ctx` ends first, Stop returns that context's error with `Status()`
-  `StatusStopping`, and a later Stop waits again. `TestStopAfterAnEndedStopWaitsForTheHealthCheck` replaces the
-  pin's test. A health check blocks; Stop under an ended context returns `context.Canceled`. A second Stop does not
-  return while the check blocks, then returns nil once the check returns. No further check runs.
+- `Stop(ctx)` refuses nil. A context that has already ended stops nothing: Stop returns its error at once, the
+  status stays `StatusRunning` and checks go on. This is the guard's reading (`internal/lifecycleguard/guard.go:108-110`
+  returns before cleanup), and the suite's `StopReturnsItsEndedContext` accepts it.
+  `TestStopWithAnEndedContextStopsNothing`.
+- A Stop with a live context begins the stop: `Status()` becomes `StatusStopping` and no new check starts. It returns
+  nil once the health goroutine has exited, with `StatusStopped` and `IsHealthy()` false. If its context ends while
+  it waits, it returns that error with `StatusStopping`, and a later Stop waits again.
+  `TestRepeatedStopWaitsForABlockedHealthCheck` replaces the pin's test. A health check blocks; a Stop whose context
+  is cancelled while it waits returns `context.Canceled`. A second Stop does not return while the check blocks, then
+  returns nil once the check returns. No further check runs.
 - Stop before Start returns nil, and a later Start is refused, as at the pin (`base_lifecycle_test.go:113-118`,
   kept).
 - A failed health check (`SetHealthCheck` returning an error), or a NATS client that is not healthy, makes
@@ -110,58 +118,79 @@ observable behaviour, each item proven by `TestBaseServicePassesTheLifecycleSuit
 it. Its one reader, `service_manager.go:888`, is PR 2's and reads `errs.ErrAlreadyStopped`. The `Service.Stop` doc
 says a repeated Stop returns nil. The `lifecycle-suite` spec's floor ("repeated Stop as a no-op", checked as a nil
 return) decides that. So the 03B row's test wording ("a stopped service and a stopped component both return the one
-`ErrAlreadyStopped`", 03B `design.md:488`) cannot be written for `BaseService`. PR 2's StopAll test proves the
-remaining half: a service whose Stop returns `errs.ErrAlreadyStopped` counts as stopped.
+`ErrAlreadyStopped`", 03B `design.md:488`; the 04A foundation design's "SS#1218 proof", `design.md:766`) cannot be
+written for `BaseService`. Changing an accepted proof commitment is the owner's call (Q2). The proposed substitute:
+no second sentinel here, a repeated Stop returning nil (the suite), and PR 2's StopAll test that a service whose Stop
+returns `errs.ErrAlreadyStopped` counts as stopped.
 
 **Mechanism** (developer's): recommended, compose `internal/lifecycleguard` with a run context created in Start and
-cancelled in Stop, and drop `contextMonitor`, `done` and `cancel`, as `config.Manager` did. An observable
-difference the guard brings: a Stop while another runs is refused as transient
-(`internal/lifecycleguard/guard_test.go:358`), where the pin returned nil. Recorded in `known_risks`. The test
+cancelled in Stop, and drop `contextMonitor`, `done` and `cancel`, as `config.Manager` did. The behaviour above is
+the guard's. One more observable difference it brings: a Stop while another runs is refused as transient
+(`internal/lifecycleguard/guard_test.go:358`). The pin returned nil there while the first Stop was still waiting on
+a blocked check (probe H6), claiming a stop that had not finished. Recorded in `known_risks`. The test
 adapter's `Observe` lists `health-loop` while the channel Stop waits on is open, and leaves `Calls` empty (config
 design D2's reason). `mustFail` is a `BaseService` stopped before Start.
 
 **Adopters.** semteams' `ruleConfigService` calls `BaseService.Stop` (`rule_config_service.go:73-80`): no change
 beyond D1's argument. semboids (on `beta.160`) still calls `Stop(timeout)` (`internal/api/service.go:126-128`); its
 move to `Stop(ctx)` predates this PR. A service embedding `BaseService` that relied on its Start context to stop
-the health loop now calls Stop. The README says so.
+the health loop now calls Stop, with a fresh bounded context: a Stop handed an already-ended signal context stops
+nothing (above). The README says so.
 
 ## D3. The profiling server stops (S4, S9; owner Q3; `background-work`)
 
-The new shape (`background-work/spec.md:19-22`): an HTTP server waits on in-flight requests, so `Shutdown(ctx)`.
+The new shape (`background-work/spec.md:19-22`): an HTTP server waits on in-flight requests, so `Shutdown(ctx)`. The
+owner's ruling expects the three consumers to change their call. A new `(*PProfServer, error)` result would not make
+them: their bare statements would still compile, never shut the server down, and drop the bind error the pin
+printed. An added logger parameter does make them, and keeps the pin's "log and continue" inside the helper:
 
 ```go
-// MaybeStartPProf serves http.DefaultServeMux on :port when debug && port > 0.
-func MaybeStartPProf(debug bool, port int) (*PProfServer, error)
+// MaybeStartPProf serves http.DefaultServeMux on :port when debug && port > 0. A bind failure is
+// logged at Warn on logger and returns nil; profiling is a debug aid, never a boot gate.
+func MaybeStartPProf(debug bool, port int, logger *slog.Logger) *PProfServer
 
 // Shutdown stops the server and waits for its requests and goroutine.
 func (s *PProfServer) Shutdown(ctx context.Context) error
 ```
 
-- Disabled (`!debug || port <= 0`): returns `nil, nil` and starts nothing. A nil `*PProfServer`'s Shutdown returns
-  nil, so a caller may defer Shutdown on whatever it got. `TestMaybeStartPProfDisabledStartsNothing`.
-- Enabled: binds `:port` before returning. A bind failure returns the error and starts nothing.
-  `TestMaybeStartPProfReportsABindFailure`: the test holds `net.Listen("tcp", ":0")` and passes its port. Probe H1:
-  `bind: address already in use` on darwin and linux. Nothing is printed: the pin's two `fmt.Printf` lines go, and
-  the caller logs. The pin's posture ("a best-effort debug aid degrading, never a boot gate", `pprof.go:23-24`)
-  becomes the caller's: log and continue.
-- `Shutdown(ctx)` refuses nil, and stops accepting. It returns nil once every in-flight request has finished and
-  the serving goroutine has exited. If `ctx` ends first it returns that error, and a later Shutdown waits again. A
-  serve error other than `http.ErrServerClosed` is returned by Shutdown. `TestPProfShutdownWaitsForAnInFlightRequest`
-  holds a request in a blocking handler. Shutdown with an ended context returns `context.Canceled`. After the
-  handler returns, Shutdown returns nil. `TestPProfShutdownRefusesANilContext`.
+- Disabled (`!debug || port <= 0`): returns nil and starts nothing. `TestMaybeStartPProfDisabledStartsNothing`.
+- Enabled: binds `:port` before returning. A bind failure is logged at Warn naming the port and the error, and nil is
+  returned with nothing started: the pin's posture ("a best-effort debug aid degrading, never a boot gate",
+  `pprof.go:23-24`), with the pin's two `fmt.Printf` lines replaced by the logger. A nil logger means
+  `slog.Default()`, as in `kvcatalog.EnsureCatalogRetentionClean`. `TestMaybeStartPProfLogsABindFailure`: the test
+  holds `net.Listen("tcp", ":0")`, passes its port and a recording logger, and requires one Warn naming the port and a
+  nil result. Probe H1: `bind: address already in use` on darwin and linux.
+- `Shutdown(ctx)` refuses a nil context first, before anything else and on a nil server too ("at the call that
+  receives it", `background-work`). A nil server's Shutdown with a context returns nil, so a caller may defer
+  Shutdown on whatever it got. Otherwise Shutdown stops accepting and returns nil once every in-flight request has
+  finished and the serving goroutine has exited. If `ctx` ends first it returns that error, and a later Shutdown waits
+  again. A serve error other than `http.ErrServerClosed` is returned by Shutdown.
+  `TestPProfShutdownWaitsForAnInFlightRequest` holds a request in a blocking handler. Shutdown with an ended context
+  returns `context.Canceled`. After the handler returns, Shutdown returns nil (probes H2 to H4).
+  `TestPProfShutdownRefusesANilContext` covers a started server and a nil one.
 - Nothing left behind (`background-work`, "Stopped inside a bubble"):
   `TestPProfServesTheIndexAndLeavesNothingRunning` serves through `startPProf` on a `127.0.0.1:0` listener inside
-  `synctest.Test`. `GET /debug/pprof/` returns 200 (blank `net/http/pprof`
-  import in the test, as at the pin), and Shutdown returns nil.
+  `synctest.Test` (probe H5). `GET /debug/pprof/` returns 200 (blank `net/http/pprof` import in the test, as at the
+  pin), and Shutdown returns nil.
 - **Seam (S9, Bounded port scope).** The pin's unexported `startPProf(debug, port, server, listen)`
   (`pprof.go:32`) becomes `startPProf(server *http.Server, listener net.Listener) *PProfServer`. The `listen`
   function goes: the test hands in a listener, as `scripts/lint-test-ports.sh` asks. `server` is the pin's own seam,
   kept so the in-flight test can give it a blocking handler. Production passes `&http.Server{}` and the bound
   listener.
 - **ADR-058 kept:** not a `Service`, called early by the composition root.
-- **Contract line** (README, ledger, spec). The three consumer call sites (semsource `cmd/semsource/run.go:109`,
-  semteams `cmd/semteams/main.go:93`, semboids `cmd/semboids/main.go:100`) become: call it before NATS; on an error,
-  log and go on; on exit, call `Shutdown` with a fresh bounded context.
+- **Contract line** (README, ledger, spec). semsource `cmd/semsource/run.go:109`, semteams `cmd/semteams/main.go:93`
+  and semboids `cmd/semboids/main.go:100` each change their one line to the first statement below, keeping their own
+  `debug` and `port` arguments, and add the second on their exit path, after their services have stopped:
+
+```go
+pprofServer := service.MaybeStartPProf(debug, port, logger)
+
+stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+defer cancel()
+if err := pprofServer.Shutdown(stopCtx); err != nil {
+    logger.Warn("pprof shutdown", "error", err)
+}
+```
 
 ## D4. Graph runtime (ADR-068 D1, ADR-091, ADR-110)
 
@@ -178,11 +207,13 @@ nothing (ADR-091); its comment (`graph_runtime.go:13-15`) stays.
 ## D5. Service configuration helpers (S6)
 
 `service_configs.go` is carried unchanged. Its strict decoder, `decodeStrictServiceJSON` (`:130-139`), has no
-caller until PR 2. A strict decoder accepts a key in another letter case (inventory S6 probe). #341's spec delta
-leaves "the contents of a component's or service's `config` payload" to the owner that decodes it. So the
-letter-case refusal for service payloads belongs to the first PR that declares a service configuration (PR 2). It
-should share #341's checker, not copy it into `service` (one interpreter per fact). Task 3.3 files the issue. The
-plain decoders of S6 are PR 5's and PR 6's.
+caller until PR 2. A strict decoder accepts a key in another letter case (inventory S6 probe). #341 has merged
+(`ea60ae4`): `config` now refuses letter-case variants through `rejectCaseVariantKeys` (`config/config.go:732`,
+unexported), and its spec leaves "the contents of a component's or service's `config` payload" to the owner that
+decodes it (`openspec/specs/config-loading/spec.md:79`). PR 1 does nothing with the checker: no service configuration
+shape exists here. PR 2, which declares the first one (`service_manager_config.go`), adopts it and decides how
+`service` reaches it without a second copy (one interpreter per fact). Task 3.3 files that issue for PR 2. The plain
+decoders of S6 are PR 5's and PR 6's.
 
 ## D6. Tests
 
@@ -194,7 +225,10 @@ plain decoders of S6 are PR 5's and PR 6's.
   - the dropped options' subtests go;
   - `TestService_ContextCancellation` and `TestBaseServiceParentCancellationConvergesAndJoins` assert the pin's abort
     (Stopped after the Start context ends). They become D2's `TestStartContextEndingKeepsHealthChecksRunning`;
-  - `TestBaseServiceStopIsOneShotAfterFailedJoin` becomes D2's flip.
+  - `TestBaseServiceStopIsOneShotAfterFailedJoin` becomes D2's `TestRepeatedStopWaitsForABlockedHealthCheck`.
+- **Carried and rewritten:** the pin's `pprof_test.go` (inventory § 2.3 placed it in PR 5, for the `waitForListener`
+  helper in a storage test file). Its two tests become D3's `TestMaybeStartPProfDisabledStartsNothing` and
+  `TestPProfServesTheIndexAndLeavesNothingRunning`, which need no such helper.
 - **Moved in:** `TestResolveServiceConfigsIsPureAndCanonical` and `TestPendingServiceChangesClassifications` (pin
   `service_composition_test.go:233-273`, `:351-392`) go to `service_configs_test.go`. They read nothing else.
 - **Not carried:**
@@ -206,8 +240,8 @@ plain decoders of S6 are PR 5's and PR 6's.
   - `test_helpers_integration_test.go`'s `safeResponseRecorder` moves to PR 2 with its one user,
     `metrics_runtime_integration_test.go`.
 - **New:**
-  - D2's suite adapter and two `synctest` tests;
-  - D3's five tests;
+  - D2's suite adapter, its two `synctest` tests and `TestStopWithAnEndedContextStopsNothing`;
+  - D3's other three tests;
   - D4's two tests;
   - `TestDecodeStrictServiceJSON` (unknown key, trailing value, empty input);
   - `TestCanonicalServiceJSONIsIdempotent` (Generated checks);
@@ -224,9 +258,9 @@ plain decoders of S6 are PR 5's and PR 6's.
   | --- | --- |
   | run context derived from Start's | `TestStartContextEndingKeepsHealthChecksRunning` and the suite |
   | Stop returns nil although its context ended | the suite's `StopReturnsItsEndedContext` |
-  | a later Stop returns at once | `TestStopAfterAnEndedStopWaitsForTheHealthCheck` |
+  | a later Stop returns at once | `TestRepeatedStopWaitsForABlockedHealthCheck` |
   | Shutdown returns before the in-flight request | `TestPProfShutdownWaitsForAnInFlightRequest` |
-  | the bind moved back into the goroutine | `TestMaybeStartPProfReportsABindFailure` |
+  | the bind moved back into the goroutine, or its failure not logged | `TestMaybeStartPProfLogsABindFailure` |
   | the retention call removed | `TestWireGraphRuntimeStripsAForeignTTL` |
 
 ## Ruling to implementation
@@ -234,9 +268,9 @@ plain decoders of S6 are PR 5's and PR 6's.
 | Ruling | Implementation | Proving test |
 | --- | --- | --- |
 | Owner 2026-10-20 Q1 (#9 comment 6296023694), option B, PR 1's files | the files of D1 | review of the file list; `go build ./service/` |
-| Owner 2026-10-20 Q3; `background-work` | `pprof.go` (D3) | D3's five tests |
-| ADR-113; `lifecycle-suite` floor | `base.go` Start/Stop (D2) | `TestBaseServicePassesTheLifecycleSuite`, `TestStartContextEndingKeepsHealthChecksRunning`, `TestStopAfterAnEndedStopWaitsForTheHealthCheck` |
-| 03B SS#1218, one `ErrAlreadyStopped` | `base.go:28` removed; `Service.Stop` doc | build; the suite's `RepeatedStopIsNoOp`; PR 2's StopAll test |
+| Owner 2026-10-20 Q3; `background-work` | `pprof.go` (D3) | D3's five tests; the consumers' old call no longer compiles |
+| ADR-113; `lifecycle-suite` floor | `base.go` Start/Stop (D2) | `TestBaseServicePassesTheLifecycleSuite`, `TestStartContextEndingKeepsHealthChecksRunning`, `TestStopWithAnEndedContextStopsNothing`, `TestRepeatedStopWaitsForABlockedHealthCheck` |
+| 03B SS#1218, one `ErrAlreadyStopped`; Q2 | `base.go:28` removed; `Service.Stop` doc | build; the suite's `RepeatedStopIsNoOp`; PR 2's StopAll test |
 | `metric-registry` spec; ledger `metric` (`RegisterOrGet`) | `RegisterMetrics` dropped (D1) | build; `TestNoProcessGlobalRegistration` (existing) |
 | Surface audit (#9 comment 5968830525, #190); Q1 | D1's drops | `go doc ./service` lists only the kept surface |
 | ADR-068 D1, ADR-091, ADR-110 | `graph_runtime.go` (D4) | `TestWireGraphRuntimeStripsAForeignTTL`, `TestWireGraphRuntimeRefusesANilContext` |
@@ -249,7 +283,7 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
 
 - **BaseService lifecycle** (a history: Start, Stop, context endings, a blocking check). Examples suffice when the
   guard is composed. The suite's eight checks enumerate the orderings of Start, Stop and context ending, and D2's
-  two named tests add the blocked-check and clock cases. The guard's state machine has its own tests
+  named tests add the ended-context, blocked-check and clock cases. The guard's state machine has its own tests
   (`internal/lifecycleguard/guard_test.go`). If the developer keeps a hand-written state machine instead, the PR adds
   a generated history check against a model of Start/Stop/cancel/block and records it in a note.
 - **`canonicalServiceJSON`** (a normalization law). `TestCanonicalServiceJSONIsIdempotent` uses `rapid`, generating
@@ -293,10 +327,11 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
     Service), NewOpenAPISpec, AddPath, AddTag, GetOpenAPISpec, Configurable, service.ErrAlreadyStopped (one sentinel,
     errs.ErrAlreadyStopped), and NewBaseServiceWithOptions' unread config argument (Q1). Changed from the pin: ending
     Start's context stops nothing and a later Stop waits again (ADR-113); a Stop during another Stop is refused as
-    transient (lifecycleguard); MaybeStartPProf binds before it returns, returns its error instead of printing it,
-    and stops through Shutdown (owner 2026-10-20). Retained: pprof listens on all interfaces; letter-case variants
-    of service config keys are accepted until the PR that declares a service configuration (issue filed);
-    service_configs.go, schema.go and openapi.go are byte-equal to the pin
+    transient (lifecycleguard), where the pin returned nil before the first Stop finished; a Stop given an ended
+    context stops nothing; MaybeStartPProf takes a logger, binds before it returns, logs a bind failure at Warn
+    instead of printing it, and stops through Shutdown (owner 2026-10-20). Retained: pprof listens on all
+    interfaces; letter-case variants of service config keys are accepted until PR 2 adopts config's checker (issue
+    filed); service_configs.go, schema.go and openapi.go are byte-equal to the pin
   proving_tests: service/*_test.go, service/*_integration_test.go
   owner: setup-04a-03-boot-service-base developer
   disposition: adapt
@@ -321,10 +356,13 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
   1 subset needs D2 and D3 before it builds. Task 3.2 records the number.
 
 **Issues:** none open names a PR 1 file except #195 (`main_test.go`'s shared client), which stays open for PRs 3 to
-5. #9 stays (`Addresses #9`). **Merge order:** independent of #341 and #342. #342 also appends ledger, map and
-cover-check lines; whichever merges second keeps both. PR 2 follows this one.
+5. #9 stays (`Addresses #9`). **Merge order:** #341 is merged and this design is written against it. #342
+(`composition`) is still at design, a draft with only OpenSpec files; PR 1 needs nothing from it and is expected to
+merge first. #342's implementation then merges `origin/main` and keeps PR 1's ledger, map and cover-check lines
+beside its own. PR 2 follows this one; PR 3 waits for #342.
 
-**Probes** (go1.26.9; darwin/arm64 and the `golang:1.26.9` linux image; source posted on the PR, task 2.1):
+**Probes** (go1.26.9 on darwin/arm64 and in the `golang:1.26.9` image, linux/arm64; source, commands and output
+in the probe comment on #343, which task 2.1 cites):
 
 - **H1:** a second `net.Listen("tcp", ":p")` while `:p` is held fails `bind: address already in use`.
 - **H2:** `http.Server.Shutdown` under a blocked handler returns `context.DeadlineExceeded` at its 100 ms bound.
@@ -332,9 +370,16 @@ cover-check lines; whichever merges second keeps both. PR 2 follows this one.
 - **H4:** a second Shutdown after the handler returns gives nil.
 - **H5:** a loopback HTTP server and client inside `synctest.Test`, shut down, leave the bubble: 20 runs with
   `-race` on each platform.
+- **H6** (a scratch copy of the pin, darwin only): a second `BaseService.Stop` while the first waits on a blocked
+  health check returns nil with the status `stopping`; the first returns only after the check is released.
 
 ## Owner questions
 
 - **Q1. Recommended: yes.** May `NewBaseServiceWithOptions` lose the configuration argument that it never reads and
-  every caller passes as `nil`, so semteams and semboids each delete one `nil,` from one call? (D1; `base.go:85`,
-  `:118`; semteams `rule_config_service.go:41`, semboids `internal/api/service.go:93`)
+  every caller passes as `nil`, so semteams deletes `nil,` from two calls and semboids from one? (D1; `base.go:85`,
+  `:118`; semteams `rule_config_service.go:41` and `rule_config_service_test.go:38`, semboids
+  `internal/api/service.go:93`)
+- **Q2. Recommended: yes.** May the promised check that a stopped service and a stopped component both return the
+  one `ErrAlreadyStopped` be replaced by this: no second sentinel in `service`, a repeated Stop that returns nil as
+  the lifecycle suite requires, and PR 2's test that a service whose Stop returns `errs.ErrAlreadyStopped` counts as
+  stopped? (D2; 03B `design.md:488`; 04A foundation `design.md:766`; `lifecycle-suite`, "Portable floor")

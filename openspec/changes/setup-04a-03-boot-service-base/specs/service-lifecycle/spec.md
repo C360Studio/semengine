@@ -5,14 +5,15 @@
 ### Requirement: BaseService's Start bounds Start and Stop is the only stop
 
 `service.BaseService.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second Start and a
-Start after any Stop, and a refused Start SHALL start nothing. A started `BaseService` SHALL report
-`StatusRunning`, run its health check once at Start and then every 30 seconds, and SHALL keep doing so when the
-context given to Start ends. `Stop(ctx)` SHALL be the only stop: it SHALL refuse a nil context, and SHALL return nil
-only after the health goroutine has exited, leaving `StatusStopped` and `IsHealthy()` false. If `ctx` ends first,
-Stop SHALL return that context's error, report `StatusStopping`, and a later Stop SHALL wait again. A repeated Stop
-after one that returned nil SHALL return nil. `BaseService` SHALL pass the `lifecycle-suite` checks through a
-test-side adapter (ADR-113). The package SHALL declare no stop sentinel of its own; `errs.ErrAlreadyStopped` is the
-one.
+Start after any Stop, and a refused Start SHALL start nothing. A started `BaseService` SHALL report `StatusRunning`,
+run its health check once at Start and then every 30 seconds, and SHALL keep doing so when the context given to Start
+ends. `Stop(ctx)` SHALL be the only stop. It SHALL refuse a nil context. Given a context that has already ended, it
+SHALL return that context's error and stop nothing. Given a live context, it SHALL report `StatusStopping`, start no
+further health check, and return nil only after the health goroutine has exited, leaving `StatusStopped` and
+`IsHealthy()` false; if that context ends while Stop waits, Stop SHALL return its error and a later Stop SHALL wait
+again. A repeated Stop after one that returned nil SHALL return nil. `BaseService` SHALL pass the `lifecycle-suite`
+checks through a test-side adapter (ADR-113). The package SHALL declare no stop sentinel of its own;
+`errs.ErrAlreadyStopped` is the one.
 
 #### Scenario: The Start context ends after Start
 
@@ -21,12 +22,19 @@ one.
 - **AND** the tests that verify this are `TestStartContextEndingKeepsHealthChecksRunning` and
   `TestBaseServicePassesTheLifecycleSuite`
 
+#### Scenario: Stop is given a context that has already ended
+
+- **WHEN** a started `BaseService`'s Stop is called with a cancelled context
+- **THEN** Stop returns `context.Canceled`, the status is still `StatusRunning`, and a following Stop with a live
+  context returns nil
+- **AND** the test that verifies this is `TestStopWithAnEndedContextStopsNothing`
+
 #### Scenario: Stop's context ends while a health check blocks
 
-- **WHEN** a health check blocks and Stop is called with an ended context
+- **WHEN** a health check blocks and Stop, called with a live context, has that context cancelled while it waits
 - **THEN** Stop returns `context.Canceled` and the status is `StatusStopping`; a second Stop does not return while
   the check blocks, and returns nil once it returns, with no further check run
-- **AND** the test that verifies this is `TestStopAfterAnEndedStopWaitsForTheHealthCheck`
+- **AND** the test that verifies this is `TestRepeatedStopWaitsForABlockedHealthCheck`
 
 ### Requirement: A failed health check makes the service unhealthy
 
@@ -42,24 +50,31 @@ passes and the client is healthy.
 
 ### Requirement: The profiling server stops on Shutdown
 
-`service.MaybeStartPProf(debug, port)` SHALL start nothing and return a nil server and a nil error when `debug` is
-false or `port` is not positive, and a nil server's `Shutdown` SHALL return nil. Otherwise it SHALL bind `:port`
-before it returns, returning the bind error and starting nothing when the bind fails, and serve
-`http.DefaultServeMux`. `Shutdown(ctx)` SHALL refuse a nil context, stop accepting, and return nil only after every
-in-flight request has finished and the serving goroutine has exited. If `ctx` ends first, it SHALL return that
-error, and a later Shutdown SHALL wait again.
+`service.MaybeStartPProf(debug, port, logger)` SHALL start nothing and return nil when `debug` is false or `port` is
+not positive. Otherwise it SHALL bind `:port` before it returns and serve `http.DefaultServeMux`; when the bind fails
+it SHALL log a Warn naming the port and the error on `logger` (`slog.Default()` when nil), start nothing and return
+nil. `Shutdown(ctx)` SHALL refuse a nil context before anything else, on a nil server too; a nil server's Shutdown
+with a context SHALL return nil. Otherwise Shutdown SHALL stop accepting and return nil only after every in-flight
+request has finished and the serving goroutine has exited. If `ctx` ends first, it SHALL return that error, and a
+later Shutdown SHALL wait again.
 
 #### Scenario: Disabled
 
-- **WHEN** `MaybeStartPProf(false, 1)` is called
-- **THEN** it returns a nil server and a nil error, and that server's Shutdown returns nil
+- **WHEN** `MaybeStartPProf(false, 1, logger)` is called
+- **THEN** it returns nil, and that nil server's Shutdown with a live context returns nil
 - **AND** the test that verifies this is `TestMaybeStartPProfDisabledStartsNothing`
 
 #### Scenario: Port already bound
 
-- **WHEN** `MaybeStartPProf(true, port)` is called with the port of a listener the test holds
-- **THEN** it returns an error and a nil server
-- **AND** the test that verifies this is `TestMaybeStartPProfReportsABindFailure`
+- **WHEN** `MaybeStartPProf(true, port, logger)` is called with the port of a listener the test holds
+- **THEN** it returns nil, and `logger` has recorded one Warn naming that port
+- **AND** the test that verifies this is `TestMaybeStartPProfLogsABindFailure`
+
+#### Scenario: Nil context
+
+- **WHEN** Shutdown is called with a nil context on a started server and on a nil server
+- **THEN** both calls return an invalid-class error, and the started server still serves until a later Shutdown
+- **AND** the test that verifies this is `TestPProfShutdownRefusesANilContext`
 
 #### Scenario: Shutdown under an in-flight request
 

@@ -22,9 +22,8 @@ Each task names its outcome and the gate that proves it. This change ports `Base
   where no NATS is needed, no sleeps, the dropped options' subtests removed, the two abort tests and the one-shot Stop
   test flipped); the `natsfixture.Shared` `TestMain` file; the two tests moved from the pin's
   `service_composition_test.go`; the new tests D2, D3, D4 and D6 name, including the lifecycle-suite adapter and
-  `TestCanonicalServiceJSONIsIdempotent`. The probe programs H1 to H5 (design, Probes) are posted on the PR with
-  their source, command, versions and output. Gate: the tests fail on the base (the package does not exist; note
-  the compile error).
+  `TestCanonicalServiceJSONIsIdempotent`. The notes cite the probe comment on #343 (H1 to H6, design, Probes). Gate:
+  the tests fail on the base (the package does not exist; note the compile error).
 - [ ] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's
   `MaybeStartPProf`/`PProfServer`, D4's `kvcatalog` call, and Q1 as ruled. Gate: `go test -race ./service/` and
   `go test -tags integration ./service/` pass, `TestBaseServicePassesTheLifecycleSuite` and
@@ -44,9 +43,9 @@ Each task names its outcome and the gate that proves it. This change ports `Base
   `scripts/cover-check.sh`; the OpenAPI-registry sentences in `.agents/contracts/semengine-developer.md` and
   `semengine-reviewer.md`. Gate: `task verify` passes on a clean tree, which runs `ledger:check`, `cover:check`
   (`service` at or above 80%, the number recorded on the PR) and `docs:check` (review stop).
-- [ ] 3.3 File the follow-up issue for letter-case refusal of service configuration keys (D5), blocked on #341 and
-  linked from the PR without a closing keyword; comment on #195 that `service`'s shared client is replaced. Gate:
-  the issue and comment read back.
+- [ ] 3.3 File the follow-up issue for PR 2: refuse letter-case variants in service configuration payloads through
+  `config`'s checker (D5), linked from the PR without a closing keyword; comment on #195 that `service`'s shared
+  client is replaced. Gate: the issue and comment read back.
 
 ## 4. Verify, review and close
 

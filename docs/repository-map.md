@@ -66,7 +66,7 @@ not a task tracker and not a description of the tree.
 | `graph/kvcatalog/` | New, split from the pin's `graph`: the one table of KV buckets the framework owns (who writes each, its retention) and the functions that create, open or check them |
 | `graph/readiness/` | The graph index's readiness signal: a publisher that writes its status to the `GRAPH_STATUS` bucket and a watcher that reads it (ADR-083) |
 | `graph/inference/` | The pin's package cut to its hierarchy part (#97): when graph-ingest stores a new entity, puts it in a container entity for its type, taxonomy and source, creating a container that does not exist yet. The rest of the pin's package is not ported; it is planned with graph-clustering in `setup-04a-07` |
-| `internal/graphmutation/` | The graph mutation protocol's name and subjects, and the typed client callers use instead of the subjects |
+| `internal/graphmutation/` | The graph mutation protocol's name and subjects, the typed client callers use instead of the subjects, and `ClassifyPort`, the one decision on whether a component port is a graph-mutation port and has the valid shape (`internal/flowgraph` and graph-ingest both call it) |
 | `internal/dispatch/` | The pin's `pkg/dispatch`, made internal: `KeyedPool`, a worker pool that runs items with the same key one at a time, in order, and items with different keys in parallel |
 | `pkg/projection/` | A client that checks a graph mutation against the contract its writer declared (which predicates it writes, and how) before sending it |
 | `pkg/lifecycle/` | Workflow-shaped entities kept in the graph: named instances that move through declared phases and are recovered after a restart; a convention layer, not a workflow engine |

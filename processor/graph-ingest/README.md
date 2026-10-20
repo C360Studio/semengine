@@ -77,7 +77,7 @@ graph.mutation.> ───────┼─►│ graph-ingest ├──► ENT
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `ports` | object | the default ports | Input and output ports. Without the key, the component takes the default ports: `entity_stream` (JetStream `ENTITY`, `entity.>`), `mutations` (the request port below) and `entity_states`. A `ports` block that is present is the whole port set, used as written and never merged with the defaults. Exactly one input must be the required `nats-request` port on `graph.mutation.>` with the `semengine.graph.mutation` v1 interface, and at least one output is required. Every output must be a `kv-write` port on `ENTITY_STATES`, the only place graph-ingest writes; any other output is refused when the component is built. |
+| `ports` | object | the default ports | Input and output ports. Without the key, the component takes the default ports: `entity_stream` (JetStream `ENTITY`, `entity.>`), `mutations` (the request port below) and `entity_states`. A `ports` block that is present is the whole port set, used as written and never merged with the defaults. Exactly one input must be the required `nats-request` port on `graph.mutation.>` with the `semengine.graph.mutation` v1 interface; any other input with that interface type, or with a NATS subject starting with `graph.mutation.` (a `nats` or `jetstream` port included), is refused. At least one output is required. Every output must be a `kv-write` port on `ENTITY_STATES`, the only place graph-ingest writes; any other output is refused when the component is built. |
 | `enable_hierarchy` | bool | `false` | Create hierarchy container entities and edges (below). |
 | `ingest_lanes` | int | `8` | Number of ingest lanes. Messages for one entity ID always use the same lane, so they apply in arrival order; different entities apply in parallel. `1` is fully serial. `0` counts as unset and takes the default of `8`; a negative value is clamped to `1`. |
 
@@ -93,7 +93,7 @@ graph-ingest is never built without one, and no write path checks for a missing 
 
 | Name | Kind | Subject | Description |
 | --- | --- | --- | --- |
-| `graph_mutations` | nats-request | `graph.mutation.>` | The typed mutation operations (create, reconcile, append, delete) |
+| `mutations` | nats-request | `graph.mutation.>` | The typed mutation operations (create, reconcile, append, delete) |
 | `entity_stream` | jetstream | `entity.>` | Entity messages to merge into `ENTITY_STATES` |
 
 ### Outputs

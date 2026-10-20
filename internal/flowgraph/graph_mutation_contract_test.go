@@ -70,6 +70,38 @@ func TestGraphMutationFlowRejectsUntypedLegacyRequester(t *testing.T) {
 	}
 }
 
+// TestGraphMutationFlowRejectsPrefixMembersOfEveryKind holds the ruling on #323
+// (Q1): a port with any one NATS subject on graph.mutation. is a graph-mutation
+// port whatever its kind, so a nats or JetStream port there is refused.
+func TestGraphMutationFlowRejectsPrefixMembersOfEveryKind(t *testing.T) {
+	const want = "component requester port legacy is not a required nats-request " +
+		"semengine.graph.mutation v1 port on graph.mutation.>: invalid configuration"
+	tests := []struct {
+		name   string
+		config component.Portable
+	}{
+		{name: "nats output on a graph.mutation subject", config: component.NATSPort{Subject: "graph.mutation.entity.create"}},
+		{
+			name: "jetstream output with one graph.mutation subject",
+			config: component.JetStreamPort{
+				StreamName: "EVENTS", Subjects: []string{"events.>", "graph.mutation.entity.create"},
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			flow := newFlowGraph()
+			addMutationProvider(t, flow, "graph-ingest", mutationPort(component.DirectionInput))
+			legacy := component.Port{Name: "legacy", Direction: component.DirectionOutput, Required: true, Config: tt.config}
+			addMutationRequester(t, flow, "requester", legacy)
+			err := flow.connectComponentsByPatterns()
+			if err == nil || err.Error() != want {
+				t.Fatalf("error = %v, want %q", err, want)
+			}
+		})
+	}
+}
+
 func mutationPort(direction component.Direction) component.Port {
 	return mutationPortWith(direction, graphmutation.SubjectFamily, graphmutation.InterfaceType, graphmutation.InterfaceVersion)
 }

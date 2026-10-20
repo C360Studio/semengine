@@ -30,7 +30,9 @@ It returns an error, and no graph, when the declarations cannot form a valid one
 - more than one writer port on one KV bucket;
 - a graph-mutation port that is not a required request port on the graph-mutation subject family with the
   graph-mutation interface type and version, or graph-mutation ports with not exactly one input (the provider) among
-  them.
+  them. A graph-mutation port is any port, of any kind and in either direction, whose interface type is
+  `semengine.graph.mutation` or one of whose NATS subjects starts with `graph.mutation.`; `internal/graphmutation`'s
+  `ClassifyPort` makes that decision, and graph-ingest uses the same one.
 
 ## What the graph connects
 

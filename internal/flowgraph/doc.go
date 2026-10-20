@@ -11,8 +11,9 @@
 // declarations cannot form a valid graph: an empty or repeated instance name, a
 // port with no connection identity, more than one writer port on a KV bucket,
 // or a graph-mutation port that is malformed or not served by exactly one
-// provider. Two binds on one network address are refused earlier, when the
-// component Registry admits the second one.
+// provider. Which ports are graph-mutation ports, and which shape is valid, is
+// decided by graphmutation.ClassifyPort. Two binds on one network address are
+// refused earlier, when the component Registry admits the second one.
 //
 // In SemStreams the composition package is this package's one reader; it
 // comes to SemEngine in a later change. Until then this package's tests are

@@ -12,14 +12,15 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
 
 ## 2. Port
 
-- [ ] 2.1 `component`, tests first:
+- [x] 2.1 `component`, tests first:
   - `TestDeclarationConflictWithMatchesAdmission`, including the case with two claims on each side;
   - `TestDeclarationConflictWithAdmitsNonClashingClaims`;
   - the field readers in `registry_boot_admission_test.go` and `registry_declare_test.go` moved to `ResourceID()`.
 
   Then add `Declaration.ConflictWith` (design O3), make the registry's admission check call it, remove
   `ExclusiveResources`, and update the `component` ledger row. Gate: `go test -race ./component/`, with the existing
-  refusal-text tests unchanged; `task verify`.
+  refusal-text tests unchanged; `task verify`. Done at `f9323f8`: `task verify` passed on a clean tree there;
+  failing-first record and choices in `notes/2.1.md`.
 - [ ] 2.2 `composition`, tests first:
   - the pin's tests, minus `assert_test.go` and `shipped_configs_test.go`, with helpers adapted;
   - `TestValidateExclusiveClashMatchesAdmission` and `TestValidateSelfClashIsPortDeclarationError`.

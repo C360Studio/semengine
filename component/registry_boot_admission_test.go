@@ -406,6 +406,20 @@ func TestRegistryRefusesNetworkClaimsThatCannotBothBind(t *testing.T) {
 			"tcp", "localhost", 8080, "tcp:localhost:8080", "tcp", "localhost", 8080, "tcp:localhost:8080"},
 		{"R13 IPv4-mapped wildcard and loopback",
 			"tcp", "::ffff:0.0.0.0", 8080, "tcp:::ffff:0.0.0.0:8080", "tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080"},
+		{"R14 loopback with and without a zone",
+			"tcp", "::1", 8080, "tcp:::1:8080", "tcp", "::1%lo0", 8080, "tcp:::1%lo0:8080"},
+		{"R15 loopback zoned by name and by index",
+			"tcp", "::1%lo0", 8080, "tcp:::1%lo0:8080", "tcp", "::1%1", 8080, "tcp:::1%1:8080"},
+		{"R16 udp loopback on two zones",
+			"udp", "::1%lo0", 8080, "udp:::1%lo0:8080", "udp", "::1%en0", 8080, "udp:::1%en0:8080"},
+		{"R17 one link-local address and zone twice",
+			"tcp", "fe80::1%lo0", 8080, "tcp:fe80::1%lo0:8080", "tcp", "fe80::1%lo0", 8080, "tcp:fe80::1%lo0:8080"},
+		{"R18 one link-local address on two interfaces",
+			"tcp", "fe80::1%en0", 8080, "tcp:fe80::1%en0:8080", "tcp", "fe80::1%en1", 8080, "tcp:fe80::1%en1:8080"},
+		{"R19 link-local zoned by name and by index",
+			"tcp", "fe80::1%lo0", 8080, "tcp:fe80::1%lo0:8080", "tcp", "fe80::1%1", 8080, "tcp:fe80::1%1:8080"},
+		{"R20 zoned wildcard and loopback",
+			"tcp", "::%lo0", 8080, "tcp:::%lo0:8080", "tcp", "127.0.0.1", 8080, "tcp:127.0.0.1:8080"},
 	}
 	for _, row := range rows {
 		t.Run(row.name+" (a) first claim held", func(t *testing.T) {

@@ -2723,3 +2723,37 @@
   proving_tests: config/stream_drift_test.go, config/stream_drift_integration_test.go
   owner: "setup-04a-03-boot-config developer"
   disposition: carry
+
+# Change port-rulepack (PR #337, epic #9): pkg/rulepack ported as adapt ahead of its importers,
+# service and processor/rule (owner, 2026-10-20: Decision B, Q1 and Q2 yes).
+
+- source_path: pkg/rulepack
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the rule-pack identity contract (PackID grammar and byte bound) read by processor/rule (pin config.go:151-177,
+    schema.go:13,18) and service's rule-pack binding (pin service/rule_pack_bind.go:96), both admitted (03B E5) and
+    ported later; carried ahead of its importers in the owner's order (#9 comment 6270875286)
+  destination: pkg/rulepack
+  contract: >-
+    03B retained-contract-matrix row (design.md:716, "rule-pack IDs validated by one contract package"): the ID
+    validation stays here; binding projection contracts at boot is service's (rule_pack_bind.go). ValidateID
+    accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing, checking
+    required, length, token, then alphabet; a nonempty value within the bound that is not one literal NATS KV
+    token is refused with natsclient's kv_token_invalid error wrapped (empty and overlength values fail the
+    earlier checks without that code); PackIDCharset and
+    MaxPackIDBytes are the grammar and bound the rule processor's schema publishes (pin ADR-076 decision 4); stated
+    as the rule-pack-identity spec
+  dependencies_and_side_effects: natsclient (ValidateKVLiteralToken), fmt, regexp; no goroutine, no I/O
+  known_risks: >-
+    dropped as unread in the port set: ValidateConfig (only pin reader frameworkcapabilities/rulepacks, reached from
+    internal/boot and internal/bootstrapobservability, none admitted), ValidateRuntimeUpdate (no production reader
+    at the pin; ADR-094 retired component hot reload), packIdentity, decodePackID; duplicate enabled pack IDs are
+    then refused only by service's rule-pack binding, after its projection preflight (pin rule_pack_bind.go:89-101);
+    a disabled rule processor's pack_id is checked only when a later boot enables it; the alphabet loop is
+    replaced by a pattern built from PackIDCharset; text naming the retired owner id
+    rule-pack.<pack_id> reworded; no importer until service or processor/rule lands
+  proving_tests: >-
+    pkg/rulepack/identity_test.go (TestValidateID, TestValidateIDEveryByte, TestValidateIDBounds,
+    TestValidateIDKVTokenRefusal, TestValidateIDRefusalPrecedence)
+  owner: port-rulepack developer
+  disposition: adapt

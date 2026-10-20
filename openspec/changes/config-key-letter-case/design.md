@@ -48,7 +48,7 @@ naming the right spelling. Yes, go."
 - A new field is covered with no edit, because the names come from its tag. A guard test fails if `Config` ever
   reaches a shape the walker does not handle: a slice or array of structs or maps, an embedded struct, or a type
   with its own `json.Unmarshaler` other than `json.RawMessage` and `types.ServiceConfig` (whose decoder uses its own
-  tagged fields).
+  tagged fields), or any `json.Marshaler` other than `json.RawMessage` (which would change the coverage test's names).
 - Rejected alternatives:
   - a table of key paths: it drifts, and only a reflection test could keep it honest;
   - folding keys during the merge: the owner ruled refuse;
@@ -82,8 +82,12 @@ naming the right spelling. Yes, go."
   - a component `config` payload holding `"Port"`, carried byte for byte.
 - Coverage test: for every declared key path reachable from `Config`, with each map level filled by a placeholder
   name, the same path with that key upper-cased is refused. The paths come from the keys `json.Marshal` writes for a
-  fully populated `Config` (every pointer, map and struct filled), never from the walker's naming code, so a naming
-  bug in the walker cannot hide itself. The hand-written #325 cases are the second independent oracle.
+  fully populated `Config`, never from the walker's naming code, so a naming bug in the walker cannot hide itself.
+  The value is built by a reflection filler, never a literal, so a new `omitempty` field is populated too: every
+  pointer gets a new value, every map one entry under a placeholder name, every leaf a non-zero value (`"x"`, `true`,
+  `1`, a one-element slice, `json.RawMessage("{}")`, `map[string]any{"PH": 1}`). Probed at 7414453: this writes all
+  118 paths. The placeholder map keys, `EndpointConfig.Options` keys and the (empty) `config` payloads are not
+  upper-cased. The hand-written #325 cases are the second independent oracle.
 - Mutants for `task mutate:check`, each detected:
   - (a) map values not walked;
   - (b) only the top level checked;

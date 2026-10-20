@@ -25,7 +25,8 @@ files inside a scratch copy of this tree ("scratch build").
 
 - D2 row 3, `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:147`: change `setup-04a-03-boot`,
   7 packages, 20,123 lines, 10 owners. Package list `:165-166`: "closure(service) − changes 1–2. Owners:
-  `config.Manager` and the nine ported `service` owners." Owner count, `inventory.md:441-443`: "ten in `service`",
+  `config.Manager` and the nine ported `service` owners." Owner count,
+  `openspec/changes/archive/2026-10-01-setup-04a-foundation/inventory.md:441-443`: "ten in `service`",
   `MilestoneService` "[not ported]".
 - No ledger row yet: `git grep -n 'source_path: service$' docs/admission-ledger.yaml` finds none.
 - Excluded or changed by earlier rulings:
@@ -78,10 +79,10 @@ lines; 18,255 without the two milestone test files. Shared files with no owner: 
 
 - Every constructor has the `Constructor` signature (`dependencies.go:43`), whose `*Dependencies` holds
   `dependencies.go:37` — `ServiceManager    *Manager`. So every owner file needs `service_manager.go` to compile.
-- The `Manager` names the component manager and the metrics service by concrete type: `service_manager.go:593` —
-  `componentManager, _ := m.services["component-manager"].(*ComponentManager)`; `:594` — `metricsService, _ :=
-  m.services["metrics"].(*Metrics)`; `:1142` — `if cm, ok := service.(*ComponentManager); ok {`; `:1543` — `cm, ok :=
-  cmService.(*ComponentManager)`; `:1812` — `componentManager, concreteComponentManager :=
+- The `Manager` names the component manager (four type checks) and the metrics service by concrete type:
+  `service_manager.go:593` — `componentManager, _ := m.services["component-manager"].(*ComponentManager)`; `:594` —
+  `metricsService, _ := m.services["metrics"].(*Metrics)`; `:1142` — `if cm, ok := service.(*ComponentManager); ok {`;
+  `:1543` — `cm, ok := cmService.(*ComponentManager)`; `:1812` — `componentManager, concreteComponentManager :=
   componentManagerService.(*ComponentManager)`; `:82` — `startupMetricsService   *Metrics`; and `:1693` — `case
   StorageObservabilityServiceName:`. The component manager uses `startupUnitCounts` (`service_manager.go:109`) and
   `attributeShutdownError` from the Manager's file. Scratch build of the Manager's files plus the shared files without
@@ -114,31 +115,40 @@ every production file it references exists (file edges; the four external `servi
 | 2 | `Manager` + `Metrics` | `service_manager.go`, `service_manager_config.go`, `startup_metrics.go`, `graph_triples_http.go`, `middleware.go`, `dependencies.go`, `registry.go`, `register.go` (only landed constructors), `metrics.go` | 2,960 | 2,855 | none | PR 1 |
 | 3 | `ComponentManager` | `component_manager.go`, `component_manager_config.go`, `component_manager_http.go`, `stream_override_expiry.go`, `rule_pack_bind.go` | 2,487 | 4,563 | `composition` (#342); `projection.PredicateReconciler` (Q2) | PR 2, #342 |
 | 4 | `MessageLogger` | `message_logger.go`, `message_logger_http.go`, `message_logger_kv_watch.go` | 2,245 | 2,613 | none | PR 2 |
-| 5 | `StorageObservabilityService` | `storage_observability.go`, `_http.go`, `_metrics.go` | 1,540 | 4,261 | none (`natsclient/storagereport`) | PR 2 |
-| 6 | `MetricsForwarder` + `HeartbeatService` | `metrics_forwarder.go`, `heartbeat.go` | 751 | 1,702 | none | PR 3 |
+| 5 | `StorageObservabilityService` | `storage_observability.go`, `_http.go`, `_metrics.go` | 1,540 | 4,261 | none (`natsclient/storagereport`); its tests use four names that package has since unexported (`UnknownCapacity`, `UnknownGrowth`, `DefaultWarningHeadroom`, `DefaultCriticalHorizon`: 10 uses in 3 test files) | PR 2 |
+| 6 | `MetricsForwarder` + `HeartbeatService` | `metrics_forwarder.go`, `heartbeat.go` | 751 | 1,702 | none | PR 2 to build; PR 3 by choice |
 | 7 | `LogForwarder` | `log_forwarder.go`; ruling (b) and the `flow-service.websocket` decision | 124 | 270 | none | PR 2 |
 
 Sums: 11,582 non-test; 17,421 test plus the 834 census lines that cannot be carried. Edges: PR 2 after PR 1 because
 `Manager` embeds `*BaseService` (`service_manager.go:32`); every later PR after PR 2 because of `dependencies.go:37`;
-PR 3 after #342 because `component_manager.go` imports `composition`; PR 6 after PR 3 because `HeartbeatService.Start`
-refuses without a component-manager service (`heartbeat.go:147`). PRs 4, 5 and 7 are independent of each other and
-of PR 3. As measured, PR 5's tests include the five Manager and component-manager files above; moving `requireGauge`
-and `gaugeValue` (two helpers) lets them land in PR 2 and PR 3.
+PR 3 after #342 because `component_manager.go` imports `composition`. PR 6 builds after PR 2; waiting for PR 3 is an
+ordering choice, not a need: `HeartbeatService.Start` refuses without a component-manager service (`heartbeat.go:147`)
+but asserts only an interface, `heartbeat.go:151` — `componentManager, ok :=
+componentService.(componentHealthGetter)`, so its tests can compose a stand-in, as the § 7 probe did. PRs 4, 5 and 7
+are independent of each other and of PR 3. As measured, PR 5's tests include the five Manager and component-manager
+test files above; moving `requireGauge` and `gaugeValue` (two helpers) lets them land in PR 2 and PR 3.
 
 - Group reasons. `Metrics` rides with the `Manager` because the Manager drives its server: `service_manager.go:620` —
   `server, err := metricsService.claimManagerServer()`, `:639` — `if err := service.startServer(ctx, server); err !=
   nil {`, `:642` — `service.setManagerServerHealthy(true)`. `MetricsForwarder` and `HeartbeatService` (751 lines
   together) have one shape: `BaseService`, a ticker loop and a join goroutine, both substrate observability (ADR-098);
   splitting them adds a design and a review round for 280 lines.
-- What option B needs that the pin does not have: PR 2 cannot name `*ComponentManager`, `*Metrics` is in it, and
-  `StorageObservabilityServiceName` must sit in a shared file. The five `*ComponentManager` sites above become one
-  small unexported interface the component manager satisfies (`startupSnapshot`, `startupStopBegun`,
-  `setStartupMetricWriter`, `registerStartupHTTPHandlers`, `withComponents`, `GetComponentHealth`). Until PR 3 lands,
-  PR 2's tests compose a stand-in `component-manager` service, as the pin's own tests do
-  (`service_manager_test.go:201` — `MockService: MockService{name: "component-manager", status: StatusRunning,
-  healthy: true},`).
-- Option A, the pin's structure: PRs 2 and 3 as one pull request, 5,447 non-test and 7,418 test lines, after #342,
-  with the owner's waiver by number (#159). Every other row is unchanged.
+- What option B needs that the pin does not have, and what it costs:
+  - PR 2 cannot name `*ComponentManager` (`*Metrics` is in it), and `StorageObservabilityServiceName`
+    (`service_manager.go:1693`, `:1697`; declared `storage_observability.go:72`) moves to a shared file.
+  - The four `*ComponentManager` type checks above become one small unexported interface the component manager
+    satisfies (`startupSnapshot`, `startupStopBegun`, `setStartupMetricWriter`, `registerStartupHTTPHandlers`,
+    `withComponents`, `GetComponentHealth`). It has one implementation: sweep shape 3 (S10), introduced by the split,
+    not inherited from the pin.
+  - PR 2 (`Manager` + `Metrics`) and PR 6 (`MetricsForwarder` + `HeartbeatService`) each carry two owners, against
+    one owner per pull request (`AGENTS.md` § 4, #159), so each needs the owner's waiver. PR 6 can split in two:
+    neither file uses a name from the other (file edges).
+  - Until PR 3 lands, PR 2's tests compose a stand-in `component-manager` service, as the pin's own tests do
+    (`service_manager_test.go:201` — `MockService: MockService{name: "component-manager", status: StatusRunning,
+    healthy: true},`).
+- Option A, the pin's structure: PRs 2 and 3 as one pull request holding three owners, 5,447 non-test and 7,418 test
+  lines, after #342, with the owner's waiver (#159). It still moves `StorageObservabilityServiceName` to a shared file
+  (`storage_observability.go` lands in PR 5); every other row is unchanged.
 - Shared files: `register.go`'s `RegisterAll` (`register.go:8`) gains one constructor per PR, and the pin's seven are
   all present after the last. `doc.go` and `README.md` grow per PR; the pin README is stale (§ 5 (c)).
 
@@ -174,6 +184,13 @@ Other second spellings the port meets: metric namespace `"semstreams"` (`startup
   `NOT READY` (`service_manager.go:1140-1149`).
 - Main listener after boot: `/health`, `/healthz`, `/readyz`, `/services`, `/services/health` (`:1707-1713`);
   `/graph/triples` (`:1720`); `/openapi.json` (`:1568`); `/docs` when `swagger_ui` (`:1572`).
+- `/graph/triples` readers (measured, `grep -rn '/graph/triples'`): semteams 110 lines, 15 of them in `ui/src` across
+  7 files (`ui/src/lib/services/runStatusApi.ts:21` — `const TRIPLES_ENDPOINT = "/graph/triples";`, run-level pause
+  detection; `controlsStore.svelte.ts:9`, `+layout.svelte:20`), the rest its e2e specs, Caddyfile, Taskfile and docs;
+  semsource one doc line; semconnect and semboids none. At the pin outside `service`: no production Go, only the e2e
+  ops scenario (`test/e2e/scenarios/ops/scenario.go`), its compose and task files, two flow configs and docs. The 03B
+  operator-surface table (03B `design.md:722-728`) lists what is kept, not what is dropped. So it is framework API:
+  it ports as at the pin, with a contract line in PR 2.
 - Services, mounted at `"/" + serviceNameToPrefix(name)` (`:1517-1520`, prefixes `:1687-1700`):
   `/components/{health,list,types/,types,status/,config/,flowgraph,validate,paths}`
   (`component_manager_http.go:68-78`); `/message-logger/{entries,stats,subjects}`,
@@ -202,23 +219,38 @@ Disposition is proposed; the design decides it under Bounded port scope.
   `internal/lifecycleguard`. The same shape, optional unless the owner schedules it: `base.go:110-114`,
   `metrics.go:29-38`, `service_manager.go:62-80` (three copies: HTTP, health listener, health publisher),
   `heartbeat.go:65-73`, `metrics_forwarder.go:139`, `storage_observability.go:167`.
-- **S4, required (background-work spec; framework API): `MaybeStartPProf` starts work nothing stops or joins.**
-  `pprof.go:28`, `:38`. Callers: pin `internal/boot/run.go:74`; semsource `cmd/semsource/run.go:109`, semteams
-  `cmd/semteams/main.go:93`, semboids `cmd/semboids/main.go:100` (Q4).
+- **S4, required design item (background-work spec; framework API): `MaybeStartPProf` starts work nothing stops or
+  joins.** `pprof.go:28`, `:38`. Callers: pin `internal/boot/run.go:74`; semsource `cmd/semsource/run.go:109`,
+  semteams `cmd/semteams/main.go:93`, semboids `cmd/semboids/main.go:100`, so it ports (#190) and is fixed, not left
+  out. The spec "binds every package in the module and every later port" (`background-work/spec.md:15-22`); an HTTP
+  server waits on in-flight requests, so the shape is `Run(ctx)` or `Shutdown(ctx)`, not `Close` (`:17-20`). Either
+  changes the signature the three consumers call (Q3). Lands in PR 1.
 - **S5, required (03B SS#1218): two `ErrAlreadyStopped`.** `base.go:28` — `var ErrAlreadyStopped = errors.New("service
   already stopped")`, beside `pkg/errs/errs.go:43`. No `service` code returns it; one reader, `service_manager.go:888`.
-- **S6, shape 1: two config decoders; three services accept unknown keys silently.** Strict `service_configs.go:130-139`
-  (`decoder.DisallowUnknownFields()`); plain `heartbeat.go:84`, `metrics_forwarder.go:28`, `:37`,
-  `storage_observability.go:178`. Required if the rule "Ported components refuse unknown config keys" (`AGENTS.md`
-  § 1) is read to cover services; its row names components.
+- **S6, shape 1, optional: two config decoders; three services accept unknown keys silently.** Strict
+  `service_configs.go:130-139` (`decoder.DisallowUnknownFields()`); plain `heartbeat.go:84`, `metrics_forwarder.go:28`,
+  `:37`, `storage_observability.go:178`. No binding rule makes it required: the unknown-key rule (`AGENTS.md` § 1;
+  `component-registration` spec, "Unknown configuration keys are refused") names components, and the developer
+  contract's fail-closed rule covers enum and grammar values, not keys. A simple fix (the strict decoder is in the
+  same package), which the owner's 2026-10-19 intent favours; the design decides.
+  - Letter case: the strict decoder also accepts a key in another letter case (probe, go1.26.4: `{"HTTP_Port":9}`
+    under `DisallowUnknownFields` fills `http_port`, no error). #341's spec delta leaves "the contents of a
+    component's or service's `config` payload" to its owner (`config-loading/spec.md:9-10` on
+    `claude/config-key-case`), so letter-case refusal in `service`'s own decoders belongs to this port, if anywhere.
 - **S7, shape 5: classification by error text.** `message_logger_http.go:443` — `if strings.Contains(err.Error(), "not
   found") {`; `:497` — `if strings.Contains(err.Error(), "no keys found") {`. Optional; a simple fix.
-- **S8, shape 2 and fail-silent publishing.** Two health loops: `component_manager.go:1476-1489` and
-  `service_manager.go:680-693`, each a 5 s ticker. Each publishes a hand-built JSON map, not a `BaseMessage`, and
-  drops the error: `component_manager.go:1524` — `_ = cm.natsClient.PublishToStream(ctx, subject, data)`;
-  `service_manager.go:798`. `metrics_forwarder.go:361-386` does the same on `metrics.<component>.<name>` and logs at
-  Debug. Pin readers of `health.>`/`metrics.>`: none in Go outside `service` (`config/streams.go:126`, `:138` declare
-  the streams). Optional, except "any skip, drop, or degrade is declared" (`AGENTS.md` § 1).
+- **S8, required in part: health publishing drops failures without a word.** Two health loops,
+  `component_manager.go:1476-1489` and `service_manager.go:680-693`, each a 5 s ticker. Each drops the publish
+  error, `component_manager.go:1524` — `_ = cm.natsClient.PublishToStream(ctx, subject, data)`, and
+  `service_manager.go:798`, and skips a marshal failure with a bare `continue` (`component_manager.go:1518-1520`,
+  `service_manager.go:792-794`). `metrics_forwarder.go:361-386` logs both at Debug.
+  - Required: "any skip, drop, or degrade is declared" (`AGENTS.md` § 1) is binding, so PRs 2 and 3 declare each
+    drop (log or count it; the design picks). PR 6 already logs its drops at Debug; its design says whether that
+    level is enough.
+  - Not in scope: the `BaseMessage` rule names polymorphic payloads; these are one fixed JSON shape per subject
+    (`health.component.<name>`, `health.service.<name>`, `metrics.<component>.<name>`), so the raw maps stay.
+  - Optional (shape 2): two near-identical loops. Pin readers of `health.>`/`metrics.>`: none in Go outside `service`
+    (`config/streams.go:126`, `:138` declare the streams).
 - **S9, shape 4: test-only code in production structs.** `service_manager.go:84-88` (`testCommitPrepared` and three
   more); `metrics.go:40-44`, used at `:323-324` to swap the listener; test-only constructors `heartbeat.go:258`,
   `metrics_forwarder.go:430`; injected `listen` functions `pprof.go:32`, `service_manager.go:1284`. All unexported, so
@@ -227,8 +259,9 @@ Disposition is proposed; the design decides it under Bounded port scope.
 - **S10, shape 3: one-implementation interfaces.** `dependencies.go:20` `natsPublisher`, with an always-true check
   `metrics_forwarder.go:74` — `publisher, ok := interface{}(deps.NATSClient).(natsPublisher)`; `metrics.go:47`
   `metricsServer`; `heartbeat.go:45` `componentHealthGetter`; `message_logger.go:166`, `:175`;
-  `metrics_forwarder.go:19` `MetricsGatherer` (exported, no reader outside `service`). Optional. Not a finding:
-  `message_logger_http.go:365` `kvBucketProvider`, whose comment gives a reason (read-only capability).
+  `metrics_forwarder.go:19` `MetricsGatherer` (exported, no reader outside `service`). Optional. Option B adds one
+  (§ 2.3). Not a finding: `message_logger_http.go:365` `kvBucketProvider`, whose comment gives a reason (read-only
+  capability).
 - **S11, shape 1: two lifecycle verb pairs on `Manager`.** `service_manager.go:1040` `Start`, `:1054` `Stop` (no
   production caller at the pin) beside `StartAll` `:390` and `StopAll` `:838`.
 - **S12, shape 1: the component manager is found by name 17 times in 7 files** (`"component-manager"`: `service_manager.go`
@@ -361,7 +394,7 @@ Searched for `service/`, `ComponentManager`, `BaseService`, `MessageLogger`, `me
 `log-forwarder`, `MetricsForwarder`, `HeartbeatService`, `StorageObservability`, `service-manager`, `ServiceManager`,
 `StartAll`, `RegisterAll`, `ProjectionBinder`, `WireGraphRuntime`, `/readyz`, `/healthz`, `component-manager`. Hits:
 026, 029, 030, 058, 063, 081, 088, 093, 094, 096, 098, 100; titles then read for lifecycle and boot (047, 075, 095,
-103).
+103); and, for `graph_runtime.go`'s comment and retention check, 068 and 091.
 
 - **ADR-029** instance-type patterns: services are `service.Manager` + `service.Registry`, config-driven; the Manager
   is passed as `ServiceManager` (`029:31`, `:44`). Governs `dependencies.go`, `registry.go`.
@@ -370,6 +403,13 @@ Searched for `service/`, `ComponentManager`, `BaseService`, `MessageLogger`, `me
 - **ADR-058** boot phases (Draft; parts superseded by ADR-091): eager wiring in the composition root before
   `StartAll`; pprof is "deliberately NOT a service.Service" (`pprof.go:12`). Carried with change 3 (#9 comment
   6099868722).
+- **ADR-068** graph retention (not in `docs/adr`): D1 is a "convention + boot/lint check that live graph buckets
+  carry no binding TTL/MaxBytes/MaxAge" (`068:417`). `WireGraphRuntime` is that boot check:
+  `graph_runtime.go:25` (`graph.EnsureCatalogRetentionClean`, here in `graph/kvcatalog`). Governs `graph_runtime.go`.
+- **ADR-091** graph mutation authority (Accepted 2026-08-05, not in `docs/adr`): "supersedes the ownership-specific
+  boot/service/shutdown parts of ADR-058" and removes "boot services" (`091:11`, `:20`); `graph_runtime.go:13-15`
+  records it: "It creates no ownership substrate or background coordination service." Governs `graph_runtime.go`
+  and `rule_pack_bind.go`.
 - **ADR-063** store substrate: the component manager owns and fills `storeregistry` at Start, clears it at Stop
   (`063:69`, `:181`, `:262`). Not in `docs/adr`; #321 asks to carry it.
 - **ADR-088** (in `docs/adr`): readiness stays out of `/readyz` (`088:103-105`). With this repository's ADR-109
@@ -386,7 +426,10 @@ Searched for `service/`, `ComponentManager`, `BaseService`, `MessageLogger`, `me
   not done at the pin), 047 (the `LifecycleManager` plumbing, dropped by #102). 075 and 103: no `service` decision.
 - This repository: ADR-108 Decision 2, ADR-109, ADR-111 (`service` is a change-3 durable owner that cites Decisions
   1-6, `111:55-56`), ADR-113, ADR-102/104 (`service.Dependencies.Platform` is an excepted carrier,
-  `internal/harness/contract/authority_test.go:231`).
+  `internal/harness/contract/authority_test.go:231`), and ADR-110, the write seam: "Each port that writes entity
+  state, and change 3's design, cites this record" (`docs/adr/110-write-seam.md:183`; also `:7`). `service` writes
+  no `ENTITY_STATES` entry itself (`graph_triples_http.go:181` only reads it); it builds mutation clients
+  (`graph_runtime.go`, `rule_pack_bind.go:72`), and the design states that against ADR-110.
 
 ## 9. Open issues and pull requests
 
@@ -411,17 +454,22 @@ Searched for `service/`, `ComponentManager`, `BaseService`, `MessageLogger`, `me
 - **Open pull requests** (`gh pr list --state open --json number,files`): #343 (this claim); #342
   `claude/port-composition` `8bfab97`, draft, `openspec/changes/port-composition/{.openspec.yaml,proposal.md,tasks.md}`
   — no shared file; PR 3 imports `composition`, so #342 merges first; #341 `claude/config-key-case` `91e6e58`, draft,
-  `openspec/changes/config-key-letter-case/` with a `config-loading` spec delta — no shared file or capability.
+  `openspec/changes/config-key-letter-case/` with a `config-loading` spec delta — no shared file or capability; the
+  delta leaves a service's `config` payload to its owner (S6).
 
 ## 10. Owner questions
 
-1. **Q1, split shape.** I propose option B, the Manager landing first in 2,960 lines with one small unexported
-   interface in place of five `*ComponentManager` type checks; the alternative is the pin's structure, the Manager and
-   the component manager in one PR of 5,447 lines after `composition`, with a waiver by number. Which?
-2. **Q2, `PredicateReconciler`.** The rule-pack binding (`rule_pack_bind.go:16`) and `processor/rule` still call
-   `projection.PredicateReconciler`, which #138 removed as unread; should PR 3 put it back in `pkg/projection`, or
-   declare the parameter type in `service`?
-3. **Q3, `/graph/triples`.** The Manager serves `/graph/triples` (`service_manager.go:1720`), a route the 03B
-   operator-surface table does not list; serve it as at the pin, or leave it out?
-4. **Q4, `MaybeStartPProf`.** It starts a server that nothing can stop, which the background-work rule forbids, and
-   all three consumers call it; give it a way to stop (a signature change for them), or leave it out of the port?
+Each starts with the recommendation; pointers are in parentheses.
+
+1. **Split: recommend landing the service manager before the component manager.** May the service manager go in
+   first with the metrics service it drives (2,960 lines), accepting a new small internal interface with one
+   implementation and your waiver for two pull requests that each hold two lifecycle owners, rather than the pin's
+   layout of one 5,447-line pull request holding three owners, which needs your waiver too? (§ 2.3; one-owner rule,
+   #159)
+2. **Predicate reconciler: recommend putting it back where it was.** May the component manager's pull request
+   restore the one-method `PredicateReconciler` interface in `pkg/projection`, since the rule-pack binding needs it
+   now and the rule processor, ported later, must name the same type to match? (removed as unread in #138 item 1;
+   pin `rule_pack_bind.go:16`, `processor/rule/processor.go:463`)
+3. **Profiling server: recommend yes.** May `MaybeStartPProf` change so its caller can stop it and wait for it,
+   which changes the call in semsource, semteams and semboids, because it must port and the background-work rule
+   requires a stop? (S4; `openspec/specs/background-work/spec.md:15-22`)

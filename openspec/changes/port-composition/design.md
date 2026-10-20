@@ -200,6 +200,8 @@ self-clash outcome and overlap for #16. ADR-094 and ADR-096 govern `service`. Th
 
 ## Owner questions
 
+Answered 2026-10-20 (#9 comment 6295807962): Q1 yes, Q2 yes.
+
 - **Q1. Rewrite `config/example_config.json`?** Recommended: yes.
   - The file names five factories (udp, robotics, websocket, graph, objectstore). None of them is registered in
     SemEngine; the only factory registered in the tree is graph-ingest. Validated as it stands, it gives five

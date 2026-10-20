@@ -6,8 +6,9 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
+  owner. Gate: `task spec:check` and `task docs:check`. Done: `INVENTORY PASS` at `336db07`, `DESIGN REVIEW PASS` at
+  `d6ee74d` (premise citation fixed at `7af29f9`); owner rulings #9 comments 6295357983 and 6295807962 (Q1 yes, Q2 yes).
 
 ## 2. Port
 

@@ -1,8 +1,8 @@
 # Tasks: config-key-letter-case
 
 Each task names its outcome and the gate that proves it. Tests come first. Record in `notes/<task>.md` how each test
-fails on the base commit, or which mutant it detects. A review stop (Codex) comes after 3.1; the change is small enough for one. Each task ends only when
-`task verify` passes on a clean tree at its commit.
+fails on the base commit, or which mutant it detects. A review stop (Codex) comes after 3.1; the change is small enough
+for one. Each task ends only when `task verify` passes on a clean tree at its commit.
 
 ## 1. Design
 

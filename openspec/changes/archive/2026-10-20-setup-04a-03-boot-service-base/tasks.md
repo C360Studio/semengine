@@ -54,9 +54,11 @@ Each task names its outcome and the gate that proves it. This change ports `Base
 
 ## 4. Verify, review and close
 
-- [ ] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `service` (merged
-  profile) is recorded on the PR.
-- [ ] 4.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 4.3 Any defect found and not fixed is filed. Then the change is archived
+- [x] 4.1 `task verify` passes on a clean tree at the implementation head `cf6afa1` (Codex's independent run, all 14
+  stages); the coverage of `service` (merged profile, 88.3%) is recorded on the PR.
+- [x] 4.2 Cross-agent review of record: Codex APPROVE at `169451f` (stop 1) and `cf6afa1` (stop 2), PR #343
+  comments; `reviewed-by: codex` in the PR body.
+- [x] 4.3 Defects not fixed are filed (#349; #344 carries the letter-case follow-up); archived in this commit.
+  Then the change is archived
   (`openspec archive setup-04a-03-boot-service-base`) as the last content commit, syncing `service-lifecycle` into
   `openspec/specs/`. Gate: `task spec:check`.

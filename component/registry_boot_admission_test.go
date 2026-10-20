@@ -377,7 +377,7 @@ func requireInvalidRefusal(t *testing.T, err error, want string) {
 // TestRegistryRefusesNetworkClaimsThatCannotBothBind: two listeners that
 // cannot both bind are refused, whichever comes first and within one
 // component (owner rulings, #328 and comment 6290643374; probe in
-// openspec/changes/one-network-address-clash/notes/probe.md).
+// openspec/changes/archive/2026-10-20-one-network-address-clash/notes/probe.md).
 func TestRegistryRefusesNetworkClaimsThatCannotBothBind(t *testing.T) {
 	rows := []networkClaimRow{
 		{"R1 http and websocket on one TCP port",

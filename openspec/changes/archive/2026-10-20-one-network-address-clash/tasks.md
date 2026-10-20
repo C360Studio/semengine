@@ -29,6 +29,7 @@ Each task ends when its gate passes; 2.4 ends when `task verify` passes on a cle
 
 - [x] 3.1 Adoption issue filed: `composition` uses the registry's clash rule, not `ExclusiveResources` text; linked
   from the PR without a closing keyword. Filed as #338.
-- [ ] 3.2 Cross-agent review; `reviewed-by:` in the PR body.
-- [ ] 3.3 Archive (`openspec archive one-network-address-clash`) as the last content commit. Gate: `task spec:check`
+- [x] 3.2 Cross-agent review; `reviewed-by:` in the PR body. Codex APPROVE at 821b5b9 with its own `task verify` exit 0
+  (PR #332, second review record).
+- [x] 3.3 Archive (`openspec archive one-network-address-clash`) as the last content commit. Gate: `task spec:check`
   and `task docs:check`.

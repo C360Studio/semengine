@@ -68,7 +68,7 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
 
 ## 3. Close
 
-- [ ] 3.1 Archive (`openspec archive port-composition`) as the last content commit. It syncs
+- [x] 3.1 Archive (`openspec archive port-composition`) as the last content commit. It syncs
   `composition-validation` (new; give it its Purpose section at archive, as `rule-pack-identity` got one),
   `graph-transport-boundary`, `component-registration` and `config-loading` into `openspec/specs/`. Gate:
   `task spec:check` and `task docs:check`.

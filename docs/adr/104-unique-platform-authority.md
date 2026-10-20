@@ -9,8 +9,10 @@
 >
 > - Issue and pull request numbers (`#1168`, `#1178`, `#1188`, `#1192`, `#1194`, `gh#459`) are SemStreams', not
 >   SemEngine's.
-> - The mechanism this record decides lives in `config.Manager.Start`, which is not yet ported (SemEngine change 3,
->   `config`). Bucket and key names such as `semstreams_config` and `platform_identity` are the pin's.
+> - The mechanism this record decides lives in this repository's `config.Manager.Start` (`config/manager.go`, ported
+>   by SemEngine change 3, `setup-04a-03-boot-config-manager`). The configuration bucket here is
+>   `semengine_config_<org>_<stem>`: where the text below says `semstreams_config`, read `semengine_config`. The
+>   identity key `platform_identity` keeps the pin's name.
 > - ADR-102 (`docs/adr/102-entity-id-segment-semantics.md`) and the `entity-id-contract` spec are ported; the
 >   `component-runtime-config` and `framework-bucket-catalog` specs and the `docs/proposals/` inventory are not yet
 >   ported. Where the text below calls `entity-id-contract` a capability spec, it is the pin's; here it is the

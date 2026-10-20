@@ -2656,16 +2656,19 @@
   consumer_purpose: >-
     the boot configuration (Config, Loader, SafeConfig) and the JetStream stream declarations and provisioning
     Config.Validate checks; read by service, composition and boot (change 3) and by semsource, semteams and semboids
-    (LoadFile, LoadFromBytes, NewStreamsManager, EnsureStreams); part 1 of 2, config.Manager is part 2
-    (#9 comment 6274501134)
+    (LoadFile, LoadFromBytes, NewStreamsManager, EnsureStreams), and config.Manager (Start/Stop, BucketName,
+    PutComponentToKV, DeleteComponentFromKV, key families) read by service, boot, processor/rule and semsource,
+    semteams, semboids
   destination: config
   contract: >-
     the config-loading spec; the pin's stream-provisioning spec requirements for declarations, bounds, exemptions,
     backing-stream refusal and drift as at the pin (readiness clauses arrive with service); ADR-102 O-2/O-14 and
-    ADR-104 as at the pin
+    decision 7 and ADR-104 as at the pin; the config-manager spec; ADR-113
   dependencies_and_side_effects: >-
-    model, pkg/platform, pkg/security, pkg/types, types, component, natsclient, pkg/errs (all in tree), nats.go
-    jetstream; reads files and env vars; creates and updates JetStream streams in EnsureStreams; no goroutine
+    model, pkg/platform, pkg/security, pkg/types, types, component, natsclient, pkg/errs, graph, graph/kvcatalog,
+    internal/lifecycleguard (all in tree), nats.go jetstream; reads files and env vars; creates and updates
+    JetStream streams in EnsureStreams; Manager creates and writes the configuration bucket
+    semengine_config_<org>_<stem> and watches it, with watch goroutines joined in Stop
   known_risks: >-
     dropped as unread: StorageMode*, BucketConfig, Loader.AddLayer/EnableValidation/Load, Config.SaveToFile,
     Config.String, DeriveStreamSubjects, FrameworkStreamAutoCreate, loadJSONFile, mergeConfigs, validateEnvVar, and
@@ -2676,10 +2679,20 @@
     in any letter case, as encoding/json does; a malformed document or trailing data fails the load (Q2); numbers
     are kept as written through the merge (json.Number), so a large integer in a raw config and a fraction in an
     integer field are not rounded; env prefix SEMENGINE_ (#69). Retained: unknown keys elsewhere accepted,
-    gulf_mexico default region, framework streams for writers not yet ported. manager.go, key_family.go,
-    bucket_name.go follow in part 2
+    gulf_mexico default region, framework streams for writers not yet ported. Manager (change 3, config part 2):
+    OnChange and Update unexported, PushToKV dropped; Stop takes a context and Start is one-shot, a run context
+    created in Start and ended in Stop, so ending Start's context stops nothing (Q1); Stop closes the subscriber
+    channels before it waits, stops the watchers concurrently on a goroutine it waits on under its context, and
+    logs a failed watcher stop at WARN without returning it (Q4); KV selection replaces components as well as
+    services (#17), and service and component names must be one KV token after spaces map to '_', a spaced name
+    is re-keyed to its key name at Start and two names sharing a key are refused (Q2); Start fails closed on bucket
+    I/O, decode, a failed push and any watch that does not open, and a stored nats value is refused like loading
+    (Q3); the push writes version last; the bucket-wide revision watermark is a per-key applied revision, so a
+    write to one key no longer suppresses another key's event; a key family's values are not decoded as Manager
+    configuration. Retained: wildcard matching unlike NATS, runtime writes that do not decode are logged and
+    skipped, unprobed nats.go comments
   proving_tests: config/*_test.go, config/*_integration_test.go
-  owner: "setup-04a-03-boot-config developer"
+  owner: "setup-04a-03-boot-config-manager developer"
   disposition: adapt
 - source_path: config/stream_bounds.go
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128

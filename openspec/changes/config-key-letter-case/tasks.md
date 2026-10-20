@@ -11,7 +11,7 @@ for one. Each task ends only when `task verify` passes on a clean tree at its co
 
 ## 2. Refusal (D1-D3)
 
-- [ ] 2.1 Tests first, in `config/load_test.go`, through both loaders:
+- [x] 2.1 Tests first, in `config/load_test.go`, through both loaders:
   - D3's refused cases, each error holding the path as written and as declared;
   - D3's accepted controls;
   - the coverage test over every declared key path;

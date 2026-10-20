@@ -4,7 +4,12 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
+	"slices"
+	"strings"
 	"testing"
+
+	"github.com/c360studio/semengine/types"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -313,4 +318,305 @@ func TestLoad_RefusesNullDocument(t *testing.T) {
 			assert.Contains(t, err.Error(), "not a JSON object")
 		})
 	}
+}
+
+// TestLoad_RefusesKeyInAnotherLetterCase pins the #325 ruling (comment
+// 6294481629): a key that differs from its declared name only in letter case is
+// refused, naming the path as written and as declared. encoding/json would match
+// it to the field anyway, and the merge with the defaults would then drop or
+// apply it depending on what the defaults hold.
+func TestLoad_RefusesKeyInAnotherLetterCase(t *testing.T) {
+	const pair = `"platform":{"org":"acme","id":"p1"}`
+	cases := []struct {
+		written, declared, document string
+	}{
+		{"NATS", "nats", `{` + pair + `,"NATS":{"urls":["nats://a.invalid:14222"]}}`},
+		{"nats.URLs", "nats.urls", `{` + pair + `,"nats":{"URLs":["nats://a.invalid:14222"]}}`},
+		{"nats.JetStream", "nats.jetstream", `{` + pair + `,"nats":{"JetStream":{"enabled":false}}}`},
+		{"Components", "components",
+			`{` + pair + `,"Components":{"x":{"type":"input","name":"udp","enabled":true,"config":{}}}}`},
+		{"Streams", "streams", `{` + pair + `,"Streams":{"S":{"subjects":["s.>"]}}}`},
+		{"services.heartbeat.Enabled", "services.heartbeat.enabled",
+			`{` + pair + `,"services":{"heartbeat":{"Enabled":false}}}`},
+		{"components.x.Config", "components.x.config",
+			`{` + pair + `,"components":{"x":{"type":"input","name":"udp","enabled":true,"Config":{}}}}`},
+		{"NATS", "nats", `{` + pair + `,"nats":{"urls":["nats://a.invalid:1"]},"NATS":{"urls":["nats://b.invalid:2"]}}`},
+		{"NATS", "nats", `{` + pair + `,"NATS":null}`},
+	}
+	for _, path := range loadPaths {
+		for _, tc := range cases {
+			t.Run(path.name+"/"+tc.written, func(t *testing.T) {
+				cfg, err := path.load(t, tc.document)
+				require.Error(t, err, "%s must be refused, not dropped or applied", tc.written)
+				assert.Nil(t, cfg, "a refused document returns no Config")
+				assert.Contains(t, err.Error(), "config key "+tc.written+" must be written "+tc.declared)
+			})
+		}
+	}
+}
+
+// TestLoad_AcceptsNamesOutsideTheLetterCaseRule is the control for the refusal
+// above: a key matching no declared name stays accepted (part 1's semteams
+// "tier"), names a deployment chooses are not declared keys, and a component's
+// config payload belongs to its owner and arrives unchanged.
+func TestLoad_AcceptsNamesOutsideTheLetterCaseRule(t *testing.T) {
+	const pair = `"platform":{"org":"acme","id":"p1"}`
+	documents := map[string]string{
+		"unknown top-level key": `{` + pair + `,"tier":"edge"}`,
+		"unknown nats key":      `{` + pair + `,"nats":{"extra":1}}`,
+		"chosen names": `{` + pair + `,
+			"components":{"Config":{"type":"input","name":"udp","enabled":true,"config":{"Port":8080}}},
+			"services":{"Enabled":{"enabled":true,"config":{}}},
+			"streams":{"Subjects":{"subjects":["s.>"]}}}`,
+	}
+	for _, path := range loadPaths {
+		for name, document := range documents {
+			t.Run(path.name+"/"+name, func(t *testing.T) {
+				cfg, err := path.load(t, document)
+				require.NoError(t, err)
+				require.NotNil(t, cfg)
+				if name != "chosen names" {
+					return
+				}
+				require.Contains(t, cfg.Components, "Config")
+				assert.Equal(t, `{"Port":8080}`, string(cfg.Components["Config"].Config),
+					"the payload is carried byte for byte")
+				assert.Contains(t, cfg.Services, "Enabled")
+				assert.Contains(t, cfg.Streams, "Subjects")
+			})
+		}
+	}
+}
+
+// placeholder fills every map level of the coverage document. It folds to no
+// declared key, so the walker treats it as a name the deployment chose.
+const placeholder = "PH"
+
+// TestLoad_RefusesEveryDeclaredKeyInCapitals is the coverage oracle for the
+// letter-case rule: every key path json.Marshal writes for a Config with every
+// field populated is refused when its last key is upper-cased. The paths come
+// from encoding/json's own naming, never from the walker's, so a naming bug in
+// the walker cannot hide itself; the filler is reflection, so a new field is
+// covered with no edit.
+func TestLoad_RefusesEveryDeclaredKeyInCapitals(t *testing.T) {
+	var cfg Config
+	fillForCoverage(reflect.ValueOf(&cfg).Elem())
+	data, err := json.Marshal(cfg)
+	require.NoError(t, err)
+	var doc map[string]any
+	require.NoError(t, json.Unmarshal(data, &doc))
+
+	var paths [][]string
+	collectKeyPaths(doc, nil, &paths)
+	written := make([]string, 0, len(paths))
+	for _, p := range paths {
+		written = append(written, strings.Join(p, "."))
+	}
+	// The filler reached a pointer's struct, a map of pointers and the deepest
+	// security struct; without these the oracle would be partial.
+	for _, deep := range []string{
+		"model_registry.defaults.capability",
+		"model_registry.capabilities.PH.timeout",
+		"security.tls.client.mtls.key_file",
+		"services.PH.config",
+	} {
+		require.Contains(t, written, deep)
+	}
+	t.Logf("%d declared key paths checked", len(paths))
+
+	for _, path := range loadPaths {
+		for _, p := range paths {
+			last := len(p) - 1
+			upper := slices.Clone(p)
+			upper[last] = strings.ToUpper(p[last])
+			value := valueAt(doc, p)
+			document := map[string]any{upper[last]: value}
+			for i := last - 1; i >= 0; i-- {
+				document = map[string]any{p[i]: document}
+			}
+			body, err := json.Marshal(document)
+			require.NoError(t, err)
+			wantErr := "config key " + strings.Join(upper, ".") + " must be written " + strings.Join(p, ".")
+			t.Run(path.name+"/"+strings.Join(p, "."), func(t *testing.T) {
+				cfg, err := path.load(t, string(body))
+				require.Error(t, err, "%s must be refused", strings.Join(upper, "."))
+				assert.Nil(t, cfg)
+				assert.Contains(t, err.Error(), wantErr)
+			})
+		}
+	}
+}
+
+// fillForCoverage gives every field reachable from v a non-zero value, so
+// json.Marshal omits nothing: a pointer gets a new value, a map one entry under
+// the placeholder, and each leaf a fixed value.
+func fillForCoverage(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Pointer:
+		v.Set(reflect.New(v.Type().Elem()))
+		fillForCoverage(v.Elem())
+	case reflect.Struct:
+		for i := range v.NumField() {
+			if v.Field(i).CanSet() {
+				fillForCoverage(v.Field(i))
+			}
+		}
+	case reflect.Map:
+		m := reflect.MakeMap(v.Type())
+		elem := reflect.New(v.Type().Elem()).Elem()
+		if elem.Kind() == reflect.Interface {
+			elem.Set(reflect.ValueOf(1))
+		} else {
+			fillForCoverage(elem)
+		}
+		m.SetMapIndex(reflect.ValueOf(placeholder).Convert(v.Type().Key()), elem)
+		v.Set(m)
+	case reflect.Slice:
+		if v.Type() == reflect.TypeFor[json.RawMessage]() {
+			v.Set(reflect.ValueOf(json.RawMessage("{}")))
+			return
+		}
+		s := reflect.MakeSlice(v.Type(), 1, 1)
+		fillForCoverage(s.Index(0))
+		v.Set(s)
+	case reflect.String:
+		v.SetString("x")
+	case reflect.Bool:
+		v.SetBool(true)
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		v.SetInt(1)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		v.SetUint(1)
+	case reflect.Float32, reflect.Float64:
+		v.SetFloat(1)
+	default:
+		panic("fillForCoverage: no fill for " + v.Type().String())
+	}
+}
+
+// collectKeyPaths appends the path to every key in doc whose last key is not
+// the placeholder, descending into every object.
+func collectKeyPaths(doc map[string]any, prefix []string, paths *[][]string) {
+	for key, value := range doc {
+		path := append(slices.Clone(prefix), key)
+		if key != placeholder {
+			*paths = append(*paths, path)
+		}
+		if obj, ok := value.(map[string]any); ok {
+			collectKeyPaths(obj, path, paths)
+		}
+	}
+}
+
+func valueAt(doc map[string]any, path []string) any {
+	var value any = doc
+	for _, key := range path {
+		value = value.(map[string]any)[key]
+	}
+	return value
+}
+
+// TestConfigReachesOnlyShapesTheLetterCaseWalkerHandles guards the walker's
+// limits (design D1): it does not handle field promotion from embedded structs,
+// keys inside slices or arrays, or a type that decodes or encodes itself. If
+// Config ever reaches one, this fails, so the walker is extended before the
+// rule silently stops covering it.
+func TestConfigReachesOnlyShapesTheLetterCaseWalkerHandles(t *testing.T) {
+	assert.Empty(t, letterCaseWalkerGaps(reflect.TypeFor[Config]()))
+}
+
+// TestLetterCaseWalkerGapsDetectsEachShape shows the guard above can fail: each
+// shape the walker does not handle is reported.
+func TestLetterCaseWalkerGapsDetectsEachShape(t *testing.T) {
+	type inner struct {
+		A string `json:"a"`
+	}
+	shapes := []struct {
+		name  string
+		shape reflect.Type
+		want  string
+	}{
+		{"embedded struct", reflect.TypeFor[struct{ inner }](), "embeds"},
+		{"slice of structs", reflect.TypeFor[struct {
+			S []inner `json:"s"`
+		}](), "inside a slice or array"},
+		{"array of maps", reflect.TypeFor[struct {
+			A [1]map[string]string `json:"a"`
+		}](), "inside a slice or array"},
+		{"slice of struct pointers", reflect.TypeFor[struct {
+			S []*inner `json:"s"`
+		}](), "inside a slice or array"},
+		{"own json.Unmarshaler behind a pointer", reflect.TypeFor[struct {
+			U *gapUnmarshaler `json:"u"`
+		}](), "json.Unmarshaler"},
+		{"own json.Marshaler", reflect.TypeFor[struct {
+			M gapMarshaler `json:"m"`
+		}](), "json.Marshaler"},
+	}
+	for _, tc := range shapes {
+		t.Run(tc.name, func(t *testing.T) {
+			gaps := letterCaseWalkerGaps(tc.shape)
+			require.Len(t, gaps, 1)
+			assert.Contains(t, gaps[0], tc.want)
+		})
+	}
+}
+
+type gapUnmarshaler struct{}
+
+func (*gapUnmarshaler) UnmarshalJSON([]byte) error { return nil }
+
+type gapMarshaler struct{}
+
+func (gapMarshaler) MarshalJSON() ([]byte, error) { return []byte("{}"), nil }
+
+// letterCaseWalkerGaps lists every type reachable from t that the walker does
+// not handle. json.RawMessage is a payload its owner decodes, and
+// types.ServiceConfig decodes into its own tagged fields, so both are allowed.
+func letterCaseWalkerGaps(t reflect.Type) []string {
+	unmarshaler := reflect.TypeFor[json.Unmarshaler]()
+	marshaler := reflect.TypeFor[json.Marshaler]()
+	rawMessage := reflect.TypeFor[json.RawMessage]()
+	serviceConfig := reflect.TypeFor[types.ServiceConfig]()
+	var gaps []string
+	seen := map[reflect.Type]bool{}
+	var visit func(reflect.Type)
+	visit = func(t reflect.Type) {
+		if seen[t] {
+			return
+		}
+		seen[t] = true
+		if t != rawMessage && t.Kind() != reflect.Pointer {
+			if reflect.PointerTo(t).Implements(unmarshaler) && t != serviceConfig {
+				gaps = append(gaps, t.String()+" has its own json.Unmarshaler")
+			}
+			if reflect.PointerTo(t).Implements(marshaler) {
+				gaps = append(gaps, t.String()+" has its own json.Marshaler")
+			}
+		}
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Map:
+			visit(t.Elem())
+		case reflect.Slice, reflect.Array:
+			elem := t.Elem()
+			for elem.Kind() == reflect.Pointer {
+				elem = elem.Elem()
+			}
+			if elem.Kind() == reflect.Struct || elem.Kind() == reflect.Map {
+				gaps = append(gaps, t.String()+" holds keys inside a slice or array")
+			}
+		case reflect.Struct:
+			for i := range t.NumField() {
+				f := t.Field(i)
+				if f.Anonymous {
+					gaps = append(gaps, t.String()+" embeds "+f.Type.String())
+				}
+				if f.IsExported() && f.Tag.Get("json") != "-" {
+					visit(f.Type)
+				}
+			}
+		}
+	}
+	visit(t)
+	return gaps
 }

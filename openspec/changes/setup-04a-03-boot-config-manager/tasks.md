@@ -11,7 +11,7 @@ when `task verify` passes on a clean tree at its commit (#171).
 
 ## 2. Port (D1-D5)
 
-- [ ] 2.1 Tests first, in `config/`: the eight pin test files with the module path rewritten and adapted per D5
+- [x] 2.1 Tests first, in `config/`: the eight pin test files with the module path rewritten and adapted per D5
   (`fixtureClient`, `semengine_config`, `Stop(ctx)`, no `Skip`, no sleeps, no fixed address, the two-boot test as
   subtests); the new tests D2, D3 and D4 name, including the lifecycle-suite adapter. Gate: the tests fail on the
   base (the symbols do not exist; note the compile error).

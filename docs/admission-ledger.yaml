@@ -1943,7 +1943,8 @@
     and component.Dependencies.ModelRegistry names model.RegistryReader
   destination: model
   contract: >-
-    as at the pin; every .go file matches it (task ledger:check)
+    as at the pin, except: (1) Registry.Validate visits endpoints and capabilities in name order, so the first
+    error for a registry is the same on every call (port-composition, #348); every other .go file matches the pin
   dependencies_and_side_effects: >-
     golang.org/x/net (model/httpclient.go:7), entered at v0.59.0, the base's version (design P-2, task 3.1),
     now v0.60.0 for five HTTP/2 advisories govulncheck reports (074c800, task 5.3); stdlib; no in-module
@@ -1951,12 +1952,14 @@
     (watch.go:35)
   known_risks: >-
     carried whole until #32 (change 7) decides the seam (design D6, K2): its agentic-only surface stays,
-    because cutting it before #32 is the blind cut #8 Q4 forbids. model/wire is not ported (its own row)
+    because cutting it before #32 is the blind cut #8 Q4 forbids. model/wire is not ported (its own row).
+    Changed from the pin: the first error Registry.Validate returns for several invalid entries is the first in
+    name order, where the pin's depended on map order
   proving_tests: >-
-    model/breaker_test.go, model/health_test.go, model/httpclient_test.go, model/registry_test.go,
-    model/watch_test.go
-  owner: setup-04a-02-ingest-kernel developer
-  disposition: carry
+    model/breaker_test.go, model/health_test.go, model/httpclient_test.go, model/registry_test.go
+    (TestRegistryValidateNamesFirstInvalidEndpointByName), model/watch_test.go
+  owner: setup-04a-02-ingest-kernel developer; port-composition developer (Registry.Validate order)
+  disposition: adapt
 
 - source_path: storage
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -2649,7 +2652,9 @@
     port/fact count and connection-identity refusals are plain text with no sentinel, as at the pin); (8) a `>`
     in a subject matches one or more trailing tokens, never none, so `events.>` and `events` do not match (at the
     pin they did; #326); (9) the network-bind refusal is removed, since component.Registry refuses every
-    exclusive-address conflict at admission (one-exclusive-address-check, #324).
+    exclusive-address conflict at admission (one-exclusive-address-check, #324); (10) ComponentPortRef carries the
+    port's Direction, and the orphan check keys ports by instance, direction and name, so a connected output never
+    marks a same-named input connected (port-composition, #346; the pin has the defect).
     BuildFromDeclarations refuses an empty or duplicate instance name, a port/fact count mismatch and a port
     with no connection identity, then derives edges: stream and request by wildcard subject match, recording
     the side without a wildcard, watch and read by exact bucket, store as fan-in from every provider to every
@@ -2673,6 +2678,7 @@
     TestValidateStreamRequirementsFlagsCoreNATSPublishers,
     TestFlowGraphOutputIsTheSameEveryRun, TestMatchNATSPatternIsSymmetric, TestRefusalsNameNoInternalFunction,
     TestTailWildcardNeedsATrailingToken),
+    composition/lanes_test.go (TestValidateReportsOrphanBesideSameNamedOutput),
     flowgraph_validation_test.go (TestUnconnectedOptionalInterfacePortReportsNoPublishers and the pin's tests),
     graph_mutation_contract_test.go, subject_cover_test.go, flowgraph_test.go, flowgraph_patterns_test.go,
     store_federation_test.go; internal/harness/contract (TestReservedSubjectsDeclaredOnce)
@@ -2693,7 +2699,10 @@
   contract: >-
     the config-loading spec; the pin's stream-provisioning spec requirements for declarations, bounds, exemptions,
     backing-stream refusal and drift as at the pin (readiness clauses arrive with service); ADR-102 O-2/O-14 and
-    decision 7 and ADR-104 as at the pin; the config-manager spec; ADR-113
+    decision 7 and ADR-104 as at the pin; the config-manager spec; ADR-113. Config.ValidateDocument runs every check
+    Validate runs except the host checks (that the configured TLS files exist, and the insecure_skip_verify warning
+    on standard error), so it reads no file and writes nothing; Validate is ValidateDocument then the host checks;
+    both visit component entries in instance-name order (port-composition, #347, #348)
   dependencies_and_side_effects: >-
     model, pkg/platform, pkg/security, pkg/types, types, component, natsclient, pkg/errs, graph, graph/kvcatalog,
     internal/lifecycleguard (all in tree), nats.go jetstream; reads files and env vars; creates and updates
@@ -2719,7 +2728,9 @@
     I/O, decode, a failed push and any watch that does not open, and a stored nats value is refused like loading
     (Q3); the push writes version last; the bucket-wide revision watermark is a per-key applied revision, so a
     write to one key no longer suppresses another key's event; a key family's values are not decoded as Manager
-    configuration. Retained: wildcard matching unlike NATS, runtime writes that do not decode are logged and
+    configuration. Validation (port-composition): with both a document fault and a missing TLS file, Validate names
+    the document fault first, where the pin named the file; with several invalid component entries it names the
+    first in instance-name order, where the pin's choice depended on map order. Retained: wildcard matching unlike NATS, runtime writes that do not decode are logged and
     skipped, unprobed nats.go comments
   proving_tests: config/*_test.go, config/*_integration_test.go
   owner: "setup-04a-03-boot-config-manager developer"

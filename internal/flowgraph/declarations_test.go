@@ -51,8 +51,8 @@ func TestBuildFromDeclarationsConnectsDeclaredPorts(t *testing.T) {
 			})
 			require.NoError(t, err)
 			assert.Equal(t, []FlowEdge{{
-				From:         ComponentPortRef{ComponentName: "pub", PortName: "out"},
-				To:           ComponentPortRef{ComponentName: "sub", PortName: "in"},
+				From:         ComponentPortRef{ComponentName: "pub", PortName: "out", Direction: component.DirectionOutput},
+				To:           ComponentPortRef{ComponentName: "sub", PortName: "in", Direction: component.DirectionInput},
 				Pattern:      component.PatternStream,
 				ConnectionID: tt.want,
 			}}, graph.GetEdges())
@@ -96,8 +96,8 @@ func TestTailWildcardNeedsATrailingToken(t *testing.T) {
 	t.Run("one trailing token", func(t *testing.T) {
 		graph := build(t, "events.created")
 		assert.Equal(t, []FlowEdge{{
-			From:         ComponentPortRef{ComponentName: "publisher", PortName: "out"},
-			To:           ComponentPortRef{ComponentName: "subscriber", PortName: "in"},
+			From:         ComponentPortRef{ComponentName: "publisher", PortName: "out", Direction: component.DirectionOutput},
+			To:           ComponentPortRef{ComponentName: "subscriber", PortName: "in", Direction: component.DirectionInput},
 			Pattern:      component.PatternStream,
 			ConnectionID: "events.created",
 		}}, graph.GetEdges())

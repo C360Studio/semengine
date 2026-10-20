@@ -27,10 +27,12 @@ func Validate(catalog *component.Registry, cfg *config.Config) (*Result, error) 
 	}
 	result := newResult()
 
-	// Validate normalizes in place (platform.org is lowercased), so judge a
-	// clone and leave the caller's document untouched.
+	// ValidateDocument, not Validate: the judgment must not depend on TLS
+	// files on this machine, nor write to standard error (#347). It
+	// normalizes in place (platform.org is lowercased), so judge a clone and
+	// leave the caller's document untouched.
 	working := cfg.Clone()
-	if err := working.Validate(); err != nil {
+	if err := working.ValidateDocument(); err != nil {
 		result.add(Finding{
 			Type: TypeConfigInvalid, Severity: severityOf(TypeConfigInvalid, nil),
 			Component: "config", Message: err.Error(),

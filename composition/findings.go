@@ -9,7 +9,7 @@ import (
 
 // Finding types: the closed vocabulary every validator output draws from.
 const (
-	// TypeConfigInvalid: config.Config.Validate rejected the document.
+	// TypeConfigInvalid: config.Config.ValidateDocument rejected the document.
 	TypeConfigInvalid = "config_invalid"
 	// TypeUnknownComponent: the configuration names a factory the catalog does not register.
 	TypeUnknownComponent = "unknown_component"

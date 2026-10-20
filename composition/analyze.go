@@ -211,34 +211,30 @@ func orphanedPortFinding(port flowgraph.OrphanedPort) Finding {
 // and a source without a contract feeding a target that requires one is a
 // warning.
 func interfaceFindings(declarations []component.Declaration, graph *flowgraph.FlowGraph) []Finding {
-	// name → port name → interface type, inputs first then outputs.
-	contracts := make(map[string]map[string]string, len(declarations))
+	// Port (instance, name and direction) → interface type. A component may
+	// name an input and an output alike, so the direction keeps the two
+	// lanes' contracts apart (#346).
+	contracts := make(map[flowgraph.ComponentPortRef]string)
 	for _, declaration := range declarations {
-		byPort := make(map[string]string)
 		for index, port := range declaration.InputPorts {
-			byPort[port.Name] = interfaceType(declaration.InputFacts, index)
+			contracts[flowgraph.ComponentPortRef{
+				ComponentName: declaration.InstanceName, PortName: port.Name, Direction: component.DirectionInput,
+			}] = interfaceType(declaration.InputFacts, index)
 		}
 		for index, port := range declaration.OutputPorts {
-			byPort[port.Name] = interfaceType(declaration.OutputFacts, index)
+			contracts[flowgraph.ComponentPortRef{
+				ComponentName: declaration.InstanceName, PortName: port.Name, Direction: component.DirectionOutput,
+			}] = interfaceType(declaration.OutputFacts, index)
 		}
-		contracts[declaration.InstanceName] = byPort
 	}
 
 	var findings []Finding
 	for _, edge := range graph.GetEdges() {
-		source, ok := contracts[edge.From.ComponentName]
+		sourceType, ok := contracts[edge.From]
 		if !ok {
 			continue
 		}
-		sourceType, ok := source[edge.From.PortName]
-		if !ok {
-			continue
-		}
-		target, ok := contracts[edge.To.ComponentName]
-		if !ok {
-			continue
-		}
-		targetType, ok := target[edge.To.PortName]
+		targetType, ok := contracts[edge.To]
 		if !ok {
 			continue
 		}

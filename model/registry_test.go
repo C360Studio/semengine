@@ -1273,3 +1273,26 @@ func TestResolveCapabilityTimeout(t *testing.T) {
 		}
 	})
 }
+
+// TestRegistryValidateNamesFirstInvalidEndpointByName — with several invalid
+// endpoints, or several invalid capabilities, every call names the first in
+// name order.
+func TestRegistryValidateNamesFirstInvalidEndpointByName(t *testing.T) {
+	for run := 0; run < 50; run++ {
+		endpoints := &Registry{Endpoints: map[string]*EndpointConfig{
+			"c-bad": {Provider: "ollama"}, "a-bad": {Provider: "ollama"}, "b-bad": {Provider: "ollama"},
+		}}
+		if err := endpoints.Validate(); err == nil || err.Error() != `endpoint "a-bad": model is required` {
+			t.Fatalf("run %d: endpoints Validate = %v, want the a-bad error", run, err)
+		}
+
+		capabilities := &Registry{
+			Endpoints:    map[string]*EndpointConfig{"ok": {Provider: "ollama", Model: "m"}},
+			Capabilities: map[string]*CapabilityConfig{"c-cap": {}, "a-cap": {}, "b-cap": {}},
+		}
+		if err := capabilities.Validate(); err == nil ||
+			err.Error() != `capability "a-cap": at least one preferred endpoint is required` {
+			t.Fatalf("run %d: capabilities Validate = %v, want the a-cap error", run, err)
+		}
+	}
+}

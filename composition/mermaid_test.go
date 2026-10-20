@@ -1,6 +1,7 @@
 package composition_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -48,5 +49,29 @@ func TestMermaidIsDeterministic(t *testing.T) {
 	}
 	if strings.Count(renders[0], "-->") != 4 {
 		t.Fatalf("Mermaid output renders %d edges, want 4:\n%s", strings.Count(renders[0], "-->"), renders[0])
+	}
+
+	// The spec scenario: one projection built by hand, rendered with its nodes
+	// and edges supplied in one order and then in the reverse order. The first
+	// two edges differ only in their source, so the render is stable only if
+	// the edge order reads every key Mermaid prints.
+	nodes := []composition.Node{
+		{Instance: "a", Factory: "src"}, {Instance: "b", Factory: "src"}, {Instance: "sink", Factory: "sink"},
+	}
+	edges := []composition.Edge{
+		{From: "a", FromPort: "out", To: "sink", ToPort: "in", Pattern: "stream", ConnectionID: "data.x"},
+		{From: "b", FromPort: "out", To: "sink", ToPort: "in", Pattern: "stream", ConnectionID: "data.x"},
+		{From: "a", FromPort: "alt", To: "sink", ToPort: "in", Pattern: "stream", ConnectionID: "data.y"},
+	}
+	reversedNodes, reversedEdges := slices.Clone(nodes), slices.Clone(edges)
+	slices.Reverse(reversedNodes)
+	slices.Reverse(reversedEdges)
+	forward := composition.Mermaid(composition.Graph{Nodes: nodes, Edges: edges})
+	backward := composition.Mermaid(composition.Graph{Nodes: reversedNodes, Edges: reversedEdges})
+	if forward != backward {
+		t.Fatalf("render depends on input order:\n%s\n---\n%s", forward, backward)
+	}
+	if strings.Count(forward, "-->") != len(edges) {
+		t.Fatalf("hand-built render has %d edges, want %d:\n%s", strings.Count(forward, "-->"), len(edges), forward)
 	}
 }

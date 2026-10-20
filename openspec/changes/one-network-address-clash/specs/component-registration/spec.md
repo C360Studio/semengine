@@ -75,7 +75,7 @@ shared.
   created with a network port on `tcp:127.0.0.1:8080`
 - **THEN** both are admitted, and `Snapshots` holds `first` and `second`
 
-#### Scenario: A zone on an address that is not link-local
+#### Scenario: A zone on an IPv6 address is ignored
 
 - **WHEN** component `first` is admitted with a network port on `tcp:::1:8080`, and component `second` is then
   created with a network port on `tcp:::1%lo0:8080`

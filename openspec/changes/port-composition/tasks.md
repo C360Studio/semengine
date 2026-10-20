@@ -35,13 +35,13 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   "Generated checks"; record the counts). Then:
   - `SubjectsOverlap` in `internal/flowgraph`, with its ledger contract line;
   - the check in `Analyze`, naming derived streams with `config.DeriveStreamName`;
-  - the type constant.
+  - the type constant, with `TestValidateFindingsVocabularyIsClosed` updated to the fourteen types.
 
   Gate: `go test -race ./composition/ ./internal/flowgraph/`, `TestReservedSubjectsDeclaredOnce`, `task verify`.
 - [ ] 2.4 Example config (owner Q1), tests first: `TestValidateExampleConfigHasNoErrorFindings`. Then the rewritten
   `config/example_config.json`, with `TestLoader_ExampleConfig` updated. Gate:
   `go test -race ./config/ ./composition/`, `task verify`.
-- [ ] 2.5 `task mutate:check` for M1-M10 (detections) and S1 (survivor recorded) in `notes/2.5.md`. Gate:
+- [ ] 2.5 `task mutate:check` for M1-M11 (detections) and S1 (survivor recorded) in `notes/2.5.md`. Gate:
   `task verify` passes on a clean tree.
 - [ ] 2.6 Cross-agent review stop (Codex) over 2.1-2.5; `reviewed-by:` in the PR body.
 

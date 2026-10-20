@@ -160,6 +160,8 @@ Predicted detections:
 - M8: JetStream outputs not checked.
 - M9: `reserved_subject_capture` severity becomes warning.
 - M10: the shared edge comparator drops the `ConnectionID` key.
+- M11: the `checkSelfClash` call removed from `component/registry.go` `declare`; detected by
+  `TestValidateSelfClashIsPortDeclarationError` (zero errors instead of one).
 
 Predicted survivor: S1, a suggestion reworded.
 

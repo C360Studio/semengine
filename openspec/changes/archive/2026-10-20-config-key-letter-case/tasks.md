@@ -32,6 +32,6 @@ for one. Each task ends only when `task verify` passes on a clean tree at its co
 
 ## 4. Verify, review and close
 
-- [ ] 4.1 `task verify` passes on a clean tree at the implementation head. A Codex review of record is on the PR
+- [x] 4.1 `task verify` passes on a clean tree at the implementation head. A Codex review of record is on the PR
   (`reviewed-by:`). The PR body carries `Closes #325` and `implemented-by:`. The change is archived and the
   `config-loading` spec synced as the last content commit.

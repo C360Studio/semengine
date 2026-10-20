@@ -377,7 +377,8 @@ in the probe comment on #343, which task 2.1 cites):
 
 ## Owner questions
 
-Status: DESIGN REVIEW PASS (semengine-reviewer, round 2, `515f1c7`); waiting for the owner on Q1 and Q2.
+Status: DESIGN REVIEW PASS (semengine-reviewer, round 2, `515f1c7`); accepted by the owner 2026-10-20, Q1 yes and
+Q2 yes (#9 comment 6297390898).
 
 - **Q1. Recommended: yes.** May `NewBaseServiceWithOptions` lose the configuration argument that it never reads and
   every caller passes as `nil`, so semteams deletes `nil,` from two calls and semboids from one? (D1; `base.go:85`,

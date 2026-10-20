@@ -13,7 +13,8 @@ Each task names its outcome and the gate that proves it. This change ports `Base
 - [x] 1.2 The split by lifecycle owner and its merge order accepted by the owner on #9, with Q1 to Q3 of
   `inventory.md` § 10 ruled: #9 comment 6296023694 (option B; `PredicateReconciler` restored in `pkg/projection` by
   PR 3; `MaybeStartPProf` gains a stop, PR 1).
-- [ ] 1.3 Proposal and design for PR 1 pass the pre-owner review and are accepted by the owner. Gate:
+- [x] 1.3 Proposal and design for PR 1 pass the pre-owner review (round 2 at `515f1c7`) and are accepted by the
+  owner: #9 comment 6297390898 (Q1 yes: no configuration argument; Q2 yes: the SS#1218 proof substitute). Gate:
   `task spec:check` and `task docs:check`.
 
 ## 2. Port (D1-D6)

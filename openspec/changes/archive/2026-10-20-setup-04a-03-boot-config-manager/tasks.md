@@ -35,9 +35,9 @@ when `task verify` passes on a clean tree at its commit (#171).
 
 ## 4. Verify, review and close
 
-- [ ] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `config` (merged profile)
+- [x] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `config` (merged profile)
   is recorded on the PR.
-- [ ] 4.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
-- [ ] 4.3 Any defect found and not fixed is filed; a comment on #196 records that `config.Manager` composes the guard.
+- [x] 4.2 Cross-agent review of record on the implementation commit; `reviewed-by:` in the PR body.
+- [x] 4.3 Any defect found and not fixed is filed; a comment on #196 records that `config.Manager` composes the guard.
   Then the change is archived (`openspec archive setup-04a-03-boot-config-manager`) as the last content commit.
   Gate: `task spec:check`.

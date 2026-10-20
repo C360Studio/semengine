@@ -5,9 +5,11 @@
 ### Requirement: A rule-pack ID is one bounded literal token
 
 `rulepack.ValidateID` SHALL accept a rule-pack ID of 1 to 246 bytes in which every byte matches `[A-Za-z0-9_=-]`, and
-SHALL refuse every other value without trimming, folding or otherwise normalizing it. A value that is not one literal
-NATS KV token SHALL be refused with natsclient's classified `kv_token_invalid` error wrapped. `PackIDCharset` and
-`MaxPackIDBytes` SHALL state the same alphabet and bound.
+SHALL refuse every other value without trimming, folding or otherwise normalizing it. The checks run in order:
+required, then length, then token, then alphabet. A nonempty value within the bound that is not one literal NATS KV
+token SHALL be refused with natsclient's classified `kv_token_invalid` error wrapped; an empty or overlength value is
+refused by the required or length check first, without that code. `PackIDCharset` and `MaxPackIDBytes` SHALL state
+the same alphabet and bound.
 
 #### Scenario: Boundary IDs are accepted unchanged
 
@@ -24,3 +26,8 @@ NATS KV token SHALL be refused with natsclient's classified `kv_token_invalid` e
 
 - **WHEN** `ValidateID` receives `pack.one`
 - **THEN** the error unwraps to a classified error with code `kv_token_invalid`
+
+#### Scenario: Required and length refusals come first
+
+- **WHEN** `ValidateID` receives an empty ID, or a 247-byte ID made of 246 alphabet bytes and a dot
+- **THEN** each is refused, and neither error unwraps to a classified error with code `kv_token_invalid`

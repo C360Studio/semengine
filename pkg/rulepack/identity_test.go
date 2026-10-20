@@ -100,3 +100,32 @@ func TestValidateIDKVTokenRefusal(t *testing.T) {
 		t.Fatalf("code = %q, want %q", classified.Code, "kv_token_invalid")
 	}
 }
+
+// TestValidateIDRefusalPrecedence checks the spec's check order: an empty ID
+// and an overlength ID are refused by the required and length checks before
+// the KV-token check runs, so neither carries the classified kv_token_invalid
+// error even though neither is a valid literal KV token.
+func TestValidateIDRefusalPrecedence(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		packID  string
+		wantErr string
+	}{
+		{name: "empty", packID: "", wantErr: "pack_id is required"},
+		{name: "overlength with dot", packID: strings.Repeat("a", MaxPackIDBytes) + ".", wantErr: "maximum is 246"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := ValidateID(test.packID)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("ValidateID(%q) error = %v, want substring %q", test.packID, err, test.wantErr)
+			}
+			var classified *errs.ClassifiedError
+			if errors.As(err, &classified) {
+				t.Fatalf("ValidateID(%q) error = %v, want no classified error before the token check", test.packID, err)
+			}
+		})
+	}
+}

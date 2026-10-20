@@ -37,8 +37,9 @@ Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). Pre-owner design review: PAS
   `one literal KV token`).
 - **Spec** (Q2): new capability `rule-pack-identity`, one requirement carried from pin `graph-events/spec.md:65-66`
   restricted to `ValidateID`: 1–246 bytes matching `^[A-Za-z0-9_=-]+$`, refused without normalization otherwise; a
-  non-KV-token value carries natsclient's `kv_token_invalid` code. The duplicate and static-reload clauses stay with
-  `service` and `processor/rule`.
+  nonempty, in-bound non-KV-token value carries natsclient's `kv_token_invalid` code, while empty and overlength
+  values fail the required and length checks first without it (Codex, review record on PR #337, MEDIUM; the pin's
+  order, kept). The duplicate and static-reload clauses stay with `service` and `processor/rule`.
 - `t.Parallel` stays: the rule bans it only in integration-tagged files (tree precedent
   `natsclient/kv_key_contract_test.go`). Public-package rule: `ValidateID(string) error` names no `internal/` type.
 - ADRs: ADR-076 decision 4 binds. Its grammar, bound and one-token clauses are kept unchanged here. Its duplicate
@@ -73,7 +74,9 @@ accepted bytes, so its assertions are shown to run.
 
 `TestValidateID` (pin, unchanged); new `TestValidateIDEveryByte`, `TestValidateIDBounds` (literals 246 and 247), and
 `TestValidateIDKVTokenRefusal` (`pack.one` gives a `*errs.ClassifiedError` with `Code` `kv_token_invalid` via
-`errors.As`). Predicted detections: M1 delete the length check (pin `:33-38`), M2 `>` to `>=` `:33`, M3 246 to 247
+`errors.As`) and `TestValidateIDRefusalPrecedence` (an empty ID and a 247-byte dotted ID carry no such error, the
+Codex MEDIUM on PR #337). Predicted detections: M1 delete the length check (pin `:33-38`), M2 `>` to `>=` `:33`, M3
+246 to 247
 `:21`, M4 delete the empty check `:30-32`, M5 delete the KV call `:39-44`, M6 `%w` to `%v` `:43`, M7 add `/` as
 `[A-Za-z0-9_=/-]` (not after `-`: that spelling makes the invalid range `=-/`, panics at init and is inconclusive),
 M8 drop `=` from it, M9 delete the pattern check, M10 drop `$` from the pattern. Predicted survivor:
@@ -93,8 +96,10 @@ S1 the `/` message reworded (anything keeping `invalid pack_id`). At the pin, `T
   contract: >-
     03B retained-contract-matrix row (design.md:716, "rule-pack IDs validated by one contract package"): the ID
     validation stays here; binding projection contracts at boot is service's (rule_pack_bind.go). ValidateID
-    accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing; a value that is
-    not one literal NATS KV token is refused with natsclient's kv_token_invalid error wrapped; PackIDCharset and
+    accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing, checking
+    required, length, token, then alphabet; a nonempty value within the bound that is not one literal NATS KV
+    token is refused with natsclient's kv_token_invalid error wrapped (empty and overlength values fail the
+    earlier checks without that code); PackIDCharset and
     MaxPackIDBytes are the grammar and bound the rule processor's schema publishes (pin ADR-076 decision 4); stated
     as the rule-pack-identity spec
   dependencies_and_side_effects: natsclient (ValidateKVLiteralToken), fmt, regexp; no goroutine, no I/O
@@ -108,7 +113,7 @@ S1 the `/` message reworded (anything keeping `invalid pack_id`). At the pin, `T
     rule-pack.<pack_id> reworded; no importer until service or processor/rule lands
   proving_tests: >-
     pkg/rulepack/identity_test.go (TestValidateID, TestValidateIDEveryByte, TestValidateIDBounds,
-    TestValidateIDKVTokenRefusal)
+    TestValidateIDKVTokenRefusal, TestValidateIDRefusalPrecedence)
   owner: port-rulepack developer
   disposition: adapt
 ```

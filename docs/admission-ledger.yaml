@@ -2732,8 +2732,10 @@
   contract: >-
     03B retained-contract-matrix row (design.md:716, "rule-pack IDs validated by one contract package"): the ID
     validation stays here; binding projection contracts at boot is service's (rule_pack_bind.go). ValidateID
-    accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing; a value that is
-    not one literal NATS KV token is refused with natsclient's kv_token_invalid error wrapped; PackIDCharset and
+    accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing, checking
+    required, length, token, then alphabet; a nonempty value within the bound that is not one literal NATS KV
+    token is refused with natsclient's kv_token_invalid error wrapped (empty and overlength values fail the
+    earlier checks without that code); PackIDCharset and
     MaxPackIDBytes are the grammar and bound the rule processor's schema publishes (pin ADR-076 decision 4); stated
     as the rule-pack-identity spec
   dependencies_and_side_effects: natsclient (ValidateKVLiteralToken), fmt, regexp; no goroutine, no I/O
@@ -2747,6 +2749,6 @@
     rule-pack.<pack_id> reworded; no importer until service or processor/rule lands
   proving_tests: >-
     pkg/rulepack/identity_test.go (TestValidateID, TestValidateIDEveryByte, TestValidateIDBounds,
-    TestValidateIDKVTokenRefusal)
+    TestValidateIDKVTokenRefusal, TestValidateIDRefusalPrecedence)
   owner: port-rulepack developer
   disposition: adapt

@@ -51,8 +51,8 @@ func TestBuildFromDeclarationsConnectsDeclaredPorts(t *testing.T) {
 			})
 			require.NoError(t, err)
 			assert.Equal(t, []FlowEdge{{
-				From:         ComponentPortRef{ComponentName: "pub", PortName: "out"},
-				To:           ComponentPortRef{ComponentName: "sub", PortName: "in"},
+				From:         ComponentPortRef{ComponentName: "pub", PortName: "out", Direction: component.DirectionOutput},
+				To:           ComponentPortRef{ComponentName: "sub", PortName: "in", Direction: component.DirectionInput},
 				Pattern:      component.PatternStream,
 				ConnectionID: tt.want,
 			}}, graph.GetEdges())
@@ -96,8 +96,8 @@ func TestTailWildcardNeedsATrailingToken(t *testing.T) {
 	t.Run("one trailing token", func(t *testing.T) {
 		graph := build(t, "events.created")
 		assert.Equal(t, []FlowEdge{{
-			From:         ComponentPortRef{ComponentName: "publisher", PortName: "out"},
-			To:           ComponentPortRef{ComponentName: "subscriber", PortName: "in"},
+			From:         ComponentPortRef{ComponentName: "publisher", PortName: "out", Direction: component.DirectionOutput},
+			To:           ComponentPortRef{ComponentName: "subscriber", PortName: "in", Direction: component.DirectionInput},
 			Pattern:      component.PatternStream,
 			ConnectionID: "events.created",
 		}}, graph.GetEdges())
@@ -402,4 +402,36 @@ func TestRefusalsNameNoInternalFunction(t *testing.T) {
 			assert.EqualError(t, err, tt.want)
 		})
 	}
+}
+
+// TestRequestEdgesKeepSameNamedLanesApart — component a names a request input
+// and a request output alike ("q", on svc.q); b's request output "r" on svc.*
+// reaches both: as a requester of a's input, and as a peer of a's output (two
+// outputs on matching subjects). They are two ports, so they are two edges;
+// keyed without the direction (#346) the second was merged into the first.
+func TestRequestEdgesKeepSameNamedLanesApart(t *testing.T) {
+	request := func(name string, direction component.Direction, subject string) component.Port {
+		return component.Port{Name: name, Direction: direction, Config: component.NATSRequestPort{Subject: subject}}
+	}
+	graph, err := BuildFromDeclarations([]component.Declaration{
+		declaration(t, "a",
+			[]component.Port{request("q", component.DirectionInput, "svc.q")},
+			[]component.Port{request("q", component.DirectionOutput, "svc.q")}),
+		declaration(t, "b", nil, []component.Port{request("r", component.DirectionOutput, "svc.*")}),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, []FlowEdge{
+		{
+			From:         ComponentPortRef{ComponentName: "b", PortName: "r", Direction: component.DirectionOutput},
+			To:           ComponentPortRef{ComponentName: "a", PortName: "q", Direction: component.DirectionInput},
+			Pattern:      component.PatternRequest,
+			ConnectionID: "svc.q",
+		},
+		{
+			From:         ComponentPortRef{ComponentName: "b", PortName: "r", Direction: component.DirectionOutput},
+			To:           ComponentPortRef{ComponentName: "a", PortName: "q", Direction: component.DirectionOutput},
+			Pattern:      component.PatternRequest,
+			ConnectionID: "svc.q",
+		},
+	}, graph.GetEdges())
 }

@@ -83,8 +83,8 @@ func TestDeclareReturnsTheAdmittedDeclarationWithoutConstructing(t *testing.T) {
 		len(declared.OutputFacts) != 2 {
 		t.Fatalf("declared outputs = %+v, want state and listener with their facts", declared.OutputPorts)
 	}
-	if want := []string{"tcp:127.0.0.1:8080"}; !reflect.DeepEqual(declared.ExclusiveResources, want) {
-		t.Fatalf("exclusive resources = %v, want %v", declared.ExclusiveResources, want)
+	if got := declared.OutputFacts[1].ResourceID(); got != "tcp:127.0.0.1:8080" {
+		t.Fatalf("listener resource = %q, want tcp:127.0.0.1:8080", got)
 	}
 
 	_, err = f.registry.CreateComponent("worker", config, declarationTestDeps(), nil)

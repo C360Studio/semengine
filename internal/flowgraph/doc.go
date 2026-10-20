@@ -39,7 +39,8 @@
 // Subject matching is this package's own rule: `*` stands for one token and
 // `>` for one or more trailing tokens, and either side of a pair may hold the
 // wildcard. [SubjectCovers] answers the one-way question of whether a filter
-// covers every subject a pattern can name.
+// covers every subject a pattern can name; [SubjectsOverlap] answers the
+// two-way question of whether any one subject matches both.
 //
 // # What the analysis reports
 //

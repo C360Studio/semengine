@@ -60,14 +60,32 @@ type Registration struct {
 // configured-but-unconstructed one. It carries no lifecycle, health,
 // readiness, grouping, or orchestration state.
 type Declaration struct {
-	InstanceName       string
-	FactoryIdentity    string
-	ComponentType      types.ComponentType
-	InputPorts         []Port
-	OutputPorts        []Port
-	InputFacts         []PortFacts
-	OutputFacts        []PortFacts
-	ExclusiveResources []string
+	InstanceName    string
+	FactoryIdentity string
+	ComponentType   types.ComponentType
+	InputPorts      []Port
+	OutputPorts     []Port
+	InputFacts      []PortFacts
+	OutputFacts     []PortFacts
+}
+
+// ConflictWith returns nil when no exclusive claim of d clashes with an
+// exclusive claim of held, under the rule admission applies. Otherwise it
+// returns a plain error naming the first clash: held's claims are visited in
+// turn and, for each, d's, each side inputs first, then outputs, in
+// declaration order. CreateComponent refuses a candidate with this error, so
+// an offline check that calls it reports what admission would.
+func (d Declaration) ConflictWith(held Declaration) error {
+	claims := exclusiveClaims(d.InputFacts, d.OutputFacts)
+	for _, heldClaim := range exclusiveClaims(held.InputFacts, held.OutputFacts) {
+		for _, claim := range claims {
+			if claimsClash(claim, heldClaim) {
+				return fmt.Errorf("resource conflict: component '%s' claims %s, held by component '%s' as %s",
+					d.InstanceName, claim.ResourceID(), held.InstanceName, heldClaim.ResourceID())
+			}
+		}
+	}
+	return nil
 }
 
 // preparedComponent exists only between factory construction and boot
@@ -300,19 +318,17 @@ func declare(registration *Registration, instanceName string, config types.Compo
 	if err != nil {
 		return Declaration{}, fmt.Errorf("declared output ports: %w", err)
 	}
-	resources, err := exclusiveResources(instanceName, inputFacts, outputFacts)
-	if err != nil {
+	if err := checkSelfClash(instanceName, inputFacts, outputFacts); err != nil {
 		return Declaration{}, err
 	}
 	return Declaration{
-		InstanceName:       instanceName,
-		FactoryIdentity:    config.Name,
-		ComponentType:      config.Type,
-		InputPorts:         inputs,
-		OutputPorts:        outputs,
-		InputFacts:         inputFacts,
-		OutputFacts:        outputFacts,
-		ExclusiveResources: resources,
+		InstanceName:    instanceName,
+		FactoryIdentity: config.Name,
+		ComponentType:   config.Type,
+		InputPorts:      inputs,
+		OutputPorts:     outputs,
+		InputFacts:      inputFacts,
+		OutputFacts:     outputFacts,
 	}, nil
 }
 
@@ -577,17 +593,9 @@ func ValidateComponentName(name string) error {
 // claims clashes with a claim an admitted component holds. Holders are visited
 // in instance-name order, so the holder named is the same on every run.
 func (r *Registry) checkResourceConflictsLocked(candidate Declaration) error {
-	claims := exclusiveClaims(candidate.InputFacts, candidate.OutputFacts)
 	for _, holder := range slices.Sorted(maps.Keys(r.declarations)) {
-		held := r.declarations[holder]
-		for _, heldClaim := range exclusiveClaims(held.InputFacts, held.OutputFacts) {
-			for _, claim := range claims {
-				if claimsClash(claim, heldClaim) {
-					msg := fmt.Errorf("resource conflict: component '%s' claims %s, held by component '%s' as %s",
-						candidate.InstanceName, claim.ResourceID(), holder, heldClaim.ResourceID())
-					return errs.WrapInvalid(msg, "Registry", "checkResourceConflicts", "exclusive resource check")
-				}
-			}
+		if err := candidate.ConflictWith(r.declarations[holder]); err != nil {
+			return errs.WrapInvalid(err, "Registry", "checkResourceConflicts", "exclusive resource check")
 		}
 	}
 	return nil
@@ -604,40 +612,34 @@ func captureComponentDeclaration(
 	if err != nil {
 		return Declaration{}, err
 	}
-	resources, err := exclusiveResources(instanceName, inputFacts, outputFacts)
-	if err != nil {
+	if err := checkSelfClash(instanceName, inputFacts, outputFacts); err != nil {
 		return Declaration{}, err
 	}
 	return Declaration{
-		InstanceName:       instanceName,
-		FactoryIdentity:    config.Name,
-		ComponentType:      config.Type,
-		InputPorts:         inputs,
-		OutputPorts:        outputs,
-		InputFacts:         inputFacts,
-		OutputFacts:        outputFacts,
-		ExclusiveResources: resources,
+		InstanceName:    instanceName,
+		FactoryIdentity: config.Name,
+		ComponentType:   config.Type,
+		InputPorts:      inputs,
+		OutputPorts:     outputs,
+		InputFacts:      inputFacts,
+		OutputFacts:     outputFacts,
 	}, nil
 }
 
-// exclusiveResources lists, sorted, the exclusive resources a component's
-// ports claim, and refuses two of its own claims that clash: a socket that
-// both reads and writes is one port, not two (#324, #328).
-func exclusiveResources(instanceName string, inputFacts, outputFacts []PortFacts) ([]string, error) {
+// checkSelfClash refuses two exclusive claims of one component that clash: a
+// socket that both reads and writes is one port, not two (#324, #328).
+func checkSelfClash(instanceName string, inputFacts, outputFacts []PortFacts) error {
 	claims := exclusiveClaims(inputFacts, outputFacts)
-	resources := make([]string, 0, len(claims))
 	for i, claim := range claims {
 		for _, earlier := range claims[:i] {
 			if claimsClash(claim, earlier) {
 				msg := fmt.Errorf("resource conflict: component '%s' claims %s, held by another of its ports as %s",
 					instanceName, claim.ResourceID(), earlier.ResourceID())
-				return nil, errs.WrapInvalid(msg, "Registry", "exclusiveResources", "exclusive resource check")
+				return errs.WrapInvalid(msg, "Registry", "checkSelfClash", "exclusive resource check")
 			}
 		}
-		resources = append(resources, claim.ResourceID())
 	}
-	sort.Strings(resources)
-	return resources, nil
+	return nil
 }
 
 // exclusiveClaims returns the exclusive port facts, inputs first, then
@@ -705,7 +707,6 @@ func cloneComponentDeclaration(declaration Declaration) Declaration {
 	clone.OutputPorts = cloneResolvedPorts(declaration.OutputPorts)
 	clone.InputFacts = clonePortFactsSlice(declaration.InputFacts)
 	clone.OutputFacts = clonePortFactsSlice(declaration.OutputFacts)
-	clone.ExclusiveResources = append([]string(nil), declaration.ExclusiveResources...)
 	return clone
 }
 

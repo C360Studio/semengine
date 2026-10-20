@@ -59,7 +59,7 @@ func mutateDeclarationSnapshot(snapshot Declaration) {
 	jetstream.Subjects[0] = "events.mutated"
 	snapshot.OutputFacts[0].natsSubjects[0] = "facts.mutated"
 	snapshot.OutputFacts[0].stream.subjects[0] = "stream-facts.mutated"
-	snapshot.ExclusiveResources[0] = "tcp:mutated:1"
+	snapshot.OutputFacts[1].resourceID = "tcp:mutated:1"
 }
 
 func assertWorkerDeclarationUnchanged(t *testing.T, snapshot Declaration) {
@@ -84,8 +84,8 @@ func assertWorkerDeclarationUnchanged(t *testing.T, snapshot Declaration) {
 	if !ok || !reflect.DeepEqual(stream.Subjects(), []string{"events.created"}) {
 		t.Fatalf("stream fact subjects = %v, present=%v, want events.created", stream.Subjects(), ok)
 	}
-	if !reflect.DeepEqual(snapshot.ExclusiveResources, []string{"tcp:127.0.0.1:8080"}) {
-		t.Fatalf("exclusive resources = %v, want tcp:127.0.0.1:8080", snapshot.ExclusiveResources)
+	if got := facts[1].ResourceID(); got != "tcp:127.0.0.1:8080" {
+		t.Fatalf("listener resource = %q, want tcp:127.0.0.1:8080", got)
 	}
 }
 
@@ -496,7 +496,11 @@ func assertAdmittedBoth(t *testing.T, registry *Registry, row networkClaimRow) {
 	}
 	var resources []string
 	for _, declaration := range registry.Snapshots() {
-		resources = append(resources, declaration.ExclusiveResources...)
+		for _, facts := range slices.Concat(declaration.InputFacts, declaration.OutputFacts) {
+			if facts.IsExclusive() {
+				resources = append(resources, facts.ResourceID())
+			}
+		}
 	}
 	if want := []string{row.firstID, row.secondID}; !reflect.DeepEqual(slices.Sorted(slices.Values(resources)),
 		slices.Sorted(slices.Values(want))) {

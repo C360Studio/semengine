@@ -5,7 +5,9 @@ package model
 import (
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
+	"slices"
 	"sort"
 	"time"
 )
@@ -436,14 +438,16 @@ func (r *Registry) Validate() error {
 		return fmt.Errorf("at least one endpoint is required")
 	}
 
-	for name, ep := range r.Endpoints {
-		if err := validateEndpoint(name, ep); err != nil {
+	// Endpoints and capabilities are visited in name order, so the first
+	// error for a registry is the same on every call.
+	for _, name := range slices.Sorted(maps.Keys(r.Endpoints)) {
+		if err := validateEndpoint(name, r.Endpoints[name]); err != nil {
 			return err
 		}
 	}
 
-	for name, cap := range r.Capabilities {
-		if err := r.validateCapability(name, cap); err != nil {
+	for _, name := range slices.Sorted(maps.Keys(r.Capabilities)) {
+		if err := r.validateCapability(name, r.Capabilities[name]); err != nil {
 			return err
 		}
 	}

@@ -16,8 +16,9 @@ func documentConfig() *Config {
 }
 
 // captureStderr runs fn with os.Stderr pointed at a temporary file and returns
-// what fn wrote there. os.Stderr is process-global, so no test in this package
-// runs in parallel with it.
+// what fn wrote there. os.Stderr is process-global; this package's parallel
+// tests are top-level, and Go starts those only after every sequential test has
+// finished, so none overlaps the capture.
 func captureStderr(t *testing.T, fn func()) string {
 	t.Helper()
 	file, err := os.CreateTemp(t.TempDir(), "stderr")

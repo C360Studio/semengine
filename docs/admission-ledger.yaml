@@ -2654,7 +2654,8 @@
     pin they did; #326); (9) the network-bind refusal is removed, since component.Registry refuses every
     exclusive-address conflict at admission (one-exclusive-address-check, #324); (10) ComponentPortRef carries the
     port's Direction, and the orphan check keys ports by instance, direction and name, so a connected output never
-    marks a same-named input connected (port-composition, #346; the pin has the defect).
+    marks a same-named input connected, and a request port matching a same-named input and output gets two edges,
+    not one (port-composition, #346; the pin has the defect).
     BuildFromDeclarations refuses an empty or duplicate instance name, a port/fact count mismatch and a port
     with no connection identity, then derives edges: stream and request by wildcard subject match, recording
     the side without a wildcard, watch and read by exact bucket, store as fan-in from every provider to every

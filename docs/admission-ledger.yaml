@@ -2664,7 +2664,7 @@
   dependencies_and_side_effects: >-
     component, internal/graphmutation, pkg/errs (in-set); stdlib (cmp, fmt, maps, slices, strings); no goroutine, no I/O
   known_risks: >-
-    no importer until composition lands, whose port drops its IssueOptionalInterfaceUnused case; refusals are no
+    imported by composition (port-composition), whose port drops its IssueOptionalInterfaceUnused case; refusals are no
     longer errs-classified invalid
     (errs.IsInvalid is false; nothing at the pin reads the class); uncovered cases in notes/2.5.md
   proving_tests: >-
@@ -2777,4 +2777,63 @@
     pkg/rulepack/identity_test.go (TestValidateID, TestValidateIDEveryByte, TestValidateIDBounds,
     TestValidateIDKVTokenRefusal, TestValidateIDRefusalPrecedence)
   owner: port-rulepack developer
+  disposition: adapt
+
+# Change port-composition (PR #342, epic #9): composition ported as repair-before-port ahead of its boot importer,
+# service (owner rulings, #9 comments 6295357983 and 6295807962), with the pin ADR that governs it.
+
+- source_path: composition
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the one validator that judges a composition (the boot configuration's components against the factories a binary
+    registers) offline and at boot (pin ADR-100); read by service's component manager (pin
+    service/component_manager.go:389,402; component_manager_http.go:280,371,576) and composition/cli (change 7), both
+    admitted and ported later; semteams reflects composition.Result and Graph in its OpenAPI generator test
+  destination: composition
+  contract: >-
+    the composition-validation spec (port-composition change) and ADR-100 decisions 1-3: Validate is a pure function
+    of a component.Registry and a config.Config whose every judgment is a finding of the closed vocabulary; two
+    components whose exclusive claims clash give one exclusive_resource_conflict on the later in instance-name order,
+    whose message is component.Declaration.ConflictWith's error text, so the offline judgment is boot admission's
+    (#338); a component whose own claims clash gives port_declaration_error; Analyze, Catalog and Mermaid as at the
+    pin
+  dependencies_and_side_effects: >-
+    component, config, internal/flowgraph, types (in-set); stdlib (cmp, encoding/json, errors, fmt, slices, sort,
+    strings); no goroutine, no I/O, no context
+  known_risks: >-
+    dropped: assert.go (AssertValid imports testing from production code; owner ruling 1, products call Validate and
+    require an empty Errors list), assert_test.go, fmt_test.go (read only by assert_test.go) and
+    shipped_configs_test.go (its imports are not admitted; owner ruling 4 replaces it with an example-config test).
+    Changed from the pin: the exclusive check calls ConflictWith instead of comparing resource text, so four pairs
+    the pin admitted (http/websocket on one port, 0.0.0.0/::, UDP/udp, a wildcard and 127.0.0.1) are now findings;
+    a self-clash is a port_declaration_error, not the pin flowgraph's connection_pattern_error (#324); the
+    IssueOptionalInterfaceUnused case and the network-listener suggestion are gone with flowgraph's bind refusal and
+    interface heuristic; one edge comparator for the projection and Mermaid; portViews reads interfaceType;
+    displayNames drops udp, robotics, graph-processor and context-processor; comments citing deleted SemStreams
+    paths state the rule instead. Kept: declareInstance's pre-checks before Declare (dropping them means classifying
+    Declare's errors by text) and the index < len(facts) guards (#280 item 2, decided with service). No importer
+    until service lands
+  proving_tests: >-
+    composition/validate_test.go (TestValidateFindingsVocabularyIsClosed, TestValidateReportsExclusiveResourceConflict,
+    TestValidateIsDeterministic and the pin's tests), clash_test.go (TestValidateExclusiveClashMatchesAdmission,
+    TestValidateSelfClashIsPortDeclarationError), catalog_test.go (TestCatalogCarriesDefaultPortsOrRequiresConfig),
+    mermaid_test.go (TestMermaidIsDeterministic)
+  owner: port-composition developer
+  disposition: repair-before-port
+
+- source_path: docs/adr/100-compositions-are-validated-diagrams-are-projections.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record that makes a composition the boot configuration plus the catalog, port declarations static
+    facts, and one validator with one vocabulary offline and at boot; ported with composition, which it governs
+  destination: docs/adr/100-compositions-are-validated-diagrams-are-projections.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    port note added under the title: SemStreams issue numbers, documents and tasks; composition/cli and service's
+    component manager not yet ported; decision 5's packages never in SemEngine; the cited ADRs not ported; the
+    exclusive judgment now admission's (#338), with AssertValid dropped and the self-clash outcome changed at spec
+    level
+  proving_tests: n/a (task docs:check lints it)
+  owner: port-composition developer
   disposition: adapt

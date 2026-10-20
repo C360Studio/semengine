@@ -18,9 +18,9 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   `go test -race ./pkg/rulepack`, `go list -deps ./pkg/rulepack` naming no `config` or `types`, `task ledger:check`.
 - [x] 2.2 `task mutate:check` for M1-M10 (detections) and S1 (survivor recorded) in `notes/2.2.md`; `task verify`
   passes on a clean tree.
-- [ ] 2.3 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
+- [x] 2.3 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 
 ## 3. Close
 
-- [ ] 3.1 Archive (`openspec archive port-rulepack`) as the last content commit, syncing `rule-pack-identity` into
+- [x] 3.1 Archive (`openspec archive port-rulepack`) as the last content commit, syncing `rule-pack-identity` into
   `openspec/specs/`. Gate: `task spec:check` and `task docs:check`.

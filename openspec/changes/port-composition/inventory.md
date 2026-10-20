@@ -44,8 +44,9 @@ go1.26.4 darwin/arm64, package only. The lifecycle suite does not apply because 
 - Behaviour probe (a throwaway test in the pin copy, then removed) for two components on one port, counting
   `exclusive_resource_conflict` errors: `http:0.0.0.0:8080`/`websocket:0.0.0.0:8080` 0; `http:0.0.0.0`/`http:::` 0;
   `0.0.0.0`/`127.0.0.1` 0; `UDP`/`udp` 0; same text 1; `udp`/`http` on one port 0, which the registry also admits.
-  No other error finding is emitted in the five zero cases. The tree's registry refuses the first four
-  (`openspec/specs/component-registration/spec.md:149-200`).
+  No other error finding is emitted in the five zero cases. One component claiming the same text twice: no finding
+  (read from the pin code, `validate.go:58-64`; the tree's `Declare` refuses it). The tree's registry refuses the
+  first four (`openspec/specs/component-registration/spec.md:149-200`).
 
 ## Shape sweep (pin `composition`)
 
@@ -55,7 +56,7 @@ go1.26.4 darwin/arm64, package only. The lifecycle suite does not apply because 
       `component/registry.go:659` — `func claimsClash(a, b PortFacts) bool {`, with `component/port_facts.go:165` —
       `func (f NetworkFacts) clashes(other NetworkFacts) bool {`. **Required**: #338 (owner "Wanted"), probe above.
    b. Admission pre-checks: `validate.go:94-121` repeats name, entry, factory-name, unknown-factory and type checks
-      that `component/registry.go:256-282` (`Declare`) also runs, before calling `Declare` at `:125`. It exists so
+      that `component/registry.go:256-282` (`Declare`) also runs, before calling `Declare` at `:124`. It exists so
       each refusal gets its own finding type without reading error text. Optional.
    c. Edge order: `graph.go:103-121` and `mermaid.go:24-42` — the same six-key comparator. Optional.
    d. Interface type of a fact: `analyze.go:283-291` (`interfaceType`) and `graph.go:63-65`. Optional.
@@ -70,15 +71,17 @@ go1.26.4 darwin/arm64, package only. The lifecycle suite does not apply because 
      `internal/harness/natsfixture` (`docs/admission-ledger.yaml:32-48`).
    - `catalog.go:38-46` `displayNames` names 7 factories. `robotics`, `graph-processor` and `context-processor` have
      no factory at the pin (`grep -rn 'Name: *"<n>"'`: 0 each). `udp` is `input/udp`, which is not admitted. Optional.
-   - Text describing behaviour no code implements once ported over `internal/flowgraph`: `analyze.go:50` —
+   - Text describing behaviour no code implements once ported over `internal/flowgraph`: `analyze.go:49` —
      `"Give each network listener its own address",` and `findings.go:24` — `(network binding or KV writer
      conflicts, ...)`. Flowgraph's network-bind refusal was removed (ledger `:2650`, item 9). **Required** under
      surface audit (c). `analyze.go:195` — `case flowgraph.IssueOptionalInterfaceUnused:` does not compile on the
      tree (ledger item 6), so **required**. `findings.go:66-68` and `analyze.go:212` cite deleted SemStreams paths.
      Optional.
-   - Type change: `validate.go:116` — `if registration.Type != string(entry.Type) {` and `catalog.go:67` —
-     `Type: registration.Type,`. In the tree, `Registration.Type` is `types.ComponentType`
-     (`component/registry.go:47`), a compile adapt.
+   - Type change: `validate.go:111` — `if registration.Type != string(entry.Type) {`, `catalog.go:67` —
+     `Type: registration.Type,` and `catalog.go:72` — `Category: registration.Type`. In the tree,
+     `Registration.Type` is `types.ComponentType` (`component/registry.go:47`), a compile adapt. A
+     `go build -overlay` of the pin files onto the tree (import paths rewritten, nothing written) gives exactly four
+     errors: `analyze.go:195`, `catalog.go:67`, `catalog.go:72`, `validate.go:111`.
    - Parallel port and fact lists: `analyze.go:145` — `if index >= len(declaration.InputFacts) {`, `:284`,
      `graph.go:61`. Guards for the shape #280 item 2 describes; that decision is left to the `service` port.
 5. Classification by error text: none (`err.Error()` only builds messages, at `validate.go:34,86`, `analyze.go:47`
@@ -169,11 +172,21 @@ land in any order relative to this one.
 Admit-or-refuse at a seam, as an offline prediction of boot admission. The closest instance in the tree is
 `component/registry.go:578` — `func (r *Registry) checkResourceConflictsLocked(candidate Declaration) error {`,
 which uses `claimsClash` `:659`, and `exclusiveResources` `:626` (refuses within one component, so `Declare`
-already refuses a component that clashes with itself). On the tree, a self-clash therefore surfaces as
-`port_declaration_error`, not `exclusive_resource_conflict` as at the pin. No other reader would adopt an exported
+already refuses a component that clashes with itself). At the pin a self-clash yields no finding (the pin's
+`component/registry.go:763-772` only sorts and compacts the claim text, and `composition/validate.go:58-64` checks
+`claimed` before adding the component's own claims); on the tree it is `port_declaration_error`, an outcome that
+changes from the pin. No other reader would adopt an exported
 clash rule: flowgraph dropped its bind refusal (#324), and the pin's `service` reads no `ExclusiveResources`. No
-collision table is needed (no durable, communication or coordination primitive). No intent check is needed (no
-boundary moves).
+collision table is needed for the clash rule.
+
+For #16's refusal (a stream filter covering a reserved request subject) the tree already has: the matcher
+`internal/flowgraph/flowgraph.go:275` `SubjectCovers`, which pin composition already calls at `analyze.go:125`; the
+reserved subjects `graph.QueryVerbs()` (`graph/query_verbs.go:25`) and `graphmutation.SubjectFamily`
+(`internal/graphmutation/protocol.go:18`), which composition must read, never spell (literal-spelling guard
+`internal/harness/contract/reservedsubjects_test.go:43`, current spec
+`openspec/specs/graph-transport-boundary/spec.md:11`, where 04A `:478` puts the refusal scenarios); and the stream
+type `config/streams.go:57` `StreamConfigs`. No further collision table is needed (no durable, communication or
+coordination primitive). No intent check is needed (no boundary moves).
 
 ## Adopter seam
 
@@ -214,8 +227,9 @@ How the clash rule reaches `composition`, and what each option changes in `compo
    `Validate` and check the error list), keep it only for SemEngine's own tests, or add a named exception to the
    rule?
 2. The approved plan puts a second check into `composition` in this change: refuse a JetStream stream whose subjects
-   would capture the graph's request subjects (#16). The contract says this PR must carry it, which makes it bigger.
-   Confirm it rides here, or rule that it waits for its own PR.
+   would capture the graph's request subjects (#16). The approved plan already says so (03B D11 `:481`, 04A `:421`,
+   ruling (g) `:724`), which makes this PR bigger. The question is only whether to waive that for this PR and give
+   the check its own PR.
 3. Once composition uses the registry's clash rule, nothing reads the resource-text list on a component
    declaration. Remove it in this PR (a small change to `component`) or file it?
 4. The pin's test that every shipped config validates cannot be ported because its imports are not admitted.

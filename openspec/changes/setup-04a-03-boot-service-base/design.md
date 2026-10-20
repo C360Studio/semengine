@@ -13,8 +13,9 @@ included). Size: 1,475 non-test pin lines (inventory § 2.3 row 1), under the ~3
   changes one of its decisions. Step 4 (`058:392-400`, `pprof.go:12`) keeps "pprof is deliberately NOT a
   service.Service, started early before NATS" and drops "fire-and-forget": the owner's ruling and the
   `background-work` spec give it a stop (D3). The port note also records: its ownership sections are superseded by
-  pin ADR-091; its "Terminal shutdown remains Start-owned" by ADR-113; its `Service` listing (`058:41-42`,
-  `Stop(timeout)`, `RegisterMetrics`) is not this tree's (D1, D2); `internal/boot` and the mains are not ported.
+  pin ADR-091; its run context derived from Start's (the worked example, `058:232`) by ADR-113; its `Service`
+  listing (`058:41-42`, `Stop(timeout)`, `RegisterMetrics`) is not this tree's (D1, D2); `internal/boot` and the
+  mains are not ported.
 - Pin ADR-095 is not carried here. Its subject is owners of JetStream consumers; it comes with the component manager
   (PR 3), with ADR-094 and ADR-096. Its "a deadline is ... not authority for later running-generation rejoin"
   (`095:30`) is superseded here by ADR-113 (D2).

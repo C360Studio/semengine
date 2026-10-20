@@ -2803,7 +2803,7 @@
     instead of printing it, and stops through Shutdown (owner 2026-10-20); NewConfigSchema keeps a Category set on
     the outer PropertySchema field, which the pin dropped (fixed in the port). Retained: pprof listens on all
     interfaces; GetAllOpenAPISpecs copies the map but shares the registered spec pointers; letter-case variants of
-    service config keys are accepted until PR 2 adopts config's checker (task 3.3 files the issue);
+    service config keys are accepted until PR 2 adopts config's checker (tracked on #344);
     service_configs.go, schema.go and openapi.go are byte-equal to the pin
   proving_tests: service/*_test.go, service/*_integration_test.go
   owner: setup-04a-03-boot-service-base developer

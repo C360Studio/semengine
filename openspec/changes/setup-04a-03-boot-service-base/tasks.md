@@ -32,23 +32,25 @@ Each task names its outcome and the gate that proves it. This change ports `Base
   `go test -tags integration ./service/` pass, `TestBaseServicePassesTheLifecycleSuite` and
   `TestPProfShutdownWaitsForAnInFlightRequest` included; `go build ./...`; `task verify` passes on a clean tree
   (review stop).
-- [ ] 2.3 Sensitivity: each mutant D6 lists makes its named test fail and the revert makes it pass, through
+- [x] 2.3 (`5afe8df`) Sensitivity: each mutant D6 lists makes its named test fail and the revert makes it pass, through
   `task mutate:check` for the unit tests and by hand with `-tags integration` for the retention mutant (#129),
   recorded in `notes/2.3.md`. Gate: `task verify` passes on a clean tree.
 
 ## 3. Text, ledger, coverage, guidance (D7)
 
-- [ ] 3.1 `service/doc.go` and `service/README.md` for this surface, with the contract lines D1 and D3 name (the
+- [x] 3.1 (`e098058`)
+  `service/doc.go` and `service/README.md` for this surface, with the contract lines D1 and D3 name (the
   embedding calls, `MaybeStartPProf` then `Shutdown` with a fresh bounded context, `WireGraphRuntime`). Pin ADR-058
   in `docs/adr/` with its port note (design, Decision records). Gate: `go doc ./service` lists only the kept surface;
   `task docs:check`.
-- [ ] 3.2 The `service` and ADR-058 ledger rows; the `docs/repository-map.md` row; `"service merged"` in
+- [x] 3.2 (`0230775`) The `service` and ADR-058 ledger rows; the `docs/repository-map.md` row; `"service merged"` in
   `scripts/cover-check.sh`; the OpenAPI-registry sentences in `.agents/contracts/semengine-developer.md` and
   `semengine-reviewer.md`. Gate: `task verify` passes on a clean tree, which runs `ledger:check`, `cover:check`
   (`service` at or above 80%, the number recorded on the PR) and `docs:check` (review stop).
-- [ ] 3.3 File the follow-up issue for PR 2: refuse letter-case variants in service configuration payloads through
-  `config`'s checker (D5), linked from the PR without a closing keyword; comment on #195 that `service`'s shared
-  client is replaced. Gate: the issue and comment read back.
+- [x] 3.3 The follow-up for PR 2 (refuse letter-case variants in service configuration payloads through `config`'s
+  checker, D5) is recorded on the earlier claim #344 (comment 6301408420) instead of a new issue, linked from the PR
+  without a closing keyword; #195 told that `service`'s shared client is replaced (comment 6301408803). Gate: both
+  comments read back.
 
 ## 4. Verify, review and close
 

@@ -6,8 +6,8 @@ Each task ends when its gate passes; 2.4 ends when `task verify` passes on a cle
 
 - [ ] 1.1 Inventory passed, design reviewed, and accepted by the owner, with answers to the three owner questions.
   Hold: owner acceptance on #328. Gate: `task spec:check`.
-- [ ] 1.2 The probe (`notes/probe.md`: source, commands, versions, output) posted as a comment on PR #332. Gate: the
-  comment URL recorded here.
+- [x] 1.2 The probe (`notes/probe.md`: source, commands, versions, output) posted as a comment on PR #332. Gate: the
+  comment URL recorded here: https://github.com/C360Studio/semengine/pull/332#issuecomment-6290561084
 
 ## 2. Implement
 

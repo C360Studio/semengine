@@ -616,3 +616,42 @@ func TestBucketIsNamedByTheDeclaredPair(t *testing.T) {
 	require.Equal(t, first.GetConfig().Get().Platform.ID, clone.GetConfig().Get().Platform.ID,
 		"a clone adopts the recorded authority instead of minting a second one")
 }
+
+// TestOtherKeyWriteDoesNotSuppressAnExternalUpdate: an external writer puts services.external at
+// revision N, and before its watch event is processed a local PutComponentToKV writes another key
+// at N+1. The external event must still apply. The watch event is delivered by calling
+// handleUpdate after the local write, the order the watcher's queue can produce, with no timing.
+//
+// spec: config-manager / Component writes are next-boot desired state
+func TestOtherKeyWriteDoesNotSuppressAnExternalUpdate(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	manager, err := NewConfigManager(identityTestConfig("acme", "revision"), tc, nil)
+	require.NoError(t, err)
+	acquireAndPublish(t, ctx, manager)
+
+	value, err := json.Marshal(types.ServiceConfig{Enabled: true})
+	require.NoError(t, err)
+	externalRev, err := mustStore(t, manager).Put(ctx, "services.external", value)
+	require.NoError(t, err)
+	require.NoError(t, manager.PutComponentToKV(ctx, "local",
+		types.ComponentConfig{Type: "input", Name: "local", Enabled: true}))
+
+	manager.handleUpdate("services.external", value, externalRev)
+	require.Contains(t, manager.GetConfig().Get().Services, "external",
+		"a local write to another key must not suppress an external update")
+
+	// The same key keeps its protection: the local write's own event, delivered late, does not
+	// overwrite a newer external write to that key the watcher already applied.
+	local, err := mustStore(t, manager).Get(ctx, "components.local")
+	require.NoError(t, err)
+	newer, err := json.Marshal(types.ComponentConfig{Type: "output", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	newerRev, err := mustStore(t, manager).Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	manager.handleUpdate("components.local", newer, newerRev)
+	manager.handleUpdate("components.local", local.Value, local.Revision)
+	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
+		"a late event for a key must not overwrite a newer applied revision of it")
+}

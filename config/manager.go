@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
@@ -74,23 +73,18 @@ type Manager struct {
 	// (ADR-113). Only the cancel is kept, never the context.
 	cancel context.CancelFunc
 
-	// engineHighWaterRev is the highest KV revision the Manager has
-	// produced via its own write methods (PutComponentToKV,
-	// DeleteComponentFromKV, pushToKV). The watcher's handleUpdate
-	// skips events whose revision is <= this watermark, because
-	// those events come from in-process engine writes that have
-	// ALREADY been applied synchronously to in-memory state.
-	//
-	// Without this guard, the watcher's async processing of queued
-	// KV events can override the Manager's recent in-memory desired-state
-	// writes — for example, an older PUT processed after a later DELETE can
-	// reinsert a component into the next-boot configuration view.
-	//
-	// NATS KV revisions are bucket-monotonic, so a single per-bucket
-	// watermark is sufficient. External writers (UI, other processes)
-	// produce events at revisions strictly greater than the watermark
-	// at the time they wrote, so their events apply normally.
-	engineHighWaterRev atomic.Uint64
+	// revMu guards appliedRev and serializes applying a revisioned entry with
+	// recording it.
+	revMu sync.Mutex
+	// appliedRev holds, per key, the highest KV revision applied to the
+	// in-memory configuration: by the Manager's own writes (PutComponentToKV,
+	// pushToKV) and by watcher events. handleUpdate skips re-applying an event at
+	// or below its key's revision, so an older event the watcher delivers late
+	// cannot override a newer write to the same key. The revision is kept per
+	// key, never bucket-wide: a write to one key must not suppress another key's
+	// event at a lower revision, such as an external writer's update still queued
+	// behind it (PR #329 Codex review; the pin kept one watermark for the bucket).
+	appliedRev map[string]uint64
 }
 
 // platformIdentityKVKey is the key in the configuration bucket holding
@@ -143,6 +137,7 @@ func NewConfigManager(cfg *Config, natsClient *natsclient.Client, logger *slog.L
 		config:      NewSafeConfig(cfg),
 		natsClient:  natsClient,
 		subscribers: make(map[string][]chan update),
+		appliedRev:  make(map[string]uint64),
 		logger:      logger,
 	}
 	for _, opt := range opts {
@@ -376,6 +371,11 @@ func (cm *Manager) start(ctx context.Context) error {
 	if err := checkPushable(cm.config.Get()); err != nil {
 		return err
 	}
+	// Name each service and component as its key does, so the file, the bucket,
+	// the watches and the component writes agree on one name.
+	if err := cm.config.Mutate(nameByKey); err != nil && !errors.Is(err, errNoConfigChange) {
+		return err
+	}
 
 	// Acquire the configuration bucket under THIS context, and refuse a
 	// policy that could evict the identity established below.
@@ -560,25 +560,16 @@ func (cm *Manager) release(ctx context.Context) error {
 		}
 		cm.subscribers = make(map[string][]chan update)
 	}
+	if len(watchers) > 0 || cancel != nil {
+		// Stopping a watch deletes its consumer with a request nats.go v1.54.0
+		// bounds by its own timeout, not by ctx
+		// (TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied). The teardown
+		// therefore runs on a goroutine Stop waits on below under ctx: a Stop whose
+		// ctx ends first returns, and the next Stop waits for it again.
+		cm.goLocked(func() { cm.stopWatches(watchers, cancel) })
+	}
 	pending := slices.Clone(cm.workDone)
 	cm.mu.Unlock()
-
-	// Each watcher is stopped before the run context ends. Ending it also
-	// unsubscribes them, in the background (nats.go v1.54.0 js.go:2063-2068);
-	// stopping first makes this the unsubscribe that deletes each consumer, which
-	// TestManagerPassesTheLifecycleSuite counts on the server.
-	for _, watcher := range watchers {
-		if err := watcher.Stop(); err != nil {
-			// Logged, not returned, as at the pin (owner ruling Q4, #9 comment
-			// 6278986482): a second unsubscribe fails, so returning it would fail
-			// every later Stop.
-			cm.logger.Warn("Config watch did not stop; its consumer may remain on the server",
-				"bucket", cm.bucketName, "error", err)
-		}
-	}
-	if cancel != nil {
-		cancel()
-	}
 
 	for _, done := range pending {
 		select {
@@ -592,6 +583,32 @@ func (cm *Manager) release(ctx context.Context) error {
 	cm.workDone = nil
 	cm.mu.Unlock()
 	return nil
+}
+
+// stopWatches stops every watcher, all at once so the teardown waits for one
+// consumer delete rather than one per watch, and then ends the run context.
+//
+// Each watcher is stopped before the run context ends. Ending it also
+// unsubscribes them, in the background (nats.go v1.54.0 js.go:2063-2068);
+// stopping first makes this the unsubscribe that deletes each consumer, which
+// TestManagerPassesTheLifecycleSuite counts on the server.
+func (cm *Manager) stopWatches(watchers []jetstream.KeyWatcher, cancel context.CancelFunc) {
+	var wg sync.WaitGroup
+	for _, watcher := range watchers {
+		wg.Go(func() {
+			if err := watcher.Stop(); err != nil {
+				// Logged, not returned, as at the pin (owner ruling Q4, #9 comment
+				// 6278986482): a second unsubscribe fails, so returning it would fail
+				// every later Stop.
+				cm.logger.Warn("Config watch did not stop; its consumer may remain on the server",
+					"bucket", cm.bucketName, "error", err)
+			}
+		})
+	}
+	wg.Wait()
+	if cancel != nil {
+		cancel()
+	}
 }
 
 // processWatcher handles incoming KV updates from a specific watcher
@@ -617,42 +634,26 @@ func (cm *Manager) processWatcher(ctx context.Context, watcher jetstream.KeyWatc
 
 // handleUpdate processes a single configuration update.
 //
-// For an engine-owned revision (revision <= engineHighWaterRev) the
-// in-memory RE-APPLY is skipped — those events were generated by the
-// Manager's own write methods (PutComponentToKV, DeleteComponentFromKV,
-// pushToKV), which already applied the change to in-memory state
-// synchronously, so re-applying would (a) be redundant and (b) can
-// overwrite more recent desired-state writes when the watcher is lagging
-// behind a rapid PUT/DELETE sequence.
+// An event at or below the revision already applied for its key is not
+// re-applied in memory: the Manager's own write methods (PutComponentToKV,
+// pushToKV) applied it synchronously, or a newer write to the key already
+// landed, and re-applying from a lagging watcher would overwrite it.
 //
-// Subscribers are notified for BOTH Manager-owned and external events. The
-// skip suppresses only the in-memory re-apply, never durable desired-state
-// observation. A delete at revision N followed by a later Manager PUT can
-// raise the high-water above N; observers must still see that delete even
-// though no running component is reconciled from it.
-//
-// External writes (UI, other processes) produce revisions strictly
-// greater than the engine's watermark at the time they wrote, so they
-// apply normally.
+// Subscribers are notified for every event, re-applied or not. The skip
+// suppresses only the in-memory re-apply, never durable desired-state
+// observation.
 func (cm *Manager) handleUpdate(key string, value []byte, revision uint64) {
-	// Skip the in-memory RE-APPLY for events produced by our own writes
-	// (the engine already applied them synchronously; re-applying from the
-	// watcher's queue can override more recent engine state) — but STILL
-	// notify subscribers below so durable desired-state observers see it.
-	engineOwned := revision != 0 && revision <= cm.engineHighWaterRev.Load()
-	if engineOwned {
-		cm.logger.Debug("Skipping in-memory re-apply for engine-owned revision (still notifying subscribers)",
+	applied, err := cm.applyRevision(key, value, revision)
+	if err != nil {
+		cm.logger.Error("Failed to update configuration",
 			"key", key,
-			"revision", revision,
-			"high_water", cm.engineHighWaterRev.Load())
-	} else {
-		// Update internal configuration (external event).
-		if err := cm.updateConfig(key, value); err != nil {
-			cm.logger.Error("Failed to update configuration",
-				"key", key,
-				"error", err)
-			return
-		}
+			"error", err)
+		return
+	}
+	if !applied {
+		cm.logger.Debug("Skipping in-memory re-apply for an already-applied revision (still notifying subscribers)",
+			"key", key,
+			"revision", revision)
 	}
 
 	// Create update notification
@@ -725,20 +726,9 @@ func (cm *Manager) updateConfig(key string, value []byte) error {
 
 // applyConfigKey applies one KV entry to currentConfig, a SafeConfig.Mutate
 // draft. An empty value deletes. It returns errNoConfigChange for a key it
-// ignores.
+// ignores, before looking at the value: a key the Manager does not apply, such
+// as a registered key family's, holds bytes only its owner interprets.
 func applyConfigKey(currentConfig *Config, key string, value []byte) error {
-	// Validate JSON structure if value is not empty (deletion)
-	if len(value) > 0 {
-		// Check size limits
-		if len(value) > maxConfigSize {
-			return fmt.Errorf("config value too large: %d bytes > %d", len(value), maxConfigSize)
-		}
-		// Validate JSON depth to prevent DoS
-		if err := validateJSONDepth(value); err != nil {
-			return fmt.Errorf("invalid JSON structure in KV update: %w", err)
-		}
-	}
-
 	// Parse the key to determine what part of config to update
 	// Expected format: "services.metrics", "components.udp-sensor", etc.
 	parts := strings.Split(key, ".")
@@ -760,9 +750,9 @@ func applyConfigKey(currentConfig *Config, key string, value []byte) error {
 			if currentConfig.Services == nil {
 				currentConfig.Services = make(types.ServiceConfigs)
 			}
-			// Parse the value as ServiceConfig (already validated above)
+			// Parse the value as ServiceConfig
 			var svcConfig types.ServiceConfig
-			if err := json.Unmarshal(value, &svcConfig); err != nil {
+			if err := decodeConfigValue(value, &svcConfig); err != nil {
 				return fmt.Errorf("failed to parse service config: %w", err)
 			}
 			currentConfig.Services[serviceName] = svcConfig
@@ -778,9 +768,9 @@ func applyConfigKey(currentConfig *Config, key string, value []byte) error {
 		if len(value) == 0 {
 			delete(currentConfig.Components, componentName)
 		} else {
-			// Parse component config (already validated above)
+			// Parse component config
 			var compConfig types.ComponentConfig
-			if err := json.Unmarshal(value, &compConfig); err != nil {
+			if err := decodeConfigValue(value, &compConfig); err != nil {
 				return fmt.Errorf("parse component config: %w", err)
 			}
 			if currentConfig.Components == nil {
@@ -798,8 +788,8 @@ func applyConfigKey(currentConfig *Config, key string, value []byte) error {
 	// subscribers are still notified.
 
 	case "nats":
-		// Update NATS config (already validated above)
-		if err := json.Unmarshal(value, &currentConfig.NATS); err != nil {
+		// Update NATS config
+		if err := decodeConfigValue(value, &currentConfig.NATS); err != nil {
 			return fmt.Errorf("parse NATS config: %w", err)
 		}
 
@@ -808,7 +798,7 @@ func applyConfigKey(currentConfig *Config, key string, value []byte) error {
 			currentConfig.ModelRegistry = nil
 		} else {
 			var registry model.Registry
-			if err := json.Unmarshal(value, &registry); err != nil {
+			if err := decodeConfigValue(value, &registry); err != nil {
 				return fmt.Errorf("parse model_registry config: %w", err)
 			}
 			currentConfig.ModelRegistry = &registry
@@ -821,6 +811,19 @@ func applyConfigKey(currentConfig *Config, key string, value []byte) error {
 		return errNoConfigChange
 	}
 	return nil
+}
+
+// decodeConfigValue checks a stored value's size and JSON nesting, then decodes
+// it into dst.
+func decodeConfigValue(value []byte, dst any) error {
+	if len(value) > maxConfigSize {
+		return fmt.Errorf("config value too large: %d bytes > %d", len(value), maxConfigSize)
+	}
+	// Validate JSON depth to prevent DoS
+	if err := validateJSONDepth(value); err != nil {
+		return fmt.Errorf("invalid JSON structure in KV update: %w", err)
+	}
+	return json.Unmarshal(value, dst)
 }
 
 // errNoConfigChange is returned by an updateConfig mutation for an ignored
@@ -856,9 +859,9 @@ func sectionKey(section, name string) (string, error) {
 // The removal is also applied synchronously to the Manager's current
 // desired-state view. It does not tear down or otherwise change the running
 // ComponentManager; composition changes only on process restart. The NATS API
-// does not expose the Delete revision, so this path cannot bump the watermark.
-// Its watcher event either reapplies the idempotent delete or skips a redundant
-// reapply after a later Manager write, while still notifying observers.
+// does not expose the Delete revision, so this path records none. Its watcher
+// event either reapplies the idempotent delete or, after a later write to the
+// same key, skips a redundant reapply, while still notifying observers.
 func (cm *Manager) DeleteComponentFromKV(ctx context.Context, name string) error {
 	key, err := sectionKey("components", name)
 	if err != nil {
@@ -888,28 +891,32 @@ func (cm *Manager) DeleteComponentFromKV(ctx context.Context, name string) error
 	return nil
 }
 
-// bumpEngineHighWater raises the engine watermark to `rev` using a
-// CAS loop. Used by every Manager write path that captures a KV
-// revision (PutComponentToKV, pushToKV). The CAS-max pattern lets
-// concurrent writers all converge to the highest observed revision
-// without losing updates.
-//
-// Callers that don't know the revision (e.g. Delete, whose
-// underlying API discards it) simply skip the bump — see the
-// DeleteComponentFromKV doc-comment for why the watermark still
-// produces the correct end-state even without tracking deletes.
-func (cm *Manager) bumpEngineHighWater(rev uint64) {
-	if rev == 0 {
-		return
+// applyRevision applies key's value at revision to the in-memory configuration
+// and records the revision, unless a revision of key at or above it has already
+// been applied. Revision 0 (unknown) always applies and records nothing. It
+// reports whether it applied.
+func (cm *Manager) applyRevision(key string, value []byte, revision uint64) (bool, error) {
+	cm.revMu.Lock()
+	defer cm.revMu.Unlock()
+	if revision != 0 && revision <= cm.appliedRev[key] {
+		return false, nil
 	}
-	for {
-		current := cm.engineHighWaterRev.Load()
-		if rev <= current {
-			return
-		}
-		if cm.engineHighWaterRev.CompareAndSwap(current, rev) {
-			return
-		}
+	if err := cm.updateConfig(key, value); err != nil {
+		return false, err
+	}
+	if revision != 0 {
+		cm.appliedRev[key] = revision
+	}
+	return true, nil
+}
+
+// recordRevision records that key's value at revision is already in memory, as
+// after a push of the in-memory configuration.
+func (cm *Manager) recordRevision(key string, revision uint64) {
+	cm.revMu.Lock()
+	defer cm.revMu.Unlock()
+	if revision > cm.appliedRev[key] {
+		cm.appliedRev[key] = revision
 	}
 }
 
@@ -917,7 +924,8 @@ func (cm *Manager) bumpEngineHighWater(rev uint64) {
 // This is more efficient than a full push when only one component has changed,
 // and avoids race conditions with KV watchers when multiple operations are in flight.
 //
-// The method performs write KV → apply desired state in memory → bump watermark.
+// The method performs write KV → apply desired state in memory and record the
+// key's revision.
 // It records a component candidate for the next process start; it does not add
 // or restart a component in the running ComponentManager. The revision returned
 // by KV.Put lets handleUpdate skip the redundant reapply while still notifying
@@ -941,11 +949,11 @@ func (cm *Manager) PutComponentToKV(ctx context.Context, name string, compConfig
 		return fmt.Errorf("put component %s to KV: %w", name, err)
 	}
 	// Apply the next-boot desired state synchronously; the watcher can skip its
-	// redundant reapply while the current runtime remains unchanged.
-	if err := cm.updateConfig(key, data); err != nil {
+	// redundant reapply while the current runtime remains unchanged. A newer
+	// revision of the key the watcher already applied is kept.
+	if _, err := cm.applyRevision(key, data, rev); err != nil {
 		return fmt.Errorf("apply component %s in memory: %w", name, err)
 	}
-	cm.bumpEngineHighWater(rev)
 	cm.logger.Debug("Put component to KV", "component", name, "key", key, "revision", rev)
 	return nil
 }
@@ -964,17 +972,57 @@ func checkPushable(cfg *Config) error {
 	return err
 }
 
+// nameByKey re-keys cfg's services and components by the name their key holds,
+// each space written as '_' (sectionKey): the name a later boot reads back from
+// the bucket and the watcher and component writes apply. checkPushable has
+// already refused two names that map to one key. It returns errNoConfigChange
+// when no name changes.
+func nameByKey(cfg *Config) error {
+	changed := false
+	for name, svc := range cfg.Services {
+		if mapped := sanitizeNATSKey(name); mapped != name {
+			delete(cfg.Services, name)
+			cfg.Services[mapped] = svc
+			changed = true
+		}
+	}
+	for name, comp := range cfg.Components {
+		if mapped := sanitizeNATSKey(name); mapped != name {
+			delete(cfg.Components, name)
+			cfg.Components[mapped] = comp
+			changed = true
+		}
+	}
+	if !changed {
+		return errNoConfigChange
+	}
+	return nil
+}
+
 // encodePush encodes every value a push of cfg writes, in write order, with
 // version last: a push interrupted after its first write leaves the bucket's
 // old version, or none, so the next boot's newer file pushes again instead of
 // selecting a partial set (design D3).
 func encodePush(cfg *Config) ([]kvWrite, error) {
 	var writes []kvWrite
+	// named maps each key to the name that claimed it: two names that map to one
+	// key would overwrite each other in the bucket.
+	named := make(map[string]string)
+	claim := func(key, name string) error {
+		if other, ok := named[key]; ok {
+			return fmt.Errorf("names %q and %q both map to key %q after mapping spaces to '_'", other, name, key)
+		}
+		named[key] = name
+		return nil
+	}
 
 	// Services
 	for name, svcConfig := range cfg.Services {
 		key, err := sectionKey("services", name)
 		if err != nil {
+			return nil, err
+		}
+		if err := claim(key, name); err != nil {
 			return nil, err
 		}
 		// Marshal the entire ServiceConfig structure
@@ -989,6 +1037,9 @@ func encodePush(cfg *Config) ([]kvWrite, error) {
 	for name, compConfig := range cfg.Components {
 		key, err := sectionKey("components", name)
 		if err != nil {
+			return nil, err
+		}
+		if err := claim(key, name); err != nil {
 			return nil, err
 		}
 		data, err := json.Marshal(compConfig)
@@ -1049,7 +1100,7 @@ func (cm *Manager) pushToKV(ctx context.Context, kvStore *natsclient.KVStore) er
 		if err != nil {
 			return fmt.Errorf("push %s: %w", write.key, err)
 		}
-		cm.bumpEngineHighWater(rev)
+		cm.recordRevision(write.key, rev)
 	}
 
 	// After bulk push, notify durable desired-state observers.

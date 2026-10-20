@@ -9,8 +9,9 @@ the platform identity, version arbitration and opening its watches) and SHALL re
 has already ended, and any Start after the first, before contacting NATS. Ending the context given to Start after
 Start returned SHALL stop nothing. `Stop(ctx)` SHALL be the only stop: it SHALL return nil only after every watch is
 stopped, every goroutine the Manager started has exited and every channel it returned is closed. If `ctx` ends
-first it SHALL return that error, and a later Stop SHALL try again. A channel requested after Stop SHALL be returned
-closed. The Manager SHALL pass the `lifecycle-suite` checks through a test-side adapter (ADR-113).
+first it SHALL return that error, including while a watch's teardown is still waiting on the server, and a later
+Stop SHALL wait for that teardown again. A channel requested after Stop SHALL be returned closed. The Manager SHALL
+pass the `lifecycle-suite` checks through a test-side adapter (ADR-113).
 
 #### Scenario: The Start context ends after Start
 
@@ -24,6 +25,13 @@ closed. The Manager SHALL pass the `lifecycle-suite` checks through a test-side 
 - **WHEN** `model.Watch` is running on a started Manager and Stop is called with a one-second context
 - **THEN** Stop returns nil and the channel `WatchModelRegistry` returned is closed
 - **AND** the test that verifies this is `TestStopWithAModelRegistryWatcherReturnsPromptly`
+
+#### Scenario: A watch teardown the server does not answer
+
+- **WHEN** the Manager's credentials may open its watches but not delete their consumers, and Stop is called with a
+  100 ms context
+- **THEN** Stop returns `context.DeadlineExceeded` within a second, and a later Stop with a longer context returns nil
+- **AND** the test that verifies this is `TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied`
 
 ### Requirement: The configuration bucket is named by the declared authority pair
 
@@ -85,8 +93,10 @@ On a first boot Start SHALL push the file configuration to the bucket. Otherwise
 Start SHALL push the file. When it is equal, older, or cannot be compared, Start SHALL select the bucket: the
 effective `services` and `components` SHALL then be exactly the bucket's `services.*` and `components.*` entries. A
 missing stored `version` SHALL compare as `0.0.0`. Before acquiring the bucket, Start SHALL refuse a file
-configuration holding a service or component name that is not one NATS KV literal token after the space mapping,
-naming it. A push SHALL encode every value before its first write and SHALL write `version` after every other key.
+configuration holding a service or component name that is not one NATS KV literal token after the space mapping, or
+two names that map to one key, naming them. Start SHALL then name each service and component as its key does, each
+space written as `_`. A push SHALL encode every value before its first write and SHALL write `version` after every
+other key.
 
 #### Scenario: Leftovers of an interrupted push do not select a partial set
 
@@ -98,8 +108,8 @@ naming it. A push SHALL encode every value before its first write and SHALL writ
 
 #### Scenario: A name the bucket cannot hold as one key
 
-- **WHEN** the file declares a service or component named `a.b`
-- **THEN** Start fails naming it, and the bucket is unchanged
+- **WHEN** the file declares a service or component named `a.b`, or two named `a b` and `a_b`
+- **THEN** Start fails naming them, and the bucket is unchanged
 - **AND** the test that verifies this is `TestNameThatIsNotOneKeyTokenIsRefused`
 
 #### Scenario: A deleted file component stays deleted
@@ -139,8 +149,9 @@ Start SHALL return an error naming the cause, hold nothing and arm no writer whe
 `components.<name>`, with each space in `name` written as `_`, and SHALL apply the change to `GetConfig()` before
 returning. They SHALL NOT create, stop or restart a running component (ADR-094). They SHALL refuse a name that is not
 one NATS KV literal token after that mapping, naming it. Concurrent writes and watcher applies SHALL each take effect
-(serialized through `SafeConfig.Mutate`). A watcher event at or below the Manager's own last write revision SHALL NOT
-be re-applied in memory but SHALL still notify subscribers.
+(serialized through `SafeConfig.Mutate`). A watcher event at or below the revision already applied for its key SHALL
+NOT be re-applied in memory but SHALL still notify subscribers; a write to one key SHALL NOT suppress another key's
+event.
 
 #### Scenario: A dotted component name
 
@@ -150,10 +161,23 @@ be re-applied in memory but SHALL still notify subscribers.
 
 #### Scenario: Engine-owned revision still notifies
 
-- **WHEN** the watcher delivers an event at or below the Manager's last write revision
+- **WHEN** the watcher delivers an event at or below the revision already applied for its key
 - **THEN** memory is not re-applied and matching subscribers are notified
 - **AND** the tests that verify this are `TestHandleUpdate_EngineOwnedRevisionStillNotifies` and
   `TestHandleUpdate_ExternalRevisionAppliesAndNotifies`
+
+#### Scenario: A local write to another key
+
+- **WHEN** an external writer puts `services.external` and, before its event is processed, `PutComponentToKV` writes
+  another key at a later revision
+- **THEN** the external event is applied in memory
+- **AND** the test that verifies this is `TestOtherKeyWriteDoesNotSuppressAnExternalUpdate`
+
+#### Scenario: Deleting a file component named with a space
+
+- **WHEN** the file declares component `a b` and `DeleteComponentFromKV("a b")` succeeds
+- **THEN** `components.a_b` is gone from the bucket and `GetConfig()` holds neither `a b` nor `a_b`
+- **AND** the test that verifies this is `TestDeletingAFileComponentWithASpaceUpdatesMemory`
 
 ### Requirement: A registered key family is delivered to its owner
 
@@ -163,7 +187,8 @@ Start the handler SHALL receive every entry present when the watch opened, marke
 with its member name, value and operation, until Stop returns. The family's `Get`, `Put`, `Create`, `Delete` and
 `Names` SHALL be scoped to `<prefix>.<name>`. They SHALL refuse a nil context or a name that is not one KV literal
 token before any bucket access, and SHALL return the not-acquired error until Start succeeds. `Names` SHALL omit a
-key with more than one token after the prefix, and log it.
+key with more than one token after the prefix, and log it. A family's stored values SHALL be left to its handler:
+Start SHALL NOT decode them as Manager configuration.
 
 #### Scenario: Snapshot then changes
 
@@ -173,3 +198,9 @@ key with more than one token after the prefix, and log it.
   `rules.*`
 - **AND** the tests that verify this are `TestKeyFamilyDeliversSnapshotThenChanges`,
   `TestBoundKeyFamilyRefusesBeforeAnyStoreAccess` and `TestNewConfigManagerRefusesAFamilyOnTheManagersOwnKeys`
+
+#### Scenario: A family value that is not JSON
+
+- **WHEN** a `rules` family puts `rules.a` as the bytes `{`, and the deployment restarts with the same family
+- **THEN** Start succeeds
+- **AND** the test that verifies this is `TestOpaqueKeyFamilyValueSurvivesRestart`

@@ -22,6 +22,7 @@ func newReconcileTestManager() *Manager {
 	return &Manager{
 		config:      NewSafeConfig(cfg),
 		subscribers: make(map[string][]chan update),
+		appliedRev:  make(map[string]uint64),
 		logger:      slog.Default(),
 	}
 }
@@ -34,17 +35,17 @@ func componentJSON(t *testing.T, name string) []byte {
 }
 
 // TestHandleUpdate_EngineOwnedRevisionStillNotifies is the gh#388 regression:
-// an engine-owned revision (revision <= engineHighWaterRev) must skip the
+// an engine-owned revision (at or below the revision applied for its key) must skip the
 // in-memory RE-APPLY but STILL notify subscribers, so a runtime add/remove
 // drives a reconcile. Before the fix, handleUpdate returned before notifying.
 func TestHandleUpdate_EngineOwnedRevisionStillNotifies(t *testing.T) {
 	cm := newReconcileTestManager()
-	cm.engineHighWaterRev.Store(100)
+	cm.appliedRev["components.doc-source-003"] = 100
 
 	ch := cm.onChange("components.*")
 	<-ch // drain the initial-config send from OnChange
 
-	// Engine-owned event: revision 50 <= high-water 100.
+	// Engine-owned event: revision 50 <= the key's applied revision 100.
 	cm.handleUpdate("components.doc-source-003", componentJSON(t, "doc-source-003"), 50)
 
 	select {
@@ -62,16 +63,16 @@ func TestHandleUpdate_EngineOwnedRevisionStillNotifies(t *testing.T) {
 }
 
 // TestHandleUpdate_ExternalRevisionAppliesAndNotifies confirms the external
-// path is unchanged: a revision above the high-water applies in memory AND
-// notifies.
+// path is unchanged: a revision above the key's applied revision applies in
+// memory AND notifies.
 func TestHandleUpdate_ExternalRevisionAppliesAndNotifies(t *testing.T) {
 	cm := newReconcileTestManager()
-	cm.engineHighWaterRev.Store(100)
+	cm.appliedRev["components.ext-comp"] = 100
 
 	ch := cm.onChange("components.*")
 	<-ch
 
-	// External event: revision 150 > high-water 100.
+	// External event: revision 150 > the key's applied revision 100.
 	cm.handleUpdate("components.ext-comp", componentJSON(t, "ext-comp"), 150)
 
 	select {

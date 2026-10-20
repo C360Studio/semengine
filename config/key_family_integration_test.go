@@ -156,3 +156,32 @@ func TestKeyFamilyDeliversSnapshotThenChanges(t *testing.T) {
 	require.True(t, errors.Is(refusedFamily.Put(ctx, "c", []byte(`"c"`)), errFamilyNotRegistered),
 		"a refused Start must leave the family disarmed")
 }
+
+// TestOpaqueKeyFamilyValueSurvivesRestart: a family stores bytes that are not JSON, which its Put
+// accepts and its Get returns. A later Start of the same deployment must not decode them as Manager
+// configuration: they belong to the family's owner.
+//
+// spec: config-manager / A registered key family is delivered to its owner
+func TestOpaqueKeyFamilyValueSurvivesRestart(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+
+	family, err := NewKeyFamily("rules", func(KeyFamilyEntry) {})
+	require.NoError(t, err)
+	first, err := NewConfigManager(identityTestConfig("acme", "family"), tc, nil, WithKeyFamily(family))
+	require.NoError(t, err)
+	require.NoError(t, first.Start(ctx))
+	require.NoError(t, family.Put(ctx, "a", []byte("{")))
+	value, err := family.Get(ctx, "a")
+	require.NoError(t, err)
+	require.Equal(t, []byte("{"), value)
+	stopManager(t, first)
+
+	nextFamily, err := NewKeyFamily("rules", func(KeyFamilyEntry) {})
+	require.NoError(t, err)
+	next, err := NewConfigManager(identityTestConfig("acme", "family"), tc, nil, WithKeyFamily(nextFamily))
+	require.NoError(t, err)
+	require.NoError(t, next.Start(ctx), "the Manager must not decode another owner's family value")
+	stopManager(t, next)
+}

@@ -6,10 +6,12 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/model"
@@ -353,4 +355,68 @@ func requireClosedSoon[T any](t *testing.T, ch <-chan T, what string) {
 			t.Fatalf("%s: channel not closed within 5s", what)
 		}
 	}
+}
+
+// TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied: a deployment whose credentials may open
+// the watches but not delete their consumers, the same failure a broker outage gives. Each watch's
+// Stop deletes its consumer with a request nats.go v1.54.0 bounds by its own timeout, not Stop's
+// context (measured 25 s for five watches on the Codex review of PR #329). Stop must still return
+// its context's error once its context ends, and a later Stop must join the teardown and return nil.
+//
+// The server is an embedded nats-server (the module's pinned v2.15.1) on an ephemeral port, not the
+// shared Docker fixture: the fixture cannot deny one subject to one user (notes/2.2.md).
+//
+// spec: config-manager / Stop(ctx) stops the Manager
+func TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied(t *testing.T) {
+	server, err := natsserver.NewServer(&natsserver.Options{
+		Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true, JetStream: true, StoreDir: t.TempDir(),
+		Users: []*natsserver.User{{Username: "edge", Password: "edge", Permissions: &natsserver.Permissions{
+			Publish: &natsserver.SubjectPermission{Allow: []string{">"}, Deny: []string{"$JS.API.CONSUMER.DELETE.>"}},
+		}}},
+	})
+	require.NoError(t, err)
+	server.Start()
+	t.Cleanup(func() {
+		done := make(chan struct{})
+		go func() { server.Shutdown(); server.WaitForShutdown(); close(done) }()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("embedded server did not shut down within 5s")
+		}
+	})
+	require.True(t, server.ReadyForConnections(5*time.Second))
+
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	client, closeClient, err := openClient(ctx, strings.Replace(server.ClientURL(), "nats://", "nats://edge:edge@", 1))
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		closeCtx, closeCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer closeCancel()
+		require.NoError(t, closeClient(closeCtx))
+	})
+	manager, err := NewConfigManager(identityTestConfig("acme", "denied"), client, nil)
+	require.NoError(t, err)
+	require.NoError(t, manager.Start(ctx))
+	// Runs after the later Stop below has already returned nil, and returns nil again; it releases
+	// the Manager if an assertion fails first. The bound covers the denied deletes' own timeout.
+	t.Cleanup(func() {
+		stopCtx, stopCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer stopCancel()
+		require.NoError(t, manager.Stop(stopCtx))
+	})
+
+	stopCtx, stopCancel := context.WithTimeout(ctx, 100*time.Millisecond)
+	defer stopCancel()
+	started := time.Now()
+	err = manager.Stop(stopCtx)
+	elapsed := time.Since(started)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	// A 100 ms context with a 1 s ceiling: generous for scheduling, far below one delete's timeout.
+	require.Less(t, elapsed, time.Second, "Stop waited %s past its 100ms context", elapsed)
+
+	laterCtx, laterCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer laterCancel()
+	require.NoError(t, manager.Stop(laterCtx), "a later Stop must join the outstanding watch teardown")
 }

@@ -104,6 +104,28 @@ func TestNameThatIsNotOneKeyTokenIsRefused(t *testing.T) {
 		}
 	}
 
+	// Two names that map to one key would overwrite each other in the bucket and in memory.
+	for _, section := range []string{"service", "component"} {
+		t.Run(section+" names sharing a key", func(t *testing.T) {
+			tc := fixtureClient(t)
+			ctx := testContext(t)
+			names := []string{"a b", "a_b"}
+			cfg := arbitrationConfig("1.0.0", nil, names)
+			if section == "service" {
+				cfg = arbitrationConfig("1.0.0", names, nil)
+			}
+			manager, err := NewConfigManager(cfg, tc, nil)
+			require.NoError(t, err)
+
+			err = manager.Start(ctx)
+			require.Error(t, err)
+			require.ErrorContains(t, err, `"a b"`)
+			require.ErrorContains(t, err, `"a_b"`)
+			_, bucketErr := tc.GetKeyValueBucket(ctx, manager.bucketName)
+			require.Error(t, bucketErr, "a refused name must be refused before the bucket is acquired")
+		})
+	}
+
 	t.Run("component writers", func(t *testing.T) {
 		tc := fixtureClient(t)
 		ctx := testContext(t)
@@ -128,6 +150,29 @@ func TestNameThatIsNotOneKeyTokenIsRefused(t *testing.T) {
 		_, err := mustStore(t, manager).Get(ctx, "components.a_b")
 		require.NoError(t, err)
 	})
+}
+
+// TestDeletingAFileComponentWithASpaceUpdatesMemory: a file component named with a space is
+// stored under the mapped key, and deleting it by its file name removes it from the bucket and from
+// GetConfig, under either spelling.
+//
+// spec: config-manager / Component writes are next-boot desired state
+func TestDeletingAFileComponentWithASpaceUpdatesMemory(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx := testContext(t)
+	manager, err := NewConfigManager(arbitrationConfig("1.0.0", nil, []string{"a b"}), tc, nil)
+	require.NoError(t, err)
+	require.NoError(t, manager.Start(ctx))
+	defer stopManager(t, manager)
+	// Start names the component as its key does, the name every later boot reads back.
+	require.Contains(t, manager.GetConfig().Get().Components, "a_b")
+
+	require.NoError(t, manager.DeleteComponentFromKV(ctx, "a b"))
+	_, err = mustStore(t, manager).Get(ctx, "components.a_b")
+	require.Error(t, err, "the stored key must be deleted")
+	components := manager.GetConfig().Get().Components
+	require.NotContains(t, components, "a b", "a successful delete must update desired-state memory")
+	require.NotContains(t, components, "a_b", "a successful delete must update desired-state memory")
 }
 
 // TestRecoveryFromAnInterruptedPush proves recovery from the leftovers a push interrupted after

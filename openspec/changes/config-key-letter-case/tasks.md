@@ -15,7 +15,8 @@ fails on the base commit, or which mutant it detects. A review stop (Codex) come
   - D3's refused cases, each error holding the path as written and as declared;
   - D3's accepted controls;
   - the coverage test over every declared key path;
-  - the guard that `Config` reaches no slice or array of structs or maps.
+  - the guard that `Config` reaches no slice or array of structs or maps, no embedded struct, and no other
+    `json.Unmarshaler`.
 
   Gate: the refused cases and the coverage test fail on the base; record how in `notes/2.1.md`.
 - [ ] 2.2 `rejectCaseVariantKeys` in `config/config.go` per D1, called from `loadRawJSONFromBytes` after the two
@@ -33,4 +34,4 @@ fails on the base commit, or which mutant it detects. A review stop (Codex) come
 
 - [ ] 4.1 `task verify` passes on a clean tree at the implementation head. A Codex review of record is on the PR
   (`reviewed-by:`). The PR body carries `Closes #325` and `implemented-by:`. The change is archived and the
-  `config-loading` spec synced as the last content commit; `task merge:check -- 341` passes before merge.
+  `config-loading` spec synced as the last content commit.

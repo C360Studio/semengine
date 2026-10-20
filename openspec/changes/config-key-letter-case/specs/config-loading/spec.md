@@ -5,9 +5,10 @@
 ### Requirement: A key in another letter case is refused
 
 `LoadFile` and `LoadFromBytes` SHALL refuse a document holding a key that differs only in letter case from the name
-of the struct field it is decoded into, at any depth. The error SHALL name the key's dotted path as written and as
-declared. They SHALL NOT check map keys a deployment chooses (component, service, stream, override, archival and model
-registry names) or the contents of a component's or service's `config` payload. A key that matches no declared name
+of the struct field it is decoded into, at any depth; a key exactly equal to a declared name is accepted. The error
+SHALL name the key's dotted path as written and as declared. They SHALL NOT check map keys a deployment chooses
+(component, service, stream, override, archival and model registry names) or the contents of a component's or
+service's `config` payload. A key that matches no declared name
 in any letter case SHALL stay accepted, except where a strictly decoded entry refuses it. When the document also sets
 a removed or unapplied key, the refusal naming that key SHALL be returned.
 
@@ -20,6 +21,11 @@ a removed or unapplied key, the refusal naming that key SHALL be returned.
 
 - **WHEN** `LoadFromBytes` reads `{"platform":{"org":"acme","id":"p1"},"nats":{"URLs":["nats://a.invalid:14222"]}}`
 - **THEN** it returns an error naming `nats.URLs` and `nats.urls` and no `Config`
+
+#### Scenario: A case variant inside a service entry
+
+- **WHEN** `LoadFromBytes` reads a document whose `services.heartbeat` entry sets `"Enabled": false`
+- **THEN** it returns an error naming `services.heartbeat.Enabled` and `services.heartbeat.enabled` and no `Config`
 
 #### Scenario: Both spellings in one document
 

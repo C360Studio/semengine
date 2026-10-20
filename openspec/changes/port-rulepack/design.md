@@ -1,7 +1,7 @@
 # Design: port-rulepack
 
 Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). Pre-owner design review: PASS (semengine-reviewer, round 2 at
-`0fab444`); waits for the owner's answers to Q1 and Q2.
+`0fab444`). Owner answers, 2026-10-20: Q1 yes, Q2 yes; design accepted.
 
 ## Options
 
@@ -142,3 +142,6 @@ file overlap); whichever merges second keeps both ledger and map appends. `compo
   and no spec in this tree states them. Cost of yes: when the rule core ports the pin's `graph-events` capability,
   the PackID rules would be written in two specs, and that change must fold them into one. Answer no: the ledger
   row is the contract until the rule core.
+
+Owner answers, 2026-10-20 (Enjoy conversation "Rulepack groundwork pickup"): Q1 yes, drop them; Q2 yes, add the
+spec. Decision B as written; `specs/rule-pack-identity/spec.md` carries the requirement.

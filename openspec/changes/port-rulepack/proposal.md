@@ -12,13 +12,14 @@ and `identity_test.go`), the rule-pack identity contract admitted by the SETUP 0
 
 - Port `pkg/rulepack` from the pin as `adapt`, with its admission-ledger row: keep `ValidateID`, `PackIDCharset` and
   `MaxPackIDBytes`; check the alphabet from `PackIDCharset` alone; reword text naming the retired owner key; drop
-  `ValidateConfig` and `ValidateRuntimeUpdate`, which nothing in the port set reads (design, owner question Q1).
+  `ValidateConfig` and `ValidateRuntimeUpdate`, which nothing in the port set reads (owner, 2026-10-20, design Q1).
 
 ## Capabilities
 
-- If the owner answers the design's Q2 yes: new capability `rule-pack-identity` (the pack ID grammar and bound).
-  Otherwise none; the contract line is the ledger row.
+- New capability `rule-pack-identity`: the pack ID grammar and byte bound `ValidateID` enforces (owner, 2026-10-20,
+  design Q2).
 
 ## Impact
 
-- New package `pkg/rulepack`, its ledger row and a `docs/repository-map.md` row.
+- New package `pkg/rulepack` (about 60 production lines after the drop, against 143 at the pin), its `adapt` ledger
+  row, a `docs/repository-map.md` row and the `rule-pack-identity` spec.

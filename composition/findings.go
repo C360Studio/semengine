@@ -35,6 +35,9 @@ const (
 	TypeMissingInterface = "missing_interface"
 	// TypeEmptyComposition: no enabled components.
 	TypeEmptyComposition = "empty_composition"
+	// TypeReservedSubjectCapture: a stream's subject filter shares a concrete subject with a request
+	// subject graph-ingest serves or with the graph mutation family, so the stream would store requests.
+	TypeReservedSubjectCapture = "reserved_subject_capture"
 )
 
 // Finding severities.

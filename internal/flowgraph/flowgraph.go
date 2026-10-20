@@ -312,6 +312,31 @@ func SubjectCovers(filter, pattern string) bool {
 	return true
 }
 
+// SubjectsOverlap reports whether some concrete subject matches both a and b
+// under NATS wildcard semantics (`*` one token, a final `>` one or more). It is
+// symmetric and weaker than cover: `*.mutation.create` and `graph.mutation.>`
+// overlap on graph.mutation.create though neither covers the other.
+// Composition validation uses it to refuse a stream that would capture a
+// reserved request subject. A malformed subject overlaps nothing.
+func SubjectsOverlap(a, b string) bool {
+	left, right := strings.Split(a, "."), strings.Split(b, ".")
+	if !validSubjectTokens(left) || !validSubjectTokens(right) {
+		return false
+	}
+	for index := 0; ; index++ {
+		switch {
+		case index == len(left) || index == len(right):
+			return len(left) == len(right)
+		case left[index] == ">" || right[index] == ">":
+			// The other side still has a token here, which `>` can take, and
+			// `>` is always last, so whatever follows on the other side matches.
+			return true
+		case left[index] != right[index] && left[index] != "*" && right[index] != "*":
+			return false
+		}
+	}
+}
+
 func validSubjectTokens(tokens []string) bool {
 	if len(tokens) == 0 {
 		return false

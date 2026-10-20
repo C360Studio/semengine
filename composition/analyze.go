@@ -7,7 +7,9 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/config"
+	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/flowgraph"
+	"github.com/c360studio/semengine/internal/graphmutation"
 )
 
 // Analyze is the graph-level half of composition validation: it connects the
@@ -25,6 +27,12 @@ func Analyze(declarations []component.Declaration, streams config.StreamConfigs)
 	result := newResult()
 	sorted := append([]component.Declaration(nil), declarations...)
 	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].InstanceName < sorted[j].InstanceName })
+	// The reserved-subject check reads only streams and port facts, so it runs
+	// before the early returns: an explicit stream is refused even when no
+	// component is enabled or the graph cannot be built.
+	for _, finding := range reservedCaptureFindings(sorted, streams) {
+		result.add(finding)
+	}
 
 	if len(sorted) == 0 {
 		result.add(Finding{
@@ -103,6 +111,71 @@ func Analyze(declarations []component.Declaration, streams config.StreamConfigs)
 	result.Graph = graphOf(sorted, graph)
 	result.finalize()
 	return result
+}
+
+// reservedSubjects returns the request subjects no stream may capture: the
+// subjects of graph's query verbs in table order, then the graph mutation
+// family. Both are read from their declarations, never spelled here.
+func reservedSubjects() []string {
+	var reserved []string
+	for _, verb := range graph.QueryVerbs() {
+		reserved = append(reserved, verb.Subject)
+	}
+	return append(reserved, graphmutation.SubjectFamily)
+}
+
+// reservedCaptureFindings reports each stream subject filter that overlaps a
+// reserved request subject (#16): a stream on such a filter would store the
+// requests, which belong to their responders alone. The streams checked are the ones provisioning creates from the composition: the
+// explicit block, named by key, and each JetStream output, named as
+// provisioning names it (its stream name, else config.DeriveStreamName of its
+// first subject). One finding per filter names the first reserved subject it
+// captures.
+func reservedCaptureFindings(declarations []component.Declaration, streams config.StreamConfigs) []Finding {
+	reserved := reservedSubjects()
+	var findings []Finding
+	check := func(owner, port, stream string, filters []string) {
+		for _, filter := range filters {
+			for _, subject := range reserved {
+				if !flowgraph.SubjectsOverlap(filter, subject) {
+					continue
+				}
+				findings = append(findings, Finding{
+					Type: TypeReservedSubjectCapture, Severity: severityOf(TypeReservedSubjectCapture, nil),
+					Component: owner,
+					Port:      port,
+					Message: fmt.Sprintf("stream %q subject filter %q captures reserved request subject %q",
+						stream, filter, subject),
+					Suggestions: []string{
+						"Narrow the stream's subjects so they share no subject with a graph request subject",
+						"Graph request subjects belong to their responders; no stream may store them",
+					},
+				})
+				break
+			}
+		}
+	}
+	for name, stream := range streams {
+		check("config", "", name, stream.Subjects)
+	}
+	for _, declaration := range declarations {
+		for index, port := range declaration.OutputPorts {
+			if index >= len(declaration.OutputFacts) {
+				continue
+			}
+			stream, ok := declaration.OutputFacts[index].Stream()
+			if !ok {
+				continue
+			}
+			subjects := stream.Subjects()
+			name := stream.Name()
+			if name == "" && len(subjects) > 0 {
+				name = config.DeriveStreamName(subjects[0])
+			}
+			check(declaration.InstanceName, port.Name, name, subjects)
+		}
+	}
+	return findings
 }
 
 // explicitStreamCovers reports whether the subscriber is fed by an explicit

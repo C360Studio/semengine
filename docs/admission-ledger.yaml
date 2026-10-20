@@ -2666,7 +2666,9 @@
     (ADR-091 §2, kept by ADR-110).
     AnalyzeConnectivity reports connected components, disconnected nodes and orphaned ports with an issue type and
     derives no severity; ValidateStreamRequirements reports each JetStream input fed by core-NATS publishers, with
-    those publishers, each named once; SubjectCovers reports whether one subject filter covers another
+    those publishers, each named once; SubjectCovers reports whether one subject filter covers another;
+    SubjectsOverlap reports whether some concrete subject matches both of two subject filters (symmetric; a malformed
+    subject overlaps nothing), which composition uses for its reserved-subject check (port-composition)
   dependencies_and_side_effects: >-
     component, internal/graphmutation, pkg/errs (in-set); stdlib (cmp, fmt, maps, slices, strings); no goroutine, no I/O
   known_risks: >-
@@ -2680,6 +2682,8 @@
     TestFlowGraphOutputIsTheSameEveryRun, TestMatchNATSPatternIsSymmetric, TestRefusalsNameNoInternalFunction,
     TestTailWildcardNeedsATrailingToken, TestRequestEdgesKeepSameNamedLanesApart),
     composition/lanes_test.go (TestValidateReportsOrphanBesideSameNamedOutput),
+    composition/reserved_test.go (TestReservedSubjectOverlapMatchesEnumeration, SubjectsOverlap against an
+    enumeration oracle),
     flowgraph_validation_test.go (TestUnconnectedOptionalInterfacePortReportsNoPublishers and the pin's tests),
     graph_mutation_contract_test.go, subject_cover_test.go, flowgraph_test.go, flowgraph_patterns_test.go,
     store_federation_test.go; internal/harness/contract (TestReservedSubjectsDeclaredOnce)
@@ -2807,11 +2811,15 @@
     of a component.Registry and a config.Config whose every judgment is a finding of the closed vocabulary; two
     components whose exclusive claims clash give one exclusive_resource_conflict on the later in instance-name order,
     whose message is component.Declaration.ConflictWith's error text, so the offline judgment is boot admission's
-    (#338); a component whose own claims clash gives port_declaration_error; Analyze, Catalog and Mermaid as at the
-    pin
+    (#338); a component whose own claims clash gives port_declaration_error; the reserved-subject requirement of the
+    graph-transport-boundary spec (the composition share of #16): Analyze gives one reserved_subject_capture error for
+    each explicit stream filter and JetStream output filter that overlaps a subject of graph.QueryVerbs() or
+    graphmutation.SubjectFamily, read from those declarations, naming the stream (a derived one by
+    config.DeriveStreamName), the filter and the first reserved subject captured; Analyze, Catalog and Mermaid
+    otherwise as at the pin
   dependencies_and_side_effects: >-
-    component, config, internal/flowgraph, types (in-set); stdlib (cmp, encoding/json, errors, fmt, slices, sort,
-    strings); no goroutine, no I/O, no context
+    component, config, graph, internal/flowgraph, internal/graphmutation, types (in-set); stdlib (cmp, encoding/json,
+    errors, fmt, slices, sort, strings); no goroutine, no I/O, no context
   known_risks: >-
     dropped: assert.go (AssertValid imports testing from production code; owner ruling 1, products call Validate and
     require an empty Errors list), assert_test.go, fmt_test.go (read only by assert_test.go) and
@@ -2829,7 +2837,8 @@
     composition/validate_test.go (TestValidateFindingsVocabularyIsClosed, TestValidateReportsExclusiveResourceConflict,
     TestValidateIsDeterministic and the pin's tests), clash_test.go (TestValidateExclusiveClashMatchesAdmission,
     TestValidateSelfClashIsPortDeclarationError), catalog_test.go (TestCatalogCarriesDefaultPortsOrRequiresConfig),
-    mermaid_test.go (TestMermaidIsDeterministic)
+    mermaid_test.go (TestMermaidIsDeterministic), reserved_test.go (TestValidateRefusesStreamCapturingReservedSubject,
+    TestValidateDoesNotRefuseNeighbouringSubjects, TestReservedSubjectOverlapMatchesEnumeration)
   owner: port-composition developer
   disposition: repair-before-port
 

@@ -22,7 +22,7 @@ when `task verify` passes on a clean tree at its commit (#171).
   pin's `TestConfigManagerKVSelectionReplacesOnlyServices`) included; the PR body carries `Closes #17`; `task verify`
   passes on a clean tree (review stop).
 - [x] 2.3 Folded into 2.2: the 2.1 tests cover D3 and D4, so 2.2's gate cannot pass without them.
-- [ ] 2.4 Sensitivity by hand (#129): each mutant D5 lists, applied to the working tree, makes its named test fail
+- [x] 2.4 Sensitivity by hand (#129): each mutant D5 lists, applied to the working tree, makes its named test fail
   under `go test -tags integration -run <name> ./config/`, and the revert makes it pass, recorded in `notes/2.4.md`.
   Gate: `task verify` passes on a clean tree.
 

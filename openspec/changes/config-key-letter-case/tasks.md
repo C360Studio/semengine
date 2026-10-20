@@ -22,7 +22,7 @@ for one. Each task ends only when `task verify` passes on a clean tree at its co
 - [x] 2.2 `rejectCaseVariantKeys` in `config/config.go` per D1, called from `loadRawJSONFromBytes` after the two
   named refusals (D2). Gate: `go test -race ./config/` passes, with no edit to an existing test; `task verify`
   passes on a clean tree.
-- [ ] 2.3 Sensitivity: `task mutate:check` detects D3's mutants (a)-(d), recorded in `notes/2.3.md`. Gate:
+- [x] 2.3 Sensitivity: `task mutate:check` detects D3's mutants (a)-(d), recorded in `notes/2.3.md`. Gate:
   `task verify` passes on a clean tree.
 
 ## 3. Docs (D4)

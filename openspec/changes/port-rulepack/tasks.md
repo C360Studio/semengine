@@ -10,7 +10,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 2. Port
 
-- [ ] 2.1 Tests first: `pkg/rulepack/identity_test.go` with the pin's `TestValidateID` unchanged plus
+- [x] 2.1 Tests first: `pkg/rulepack/identity_test.go` with the pin's `TestValidateID` unchanged plus
   `TestValidateIDEveryByte`, `TestValidateIDBounds` and `TestValidateIDKVTokenRefusal` (design, "Generated checks" and
   "Proving tests and mutants"); then `identity.go` as Decision B (keep `PackIDCharset`, `MaxPackIDBytes`, `ValidateID`;
   one pattern from `PackIDCharset`; true text; `ValidateConfig`, `ValidateRuntimeUpdate`, `packIdentity`,

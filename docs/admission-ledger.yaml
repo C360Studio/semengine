@@ -2735,7 +2735,7 @@
     accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing; a value that is
     not one literal NATS KV token is refused with natsclient's kv_token_invalid error wrapped; PackIDCharset and
     MaxPackIDBytes are the grammar and bound the rule processor's schema publishes (pin ADR-076 decision 4); stated
-    as the rule-pack-identity spec if Q2 is answered yes
+    as the rule-pack-identity spec
   dependencies_and_side_effects: natsclient (ValidateKVLiteralToken), fmt, regexp; no goroutine, no I/O
   known_risks: >-
     dropped as unread in the port set: ValidateConfig (only pin reader frameworkcapabilities/rulepacks, reached from

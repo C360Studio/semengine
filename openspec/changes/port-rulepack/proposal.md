@@ -10,12 +10,14 @@ and `identity_test.go`), the rule-pack identity contract admitted by the SETUP 0
 
 ## What Changes
 
-- Port `pkg/rulepack` from the pin with its admission-ledger row. The design decides which of its three exported
-  functions have a reader in the port set and whether the package keeps its `config` import (inventory, then design).
+- Port `pkg/rulepack` from the pin as `adapt`, with its admission-ledger row: keep `ValidateID`, `PackIDCharset` and
+  `MaxPackIDBytes`; check the alphabet from `PackIDCharset` alone; reword text naming the retired owner key; drop
+  `ValidateConfig` and `ValidateRuntimeUpdate`, which nothing in the port set reads (design, owner question Q1).
 
 ## Capabilities
 
-- None changed. The contract line is the ledger row; the requirement lands with the first importer.
+- If the owner answers the design's Q2 yes: new capability `rule-pack-identity` (the pack ID grammar and bound).
+  Otherwise none; the contract line is the ledger row.
 
 ## Impact
 

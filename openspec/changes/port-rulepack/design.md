@@ -4,10 +4,11 @@ Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). This design depends on `INVE
 
 ## Options
 
-- A. Carry as-is (`carry`, byte-equal). Cost: `ValidateConfig` and `ValidateRuntimeUpdate` land with no reader in
-  the port set and no test here (coverage 19.2%; their tests live in unadmitted `frameworkcapabilities/rulepacks`);
-  the package keeps `config` and `types` (in-tree closure 19 semengine packages against 7 for `natsclient`); the two
-  alphabet spellings and the retired owner-key text stay.
+- A. Carry as-is (`carry`, byte-equal). Not available: the owner's 2026-10-19 ruling makes the alphabet and text
+  fixes below required, so the package is `adapt` whatever Q1 says. It would also land `ValidateConfig` and
+  `ValidateRuntimeUpdate` with no reader, contract line or local test (coverage 19.2%; their tests live in
+  unadmitted `frameworkcapabilities/rulepacks`), and keep `config` and `types` (in-tree closure 19 semengine packages
+  against 7 for `natsclient`).
 - B. Adapt: keep `PackIDCharset`, `MaxPackIDBytes`, `ValidateID`; drop `ValidateConfig`, `ValidateRuntimeUpdate`,
   `packIdentity`, `decodePackID`; one alphabet spelling; true text; a small spec (recommended).
 - C. Keep `ValidateConfig` as plumbing for `service`'s rule-pack PR, drop `ValidateRuntimeUpdate`. Cost: no admitted
@@ -21,7 +22,8 @@ Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). This design depends on `INVE
 - **Dropped as dead surface** (inventory sweep item 4; surface audit, #9 comment 5968830525; #190): `ValidateConfig`
   (only reader unadmitted; no consumer imports the package) and `ValidateRuntimeUpdate` (no production reader at the
   pin; guards hot reload ADR-094 retired), with `packIdentity` and `decodePackID`. The package then imports `fmt`,
-  `regexp` and `natsclient`. This changes 03B E5's "carries (no edit)", so it waits for the owner (Q1).
+  `regexp` and `natsclient`. The surface audit requires the drop; Q1 names it because it departs from 03B E5's
+  accepted "carries (no edit)", which the alphabet and text fixes below already change on their own.
 - **One alphabet spelling** (owner, 2026-10-19: fix simple leftovers): `ValidateID` refuses an ID that does not match
   a pattern compiled once from `PackIDCharset` (`"^" + PackIDCharset + "+$"`), replacing the loop at pin `:45-55`.
   The validator and the rule processor's schema pattern (pin `processor/rule/schema.go:18`) then share one source,
@@ -38,7 +40,11 @@ Pin `8b99efe9`. Ledger row: `pkg/rulepack` (below). This design depends on `INVE
   `service` and `processor/rule`.
 - `t.Parallel` stays: the rule bans it only in integration-tagged files (tree precedent
   `natsclient/kv_key_contract_test.go`). Public-package rule: `ValidateID(string) error` names no `internal/` type.
-- ADRs: ADR-076 decision 4 binds and is kept unchanged. The record is not copied now: decisions 1–3 and 5 govern
+- ADRs: ADR-076 decision 4 binds. Its grammar, bound and one-token clauses are kept unchanged here. Its duplicate
+  clause ("Duplicate enabled PackIDs are one semantic producer collision → composition rejection before binding",
+  `076-...md:36-37`) leaves this package with `ValidateConfig` and is kept in the port set by `service`'s binding
+  (pin `rule_pack_bind.go:99`, before clients are built at `:72-79`). What loosens is pin `graph-events/spec.md:75-77`
+  ("before projection validation"); Q1 names it. The record is not copied now: decisions 1–3 and 5 govern
   `processor/rule` event identity and come with the rule core, as ADR-055 does (config design). ADR-094 is kept (it
   is why `ValidateRuntimeUpdate` goes). ADR-056 is superseded; ADR-058 governs `service`. No guidance to carry.
 - Context and lifecycle rules do not apply: no context, goroutine or I/O.
@@ -67,8 +73,10 @@ accepted bytes, so its assertions are shown to run.
 `TestValidateID` (pin, unchanged); new `TestValidateIDEveryByte`, `TestValidateIDBounds` (literals 246 and 247), and
 `TestValidateIDKVTokenRefusal` (`pack.one` gives a `*errs.ClassifiedError` with `Code` `kv_token_invalid` via
 `errors.As`). Predicted detections: M1 delete the length check (pin `:33-38`), M2 `>` to `>=` `:33`, M3 246 to 247
-`:21`, M4 delete the empty check `:30-32`, M5 delete the KV call `:39-44`, M6 `%w` to `%v` `:43`, M7 add `/` to
-`PackIDCharset`, M8 drop `=` from it, M9 delete the pattern check, M10 drop `$` from the pattern. Predicted survivor:
+`:21`, M4 delete the empty check `:30-32`, M5 delete the KV call `:39-44`, M6 `%w` to `%v` `:43`, M7 `PackIDCharset`
+to `[A-Za-z0-9_=/-]` (a `/` appended after `-` makes the invalid range `=-/`, so `MustCompile` panics at init and
+the run is inconclusive, not a detection), M8 drop `=` from it, M9 delete the pattern check, M10 drop `$` from the
+pattern. Predicted survivor:
 S1 the `/` message reworded (anything keeping `invalid pack_id`). At the pin, `TestValidateID` alone lets every
 `PackIDCharset` edit survive, and loop edits adding a byte outside the KV alphabet are equivalent (unreachable).
 
@@ -83,10 +91,12 @@ S1 the `/` message reworded (anything keeping `invalid pack_id`). At the pin, `T
     ported later; carried ahead of its importers in the owner's order (#9 comment 6270875286)
   destination: pkg/rulepack
   contract: >-
-    the rule-pack-identity spec: ValidateID accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything
-    else without normalizing; a value that is not one literal NATS KV token is refused with natsclient's
-    kv_token_invalid error wrapped; PackIDCharset and MaxPackIDBytes are the grammar and bound the rule processor's
-    schema publishes (pin ADR-076 decision 4)
+    03B retained-contract-matrix row (design.md:716, "rule-pack IDs validated by one contract package"): the ID
+    validation stays here; binding projection contracts at boot is service's (rule_pack_bind.go). ValidateID
+    accepts 1-246 bytes matching ^[A-Za-z0-9_=-]+$ and refuses anything else without normalizing; a value that is
+    not one literal NATS KV token is refused with natsclient's kv_token_invalid error wrapped; PackIDCharset and
+    MaxPackIDBytes are the grammar and bound the rule processor's schema publishes (pin ADR-076 decision 4); stated
+    as the rule-pack-identity spec if Q2 is answered yes
   dependencies_and_side_effects: natsclient (ValidateKVLiteralToken), fmt, regexp; no goroutine, no I/O
   known_risks: >-
     dropped as unread in the port set: ValidateConfig (only pin reader frameworkcapabilities/rulepacks, reached from
@@ -103,19 +113,32 @@ S1 the `/` message reworded (anything keeping `invalid pack_id`). At the pin, `T
   disposition: adapt
 ```
 
-`docs/repository-map.md` gains a `pkg/rulepack/` row. Coverage is recorded on the PR, not gated (03B D10:
-dormant code is not gated; `pkg/rulepack` is not in `scripts/cover-check.sh`); predicted 100%.
+`docs/repository-map.md` gains a `pkg/rulepack/` row. Coverage is recorded on the PR, not gated: `pkg/rulepack` is
+not on 03B D10's ruled or extended critical lists (`.../setup-03b-contract-boundary/design.md:454-467`) nor in
+`scripts/cover-check.sh`; predicted 100%. No `class:port-refactor` item: a dead-surface drop and text fixes, as for
+`health`'s row.
 
 **Issues:** none names the package; #9 stays (`Addresses #9`). **Merge order:** independent of #329 and #332 (no
 file overlap); whichever merges second keeps both ledger and map appends. `composition` follows this PR.
 
 ## Owner questions
 
-- **Q1. Drop `ValidateConfig` and `ValidateRuntimeUpdate`?** Recommended: yes. Nothing in the port set calls them,
-  and the second guards hot reload the pin already retired. Cost: the 03B design's "carries (no edit)" becomes
-  "adapt", and a duplicate pack ID is then caught only by `service`'s rule-pack binding, which checks projection
-  contracts first, so a config with both faults reports the contract fault; `service`'s PR decides whether to reorder.
-  Answer no: option A.
-- **Q2. Add a small `rule-pack-identity` spec in this PR?** Recommended: yes. The `pack_id` rules are public and no
-  spec in this tree states them (the pin's `graph-events` is not ported). Answer no: the ledger row is the contract
-  until the rule core, and the proposal stays as written.
+- **Q1. Drop `ValidateConfig` and `ValidateRuntimeUpdate`?** Recommended: yes. Nothing in the port set calls either,
+  and the second guards a hot-reload path the pin itself retired (ADR-094). The surface-audit rule requires the drop;
+  it is asked because it departs from the 03B design's accepted "carries (no edit)" for this package. What gets
+  looser: the pin spec says a duplicate pack ID "MUST fail the complete composition before projection validation"
+  (`graph-events/spec.md:75-77`), and ADR-076 decision 4 rejects duplicates "before binding" (`:36-37`). After the
+  drop only `service`'s rule-pack binding refuses duplicates: still before binding (`rule_pack_bind.go:99`; clients
+  at `:72-79`), but after the projection check (`:89-93`), so a config with both faults reports the projection
+  fault. The pin ran `ValidateConfig` first only in its own boot (`internal/boot/run.go:90`), which no consumer uses
+  (04A `inventory.md:527`): for every consumer, the pin already behaved this way. `service`'s PR decides whether to
+  move its duplicate check ahead. Answer no: decision B still holds, but both functions stay, each with a contract
+  line in the ledger row, their tests rewritten here (0% locally today; the pin's live in
+  `frameworkcapabilities/rulepacks`), the `config` and `types` imports kept, and the hot-reload messages at pin
+  `:102` and `:124` reworded, since they describe a path ADR-094 retired.
+- **Q2. Add a small `rule-pack-identity` spec in this PR?** Recommended: yes, though optional: the ledger `contract`
+  field is already a valid contract line, since `ValidateID` and the constants are ported and their readers are
+  admitted (precedent: `health` got a spec, `internal/logforwarderpolicy` did not). The `pack_id` rules are public
+  and no spec in this tree states them. Cost of yes: when the rule core ports the pin's `graph-events` capability,
+  the PackID rules would be written in two specs, and that change must fold them into one. Answer no: the ledger
+  row is the contract until the rule core.

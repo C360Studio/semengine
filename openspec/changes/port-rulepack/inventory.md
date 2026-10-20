@@ -42,7 +42,7 @@ go1.26.4 darwin/arm64, package only; the lifecycle suite does not apply (no owne
 1. Second spelling of the PackID alphabet: `identity.go:18` — `PackIDCharset = "[A-Za-z0-9_=-]"` (read for message
    text and, at `processor/rule/config.go:151-152` and `schema.go:18`, the operator-schema pattern) and
    `identity.go:45` — `for _, char := range packID {` (`:45-55`), which never reads the constant. The KV alphabet is a
-   third, per byte: `natsclient/kv_key_contract.go:262` (pin; tree `:257`) — `case '-', '/', '_', '=':`. Since
+   third, per byte: `natsclient/kv_key_contract.go:257` (pin; tree `:262`) — `case '-', '/', '_', '=':`. Since
    `ValidateKVLiteralToken` runs first (`:39`), the loop's only reachable refusal is `/`; no test ties the constant
    to the loop.
 2. Second spelling of the duplicate-pack refusal: `identity.go:78` — `if first, duplicate := seen[packID]; duplicate
@@ -99,7 +99,8 @@ gives #25, #26, #27 and `"rule processor"` gives #196: each names the word or `p
 ## Overlapping PRs
 
 `gh pr list --state open`: #329 (draft) changes 13 files under `config/` (none is `config.go`) and its own
-`openspec/changes/` directory; #332 (draft) has no files yet. No file overlap today; ledger and map appends at most.
+`openspec/changes/` directory; #332 (draft) changes 6 files, all under `openspec/changes/one-network-address-clash/`
+(a `component-registration` spec delta). No file overlap; ledger and map appends at most.
 
 ## Problem shape
 

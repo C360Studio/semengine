@@ -119,8 +119,9 @@
 // written, not even the identity record.
 //
 // PutComponentToKV and DeleteComponentFromKV change the components the next
-// boot runs. They update GetConfig before they return, and they never start,
-// stop or restart a running component. WatchModelRegistry delivers the model
+// boot runs. They update GetConfig before they return; a put whose key the
+// watcher has already applied at a newer revision keeps that newer value. They
+// never start, stop or restart a running component. WatchModelRegistry delivers the model
 // registry each time its key changes.
 //
 // A key family (NewKeyFamily, WithKeyFamily) hands another owner the keys

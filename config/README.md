@@ -249,9 +249,10 @@ A change written to the bucket while the `Manager` runs that does not decode is 
 ### Next-boot writes
 
 `PutComponentToKV(ctx, name, cfg)` and `DeleteComponentFromKV(ctx, name)` write or delete `components.<name>` and
-update `GetConfig` before they return. They record what the next boot runs: they never start, stop or restart a
-component in the running process. `WatchModelRegistry()` returns a channel that receives the model registry each time
-its key changes, and closes when `Stop` runs.
+update `GetConfig` before they return; a put whose key the watcher has already applied at a newer revision keeps that
+newer value. They record what the next boot runs: they never start, stop or restart a component in the running
+process. `WatchModelRegistry()` returns a channel that receives the model registry each time its key changes, and
+closes when `Stop` runs.
 
 ### Key families
 

@@ -368,6 +368,7 @@ func requireClosedSoon[T any](t *testing.T, ch <-chan T, what string) {
 //
 // spec: config-manager / Stop(ctx) stops the Manager
 func TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied(t *testing.T) {
+	// Own server: denies one subject to one user, a permission natsfixture cannot set.
 	server, err := natsserver.NewServer(&natsserver.Options{
 		Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true, JetStream: true, StoreDir: t.TempDir(),
 		Users: []*natsserver.User{{Username: "edge", Password: "edge", Permissions: &natsserver.Permissions{

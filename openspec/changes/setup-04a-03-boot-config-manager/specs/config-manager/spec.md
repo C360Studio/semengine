@@ -147,8 +147,9 @@ Start SHALL return an error naming the cause, hold nothing and arm no writer whe
 
 `PutComponentToKV(ctx, name, cfg)` and `DeleteComponentFromKV(ctx, name)` SHALL write or delete the key
 `components.<name>`, with each space in `name` written as `_`, and SHALL apply the change to `GetConfig()` before
-returning. They SHALL NOT create, stop or restart a running component (ADR-094). They SHALL refuse a name that is not
-one NATS KV literal token after that mapping, naming it. Concurrent writes and watcher applies SHALL each take effect
+returning; a put whose key the watcher has already applied at a newer revision SHALL keep that newer value. They
+SHALL NOT create, stop or restart a running component (ADR-094). They SHALL refuse a name that is not one NATS KV
+literal token after that mapping, naming it. Concurrent writes and watcher applies SHALL each take effect
 (serialized through `SafeConfig.Mutate`). A watcher event at or below the revision already applied for its key SHALL
 NOT be re-applied in memory but SHALL still notify subscribers; a write to one key SHALL NOT suppress another key's
 event.
@@ -158,6 +159,13 @@ event.
 - **WHEN** `PutComponentToKV` is called with `a.b`
 - **THEN** it returns an error naming `a.b` and the bucket is unchanged
 - **AND** the test that verifies this is `TestNameThatIsNotOneKeyTokenIsRefused`
+
+#### Scenario: A put keeps a newer revision of its key
+
+- **WHEN** the watcher has already applied an external write of `components.local` at a revision above the one
+  `PutComponentToKV` gets for its own write of that key
+- **THEN** `GetConfig()` keeps the external value
+- **AND** the test that verifies this is `TestPutKeepsANewerRevisionTheWatcherApplied`
 
 #### Scenario: Engine-owned revision still notifies
 

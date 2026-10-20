@@ -655,3 +655,36 @@ func TestOtherKeyWriteDoesNotSuppressAnExternalUpdate(t *testing.T) {
 	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
 		"a late event for a key must not overwrite a newer applied revision of it")
 }
+
+// TestPutKeepsANewerRevisionTheWatcherApplied: PutComponentToKV writes components.local at
+// revision N+1, but before its own in-memory apply runs, the watcher has already applied an
+// external write of the same key at N+2. The Put must keep the newer value. The order is chosen
+// without timing: the watcher's apply is delivered through handleUpdate before the Put, at the
+// revision the external write is then shown to take.
+//
+// spec: config-manager / Component writes are next-boot desired state
+func TestPutKeepsANewerRevisionTheWatcherApplied(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	manager, err := NewConfigManager(identityTestConfig("acme", "put-revision"), tc, nil)
+	require.NoError(t, err)
+	acquireAndPublish(t, ctx, manager)
+	store := mustStore(t, manager)
+
+	newer, err := json.Marshal(types.ComponentConfig{Type: "output", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	baseRev, err := store.Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	externalRev := baseRev + 2
+	manager.handleUpdate("components.local", newer, externalRev)
+
+	require.NoError(t, manager.PutComponentToKV(ctx, "local",
+		types.ComponentConfig{Type: "input", Name: "local", Enabled: true}))
+	gotRev, err := store.Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	require.Equal(t, externalRev, gotRev, "the external write takes the revision the watcher applied")
+
+	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
+		"a Put must keep a newer revision of its key the watcher already applied")
+}

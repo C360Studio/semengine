@@ -21,13 +21,15 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   `ExclusiveResources`, and update the `component` ledger row. Gate: `go test -race ./component/`, with the existing
   refusal-text tests unchanged; `task verify`. Done at `f9323f8`: `task verify` passed on a clean tree there;
   failing-first record and choices in `notes/2.1.md`.
-- [ ] 2.2 `composition`, tests first:
+- [x] 2.2 `composition`, tests first:
   - the pin's tests, minus `assert_test.go` and `shipped_configs_test.go`, with helpers adapted;
   - `TestValidateExclusiveClashMatchesAdmission` and `TestValidateSelfClashIsPortDeclarationError`.
 
   Then the package as in design "Decision", with the `repair-before-port` ledger row, a `docs/repository-map.md` row,
   `"composition unit"` in `scripts/cover-check.sh`, and ADR-100 carried with its port note and ledger row. Gate:
-  `go test -race ./composition/`, `task ledger:check`, `task cover:check`, `task verify`.
+  `go test -race ./composition/`, `task ledger:check`, `task cover:check`, `task verify`. Done at `1b7406f`:
+  `task verify` passed on a clean tree there (`composition` 90.3%, unit profile); failing-first record and choices in
+  `notes/2.2.md`.
 - [ ] 2.3 #16 refusal, tests first: `TestValidateRefusesStreamCapturingReservedSubject`,
   `TestValidateDoesNotRefuseNeighbouringSubjects` and `TestReservedSubjectOverlapMatchesEnumeration` (design
   "Generated checks"; record the counts). Then:

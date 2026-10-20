@@ -34,6 +34,7 @@ on a clean tree at its commit (#171).
 
 ## 5. Review and close
 
-- [ ] 5.1 Cross-agent review; `reviewed-by:` in the PR body.
-- [ ] 5.2 Archive (`openspec archive one-mutation-port-check`) as the last content commit. Gate: `task spec:check`
+- [x] 5.1 Cross-agent review; `reviewed-by:` in the PR body. Codex approved at `6670547` (PR #330 review
+  record); its MEDIUM finding on the spec's error class is fixed before the archive.
+- [x] 5.2 Archive (`openspec archive one-mutation-port-check`) as the last content commit. Gate: `task spec:check`
   and `task docs:check`.

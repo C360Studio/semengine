@@ -3,6 +3,8 @@
 base: `30ae761f93b5d3e08049e812843763a5b8e865c4` (`main` `3a8611f` plus the two claim commits, which add only
 `proposal.md`; draft PR #343)
 
+Status: INVENTORY PASS (semengine-reviewer, round 2, `ad946b7`).
+
 Question: what porting `service` from the SemStreams pin `8b99efe9` carries, how it splits into one pull request per
 lifecycle owner and in what order, and what the owner must rule on before the first owner's design. This is an
 inventory; the split in § 2.3 is a proposal for the owner to accept on #9, not a design.
@@ -185,7 +187,7 @@ Other second spellings the port meets: metric namespace `"semstreams"` (`startup
 - Main listener after boot: `/health`, `/healthz`, `/readyz`, `/services`, `/services/health` (`:1707-1713`);
   `/graph/triples` (`:1720`); `/openapi.json` (`:1568`); `/docs` when `swagger_ui` (`:1572`).
 - `/graph/triples` readers (measured, `grep -rn '/graph/triples'`): semteams 110 lines, 15 of them in `ui/src` across
-  7 files (`ui/src/lib/services/runStatusApi.ts:21` — `const TRIPLES_ENDPOINT = "/graph/triples";`, run-level pause
+  7 production files (21 in 10 with its `.test.ts` files; `ui/src/lib/services/runStatusApi.ts:21` — `const TRIPLES_ENDPOINT = "/graph/triples";`, run-level pause
   detection; `controlsStore.svelte.ts:9`, `+layout.svelte:20`), the rest its e2e specs, Caddyfile, Taskfile and docs;
   semsource one doc line; semconnect and semboids none. At the pin outside `service`: no production Go, only the e2e
   ops scenario (`test/e2e/scenarios/ops/scenario.go`), its compose and task files, two flow configs and docs. The 03B

@@ -2273,7 +2273,10 @@
     Dependencies.Platform is types.PlatformMeta (D7, D8); (11) ValidateConfig and ValidationError
     are deleted (D9); and, in one-exclusive-address-check (#324): (12) admission refuses one component
     claiming an exclusive resource on two of its ports, through both Declare and CreateComponent;
-    compactStrings and the unreachable self-skip in the registry's conflict check are removed
+    compactStrings and the unreachable self-skip in the registry's conflict check are removed; and, in
+    one-network-address-clash (#328): (13) exclusive network claims clash by transport (`udp` in any
+    letter case, else TCP), port and host (wildcard, one IP address, or same text), not by resource
+    text; the refusal names the refused component, the holder and both claims
   dependencies_and_side_effects: >-
     internal/cache, metric, model, natsclient, payloadregistry, pkg/errs, pkg/security, storage,
     storage/storeregistry, types (in-set); stdlib
@@ -2287,7 +2290,9 @@
     internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage),
     component/registry_boot_admission_test.go (TestRegistryRefusesASecondComponentOnATakenAddress,
     TestRegistryRefusesOneComponentClaimingAnAddressTwice,
-    TestRegistryAdmitsComponentsOnDistinctOrSharedResources), registry_test.go, registry_integration_test.go,
+    TestRegistryAdmitsComponentsOnDistinctOrSharedResources,
+    TestRegistryRefusesNetworkClaimsThatCannotBothBind, TestRegistryAdmitsNetworkClaimsThatCanBothBind,
+    TestRegistryNamesTheFirstClashingHolderByName), registry_test.go, registry_integration_test.go,
     register_test.go, validation_test.go, schema_words_test.go, discovery_test.go
     (TestDiscoverableNeedsOnlyPortsHealthAndFlow)
   owner: setup-04a-02-ingest-kernel developer

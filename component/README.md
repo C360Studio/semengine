@@ -205,15 +205,23 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 - `ListFactories()` returns a copy of each registration's metadata, without its factory function; it returns no live
   component.
 - `Declare(instanceName, config)` runs a factory's port declarer for one configured instance and returns its
-  `Declaration`, without building the component. It refuses a component that claims one exclusive address (a
-  `NetworkPort`'s) on two of its own ports.
+  `Declaration`, without building the component. It refuses a component two of whose own network claims clash.
+  Two `NetworkPort` claims clash when they have the same transport (UDP for the protocol `udp` in any letter case, TCP
+  for every other protocol) and the same port, and either host is a wildcard (`0.0.0.0`, `::`), or both hosts are IP
+  addresses naming one address (`::ffff:127.0.0.1` names `127.0.0.1`), or both hosts are the same text. Host names are
+  not resolved: `localhost` beside `127.0.0.1` is admitted, and the bind at `Start` decides it. The refusal is of the
+  invalid class and reads
+  `resource conflict: component 'gateway' claims ws:0.0.0.0:8080, held by another of its ports as http:0.0.0.0:8080`,
+  naming the later claim (inputs first, then outputs) and the earlier one.
 - `CreateComponent(instanceName, config, deps, prepare)`, `SealComposition()` and `Snapshots()` exist for the component
   manager. `Snapshots()` returns a copy of every admitted `Declaration`, sorted by instance name; changing one changes
   nothing in the registry. A consumer creates and composes components through that manager; a direct call is not
   refused, but it bypasses the manager's bookkeeping. `CreateComponent` refuses a disabled instance, a nil
   `Dependencies.NATSClient`, a port declaration that differs from the ports the built component reports, an instance
-  name already admitted, an exclusive resource another instance holds or one address on two of its own ports, and any
-  call after `SealComposition`. `prepare` may be nil.
+  name already admitted, a network claim that clashes with one another instance holds or with another of its own (the
+  rule under `Declare`), and any call after `SealComposition`. A refusal between components reads
+  `resource conflict: component 'second' claims tcp:127.0.0.1:8080, held by component 'first' as tcp:0.0.0.0:8080`,
+  naming the first holder in instance-name order when several clash. `prepare` may be nil.
 
 ### Decoding a configuration
 

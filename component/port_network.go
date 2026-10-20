@@ -4,7 +4,7 @@ import "fmt"
 
 // NetworkPort - TCP/UDP network bindings
 type NetworkPort struct {
-	Protocol string `json:"protocol"` // "tcp", "udp"
+	Protocol string `json:"protocol"` // "udp" in any letter case is UDP; any other label ("tcp", "http") is TCP
 	Host     string `json:"host"`     // "0.0.0.0", "localhost"
 	Port     int    `json:"port"`     // 14550, 8080
 }

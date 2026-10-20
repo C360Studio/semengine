@@ -1,12 +1,12 @@
 # Tasks: config-key-letter-case
 
 Each task names its outcome and the gate that proves it. Tests come first. Record in `notes/<task>.md` how each test
-fails on the base commit, or which mutant it detects. A review stop (Codex) comes after 2.3. Each task ends only when
+fails on the base commit, or which mutant it detects. A review stop (Codex) comes after 3.1; the change is small enough for one. Each task ends only when
 `task verify` passes on a clean tree at its commit.
 
 ## 1. Design
 
-- [ ] 1.1 Proposal, design and spec delta pass pre-owner review and are accepted by the owner. Gate:
+- [x] 1.1 Proposal, design and spec delta pass pre-owner review and are accepted by the owner. Gate:
   `task spec:check` and `task docs:check`.
 
 ## 2. Refusal (D1-D3)
@@ -23,12 +23,12 @@ fails on the base commit, or which mutant it detects. A review stop (Codex) come
   named refusals (D2). Gate: `go test -race ./config/` passes, with no edit to an existing test; `task verify`
   passes on a clean tree.
 - [ ] 2.3 Sensitivity: `task mutate:check` detects D3's mutants (a)-(d), recorded in `notes/2.3.md`. Gate:
-  `task verify` passes on a clean tree (review stop).
+  `task verify` passes on a clean tree.
 
 ## 3. Docs (D4)
 
 - [ ] 3.1 `config/README.md` and `config/doc.go` per D4. Gate: `task verify` passes on a clean tree, including
-  `docs:check` and the README example test.
+  `docs:check` and the README example test (review stop).
 
 ## 4. Verify, review and close
 

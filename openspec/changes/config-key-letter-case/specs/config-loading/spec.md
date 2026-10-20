@@ -8,9 +8,9 @@
 of the struct field it is decoded into, at any depth; a key exactly equal to a declared name is accepted. The error
 SHALL name the key's dotted path as written and as declared. They SHALL NOT check map keys a deployment chooses
 (component, service, stream, override, archival and model registry names) or the contents of a component's or
-service's `config` payload. A key that matches no declared name
-in any letter case SHALL stay accepted, except where a strictly decoded entry refuses it. When the document also sets
-a removed or unapplied key, the refusal naming that key SHALL be returned.
+service's `config` payload. A key that matches no declared name in any letter case SHALL stay accepted, except where a
+strictly decoded entry refuses it. When the document also sets a removed or unapplied key, the refusal naming that key
+SHALL be returned.
 
 #### Scenario: NATS written in capitals
 

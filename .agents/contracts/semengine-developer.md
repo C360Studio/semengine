@@ -299,8 +299,10 @@ Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' deve
 ### State ownership and component wiring
 
 Carried with graph-ingest and `component` from SemStreams' developer contract at the pin (§ State ownership and
-component wiring). The pin's rules for `internal/boot`, schema generation and OpenAPI types are not carried: this
-module has no binary, no schema generator and no OpenAPI registry.
+component wiring). The pin's rules for `internal/boot` and schema generation are not carried: this module has no
+binary and no schema generator. `service` has the OpenAPI types and registry (`RegisterOpenAPISpec`); the pin's rule
+to register every OpenAPI `SchemaRef` type arrives with the first service that registers a spec (PR 3 of the `service`
+port).
 
 - Only graph-ingest writes domain entities to `ENTITY_STATES`. Other code emits a `graph.Graphable` payload or uses a
   bucket it owns, declared in `graph/kvcatalog` when the framework guarantees its ownership or retention.

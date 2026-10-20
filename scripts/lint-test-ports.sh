@@ -26,8 +26,10 @@
 #     it is this guard's rule applied: the kernel picks the port. It
 #     closes the listener because Docker, another process, can be given
 #     only the number; a process that takes the port in between fails
-#     Docker's start loudly (SemEngine #209; measured on macOS by the
-#     probe on PR #210, comment 6151736554).
+#     Docker's start loudly with "address already in use" (SemEngine #209;
+#     measured on macOS by the probe on PR #210, comment 6151736554), and
+#     Start removes that unstarted container and tries once more with a
+#     fresh port (#345).
 #
 # Adapted in SemEngine (openspec change flake-defense, design D7): the
 # inline exemption marker is gone, and the failure message says to hand

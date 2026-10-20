@@ -3,11 +3,17 @@
 package natsfixture
 
 import (
+	"context"
+	"errors"
 	"net"
 	neturl "net/url"
+	"slices"
+	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/moby/moby/api/types/network"
+	"github.com/nats-io/nats.go"
 )
 
 // heldPorts is how many wildcard listeners TestStartPastHeldPorts holds between the two fixtures.
@@ -39,6 +45,161 @@ func TestStartPastHeldPorts(t *testing.T) {
 	second := startFixture(t)
 	assertExplicitPortBinding(t, second)
 	t.Logf("first fixture at %s; held %v; second fixture at %s", first.URL(), heldAddrs, second.URL())
+}
+
+// Requirement: nats-fixture/Phased start in one container; Scenario: Host port taken before Docker binds it
+// When another process takes the host port freePort just released before Docker binds it (#345),
+// Docker fails ContainerStart with "address already in use". With a live caller context, Start
+// removes the first unstarted container, takes a fresh host port, and starts a second container;
+// when both attempts hit a held port, or when the caller context is cancelled, Start fails in the
+// start phase and leaves no container behind.
+func TestStartRetriesOnceOnPortInUse(t *testing.T) {
+	held1, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("listen :0: %v", err)
+	}
+	t.Cleanup(func() { _ = held1.Close() })
+	heldPort1 := strconv.Itoa(held1.Addr().(*net.TCPAddr).Port)
+
+	held2, err := net.Listen("tcp", ":0")
+	if err != nil {
+		t.Fatalf("listen :0: %v", err)
+	}
+	t.Cleanup(func() { _ = held2.Close() })
+	heldPort2 := strconv.Itoa(held2.Addr().(*net.TCPAddr).Port)
+
+	t.Run("recovers_on_second_attempt", func(t *testing.T) {
+		orig := pickPort
+		t.Cleanup(func() { pickPort = orig })
+		calls := 0
+		pickPort = func() (string, error) {
+			calls++
+			if calls == 1 {
+				return heldPort1, nil
+			}
+			return freePort()
+		}
+
+		const limit = 4096
+		// Own server: tests Start's port-in-use retry on a fresh container.
+		f := New(t, WithMaxPayload(limit))
+		if err := f.Start(t.Context()); err != nil {
+			t.Fatalf("Start after one held port (%s) = %v, want nil on the second attempt", heldPort1, err)
+		}
+		if calls != 2 {
+			t.Fatalf("pickPort calls = %d, want 2", calls)
+		}
+		assertExplicitPortBinding(t, f)
+		if _, err := f.JetStream().AccountInfo(t.Context()); err != nil {
+			t.Fatalf("JetStream AccountInfo on %s: %v", f.URL(), err)
+		}
+		nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+		if err != nil {
+			t.Fatalf("dial %s: %v", f.URL(), err)
+		}
+		defer nc.Close()
+		if got := nc.MaxPayload(); got != limit {
+			t.Fatalf("broker announces max_payload %d after retry, want %d", got, limit)
+		}
+		if err := nc.Publish("payload.bound", make([]byte, limit+1)); !errors.Is(err, nats.ErrMaxPayload) {
+			t.Fatalf("publish of %d bytes after retry = %v, want nats.ErrMaxPayload", limit+1, err)
+		}
+		if got := processContainers(t); !slices.Equal(got, []string{f.containerID}) {
+			t.Fatalf("containers of this process = %v, want only %s (first attempt container not removed)", got, f.containerID)
+		}
+	})
+
+	t.Run("fails_after_two_attempts", func(t *testing.T) {
+		orig := pickPort
+		t.Cleanup(func() { pickPort = orig })
+		calls := 0
+		pickPort = func() (string, error) {
+			calls++
+			if calls == 1 {
+				return heldPort1, nil
+			}
+			return heldPort2, nil
+		}
+
+		// Own server: tests Start's two-attempt bound when both ports are in use.
+		f := New(t)
+		err := f.Start(t.Context())
+		if err == nil {
+			t.Fatal("Start succeeded when both attempts used a held port")
+		}
+		if calls != 2 {
+			t.Fatalf("pickPort calls = %d, want 2", calls)
+		}
+		for _, want := range []string{"phase start", "(parent context live)", "address already in use", heldPort1, heldPort2} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("Start error %q lacks %q", err, want)
+			}
+		}
+		if strings.Contains(err.Error(), "cleanup:") {
+			t.Errorf("Start error %q reports a failed cleanup", err)
+		}
+		if got := processContainers(t); len(got) != 0 {
+			t.Fatalf("containers of this process after failed Start = %v, want none", got)
+		}
+		if !stopHoldsNothing(t, f) {
+			t.Fatalf("after failed Start the fixture still holds %v", f.remaining())
+		}
+	})
+
+	t.Run("no_retry_when_context_cancelled", func(t *testing.T) {
+		orig := pickPort
+		t.Cleanup(func() { pickPort = orig })
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		calls := 0
+		pickPort = func() (string, error) {
+			calls++
+			cancel()
+			return heldPort1, nil
+		}
+
+		// Own server: tests that a cancelled context stops Start after the first attempt.
+		f := New(t)
+		err := f.Start(ctx)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Start = %v, want context.Canceled", err)
+		}
+		if calls != 1 {
+			t.Fatalf("pickPort calls = %d, want 1 (no retry after cancellation)", calls)
+		}
+		if got := processContainers(t); len(got) != 0 {
+			t.Fatalf("containers of this process after cancelled Start = %v, want none", got)
+		}
+		if !stopHoldsNothing(t, f) {
+			t.Fatalf("after cancelled Start the fixture still holds %v", f.remaining())
+		}
+	})
+
+	t.Run("no_retry_on_non_port_in_use_error", func(t *testing.T) {
+		orig := pickPort
+		t.Cleanup(func() { pickPort = orig })
+		calls := 0
+		pickPort = func() (string, error) {
+			calls++
+			return "99999", nil
+		}
+
+		// Own server: tests that a Docker start failure other than address-in-use does not retry.
+		f := New(t)
+		err := f.Start(t.Context())
+		if err == nil || !strings.Contains(err.Error(), "phase start") {
+			t.Fatalf("Start with invalid port = %v, want a start-phase error", err)
+		}
+		if calls != 1 {
+			t.Fatalf("pickPort calls = %d, want 1 (no retry on non-port-in-use error)", calls)
+		}
+		if got := processContainers(t); len(got) != 0 {
+			t.Fatalf("containers of this process after failed Start = %v, want none", got)
+		}
+		if !stopHoldsNothing(t, f) {
+			t.Fatalf("after failed Start the fixture still holds %v", f.remaining())
+		}
+	})
 }
 
 func assertExplicitPortBinding(t *testing.T, f *Fixture) {

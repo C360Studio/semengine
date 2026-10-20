@@ -13,48 +13,36 @@
     "discovery": {"enabled": true, "config": {}}
   },
   "components": {
-    "udp-input": {
-      "type": "input",
-      "name": "udp",
-      "enabled": true,
-      "config": {
-        "port": 14550
-      }
-    },
-    "mavlink-processor": {
+    "graph-ingest": {
       "type": "processor",
-      "name": "robotics",
+      "name": "graph-ingest",
       "enabled": true,
       "config": {
-        "protocol": "mavlink"
-      }
-    },
-    "websocket-output": {
-      "type": "output",
-      "name": "websocket",
-      "enabled": true,
-      "config": {
-        "path": "/stream"
-      }
-    },
-    "graph-processor": {
-      "type": "processor",
-      "name": "graph",
-      "enabled": true,
-      "config": {
-        "entity_states": {
-          "ttl": "0",
-          "history": 10,
-          "replicas": 1
-        }
-      }
-    },
-    "message-store": {
-      "type": "storage",
-      "name": "objectstore",
-      "enabled": true,
-      "config": {
-        "bucket_name": "messages"
+        "ports": {
+          "inputs": [
+            {
+              "name": "entity_stream",
+              "config": {"kind": "jetstream", "stream_name": "ENTITY", "subjects": ["entity.>"], "deliver_policy": "all"}
+            },
+            {
+              "name": "mutations",
+              "required": true,
+              "config": {
+                "kind": "nats-request",
+                "subject": "graph.mutation.>",
+                "interface": {"type": "semengine.graph.mutation", "version": "v1"}
+              }
+            }
+          ],
+          "outputs": [
+            {
+              "name": "entity_states",
+              "config": {"kind": "kv-write", "bucket": "ENTITY_STATES"}
+            }
+          ]
+        },
+        "enable_hierarchy": false,
+        "ingest_lanes": 8
       }
     }
   }

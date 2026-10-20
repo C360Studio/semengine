@@ -249,7 +249,9 @@ self-clash outcome and overlap for #16. ADR-094 and ADR-096 govern `service`. Th
 - **Row `component`:** the contract gains `ConflictWith`; `known_risks` records the removed field.
 - **Row `component/flowgraph`:** the contract gains `SubjectsOverlap` and `ComponentPortRef.Direction`.
 - **Row `config`:** the contract gains `ValidateDocument` (reads no file, writes nothing) and validation in name order.
-- **Row `model`:** validation in name order.
+- **Row `model`:** changes from `carry` to `adapt` (`docs/admission-ledger.yaml:1939-1959`; `ledger:check` fails a
+  `carry` row that differs from the pin), with one item: validation visits endpoints and capabilities in name order
+  (#348).
 - **Coverage:** `composition` is on 03B D10's ruled list (`design.md:458`), so add `"composition unit"` to
   `scripts/cover-check.sh`. Pin baseline 89.6%; the gate is 80%.
 - **Issues:** `Closes #338`, `Closes #346`, `Closes #347`, `Closes #348`. These stay open:

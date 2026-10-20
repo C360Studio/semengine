@@ -43,7 +43,10 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   - `Config.ValidateDocument`, with `Validate` composed from it and the host checks;
   - composition calling `ValidateDocument`;
   - sorted loops in `Config.ValidateDocument` and `model.Registry.Validate`;
-  - the `config`, `model` and `component/flowgraph` ledger rows updated.
+  - the `config`, `model` (now `adapt`) and `component/flowgraph` ledger rows updated.
+
+  After the fix commit, the PR body carries `Closes #346`, `Closes #347` and `Closes #348`, and `status:blocked` is
+  removed from those three issues.
 
   Gate: `go test -race ./config/ ./model/ ./internal/flowgraph/ ./composition/`, `task verify`.
 - [ ] 2.3 #16 refusal, tests first: `TestValidateRefusesStreamCapturingReservedSubject`,

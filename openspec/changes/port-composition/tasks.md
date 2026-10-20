@@ -49,7 +49,7 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   removed from those three issues.
 
   Gate: `go test -race ./config/ ./model/ ./internal/flowgraph/ ./composition/`, `task verify`.
-- [ ] 2.3 #16 refusal, tests first: `TestValidateRefusesStreamCapturingReservedSubject`,
+- [x] 2.3 #16 refusal, tests first: `TestValidateRefusesStreamCapturingReservedSubject`,
   `TestValidateDoesNotRefuseNeighbouringSubjects` and `TestReservedSubjectOverlapMatchesEnumeration` (design
   "Generated checks"; record the counts). Then:
   - `SubjectsOverlap` in `internal/flowgraph`, with its ledger contract line;

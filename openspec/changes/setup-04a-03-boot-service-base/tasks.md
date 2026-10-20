@@ -19,13 +19,15 @@ Each task names its outcome and the gate that proves it. This change ports `Base
 
 ## 2. Port (D1-D6)
 
-- [ ] 2.1 Tests first, in `service/`: `base_lifecycle_test.go` and `base_test.go` carried and adapted per D6 (unit
+- [x] 2.1 (`3745b91`) Tests first, in
+  `service/`: `base_lifecycle_test.go` and `base_test.go` carried and adapted per D6 (unit
   where no NATS is needed, no sleeps, the dropped options' subtests removed, the two abort tests and the one-shot Stop
   test flipped); the `natsfixture.Shared` `TestMain` file; the two tests moved from the pin's
   `service_composition_test.go`; the new tests D2, D3, D4 and D6 name, including the lifecycle-suite adapter and
   `TestCanonicalServiceJSONIsIdempotent`. The notes cite the probe comment on #343 (H1 to H6, design, Probes). Gate:
   the tests fail on the base (the package does not exist; note the compile error).
-- [ ] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's
+- [x] 2.2 (`2426715`; early-review fixes `7f34363`) The nine
+  files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's
   `MaybeStartPProf`/`PProfServer`, D4's `kvcatalog` call, and Q1 as ruled. Gate: `go test -race ./service/` and
   `go test -tags integration ./service/` pass, `TestBaseServicePassesTheLifecycleSuite` and
   `TestPProfShutdownWaitsForAnInFlightRequest` included; `go build ./...`; `task verify` passes on a clean tree

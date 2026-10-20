@@ -20,7 +20,7 @@ Each task ends when its gate passes; 2.4 ends when `task verify` passes on a cle
   commit. Gate: `go test -race ./component` and `task lint`.
 - [x] 2.3 The spec delta is true of the code, each scenario's literal matching its test. Gate: `task spec:check`.
 - [x] 2.4 README, `port_network.go` comment and the ledger `component` row updated. Gate: `task verify`.
-- [ ] 2.5 #339 (ruled: #339 comment 6291592448): `hostAddr` drops any IPv6 zone; R14-R20 added (red before the
+- [x] 2.5 #339 (ruled: #339 comment 6291592448): `hostAddr` drops any IPv6 zone; R14-R20 added (red before the
   change, the run recorded); M8 detected and M3 re-run as restated by `task mutate:check`; the spec delta, ruling
   table, README and ledger `component` row updated; `notes/probe-339.md` posted as a PR comment. The PR body carries
   `Closes #339`. Gate: `go test -race ./component`, then `task verify`.

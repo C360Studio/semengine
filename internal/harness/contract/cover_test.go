@@ -38,8 +38,8 @@ const (
 func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
 
 // d11Targets are the coverage targets setup-04a-02 design D11 adds (task 5.2d), and those later
-// changes add (simplify-04a-13 design D2: natsclient/storagereport), each with the profile
-// scripts/cover-check.sh measures it from.
+// changes add (simplify-04a-13 design D2: natsclient/storagereport; setup-04a-03-boot-config-manager
+// design D5: config), each with the profile scripts/cover-check.sh measures it from.
 var d11Targets = []struct{ dir, kind string }{
 	{"processor/graph-ingest", "merged"},
 	{"graph", "merged"},
@@ -52,6 +52,7 @@ var d11Targets = []struct{ dir, kind string }{
 	{"storage/storeregistry", "unit"},
 	{"pkg/lifecycle", "merged"},
 	{"natsclient/storagereport", "merged"},
+	{"config", "merged"},
 }
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced

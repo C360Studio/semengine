@@ -2,10 +2,11 @@
 
 Package `config` reads a SemEngine process's configuration: one JSON document, laid over built-in defaults, with a
 few environment variables on top. It also declares the JetStream streams that configuration needs and creates them on
-a NATS server.
+a NATS server, and its `Manager` keeps the configuration in a NATS key-value bucket so it outlives the process.
 
-What it does not do: it does not connect to NATS (the caller hands `StreamsManager` a connected client), it does not
-watch for configuration changes at run time, and it does not write configuration back to a file.
+What it does not do: it does not connect to NATS (the caller hands `StreamsManager` and `Manager` a connected client),
+and it does not write configuration back to a file. A change the `Manager` sees in its bucket while it runs updates
+what `GetConfig` and `WatchModelRegistry` report; the `Manager` itself never starts, stops or rewires a component.
 
 ## Loading a configuration
 
@@ -158,6 +159,134 @@ err := safe.Mutate(func(cfg *config.Config) error {
 `Get`, then a change, then `Update` can lose a change another goroutine made between the two calls. The function
 passed to `Mutate` must not call `Get`, `Update` or `Mutate` itself: it would wait forever on the lock it is running
 under.
+
+## The configuration manager
+
+`Manager` stores a deployment's configuration in a NATS key-value bucket, the configuration bucket, so that it survives
+a restart and another process (an operator's tool, a UI) can change what the next boot runs. The bucket is named
+`semengine_config_<org>_<stem>` from the document's `platform.org` and the `platform.id` it declares:
+`config.BucketName("acme", "dep")` returns `semengine_config_acme_dep`.
+
+```go
+func run(ctx context.Context, cfg *config.Config, client *natsclient.Client, logger *slog.Logger) (err error) {
+    mgr, err := config.NewConfigManager(cfg, client, logger)
+    if err != nil {
+        return err
+    }
+    // Installed before Start: a failed Start whose rollback also fails leaves its cleanup for Stop.
+    defer func() {
+        // ctx may have ended by now; Stop needs a context that has not.
+        stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+        defer cancel()
+        err = errors.Join(err, mgr.Stop(stopCtx))
+    }()
+    if err := mgr.Start(ctx); err != nil {
+        return err
+    }
+
+    platformID := mgr.GetConfig().Get().Platform.ID // the effective identifier, such as "dep-800dff"
+    logger.Info("configuration ready", "platform_id", platformID)
+    <-ctx.Done()
+    return nil
+}
+```
+
+### Start and Stop
+
+`Start(ctx)` does all of its work under `ctx`: it acquires the bucket, establishes the platform identity (below),
+decides whether the file or the bucket wins, and opens the watches. It refuses a `nil` or ended `ctx`, and refuses
+every call after the first with `errs.ErrAlreadyStarted`, including a call after `Stop`: build a new `Manager` to start
+again. Once `Start` has returned, ending its `ctx` stops nothing; the watches run until `Stop` (ADR-113).
+
+`Stop(ctx)` closes every channel the `Manager` handed out, stops every watch and waits for the `Manager`'s goroutines.
+It returns `nil` only when all of that is done. If `ctx` ends first it returns `ctx`'s error, and a later `Stop` tries
+again. A `ctx` that has already ended stops nothing, which is why the example builds a fresh bounded context instead
+of passing the signal context that is ending the program.
+
+### Platform identity
+
+The first `Start` on an empty bucket mints the deployment's effective `platform.id`, the declared value plus a
+six-character hexadecimal suffix such as `dep-800dff`, and records it in the bucket's `platform_identity` key. Every
+later `Start`, in this process or another with the same document, adopts the recorded value. `Start` refuses a bucket
+whose record names another `platform.org` or another declared `platform.id`, and a bucket that holds configuration but
+no record (ADR-104).
+
+### Which copy wins
+
+| At `Start` | Result |
+| --- | --- |
+| The bucket holds no configuration (first boot) | The file is written to the bucket |
+| The file's `version` is newer than the bucket's | The file is written to the bucket |
+| The versions are equal, or the file's is older | The bucket wins |
+| Either version is not a semantic version, including a file with no `version` | The bucket wins |
+
+Versions are compared with `CompareVersions`. The bucket's `version` is stored as a JSON string. A bucket with no
+`version` key compares as `0.0.0`, and so does a stored value that fails to decode into a string, such as a number
+(with a warning in the log), so a file at `1.0.0` wins over either. A stored JSON string that is not a semantic version,
+such as `"latest"`, cannot be compared, and the bucket wins. A stored `null` decodes as an empty string, which is not a
+semantic version either, so the bucket wins. When the bucket wins, its `services` and `components` entries replace
+the file's, so a component deleted at run time stays deleted at the next boot; to bring the file's set back, raise the
+file's `version`. A stored `model_registry` replaces the file's; a stored `nats` is decoded over the file's `nats`
+section, so a key it leaves out keeps the file's value. The stored `platform` key is a copy for readers and is never
+applied. When the file is written, `version` is written last, so a write cut short leaves the bucket's old `version`,
+or none. The next boot writes the file again only when the file's `version` is newer than that. A file with no
+`version`, or `0.0.0`, is not newer than a missing one, so the next boot selects the partly written bucket instead; raise
+the file's `version` to write it again.
+
+### Names
+
+Each service and component name is stored as the key `services.<name>` or `components.<name>`, with every space
+written as `_`. The name must then be one key token: no `.`, `*` or `>`. `Start` refuses such a name, and two names
+that map to the same key (`a b` and `a_b`), before it touches the bucket. A name with a space appears under its key's
+name from `Start` on: a file component `a b` is `a_b` in `GetConfig`.
+
+### When Start fails
+
+`Start` returns an error naming the key, and leaves every writer refusing, when:
+
+- a name or a value cannot be written (found before the bucket is touched, so nothing is written, not even the
+  identity record);
+- the bucket cannot be listed or read;
+- a stored `services`, `components`, `nats` or `model_registry` entry does not decode;
+- a stored `nats` entry sets a key loading refuses (see "What loading refuses");
+- writing the file to the bucket fails;
+- any watch does not open.
+
+Before it returns, a failed `Start` rolls back what it acquired, such as a watch it opened, with a budget of five
+seconds of its own. When the rollback succeeds the `Manager` holds nothing. When it fails, its error is joined into
+`Start`'s error and the rest of the cleanup is kept for `Stop`, which is why the example above installs its bounded
+`Stop` before calling `Start`.
+
+A change written to the bucket while the `Manager` runs that does not decode is logged and skipped.
+
+### Next-boot writes
+
+`PutComponentToKV(ctx, name, cfg)` and `DeleteComponentFromKV(ctx, name)` write or delete `components.<name>` and
+update `GetConfig` before they return; a put whose key the watcher has already applied at a newer revision keeps that
+newer value, and a delete never erases a later put of its key: no watcher event is applied between the delete reaching
+the bucket and its removal from `GetConfig`. They record what the next boot runs: they never start, stop or restart a
+component in the running process. `WatchModelRegistry()` returns a channel that receives the model registry each time
+its key changes, and closes when `Stop` runs.
+
+### Key families
+
+A key family gives another owner its own keys, `<prefix>.<name>`, in the same bucket:
+
+```go
+rules, err := config.NewKeyFamily("rules", func(e config.KeyFamilyEntry) {
+    logger.Info("rule changed", "name", e.Name, "deleted", e.Operation == config.KeyFamilyDelete, "initial", e.Initial)
+})
+if err != nil {
+    return err
+}
+mgr, err := config.NewConfigManager(cfg, client, logger, config.WithKeyFamily(rules))
+```
+
+After `Start`, the handler receives every entry present when the watch opened (`Initial` is true), then each put and
+delete. It runs on the `Manager`'s goroutine and must not block: `Stop` waits for it. The family's `Get`, `Put`,
+`Create`, `Delete` and `Names` reach only `rules.*` keys, and return an error until `Start` has succeeded. The
+`Manager` never decodes a family's values. A prefix the `Manager` uses itself (`services`, `components`, `platform`,
+`nats`, `model_registry`, `platform_identity`) is refused by `NewConfigManager`.
 
 ## Streams
 

@@ -1,0 +1,779 @@
+//go:build integration
+
+package config
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/require"
+	"github.com/stretchr/testify/suite"
+
+	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/types"
+)
+
+type ManagerIntegrationSuite struct {
+	suite.Suite
+	natsClient    *natsclient.Client
+	configManager *Manager
+	kvStore       *natsclient.KVStore
+	ctx           context.Context
+	cancel        context.CancelFunc
+}
+
+func (s *ManagerIntegrationSuite) SetupTest() {
+	// Each test method gets its own reset of the shared broker (fixtureClient), so no
+	// method starts on another method's bucket.
+	s.natsClient = fixtureClient(s.T())
+
+	// Create base config with required fields
+	baseConfig := &Config{
+		Version: "1.0.0",
+		Platform: PlatformConfig{
+			Org:  "c360",
+			ID:   "integration-test",
+			Type: "test",
+		},
+		Services:   make(types.ServiceConfigs),
+		Components: make(ComponentConfigs),
+	}
+
+	// Create Manager
+	var err error
+	s.configManager, err = NewConfigManager(baseConfig, s.natsClient, nil)
+	s.Require().NoError(err)
+
+	// Create context for test
+	s.ctx, s.cancel = context.WithCancel(context.Background())
+
+	// Start watching
+	err = s.configManager.Start(s.ctx)
+	s.Require().NoError(err)
+
+	// Get KVStore for direct KV operations
+	s.kvStore = mustStore(s.T(), s.configManager) // Use the same KVStore instance
+
+	// Wait until the server holds the Manager's watches, rather than sleeping.
+	awaitWatchConsumers(s.T(), s.ctx, s.natsClient, s.configManager.bucketName, len(managerWatchPatterns))
+}
+
+func (s *ManagerIntegrationSuite) TearDownTest() {
+	stopManager(s.T(), s.configManager)
+	s.cancel()
+}
+
+func (s *ManagerIntegrationSuite) TestJSONOnlyUpdates() {
+	// Subscribe to service updates
+	updates := s.configManager.onChange("services.*")
+
+	// With UpdatesOnly, we should get initial config from OnChange
+	// but no replay from watcher
+	select {
+	case <-updates:
+		// Expected - OnChange sends initial config
+	case <-time.After(100 * time.Millisecond):
+		s.Fail("No initial config received from OnChange")
+	}
+
+	// 1. Write JSON service config - should work
+	metricsConfig := types.ServiceConfig{Enabled: true, Config: json.RawMessage(`{"port": 9090, "path": "/metrics"}`)}
+
+	configJSON, _ := json.Marshal(metricsConfig)
+	_, err := s.kvStore.Put(s.ctx, "services.metrics", configJSON)
+	s.Require().NoError(err)
+
+	// 2. Wait for update via channel
+	select {
+	case update := <-updates:
+		s.Equal("services.metrics", update.Path) // Should be exact key, not pattern
+		cfg := update.Config.Get()
+		s.NotNil(cfg.Services["metrics"])
+
+		// Verify the config was properly stored
+		svcConfig := cfg.Services["metrics"]
+		s.T().Logf("Service config: %+v", svcConfig)
+		s.T().Logf("Raw config: %s", string(svcConfig.Config))
+		s.True(svcConfig.Enabled)
+	case <-time.After(500 * time.Millisecond):
+		s.Fail("No config update received")
+	}
+
+	// 3. Try property-level update - should be ignored
+	s.T().Log("Writing property-level key services.metrics.enabled")
+	_, err = s.kvStore.Put(s.ctx, "services.metrics.enabled", []byte("false"))
+	s.Require().NoError(err)
+
+	// 4. Verify no update received (property-level ignored)
+	select {
+	case update := <-updates:
+		s.T().Logf("Unexpected update received for key: %s", update.Path)
+		cfg := update.Config.Get()
+		if svc, ok := cfg.Services["metrics"]; ok {
+			s.T().Logf("Service state after property write: %+v", svc)
+		}
+		s.Fail("Should not receive update for property-level key")
+	case <-time.After(200 * time.Millisecond):
+		// Expected - no update
+		s.T().Log("Good: No update received for property-level key")
+	}
+
+	// 5. Update with full JSON again - should work
+	metricsConfig.Enabled = false
+	configJSON, _ = json.Marshal(metricsConfig)
+	_, err = s.kvStore.Put(s.ctx, "services.metrics", configJSON)
+	s.Require().NoError(err)
+
+	// 6. Should receive update for JSON change
+	select {
+	case update := <-updates:
+		cfg := update.Config.Get()
+		s.NotNil(cfg.Services["metrics"])
+	case <-time.After(500 * time.Millisecond):
+		s.Fail("Should receive update for JSON config change")
+	}
+}
+
+func (s *ManagerIntegrationSuite) TestChannelSubscriptions() {
+	// Subscribe to different patterns
+	serviceUpdates := s.configManager.onChange("services.*")
+	componentUpdates := s.configManager.onChange("components.*")
+	specificService := s.configManager.onChange("services.discovery")
+
+	// OnChange sends initial config, drain those (expecting up to 3)
+	timeout := time.After(300 * time.Millisecond)
+	drained := 0
+	for drained < 3 {
+		select {
+		case <-serviceUpdates:
+			drained++
+		case <-componentUpdates:
+			drained++
+		case <-specificService:
+			drained++
+		case <-timeout:
+			// No more initial configs to drain
+			drained = 3
+		}
+	}
+
+	// Update a service
+	config := types.ServiceConfig{Enabled: true, Config: json.RawMessage(`{"interval": 30}`)}
+
+	configJSON, _ := json.Marshal(config)
+	_, err := s.kvStore.Put(s.ctx, "services.discovery", configJSON)
+	s.Require().NoError(err)
+
+	// Service channels should receive update
+	received := 0
+	timeout2 := time.After(500 * time.Millisecond)
+
+	for received < 2 {
+		select {
+		case <-serviceUpdates:
+			received++
+		case <-specificService:
+			received++
+		case <-componentUpdates:
+			s.Fail("Component channel should not receive service update")
+		case <-timeout2:
+			s.Fail("Timeout waiting for service updates")
+			return
+		}
+	}
+
+	s.Equal(2, received, "Should receive updates on both service channels")
+
+	// Component channel should NOT have received update
+	select {
+	case <-componentUpdates:
+		s.Fail("Component channel should not receive service update")
+	case <-time.After(50 * time.Millisecond):
+		// Expected - no update on component channel
+	}
+}
+
+func (s *ManagerIntegrationSuite) TestConcurrentKVUpdates() {
+	// Test that Manager handles concurrent KV updates gracefully
+	updates := s.configManager.onChange("services.*")
+
+	// Write multiple services concurrently
+	services := []string{"metrics", "discovery", "message-logger"}
+	done := make(chan bool, len(services))
+
+	for _, svcName := range services {
+		go func(name string) {
+			config := types.ServiceConfig{Enabled: true, Config: json.RawMessage(`{"test": true}`)}
+
+			configJSON, _ := json.Marshal(config)
+			_, err := s.kvStore.Put(s.ctx, "services."+name, configJSON)
+			s.NoError(err)
+			done <- true
+		}(svcName)
+	}
+
+	// Wait for all writes to complete
+	for i := 0; i < len(services); i++ {
+		<-done
+	}
+
+	// Should receive updates for all services (order may vary)
+	receivedServices := make(map[string]bool)
+	timeout := time.After(1 * time.Second)
+
+	for len(receivedServices) < len(services) {
+		select {
+		case update := <-updates:
+			cfg := update.Config.Get()
+			for svcName := range cfg.Services {
+				receivedServices[svcName] = true
+			}
+		case <-timeout:
+			s.Failf("Timeout waiting for all service updates", "Received: %v", receivedServices)
+			return
+		}
+	}
+
+	// Verify all services were received
+	for _, svcName := range services {
+		s.True(receivedServices[svcName], "Should have received update for "+svcName)
+	}
+}
+
+func (s *ManagerIntegrationSuite) TestCompleteFlow_KVToService() {
+	// Test complete flow: KV → Manager → Config update → Service visibility
+
+	// 1. Subscribe to updates
+	updates := s.configManager.onChange("services.metrics")
+
+	// OnChange sends initial config, drain it
+	select {
+	case <-updates:
+		// Expected - OnChange sends initial config
+	case <-time.After(100 * time.Millisecond):
+		// May not receive if no existing config
+	}
+
+	// 2. Write service config to KV
+	metricsConfig := types.ServiceConfig{Enabled: true, Config: json.RawMessage(`{"port": 9090, "path": "/metrics"}`)}
+
+	configJSON, _ := json.Marshal(metricsConfig)
+	_, err := s.kvStore.Put(s.ctx, "services.metrics", configJSON)
+	s.Require().NoError(err)
+
+	// 3. Verify update received via channel
+	select {
+	case <-updates:
+		// 4. Verify config is accessible via GetConfig()
+		currentConfig := s.configManager.GetConfig()
+		cfg := currentConfig.Get()
+
+		s.NotNil(cfg.Services["metrics"])
+		s.True(cfg.Services["metrics"].Enabled)
+
+		// 5. Verify the raw config is preserved correctly
+		var parsedConfig map[string]any
+		err := json.Unmarshal(cfg.Services["metrics"].Config, &parsedConfig)
+		s.NoError(err)
+		s.Equal(float64(9090), parsedConfig["port"])
+		s.Equal("/metrics", parsedConfig["path"])
+
+	case <-time.After(500 * time.Millisecond):
+		s.Fail("No config update received")
+	}
+
+	// 6. Test config deletion
+	err = s.kvStore.Delete(s.ctx, "services.metrics")
+	s.NoError(err)
+
+	// 7. Should receive update for deletion
+	select {
+	case <-updates:
+		// After deletion, service should be removed from config
+		currentConfig := s.configManager.GetConfig()
+		cfg := currentConfig.Get()
+		_, exists := cfg.Services["metrics"]
+		s.False(exists, "Service should be removed after deletion")
+	case <-time.After(500 * time.Millisecond):
+		s.Fail("No update received for deletion")
+	}
+}
+
+func (s *ManagerIntegrationSuite) TestKVStore_OptimisticLocking() {
+	// Test that KVStore's CAS operations prevent lost updates
+
+	// Create initial config
+	config := types.ServiceConfig{Enabled: true, Config: json.RawMessage(`{"version": 1}`)}
+
+	configJSON, _ := json.Marshal(config)
+	rev1, err := s.kvStore.Put(s.ctx, "services.test", configJSON)
+	s.Require().NoError(err)
+	s.Greater(rev1, uint64(0))
+
+	// Get current state
+	entry, err := s.kvStore.Get(s.ctx, "services.test")
+	s.Require().NoError(err)
+	s.Equal(rev1, entry.Revision)
+
+	// Simulate concurrent update (someone else changes it)
+	config.Config = json.RawMessage(`{"version": 2}`)
+	configJSON, _ = json.Marshal(config)
+	rev2, err := s.kvStore.Put(s.ctx, "services.test", configJSON)
+	s.Require().NoError(err)
+	s.Greater(rev2, rev1)
+
+	// Try to update with old revision (should fail)
+	config.Config = json.RawMessage(`{"version": 3}`)
+	configJSON, _ = json.Marshal(config)
+	_, err = s.kvStore.Update(s.ctx, "services.test", configJSON, rev1)
+	s.Error(err)
+	s.True(natsclient.IsKVConflictError(err), "Should be a revision mismatch error")
+
+	// Update with correct revision (should succeed)
+	_, err = s.kvStore.Update(s.ctx, "services.test", configJSON, rev2)
+	s.NoError(err)
+}
+
+// TestRuntimeComponentAdd_AppliesAndReconciles (gh#388) proves PutComponentToKV
+// applies the component to the in-memory config synchronously AND drives a
+// components.* notification, so a runtime add reconciles without PushToKV.
+func (s *ManagerIntegrationSuite) TestRuntimeComponentAdd_AppliesAndReconciles() {
+	updates := s.configManager.onChange("components.*")
+	select {
+	case <-updates: // drain the initial-config send
+	case <-time.After(500 * time.Millisecond):
+		s.Fail("no initial config from OnChange")
+	}
+
+	comp := types.ComponentConfig{Type: "input", Name: "doc-source-003", Enabled: true}
+	s.Require().NoError(s.configManager.PutComponentToKV(s.ctx, "doc-source-003", comp))
+
+	// In-memory config reflects the add synchronously (right after the call).
+	_, present := s.configManager.config.Get().Components["doc-source-003"]
+	s.True(present, "PutComponentToKV must apply the component in memory synchronously")
+
+	// A components.* notification is delivered carrying the added component.
+	select {
+	case up := <-updates:
+		s.Equal("components.doc-source-003", up.Path)
+		_, ok := up.Config.Get().Components["doc-source-003"]
+		s.True(ok, "notified config must carry the added component")
+	case <-time.After(2 * time.Second):
+		s.Fail("PutComponentToKV did not deliver a reconcile notification (gh#388)")
+	}
+}
+
+// TestRuntimeComponentRemove_AppliesAndReconciles (gh#388) proves
+// DeleteComponentFromKV removes the component from the in-memory config
+// synchronously AND drives a components.* notification, so a runtime remove
+// reconciles (teardown) without PushToKV.
+func (s *ManagerIntegrationSuite) TestRuntimeComponentRemove_AppliesAndReconciles() {
+	// Seed a component.
+	comp := types.ComponentConfig{Type: "input", Name: "doc-source-009", Enabled: true}
+	s.Require().NoError(s.configManager.PutComponentToKV(s.ctx, "doc-source-009", comp))
+	_, present := s.configManager.config.Get().Components["doc-source-009"]
+	s.Require().True(present, "precondition: component seeded in memory")
+
+	updates := s.configManager.onChange("components.*")
+	select {
+	case <-updates: // drain initial
+	case <-time.After(500 * time.Millisecond):
+		s.Fail("no initial config from OnChange")
+	}
+
+	s.Require().NoError(s.configManager.DeleteComponentFromKV(s.ctx, "doc-source-009"))
+
+	// In-memory config reflects the removal synchronously.
+	_, stillPresent := s.configManager.config.Get().Components["doc-source-009"]
+	s.False(stillPresent, "DeleteComponentFromKV must remove the component in memory synchronously")
+
+	// A components.* notification is delivered without the removed component.
+	select {
+	case up := <-updates:
+		_, ok := up.Config.Get().Components["doc-source-009"]
+		s.False(ok, "notified config must not carry the removed component")
+	case <-time.After(2 * time.Second):
+		s.Fail("DeleteComponentFromKV did not deliver a reconcile notification (gh#388)")
+	}
+}
+
+// TestRuntimeComponentAddRemove_ConcurrentNoLostUpdate is the gh#515 regression at
+// the Manager level: many concurrent PutComponentToKV (adds) interleaved with
+// DeleteComponentFromKV (removes) must not drop one another's in-memory change.
+// Both paths funnel through updateConfig → SafeConfig.Mutate, which serializes the
+// read-modify-write. The old lock-free Get→mutate→Update would lose writes here
+// (and -race would not flag it — the atomicity violation is compound-level), so
+// this asserts on the surviving set, not via -race.
+func (s *ManagerIntegrationSuite) TestRuntimeComponentAddRemove_ConcurrentNoLostUpdate() {
+	const n = 40
+
+	// Seed n "remove-target" components that concurrent deletes will remove.
+	for i := 0; i < n; i++ {
+		name := fmt.Sprintf("del-%03d", i)
+		s.Require().NoError(s.configManager.PutComponentToKV(s.ctx,
+			name, types.ComponentConfig{Type: "input", Name: name, Enabled: true}))
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2 * n)
+	for i := 0; i < n; i++ {
+		addName := fmt.Sprintf("add-%03d", i)
+		delName := fmt.Sprintf("del-%03d", i)
+		go func() {
+			defer wg.Done()
+			_ = s.configManager.PutComponentToKV(s.ctx,
+				addName, types.ComponentConfig{Type: "input", Name: addName, Enabled: true})
+		}()
+		go func() {
+			defer wg.Done()
+			_ = s.configManager.DeleteComponentFromKV(s.ctx, delName)
+		}()
+	}
+	wg.Wait()
+
+	comps := s.configManager.config.Get().Components
+	for i := 0; i < n; i++ {
+		addName := fmt.Sprintf("add-%03d", i)
+		delName := fmt.Sprintf("del-%03d", i)
+		_, added := comps[addName]
+		s.True(added, "concurrent add %s must survive (no lost update)", addName)
+		_, removed := comps[delName]
+		s.False(removed, "concurrent remove %s must take effect (no lost update)", delName)
+	}
+}
+
+func TestManagerIntegrationSuite(t *testing.T) {
+	suite.Run(t, new(ManagerIntegrationSuite))
+}
+
+func TestConfigManagerStartupVersionArbitration(t *testing.T) {
+	tests := []struct {
+		name        string
+		fileVersion string
+		kvVersion   any // stored through json.Marshal
+		wantSource  string
+	}{
+		{name: "newer file pushes file state", fileVersion: "2.0.0", kvVersion: "1.0.0", wantSource: "file"},
+		{name: "older file selects KV", fileVersion: "1.0.0", kvVersion: "2.0.0", wantSource: "kv"},
+		{name: "equal version content edit does not apply", fileVersion: "1.0.0", kvVersion: "1.0.0", wantSource: "kv"},
+		// A stored version that is not a JSON string compares as 0.0.0.
+		{name: "stored version not a JSON string loses to a file at 1.0.0", fileVersion: "1.0.0",
+			kvVersion: json.RawMessage(`100`), wantSource: "file"},
+		// A string that is not a semantic version cannot be compared.
+		{name: "stored version not semantic selects KV", fileVersion: "1.0.0", kvVersion: "latest", wantSource: "kv"},
+		{name: "file with no version selects KV", fileVersion: "", kvVersion: "1.0.0", wantSource: "kv"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tc := fixtureClient(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			fileConfig := &Config{
+				Version: tt.fileVersion,
+				Platform: PlatformConfig{
+					Org: "c360", ID: "arbitration-test", Type: "test",
+				},
+				Services: types.ServiceConfigs{
+					"common": {Enabled: true, Config: json.RawMessage(`{"source":"file"}`)},
+				},
+				Components: make(ComponentConfigs),
+			}
+			manager, err := NewConfigManager(fileConfig, tc, nil)
+			require.NoError(t, err)
+
+			putConfigValue(t, ctx, manager, "version", tt.kvVersion)
+			putConfigValue(t, ctx, manager, "services.common", types.ServiceConfig{
+				Enabled: true,
+				Config:  json.RawMessage(`{"source":"kv"}`),
+			})
+			// A bucket that already holds configuration must also hold its
+			// identity record (ADR-104); arbitration is what is under test here.
+			seedDeclaredIdentity(t, ctx, manager)
+
+			require.NoError(t, manager.Start(ctx))
+			defer stopManager(t, manager)
+
+			got := manager.GetConfig().Get().Services["common"]
+			var inner map[string]string
+			require.NoError(t, json.Unmarshal(got.Config, &inner))
+			require.Equal(t, tt.wantSource, inner["source"])
+
+			entry, err := mustBucket(t, manager).Get(ctx, "services.common")
+			require.NoError(t, err)
+			var stored types.ServiceConfig
+			require.NoError(t, json.Unmarshal(entry.Value(), &stored))
+			require.NoError(t, json.Unmarshal(stored.Config, &inner))
+			require.Equal(t, tt.wantSource, inner["source"])
+		})
+	}
+}
+
+// TestKVSelectionReplacesServicesAndComponents replaces the pin's
+// TestConfigManagerKVSelectionReplacesOnlyServices, which encoded #17: when arbitration selects the
+// bucket, its components.* entries replace the file's components exactly as its services.* entries
+// replace the file's services (design D3).
+//
+// spec: config-manager / Version arbitration selects one source for services and components
+func TestKVSelectionReplacesServicesAndComponents(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	fileConfig := &Config{
+		Version: "1.0.0",
+		Platform: PlatformConfig{
+			Org: "c360", ID: "services-replacement-test", Type: "test",
+		},
+		Services: types.ServiceConfigs{
+			"file-only": {Enabled: true, Config: json.RawMessage(`{}`)},
+		},
+		Components: ComponentConfigs{
+			"file-component": {Type: "input", Name: "file-component", Enabled: true},
+		},
+	}
+	manager, err := NewConfigManager(fileConfig, tc, nil)
+	require.NoError(t, err)
+
+	putConfigValue(t, ctx, manager, "version", "1.0.0")
+	putConfigValue(t, ctx, manager, "services.kv-only", types.ServiceConfig{
+		Enabled: true,
+		Config:  json.RawMessage(`{}`),
+	})
+	putConfigValue(t, ctx, manager, "components.kv-component", types.ComponentConfig{
+		Type: "output", Name: "kv-component", Enabled: true,
+	})
+	seedDeclaredIdentity(t, ctx, manager)
+
+	require.NoError(t, manager.Start(ctx))
+	defer stopManager(t, manager)
+
+	got := manager.GetConfig().Get()
+	require.NotContains(t, got.Services, "file-only")
+	require.Contains(t, got.Services, "kv-only")
+	require.NotContains(t, got.Components, "file-component", "a selected bucket replaces the file's components (#17)")
+	require.Contains(t, got.Components, "kv-component")
+}
+
+func putConfigValue(t *testing.T, ctx context.Context, manager *Manager, key string, value any) {
+	t.Helper()
+	data, err := json.Marshal(value)
+	require.NoError(t, err)
+	// Seeding happens BEFORE Start, which is where the bucket is acquired now.
+	_, err = directKVStore(t, ctx, manager).Put(ctx, key, data)
+	require.NoError(t, err)
+}
+
+// TestBucketIsNamedByTheDeclaredPair is the gh#459 regression, flipped by
+// #1188. Two sem* apps on one NATS server used to share the fixed-name
+// configuration bucket, and the second to boot either adopted the first's
+// components or, once the gh#459 guard existed, was refused. Now each declared
+// pair names its own bucket: both apps start, neither sees the other's
+// configuration, and nothing is refused because there is nothing left to
+// catch. A clone declaring the same pair shares its bucket and its authority.
+//
+// spec: config-manager / The configuration bucket is named by the declared authority pair
+func TestBucketIsNamedByTheDeclaredPair(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	appConfig := func(org, id, component, factory string) *Config {
+		return &Config{
+			Version:  "1.0.0", // matching versions: identity alone must separate the apps
+			Platform: PlatformConfig{Org: org, ID: id, Type: "test"},
+			Services: make(types.ServiceConfigs),
+			Components: ComponentConfigs{
+				component: types.ComponentConfig{
+					Type: "input", Name: factory, Enabled: true,
+					Config: json.RawMessage(`{"port": 8080}`),
+				},
+			},
+		}
+	}
+
+	first, err := NewConfigManager(appConfig("acme", "dep", "dep-comp", "udp"), tc, nil)
+	require.NoError(t, err)
+	require.NoError(t, first.Start(ctx))
+	defer stopManager(t, first)
+
+	other, err := NewConfigManager(appConfig("acme", "other", "other-comp", "websocket"), tc, nil)
+	require.NoError(t, err)
+	require.NoError(t, other.Start(ctx), "a different declared pair must start in its own bucket, not be refused")
+	defer stopManager(t, other)
+
+	require.Equal(t, "semengine_config_acme_dep", first.bucketName)
+	require.Equal(t, "semengine_config_acme_other", other.bucketName)
+	_, bleed := other.GetConfig().Get().Components["dep-comp"]
+	require.False(t, bleed, "an app must never see another pair's components (gh#459)")
+	_, err = mustStore(t, other).Get(ctx, "components.dep-comp")
+	require.ErrorIs(t, err, natsclient.ErrKVKeyNotFound, "the other pair's bucket must not hold the first app's keys")
+
+	clone, err := NewConfigManager(appConfig("acme", "dep", "dep-comp", "udp"), tc, nil)
+	require.NoError(t, err)
+	require.NoError(t, clone.Start(ctx))
+	defer stopManager(t, clone)
+	require.Equal(t, first.bucketName, clone.bucketName, "a clone of the same pair shares one bucket")
+	require.Equal(t, first.GetConfig().Get().Platform.ID, clone.GetConfig().Get().Platform.ID,
+		"a clone adopts the recorded authority instead of minting a second one")
+}
+
+// TestOtherKeyWriteDoesNotSuppressAnExternalUpdate: an external writer puts services.external at
+// revision N, and before its watch event is processed a local PutComponentToKV writes another key
+// at N+1. The external event must still apply. The watch event is delivered by calling
+// handleUpdate after the local write, the order the watcher's queue can produce, with no timing.
+//
+// spec: config-manager / Component writes are next-boot desired state
+func TestOtherKeyWriteDoesNotSuppressAnExternalUpdate(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	manager, err := NewConfigManager(identityTestConfig("acme", "revision"), tc, nil)
+	require.NoError(t, err)
+	acquireAndPublish(t, ctx, manager)
+
+	value, err := json.Marshal(types.ServiceConfig{Enabled: true})
+	require.NoError(t, err)
+	externalRev, err := mustStore(t, manager).Put(ctx, "services.external", value)
+	require.NoError(t, err)
+	require.NoError(t, manager.PutComponentToKV(ctx, "local",
+		types.ComponentConfig{Type: "input", Name: "local", Enabled: true}))
+
+	manager.handleUpdate("services.external", value, externalRev)
+	require.Contains(t, manager.GetConfig().Get().Services, "external",
+		"a local write to another key must not suppress an external update")
+
+	// The same key keeps its protection: the local write's own event, delivered late, does not
+	// overwrite a newer external write to that key the watcher already applied.
+	local, err := mustStore(t, manager).Get(ctx, "components.local")
+	require.NoError(t, err)
+	newer, err := json.Marshal(types.ComponentConfig{Type: "output", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	newerRev, err := mustStore(t, manager).Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	manager.handleUpdate("components.local", newer, newerRev)
+	manager.handleUpdate("components.local", local.Value, local.Revision)
+	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
+		"a late event for a key must not overwrite a newer applied revision of it")
+}
+
+// TestPutKeepsANewerRevisionTheWatcherApplied: PutComponentToKV writes components.local at
+// revision N+1, but before its own in-memory apply runs, the watcher has already applied an
+// external write of the same key at N+2. The Put must keep the newer value. The order is chosen
+// without timing: the watcher's apply is delivered through handleUpdate before the Put, at the
+// revision the external write is then shown to take.
+//
+// spec: config-manager / Component writes are next-boot desired state
+func TestPutKeepsANewerRevisionTheWatcherApplied(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	manager, err := NewConfigManager(identityTestConfig("acme", "put-revision"), tc, nil)
+	require.NoError(t, err)
+	acquireAndPublish(t, ctx, manager)
+	store := mustStore(t, manager)
+
+	newer, err := json.Marshal(types.ComponentConfig{Type: "output", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	baseRev, err := store.Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	externalRev := baseRev + 2
+	manager.handleUpdate("components.local", newer, externalRev)
+
+	require.NoError(t, manager.PutComponentToKV(ctx, "local",
+		types.ComponentConfig{Type: "input", Name: "local", Enabled: true}))
+	gotRev, err := store.Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	require.Equal(t, externalRev, gotRev, "the external write takes the revision the watcher applied")
+
+	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
+		"a Put must keep a newer revision of its key the watcher already applied")
+}
+
+// TestDeleteExcludesAWatcherApplyMidTransition proves that no watcher apply
+// runs between DeleteComponentFromKV's bucket delete and its in-memory removal,
+// so a later put of the same key the watcher applies is never erased by the
+// delete's memory update (PR #329 Codex re-review). The test holds the
+// configuration's write lock, which parks the delete after its bucket write and
+// before its memory update. A watcher apply attempted then must wait: the
+// applied-revision lock is held by the delete. Once released, the later put
+// applies after the delete, and the delete's own, older event is stale.
+func TestDeleteExcludesAWatcherApplyMidTransition(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	manager, err := NewConfigManager(identityTestConfig("acme", "delete-revision"), tc, nil)
+	require.NoError(t, err)
+	acquireAndPublish(t, ctx, manager)
+	store := mustStore(t, manager)
+
+	initial, err := json.Marshal(types.ComponentConfig{Type: "input", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	baseRev, err := store.Put(ctx, "components.local", initial)
+	require.NoError(t, err)
+	manager.handleUpdate("components.local", initial, baseRev)
+
+	watcher, err := store.Watch(ctx, "components.local")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, watcher.Stop()) }()
+
+	// Park every configuration mutation until release is closed.
+	held, release := make(chan struct{}), make(chan struct{})
+	mutateDone := make(chan error, 1)
+	go func() {
+		mutateDone <- manager.GetConfig().Mutate(func(*Config) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- manager.DeleteComponentFromKV(ctx, "local") }()
+
+	// Wait until the delete has reached the bucket; its memory update is parked.
+	deleteRev := uint64(0)
+	for deleteRev == 0 {
+		select {
+		case entry := <-watcher.Updates():
+			if entry != nil && natsclient.IsKVTombstone(entry.Operation()) {
+				deleteRev = entry.Revision()
+			}
+		case <-ctx.Done():
+			t.Fatal("the delete never reached the bucket")
+		}
+	}
+
+	newer, err := json.Marshal(types.ComponentConfig{Type: "output", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	putRev, err := store.Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	require.Greater(t, putRev, deleteRev)
+
+	if manager.revMu.TryLock() {
+		manager.revMu.Unlock()
+		close(release)
+		t.Fatal("a watcher apply can run between the delete's bucket write and its memory update")
+	}
+	applyDone := make(chan struct{})
+	go func() {
+		manager.handleUpdate("components.local", newer, putRev)
+		close(applyDone)
+	}()
+
+	close(release)
+	require.NoError(t, <-mutateDone)
+	require.NoError(t, <-deleteDone)
+	<-applyDone
+	// The watcher delivers the delete's own event too; it is older than the put.
+	manager.handleUpdate("components.local", nil, deleteRev)
+
+	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
+		"a delete must not erase a later put of its key the watcher applies")
+}

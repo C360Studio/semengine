@@ -78,7 +78,7 @@ boot and takes on keeping it unique (ADR-104 decision 4).
 > **Correction (SemEngine port):** supersedes pin `docs/concepts/16-federation.md:56-58`, which said nothing
 > coordinates the pair and two deployments choosing the same `platform.org` / `platform.id` mint colliding
 > identities. That stopped being true with ADR-104 decision 1, the minted suffix. In SemEngine the mint lives in
-> `config.Manager.Start`, which is not yet ported (change 3).
+> `config.Manager.Start` (`config/manager.go`).
 
 Every graph boundary checks the authority pair of a candidate subject before any storage I/O. A subject whose
 `org.platform` is not the deployment's own is rejected (code `entity_id_authority_invalid`, reason

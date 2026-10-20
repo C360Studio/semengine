@@ -57,7 +57,7 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   - the type constant, with `TestValidateFindingsVocabularyIsClosed` updated to the fourteen types.
 
   Gate: `go test -race ./composition/ ./internal/flowgraph/`, `TestReservedSubjectsDeclaredOnce`, `task verify`.
-- [ ] 2.4 Example config (owner Q1), tests first: `TestValidateExampleConfigHasNoErrorFindings`. Then the rewritten
+- [x] 2.4 Example config (owner Q1), tests first: `TestValidateExampleConfigHasNoErrorFindings`. Then the rewritten
   `config/example_config.json`, with `TestLoader_ExampleConfig` updated. Gate:
   `go test -race ./config/ ./composition/`, `task verify`.
 - [ ] 2.5 `task mutate:check` for M1-M18 (detections; for M16 and M17 record the run count) and S1 (survivor

@@ -21,11 +21,11 @@
 // document sets replaces the default, including false, 0 or an empty list; a
 // key it leaves out keeps the default; objects merge key by key.
 //
-// Write every key in lowercase, as the README shows it. A key in another
-// letter case is not reliably applied: where the defaults carry that key it is
-// silently ignored, so "Components", nats "URLs" or nats "JetStream" leave the
-// defaults in place (#325). The refused keys below are the exception: they are
-// refused in any letter case.
+// Write every key exactly as the README shows it. A key that differs from a
+// declared key only in letter case fails the load, naming the right spelling
+// (#325). Names a deployment chooses (component, service, stream, override,
+// archival and model registry names) are not checked, and a component's or
+// service's config payload belongs to its owner, which decodes it.
 //
 // Loading fails, returning no Config, when the document:
 //   - is not exactly one JSON object (null is refused too), is larger than
@@ -39,10 +39,13 @@
 //     nats.reconnect_wait, nats.jetstream.domain,
 //     nats.jetstream.retention_policy or nats.jetstream.replication_factor.
 //     These are refused when present, whatever their value and in any letter
-//     case, so a setting an operator wrote is never silently ignored (#74).
+//     case, so a setting an operator wrote is never silently ignored (#74);
+//   - has a key that differs from a declared key only in letter case, such as
+//     "NATS" or nats "URLs": the error names the key as written and as
+//     declared, for example "config key nats.URLs must be written nats.urls".
+//     When the document also sets one of the keys above, that refusal wins.
 //
-// Other unknown keys are accepted and ignored, as are keys in another letter
-// case where the defaults carry that key (#325).
+// Other unknown keys are accepted and ignored.
 //
 // # Environment overrides
 //

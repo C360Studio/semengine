@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -420,6 +423,9 @@ func (l *Loader) loadRawJSONFromBytes(data []byte) (map[string]any, error) {
 	if err := rejectUnappliedNATSKeys(rawConfig); err != nil {
 		return nil, err
 	}
+	if err := rejectCaseVariantKeys(rawConfig); err != nil {
+		return nil, err
+	}
 
 	return rawConfig, nil
 }
@@ -712,6 +718,64 @@ func rejectUnappliedNATSKeys(raw map[string]any) error {
 	for _, key := range unappliedJetStreamKeys {
 		if hasKeyFolded(jetStream, key) {
 			return fmt.Errorf("config key nats.jetstream.%s is not applied yet: remove it", key)
+		}
+	}
+	return nil
+}
+
+// rejectCaseVariantKeys fails the load when a key differs from the name of the
+// struct field it decodes into only in letter case, naming both spellings.
+// encoding/json would match such a key to the field, and the merge with the
+// defaults would then drop or apply it depending on what the defaults hold
+// (#325). Map keys are names a deployment chooses and are not checked; nor are
+// json.RawMessage and map[string]any payloads, which their owners decode.
+func rejectCaseVariantKeys(raw map[string]any) error {
+	return checkKeyCase(raw, reflect.TypeFor[Config](), "")
+}
+
+// checkKeyCase walks value beside t, the type it decodes into. A value that is
+// not an object is left to the decoder.
+func checkKeyCase(value any, t reflect.Type, path string) error {
+	for t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	obj, ok := value.(map[string]any)
+	if !ok || (t.Kind() != reflect.Map && t.Kind() != reflect.Struct) {
+		return nil
+	}
+	fields := map[string]reflect.Type{}
+	if t.Kind() == reflect.Struct {
+		for i := range t.NumField() {
+			f := t.Field(i)
+			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+			if !f.IsExported() || name == "-" {
+				continue
+			}
+			if name == "" {
+				name = f.Name
+			}
+			fields[name] = f.Type
+		}
+	}
+	for _, key := range slices.Sorted(maps.Keys(obj)) {
+		next := key
+		if path != "" {
+			next = path + "." + key
+		}
+		elem, declared := fields[key]
+		if t.Kind() == reflect.Map {
+			elem, declared = t.Elem(), true
+		}
+		if declared {
+			if err := checkKeyCase(obj[key], elem, next); err != nil {
+				return err
+			}
+			continue
+		}
+		for name := range fields {
+			if strings.EqualFold(key, name) {
+				return fmt.Errorf("config key %s must be written %s", next, strings.TrimSuffix(next, key)+name)
+			}
 		}
 	}
 	return nil

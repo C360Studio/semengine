@@ -85,8 +85,8 @@ func TestValidateIDBounds(t *testing.T) {
 
 // TestValidateIDKVTokenRefusal checks that a value that is not one literal KV
 // token carries natsclient's classified error: natsclient.ValidateKVLiteralToken
-// returns a *errs.ClassifiedError whose Code is natsclient.ErrorCodeKVTokenInvalid
-// (natsclient/kv_key_contract.go:30, :94-114, :301-307). The literal below is the
+// returns a *errs.ClassifiedError (built by natsclient's newKVContractError)
+// whose Code is natsclient.ErrorCodeKVTokenInvalid. The literal below is the
 // spec's.
 func TestValidateIDKVTokenRefusal(t *testing.T) {
 	t.Parallel()

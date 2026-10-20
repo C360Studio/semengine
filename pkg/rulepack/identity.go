@@ -5,6 +5,7 @@
 package rulepack
 
 import (
+	"errors"
 	"fmt"
 	"regexp"
 
@@ -26,7 +27,7 @@ var packIDPattern = regexp.MustCompile("^" + PackIDCharset + "+$")
 // ValidateID validates the public, stable rule-pack identity contract.
 func ValidateID(packID string) error {
 	if packID == "" {
-		return fmt.Errorf("rule config: pack_id is required")
+		return errors.New("rule config: pack_id is required")
 	}
 	if len(packID) > MaxPackIDBytes {
 		return fmt.Errorf("rule config: pack_id is %d bytes; maximum is %d", len(packID), MaxPackIDBytes)

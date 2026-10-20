@@ -26,6 +26,8 @@ In `Fixture.attempt` (`internal/harness/natsfixture/fixture.go`):
 2. Bound the `start` phase loop to `startAttempts = 2`:
    - Pick a host port via `pickPort()` (`freePort` in production; replaceable in-package by tests, matching `imagePin`
      in `fixture.go:46`).
+   - When `f.maxPayloadSet` is true, assign `req.Files` a fresh `strings.NewReader` inside each attempt (`testcontainers`
+     copies `Files` in a `PostCreates` hook before `ContainerStart`, draining the reader on attempt 1, #352).
    - Configure `req.HostConfigModifier` with `HostPort: hostPort` and call `testcontainers.GenericContainer(ctx, req)`.
    - Record any returned container on `f.container` and `f.containerID` immediately so ownership is never lost.
    - If `err == nil`, return `nil`.
@@ -44,6 +46,14 @@ All later phases (`host`, `mapped-port`, `connect`, `jetstream-ready`) and `Rest
 
 | Behaviour | Proving test (`internal/harness/natsfixture/start_port_integration_test.go`) |
 | --- | --- |
-| When the first host port picked by `Start` is held by another listener (causing Docker's real `"address already in use"` failure) and `ctx` is live, `Start` removes the first unstarted container, retries once with a fresh port, and succeeds with only the second container present | `TestStartRetriesOnceOnPortInUse/recovers_on_second_attempt`: holds an ephemeral port via `net.Listen("tcp", ":0")`, returns it on call 1 of `pickPort` and delegates call 2 to `freePort()`; asserts `Start` returns `nil`, `pickPort` was called twice, JetStream answers on `URL()`, and `processContainers(t)` lists only `f.containerID`. Fails 5/5 runs on `main`; passes 5/5 runs with the fix |
+| When the first host port picked by `Start` is held by another listener (causing Docker's real `"address already in use"` failure) and `ctx` is live, `Start` removes the first unstarted container, retries once with a fresh port and fresh config reader, and succeeds with only the second container present | `TestStartRetriesOnceOnPortInUse/recovers_on_second_attempt`: starts with `WithMaxPayload(4096)`, holds an ephemeral port via `net.Listen("tcp", ":0")`, returns it on call 1 of `pickPort` and delegates call 2 to `freePort()`; asserts `Start` returns `nil`, `pickPort` was called twice, JetStream answers on `URL()`, the broker announces `nc.MaxPayload() == 4096` and rejects a `4097`-byte publish with `nats.ErrMaxPayload`, and `processContainers(t)` lists only `f.containerID`. Fails 5/5 runs on `main`; passes 5/5 runs with the fix |
 | When both attempts in the `start` phase hit `"address already in use"`, `Start` fails in phase `start` after 2 attempts with both causes joined and removes both unstarted containers | `TestStartRetriesOnceOnPortInUse/fails_after_two_attempts`: returns two distinct held ports on calls 1 and 2; asserts `Start` fails naming `phase start`, `address already in use`, and both ports, `pickPort` was called twice, `processContainers(t)` is empty, and `stopHoldsNothing(t, f)` is true |
 | When `ctx` is cancelled or `GenericContainer` fails for a reason other than `"address already in use"`, `Start` does not retry and leaves no container behind | `TestStartRetriesOnceOnPortInUse/no_retry_when_context_cancelled` and `TestStartRetriesOnceOnPortInUse/no_retry_on_non_port_in_use_error`: assert `pickPort` was called once, `processContainers(t)` is empty, and `stopHoldsNothing(t, f)` is true |
+
+## Why bounded examples suffice
+
+The retry state space in `Fixture.attempt` is finite and small: at most two start attempts (`startAttempts = 2`), a
+boolean error predicate (`isAddressInUse(err)`), caller context liveness (`ctx.Err() == nil` vs cancelled), and the
+`WithMaxPayload` reader reset across retry (#352). The four subtests of `TestStartRetriesOnceOnPortInUse` exercise each
+reachable transition against a real Docker daemon, so deterministic examples exhaust the state graph without property
+generation.

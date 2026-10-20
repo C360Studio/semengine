@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/moby/moby/api/types/network"
+	"github.com/nats-io/nats.go"
 )
 
 // heldPorts is how many wildcard listeners TestStartPastHeldPorts holds between the two fixtures.
@@ -79,8 +80,9 @@ func TestStartRetriesOnceOnPortInUse(t *testing.T) {
 			return freePort()
 		}
 
+		const limit = 4096
 		// Own server: tests Start's port-in-use retry on a fresh container.
-		f := New(t)
+		f := New(t, WithMaxPayload(limit))
 		if err := f.Start(t.Context()); err != nil {
 			t.Fatalf("Start after one held port (%s) = %v, want nil on the second attempt", heldPort1, err)
 		}
@@ -90,6 +92,17 @@ func TestStartRetriesOnceOnPortInUse(t *testing.T) {
 		assertExplicitPortBinding(t, f)
 		if _, err := f.JetStream().AccountInfo(t.Context()); err != nil {
 			t.Fatalf("JetStream AccountInfo on %s: %v", f.URL(), err)
+		}
+		nc, err := nats.Connect(f.URL(), nats.MaxReconnects(0))
+		if err != nil {
+			t.Fatalf("dial %s: %v", f.URL(), err)
+		}
+		defer nc.Close()
+		if got := nc.MaxPayload(); got != limit {
+			t.Fatalf("broker announces max_payload %d after retry, want %d", got, limit)
+		}
+		if err := nc.Publish("payload.bound", make([]byte, limit+1)); !errors.Is(err, nats.ErrMaxPayload) {
+			t.Fatalf("publish of %d bytes after retry = %v, want nats.ErrMaxPayload", limit+1, err)
 		}
 		if got := processContainers(t); !slices.Equal(got, []string{f.containerID}) {
 			t.Fatalf("containers of this process = %v, want only %s (first attempt container not removed)", got, f.containerID)

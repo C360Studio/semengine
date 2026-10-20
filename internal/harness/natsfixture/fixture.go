@@ -184,17 +184,11 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in the
 	// container's own filesystem: the fixture creates no volume.
 	cmd := []string{"--port", "4222", "--js"}
-	var files []testcontainers.ContainerFile
 	if f.maxPayloadSet {
 		// nats-server has no command-line flag for max_payload, so it goes in a config file
 		// copied in before the container starts; the flags above still apply over it. The file
 		// is in the container's writable layer, so a Restart keeps the limit.
 		cmd = append(cmd, "--config", maxPayloadConfig)
-		files = append(files, testcontainers.ContainerFile{
-			Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
-			ContainerFilePath: maxPayloadConfig,
-			FileMode:          0o644,
-		})
 	}
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -202,7 +196,6 @@ func (f *Fixture) attempt(ctx context.Context) error {
 			Labels:       map[string]string{testLabel: labelValue()},
 			ExposedPorts: []string{clientPort},
 			Cmd:          cmd,
-			Files:        files,
 			WaitingFor:   wait.ForLog(readyLog),
 		},
 		Started: true,
@@ -220,6 +213,15 @@ func (f *Fixture) attempt(ctx context.Context) error {
 			hostPort, err := pickPort()
 			if err != nil {
 				return errors.Join(startErr, err)
+			}
+			if f.maxPayloadSet {
+				// testcontainers copies Files in a PostCreates hook before ContainerStart, draining the
+				// Reader on each attempt (#352).
+				req.Files = []testcontainers.ContainerFile{{
+					Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
+					ContainerFilePath: maxPayloadConfig,
+					FileMode:          0o644,
+				}}
 			}
 			req.HostConfigModifier = func(hc *container.HostConfig) {
 				hc.PortBindings = network.PortMap{network.MustParsePort(clientPort): {{HostPort: hostPort}}}

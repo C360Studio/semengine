@@ -143,7 +143,8 @@ as missing (#180, #209). The fixture no longer lets Docker pick: it asks the ope
 gives Docker that exact port (#209, #210), so Docker's pick no longer applies. That Docker then publishes the port, and
 keeps it across a stop and start, is not promised by Docker: it rests on one macOS probe (Docker Desktop 29.8.2,
 testcontainers v0.44.0, PR #210 comment 6151736554) and on every run since, and `TestRestartURLDials` checks it. A
-port another program takes in the moment before Docker binds it fails the start with "address already in use".
+port another program takes in the moment before Docker binds it fails the container start with "address already in
+use", and `Start` removes that unstarted container, takes a new port, and tries once more (#345).
 Linux has not been measured. When a mapped port is missing, the error says what an inspect of the container showed.
 
 ## When we write harness code

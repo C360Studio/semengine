@@ -35,9 +35,13 @@ ready, deriving every operation context from the caller's. A failure SHALL retur
 container ID when a container exists, and the cause, and that matches the caller's context error under `errors.Is`
 whenever that context had ended. Before returning it SHALL remove any container Start created, under a fresh bounded
 context, and report a removal failure in the error, and it SHALL write that container's log to the test output. The
-create and start phase SHALL publish the client port on a host port the fixture took from the operating system with a
-port-0 listener and closed, and SHALL NOT leave the host port to Docker to choose; a failure to take a port SHALL fail
-that phase. Start SHALL start at most one container: after a failure in any phase it SHALL NOT start another. A failed
+create and start phase SHALL run the once-per-process Docker preparation before taking its host port, SHALL publish the
+client port on a host port the fixture took from the operating system with a port-0 listener and closed, and SHALL NOT
+leave the host port to Docker to choose; a failure to take a port SHALL fail that phase. When Docker fails to start the
+container with "address already in use" and the caller's context is still live, the create and start phase SHALL remove
+that unstarted container under a fresh bounded context, take a new host port, and try to create and start the container
+once more (at most two create-and-start attempts total), returning a second failure with both causes joined; after a
+failure in any other phase, or any other create-and-start failure, Start SHALL NOT start another container. A failed
 mapped-port read SHALL say what an inspect of the container showed, or why the inspect failed. The fixture SHALL NOT
 expose start, connect or bucket-prefix knobs.
 
@@ -58,6 +62,14 @@ expose start, connect or bucket-prefix knobs.
 - **WHEN** ephemeral host ports are held by listeners on all addresses and two fixtures start
 - **THEN** both fixtures' Start calls return nil, Docker's inspect for each container reports its `URL()` port as the
   explicit `HostPort` binding on `4222/tcp`, and JetStream answers on each `URL()`
+
+#### Scenario: Host port taken before Docker binds it
+
+- **WHEN** another listener holds the first host port the create and start phase picked while the caller's context is
+  live
+- **THEN** Start removes the first unstarted container, takes a new host port, starts a second container, and returns
+  nil with only the second container present; when both attempts hit a held port, Start fails in the start phase after
+  two attempts and leaves no container behind
 
 #### Scenario: A missing mapped port fails Start
 

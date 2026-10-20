@@ -33,6 +33,9 @@ const (
 	// cleanupBudget is the fresh finite authority New's t.Cleanup gives Stop. The test's own
 	// context is already cancelled when cleanups run.
 	cleanupBudget = 60 * time.Second
+	// startAttempts bounds how many times the start phase tries to create and start a container when
+	// another process binds the host port freePort just released before Docker binds it (#345).
+	startAttempts = 2
 	// readyLog is the line nats-server logs once per boot when it accepts clients.
 	readyLog = "Server is ready"
 	// maxPayloadConfig is where WithMaxPayload's config file lands in the container.
@@ -118,8 +121,9 @@ func New(t testing.TB, opts ...Option) *Fixture {
 
 // Start starts one NATS container with JetStream from the pinned image, connects, and returns once
 // JetStream answers. Every operation runs under ctx. A failure returns an error naming the phase
-// (phaseError lists them), after removing whatever Start created; no second container is started.
-// A second Start returns ErrAlreadyUsed.
+// (phaseError lists them), after removing whatever Start created; only a start-phase failure where
+// Docker reports the picked host port "address already in use" tries a second container (#345). A
+// second Start returns ErrAlreadyUsed.
 func (f *Fixture) Start(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("natsfixture: Start with a nil context")
@@ -180,17 +184,11 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	// The image's entrypoint prefixes nats-server to flag arguments. JetStream stores in the
 	// container's own filesystem: the fixture creates no volume.
 	cmd := []string{"--port", "4222", "--js"}
-	var files []testcontainers.ContainerFile
 	if f.maxPayloadSet {
 		// nats-server has no command-line flag for max_payload, so it goes in a config file
 		// copied in before the container starts; the flags above still apply over it. The file
 		// is in the container's writable layer, so a Restart keeps the limit.
 		cmd = append(cmd, "--config", maxPayloadConfig)
-		files = append(files, testcontainers.ContainerFile{
-			Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
-			ContainerFilePath: maxPayloadConfig,
-			FileMode:          0o644,
-		})
 	}
 	req := testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -198,30 +196,53 @@ func (f *Fixture) attempt(ctx context.Context) error {
 			Labels:       map[string]string{testLabel: labelValue()},
 			ExposedPorts: []string{clientPort},
 			Cmd:          cmd,
-			Files:        files,
 			WaitingFor:   wait.ForLog(readyLog),
 		},
 		Started: true,
 	}
 	var c testcontainers.Container
 	if err := run("start", func() error {
-		hostPort, err := freePort()
-		if err != nil {
-			return err
-		}
-		req.HostConfigModifier = func(hc *container.HostConfig) {
-			hc.PortBindings = network.PortMap{network.MustParsePort(clientPort): {{HostPort: hostPort}}}
-		}
 		prepareDocker(ctx, f.logf)
-		c, err = testcontainers.GenericContainer(ctx, req)
-		// GenericContainer can return a live container together with its error (generic.go:89,94);
-		// it is owned from this moment either way.
-		if c != nil {
-			f.mu.Lock()
-			f.container, f.containerID = c, c.GetContainerID()
-			f.mu.Unlock()
+		var startErr error
+		for attempt := range startAttempts {
+			if attempt > 0 {
+				if cerr := f.rollbackAttempt(ctx); cerr != nil {
+					return errors.Join(startErr, fmt.Errorf("cleanup before retry: %w", cerr))
+				}
+			}
+			hostPort, err := pickPort()
+			if err != nil {
+				return errors.Join(startErr, err)
+			}
+			if f.maxPayloadSet {
+				// testcontainers copies Files in a PostCreates hook before ContainerStart, draining the
+				// Reader on each attempt (#352).
+				req.Files = []testcontainers.ContainerFile{{
+					Reader:            strings.NewReader(fmt.Sprintf("max_payload: %d\n", f.maxPayload)),
+					ContainerFilePath: maxPayloadConfig,
+					FileMode:          0o644,
+				}}
+			}
+			req.HostConfigModifier = func(hc *container.HostConfig) {
+				hc.PortBindings = network.PortMap{network.MustParsePort(clientPort): {{HostPort: hostPort}}}
+			}
+			c, err = testcontainers.GenericContainer(ctx, req)
+			// GenericContainer can return a live container together with its error (generic.go:81,86);
+			// it is owned from this moment either way.
+			if c != nil {
+				f.mu.Lock()
+				f.container, f.containerID = c, c.GetContainerID()
+				f.mu.Unlock()
+			}
+			if err == nil {
+				return nil
+			}
+			startErr = errors.Join(startErr, err)
+			if !isAddressInUse(err) {
+				return startErr
+			}
 		}
-		return err
+		return startErr
 	}); err != nil {
 		return err
 	}
@@ -279,14 +300,25 @@ func (f *Fixture) attempt(ctx context.Context) error {
 	return nil
 }
 
+// pickPort is freePort; a test in this package swaps it to give the start phase a port a listener
+// already holds, exercising the #345 port-in-use retry against Docker.
+var pickPort = freePort
+
+// isAddressInUse reports whether Docker refused to start the container because another process
+// bound the host port between freePort's close and Docker's bind (#345).
+func isAddressInUse(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "address already in use")
+}
+
 // freePort asks the operating system for a free TCP port on all addresses and releases it, so the
 // start phase can give Docker that exact host port. Left to pick, Docker Desktop for Mac takes the
 // next port of a counter of its own, which does not see the Mac's listeners, and a container whose
 // port a Mac process holds runs with an empty port list (#209; the probe on PR #210, comment
 // 6151736554; TestStartPastHeldPorts). The macOS kernel hands ports out in sequence (the same
 // probe), so a port-0 listener does not get this port back until the range wraps; a process that
-// binds it by number before Docker does fails the start phase with "address already in use" (the
-// same probe). Restart keeps the binding (TestRestartURLDials).
+// binds it before Docker does fails the container start with "address already in use", which the
+// start phase retries once with a new port (#345; TestStartRetriesOnceOnPortInUse). Restart keeps
+// the binding (TestRestartURLDials).
 func freePort() (string, error) {
 	l, err := net.Listen("tcp", ":0")
 	if err != nil {

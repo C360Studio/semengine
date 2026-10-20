@@ -16,7 +16,7 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
   one pattern from `PackIDCharset`; true text; `ValidateConfig`, `ValidateRuntimeUpdate`, `packIdentity`,
   `decodePackID` dropped); the `adapt` ledger row; a `docs/repository-map.md` row. Gate:
   `go test -race ./pkg/rulepack`, `go list -deps ./pkg/rulepack` naming no `config` or `types`, `task ledger:check`.
-- [ ] 2.2 `task mutate:check` for M1-M10 (detections) and S1 (survivor recorded) in `notes/2.2.md`; `task verify`
+- [x] 2.2 `task mutate:check` for M1-M10 (detections) and S1 (survivor recorded) in `notes/2.2.md`; `task verify`
   passes on a clean tree.
 - [ ] 2.3 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 

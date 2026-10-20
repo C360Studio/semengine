@@ -187,8 +187,9 @@ Other second spellings the port meets: metric namespace `"semstreams"` (`startup
 - Main listener after boot: `/health`, `/healthz`, `/readyz`, `/services`, `/services/health` (`:1707-1713`);
   `/graph/triples` (`:1720`); `/openapi.json` (`:1568`); `/docs` when `swagger_ui` (`:1572`).
 - `/graph/triples` readers (measured, `grep -rn '/graph/triples'`): semteams 110 lines, 15 of them in `ui/src` across
-  7 production files (21 in 10 with its `.test.ts` files; `ui/src/lib/services/runStatusApi.ts:21` — `const TRIPLES_ENDPOINT = "/graph/triples";`, run-level pause
-  detection; `controlsStore.svelte.ts:9`, `+layout.svelte:20`), the rest its e2e specs, Caddyfile, Taskfile and docs;
+  7 production files (21 in 10 with its `.test.ts` files; `ui/src/lib/services/runStatusApi.ts:21` —
+  `const TRIPLES_ENDPOINT = "/graph/triples";`, run-level pause detection; `controlsStore.svelte.ts:9`,
+  `+layout.svelte:20`), the rest its e2e specs, Caddyfile, Taskfile and docs;
   semsource one doc line; semconnect and semboids none. At the pin outside `service`: no production Go, only the e2e
   ops scenario (`test/e2e/scenarios/ops/scenario.go`), its compose and task files, two flow configs and docs. The 03B
   operator-surface table (03B `design.md:722-728`) lists what is kept, not what is dropped. So it is framework API:

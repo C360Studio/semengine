@@ -85,11 +85,14 @@ reserved-subject capture.
    `config.DeriveStreamName`, so there is no second naming rule. Its finding component is the instance and port.
 
 The declarations cover every stream that source 3 provisions under one premise: a ported factory either declares the
-`ports` block's outputs or refuses the block. Refusing it is the "Unknown configuration keys are refused"
-requirement (`openspec/specs/component-registration/spec.md:61`). graph-ingest, the tree's one factory, refuses any
-output other than its `ENTITY_STATES` write (`processor/graph-ingest/component.go:292-312`). A refusal is a
-`port_declaration_error`, so no declaration is checked. Not covered: a factory that accepts a `ports` block but
-declares different outputs. No factory in the tree does that.
+`ports` block's outputs or refuses the block. Today that holds for graph-ingest, the tree's one factory, through its
+own output rule: `DeclarePorts` (`processor/graph-ingest/component.go:579`) runs `resolveConfig`, which calls
+`Config.Validate` (`:612-614`), and that refuses any output other than a kv-write on `ENTITY_STATES` (`:303-310`). A
+refusal is a `port_declaration_error`, so no declaration is checked; an accepted block is declared as written. No
+requirement enforces the premise for factories ported later. Not covered: a factory that accepts a `ports` block but
+declares different outputs; no factory in the tree does that. The reverse case is safe: a factory that declares
+default JetStream outputs when the raw config has no `ports` block makes `Analyze` check streams provisioning does not
+create, which only makes the check stricter.
 
 **The test is overlap, not cover.** A filter is refused when one concrete subject matches both the filter and a
 reserved subject. This departs from 03B D11 `:481`, which says "cover" (ruling table): `*.mutation.create` captures

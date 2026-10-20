@@ -39,6 +39,11 @@ component or service: loading does not check its keys.
 
 Loading does not call `Validate`. The caller calls it, as in the example.
 
+`Validate` also checks the host: that each configured TLS certificate, key and CA file exists, and it prints a
+warning on standard error when `insecure_skip_verify` is set. `ValidateDocument` runs every other check and reads no
+file and writes nothing, so a configuration reviewed on another machine (as `composition.Validate` does) gets the same
+answer. Both check component entries in name order, so the first error for a document is the same on every run.
+
 The defaults are: `platform.region` `gulf_mexico`, `nats.urls` `["nats://localhost:4222"]`, `nats.jetstream.enabled`
 `true`, and two services, `discovery` (disabled) and `heartbeat` (enabled, every 30 seconds).
 

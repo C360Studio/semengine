@@ -197,8 +197,28 @@ type JetStreamConfig struct {
 	MaxFileStore int64 `json:"max_file_store,omitempty"`
 }
 
-// Validate checks if the config is valid
+// Validate checks the configuration for use on this host: ValidateDocument,
+// then the host checks: each configured server certificate, server key and
+// client CA file exists, and a warning on standard error when client
+// certificate verification is switched off.
 func (c *Config) Validate() error {
+	if err := c.ValidateDocument(); err != nil {
+		return err
+	}
+	if err := c.validateSecurityFiles(); err != nil {
+		return fmt.Errorf("security configuration: %w", err)
+	}
+	return nil
+}
+
+// ValidateDocument checks the configuration document alone: it reads no file
+// and writes nothing, so offline review (composition.Validate) judges a
+// deployment's document the same way on any machine. The one input it reads
+// from outside the document is the current time, to judge whether a stream
+// migration override has expired. Component entries are visited in instance
+// name order, so the first error for a document is the same on every call.
+// Like Validate, it lowercases platform.org in place.
+func (c *Config) ValidateDocument() error {
 	// Validate and normalize org
 	if c.Platform.Org == "" {
 		return errors.New("platform.org is required")
@@ -228,11 +248,11 @@ func (c *Config) Validate() error {
 	}
 
 	// Validate Components
-	for instanceName, config := range c.Components {
+	for _, instanceName := range slices.Sorted(maps.Keys(c.Components)) {
 		if instanceName == "" {
 			return errors.New("component instance name cannot be empty")
 		}
-		if err := config.Validate(); err != nil {
+		if err := c.Components[instanceName].Validate(); err != nil {
 			return fmt.Errorf("component %s: %w", instanceName, err)
 		}
 	}
@@ -276,7 +296,8 @@ func isValidNATSSubjectPart(s string) bool {
 	return true
 }
 
-// validateSecurity validates the security configuration
+// validateSecurity is the document half of the security checks: required
+// fields and TLS versions. Validate adds validateSecurityFiles.
 func (c *Config) validateSecurity() error {
 	// Validate Server TLS
 	if c.Security.TLS.Server.Enabled {
@@ -287,16 +308,6 @@ func (c *Config) validateSecurity() error {
 			return errors.New("tls.server.key_file is required when TLS is enabled")
 		}
 
-		// Check if cert file exists
-		if _, err := os.Stat(c.Security.TLS.Server.CertFile); err != nil {
-			return fmt.Errorf("tls.server.cert_file: %w", err)
-		}
-
-		// Check if key file exists
-		if _, err := os.Stat(c.Security.TLS.Server.KeyFile); err != nil {
-			return fmt.Errorf("tls.server.key_file: %w", err)
-		}
-
 		// Validate MinVersion if specified
 		if c.Security.TLS.Server.MinVersion != "" {
 			if err := validateTLSVersion(c.Security.TLS.Server.MinVersion); err != nil {
@@ -305,27 +316,40 @@ func (c *Config) validateSecurity() error {
 		}
 	}
 
-	// Validate Client TLS
-	// Check all CA files exist
+	// Validate MinVersion if specified
+	if c.Security.TLS.Client.MinVersion != "" {
+		if err := validateTLSVersion(c.Security.TLS.Client.MinVersion); err != nil {
+			return fmt.Errorf("tls.client.min_version: %w", err)
+		}
+	}
+
+	return nil
+}
+
+// validateSecurityFiles is Validate's host half of the security checks: the
+// configured TLS files exist on this machine, and switching off client
+// certificate verification is announced on standard error.
+func (c *Config) validateSecurityFiles() error {
+	if c.Security.TLS.Server.Enabled {
+		if _, err := os.Stat(c.Security.TLS.Server.CertFile); err != nil {
+			return fmt.Errorf("tls.server.cert_file: %w", err)
+		}
+		if _, err := os.Stat(c.Security.TLS.Server.KeyFile); err != nil {
+			return fmt.Errorf("tls.server.key_file: %w", err)
+		}
+	}
+
 	for i, caFile := range c.Security.TLS.Client.CAFiles {
 		if _, err := os.Stat(caFile); err != nil {
 			return fmt.Errorf("tls.client.ca_files[%d]: %w", i, err)
 		}
 	}
 
-	// Warn if InsecureSkipVerify is enabled
 	if c.Security.TLS.Client.InsecureSkipVerify {
 		_, _ = fmt.Fprintf(
 			os.Stderr,
 			"WARNING: TLS certificate verification is disabled (insecure_skip_verify=true). This should only be used in development/testing!\n",
 		)
-	}
-
-	// Validate MinVersion if specified
-	if c.Security.TLS.Client.MinVersion != "" {
-		if err := validateTLSVersion(c.Security.TLS.Client.MinVersion); err != nil {
-			return fmt.Errorf("tls.client.min_version: %w", err)
-		}
 	}
 
 	return nil

@@ -43,10 +43,13 @@ type FlowEdge struct {
 	ConnectionID string // Subject, bucket, or network addr
 }
 
-// ComponentPortRef references a specific port on a component
+// ComponentPortRef references a specific port on a component. A component
+// may name an input and an output alike, so a port is identified by its
+// direction as well as its name.
 type ComponentPortRef struct {
 	ComponentName string
 	PortName      string
+	Direction     component.Direction
 }
 
 // Issue type constants for orphaned port classification
@@ -248,6 +251,7 @@ func (g *FlowGraph) portsByConnection(direction component.Direction) map[compone
 			portRef := ComponentPortRef{
 				ComponentName: componentName,
 				PortName:      port.Name,
+				Direction:     direction,
 			}
 			byConnection[port.ConnectionID] = append(byConnection[port.ConnectionID], portRef)
 
@@ -306,6 +310,31 @@ func SubjectCovers(filter, pattern string) bool {
 		}
 	}
 	return true
+}
+
+// SubjectsOverlap reports whether some concrete subject matches both a and b
+// under NATS wildcard semantics (`*` one token, a final `>` one or more). It is
+// symmetric and weaker than cover: `*.mutation.create` and `graph.mutation.>`
+// overlap on graph.mutation.create though neither covers the other.
+// Composition validation uses it to refuse a stream that would capture a
+// reserved request subject. A malformed subject overlaps nothing.
+func SubjectsOverlap(a, b string) bool {
+	left, right := strings.Split(a, "."), strings.Split(b, ".")
+	if !validSubjectTokens(left) || !validSubjectTokens(right) {
+		return false
+	}
+	for index := 0; ; index++ {
+		switch {
+		case index == len(left) || index == len(right):
+			return len(left) == len(right)
+		case left[index] == ">" || right[index] == ">":
+			// The other side still has a token here, which `>` can take, and
+			// `>` is always last, so whatever follows on the other side matches.
+			return true
+		case left[index] != right[index] && left[index] != "*" && right[index] != "*":
+			return false
+		}
+	}
 }
 
 func validSubjectTokens(tokens []string) bool {
@@ -721,20 +750,12 @@ func (g *FlowGraph) dfs(node string, adj map[string][]string, visited map[string
 func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 	var orphaned []OrphanedPort
 
-	// Track which ports have connections
-	connectedPorts := make(map[string]map[string]bool) // component -> port -> connected
-
+	// Track which ports have connections, by direction as well as name, so a
+	// connected output never marks a same-named input as connected.
+	connectedPorts := make(map[ComponentPortRef]bool)
 	for _, edge := range g.edges {
-		// Mark ports as connected
-		if connectedPorts[edge.From.ComponentName] == nil {
-			connectedPorts[edge.From.ComponentName] = make(map[string]bool)
-		}
-		if connectedPorts[edge.To.ComponentName] == nil {
-			connectedPorts[edge.To.ComponentName] = make(map[string]bool)
-		}
-
-		connectedPorts[edge.From.ComponentName][edge.From.PortName] = true
-		connectedPorts[edge.To.ComponentName][edge.To.PortName] = true
+		connectedPorts[edge.From] = true
+		connectedPorts[edge.To] = true
 	}
 
 	// Check all ports for orphans
@@ -742,7 +763,7 @@ func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 		node := g.nodes[componentName]
 		// Check input ports
 		for _, port := range node.InputPorts {
-			if connectedPorts[componentName] == nil || !connectedPorts[componentName][port.Name] {
+			if !connectedPorts[ComponentPortRef{ComponentName: componentName, PortName: port.Name, Direction: component.DirectionInput}] {
 				// Skip external boundary inputs — they ARE the external source.
 				// component.PatternNetwork binds a local listener; component.PatternHTTPClient initiates
 				// an outbound connection. Both are legitimately unmatched in the
@@ -775,7 +796,7 @@ func (g *FlowGraph) findOrphanedPorts() []OrphanedPort {
 
 		// Check output ports
 		for _, port := range node.OutputPorts {
-			if connectedPorts[componentName] == nil || !connectedPorts[componentName][port.Name] {
+			if !connectedPorts[ComponentPortRef{ComponentName: componentName, PortName: port.Name, Direction: component.DirectionOutput}] {
 				// Skip external boundary outputs — they ARE the external sink.
 				// component.PatternHTTPClient is also skipped: the component owns the
 				// outbound connection so no internal subscriber is expected.

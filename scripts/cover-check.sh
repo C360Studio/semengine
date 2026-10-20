@@ -44,6 +44,8 @@ readonly targets=(
   "config merged"
   # setup-04a-03-boot-service-base design D7.
   "service merged"
+  # port-composition design, "Ledger, coverage, issues, order" (03B D10's list).
+  "composition unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

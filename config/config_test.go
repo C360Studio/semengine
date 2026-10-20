@@ -241,38 +241,27 @@ func TestLoader_ExampleConfig(t *testing.T) {
 	cfg, err := loader.LoadFile("example_config.json")
 	require.NoError(t, err)
 
-	// Verify it matches our expected MAVLink demo structure
-	assert.Equal(t, "mavlink-demo", cfg.Platform.ID)
-	assert.Equal(t, "ground-station", cfg.Platform.Type)
+	// The platform and services blocks
+	assert.Equal(t, "c360", cfg.Platform.Org)
+	assert.Equal(t, "graph-demo", cfg.Platform.ID)
+	assert.Equal(t, "edge", cfg.Platform.Type)
 	// Parse service config from types.ServiceConfigs
 	msgLoggerEnabled := getServiceEnabled(cfg.Services["message-logger"])
 	discoveryEnabled := getServiceEnabled(cfg.Services["discovery"])
 	assert.True(t, msgLoggerEnabled)
 	assert.True(t, discoveryEnabled)
 
-	// Check components are properly configured
-	assert.Equal(t, 5, len(cfg.Components), "should have 5 components configured")
+	// One component: graph-ingest, the one factory SemEngine registers. That
+	// it validates against graph-ingest's Register is proven in
+	// composition's TestValidateExampleConfigHasNoErrorFindings.
+	require.Len(t, cfg.Components, 1, "should have 1 component configured")
+	ingest, exists := cfg.Components["graph-ingest"]
+	require.True(t, exists, "should have graph-ingest component")
+	assert.Equal(t, types.ComponentType("processor"), ingest.Type)
+	assert.Equal(t, "graph-ingest", ingest.Name)
+	assert.True(t, ingest.Enabled)
 
-	// Verify udp-input component
-	udpInput, exists := cfg.Components["udp-input"]
-	assert.True(t, exists, "should have udp-input component")
-	assert.Equal(t, types.ComponentType("input"), udpInput.Type)
-	assert.Equal(t, "udp", udpInput.Name)
-	assert.True(t, udpInput.Enabled)
-
-	// Verify mavlink-processor component
-	mavlinkProc, exists := cfg.Components["mavlink-processor"]
-	assert.True(t, exists, "should have mavlink-processor component")
-	assert.Equal(t, types.ComponentType("processor"), mavlinkProc.Type)
-	assert.Equal(t, "robotics", mavlinkProc.Name)
-	assert.True(t, mavlinkProc.Enabled)
-
-	// Verify websocket-output component
-	wsOutput, exists := cfg.Components["websocket-output"]
-	assert.True(t, exists, "should have websocket-output component")
-	assert.Equal(t, types.ComponentType("output"), wsOutput.Type)
-	assert.Equal(t, "websocket", wsOutput.Name)
-	assert.True(t, wsOutput.Enabled)
+	require.NoError(t, cfg.Validate())
 }
 
 // writeAndLoadAuthorityPair loads a minimal configuration declaring the given

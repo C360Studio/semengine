@@ -6,7 +6,7 @@ Change 3 (`setup-04a-03-boot`) of epic #9 ports the boot-layer packages one per 
 order on 2026-10-19 (#9 comment 6270875286): `health`, `internal/logforwarderpolicy`, `component/flowgraph`, `config`,
 `pkg/rulepack`, `composition`, then `service`. Five are merged (`config` in two parts, #322 and #329). `service` is
 about 11,800 pin lines at SemStreams `8b99efe9` and is split by lifecycle owner (archived 04A foundation design,
-`design.md:84-97` and D2 `:155-178`; owner choice 2026-10-20, #9 comment 6297240746). The split comes out of an
+`design.md:84-97` and D2 `:155-178`; owner choice 2026-10-20, #9 comment 6294662570). The split comes out of an
 inventory of the package at the pin, for the owner to accept on #9, before any owner's design is written.
 
 ## What Changes

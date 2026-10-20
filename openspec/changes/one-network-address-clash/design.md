@@ -16,7 +16,7 @@ Rulings: #328, 2026-10-20 (transport; hosts decided here from a probe on macOS a
 ## What exists
 
 See `inventory.md`. The registry compares `ResourceID` text in two places: between components
-(`component/registry.go:578`) and within one component (`:628`). `ResourceID` is `protocol:host:port`
+(`component/registry.go:579`) and within one component (`:628`). `ResourceID` is `protocol:host:port`
 (`component/port_network.go:14`), and `NetworkFacts` already holds the three parts (`component/port_facts.go:35-40`,
 built at `:167`).
 
@@ -120,7 +120,8 @@ func hostAddr(host string) netip.Addr {
 
 - `exclusiveClaims(inputFacts, outputFacts []PortFacts) []PortFacts` returns the `IsExclusive` facts, inputs first.
 - `claimsClash(a, b PortFacts) bool` calls `NetworkFacts.clashes` when both have network facts, and otherwise
-  compares `ResourceID` text (today's rule, kept so the check stays closed if another kind ever becomes exclusive).
+  compares `ResourceID` text. That fallback exists only for a future exclusive kind, so the check stays closed if one
+  is added.
 - `exclusiveResources` (`:619`) checks each claim against the earlier ones with `if claimsClash(claim, earlier) {`,
   then returns the sorted `ResourceID` texts.
 - `checkResourceConflictsLocked(candidate Declaration)` (`:575`; its call at `:406` passes `prepared`) loops
@@ -134,8 +135,8 @@ Line numbers are rewritten at the commit that lands task 2.2.
 | Ruling | Implemented | Proved |
 | --- | --- | --- |
 | Only `udp` is UDP; every other label is TCP | `component/port_facts.go`, `NetworkFacts.transport` | `TestRegistryRefusesNetworkClaimsThatCannotBothBind` rows R1-R3; `TestRegistryAdmitsNetworkClaimsThatCanBothBind` rows A1-A2 |
-| Hosts decided from the probe: wildcard clashes with any host | `NetworkFacts.clashes`, the `IsUnspecified` branch | R4-R8, R11; A3-A5 show that specific hosts do not clash |
-| One address in two spellings clashes | `hostAddr` (`Unmap`) and `a == b` | R9, R10 |
+| Hosts decided from the probe: wildcard clashes with any host | `NetworkFacts.clashes`, the `IsUnspecified` branch | R4-R8, R11, R13; A3-A5 show that specific hosts do not clash |
+| One address in two spellings clashes, the wildcard included | `hostAddr` (`Unmap`) and `a == b` | R9, R10, R13 |
 | Names are not resolved (not promised) | `NetworkFacts.clashes`, the text branch | R12 (same text refused), A7 (`localhost` beside `127.0.0.1` admitted) |
 | Between components, invalid class, both claims and holder named | `component/registry.go` `checkResourceConflictsLocked` | `TestRegistryRefusesASecondComponentOnATakenAddress`; R rows on the two-component path |
 | Within one component, through `Declare` and `CreateComponent` | `component/registry.go` `exclusiveResources` | `TestRegistryRefusesOneComponentClaimingAnAddressTwice`; R rows on the `Declare` path |
@@ -153,8 +154,13 @@ taken from the probe table, never computed from `NetworkFacts`.
   It gains a row: input `http` and output `websocket` on `0.0.0.0:8080`, expecting
   `resource conflict: websocket:0.0.0.0:8080 already used by another port of component 'gateway' as http:0.0.0.0:8080`.
 - `TestRegistryRefusesNetworkClaimsThatCannotBothBind` (new). Each row is two `NetworkPort`s with their
-  `ResourceID` literals, run three ways: first then second as two components, second then first, and both as ports
-  of one component through `Declare`. Each run checks `errs.IsInvalid` and the exact text.
+  `ResourceID` literals, run three ways. (a) Component `first` is admitted with the row's first claim, then `second`
+  is created with its second claim. (b) The same names, with the two claims swapped. (c) One component, `gateway`, has
+  the first claim as its input and the second as its output, through `Declare`. Each run checks `errs.IsInvalid` and
+  the exact text:
+  - (a) `resource conflict: <second claim> already used by component 'first' as <first claim>`
+  - (b) `resource conflict: <first claim> already used by component 'first' as <second claim>`
+  - (c) `resource conflict: <second claim> already used by another port of component 'gateway' as <first claim>`
   - R1: http `0.0.0.0:8080` / websocket `0.0.0.0:8080`
   - R2: http `0.0.0.0:8080` / tcp `0.0.0.0:8080`
   - R3: `UDP` `0.0.0.0:8080` / tcp `0.0.0.0:8080`
@@ -167,9 +173,10 @@ taken from the probe table, never computed from `NetworkFacts`.
   - R10: tcp `0:0:0:0:0:0:0:1` / tcp `::1`
   - R11: tcp `0.0.0.0` / tcp `localhost`
   - R12: tcp `localhost` / tcp `localhost`
+  - R13: tcp `::ffff:0.0.0.0` / tcp `127.0.0.1` (a wildcard in its IPv4-mapped spelling; Linux refuses)
   - Port 8080 unless shown.
-- `TestRegistryAdmitsNetworkClaimsThatCanBothBind` (new, the sensitivity pair). The same three paths; each admits
-  both claims.
+- `TestRegistryAdmitsNetworkClaimsThatCanBothBind` (new, the sensitivity pair). The same three paths (a), (b) and (c)
+  with the same instance names; each admits both claims (`Snapshots` holds `first` and `second`; `Declare` succeeds).
   - A1: tcp `0.0.0.0` / udp `0.0.0.0`
   - A2: http `0.0.0.0` / udp `0.0.0.0`
   - A3: tcp `127.0.0.1` / tcp `::1`
@@ -178,8 +185,9 @@ taken from the probe table, never computed from `NetworkFacts`.
   - A6: tcp `0.0.0.0:8080` / tcp `0.0.0.0:8081`
   - A7: tcp `localhost` / tcp `127.0.0.1` (pins the declared "names are not resolved")
 - `TestRegistryNamesTheFirstClashingHolderByName` (new): `beta` on tcp `127.0.0.1:8080` and `alpha` on tcp
-  `::1:8080` are admitted. `gamma` on tcp `0.0.0.0:8080` is then refused with
-  `resource conflict: tcp:0.0.0.0:8080 already used by component 'alpha' as tcp:::1:8080`, and `Snapshots` holds
+  `::1:8080` are admitted. `gamma` on tcp `0.0.0.0:8080` is then created 20 times. A refusal leaves the admitted set
+  unchanged, so every attempt meets the same two holders. Every attempt must be refused with exactly
+  `resource conflict: tcp:0.0.0.0:8080 already used by component 'alpha' as tcp:::1:8080`, and `Snapshots` then holds
   `alpha` and `beta`.
 
 These tests bind nothing, so the fixed-port guard does not apply; the existing tests already use 8080 the same way.
@@ -190,15 +198,14 @@ These tests bind nothing, so the fixed-port guard does not apply; the existing t
 | --- | --- | --- |
 | M1 | `if f.protocol == "udp" {` becomes `if f.protocol != "tcp" {` | R2 |
 | M2 | `if a.IsUnspecified() \|\| b.IsUnspecified() {` becomes `if false && (a.IsUnspecified() \|\| b.IsUnspecified()) {` | R4 |
-| M3 | `return addr.Unmap()` becomes `return addr` | R9 |
+| M3 | `return addr.Unmap()` becomes `return addr` | R9, R13 |
 | M4 | in `checkResourceConflictsLocked`, `if claimsClash(claim, heldClaim) {` becomes `if claim.ResourceID() == heldClaim.ResourceID() {` | R1, two-component path |
 | M5 | in `exclusiveResources`, `if claimsClash(claim, earlier) {` becomes `if claim.ResourceID() == earlier.ResourceID() {` | R1, `Declare` path |
 | M6 | `for _, holder := range slices.Sorted(maps.Keys(r.declarations)) {` becomes `for holder := range maps.Keys(r.declarations) {` (`slices` is still used at `registry.go:377`) | `TestRegistryNamesTheFirstClashingHolderByName` |
 
-M6's detection depends on map order: it fails about half the time. `mutate:check` runs `-count=1`
-(`internal/harness/mutcheck/runs.go:88`), so a single run may survive; that is reported as such, never as detection.
-The developer also runs the mutated copy with `go test -count=20 -run TestRegistryNamesTheFirstClashingHolderByName`
-and records how many of the 20 runs failed.
+M6 makes the named holder depend on map order. The test makes 20 attempts in one run, and the chance that unsorted
+iteration names `alpha` on all 20 is about one in a million (2^-20), so one `task mutate:check` run (`-count=1`,
+`internal/harness/mutcheck/runs.go:88`) detects it.
 
 **Uncovered, recorded:**
 
@@ -215,11 +222,11 @@ The rule is a symmetric predicate over two claims plus an add-only history. The 
   - host relation: wildcard on either side, one address in two spellings, two distinct addresses, same name, name
     beside an address.
 
-  Each combination that changes the outcome is a row: R1-R12 refuse and A1-A7 admit. Each transport branch, the
+  Each combination that changes the outcome is a row: R1-R13 refuse and A1-A7 admit. Each transport branch, the
   wildcard branch, the address branch and the text branch is proved separately by M1-M3 and A7.
 - **Symmetry.** Every row runs in both orders, and within one component as well.
-- **History.** The registry only adds components, and a repeated name is refused first
-  (`registry_boot_admission_test.go:88`). The only histories are "a holder, then a claimant" (both orders per row)
+- **History.** The registry only adds components, and a repeated name is refused before the clash check
+  (`component/registry.go:401-404`). The only histories are "a holder, then a claimant" (both orders per row)
   and "several holders, then a claimant" (`TestRegistryNamesTheFirstClashingHolderByName`).
 
 There is no input format with size limits: host text is parsed by `netip.ParseAddr` only.

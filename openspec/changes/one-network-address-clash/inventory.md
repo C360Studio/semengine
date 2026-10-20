@@ -7,7 +7,7 @@ package) do not apply; the pin is read only for who declares network ports.
 
 ## 1. The claimed gap
 
-- `component/registry.go:578` — `if resource == existingResource {` (between components: text equality)
+- `component/registry.go:579` — `if resource == existingResource {` (between components: text equality)
 - `component/registry.go:628` — `if resources[i] == resources[i-1] {` (within one component: text equality)
 - `component/port_network.go:14` — `return fmt.Sprintf("%s:%s:%d", n.Protocol, n.Host, n.Port)`
 - `component/port_codec.go:286` — `if strings.TrimSpace(port.Protocol) == "" {` (the only protocol check)

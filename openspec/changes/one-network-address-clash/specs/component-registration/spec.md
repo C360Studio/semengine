@@ -8,10 +8,10 @@ An exclusive resource is one only one port may hold. Today the only exclusive po
 listener whose claim is its protocol, host and port, shown as its resource text (`tcp:127.0.0.1:8080`).
 
 Two network claims clash when they have the same transport and the same port, and either host is a wildcard
-(`0.0.0.0` or `::` in any spelling), or both hosts are IP addresses naming one address (an IPv4-mapped IPv6 address
-names its IPv4 address), or both hosts are the same text. The transport is UDP when the protocol is exactly `udp`
-and TCP for every other protocol. A host name is not resolved at admission, so a name and an address that resolve to
-one address are not a clash here, and the second bind fails at `Start`.
+(`0.0.0.0`, `::`, or `::ffff:0.0.0.0`), or both hosts are IP addresses naming one address (an IPv4-mapped IPv6
+address names its IPv4 address), or both hosts are the same text. The transport is UDP when the protocol is exactly `udp`
+and TCP for every other protocol. A host name is not resolved at admission, so a name beside an address that
+resolves to the same address is not refused here; the bind at `Start` decides it (not promised).
 
 `component.Registry.CreateComponent` SHALL refuse, with an error of the invalid class, a component with a claim that
 clashes with a claim an admitted component holds. The error SHALL name the component's claim, the holder and the
@@ -44,24 +44,27 @@ shared.
 - **WHEN** component `first` is admitted with a network port on `tcp:0.0.0.0:8080`, and component `second` is then
   created with a network port on `tcp:127.0.0.1:8080`
 - **THEN** creation fails with an invalid-class error reading
-  `resource conflict: tcp:127.0.0.1:8080 already used by component 'first' as tcp:0.0.0.0:8080`, and in the reverse
-  order the error reads
+  `resource conflict: tcp:127.0.0.1:8080 already used by component 'first' as tcp:0.0.0.0:8080`; and when `first` is
+  admitted on `tcp:127.0.0.1:8080` and `second` is then created on `tcp:0.0.0.0:8080`, the error reads
   `resource conflict: tcp:0.0.0.0:8080 already used by component 'first' as tcp:127.0.0.1:8080`
 
 #### Scenario: TCP and UDP on one port
 
-- **WHEN** one component declares a network port on `tcp:0.0.0.0:8080` and another on `udp:0.0.0.0:8080`
-- **THEN** both are admitted
+- **WHEN** component `first` is admitted with a network port on `tcp:0.0.0.0:8080`, and component `second` is then
+  created with a network port on `udp:0.0.0.0:8080`
+- **THEN** both are admitted, and `Snapshots` holds `first` and `second`
 
 #### Scenario: Two loopback addresses on one port
 
-- **WHEN** one component declares a network port on `tcp:127.0.0.1:8080` and another on `tcp:::1:8080`
-- **THEN** both are admitted
+- **WHEN** component `first` is admitted with a network port on `tcp:127.0.0.1:8080`, and component `second` is then
+  created with a network port on `tcp:::1:8080`
+- **THEN** both are admitted, and `Snapshots` holds `first` and `second`
 
 #### Scenario: A host name is not resolved
 
-- **WHEN** one component declares a network port on `tcp:localhost:8080` and another on `tcp:127.0.0.1:8080`
-- **THEN** both are admitted
+- **WHEN** component `first` is admitted with a network port on `tcp:localhost:8080`, and component `second` is then
+  created with a network port on `tcp:127.0.0.1:8080`
+- **THEN** both are admitted, and `Snapshots` holds `first` and `second`
 
 #### Scenario: Several holders clash
 

@@ -54,8 +54,41 @@ func freePort() int {
 }
 
 func main() {
-    // pairs: {network1, host1, network2, host2}; the full list is in the tables below.
-    for _, p := range [][4]string{{"tcp", "0.0.0.0", "tcp", "127.0.0.1"} /* ... */} {
+    // Each entry: {network1, host1, network2, host2}. Every table row below is listed, in both orders where the
+    // table says so. The last nine entries (mapped, long-form, upper-case and 127.0.0.2 hosts) were first run as
+    // two smaller programs with these same bind calls; they are merged here so one program re-runs the table.
+    var pairs [][4]string
+    for _, n := range []string{"tcp", "udp"} {
+        for _, h := range [][2]string{
+            {"0.0.0.0", "127.0.0.1"}, {"127.0.0.1", "0.0.0.0"},
+            {"0.0.0.0", "0.0.0.0"}, {"127.0.0.1", "127.0.0.1"},
+            {"::", "0.0.0.0"}, {"0.0.0.0", "::"},
+            {"::1", "127.0.0.1"}, {"127.0.0.1", "::1"},
+            {"::", "::1"}, {"::1", "::"},
+            {"::", "127.0.0.1"}, {"127.0.0.1", "::"},
+            {"0.0.0.0", "::1"}, {"::1", "0.0.0.0"},
+            {"", "0.0.0.0"}, {"0.0.0.0", ""},
+            {"", "127.0.0.1"}, {"127.0.0.1", ""},
+            {"localhost", "127.0.0.1"}, {"127.0.0.1", "localhost"},
+            {"localhost", "0.0.0.0"}, {"0.0.0.0", "localhost"},
+            {"localhost", "::1"},
+        } {
+            pairs = append(pairs, [4]string{n, h[0], n, h[1]})
+        }
+    }
+    pairs = append(pairs,
+        [4]string{"tcp", "0.0.0.0", "udp", "0.0.0.0"},
+        [4]string{"udp", "0.0.0.0", "tcp", "0.0.0.0"},
+        [4]string{"tcp", "127.0.0.1", "udp", "127.0.0.1"},
+        [4]string{"tcp", "::ffff:127.0.0.1", "tcp", "127.0.0.1"},
+        [4]string{"udp", "::ffff:127.0.0.1", "udp", "127.0.0.1"},
+        [4]string{"tcp", "0:0:0:0:0:0:0:1", "tcp", "::1"},
+        [4]string{"tcp", "::ffff:0.0.0.0", "tcp", "127.0.0.1"},
+        [4]string{"tcp", "LOCALHOST", "tcp", "127.0.0.1"},
+        [4]string{"tcp", "127.0.0.1", "tcp", "127.0.0.2"}, // Linux only: macOS has no 127.0.0.2
+        [4]string{"udp", "127.0.0.1", "udp", "127.0.0.2"}, // Linux only
+    )
+    for _, p := range pairs {
         port := freePort()
         c1, a1, err := bind(p[0], p[1], port)
         if err != nil {

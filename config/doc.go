@@ -97,30 +97,41 @@
 //
 // Which copy wins at Start: on a first boot, and when the file's version is
 // newer than the bucket's version key (CompareVersions), Start writes the file
-// to the bucket. Otherwise (equal versions, an older file, or a stored version
-// that does not parse) the bucket wins: its services and components replace
-// the file's, so one deleted at run time stays deleted. A stored
-// model_registry replaces the file's; a stored nats is decoded over the file's
-// nats section, so a key it leaves out keeps the file's value. The stored
-// platform key is a copy for readers and is never applied. Start writes the version key last, so
-// a write cut short leaves the old version and the next boot writes again.
+// to the bucket. Otherwise (equal versions, an older file, or either version
+// not a semantic version, a file with no version among them) the bucket wins:
+// its services and components replace the file's, so one deleted at run time
+// stays deleted. A missing version key, and a stored version that is not a
+// JSON string (logged as a warning), compare as 0.0.0, so a file at 1.0.0
+// wins; a stored JSON string that is not a semantic version selects the
+// bucket. A stored model_registry replaces the file's; a stored nats is
+// decoded over the file's nats section, so a key it leaves out keeps the
+// file's value. The stored platform key is a copy for readers and is never
+// applied. Start writes the version key last, so a write cut short leaves the
+// old version, or none; the next boot writes again only when the file's
+// version is newer than that. A file with no version, or 0.0.0, is not, and
+// selects the partly written bucket.
 //
 // Each service and component name must be one NATS KV key token once its
 // spaces are written as '_': no '.', '*' or '>'. A name with a space is kept
 // under its key's name from Start on, so GetConfig reports a file component
 // "a b" as "a_b", and two names that map to one key are refused.
 //
-// Start fails closed. It returns an error, holds nothing and leaves every
-// writer refusing when a name or value cannot be written, the bucket cannot
+// Start fails closed. It returns an error and leaves every writer refusing
+// when a name or value cannot be written, the bucket cannot
 // be listed or read, a stored services, components, nats or model_registry
 // entry does not decode, a stored nats entry sets a key loading refuses, the
 // write to the bucket fails, or a watch does not open. The error names the key.
 // A refused name or value is found before the bucket is touched, so nothing is
-// written, not even the identity record.
+// written, not even the identity record. A failed Start rolls back what it
+// acquired before returning; if that rollback fails, its error is joined into
+// Start's and the rest of the cleanup is kept for Stop, so a caller installs
+// its bounded Stop before calling Start.
 //
 // PutComponentToKV and DeleteComponentFromKV change the components the next
 // boot runs. They update GetConfig before they return; a put whose key the
-// watcher has already applied at a newer revision keeps that newer value. They
+// watcher has already applied at a newer revision keeps that newer value, and
+// no watcher event is applied between a delete reaching the bucket and its
+// removal from GetConfig, so a delete never erases a later put. They
 // never start, stop or restart a running component. WatchModelRegistry delivers the model
 // registry each time its key changes.
 //

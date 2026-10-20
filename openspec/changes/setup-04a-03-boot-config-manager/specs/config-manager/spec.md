@@ -92,7 +92,9 @@ unchanged.
 On a first boot Start SHALL push the file configuration to the bucket. Otherwise, when the file's `version` is newer
 Start SHALL push the file. When it is equal, older, or cannot be compared, Start SHALL select the bucket: the
 effective `services` and `components` SHALL then be exactly the bucket's `services.*` and `components.*` entries. A
-missing stored `version` SHALL compare as `0.0.0`. Before acquiring the bucket, Start SHALL refuse a file
+missing stored `version`, and a stored `version` that is not a JSON string (with a Warn), SHALL compare as `0.0.0`; a
+stored string or a file `version` that is not a semantic version (a file with no `version` among them) cannot be
+compared, and Start SHALL select the bucket. Before acquiring the bucket, Start SHALL refuse a file
 configuration holding a service or component name that is not one NATS KV literal token after the space mapping, or
 two names that map to one key, naming them. Start SHALL then name each service and component as its key does, each
 space written as `_`. A push SHALL encode every value before its first write and SHALL write `version` after every
@@ -101,7 +103,9 @@ other key.
 #### Scenario: Leftovers of an interrupted push do not select a partial set
 
 - **WHEN** the bucket holds the identity record and some `services.*`/`components.*` keys with no `version`, or with
-  a `version` older than the file's, and a Manager starts with the file
+  a `version` older than the file's, and a Manager starts with a file whose `version` is newer than the stored one (a
+  missing stored `version` compares as `0.0.0`; a file with no `version`, or `0.0.0`, is not newer and selects the
+  partial bucket)
 - **THEN** the effective services and components are the file's full set, and the bucket holds the full push with the
   file's `version`
 - **AND** the tests that verify this are `TestRecoveryFromAnInterruptedPush` and `TestPushWritesVersionLast`
@@ -122,7 +126,8 @@ other key.
 
 ### Requirement: Start fails closed on the bucket it cannot use
 
-Start SHALL return an error naming the cause, hold nothing and arm no writer when:
+Start SHALL return an error naming the cause, roll back what it acquired and arm no writer when any of the following
+holds; a rollback that fails SHALL be joined into Start's error and SHALL leave its cleanup for the next Stop:
 
 - the first-boot push fails, or the push when the file's version is newer fails, including a value that cannot be
   encoded (`TestPushEncodingFailureFailsStart`);
@@ -147,7 +152,9 @@ Start SHALL return an error naming the cause, hold nothing and arm no writer whe
 
 `PutComponentToKV(ctx, name, cfg)` and `DeleteComponentFromKV(ctx, name)` SHALL write or delete the key
 `components.<name>`, with each space in `name` written as `_`, and SHALL apply the change to `GetConfig()` before
-returning; a put whose key the watcher has already applied at a newer revision SHALL keep that newer value. They
+returning; a put whose key the watcher has already applied at a newer revision SHALL keep that newer value, and no
+watcher apply SHALL run between a delete's bucket write and its in-memory removal, so a later put of the key is applied
+after the removal and the delete's own, older event is not re-applied over it. They
 SHALL NOT create, stop or restart a running component (ADR-094). They SHALL refuse a name that is not one NATS KV
 literal token after that mapping, naming it. Concurrent writes and watcher applies SHALL each take effect
 (serialized through `SafeConfig.Mutate`). A watcher event at or below the revision already applied for its key SHALL
@@ -166,6 +173,14 @@ event.
   `PutComponentToKV` gets for its own write of that key
 - **THEN** `GetConfig()` keeps the external value
 - **AND** the test that verifies this is `TestPutKeepsANewerRevisionTheWatcherApplied`
+
+#### Scenario: A delete does not erase a later put of its key
+
+- **WHEN** `DeleteComponentFromKV("local")` has written its delete to the bucket, an external writer then puts
+  `components.local`, and the watcher delivers that put before the delete has updated `GetConfig()`
+- **THEN** the put's apply waits for the delete's in-memory removal, the delete's own event is not re-applied after it,
+  and `GetConfig()` holds the external value
+- **AND** the test that verifies this is `TestDeleteExcludesAWatcherApplyMidTransition`
 
 #### Scenario: Engine-owned revision still notifies
 

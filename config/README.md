@@ -173,15 +173,16 @@ func run(ctx context.Context, cfg *config.Config, client *natsclient.Client, log
     if err != nil {
         return err
     }
-    if err := mgr.Start(ctx); err != nil {
-        return err // nothing is held: there is nothing to stop
-    }
+    // Installed before Start: a failed Start whose rollback also fails leaves its cleanup for Stop.
     defer func() {
         // ctx may have ended by now; Stop needs a context that has not.
         stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
         defer cancel()
         err = errors.Join(err, mgr.Stop(stopCtx))
     }()
+    if err := mgr.Start(ctx); err != nil {
+        return err
+    }
 
     platformID := mgr.GetConfig().Get().Platform.ID // the effective identifier, such as "dep-800dff"
     logger.Info("configuration ready", "platform_id", platformID)
@@ -216,14 +217,20 @@ no record (ADR-104).
 | --- | --- |
 | The bucket holds no configuration (first boot) | The file is written to the bucket |
 | The file's `version` is newer than the bucket's | The file is written to the bucket |
-| The versions are equal, the file's is older, or the bucket's does not parse | The bucket wins |
+| The versions are equal, or the file's is older | The bucket wins |
+| Either version is not a semantic version, including a file with no `version` | The bucket wins |
 
-Versions are compared with `CompareVersions`. When the bucket wins, its `services` and `components` entries replace
+Versions are compared with `CompareVersions`. The bucket's `version` is stored as a JSON string. A bucket with no
+`version` key compares as `0.0.0`, and so does a stored value that is not a JSON string (with a warning in the log), so
+a file at `1.0.0` wins over either. A stored JSON string that is not a semantic version, such as `"latest"`, cannot be
+compared, and the bucket wins. When the bucket wins, its `services` and `components` entries replace
 the file's, so a component deleted at run time stays deleted at the next boot; to bring the file's set back, raise the
 file's `version`. A stored `model_registry` replaces the file's; a stored `nats` is decoded over the file's `nats`
 section, so a key it leaves out keeps the file's value. The stored `platform` key is a copy for readers and is never
-applied. When the file is written, `version` is written last, so a write cut short leaves the bucket's old `version`
-(or none) and the next boot writes the file again.
+applied. When the file is written, `version` is written last, so a write cut short leaves the bucket's old `version`,
+or none. The next boot writes the file again only when the file's `version` is newer than that. A file with no
+`version`, or `0.0.0`, is not newer than a missing one, so the next boot selects the partly written bucket instead; raise
+the file's `version` to write it again.
 
 ### Names
 
@@ -234,7 +241,7 @@ name from `Start` on: a file component `a b` is `a_b` in `GetConfig`.
 
 ### When Start fails
 
-`Start` returns an error naming the key, holds nothing, and leaves every writer refusing, when:
+`Start` returns an error naming the key, and leaves every writer refusing, when:
 
 - a name or a value cannot be written (found before the bucket is touched, so nothing is written, not even the
   identity record);
@@ -244,15 +251,21 @@ name from `Start` on: a file component `a b` is `a_b` in `GetConfig`.
 - writing the file to the bucket fails;
 - any watch does not open.
 
+Before it returns, a failed `Start` rolls back what it acquired, such as a watch it opened, with a budget of five
+seconds of its own. When the rollback succeeds the `Manager` holds nothing. When it fails, its error is joined into
+`Start`'s error and the rest of the cleanup is kept for `Stop`, which is why the example above installs its bounded
+`Stop` before calling `Start`.
+
 A change written to the bucket while the `Manager` runs that does not decode is logged and skipped.
 
 ### Next-boot writes
 
 `PutComponentToKV(ctx, name, cfg)` and `DeleteComponentFromKV(ctx, name)` write or delete `components.<name>` and
 update `GetConfig` before they return; a put whose key the watcher has already applied at a newer revision keeps that
-newer value. They record what the next boot runs: they never start, stop or restart a component in the running
-process. `WatchModelRegistry()` returns a channel that receives the model registry each time its key changes, and
-closes when `Stop` runs.
+newer value, and a delete never erases a later put of its key: no watcher event is applied between the delete reaching
+the bucket and its removal from `GetConfig`. They record what the next boot runs: they never start, stop or restart a
+component in the running process. `WatchModelRegistry()` returns a channel that receives the model registry each time
+its key changes, and closes when `Stop` runs.
 
 ### Key families
 

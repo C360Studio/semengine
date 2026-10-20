@@ -454,12 +454,18 @@ func TestConfigManagerStartupVersionArbitration(t *testing.T) {
 	tests := []struct {
 		name        string
 		fileVersion string
-		kvVersion   string
+		kvVersion   any // stored through json.Marshal
 		wantSource  string
 	}{
 		{name: "newer file pushes file state", fileVersion: "2.0.0", kvVersion: "1.0.0", wantSource: "file"},
 		{name: "older file selects KV", fileVersion: "1.0.0", kvVersion: "2.0.0", wantSource: "kv"},
 		{name: "equal version content edit does not apply", fileVersion: "1.0.0", kvVersion: "1.0.0", wantSource: "kv"},
+		// A stored version that is not a JSON string compares as 0.0.0.
+		{name: "stored version not a JSON string loses to a file at 1.0.0", fileVersion: "1.0.0",
+			kvVersion: json.RawMessage(`100`), wantSource: "file"},
+		// A string that is not a semantic version cannot be compared.
+		{name: "stored version not semantic selects KV", fileVersion: "1.0.0", kvVersion: "latest", wantSource: "kv"},
+		{name: "file with no version selects KV", fileVersion: "", kvVersion: "1.0.0", wantSource: "kv"},
 	}
 
 	for _, tt := range tests {
@@ -687,4 +693,87 @@ func TestPutKeepsANewerRevisionTheWatcherApplied(t *testing.T) {
 
 	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
 		"a Put must keep a newer revision of its key the watcher already applied")
+}
+
+// TestDeleteExcludesAWatcherApplyMidTransition proves that no watcher apply
+// runs between DeleteComponentFromKV's bucket delete and its in-memory removal,
+// so a later put of the same key the watcher applies is never erased by the
+// delete's memory update (PR #329 Codex re-review). The test holds the
+// configuration's write lock, which parks the delete after its bucket write and
+// before its memory update. A watcher apply attempted then must wait: the
+// applied-revision lock is held by the delete. Once released, the later put
+// applies after the delete, and the delete's own, older event is stale.
+func TestDeleteExcludesAWatcherApplyMidTransition(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 20*time.Second)
+	defer cancel()
+	manager, err := NewConfigManager(identityTestConfig("acme", "delete-revision"), tc, nil)
+	require.NoError(t, err)
+	acquireAndPublish(t, ctx, manager)
+	store := mustStore(t, manager)
+
+	initial, err := json.Marshal(types.ComponentConfig{Type: "input", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	baseRev, err := store.Put(ctx, "components.local", initial)
+	require.NoError(t, err)
+	manager.handleUpdate("components.local", initial, baseRev)
+
+	watcher, err := store.Watch(ctx, "components.local")
+	require.NoError(t, err)
+	defer func() { require.NoError(t, watcher.Stop()) }()
+
+	// Park every configuration mutation until release is closed.
+	held, release := make(chan struct{}), make(chan struct{})
+	mutateDone := make(chan error, 1)
+	go func() {
+		mutateDone <- manager.GetConfig().Mutate(func(*Config) error {
+			close(held)
+			<-release
+			return nil
+		})
+	}()
+	<-held
+
+	deleteDone := make(chan error, 1)
+	go func() { deleteDone <- manager.DeleteComponentFromKV(ctx, "local") }()
+
+	// Wait until the delete has reached the bucket; its memory update is parked.
+	deleteRev := uint64(0)
+	for deleteRev == 0 {
+		select {
+		case entry := <-watcher.Updates():
+			if entry != nil && natsclient.IsKVTombstone(entry.Operation()) {
+				deleteRev = entry.Revision()
+			}
+		case <-ctx.Done():
+			t.Fatal("the delete never reached the bucket")
+		}
+	}
+
+	newer, err := json.Marshal(types.ComponentConfig{Type: "output", Name: "local", Enabled: true})
+	require.NoError(t, err)
+	putRev, err := store.Put(ctx, "components.local", newer)
+	require.NoError(t, err)
+	require.Greater(t, putRev, deleteRev)
+
+	if manager.revMu.TryLock() {
+		manager.revMu.Unlock()
+		close(release)
+		t.Fatal("a watcher apply can run between the delete's bucket write and its memory update")
+	}
+	applyDone := make(chan struct{})
+	go func() {
+		manager.handleUpdate("components.local", newer, putRev)
+		close(applyDone)
+	}()
+
+	close(release)
+	require.NoError(t, <-mutateDone)
+	require.NoError(t, <-deleteDone)
+	<-applyDone
+	// The watcher delivers the delete's own event too; it is older than the put.
+	manager.handleUpdate("components.local", nil, deleteRev)
+
+	require.Equal(t, types.ComponentType("output"), manager.GetConfig().Get().Components["local"].Type,
+		"a delete must not erase a later put of its key the watcher applies")
 }

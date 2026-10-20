@@ -74,7 +74,8 @@ type Manager struct {
 	cancel context.CancelFunc
 
 	// revMu guards appliedRev and serializes applying a revisioned entry with
-	// recording it.
+	// recording it. DeleteComponentFromKV holds it across its bucket delete and
+	// in-memory removal, since the delete's revision is not returned.
 	revMu sync.Mutex
 	// appliedRev holds, per key, the highest KV revision applied to the
 	// in-memory configuration: by the Manager's own writes (PutComponentToKV,
@@ -353,8 +354,9 @@ func (cm *Manager) goLocked(fn func()) {
 // Start acquires the configuration bucket, establishes the platform identity,
 // arbitrates between the file and the bucket, and opens the watches, all under
 // ctx. It refuses a nil or ended ctx, and any Start after the first with
-// errs.ErrAlreadyStarted, before contacting NATS. A Start that fails holds
-// nothing and arms no writer.
+// errs.ErrAlreadyStarted, before contacting NATS. A Start that fails arms no
+// writer and rolls back what it acquired; a rollback that fails is joined into
+// Start's error and leaves its cleanup for Stop.
 //
 // Ending ctx after Start returned stops nothing: the watches run under a run
 // context Start creates and Stop ends (ADR-113). Stop is the only stop.
@@ -858,10 +860,13 @@ func sectionKey(section, name string) (string, error) {
 //
 // The removal is also applied synchronously to the Manager's current
 // desired-state view. It does not tear down or otherwise change the running
-// ComponentManager; composition changes only on process restart. The NATS API
-// does not expose the Delete revision, so this path records none. Its watcher
-// event either reapplies the idempotent delete or, after a later write to the
-// same key, skips a redundant reapply, while still notifying observers.
+// ComponentManager; composition changes only on process restart.
+//
+// The NATS API does not return the Delete's revision, so the bucket delete and
+// the in-memory removal run under revMu, the lock every revisioned apply takes:
+// no watcher event applies between them. A later put of the key therefore
+// applies after the removal, never before it, and the delete's own event is
+// either an idempotent reapply or, after that later put, skipped as older.
 func (cm *Manager) DeleteComponentFromKV(ctx context.Context, name string) error {
 	key, err := sectionKey("components", name)
 	if err != nil {
@@ -871,6 +876,8 @@ func (cm *Manager) DeleteComponentFromKV(ctx context.Context, name string) error
 	if err != nil {
 		return err
 	}
+	cm.revMu.Lock()
+	defer cm.revMu.Unlock()
 	if err := kvStore.Delete(ctx, key); err != nil {
 		if errors.Is(err, natsclient.ErrKVKeyNotFound) {
 			// Already gone from KV; ensure it is also gone from in-memory config.

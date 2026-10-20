@@ -2770,3 +2770,60 @@
     TestValidateIDKVTokenRefusal, TestValidateIDRefusalPrecedence)
   owner: port-rulepack developer
   disposition: adapt
+
+- source_path: service
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the service layer of the boot (change 3), ported in seven pull requests by lifecycle owner (#9 comment
+    6296023694). PR 1: BaseService and the Service interface every service embeds, also embedded by semteams
+    (cmd/semteams/rule_config_service.go:32) and semboids (internal/api/service.go:72); the OpenAPI types semboids
+    builds (:171-197); MaybeStartPProf, called by semsource, semteams and semboids; WireGraphRuntime, called by
+    semteams (cmd/semteams/main.go:840); the service-configuration, schema and OpenAPI registry helpers the later
+    PRs read
+  destination: service
+  contract: >-
+    the service-lifecycle spec; ADR-113; the background-work spec (PProfServer.Shutdown); pin ADR-058 as carried
+    (pprof is not a Service and now stops); pin ADR-068 D1 and ADR-091 as graph/kvcatalog and
+    internal/graphmutation implement them; ADR-110 (service writes no ENTITY_STATES entry); service/README.md for
+    the calls semsource, semteams and semboids make
+  dependencies_and_side_effects: >-
+    component, graph/kvcatalog, health, internal/lifecycleguard, metric, natsclient, pkg/errs, pkg/projection, types
+    (all in tree); BaseService runs one health goroutine, joined in Stop; MaybeStartPProf binds :port on every
+    interface and serves http.DefaultServeMux on a goroutine joined in Shutdown; WireGraphRuntime may rewrite the
+    retention of inactive catalog buckets; the OpenAPI registry is process-global
+  known_risks: >-
+    PR 1 of 7 (base.go, pprof.go, graph_runtime.go, service_configs.go, schema.go, openapi.go, openapi_types.go,
+    openapi_registry.go, configurable.go, doc.go, README.md); the managers and services follow. Dropped as unread:
+    WithHealthCheck, WithHealthInterval, OnHealthChange (option and method), RegisterMetrics (BaseService and
+    Service), NewOpenAPISpec, AddPath, AddTag, GetOpenAPISpec, Configurable, service.ErrAlreadyStopped (one sentinel,
+    errs.ErrAlreadyStopped), and NewBaseServiceWithOptions' unread config argument (Q1). Changed from the pin: ending
+    Start's context stops nothing and a later Stop waits again (ADR-113); a Stop during another Stop is refused as
+    transient (lifecycleguard), where the pin returned nil before the first Stop finished; a Stop given an ended
+    context stops nothing; MaybeStartPProf takes a logger, binds before it returns, logs a bind failure at Warn
+    instead of printing it, and stops through Shutdown (owner 2026-10-20); NewConfigSchema keeps a Category set on
+    the outer PropertySchema field, which the pin dropped (fixed in the port). Retained: pprof listens on all
+    interfaces; GetAllOpenAPISpecs copies the map but shares the registered spec pointers; letter-case variants of
+    service config keys are accepted until PR 2 adopts config's checker (task 3.3 files the issue);
+    service_configs.go, schema.go and openapi.go are byte-equal to the pin
+  proving_tests: service/*_test.go, service/*_integration_test.go
+  owner: setup-04a-03-boot-service-base developer
+  disposition: adapt
+
+- source_path: docs/adr/058-boot-lifecycle-phases.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for what a composition root wires itself and what runs as a service.Service, whose rollout
+    step 4 is service.MaybeStartPProf; ported with service because that pull request changes step 4 (design
+    setup-04a-03-boot-service-base, Decision records)
+  destination: docs/adr/058-boot-lifecycle-phases.md
+  contract: >-
+    the decision text as at the pin, read with its port note: step 4 kept except "fire-and-forget" (the profiling
+    server now stops); the ownership sections superseded by pin ADR-091; the Start-derived run context of the worked
+    example superseded by ADR-113
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    a port note under the title naming what changed, what is superseded and what is not ported; the three bold
+    labels under Consequences made headings for markdownlint
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-03-boot-service-base developer
+  disposition: adapt

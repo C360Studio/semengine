@@ -42,6 +42,8 @@ readonly targets=(
   "natsclient/storagereport merged"
   # setup-04a-03-boot-config-manager design D5.
   "config merged"
+  # setup-04a-03-boot-service-base design D7.
+  "service merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

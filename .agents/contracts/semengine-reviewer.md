@@ -325,7 +325,9 @@ Carried with graph-ingest from SemStreams' reviewer contract at the pin (§ Grap
 ### Component and schema wiring
 
 Carried with `component` and graph-ingest from SemStreams' reviewer contract at the pin (§ Component and schema
-wiring). Its `internal/boot`, schema-generation and OpenAPI rules are not carried: this module has none of the three.
+wiring). Its `internal/boot` and schema-generation rules are not carried: this module has neither. `service` has the
+OpenAPI types and registry (`RegisterOpenAPISpec`); the pin's rule that every OpenAPI `SchemaRef` type is registered
+arrives with the first service that registers a spec (PR 3 of the `service` port).
 
 - A consumer that calls `Registry.CreateComponent`, `SealComposition` or `Snapshots` directly instead of going
   through the component manager (`service.ComponentManager`, change 3) is a finding (ruling C, #91 comment

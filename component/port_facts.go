@@ -177,13 +177,14 @@ func (f NetworkFacts) clashes(other NetworkFacts) bool {
 }
 
 // hostAddr returns the IP address a host spells, unmapping an IPv4-mapped IPv6
-// address; for a host name it returns the zero Addr.
+// address and dropping any IPv6 zone (owner ruling, #339); for a host name it
+// returns the zero Addr.
 func hostAddr(host string) netip.Addr {
 	addr, err := netip.ParseAddr(host)
 	if err != nil {
 		return netip.Addr{}
 	}
-	return addr.Unmap()
+	return addr.Unmap().WithZone("")
 }
 
 func basePortFacts(config Portable, interaction InteractionPattern, connectionIDs ...string) PortFacts {

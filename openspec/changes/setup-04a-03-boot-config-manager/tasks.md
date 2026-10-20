@@ -28,7 +28,7 @@ when `task verify` passes on a clean tree at its commit (#171).
 
 ## 3. Text, ledger, coverage (D5, D6)
 
-- [ ] 3.1 `config/doc.go` and `config/README.md` Manager sections; the `config` ledger row edited in place per D6;
+- [x] 3.1 `config/doc.go` and `config/README.md` Manager sections; the `config` ledger row edited in place per D6;
   the ADR-104 port note; the `docs/repository-map.md` `config/` row; `"config merged"` in `scripts/cover-check.sh`.
   Gate: `go doc ./config` lists only the kept surface; `task verify` passes on a clean tree, which runs
   `ledger:check`, `cover:check` (`config` at or above 80%) and `docs:check` (review stop).

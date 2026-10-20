@@ -100,10 +100,11 @@
 // to the bucket. Otherwise (equal versions, an older file, or either version
 // not a semantic version, a file with no version among them) the bucket wins:
 // its services and components replace the file's, so one deleted at run time
-// stays deleted. A missing version key, and a stored version that is not a
-// JSON string (logged as a warning), compare as 0.0.0, so a file at 1.0.0
-// wins; a stored JSON string that is not a semantic version selects the
-// bucket. A stored model_registry replaces the file's; a stored nats is
+// stays deleted. A missing version key, and a stored version that fails to
+// decode into a string, such as a number (logged as a warning), compare as
+// 0.0.0, so a file at 1.0.0 wins; a stored string that is not a semantic
+// version selects the bucket, and so does a stored null, which decodes as an
+// empty string. A stored model_registry replaces the file's; a stored nats is
 // decoded over the file's nats section, so a key it leaves out keeps the
 // file's value. The stored platform key is a copy for readers and is never
 // applied. Start writes the version key last, so a write cut short leaves the

@@ -221,9 +221,10 @@ no record (ADR-104).
 | Either version is not a semantic version, including a file with no `version` | The bucket wins |
 
 Versions are compared with `CompareVersions`. The bucket's `version` is stored as a JSON string. A bucket with no
-`version` key compares as `0.0.0`, and so does a stored value that is not a JSON string (with a warning in the log), so
-a file at `1.0.0` wins over either. A stored JSON string that is not a semantic version, such as `"latest"`, cannot be
-compared, and the bucket wins. When the bucket wins, its `services` and `components` entries replace
+`version` key compares as `0.0.0`, and so does a stored value that fails to decode into a string, such as a number
+(with a warning in the log), so a file at `1.0.0` wins over either. A stored JSON string that is not a semantic version,
+such as `"latest"`, cannot be compared, and the bucket wins. A stored `null` decodes as an empty string, which is not a
+semantic version either, so the bucket wins. When the bucket wins, its `services` and `components` entries replace
 the file's, so a component deleted at run time stays deleted at the next boot; to bring the file's set back, raise the
 file's `version`. A stored `model_registry` replaces the file's; a stored `nats` is decoded over the file's `nats`
 section, so a key it leaves out keeps the file's value. The stored `platform` key is a copy for readers and is never

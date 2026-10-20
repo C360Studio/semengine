@@ -92,8 +92,9 @@ unchanged.
 On a first boot Start SHALL push the file configuration to the bucket. Otherwise, when the file's `version` is newer
 Start SHALL push the file. When it is equal, older, or cannot be compared, Start SHALL select the bucket: the
 effective `services` and `components` SHALL then be exactly the bucket's `services.*` and `components.*` entries. A
-missing stored `version`, and a stored `version` that is not a JSON string (with a Warn), SHALL compare as `0.0.0`; a
-stored string or a file `version` that is not a semantic version (a file with no `version` among them) cannot be
+missing stored `version`, and a stored `version` that fails to decode into a string (with a Warn), SHALL compare as
+`0.0.0`; a stored string (including the empty string a stored `null` decodes to) or a file `version` that is not a
+semantic version (a file with no `version` among them) cannot be
 compared, and Start SHALL select the bucket. Before acquiring the bucket, Start SHALL refuse a file
 configuration holding a service or component name that is not one NATS KV literal token after the space mapping, or
 two names that map to one key, naming them. Start SHALL then name each service and component as its key does, each

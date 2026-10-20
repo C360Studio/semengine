@@ -23,10 +23,16 @@ type PropertySchema struct {
 
 // NewConfigSchema creates a service ConfigSchema with extended property schemas
 func NewConfigSchema(properties map[string]PropertySchema, required []string) ConfigSchema {
-	// Convert our extended PropertySchema to component.PropertySchema
+	// Convert our extended PropertySchema to component.PropertySchema. The
+	// outer Category is the one callers set; it shadows the embedded field, so
+	// it is copied in when set rather than dropped.
 	componentProps := make(map[string]component.PropertySchema)
 	for key, prop := range properties {
-		componentProps[key] = prop.PropertySchema
+		p := prop.PropertySchema
+		if prop.Category != "" {
+			p.Category = prop.Category
+		}
+		componentProps[key] = p
 	}
 
 	return ConfigSchema{

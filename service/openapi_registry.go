@@ -18,8 +18,8 @@ func RegisterOpenAPISpec(name string, spec *OpenAPISpec) {
 	openAPIRegistry[name] = spec
 }
 
-// GetAllOpenAPISpecs returns all registered OpenAPI specifications.
-// Used by the openapi-generator tool to collect specs from all services.
+// GetAllOpenAPISpecs returns a copy of every registered OpenAPI specification.
+// The service manager's /openapi.json handler reads it (PR 2 of the port).
 func GetAllOpenAPISpecs() map[string]*OpenAPISpec {
 	openAPIRegistryMu.RLock()
 	defer openAPIRegistryMu.RUnlock()

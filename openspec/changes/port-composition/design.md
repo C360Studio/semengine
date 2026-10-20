@@ -150,7 +150,8 @@ clash is between the candidate's second claim and the holder's first.
 Predicted detections:
 
 - M1: `ConflictWith` compares `ResourceID()` text.
-- M2: `ConflictWith` visits `d`'s claims before `held`'s; detected by the two-claims case.
+- M2: `ConflictWith` visits `d`'s claims before `held`'s; detected by the crossed-pairs row (two clashing pairs, ports 8080
+  and 9090; added in 2.1, `notes/2.1.md`), not by the one-clash two-claims case.
 - M3: composition's exclusive check removed.
 - M4: the reserved check removed.
 - M5: `SubjectsOverlap` replaced by `SubjectCovers(filter, reserved)`.

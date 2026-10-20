@@ -1,4 +1,4 @@
-# Proposal: setup-04a-03-boot-service
+# Proposal: setup-04a-03-boot-service-base
 
 ## Why
 
@@ -10,6 +10,9 @@ about 11,800 pin lines at SemStreams `8b99efe9` and is split by lifecycle owner 
 inventory of the package at the pin, for the owner to accept on #9, before any owner's design is written.
 
 ## What Changes
+
+The owner accepted the split on 2026-10-20 (#9 comment 6296023694, option B): this change is PR 1 of 7, `BaseService`
+and the shared files of `service`. Its design replaces the paragraphs below.
 
 - An inventory of `service` at the pin: every lifecycle owner, what it starts and ends, what it imports from the
   port set and from outside it, the shape sweep, the pin ADRs it carries, and every open issue naming it (#157,

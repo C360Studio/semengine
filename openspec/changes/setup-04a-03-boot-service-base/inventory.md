@@ -1,4 +1,4 @@
-# Inventory: setup-04a-03-boot-service
+# Inventory: setup-04a-03-boot-service-base (whole `service` package; PR 1 of 7)
 
 base: `30ae761f93b5d3e08049e812843763a5b8e865c4` (`main` `3a8611f` plus the two claim commits, which add only
 `proposal.md`; draft PR #343)

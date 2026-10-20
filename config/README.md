@@ -27,14 +27,15 @@ if err := cfg.Validate(); err != nil {
 2. Lay it over the defaults. A key the document sets replaces the default; a key it leaves out keeps the default.
    Objects merge key by key, so `{"platform":{"id":"p1"}}` keeps the default `platform.region`. A value written in
    the document, including `false`, `0` or an empty list, replaces the default.
-
-Write every key in lowercase, exactly as shown in this README. A key in another letter case is not reliably applied:
-where the defaults carry that key, it is silently ignored. `{"Components":{...}}` loads no components, `"URLs"` keeps
-the default URL, and `"JetStream":{"enabled":false}` leaves JetStream enabled (#325). The refused keys listed below
-are the exception: they are refused in any letter case.
 3. Apply the environment overrides.
 4. Check that `platform.org` and `platform.id` together leave room for the entity IDs this deployment will create
    (ADR-104).
+
+Write every key exactly as this README shows it. A key that differs from a key `Config` declares only in letter case
+fails the load, naming the right spelling (#325): `"nats":{"URLs":[...]}` fails with an error ending
+`config key nats.URLs must be written nats.urls`. Names you choose (component, service, stream, override, archival
+and model registry names) are yours to spell, and a component's or service's `config` payload belongs to that
+component or service: loading does not check its keys.
 
 Loading does not call `Validate`. The caller calls it, as in the example.
 
@@ -117,9 +118,11 @@ Loading fails, and returns no `Config`, when:
 - `SEMENGINE_NATS_USERNAME`, `SEMENGINE_NATS_PASSWORD` or `SEMENGINE_NATS_TOKEN` is set to a value that is not empty,
   for the same reason.
 - The document sets `platform.instance_id`, in any letter case.
+- A key differs from the key `Config` declares only in letter case, such as `"NATS"` or `"Enabled"` inside a
+  `services` entry (above). When the document also sets one of the refused keys above, the error names that key
+  instead.
 
-Other unknown keys at the top level, or inside `platform` or `nats`, are accepted and ignored, and so is a key in
-another letter case where the defaults carry that key (above).
+Other unknown keys at the top level, or inside `platform` or `nats`, are accepted and ignored.
 
 ### Which files LoadFile reads
 

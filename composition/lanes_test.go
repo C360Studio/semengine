@@ -1,6 +1,7 @@
 package composition_test
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -112,5 +113,39 @@ func TestValidateReportsOrphanBesideSameNamedOutput(t *testing.T) {
 	if len(orphans) != 1 || orphans[0].Component != "proc" || orphans[0].Port != "data" ||
 		!strings.HasPrefix(orphans[0].Message, "input port 'data'") {
 		t.Fatalf("orphaned_port errors = %+v, want one naming proc's input data", orphans)
+	}
+}
+
+// TestValidateOrdersEdgesByConnectionIDLast — when two edges agree on source,
+// ports, target and pattern, the projection orders them by connection ID.
+// Component a's request input q (on svc.z) and request output q (on svc.a) are
+// two lanes, and b's request output r on svc.* reaches both, so the graph holds
+// two b/r -> a/q request edges that differ only in connection ID.
+func TestValidateOrdersEdgesByConnectionIDLast(t *testing.T) {
+	request := func(name, subject string) component.PortDefinition {
+		return component.PortDefinition{Name: name, Config: component.NATSRequestPort{Subject: subject}}
+	}
+	registry := fakeRegistry(t,
+		fakeSpec{name: "a", typ: types.ComponentTypeProcessor,
+			inputs:  []component.PortDefinition{request("q", "svc.z")},
+			outputs: []component.PortDefinition{request("q", "svc.a")},
+		},
+		fakeSpec{name: "b", typ: types.ComponentTypeProcessor,
+			outputs: []component.PortDefinition{request("r", "svc.*")},
+		},
+	)
+	result := validateRoundTrip(t, registry, compositionOf(config.ComponentConfigs{
+		"a": instance("a", types.ComponentTypeProcessor),
+		"b": instance("b", types.ComponentTypeProcessor),
+	}))
+	if len(result.Errors) != 0 {
+		t.Fatalf("errors = %+v, want none", result.Errors)
+	}
+	want := []composition.Edge{
+		{From: "b", FromPort: "r", To: "a", ToPort: "q", Pattern: "request", ConnectionID: "svc.a"},
+		{From: "b", FromPort: "r", To: "a", ToPort: "q", Pattern: "request", ConnectionID: "svc.z"},
+	}
+	if !slices.Equal(result.Graph.Edges, want) {
+		t.Fatalf("graph edges = %+v, want %+v", result.Graph.Edges, want)
 	}
 }

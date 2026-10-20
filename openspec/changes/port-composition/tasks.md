@@ -60,8 +60,9 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
 - [x] 2.4 Example config (owner Q1), tests first: `TestValidateExampleConfigHasNoErrorFindings`. Then the rewritten
   `config/example_config.json`, with `TestLoader_ExampleConfig` updated. Gate:
   `go test -race ./config/ ./composition/`, `task verify`.
-- [x] 2.5 `task mutate:check` for M1-M18 (detections; for M16 and M17 record the run count) and S1 (survivor
-  recorded) in `notes/2.5.md`. Gate: `task verify` passes on a clean tree.
+- [x] 2.5 `task mutate:check` for M1-M18 (detections, M10 by `TestValidateOrdersEdgesByConnectionIDLast` after
+  the 2.6 review; for M16 and M17 record the run count) and S1 (survivor recorded) in `notes/2.5.md`. Gate:
+  `task verify` passes on a clean tree.
 - [ ] 2.6 Cross-agent review stop (Codex) over 2.2a-2.5; `reviewed-by:` in the PR body.
 
 ## 3. Close

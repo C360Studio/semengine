@@ -209,7 +209,8 @@ Predicted detections:
 - M7: explicit `streams` not checked.
 - M8: JetStream outputs not checked.
 - M9: `reserved_subject_capture` severity becomes warning.
-- M10: the shared edge comparator drops the `ConnectionID` key; equivalent, survives (`notes/2.5.md`).
+- M10: the shared edge comparator drops the `ConnectionID` key; detected by
+  `TestValidateOrdersEdgesByConnectionIDLast`, whose two request edges differ only in connection ID (`notes/2.5.md`).
 - M10b: the shared edge comparator drops its first key (`From`); detected by `TestMermaidIsDeterministic`, which
   renders a hand-built projection with its nodes and edges supplied in two orders.
 - M11: the `checkSelfClash` call removed from `component/registry.go` `declare`; detected by
@@ -262,9 +263,12 @@ self-clash outcome and overlap for #16. ADR-094 and ADR-096 govern `service`. Th
   - #9: `Addresses #9`.
 
   The PR body says "retires" or "stays open" and never puts a closing word near #16.
-- **Merge order:** before the `service` component-manager PR. #341 is merged; this PR edits `config/config.go`
-  (`Validate`, `validateSecurity`), `config_test.go` and `config/example_config.json`, after merging origin/main in
-  task 2.2a. #343 is docs only.
+- **Merge order:** before the `service` component-manager PR, which imports `composition`. #341 is merged; this PR
+  edits `config/config.go` (`Validate`, `validateSecurity`), `config_test.go` and `config/example_config.json`, after
+  merging origin/main in task 2.2a. #343 (service PR 1 of 7: `BaseService` and the shared `service` files) imports
+  nothing from `composition` and shares no file with this PR today (`gh pr view 343 --json files`, 2026-10-20), so
+  either may land first. Its body expects this PR second and plans ledger, repository-map and cover-check lines;
+  whichever lands second merges origin/main and keeps both sets.
 
 ## Owner questions
 

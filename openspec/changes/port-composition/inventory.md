@@ -170,7 +170,7 @@ land in any order relative to this one.
 ## Problem shape
 
 Admit-or-refuse at a seam, as an offline prediction of boot admission. The closest instance in the tree is
-`component/registry.go:578` — `func (r *Registry) checkResourceConflictsLocked(candidate Declaration) error {`,
+`component/registry.go:579` — `func (r *Registry) checkResourceConflictsLocked(candidate Declaration) error {`,
 which uses `claimsClash` `:659`, and `exclusiveResources` `:626` (refuses within one component, so `Declare`
 already refuses a component that clashes with itself). At the pin a self-clash yields no finding (the pin's
 `component/registry.go:763-772` only sorts and compacts the claim text, and `composition/validate.go:58-64` checks

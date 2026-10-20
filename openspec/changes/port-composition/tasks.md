@@ -30,7 +30,7 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   `go test -race ./composition/`, `task ledger:check`, `task cover:check`, `task verify`. Done at `1b7406f`:
   `task verify` passed on a clean tree there (`composition` 90.3%, unit profile); failing-first record and choices in
   `notes/2.2.md`.
-- [ ] 2.2a Codex round 1 (design "Codex round 1"; #346, #347, #348). First merge origin/main into the branch (#341).
+- [x] 2.2a Codex round 1 (design "Codex round 1"; #346, #347, #348). First merge origin/main into the branch (#341).
   Tests first, each failing on the base:
   - `TestValidateKeepsSameNamedLanesApart` (Codex's #346 probe as the oracle, with the renamed-output control) and
     `TestValidateReportsOrphanBesideSameNamedOutput`;

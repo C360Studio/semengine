@@ -207,10 +207,10 @@ The other port types are `NATSRequestPort` (request and reply), `KVReadPort`, `H
 - `Declare(instanceName, config)` runs a factory's port declarer for one configured instance and returns its
   `Declaration`, without building the component. It refuses a component two of whose own network claims clash.
   Two `NetworkPort` claims clash when they have the same transport (UDP for the protocol `udp` in any letter case, TCP
-  for every other protocol) and the same port, and either host is a wildcard (`0.0.0.0`, `::`), or both hosts are IP
-  addresses naming one address (`::ffff:127.0.0.1` names `127.0.0.1`), or both hosts are the same text. Host names are
-  not resolved: `localhost` beside `127.0.0.1` is admitted, and the bind at `Start` decides it. The refusal is of the
-  invalid class and reads
+  for every other protocol) and the same port, and either host is a wildcard (an unspecified address such as `0.0.0.0`
+  or `::`), or both hosts are IP addresses naming one address (`::ffff:127.0.0.1` names `127.0.0.1`), or both hosts
+  are the same text. Host names are not resolved: `localhost` beside `127.0.0.1` is admitted, and the bind at `Start`
+  decides it. The refusal is of the invalid class and reads
   `resource conflict: component 'gateway' claims ws:0.0.0.0:8080, held by another of its ports as http:0.0.0.0:8080`,
   naming the later claim (inputs first, then outputs) and the earlier one.
 - `CreateComponent(instanceName, config, deps, prepare)`, `SealComposition()` and `Snapshots()` exist for the component

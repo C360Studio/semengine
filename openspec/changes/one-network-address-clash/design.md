@@ -175,7 +175,7 @@ taken from the probe table and the rulings, never computed from `NetworkFacts`.
   `ResourceID` literals, run three ways. (a) Component `first` is admitted with the row's first claim, then `second`
   is created with its second claim. (b) The same names, with the two claims swapped. (c) One component, `gateway`, has
   the first claim as its input and the second as its output, through `Declare`. Each run checks `errs.IsInvalid` and
-  the exact text:
+  the full refusal text, inside the registry's operation prefixes:
   - (a) `resource conflict: component 'second' claims <second claim>, held by component 'first' as <first claim>`
   - (b) `resource conflict: component 'second' claims <first claim>, held by component 'first' as <second claim>`
   - (c) `resource conflict: component 'gateway' claims <second claim>, held by another of its ports as <first claim>`

@@ -2276,7 +2276,10 @@
     compactStrings and the unreachable self-skip in the registry's conflict check are removed; and, in
     one-network-address-clash (#328): (13) exclusive network claims clash by transport (`udp` in any
     letter case, else TCP), port and host (wildcard, one IP address, or same text; an IPv6 zone is
-    ignored), not by resource text; the refusal names the refused component, the holder and both claims
+    ignored), not by resource text; the refusal names the refused component, the holder and both claims;
+    and, in port-composition (#338): (14) Declaration.ConflictWith(held) returns the first clash between
+    two declarations' exclusive claims under that rule, as a plain error with the refusal's text, and
+    CreateComponent's conflict check calls it for each admitted holder in instance-name order
   dependencies_and_side_effects: >-
     internal/cache, metric, model, natsclient, payloadregistry, pkg/errs, pkg/security, storage,
     storage/storeregistry, types (in-set); stdlib
@@ -2285,14 +2288,19 @@
     metrics.go, registerable.go, logging.go, and component/flowgraph/. Dead surface removed (design
     D6, #153): unused property/config helpers, Registry.Snapshot/ListComponentTypes/GetFactory/
     ListAvailable/GetComponentSchema, MergePortConfig, PortFacts.KVReadBucket, and
-    StreamFacts.ConsumerName; doc.go and README.md updated to match
+    StreamFacts.ConsumerName; doc.go and README.md updated to match. Declaration.ExclusiveResources
+    (the sorted text of a declaration's exclusive claims) is removed in port-composition (owner ruling
+    3, #9 comment 6295357983): nothing reads it once composition calls ConflictWith; a reader of the
+    claims uses the facts' ResourceID
   proving_tests: >-
     internal/harness/contract/componentdeps_test.go (TestComponentReachesNoAgenticOrGraphPackage),
     component/registry_boot_admission_test.go (TestRegistryRefusesASecondComponentOnATakenAddress,
     TestRegistryRefusesOneComponentClaimingAnAddressTwice,
     TestRegistryAdmitsComponentsOnDistinctOrSharedResources,
     TestRegistryRefusesNetworkClaimsThatCannotBothBind, TestRegistryAdmitsNetworkClaimsThatCanBothBind,
-    TestRegistryNamesTheFirstClashingHolderByName), registry_test.go, registry_integration_test.go,
+    TestRegistryNamesTheFirstClashingHolderByName), component/declaration_conflict_test.go
+    (TestDeclarationConflictWithMatchesAdmission, TestDeclarationConflictWithAdmitsNonClashingClaims),
+    registry_test.go, registry_integration_test.go,
     register_test.go, validation_test.go, schema_words_test.go, discovery_test.go
     (TestDiscoverableNeedsOnlyPortsHealthAndFlow)
   owner: setup-04a-02-ingest-kernel developer

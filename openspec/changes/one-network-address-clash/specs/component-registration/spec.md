@@ -7,11 +7,11 @@
 An exclusive resource is one only one port may hold. Today the only exclusive port is `component.NetworkPort`, a
 listener whose claim is its protocol, host and port, shown as its resource text (`tcp:127.0.0.1:8080`).
 
-Two network claims clash when they have the same transport and the same port, and either host is a wildcard
-(`0.0.0.0`, `::`, or `::ffff:0.0.0.0`), or both hosts are IP addresses naming one address (an IPv4-mapped IPv6
-address names its IPv4 address), or both hosts are the same text. The transport is UDP when the protocol is exactly `udp`
-and TCP for every other protocol. A host name is not resolved at admission, so a name beside an address that
-resolves to the same address is not refused here; the bind at `Start` decides it (not promised).
+Two network claims clash when they have the same transport and the same port, and either host is a wildcard (an
+unspecified address such as `0.0.0.0`, `::` or `::ffff:0.0.0.0`), or both hosts are IP addresses naming one address (an
+IPv4-mapped IPv6 address names its IPv4 address), or both hosts are the same text. The transport is UDP when the
+protocol is exactly `udp` and TCP for every other protocol. A host name is not resolved at admission, so a name beside
+an address that resolves to the same address is not refused here; the bind at `Start` decides it (not promised).
 
 `component.Registry.CreateComponent` SHALL refuse, with an error of the invalid class, a component with a claim that
 clashes with a claim an admitted component holds. The error SHALL name the component's claim, the holder and the

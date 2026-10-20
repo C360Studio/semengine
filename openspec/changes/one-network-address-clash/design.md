@@ -203,8 +203,9 @@ These tests bind nothing, so the fixed-port guard does not apply; the existing t
 | M5 | in `exclusiveResources`, `if claimsClash(claim, earlier) {` becomes `if claim.ResourceID() == earlier.ResourceID() {` | R1, `Declare` path |
 | M6 | `for _, holder := range slices.Sorted(maps.Keys(r.declarations)) {` becomes `for holder := range maps.Keys(r.declarations) {` (`slices` is still used at `registry.go:377`) | `TestRegistryNamesTheFirstClashingHolderByName` |
 
-M6 makes the named holder depend on map order. The test makes 20 attempts in one run, and the chance that unsorted
-iteration names `alpha` on all 20 is about one in a million (2^-20), so one `task mutate:check` run (`-count=1`,
+M6 makes the named holder depend on map order. The test makes 20 attempts in one run; the reviewer measured unsorted
+iteration over the two holders naming `alpha` first in about 1 of 8 attempts (Go 1.26, 100,000 trials; map order is
+measured, not promised), so the chance all 20 pass is negligible and one `task mutate:check` run (`-count=1`,
 `internal/harness/mutcheck/runs.go:88`) detects it.
 
 **Uncovered, recorded:**

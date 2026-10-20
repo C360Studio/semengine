@@ -55,8 +55,8 @@ func freePort() int {
 
 func main() {
     // Each entry: {network1, host1, network2, host2}. Every table row below is listed, in both orders where the
-    // table says so. The last nine entries (mapped, long-form, upper-case and 127.0.0.2 hosts) were first run as
-    // two smaller programs with these same bind calls; they are merged here so one program re-runs the table.
+    // table says so. Of the ten appended entries, the seven with mapped, long-form, upper-case and 127.0.0.2 hosts were
+    // first run as two smaller programs with these same bind calls; they are merged here so one program re-runs the table.
     var pairs [][4]string
     for _, n := range []string{"tcp", "udp"} {
         for _, h := range [][2]string{
@@ -85,7 +85,7 @@ func main() {
         [4]string{"tcp", "0:0:0:0:0:0:0:1", "tcp", "::1"},
         [4]string{"tcp", "::ffff:0.0.0.0", "tcp", "127.0.0.1"},
         [4]string{"tcp", "LOCALHOST", "tcp", "127.0.0.1"},
-        [4]string{"tcp", "127.0.0.1", "tcp", "127.0.0.2"}, // Linux only: macOS has no 127.0.0.2
+        [4]string{"tcp", "127.0.0.1", "tcp", "127.0.0.2"}, // Linux only: on macOS the second bind fails for want of the address, not a clash
         [4]string{"udp", "127.0.0.1", "udp", "127.0.0.2"}, // Linux only
     )
     for _, p := range pairs {
@@ -117,8 +117,8 @@ Go binds `0.0.0.0`, `::` and `""` as `[::]` (dual-stack) on both systems.
 | `::` / `127.0.0.1`; `""` / `127.0.0.1` | both bind | second fails | second fails | second fails |
 | `localhost` / `127.0.0.1` (`localhost` bound `127.0.0.1`) | second fails | second fails | second fails | second fails |
 | `localhost` / `0.0.0.0` | both bind | second fails | second fails | second fails |
-| `localhost` / `::1` | both bind | both bind | both bind | both bind |
-| tcp `0.0.0.0` / udp `0.0.0.0`; tcp `127.0.0.1` / udp `127.0.0.1` | both bind | both bind | (same rows) | (same rows) |
+| `localhost` / `::1` (one order) | both bind | both bind | both bind | both bind |
+| tcp `0.0.0.0` / udp `0.0.0.0`; tcp `127.0.0.1` / udp `127.0.0.1` (one order) | both bind | both bind | (same rows) | (same rows) |
 | `::ffff:127.0.0.1` / `127.0.0.1` (one order) | second fails | second fails | second fails | second fails |
 | `0:0:0:0:0:0:0:1` / `::1` (one order) | second fails | second fails | not run | not run |
 | `::ffff:0.0.0.0` / `127.0.0.1` (one order) | both bind | second fails | not run | not run |

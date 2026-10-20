@@ -1,4 +1,3 @@
-// Package service provides OpenAPI specification types for HTTP endpoint documentation
 package service
 
 import (

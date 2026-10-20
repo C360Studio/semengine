@@ -1,4 +1,3 @@
-// Package service provides the OpenAPI registry for service specifications
 package service
 
 import "sync"

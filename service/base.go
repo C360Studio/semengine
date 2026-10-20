@@ -1,6 +1,3 @@
-// Package service provides base functionality and common patterns for
-// long-running services in SemEngine. It includes health monitoring, lifecycle
-// management, and metric collection capabilities.
 package service
 
 import (

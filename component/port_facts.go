@@ -1,5 +1,10 @@
 package component
 
+import (
+	"net/netip"
+	"strings"
+)
+
 // PortFacts is an immutable semantic projection of one resolved Port.
 type PortFacts struct {
 	kind              PortKind
@@ -143,6 +148,44 @@ func (f NetworkFacts) Host() string { return f.host }
 
 // Port returns the configured bind port.
 func (f NetworkFacts) Port() int { return f.port }
+
+// transport is the socket type a listener for this port opens: UDP for the
+// protocol label "udp" in any letter case, TCP for every other label (owner
+// rulings, #328).
+func (f NetworkFacts) transport() string {
+	if strings.EqualFold(f.protocol, "udp") {
+		return "udp"
+	}
+	return "tcp"
+}
+
+// clashes reports whether listeners for f and other cannot both bind: the same
+// transport and port, and a wildcard host on either side, one IP address in two
+// spellings, or the same host text. Host names are not resolved (probe, #328).
+func (f NetworkFacts) clashes(other NetworkFacts) bool {
+	if f.transport() != other.transport() || f.port != other.port {
+		return false
+	}
+	a, b := hostAddr(f.host), hostAddr(other.host)
+	if a.IsUnspecified() || b.IsUnspecified() {
+		return true
+	}
+	if a.IsValid() && b.IsValid() {
+		return a == b
+	}
+	return f.host == other.host
+}
+
+// hostAddr returns the IP address a host spells, unmapping an IPv4-mapped IPv6
+// address and dropping any IPv6 zone (owner ruling, #339); for a host name it
+// returns the zero Addr.
+func hostAddr(host string) netip.Addr {
+	addr, err := netip.ParseAddr(host)
+	if err != nil {
+		return netip.Addr{}
+	}
+	return addr.Unmap().WithZone("")
+}
 
 func basePortFacts(config Portable, interaction InteractionPattern, connectionIDs ...string) PortFacts {
 	return PortFacts{

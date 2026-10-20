@@ -2677,7 +2677,7 @@
     TestBuildFromDeclarationsRefusesExtraFacts, TestBuildFromDeclarationsRefusesMalformedDeclarations,
     TestValidateStreamRequirementsFlagsCoreNATSPublishers,
     TestFlowGraphOutputIsTheSameEveryRun, TestMatchNATSPatternIsSymmetric, TestRefusalsNameNoInternalFunction,
-    TestTailWildcardNeedsATrailingToken),
+    TestTailWildcardNeedsATrailingToken, TestRequestEdgesKeepSameNamedLanesApart),
     composition/lanes_test.go (TestValidateReportsOrphanBesideSameNamedOutput),
     flowgraph_validation_test.go (TestUnconnectedOptionalInterfacePortReportsNoPublishers and the pin's tests),
     graph_mutation_contract_test.go, subject_cover_test.go, flowgraph_test.go, flowgraph_patterns_test.go,

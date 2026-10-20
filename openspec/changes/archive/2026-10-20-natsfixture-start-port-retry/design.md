@@ -52,8 +52,10 @@ All later phases (`host`, `mapped-port`, `connect`, `jetstream-ready`) and `Rest
 
 ## Why bounded examples suffice
 
-The retry state space in `Fixture.attempt` is finite and small: at most two start attempts (`startAttempts = 2`), a
-boolean error predicate (`isAddressInUse(err)`), caller context liveness (`ctx.Err() == nil` vs cancelled), and the
-`WithMaxPayload` reader reset across retry (#352). The four subtests of `TestStartRetriesOnceOnPortInUse` exercise each
-reachable transition against a real Docker daemon, so deterministic examples exhaust the state graph without property
-generation.
+The retry loop in `Fixture.attempt` is bounded to two attempts (`startAttempts = 2`) with a boolean error predicate
+(`isAddressInUse(err)`), caller context liveness (`ctx.Err() == nil` vs cancelled), and the `WithMaxPayload` reader
+reset across retry (#352). The four subtests of `TestStartRetriesOnceOnPortInUse` cover the four primary histories
+against a real Docker daemon (one collision then recovery with `WithMaxPayload`, two collisions then failure, caller
+cancellation on attempt 1, and a non-port-in-use failure on attempt 1). They do not inject failures into
+`rollbackAttempt` (`fixture.go:209-210`), `pickPort` (`:213-215`), or mid-rollback cancellation, which would require
+extra fault-injection hooks in `Start` without exercising additional port-collision logic.

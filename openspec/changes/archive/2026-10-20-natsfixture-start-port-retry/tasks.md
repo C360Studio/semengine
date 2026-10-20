@@ -25,7 +25,9 @@ flakes), plus mutation check results.
 
 ## 3. Review and close
 
-- [ ] 3.1 Hold: awaiting cross-agent review (`claude` or `codex` `semengine-reviewer`) on the implementation commit;
-  address any findings and record `reviewed-by:` in the PR body once approved.
-- [ ] 3.2 Archive the change and sync `openspec/specs/nats-fixture/spec.md` as the last content commit. Gate:
+- [x] 3.1 Cross-agent review (`codex` `semengine-reviewer`) on the implementation commit
+  ([comment 6302930329](https://github.com/C360Studio/semengine/pull/351#issuecomment-6302930329) and approval at
+  `6c18786` in [comment 6303458475](https://github.com/C360Studio/semengine/pull/351#issuecomment-6303458475));
+  findings addressed in `6c18786` (`notes/3.1.md`) and `reviewed-by: codex` recorded in the PR body.
+- [x] 3.2 Archive the change and sync `openspec/specs/nats-fixture/spec.md` as the last content commit. Gate:
   `task spec:check`.

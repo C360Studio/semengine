@@ -1,0 +1,48 @@
+# Design: natsfixture-start-port-retry
+
+## Context and root-cause analysis (#180, #209, #254, #345)
+
+1. **Why the host must pick the port (#180, #209):** On Docker Desktop for Mac, `dockerd` runs inside the Linux VM and
+   assigns ephemeral host ports from a VM counter that cannot see macOS host listeners. When Docker picks a port held on
+   macOS, `com.docker.backend` silently drops the port forwarding and leaves the container running with an empty port
+   map (`ports: {"4222/tcp": []}`). Asking the macOS kernel for an ephemeral port (`freePort()`) and passing that
+   explicit `HostPort` to Docker (#210) eliminated silent empty port maps.
+2. **Why the TOCTOU window exists (#345):** Because Docker binds `0.0.0.0:<port>` in its own process during
+   `ContainerStart`, `natsfixture` must close its port-0 listener before Docker starts the container. Unlike #180/#209,
+   a collision on an explicit `HostPort` fails synchronously during `ContainerStart` with Docker's daemon error:
+   `Error response from daemon: ports are not available: exposing port TCP 0.0.0.0:<port> -> 127.0.0.1:0: listen tcp
+   0.0.0.0:<port>: bind: address already in use`.
+3. **Why `fixture.go` widened the window:** In `fixture.go:208-216`, `prepareDocker(ctx, f.logf)` ran *after*
+   `freePort()` closed the listener and *before* `testcontainers.GenericContainer(ctx, req)`, placing the first-call
+   Docker client initialization, `ContainerList`, and 30-minute container sweep inside the unbound port window.
+
+## Decisions
+
+### D1. Run `prepareDocker` first and retry `start` once on port in use
+
+In `Fixture.attempt` (`internal/harness/natsfixture/fixture.go`):
+
+1. Call `prepareDocker(ctx, f.logf)` at the beginning of the `start` phase, before picking a host port.
+2. Bound the `start` phase loop to `startAttempts = 2`:
+   - Pick a host port via `pickPort()` (`freePort` in production; replaceable in-package by tests, matching `imagePin`
+     in `fixture.go:46`).
+   - Configure `req.HostConfigModifier` with `HostPort: hostPort` and call `testcontainers.GenericContainer(ctx, req)`.
+   - Record any returned container on `f.container` and `f.containerID` immediately so ownership is never lost.
+   - If `err == nil`, return `nil`.
+   - Join `err` into `startErr`. If `ctx.Err() != nil` or `!isAddressInUse(err)` (where `isAddressInUse` checks
+     `strings.Contains(err.Error(), "address already in use")`), return `startErr` without retrying; `run("start", ...)`
+     then runs `f.rollbackAttempt(ctx)` to remove the failed container.
+   - On attempt 1 (`attempt == 0`), when `ctx.Err() == nil` and `isAddressInUse(err)` is true, run
+     `f.rollbackAttempt(ctx)` before attempt 2 to remove the unstarted first container under a fresh bounded rollback
+     context and clear `f.container` / `f.containerID`. If that rollback fails, return `startErr` joined with the
+     cleanup error rather than starting a second container while the first could not be removed.
+
+All later phases (`host`, `mapped-port`, `connect`, `jetstream-ready`) and `Restart` remain single-attempt.
+
+## Observable behaviour and proving tests
+
+| Behaviour | Proving test (`internal/harness/natsfixture/start_port_integration_test.go`) |
+| --- | --- |
+| When the first host port picked by `Start` is held by another listener (causing Docker's real `"address already in use"` failure) and `ctx` is live, `Start` removes the first unstarted container, retries once with a fresh port, and succeeds with only the second container present | `TestStartRetriesOnceOnPortInUse/recovers_on_second_attempt`: holds an ephemeral port via `net.Listen("tcp", ":0")`, returns it on call 1 of `pickPort` and delegates call 2 to `freePort()`; asserts `Start` returns `nil`, `pickPort` was called twice, JetStream answers on `URL()`, and `processContainers(t)` lists only `f.containerID`. Fails 5/5 runs on `main`; passes 5/5 runs with the fix |
+| When both attempts in the `start` phase hit `"address already in use"`, `Start` fails in phase `start` after 2 attempts and removes both unstarted containers | `TestStartRetriesOnceOnPortInUse/fails_after_two_attempts`: returns the held port on both calls; asserts `Start` fails naming `phase start` and `address already in use`, `pickPort` was called twice, `processContainers(t)` is empty, and `stopHoldsNothing(t, f)` is true |
+| When `ctx` is cancelled by the time attempt 1 fails with `"address already in use"`, `Start` does not retry and removes the first container | `TestStartRetriesOnceOnPortInUse/no_retry_when_context_cancelled`: cancels `ctx` during attempt 1's port pick while returning the held port; asserts `errors.Is(err, context.Canceled)`, `pickPort` was called once, and `processContainers(t)` is empty |

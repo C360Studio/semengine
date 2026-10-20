@@ -209,7 +209,9 @@ Predicted detections:
 - M7: explicit `streams` not checked.
 - M8: JetStream outputs not checked.
 - M9: `reserved_subject_capture` severity becomes warning.
-- M10: the shared edge comparator drops the `ConnectionID` key.
+- M10: the shared edge comparator drops the `ConnectionID` key; equivalent, survives (`notes/2.5.md`).
+- M10b: the shared edge comparator drops its first key (`From`); detected by `TestMermaidIsDeterministic`, which
+  renders a hand-built projection with its nodes and edges supplied in two orders.
 - M11: the `checkSelfClash` call removed from `component/registry.go` `declare`; detected by
   `TestValidateSelfClashIsPortDeclarationError` (zero errors instead of one).
 - M12: composition's contract map keyed without direction; detected by `TestValidateKeepsSameNamedLanesApart`.

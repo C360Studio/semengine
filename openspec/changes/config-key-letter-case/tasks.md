@@ -19,7 +19,7 @@ for one. Each task ends only when `task verify` passes on a clean tree at its co
     `json.Unmarshaler`.
 
   Gate: the refused cases and the coverage test fail on the base; record how in `notes/2.1.md`.
-- [ ] 2.2 `rejectCaseVariantKeys` in `config/config.go` per D1, called from `loadRawJSONFromBytes` after the two
+- [x] 2.2 `rejectCaseVariantKeys` in `config/config.go` per D1, called from `loadRawJSONFromBytes` after the two
   named refusals (D2). Gate: `go test -race ./config/` passes, with no edit to an existing test; `task verify`
   passes on a clean tree.
 - [ ] 2.3 Sensitivity: `task mutate:check` detects D3's mutants (a)-(d), recorded in `notes/2.3.md`. Gate:

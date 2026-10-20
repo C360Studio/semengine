@@ -30,6 +30,22 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
   `go test -race ./composition/`, `task ledger:check`, `task cover:check`, `task verify`. Done at `1b7406f`:
   `task verify` passed on a clean tree there (`composition` 90.3%, unit profile); failing-first record and choices in
   `notes/2.2.md`.
+- [ ] 2.2a Codex round 1 (design "Codex round 1"; #346, #347, #348). First merge origin/main into the branch (#341).
+  Tests first, each failing on the base:
+  - `TestValidateKeepsSameNamedLanesApart` (Codex's #346 probe as the oracle, with the renamed-output control) and
+    `TestValidateReportsOrphanBesideSameNamedOutput`;
+  - `TestValidateReadsNoTLSFile`, `TestValidateDocumentReadsNoFile` and `TestConfigValidateRefusesMissingTLSFiles`;
+  - `TestValidateConfigInvalidIsDeterministic`, `TestConfigValidateNamesFirstInvalidComponentByName` and
+    `TestRegistryValidateNamesFirstInvalidEndpointByName`.
+
+  Then:
+  - `ComponentPortRef.Direction`, used by the contract map and the orphan check;
+  - `Config.ValidateDocument`, with `Validate` composed from it and the host checks;
+  - composition calling `ValidateDocument`;
+  - sorted loops in `Config.ValidateDocument` and `model.Registry.Validate`;
+  - the `config`, `model` and `component/flowgraph` ledger rows updated.
+
+  Gate: `go test -race ./config/ ./model/ ./internal/flowgraph/ ./composition/`, `task verify`.
 - [ ] 2.3 #16 refusal, tests first: `TestValidateRefusesStreamCapturingReservedSubject`,
   `TestValidateDoesNotRefuseNeighbouringSubjects` and `TestReservedSubjectOverlapMatchesEnumeration` (design
   "Generated checks"; record the counts). Then:
@@ -41,13 +57,13 @@ test fails on the base commit. Each stop's task ends only when `task verify` pas
 - [ ] 2.4 Example config (owner Q1), tests first: `TestValidateExampleConfigHasNoErrorFindings`. Then the rewritten
   `config/example_config.json`, with `TestLoader_ExampleConfig` updated. Gate:
   `go test -race ./config/ ./composition/`, `task verify`.
-- [ ] 2.5 `task mutate:check` for M1-M11 (detections) and S1 (survivor recorded) in `notes/2.5.md`. Gate:
-  `task verify` passes on a clean tree.
-- [ ] 2.6 Cross-agent review stop (Codex) over 2.1-2.5; `reviewed-by:` in the PR body.
+- [ ] 2.5 `task mutate:check` for M1-M18 (detections; for M16 and M17 record the run count) and S1 (survivor
+  recorded) in `notes/2.5.md`. Gate: `task verify` passes on a clean tree.
+- [ ] 2.6 Cross-agent review stop (Codex) over 2.2a-2.5; `reviewed-by:` in the PR body.
 
 ## 3. Close
 
 - [ ] 3.1 Archive (`openspec archive port-composition`) as the last content commit. It syncs
   `composition-validation` (new; give it its Purpose section at archive, as `rule-pack-identity` got one),
-  `graph-transport-boundary` and `component-registration` into `openspec/specs/`. Gate: `task spec:check` and
-  `task docs:check`.
+  `graph-transport-boundary`, `component-registration` and `config-loading` into `openspec/specs/`. Gate:
+  `task spec:check` and `task docs:check`.

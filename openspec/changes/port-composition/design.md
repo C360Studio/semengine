@@ -108,6 +108,46 @@ reserved subject it captures (query verbs in table order, then the mutation fami
 **#16 stays open.** The real-NATS PubAck regression and refusal before readiness come with `service`; graph-query's
 subjects come with change 4 (#106).
 
+## Codex round 1
+
+This section answers Codex's review of tasks 2.1-2.2 at `b091939` (PR #342 comment, 2026-10-20). The owner asked that
+the fixes land in this PR. Each issue is retired here with `Closes`.
+
+- **#346 (HIGH): a same-named output hides an input.**
+  - Cause: the port grammar allows one name in each lane (`component/ports.go:143-147`). Composition's contract map
+    (`composition/analyze.go:218-222`) and flowgraph's orphan check (`internal/flowgraph/flowgraph.go:725-737`) both
+    key ports by instance and name only. An output therefore overwrites, or marks as connected, an input with the
+    same name.
+  - Request edges can join two outputs or two inputs (`flowgraph.go:552-584`), so "source is an output, target is an
+    input" would be wrong for them.
+  - Fix: `flowgraph.ComponentPortRef` gains `Direction component.Direction`, set at its one construction site
+    (`flowgraph.go:248`). The contract map and the orphan check key on instance, direction and port.
+  - The orphan half was read from the code, not probed; its test must fail on the base first.
+  - The pin has both defects (pin `composition/analyze.go:215-227`, `component/flowgraph/flowgraph.go:909`). Nothing
+    is filed upstream (no external filing without the owner).
+  - The projection's `Edge` JSON keeps its shape. A diagram stays ambiguous for same-named ports, which is not a
+    wrong judgment, so it stays optional and unfiled.
+- **#347 (HIGH): offline validation reads TLS files and writes to stderr.**
+  - Split inside `config`, its current owner. New `(*Config).ValidateDocument() error` runs every check that reads
+    only the document: platform, the TLS required-field and version checks, components, streams, model registry.
+  - `Validate()` becomes `ValidateDocument()` followed by the host checks: the `os.Stat` calls on the cert, key and CA
+    files (`config/config.go:288,293,308`) and the insecure-TLS warning (`:315`).
+  - Composition calls `ValidateDocument`. Runtime callers keep `Validate`: `SafeConfig.Update`/`Mutate`
+    (`config/config.go:96,134`), reached from `config.Manager` (`manager.go:378,720,1434,1501`).
+  - `internal/tlsutil` still fails at use on a missing file (`tlsutil.go:36,80,93`).
+  - The warning is not a finding: skipping verification is a deployment choice, not a wiring fault, and the
+    vocabulary stays at 14 types.
+  - One behaviour changes: with both a document fault and a missing TLS file, `Validate` now names the document fault
+    first.
+  - The one input `ValidateDocument` reads from outside its arguments is the current time: `ValidateStreamDeclarations`
+    checks whether a stream migration override has expired. The spec now states this.
+- **#348 (MEDIUM): an unstable first error.** `Config.Validate` ranges over the components map (`config/config.go:228`)
+  and returns the first error. It now visits components in sorted name order. `model.Registry.Validate` ranges over
+  two maps in the same way (`model/registry.go:439,445`) on the same path, and gets the same sort (owner: fix simple
+  leftovers now).
+- **Merge with #341.** #341 is merged and changed the loader functions in `config/config.go`, not `Validate`. Task
+  2.2a merges origin/main first (protocol: merge, never rebase).
+
 ## Ruling to implementation
 
 | Ruling / required finding | Implementation | Proving test |
@@ -121,6 +161,9 @@ subjects come with change 4 (#106).
 | Ruling 4; pin spec `:347` | `config/example_config.json` rewritten | `TestValidateExampleConfigHasNoErrorFindings`, `TestLoader_ExampleConfig` |
 | Sweep 4 (flowgraph, type) | `analyze.go:49,195`, `findings.go:24`, three `string()` conversions | build; pin `TestValidateFindingsVocabularyIsClosed` |
 | ADR-100 decisions 1-3 | the package as ported | the pin's validate, catalog and mermaid tests |
+| #346 (pin defect too) | `ComponentPortRef.Direction`; contract map and orphan check keyed by direction | `TestValidateKeepsSameNamedLanesApart` (Codex's probe as oracle: one `interface_mismatch`, and the same with the output renamed `out`; plus compatible and missing-interface rows), `TestValidateReportsOrphanBesideSameNamedOutput` |
+| #347 | `Config.ValidateDocument`; `Validate` = document checks + host checks; composition calls `ValidateDocument` | `TestValidateReadsNoTLSFile` (CA file absent and present give byte-equal JSON; stderr empty with `insecure_skip_verify`), `TestValidateDocumentReadsNoFile`, `TestConfigValidateRefusesMissingTLSFiles` |
+| #348 | sorted components in `Config.ValidateDocument`; sorted endpoints and capabilities in `model.Registry.Validate` | `TestValidateConfigInvalidIsDeterministic` (literal first error, byte-equal JSON over 50 runs), `TestConfigValidateNamesFirstInvalidComponentByName`, `TestRegistryValidateNamesFirstInvalidEndpointByName` |
 
 ## Generated checks
 
@@ -140,6 +183,13 @@ subjects come with change 4 (#106).
   `TestRegistryAdmitsNetworkClaimsThatCanBothBind`). Composition's table runs the four probe pairs, the same-text
   pair and two controls through both `CreateComponent` and `Validate`. Expected text is written as literals: the
   finding message equals it, and the `CreateComponent` error contains it.
+- **Codex round 1: examples enough.**
+  - #346: the cases are one name in two lanes, crossed with three contract outcomes and one orphan. The renamed
+    control shows each assertion runs.
+  - #347: the file checks are one boolean per path.
+  - #348: a sort; the tests use three invalid entries and repeat 50 times. An unsorted mutant is caught by
+    probability only (Go's map order varies from run to run), so `notes/2.5.md` records each detection with its run
+    count.
 
 ## Proving tests and mutants
 
@@ -162,6 +212,15 @@ Predicted detections:
 - M10: the shared edge comparator drops the `ConnectionID` key.
 - M11: the `checkSelfClash` call removed from `component/registry.go` `declare`; detected by
   `TestValidateSelfClashIsPortDeclarationError` (zero errors instead of one).
+- M12: composition's contract map keyed without direction; detected by `TestValidateKeepsSameNamedLanesApart`.
+- M13: flowgraph's orphan check keyed without direction; detected by `TestValidateReportsOrphanBesideSameNamedOutput`.
+- M14: composition calls `Validate` instead of `ValidateDocument`; detected by `TestValidateReadsNoTLSFile`.
+- M15: `Validate` skips the host checks; detected by `TestConfigValidateRefusesMissingTLSFiles`.
+- M16: the components loop goes back to map order; detected by `TestConfigValidateNamesFirstInvalidComponentByName`
+  and `TestValidateConfigInvalidIsDeterministic` (probabilistic; run count recorded).
+- M17: `model.Registry.Validate`'s endpoints loop goes back to map order; detected by
+  `TestRegistryValidateNamesFirstInvalidEndpointByName` (probabilistic; run count recorded).
+- M18: `ComponentPortRef.Direction` left unset at `flowgraph.go:248`; detected by the same two tests as M12 and M13.
 
 Predicted survivor: S1, a suggestion reworded.
 
@@ -188,18 +247,20 @@ self-clash outcome and overlap for #16. ADR-094 and ADR-096 govern `service`. Th
     goroutine, no I/O.
   - `known_risks`: the drops and changes above, and the not-covered factory case.
 - **Row `component`:** the contract gains `ConflictWith`; `known_risks` records the removed field.
-- **Row `component/flowgraph`:** the contract gains `SubjectsOverlap`.
+- **Row `component/flowgraph`:** the contract gains `SubjectsOverlap` and `ComponentPortRef.Direction`.
+- **Row `config`:** the contract gains `ValidateDocument` (reads no file, writes nothing) and validation in name order.
+- **Row `model`:** validation in name order.
 - **Coverage:** `composition` is on 03B D10's ruled list (`design.md:458`), so add `"composition unit"` to
   `scripts/cover-check.sh`. Pin baseline 89.6%; the gate is 80%.
-- **Issues:** `Closes #338`. These stay open:
+- **Issues:** `Closes #338`, `Closes #346`, `Closes #347`, `Closes #348`. These stay open:
   - #16: this PR carries only the composition share; the rest needs `service` and change 4;
   - #280: decided with `service`;
   - #9: `Addresses #9`.
 
   The PR body says "retires" or "stays open" and never puts a closing word near #16.
-- **Merge order:** before the `service` component-manager PR. #341 edits `config/config.go`, `load_test.go`,
-  `README.md` and `doc.go`; this PR edits `config/example_config.json` and `config_test.go`. They share no file, so
-  either order works. #343 is docs only.
+- **Merge order:** before the `service` component-manager PR. #341 is merged; this PR edits `config/config.go`
+  (`Validate`, `validateSecurity`), `config_test.go` and `config/example_config.json`, after merging origin/main in
+  task 2.2a. #343 is docs only.
 
 ## Owner questions
 

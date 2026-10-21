@@ -17,10 +17,12 @@ verify` passes on a clean tree at its commit.
   Q-B yes (boot fails, naming the components); Q-A withdrawn as a question, ADR-113 governs (option A). The probes'
   output and the build probe's commands and diff are on #359 (comments 6324262845 and 6324713111). Gate:
   `task spec:check` and `task docs:check`; each comment read back.
-- [ ] 1.2 The spec deltas design D9 names, with Q-B's answer and ADR-113's rule, under `specs/service-lifecycle/` and
-  `specs/operator-surface/`; `skip_specs` removed from `.openspec.yaml`. Gate: `task spec:check`.
-- [ ] 1.3 The lock-simplification amendment (owner, 2026-10-21, #359 comment 6325195862: design D2 "State shape" and
-  "No wait for readers", D4, D5, D7, D8, Generated checks; sweep C10, C11) passes review. Gate: `task spec:check` and
+- [x] 1.2 The spec deltas design D9 names, with Q-B's answer and ADR-113's rule, under `specs/service-lifecycle/` and
+  `specs/operator-surface/`; `skip_specs` removed from `.openspec.yaml`. Gate: `task spec:check` (strict validation
+  with the deltas present; exit 0).
+- [x] 1.3 The lock-simplification amendment (owner, 2026-10-21, #359 comment 6325195862: design D2 "State shape" and
+  "No wait for readers", D4, D5, D7, D8, Generated checks; sweep C10, C11) passes review: round 3 PASS WITH FINDINGS
+  at `3708774` (no BLOCKING or HIGH; two MEDIUM, three NIT), findings applied. Gate: `task spec:check` and
   `task docs:check`.
 
 ## 2. Port (D1-D7)
@@ -54,6 +56,9 @@ verify` passes on a clean tree at its commit.
   - [ ] 2.1n The Start/Stop model check (Generated checks): `component_manager_prop_test.go`.
   - [ ] 2.1o The state shape and the manager's health (D2 "State shape" and "No wait for readers", D4, #360):
     `component_manager_state_test.go`.
+  - [ ] 2.1p graph-ingest answers reads during and after its `Stop` (D2 "No wait for readers"):
+    `processor/graph-ingest/discoverable_reads_test.go`. It passes on the base; its gate is D7's mutant (task 2.3)
+    instead of a failure on the base.
 - [ ] 2.2 The five pin files, the module path rewritten, as D1-D6 say, one unit per commit (`notes/2.2.md`). Every
   2.1 test file is in package `service`, so no unit's tests can run until all six units have landed. Gate for 2.2a-2.2e:
   `go build ./service/ ./pkg/projection/` and `go vet ./service/` (with and without `-tags integration`) pass with a
@@ -73,7 +78,7 @@ verify` passes on a clean tree at its commit.
     provide: `service/component_manager_http.go`. Exercised by 2.1e, 2.1f, 2.1g, 2.1j, 2.1o.
   - [ ] 2.2f Registration, the component manager's OpenAPI spec (D5 option a), the stale field comment (D1, sweep
     C12) and the read contract line on `LifecycleComponent` (D2, "No wait for readers"): `service/register.go`,
-    `component/lifecycle.go`. Exercised by 2.1g, 2.1k-m, 2.1o.
+    `component/lifecycle.go`. Exercised by 2.1g, 2.1k-m, 2.1o, 2.1p.
 - [ ] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
   `task mutate:check` for the unit tests and by hand with `-tags integration` where a test needs NATS (#129), recorded
   in `notes/2.3.md` with the `rapid` seed and check count. Gate: `task verify` passes on a clean tree.

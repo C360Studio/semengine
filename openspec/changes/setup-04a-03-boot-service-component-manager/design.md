@@ -165,7 +165,13 @@ follows ADR-113; `mustFail`, a composition whose one component's `Start` fails) 
   failed, the store instances it registered, and whether its `Stop` returned nil) is one small value behind an
   `atomic.Pointer` on its record, replaced whole and never edited in place. One goroutine at a time replaces a given
   record's value (its start goroutine during a phase, then the failed `Start`'s rollback or the `Stop` sequence, which
-  the guard runs one after another), and every reader loads it without waiting. Manager-wide, whether the stop began
+  the guard runs one after another), and every reader loads it without waiting. Two orderings are the only guard of
+  that single writer, and nothing else enforces it: each phase joins every component's `Start` before the next phase
+  or the rollback can run (`:127-130`; pin `launchComponentsPhase`, `:653-672`, waits on its `WaitGroup`), and the
+  guard runs the rollback and the `Stop` sequence one after the other, refuses a concurrent `Stop`, and the sequence
+  calls each component's `Stop` on the caller's stack (pin `stopAllComponents`, `:946-972`), so a `Stop` cut short
+  leaves no writer behind. The race detector cannot see a breach: two stores to one `atomic.Pointer` are synchronised,
+  so a lost update passes `-race` silently. The record's doc comment says this (2.2c). Manager-wide, whether the stop began
   is an `atomic.Bool`; the startup metric writer the service manager hands in after construction sits behind an
   `atomic.Pointer` (that setter goes with the seam, #364); the supervisor's run-context cancel and done channel are
   written by the guard's start function and read by its cleanup function, which the guard orders. There is no
@@ -182,18 +188,20 @@ follows ADR-113; `mustFail`, a composition whose one component's `Start` fails) 
   `mc.Component` (`service/service_manager_http.go:277-285`). Proof: `TestComponentListIsFixedAtConstruction`,
   `TestComponentReadsReturnWhileAComponentStartIsBlocked`, `TestComponentReadsRaceStartAndStop` (D7).
 - **No wait for readers.** `Stop` neither waits for a health, status or list request in flight nor refuses one that
-  arrives during or after it; the pin's borrow fence (`:830-888`) goes. Such a request reads each record's current
-  value and asks the component itself, and the component answers with what it knows during and after its own `Stop`.
-  No line says so today: `component/discovery.go:17-29` and ADR-113 make no promise about when `Health` may be
-  called, and `component/lifecycle.go:66` excludes only concurrent lifecycle calls. So 2.2f adds one to
-  `component.LifecycleComponent`'s doc: `Health`, `DataFlow` and `DebugStatus` may be called at any time, during
-  `Start` or `Stop` and after `Stop`, and return without waiting for either. Measured: graph-ingest's `Health` takes
-  its read lock (`processor/graph-ingest/component.go:841-843`), and its `Stop` holds that lock only to clear `running`
-  (`:1102-1104`), not across the drain; semboids' `sim` does the same (`internal/sim/component.go:430-432`, `Stop`
-  `:548-551`) and answers `stopped` afterwards. semteams' agentic components and semsource's are not measured. The
-  pin already called `Health` during `Start` (its fence closed only in `Stop`), so the new case is during and after
+  arrives during or after it; the pin's borrow fence (`:830-888`) goes. Such a request reads each record's current value
+  and asks the component itself, and the component answers with what it knows during and after its own `Stop`. No line
+  says so today: `component/discovery.go:17-29` and ADR-113 make no promise about when `Health` may be called, and
+  `component/lifecycle.go:66` excludes only concurrent lifecycle calls. So 2.2f adds one to
+  `component.LifecycleComponent`'s doc: `Health`, `DataFlow` and `DebugStatus` may be called at any time, during `Start`
+  or `Stop` and after `Stop`, and return without waiting for either. It is enforced for the one component in this module
+  by `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` (2.1p) and is review only for components outside it; the
+  line says so, and the ledger's `known_risks` names the unmeasured consumers (D8). Measured: graph-ingest's `Health`
+  takes its read lock (`processor/graph-ingest/component.go:841-843`), and its `Stop` holds that lock only to clear
+  `running` (`:1102-1104`), not across the drain; semboids' `sim` does the same (`internal/sim/component.go:430-432`,
+  `Stop` `:548-551`) and answers `stopped` afterwards. semteams' agentic components and semsource's are not measured.
+  The pin already called `Health` during `Start` (its fence closed only in `Stop`), so the new case is during and after
   `Stop`. Proof: `TestComponentReadsReturnWhileAComponentStopIsBlocked`,
-  `TestComponentHealthAfterStopAsksEachComponent` (D7).
+  `TestComponentHealthAfterStopAsksEachComponent`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` (D7).
 
 **The component's own Start context (Q-A, settled by ADR-113; option A applies).** What the pin does (`component_manager.go`):
 
@@ -248,8 +256,8 @@ Governed by ADR-094, ADR-096 ¶4 and ADR-100, and pin ADR-063 through #321.
 - `NewComponentManager(raw, deps)` decodes `raw` strictly (`decodeStrictServiceJSON`, so a key in another letter case is
   refused too, PR 2 D5), refuses a nil `deps`, a nil `deps.Manager` (pin `:155-157`), a config manager with no
   configuration (`:166-168`) and a nil `deps.ComponentRegistry` (sweep C2: "component-manager requires a component
-  registry"; the pin's private fallback registry goes). It reads the configuration once: components, security, model
-  registry, streams (`:165-175`; ADR-096 ¶4;
+  registry"; the pin's private fallback registry goes; `TestNewComponentManagerRefusesANilComponentRegistry`). It reads
+  the configuration once: components, security, model registry, streams (`:165-175`; ADR-096 ¶4;
   `TestComponentManagerPostBootComponentAndModelWritesDoNotChangeRuntimeComposition`).
 - For each enabled component it builds the instance through `Registry.CreateComponent`, running the component's
   `Initialize` before the registry publishes its declaration (`:1107-1118`), with `component.Dependencies` holding the
@@ -293,15 +301,18 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
   (`TestComponentManagerStopWaitsForTheOverrideExpiryLoop`, `TestSuperviseHoldsDoneUntilTheOverrideExpiryLoopReturns`);
   a failed `Start` launches neither (`TestComponentManagerFailedStartDoesNotLaunchOverrideExpiryLoop`).
 - **The manager's own health (#360, sweep C11).** The check `BaseService` runs, and the service manager's readiness
-  reads through `svc.IsHealthy()` (`service/service_manager_http.go:507`), loads every record every time: unhealthy
-  when any component is in `StateFailed`, naming each such component in name order with its `LastError`
-  (`component "x" failed: ...`, each `errors.Is` its error), healthy otherwise. It answers only after looking: the
-  pin's not-started shortcut (`:1156-1159`) and its `TryRLock` fallback (`:1173-1177`) go, and with no manager lock
-  there is nothing to wait for, so the deadlock the fallback avoided (gh#508 at the pin) has nowhere to arise. Before
-  `Start` no record is failed and the answer is healthy because it looked; `BaseService` runs the check only while it
-  runs (`service/base.go:292-301`), and readiness also requires `StatusRunning` (`service_manager_http.go:507`).
-  Proof: `TestComponentManagerHealthNamesAComponentLeftFailedByARollback` (a component whose `Start` and `Stop` both
-  fail; the pin answers healthy here, since `started` is never set, `:502`, `:522`),
+  reads through `svc.IsHealthy()` (`service/service_manager_http.go:507`), loads every record every time: unhealthy when
+  any component is in `StateFailed`, naming each such component in name order with its `LastError`
+  (`component "x" failed: ...`, each `errors.Is` its error), healthy otherwise. It answers only after looking: the pin's
+  not-started shortcut (`:1156-1159`) and its `TryRLock` fallback (`:1173-1177`) go, and with no manager lock there is
+  nothing to wait for, so the deadlock the fallback avoided (gh#508 at the pin) has nowhere to arise. Before `Start` no
+  record is failed and the answer is healthy because it looked; `BaseService` runs the check only while it runs
+  (`performHealthCheck` returns unless the service is running, `service/base.go:307-309`), and readiness also requires
+  `StatusRunning` (`service_manager_http.go:507`). Proof:
+  `TestComponentManagerHealthNamesAComponentLeftFailedByARollback` (a component whose `Start` and `Stop` both fail; the
+  pin answers healthy here, since `started` is never set, `:502`, `:522`). That test calls `healthCheck()` directly: it
+  proves the function's contract, not a path production reaches, since `BaseService` starts only after every component
+  started (pin `:491-494`) and so never runs the check after a failed `Start`;
   `TestComponentManagerHealthNamesEveryFailedComponent` (two components left failed by a `Stop`, both named; a retried
   `Stop` that succeeds clears it), and the model check (Generated checks).
 
@@ -389,6 +400,13 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
   - Adapted: `TestPerformDetailedHealthCheck_ReportsFailedComponent` (pin
     `component_manager_start_barrier_test.go:390-425`, a struct literal) becomes
     `TestComponentManagerHealthNamesEveryFailedComponent` (D4), through the constructor.
+  - New, in `processor/graph-ingest/discoverable_reads_test.go` (2.1p):
+    `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop`. It builds the owner as
+    `TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder` does (`lifecycle_owner_test.go:25-70`, a consumer
+    whose `Closed` the test holds), runs `Stop` on a goroutine and waits for the drain, so `Stop` is blocked; then
+    `Health` and `DataFlow` return on the test goroutine, `Health` reporting `Healthy: false` and `Status: "stopped"`.
+    After the test releases `Closed` and `Stop` returns nil, both answer the same. It passes on the base; mutant row
+    below shows it can fail.
   - New, in `component_manager_state_test.go`: `TestComponentListIsFixedAtConstruction` (the names and `StartOrder`
     values `withComponents` and `/components/list` give are the same before `Start`, after it, after `Stop` and after a
     failed `Start`; a callback that writes a `ManagedComponent`'s `State` changes nothing the manager reports);
@@ -424,7 +442,8 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
   | an error finding logged but not refused | `TestComponentManagerRefusesBootOnErrorFinding` (integration) |
   | a manager-wide mutex held by a phase across a component's `Start` and taken by status reads | `TestComponentReadsReturnWhileAComponentStartIsBlocked` |
   | a manager-wide mutex held by `Stop` across a component's `Stop` and taken by status reads | `TestComponentReadsReturnWhileAComponentStopIsBlocked` |
-  | the health check answering healthy before `Start` completed (the pin's `:1156-1159`) | `TestComponentManagerHealthNamesAComponentLeftFailedByARollback` |
+  | the health check answering healthy before `Start` completed (the pin's `:1156-1159`; the function's contract, reached by a direct call, not by `BaseService`) | `TestComponentManagerHealthNamesAComponentLeftFailedByARollback` |
+  | graph-ingest's release holding `c.mu` across its cleanup (`processor/graph-ingest/component.go:1102-1105`) | `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` (the test does not return; `go test -timeout` reports it) |
   | the health check naming only the first failed component | `TestComponentManagerHealthNamesEveryFailedComponent` |
   | `withComponents` handing its callback the manager's own records | `TestComponentListIsFixedAtConstruction` |
   | `GetComponentHealth` asking no component after `Stop` (the pin's fence) | `TestComponentHealthAfterStopAsksEachComponent` |
@@ -441,7 +460,10 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
   `health.component.<name>` every 5 s and re-reads the configuration's stream overrides every minute". Changed from the
   pin, listed there: D1's drops; Q-A's answer; the component set fixed at construction with each component's state on
   its own record, no manager lock and no borrow fence, so `Stop` does not wait for reads and a read during or after
-  `Stop` asks the component (owner, #359 comment 6325195862); the manager's health reads every component (#360); a
+  `Stop` asks the component (owner, #359 comment 6325195862), so consumer components now get `Health`, `DataFlow` and
+  `DebugStatus` calls during and after their `Stop`, which the pin's fence kept away (semteams' agentic components
+  and semsource's not measured; the contract line is review only outside this module); the manager's health reads
+  every component (#360); a
   failed `Stop` retried (C6); Stop during Start waits (C5); a nil component registry refused (C2); Q-B's answer; the
   stop order fixed by name (C4); the component manager's OpenAPI spec registered by `RegisterAll`, not on import (C9);
   the publish failure counted; namespace `semengine`. New rows for `docs/adr/095-...` and `docs/adr/096-...` in the
@@ -480,16 +502,15 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
 ## D9. Spec deltas (written in task 1.2, after acceptance)
 
 - `service-lifecycle`, ADDED: "The component manager's Start bounds Start" (D2, with Q-A's answer; scenarios: the Start
-  context ends after Start; Stop during Start; a failed Start's cleanup fails; a failed Stop is retried);
-  "The component manager composes the boot set once" (D3 and Q-B; scenarios: an error finding refuses construction; a
-  rule-pack failure; a nil registry; a key in the payload); "Providers start before consumers and own their stores"
-  (D2-D3); "The component manager publishes component health and counts its drops" (D4); "A lapsed stream migration
-  override is reported while running" (D4); "Rule-pack projection contracts are checked before any reconciler is
-  injected" (D6); "The component manager's reads wait on no lock and not on Stop" (D2 "State shape" and "No wait for
-  readers"; scenarios: a read while a component's Start is blocked; a read while a component's Stop is blocked; a read
-  after Stop asks the component); "The component manager's health reads every component" (D4, #360; scenarios: a
-  component left failed by a rollback; two failed components). The existing "Every composition has a component
-  manager" stays as written.
+  context ends after Start; Stop during Start; a failed Start's cleanup fails; a failed Stop is retried); "The component
+  manager composes the boot set once" (D3 and Q-B; scenarios: an error finding refuses construction; a component cannot
+  be built; a rule-pack failure; a nil registry; a key in the payload); "Providers start before consumers and own their
+  stores" (D2-D3); "Component health is published and its drops counted" (D4); "A lapsed stream migration override is
+  reported while running" (D4); "Rule-pack contracts are checked before any injection" (D6); "The component manager's
+  reads wait on no lock and not on Stop" (D2 "State shape" and "No wait for readers"; scenarios: a read while a
+  component's Start is blocked; a read while a component's Stop is blocked; a read after Stop asks the component); "The
+  component manager's health reads every component" (D4, #360; scenarios: a component left failed by a rollback; two
+  failed components). The existing "Every composition has a component manager" stays as written.
 - `operator-surface`, ADDED: "The component manager's routes are served under /components" and "The composition
   projections serve the result kept at construction" (D5, the golden test). "/openapi.json documents the mounted
   routes" stays as written: under D5 option (a) the component manager's spec is a registered spec.

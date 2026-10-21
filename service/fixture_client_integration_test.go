@@ -18,7 +18,14 @@ import (
 // the tests. It replaces the pin's main_test.go NewSharedTestClient (#195; design D6).
 var shared natsfixture.Shared
 
-func TestMain(m *testing.M) { os.Exit(run(m)) }
+// TestMain runs the tests, or, in a child process TestIntegration_ConfigBootActivationRequiresProcessRestart
+// starts with its role variable set, that role alone; the child starts no shared server.
+func TestMain(m *testing.M) {
+	if role := os.Getenv(configBootProcessRoleEnv); role != "" {
+		os.Exit(configBootProcessChild(role))
+	}
+	os.Exit(run(m))
+}
 
 func run(m *testing.M) int {
 	code := m.Run()

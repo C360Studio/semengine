@@ -11,7 +11,8 @@ on a clean tree at its commit (#171).
 
 - [ ] 1.1 Shape sweep (`sweep.md`) and design (`design.md`) pass the pre-owner review and are accepted by the owner,
   including the owner's answers to Q-A (each component's Start context, ADR-113) and Q-B (a component that cannot be
-  built); the probe note (sweep § 3, source and output) is posted on #359. Gate: `task spec:check` and
+  built); the probes' output and the build probe's commands and diff (sweep § 3, verbatim) are posted on #359 beside
+  the suite probe's source (comment 6324262845). Gate: `task spec:check` and
   `task docs:check`; each comment read back.
 - [ ] 1.2 The spec deltas design D9 names, with the owner's answers, under `specs/service-lifecycle/` and
   `specs/operator-surface/`; `skip_specs` removed from `.openspec.yaml`. Gate: `task spec:check`.
@@ -28,8 +29,10 @@ on a clean tree at its commit (#171).
     `component_manager_storeregistry_test.go`.
   - [ ] 2.1d Construction, the empty configuration and Q-B (D1, D3): `component_manager_rulepack_init_test.go`,
     `component_manager_boot_only_test.go`.
-  - [ ] 2.1e Composition projections (D3, D5): `component_manager_port_facts_test.go`, `component_manager_paths_test.go`.
-  - [ ] 2.1f Routes and the golden flowgraph (D5): `component_manager_http_test.go` (with `testdata/`), `attack_test.go`.
+  - [ ] 2.1e Composition projections (D3, D5): `component_manager_port_facts_test.go`,
+    `component_manager_paths_test.go`.
+  - [ ] 2.1f Routes and the golden flowgraph (D5): `component_manager_http_test.go` (with `testdata/`),
+    `attack_test.go`.
   - [ ] 2.1g Type catalog and the OpenAPI document (D5): `component_catalog_test.go`,
     `component_manager_gaps_removed_test.go`.
   - [ ] 2.1h The supervisor (D4): `stream_override_expiry_test.go`, `component_manager_supervisor_test.go`.
@@ -43,35 +46,41 @@ on a clean tree at its commit (#171).
   - [ ] 2.1m Integration, the process restart (D7): `config_boot_process_restart_integration_test.go`,
     `fixture_client_integration_test.go`.
   - [ ] 2.1n The Start/Stop model check (Generated checks): `component_manager_prop_test.go`.
-- [ ] 2.2 The five pin files, the module path rewritten, as D1-D6 say, one unit per commit (`notes/2.2.md`). Gate for
-  each unit: the 2.1 units it names pass under `-race`; for the last, `go test -race ./service/ ./pkg/projection/` and
-  `go test -tags integration ./service/` pass, `go build ./...`, and `task verify` passes on a clean tree (review stop).
+- [ ] 2.2 The five pin files, the module path rewritten, as D1-D6 say, one unit per commit (`notes/2.2.md`). Every
+  2.1 test file is in package `service`, so no unit's tests can run until all six units have landed. Gate for 2.2a-2.2e:
+  `go build ./service/ ./pkg/projection/` and `go vet ./service/` (with and without `-tags integration`) pass with a
+  throwaway stub for what the later units add, supplied through `-overlay` and kept outside the repository, as 2.1
+  does. Gate for 2.2f, the last: `go test -race ./service/ ./pkg/projection/` and `go test -tags integration ./service/`
+  pass, `go build ./...`, and `task verify` passes on a clean tree (review stop). "Exercised by" names the 2.1 units
+  whose tests reach that unit's code.
   - [ ] 2.2a `PredicateReconciler` and the rule-pack binding (D6): `pkg/projection/mutation_types.go`,
-    `service/rule_pack_bind.go`. Unblocks 2.1i.
+    `service/rule_pack_bind.go`. Exercised by 2.1i (with 2.2c-2.2d for a real manager).
   - [ ] 2.2b The override reporter and the empty configuration (D1, D4): `service/stream_override_expiry.go`,
-    `service/component_manager_config.go`. Unblocks 2.1h's reporter tests.
-  - [ ] 2.2c Construction, composition, stores, projections (D1, D3): `service/component_manager.go`. Unblocks 2.1d,
-    2.1e.
+    `service/component_manager_config.go`. Exercised by 2.1d, 2.1h.
+  - [ ] 2.2c Construction, composition, stores, projections (D1, D3): `service/component_manager.go`. Exercised by
+    2.1c, 2.1d, 2.1e (with 2.2e), 2.1k, 2.1l.
   - [ ] 2.2d Start, Stop, phases and the supervisor (D2, D4): `service/component_manager_lifecycle.go`,
-    `service/startup_metrics.go`. Unblocks 2.1a-c, 2.1h, 2.1j, 2.1n.
-  - [ ] 2.2e Routes and the OpenAPI schemas (D5): `service/component_manager_http.go`,
-    `service/service_manager_http.go`. Unblocks 2.1f, 2.1g.
-  - [ ] 2.2f Registration and the stale field comment (D1, sweep C12): `service/register.go`, `component/lifecycle.go`.
-    Unblocks 2.1k-m.
+    `service/startup_metrics.go`. Exercised by 2.1a, 2.1b, 2.1c, 2.1h, 2.1j (with 2.2c and 2.2e), 2.1n.
+  - [ ] 2.2e Routes (D5) and `var _ componentStartup = (*ComponentManager)(nil)`, whose six methods 2.2c-2.2e
+    provide: `service/component_manager_http.go`. Exercised by 2.1e, 2.1f, 2.1g, 2.1j.
+  - [ ] 2.2f Registration, the component manager's OpenAPI spec (D5 option a) and the stale field comment (D1, sweep
+    C12): `service/register.go`, `component/lifecycle.go`. Exercised by 2.1g, 2.1k-m.
 - [ ] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
   `task mutate:check` for the unit tests and by hand with `-tags integration` where a test needs NATS (#129), recorded
   in `notes/2.3.md` with the `rapid` seed and check count. Gate: `task verify` passes on a clean tree.
 
 ## 3. Text, ledger, guidance, ADRs (D8)
 
-- [ ] 3.1 `service/README.md` and `service/doc.go` for the component manager, with D1's contract lines and D8's
-  declared degrades; pin ADR-095 and ADR-096 in `docs/adr/` with port notes; ADR-094's port note rewritten for the
-  component manager's part. Gate: `go doc ./service` lists only the kept surface; `task docs:check`.
+- [ ] 3.1 `service/README.md` and `service/doc.go` for the component manager, with D1's contract lines and D8's declared
+  degrades; pin ADR-095 and ADR-096 in `docs/adr/` with port notes; ADR-094's port note rewritten for the component
+  manager's part; under Q-A option A, a dated note under ADR-113's Decision naming the composition root as what reacts
+  to the root context ending (design D2, "Who reacts"). Gate: `go doc ./service` lists only the kept surface; `task
+  docs:check`.
 - [ ] 3.2 The `SchemaRef` rule (D8 Guidance) in the developer and reviewer contracts, with its rows in `AGENTS.md` § 1
-  and `.agents/rules-index.md`; the `service` ledger row edited in place, the `pkg/projection` row's sentence, the ADR-095
-  and ADR-096 rows; the `docs/repository-map.md` rows. Gate: `task verify` passes on a clean tree (`ledger:check`,
-  `cover:check` with `service` at or above its floor, the number recorded on the PR, `docs:check`, the `AGENTS.md`
-  size and row-count checks).
+  and `.agents/rules-index.md`; the `service` ledger row edited in place, the `pkg/projection` row's sentence, the
+  ADR-095 and ADR-096 rows; the `docs/repository-map.md` rows. Gate: `task verify` passes on a clean tree
+  (`ledger:check`, `cover:check` with `service` at or above its floor, the number recorded on the PR, `docs:check`, the
+  `AGENTS.md` size and row-count checks).
 - [ ] 3.3 #196 told that the component manager composes the guard; #195 told that this PR's 12 test clients use
   `fixtureClient`; #280 told that item 2 is the message logger's (D8). Any defect found and not fixed is filed
   (`status:blocked` on #359, linked without a closing keyword). Gate: each comment and issue read back (review stop).

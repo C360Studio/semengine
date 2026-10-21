@@ -32,12 +32,13 @@ Named in `design.md` D9; the delta files are written in task 1.2, after the owne
 `skip_specs` is removed then.
 
 - `service-lifecycle` (ADDED): the component manager's Start bounds Start, with the owner's answer on each component's
-  Start context (design Q-A); the boot set composed once and sealed (Q-B); providers before consumers, and the store
-  registry they fill; component health published with drops counted; a lapsed stream migration override reported while
-  running; rule-pack contracts checked before any reconciler is injected.
+  Start context and the composition root reacting to the root context ending (design Q-A); the boot set composed once
+  and sealed (Q-B); providers before consumers, and the store registry they fill; component health published with drops
+  counted; a lapsed stream migration override reported while running; rule-pack contracts checked before any reconciler
+  is injected.
 - `operator-surface` (ADDED): the component manager's routes under `/components`, and the composition projections
-  served from the result kept at construction. (MODIFIED): `/openapi.json` takes its schemas from each composed
-  handler's spec as well as from the registry, so no package registers a spec when it is imported (design D5).
+  served from the result kept at construction. "/openapi.json documents the mounted routes" is unchanged: `RegisterAll`
+  registers the component manager's spec instead of an `init` (design D5 option a).
 
 ## Non-goals
 

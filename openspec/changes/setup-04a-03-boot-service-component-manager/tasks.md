@@ -79,7 +79,7 @@ verify` passes on a clean tree at its commit.
   - [x] 2.2f Registration, the component manager's OpenAPI spec (D5 option a), the stale field comment (D1, sweep
     C12) and the read contract line on `LifecycleComponent` (D2, "No wait for readers"): `service/register.go`,
     `component/lifecycle.go`. Exercised by 2.1g, 2.1k-m, 2.1o, 2.1p.
-- [ ] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
+- [x] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
   `task mutate:check` for the unit tests and by hand with `-tags integration` where a test needs NATS (#129), recorded
   in `notes/2.3.md` with the `rapid` seed and check count. Gate: `task verify` passes on a clean tree.
 

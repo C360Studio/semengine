@@ -9,9 +9,9 @@
 >
 > - **Phase 1 is kept unchanged.** `HTTPMiddleware` and `Manager.UseHTTPMiddleware` work as the text says: products
 >   call it between `NewServiceManager` and `StartAll`, the first middleware passed is the outermost, and the
->   framework ships none. One addition in the port: a call after `StartAll` bound the main listener is ignored with a
->   Warn, because the listener's handler is built at the bind. The middleware wraps the startup routes as well as the
->   full route set, and the dedicated health listener takes none.
+>   framework ships none. As the Phase 1 text below already says, a call after `StartAll` bound the main listener is
+>   ignored with a Warn, because the listener's handler is built at the bind; the port keeps that refusal. The
+>   middleware wraps the startup routes as well as the full route set, and the dedicated health listener takes none.
 > - **Phase 0 is not ported.** `IdentityFromRequest`, `WithIdentity` and `DefaultIdentity` live in
 >   `processor/agentic-dispatch`, which this repository does not carry. The context-based identity helper that the
 >   Decision describes is therefore absent here; the Context table's rows about `/message`, `/loops/{id}/signal`,

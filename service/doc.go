@@ -100,12 +100,13 @@
 // the Manager itself (ManagerConfig): http_port (default 8080), swagger_ui
 // (default false), server_info (title, description and version of the API
 // document, default "SemEngine API", "SemEngine framework API" and "0.0.0"),
-// http_read_timeout (default 30s) and http_write_timeout (default 120s). A
-// service's config, the Manager's among them, is decoded strictly: an unknown key
-// is refused, and so is a key that differs from a field's name only in letter
-// case ("Port" for "port"), naming both spellings. CreateService and
-// RegisterInstance compose one more service by hand, and GetService finds a
-// composed one.
+// http_read_timeout (default 30s) and http_write_timeout (default 120s). The
+// configs of the services this package defines, service-manager and metrics,
+// are decoded strictly: an unknown key is refused, and so is a key that differs
+// from a field's name only in letter case ("Port" for "port"), naming both
+// spellings. A service defined elsewhere receives its raw JSON and decodes it
+// itself. CreateService and RegisterInstance compose one more service by hand,
+// and GetService finds a composed one.
 //
 // StartAll creates component-manager if no service has that name, seals the
 // composition (CreateService, RegisterInstance and ConfigureFromServices are

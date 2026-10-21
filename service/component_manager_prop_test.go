@@ -205,9 +205,21 @@ func TestPropComponentManagerStopHistory(t *testing.T) {
 		// stopsSince returns the components whose Stop was called since the log held mark entries.
 		stopsSince := func(mark int) []string { return log.stopOrder()[mark:] }
 
-		// expectStops predicts, from the scripts, which of the launched components not yet stopped
-		// a stop sequence calls, in reverse launch order, and which failure each returns.
-		expectStops := func() (visits []string, fired map[string]error) {
+		// nextStopFailures reads, from the scripts, the failure each component's next Stop returns.
+		// It is read before the action: a failed Start's rollback runs inside Start (design D2), so
+		// by the time Start returns the rollback has already popped the queues.
+		nextStopFailures := func() map[string]error {
+			next := map[string]error{}
+			for name, m := range models {
+				next[name] = m.script.peek()
+			}
+			return next
+		}
+
+		// expectStops predicts which of the launched components not yet stopped a stop sequence
+		// calls, in reverse launch order, and which failure each returns, from next as read before
+		// the action.
+		expectStops := func(next map[string]error) (visits []string, fired map[string]error) {
 			fired = map[string]error{}
 			for _, name := range reverseLaunch {
 				m := models[name]
@@ -215,7 +227,7 @@ func TestPropComponentManagerStopHistory(t *testing.T) {
 					continue
 				}
 				visits = append(visits, name)
-				if err := m.script.peek(); err != nil {
+				if err := next[name]; err != nil {
 					fired[name] = err
 				}
 			}
@@ -254,6 +266,7 @@ func TestPropComponentManagerStopHistory(t *testing.T) {
 			for name, m := range models {
 				startsBefore[name] = m.comp.starts.Load()
 			}
+			next := nextStopFailures()
 			err := cm.Start(t.Context())
 
 			if startCalled || stopAdmitted {
@@ -316,7 +329,7 @@ func TestPropComponentManagerStopHistory(t *testing.T) {
 				}
 			}
 			// The rollback stops every launched component, the failed ones included.
-			visits, fired := expectStops()
+			visits, fired := expectStops(next)
 			requireStops(rt, "the failed Start's rollback", mark, visits)
 			requireCarries(rt, "Start", err, fired)
 			if len(fired) > 0 {
@@ -327,7 +340,7 @@ func TestPropComponentManagerStopHistory(t *testing.T) {
 
 		stopLive := func(rt *rapid.T) {
 			mark := len(log.stopOrder())
-			visits, fired := expectStops()
+			visits, fired := expectStops(nextStopFailures())
 			err := cm.Stop(stopContext(t))
 			first := !startCalled && !stopAdmitted
 			stopAdmitted = true

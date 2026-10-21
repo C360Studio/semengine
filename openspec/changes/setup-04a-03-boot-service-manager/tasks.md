@@ -14,7 +14,7 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 
 ## 2. Port (D1-D7)
 
-- [ ] 2.1 Tests first, in `service/`, `internal/keycase/` and `internal/httpadmission/` (`metric/admission_test.go`
+- [x] 2.1 Tests first, in `service/`, `internal/keycase/` and `internal/httpadmission/` (`metric/admission_test.go`
   moved, D2): the pin test files D7 lists, adapted (dead tests out,
   runtime-stop and base-context tests flipped to D2, `t.Skip` in the `rapid` action made a no-op, the `StopAll` model
   rewritten, `errs.ErrAlreadyStopped` in the idempotency test, the two pause tests changed as D2 says, and the
@@ -37,16 +37,16 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 
 ## 3. Text, ledger, coverage, ADRs (D8)
 
-- [ ] 3.1 `service/doc.go` and `service/README.md` for the manager and the metrics service, with the contract lines D1
+- [x] 3.1 `service/doc.go` and `service/README.md` for the manager and the metrics service, with the contract lines D1
   and D8 name; pin ADR-030 and ADR-094 in `docs/adr/` with port notes (design, Decision records); the
   `/graph/triples` row in `docs/contract.md`'s operator table. Gate:
   `go doc ./service` lists only the kept surface; `task docs:check`.
-- [ ] 3.2 The `service` ledger row edited in place, the ADR-030 and ADR-094 rows, the `config` and `metric` rows'
+- [x] 3.2 The `service` ledger row edited in place, the ADR-030 and ADR-094 rows, the `config` and `metric` rows'
   sentences; the `docs/repository-map.md` rows (`service/`, `docs/adr/`, `internal/keycase/`, `internal/httpadmission/`,
   and the ledger count, 88). Gate:
   `task verify` passes on a clean tree, which runs `ledger:check`, `cover:check` (`service` at or above its floor, the
   number recorded on the PR) and `docs:check` (review stop).
-- [ ] 3.3 #344 told that service payloads now refuse letter-case variants and that the heartbeat's decode (PR 6)
+- [x] 3.3 #344 told that service payloads now refuse letter-case variants and that the heartbeat's decode (PR 6)
   closes it; #196 told that the manager and the metrics service compose the guard (or why not, from 2.2's notes).
   Any defect found and not fixed is filed (`status:blocked` on #353, linked without a closing keyword). Gate: each
   comment and issue read back.

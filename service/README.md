@@ -1,14 +1,16 @@
 # service
 
 Package `service` holds what every long-running SemEngine service shares: `BaseService`, which a service embeds for
-its name, status and health check, and the `Service` interface a service manager drives. It also holds the helpers a
-composition root (the process's `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`,
+its name, status and health check, and the `Service` interface a service manager drives. `Manager` is that service
+manager: it builds the services a configuration names, starts them, serves the HTTP routes around them and stops
+them. `Metrics` is the service that serves the Prometheus endpoint. The package also holds the helpers a composition
+root (the process's `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`,
 `WireGraphRuntime` and the OpenAPI registry, plus the service-configuration and schema helpers the service manager
 reads.
 
-The package is ported from SemStreams in seven pull requests. This first one carries `BaseService` and the shared
-files. The service manager, the component manager and the services themselves arrive with the later ones; until then
-nothing in this repository starts a `Service` for you.
+The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
+this one carries `Manager` and `Metrics`. The component manager and the other services arrive with the later ones;
+until then a composition supplies its own `component-manager` service (see [Composing](#composing-and-starting)).
 
 ## Embedding BaseService
 
@@ -66,6 +68,145 @@ The health check fails when the function set with `SetHealthCheck` returns an er
 `WithNATS` is not healthy. `IsHealthy()` is then false and `Health()` reports unhealthy; the next passing check makes
 the service healthy again. While the last check passed, `Health()` reports a running service as healthy and a
 stopping one as degraded; a stopped service is unhealthy. `GetStatus()` returns the counts of checks run and failed.
+
+## The service manager
+
+### Composing and starting
+
+A composition root builds a `Manager` from a `Registry` of service constructors, hands it the `services` section of
+the configuration, and starts it:
+
+```go
+services := service.NewServiceRegistry()
+if err := service.RegisterAll(services); err != nil { // offers "metrics"
+    return err
+}
+// Until the component manager is ported, register a constructor for "component-manager" here too:
+// services.Register("component-manager", ...)
+
+manager := service.NewServiceManager(services)
+manager.UseHTTPMiddleware(authMiddleware) // optional; before StartAll
+
+deps := &service.Dependencies{NATSClient: client, MetricsRegistry: registry, Logger: logger}
+if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+    return err
+}
+if err := manager.StartAll(startCtx); err != nil {
+    return err
+}
+
+// ... run ...
+
+stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+if err := manager.StopAll(stopCtx); err != nil {
+    logger.Warn("stop services", "error", err)
+}
+```
+
+`ConfigureFromServices` resolves the configuration with `ResolveServiceConfigs` and constructs every enabled service
+from its registered constructor. Nothing is composed unless every constructor succeeds. `component-manager` and
+`service-manager` may not be disabled, and a composition whose `component-manager` has no registered constructor is
+refused. `CreateService` and `RegisterInstance` compose one more service by hand, and `GetService` finds a composed
+one.
+
+The `service-manager` entry configures the `Manager` itself (`ManagerConfig`):
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `http_port` | `8080` | the main listener's port, on every interface |
+| `swagger_ui` | `false` | serves `/docs` when true |
+| `server_info` | `SemEngine API`, `SemEngine framework API`, `0.0.0` | `title`, `description` and `version` of the API document |
+| `http_read_timeout` | `30s` | how long a request body may take (a Go duration string) |
+| `http_write_timeout` | `120s` | how long a response may take |
+
+A service's `config` is decoded strictly. An unknown key is refused, and so is a key that differs from a field's name
+only in letter case (`"Port"` for `"port"`), with both spellings named in the error. This holds for the `service-manager`
+and `metrics` entries, which this package decodes. A service defined elsewhere decodes its own `config`, and the
+check applies to it only if it makes it.
+
+### Starting and stopping
+
+`StartAll(ctx)` creates `component-manager` if no service has that name, then seals the composition:
+`CreateService`, `RegisterInstance` and `ConfigureFromServices` are refused from then on. It binds the main listener
+on `http_port`, starts the metrics server it claims, starts every service in registration order, builds the full
+route set, and starts a publisher that sends each service's health on `health.service.<name>` every 5 seconds. It
+runs once: a second `StartAll`, and a `StartAll` after `StopAll`, are refused with `errs.ErrAlreadyStarted`. If a step
+fails, `StartAll` stops what it started and returns both errors; if that stop fails too, `StopAll` runs it again.
+
+The context given to `StartAll` bounds `StartAll` and nothing else. Ending it after `StartAll` returned stops no
+service, and no request's context derives from it (ADR-113). `StopAll(ctx)` is the only stop. It stops the services
+in reverse registration order, then the health publisher, the listeners and the metrics server. Each listener
+refuses new requests and `StopAll` waits for those in flight. If `ctx` ends first, `StopAll` closes every connection
+still open and returns `ctx`'s error, and a later `StopAll` waits again for the handlers that are still running. So a
+service that serves a long-lived response, such as a stream, ends it in its own `Stop`.
+
+A `StopAll` given a context that has already ended stops nothing: give it a fresh bounded context, never the signal
+context that is ending the program. A service whose `Stop` returns `errs.ErrAlreadyStopped` counts as stopped. Any
+other failure is returned naming the service, and the next `StopAll` runs the whole stop again. A `StopAll` after one
+that returned `nil` returns `nil`; one while another runs is refused as transient.
+
+`StartHealthListener(ctx, port)` binds a second listener that serves only `/health` and `/healthz`, for container
+probes that want a port apart from `http_port`. Call it before `StartAll` and probes work while a slow boot runs.
+Port 0 does nothing, a second call is refused, and `StopAll` stops the listener whether or not `StartAll` ran.
+
+### Middleware
+
+`UseHTTPMiddleware(mws...)` wraps every route the main listener serves, the startup routes as well as the full set.
+The first middleware passed is the outermost. The framework ships none: authentication, request logging, panic
+recovery, rate limiting and CORS are the product's. The dedicated health listener takes no middleware. Call it before
+`StartAll`; a later call is ignored with a Warn, because the listener's handler is built when it binds. This is
+phase 1 of SemStreams ADR-030, carried as
+[docs/adr/030-http-middleware-and-identity-pattern.md](../docs/adr/030-http-middleware-and-identity-pattern.md).
+
+### Boot seals the composition
+
+A change to the `services` section of the configuration after `StartAll` is desired state for the next boot. It
+starts, stops and reconfigures nothing, and `/services` reports it with `restart_required` set. This is the part of
+SemStreams ADR-094 that the `Manager` carries, in
+[docs/adr/094-boot-only-composition-and-observable-rule-activation.md](../docs/adr/094-boot-only-composition-and-observable-rule-activation.md).
+
+### The routes
+
+The main listener serves the first five routes below from the moment `StartAll` binds it, and answers every other path
+`503 NOT READY` until `StartAll` has started every service and committed the full route set. The last four come with
+the commit.
+
+| Route | Answer |
+| --- | --- |
+| `/health` | every service's health and the NATS connection's, aggregated; 503 when unhealthy |
+| `/healthz` | `200 OK` while the listener serves |
+| `/readyz` | `200 READY` once every service has started and is running and healthy; `503 NOT READY` while starting, after a start failed, and from the moment `StopAll` is entered, even while a service's `Start` is still running |
+| `/services` | each service's status and health, the startup counts, and `restart_required` with the pending configuration changes |
+| `/services/health` | each service's health and their aggregate; 503 when unhealthy |
+| `/graph/triples` | triples read from the graph's `ENTITY_STATES` bucket (below) |
+| each `HTTPHandler` service's routes | under a prefix taken from the service's name: the name with its hyphens removed, except `component-manager` at `/components` and `message-logger` and `storage-observability` as named |
+| `/openapi.json` | the API document, in OpenAPI 3.0 form: the paths of every `HTTPHandler` service under its prefix, and the schemas of the types registered with `RegisterOpenAPISpec` |
+| `/docs` | a Swagger UI page for `/openapi.json`, only when `swagger_ui` is true; it loads its script and style sheet from `unpkg.com`, so the browser needs network access to it |
+
+`GET /graph/triples` is for an operator or a test, not a query API: it scans the bucket. Its query parameters are all
+optional:
+
+| Parameter | Meaning |
+| --- | --- |
+| `subject` | a literal entity ID |
+| `predicate` | a three-part predicate |
+| `object` | compared as text |
+| `limit` | default 100, at most 1000 |
+
+It answers a JSON array sorted by entity ID, never `null`. A malformed parameter is `400` naming the parameter, a
+method other than `GET` is `405`, and a bucket that cannot be read is `500`. With no NATS client in the
+`Dependencies`, it answers `[]` for every query: there is no store to read. The `Manager` only reads the bucket
+(ADR-110).
+
+## The metrics service
+
+`Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
+`/metrics`). Started by itself, it binds the port between `Start` and `Stop`. Composed under a `Manager`, the
+`Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
+the server runs. `RegisterAll` registers `metrics` and nothing else today. A `Metrics` runs once: a second `Start`,
+and a `Start` after any `Stop`, are refused with `errs.ErrAlreadyStarted`, and the context given to `Start` bounds
+`Start` only.
 
 ## The profiling server
 
@@ -127,7 +268,7 @@ a change made through one is seen by every later caller.
 
 ## Configuration helpers
 
-These are read by the service manager, which arrives in the next pull request.
+These are read by the service manager.
 
 - `ResolveServiceConfigs(configs)` turns the `services` section of a configuration into the map a service manager
   starts from. Each entry's `config` is rewritten in one canonical JSON form, and `component-manager`,
@@ -137,6 +278,3 @@ These are read by the service manager, which arrives in the next pull request.
   the service manager reports about that map.
 - `ConfigSchema`, `PropertySchema` and `NewConfigSchema` describe a service's configuration keys. `SchemaFromType` and
   `TypeNameFromReflect` build the JSON schema of a Go type for an OpenAPI document.
-
-A key in a service's `config` written in another letter case (`"Port"` for `"port"`) is accepted today. `config`
-already refuses such keys in its own document; the service manager is to adopt the same check when it arrives.

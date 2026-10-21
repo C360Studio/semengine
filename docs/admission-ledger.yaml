@@ -734,7 +734,8 @@
     removed in favor of RegisterOrGet[C] (design D9); doc.go and README.md updated to match.
     Dropped NATS collectors (NATSConnected, NATSRTT, NATSReconnects, NATSCircuitBreaker) and methods
     (RecordNATSStatus, RecordNATSRTT, RecordNATSReconnect, RecordCircuitBreakerState), and the
-    socket probe in StartWithListener: a closed listener is no longer refused (#207, #221)
+    socket probe in StartWithListener: a closed listener is no longer refused (#207, #221); the
+    admitted-request counter lives in internal/httpadmission, shared with service
   proving_tests: >-
     metric/handler_test.go, metric/lifecycle_test.go, metric/admission_test.go, metric/tls_test.go,
     metric/registerorget_test.go, metric/registerorget_prop_test.go, metric/registry_test.go,
@@ -2736,7 +2737,7 @@
     configuration. Validation (port-composition): with both a document fault and a missing TLS file, Validate names
     the document fault first, where the pin named the file; with several invalid component entries it names the
     first in instance-name order, where the pin's choice depended on map order. Retained: wildcard matching unlike NATS, runtime writes that do not decode are logged and
-    skipped, unprobed nats.go comments
+    skipped, unprobed nats.go comments; the letter-case check lives in internal/keycase, shared with service
   proving_tests: config/*_test.go, config/*_integration_test.go
   owner: "setup-04a-03-boot-config-manager developer"
   disposition: adapt
@@ -2803,18 +2804,25 @@
     (cmd/semteams/rule_config_service.go:32) and semboids (internal/api/service.go:72); the OpenAPI types semboids
     builds (:171-197); MaybeStartPProf, called by semsource, semteams and semboids; WireGraphRuntime, called by
     semteams (cmd/semteams/main.go:840); the service-configuration, schema and OpenAPI registry helpers the later
-    PRs read
+    PRs read. PR 2: the service manager and the metrics service, composed by semsource
+    (cmd/semsource/run.go:371-391), semteams (cmd/semteams/main.go:249, :714-719, :887, :916) and semboids
+    (cmd/semboids/main.go:401-409, :457)
   destination: service
   contract: >-
-    the service-lifecycle spec; ADR-113; the background-work spec (PProfServer.Shutdown); pin ADR-058 as carried
-    (pprof is not a Service and now stops); pin ADR-068 D1 and ADR-091 as graph/kvcatalog and
-    internal/graphmutation implement them; ADR-110 (service writes no ENTITY_STATES entry); service/README.md for
-    the calls semsource, semteams and semboids make
+    the service-lifecycle and operator-surface specs; ADR-113; ADR-088 and ADR-109 (/readyz); the background-work
+    spec (PProfServer.Shutdown); pin ADR-030 and ADR-094 as carried; pin ADR-058 as carried (pprof is not a Service
+    and now stops); pin ADR-068 D1 and ADR-091 as graph/kvcatalog and internal/graphmutation implement them;
+    ADR-110 (service writes no ENTITY_STATES entry); service/README.md for the calls semsource, semteams and
+    semboids make
   dependencies_and_side_effects: >-
-    component, graph/kvcatalog, health, internal/lifecycleguard, metric, natsclient, pkg/errs, pkg/projection, types
-    (all in tree); BaseService runs one health goroutine, joined in Stop; MaybeStartPProf binds :port on every
-    interface and serves http.DefaultServeMux on a goroutine joined in Shutdown; WireGraphRuntime may rewrite the
-    retention of inactive catalog buckets; the OpenAPI registry is process-global
+    component, config, graph, graph/kvcatalog, health, internal/httpadmission, internal/keycase,
+    internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup,
+    pkg/projection, pkg/security, pkg/types, types, vocabulary (all in tree); BaseService runs one health goroutine,
+    joined in Stop; MaybeStartPProf binds :port on every interface and serves http.DefaultServeMux on a goroutine
+    joined in Shutdown; the Manager binds :http_port (default 8080) and an optional health port on every interface,
+    serves until StopAll, publishes each service's health on health.service.<name> every 5 s, and starts the metrics
+    server it claims (default :9090); WireGraphRuntime may rewrite the retention of inactive catalog buckets; the
+    OpenAPI registry is process-global
   known_risks: >-
     PR 1 of 7 (base.go, pprof.go, graph_runtime.go, service_configs.go, schema.go, openapi.go, openapi_types.go,
     openapi_registry.go, configurable.go, doc.go, README.md); the managers and services follow. Dropped as unread:
@@ -2826,11 +2834,40 @@
     context stops nothing; MaybeStartPProf takes a logger, binds before it returns, logs a bind failure at Warn
     instead of printing it, and stops through Shutdown (owner 2026-10-20); NewConfigSchema keeps a Category set on
     the outer PropertySchema field, which the pin dropped (fixed in the port). Retained: pprof listens on all
-    interfaces; GetAllOpenAPISpecs copies the map but shares the registered spec pointers; letter-case variants of
-    service config keys are accepted until PR 2 adopts config's checker (tracked on #344);
-    service_configs.go, schema.go and openapi.go are byte-equal to the pin
+    interfaces; GetAllOpenAPISpecs copies the map but shares the registered spec pointers. PR 2 edits three
+    PR 1 files: schema.go (TypeNameFromReflect, #349), service_configs.go (the letter-case check) and openapi.go
+    (OpenAPIDocument.MarshalJSON, #357), so they are no longer byte-equal to the pin. PR 2 of 7 (service_manager.go, service_manager_http.go, service_manager_config.go, startup_metrics.go,
+    graph_triples_http.go, middleware.go, dependencies.go, registry.go, register.go, metrics.go). Dropped as unread:
+    Manager.GetAllServices, ListConstructors, HasConstructor, GetHealthyServices, GetUnhealthyServices,
+    GetServiceStatus, GetAllServiceStatus, StopHealthListener, the embedded BaseService with its Start and Stop,
+    Registry.Services, Registry.Constructors, Metrics.Port, Path, URL and ConfigSchema, Dependencies.ToolRegistry and
+    LifecycleManager; the Manager's four test-only pause channels. Changed from the pin: ending StartAll's or
+    StartHealthListener's context stops nothing and request contexts are not derived from it (ADR-113); at its
+    deadline StopAll still closes open connections, but a later StopAll waits for every handler still running instead
+    of returning at once (Q-B); a StopAll with an ended context stops nothing; a StopAll before any StartAll stops
+    only a started health listener and calls no service's Stop, where the pin called Stop on every configured
+    service; a second StartAll is refused with ErrAlreadyStarted; StopAll counts errs.ErrAlreadyStopped as stopped;
+    service payloads refuse keys in another letter case (internal/keycase), which PR 1 accepted; a failed health
+    publish is counted on semengine_errors_total; the /health nats sub-status drops the failure count;
+    /graph/triples validates subject and predicate, sorts before its limit and fails a read error other than a
+    deleted key (Q-A); TypeNameFromReflect names slices, maps and anonymous structs apart (#349); the Manager logs
+    through the injected logger; the metric namespace reads semengine (#69); the OpenAPI defaults read SemEngine
+    API, SemEngine framework API and 0.0.0 (Q-A). Adapt, a pin defect fixed in the port: /openapi.json at the pin
+    wrote each path's internal descriptors (request_body, content_type, schema_ref, is_array), not OpenAPI 3.0
+    request bodies and responses, and only the static generator cmd/openapi-generator translated them;
+    OpenAPIDocument.MarshalJSON now writes OpenAPI 3.0 bodies, so a content type with no schema gets no invented
+    schema and text/event-stream is not special-cased (#357). Adapt, a defect of the port found in review and fixed
+    before merge: StopAll waits for a start in progress through lifecycleguard before it marks the stop, so /readyz
+    answered READY after StopAll was entered; readiness now reports stopping from the moment StopAll is entered, and
+    a start that completes afterwards still commits its routes (#356). Retained: the Manager's listeners on every
+    interface; /docs loads Swagger UI from unpkg.com; with no NATS client /graph/triples answers []; the startup
+    gauge registers directly on the injected registry; startHealthListener's listen parameter, the Manager's
+    httpListener field (read only by tests) and Metrics' testListener, because port 0 does not ask for a
+    kernel-picked port;
+    component-manager is mandatory and RegisterAll registers only metrics until PR 3. Not covered: ParameterSpec.Schema
+    still writes "type": "" for a parameter that declares no schema, and no test here declares one
   proving_tests: service/*_test.go, service/*_integration_test.go
-  owner: setup-04a-03-boot-service-base developer
+  owner: setup-04a-03-boot-service-manager developer
   disposition: adapt
 
 - source_path: docs/adr/058-boot-lifecycle-phases.md
@@ -2850,6 +2887,44 @@
     labels under Consequences made headings for markdownlint
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-03-boot-service-base developer
+  disposition: adapt
+
+- source_path: docs/adr/030-http-middleware-and-identity-pattern.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for the framework's HTTP middleware seam, whose Phase 1 is service.HTTPMiddleware and
+    Manager.UseHTTPMiddleware, called by semteams; ported with the service manager that implements it (design
+    setup-04a-03-boot-service-manager, Decision records)
+  destination: docs/adr/030-http-middleware-and-identity-pattern.md
+  contract: >-
+    the decision text as at the pin, read with its port note: Phase 1 kept as at the pin; Phase 0's identity helpers
+    (processor/agentic-dispatch) not ported; Phases 2 and 3 never built
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    a port note under the title naming what is kept, what is not ported and the two files the pin's Critical files
+    list names that are not carried (docs/operations/09-http-middleware.md and the beta22-to-beta23 migration guide)
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-03-boot-service-manager developer
+  disposition: adapt
+
+- source_path: docs/adr/094-boot-only-composition-and-observable-rule-activation.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record for boot-only composition, whose service half is the Manager's seal (CompositionSealedError)
+    and the /services restart_required answer; ported with the first pull request that carries that code (design
+    setup-04a-03-boot-service-manager, Decision records)
+  destination: docs/adr/094-boot-only-composition-and-observable-rule-activation.md
+  contract: >-
+    the decision text as at the pin, read with its port note: "Boot seals service and component composition" kept
+    for services; "Terminal shutdown remains Start-owned" superseded by ADR-113; the component manager's part
+    arrives with PR 3 and the rule activation parts with change 6
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    a port note under the title naming what is kept, what is superseded by ADR-113 and what is not ported yet; the
+    restart-safe shutdown and crash-recovery sections describe the SemStreams process and its proofs, none of which
+    is carried
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-03-boot-service-manager developer
   disposition: adapt
 
 # Change port-composition (PR #342, epic #9): composition ported as repair-before-port ahead of its boot importer,

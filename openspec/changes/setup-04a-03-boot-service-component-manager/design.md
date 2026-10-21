@@ -12,7 +12,9 @@ The spec deltas are named in D9 and written after the owner accepts this design 
 **Decision records.**
 
 - ADR-113 governs D2 and is kept; how it applies to each component's Start context, and who reacts to the root context
-  ending (its Decision ¶2 leaves that to change 3, `:66-69`), is owner question Q-A. Its Consequences already state the
+  ending (its Decision ¶2 leaves that to change 3, `:66-69`), is settled by that ADR (D2 applies option A) and is not an
+  owner question: context ownership and lifecycle control are ruled once, by ADR-113, and not put to the owner again
+  (owner, 2026-10-21, on this design's Q-A). Its Consequences already state the
   target: "The ported component manager holds no per-component cancel, so the pin's two cancel orders
   (`service/component_manager.go:1033-1042`) do not come over" (`docs/adr/113-start-context-bounds-start.md:107-108`).
 - Pin ADR-095 (one-shot running lifecycle, retained failed-start cleanup) is carried into `docs/adr/` in this PR, as
@@ -155,7 +157,7 @@ follows ADR-113; `mustFail`, a composition whose one component's `Start` fails) 
   guard stuck) now also covers a component whose `Stop` panics; the pin crashes the process the same way, and no caller
   recovers it, so it stays open (D8).
 
-**The component's own Start context (owner question Q-A).** What the pin does (`component_manager.go`):
+**The component's own Start context (Q-A, settled by ADR-113; option A applies).** What the pin does (`component_manager.go`):
 
 - `:464` — `runtimeCtx, cancel := context.WithCancel(ctx)`: the manager's run context descends from its Start context.
 - `:622` — `childCtx, cancel := context.WithCancel(ctx)` with `ctx` = that run context, kept as
@@ -174,7 +176,7 @@ follows ADR-113; `mustFail`, a composition whose one component's `Start` fails) 
   (`cmd/semboids/main.go:457` — `manager.StartAll(signalCtx)`) and then calls `StopAll` (`:465`).
 
 Only option A is a shape ADR-113 already allows. B and C each keep a cancel per component, which `:107-108` rules out,
-so either needs ADR-113 amended; they are listed for their costs, and Q-A is the owner confirming A.
+so either needs ADR-113 amended; they are listed for their costs only. A is applied; it is not an owner question.
 
 | Option | What a component observes | Proving test | Cost |
 | --- | --- | --- | --- |
@@ -414,7 +416,7 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
 | Owner 2026-10-20 option B (#9 comment 6296023694); PR 2 D3 | `var _ componentStartup = (*ComponentManager)(nil)`; `RegisterAll` registers it | `go build ./service/`; the cut startup tests |
 | Owner Q2 (same comment) | D6 `projection.PredicateReconciler` | D6's tests |
 | ADR-113; pin ADR-095 (carried, changed); `lifecycle-suite` floor | D2 | `TestComponentManagerPassesTheLifecycleSuite`; `TestStopRetriesOnlyComponentsThatDidNotStop` |
-| Q-A (owner, pending); ADR-113 Decision ¶2 (`:66-69`) | D2's component Start context; the dated note under ADR-113 | Q-A option A's three tests |
+| ADR-113 Decision and Consequences (`:57-69`, `:107-108`; Q-A settled, owner 2026-10-21) | D2's component Start context; the dated note under ADR-113 naming what the ADR left to change 3 | Q-A option A's three tests |
 | Q-B (owner, pending) | D3's construction failure | Q-B's test |
 | #196; ADR-108 Decision 2 | D2 guard | the suite; the adoption note |
 | ADR-094, ADR-096 ¶4, ADR-100 | D3 | `TestComponentManagerRefusesBootOnErrorFinding`; the boot-only tests |
@@ -447,11 +449,13 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
 
 ## Owner questions
 
-Two changes to what a component, or a deployment, sees are the owner's to accept. Each is written as the owner reads
-it.
+One change to what a deployment sees is the owner's to accept (Q-B). Q-A was put to the owner as a question and
+withdrawn: ADR-113 rules context ownership and lifecycle control, and the owner is not asked again (owner,
+2026-10-21: "how many times do we need to rule on context and lifecycle control"). Its text stays as the record of
+what option A means for this owner.
 
-- **Q-A. Do you confirm that a shutdown arriving while components are still starting waits for them to finish
-  starting?** Recommend yes. It is the one visible consequence of option A, the only shape ADR-113 already allows (it
+- **Q-A. Settled by ADR-113, not asked.** A shutdown arriving while components are still starting waits for them to
+  finish starting. It is the one visible consequence of option A, the only shape ADR-113 already allows (it
   says the ported manager "holds no per-component cancel", `docs/adr/113-start-context-bounds-start.md:107-108`; B and C
   would need that record changed). Each component's `Start` gets the same context the component manager's `Start` got,
   which the manager never ends; a slow boot is cut short only by the caller ending that context (`:59-60`), as PR 2's
@@ -465,7 +469,8 @@ it.
   semboids `cmd/semboids/main.go:465`). Cost by consumer: none for semsource and semteams; in semboids, which hands
   `StartAll` its signal context (`main.go:457`), a component written the old way stops at SIGTERM before `StopAll`
   reaches it.
-- **Q-B. Should boot fail when a configured component cannot be built?** Recommend yes: today SemStreams logs the error
+- **Q-B. Should boot fail when a configured component cannot be built?** **Owner, 2026-10-21: yes, fail boot and name
+  the components.** The recommendation was yes: today SemStreams logs the error
   and boots without that component, and `/readyz` then says ready (pin `service/component_manager.go:328-346`), while
   `AGENTS.md` asks every failure path to fail closed; the refusal would name every component that failed, as SemStreams
   already does for rule processors (`:339-372`). Measured cost of yes: semteams ships two example configurations that

@@ -12,12 +12,12 @@ verify` passes on a clean tree at its commit.
 
 ## 1. Design
 
-- [ ] 1.1 Shape sweep (`sweep.md`) and design (`design.md`) pass the pre-owner review and are accepted by the owner,
-  including the owner's answers to Q-A (each component's Start context, ADR-113) and Q-B (a component that cannot be
-  built); the probes' output and the build probe's commands and diff (sweep § 3, verbatim) are posted on #359 beside
-  the suite probe's source (comment 6324262845). Gate: `task spec:check` and
-  `task docs:check`; each comment read back.
-- [ ] 1.2 The spec deltas design D9 names, with the owner's answers, under `specs/service-lifecycle/` and
+- [x] 1.1 Shape sweep (`sweep.md`) and design (`design.md`) passed the pre-owner review (round 1 at `61ffb6d`, round 2
+  at `5393ce7`, nits fixed at `a32ee4a`) and were accepted by the owner on 2026-10-21 (#359 comment, owner's word):
+  Q-B yes (boot fails, naming the components); Q-A withdrawn as a question, ADR-113 governs (option A). The probes'
+  output and the build probe's commands and diff are on #359 (comments 6324262845 and 6324713111). Gate:
+  `task spec:check` and `task docs:check`; each comment read back.
+- [ ] 1.2 The spec deltas design D9 names, with Q-B's answer and ADR-113's rule, under `specs/service-lifecycle/` and
   `specs/operator-surface/`; `skip_specs` removed from `.openspec.yaml`. Gate: `task spec:check`.
 
 ## 2. Port (D1-D7)
@@ -76,8 +76,9 @@ verify` passes on a clean tree at its commit.
 
 - [ ] 3.1 `service/README.md` and `service/doc.go` for the component manager, with D1's contract lines and D8's declared
   degrades; pin ADR-095 and ADR-096 in `docs/adr/` with port notes; ADR-094's port note rewritten for the component
-  manager's part; under Q-A option A, a dated note under ADR-113's Decision naming the composition root as what reacts
-  to the root context ending (design D2, "Who reacts"). Gate: `go doc ./service` lists only the kept surface; `task
+  manager's part; a dated note under ADR-113's Decision naming the composition root as what reacts to the root
+  context ending (design D2, "Who reacts"; what `:66-69` left to change 3, no new ruling). Gate: `go doc ./service`
+  lists only the kept surface; `task
   docs:check`.
 - [ ] 3.2 The `SchemaRef` rule (D8 Guidance) in the developer and reviewer contracts, with its rows in `AGENTS.md` § 1
   and `.agents/rules-index.md`; the `service` ledger row edited in place, the `pkg/projection` row's sentence, the

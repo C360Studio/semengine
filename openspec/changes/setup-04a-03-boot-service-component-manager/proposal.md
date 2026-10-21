@@ -32,7 +32,8 @@ Named in `design.md` D9; the delta files are written in task 1.2, after the owne
 `skip_specs` is removed then.
 
 - `service-lifecycle` (ADDED): the component manager's Start bounds Start, with the owner's answer on each component's
-  Start context and the composition root reacting to the root context ending (design Q-A); the boot set composed once
+  Start context and the composition root reacting to the root context ending (design D2, ADR-113); the boot set composed
+  once
   and sealed (Q-B); providers before consumers, and the store registry they fill; component health published with drops
   counted; a lapsed stream migration override reported while running; rule-pack contracts checked before any reconciler
   is injected.

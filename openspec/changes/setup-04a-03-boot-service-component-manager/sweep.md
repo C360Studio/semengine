@@ -21,7 +21,7 @@ Files (non-test pin lines, 2,487 in all): `component_manager.go` 1,526, `compone
 | S12 | `"component-manager"` by name | `component_manager_http.go:20`, `component_manager.go:192`, `:896`, `:937`, `rule_pack_bind.go:32` | optional; the tree's `componentManagerName` (`service/service_manager.go:28`) is used |
 | S14 | context rules otherwise clean | re-checked below | none |
 | § 2.4 | renamed names | `component_manager.go:47`, `:1216`, `:1218`; `:290`, `:384`, `:397`, `:1107`; `:400`, `:697`; `:1210`; `stream_override_expiry.go:67`, `:79`; `rule_pack_bind.go:16` | required (build; #69 for `:67`; owner Q2 for `rule_pack_bind.go:16`) |
-| § 4 | where the manager receives, keeps and derives a context | `component_manager.go:463-464`, `:622`, `:636`, `:699`, `:1033-1042` | required (ADR-113); D2, owner question Q-A |
+| § 4 | where the manager receives, keeps and derives a context | `component_manager.go:463-464`, `:622`, `:636`, `:699`, `:1033-1042` | required (ADR-113); D2, Q-A settled by ADR-113 |
 | § 5 (a) | exported, no reader | `component_manager.go:1139`, `:1144`, `:1333`, `:1345`; `component_manager_config.go:14`; unexported `:1200` | required (surface audit): dropped |
 | § 5 (b) | config read by no behaviour | `component_manager_config.go:10` (`EnabledComponents`) | required (surface audit): dropped |
 | § 5 (c) | documented, not implemented | `component_manager_config.go:10` ("empty=all") | required: goes with the field |

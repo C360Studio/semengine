@@ -377,7 +377,8 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
   component manager's payload already goes through `decodeStrictServiceJSON`, so nothing here; the heartbeat half is PR
   6's. **#30**: the last `service` PR. **#309**: optional (no caller recovers a panic, so no trigger), noted in D2.
   Merge order: no open pull request shares a file (addendum).
-- **Filed as #360** (protocol "File", #212; `status:blocked` on #359, linked without a closing keyword). Title: "service: the component manager's health says healthy when it cannot tell". Body: "The
+- **Filed as #360** (protocol "File", #212; `status:blocked` on #359, linked without a closing keyword).
+  Title: "service: the component manager's health says healthy when it cannot tell". Body: "The
   component manager's own health check, which `BaseService` runs and `Manager`'s readiness reads through
   `svc.IsHealthy()` (`service/service_manager_http.go:507`), returns healthy in two cases where it has not looked.
   (1) Not started: `if !cm.started.Load() { return nil // Still starting up, assume healthy }` (pin

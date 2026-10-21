@@ -2,6 +2,7 @@ package service
 
 import (
 	"reflect"
+	"regexp"
 	"testing"
 	"time"
 
@@ -68,5 +69,34 @@ func TestTypeNameFromReflect(t *testing.T) {
 	require.Equal(t, "schemaSample", TypeNameFromReflect(reflect.TypeFor[schemaSample]()))
 	require.Equal(t, "schemaSample", TypeNameFromReflect(reflect.TypeFor[*schemaSample]()))
 	require.Equal(t, "int", TypeNameFromReflect(reflect.TypeFor[int]()))
-	require.Equal(t, "[]int", TypeNameFromReflect(reflect.TypeFor[[]int]()), "an unnamed type is named by its text")
+}
+
+// schemaNamePattern is the component-name grammar OpenAPI 3.0 allows.
+var schemaNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
+
+// TestTypeNameFromReflectNamesEachShapeApart: a pointer is named by its element and a named type
+// keeps its bare name, while a slice, an array, a map and an anonymous struct get names that differ
+// from their element's and from one another, each a valid OpenAPI component name (#349; design D6).
+// The pin named []X and map[string]X "X", so a collection's schema overwrote its element's.
+//
+// spec: operator-surface / /openapi.json documents the mounted routes
+func TestTypeNameFromReflectNamesEachShapeApart(t *testing.T) {
+	require.Equal(t, "schemaSample", TypeNameFromReflect(reflect.TypeFor[schemaSample]()))
+	require.Equal(t, "schemaSample", TypeNameFromReflect(reflect.TypeFor[*schemaSample]()))
+
+	shapes := map[string]reflect.Type{
+		"slice":            reflect.TypeFor[[]schemaSample](),
+		"array":            reflect.TypeFor[[2]schemaSample](),
+		"map":              reflect.TypeFor[map[string]schemaSample](),
+		"anonymous struct": reflect.TypeFor[struct{ Name string }](),
+	}
+	seen := map[string]string{"schemaSample": "the element"}
+	for shape, typ := range shapes {
+		name := TypeNameFromReflect(typ)
+		require.Regexp(t, schemaNamePattern, name, "%s (%s)", shape, typ)
+		if other, taken := seen[name]; taken {
+			t.Errorf("%s (%s) is named %q, as %s is", shape, typ, name, other)
+		}
+		seen[name] = shape
+	}
 }

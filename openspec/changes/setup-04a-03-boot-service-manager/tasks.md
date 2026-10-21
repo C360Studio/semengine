@@ -7,10 +7,10 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 
 ## 1. Design
 
-- [ ] 1.1 Shape sweep (`sweep.md`) and design pass the pre-owner review and are accepted by the owner, who answers
-  Q-A and Q-B (design, Owner questions); the probe note (#353 comment 6315789814) and its round 2 addendum are on
-  #353. If an answer is no, the design's stated fallback replaces that part before 2.1. Gate: `task spec:check` and
-  `task docs:check`; each comment read back.
+- [x] 1.1 Shape sweep (`sweep.md`) and design pass the pre-owner review (round 2 at `daae8e8`, fixes `0a65778`) and
+  are accepted by the owner, who answered Q-A yes and Q-B yes (#9 comment 6317003800); the probe note (#353
+  comment 6315789814) and its round 2 addendum are on #353. Gate: `task spec:check` and `task docs:check`; each
+  comment read back.
 
 ## 2. Port (D1-D7)
 

@@ -499,6 +499,9 @@ go1.26.9; C1-C4, `Close` after a bounded `Shutdown`, at go1.26.9; PR 1's H1-H4 o
 
 ## Owner questions
 
+Status: accepted by the owner 2026-10-21, Q-A yes and Q-B yes (#9 comment 6317003800); design review PASS round 2
+at `daae8e8`, round-3 fixes `0a65778`.
+
 Two changes to what callers see are the owner's to accept (a change to what a route answers is the owner's call,
 PR #318). Each is written as the owner reads it.
 

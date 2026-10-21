@@ -19,6 +19,9 @@ verify` passes on a clean tree at its commit.
   `task spec:check` and `task docs:check`; each comment read back.
 - [ ] 1.2 The spec deltas design D9 names, with Q-B's answer and ADR-113's rule, under `specs/service-lifecycle/` and
   `specs/operator-surface/`; `skip_specs` removed from `.openspec.yaml`. Gate: `task spec:check`.
+- [ ] 1.3 The lock-simplification amendment (owner, 2026-10-21, #359 comment 6325195862: design D2 "State shape" and
+  "No wait for readers", D4, D5, D7, D8, Generated checks; sweep C10, C11) passes review. Gate: `task spec:check` and
+  `task docs:check`.
 
 ## 2. Port (D1-D7)
 
@@ -49,6 +52,8 @@ verify` passes on a clean tree at its commit.
   - [ ] 2.1m Integration, the process restart (D7): `config_boot_process_restart_integration_test.go`,
     `fixture_client_integration_test.go`.
   - [ ] 2.1n The Start/Stop model check (Generated checks): `component_manager_prop_test.go`.
+  - [ ] 2.1o The state shape and the manager's health (D2 "State shape" and "No wait for readers", D4, #360):
+    `component_manager_state_test.go`.
 - [ ] 2.2 The five pin files, the module path rewritten, as D1-D6 say, one unit per commit (`notes/2.2.md`). Every
   2.1 test file is in package `service`, so no unit's tests can run until all six units have landed. Gate for 2.2a-2.2e:
   `go build ./service/ ./pkg/projection/` and `go vet ./service/` (with and without `-tags integration`) pass with a
@@ -61,13 +66,14 @@ verify` passes on a clean tree at its commit.
   - [ ] 2.2b The override reporter and the empty configuration (D1, D4): `service/stream_override_expiry.go`,
     `service/component_manager_config.go`. Exercised by 2.1d, 2.1h.
   - [ ] 2.2c Construction, composition, stores, projections (D1, D3): `service/component_manager.go`. Exercised by
-    2.1c, 2.1d, 2.1e (with 2.2e), 2.1k, 2.1l.
+    2.1c, 2.1d, 2.1e (with 2.2e), 2.1k, 2.1l, 2.1o.
   - [ ] 2.2d Start, Stop, phases and the supervisor (D2, D4): `service/component_manager_lifecycle.go`,
-    `service/startup_metrics.go`. Exercised by 2.1a, 2.1b, 2.1c, 2.1h, 2.1j (with 2.2c and 2.2e), 2.1n.
+    `service/startup_metrics.go`. Exercised by 2.1a, 2.1b, 2.1c, 2.1h, 2.1j (with 2.2c and 2.2e), 2.1n, 2.1o.
   - [ ] 2.2e Routes (D5) and `var _ componentStartup = (*ComponentManager)(nil)`, whose six methods 2.2c-2.2e
-    provide: `service/component_manager_http.go`. Exercised by 2.1e, 2.1f, 2.1g, 2.1j.
-  - [ ] 2.2f Registration, the component manager's OpenAPI spec (D5 option a) and the stale field comment (D1, sweep
-    C12): `service/register.go`, `component/lifecycle.go`. Exercised by 2.1g, 2.1k-m.
+    provide: `service/component_manager_http.go`. Exercised by 2.1e, 2.1f, 2.1g, 2.1j, 2.1o.
+  - [ ] 2.2f Registration, the component manager's OpenAPI spec (D5 option a), the stale field comment (D1, sweep
+    C12) and the read contract line on `LifecycleComponent` (D2, "No wait for readers"): `service/register.go`,
+    `component/lifecycle.go`. Exercised by 2.1g, 2.1k-m, 2.1o.
 - [ ] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
   `task mutate:check` for the unit tests and by hand with `-tags integration` where a test needs NATS (#129), recorded
   in `notes/2.3.md` with the `rapid` seed and check count. Gate: `task verify` passes on a clean tree.
@@ -86,7 +92,8 @@ verify` passes on a clean tree at its commit.
   (`ledger:check`, `cover:check` with `service` at or above its floor, the number recorded on the PR, `docs:check`, the
   `AGENTS.md` size and row-count checks).
 - [ ] 3.3 #196 told that the component manager composes the guard; #195 told that this PR's 12 test clients use
-  `fixtureClient`; #280 told that item 2 is the message logger's (D8). Any defect found and not fixed is filed
+  `fixtureClient`; #280 told that item 2 is the message logger's (D8); the PR body declares `Closes #360` (D8).
+  #361-#364 stay open, listed in D8 as told. Any defect found and not fixed is filed
   (`status:blocked` on #359, linked without a closing keyword). Gate: each comment and issue read back (review stop).
 
 ## 4. Verify, review and close

@@ -23,6 +23,10 @@ stops them, and serves their diagnostics. One lifecycle owner, 2,487 non-test pi
 - Per-component start contexts against ADR-113 ("Start's context bounds Start; Stop(ctx) is the only stop"): the
   design states the component manager's observable behaviour at the pin's per-component cancel
   (`component_manager.go:622` on the pin) and the owner's reading settles it.
+- The component set is fixed at construction and each component's state is its own: the pin's manager-wide lock and
+  its borrow fence do not come over, `Stop` does not wait for health or status reads, and the component manager's own
+  health reads every component instead of answering healthy when it cannot look (owner, 2026-10-21, #359 comment
+  6325195862; retires #360).
 - Cite pin ADR-063 (store substrate) through #321 rather than carrying it in this change. Carry pin ADR-095 and
   ADR-096 with port notes, as PR 1's design said (design, Decision records).
 
@@ -36,7 +40,7 @@ Named in `design.md` D9; the delta files are written in task 1.2, after the owne
   once
   and sealed (Q-B); providers before consumers, and the store registry they fill; component health published with drops
   counted; a lapsed stream migration override reported while running; rule-pack contracts checked before any reconciler
-  is injected.
+  is injected; reads that wait on no lock and not on `Stop`; the component manager's health read from every component.
 - `operator-surface` (ADDED): the component manager's routes under `/components`, and the composition projections
   served from the result kept at construction. "/openapi.json documents the mounted routes" is unchanged: `RegisterAll`
   registers the component manager's spec instead of an `init` (design D5 option a).

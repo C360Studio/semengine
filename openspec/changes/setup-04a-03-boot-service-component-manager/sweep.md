@@ -89,14 +89,16 @@ Each is `path:line` — the line's text at the pin, then the shape and the propo
 - **C10, a read lock held across a network write.** `component_manager_http.go:532-554` — `cm.mu.RLock()` / `defer
   cm.mu.RUnlock()` around `json.NewEncoder(w).Encode(config)`. A client that stops reading holds the lock that
   `updateComponentState` (`:1074-1075`, called during Stop) needs. The trigger needs a response larger than the
-  socket buffers, which no named configuration reaches (#185: MEDIUM at most). Optional; recommended in D5: copy under
-  the lock, encode through `writeJSON` (`:602-613`) after it.
+  socket buffers, which no named configuration reaches (#185: MEDIUM at most). Fixed by the owner's lock ruling (#359
+  comment 6325195862): the manager holds no lock and the boot configuration is fixed at construction, so the route
+  encodes it through `writeJSON` (`:602-613`) holding nothing (design D2 "State shape", D5).
 - **C11, health that has not looked says healthy.** `component_manager.go:1173-1177` — `if !cm.mu.TryRLock() {` /
   `// Under write contention - assume healthy to avoid blocking.` / `return nil` (the reason, gh#508 at the pin, is a
   real deadlock); and the same shape at `:1156-1159` — `if !cm.started.Load() {` / `return nil // Still starting up,
   assume healthy`. A positive answer stands in for "unknown", and `Manager`'s readiness reads it through
   `svc.IsHealthy()` (`service/service_manager_http.go:507`). The trigger is Go lock timing (#185: MEDIUM at most).
-  Retained as at the pin and filed under protocol "File" (#212): the issue text is in design D8, "To file".
+  Filed as #360 under protocol "File" (#212), then fixed in this PR under the owner's lock ruling (#359 comment
+  6325195862; `Closes #360`): the health check reads every component's record, every time (design D4).
 - **C12, documented, not implemented (§ 5 (c) class).** `component_manager.go:1` — `// Package service provides service
   management and HTTP APIs for the SemStreams platform.` (a second package comment); `:31-38` (`Initialize()`, `Stop()`
   without a context); `:133` — `// ComponentManagerOption removed - we now use Dependencies pattern instead`;

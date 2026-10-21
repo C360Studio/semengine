@@ -1,0 +1,7 @@
+flowchart LR
+    n0["enricher (enricher)"]
+    n1["sink (sink)"]
+    n2["source (source)"]
+    n0 -- "enriched → enriched [stream]" --> n1
+    n0 -- "state → state [read]" --> n1
+    n2 -- "raw → raw [stream]" --> n0

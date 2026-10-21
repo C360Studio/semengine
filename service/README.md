@@ -263,13 +263,13 @@ runs it again.
 `Stop(ctx)` is the only stop. It refuses a `nil` `ctx`. Given an ended `ctx` it returns that error and stops nothing,
 so give it a fresh bounded context, never the signal context that is ending the program. Before any `Start` it returns
 `nil`, and a later `Start` is refused. Otherwise it marks the stop begun (`/readyz` answers `503 NOT READY` from then),
-removes a provider's stores from the store registry, stops each started component with `ctx` in reverse start order,
-then ends the manager's own loops and its base service. It returns `nil` only once everything is released. A component
-whose `Stop` failed, or was not reached because `ctx` ended, is stopped again by the next `Stop`; one whose `Stop`
-returned `nil` is not called again. A `Stop` after one that returned `nil` returns `nil`, and a `Stop` while another
-runs is refused as transient. A `Stop` that arrives while `Start` is still running waits for every component's `Start`
-to return, or returns its own context's error first; if that `Start` failed, it then stops only what the rollback left.
-A caller cuts a slow boot short only by ending the context it gave `Start`.
+stops each started component with `ctx` in reverse start order (just before a provider's own `Stop`, it removes that
+provider's stores from the store registry), then ends the manager's own loops and its base service. It returns `nil`
+only once everything is released. A component whose `Stop` failed, or was not reached because `ctx` ended, is stopped
+again by the next `Stop`; one whose `Stop` returned `nil` is not called again. A `Stop` after one that returned `nil`
+returns `nil`, and a `Stop` while another runs is refused as transient. A `Stop` that arrives while `Start` is still
+running waits for every component's `Start` to return, or returns its own context's error first; if that `Start`
+failed, it then stops only what the rollback left. A caller cuts a slow boot short only by ending the context it gave `Start`.
 
 ### Reading status during and after Stop
 

@@ -109,21 +109,23 @@ func TestAttack_HandleComponentStatus_NoGoroutineLeak(t *testing.T) {
 	})
 }
 
-// TestAttack_HandleComponentStatus_MaliciousComponentName: a hostile name is a 400 or a 404,
-// never a 200, and does not panic.
+// TestAttack_HandleComponentStatus_MaliciousComponentName: a name that is "." or "..", or that
+// decodes once to one holding a path separator, is a 400 (design D5); a double-encoded or very long
+// name decodes to a valid name no component has, so it is a 404. None panics.
 func TestAttack_HandleComponentStatus_MaliciousComponentName(t *testing.T) {
 	cm := newAttackComponentManager(t)
 
 	maliciousNames := []struct {
 		name string
 		path string
+		want int
 	}{
-		{"path traversal", "/components/status/../../etc/passwd?debug=true"},
-		{"url encoded slash", "/components/status/test%2Fcomponent?debug=true"},
-		{"double encoded", "/components/status/test%252Fcomponent?debug=true"},
-		{"extremely long", "/components/status/" + strings.Repeat("a", 10000) + "?debug=true"},
-		{"dot dot", "/components/status/..?debug=true"},
-		{"single dot", "/components/status/.?debug=true"},
+		{"path traversal", "/components/status/../../etc/passwd?debug=true", http.StatusBadRequest},
+		{"url encoded slash", "/components/status/test%2Fcomponent?debug=true", http.StatusBadRequest},
+		{"double encoded", "/components/status/test%252Fcomponent?debug=true", http.StatusNotFound},
+		{"extremely long", "/components/status/" + strings.Repeat("a", 10000) + "?debug=true", http.StatusNotFound},
+		{"dot dot", "/components/status/..?debug=true", http.StatusBadRequest},
+		{"single dot", "/components/status/.?debug=true", http.StatusBadRequest},
 	}
 
 	for _, tc := range maliciousNames {
@@ -135,8 +137,7 @@ func TestAttack_HandleComponentStatus_MaliciousComponentName(t *testing.T) {
 				cm.handleComponentStatus(w, req)
 			})
 
-			assert.Contains(t, []int{http.StatusBadRequest, http.StatusNotFound}, w.Code,
-				"Should reject malicious component name")
+			assert.Equal(t, tc.want, w.Code, "GET %s", tc.path)
 		})
 	}
 }

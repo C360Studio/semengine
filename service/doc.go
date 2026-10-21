@@ -235,10 +235,10 @@
 // Stop(ctx) is the only stop. It refuses a nil ctx; given an ended ctx it
 // returns that error and stops nothing. Before any Start it returns nil and a
 // later Start is refused. Otherwise it marks the stop begun (/readyz answers
-// 503 NOT READY from then), removes a provider's stores from the store registry,
-// stops each started component with ctx in reverse start order, then ends the
-// manager's own loops and its base service, and returns nil only once all are
-// released. A component whose Stop failed, or was not reached because ctx ended,
+// 503 NOT READY from then), stops each started component with ctx in reverse
+// start order (just before a provider's own Stop it removes that provider's
+// stores from the store registry), then ends the manager's own loops and its
+// base service, and returns nil only once all are released. A component whose Stop failed, or was not reached because ctx ended,
 // is stopped again by the next Stop; one whose Stop returned nil is not called
 // again. A Stop while another runs is refused as transient. A Stop that arrives
 // while Start is running waits for every component's Start to return, or

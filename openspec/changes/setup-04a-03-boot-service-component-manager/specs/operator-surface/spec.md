@@ -16,7 +16,8 @@ package SHALL register nothing.
 
 - **WHEN** `/components/status/` is asked for `..` or a name that decodes to a path separator
 - **THEN** the answer is 400
-- **AND** the test that verifies this is `TestAttack_HandleComponentStatus_MaliciousComponentName`
+- **AND** the tests that verify this are `TestAttack_HandleComponentStatus_MaliciousComponentName` and
+  `TestComponentRoutesRejectMalformedName`
 
 #### Scenario: A method other than GET
 

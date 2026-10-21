@@ -2908,7 +2908,9 @@
     a component whose Stop failed is stopped again by the next Stop and one whose Stop returned nil is not called
     again; a nil component registry is refused, where the pin built a private one; the start order is fixed (store
     providers by instance name, then the rest) and Stop is its reverse; the config route encodes the fixed boot
-    configuration holding nothing; the component manager's OpenAPI spec is registered by RegisterAll, not on import,
+    configuration holding nothing; a route's component name is the whole parameter after the route word, read from
+    the escaped path and decoded once with path semantics (so + stays +), an encoded separator is refused with 400,
+    and a missing name (status/) answers 400 instead of reading as the name status (#365); the component manager's OpenAPI spec is registered by RegisterAll, not on import,
     so a composition that registers NewComponentManager by hand registers the spec itself; a failed component health
     publish is counted on semengine_errors_total{service="component-manager",type="health_publish"}; the override
     gauge is registered through metric.RegisterOrGet and the metric namespace reads semengine (#69);

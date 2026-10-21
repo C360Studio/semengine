@@ -14,7 +14,8 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 
 ## 2. Port (D1-D7)
 
-- [ ] 2.1 Tests first, in `service/` and `internal/keycase/`: the pin test files D7 lists, adapted (dead tests out,
+- [ ] 2.1 Tests first, in `service/`, `internal/keycase/` and `internal/httpadmission/` (`metric/admission_test.go`
+  moved, D2): the pin test files D7 lists, adapted (dead tests out,
   runtime-stop and base-context tests flipped to D2, `t.Skip` in the `rapid` action made a no-op, the `StopAll` model
   rewritten, `errs.ErrAlreadyStopped` in the idempotency test, the two pause tests changed as D2 says, and the
   refused-dial assertion added to `TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext`, which the pin never
@@ -23,8 +24,10 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
   moved from `config/load_test.go`. The notes cite the probe comment on #353. Gate: the tests fail on the base (the
   types do not exist; note the compile errors).
 - [ ] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's interface and
-  default composition, D4's metrics service, D5's moved check (`config` calling it), D6's routes and the #349 fix in
-  `service/schema.go`. Gate: `go test -race ./service/ ./internal/keycase/ ./config/` and
+  default composition, D4's metrics service, D5's moved check (`config` calling it), the admitted-request counter moved
+  to `internal/httpadmission` (`metric` and `service` calling it, D2), D6's routes and the #349 fix in
+  `service/schema.go`. Gate:
+  `go test -race ./service/ ./internal/keycase/ ./internal/httpadmission/ ./config/ ./metric/` and
   `go test -tags integration ./service/ ./config/` pass, `TestManagerPassesTheLifecycleSuite` and
   `TestMetricsPassesTheLifecycleSuite` included; `go build ./...`; `task verify` passes on a clean tree (review
   stop).
@@ -38,8 +41,9 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
   and D8 name; pin ADR-030 and ADR-094 in `docs/adr/` with port notes (design, Decision records); the
   `/graph/triples` row in `docs/contract.md`'s operator table. Gate:
   `go doc ./service` lists only the kept surface; `task docs:check`.
-- [ ] 3.2 The `service` ledger row edited in place, the ADR-030 and ADR-094 rows, the `config` row's sentence; the
-  `docs/repository-map.md` rows (`service/`, `docs/adr/`, `internal/keycase/`, and the ledger count, 88). Gate:
+- [ ] 3.2 The `service` ledger row edited in place, the ADR-030 and ADR-094 rows, the `config` and `metric` rows'
+  sentences; the `docs/repository-map.md` rows (`service/`, `docs/adr/`, `internal/keycase/`, `internal/httpadmission/`,
+  and the ledger count, 88). Gate:
   `task verify` passes on a clean tree, which runs `ledger:check`, `cover:check` (`service` at or above its floor, the
   number recorded on the PR) and `docs:check` (review stop).
 - [ ] 3.3 #344 told that service payloads now refuse letter-case variants and that the heartbeat's decode (PR 6)

@@ -67,11 +67,15 @@ the routes: `health-status` explicitly leaves readiness to `/readyz`, `openspec/
   `PayloadRegistry`, `ServiceManager`. `Platform`, `ComponentRegistry` and `PayloadRegistry` have no reader in this PR;
   their reader is `component_manager.go` (an admitted package's caller counts, architect contract § Surface audit).
 - **Text** (P13): the `agenticdispatch` sentences, the `cmd/semstreams -health-port` comment and "SemStreams" in the
-  `/docs` title are rewritten. Outward names follow the owner's ruling that every outward-facing name reads
-  `semengine` (#69 comment 6024010936): the metric namespace is `semengine`, so the gauge is
-  `semengine_startup_units`, and the OpenAPI defaults are `"SemEngine API"` and `"SemEngine framework API"`. The
-  default version becomes `"0.0.0"` (pin `"0.7.0"`, `service_manager.go:191`), what the tree reads when no version is
-  stored (`config/manager.go:1443-1450`), since this tree has no release number; it rides in Q-A for the owner.
+  `/docs` title are rewritten. The metric namespace follows the owner's ruling (#69 comment 6024010936: "One rule
+  for every outward-facing name: `semengine`"; its listed items, as far as read, name the Prometheus namespace and the
+  environment-variable prefix, and the ledger records it so, `docs/admission-ledger.yaml:1230-1235`), so the gauge is
+  `semengine_startup_units`. The ruling's words would cover the OpenAPI title strings, but no item read names them and
+  the whole comment could not be re-read on 2026-10-21 (GitHub unreachable), so the defaults `"SemEngine API"` and
+  `"SemEngine framework API"` (pin `"SemStreams API"` and "Flow-based programming framework API",
+  `service_manager.go:185-189`) ride in Q-A for the owner to confirm, with the default version `"0.0.0"` (pin
+  `"0.7.0"`, `:191`), what the tree reads when no version is stored (`config/manager.go:1443-1450`), since this tree
+  has no release number.
 
 ## D2. Manager: StartAll bounds StartAll, StopAll is the only stop
 
@@ -116,7 +120,15 @@ named:
   `StopAll` joins what is still running (ADR-113): `net/http` stops tracking a handler once its connection is closed
   (probe C3: a later `Shutdown` returns nil at once while the handler runs), so the manager itself observes its
   handlers, and a later `StopAll` returns nil only once every one has returned, or its own `ctx`'s error first. The
-  rollback of a failed `StartAll` stops the listeners the same way, under its own bound.
+  rollback of a failed `StartAll` stops the listeners the same way, under its own bound. The tree already solves this
+  for `metric.Server`: `admittedRequests` (`metric/handler.go:320-390`) counts admitted requests, refuses new ones
+  once stopping, and lets `Stop` wait for them after a forced close. It is shared, not copied: it moves, with its
+  tests (`metric/admission_test.go`), to a new package `internal/httpadmission`, imported by `metric` and `service`.
+  An internal home is allowed because both hold it only in unexported fields, so no exported signature names it
+  (`harness-boundaries` spec); the refusal text, "metrics server is stopping" today, becomes an argument so each
+  caller names itself, and `metric`'s behaviour is otherwise unchanged (its tests are the proof). The manager wraps
+  each listener's handler, main and health, and closes admission when that listener's stop begins, not when
+  `StopAll` begins, so `/readyz` still answers `NOT READY` while services stop.
   Proof: `TestStopAllCutsOpenConnectionsAtItsDeadline` (a handler waits for its request context to end and then for
   a release; a 100 ms `StopAll` returns `context.DeadlineExceeded`, the handler saw its context end, a new dial is
   refused, a second `StopAll` does not return before the release and returns nil after it). The pin's
@@ -323,6 +335,7 @@ Governed by the 03B operator-surface rows (`design.md:722-724`), ADR-030, ADR-08
   | connections left open when `StopAll`'s context ends | `TestStopAllCutsOpenConnectionsAtItsDeadline` |
   | a later `StopAll` returning while a cut handler still runs | `TestStopAllCutsOpenConnectionsAtItsDeadline` |
   | the rollback not waiting for an in-flight request | `TestStartAllRollbackWaitsForAnInFlightRequest` |
+  | admission closed when `StopAll` begins rather than when a listener's stop begins | `TestReadinessRequiresCommitAndClearsBeforeChildStop` |
   | the publish failure not counted | `TestHealthPublishFailureIsCounted` |
   | the letter-case check removed from `decodeStrictServiceJSON` | `TestServiceConfigRefusesKeyInAnotherCase` |
   | the case check skipped for a nested `server_info` key | `TestServiceConfigRefusesKeyInAnotherCase` |
@@ -339,14 +352,15 @@ Governed by the 03B operator-surface rows (`design.md:722-724`), ADR-030, ADR-08
 | Owner Q2 (#9 comment 6297390898); 03B SS#1218 | `StopAll` counts `errs.ErrAlreadyStopped` as stopped | `TestStopAllCountsAlreadyStoppedAsStopped` |
 | ADR-113; ADR-095 (pin, cited); `lifecycle-suite` floor | D2, D4 | the two suite tests; `TestRequestContextOutlivesStartContext`; `TestHealthListenerRequestContextOutlivesStartContext` |
 | Q-B (owner, pending) | D2 at `StopAll`'s deadline | `TestStopAllCutsOpenConnectionsAtItsDeadline` |
-| Q-A (owner, pending) | D6 `/graph/triples`; the `0.0.0` default | D6's four tests |
+| Q-A (owner, pending) | D6 `/graph/triples`; D1's OpenAPI defaults | D6's four tests |
 | PR 1 D5 (accepted design); #344 comment 6301408420 | D5 | `TestServiceConfigRefusesKeyInAnotherCase`; `config-loading` tests unchanged |
 | Owner 2026-10-12 surface audit (#190) | D1 drops and contract lines | `go doc ./service` lists only the kept surface |
 | "skip, drop, degrade declared" (`AGENTS.md` § 1); pin ADR-098 | D2 health publisher | `TestHealthPublishFailureIsCounted` |
 | Developer contract `:141-150`; fail closed | D6 `/graph/triples`, under Q-A | D6's four tests |
 | 03B operator-surface rows; ADR-088, ADR-109 | D6 | ADR-109's tests; `TestServicesListsComposedServicesWithHealth`; `TestOpenAPIDocumentListsMountedRoutes` |
 | simplify-04a-16 `Status.FailureCount` removed (archived design `:171`) | `/health` without failure count | `TestSystemHealthReportsNATSDisconnected` |
-| Outward names read `semengine` (#69 comment 6024010936) | D1 text and defaults | `TestOpenAPIDocumentListsMountedRoutes`; the gauge name in the startup metric tests |
+| Outward names read `semengine` (#69 comment 6024010936: the Prometheus namespace) | D1 metric namespace | the gauge name in the startup metric tests |
+| Q-A's one line (the OpenAPI title strings and version) | D1 defaults | `TestOpenAPIDocumentListsMountedRoutes` |
 | ADR-030, ADR-094 (pin, carried) | middleware; seal | `middleware_test.go`; `TestCreateServiceRefusedAfterStartAll` |
 | #195; harness rules | D7 | `task verify` guards |
 
@@ -378,7 +392,9 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
 - **Ledger:** the `service` row edited in place, PR 1's text kept and PR 2's sentences added (YAML below);
   new rows `docs/adr/030-...` and `docs/adr/094-...` in the ADR-058 row's shape; the `config` row's `known_risks`
   gains "the letter-case check lives in internal/keycase, shared with service". `internal/keycase` is code written
-  here and moved out of `config`, so it takes no row of its own, as `internal/lifecycleguard` has none.
+  here and moved out of `config`, so it takes no row of its own, as `internal/lifecycleguard` has none; the same holds
+  for `internal/httpadmission`, moved out of `metric`, whose row's `known_risks` gains "the admitted-request counter
+  lives in internal/httpadmission, shared with service".
 
 ```yaml
 - source_path: service
@@ -400,13 +416,14 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
     ADR-110 (service writes no ENTITY_STATES entry); service/README.md for the calls semsource, semteams and
     semboids make
   dependencies_and_side_effects: >-
-    component, config, graph, graph/kvcatalog, health, internal/keycase, internal/lifecycleguard, message, metric,
-    natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup, pkg/projection, pkg/security, pkg/types, types,
-    vocabulary (all in tree); BaseService runs one health goroutine, joined in Stop; MaybeStartPProf binds :port on
-    every interface and serves http.DefaultServeMux on a goroutine joined in Shutdown; the Manager binds :http_port
-    (default 8080) and an optional health port on every interface, serves until StopAll, publishes each service's
-    health on health.service.<name> every 5 s, and starts the metrics server it claims (default :9090);
-    WireGraphRuntime may rewrite the retention of inactive catalog buckets; the OpenAPI registry is process-global
+    component, config, graph, graph/kvcatalog, health, internal/httpadmission, internal/keycase,
+    internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup,
+    pkg/projection, pkg/security, pkg/types, types, vocabulary (all in tree); BaseService runs one health goroutine,
+    joined in Stop; MaybeStartPProf binds :port on every interface and serves http.DefaultServeMux on a goroutine
+    joined in Shutdown; the Manager binds :http_port (default 8080) and an optional health port on every interface,
+    serves until StopAll, publishes each service's health on health.service.<name> every 5 s, and starts the metrics
+    server it claims (default :9090); WireGraphRuntime may rewrite the retention of inactive catalog buckets; the
+    OpenAPI registry is process-global
   known_risks: >-
     PR 1 of 7 (base.go, pprof.go, graph_runtime.go, service_configs.go, schema.go, openapi.go, openapi_types.go,
     openapi_registry.go, configurable.go, doc.go, README.md); the managers and services follow. Dropped as unread:
@@ -427,16 +444,18 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
     LifecycleManager; the Manager's four test-only pause channels. Changed from the pin: ending StartAll's or
     StartHealthListener's context stops nothing and request contexts are not derived from it (ADR-113); at its deadline
     StopAll still closes open connections, but a later StopAll waits for every handler still running instead of
-    returning at once (Q-B); a StopAll with an ended context stops nothing; a second StartAll is refused with
-    ErrAlreadyStarted; StopAll counts errs.ErrAlreadyStopped as stopped; service payloads refuse keys in another letter
-    case (internal/keycase), which PR 1 accepted; a failed health publish is counted on semengine_errors_total; the
-    /health nats sub-status drops the failure count; /graph/triples validates subject and predicate, sorts before its
-    limit and fails a read error other than a deleted key (Q-A); TypeNameFromReflect names slices, maps and anonymous
-    structs apart (#349); the Manager logs through the injected logger; names read semengine and SemEngine (#69) and the
-    OpenAPI default version is 0.0.0. Retained: the Manager's listeners on every interface; /docs loads Swagger UI from
-    unpkg.com; with no NATS client /graph/triples answers []; the startup gauge registers directly on the injected
-    registry; startHealthListener's listen parameter and Metrics' testListener, because port 0 does not ask for a
-    kernel-picked port; component-manager is mandatory and RegisterAll registers only metrics until PR 3
+    returning at once (Q-B); a StopAll with an ended context stops nothing; a StopAll before any StartAll stops only a
+    started health listener and calls no service's Stop, where the pin called Stop on every configured service; a second
+    StartAll is refused with ErrAlreadyStarted; StopAll counts errs.ErrAlreadyStopped as stopped; service payloads
+    refuse keys in another letter case (internal/keycase), which PR 1 accepted; a failed health publish is counted on
+    semengine_errors_total; the /health nats sub-status drops the failure count; /graph/triples validates subject and
+    predicate, sorts before its limit and fails a read error other than a deleted key (Q-A); TypeNameFromReflect names
+    slices, maps and anonymous structs apart (#349); the Manager logs through the injected logger; the metric namespace
+    reads semengine (#69); the OpenAPI defaults read SemEngine API, SemEngine framework API and 0.0.0 (Q-A). Retained:
+    the Manager's listeners on every interface; /docs loads Swagger UI from unpkg.com; with no NATS client
+    /graph/triples answers []; the startup gauge registers directly on the injected registry; startHealthListener's
+    listen parameter and Metrics' testListener, because port 0 does not ask for a kernel-picked port; component-manager
+    is mandatory and RegisterAll registers only metrics until PR 3
   proving_tests: service/*_test.go, service/*_integration_test.go
   owner: setup-04a-03-boot-service-manager developer
   disposition: adapt
@@ -447,7 +466,10 @@ Decided per `docs/testing.md` "Decide whether generated checks are needed":
   manager (`StartAll` bounds `StartAll`, `StopAll` is the only stop; the boot, health, readiness, service, OpenAPI
   and `/graph/triples` routes) and the metrics service"; the `docs/adr/` row adds ADR-030 and ADR-094; a new
   `internal/keycase/` row: "the one check that refuses a configuration key written in another letter case, used by
-  `config` for its document and by `service` for each strictly decoded service payload".
+  `config` for its document and by `service` for each strictly decoded service payload"; a new
+  `internal/httpadmission/` row: "counts the requests an HTTP server has admitted, refuses new ones once its stop
+  begins, and lets the stop wait for them after a forced close; used by `metric`'s server and `service`'s
+  listeners".
 - **`docs/contract.md`:** the operator table (`:129-140`) gains a row, "graph triples (read-only) |
   `/graph/triples`", since `operator-surface` now gives the route a contract line.
 - **Text:** `service/doc.go` and `service/README.md` gain the manager and metrics sections: composing with
@@ -486,8 +508,9 @@ PR #318). Each is written as the owner reads it.
   treats any non-2xx answer as a failed read, `ui/src/lib/services/runStatusApi.ts:45-52` and
   `ui/src/lib/server/work/overlays.ts:102-110`, calls SemStreams' partial answer untrustworthy, `overlays.ts:12-16`,
   and sends only full entity IDs and three-part predicates, `overlays.ts:236`, `:327`, `:373`, `:423`; sweep P9-P11;
-  developer contract `:141-150`). One line more: the API document's default version would read `0.0.0` instead of
-  SemStreams' `0.7.0`, since SemEngine has no release number yet.
+  developer contract `:141-150`). One line more: the API document's defaults would read `SemEngine API`,
+  `SemEngine framework API` and version `0.0.0` instead of SemStreams' `SemStreams API`,
+  `Flow-based programming framework API` and `0.7.0`, since SemEngine has no release number yet.
 - **Q-B. When `StopAll` runs out of time, should it still cut the connections that are open?** Recommend yes: keep
   SemStreams' cut at the deadline, which ends each open request such as a browser's live graph stream, and have a
   later `StopAll` wait for any handler still finishing (SemStreams closes the server after a timed-out shutdown, pin

@@ -53,8 +53,11 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 
 ## 4. Verify, review and close
 
-- [ ] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `service` is recorded on
-  the PR.
-- [ ] 4.2 Cross-agent review of record at both stops, as PR comments; `reviewed-by:` in the PR body.
-- [ ] 4.3 The change is archived (`openspec archive setup-04a-03-boot-service-manager`) as the last content commit,
-  syncing `service-lifecycle` and `operator-surface` into `openspec/specs/`. Gate: `task spec:check`.
+- [x] 4.1 `task verify` passes on a clean tree at the implementation head `f1ced98` (`verify: ok`, 2026-10-21); the
+  coverage of `service` (89.4%, merged unit and integration profile, floor 80%) is recorded on the PR (#353 comment
+  6322449603).
+- [x] 4.2 Cross-agent review of record at both stops, as PR comments (Codex: stop 1 at `66a5d30`, #353 comments
+  6319900945 and 6321007206; stop 2 at `dfb3418`, comment 6322221725, two documentation findings fixed at `f1ced98`);
+  `reviewed-by:` in the PR body.
+- [x] 4.3 The change is archived (`openspec archive setup-04a-03-boot-service-manager`) in this commit, the last
+  content commit, syncing `service-lifecycle` and `operator-surface` into `openspec/specs/`. Gate: `task spec:check`.

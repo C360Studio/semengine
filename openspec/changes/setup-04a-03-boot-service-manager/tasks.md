@@ -31,7 +31,7 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
   `go test -tags integration ./service/ ./config/` pass, `TestManagerPassesTheLifecycleSuite` and
   `TestMetricsPassesTheLifecycleSuite` included; `go build ./...`; `task verify` passes on a clean tree (review
   stop).
-- [ ] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
+- [x] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
   `task mutate:check` for the unit tests and by hand with `-tags integration` where a test needs NATS (#129),
   recorded in `notes/2.3.md` with the `rapid` seeds and check counts. Gate: `task verify` passes on a clean tree.
 

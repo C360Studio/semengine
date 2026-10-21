@@ -4,8 +4,11 @@ Each task names its outcome and the gate that proves it. This change ports the c
 of 7 in the split the owner accepted, #9 comment 6296023694). Tests come first. Each developer unit below is one or two
 files; its pin line ranges and the names its tests call are in `notes/2.1.md` or `notes/2.2.md`, so a unit's brief
 cites only that section and the design sections it names. Record in the note how each test fails on the base commit,
-or which mutant it detects. Review stops (Codex) come after 2.2 and 3.3. Each task ends only when `task verify` passes
-on a clean tree at its commit (#171).
+or which mutant it detects. Review stops (Codex) come after 2.2 and 3.3. The `task verify` gate (#171) applies to 2.1
+and 2.2 as wholes, met
+at the 2.2f commit: a 2.1 or 2.2a-2.2e sub-unit is ticked on its own stated gate (build and vet with the overlay
+stub), since `go vet ./service/` cannot pass before the last unit lands. Every other task ends only when `task
+verify` passes on a clean tree at its commit.
 
 ## 1. Design
 

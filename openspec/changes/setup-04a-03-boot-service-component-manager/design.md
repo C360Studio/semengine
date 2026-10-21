@@ -187,8 +187,9 @@ so either needs ADR-113 amended; they are listed for their costs, and Q-A is the
 owner that watches that context, calls `Stop` on every component in reverse start order under a bounded stop context",
 and "How the manager receives and watches the root context is change 3's to name". Named here: nothing in `service`
 watches it. Under A the component manager receives the root's context only as `Start`'s bound, as PR 2's `Manager`
-does with `StartAll`'s. The composition root reacts to SIGTERM by calling `StopAll` with a bounded context (semsource
-`run.go:222`, semteams `main.go:937`, semboids `main.go:465`); `StopAll` stops the component manager, whose `Stop` stops
+does with `StartAll`'s. The composition root reacts to SIGTERM by calling `StopAll` with a time limit (semsource
+`run.go:222`, semteams `main.go:937`, semboids `main.go:465`, which passes a `time.Duration`); `StopAll` stops the
+component manager, whose `Stop` stops
 every component in reverse start order under that bound. So the decision is kept, the parent's cancel reaches a
 component through the manager's `Stop` and never through an inherited context, and only the word "watches" moves from
 the component manager to the composition root. Accepting A accepts a dated note under ADR-113's Decision recording

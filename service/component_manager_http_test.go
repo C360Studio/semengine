@@ -210,28 +210,41 @@ func TestHandleComponentStatus_MethodNotAllowed(t *testing.T) {
 	}
 }
 
-// TestExtractComponentNameRefusesUnsafeNames: the last path segment is the component name, and a
-// name that is empty, "." or "..", or that decodes to a path separator, is refused, which the
-// status route answers with a 400 (design D5).
+// TestExtractComponentNameRefusesUnsafeNames: the name is the whole of the path after the route's
+// segment, read from the request httptest.NewRequest parses (its Path already decoded, the encoded
+// form kept in RawPath), as a handler receives it. A name that is empty, "." or "..", has a second
+// segment, or decodes to a path separator, is refused, which the status route answers with a 400
+// (design D5; #365). It decodes with path semantics, so "+" stays "+".
 func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 	cases := []struct {
-		path string
-		name string
-		ok   bool
+		route string
+		path  string
+		name  string
+		ok    bool
 	}{
-		{path: "/components/status/test-component", name: "test-component", ok: true},
-		{path: "/components/status/test-component/", name: "test-component", ok: true},
-		{path: "/components/status//"},
-		{path: "/components/status/."},
-		{path: "/components/status/.."},
-		{path: "/components/status/test%2Fcomponent"},
-		{path: "/components/status/test%5Ccomponent"},
-		{path: `/components/status/test\component`},
+		{route: "status", path: "/components/status/test-component", name: "test-component", ok: true},
+		{route: "status", path: "/components/status/test-component/", name: "test-component", ok: true},
+		{route: "status", path: "/components/status/a+b", name: "a+b", ok: true},
+		{route: "config", path: "/components/config/test-component", name: "test-component", ok: true},
+		{route: "types", path: "/components/types/udp", name: "udp", ok: true},
+		{route: "status", path: "/components/status/"},
+		{route: "status", path: "/components/status//"},
+		{route: "status", path: "/components/status/test-component//"},
+		{route: "status", path: "/components/status/."},
+		{route: "status", path: "/components/status/.."},
+		{route: "status", path: "/components/status/%2E%2E"},
+		{route: "status", path: "/components/status/test%2Fcomponent"},
+		{route: "status", path: "/components/status/unknown%2Ftest-component"},
+		{route: "status", path: "/components/status/unknown/test-component"},
+		{route: "status", path: "/components/status/test%5Ccomponent"},
+		{route: "status", path: `/components/status/test\component`},
+		{route: "status", path: "/components/config/test-component"},
 	}
 	for _, tc := range cases {
-		name, ok := extractComponentName(tc.path)
+		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		name, ok := extractComponentName(request, tc.route)
 		if name != tc.name || ok != tc.ok {
-			t.Errorf("extractComponentName(%q) = %q, %v; want %q, %v", tc.path, name, ok, tc.name, tc.ok)
+			t.Errorf("extractComponentName(%q, %q) = %q, %v; want %q, %v", tc.path, tc.route, name, ok, tc.name, tc.ok)
 		}
 	}
 
@@ -241,6 +254,37 @@ func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 		cm.handleComponentStatus(w, httptest.NewRequest(http.MethodGet, target, nil))
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("GET %s = %d, want %d", target, w.Code, http.StatusBadRequest)
+		}
+	}
+}
+
+// TestComponentRoutesRejectMalformedName: through the registered mux, a name that is empty, has
+// more than one segment, or decodes to a separator answers 400 on the status, config and type
+// routes, even where its last segment names a composed component, so a wrong lookup cannot hide
+// behind a 404 (design D5; #365).
+func TestComponentRoutesRejectMalformedName(t *testing.T) {
+	cm := newDebugStatusComponentManager(t)
+	mux := http.NewServeMux()
+	cm.RegisterHTTPHandlers("/components", mux)
+
+	control := httptest.NewRecorder()
+	mux.ServeHTTP(control, httptest.NewRequest(http.MethodGet, "/components/status/test-component", nil))
+	require.Equal(t, http.StatusOK, control.Code, "the target component must exist: %s", control.Body.String())
+
+	for _, path := range []string{
+		"/components/status/unknown%2Ftest-component",
+		"/components/config/unknown%2Ftest-component",
+		"/components/types/unknown%2Ftest-component",
+		"/components/status/unknown/test-component",
+		"/components/config/unknown/test-component",
+		"/components/status/",
+		"/components/config/",
+		"/components/types/",
+	} {
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("GET %s: got %d, want 400: %s", path, w.Code, w.Body.String())
 		}
 	}
 }

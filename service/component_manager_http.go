@@ -24,36 +24,32 @@ var _ HTTPHandler = (*ComponentManager)(nil)
 // /services would see no components.
 var _ componentStartup = (*ComponentManager)(nil)
 
-// extractComponentName safely extracts and validates a component name from the URL path
-func extractComponentName(path string) (string, bool) {
-	// Remove trailing slash if present
-	path = strings.TrimSuffix(path, "/")
-
-	// Split path and get last segment
-	parts := strings.Split(path, "/")
-	if len(parts) < 2 {
+// extractComponentName returns the name a status, config or types route
+// carries: the whole of the request path after the route's own segment
+// (<prefix>/status/<name>), with one trailing slash allowed. It reads the
+// escaped path, where an encoded separator survives, and decodes it once with
+// path semantics. A name that is empty, "." or "..", or holds a separator, raw
+// or decoded, is refused, so "a%2Fb" and "a/b" are refused rather than
+// reduced to "b" (design D5; #365).
+//
+// The route's segment is found at its first occurrence. Both prefixes the
+// component manager is served under are "/components", which names no route; a
+// prefix that did would refuse every name, never answer for another.
+func extractComponentName(r *http.Request, route string) (string, bool) {
+	escaped := r.URL.EscapedPath()
+	marker := "/" + route + "/"
+	at := strings.Index(escaped, marker)
+	if at < 0 {
 		return "", false
 	}
-
-	name := parts[len(parts)-1]
-
-	// Validate component name
-	if name == "" || name == "." || name == ".." {
-		return "", false
-	}
-
-	// Decode URL encoding
-	decoded, err := url.QueryUnescape(name)
+	name, err := url.PathUnescape(strings.TrimSuffix(escaped[at+len(marker):], "/"))
 	if err != nil {
 		return "", false
 	}
-
-	// Check for path traversal attempts
-	if strings.Contains(decoded, "/") || strings.Contains(decoded, "\\") {
+	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, `/\`) {
 		return "", false
 	}
-
-	return decoded, true
+	return name, true
 }
 
 // RegisterHTTPHandlers registers HTTP endpoints for the ComponentManager service
@@ -425,7 +421,7 @@ func (cm *ComponentManager) handleComponentTypeByID(w http.ResponseWriter, r *ht
 	}
 
 	// Extract component type from URL path
-	componentType, valid := extractComponentName(r.URL.Path)
+	componentType, valid := extractComponentName(r, "types")
 	if !valid {
 		http.Error(w, "Invalid component type", http.StatusBadRequest)
 		return
@@ -451,7 +447,7 @@ func (cm *ComponentManager) handleComponentStatus(w http.ResponseWriter, r *http
 	}
 
 	// Extract and validate component name from URL path
-	componentName, valid := extractComponentName(r.URL.Path)
+	componentName, valid := extractComponentName(r, "status")
 	if !valid {
 		http.Error(w, "Invalid component name", http.StatusBadRequest)
 		return
@@ -524,7 +520,7 @@ func (cm *ComponentManager) handleComponentConfig(w http.ResponseWriter, r *http
 // needs (design D2, "State shape").
 func (cm *ComponentManager) handleGetComponentConfig(w http.ResponseWriter, r *http.Request) {
 	// Extract and validate component name from URL path
-	componentName, valid := extractComponentName(r.URL.Path)
+	componentName, valid := extractComponentName(r, "config")
 	if !valid {
 		http.Error(w, "Invalid component name", http.StatusBadRequest)
 		return

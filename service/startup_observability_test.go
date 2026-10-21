@@ -14,12 +14,15 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/health"
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 )
 
-// This file carries the pin's startup_observability_test.go without its tests that need a real
-// ComponentManager, which go to PR 3 with it (design D7): pin lines 148-223, 264-395 and 418-449.
+// This file carries the pin's startup_observability_test.go. Its tests that need a real
+// ComponentManager (pin lines 148-223, 264-395 and 418-449) came with it in PR 3 and are at the end
+// of the file (setup-04a-03-boot-service-component-manager, task 2.1j).
 // TestStartupMuxCommitIsCausallyAtomic (pin :509-537) is not carried: it drove the dropped
 // testCommitPrepared hooks (design D2, "Test-only code"). The tests that called the pin's private
 // startup steps (sealComposition, initializeHTTPInfrastructure, commitStartup and the readiness
@@ -555,4 +558,188 @@ func TestStartAllRejectsEndedContextBeforeCompositionOrListenerMutation(t *testi
 				"a refused StartAll sealed the composition")
 		})
 	}
+}
+
+// The tests below are the pin's that need a real ComponentManager (pin :148-223, :264-395,
+// :418-449). The pin built the manager as a struct literal and set its components, states and
+// initialized flag by hand, and drove the service manager's private startup steps on a recorder;
+// here the component manager is built by NewComponentManager over the test components
+// (newTestComponentManager) and the service manager runs StartAll and is asked over its main
+// listener (setup-04a-03-boot-service-component-manager design D7; PR 2's notes/2.1.md part 5).
+
+// startupDiscoverable is a component with no lifecycle (it implements only component.Discoverable)
+// whose health a test sets (pin :148). The pin's Meta and ConfigSchema are not on
+// component.Discoverable any more.
+type startupDiscoverable struct {
+	baseDiscoverable
+	healthy atomic.Bool
+}
+
+func newStartupDiscoverable() *startupDiscoverable {
+	c := &startupDiscoverable{}
+	c.healthy.Store(true)
+	return c
+}
+
+func (c *startupDiscoverable) Health() component.HealthStatus {
+	return component.HealthStatus{Healthy: c.healthy.Load()}
+}
+
+// awaitStartupAnswer requests url until it answers status with body, failing the test once
+// stopBound passes. It waits for what a goroutine the test does not hold decides, such as the
+// component manager's first health check, which BaseService runs in its health goroutine after
+// Start returned (service/base.go, healthMonitor).
+func awaitStartupAnswer(t *testing.T, url string, status int, body string) {
+	t.Helper()
+	type answer struct {
+		status int
+		body   string
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	_, err := probe.Await(ctx,
+		func(ctx context.Context) (answer, error) {
+			gotStatus, gotBody, err := httpGet(ctx, url)
+			return answer{status: gotStatus, body: gotBody}, err
+		},
+		func(got answer) bool { return got.status == status && got.body == body })
+	require.NoError(t, err, "GET %s never answered %d %q", url, status, body)
+}
+
+// TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts: a composition of one
+// lifecycle component and one plain component counts two admitted and one lifecycle participant;
+// while the lifecycle component's Start is held, one start is invoked and none completed, in the
+// snapshot and on semengine_startup_units, and once it returns one start completed and none failed
+// (pin :167, which set the components and their states on a struct literal).
+func TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts(t *testing.T) {
+	gated := newBarrierTestComponent("gated")
+	gated.entered = make(chan struct{})
+	cm := newTestComponentManager(t,
+		barrierComposed(gated), testComponent{name: "plain", instance: newStartupDiscoverable()})
+	barrierStopOnCleanup(t, cm)
+	release := newReleaser(t) // registered after the stop, so it runs first: Stop waits for a held Start
+	gated.release = release.ch
+
+	registry := metric.NewMetricsRegistry()
+	writer, err := newStartupMetricWriter(
+		registry,
+		func() serviceStartupCounts { return serviceStartupCounts{} },
+		cm.startupSnapshot,
+	)
+	require.NoError(t, err)
+	cm.setStartupMetricWriter(writer)
+	componentGauge := func(stage string) float64 {
+		return requireGauge(t, registry, "semengine_startup_units", map[string]string{
+			"owner": "components", "stage": stage,
+		})
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- cm.Start(t.Context()) }()
+	waitForSignal(t, gated.entered, "the gated component's Start entry")
+
+	require.Equal(t, startupUnitCounts{
+		Admitted:              2,
+		LifecycleParticipants: 1,
+		StartsInvoked:         1,
+		StartsCompleted:       0,
+		StartsFailed:          0,
+	}, cm.startupSnapshot())
+	require.Equal(t, float64(2), componentGauge("admitted"))
+	require.Equal(t, float64(1), componentGauge("starts_invoked"))
+	require.Equal(t, float64(0), componentGauge("starts_completed"))
+
+	release.release()
+	require.NoError(t, barrierStartResult(t, done, "the component manager's Start"))
+	completed := cm.startupSnapshot()
+	require.Equal(t, 1, completed.StartsCompleted)
+	require.Equal(t, 0, completed.StartsFailed)
+	require.Equal(t, float64(1), componentGauge("starts_completed"))
+}
+
+// TestReadinessIncludesHealthyNonLifecycleDiscoverables: after StartAll, /readyz answers READY
+// once the component manager's first health check passed, and NOT READY as soon as a component
+// with no lifecycle reports itself unhealthy (pin :264, which waited on the dropped
+// OnHealthChange and called the private startup steps).
+//
+// spec: operator-surface / /readyz says READY only after boot, while all is healthy
+func TestReadinessIncludesHealthyNonLifecycleDiscoverables(t *testing.T) {
+	plain := newStartupDiscoverable()
+	cm := newTestComponentManager(t,
+		barrierComposed(newBarrierTestComponent("lifecycle")), testComponent{name: "plain", instance: plain})
+	manager := createTestServiceManager(ManagerConfig{}, nil)
+	require.NoError(t, manager.RegisterInstance("component-manager", cm))
+	startTestManager(t, manager)
+	url := observedManagerHTTPURL(t, manager)
+
+	awaitStartupAnswer(t, url+"/readyz", http.StatusOK, "READY")
+	require.True(t, cm.IsHealthy())
+
+	plain.healthy.Store(false)
+	requireAnswer(t, url+"/readyz", http.StatusServiceUnavailable, "NOT READY")
+}
+
+// TestReadinessWaitsForInitialServiceHealthObservation: StartAll commits the full route set
+// while the component manager's first health check is still running, and /readyz answers NOT
+// READY until that check has passed, then READY (pin :321). The check is held by wrapping the
+// manager's own check through SetHealthCheck, as the pin did; the pin's bootCommitted flag is
+// read as the committed route /graph/triples answering.
+//
+// spec: operator-surface / /readyz says READY only after boot, while all is healthy
+func TestReadinessWaitsForInitialServiceHealthObservation(t *testing.T) {
+	cm := newTestComponentManager(t)
+	manager := createTestServiceManager(ManagerConfig{}, nil)
+	require.NoError(t, manager.RegisterInstance("component-manager", cm))
+	stopManagerAtEnd(t, manager)
+	// Registered after the stop, so it runs first: the component manager's Stop waits for its
+	// health goroutine, which is held in the check.
+	release := newReleaser(t)
+
+	checkEntered := make(chan struct{})
+	var enteredOnce sync.Once
+	cm.SetHealthCheck(func() error {
+		enteredOnce.Do(func() { close(checkEntered) })
+		<-release.ch
+		return cm.healthCheck()
+	})
+
+	require.NoError(t, manager.StartAll(t.Context()))
+	url := observedManagerHTTPURL(t, manager)
+	requireAnswer(t, url+"/graph/triples", http.StatusOK, "[]\n")
+	waitForSignal(t, checkEntered, "the component manager's first health check")
+	requireAnswer(t, url+"/readyz", http.StatusServiceUnavailable, "NOT READY")
+	require.False(t, cm.IsHealthy())
+
+	release.release()
+	awaitStartupAnswer(t, url+"/readyz", http.StatusOK, "READY")
+	require.True(t, cm.IsHealthy())
+}
+
+// TestStartupMuxAdmitsOnlyReadOnlyComponentDiagnostics: before StartAll commits, the main
+// listener serves the component manager's read-only routes (health, list, a component's status)
+// and answers its other routes 503 NOT READY (design D5; PR 2's design D6; pin :418, which built
+// the startup handler through the private steps). A service registered before the component
+// manager holds StartAll, so the component manager has not started either, as at the pin.
+//
+// spec: operator-surface / The service manager serves only diagnostics until boot commits
+func TestStartupMuxAdmitsOnlyReadOnlyComponentDiagnostics(t *testing.T) {
+	cm := newTestComponentManager(t, testComponent{name: "plain", instance: newStartupDiscoverable()})
+	release := newReleaser(t)
+	held := newGatedStartupService("held", release.ch)
+	manager := createTestServiceManager(ManagerConfig{}, nil)
+	require.NoError(t, manager.RegisterInstance("held", held))
+	require.NoError(t, manager.RegisterInstance("component-manager", cm))
+
+	start := beginObservedManagerStart(t, manager, release.release)
+	start.requireSignal(t, held.entered, "held service Start entry")
+	url := observedManagerHTTPURL(t, manager)
+	for _, path := range []string{"/components/health", "/components/list", "/components/status/plain"} {
+		requireAnswer(t, url+path, http.StatusOK, "")
+	}
+	for _, path := range []string{"/components/types", "/components/config/plain", "/components/flowgraph"} {
+		requireAnswer(t, url+path, http.StatusServiceUnavailable, "NOT READY")
+	}
+
+	release.release()
+	require.NoError(t, start.wait(t))
 }

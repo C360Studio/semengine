@@ -76,6 +76,20 @@ the check does not hold. The ban on new root contexts gains one narrow exception
 owner's `Start` creates the one run context for its continuing work, keeps it only as a cancel, and ends it inside
 `Stop`.
 
+**Note, 2026-10-21 (change `setup-04a-03-boot-service-component-manager`).** The Decision above leaves "how the
+manager receives and watches the root context" to change 3; that change names it here, and it is not a new ruling.
+`service.ComponentManager` watches no root context. Its `Start` takes the composition root's context only as the
+bound on `Start`, as `Manager` does with `StartAll`, and passes that same context to each component's `Start`; the
+manager keeps no per-component context or cancel and never ends the context it was given. The composition root is
+what reacts to the root context ending: on SIGTERM it calls `StopAll` (or the manager's `Stop`) with a fresh bounded
+context, and the component manager's `Stop` stops every component in reverse start order under that bound. So the
+parent's cancel still reaches a component through the manager's `Stop` and never through an inherited context; only
+the word "watches" in the second paragraph moves from the component manager to the composition root. Two things
+follow. A `Stop` that arrives while components are still starting waits for every `Start` to return, or returns its
+own context's error first, and a caller cuts a slow boot short only by ending the context it gave `Start`. The three
+composition roots already shut down this way (semsource `cmd/semsource/run.go:222`, semteams `cmd/semteams/main.go:937`
+and semboids `cmd/semboids/main.go:465`, read for this change's design).
+
 ## Alternatives rejected
 
 - **Keep the carried contract (option 1 on #282; doing nothing).** The run context descends from the Start context,

@@ -85,18 +85,18 @@ verify` passes on a clean tree at its commit.
 
 ## 3. Text, ledger, guidance, ADRs (D8)
 
-- [ ] 3.1 `service/README.md` and `service/doc.go` for the component manager, with D1's contract lines and D8's declared
+- [x] 3.1 `service/README.md` and `service/doc.go` for the component manager, with D1's contract lines and D8's declared
   degrades; pin ADR-095 and ADR-096 in `docs/adr/` with port notes; ADR-094's port note rewritten for the component
   manager's part; a dated note under ADR-113's Decision naming the composition root as what reacts to the root
   context ending (design D2, "Who reacts"; what `:66-69` left to change 3, no new ruling). Gate: `go doc ./service`
   lists only the kept surface; `task
   docs:check`.
-- [ ] 3.2 The `SchemaRef` rule (D8 Guidance) in the developer and reviewer contracts, with its rows in `AGENTS.md` § 1
+- [x] 3.2 The `SchemaRef` rule (D8 Guidance) in the developer and reviewer contracts, with its rows in `AGENTS.md` § 1
   and `.agents/rules-index.md`; the `service` ledger row edited in place, the `pkg/projection` row's sentence, the
   ADR-095 and ADR-096 rows; the `docs/repository-map.md` rows. Gate: `task verify` passes on a clean tree
   (`ledger:check`, `cover:check` with `service` at or above its floor, the number recorded on the PR, `docs:check`, the
   `AGENTS.md` size and row-count checks).
-- [ ] 3.3 #196 told that the component manager composes the guard; #195 told that this PR's 12 test clients use
+- [x] 3.3 #196 told that the component manager composes the guard; #195 told that this PR's 12 test clients use
   `fixtureClient`; #280 told that item 2 is the message logger's (D8); the PR body declares `Closes #360` (D8).
   #361-#364 stay open, listed in D8 as told. Any defect found and not fixed is filed
   (`status:blocked` on #359, linked without a closing keyword). Gate: each comment and issue read back (review stop).

@@ -27,8 +27,8 @@ The terms this README uses:
   reports equal the ports its declarer derives, and recording its declaration.
 - **Sealing**: closing boot admission. After `SealComposition`, the `Registry` refuses to create or admit another
   component until the process starts again with a new `Registry`.
-- **Component manager**: `service.ComponentManager`, which owns every live component and its lifecycle. It is not yet
-  in SemEngine; it arrives with setup change 3.
+- **Component manager**: `service.ComponentManager`, which owns every live component and its lifecycle: it builds each
+  configured instance once, starts the set (store providers first) and stops it in reverse start order.
 
 ## Registration
 
@@ -325,4 +325,4 @@ stop `Register`.
 - [payloadregistry](../payloadregistry): payload decoding for components that read `BaseMessage`
 - [storage/storeregistry](../storage/storeregistry): the stores components share
 
-`service` (the component manager) and `componentregistry` (a host's list of `Register` calls) are not yet in SemEngine.
+`componentregistry` (a host's list of `Register` calls) is not yet in SemEngine; each host writes its own.

@@ -2,17 +2,17 @@
 // BaseService, which a service embeds for its name, status and health check,
 // and the Service interface a service manager drives. Manager is that service
 // manager: it builds the services a configuration names, starts them, serves the
-// HTTP routes around them and stops them. Metrics is the service that serves the
-// Prometheus endpoint. The package also holds the helpers a composition root (the
+// HTTP routes around them and stops them. ComponentManager is the service that
+// owns the components. Metrics is the service that serves the Prometheus
+// endpoint. The package also holds the helpers a composition root (the
 // process's main function, which builds and wires everything) calls itself:
 // MaybeStartPProf, WireGraphRuntime and the OpenAPI registry, plus the
 // service-configuration and schema helpers the service manager reads.
 //
 // This package is ported from SemStreams in seven pull requests. The first
-// carried BaseService and the shared files; this one carries Manager and
-// Metrics. The component manager and the other services arrive with the later
-// ones; until then a composition supplies its own "component-manager" service
-// (see the service manager section).
+// carried BaseService and the shared files; the second Manager and Metrics; this
+// one carries ComponentManager, the service that owns the components (see the
+// component manager section). The other services arrive with the later ones.
 //
 // # Embedding BaseService
 //
@@ -67,16 +67,18 @@
 // hands it the services section of the configuration, and starts it:
 //
 //	services := service.NewServiceRegistry()
-//	if err := service.RegisterAll(services); err != nil { // offers "metrics"
+//	if err := service.RegisterAll(services); err != nil { // "metrics", "component-manager"
 //		return err
 //	}
-//	// Until the component manager is ported, register a constructor for
-//	// "component-manager" here too: services.Register("component-manager", ...).
 //
 //	manager := service.NewServiceManager(services)
 //	manager.UseHTTPMiddleware(authMiddleware) // optional; before StartAll
 //
-//	deps := &service.Dependencies{NATSClient: client, MetricsRegistry: registry, Logger: logger}
+//	deps := &service.Dependencies{
+//		NATSClient: client, MetricsRegistry: registry, Logger: logger,
+//		Platform: platform, Manager: configManager,
+//		ComponentRegistry: components, PayloadRegistry: payloads,
+//	}
 //	if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
 //		return err
 //	}
@@ -101,8 +103,8 @@
 // (default false), server_info (title, description and version of the API
 // document, default "SemEngine API", "SemEngine framework API" and "0.0.0"),
 // http_read_timeout (default 30s) and http_write_timeout (default 120s). The
-// configs of the services this package defines, service-manager and metrics,
-// are decoded strictly: an unknown key is refused, and so is a key that differs
+// configs of the services this package defines, service-manager, metrics and
+// component-manager, are decoded strictly: an unknown key is refused, and so is a key that differs
 // from a field's name only in letter case ("Port" for "port"), naming both
 // spellings. A service defined elsewhere receives its raw JSON and decodes it
 // itself. CreateService and RegisterInstance compose one more service by hand,
@@ -184,13 +186,129 @@
 // with RegisterOpenAPISpec. /docs serves a Swagger UI page that loads its script
 // and style sheet from unpkg.com, so a browser needs network access to it.
 //
+// # The component manager
+//
+// A component is one unit of a running composition: an input, processor,
+// output or storage unit. A binary makes the component factories available
+// through a component.Registry, and the components section of the
+// configuration names the instances to build. ComponentManager builds every
+// enabled component, starts them, serves their status over HTTP and stops them.
+// Every composition has one: component-manager may not be disabled. RegisterAll
+// registers its constructor, NewComponentManager, and its OpenAPI spec. Its
+// config takes no key; any key is refused, naming it. Its Dependencies fields:
+// Manager (the *config.Manager whose boot configuration it reads) and
+// ComponentRegistry are required; PayloadRegistry, NATSClient, Platform,
+// MetricsRegistry and Logger are given to each component, and with no
+// NATSClient the manager publishes no component health.
+//
+// NewComponentManager reads the boot configuration once; later writes to it are
+// desired state for the next boot and change nothing in the running set
+// (SemStreams ADR-094 and ADR-096, docs/adr). It builds each enabled component
+// through Registry.CreateComponent in instance-name order, checks the whole set
+// with composition.Analyze, and seals the registry (ADR-100). It returns an
+// error, and no service, when the Manager or ComponentRegistry is missing, when
+// any enabled component cannot be built (the error names every one that
+// failed), or when the composition has an error-severity finding.
+//
+// Start(ctx) refuses a nil or ended ctx, a second Start, and a Start after any
+// Stop (errs.ErrAlreadyStarted). The start order is fixed at construction:
+// components that provide stores (component.StoreProvider) by instance name,
+// then the rest by instance name. Start runs two phases, providers first; each
+// phase starts its components concurrently and the next begins only after every
+// Start in the current one returned. A failure in the first phase starts
+// nothing of the second. A component that is not a component.LifecycleComponent
+// is built and listed but never started or stopped.
+//
+// Each component's Start receives the context the manager's Start received.
+// The manager keeps no context of its own for a component and never ends the
+// one it was given, Stop included (ADR-113). A component makes its own run
+// context in Start and ends it in Stop; one that hangs its continuing work on
+// its Start context stops when the caller ends that context, before Stop
+// reaches it. The manager's health publisher and override-expiry reporter run
+// under a run context that Start creates and Stop ends.
+//
+// A failed Start returns every component failure joined, each naming its
+// component, after one rollback: it stops every component it launched, the
+// failing ones included, in reverse start order. If the rollback fails too, the
+// next Stop runs it again.
+//
+// Stop(ctx) is the only stop. It refuses a nil ctx; given an ended ctx it
+// returns that error and stops nothing. Before any Start it returns nil and a
+// later Start is refused. Otherwise it marks the stop begun (/readyz answers
+// 503 NOT READY from then), removes a provider's stores from the store registry,
+// stops each started component with ctx in reverse start order, then ends the
+// manager's own loops and its base service, and returns nil only once all are
+// released. A component whose Stop failed, or was not reached because ctx ended,
+// is stopped again by the next Stop; one whose Stop returned nil is not called
+// again. A Stop while another runs is refused as transient. A Stop that arrives
+// while Start is running waits for every component's Start to return, or
+// returns its own context's error first; a caller cuts a slow boot short only
+// by ending the context it gave Start.
+//
+// GetComponentHealth, GetComponentStatus, the /components routes and the
+// manager's health check wait on no lock and not on Start or Stop. Each asks the
+// component itself, so a request during or after Stop gets whatever the
+// component answers then; SemStreams kept such requests away from a stopping
+// component and this manager does not. A component author holds the line in
+// component.LifecycleComponent: Health, DataFlow and DebugStatus may be called
+// at any time and return without waiting for Start or Stop. The tree enforces
+// it for graph-ingest only. The manager's own health is unhealthy while any
+// component is in the failed state, naming each one with its last error.
+//
+// With a NATS client the manager publishes each admitted component's health on
+// health.component.<name> once as Start returns and then every 5 seconds. A
+// publish that fails is counted on
+// semengine_errors_total{service="component-manager",type="health_publish"} and
+// logged at Debug; the next component and round are still published. From Start
+// to Stop it also evaluates the live configuration's stream migration overrides
+// every minute and sets the gauge
+// semengine_streams_migration_override_expired{stream,owner} to 1 for a lapsed
+// bridge, 0 for an open one, with a Warn line per lapsed bridge. It only
+// reports; readiness is unaffected.
+//
+// The routes, mounted under /components and answering GET only (405 otherwise),
+// are health, list, types, types/{id}, status/{name} (?debug=true adds a
+// component's DebugStatus), config/{name}, flowgraph (JSON, or Mermaid with
+// ?format=mermaid), validate and paths. A name that is empty, "." or ".." or
+// decodes to a path separator is 400, an unknown one 404. Until StartAll commits
+// the full route set only health, list and status/{name} are served. flowgraph,
+// validate and paths project the composition result kept at construction and
+// compute nothing. BuildComponentTypeCatalog returns what types serves, for a
+// product that serves the catalog elsewhere. One declared difference: GET
+// /components/types/{id} for an unregistered type answers 404 with the body
+// {"error":"Component type <id> not found"} sent as text/plain, not JSON, as
+// SemStreams does; read the status code, not the text.
+//
+// ConfigureRulePackMutations(manager) hands a reconciler to each rule
+// processor. A composition root must call it after ConfigureFromServices and
+// before StartAll; without the call no ProjectionBinder is given one. It finds
+// the admitted components that implement ProjectionBinder (ComponentsImplementing
+// returns the components that implement any T, in start order), runs every
+// binder's PreflightProjectionMutations before changing anything, validates
+// each pack ID and refuses a duplicate, copies and validates each pack's
+// contracts, refuses contracts when there is no NATS client, and gives each pack
+// that has contracts one projection.MutationClient through SetPredicateReconciler.
+// No rule processor is in this tree yet, so today the call has no effect.
+//
+// /openapi.json takes its schemas only from the registry RegisterOpenAPISpec
+// fills, and the component manager's flowgraph and validate responses refer to
+// the Graph and Result schemas there. RegisterAll registers the component
+// manager's spec; a composition that registers NewComponentManager by hand must
+// register the spec itself, as
+//
+//	if svc, ok := manager.GetService("component-manager"); ok {
+//		service.RegisterOpenAPISpec("component-manager", svc.(service.HTTPHandler).OpenAPISpec())
+//	}
+//
+// or those references name schemas the document does not carry.
+//
 // # The metrics service
 //
 // Metrics serves the Prometheus endpoint. Its config keys are port (default
 // 9090) and path (default "/metrics"). Started by itself, it binds the port
 // between Start and Stop. Composed under a Manager, the Manager claims the server
 // before any service starts, serves it until StopAll, and Metrics reports healthy
-// while the server runs. Metrics is the one service RegisterAll registers today.
+// while the server runs. RegisterAll registers Metrics and the component manager.
 // A Metrics runs once: a second Start, and a Start after any Stop, are refused
 // with errs.ErrAlreadyStarted, and the context given to Start bounds Start only.
 //

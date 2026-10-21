@@ -119,3 +119,79 @@ func TestOpenAPIDocumentListsMountedRoutes(t *testing.T) {
 		require.Equal(t, http.StatusNotFound, status, "/docs is served while swagger_ui is false")
 	})
 }
+
+// TestOpenAPIDocumentSerialisesBodiesAsOpenAPI3: a service's declared request body and response
+// schemas reach /openapi.json in OpenAPI 3.0's shape: requestBody and each response's
+// content[mediaType].schema, a $ref, an array of $ref items for IsArray, and application/json when
+// the request body names no content type. The expected JSON is written from the OpenAPI 3.0.0
+// Operation, Request Body, Response and Media Type objects, not from the encoder (Codex review of
+// PR #353, issue #357).
+//
+// spec: operator-surface / /openapi.json documents the mounted routes
+func TestOpenAPIDocumentSerialisesBodiesAsOpenAPI3(t *testing.T) {
+	widgets := newRoutedService("widgets", func(prefix string, mux *http.ServeMux) {
+		mux.HandleFunc(prefix+"/items", answer(http.StatusOK, "[]"))
+	})
+	widgets.spec = &OpenAPISpec{Paths: map[string]PathSpec{
+		"/items": {
+			GET: &OperationSpec{
+				Summary: "List widgets",
+				Responses: map[string]ResponseSpec{
+					"200": {Description: "The widgets", ContentType: "application/json",
+						SchemaRef: "#/components/schemas/Widget", IsArray: true},
+				},
+			},
+			POST: &OperationSpec{
+				Summary: "Add a widget",
+				RequestBody: &RequestBodySpec{Description: "The widget", Required: true,
+					SchemaRef: "#/components/schemas/Widget"},
+				Responses: map[string]ResponseSpec{
+					"201": {Description: "Added", SchemaRef: "#/components/schemas/Widget"},
+					"204": {Description: "Nothing to add"},
+					"400": {Description: "Refused", ContentType: "text/plain"},
+				},
+			},
+		},
+	}}
+	manager := createTestServiceManager(ManagerConfig{}, createTestServiceDependencies())
+	require.NoError(t, manager.RegisterInstance("component-manager", newStandInComponentManager()))
+	require.NoError(t, manager.RegisterInstance("widgets", widgets))
+	startTestManager(t, manager)
+
+	status, body, err := httpGet(t.Context(), observedManagerHTTPURL(t, manager)+"/openapi.json")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, status, body)
+	var document struct {
+		Paths map[string]json.RawMessage `json:"paths"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(body), &document))
+	require.Contains(t, document.Paths, "/widgets/items")
+	require.JSONEq(t, `{
+		"get": {
+			"summary": "List widgets",
+			"responses": {
+				"200": {
+					"description": "The widgets",
+					"content": {"application/json": {"schema": {
+						"type": "array", "items": {"$ref": "#/components/schemas/Widget"}}}}
+				}
+			}
+		},
+		"post": {
+			"summary": "Add a widget",
+			"requestBody": {
+				"description": "The widget",
+				"required": true,
+				"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Widget"}}}
+			},
+			"responses": {
+				"201": {
+					"description": "Added",
+					"content": {"application/json": {"schema": {"$ref": "#/components/schemas/Widget"}}}
+				},
+				"204": {"description": "Nothing to add"},
+				"400": {"description": "Refused", "content": {"text/plain": {}}}
+			}
+		}
+	}`, string(document.Paths["/widgets/items"]))
+}

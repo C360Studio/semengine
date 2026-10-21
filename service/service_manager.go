@@ -74,7 +74,9 @@ type Manager struct {
 	startupMetrics     *startupMetricWriter
 	// stopping is set when a stop of the started services begins.
 	stopping bool
-	// stopCalled is set by the first StopAll given a live context; a later
+	// stopCalled is set by the first StopAll given a live context: from then
+	// /readyz answers NOT READY, even when that StopAll's context ends before
+	// the stop runs and a start still in progress commits, and a later
 	// StartHealthListener is refused.
 	stopCalled bool
 

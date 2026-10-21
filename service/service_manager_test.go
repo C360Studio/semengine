@@ -771,6 +771,48 @@ func TestReadinessRequiresCommitAndClearsBeforeChildStop(t *testing.T) {
 	require.NoError(t, <-stopResult)
 }
 
+// TestReadinessStaysClearedWhenStopAllExpiresDuringStart: a StopAll given a live context is a
+// stop request from its entry, even when its deadline ends while a service is still starting and
+// before any service is stopped. Once that start completes, StartAll commits, but /readyz answers
+// NOT READY, never READY (design D2; Codex review of PR #353, issue #356: SIGTERM during a slow
+// start).
+//
+// spec: operator-surface / /readyz says READY only after boot, while all is healthy
+func TestReadinessStaysClearedWhenStopAllExpiresDuringStart(t *testing.T) {
+	entered := make(chan struct{})
+	release := newReleaser(t)
+	slow := &failedStartRollbackService{
+		MockService: MockService{name: "slow", status: StatusRunning, healthy: true},
+		start: func(context.Context) error {
+			close(entered)
+			<-release.ch
+			return nil
+		},
+		stop: func(context.Context) error { return nil },
+	}
+	manager := createTestServiceManager(ManagerConfig{}, createTestServiceDependencies())
+	require.NoError(t, manager.RegisterInstance("component-manager", newStandInComponentManager()))
+	require.NoError(t, manager.RegisterInstance("slow", slow))
+
+	startResult := make(chan error, 1)
+	go func() { startResult <- manager.StartAll(t.Context()) }()
+	<-entered
+	stopManagerAtEnd(t, manager)
+
+	// The deadline ends while the guard waits for the start; the start is still blocked, so no
+	// service has been stopped when StopAll returns.
+	ctx, cancel := context.WithTimeout(t.Context(), 25*time.Millisecond)
+	defer cancel()
+	require.ErrorIs(t, manager.StopAll(ctx), context.DeadlineExceeded)
+
+	release.release()
+	require.NoError(t, <-startResult)
+	status, body, err := httpGet(t.Context(), observedManagerHTTPURL(t, manager)+"/readyz")
+	require.NoError(t, err)
+	require.Equal(t, http.StatusServiceUnavailable, status, "StopAll began, but /readyz answers %q", body)
+	require.Equal(t, "NOT READY", body)
+}
+
 // newUnconnectedClient returns a NATS client that never connects; the URL is never dialled.
 func newUnconnectedClient(t *testing.T) *natsclient.Client {
 	t.Helper()

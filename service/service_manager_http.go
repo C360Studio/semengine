@@ -460,13 +460,13 @@ func (m *Manager) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 }
 
 // currentStartupSnapshot reports startup: failed when a service or component
-// start failed, stopping once a stop began, starting until every service and
-// component lifecycle participant has started, not_ready until the commit or
-// while a service is not running and healthy or a component is unhealthy or
-// missing from health, and ready otherwise.
+// start failed, stopping once StopAll was called or a stop began, starting
+// until every service and component lifecycle participant has started,
+// not_ready until the commit or while a service is not running and healthy or
+// a component is unhealthy or missing from health, and ready otherwise.
 func (m *Manager) currentStartupSnapshot() startupSnapshot {
 	m.mu.RLock()
-	sealed, stopping := m.sealed, m.stopping
+	sealed, stopping := m.sealed, m.stopping || m.stopCalled
 	serviceCounts := m.serviceStartupCountsLocked()
 	services := make(map[string]Service, len(m.serviceOutcomes))
 	for name, outcome := range m.serviceOutcomes {
@@ -522,8 +522,11 @@ func (m *Manager) currentStartupSnapshot() startupSnapshot {
 			}
 		}
 	}
-	// A stop that began while the checks above ran clears the commit first.
-	if m.committedRoutes.Load() == nil {
+	// A StopAll called, or a stop begun, while the checks above ran.
+	m.mu.RLock()
+	stopCalled := m.stopCalled
+	m.mu.RUnlock()
+	if stopCalled || m.committedRoutes.Load() == nil {
 		snapshot.Status = "stopping"
 		return snapshot
 	}

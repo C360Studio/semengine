@@ -13,6 +13,7 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/c360studio/semengine/internal/httpadmission"
 	"github.com/c360studio/semengine/internal/tlsutil"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/security"
@@ -25,7 +26,7 @@ type Server struct {
 	server    *http.Server
 	listener  net.Listener
 	serveDone chan error
-	requests  *admittedRequests
+	requests  *httpadmission.Requests
 	registry  *MetricsRegistry
 	security  security.Config
 	mu        sync.Mutex // serializes server lifecycle fields
@@ -139,10 +140,10 @@ func (s *Server) start(ctx context.Context, supplied net.Listener, provided bool
 	})
 
 	// Create the server
-	s.requests = &admittedRequests{}
+	s.requests = &httpadmission.Requests{}
 	s.server = &http.Server{
 		Addr:    fmt.Sprintf(":%d", s.port),
-		Handler: s.requests.wrap(mux),
+		Handler: s.requests.Wrap(mux, "metrics server is stopping"),
 	}
 
 	// Configure TLS if enabled at platform level
@@ -204,14 +205,14 @@ func (s *Server) Stop(ctx context.Context) error {
 	if s.server == nil {
 		s.used = true
 		requests := s.requests
-		if requests == nil || requests.pending() == 0 {
+		if requests == nil || requests.Pending() == 0 {
 			s.mu.Unlock()
 			return nil
 		}
 		// An earlier Stop's context ended while admitted requests still ran.
 		s.stopping = true
 		s.mu.Unlock()
-		err := requests.wait(ctx)
+		err := requests.Wait(ctx)
 		s.mu.Lock()
 		s.stopping = false
 		s.mu.Unlock()
@@ -225,7 +226,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	s.stopping = true
 	s.mu.Unlock()
 	if requests != nil {
-		requests.closeAdmission()
+		requests.CloseAdmission()
 	}
 
 	var stopErr error
@@ -270,7 +271,7 @@ func (s *Server) Stop(ctx context.Context) error {
 	// Serve has returned, but a force-closed connection does not stop a handler that is
 	// still collecting; Stop waits for admitted requests within ctx.
 	if requests != nil {
-		if err := requests.wait(ctx); err != nil && !errors.Is(stopErr, err) {
+		if err := requests.Wait(ctx); err != nil && !errors.Is(stopErr, err) {
 			stopErr = errors.Join(stopErr, err)
 		}
 	}
@@ -315,85 +316,4 @@ func (s *Server) Address() string {
 		scheme = "https"
 	}
 	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, strconv.Itoa(port)), Path: s.path}).String()
-}
-
-// admittedRequests counts the requests a Server's handler has admitted and not yet
-// returned from, so Stop can wait for them after a forced close. Stop closes
-// admission first: a request that reaches the handler afterwards is refused, so
-// once admission is closed and nothing runs, which wait observes under the same
-// lock, no request can start collection.
-type admittedRequests struct {
-	mu     sync.Mutex
-	active int
-	closed bool          // admission closed by Stop
-	idle   chan struct{} // closed when active returns to zero; nil while none run
-}
-
-func (r *admittedRequests) wrap(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		if !r.begin() {
-			// Stop has begun: the request is refused rather than started, because a
-			// Stop may already have reported that no request runs.
-			w.Header().Set("Connection", "close")
-			http.Error(w, "metrics server is stopping", http.StatusServiceUnavailable)
-			return
-		}
-		defer r.end()
-		next.ServeHTTP(w, req)
-	})
-}
-
-// begin admits a request, or reports false once admission is closed.
-func (r *admittedRequests) begin() bool {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if r.closed {
-		return false
-	}
-	if r.active == 0 {
-		r.idle = make(chan struct{})
-	}
-	r.active++
-	return true
-}
-
-// closeAdmission refuses every later request; requests already admitted run on.
-func (r *admittedRequests) closeAdmission() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.closed = true
-}
-
-func (r *admittedRequests) end() {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	r.active--
-	if r.active == 0 {
-		close(r.idle)
-		r.idle = nil
-	}
-}
-
-func (r *admittedRequests) pending() int {
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	return r.active
-}
-
-// wait returns nil once no admitted request is running, or ctx's error if ctx
-// ends first.
-func (r *admittedRequests) wait(ctx context.Context) error {
-	for {
-		r.mu.Lock()
-		idle := r.idle
-		r.mu.Unlock()
-		if idle == nil {
-			return nil
-		}
-		select {
-		case <-idle:
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
 }

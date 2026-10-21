@@ -3,7 +3,6 @@ package metric
 import (
 	"context"
 	"net"
-	"net/http"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -105,28 +104,3 @@ func TestServerRefusesRequestAfterStopReportedCompletion(t *testing.T) {
 	}
 	require.NoError(t, server.Stop(t.Context()))
 }
-
-// TestAdmittedRequestsRefuseAfterClose: the refusal itself, at the wrapper. A request arriving
-// after admission closed gets 503 and its handler never runs; admission closed with nothing
-// running is observed as complete.
-func TestAdmittedRequestsRefuseAfterClose(t *testing.T) {
-	var requests admittedRequests
-	ran := false
-	handler := requests.wrap(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { ran = true }))
-	requests.closeAdmission()
-	recorder := &statusRecorder{header: http.Header{}}
-	handler.ServeHTTP(recorder, &http.Request{})
-	require.False(t, ran, "a request after admission closed must not run the handler")
-	require.Equal(t, http.StatusServiceUnavailable, recorder.status)
-	require.Zero(t, requests.pending())
-	require.NoError(t, requests.wait(t.Context()))
-}
-
-type statusRecorder struct {
-	header http.Header
-	status int
-}
-
-func (r *statusRecorder) Header() http.Header         { return r.header }
-func (r *statusRecorder) Write(b []byte) (int, error) { return len(b), nil }
-func (r *statusRecorder) WriteHeader(status int)      { r.status = status }

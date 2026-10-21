@@ -133,6 +133,7 @@ Each running engine serves the following. `{prefix}` is the path the component m
 | liveness and readiness | `/health`, `/healthz`, `/readyz` (ready only once every component the program started is ready) |
 | services and their health | `/services`, `/services/health` |
 | API description | `/openapi.json`, with a browsable version at `/docs` |
+| graph triples (read-only) | `/graph/triples` |
 | component health, list, types, status, config | `{prefix}health`, `{prefix}list`, `{prefix}types` and `{prefix}types/{id}`, `{prefix}status/{name}`, `{prefix}config/{name}` |
 | how the running components are wired, as a graph | `{prefix}flowgraph`, `{prefix}validate`, `{prefix}paths` |
 | message trace by ID, KV query and watch | the message logger's HTTP endpoints |

@@ -394,17 +394,6 @@ func (cm *ComponentManager) bootCompositionResult() *composition.Result {
 	return cm.bootFindings
 }
 
-// updateComponentState stores a component's lifecycle state and last error on
-// its record. Only the record's one writer calls it (see componentRecord).
-func (cm *ComponentManager) updateComponentState(name string, state component.State, err error) {
-	if record, ok := cm.componentsByName[name]; ok {
-		record.update(func(s *componentState) {
-			s.state = state
-			s.lastError = err
-		})
-	}
-}
-
 // createComponent builds one instance through the registry, running the
 // component's Initialize before the registry publishes its declaration, and
 // returns its record. The caller fixes the record's start order.

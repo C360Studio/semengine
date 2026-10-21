@@ -3,7 +3,6 @@ package service
 import (
 	"cmp"
 	"fmt"
-	"maps"
 	"slices"
 
 	"github.com/c360studio/semengine/component"
@@ -47,15 +46,15 @@ func ComponentsImplementing[T any](m *Manager) []T {
 	// The callback cannot fail, and withComponents returns only what its
 	// callback returns, so there is no error to report.
 	_ = components.withComponents(func(byName map[string]*component.ManagedComponent) error {
-		for _, name := range slices.Sorted(maps.Keys(byName)) {
-			managed = append(managed, byName[name])
+		for _, mc := range byName {
+			managed = append(managed, mc)
 		}
 		return nil
 	})
-	// Start order (providers by name, then the rest by name), never the map's:
-	// ConfigureRulePackMutations visits the packs in the same order on every
-	// run, so which pack a refusal names does not depend on map iteration.
-	slices.SortStableFunc(managed, func(a, b *component.ManagedComponent) int {
+	// Start order, never the map's: each StartOrder is a distinct position in
+	// the fixed start order built at construction, so one sort gives the same
+	// order on every run and ConfigureRulePackMutations visits the packs in it.
+	slices.SortFunc(managed, func(a, b *component.ManagedComponent) int {
 		return cmp.Compare(a.StartOrder, b.StartOrder)
 	})
 	var result []T

@@ -66,9 +66,10 @@ func (cs State) String() string {
 // Concurrent lifecycle calls are not part of the contract. Reads are: Health,
 // DataFlow and DebugStatus may be called at any time, during Start or Stop and
 // after Stop, and return without waiting for either; after Stop they report
-// what the component knows then. The component manager's health and status
-// routes call them so, and Stop does not wait for those routes. The rule is
-// tested for graph-ingest
+// what the component knows then. Callers do so without waiting for Stop: the
+// component manager's health and status routes, its health publisher (which
+// ends only after the components have stopped) and the service manager's
+// /readyz. The rule is tested for graph-ingest
 // (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop) and is review
 // only for components outside this module.
 //

@@ -590,7 +590,9 @@ func TestGraphTriplesSkipsOnlyADeletedKey(t *testing.T) {
 // filters often match several entities; lists them in a drawn permutation; draws each filter as
 // absent or one value from its pool, a subject included; and draws the limit from one, one below
 // the match count, the match count and one above, so a cut inside, at and past the matches is
-// reached by construction. Both assertions run on every draw.
+// reached by construction. Both assertions run on every draw. The generated part is its own subtest:
+// a failed example fails the parent test, and rapid refuses to run on a failed *testing.T, so the
+// generated assertions would otherwise never run once the example had failed.
 //
 // spec: operator-surface / /graph/triples answers a sorted, validated read of ENTITY_STATES
 func TestScanGraphTriplesMatchesSortedOracle(t *testing.T) {
@@ -620,69 +622,71 @@ func TestScanGraphTriplesMatchesSortedOracle(t *testing.T) {
 		}
 	})
 
-	rapid.Check(t, func(rt *rapid.T) {
-		listing := rapid.Permutation(ids).Draw(rt, "listing")
-		listing = listing[:rapid.IntRange(0, len(ids)).Draw(rt, "entities")]
-		values := map[string][]byte{}
-		stored := map[string][]message.Triple{}
-		for _, id := range listing {
-			triples := make([]message.Triple, rapid.IntRange(0, 3).Draw(rt, "triple count"))
-			for i := range triples {
-				triples[i] = entityTriple(id,
-					rapid.SampledFrom(predicates).Draw(rt, "predicate"),
-					rapid.SampledFrom(objects).Draw(rt, "object"))
+	t.Run("generated", func(t *testing.T) {
+		rapid.Check(t, func(rt *rapid.T) {
+			listing := rapid.Permutation(ids).Draw(rt, "listing")
+			listing = listing[:rapid.IntRange(0, len(ids)).Draw(rt, "entities")]
+			values := map[string][]byte{}
+			stored := map[string][]message.Triple{}
+			for _, id := range listing {
+				triples := make([]message.Triple, rapid.IntRange(0, 3).Draw(rt, "triple count"))
+				for i := range triples {
+					triples[i] = entityTriple(id,
+						rapid.SampledFrom(predicates).Draw(rt, "predicate"),
+						rapid.SampledFrom(objects).Draw(rt, "object"))
+				}
+				data, err := graph.MarshalEntityState(&graph.EntityState{ID: id, Triples: triples})
+				if err != nil {
+					rt.Fatalf("encode %s: %v", id, err)
+				}
+				values[id], stored[id] = data, triples
 			}
-			data, err := graph.MarshalEntityState(&graph.EntityState{ID: id, Triples: triples})
-			if err != nil {
-				rt.Fatalf("encode %s: %v", id, err)
+			params := tripleQueryParams{
+				subject:   rapid.SampledFrom(append([]string{""}, ids...)).Draw(rt, "subject filter"),
+				predicate: rapid.SampledFrom(append([]string{""}, predicates...)).Draw(rt, "predicate filter"),
+				object:    rapid.SampledFrom([]string{"", "x", "y", "2"}).Draw(rt, "object filter"),
 			}
-			values[id], stored[id] = data, triples
-		}
-		params := tripleQueryParams{
-			subject:   rapid.SampledFrom(append([]string{""}, ids...)).Draw(rt, "subject filter"),
-			predicate: rapid.SampledFrom(append([]string{""}, predicates...)).Draw(rt, "predicate filter"),
-			object:    rapid.SampledFrom([]string{"", "x", "y", "2"}).Draw(rt, "object filter"),
-		}
 
-		var matches []message.Triple
-		for _, id := range slices.Sorted(maps.Keys(stored)) {
-			for _, tr := range stored[id] {
-				if (params.subject == "" || tr.Subject == params.subject) &&
-					(params.predicate == "" || tr.Predicate == params.predicate) &&
-					(params.object == "" || fmt.Sprintf("%v", tr.Object) == params.object) {
-					matches = append(matches, tr)
+			var matches []message.Triple
+			for _, id := range slices.Sorted(maps.Keys(stored)) {
+				for _, tr := range stored[id] {
+					if (params.subject == "" || tr.Subject == params.subject) &&
+						(params.predicate == "" || tr.Predicate == params.predicate) &&
+						(params.object == "" || fmt.Sprintf("%v", tr.Object) == params.object) {
+						matches = append(matches, tr)
+					}
 				}
 			}
-		}
-		limits := []int{1}
-		for _, l := range []int{len(matches) - 1, len(matches), len(matches) + 1} {
-			if l > 1 && !slices.Contains(limits, l) {
-				limits = append(limits, l)
+			limits := []int{1}
+			for _, l := range []int{len(matches) - 1, len(matches), len(matches) + 1} {
+				if l > 1 && !slices.Contains(limits, l) {
+					limits = append(limits, l)
+				}
 			}
-		}
-		params.limit = rapid.SampledFrom(limits).Draw(rt, "limit")
-		want := matches[:min(params.limit, len(matches))]
+			params.limit = rapid.SampledFrom(limits).Draw(rt, "limit")
+			want := matches[:min(params.limit, len(matches))]
 
-		got, err := scanGraphTriples(t.Context(), &stubEntityReader{keys: listing, values: values}, params, discardLogger)
-		if err != nil {
-			rt.Fatalf("scan: %v", err)
-		}
-		if got == nil {
-			rt.Fatalf("scan returned nil, want an empty slice")
-		}
-		wantJSON, err := json.Marshal(want)
-		if err != nil {
-			rt.Fatalf("encode want: %v", err)
-		}
-		gotJSON, err := json.Marshal(got)
-		if err != nil {
-			rt.Fatalf("encode got: %v", err)
-		}
-		if want == nil {
-			wantJSON = []byte("[]")
-		}
-		if string(gotJSON) != string(wantJSON) {
-			rt.Fatalf("scan with %+v over listing %v:\n got: %s\nwant: %s", params, listing, gotJSON, wantJSON)
-		}
+			got, err := scanGraphTriples(t.Context(), &stubEntityReader{keys: listing, values: values}, params, discardLogger)
+			if err != nil {
+				rt.Fatalf("scan: %v", err)
+			}
+			if got == nil {
+				rt.Fatalf("scan returned nil, want an empty slice")
+			}
+			wantJSON, err := json.Marshal(want)
+			if err != nil {
+				rt.Fatalf("encode want: %v", err)
+			}
+			gotJSON, err := json.Marshal(got)
+			if err != nil {
+				rt.Fatalf("encode got: %v", err)
+			}
+			if want == nil {
+				wantJSON = []byte("[]")
+			}
+			if string(gotJSON) != string(wantJSON) {
+				rt.Fatalf("scan with %+v over listing %v:\n got: %s\nwant: %s", params, listing, gotJSON, wantJSON)
+			}
+		})
 	})
 }

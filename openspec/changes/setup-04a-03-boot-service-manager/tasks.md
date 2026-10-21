@@ -1,8 +1,51 @@
 # Tasks: setup-04a-03-boot-service-manager
 
-Each task names its outcome and the gate that proves it. Sections 2 onward arrive with the accepted design.
+Each task names its outcome and the gate that proves it. This change ports the service manager and the metrics service
+of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694). Tests come first. Record in
+`notes/<task>.md` how each test fails on the base commit, or which mutant it detects. Review stops (Codex) come after
+2.2 and 3.2. Each task ends only when `task verify` passes on a clean tree at its commit (#171).
 
 ## 1. Design
 
-- [ ] 1.1 Per-PR shape sweep of this PR's files and the design pass the pre-owner review and are accepted by the
-  owner. Gate: `task spec:check` and `task docs:check`.
+- [ ] 1.1 Shape sweep (`sweep.md`) and design pass the pre-owner review and are accepted by the owner, and the probe
+  note is posted on #353. Gate: `task spec:check` and `task docs:check`; the comment read back.
+
+## 2. Port (D1-D7)
+
+- [ ] 2.1 Tests first, in `service/` and `internal/keycase/`: the pin test files D7 lists, adapted (dead tests out,
+  runtime-stop and base-context tests flipped to D2, `t.Skip` in the `rapid` action made a no-op, the `StopAll` model
+  rewritten, `errs.ErrAlreadyStopped` in the idempotency test); `gaugeValue` and `requireGauge` in a helper file; the
+  two lifecycle-suite adapters; every new test D2-D6 names; `keycase.Check`'s own tests (a struct field, a nested
+  struct, a map key left alone). The notes cite the probe comment on #353. Gate: the tests fail on the base (the
+  types do not exist; note the compile errors).
+- [ ] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's interface and
+  default composition, D4's metrics service, D5's moved check (`config` calling it), D6's routes and the #349 fix in
+  `service/schema.go`. Gate: `go test -race ./service/ ./internal/keycase/ ./config/` and
+  `go test -tags integration ./service/ ./config/` pass, `TestManagerPassesTheLifecycleSuite` and
+  `TestMetricsPassesTheLifecycleSuite` included; `go build ./...`; `task verify` passes on a clean tree (review
+  stop).
+- [ ] 2.3 Sensitivity: each mutant D7 lists makes its named test fail and the revert makes it pass, through
+  `task mutate:check` for the unit tests and by hand with `-tags integration` where a test needs NATS (#129),
+  recorded in `notes/2.3.md` with the `rapid` seeds and check counts. Gate: `task verify` passes on a clean tree.
+
+## 3. Text, ledger, coverage, ADRs (D8)
+
+- [ ] 3.1 `service/doc.go` and `service/README.md` for the manager and the metrics service, with the contract lines D1
+  and D8 name; pin ADR-030 and ADR-094 in `docs/adr/` with port notes (design, Decision records). Gate:
+  `go doc ./service` lists only the kept surface; `task docs:check`.
+- [ ] 3.2 The `service` ledger row edited in place, the ADR-030 and ADR-094 rows, the `config` row's sentence; the
+  `docs/repository-map.md` rows (`service/`, `docs/adr/`, `internal/keycase/`). Gate: `task verify` passes on a clean
+  tree, which runs `ledger:check`, `cover:check` (`service` at or above its floor, the number recorded on the PR)
+  and `docs:check` (review stop).
+- [ ] 3.3 #344 told that service payloads now refuse letter-case variants and that the heartbeat's decode (PR 6)
+  closes it; #196 told that the manager and the metrics service compose the guard (or why not, from 2.2's notes).
+  Any defect found and not fixed is filed (`status:blocked` on #353, linked without a closing keyword). Gate: each
+  comment and issue read back.
+
+## 4. Verify, review and close
+
+- [ ] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `service` is recorded on
+  the PR.
+- [ ] 4.2 Cross-agent review of record at both stops, as PR comments; `reviewed-by:` in the PR body.
+- [ ] 4.3 The change is archived (`openspec archive setup-04a-03-boot-service-manager`) as the last content commit,
+  syncing `service-lifecycle` and `operator-surface` into `openspec/specs/`. Gate: `task spec:check`.

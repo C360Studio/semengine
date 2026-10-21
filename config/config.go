@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/c360studio/semengine/internal/keycase"
 	"github.com/c360studio/semengine/model"
 	"github.com/c360studio/semengine/pkg/platform"
 	"github.com/c360studio/semengine/pkg/security"
@@ -754,55 +755,7 @@ func rejectUnappliedNATSKeys(raw map[string]any) error {
 // (#325). Map keys are names a deployment chooses and are not checked; nor are
 // json.RawMessage and map[string]any payloads, which their owners decode.
 func rejectCaseVariantKeys(raw map[string]any) error {
-	return checkKeyCase(raw, reflect.TypeFor[Config](), "")
-}
-
-// checkKeyCase walks value beside t, the type it decodes into. A value that is
-// not an object is left to the decoder.
-func checkKeyCase(value any, t reflect.Type, path string) error {
-	for t.Kind() == reflect.Pointer {
-		t = t.Elem()
-	}
-	obj, ok := value.(map[string]any)
-	if !ok || (t.Kind() != reflect.Map && t.Kind() != reflect.Struct) {
-		return nil
-	}
-	fields := map[string]reflect.Type{}
-	if t.Kind() == reflect.Struct {
-		for i := range t.NumField() {
-			f := t.Field(i)
-			name, _, _ := strings.Cut(f.Tag.Get("json"), ",")
-			if !f.IsExported() || name == "-" {
-				continue
-			}
-			if name == "" {
-				name = f.Name
-			}
-			fields[name] = f.Type
-		}
-	}
-	for _, key := range slices.Sorted(maps.Keys(obj)) {
-		next := key
-		if path != "" {
-			next = path + "." + key
-		}
-		elem, declared := fields[key]
-		if t.Kind() == reflect.Map {
-			elem, declared = t.Elem(), true
-		}
-		if declared {
-			if err := checkKeyCase(obj[key], elem, next); err != nil {
-				return err
-			}
-			continue
-		}
-		for name := range fields {
-			if strings.EqualFold(key, name) {
-				return fmt.Errorf("config key %s must be written %s", next, strings.TrimSuffix(next, key)+name)
-			}
-		}
-	}
-	return nil
+	return keycase.Check(raw, reflect.TypeFor[Config](), "")
 }
 
 // objectsFolded returns every object in the given maps stored under a key

@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"reflect"
 	"sort"
 
+	"github.com/c360studio/semengine/internal/keycase"
 	"github.com/c360studio/semengine/types"
 )
 
@@ -127,9 +129,19 @@ func ensureJSONEOF(decoder *json.Decoder) error {
 	return nil
 }
 
+// decodeStrictServiceJSON decodes raw into target, refusing a key target does
+// not define and, first, a key that differs from its field's name only in
+// letter case, naming both spellings (keycase.Check). Empty raw leaves target
+// as it is. A document that does not parse is left to the decoder's error.
 func decodeStrictServiceJSON(raw json.RawMessage, target any) error {
 	if len(bytes.TrimSpace(raw)) == 0 {
 		return nil
+	}
+	var document any
+	if err := json.Unmarshal(raw, &document); err == nil {
+		if err := keycase.Check(document, reflect.TypeOf(target), ""); err != nil {
+			return err
+		}
 	}
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.DisallowUnknownFields()

@@ -1,6 +1,8 @@
 package service
 
 import (
+	"fmt"
+	"hash/fnv"
 	"reflect"
 	"strings"
 	"time"
@@ -137,24 +139,37 @@ func parseJSONTag(tag string) (name string, opts string) {
 	return name, opts
 }
 
-// TypeNameFromReflect extracts a clean type name from a reflect.Type.
-// For example: "service.RuntimeHealthResponse" -> "RuntimeHealthResponse"
+// TypeNameFromReflect returns the OpenAPI component name for t. A pointer is
+// named by its element, and a named type by its bare name
+// ("service.RuntimeHealthResponse" -> "RuntimeHealthResponse"). An unnamed type
+// is named by its shape, so a collection's schema never takes its element's
+// name (#349): []X is "list-X", [2]X is "array-2-X", map[K]V is "map-K-V", and
+// any other unnamed type, an anonymous struct among them, is its kind and a
+// hash of its Go spelling ("struct-1a2b3c4d"). Every name matches OpenAPI's
+// component-name grammar, ^[A-Za-z0-9._-]+$, when its named parts do.
 func TypeNameFromReflect(t reflect.Type) string {
-	// Handle pointers
 	if t.Kind() == reflect.Pointer {
 		return TypeNameFromReflect(t.Elem())
 	}
 
-	name := t.Name()
-	if name == "" {
-		// Anonymous type, use the string representation
-		name = t.String()
+	if name := t.Name(); name != "" {
+		// Remove package prefix if present
+		if idx := strings.LastIndex(name, "."); idx >= 0 {
+			name = name[idx+1:]
+		}
+		return name
 	}
 
-	// Remove package prefix if present
-	if idx := strings.LastIndex(name, "."); idx >= 0 {
-		name = name[idx+1:]
+	switch t.Kind() {
+	case reflect.Slice:
+		return "list-" + TypeNameFromReflect(t.Elem())
+	case reflect.Array:
+		return fmt.Sprintf("array-%d-%s", t.Len(), TypeNameFromReflect(t.Elem()))
+	case reflect.Map:
+		return "map-" + TypeNameFromReflect(t.Key()) + "-" + TypeNameFromReflect(t.Elem())
+	default:
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(t.String()))
+		return fmt.Sprintf("%s-%08x", t.Kind(), h.Sum32())
 	}
-
-	return name
 }

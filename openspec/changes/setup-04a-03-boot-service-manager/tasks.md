@@ -7,16 +7,20 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 
 ## 1. Design
 
-- [ ] 1.1 Shape sweep (`sweep.md`) and design pass the pre-owner review and are accepted by the owner, and the probe
-  note is posted on #353. Gate: `task spec:check` and `task docs:check`; the comment read back.
+- [ ] 1.1 Shape sweep (`sweep.md`) and design pass the pre-owner review and are accepted by the owner, who answers
+  Q-A and Q-B (design, Owner questions); the probe note (#353 comment 6315789814) and its round 2 addendum are on
+  #353. If an answer is no, the design's stated fallback replaces that part before 2.1. Gate: `task spec:check` and
+  `task docs:check`; each comment read back.
 
 ## 2. Port (D1-D7)
 
 - [ ] 2.1 Tests first, in `service/` and `internal/keycase/`: the pin test files D7 lists, adapted (dead tests out,
   runtime-stop and base-context tests flipped to D2, `t.Skip` in the `rapid` action made a no-op, the `StopAll` model
-  rewritten, `errs.ErrAlreadyStopped` in the idempotency test); `gaugeValue` and `requireGauge` in a helper file; the
-  two lifecycle-suite adapters; every new test D2-D6 names; `keycase.Check`'s own tests (a struct field, a nested
-  struct, a map key left alone). The notes cite the probe comment on #353. Gate: the tests fail on the base (the
+  rewritten, `errs.ErrAlreadyStopped` in the idempotency test, the two pause tests changed as D2 says, and the
+  refused-dial assertion added to `TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext`, which the pin never
+  checked); `gaugeValue` and `requireGauge` in a helper file; the two lifecycle-suite adapters; every new test D2-D6
+  names; `keycase.Check`'s own tests (one per shape, design § Generated checks) and the guard and its sensitivity test
+  moved from `config/load_test.go`. The notes cite the probe comment on #353. Gate: the tests fail on the base (the
   types do not exist; note the compile errors).
 - [ ] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's interface and
   default composition, D4's metrics service, D5's moved check (`config` calling it), D6's routes and the #349 fix in
@@ -31,12 +35,13 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
 ## 3. Text, ledger, coverage, ADRs (D8)
 
 - [ ] 3.1 `service/doc.go` and `service/README.md` for the manager and the metrics service, with the contract lines D1
-  and D8 name; pin ADR-030 and ADR-094 in `docs/adr/` with port notes (design, Decision records). Gate:
+  and D8 name; pin ADR-030 and ADR-094 in `docs/adr/` with port notes (design, Decision records); the
+  `/graph/triples` row in `docs/contract.md`'s operator table. Gate:
   `go doc ./service` lists only the kept surface; `task docs:check`.
 - [ ] 3.2 The `service` ledger row edited in place, the ADR-030 and ADR-094 rows, the `config` row's sentence; the
-  `docs/repository-map.md` rows (`service/`, `docs/adr/`, `internal/keycase/`). Gate: `task verify` passes on a clean
-  tree, which runs `ledger:check`, `cover:check` (`service` at or above its floor, the number recorded on the PR)
-  and `docs:check` (review stop).
+  `docs/repository-map.md` rows (`service/`, `docs/adr/`, `internal/keycase/`, and the ledger count, 88). Gate:
+  `task verify` passes on a clean tree, which runs `ledger:check`, `cover:check` (`service` at or above its floor, the
+  number recorded on the PR) and `docs:check` (review stop).
 - [ ] 3.3 #344 told that service payloads now refuse letter-case variants and that the heartbeat's decode (PR 6)
   closes it; #196 told that the manager and the metrics service compose the guard (or why not, from 2.2's notes).
   Any defect found and not fixed is filed (`status:blocked` on #353, linked without a closing keyword). Gate: each

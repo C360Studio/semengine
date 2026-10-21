@@ -22,13 +22,13 @@ Files (non-test pin lines, 2,960 in all): `service_manager.go` 1,958, `metrics.g
 | S5 | second stop sentinel read | `service_manager.go:888` | required (03B SS#1218; owner Q2) |
 | S6 | strict decoder takes another letter case | `service_configs.go:130-139`, read at `service_manager.go:178`, `metrics.go:74` | required (PR 1 D5) |
 | S8 | health publisher drops failures | `service_manager.go:680-693`, `:792-794`, `:798` | required in part |
-| S9 | test-only fields and seams | `service_manager.go:84-88`, `:1284`; `metrics.go:40-44` | optional in part; D2, D4 |
+| S9 | test-only fields and seams | `service_manager.go:84-88`, `:1284`; `metrics.go:40-44` | required in part (shape 4, as P2): the four `Manager` channels dropped; the `listen` parameter and `testListener` retained (Bounded port scope); D2, D4 |
 | S10 | one-implementation interfaces | `metrics.go:47`; `dependencies.go:20` | optional; D1, D4 |
 | S11 | two verb pairs on `Manager` | `service_manager.go:1040`, `:1054` | required (surface audit) |
 | S12 | `"component-manager"` by name | 9 sites in `service_manager.go` | optional |
 | S13 | direct `PrometheusRegistry().Register` | `startup_metrics.go:50` | optional; retained |
 | S14 | context rules otherwise clean | `graph_triples_http.go:147`, `:225`, `:239` request-scoped | none |
-| § 2.4 | renamed names | `service_manager.go:1752`, `:185`, `:191`; `startup_metrics.go:43`; `dependencies.go:34`, `:36` | required (build) |
+| § 2.4 | renamed names | `service_manager.go:1752`, `:185`, `:191`; `startup_metrics.go:43`; `dependencies.go:34`, `:36` | required: build for `:1752` and `dependencies.go`; owner ruling for the outward strings `:185`, `:191`, `startup_metrics.go:43` (#69 comment 6024010936; the version under Q-A) |
 | § 5 (a) | exported, no reader | `service_manager.go:354`, `:367`, `:379`, `:970`, `:988`, `:1006`, `:1019`, `:1040`, `:1054`, `:1355`; `registry.go:53` | required (audit) |
 
 ## 2. Findings added by this sweep
@@ -113,9 +113,9 @@ Searched and empty in these nine files: shape 5 (`grep -n 'err.Error()\|strings.
 
 ## 3. Pin probe for the two owners (inventory § 7, "Not run")
 
-Scratch copy of the pin, go1.26.4 darwin/arm64, about 10 minutes of wall clock; source, command and output in
-`probe-note.md`. This repository's `internal/harness/lifecycletest` copied into the scratch pin, with test-side
-adapters (`Start` = `StartAll`, `Stop` = `StopAll` for the `Manager`), run under `-race`:
+Scratch copy of the pin, go1.26.4 darwin/arm64, about 10 minutes of wall clock; source, command and output in the probe
+note, #353 comment 6315789814. This repository's `internal/harness/lifecycletest` copied into the scratch pin, with
+test-side adapters (`Start` = `StartAll`, `Stop` = `StopAll` for the `Manager`), run under `-race`:
 
 - **`Manager`:** 7 of 8 checks pass. `StartContextEndStopsNothing` fails: "after the Start context ended the owner
   stopped holding [health-publisher child-service]" (the main listener and the claimed metrics server stay). The

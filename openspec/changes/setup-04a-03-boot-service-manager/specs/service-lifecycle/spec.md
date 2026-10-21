@@ -4,20 +4,21 @@
 
 ### Requirement: The service manager's StartAll bounds StartAll
 
-`service.Manager.StartAll(ctx)` SHALL refuse a nil context, a context that has already ended, a second `StartAll` and
-a `StartAll` after `StopAll` (`errs.ErrAlreadyStarted`), and a refused `StartAll` SHALL start nothing. Otherwise it
-SHALL seal the composition, bind its main listener and the metrics server it claimed before it starts any service,
-start every service in registration order, and commit the full route set and readiness only after every service
-started. A failure at any step SHALL be returned joined with the rollback's error, and the rollback SHALL stop what
-had started; a rollback that fails SHALL be run again by `StopAll`. Ending the context given to `StartAll` after it
-returned SHALL stop nothing: no service, no health publishing, no listener, and no request's context. `StopAll(ctx)`
-SHALL be the only stop. It SHALL refuse a nil context; given a context that has already ended it SHALL return that
-context's error and stop nothing; before any `StartAll` it SHALL return nil, stopping only a health listener that
-was started. Otherwise it SHALL stop every service in reverse registration order, then the health publisher, the
-listeners and the metrics server, and return nil only when all are released; a listener SHALL stop accepting and
-`StopAll` SHALL wait for its in-flight requests. If `ctx` ends first, `StopAll` SHALL return that error and a later
-`StopAll` SHALL wait again. A `StopAll` after one that returned nil SHALL return nil and stop nothing. The manager
-and the metrics service SHALL pass the `lifecycle-suite` checks through test-side adapters (ADR-113).
+`service.Manager.StartAll(ctx)` SHALL refuse a nil context, a context that has already ended, a second `StartAll` and a
+`StartAll` after `StopAll` (`errs.ErrAlreadyStarted`), and a refused `StartAll` SHALL start nothing. Otherwise it SHALL
+seal the composition, bind its main listener and the metrics server it claimed before it starts any service, start every
+service in registration order, and commit the full route set and readiness only after every service started. A failure
+at any step SHALL be returned joined with the rollback's error, and the rollback SHALL stop what had started; a rollback
+that fails SHALL be run again by `StopAll`. Ending the context given to `StartAll` after it returned SHALL stop nothing:
+no service, no health publishing, no listener, and no request's context. `StopAll(ctx)` SHALL be the only stop. It SHALL
+refuse a nil context; given a context that has already ended it SHALL return that context's error and stop nothing;
+before any `StartAll` it SHALL return nil, stopping only a health listener that was started. Otherwise it SHALL stop
+every service in reverse registration order, then the health publisher, the listeners and the metrics server, and return
+nil only when all are released; a listener SHALL stop accepting and `StopAll` SHALL wait for its in-flight requests. If
+`ctx` ends first, `StopAll` SHALL close every connection still open on its listeners, ending each open request's
+context, and return that error; a later `StopAll` SHALL return nil only once every handler has returned. A `StopAll`
+after one that returned nil SHALL return nil and stop nothing. The manager and the metrics service SHALL pass the
+`lifecycle-suite` checks through test-side adapters (ADR-113).
 
 #### Scenario: The StartAll context ends after StartAll
 
@@ -35,12 +36,14 @@ and the metrics service SHALL pass the `lifecycle-suite` checks through test-sid
   live context returns nil
 - **AND** the test that verifies this is `TestStopAllWithAnEndedContextStopsNothing`
 
-#### Scenario: StopAll's context ends while a request blocks
+#### Scenario: StopAll's context ends while a request is open
 
-- **WHEN** a handler on the main listener blocks and `StopAll` is called with a 100 ms context
-- **THEN** `StopAll` returns `context.DeadlineExceeded`, a new connection to the listener is refused, and once the
-  handler returns a second `StopAll` returns nil
-- **AND** the test that verifies this is `TestStopAllWaitsAgainForABlockedRequest`
+- **WHEN** a handler on the main listener waits for its request context to end and then for a release, and `StopAll`
+  is called with a 100 ms context
+- **THEN** `StopAll` returns `context.DeadlineExceeded`, the handler has seen its request context end, and a new
+  connection to the listener is refused; a second `StopAll` does not return before the release, and returns nil
+  after it
+- **AND** the test that verifies this is `TestStopAllCutsOpenConnectionsAtItsDeadline`
 
 #### Scenario: A service fails to start
 
@@ -145,11 +148,21 @@ claim after `Metrics.Start` or `Stop` was called, or a second claim, SHALL be re
 ### Requirement: A service configuration key in another letter case is refused
 
 A service payload decoded strictly (the service manager's and the metrics service's) SHALL be refused when a key
-differs only in letter case from the name of the field it decodes into, at any depth, with an error naming the key
-as written and as declared. This SHALL be the same check `config` applies to its own document.
+differs only in letter case from the name of the field it decodes into, in any struct field, pointer or map value the
+payload type reaches, with an error naming the key as written and as declared. This SHALL be the same check `config`
+applies to its own document. A guard test SHALL fail if `config.Config`, `service.ManagerConfig` or
+`service.MetricsConfig` reaches a shape the check does not walk: an embedded struct, a slice or array of structs or
+maps, or a type that decodes itself.
 
 #### Scenario: A metrics key in another letter case
 
 - **WHEN** `service.NewMetrics` is given `{"Port":9091}`
 - **THEN** it returns an error containing `config key Port must be written port` and no service
 - **AND** the test that verifies this is `TestServiceConfigRefusesKeyInAnotherCase`
+
+#### Scenario: A payload type grows a shape the check does not walk
+
+- **WHEN** the guard runs over the three payload types, and over a type with each unwalked shape
+- **THEN** it reports nothing for the three, and names each unwalked shape
+- **AND** the tests that verify this are `TestPayloadTypesReachOnlyShapesTheLetterCaseCheckWalks` and
+  `TestLetterCaseWalkerGapsDetectsEachShape`

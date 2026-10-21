@@ -16,18 +16,19 @@ SemStreams `8b99efe9`.
   `middleware.go`, `dependencies.go`, `registry.go`, `register.go` and `metrics.go` with their tests. `RegisterAll`
   registers the metrics service; the component manager's constructor follows in PR 3.
 - `StartAll`'s context bounds `StartAll` and `StopAll(ctx)` is the only stop (ADR-113): ending that context stops no
-  service, loop or listener, request contexts no longer derive from it, and a `StopAll` whose context ended returns
-  its error and a later one waits again. A service whose `Stop` returns `errs.ErrAlreadyStopped` counts as stopped
-  (the SS#1218 proof the owner accepted).
+  service, loop or listener, request contexts no longer derive from it, and a `StopAll` given an already-ended
+  context stops nothing. When `StopAll`'s time runs out it still cuts the open connections, as SemStreams does, and a
+  later `StopAll` waits for any handler still finishing (owner question Q-B). A service whose `Stop` returns
+  `errs.ErrAlreadyStopped` counts as stopped (the SS#1218 proof the owner accepted).
 - The four concrete `*ComponentManager` checks become one unexported interface the component manager (PR 3)
   satisfies; `StorageObservabilityServiceName` moves beside the route prefixes.
 - Unread surface is dropped: seven `Manager` lookups, `StopHealthListener`, the `Manager`'s embedded `BaseService`
   with its `Start` and `Stop`, two `Registry` listings, `Metrics.Port`, `Path`, `URL` and `ConfigSchema`, and
   `Dependencies.ToolRegistry` and `LifecycleManager`.
 - A service payload key written in another letter case is refused, through the check `config` uses, moved to
-  `internal/keycase`. The health publisher counts a failed publish. `/graph/triples` validates `subject` and
-  `predicate`, sorts before its limit and fails a read error. `/openapi.json` names a slice apart from its element
-  (`Closes #349`).
+  `internal/keycase`. The health publisher counts a failed publish. If the owner agrees (Q-A), `/graph/triples`
+  validates `subject` and `predicate`, sorts before its limit and fails a read error. `/openapi.json` names a slice
+  apart from its element (`Closes #349`).
 - Carry pin ADR-030 (HTTP middleware) and ADR-094 (boot-only composition) into `docs/adr/` with port notes.
 
 ## Capabilities
@@ -41,6 +42,7 @@ SemStreams `8b99efe9`.
 ## Impact
 
 - `service/` grows by the manager and the metrics service; new `internal/keycase`; `config` calls the moved check.
+  `docs/contract.md`'s operator table gains `/graph/triples`.
 - semsource, semteams and semboids compose the manager as they do at the pin. Until PR 3 a composition needs a
   `component-manager` service of its own, because the manager refuses to boot without one. A `StopAll` given an
   already-ended context now stops nothing; each consumer already passes a fresh bounded one, except semboids on

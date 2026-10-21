@@ -5,8 +5,9 @@
 ### Requirement: The service manager serves only diagnostics until boot commits
 
 From the moment `StartAll` binds its main listener (`http_port`, default 8080, on every interface) until it commits,
-the listener SHALL serve `/health`, `/healthz`, `/readyz`, `/services` and `/services/health`, and SHALL answer any
-other path with status 503 and the body `NOT READY`. After the commit it SHALL serve the full route set: those five,
+the listener SHALL serve `/health`, `/healthz`, `/readyz`, `/services` and `/services/health`, and the component
+manager's read-only routes when it provides them, and SHALL answer any other path with status 503 and the body
+`NOT READY`. After the commit it SHALL serve the full route set: those five,
 `/graph/triples`, `/openapi.json`, `/docs` when `swagger_ui` is true, each service's routes under its prefix, and the
 routes of components that register their own. A route set prepared but not committed SHALL never be served.
 
@@ -110,8 +111,14 @@ other than `GET` SHALL answer 405. With no NATS client the manager SHALL answer 
 - **WHEN** generated entities, filters and a limit are scanned through a stub reader that lists keys out of order
 - **THEN** the answer equals the first `limit` triples of an oracle that sorts every matching triple by key and
   position
-- **AND** the tests that verify this are `TestScanGraphTriplesMatchesSortedOracle` and
-  `TestGraphTriplesReadsEntityStates`
+- **AND** the test that verifies this is `TestScanGraphTriplesMatchesSortedOracle`
+
+#### Scenario: Read from a live bucket
+
+- **WHEN** entities are written to `ENTITY_STATES` on a NATS server and `/graph/triples` is requested with a
+  `subject`
+- **THEN** it answers 200 with that entity's triples and no other entity's
+- **AND** the test that verifies this is `TestGraphTriplesReadsEntityStates`
 
 #### Scenario: A read error other than a deleted key
 
@@ -141,8 +148,9 @@ a Warn (pin ADR-030).
 
 `StartHealthListener(ctx, port)` SHALL do nothing and return nil for port 0. Otherwise it SHALL bind `:port` before
 it returns, returning a bind error, and serve `/health` and `/healthz` with the main listener's answers until
-`StopAll`, which SHALL stop it whether or not `StartAll` ran. `ctx` SHALL bound the bind only. A second call, or a
-call after `StopAll` began, SHALL be refused.
+`StopAll`, which SHALL stop it whether or not `StartAll` ran. `ctx` SHALL bound the bind only: ending it after the
+call returned SHALL stop nothing and SHALL end no request's context. A second call, or a call after `StopAll` began,
+SHALL be refused.
 
 #### Scenario: Health listener
 
@@ -150,3 +158,10 @@ call after `StopAll` began, SHALL be refused.
 - **THEN** it answers 200 with `OK`, and after `StopAll` a second `StartHealthListener` is refused
 - **AND** the tests that verify this are `TestStartHealthListener_BindsHealthAndHealthz` and
   `TestHealthListenerCannotRebindAfterCompletedStop`
+
+#### Scenario: The start context ends
+
+- **WHEN** the context given to `StartHealthListener` is cancelled after it returned
+- **THEN** `/healthz` on the health listener answers 200 with `OK`, and the context the server gives a new connection
+  has not ended
+- **AND** the test that verifies this is `TestHealthListenerRequestContextOutlivesStartContext`

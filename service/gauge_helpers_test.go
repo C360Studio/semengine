@@ -9,7 +9,8 @@ import (
 )
 
 // gaugeValue and requireGauge are the pin's (storage_observability_test.go:75-112), moved here for
-// the startup-metric tests (design D7).
+// the startup-metric tests (design D7). They also read a counter, such as semengine_errors_total
+// (TestHealthPublishFailureIsCounted): the pin read only gauges.
 
 func gaugeValue(t *testing.T, registry *metric.MetricsRegistry, name string, labels map[string]string) (float64, bool) {
 	t.Helper()
@@ -36,6 +37,9 @@ func gaugeValue(t *testing.T, registry *metric.MetricsRegistry, name string, lab
 				}
 			}
 			if matched {
+				if counter := m.GetCounter(); counter != nil {
+					return counter.GetValue(), true
+				}
 				return m.GetGauge().GetValue(), true
 			}
 		}

@@ -212,7 +212,7 @@ func TestStartupReadinessAndAtomicPromotion(t *testing.T) {
 
 	release.release()
 	require.NoError(t, start.wait(t))
-	requireAnswer(t, url+"/graph/triples", http.StatusOK, "[]")
+	requireAnswer(t, url+"/graph/triples", http.StatusOK, "[]\n")
 	requireAnswer(t, url+"/readyz", http.StatusOK, "READY")
 
 	componentManager.healthy.Store(false)

@@ -120,6 +120,24 @@ func tripleMatchesQuery(t message.Triple, p tripleQueryParams) bool {
 	return true
 }
 
+// handleGraphTriples serves GET /graph/triples from ENTITY_STATES.
+func (m *Manager) handleGraphTriples(w http.ResponseWriter, r *http.Request) {
+	serveGraphTriples(w, r, m.queryGraphTriples, m.logger)
+}
+
+// queryGraphTriples scans ENTITY_STATES for the triples params selects. With no
+// NATS client it answers an empty list, not an error.
+func (m *Manager) queryGraphTriples(ctx context.Context, params tripleQueryParams) ([]message.Triple, error) {
+	if m.natsClient == nil {
+		return []message.Triple{}, nil
+	}
+	reader, err := kvcatalog.OpenCatalogReader(ctx, m.natsClient, graph.BucketEntityStates)
+	if err != nil {
+		return nil, fmt.Errorf("open %s bucket: %w", graph.BucketEntityStates, err)
+	}
+	return scanGraphTriples(ctx, reader, params, m.logger)
+}
+
 // serveGraphTriples answers GET /graph/triples with the triples querier returns,
 // as JSON. The service manager's handler passes its ENTITY_STATES query.
 //

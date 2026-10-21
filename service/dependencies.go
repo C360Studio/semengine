@@ -22,6 +22,7 @@ type Dependencies struct {
 	Manager           *config.Manager           // Centralized configuration management
 	ComponentRegistry *component.Registry       // Component registry for ComponentManager
 	PayloadRegistry   *payloadregistry.Registry // Shared payload registry plumbed to component deps
+	ServiceManager    *Manager                  // The manager that constructs the service
 }
 
 // Constructor defines the standard constructor signature for all services.

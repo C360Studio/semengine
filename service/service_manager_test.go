@@ -657,7 +657,8 @@ func TestStopAllCutsOpenConnectionsAtItsDeadline(t *testing.T) {
 
 // TestStartAllRollbackWaitsForAnInFlightRequest: a service whose Start blocks until released and
 // then fails holds StartAll open while a /services request blocks in a middleware. StartAll does
-// not return before that request's handler returns, and the request answers "status":"stopping"
+// not return before that request's handler returns, and the request answers "status":"failed", the
+// startup status a failed service start takes over a begun stop (pin service_manager.go:1824)
 // (design D2, the drained-request leg of the pin's
 // TestMetricsBindFailureClosesSharedAndStartsNoLaterService).
 //
@@ -712,7 +713,7 @@ func TestStartAllRollbackWaitsForAnInFlightRequest(t *testing.T) {
 	answer := <-request
 	require.NoError(t, answer.err)
 	require.Equal(t, http.StatusOK, answer.status)
-	require.Contains(t, answer.body, `"status":"stopping"`)
+	require.Contains(t, answer.body, `"status":"failed"`)
 	require.NoError(t, manager.StopAll(stopContext(t)))
 }
 

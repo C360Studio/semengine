@@ -167,12 +167,21 @@ named:
     metrics bind, no service started, the main listener refuses a dial) without the pause. Its drained-request leg
     moves to `TestStartAllRollbackWaitsForAnInFlightRequest`: a service whose `Start` blocks until released and then
     fails holds `StartAll` open while a `/services` request blocks in a middleware; `StartAll` does not return before
-    that request's handler returns, and the request answers `"status":"stopping"`.
+    that request's handler returns, and the request answers `"status":"failed"`: the snapshot checks a failed start
+    before a begun stop, as the pin does (`:1824-1830`).
   - The `listen` parameter of the unexported `startHealthListener` (`:1284`) is retained (Bounded port scope): it has
     a production caller, `StartHealthListener`, which passes `net.Listen`, the shape PR 1's `startPProf`
     (`service/pprof.go:59`) has, and tests need it because port 0 means disabled, so no call asks for a kernel-picked
     port. Its tests: `TestStartHealthListener_BindsHealthAndHealthz`, `_ZeroIsNoOp`,
     `TestHealthListenerCannotRebindAfterCompletedStop`, `TestHealthListenerRequestContextOutlivesStartContext`.
+  - The main listener's `httpListener` field (`service/service_manager.go`) is retained (Bounded port scope): it is
+    set at the bind and cleared when the listener is released, and its pin reader, the stop path (`:1419`), is gone,
+    because the port stops the listener through `http.Server.Shutdown`, which closes it. Tests read it to find the
+    bound port: they set `http_port` to 0 directly, which no production path does (`ConfigureFromServices` turns 0
+    into 8080), so no production call reports a kernel-picked port. Its readers: `observedManagerHTTPURL`, the
+    lifecycle suite's `managerOwner.Observe`, and the tests that check the listener was never bound or was released
+    (`TestStartAllRollsBackMainAndPublisherAfterPublisherStartFailure`,
+    `TestMetricsBindFailureClosesSharedAndStartsNoLaterService` and four more).
 - **The `Manager` is not a `Service`** (S11, P3): no embedded `BaseService`; a `logger` field, set from
   `deps.Logger` by `ConfigureFromServices` (P4, `TestManagerLogsThroughTheInjectedLogger`).
 

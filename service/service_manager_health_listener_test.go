@@ -32,7 +32,7 @@ func startHealthOnBoundListener(ctx context.Context, t *testing.T, manager *Mana
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = listener.Close() })
+	// The manager owns the listener from here: its StopAll, which every caller runs, closes it.
 	require.NoError(t, manager.startHealthListener(ctx, 1, func(string, string) (net.Listener, error) {
 		return listener, nil
 	}))

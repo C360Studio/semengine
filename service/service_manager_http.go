@@ -77,13 +77,11 @@ func (m *Manager) startMainListener() error {
 		return fmt.Errorf("bind HTTP listener: %w", err)
 	}
 	dispatch := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		mux := startup
-		if m.bootCommitted.Load() {
-			if full := m.httpRoutes.Load(); full != nil {
-				mux = full
-			}
+		if full := m.committedRoutes.Load(); full != nil {
+			full.ServeHTTP(w, r)
+			return
 		}
-		mux.ServeHTTP(w, r)
+		startup.ServeHTTP(w, r)
 	})
 	// The admission wrapper is outermost, so a request admitted before a stop
 	// began is waited for whatever middleware does with it.
@@ -117,7 +115,6 @@ func (m *Manager) stopMainListener(ctx context.Context) error {
 	m.mu.Lock()
 	m.httpServer, m.httpListener, m.httpServeDone, m.httpRequests = nil, nil, nil, nil
 	m.mu.Unlock()
-	m.httpRoutes.Store(nil)
 	return nil
 }
 
@@ -214,10 +211,6 @@ func serveHTTP(server *http.Server, listener net.Listener, logger *slog.Logger, 
 func stopHTTP(ctx context.Context, server *http.Server, serveDone <-chan struct{}, requests *httpadmission.Requests) error {
 	requests.CloseAdmission()
 	err := server.Shutdown(ctx)
-	if errors.Is(err, net.ErrClosed) {
-		// The listener was closed already, by its owner; the shutdown completed.
-		err = nil
-	}
 	if err != nil {
 		if closeErr := server.Close(); closeErr != nil && !errors.Is(closeErr, net.ErrClosed) {
 			err = errors.Join(err, closeErr)
@@ -421,7 +414,7 @@ func (m *Manager) composedServices() []Service {
 func (m *Manager) handleSystemHealth(w http.ResponseWriter, _ *http.Request) {
 	services := m.composedServices()
 	m.mu.RLock()
-	natsClient := m.natsClient
+	natsClient, logger := m.natsClient, m.logger
 	m.mu.RUnlock()
 
 	subStatuses := make([]health.Status, 0, len(services)+1)
@@ -445,7 +438,7 @@ func (m *Manager) handleSystemHealth(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusServiceUnavailable)
 	}
 	if err := json.NewEncoder(w).Encode(systemHealth); err != nil {
-		m.logger.Error("Failed to encode system health response", "error", err)
+		logger.Error("Failed to encode system health response", "error", err)
 	}
 }
 
@@ -505,7 +498,7 @@ func (m *Manager) currentStartupSnapshot() startupSnapshot {
 	case !servicesComplete || !componentsComplete:
 		snapshot.Status = "starting"
 		return snapshot
-	case !m.bootCommitted.Load():
+	case m.committedRoutes.Load() == nil:
 		snapshot.Status = "not_ready"
 		return snapshot
 	}
@@ -530,7 +523,7 @@ func (m *Manager) currentStartupSnapshot() startupSnapshot {
 		}
 	}
 	// A stop that began while the checks above ran clears the commit first.
-	if !m.bootCommitted.Load() {
+	if m.committedRoutes.Load() == nil {
 		snapshot.Status = "stopping"
 		return snapshot
 	}

@@ -3,7 +3,7 @@ package service
 import "net/http"
 
 // HTTPMiddleware wraps an http.Handler. Products supply middleware
-// via Manager.UseHTTPMiddleware before Start; the Manager wraps the
+// via Manager.UseHTTPMiddleware before StartAll; the Manager wraps the
 // framework's HTTP mux with the chain at server boot.
 //
 // Application order is outermost-first: the slice element at index 0

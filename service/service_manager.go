@@ -58,11 +58,9 @@ type Manager struct {
 	// run stopAll through it (ADR-113).
 	lifecycle lifecycleguard.Guard
 
-	// bootCommitted is set when StartAll commits the full route set and cleared
-	// when a stop begins; the main listener serves the full set only while set.
-	bootCommitted atomic.Bool
-	// httpRoutes is the full route set StartAll committed.
-	httpRoutes atomic.Pointer[http.ServeMux]
+	// committedRoutes is the full route set, stored when StartAll commits and
+	// set to nil when a stop begins; the main listener serves it while set.
+	committedRoutes atomic.Pointer[http.ServeMux]
 
 	// mu guards the fields below it.
 	mu       sync.RWMutex
@@ -86,7 +84,8 @@ type Manager struct {
 	// middleware is ignored.
 	httpStarted bool
 
-	// The main listener, set from its bind until a stop released it.
+	// The main listener, set from its bind until a stop released it. Only tests
+	// read httpListener, for the bound port (design D2, "Test-only code").
 	httpServer    *http.Server
 	httpListener  net.Listener
 	httpServeDone chan struct{}
@@ -164,13 +163,6 @@ func (m *Manager) bindConstructorDependencies(deps *Dependencies) *Dependencies 
 // has no registered constructor is refused. Nothing is composed unless every
 // constructor succeeds. It is refused once StartAll sealed the composition.
 func (m *Manager) ConfigureFromServices(services types.ServiceConfigs, deps *Dependencies) error {
-	m.mu.RLock()
-	sealed := m.sealed
-	m.mu.RUnlock()
-	if sealed {
-		return &CompositionSealedError{Operation: "configure", Name: "service-manager"}
-	}
-
 	resolved, err := ResolveServiceConfigs(services)
 	if err != nil {
 		return fmt.Errorf("resolve service configs: %w", err)
@@ -388,9 +380,9 @@ func (m *Manager) startAll(ctx context.Context) error {
 
 	m.logger.Debug("Starting services", "count", len(services))
 	for _, admitted := range services {
-		m.recordServiceStart(admitted.name, false, nil)
+		m.recordStartInvoked(admitted.name)
 		startErr := admitted.service.Start(ctx)
-		m.recordServiceStart(admitted.name, true, startErr)
+		m.recordStartCompleted(admitted.name, startErr)
 		if startErr != nil {
 			m.logger.Error("Service start failed", "service", admitted.name, "error", startErr)
 			return fmt.Errorf("failed to start service %s: %w", admitted.name, startErr)
@@ -407,8 +399,7 @@ func (m *Manager) startAll(ctx context.Context) error {
 	if err := m.startHealthPublisher(ctx); err != nil {
 		return fmt.Errorf("start health publisher: %w", err)
 	}
-	m.httpRoutes.Store(fullMux)
-	m.bootCommitted.Store(true)
+	m.committedRoutes.Store(fullMux)
 	m.logger.Info("All services started", "count", len(services), "port", m.config.HTTPPort)
 	return nil
 }
@@ -419,9 +410,6 @@ func (m *Manager) createComponentManager() error {
 	m.mu.RLock()
 	_, exists := m.services[componentManagerName]
 	deps := m.dependencies
-	if deps == nil {
-		deps = &Dependencies{NATSClient: m.natsClient, Manager: m.configManager, Logger: m.logger}
-	}
 	m.mu.RUnlock()
 	if exists {
 		return nil
@@ -468,17 +456,24 @@ func (m *Manager) sealComposition() ([]admittedService, error) {
 	return services, nil
 }
 
-// recordServiceStart records that the service's Start was called or, when
-// completed is set, that it returned startErr, and publishes the service
-// startup counts.
-func (m *Manager) recordServiceStart(name string, completed bool, startErr error) {
+// recordStartInvoked records that the service's Start was called and publishes
+// the service startup counts.
+func (m *Manager) recordStartInvoked(name string) {
 	m.mu.Lock()
 	if outcome := m.serviceOutcomes[name]; outcome != nil {
-		if completed {
-			outcome.startCompleted, outcome.startErr = true, startErr
-		} else {
-			outcome.startInvoked = true
-		}
+		outcome.startInvoked = true
+	}
+	writer := m.startupMetrics
+	m.mu.Unlock()
+	writer.publishServices()
+}
+
+// recordStartCompleted records that the service's Start returned startErr and
+// publishes the service startup counts.
+func (m *Manager) recordStartCompleted(name string, startErr error) {
+	m.mu.Lock()
+	if outcome := m.serviceOutcomes[name]; outcome != nil {
+		outcome.startCompleted, outcome.startErr = true, startErr
 	}
 	writer := m.startupMetrics
 	m.mu.Unlock()
@@ -727,7 +722,7 @@ func (m *Manager) StopAll(ctx context.Context) error {
 func (m *Manager) stopAll(ctx context.Context) error {
 	m.mu.Lock()
 	m.stopping = true
-	m.bootCommitted.Store(false)
+	m.committedRoutes.Store(nil)
 	var started []admittedService
 	for _, name := range slices.Backward(m.order) {
 		if outcome := m.serviceOutcomes[name]; outcome != nil && outcome.startInvoked {

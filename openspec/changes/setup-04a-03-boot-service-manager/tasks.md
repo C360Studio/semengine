@@ -23,7 +23,7 @@ of `service` (PR 2 of 7 in the split the owner accepted, #9 comment 6296023694).
   names; `keycase.Check`'s own tests (one per shape, design § Generated checks) and the guard and its sensitivity test
   moved from `config/load_test.go`. The notes cite the probe comment on #353. Gate: the tests fail on the base (the
   types do not exist; note the compile errors).
-- [ ] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's interface and
+- [x] 2.2 The nine files from the pin with the module path rewritten, D1's surface, D2's lifecycle, D3's interface and
   default composition, D4's metrics service, D5's moved check (`config` calling it), the admitted-request counter moved
   to `internal/httpadmission` (`metric` and `service` calling it, D2), D6's routes and the #349 fix in
   `service/schema.go`. Gate:

@@ -13,10 +13,10 @@ import (
 	"github.com/c360studio/semengine/health"
 )
 
-// The pin's TestServiceManager_StopAllCleanup, TestServiceManager_ReverseOrderShutdown and
-// TestServiceManager_ConcurrentStartStop drive StartAll and StopAll and move with the manager's
-// tests (task 2.1, part 3). The pin's mockService.RegisterMetrics is not carried: Service has no
-// such method here and metric has no MetricsRegistrar.
+// The pin's mockService.RegisterMetrics is not carried: Service has no such method here and
+// metric has no MetricsRegistrar. The pin's StopAllCleanup and ReverseOrderShutdown started each
+// service by hand and called StopAll without StartAll, which stops no service here (design D2),
+// so they compose through StartAll, which also creates component-manager from its constructor.
 
 // mockService implements the Service interface for testing
 type mockService struct {
@@ -236,4 +236,137 @@ func TestServiceManager_ErrorHandling(t *testing.T) {
 	// Test getting non-existent service
 	_, exists := manager.GetService("non-existent")
 	assert.False(t, exists, "Expected false for non-existent service")
+}
+
+// registerComponentManagerConstructor registers the constructor StartAll uses to create the
+// mandatory component-manager.
+func registerComponentManagerConstructor(t *testing.T, registry *Registry) {
+	t.Helper()
+	require.NoError(t, registry.Register("component-manager", func(_ json.RawMessage, _ *Dependencies) (Service, error) {
+		return newMockService("component-manager"), nil
+	}))
+}
+
+// createMockServices registers and creates one mockService per name, in order.
+func createMockServices(t *testing.T, registry *Registry, manager *Manager, names []string) []*mockService {
+	t.Helper()
+	created := make([]*mockService, 0, len(names))
+	for _, name := range names {
+		require.NoError(t, registry.Register(name, func(_ json.RawMessage, _ *Dependencies) (Service, error) {
+			return newMockService(name), nil
+		}))
+		service, err := manager.CreateService(name, json.RawMessage(`{}`), &Dependencies{})
+		require.NoError(t, err)
+		mock, ok := service.(*mockService)
+		require.True(t, ok, "CreateService returned %T", service)
+		created = append(created, mock)
+	}
+	return created
+}
+
+// TestServiceManager_StopAllCleanup: StopAll stops every service StartAll started, and the
+// manager then holds none (pin registry_race_test.go:204, which read the dropped GetAllServices).
+func TestServiceManager_StopAllCleanup(t *testing.T) {
+	registry := NewServiceRegistry()
+	manager := NewServiceManager(registry)
+	registerComponentManagerConstructor(t, registry)
+	names := []string{"service-1", "service-2", "service-3", "service-4", "service-5"}
+	services := createMockServices(t, registry, manager, names)
+
+	require.NoError(t, manager.StartAll(t.Context()))
+	for _, service := range services {
+		assert.True(t, service.IsHealthy(), "service %s is not healthy after StartAll", service.Name())
+	}
+
+	require.NoError(t, manager.StopAll(stopContext(t)))
+	for _, service := range services {
+		assert.True(t, service.IsStopped(), "service %s was not stopped", service.Name())
+		assert.False(t, service.IsHealthy(), "service %s is healthy after StopAll", service.Name())
+		_, found := manager.GetService(service.Name())
+		assert.False(t, found, "the manager still holds %s after StopAll", service.Name())
+	}
+}
+
+// TestServiceManager_ReverseOrderShutdown: StopAll stops services in reverse registration order
+// (pin :247).
+func TestServiceManager_ReverseOrderShutdown(t *testing.T) {
+	registry := NewServiceRegistry()
+	manager := NewServiceManager(registry)
+	registerComponentManagerConstructor(t, registry)
+
+	var shutdownOrder []string
+	var mu sync.Mutex
+	for _, name := range []string{"first", "second", "third", "fourth"} {
+		require.NoError(t, registry.Register(name, func(_ json.RawMessage, _ *Dependencies) (Service, error) {
+			return &shutdownTrackingService{
+				mockService: newMockService(name),
+				shutdownCallback: func() {
+					mu.Lock()
+					shutdownOrder = append(shutdownOrder, name)
+					mu.Unlock()
+				},
+			}, nil
+		}))
+		_, err := manager.CreateService(name, json.RawMessage(`{}`), &Dependencies{})
+		require.NoError(t, err)
+	}
+
+	require.NoError(t, manager.StartAll(t.Context()))
+	require.NoError(t, manager.StopAll(stopContext(t)))
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, []string{"fourth", "third", "second", "first"}, shutdownOrder,
+		"services did not stop in reverse registration order")
+}
+
+// TestServiceManager_ConcurrentStartStop: services read concurrently while StartAll runs; once it
+// returned, ending its context stops nothing, and only StopAll stops the services (design D2,
+// ADR-113; pin :289, which counted the dropped GetHealthyServices and read GetAllServices).
+//
+// spec: service-lifecycle / The service manager's StartAll bounds StartAll
+func TestServiceManager_ConcurrentStartStop(t *testing.T) {
+	registry := NewServiceRegistry()
+	manager := NewServiceManager(registry)
+	registerComponentManagerConstructor(t, registry)
+	const numServices = 20
+	names := make([]string, numServices)
+	for i := range names {
+		names[i] = fmt.Sprintf("service-%d", i)
+	}
+	services := createMockServices(t, registry, manager, names)
+
+	startCtx, endStart := context.WithCancel(t.Context())
+	defer endStart()
+	var wg sync.WaitGroup
+	startErr := make(chan error, 1)
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		startErr <- manager.StartAll(startCtx)
+	}()
+	for i := range 10 {
+		wg.Add(1)
+		go func(id int) {
+			defer wg.Done()
+			if service, exists := manager.GetService(fmt.Sprintf("service-%d", id)); exists {
+				_ = service.IsHealthy()
+				_ = service.Status()
+			}
+		}(i)
+	}
+	wg.Wait()
+	require.NoError(t, <-startErr)
+
+	endStart()
+	for _, service := range services {
+		assert.True(t, service.IsHealthy(), "service %s is not healthy after StartAll's context ended", service.Name())
+		assert.False(t, service.IsStopped(), "ending StartAll's context stopped %s", service.Name())
+	}
+
+	require.NoError(t, manager.StopAll(stopContext(t)))
+	for _, service := range services {
+		assert.True(t, service.IsStopped(), "StopAll did not stop %s", service.Name())
+		_, found := manager.GetService(service.Name())
+		assert.False(t, found, "the manager still holds %s after StopAll", service.Name())
+	}
 }

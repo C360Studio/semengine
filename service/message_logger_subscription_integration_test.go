@@ -5,6 +5,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"testing"
 	"time"
@@ -311,4 +312,65 @@ func TestMessageLoggerCapturesCoveredSubjectOnce(t *testing.T) {
 
 	require.Equal(t, want, capturedMessages(ml))
 	require.Equal(t, int64(2), readSubscriptionStats(t, ml).TotalMessages)
+}
+
+// TestMessageLoggerRetriesSubscribeUntilConnected is D2's "Retry, declared", replacing pin
+// message_logger_registry_test.go:58-73 (a subscribe that fails is retried and the degraded state
+// clears) without its injected subscriber and retry clock. The logger starts on a client built for
+// the shared server's URL but not yet connected, so every subscribe fails with ErrNotConnected
+// (natsclient/client.go:1074-1078), the state a NATS outage during boot leaves. Start returns nil;
+// /stats reports the subject unsubscribed and the logger's health check, run through the base
+// service's production path, turns it unhealthy. Once the client connects, the retry subscribes:
+// the degraded state clears, the logger is healthy again, and a message published then is stored.
+// A logger whose health check is not wired stays healthy through the outage and fails here.
+func TestMessageLoggerRetriesSubscribeUntilConnected(t *testing.T) {
+	url := shared.Reset(t)
+	client, err := natsclient.NewClient(url,
+		natsclient.WithTimeout(clientTimeout),
+		natsclient.WithMaxReconnects(0),
+		natsclient.WithHealthInterval(0),
+	)
+	require.NoError(t, err)
+	// Registered after the reset, so it runs before the reset's check that no connection is left.
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), stopBound)
+		defer cancel()
+		if err := client.Close(ctx); err != nil {
+			t.Errorf("cleanup Close: %v", err)
+		}
+	})
+
+	const subject = "logger.until-connected"
+	ml := startSubscriptionLogger(t, client, `{"monitor_subjects":["`+subject+`"]}`, nil)
+
+	stats := readSubscriptionStats(t, ml)
+	require.True(t, stats.Degraded, "a subject that failed to subscribe is reported")
+	require.NotEmpty(t, stats.DegradedReason)
+	ml.performHealthCheck()
+	require.False(t, ml.IsHealthy(), "a logger holding an unsubscribed subject is unhealthy")
+
+	connectCtx, cancelConnect := context.WithTimeout(t.Context(), stopBound)
+	defer cancelConnect()
+	require.NoError(t, client.Connect(connectCtx))
+	require.NoError(t, client.WaitForConnection(connectCtx))
+
+	// The retry runs on its own every 100 ms and signals nothing a caller can wait on (no seam is
+	// added for a test, #186), so the test polls the two production reads under a bounded context.
+	recovered, err := probe.Await(connectCtx, func(context.Context) (subscriptionStats, error) {
+		ml.performHealthCheck()
+		s := readSubscriptionStats(t, ml)
+		if s.Degraded || !ml.IsHealthy() {
+			return s, fmt.Errorf("degraded=%t (%q) healthy=%t", s.Degraded, s.DegradedReason, ml.IsHealthy())
+		}
+		return s, nil
+	}, func(subscriptionStats) bool { return true })
+	require.NoError(t, err, "the retry subscribes once the client connects")
+	require.Equal(t, []string{subject}, recovered.MonitoredSubjects)
+
+	want := capturedMessage{Subject: subject, Payload: `{"phase":"connected"}`}
+	publishAndFlush(t, client, want)
+	require.NoError(t, stopLogger(t, ml))
+	require.Equal(t, []capturedMessage{want}, capturedMessages(ml))
+	require.Empty(t, (&messageLoggerOwner{ml: ml}).Observe().Unresolved,
+		"a Stop that returned nil leaves no retry, subscription or base service running")
 }

@@ -26,4 +26,4 @@ after the docs. Each task ends only when `task verify` passes on a clean tree at
 - [x] 3.1 `service/README.md`, `service/doc.go`, `internal/flowgraph/README.md`, `internal/flowgraph/doc.go` and the
   admission ledger rows (`service`, `internal/flowgraph`) updated; #280 commented with the item 2 outcome; the D3
   adoption sweep filed as one tracking issue and linked from the PR.
-- [ ] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.
+- [x] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.

@@ -149,7 +149,8 @@ func TestMessageLoggerMonitorsOnlyConfiguredSubjects(t *testing.T) {
 	)
 	require.NoError(t, stopLogger(t, ml))
 
-	require.Equal(t, want, capturedMessages(ml))
+	// Each subscription delivers on its own goroutine, so the order across subjects is not promised.
+	require.ElementsMatch(t, want, capturedMessages(ml))
 	require.Equal(t, int64(2), readSubscriptionStats(t, ml).TotalMessages)
 }
 

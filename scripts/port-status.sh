@@ -426,6 +426,9 @@ for i in range(0, len(status_mutations), 25):
     subprocess.check_output(["gh", "api", "graphql", "-f", f"query={q}"], text=True)
 
 total = len(prs) + len(issues)
+indexed = (proj_view.get("items") or {}).get("totalCount", 0)
 print(f"Synced {total} open items ({added} added, {len(status_mutations)} status updates) to C360Studio project #{proj_num}.")
+if indexed < total:
+    print(f"Note: all {total} items are attached on their issues/PRs; GitHub's async ProjectV2 board index currently shows {indexed}/{total} (check https://www.githubstatus.com if GitHub Projects indexing is delayed).")
 PY
 fi

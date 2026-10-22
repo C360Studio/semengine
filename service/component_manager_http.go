@@ -27,16 +27,29 @@ var _ componentStartup = (*ComponentManager)(nil)
 // extractComponentName returns the name a status, config or types route
 // carries: the whole of the request path after route, the exact pattern the
 // handler was registered under (<prefix>/status/ and so on), with one trailing
-// slash allowed. It reads the escaped path, where an encoded separator
-// survives, and decodes it once with path semantics. A name that is empty, "."
-// or "..", or holds a separator, raw or decoded, is refused, so "a%2Fb" and
-// "a/b" are refused rather than reduced to "b" (design D5; #365). Binding the
-// registered route, not searching for its word, keeps a prefix that holds a
-// route word ("/api/status/components") serving its names (#366).
+// slash allowed. route is matched as ServeMux matched it, segment by segment
+// with each side path-unescaped once (an invalid escape compared as written),
+// so an escaped mount prefix such as "/api/v%2F1/components" binds as
+// registered. The name is the rest of the escaped path, where an encoded
+// separator survives, decoded once with path semantics. A name that is empty,
+// "." or "..", or holds a separator, raw or decoded, is refused, so "a%2Fb"
+// and "a/b" are refused rather than reduced to "b" (design D5; #365). Binding
+// the registered route, not searching for its word, keeps a prefix that holds
+// a route word ("/api/status/components") serving its names (#366).
 func extractComponentName(r *http.Request, route string) (string, bool) {
-	rest, ok := strings.CutPrefix(r.URL.EscapedPath(), (&url.URL{Path: route}).EscapedPath())
-	if !ok {
-		return "", false
+	unescape := func(segment string) string {
+		if decoded, err := url.PathUnescape(segment); err == nil {
+			return decoded
+		}
+		return segment
+	}
+	rest := strings.TrimPrefix(r.URL.EscapedPath(), "/")
+	for _, want := range strings.Split(strings.Trim(route, "/"), "/") {
+		segment, after, ok := strings.Cut(rest, "/")
+		if !ok || unescape(segment) != unescape(want) {
+			return "", false
+		}
+		rest = after
 	}
 	name, err := url.PathUnescape(strings.TrimSuffix(rest, "/"))
 	if err != nil {

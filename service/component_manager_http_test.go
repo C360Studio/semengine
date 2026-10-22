@@ -313,6 +313,24 @@ func TestComponentRoutesRespectTheirMountPrefix(t *testing.T) {
 	}
 }
 
+// TestComponentRoutesRespectEscapedMountPrefix: a mount prefix holding an escape, including an
+// escaped slash inside one segment, is matched the way ServeMux matched it, so its names are served.
+func TestComponentRoutesRespectEscapedMountPrefix(t *testing.T) {
+	cm := newDebugStatusComponentManager(t)
+	for _, prefix := range []string{"/api/v%201/components", "/api/v%2F1/components"} {
+		mux := http.NewServeMux()
+		cm.RegisterHTTPHandlers(prefix, mux)
+		for _, route := range []string{"status", "config", "types"} {
+			path := prefix + "/" + route + "/test-component"
+			w := httptest.NewRecorder()
+			mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+			if w.Code != http.StatusOK {
+				t.Errorf("GET %s: got %d, want 200", path, w.Code)
+			}
+		}
+	}
+}
+
 // TestFlowValidationHandlerProjectsLibraryResult: <components>/validate serves the result kept at
 // construction verbatim. The pin handed a struct literal a result whose status its arrays could
 // not derive; a manager built through NewComponentManager keeps the library's own analysis, so

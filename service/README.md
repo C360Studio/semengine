@@ -4,13 +4,15 @@ Package `service` holds what every long-running SemEngine service shares: `BaseS
 its name, status and health check, and the `Service` interface a service manager drives. `Manager` is that service
 manager: it builds the services a configuration names, starts them, serves the HTTP routes around them and stops
 them. `ComponentManager` is the service that owns the components. `Metrics` is the service that serves the Prometheus
-endpoint. The package also holds the helpers a composition root (the process's `main` function, which builds and wires
-everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
+endpoint. `MessageLogger` is the service that keeps the newest messages seen on chosen NATS subjects for
+inspection. The package also holds the helpers a composition root (the process's `main` function, which builds and
+wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
 service-configuration and schema helpers the service manager reads.
 
 The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
-the second `Manager` and `Metrics`; this one carries `ComponentManager`, the service that owns the components
-([The component manager](#the-component-manager)). The other services arrive with the later ones.
+the second `Manager` and `Metrics`; the third `ComponentManager`, the service that owns the components
+([The component manager](#the-component-manager)); this one carries `MessageLogger`
+([The message logger](#the-message-logger)). The other services arrive with the later ones.
 
 ## Embedding BaseService
 
@@ -78,7 +80,7 @@ the configuration, and starts it:
 
 ```go
 services := service.NewServiceRegistry()
-if err := service.RegisterAll(services); err != nil { // offers "metrics" and "component-manager"
+if err := service.RegisterAll(services); err != nil { // offers "metrics", "component-manager", "message-logger"
     return err
 }
 
@@ -374,14 +376,153 @@ The rule for any service that does this is in the developer contract: every `Sch
 `GetUnhealthyComponents`, `DefaultComponentManagerConfig`, the configuration's `enabled_components` key and its
 `Validate`, and the component manager's config subscribers and live-configuration routes, which ADR-094 retired.
 
+## The message logger
+
+`MessageLogger` is a service that subscribes to NATS subjects and keeps the newest messages it sees in memory, so a
+developer can look at what flows through a running system. It also reads NATS KV buckets (NATS's key-value store) over
+HTTP. It writes nothing to NATS and nothing to the graph.
+
+### Enabling it
+
+The message logger is off unless the configuration turns it on: `ResolveServiceConfigs` adds `component-manager`,
+`service-manager` and `metrics` when they are missing, and does not add `message-logger`. `RegisterAll` registers its
+constructor, `NewMessageLoggerService`, and its OpenAPI spec. Enable it in the `services` section:
+
+```json
+{
+  "services": {
+    "message-logger": {
+      "enabled": true,
+      "config": {
+        "monitor_subjects": ["agent.>", "tool.>"],
+        "max_entries": 10000
+      }
+    }
+  }
+}
+```
+
+Its `Dependencies` fields: `NATSClient` and `PayloadRegistry` are required, `ComponentRegistry` is required when
+`monitor_subjects` holds `"*"`, and `MetricsRegistry` and `Logger` are optional.
+
+| Key | Meaning |
+| --- | --- |
+| `monitor_subjects` | NATS subjects to watch. `"*"` stands for the NATS, NATS-request and JetStream port subjects of every admitted component (never `*`, `>` or `_INBOX` subjects). Empty means `["*"]`. |
+| `max_entries` | How many messages to keep, 0 to 100000. 0 means 10000. The oldest are overwritten. |
+| `sample_rate` | Store one message in every `sample_rate` and only count the rest. 0 and 1 store every message. |
+| `output_to_stdout` | Also print one line per stored message. |
+
+Construction refuses, naming the problem: an unknown key (or a key in another letter case), a nil NATS client, a nil
+payload registry, `"*"` without a component registry, `max_entries` below 0 or above 100000, and `sample_rate` below 0.
+
+### What it captures
+
+`Start` works out the subject set once. Each subject is then checked against one grammar, owned by
+`internal/flowgraph`: one or more `.`-separated tokens, none empty; `*` and `>` only as a whole token; `>` only as the
+last; no space, tab, line feed, carriage return or form feed. This is stricter than NATS in two ways: NATS takes a token
+such as `a*` as plain text and accepts a form feed, and the logger refuses both. A subject that fails the check
+makes `Start` fail, as invalid data, with an error naming the subject and where it came from (`monitor_subjects`, or
+the component and port that declare it). The check runs before the base service starts and before any NATS call, so a
+refused `Start` holds nothing, connected or not.
+
+A subject that another subject in the set covers (`a.>` covers `a.b`) is not subscribed, and the omission is listed
+in `/stats` under `subject_overlaps`. Two subscribed subjects can still overlap without either covering the other
+(`a.b.*` and `*.b.c` both match `a.b.c`); a message on such a subject is then stored twice.
+
+Each message is stored as an entry: a sequence number, the time, the subject, the message type and summary, the
+trace and span IDs when the message carries them, and the payload as `raw_data`. A message that decodes as a typed
+envelope (a `message.BaseMessage` whose type is in the payload registry) is stored under its type name; any other is
+stored with type `raw`. A payload that is not JSON is stored as a JSON string, so every entry can be served.
+
+### Starting and stopping
+
+`Start(ctx)` refuses a nil or ended `ctx`, a second `Start`, and a `Start` after any `Stop`
+(`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. `ctx` bounds `Start` only: ending it afterwards stops
+nothing, and messages keep being stored. `Start` checks `ctx` before each subscribe; a subscribe already running is
+not shortened by it, and how long `Start` can outlast its context is not promised.
+
+A subscribe that fails does not fail `Start`. The logger keeps running and retries that subject every 100 ms until it
+succeeds. While any subject is unsubscribed:
+
+- `/stats` reports `subject_reconciliation_degraded` as true and `subject_reconciliation_error` names each subject with
+  its last error;
+- the logger's health check fails, naming the subjects, so `IsHealthy` turns false and `/readyz` answers not ready.
+  Health checks run every 30 seconds, so the change shows within one interval of the failure and again within one
+  interval of the retry succeeding. On a normal boot the first check runs before any subscribe and is healthy.
+
+`Stop(ctx)` is the only stop. It refuses a nil `ctx`; given an ended `ctx` it returns that error and stops nothing.
+Otherwise it ends the retry, drains every subscription (a message being handled when `Stop` begins is stored), ends
+every open KV watch stream, and stops the base service, returning nil once all are released. If `ctx` ends first, or a
+drain fails, `Stop` returns the error and leaves what is left for the next `Stop`. A `Stop` after one that returned nil
+returns nil; a `Stop` while another runs is refused as transient. Messages published after `Stop` are not stored.
+
+### What `/stats` reports
+
+| Key | Meaning |
+| --- | --- |
+| `total_messages` | Every message received, sampled or not. |
+| `sampled_messages` | Messages stored under `sample_rate`. |
+| `valid_messages` | Stored messages that decoded as typed envelopes. |
+| `invalid_messages` | Stored messages that did not (type `raw`). |
+| `sample_rate`, `max_entries` | The configured values, after defaults. |
+| `start_time`, `last_message_time`, `uptime_seconds` | Logger start, last message received, and seconds since start. |
+| `monitored_subjects` | The subjects currently subscribed, sorted; empty after `Stop`. |
+| `subject_overlaps` | Each omitted covered subject: `broader`, `covered`, and `resolution` (`covered subscription omitted`). |
+| `subject_reconciliation_degraded` | True while a subject is unsubscribed. |
+| `subject_reconciliation_error` | The unsubscribed subjects and their last errors; empty when none. |
+
+### The routes
+
+Mounted under `/message-logger/` and answering `GET` only (405 otherwise). `entries`, `stats` and `trace` answer from
+memory at any time, including after `Stop`.
+
+- `entries`: the newest entries, newest first. `limit` defaults to 100 and is capped at 10000; a missing, non-numeric,
+  zero or negative value gives 100. `subject` is a NATS subject pattern (`*` one token, `>` the remaining tokens)
+  applied before the limit; a pattern NATS cannot parse matches nothing. `subject=*` matches only one-token subjects:
+  write `>` for all, and `agent.>` for everything under `agent`.
+- `stats`: the object above.
+- `subjects`: the subscribed subjects as a JSON array; `[]` after `Stop`.
+- `trace/{traceID}`: the entries still held for a trace ID (32 hex characters, else 400), oldest first, as
+  `{"trace_id", "count", "entries"}`. An entry the buffer has overwritten is gone.
+- `kv/{bucket}`: the entries of an existing KV bucket, keys sorted before `limit` applies. `pattern` is a key glob: one
+  `*` as prefix, suffix, both ends or in the middle, or none for an exact key; the default matches every key. `limit`
+  defaults to 100 and is capped at 1000. `status` keeps only records whose top-level JSON `status` equals it. Values
+  are answered as stored (a value that is not JSON as a JSON string). A bucket that does not exist is 404 and is never
+  created; a bucket name that is empty, `.`, `..` or holds `/`, `\`, `*` or `>` is 400; a lookup, listing or read
+  failure is 500, naming the key for a read.
+- `kv/{bucket}/watch`: a stream of Server-Sent Events (SSE), described next.
+
+### The watch stream
+
+`kv/{bucket}/watch` answers 503 once `Stop` has begun, 400 for a bad bucket name or `pattern` (empty or `*` watches
+every key; anything else must be a NATS KV key filter, and a final `>` is accepted), 404 for a missing bucket and 500
+for another lookup failure; none of these opens a stream. Otherwise it sends:
+
+1. `event: connected` with `{"bucket","pattern","message"}`, then `retry: 5000`;
+2. one `event: kv_change` for each key's current value, then one with `operation` `initial_sync_complete`;
+3. one `kv_change` per later change. `operation` is what NATS records for the entry: `put`, `delete` or `purge`.
+   `value` is present for a `put` only.
+
+The logger does not read `Last-Event-ID`: a client that reconnects gets a new initial replay. Each stream buffers up to
+100 events between its KV watcher and the client. If the client reads too slowly and an event does not fit, the stream
+ends: the events already buffered are sent, then one `event: error` with `{"error":"watch fell behind: events were
+dropped"}`, and the response ends. No `kv_change`, and no `initial_sync_complete`, follows a dropped event, so a
+client that sees `initial_sync_complete` has seen every initial value. Each stream runs its own KV watcher.
+
+### Not ported
+
+`GetMessages`, `ConfigSchema`, `DefaultMessageLoggerConfig`, the exported `NewMessageLogger` and `SetDecoder`, the
+reconciliation of a changing subject set, and the test-only seams the pin carried. `service/configurable.go`
+(`ConfigSchema`, `PropertySchema`, `NewConfigSchema`) is removed with them.
+
 ## The metrics service
 
 `Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
 `/metrics`). Started by itself, it binds the port between `Start` and `Stop`. Composed under a `Manager`, the
 `Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
-the server runs. `RegisterAll` registers `metrics` and `component-manager`. A `Metrics` runs once: a second `Start`,
-and a `Start` after any `Stop`, are refused with `errs.ErrAlreadyStarted`, and the context given to `Start` bounds
-`Start` only.
+the server runs. A `Metrics` runs once: a second `Start`, and a `Start` after any `Stop`, are refused with
+`errs.ErrAlreadyStarted`, and the context given to `Start` bounds `Start` only. `RegisterAll` registers `metrics`,
+`component-manager` and `message-logger`.
 
 ## The profiling server
 
@@ -451,5 +592,4 @@ These are read by the service manager.
   `"enabled": false` stays). It never reads inside a service's `config`; the service that decodes it does.
 - `PendingServiceChange`, `CompositionSealedError`, `DuplicateServiceError` and `MandatoryServiceDisabledError` are what
   the service manager reports about that map.
-- `ConfigSchema`, `PropertySchema` and `NewConfigSchema` describe a service's configuration keys. `SchemaFromType` and
-  `TypeNameFromReflect` build the JSON schema of a Go type for an OpenAPI document.
+- `SchemaFromType` and `TypeNameFromReflect` build the JSON schema of a Go type for an OpenAPI document.

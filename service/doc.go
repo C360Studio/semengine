@@ -4,15 +4,18 @@
 // manager: it builds the services a configuration names, starts them, serves the
 // HTTP routes around them and stops them. ComponentManager is the service that
 // owns the components. Metrics is the service that serves the Prometheus
-// endpoint. The package also holds the helpers a composition root (the
-// process's main function, which builds and wires everything) calls itself:
+// endpoint. MessageLogger is the service that keeps the newest messages seen on
+// chosen NATS subjects for inspection. The package also holds the helpers a
+// composition root (the process's main function, which builds and wires
+// everything) calls itself:
 // MaybeStartPProf, WireGraphRuntime and the OpenAPI registry, plus the
 // service-configuration and schema helpers the service manager reads.
 //
 // This package is ported from SemStreams in seven pull requests. The first
-// carried BaseService and the shared files; the second Manager and Metrics; this
-// one carries ComponentManager, the service that owns the components (see the
-// component manager section). The other services arrive with the later ones.
+// carried BaseService and the shared files; the second Manager and Metrics; the
+// third ComponentManager, the service that owns the components (see the
+// component manager section); this one carries MessageLogger (see the message
+// logger section). The other services arrive with the later ones.
 //
 // # Embedding BaseService
 //
@@ -67,7 +70,7 @@
 // hands it the services section of the configuration, and starts it:
 //
 //	services := service.NewServiceRegistry()
-//	if err := service.RegisterAll(services); err != nil { // "metrics", "component-manager"
+//	if err := service.RegisterAll(services); err != nil { // "metrics", "component-manager", "message-logger"
 //		return err
 //	}
 //
@@ -302,15 +305,83 @@
 //
 // or those references name schemas the document does not carry.
 //
+// # The message logger
+//
+// MessageLogger subscribes to NATS subjects and keeps the newest messages in
+// memory so a developer can inspect what flows through a running system. It
+// also reads NATS KV buckets over HTTP. It writes nothing to NATS or the graph.
+// It is off unless the configuration enables it: ResolveServiceConfigs does not
+// add it. RegisterAll registers its constructor, NewMessageLoggerService, and
+// its OpenAPI spec. Its config keys are monitor_subjects ("*" stands for the
+// NATS, NATS-request and JetStream port subjects of every admitted component;
+// empty means ["*"]), max_entries (0 to 100000; 0 means 10000), sample_rate
+// (store one message in every sample_rate; 0 and 1 store all) and
+// output_to_stdout. Construction refuses an unknown key (or one in another
+// letter case), a nil NATS client, a nil payload registry, "*" without a
+// component registry, max_entries outside 0 to 100000 and a negative
+// sample_rate, naming the problem.
+//
+// Start works out the subject set once and checks every subject against the
+// grammar of internal/flowgraph before it starts the base service or makes any
+// NATS call: tokens separated by ".", none empty; "*" and ">" only as a whole
+// token and ">" only last; no space, tab, line feed, carriage return or form
+// feed. That is stricter than NATS, which takes "a*" as plain text and accepts a
+// form feed. A subject that fails the check refuses Start as invalid data,
+// naming the subject and its source (monitor_subjects, or the declaring
+// component and port), and holds nothing. A subject another subject covers
+// is not subscribed and is listed in /stats under subject_overlaps; two
+// subscribed subjects can still overlap without either covering the other, and
+// a message on both is stored twice.
+//
+// Start refuses a nil or ended ctx, a second Start, and a Start after any Stop
+// (errs.ErrAlreadyStarted); ctx bounds Start only and ending it afterwards stops
+// nothing (ADR-113). A subscribe that fails does not fail Start: the subject is
+// retried every 100 ms until it succeeds. Meanwhile /stats reports
+// subject_reconciliation_degraded true with subject_reconciliation_error, and
+// the logger's health check fails naming the subjects, so IsHealthy turns false
+// and /readyz answers not ready; health checks run every 30 seconds, so each
+// change shows within one interval. Stop is the only stop: it ends the retry,
+// drains every subscription so a message being handled is stored, ends every
+// open KV watch stream and stops the base service. It refuses a nil ctx and,
+// given an ended ctx, returns that error and stops nothing; if ctx ends first
+// the next Stop finishes the rest.
+//
+// A message that decodes as a typed envelope is stored under its type name and
+// counted in valid_messages; any other is stored with type "raw" and counted in
+// invalid_messages. A payload that is not JSON is stored as a JSON string.
+// /stats also reports total_messages, sampled_messages, sample_rate,
+// max_entries, start_time, last_message_time, uptime_seconds,
+// monitored_subjects (empty after Stop) and subject_overlaps.
+//
+// The routes, mounted under /message-logger and answering GET only (405
+// otherwise), are entries (newest first; limit defaults to 100, capped at
+// 10000; subject is a NATS pattern applied before the limit, and a pattern NATS
+// cannot parse matches nothing), stats, subjects, trace/{traceID} (32 hex
+// characters, else 400; the entries still held, oldest first), kv/{bucket} (an
+// existing bucket's entries, keys sorted before limit, default 100, capped at
+// 1000; pattern is a key glob; status keeps records whose top-level JSON
+// status equals it; 404 for a missing bucket, which is never created) and
+// kv/{bucket}/watch. The watch answers 503 once Stop has begun, 400 for a bad
+// bucket name or key filter, 404 for a missing bucket. It then streams Server-Sent
+// Events: connected, one kv_change per key's current value, a kv_change with
+// operation initial_sync_complete, then each change with operation put, delete
+// or purge. Each stream buffers 100 events for a slow client. If an event does
+// not fit, the stream sends the buffered events, one error event
+// {"error":"watch fell behind: events were dropped"} and ends, so no
+// kv_change and no initial_sync_complete follows a dropped event. The logger
+// does not read Last-Event-ID; a client that reconnects gets a new initial
+// replay.
+//
 // # The metrics service
 //
 // Metrics serves the Prometheus endpoint. Its config keys are port (default
 // 9090) and path (default "/metrics"). Started by itself, it binds the port
 // between Start and Stop. Composed under a Manager, the Manager claims the server
 // before any service starts, serves it until StopAll, and Metrics reports healthy
-// while the server runs. RegisterAll registers Metrics and the component manager.
-// A Metrics runs once: a second Start, and a Start after any Stop, are refused
-// with errs.ErrAlreadyStarted, and the context given to Start bounds Start only.
+// while the server runs. A Metrics runs once: a second Start, and a Start after
+// any Stop, are refused with errs.ErrAlreadyStarted, and the context given to
+// Start bounds Start only. RegisterAll registers Metrics, the component manager
+// and the message logger.
 //
 // # The profiling server
 //

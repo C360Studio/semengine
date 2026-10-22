@@ -478,12 +478,12 @@ bounded context and asserts the result.
 
 | Mutant | Caught by |
 | --- | --- |
-| run context derived from `Start`'s | suite `StartContextEndStopsNothing`; `TestMessageLoggerKeepsCapturingAfterStartContextEnds` |
+| run context derived from `Start`'s | `TestMessageLoggerKeepsCapturingAfterStartContextEnds`; the suite's `StartContextEndStopsNothing` survives it (no handle it observes changes when the run context ends; `notes/2.3.md`) |
 | subscriptions made under the Start context | `TestMessageLoggerKeepsCapturingAfterStartContextEnds` |
 | a failed `Stop` forgets its subscriptions (the pin's `:922-928`) | `TestMessageLoggerFailedStopIsRetried`: the second `Stop` returns inside the window while the callback is held (D2; a pass is inconclusive) |
 | run context cancelled before the drain | `TestMessageLoggerStopDrainsInFlightMessage`: the message queued behind the held one is dropped |
 | `Stop` not ending watch streams | `TestMessageLoggerStopEndsOpenWatchStreams`: `Stop` returns its bounded context's error, or the body read ends at the client's deadline |
-| retry not joined by `Stop` | `TestMessageLoggerRetriesSubscribeUntilConnected`, `Observe` right after `Stop` reports a running retry; an unjoined retry can exit before `Observe` runs, so a pass is reported inconclusive |
+| retry not joined by `Stop` | review only: measured a survivor (`notes/2.3.md`), since the retry ends by itself once nothing is pending, before `Stop` joins it; a stop mid-retry would catch it only some runs |
 | no health check while a subject is unsubscribed | `TestMessageLoggerRetriesSubscribeUntilConnected` |
 | `RegisterAll` not registering the logger's spec | `TestOpenAPIDocumentResolvesEverySchemaRef` |
 | a covered subject also subscribed | `TestPropCoveredSubjectsSubscribedOnce`; `TestMessageLoggerCapturesCoveredSubjectOnce` |

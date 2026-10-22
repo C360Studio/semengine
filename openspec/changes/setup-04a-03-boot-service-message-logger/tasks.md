@@ -19,7 +19,7 @@ after the docs. Each task ends only when `task verify` passes on a clean tree at
   updated; `flowgraph.ValidSubject` added and the whitespace rule in the shared grammar (design D3; the pull request
   body carries `Closes #368`). Gate: `go test -race ./service/ ./internal/flowgraph/ ./composition/` green and `task
   verify` green.
-- [ ] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
+- [x] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
 
 ## 3. Docs, ledger and follow-ups
 

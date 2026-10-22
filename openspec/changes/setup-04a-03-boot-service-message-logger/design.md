@@ -111,10 +111,12 @@ with its proving test (D7 units in brackets):
   Options: (a) health check, chosen; (b) a metric: new exported surface with no reader; (c) inherited under Bounded
   port scope: `/readyz` says ready while the logger is unsubscribed after a NATS restart during boot.
 
-  Proof: `TestMessageLoggerRetriesSubscribeAfterReconnect` [U-c, own server: `// Own server: stops and restarts the
-  server` with `natsfixture.Fixture.Stop`/`Start`] asserts, during the outage, `subject_reconciliation_degraded` true
-  and, through the production path, `ml.performHealthCheck()` (`service/base.go:307`) then `IsHealthy()` false; after
-  the restart, both cleared (awaited under a bounded context; `performHealthCheck` then `IsHealthy()` true) and a
+  Proof: `TestMessageLoggerRetriesSubscribeUntilConnected` [U-c, on the shared server] starts the logger on a
+  `natsclient.Client` built for the URL `shared.Reset(t)` returns but not yet connected, so every subscribe fails with
+  `ErrNotConnected` (`natsclient/client.go:1074-1098`), the state a NATS outage during boot leaves. It asserts
+  `subject_reconciliation_degraded` true and, through the production path, `ml.performHealthCheck()`
+  (`service/base.go:307`) then `IsHealthy()` false; then it connects the client (`Connect`, `WaitForConnection`)
+  and awaits both cleared (awaited under a bounded context; `performHealthCheck` then `IsHealthy()` true) and a
   published message stored. A logger whose `SetHealthCheck` wiring is removed fails the outage assertion.
 - **Stop.**
   1. `Stop` ends the retry and waits for it. A retry's `Subscribe` in progress runs under the run context, which
@@ -407,7 +409,10 @@ the one production way, `NewMessageLoggerService`, through U-a's helper; none ca
   - Logger: the helper over `fixtureClient(t)`, `Start` and `Stop` under bounded contexts.
   - Pin `subscription_integration_test.go:17-92` and `registry_test.go:19-191` behaviours on the shared server.
   - New tests: Start-context end, in-flight drain, failed Stop retried, publishes after Stop, covered subject once,
-    retry after reconnect (own server, `natsfixture.New`, `Fixture.Stop`, `Fixture.Start`).
+    subscribe retried until the client connects (shared server: a client not yet connected, then `Connect`; a
+    restart cannot be observed mid-outage, since `natsfixture.Fixture.Start` after `Stop` returns `ErrAlreadyUsed`,
+    `internal/harness/natsfixture/fixture.go:122-126`, and `Fixture.Restart` stops and starts in one call). The test
+    closes its client under a bounded context in `t.Cleanup`.
   - Calls: `natsclient.Client.Publish`, `GetConnection().Flush()` on the publishing client, `GetStatistics`,
     `GetLogEntries`, the unexported health check.
 - **U-d** `service/message_logger_http_test.go` (new). D4, Q1.
@@ -478,8 +483,8 @@ bounded context and asserts the result.
 | a failed `Stop` forgets its subscriptions (the pin's `:922-928`) | `TestMessageLoggerFailedStopIsRetried`: the second `Stop` returns inside the window while the callback is held (D2; a pass is inconclusive) |
 | run context cancelled before the drain | `TestMessageLoggerStopDrainsInFlightMessage`: the message queued behind the held one is dropped |
 | `Stop` not ending watch streams | `TestMessageLoggerStopEndsOpenWatchStreams`: `Stop` returns its bounded context's error, or the body read ends at the client's deadline |
-| retry not joined by `Stop` | `TestMessageLoggerRetriesSubscribeAfterReconnect`, `Observe` right after `Stop` reports a running retry; an unjoined retry can exit before `Observe` runs, so a pass is reported inconclusive |
-| no health check while a subject is unsubscribed | `TestMessageLoggerRetriesSubscribeAfterReconnect` |
+| retry not joined by `Stop` | `TestMessageLoggerRetriesSubscribeUntilConnected`, `Observe` right after `Stop` reports a running retry; an unjoined retry can exit before `Observe` runs, so a pass is reported inconclusive |
+| no health check while a subject is unsubscribed | `TestMessageLoggerRetriesSubscribeUntilConnected` |
 | `RegisterAll` not registering the logger's spec | `TestOpenAPIDocumentResolvesEverySchemaRef` |
 | a covered subject also subscribed | `TestPropCoveredSubjectsSubscribedOnce`; `TestMessageLoggerCapturesCoveredSubjectOnce` |
 | validation dropped, the subscribe's `ErrBadSubject` left to refuse (the previous draft) | `TestMessageLoggerRefusesMalformedSubject`: on the never-connected client `Start` returns nil and retries |

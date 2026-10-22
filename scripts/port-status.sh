@@ -309,25 +309,123 @@ for p in projects:
     PROJECT_NUM=$(printf '%s' "$created" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("number",""))')
     gh project link "$PROJECT_NUM" --owner C360Studio --repo C360Studio/semengine >/dev/null 2>&1 || true
   fi
-  echo "Syncing open issues and PRs to C360Studio project #${PROJECT_NUM}..."
-  urls=$(python3 - "$prs_json" "$issues_json" <<'PY'
-import json, sys
-prs = json.loads(sys.argv[1])
-issues = json.loads(sys.argv[2])
-for pr in prs:
-    print(f"https://github.com/C360Studio/semengine/pull/{pr['number']}")
-for i in issues:
-    print(f"https://github.com/C360Studio/semengine/issues/{i['number']}")
-PY
-)
-  count=0
-  while IFS= read -r url; do
-    [ -n "$url" ] || continue
-    gh project item-add "$PROJECT_NUM" --owner C360Studio --url "$url" >/dev/null 2>"$errfile" || {
-      echo "port-status: failed adding $url to project #${PROJECT_NUM}: $(cat "$errfile")" >&2
-      exit 2
+  echo "Syncing open issues and PRs to C360Studio project #${PROJECT_NUM} (https://github.com/orgs/C360Studio/projects/${PROJECT_NUM})..."
+  if ! fields_json=$(gh project field-list "$PROJECT_NUM" --owner C360Studio --format json 2>"$errfile"); then
+    echo "port-status: unavailable: cannot read fields of project #${PROJECT_NUM}: $(cat "$errfile")" >&2
+    exit 2
+  fi
+  if ! proj_view_json=$(gh project view "$PROJECT_NUM" --owner C360Studio --format json 2>"$errfile"); then
+    echo "port-status: unavailable: cannot read project #${PROJECT_NUM}: $(cat "$errfile")" >&2
+    exit 2
+  fi
+  if ! gql_json=$(gh api graphql -f query='query {
+    repository(owner: "C360Studio", name: "semengine") {
+      pullRequests(first: 100, states: OPEN) {
+        nodes {
+          id
+          number
+          closingIssuesReferences(first: 20) { nodes { number } }
+          projectItems(first: 10) {
+            nodes {
+              id
+              project { number }
+              fieldValueByName(name: "Status") {
+                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+              }
+            }
+          }
+        }
+      }
+      issues(first: 100, states: OPEN) {
+        nodes {
+          id
+          number
+          projectItems(first: 10) {
+            nodes {
+              id
+              project { number }
+              fieldValueByName(name: "Status") {
+                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+              }
+            }
+          }
+        }
+      }
     }
-    count=$((count + 1))
-  done <<< "$urls"
-  echo "Synced ${count} open items to C360Studio project #${PROJECT_NUM}."
+  }' 2>"$errfile"); then
+    echo "port-status: unavailable: GraphQL project sync query failed: $(cat "$errfile")" >&2
+    exit 2
+  fi
+
+  python3 - "$PROJECT_NUM" "$proj_view_json" "$fields_json" "$gql_json" <<'PY'
+import json, subprocess, sys
+
+proj_num = int(sys.argv[1])
+proj_view = json.loads(sys.argv[2])
+fields = json.loads(sys.argv[3]).get("fields", [])
+gql = json.loads(sys.argv[4]).get("data", {}).get("repository", {})
+
+proj_id = proj_view.get("id")
+status_field_id = None
+todo_opt = None
+in_prog_opt = None
+for f in fields:
+    if f.get("name") == "Status":
+        status_field_id = f.get("id")
+        for opt in f.get("options", []):
+            if opt.get("name") == "Todo":
+                todo_opt = opt.get("id")
+            elif opt.get("name") == "In Progress":
+                in_prog_opt = opt.get("id")
+
+prs = gql.get("pullRequests", {}).get("nodes", [])
+issues = gql.get("issues", {}).get("nodes", [])
+
+claimed_issues = {7, 9}
+for pr in prs:
+    for ref in (pr.get("closingIssuesReferences") or {}).get("nodes", []):
+        if ref and ref.get("number"):
+            claimed_issues.add(ref["number"])
+
+added = 0
+status_mutations = []
+mut_idx = 0
+
+def ensure_item(node, want_in_prog):
+    global added, mut_idx
+    item_id = None
+    cur_status = None
+    for pi in (node.get("projectItems") or {}).get("nodes", []):
+        if pi and (pi.get("project") or {}).get("number") == proj_num:
+            item_id = pi.get("id")
+            fv = pi.get("fieldValueByName") or {}
+            cur_status = fv.get("name")
+            break
+    if not item_id:
+        q = f'mutation {{ addProjectV2ItemById(input: {{projectId: "{proj_id}", contentId: "{node["id"]}"}}) {{ item {{ id }} }} }}'
+        out = subprocess.check_output(["gh", "api", "graphql", "-f", f"query={q}"], text=True)
+        item_id = json.loads(out)["data"]["addProjectV2ItemById"]["item"]["id"]
+        added += 1
+    if status_field_id and item_id:
+        want_name = "In Progress" if want_in_prog else "Todo"
+        want_opt = in_prog_opt if want_in_prog else todo_opt
+        if want_opt and (cur_status is None or (want_in_prog and cur_status != "In Progress")):
+            mut_idx += 1
+            status_mutations.append(
+                f'm{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{status_field_id}", value: {{singleSelectOptionId: "{want_opt}"}}}}) {{ projectV2Item {{ id }} }}'
+            )
+
+for pr in prs:
+    ensure_item(pr, True)
+for iss in issues:
+    ensure_item(iss, iss.get("number") in claimed_issues)
+
+for i in range(0, len(status_mutations), 25):
+    chunk = status_mutations[i:i+25]
+    q = "mutation {\n  " + "\n  ".join(chunk) + "\n}"
+    subprocess.check_output(["gh", "api", "graphql", "-f", f"query={q}"], text=True)
+
+total = len(prs) + len(issues)
+print(f"Synced {total} open items ({added} added, {len(status_mutations)} status updates) to C360Studio project #{proj_num}.")
+PY
 fi

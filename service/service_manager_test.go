@@ -6,10 +6,8 @@ import (
 	"errors"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -91,17 +89,18 @@ func createTestServiceManager(config ManagerConfig, deps *Dependencies) *Manager
 	return m
 }
 
-// observedManagerHTTPURL returns the loopback URL of a manager's bound main listener (pin
+// observedManagerHTTPURL returns the URL of a manager's bound main listener (pin
 // startup_observability_test.go:37). The listener field is set from the bind until it is released.
+// It dials the address the listener reports, never a hand-built 127.0.0.1: the manager binds every
+// address, and on macOS another socket may bind 127.0.0.1 on the same port and take those
+// connections (#372). Dialing the unspecified address reaches the local system (net.Dial).
 func observedManagerHTTPURL(t *testing.T, manager *Manager) string {
 	t.Helper()
 	manager.mu.RLock()
 	listener := manager.httpListener
 	manager.mu.RUnlock()
 	require.NotNil(t, listener, "main HTTP listener not bound")
-	addr, ok := listener.Addr().(*net.TCPAddr)
-	require.True(t, ok, "main HTTP listener must have a TCP endpoint")
-	return "http://" + net.JoinHostPort("127.0.0.1", strconv.Itoa(addr.Port))
+	return "http://" + listener.Addr().String()
 }
 
 // startTestManager starts manager and stops it when the test ends under a bounded detached

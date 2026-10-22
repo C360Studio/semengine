@@ -47,7 +47,11 @@ Each is `path:line` — the line's text at the pin, then the shape and the propo
   production value is `ml.natsClient` (`:375`); `:317-319` — exported `SetDecoder`, "tests can leave it nil", whose
   only production caller is the constructor (`:64`). Every pin test that swaps one is listed in § 6. Optional
   (unexported except `SetDecoder`; `AGENTS.md` § 4 back-door row); recommended dropped in D1, tests moved to the
-  production path (D7).
+  production path (D7). The inventory called `kvBucketProvider` "not a finding" (inventory `:266`), judging it as a
+  one-implementation interface (shape 3) whose comment gives a reason: a read-only capability, so the query cannot
+  create a bucket. This sweep reads it as the parameter type of the `handleKVQueryWith` seam (shape 4): with the seam
+  gone it has no other use, and the read-only promise it stated is held instead by a test against the real client,
+  `TestKVQueryMissingBucketIs404AndCreatesNothing` (design D4, ADR-068 D1), which fails if the query creates a bucket.
 - **M3, a failed Stop is final (required: ADR-113 Decision).** `:920-928` — `completeMessageLoggerStop` sets
   `ml.lifecycleTerminal = true` and `ml.subscriptions = make(...)` whatever `stopErr` was, so a subscription whose
   drain failed is forgotten and a later `Stop` returns nil (`:822-825`) and drains nothing. Probe § 3, third run.
@@ -94,8 +98,8 @@ Each is `path:line` — the line's text at the pin, then the shape and the propo
   Error lines a second per bad subject, and `Start` returned nil (`:771-781`). Probe § 3: nats.go refuses `"foo bar"`,
   `"foo..bar"` and `""` with `nats.ErrBadSubject`. Trigger: a typo in `monitor_subjects`. Optional; recommended in D3:
   a subject nats.go refuses fails `Start`, naming it (by analogy with the owner's 2026-10-21 Q-B ruling on PR 3, which was
-  about a component that cannot be built, not this logger: boot fails and names it; D3 asks the owner to confirm
-  the analogy).
+  about a component that cannot be built, not this logger: boot fails and names it; owner question Q3 asks whether
+  the analogy holds).
 - **M12, § 5 (c) class: `invalid_messages` is never counted.** `:226` declares it, `:968-975` adds to
   `validMessages` on both branches, `:1168` reports it. Changing what `/message-logger/stats` answers is the owner's
   (PR #318 precedent): Q1(d).
@@ -149,10 +153,29 @@ Each is `path:line` — the line's text at the pin, then the shape and the propo
   ten Error lines a second per subject during a NATS outage (the retry is the right behaviour; the volume is
   inherited); one KV watcher per SSE client, which pin ADR-081 names as a trap to convert (`081:27-28`, `:201`) and the
   pin did not.
+- **M23, the KV query's limit and key order (`AGENTS.md` § 2, sort before limit).** `message_logger_http.go:494` —
+  `keys, err := kv.Keys(ctx, jetstream.IgnoreDeletes())`, then `:513-516` stops at `limit`. nats.go's doc promises only
+  dedup (`jetstream/kv.go:177`, "Keys will return all keys, filtering out any duplicates"); v1.54.0 also sorts
+  (`jetstream/kv.go:1420` — `slices.Sort(keys)`; the KV read probe, § 3, listed `[a b c d]` after puts in the order
+  c, a, b, d).
+  So the pin's answer is sorted today by an implementation detail, not a promise. Required (the § 2 rule): the logger
+  sorts before the limit (D4). The mutant that drops the sort survives at v1.54.0; recorded as a survivor.
+- **M24, a failed per-key read skipped with a Warn.** `message_logger_http.go:524-527` — `ml.logger.Warn("Failed to get
+  KV entry", "key", key, "error", err)` / `continue`: every `Get` error shortens the list and the route still answers
+  200, so a lost connection mid-query reads as a short bucket (`AGENTS.md` § 1: a skip is declared, failures fail
+  closed). A key deleted or purged between `Keys` and `Get` is a routine trigger and answers `jetstream.ErrKeyNotFound`
+  (KV read probe, § 3: both, and not `ErrKeyDeleted`). Required: that error leaves the key out, since it no longer
+  exists; any other answers 500 naming the key (D4). Neither branch can be reached by a test without a change between
+  two calls: review only.
+- **M25, the entries filter applied after the limit.** `message_logger_http.go:265` — `entries :=
+  ml.GetLogEntries(limit)`, then `:268-275` filters by `subject`: a filtered request with `limit=20` returns the
+  matches among the newest 20 entries, often fewer than 20 though more are held. Changing what the route answers is
+  the owner's, with the filter itself (M20): Q1(c), recommended fixed (filter, then limit); filed if carried.
 
 Not findings: `KVWatchEvent`, `KVWatchConnectedEvent` (exported wire shapes, read in their file); `GetLogEntries`,
 `GetEntriesByTrace`, `GetStatistics` (read by the routes, `message_logger_http.go:270`, `:299`, `:333`); the
-drop-when-full of a watch's 100-event buffer, declared by a Warn line (`message_logger_kv_watch.go:293-298`).
+drop-when-full of a watch's 100-event buffer, declared by a Warn line (`message_logger_kv_watch.go:293-298`;
+retained in design D4 under Bounded port scope, no test observes it).
 
 Searched and empty in these three files: new roots or context values (`grep -n -E 'context\.Background|context\.TODO|
 WithoutCancel|WithValue|ctx\.Value|select \{\}'`: 0 hits; every context is a parameter); a `context.Context` field:
@@ -163,9 +186,10 @@ reserved-subject guard reads string literals only (`internal/harness/contract/re
 
 ## 3. Pin probes (inventory § 7 left `MessageLogger` "not run")
 
-Three probes, 2026-10-22, about four minutes of wall clock, all outside the repository. Sources are local:
-`/tmp/pr4probe-src/zz_ml_probe_test.go`, `/tmp/pr4tree/zzprobe/kv_probe_test.go`, `/tmp/pr4rawprobe/main.go`; the
-orchestrating session posts them with this output on #367.
+Five probes, 2026-10-22, all outside the repository. Sources are local: `/tmp/pr4probe-src/zz_ml_probe_test.go`,
+`/tmp/pr4tree/zzprobe/kv_probe_test.go`, `/tmp/pr4rawprobe/main.go` (posted on #367, comment 6342054707), and, added
+after review round 1, `/tmp/pr4tree/zzdrain/drain_probe_test.go` and `/tmp/pr4tree/zzkvget/kvget_probe_test.go`; the
+orchestrating session posts the last two with their output on #367.
 
 **Suite probe** (go1.26.4 darwin/arm64; the pin copy with this tree's `internal/harness/lifecycletest` copied in, as
 PR 3's probe). The adapter builds the logger as the pin's tests do (`NewMessageLogger` with one explicit subject and a
@@ -219,7 +243,40 @@ is `nats:2.15.0-alpine`), through this tree's `natsclient` at `ad9fda0`, in a `g
 err=json: error calling MarshalJSON for type json.RawMessage: invalid character 'p' looking for beginning of value written=0
 ```
 
-Read: M14. Not re-run: the unit runs (once under `-race`, five times shuffled), the integration run and the test-text
+Read: M14.
+
+**Drain probe** (go1.26.10; nats.go v1.54.0, embedded nats-server v2.15.1; this tree's `natsclient`, whose
+`client.go` is identical at `ad9fda0` and `8286432`). Two connections on one server, 200 runs. A handler holds
+message 1; messages 2 and 3 are published and the publishing connection flushed; then, on even runs, one `Drain` under
+a live context, checked for 50 ms before release; on odd runs, a first `Drain` whose context is cancelled while held, a
+second `Drain` checked for 50 ms while still held, and a publish of `late` after the drain began. Command: `go test
+-count=1 -v ./zzdrain/`. Output (INFO lines removed):
+
+```text
+    drain_probe_test.go:125: run 0 seen=[1 2 3]
+    drain_probe_test.go:108: case B: first Drain err=context canceled; second Drain err=<nil>
+    drain_probe_test.go:125: run 1 seen=[1 2 3]
+    drain_probe_test.go:130: runs=200 all-three-handled=200 drainReturnedWhileHeld(caseA)=0 secondDrainReturnedWhileHeld(caseB)=0 lateHandled=0
+--- PASS: TestProbeDrain (20.75s)
+```
+
+Read: messages queued behind a held callback before `Drain` begins are handled by the drain (measured, not promised:
+natsclient's `Drain` doc promises only the in-flight callback, `natsclient/client.go:957-964`); a second `Drain`
+rejoins the first and does not return while the callback is held; a publish after the drain began is not handled.
+Design D2.
+
+**KV read probe** (same versions and copy). Command: `go test -count=1 -v ./zzkvget/`. Output (INFO lines removed):
+
+```text
+    kvget_probe_test.go:47: Keys order after puts c,a,b,d then c again: [a b c d] err=<nil>
+    kvget_probe_test.go:52: Get "a" after delete/purge: err=nats: key not found Is(ErrKeyNotFound)=true Is(ErrKeyDeleted)=false
+    kvget_probe_test.go:52: Get "b" after delete/purge: err=nats: key not found Is(ErrKeyNotFound)=true Is(ErrKeyDeleted)=false
+--- PASS: TestProbeKVGetAfterDelete (0.03s)
+```
+
+Read: M23 (sorted by the implementation, `jetstream/kv.go:1420`), M24.
+
+Not re-run: the unit runs (once under `-race`, five times shuffled), the integration run and the test-text
 guards are the inventory's § 7, run on the whole package; their hits in this PR's tests are § 1's two rows.
 
 ## 4. Open issues and pull requests
@@ -250,7 +307,7 @@ Searched the 85 records at the pin for `message_logger`, `MessageLogger`, `messa
 -l -i`): 058, 081, 093. Governing or cited:
 
 - **ADR-093** (Accepted 2026-08-13): "Message-logger decoding is observability evidence, not a claim of" delivery
-  (`093:41-43`); "Message-logger remains an observer" (`093:58-59`). Kept (D1, D7 U-h).
+  (`093:41-43`); "Message-logger remains an observer" (`093:58-59`). Kept (D1, D7 U-g).
 - **ADR-068 D1** (not in the pin's `docs/adr`; inventory § 8): a reader never creates a bucket — the KV query's
   comment (`message_logger_http.go:467-482`, "a reader still must never be the emitter"). Kept (D4).
 - **ADR-081** (Accepted 2026-07-19): names `message_logger_kv_watch.go:216` as one watcher per SSE client

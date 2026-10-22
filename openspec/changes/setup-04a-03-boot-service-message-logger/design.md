@@ -1,10 +1,11 @@
 # Design: setup-04a-03-boot-service-message-logger
 
-base: `265235183bf517121883c4b957fb37356c901835` (draft PR #367). Inputs: `sweep.md` (this change; M-ids), the
-whole-package inventory (`openspec/changes/archive/2026-10-20-setup-04a-03-boot-service-base/inventory.md`, S-ids), and
-PR 3's archived design (`openspec/changes/archive/2026-10-22-setup-04a-03-boot-service-component-manager/design.md`),
-whose shape this copies. Pin lines are SemStreams `8b99efe9`, `service/`; `:n` is `message_logger.go`. One lifecycle
-owner, 2,245 non-test pin lines (under the ~3,000 bound, #159).
+base: `265235183bf517121883c4b957fb37356c901835` (draft PR #367); revised after review round 1 at `8286432`. Inputs:
+`sweep.md` (this change; M-ids), the whole-package inventory
+(`openspec/changes/archive/2026-10-20-setup-04a-03-boot-service-base/inventory.md`, S-ids), and PR 3's archived design
+(`openspec/changes/archive/2026-10-22-setup-04a-03-boot-service-component-manager/design.md`), whose shape this copies.
+Pin lines are SemStreams `8b99efe9`, `service/`; `:n` is `message_logger.go`. One lifecycle owner, 2,245 non-test pin
+lines (under the ~3,000 bound, #159).
 
 Owner intent applied, not re-asked: ADR-113 (context ownership and lifecycle control); no context-value bags; no back
 doors on production types; natsclient passes nats.go through; no SemStreams state migration; simple idiomatic Go;
@@ -19,7 +20,7 @@ port whole, drop only dead surface; every real defect found and not fixed is fil
   - semteams enables it with explicit subjects (`configs/e2e-flow-bootstrap.json`: `{"max_entries":10000,
     "monitor_subjects":["agent.>","tool.>","user.>","graph.mutation.>","discovery.>"]}`)
   - semteams reads `/message-logger/entries` from its UI (`ui/src/lib/services/messageLoggerApi.ts:42`,
-    `components/board/TaskTrace.svelte:66`)
+    `components/board/TaskTrace.svelte:66`) and its end-to-end specs (Q1(c))
   - semteams reads `stats`, `trace/{id}`, `kv/{bucket}` and `kv/{bucket}/watch` from `taskfiles/dev.yml:140-181`.
 
   semsource, semconnect, semboids: none.
@@ -36,7 +37,7 @@ port whole, drop only dead surface; every real defect found and not fixed is fil
     and `service/configurable_test.go` are deleted, closing PR 1's D1 plan
   - the reconciliation of a changing subject set (M1)
   - the test-swap seams `subscribe`, `retryAfter`, `handleKVQueryWith`, `kvBucketProvider`, the two S10 interfaces
-    (M2)
+    (M2; why `kvBucketProvider` changed disposition is in M2)
   - `DefaultMessageLoggerConfig`, and the exported `NewMessageLogger` and `SetDecoder` (M5).
 - **Construction** (`NewMessageLoggerService`, the one constructor, registered by `RegisterAll`) decodes strictly
   (unknown key, and a key in another letter case, refused: the existing requirement) and refuses each of these,
@@ -77,42 +78,72 @@ with its proving test (D7 units in brackets):
     precedent, `processor/graph-ingest/component.go:982`, `:1024-1027`). natsclient makes that context the parent of
     every message's context (`natsclient/client.go:1036-1047`), so the Start context must not be it (M4).
   - `Start` checks its own context before each subscribe. If it has ended, `Start` returns that error and holds
-    nothing: the guard rolls back through the cleanup. The subscribe already in progress may finish first; natsclient
-    bounds its wait for the server by `DefaultRequestTimeout` (`natsclient/client.go:1003-1016`), not by the Start
-    context.
+    nothing: the guard rolls back through the cleanup. A subscribe already in progress runs to its own end, which the
+    Start context does not shorten: natsclient ends its wait for the server's answer at `DefaultRequestTimeout`, but
+    a write held on the connection can keep the call "a minute or more" (`natsclient/client.go:1003-1016`). How long
+    `Start` can run past its context's end is not promised.
   - Proof: suite `FailedStartHoldsNothing`. The mid-start cancel is review only: no test can end the context between
     two subscribes without a hook; `notes/2.3.md` records it.
 - **Ending the Start context after `Start` returned stops nothing.** A message published afterwards is stored and
-  counted. Proof: suite `StartContextEndStopsNothing`; `TestMessageLoggerKeepsCapturingAfterStartContextEnds` [U-d]
+  counted. Proof: suite `StartContextEndStopsNothing`; `TestMessageLoggerKeepsCapturingAfterStartContextEnds` [U-c]
   (the probe's second run, inverted).
-- **Retry.** A subscribe that fails with anything but a malformed subject (D3) leaves the logger running and
-  degraded, as at the pin: `subject_reconciliation_degraded` and `_error` in `/stats`, Error line. The failed subjects
-  are retried every 100 ms under the run context. The retry ends in `Stop`, which waits for it. Proof:
-  `TestMessageLoggerRetriesSubscribeAfterReconnect` [U-d, own server: `// Own server: stops and restarts the server`
-  with `natsfixture.Fixture.Stop`/`Start`].
+- **Retry, declared.** A subscribe that fails with anything but a malformed subject (D3) leaves the logger running.
+  The failed subjects are retried every 100 ms under the run context. While any subject is unsubscribed:
+  - `/stats` reports `subject_reconciliation_degraded` true with `_error`, and an Error line is logged, as at the pin;
+  - new here, the logger's health check (`SetHealthCheck`, `service/base.go:252`, as `service/metrics.go:105` and
+    `service/component_manager.go:259` use it) returns an error naming the subjects, so `IsHealthy` turns false at
+    the next check (every 30 s, `service/base.go:19`, `:290-336`) and `/readyz` answers not ready
+    (`service/service_manager_http.go:507`). At the pin the logger had no health check and no NATS check (its
+    constructor passes no `WithNATS`, `:54-60`), so it stayed healthy while capturing nothing.
+
+  Options: (a) health check, chosen; (b) a metric: new exported surface with no reader; (c) inherited under Bounded
+  port scope: `/readyz` says ready while the logger is unsubscribed after a NATS restart during boot.
+
+  Proof: `TestMessageLoggerRetriesSubscribeAfterReconnect` [U-c, own server: `// Own server: stops and restarts the
+  server` with `natsfixture.Fixture.Stop`/`Start`] asserts, during the outage, `subject_reconciliation_degraded` true
+  and the health check's error; after the restart, both cleared (awaited under a bounded context) and a published
+  message stored.
 - **Stop.**
-  1. `Stop` ends the retry and joins it.
+  1. `Stop` ends the retry and waits for it. A retry's `Subscribe` in progress runs under the run context, which
+     only step 3 ends, so `Stop` waits for that call to return (bounded as in Startup work, not promised).
   2. It drains every subscription (`natsclient.Subscription.Drain`, which returns once the in-flight callback has
      returned, `natsclient/client.go:957-964`), so a message being handled when `Stop` begins is stored.
   3. Then it ends the run context, ends every open watch stream (D4) and waits for each stream's KV watcher to stop,
      and stops the base service.
-  4. It returns nil only once all are released.
+  4. It returns nil only once all are released. If its context ends first at any step, it returns that error (M3).
 
   Proofs:
-  - `TestMessageLoggerStopDrainsInFlightMessage` [U-d]: the composition's `slog` handler blocks on the "Message
-    sample" record until the test releases it; `Stop` runs on a goroutine. A production dependency, not a seam.
-  - `TestMessageLoggerStopEndsOpenWatchStreams` [U-g]: an open watch's body reaches EOF and `Stop` returns nil.
-  - `TestMessageLoggerIgnoresPublishesAfterStop` [U-d].
+  - `TestMessageLoggerStopDrainsInFlightMessage` [U-c]. The composition's `slog` handler (U-a) holds the first
+    "Message sample" record until released; a production dependency, not a seam. The pin logs that record after
+    `storeEntry` (`:1001`, `:1027`), so message 1 is already stored. The test publishes message 2, flushes the
+    publishing connection, runs `Stop` on a goroutine, releases, and asserts `Stop` returned nil and both messages
+    are stored. Message 2 reaching the handler during the drain is measured, not promised: natsclient's `Drain`
+    promises only the in-flight callback; the drain probe (`sweep.md` § 3) saw messages published and flushed before
+    `Drain` handled in 200 of 200 runs at nats.go v1.54.0 / nats-server v2.15.1. A library change there fails this
+    test loudly.
+  - `TestMessageLoggerStopEndsOpenWatchStreams` [U-f]: with one watch open, `Stop` under a 10 s bound returns nil,
+    the stream's body reaches EOF before the HTTP client's own 10 s deadline, and `Observe` reports no open stream.
+  - `TestMessageLoggerIgnoresPublishesAfterStop` [U-c].
 - **A failed `Stop` is retried (M3).** If the context ends first, or a drain fails, `Stop` returns that error. Every
   subscription not yet drained, the retry and open streams are left for the next `Stop`, which runs the same
-  cleanup. A `Stop` after one that returned nil returns nil and calls nothing; a `Stop` while another runs is refused
-  as transient. Proof: `TestMessageLoggerFailedStopIsRetried` [U-d]. The same blocking handler holds a drain; the
-  first `Stop`'s context is cancelled; after release, the second `Stop` returns nil and a later publish is not
-  captured. If the developer cannot observe that the first `Stop` reached the drain without a sleep, the mutant row
-  is recorded as uncovered.
+  cleanup; natsclient rejoins a begun drain rather than starting another (`natsclient/client.go:957-964`). A `Stop`
+  after one that returned nil returns nil and calls nothing; a `Stop` while another runs is refused as transient.
+  Proof: `TestMessageLoggerFailedStopIsRetried` [U-c]:
+  - with message 1 held, the first `Stop` runs under a 200 ms deadline and returns `context.DeadlineExceeded` (the
+    held callback keeps the drain from finishing, so the deadline cannot fail a correct implementation);
+  - the check: a second `Stop`, on a goroutine, has not returned within a 200 ms observation window while the
+    callback is held. Under the M3 mutant it returns nil at once. The window is listed here as `docs/testing.md`
+    § Porting a test from SemStreams requires; its expiry cannot fail a correct implementation (drain probe: a second
+    `Drain` returned while the callback was held in 0 of 100 runs);
+  - after release, the second `Stop` returns nil and a third returns nil.
+
+  "A later publish is not captured" is not the check: a begun native drain finishes on its own, so it holds under
+  the mutant too (probe: a publish after the drain began was handled in 0 of 100 runs). If the first `Stop` is still
+  before its drain when its deadline ends, the mutant passes that run; a pass under the mutant is reported
+  inconclusive, not as a survivor or a detection.
 - **Reads during and after Stop.** `/entries`, `/stats`, `/trace` answer from memory at any time, holding no lock a
   `Stop` needs. `/subjects` answers `[]` after `Stop` (`:928-931`). A watch requested after `Stop` began answers 503
-  and opens nothing. Proof: `TestMessageLoggerRoutesAfterStop` [U-e].
+  and opens nothing. Proof: `TestMessageLoggerRoutesAfterStop` [U-d].
 - **Context rules:** the logger keeps no `context.Context`; it holds one private cancel. The watch stream learns of
   `Stop` through a value the logger closes or a run-context child created per request and joined, not through a
   stored context. Locks, channels and join order are the developer's (failing-first under `-race`).
@@ -127,35 +158,35 @@ with its proving test (D7 units in brackets):
   The `Snapshots` doc comment (`component/registry.go:683-687`, "It exists for the component manager") gains the
   logger as its second framework reader (one sentence).
 - **Covered subjects (M10).**
-  - Replaces the three agentic pairs (`:391-395`, `:652-656`): a desired subject covered by another desired subject
-    is not subscribed, and each omission is reported in `/stats` `subject_overlaps` as `{broader, covered,
-    "covered subscription omitted"}`.
-  - Law: every desired subject is covered by exactly one subscribed subject, and no subscribed subject covers
-    another.
-  - One unexported function decides "pattern covers subject" by NATS token rules (`*` one token, `>` one or more,
-    last). The entries filter uses it too (Q1(c)).
-  - Neighbour, not consolidated: `internal/flowgraph/flowgraph.go:366` `matchNATSPattern` answers a different
-    question (do two patterns overlap, symmetric) and is unexported in another package.
+  - Replaces the three agentic pairs (`:391-395`, `:652-656`): after duplicates are removed, a desired subject that
+    another desired subject covers is not subscribed, and each omission is reported in `/stats` `subject_overlaps` as
+    `{broader, covered, "covered subscription omitted"}`.
+  - "Covers" is `flowgraph.SubjectCovers(filter, pattern)` (`internal/flowgraph/flowgraph.go:270-311`): directional,
+    false for malformed input, already called by `composition/analyze.go:198`. `service` imports `composition`,
+    which imports `flowgraph`, so no cycle; no new matcher is written. The entries filter uses it too (Q1(c)).
+  - Law: every desired subject is covered by at least one subscribed subject, and no subscribed subject covers
+    another. Two subscribed subjects can still overlap without either covering the other (`a.b.*` and `*.b.c` share
+    `a.b.c`); NATS delivers such a message to both subscriptions, so it is captured twice, as at the pin. The README
+    says so.
   - Proof: `TestPropCoveredSubjectsSubscribedOnce` (generated, `pgregory.net/rapid`, U-b) and
-    `TestMessageLoggerCapturesCoveredSubjectOnce` [U-d].
-  - Options: (a) generic, chosen; (b) carry the pairs (a consumer's subjects in the framework, other overlaps
-    captured twice); (c) no overlap handling (every overlap captured twice).
+    `TestMessageLoggerCapturesCoveredSubjectOnce` [U-c].
+  - Options: (a) generic, chosen; (b) carry the pairs (a consumer's subjects in the framework, other covers captured
+    twice); (c) no cover handling (every covered subject captured twice).
 - **Malformed subject (M11).**
   - A subscribe refused with `nats.ErrBadSubject` (probe, `sweep.md` § 3) fails `Start`, naming the subject and
     `monitor_subjects`; the guard rolls back.
-  - Proof: `TestMessageLoggerRefusesMalformedSubject` [U-d].
-  - This applies by analogy the owner's 2026-10-21 Q-B ruling on PR 3, which said fail boot and name it. That ruling
-    was about a component that cannot be built, not this logger. With no subject validator in the tree, the
-    library's refusal is the check.
+  - Proof: `TestMessageLoggerRefusesMalformedSubject` [U-c].
+  - With no subject validator in the tree, the library's refusal is the check. Owner question Q3.
 
 ## D4. HTTP surface (`operator-surface`; 03B D14/D15 row "Keep", `docs/contract.md:139`)
 
 - **Routes.** Served after boot under `/message-logger/`:
-  - `entries` (`limit` 1-10000, default 100; `subject` filter)
+  - `entries` (`limit`: default 100; above 10000 clamped to 10000; zero, negative or not a number gives 100;
+    `message_logger_http.go:251-258`. `subject` filter, Q1(c))
   - `stats`
   - `subjects`
   - `GET trace/{traceID}` (32 hex, else 400)
-  - `kv/{bucket}` (`pattern` key glob, `limit` 1-1000, `status`)
+  - `kv/{bucket}` (`pattern` key glob; `limit` as `entries` with 1000 for 10000, `:422-428`; `status`)
   - `GET kv/{bucket}/watch` (SSE: `connected`, then `kv_change` events, the initial values ending with an
     `initial_sync_complete` operation, `retry: 5000`).
 
@@ -166,22 +197,32 @@ with its proving test (D7 units in brackets):
 - **Error kinds (S7).**
   - `errors.Is(err, jetstream.ErrBucketNotFound)` → 404 and `errors.Is(err, jetstream.ErrNoKeysFound)` → empty
     result. Probe at nats.go v1.54.0, `sweep.md` § 3.
-  - Proof: `TestKVQueryMissingBucketIs404AndCreatesNothing`, `TestKVQueryEmptyBucketReturnsNoEntries` [U-f].
+  - Proof: `TestKVQueryMissingBucketIs404AndCreatesNothing`, `TestKVQueryEmptyBucketReturnsNoEntries` [U-e].
+- **KV query reads (M23, M24).** Keys are sorted before `limit` applies (`AGENTS.md` § 2). nats.go v1.54.0 sorts
+  them already (`jetstream/kv.go:1420`), but its doc promises only dedup (`kv.go:177`), so the order is not promised
+  and the logger sorts. A key whose `Get` answers `jetstream.ErrKeyNotFound` was deleted or purged after the listing
+  (probe: both give that error) and is left out, because it no longer exists. Any other `Get` error answers 500
+  naming the key, where the pin logged a Warn and returned a short list (`message_logger_http.go:524-527`). Proof:
+  `TestKVQuerySortsKeysBeforeLimit` [U-e]; the two `Get` branches need a change between two calls and are review
+  only (`notes/2.3.md`).
 - **One spelling of the bucket and its name check (M16).** Both KV routes take `{bucket}` from the route
   (`r.PathValue`), not the hard-coded prefix. One validator (empty, `.`, `..`, `/`, `\`, `*`, `>` → 400) serves both.
-  Proof: `TestKVRoutesRejectMalformedBucket` [U-e].
+  Proof: `TestKVRoutesRejectMalformedBucket` [U-d].
 - **The watch filter (M17).** Empty or `*` watches every key, as at the pin
   (`message_logger_kv_watch.go:216-220`). Any other `pattern` passes `natsclient.ValidateKVWildcardFilter`, else 400
   naming it. This accepts a final `>`, which the pin refused, and refuses a space, which it accepted. Proof:
-  `TestKVWatchRejectsInvalidFilter` [U-g].
+  `TestKVWatchRejectsInvalidFilter` [U-f].
 - **The trace query (M13).** The trace index is dropped. `GetEntriesByTrace` scans the buffer (at most 100,000
   entries) and returns the trace's entries still held, oldest first. Memory stays within `max_entries`. Proof: the
-  pin's `:268-347` and `:379-415`, adapted [U-b].
+  pin's `message_logger_test.go:268-347` and `:379-415`, adapted [U-b].
 - **Text (M20).** The dev/test-mode claims, the 403, `Last-Event-ID` and "reconnection" are rewritten to what the code
   does. The README states the gate: the service is off unless configured. The watch keeps one KV watcher per stream
   (pin ADR-081 not done; M22).
 - **Retained and declared:** the query's `pattern` is a key glob while the watch's is a NATS filter (one parameter
-  name, two grammars; changing the query's is the owner's, not asked); `/stats` keys as at the pin, except Q1(d).
+  name, two grammars; changing the query's is the owner's, not asked); `/stats` keys as at the pin, except Q1(d); a
+  watch's events dropped when its 100-event buffer is full, declared by a Warn line only
+  (`message_logger_kv_watch.go:293-298`), retained under Bounded port scope: it affects one SSE client's view, and no
+  test observes it (recorded uncovered in `notes/2.3.md`).
 
 ## D5. #280 item 2: `component.Declaration`'s parallel port and facts lists
 
@@ -199,8 +240,10 @@ reader (gopls `references` on `component/registry.go:66-69`, production):
   - `composition/catalog.go:82-83` and `composition/graph.go:52-86` (`portViews`, guarded `:63`)
   - `internal/flowgraph/flowgraph.go:88-89`.
 - **Tests:** `component` (`registry_declare_test.go`, `discovery_test.go`, `register_test.go`,
-  `registry_boot_admission_test.go`) and `internal/flowgraph/declarations_test.go`; none in `composition`.
-  Consumers: no use (consumer tarballs, `grep -rn 'InputDeclarationFacts|component.Declaration'`: 0).
+  `registry_boot_admission_test.go`); `internal/flowgraph/declarations_test.go` (the `declaration` helper, `:23`) and
+  `internal/flowgraph/flowgraph_validation_test.go:352`, which builds one through that helper. `flowgraph_test.go`
+  builds `Discoverable` mocks (`:460-467`), not declarations. None in `composition`. Consumers: no use (consumer
+  tarballs, `grep -rn 'InputDeclarationFacts|component.Declaration'`: 0).
 
 Options:
 
@@ -227,7 +270,8 @@ Options:
    - (ii) `"*"` needs `Dependencies.ComponentRegistry`
    - (iii) `Dependencies.PayloadRegistry` is required.
 2. **If they do nothing:** the logger is off (not materialized). If they get (ii) or (iii) wrong, construction
-   refuses, naming the field. A typo'd subject fails boot, naming it (D3).
+   refuses, naming the field. A typo'd subject fails boot, naming it (D3, Q3). A subject NATS cannot serve yet makes
+   the logger unhealthy until it is subscribed (D2).
 3. **Where they find out:** a boot error, for all three. Today (iii) is nowhere: every message is silently "raw".
 4. **What they should have to know:** (i) only. (ii) and (iii) are the composition the root already builds (semteams
    `cmd/semteams/main.go:208`, `:789`).
@@ -239,87 +283,116 @@ Intent check: no boundary moves.
 | Pin test file (lines) | Here |
 | --- | --- |
 | `message_logger_test.go` (415) | U-b; `:12-55`, `:67-75` dropped (D1); `:76-96` replaced by the helper (no fixed address); trace tests use `storeEntry` only |
-| `message_logger_registry_test.go` (276) | behaviours moved to U-d on the shared server; fake subscriber `:193-276` dropped (M2); `:80-133` flipped (M3) |
+| `message_logger_registry_test.go` (276) | behaviours moved to U-c on the shared server; fake subscriber `:193-276` dropped (M2); `:80-133` flipped (M3) |
 | `message_logger_lifecycle_test.go` (378) | `:70-100` → the suite; `:102-145` → `TestMessageLoggerStopDrainsInFlightMessage`; `:147-178` → `TestMessageLoggerFailedStopIsRetried` and the retry test; `:180-378` dropped with M1 (they test the obsolete-drain and reconcile gate) |
-| `message_logger_subscription_integration_test.go` (92) | U-d; `:62-63` flipped (a failed Stop is retried) |
-| `message_logger_http_kv_query_test.go` (223) | `:126-147` carried (U-e); `:98-125`, `:149-205` moved to real NATS (U-f); `:206-223` dropped (asserts the injected provider's context: mechanism, M2) |
-| `message_logger_kv_acquisition_integration_test.go` (145) | U-f, through `fixtureClient`; `graph.EnsureCatalogBucket` from `graph/kvcatalog` |
-| `message_logger_kv_watch_test.go` (92) | U-g; `TestIsValidWatchPattern` replaced by the shared validator's cases; `TestDetectKVOperation` per Q1(b) |
-| `message_logger_user_response_test.go` (49) | U-h: a test payload registered in a local `payloadregistry` instead of `agentic.UserResponse` (ADR-093 kept) |
+| `message_logger_subscription_integration_test.go` (92) | U-c; `:62-63` flipped (a failed Stop is retried) |
+| `message_logger_http_kv_query_test.go` (223) | `:126-147` carried (U-d); `:98-125`, `:149-205` moved to real NATS (U-e); `:206-223` dropped (asserts the injected provider's context: mechanism, M2) |
+| `message_logger_kv_acquisition_integration_test.go` (145) | U-e, through `fixtureClient`; `kvcatalog.EnsureCatalogBucket` |
+| `message_logger_kv_watch_test.go` (92) | U-f; `TestIsValidWatchPattern` replaced by the shared validator's cases; `TestDetectKVOperation` per Q1(b) |
+| `message_logger_user_response_test.go` (49) | U-g: a test payload registered in a local `payloadregistry` instead of `agentic.UserResponse` (ADR-093 kept) |
 | `message_logger_census_test.go` (556) | not carried (imports outside the port set) |
 
-**Units** (one or two files each; parallel developers; brief cites only the D-sections named):
+**Units** (one or two files each; brief cites only the D-sections named). Order: U-a first, because every other
+unit builds its logger through U-a's helper; then U-b to U-g in any order, in parallel. Every unit builds the logger
+the one production way, `NewMessageLoggerService`, through U-a's helper; none calls an unexported constructor.
 
-- **U-a** `service/message_logger_helpers_test.go`, `service/message_logger_suite_integration_test.go` (new). D1, D2.
-  - Calls: `NewMessageLoggerService(json.RawMessage, *Dependencies) (Service, error)`; `*MessageLogger` `Start`,
-    `Stop`, `Status`; `fixtureClient(t)` (`service/fixture_client_integration_test.go:48`); `newUnconnectedClient`
-    (`service/service_manager_test.go:817`); `component.NewRegistry`; `payloadregistry.New`; `lifecycletest.Run`,
-    `Owner`, `Observation`, `Promise`.
-  - `Observe` reports base status, held subscriptions, a running retry and open streams (unexported reads in the
-    package; no guard-state field).
+- **U-a** `service/message_logger_helpers_test.go` (no build tag), `service/message_logger_suite_integration_test.go`
+  (new). D1, D2.
+  - Helper `newTestMessageLogger(t, client *natsclient.Client, config string, logger *slog.Logger) *MessageLogger`:
+    `NewMessageLoggerService(json.RawMessage(config), &Dependencies{NATSClient, Logger, ComponentRegistry:
+    component.NewRegistry(), PayloadRegistry: payloadregistry.New()})`, then the type assertion.
+  - A `slog.Handler`, enabled at Debug (the record is logged at Debug, `:1027`), that holds the first "Message
+    sample" record until the test releases it (D2's proofs).
+  - Suite adapter: `lifecycletest.Run`, `Owner`, `Observation`, `Promise`; the logger over `fixtureClient(t)`
+    (`service/fixture_client_integration_test.go:48`). `Observe` reports base status, held subscriptions, whether a
+    retry is running and the open streams (unexported reads in the package; no guard-state field).
 - **U-b** `service/message_logger_test.go`. D1, D3, D4 (trace).
+  - Logger: the helper over `newUnconnectedClient(t)` (`service/service_manager_test.go:817`), never started.
   - Pin `:98-415` adapted: sampling `:98-148`, `containsWildcard` `:150-189`, `uniqueStrings` `:191-196`, overlap
-    `:198-220` rewritten for the generic rule, config `:222-266`, trace and ring `:268-415`.
-  - New: construction refusals (D1) and `TestPropCoveredSubjectsSubscribedOnce`.
-  - Calls: `newMessageLogger`-free: entries are stored through `handleMessage(ctx, subject, data)` and `storeEntry`;
-    `GetLogEntries`, `GetEntriesByTrace`, `GetStatistics`.
-- **U-d** `service/message_logger_subscription_integration_test.go`. D2, D3.
+    `:198-220` rewritten for the cover rule, config `:222-266`, trace and ring `:268-415`.
+  - Entries are stored through `handleMessage(t.Context(), subject, data)` (the subscription callback's body) and,
+    for the ring cases, `storeEntry`; read through `GetLogEntries`, `GetEntriesByTrace`, `GetStatistics`.
+  - New: construction refusals (D1, through `NewMessageLoggerService` directly) and
+    `TestPropCoveredSubjectsSubscribedOnce` (on the unexported function that turns desired subjects into the
+    subscribed set and the omissions).
+- **U-c** `service/message_logger_subscription_integration_test.go`. D2, D3.
+  - Logger: the helper over `fixtureClient(t)`, `Start` and `Stop` under bounded contexts.
   - Pin `subscription_integration_test.go:17-92` and `registry_test.go:19-191` behaviours on the shared server.
   - New tests: Start-context end, in-flight drain, failed Stop retried, publishes after Stop, covered subject once,
-    malformed subject, retry after reconnect (own server).
-  - Calls: `natsclient.Client.Publish`, `Subscription` via the logger only, `natsfixture.New`, `Fixture.Stop`,
-    `Fixture.Start`.
-- **U-e** `service/message_logger_http_test.go` (new). D4, Q1.
-  - Routes on a logger built over `newUnconnectedClient` with `"*"` and an empty registry: entries (limit, filter),
+    malformed subject, retry after reconnect (own server, `natsfixture.New`, `Fixture.Stop`, `Fixture.Start`).
+  - Calls: `natsclient.Client.Publish`, `GetConnection().Flush()` on the publishing client, `GetStatistics`,
+    `GetLogEntries`, the unexported health check.
+- **U-d** `service/message_logger_http_test.go` (new). D4, Q1.
+  - Logger: the helper over `newUnconnectedClient(t)` with `"*"` and an empty registry; entries stored as in U-b.
+  - Routes through `RegisterHTTPHandlers("/message-logger", mux)` and `httptest`: entries (limit clamp, filter),
     stats, subjects, trace (400 on bad id), 405, bucket validation, routes after Stop.
   - Plus `recordMatchesStatus` (pin `http_kv_query_test.go:126-147`) and `TestEntriesServeNonJSONPayload` (Q1(a)).
-  - Calls: `RegisterHTTPHandlers("/message-logger", mux)`, `httptest`.
-- **U-f** `service/message_logger_kv_integration_test.go`. D4.
-  - Pin `kv_acquisition_integration_test.go:18-145` and `http_kv_query_test.go:98-125`, `:149-205` on the shared
-    server: missing bucket 404 and nothing created, empty bucket, failed-record round trip, lookup failure 500
-    (unconnected client).
-- **U-g** `service/message_logger_kv_watch_test.go`, `service/message_logger_kv_watch_integration_test.go`. D2
+- **U-e** `service/message_logger_kv_integration_test.go`. D4.
+  - Logger: the helper over `fixtureClient(t)`; buckets made with `Client.CreateKeyValueBucket` and
+    `kvcatalog.EnsureCatalogBucket`; routes through `RegisterHTTPHandlers` and `httptest`.
+  - Pin `kv_acquisition_integration_test.go:18-145` and `http_kv_query_test.go:98-125`, `:149-205`: missing bucket 404
+    and nothing created (`Client.ListKeyValueBuckets`), empty bucket, failed-record round trip, lookup failure 500
+    (a second logger over `newUnconnectedClient`, pin `:187-205`); new: `TestKVQuerySortsKeysBeforeLimit`.
+- **U-f** `service/message_logger_kv_watch_test.go`, `service/message_logger_kv_watch_integration_test.go`. D2
   (streams), D4, Q1(b), Q1(e).
-  - Validators; event sequence `connected` → initial values → `initial_sync_complete` → `kv_change`; filter refusal;
-    `Stop` ends streams; 503 after `Stop`; missing bucket 404 (Q1(e)).
-- **U-h** `service/message_logger_decode_test.go`. D1 (payload registry), ADR-093.
+  - Unit file: the bucket validator (pin `kv_watch_test.go:9-44` cases plus `*`, `>`, `/`), the filter cases (pin
+    `:45-77`, replaced by `natsclient.ValidateKVWildcardFilter`'s grammar), the operation mapping (pin `:78-92`, per
+    Q1(b)).
+  - Integration file: the helper over `fixtureClient(t)`, `Start`; `httptest.NewServer` over the mux; event sequence
+    `connected` → initial values → `initial_sync_complete` → `kv_change`; filter refusal; `Stop` ends streams; 503
+    after `Stop`; missing bucket 404 (Q1(e)).
+- **U-g** `service/message_logger_decode_test.go`. D1 (payload registry), ADR-093.
+  - Logger: the helper over `newUnconnectedClient(t)` with its own `payloadregistry.New()` holding one test payload;
+    pin `user_response_test.go:16-49` adapted: `handleMessage` with a `message.BaseMessage` of that payload, then
+    `GetLogEntries` shows its type.
 - **Integration with PR 3's test:** `TestOpenAPIDocumentResolvesEverySchemaRef` gains the logger (D4); one line in its
   composition.
 
 Harness rules as PR 3's D7: no `time.Sleep`, `Skip`, fixed port, or `t.Parallel` in an integration file; cleanup
 stops under `context.WithTimeout(context.WithoutCancel(t.Context()), ...)`; every NATS connection through
-`fixtureClient` (#195) except the own-server retry test.
+`fixtureClient` (#195) except the own-server retry test. Real-clock windows, listed as `docs/testing.md` requires:
+the two 200 ms windows of `TestMessageLoggerFailedStopIsRetried` (D2); every other wait is on a signal, bounded at
+10 s or the test's context.
 
 **Generated checks.** The covered-subject rule is a stated law (D3), so it gets a rapid property:
 
 - generator: random subject sets from a small token alphabet with `*` and `>`
-- checks: every input subject is covered by exactly one output subject; no output covers another; the output is
-  sorted and unique
+- checks: every input subject is covered by at least one output subject; no output covers another; the output is a
+  sorted, duplicate-free subset of the input. Oracle: `flowgraph.SubjectCovers`, tested on its own
+  (`internal/flowgraph/subject_cover_test.go`)
 - the run records its seed and check count.
 
 The ring buffer's law ("never let an older sequence replace a newer", `:1062-1075`) keeps the pin's example tests
-(`:349-377`). Start/Stop histories are the guard's (`internal/lifecycleguard/guard_test.go`) plus the suite; examples
-suffice.
+(`message_logger_test.go:349-377`). Start/Stop histories are the guard's (`internal/lifecycleguard/guard_test.go`)
+plus the suite; examples suffice.
 
-**Sensitivity** (task 2.3; unit mutants through `task mutate:check`, integration ones by hand):
+**Sensitivity** (task 2.3; unit mutants through `task mutate:check`, integration ones by hand). A row counts as a
+detection only when the test fails under the mutant; a hang is not a detection, so each Stop-path test runs under a
+bounded context and asserts the result.
 
 | Mutant | Caught by |
 | --- | --- |
 | run context derived from `Start`'s | suite `StartContextEndStopsNothing`; `TestMessageLoggerKeepsCapturingAfterStartContextEnds` |
 | subscriptions made under the Start context | `TestMessageLoggerKeepsCapturingAfterStartContextEnds` |
-| a failed `Stop` forgets its subscriptions (the pin's `:922-928`) | `TestMessageLoggerFailedStopIsRetried` (or recorded uncovered, D2) |
-| run context cancelled before the drain | `TestMessageLoggerStopDrainsInFlightMessage` |
-| `Stop` not ending watch streams | `TestMessageLoggerStopEndsOpenWatchStreams` |
-| retry not joined by `Stop` | `TestMessageLoggerRetriesSubscribeAfterReconnect` (`-race`, joined goroutine) |
+| a failed `Stop` forgets its subscriptions (the pin's `:922-928`) | `TestMessageLoggerFailedStopIsRetried`: the second `Stop` returns inside the window while the callback is held (D2; a pass is inconclusive) |
+| run context cancelled before the drain | `TestMessageLoggerStopDrainsInFlightMessage`: the message queued behind the held one is dropped |
+| `Stop` not ending watch streams | `TestMessageLoggerStopEndsOpenWatchStreams`: `Stop` returns its bounded context's error, or the body read ends at the client's deadline |
+| retry not joined by `Stop` | `TestMessageLoggerRetriesSubscribeAfterReconnect`, `Observe` right after `Stop` reports a running retry; an unjoined retry can exit before `Observe` runs, so a pass is reported inconclusive |
+| no health check while a subject is unsubscribed | `TestMessageLoggerRetriesSubscribeAfterReconnect` |
 | `RegisterAll` not registering the logger's spec | `TestOpenAPIDocumentResolvesEverySchemaRef` |
 | a covered subject also subscribed | `TestPropCoveredSubjectsSubscribedOnce`; `TestMessageLoggerCapturesCoveredSubjectOnce` |
 | a malformed subject degraded instead of refused | `TestMessageLoggerRefusesMalformedSubject` |
 | a nil payload registry accepted | `TestMessageLoggerConstructionRefusals` |
 | the watch filter checked by the pin's grammar | `TestKVWatchRejectsInvalidFilter` (a space and `a.>` cases) |
 | the 404 branch removed | `TestKVQueryMissingBucketIs404AndCreatesNothing` |
+| the KV query's sort removed | survivor at nats.go v1.54.0, which sorts `Keys` itself; recorded as a survivor |
 | `errors.Is` replaced by the pin's text test | equivalent on every real error measured; recorded as a survivor |
 | non-JSON payload stored raw (Q1(a)) | `TestEntriesServeNonJSONPayload` |
-| trace query returning an overwritten entry | the pin's `:379-415`, adapted |
+| entries filter applied after the limit (Q1(c)) | `TestEntriesFilterBeforeLimit` [U-d] |
+| trace query returning an overwritten entry | the pin's `message_logger_test.go:379-415`, adapted |
+
+Uncovered, recorded in `notes/2.3.md`: the mid-start cancel (D2), the two KV `Get` branches (D4), the watch's
+dropped-event Warn (D4).
 
 ## D8. Ledger, text, ADRs, coverage, issues
 
@@ -328,9 +401,10 @@ suffice.
   - `contract`: the D9 requirements; pin ADR-093 (decoding is observability evidence, the logger an observer), ADR-068
     D1 (readers never create a bucket), ADR-081 (not done); `RegisterAll` registers the logger and its spec.
   - kept names: D1. `configurable.go` and its three names leave the row.
-  - `known_risks`: one watcher per watch stream; the query's glob vs the watch's filter.
+  - `known_risks`: one watcher per watch stream; the query's glob vs the watch's filter; overlapping (not covering)
+    subjects captured twice; the watch's dropped events declared by a Warn only.
 - **Text:** `service/README.md` and `service/doc.go` gain the logger: enabling it, its keys and refusals, routes,
-  the off-by-default gate, what each `/stats` key means, and the SSE events.
+  the off-by-default gate, what each `/stats` key means, the health check, and the SSE events.
 - **ADRs:** ADR-113 applied (D2), changing pin ADR-095's final failed Stop as PR 3 did. ADR-108 Decision 2 (guard).
   ADR-110: the logger writes no entity. No ADR is drafted.
 - **Guidance:** none at the pin (`sweep.md` § 5).
@@ -343,12 +417,13 @@ suffice.
 - **`service-lifecycle`, ADDED:**
   - "The message logger's Start bounds Start and Stop is the only stop" (D2's bullets as scenarios, each naming its
     test)
-  - "The message logger subscribes to a fixed subject set, covered subjects once" (D3)
-  - "A malformed monitored subject fails the logger's Start" (D3)
+  - "The message logger is unhealthy while a monitored subject is unsubscribed" (D2, Retry)
+  - "The message logger subscribes to a fixed subject set, covered subjects once" (D3, the law as stated)
+  - "A malformed monitored subject fails the logger's Start" (D3, if Q3 is accepted)
   - "The message logger's construction refuses an incomplete composition" (D1).
 - **`operator-surface`, ADDED:**
-  - "The message logger's routes are served under /message-logger" (D4: routes, 400/404/405/503, `RegisterAll`
-    registers its spec, importing registers nothing)
+  - "The message logger's routes are served under /message-logger" (D4: routes, clamped limits, 400/404/405/503,
+    KV keys sorted before the limit, `RegisterAll` registers its spec, importing registers nothing)
   - "The KV watch streams changes until the client leaves or the logger stops" (event sequence, operation values per
     Q1(b), filter validation, drops logged).
 
@@ -356,24 +431,40 @@ suffice.
 
 ## Owner questions
 
-- **Q1. The logger's routes give five wrong answers at the pin. Fix them in this port, or carry them as they are and
-  file an issue for each?** Recommendation: fix all five. Each is small and makes a route say what its documentation
-  already promises. Fix (a) even if you choose to carry the rest, because today it breaks the whole page.
+- **Q1. Recommended: fix, in this port, the five wrong answers the logger's pages give at the pin.** Each is small and
+  makes a page do what its documentation already says. Fix (a) even if you carry the rest, because one bad message
+  breaks the whole page. Any you choose to carry is filed as an issue. Fix all five, or which to carry?
   - (a) A single message that is not JSON makes the entries and trace pages fail with an error for every entry until
     it ages out (`sweep.md` M14). Fix: store such a message as a JSON string, as the watch already does.
   - (b) The watch calls a key's first write "update" unless it is the bucket's very first write, because NATS numbers
     writes across the whole bucket (M18, probed). It shows a purge as "unknown". Fix: report what NATS records,
     `put`, `delete` or `purge`. semteams' UI does not read this field; its dev script prints it.
-  - (c) The `subject` filter on the entries page is documented as a NATS pattern but works as a text glob, so
-    `agent.>` matches nothing (M20). Fix: NATS matching (D3's function).
+  - (c) The `subject` filter on the entries page is documented as a NATS pattern but works as a text pattern, and it
+    is applied after the limit, so a filtered request returns fewer entries than exist (M20, M25). Fix: NATS matching
+    with the cover check D3 uses, applied before the limit; a filter NATS cannot parse matches nothing. Cost:
+    `subject=*`, which today returns everything, would return only subjects with no dot (write `>`), and `agent.*`,
+    which today matches anything starting `agent.`, would match only two-part subjects (write `agent.>`). In
+    semteams the UI documents the filter as a NATS pattern (`ui/src/lib/services/messageLoggerApi.ts:31`) and passes
+    it through (`:42`); the trace panel sends none (`TaskTrace.svelte:66`); two end-to-end specs send
+    `user.response.*` (`ui/e2e/agentic/clarification-autonomous.spec.ts:99`, `run-approval-boundary.spec.ts:85`) and
+    would then see only three-part `user.response` subjects. Four other specs send `subject_prefix`, which neither
+    the pin nor this port reads.
   - (d) `invalid_messages` in the stats is always 0, and `valid_messages` counts everything (M12). Fix:
     `valid_messages` counts messages decoded as typed envelopes, `invalid_messages` the rest.
   - (e) Watching a bucket that does not exist answers "OK" and then an error event, where the documentation says 404
     (M20, M21). Fix: look the bucket up before starting the stream: 404 if missing, 500 for other failures.
-- **Q2. (#280 item 2) Keep `component.Declaration`'s two parallel lists and state their alignment (recommended), or
-  file a separate `component` change that joins them into one list of pairs?** D5 lists every reader each choice
-  touches.
+- **Q2. Recommended: keep a component declaration's two side-by-side lists, its ports and their facts, and write
+  down that entry i of one describes entry i of the other.** The logger reads them in pairs, as the composition
+  package already does. Joining them into one list would make a mismatch impossible, but it changes a public type
+  read in three packages and belongs in its own pull request for the component package. This settles the second of
+  the three items in the open issue about component declarations; the other two stay open. D5 lists every reader
+  each choice touches. Keep them, or join them in a separate change?
+- **Q3. Recommended: a subject in the logger's list that NATS cannot read (a typo such as `agent..x`) stops the
+  process at boot, naming the subject.** This applies your 2026-10-21 ruling on the component manager (a component
+  that cannot be built fails boot and is named) to the logger by analogy; that ruling was about components, not this
+  logger. Cost: one typo keeps the whole process from starting. Today the process starts, the logger captures the
+  other subjects, and it logs about ten errors a second for the bad one for as long as the process runs. The other
+  choice: start, report the subject in `/stats` and as unhealthy, and stop retrying it. Fail boot, or start and
+  report it?
 
-ADR-113 is applied, not asked. D1's drops follow the surface audit and PR 1's D1 plan. D3's malformed-subject refusal
-applies the owner's PR 3 Q-B ruling by analogy (that ruling was about components); please confirm the analogy holds
-for this logger.
+ADR-113 is applied, not asked. D1's drops follow the surface audit and PR 1's D1 plan.

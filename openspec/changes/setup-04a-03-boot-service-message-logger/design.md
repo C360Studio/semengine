@@ -252,7 +252,7 @@ with its proving test (D7 units in brackets):
   - `GET kv/{bucket}/watch` (SSE: `connected`, then `kv_change` events, the initial values ending with an
     `initial_sync_complete` operation, `retry: 5000`).
 
-  Every route answers `GET` only; any other method gets 405.
+  Every route answers `GET` and `HEAD` (ServeMux serves `HEAD` on a `GET` pattern); any other method gets 405.
 - **OpenAPI without an import-time registration (M15).** `RegisterAll` registers the logger's spec, as PR 3 D5 option
   (a). Proof: `TestOpenAPIDocumentResolvesEverySchemaRef`, extended so the composition enables `message-logger` with
   `"*"` and an empty registry (no NATS needed).

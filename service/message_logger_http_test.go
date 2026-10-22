@@ -329,8 +329,8 @@ func TestTraceRouteRefusesMalformedID(t *testing.T) {
 	}
 }
 
-// TestMessageLoggerRoutesRefuseOtherMethods: every route answers GET only; any other method gets 405
-// (D4).
+// TestMessageLoggerRoutesRefuseOtherMethods: every route answers GET and HEAD (ServeMux serves HEAD
+// on a "GET " pattern); any other method gets 405 (D4).
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestMessageLoggerRoutesRefuseOtherMethods(t *testing.T) {
@@ -350,6 +350,12 @@ func TestMessageLoggerRoutesRefuseOtherMethods(t *testing.T) {
 				require.Equal(t, http.StatusMethodNotAllowed, rec.Code, rec.Body.String())
 			})
 		}
+	}
+	for _, path := range []string{"/message-logger/entries", "/message-logger/stats"} {
+		t.Run(http.MethodHead+" "+path, func(t *testing.T) {
+			rec := rl.serve(t, http.MethodHead, path)
+			require.Equal(t, http.StatusOK, rec.Code)
+		})
 	}
 }
 

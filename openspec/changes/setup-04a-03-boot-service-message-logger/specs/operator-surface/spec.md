@@ -5,7 +5,7 @@
 ### Requirement: The message logger's routes are served under /message-logger
 
 The message logger SHALL serve, under `/message-logger/`, `entries`, `stats`, `subjects`, `trace/{traceID}`,
-`kv/{bucket}` and `kv/{bucket}/watch`. Each route SHALL answer only `GET` and SHALL answer any other method with 405.
+`kv/{bucket}` and `kv/{bucket}/watch`. Each route SHALL answer `GET` and `HEAD` and SHALL answer any other method with 405.
 `entries` SHALL return the newest stored entries, newest first; its `limit` SHALL default to 100 and be clamped to
 10000, and a missing, non-numeric, zero or negative value SHALL give 100. Its `subject` filter SHALL be a NATS subject
 pattern matched with `flowgraph.SubjectCovers` and applied before the limit, and a pattern NATS cannot parse SHALL match
@@ -42,10 +42,11 @@ JSON string, so every entry can be served. `RegisterAll` SHALL register the mess
 - **THEN** `valid_messages` counts the first and `invalid_messages` the second
 - **AND** the test that verifies this is `TestStatsCountsOnlyTypedEnvelopesValid`
 
-#### Scenario: A malformed trace ID, or a method other than GET
+#### Scenario: A malformed trace ID, or a method other than GET or HEAD
 
-- **WHEN** `trace/` is asked for an ID that is not 32 hex characters, or any route is asked with `POST`
-- **THEN** the answers are 400 and 405
+- **WHEN** `trace/` is asked for an ID that is not 32 hex characters, or any route is asked with `POST`, or
+  `stats` with `HEAD`
+- **THEN** the answers are 400, 405 and 200
 - **AND** the tests that verify this are `TestTraceRouteRefusesMalformedID` and
   `TestMessageLoggerRoutesRefuseOtherMethods`
 

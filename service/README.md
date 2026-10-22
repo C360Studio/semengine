@@ -473,8 +473,8 @@ returns nil; a `Stop` while another runs is refused as transient. Messages publi
 
 ### The routes
 
-Mounted under `/message-logger/` and answering `GET` only (405 otherwise). `entries`, `stats` and `trace` answer from
-memory at any time, including after `Stop`.
+Mounted under `/message-logger/` and answering `GET` and `HEAD` (405 for any other method). `entries`, `stats` and
+`trace` answer from memory at any time, including after `Stop`.
 
 - `entries`: the newest entries, newest first. `limit` defaults to 100 and is capped at 10000; a missing, non-numeric,
   zero or negative value gives 100. `subject` is a NATS subject pattern (`*` one token, `>` the remaining tokens)

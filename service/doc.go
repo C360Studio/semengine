@@ -353,8 +353,8 @@
 // max_entries, start_time, last_message_time, uptime_seconds,
 // monitored_subjects (empty after Stop) and subject_overlaps.
 //
-// The routes, mounted under /message-logger and answering GET only (405
-// otherwise), are entries (newest first; limit defaults to 100, capped at
+// The routes, mounted under /message-logger and answering GET and HEAD (405
+// for any other method), are entries (newest first; limit defaults to 100, capped at
 // 10000; subject is a NATS pattern applied before the limit, and a pattern NATS
 // cannot parse matches nothing), stats, subjects, trace/{traceID} (32 hex
 // characters, else 400; the entries still held, oldest first), kv/{bucket} (an

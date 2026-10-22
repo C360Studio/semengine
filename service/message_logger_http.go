@@ -29,8 +29,8 @@ const (
 	kvQueryMaxLimit     = 1000
 )
 
-// RegisterHTTPHandlers mounts the logger's routes under prefix. Every route answers GET only; the
-// mux answers any other method with 405.
+// RegisterHTTPHandlers mounts the logger's routes under prefix. Every route answers GET, and HEAD as
+// ServeMux serves it on a "GET " pattern; the mux answers any other method with 405.
 func (ml *MessageLogger) RegisterHTTPHandlers(prefix string, mux *http.ServeMux) {
 	if !strings.HasSuffix(prefix, "/") {
 		prefix += "/"

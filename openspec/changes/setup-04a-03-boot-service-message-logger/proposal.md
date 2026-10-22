@@ -25,8 +25,10 @@ message subjects, keeps a bounded log of recent messages, and serves it and KV w
 
 ## Capabilities
 
-To be filled by the design: the `service-lifecycle` and `operator-surface` deltas for the message logger's start, stop
-and readiness promises and the routes it serves. `skip_specs` is set until the design names the deltas.
+- `service-lifecycle`: the message logger's construction refusals, its Start and Stop under ADR-113, its health
+  while a subject has failed to subscribe, the fixed subject set, and the malformed-subject refusal.
+- `operator-surface`: the routes under `/message-logger`, the KV query, and the KV watch.
+- `composition-validation`: one subject grammar for validity, cover and overlap.
 
 ## Non-goals
 

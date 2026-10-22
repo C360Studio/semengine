@@ -418,8 +418,9 @@ func (ml *MessageLogger) queryKVBucket(
 		if !recordMatchesStatus(entry.Value(), statusFilter) {
 			continue
 		}
-		// The stored JSON goes out byte for byte, so no number is rounded through float64 (#370);
-		// a value that is not JSON travels as a JSON string, as the watch sends it.
+		// The stored JSON is embedded as is, so every number token survives unrounded (#370); the
+		// response encoder still compacts it and escapes HTML characters. A value that is not JSON
+		// travels as a JSON string, as the watch sends it.
 		value := json.RawMessage(entry.Value())
 		if !json.Valid(value) {
 			value, _ = json.Marshal(string(entry.Value()))

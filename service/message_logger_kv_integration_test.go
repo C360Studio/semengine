@@ -265,13 +265,14 @@ func TestKVQuerySortsKeysBeforeLimit(t *testing.T) {
 	require.Equal(t, []string{"k.a", "k.b", "k.c", "k.d"}, entryKeys(all))
 }
 
-// TestKVQueryPreservesValueBytes: the query answers each stored JSON value byte for byte, with and
-// without the status filter, so an integer past 2^53, a nested number and a float spelling come back
-// as stored (#370). The oracle is the stored bytes; JSONEq would decode both sides into float64 and
+// TestKVQueryPreservesJSONValues: the query answers each stored JSON value with its number tokens as
+// stored, with and without the status filter, so an integer past 2^53, a nested number and a float
+// spelling come back unrounded (#370). The fixtures are compact ASCII, so the oracle is the stored
+// bytes (the encoder compacts and escapes HTML characters, which these fixtures do not exercise); JSONEq would decode both sides into float64 and
 // hide the rounding. A value that is not JSON comes back as a JSON string, as the watch sends it.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
-func TestKVQueryPreservesValueBytes(t *testing.T) {
+func TestKVQueryPreservesJSONValues(t *testing.T) {
 	client := fixtureClient(t)
 	ctx, cancel := context.WithTimeout(t.Context(), kvRouteBudget)
 	defer cancel()

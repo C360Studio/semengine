@@ -13,7 +13,7 @@ the pin (it now has the #371 length check).
   (message_logger_kv_watch.go:219-224). Non-JSON values therefore still go out as a JSON string, as before the fix.
 - recordMatchesStatus now takes the stored bytes and decodes only a `map[string]json.RawMessage` view plus the
   "status" token as a string; field name stays exact (no struct case-folding), null/number/missing status never match.
-- Test: TestKVQueryPreservesValueBytes (integration). Oracle = stored bytes, exact string equality, not JSONEq.
+- Test: TestKVQueryPreservesJSONValues (integration). Oracle = stored bytes, exact string equality, not JSONEq.
   Before (5ea607e): actual
   `{"nested":{"n":[18446744073709552000,100,-0]},"sequence":9007199254740992,"status":"failed"}`.
 - TestRecordMatchesStatus moved to byte inputs; added JSON-string, `{"Status":..}` and `{"status":null}` cases.

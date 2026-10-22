@@ -367,7 +367,6 @@
 // the service that decodes it does. PendingServiceChange,
 // CompositionSealedError, DuplicateServiceError and
 // MandatoryServiceDisabledError are what the service manager reports about
-// that map. ConfigSchema, PropertySchema and NewConfigSchema describe a
-// service's configuration keys; SchemaFromType and TypeNameFromReflect build
-// the JSON schema of a Go type for an OpenAPI document.
+// that map. SchemaFromType and TypeNameFromReflect build the JSON schema of a
+// Go type for an OpenAPI document.
 package service

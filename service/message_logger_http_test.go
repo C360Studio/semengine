@@ -378,7 +378,9 @@ func TestKVRoutesRejectMalformedBucket(t *testing.T) {
 		for _, bucket := range []string{"", "%2F", "A%2FB"} {
 			t.Run(name+"/unrouted/"+bucket, func(t *testing.T) {
 				rec := rl.serve(t, http.MethodGet, route(bucket))
-				require.Contains(t, []int{http.StatusBadRequest, http.StatusNotFound}, rec.Code,
+				// An empty name makes the path unclean (kv//watch), which ServeMux redirects (307)
+				// before matching any pattern; no handler runs, so no lookup either.
+				require.Contains(t, []int{http.StatusBadRequest, http.StatusNotFound, http.StatusTemporaryRedirect}, rec.Code,
 					"a bucket name holding / must be refused before a lookup: %s", rec.Body.String())
 			})
 		}

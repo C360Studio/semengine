@@ -88,11 +88,14 @@ with its proving test (D7 units in brackets):
   counted. Proof: suite `StartContextEndStopsNothing`; `TestMessageLoggerKeepsCapturingAfterStartContextEnds` [U-c]
   (the probe's second run, inverted).
 - **Retry, declared.** A subscribe that fails with anything but a malformed subject (D3) leaves the logger running.
-  The failed subjects are retried every 100 ms under the run context. While any subject is unsubscribed:
+  The failed subjects are retried every 100 ms under the run context. While the retry holds a subject that failed to
+  subscribe (the retry's pending set, empty until a subscribe has failed, so the base service's first health check,
+  which runs before the subscribes, `service/base.go:209`, `:290-295`, sees a healthy logger on a normal boot):
   - `/stats` reports `subject_reconciliation_degraded` true with `_error`, and an Error line is logged, as at the pin;
   - new here, the logger's health check (`SetHealthCheck`, `service/base.go:252`, as `service/metrics.go:105` and
-    `service/component_manager.go:259` use it) returns an error naming the subjects, so `IsHealthy` turns false at
-    the next check (every 30 s, `service/base.go:19`, `:290-336`) and `/readyz` answers not ready
+    `service/component_manager.go:259` use it) returns an error naming the pending subjects, so `IsHealthy` turns
+    false at the next check and `/readyz` answers not ready. Checks run every 30 s (`service/base.go:19`, `:290-336`),
+    so turning unhealthy after a failed subscribe and healthy again after it succeeds each lag by up to 30 s
     (`service/service_manager_http.go:507`). At the pin the logger had no health check and no NATS check (its
     constructor passes no `WithNATS`, `:54-60`), so it stayed healthy while capturing nothing.
 
@@ -101,8 +104,9 @@ with its proving test (D7 units in brackets):
 
   Proof: `TestMessageLoggerRetriesSubscribeAfterReconnect` [U-c, own server: `// Own server: stops and restarts the
   server` with `natsfixture.Fixture.Stop`/`Start`] asserts, during the outage, `subject_reconciliation_degraded` true
-  and the health check's error; after the restart, both cleared (awaited under a bounded context) and a published
-  message stored.
+  and, through the production path, `ml.performHealthCheck()` (`service/base.go:307`) then `IsHealthy()` false; after
+  the restart, both cleared (awaited under a bounded context; `performHealthCheck` then `IsHealthy()` true) and a
+  published message stored. A logger whose `SetHealthCheck` wiring is removed fails the outage assertion.
 - **Stop.**
   1. `Stop` ends the retry and waits for it. A retry's `Subscribe` in progress runs under the run context, which
      only step 3 ends, so `Stop` waits for that call to return (bounded as in Startup work, not promised).
@@ -134,11 +138,11 @@ with its proving test (D7 units in brackets):
   - the check: a second `Stop`, on a goroutine, has not returned within a 200 ms observation window while the
     callback is held. Under the M3 mutant it returns nil at once. The window is listed here as `docs/testing.md`
     § Porting a test from SemStreams requires; its expiry cannot fail a correct implementation (drain probe: a second
-    `Drain` returned while the callback was held in 0 of 100 runs);
+    `Drain` returned while the callback was held in 0 of 200 runs);
   - after release, the second `Stop` returns nil and a third returns nil.
 
   "A later publish is not captured" is not the check: a begun native drain finishes on its own, so it holds under
-  the mutant too (probe: a publish after the drain began was handled in 0 of 100 runs). If the first `Stop` is still
+  the mutant too (probe: a publish after the drain began was handled in 0 of 200 runs). If the first `Stop` is still
   before its drain when its deadline ends, the mutant passes that run; a pass under the mutant is reported
   inconclusive, not as a survivor or a detection.
 - **Reads during and after Stop.** `/entries`, `/stats`, `/trace` answer from memory at any time, holding no lock a
@@ -417,7 +421,9 @@ dropped-event Warn (D4).
 - **`service-lifecycle`, ADDED:**
   - "The message logger's Start bounds Start and Stop is the only stop" (D2's bullets as scenarios, each naming its
     test)
-  - "The message logger is unhealthy while a monitored subject is unsubscribed" (D2, Retry)
+  - "The message logger is unhealthy while a monitored subject is unsubscribed" (D2, Retry; scenarios: healthy at
+    the first check of a normal boot; unhealthy within one 30 s check interval after a failed subscribe; healthy
+    again within one interval after the retry succeeds)
   - "The message logger subscribes to a fixed subject set, covered subjects once" (D3, the law as stated)
   - "A malformed monitored subject fails the logger's Start" (D3, if Q3 is accepted)
   - "The message logger's construction refuses an incomplete composition" (D1).

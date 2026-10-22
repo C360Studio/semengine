@@ -103,8 +103,8 @@ verify` passes on a clean tree at its commit.
 
 ## 4. Verify, review and close
 
-- [ ] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `service` is recorded on
+- [x] 4.1 `task verify` passes on a clean tree at the implementation head; the coverage of `service` is recorded on
   the PR.
-- [ ] 4.2 Cross-agent review of record at both stops, as PR comments; `reviewed-by:` in the PR body.
-- [ ] 4.3 The change is archived (`openspec archive setup-04a-03-boot-service-component-manager`) in the last content
+- [x] 4.2 Cross-agent review of record at both stops, as PR comments; `reviewed-by:` in the PR body.
+- [x] 4.3 The change is archived (`openspec archive setup-04a-03-boot-service-component-manager`) in the last content
   commit, syncing `service-lifecycle` and `operator-surface` into `openspec/specs/`. Gate: `task spec:check`.

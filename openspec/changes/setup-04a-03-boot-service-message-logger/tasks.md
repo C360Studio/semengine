@@ -15,7 +15,7 @@ after the docs. Each task ends only when `task verify` passes on a clean tree at
 - [x] 2.1 Tests first: the pin test files the design lists, adapted as the design says, and the subject-grammar tests in
   `internal/flowgraph` (design D3, U-h; #368's reproduction and the `FuzzValidSubject` seed corpus among them). Gate:
   the tests fail on the base (compile errors and #368's failing assertions noted in `notes/2.1.md`).
-- [ ] 2.2 The three pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
+- [x] 2.2 The three pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
   updated; `flowgraph.ValidSubject` added and the whitespace rule in the shared grammar (design D3; the pull request
   body carries `Closes #368`). Gate: `go test -race ./service/ ./internal/flowgraph/ ./composition/` green and `task
   verify` green.

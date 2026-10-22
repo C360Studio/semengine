@@ -421,7 +421,7 @@ dropped-event Warn (D4).
 - **`service-lifecycle`, ADDED:**
   - "The message logger's Start bounds Start and Stop is the only stop" (D2's bullets as scenarios, each naming its
     test)
-  - "The message logger is unhealthy while a monitored subject is unsubscribed" (D2, Retry; scenarios: healthy at
+  - "The message logger is unhealthy while a monitored subject has failed to subscribe" (D2, Retry; scenarios: healthy at
     the first check of a normal boot; unhealthy within one 30 s check interval after a failed subscribe; healthy
     again within one interval after the retry succeeds)
   - "The message logger subscribes to a fixed subject set, covered subjects once" (D3, the law as stated)

@@ -10,11 +10,14 @@ not a task tracker and not a description of the tree.
   (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **Five of the seven Slice 04A implementation changes.** SETUP 02, SETUP 03B, the Slice 04A design,
+- **Four and a half of the seven Slice 04A implementation changes.** SETUP 02, SETUP 03B, the Slice 04A design,
   `flake-defense` and the first two implementation changes, `setup-04a-01-floor` and `setup-04a-02-ingest-kernel`
   (PR #93), are archived; the capability specs under `openspec/specs/` are the current truth, and `docs/contract.md`
-  states the tier-0 contract 03B approved. The Slice 04A design names seven implementation changes
-  (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`); `setup-04a-03` to `setup-04a-07` are not started.
+  states the tier-0 contract 03B approved. Of the seven implementation changes in the Slice 04A design
+  (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`), change 3 (`setup-04a-03-boot`) is in progress (six of its
+  seven packages and three of `service`'s seven lifecycle-owner pull requests have merged; `service` PRs 4 to 7 remain),
+  `vocabulary/export` was ported ahead of change 7 (#234), and `setup-04a-04` to `setup-04a-07` are otherwise not
+  started.
 
 ## Present
 
@@ -46,6 +49,7 @@ not a task tracker and not a description of the tree.
 | `internal/harness/mutcheck/` | The program behind `task mutate:check`: runs one named test against one wrong change to a Go source file, kept in a copy outside the repository, and reports detection, survivor, invalid or inconclusive (`docs/testing.md`, "Show that the test can fail"). Run by hand, never by `task verify` or CI; writes nothing in the repository |
 | `scripts/cover-check.sh` | `task cover:check`: 80% statements on each of the 17 packages in its target list: the harness's `natsfixture`, `lifecycletest` and `probe`; `message`, `payloadregistry`, `natsclient` and `natsclient/storagereport`; and `processor/graph-ingest`, `graph`, `graph/kvcatalog`, `graph/readiness`, `graph/inference`, `pkg/projection`, `internal/graphmutation`, `component`, `storage/storeregistry` and `pkg/lifecycle` |
 | `scripts/merge-check.sh` | `task merge:check` and the CI job `merge-check`: fails while an open `class:flake` issue is not closed by the pull request, or while the rules on `main` do not require an up-to-date head, or while a code pull request that is not a draft lacks the `implemented-by:` and `reviewed-by:` lines naming the two agents (`.agents/protocol.md`, "Cross-agent review"). Reads GitHub, so not part of `task verify` |
+| `scripts/port-status.sh` | `task status`: prints the Slice 04A 65-package port scoreboard from `docs/admission-ledger.yaml` and the `service` 7-PR split (`--offline`), queries GitHub for milestone progress, active PR claims, open `class:flake` blockers and issue/milestone hygiene (`--check`), and syncs open issues and PRs to the GitHub Project v2 tracker (`--sync-project`). Reads GitHub unless `--offline`, so not part of `task verify` |
 | `internal/harness/natsfixture/nats-image` | The pinned NATS image digest every fixture starts; `natsfixture` embeds it and `task doctor` reads it |
 | `.github/` | CI workflow (jobs `verify`, `merge-check` and `required`) and Dependabot configuration |
 | `package.json`, `.nvmrc`, `.task-version` | Pins for the Node-based OpenSpec and markdownlint tools and Task |
@@ -114,7 +118,7 @@ There is no `/tickets` state and no handoff document; each question has one home
 | Question | Home |
 | --- | --- |
 | What is wanted, is it decided | GitHub issues; rulings are issue comments |
-| What gates a release | A GitHub milestone: `Setup: foundation through contract`, then one per provisional slice |
+| What gates a release | A GitHub milestone: `setup` (foundation through contract), then `slice-04a`, `slice-04b`, `slice-04c` |
 | Who has claimed it | A draft PR: `Closes #n` for a leaf issue, `Addresses #n` for an epic |
 | Target state, tasks, holds | The OpenSpec change inside that PR; `task spec:queue` reads the holds |
 | What is true now | `openspec/specs/`, verified against code |
@@ -126,16 +130,16 @@ There is no `/tickets` state and no handoff document; each question has one home
 - Issues #5 to #11 are the SETUP epics: #5 Foundation, #6 Isolated harness, #7 Pinned consumer baseline, #8 Contract
   and boundary, #9 Slice 04A tier-0 graph foundation, #10 Slice 04B tier-0 lexical (BM25 completes tier 0), #11 Slice
   04C tier-1 neural (embedding provider).
-- Milestones: `Setup: foundation through contract` (#2 to #8), `Slice 04A: tier-0 graph foundation (provisional)` (#9),
-  `Slice 04B: tier-0 lexical — BM25 completes tier 0 (provisional)` (#10), `Slice 04C: tier-1 neural — embedding
-  provider (provisional)` (#11).
+- Milestones: `setup` (#2 to #8; Setup: foundation through contract), `slice-04a` (#9; Slice 04A: tier-0 graph
+  foundation), `slice-04b` (#10; Slice 04B: tier-0 lexical — BM25 completes tier 0), `slice-04c` (#11; Slice 04C:
+  tier-1 neural — embedding provider).
 - PR #12 (SETUP 01) merged as `819c461`; #5 stays open for the Codex-to-Claude pickup demonstration.
 - PR #13 (SETUP 02) merged as `34c9dc6` and #6 is closed; its SETUP 02 rulings are on
   [issue #6](https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663).
 - PR #21 (SETUP 03B) merged as `9286055` and #8 is closed; its rulings are on #8. The approved boundary it records:
   tier 0 is 65 packages / 140,842 non-test lines at the pin (`design.md` D4); the
   critical coverage list is `design.md` D10 (task `cover:check` scope as each package is ported); the twelve port
-  refactors are issues #25–#36 (label `class:port-refactor`, milestone Slice 04A).
+  refactors are issues #25–#36 (label `class:port-refactor`, milestone `slice-04a`).
 - The Slice 04A design (PR #47) is accepted: owner rulings of 2026-10-01 on #9 fix the seven-change chain, the
   rule that each package lands with its tests, ledger rows and repair proofs green, and #24's re-scope to the pin's
   composition points. The first implementation change is `setup-04a-01-floor` (15 packages, the transport and

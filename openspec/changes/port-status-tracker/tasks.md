@@ -9,14 +9,14 @@ Each task names its outcome and the gate that proves it.
 
 ## 2. Implementation and tests
 
-- [ ] 2.1 Write `internal/harness/contract/portstatus_test.go` covering `--offline`, `--check` pass/fail cases with a
+- [x] 2.1 Write `internal/harness/contract/portstatus_test.go` covering `--offline`, `--check` pass/fail cases with a
   fake `gh` binary (missing milestone, missing label, whitespace milestone title, `gh` read failure exit 2), and
   `Taskfile.yml` wiring; confirm it fails before `scripts/port-status.sh` exists.
-- [ ] 2.2 Implement `scripts/port-status.sh`, wire `status` in `Taskfile.yml` and `AGENTS.md`, add
+- [x] 2.2 Implement `scripts/port-status.sh`, wire `status` in `Taskfile.yml` and `AGENTS.md`, add
   `.agents/skills/semengine-status/SKILL.md` and `.claude/skills/semengine-status/SKILL.md`, and register
   `semengine-status` in `.agents/README.md` and `internal/harness/contract/agentsetup_test.go`. Gate:
   `go test -race ./internal/harness/contract/` and `task status -- --check`.
-- [ ] 2.3 Update `docs/repository-map.md` for Change 3 progress, the slugged milestone names (`setup`, `slice-04a`,
+- [x] 2.3 Update `docs/repository-map.md` for Change 3 progress, the slugged milestone names (`setup`, `slice-04a`,
   `slice-04b`, `slice-04c`), and `scripts/port-status.sh`. Gate: `task verify` passes on a clean tree.
 
 ## 3. Review and archive

@@ -268,8 +268,8 @@ func TestKVQuerySortsKeysBeforeLimit(t *testing.T) {
 // TestKVQueryPreservesJSONValues: the query answers each stored JSON value with its number tokens as
 // stored, with and without the status filter, so an integer past 2^53, a nested number and a float
 // spelling come back unrounded (#370). The fixtures are compact ASCII, so the oracle is the stored
-// bytes (the encoder compacts and escapes HTML characters, which these fixtures do not exercise); JSONEq would decode both sides into float64 and
-// hide the rounding. A value that is not JSON comes back as a JSON string, as the watch sends it.
+// bytes (the encoder compacts and escapes HTML characters, which these fixtures do not exercise);
+// JSONEq would decode both sides into float64 and hide the rounding. A value that is not JSON comes back as a JSON string, as the watch sends it.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQueryPreservesJSONValues(t *testing.T) {

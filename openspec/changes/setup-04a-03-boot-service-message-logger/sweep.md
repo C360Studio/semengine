@@ -1,6 +1,7 @@
 # Shape sweep: setup-04a-03-boot-service-message-logger (service PR 4 of 7)
 
-base: `265235183bf517121883c4b957fb37356c901835` (`main` `ad9fda0` plus the claim commit; draft PR #367)
+base: `265235183bf517121883c4b957fb37356c901835` (`main` `ad9fda0` plus the claim commit; draft PR #367); M11 and
+M26 revised and the subject probe added after the Codex design review at `5e02cd4` (PR #367 comment 6343581103)
 
 The per-PR read the architect contract asks for (§ The shape sweep), of the three files this pull request carries, on
 a scratch copy of the SemStreams pin `8b99efe9c66a4faa4fa509f9f62cc6bad8392128` (`gh api .../tarball/8b99efe9`, local
@@ -93,13 +94,17 @@ Each is `path:line` — the line's text at the pin, then the shape and the propo
   subject covers another is subscribed twice, and core NATS delivers a message to each matching subscription, so it is
   captured twice. No ported component declares these subjects today. Optional; recommended in D3: a generic covered-
   subject rule.
-- **M11, a malformed explicit subject retries forever.** `:539` — `ml.logger.Error("Failed to subscribe to subject",
-  ...)`, every `messageLoggerReconcileRetryDelay` (`:179`, 100 ms; `:682`), for the life of the process: about ten
-  Error lines a second per bad subject, and `Start` returned nil (`:771-781`). Probe § 3: nats.go refuses `"foo bar"`,
-  `"foo..bar"` and `""` with `nats.ErrBadSubject`. Trigger: a typo in `monitor_subjects`. Optional; recommended in D3:
-  a subject nats.go refuses fails `Start`, naming it (by analogy with the owner's 2026-10-21 Q-B ruling on PR 3, which was
-  about a component that cannot be built, not this logger: boot fails and names it; owner question Q3 asks whether
-  the analogy holds).
+- **M11, a malformed explicit subject retries forever, or is never refused.** `:539` —
+  `ml.logger.Error("Failed to subscribe to subject", ...)`, every `messageLoggerReconcileRetryDelay` (`:179`, 100 ms;
+  `:682`), for the life of the process: about ten Error lines a second per bad subject, and `Start` returned nil
+  (`:771-781`). Probes § 3: nats.go refuses `"foo bar"`, `"foo..bar"` and `""` with `nats.ErrBadSubject`, but accepts
+  `a.>.b`, which the server answers with `Invalid Subject` and a closed connection (subject probe). The library's
+  refusal is also never reached on two paths (Codex review): a malformed subject covered by a valid broader one
+  (`["a.>", "a.foo bar"]`) is removed by the cover check first, because `flowgraph.SubjectCovers` accepts whitespace
+  (#368, `internal/flowgraph/flowgraph.go:340-352`); and while disconnected natsclient answers `ErrNotConnected`
+  before nats.go sees the subject (`natsclient/client.go:1074-1092`). Trigger: a typo in `monitor_subjects`. Required
+  (owner ruling Q3, 2026-10-22, #9 comment 6343081407: fail boot, naming the subject): D3 validates every subject
+  with one `internal/flowgraph` grammar before reduction and subscribe, and fixes #368.
 - **M12, § 5 (c) class: `invalid_messages` is never counted.** `:226` declares it, `:968-975` adds to
   `validMessages` on both branches, `:1168` reports it. Changing what `/message-logger/stats` answers is the owner's
   (PR #318 precedent): Q1(d).
@@ -171,11 +176,18 @@ Each is `path:line` — the line's text at the pin, then the shape and the propo
   ml.GetLogEntries(limit)`, then `:268-275` filters by `subject`: a filtered request with `limit=20` returns the
   matches among the newest 20 entries, often fewer than 20 though more are held. Changing what the route answers is
   the owner's, with the filter itself (M20): Q1(c), recommended fixed (filter, then limit); filed if carried.
+- **M26, a full watch buffer drops events and then claims a complete initial sync.** `message_logger_kv_watch.go:293`
+  — `default:` / `:295` `ml.logger.Warn("KV watch buffer full, dropping event",` drops the event and continues, while
+  `:254-264` later forwards `initial_sync_complete`, commented at `:256` "so clients know all existing keys have been
+  sent". Trigger: a client reading slower than the initial replay of a bucket with more than about 100 keys (the
+  buffer, `:226`), such as `curl -N` over a slow link on semteams' `ENTITY_STATES` (`taskfiles/dev.yml:172`).
+  Required (silent-loss admission gate: a completion claim after a loss): D4 ends the stream with an `error` event at
+  the first drop.
 
 Not findings: `KVWatchEvent`, `KVWatchConnectedEvent` (exported wire shapes, read in their file); `GetLogEntries`,
-`GetEntriesByTrace`, `GetStatistics` (read by the routes, `message_logger_http.go:270`, `:299`, `:333`); the
-drop-when-full of a watch's 100-event buffer, declared by a Warn line (`message_logger_kv_watch.go:293-298`;
-retained in design D4 under Bounded port scope, no test observes it).
+`GetEntriesByTrace`, `GetStatistics` (read by the routes, `message_logger_http.go:270`, `:299`, `:333`). The
+watch's drop-when-full, listed here in the first draft as declared by its Warn line, is M26: the completion event
+after a drop is a false claim, not a declared skip.
 
 Searched and empty in these three files: new roots or context values (`grep -n -E 'context\.Background|context\.TODO|
 WithoutCancel|WithValue|ctx\.Value|select \{\}'`: 0 hits; every context is a parameter); a `context.Context` field:
@@ -186,10 +198,11 @@ reserved-subject guard reads string literals only (`internal/harness/contract/re
 
 ## 3. Pin probes (inventory § 7 left `MessageLogger` "not run")
 
-Five probes, 2026-10-22, all outside the repository. Sources are local: `/tmp/pr4probe-src/zz_ml_probe_test.go`,
+Six probes, 2026-10-22, all outside the repository. Sources are local: `/tmp/pr4probe-src/zz_ml_probe_test.go`,
 `/tmp/pr4tree/zzprobe/kv_probe_test.go`, `/tmp/pr4rawprobe/main.go` (posted on #367, comment 6342054707), and, added
-after review round 1, `/tmp/pr4tree/zzdrain/drain_probe_test.go` and `/tmp/pr4tree/zzkvget/kvget_probe_test.go`; the
-orchestrating session posts the last two with their output on #367.
+after review round 1, `/tmp/pr4tree/zzdrain/drain_probe_test.go` and `/tmp/pr4tree/zzkvget/kvget_probe_test.go`, and,
+added after the Codex review, `/tmp/pr4rev3probe/subject_probe_test.go`; the orchestrating session posts the last
+three with their output on #367.
 
 **Suite probe** (go1.26.4 darwin/arm64; the pin copy with this tree's `internal/harness/lifecycletest` copied in, as
 PR 3's probe). The adapter builds the logger as the pin's tests do (`NewMessageLogger` with one explicit subject and a
@@ -276,6 +289,29 @@ Design D2.
 
 Read: M23 (sorted by the implementation, `jetstream/kv.go:1420`), M24.
 
+**Subject probe** (go1.26.4 darwin/arm64; nats.go v1.54.0 and an embedded nats-server v2.15.1, the tree's `go.mod`
+versions, in a scratch module). One fresh connection per subject, `nats.NoReconnect()`; `Subscribe`, then `Flush`,
+then the connection's last error and status, and the server's own `server.IsValidSubject`. Command: `GOFLAGS=-mod=mod
+GOPROXY=off go test -count=1 -v ./...`. Output (INFO lines removed):
+
+```text
+    subject_probe_test.go:26: subscribe "a.foo bar": err=nats: invalid subject Is(ErrBadSubject)=true flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=false
+    subject_probe_test.go:26: subscribe "a.foo\fbar": err=<nil> Is(ErrBadSubject)=false flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=false
+    subject_probe_test.go:26: subscribe "a.>.b": err=<nil> Is(ErrBadSubject)=false flush=nats: connection closed lastErr=nats: Invalid Subject status=CLOSED server.IsValidSubject=false
+    subject_probe_test.go:26: subscribe "a*": err=<nil> Is(ErrBadSubject)=false flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=true
+    subject_probe_test.go:26: subscribe "a.b*.c": err=<nil> Is(ErrBadSubject)=false flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=true
+    subject_probe_test.go:26: subscribe "a..b": err=nats: invalid subject Is(ErrBadSubject)=true flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=false
+    subject_probe_test.go:26: subscribe "a.>": err=<nil> Is(ErrBadSubject)=false flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=true
+    subject_probe_test.go:26: subscribe "a.*.c": err=<nil> Is(ErrBadSubject)=false flush=<nil> lastErr=<nil> status=CONNECTED server.IsValidSubject=true
+--- PASS: TestProbeSubscribeSubjects (0.03s)
+```
+
+Read: M11 (nats.go's subscribe check is whitespace and empty tokens only, `nats.go:5074-5086`; `a.>.b` passes it
+and the server closes the connection; a form feed passes the wire); design D3's "stricter than NATS" (`a*`, `a.b*.c`
+are literals to NATS). nats-server's grammar, `isValidSubject` (`server/sublist.go:1214-1250` at v2.15.1), refuses
+empty tokens, a token after `>`, and a tab, line feed, form feed, carriage return or space inside a token:
+the whitespace set D3 adopts.
+
 Not re-run: the unit runs (once under `-race`, five times shuffled), the integration run and the test-text
 guards are the inventory's § 7, run on the whole package; their hits in this PR's tests are § 1's two rows.
 
@@ -293,6 +329,10 @@ and also #36, #109, #68, #7).
   other packages remain.
 - **#280** item 2 names `service/message_logger.go:347-349`. Decided here (D5) and commented in task 3.1; items 1 and
   3 keep it open. Not `Closes`.
+- **#368** (`flowgraph`: subject coverage and overlap accept whitespace), filed from the Codex design review of this
+  PR; names `internal/flowgraph/flowgraph.go:343-355`, which D3 reads. Retired here: `Closes #368`, tasks 2.1 and
+  2.2 (design D3, U-h). `gh issue list --state open --search flowgraph`, 2026-10-22: #368, #363 and #331 (other
+  questions on flowgraph's callers; not touched), #9.
 - Name the word, not the package: #9, #7, #10, #11 (epics); #340 and #103 ("watch" in `config` and graph query);
   #30, #363, #344 (heartbeat's decode, PR 6), #364, #362, #361, #29, #36, #109, #68 (other `service` owners or other
   packages; none names a message-logger file).

@@ -12,14 +12,18 @@ after the docs. Each task ends only when `task verify` passes on a clean tree at
 
 ## 2. Port
 
-- [ ] 2.1 Tests first: the pin test files the design lists, adapted as the design says. Gate: the tests fail on the
-  base (compile errors noted in `notes/2.1.md`).
+- [ ] 2.1 Tests first: the pin test files the design lists, adapted as the design says, and the subject-grammar tests
+  in `internal/flowgraph` (design D3, U-h; #368's reproduction among them). Gate: the tests fail on the base (compile
+  errors and #368's failing assertions noted in `notes/2.1.md`).
 - [ ] 2.2 The three pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
-  updated. Gate: `go test -race ./service/` green and `task verify` green.
+  updated; `flowgraph.ValidSubject` added and the whitespace rule in the shared grammar (design D3; the pull request
+  body carries `Closes #368`). Gate: `go test -race ./service/ ./internal/flowgraph/ ./composition/` green and `task
+  verify` green.
 - [ ] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
 
 ## 3. Docs, ledger and follow-ups
 
-- [ ] 3.1 `service/README.md`, `service/doc.go` and the admission ledger rows updated; #280 commented with the item 2
-  outcome.
+- [ ] 3.1 `service/README.md`, `service/doc.go`, `internal/flowgraph/README.md`, `internal/flowgraph/doc.go` and the
+  admission ledger rows (`service`, `internal/flowgraph`) updated; #280 commented with the item 2 outcome; the D3
+  adoption sweep filed as one tracking issue and linked from the PR.
 - [ ] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.

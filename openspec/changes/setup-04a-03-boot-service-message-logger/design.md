@@ -1,6 +1,7 @@
 # Design: setup-04a-03-boot-service-message-logger
 
-base: `265235183bf517121883c4b957fb37356c901835` (draft PR #367); revised after review round 1 at `8286432`. Inputs:
+base: `265235183bf517121883c4b957fb37356c901835` (draft PR #367); revised after review round 1 at `8286432` and after
+the Codex design review at `5e02cd4` (PR #367 comment 6343581103: D3 validation, D4 watch overflow). Inputs:
 `sweep.md` (this change; M-ids), the whole-package inventory
 (`openspec/changes/archive/2026-10-20-setup-04a-03-boot-service-base/inventory.md`, S-ids), and PR 3's archived design
 (`openspec/changes/archive/2026-10-22-setup-04a-03-boot-service-component-manager/design.md`), whose shape this copies.
@@ -26,7 +27,12 @@ port whole, drop only dead surface; every real defect found and not fixed is fil
   semsource, semconnect, semboids: none.
 - **Who mounts it.** `serviceNameToPrefix` keeps `message-logger` (`service/service_manager_http.go:380-381`); the
   service is not materialized by default (`service/service_configs.go:85-89`).
-- **Open pull requests and issues:** `sweep.md` § 4 (#367 this claim; #358 no overlap, either order).
+- **Open pull requests and issues:** `sweep.md` § 4 (#367 this claim; #358 no overlap, either order; #368 retired
+  here, D3).
+- **A second package.** D3 changes `internal/flowgraph` (one function added, one grammar line corrected, about ten
+  production lines): the logger's boot refusal (Q3) reads that grammar and is wrong without the correction. A required
+  correction the accepted Q3 commitment depends on, not a port; the one-package bound (#159) counts pin lines, and
+  this adds none.
 
 ## D1. Files and surface (surface audit, #190)
 
@@ -73,7 +79,9 @@ with its proving test (D7 units in brackets):
   that context's error and stops nothing. Proof: `TestMessageLoggerPassesTheLifecycleSuite` [U-a]; must-fail owner =
   a logger stopped before `Start` (`service/base_lifecycle_test.go:249-259` precedent).
 - **Startup work.**
-  - `Start` starts the base service, then subscribes to each subject (D3) in sorted order.
+  - `Start` computes the subject set and validates every subject in it (D3) before it starts the base service or
+    subscribes anything, so a refused subject needs no NATS and leaves nothing held. Then it starts the base service
+    and subscribes to each subscribed subject in sorted order.
   - The subscriptions are made under the one run context `Start` creates, kept only as a cancel (graph-ingest
     precedent, `processor/graph-ingest/component.go:982`, `:1024-1027`). natsclient makes that context the parent of
     every message's context (`natsclient/client.go:1036-1047`), so the Start context must not be it (M4).
@@ -87,7 +95,8 @@ with its proving test (D7 units in brackets):
 - **Ending the Start context after `Start` returned stops nothing.** A message published afterwards is stored and
   counted. Proof: suite `StartContextEndStopsNothing`; `TestMessageLoggerKeepsCapturingAfterStartContextEnds` [U-c]
   (the probe's second run, inverted).
-- **Retry, declared.** A subscribe that fails with anything but a malformed subject (D3) leaves the logger running.
+- **Retry, declared.** A subscribe that fails, with any error, leaves the logger running; a malformed subject never
+  reaches a subscribe (D3).
   The failed subjects are retried every 100 ms under the run context. While the retry holds a subject that failed to
   subscribe (the retry's pending set, empty until a subscribe has failed, so the base service's first health check,
   which runs before the subscribes, `service/base.go:209`, `:290-295`, sees a healthy logger on a normal boot):
@@ -152,7 +161,7 @@ with its proving test (D7 units in brackets):
   `Stop` through a value the logger closes or a run-context child created per request and joined, not through a
   stored context. Locks, channels and join order are the developer's (failing-first under `-race`).
 
-## D3. Subjects: one fixed set, covered subjects once, a malformed subject refused
+## D3. Subjects: one fixed set, validated first, covered subjects once
 
 - **The set** is computed once in `Start`, as at the pin (`:341-353`):
   - the explicit subjects, plus, with `"*"`, every NATS, NATS-request and JetStream port subject of every admitted
@@ -161,12 +170,63 @@ with its proving test (D7 units in brackets):
 
   The `Snapshots` doc comment (`component/registry.go:683-687`, "It exists for the component manager") gains the
   logger as its second framework reader (one sentence).
+- **Validation first (M11, Q3, #368).**
+  - `Start` checks every subject of the set with `flowgraph.ValidSubject` before duplicates or covered subjects are
+    removed, before the base service starts and before any subscribe. The first subject that fails refuses `Start`
+    with an invalid-class error (`errs.WrapInvalid`, as the logger's other refusals) whose text names the subject and
+    its source: `monitor_subjects`, or the component and port that declare it. Nothing is held and no NATS call is
+    made, so the refusal is the same connected or not.
+  - Why before reduction and subscribe (Codex, measured): with `["a.>", "a.foo bar"]` the cover check removes the
+    second subject before anything could refuse it; while disconnected, natsclient returns `ErrNotConnected` before
+    nats.go sees the subject (`natsclient/client.go:1074-1092`), which D2 retries; and nats.go refuses at subscribe
+    only whitespace and empty tokens (`badSubject`, `nats.go:5074-5086` at v1.54.0). `a.>.b` passes nats.go: the
+    server answers `Invalid Subject` and closes the connection (subject probe, `sweep.md` § 3; with natsclient's
+    reconnects on, what follows is not probed).
+  - **One grammar, one owner: `internal/flowgraph`.** `ValidSubject(subject string) bool` (new, exported inside an
+    `internal` package) is the per-argument check `SubjectCovers` and `SubjectsOverlap` already make
+    (`validSubjectTokens`, `internal/flowgraph/flowgraph.go:340-352`), so validation, the cover reduction and the
+    entries filter (Q1(c)) read one grammar. Its reader: the logger's `Start` (production); the two helpers keep
+    calling the unexported check it wraps. `service` already reaches `flowgraph` through `composition`. Grammar: one
+    or more `.`-separated tokens, none empty; `*` and `>` only as whole tokens; `>` only last; no space, tab, line
+    feed, carriage return or form feed in any token (nats-server's set, `isValidSubject`,
+    `server/sublist.go:1214-1250` at v2.15.1).
+  - **#368 fixed here.** `validSubjectTokens` gains that whitespace check, so `SubjectCovers("a.>", "a.foo bar")` and
+    `SubjectsOverlap("a.>", "a.foo bar")` return false, as their doc comments already promise. Callers (gopls
+    `references` on `flowgraph.go:279`, `:321`, `:340`): `composition/analyze.go:140` (`reservedCaptureFindings`), where
+    a stream filter holding whitespace no longer reports a reserved-subject capture (it overlaps nothing), and
+    `composition/analyze.go:198` (`explicitStreamCovers`), where such a subject is no longer covered, so its
+    `stream_requirement` finding is no longer suppressed (fail closed); tests
+    `internal/flowgraph/subject_cover_test.go` and `composition/reserved_test.go:161-165`, whose alphabets hold no
+    whitespace, unchanged. `matchNATSPattern` (edge derivation) does not read the grammar and is untouched. The pull
+    request body carries `Closes #368`.
+  - **Stricter than NATS, declared.** A token mixing a wildcard with other text (`a*`, `b*.c`) is a literal to NATS
+    (probe: subscribed, connection healthy) and malformed here, as composition already treats it; a form feed passes
+    the wire (probe: subscribed, no error) and is refused here. A subject NATS accepts but this grammar refuses fails
+    boot, named; that is the fail-closed side. semteams' configured subjects (addendum) all pass.
+  - Since every subject reaching a subscribe has passed a grammar stricter than nats.go's, D2's retry treats every
+    subscribe error alike; a later nats.go refusing more would show as a retried subject and an unhealthy logger
+    (D2), not a silent one.
+  - Options: (a) `flowgraph.ValidSubject`, chosen; (b) `SubjectCovers(s, s)` as the check, no new name, but it reads
+    as a trick and makes reflexivity a promise of the cover helper; (c) a logger-owned validator, a second grammar
+    beside flowgraph's (one home per interpreted fact); (d) the library's refusal as the check (the previous draft):
+    misses the three paths above. `config/config.go:286` (`isValidNATSSubjectPart`) answers a different question,
+    an identity part with no wildcards, and is not adopted.
+  - Proofs: `TestMessageLoggerRefusesMalformedSubject` [U-b], over `newUnconnectedClient`, so it is the disconnected
+    case: `a..b`, `a.foo bar`, `a.>.b`, `a*` and `""` each refuse `Start`, the error names the subject and
+    `monitor_subjects`, and the logger holds nothing (base service not started, no subscription held);
+    `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` [U-b]: `["a.>", "a.foo bar"]` refused, naming
+    `a.foo bar`; `TestValidSubject` and `TestSubjectHelpersRefuseWhitespace` (#368's regression, all five whitespace
+    bytes, both helpers) [U-h].
+  - Adoption sweep (a validator other entry points should read; one tracking issue, not this PR's work): component
+    port subjects are checked only for emptiness (`component/port_codec.go:322`, `:333`, `:356-359`); stream subjects
+    (`config/streams.go:28`) by no subject grammar found in this search.
 - **Covered subjects (M10).**
   - Replaces the three agentic pairs (`:391-395`, `:652-656`): after duplicates are removed, a desired subject that
     another desired subject covers is not subscribed, and each omission is reported in `/stats` `subject_overlaps` as
     `{broader, covered, "covered subscription omitted"}`.
-  - "Covers" is `flowgraph.SubjectCovers(filter, pattern)` (`internal/flowgraph/flowgraph.go:270-311`): directional,
-    false for malformed input, already called by `composition/analyze.go:198`. `service` imports `composition`,
+  - Runs only on a validated set. "Covers" is `flowgraph.SubjectCovers(filter, pattern)`
+    (`internal/flowgraph/flowgraph.go:271-313`): directional, false for malformed input, already called by
+    `composition/analyze.go:198`. `service` imports `composition`,
     which imports `flowgraph`, so no cycle; no new matcher is written. The entries filter uses it too (Q1(c)).
   - Law: every desired subject is covered by at least one subscribed subject, and no subscribed subject covers
     another. Two subscribed subjects can still overlap without either covering the other (`a.b.*` and `*.b.c` share
@@ -176,11 +236,6 @@ with its proving test (D7 units in brackets):
     `TestMessageLoggerCapturesCoveredSubjectOnce` [U-c].
   - Options: (a) generic, chosen; (b) carry the pairs (a consumer's subjects in the framework, other covers captured
     twice); (c) no cover handling (every covered subject captured twice).
-- **Malformed subject (M11).**
-  - A subscribe refused with `nats.ErrBadSubject` (probe, `sweep.md` § 3) fails `Start`, naming the subject and
-    `monitor_subjects`; the guard rolls back.
-  - Proof: `TestMessageLoggerRefusesMalformedSubject` [U-c].
-  - With no subject validator in the tree, the library's refusal is the check. Owner question Q3.
 
 ## D4. HTTP surface (`operator-surface`; 03B D14/D15 row "Keep", `docs/contract.md:139`)
 
@@ -222,11 +277,35 @@ with its proving test (D7 units in brackets):
 - **Text (M20).** The dev/test-mode claims, the 403, `Last-Event-ID` and "reconnection" are rewritten to what the code
   does. The README states the gate: the service is off unless configured. The watch keeps one KV watcher per stream
   (pin ADR-081 not done; M22).
+- **A watch that falls behind ends (M26).** Each stream buffers up to 100 events between its KV watcher and the
+  client (`message_logger_kv_watch.go:226`). At the pin a full buffer dropped the event with a Warn (`:293-298`) and
+  went on, so a slow client during the initial replay could get part of the bucket and then `initial_sync_complete`,
+  which the code says means "all existing keys have been sent" (`:254-264`). Here the first event that does not fit
+  ends the stream:
+  - the watcher is stopped, the events already buffered are sent, then one `error` event,
+    `{"error":"watch fell behind: events were dropped"}`, and the response ends;
+  - no `kv_change` or `initial_sync_complete` is sent after a dropped event;
+  - the Warn line stays (bucket, key, revision). The `error` event is the one the pin already sends when its watcher
+    closes (`:337-340`); a client that reconnects after the stream's `retry: 5000` starts a new initial replay (how
+    a client reconnects is the client's, not promised here).
+
+  Options: (a) end the stream, chosen; (b) keep dropping, add a metric and mark the completion event incomplete: a
+  metric with no reader and a wire field every client must learn, while a client that ignores it still reads a false
+  "complete"; (c) block instead of dropping: moves the backlog into nats.go's watcher, whose behaviour behind a slow
+  reader is not probed at v1.54.0 and not promised; (d) retain (the pin): a false completion claim, the silent-loss
+  admission gate.
+
+  Proof: `TestKVWatchFallingBehindEndsStream` [U-f]. 150 keys are put before the watch opens. The request goes
+  through the mux (`RegisterHTTPHandlers`) to a test `http.ResponseWriter` and `http.Flusher` whose `Write` blocks
+  until the test releases it: the client that does not read, outside the logger, so no production hook. The stream
+  is held at its first write, so at most 101 of the 150 initial values fit (100 buffered, at most one in the
+  stream's hands) and a later one is dropped, whatever the scheduling. The test waits (10 s bound) for the Warn
+  record on U-a's `slog` handler, releases the writer, and waits (10 s bound, then cancels the request context) for
+  `ServeHTTP` to return. It asserts: the last event is `error` with the text above; no `initial_sync_complete`
+  anywhere; fewer than 150 `kv_change` events. Under the pin's drop-and-continue mutant the stream sends
+  `initial_sync_complete`, which fails the assertion, not the bound.
 - **Retained and declared:** the query's `pattern` is a key glob while the watch's is a NATS filter (one parameter
-  name, two grammars; changing the query's is the owner's, not asked); `/stats` keys as at the pin, except Q1(d); a
-  watch's events dropped when its 100-event buffer is full, declared by a Warn line only
-  (`message_logger_kv_watch.go:293-298`), retained under Bounded port scope: it affects one SSE client's view, and no
-  test observes it (recorded uncovered in `notes/2.3.md`).
+  name, two grammars; changing the query's is the owner's, not asked); `/stats` keys as at the pin, except Q1(d).
 
 ## D5. #280 item 2: `component.Declaration`'s parallel port and facts lists
 
@@ -274,8 +353,9 @@ Options:
    - (ii) `"*"` needs `Dependencies.ComponentRegistry`
    - (iii) `Dependencies.PayloadRegistry` is required.
 2. **If they do nothing:** the logger is off (not materialized). If they get (ii) or (iii) wrong, construction
-   refuses, naming the field. A typo'd subject fails boot, naming it (D3, Q3). A subject NATS cannot serve yet makes
-   the logger unhealthy until it is subscribed (D2).
+   refuses, naming the field. A typo'd subject fails boot, naming it, whether NATS is up or not (D3, Q3). A subject
+   NATS cannot serve yet makes the logger unhealthy until it is subscribed (D2). A watch client too slow for the
+   bucket gets an `error` event and a closed stream, never a false "initial sync complete" (D4).
 3. **Where they find out:** a boot error, for all three. Today (iii) is nowhere: every message is silently "raw".
 4. **What they should have to know:** (i) only. (ii) and (iii) are the composition the root already builds (semteams
    `cmd/semteams/main.go:208`, `:789`).
@@ -306,7 +386,8 @@ the one production way, `NewMessageLoggerService`, through U-a's helper; none ca
     `NewMessageLoggerService(json.RawMessage(config), &Dependencies{NATSClient, Logger, ComponentRegistry:
     component.NewRegistry(), PayloadRegistry: payloadregistry.New()})`, then the type assertion.
   - A `slog.Handler`, enabled at Debug (the record is logged at Debug, `:1027`), that holds the first "Message
-    sample" record until the test releases it (D2's proofs).
+    sample" record until the test releases it (D2's proofs), and signals when a record with a given message arrives
+    (D4's watch overflow).
   - Suite adapter: `lifecycletest.Run`, `Owner`, `Observation`, `Promise`; the logger over `fixtureClient(t)`
     (`service/fixture_client_integration_test.go:48`). `Observe` reports base status, held subscriptions, whether a
     retry is running and the open streams (unexported reads in the package; no guard-state field).
@@ -316,14 +397,15 @@ the one production way, `NewMessageLoggerService`, through U-a's helper; none ca
     `:198-220` rewritten for the cover rule, config `:222-266`, trace and ring `:268-415`.
   - Entries are stored through `handleMessage(t.Context(), subject, data)` (the subscription callback's body) and,
     for the ring cases, `storeEntry`; read through `GetLogEntries`, `GetEntriesByTrace`, `GetStatistics`.
-  - New: construction refusals (D1, through `NewMessageLoggerService` directly) and
-    `TestPropCoveredSubjectsSubscribedOnce` (on the unexported function that turns desired subjects into the
-    subscribed set and the omissions).
+  - New: construction refusals (D1, through `NewMessageLoggerService` directly);
+    `TestMessageLoggerRefusesMalformedSubject` and `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` (D3,
+    `Start` on this never-connected client); `TestPropCoveredSubjectsSubscribedOnce` (on the unexported function that
+    turns a validated subject set into the subscribed set and the omissions).
 - **U-c** `service/message_logger_subscription_integration_test.go`. D2, D3.
   - Logger: the helper over `fixtureClient(t)`, `Start` and `Stop` under bounded contexts.
   - Pin `subscription_integration_test.go:17-92` and `registry_test.go:19-191` behaviours on the shared server.
   - New tests: Start-context end, in-flight drain, failed Stop retried, publishes after Stop, covered subject once,
-    malformed subject, retry after reconnect (own server, `natsfixture.New`, `Fixture.Stop`, `Fixture.Start`).
+    retry after reconnect (own server, `natsfixture.New`, `Fixture.Stop`, `Fixture.Start`).
   - Calls: `natsclient.Client.Publish`, `GetConnection().Flush()` on the publishing client, `GetStatistics`,
     `GetLogEntries`, the unexported health check.
 - **U-d** `service/message_logger_http_test.go` (new). D4, Q1.
@@ -344,11 +426,18 @@ the one production way, `NewMessageLoggerService`, through U-a's helper; none ca
     Q1(b)).
   - Integration file: the helper over `fixtureClient(t)`, `Start`; `httptest.NewServer` over the mux; event sequence
     `connected` → initial values → `initial_sync_complete` → `kv_change`; filter refusal; `Stop` ends streams; 503
-    after `Stop`; missing bucket 404 (Q1(e)).
+    after `Stop`; missing bucket 404 (Q1(e)); `TestKVWatchFallingBehindEndsStream` (D4, the blocking test writer
+    beside the test).
 - **U-g** `service/message_logger_decode_test.go`. D1 (payload registry), ADR-093.
   - Logger: the helper over `newUnconnectedClient(t)` with its own `payloadregistry.New()` holding one test payload;
     pin `user_response_test.go:16-49` adapted: `handleMessage` with a `message.BaseMessage` of that payload, then
     `GetLogEntries` shows its type.
+- **U-h** `internal/flowgraph/flowgraph.go`, `internal/flowgraph/subject_cover_test.go`. D3 (grammar, #368). Runs
+  first with U-a: U-b's malformed-subject tests need `ValidSubject`.
+  - `TestValidSubject`: valid (`a`, `a.b`, `*`, `>`, `a.*.c`, `a.>`) and malformed (`""`, `a..b`, `.a`, `a.`,
+    `a.>.b`, `a*`, `b*.c`, and each of space, tab, line feed, carriage return, form feed inside a token).
+  - `TestSubjectHelpersRefuseWhitespace`: #368's reproduction, widened to form feed: both helpers return false for
+    `("a.>", "a.foo<ws>bar")` with each whitespace byte. The existing cover cases stay.
 - **Integration with PR 3's test:** `TestOpenAPIDocumentResolvesEverySchemaRef` gains the logger (D4); one line in its
   composition.
 
@@ -360,7 +449,8 @@ the two 200 ms windows of `TestMessageLoggerFailedStopIsRetried` (D2); every oth
 
 **Generated checks.** The covered-subject rule is a stated law (D3), so it gets a rapid property:
 
-- generator: random subject sets from a small token alphabet with `*` and `>`
+- generator: random valid subject sets from a small token alphabet with `*` and `>` (the reduction's input is a
+  validated set, D3)
 - checks: every input subject is covered by at least one output subject; no output covers another; the output is a
   sorted, duplicate-free subset of the input. Oracle: `flowgraph.SubjectCovers`, tested on its own
   (`internal/flowgraph/subject_cover_test.go`)
@@ -385,7 +475,10 @@ bounded context and asserts the result.
 | no health check while a subject is unsubscribed | `TestMessageLoggerRetriesSubscribeAfterReconnect` |
 | `RegisterAll` not registering the logger's spec | `TestOpenAPIDocumentResolvesEverySchemaRef` |
 | a covered subject also subscribed | `TestPropCoveredSubjectsSubscribedOnce`; `TestMessageLoggerCapturesCoveredSubjectOnce` |
-| a malformed subject degraded instead of refused | `TestMessageLoggerRefusesMalformedSubject` |
+| validation dropped, the subscribe's `ErrBadSubject` left to refuse (the previous draft) | `TestMessageLoggerRefusesMalformedSubject`: on the never-connected client `Start` returns nil and retries |
+| validation after the cover reduction | `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` |
+| `validSubjectTokens` without the whitespace check (#368) | `TestSubjectHelpersRefuseWhitespace`; `TestValidSubject`; `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` |
+| a full watch buffer drops and continues (the pin's `:293-298`) | `TestKVWatchFallingBehindEndsStream`: `initial_sync_complete` is sent |
 | a nil payload registry accepted | `TestMessageLoggerConstructionRefusals` |
 | the watch filter checked by the pin's grammar | `TestKVWatchRejectsInvalidFilter` (a space and `a.>` cases) |
 | the 404 branch removed | `TestKVQueryMissingBucketIs404AndCreatesNothing` |
@@ -395,8 +488,8 @@ bounded context and asserts the result.
 | entries filter applied after the limit (Q1(c)) | `TestEntriesFilterBeforeLimit` [U-d] |
 | trace query returning an overwritten entry | the pin's `message_logger_test.go:379-415`, adapted |
 
-Uncovered, recorded in `notes/2.3.md`: the mid-start cancel (D2), the two KV `Get` branches (D4), the watch's
-dropped-event Warn (D4).
+Uncovered, recorded in `notes/2.3.md`: the mid-start cancel (D2), the two KV `Get` branches (D4), the source naming
+of a malformed subject declared by a component (D3: same loop as `monitor_subjects`, tested through the latter).
 
 ## D8. Ledger, text, ADRs, coverage, issues
 
@@ -406,15 +499,21 @@ dropped-event Warn (D4).
     D1 (readers never create a bucket), ADR-081 (not done); `RegisterAll` registers the logger and its spec.
   - kept names: D1. `configurable.go` and its three names leave the row.
   - `known_risks`: one watcher per watch stream; the query's glob vs the watch's filter; overlapping (not covering)
-    subjects captured twice; the watch's dropped events declared by a Warn only.
+    subjects captured twice; a watch client slower than the bucket loses its stream (`error` event, then end); the
+    subject grammar is stricter than NATS on a wildcard inside a token and on form feed.
+  - the `internal/flowgraph` row: `contract` gains `ValidSubject` and the whitespace rule; the "a malformed subject
+    overlaps nothing" line (`docs/admission-ledger.yaml:2673`) becomes true.
 - **Text:** `service/README.md` and `service/doc.go` gain the logger: enabling it, its keys and refusals, routes,
-  the off-by-default gate, what each `/stats` key means, the health check, and the SSE events.
+  the off-by-default gate, what each `/stats` key means, the health check, and the SSE events, the overflow `error`
+  among them. `internal/flowgraph/README.md` and `doc.go` gain `ValidSubject` and the grammar (one paragraph).
 - **ADRs:** ADR-113 applied (D2), changing pin ADR-095's final failed Stop as PR 3 did. ADR-108 Decision 2 (guard).
   ADR-110: the logger writes no entity. No ADR is drafted.
 - **Guidance:** none at the pin (`sweep.md` § 5).
 - **Coverage:** `service merged` floor (`scripts/cover-check.sh:46`) holds.
-- **Issues:** retired none. #196, #195 and #280 stay (`sweep.md` § 4). None to file: the owner ruled all five Q1 items
-  fixed here; no other defect is left unfixed. #280 item 2 is settled by this change (Q2), items 1 and 3 stay.
+- **Issues:** retires #368 (`Closes #368`; tasks 2.1, 2.2, U-h). #196, #195 and #280 stay (`sweep.md` § 4). One
+  to file: the D3 adoption sweep's tracking issue (port and stream subjects read no grammar), an enumeration, not a
+  defect this PR leaves. The owner ruled all five Q1 items fixed here; no other defect is left unfixed. #280 item 2
+  is settled by this change (Q2), items 1 and 3 stay.
 
 ## D9. Spec deltas (written after acceptance; `skip_specs` removed then)
 
@@ -425,15 +524,24 @@ dropped-event Warn (D4).
     the first check of a normal boot; unhealthy within one 30 s check interval after a failed subscribe; healthy
     again within one interval after the retry succeeds)
   - "The message logger subscribes to a fixed subject set, covered subjects once" (D3, the law as stated)
-  - "A malformed monitored subject fails the logger's Start" (D3, Q3)
+  - "A malformed monitored subject fails the logger's Start" (D3, Q3; scenarios: refused while disconnected, holding
+    nothing; refused when a broader subject covers it; the error names the subject and its source)
   - "The message logger's construction refuses an incomplete composition" (D1).
 - **`operator-surface`, ADDED:**
   - "The message logger's routes are served under /message-logger" (D4: routes, clamped limits, 400/404/405/503,
     KV keys sorted before the limit, `RegisterAll` registers its spec, importing registers nothing)
-  - "The KV watch streams changes until the client leaves or the logger stops" (event sequence, operation values per
-    Q1(b), filter validation, drops logged).
+  - "The KV watch streams changes until the client leaves, falls behind, or the logger stops" (event sequence,
+    operation values per Q1(b), filter validation; scenario: a client that falls behind gets the buffered events,
+    then one `error` event, then the end of the stream, and no `initial_sync_complete` after a dropped event).
 
   No MODIFIED requirement: "/openapi.json documents the mounted routes" already covers the paths.
+- **`composition-validation`, ADDED** (the spec whose stream-cover scenarios already rest on `SubjectCovers`,
+  `openspec/specs/composition-validation/spec.md:36`, `:82-86`; no spec names the grammar today, `grep -rln
+  SubjectCovers openspec/specs`: none):
+  - "One subject grammar decides validity, cover and overlap" (D3: the grammar as stated; scenarios: a subject with
+    whitespace in a token is invalid, covers nothing and overlaps nothing, `TestSubjectHelpersRefuseWhitespace`;
+    `ValidSubject` accepts exactly the subjects the grammar admits, `TestValidSubject`). The logger requirement
+    above cites it.
 
 ## Owner questions
 

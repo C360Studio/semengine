@@ -25,24 +25,20 @@ var _ HTTPHandler = (*ComponentManager)(nil)
 var _ componentStartup = (*ComponentManager)(nil)
 
 // extractComponentName returns the name a status, config or types route
-// carries: the whole of the request path after the route's own segment
-// (<prefix>/status/<name>), with one trailing slash allowed. It reads the
-// escaped path, where an encoded separator survives, and decodes it once with
-// path semantics. A name that is empty, "." or "..", or holds a separator, raw
-// or decoded, is refused, so "a%2Fb" and "a/b" are refused rather than
-// reduced to "b" (design D5; #365).
-//
-// The route's segment is found at its first occurrence. Both prefixes the
-// component manager is served under are "/components", which names no route; a
-// prefix that did would refuse every name, never answer for another.
+// carries: the whole of the request path after route, the exact pattern the
+// handler was registered under (<prefix>/status/ and so on), with one trailing
+// slash allowed. It reads the escaped path, where an encoded separator
+// survives, and decodes it once with path semantics. A name that is empty, "."
+// or "..", or holds a separator, raw or decoded, is refused, so "a%2Fb" and
+// "a/b" are refused rather than reduced to "b" (design D5; #365). Binding the
+// registered route, not searching for its word, keeps a prefix that holds a
+// route word ("/api/status/components") serving its names (#366).
 func extractComponentName(r *http.Request, route string) (string, bool) {
-	escaped := r.URL.EscapedPath()
-	marker := "/" + route + "/"
-	at := strings.Index(escaped, marker)
-	if at < 0 {
+	rest, ok := strings.CutPrefix(r.URL.EscapedPath(), (&url.URL{Path: route}).EscapedPath())
+	if !ok {
 		return "", false
 	}
-	name, err := url.PathUnescape(strings.TrimSuffix(escaped[at+len(marker):], "/"))
+	name, err := url.PathUnescape(strings.TrimSuffix(rest, "/"))
 	if err != nil {
 		return "", false
 	}
@@ -64,10 +60,10 @@ func (cm *ComponentManager) RegisterHTTPHandlers(prefix string, mux *http.ServeM
 	// Register endpoints
 	mux.HandleFunc(prefix+"health", cm.handleComponentsHealth)
 	mux.HandleFunc(prefix+"list", cm.handleComponentsList)
-	mux.HandleFunc(prefix+"types/", cm.handleComponentTypeByID)
+	mux.HandleFunc(prefix+"types/", cm.handleComponentTypeByID(prefix+"types/"))
 	mux.HandleFunc(prefix+"types", cm.handleComponentTypes)
-	mux.HandleFunc(prefix+"status/", cm.handleComponentStatus)
-	mux.HandleFunc(prefix+"config/", cm.handleComponentConfig)
+	mux.HandleFunc(prefix+"status/", cm.handleComponentStatus(prefix+"status/"))
+	mux.HandleFunc(prefix+"config/", cm.handleComponentConfig(prefix+"config/"))
 
 	// FlowGraph endpoints
 	mux.HandleFunc(prefix+"flowgraph", cm.handleFlowGraph)
@@ -83,7 +79,7 @@ func (cm *ComponentManager) registerStartupHTTPHandlers(prefix string, mux *http
 	}
 	mux.HandleFunc(prefix+"health", cm.handleComponentsHealth)
 	mux.HandleFunc(prefix+"list", cm.handleComponentsList)
-	mux.HandleFunc(prefix+"status/", cm.handleComponentStatus)
+	mux.HandleFunc(prefix+"status/", cm.handleComponentStatus(prefix+"status/"))
 }
 
 // OpenAPISpec returns the OpenAPI specification for ComponentManager endpoints
@@ -413,15 +409,22 @@ func (cm *ComponentManager) handleComponentTypes(w http.ResponseWriter, r *http.
 	}
 }
 
-// handleComponentTypeByID returns metadata and schema for a specific component type
-func (cm *ComponentManager) handleComponentTypeByID(w http.ResponseWriter, r *http.Request) {
+// handleComponentTypeByID returns the handler serving metadata and schema for a
+// specific component type under route, the pattern it is registered under.
+func (cm *ComponentManager) handleComponentTypeByID(route string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cm.serveComponentTypeByID(w, r, route)
+	}
+}
+
+func (cm *ComponentManager) serveComponentTypeByID(w http.ResponseWriter, r *http.Request, route string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Extract component type from URL path
-	componentType, valid := extractComponentName(r, "types")
+	componentType, valid := extractComponentName(r, route)
 	if !valid {
 		http.Error(w, "Invalid component type", http.StatusBadRequest)
 		return
@@ -439,15 +442,22 @@ func (cm *ComponentManager) handleComponentTypeByID(w http.ResponseWriter, r *ht
 	http.Error(w, fmt.Sprintf(`{"error":"Component type %s not found"}`, componentType), http.StatusNotFound)
 }
 
-// handleComponentStatus returns detailed status for a specific component
-func (cm *ComponentManager) handleComponentStatus(w http.ResponseWriter, r *http.Request) {
+// handleComponentStatus returns the handler serving detailed status for a
+// specific component under route, the pattern it is registered under.
+func (cm *ComponentManager) handleComponentStatus(route string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cm.serveComponentStatus(w, r, route)
+	}
+}
+
+func (cm *ComponentManager) serveComponentStatus(w http.ResponseWriter, r *http.Request, route string) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
 	// Extract and validate component name from URL path
-	componentName, valid := extractComponentName(r, "status")
+	componentName, valid := extractComponentName(r, route)
 	if !valid {
 		http.Error(w, "Invalid component name", http.StatusBadRequest)
 		return
@@ -504,13 +514,15 @@ func (cm *ComponentManager) handleComponentStatus(w http.ResponseWriter, r *http
 
 // handleComponentConfig exposes boot-effective configuration as a value-only
 // observation. Mutations belong to desired configuration and take effect only
-// on a later process boot.
-func (cm *ComponentManager) handleComponentConfig(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		cm.handleGetComponentConfig(w, r)
-	default:
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+// on a later process boot. route is the pattern the handler is registered under.
+func (cm *ComponentManager) handleComponentConfig(route string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodGet:
+			cm.handleGetComponentConfig(w, r, route)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
 	}
 }
 
@@ -518,9 +530,9 @@ func (cm *ComponentManager) handleComponentConfig(w http.ResponseWriter, r *http
 // component. The record's configuration is fixed at construction, so it is
 // encoded holding nothing, and a client that stops reading holds nothing a Stop
 // needs (design D2, "State shape").
-func (cm *ComponentManager) handleGetComponentConfig(w http.ResponseWriter, r *http.Request) {
+func (cm *ComponentManager) handleGetComponentConfig(w http.ResponseWriter, r *http.Request, route string) {
 	// Extract and validate component name from URL path
-	componentName, valid := extractComponentName(r, "config")
+	componentName, valid := extractComponentName(r, route)
 	if !valid {
 		http.Error(w, "Invalid component name", http.StatusBadRequest)
 		return

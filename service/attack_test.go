@@ -41,7 +41,7 @@ func TestAttack_HandleComponentStatus_MaliciousQueryParams(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			require.NotPanics(t, func() {
-				cm.handleComponentStatus(w, req)
+				cm.handleComponentStatus("/components/status/")(w, req)
 			})
 		})
 	}
@@ -71,7 +71,7 @@ func TestAttack_HandleComponentStatus_ConcurrentRequests(t *testing.T) {
 				}
 			}()
 
-			cm.handleComponentStatus(w, req)
+			cm.handleComponentStatus("/components/status/")(w, req)
 
 			if w.Code != http.StatusOK && w.Code != http.StatusNotFound {
 				failures <- assert.AnError
@@ -103,7 +103,7 @@ func TestAttack_HandleComponentStatus_NoGoroutineLeak(t *testing.T) {
 		for range 100 {
 			req := httptest.NewRequest(http.MethodGet, "/components/status/test-component?debug=true", nil)
 			w := httptest.NewRecorder()
-			cm.handleComponentStatus(w, req)
+			cm.handleComponentStatus("/components/status/")(w, req)
 			require.Equal(t, http.StatusOK, w.Code)
 		}
 	})
@@ -134,7 +134,7 @@ func TestAttack_HandleComponentStatus_MaliciousComponentName(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			require.NotPanics(t, func() {
-				cm.handleComponentStatus(w, req)
+				cm.handleComponentStatus("/components/status/")(w, req)
 			})
 
 			assert.Equal(t, tc.want, w.Code, "GET %s", tc.path)
@@ -152,7 +152,7 @@ func TestAttack_HandleComponentStatus_JSONBomb(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	require.NotPanics(t, func() {
-		cm.handleComponentStatus(w, req)
+		cm.handleComponentStatus("/components/status/")(w, req)
 	})
 
 	assert.Equal(t, http.StatusOK, w.Code)
@@ -170,7 +170,7 @@ func TestAttack_HandleComponentStatus_RapidRequests(t *testing.T) {
 		w := httptest.NewRecorder()
 
 		require.NotPanics(t, func() {
-			cm.handleComponentStatus(w, req)
+			cm.handleComponentStatus("/components/status/")(w, req)
 		})
 	}
 }
@@ -184,7 +184,7 @@ func TestAttack_HandleComponentStatus_MemoryExhaustion(t *testing.T) {
 	w := httptest.NewRecorder()
 
 	require.NotPanics(t, func() {
-		cm.handleComponentStatus(w, req)
+		cm.handleComponentStatus("/components/status/")(w, req)
 	})
 }
 
@@ -210,7 +210,7 @@ func TestAttack_HandleComponentStatus_InvalidHTTPMethods(t *testing.T) {
 			w := httptest.NewRecorder()
 
 			require.NotPanics(t, func() {
-				cm.handleComponentStatus(w, req)
+				cm.handleComponentStatus("/components/status/")(w, req)
 			})
 
 			assert.Equal(t, http.StatusMethodNotAllowed, w.Code)

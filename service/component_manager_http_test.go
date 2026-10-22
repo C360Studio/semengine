@@ -31,7 +31,7 @@ func TestHandleComponentStatus_WithoutDebugParam(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/components/status/test-component", nil)
 	w := httptest.NewRecorder()
 
-	cm.handleComponentStatus(w, req)
+	cm.handleComponentStatus("/components/status/")(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -52,7 +52,7 @@ func TestHandleComponentStatus_DebugParamFalse(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/components/status/test-component?debug=false", nil)
 	w := httptest.NewRecorder()
 
-	cm.handleComponentStatus(w, req)
+	cm.handleComponentStatus("/components/status/")(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -71,7 +71,7 @@ func TestHandleComponentStatus_DebugParamTrue_ProviderExists(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/components/status/test-component?debug=true", nil)
 	w := httptest.NewRecorder()
 
-	cm.handleComponentStatus(w, req)
+	cm.handleComponentStatus("/components/status/")(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -95,7 +95,7 @@ func TestHandleComponentStatus_DebugParamTrue_NoProvider(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/components/status/non-debug-component?debug=true", nil)
 	w := httptest.NewRecorder()
 
-	cm.handleComponentStatus(w, req)
+	cm.handleComponentStatus("/components/status/")(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -149,7 +149,7 @@ func TestHandleComponentStatus_DebugParamInvalid(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/components/status/test-component?"+tc.queryParam, nil)
 			w := httptest.NewRecorder()
 
-			cm.handleComponentStatus(w, req)
+			cm.handleComponentStatus("/components/status/")(w, req)
 
 			require.Equal(t, http.StatusOK, w.Code, "Invalid param should not cause error")
 
@@ -170,7 +170,7 @@ func TestHandleComponentStatus_DebugFieldJSONSerializable(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/components/status/test-component?debug=true", nil)
 	w := httptest.NewRecorder()
 
-	cm.handleComponentStatus(w, req)
+	cm.handleComponentStatus("/components/status/")(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code)
 
@@ -188,7 +188,7 @@ func TestHandleComponentStatus_ComponentNotFound(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/components/status/nonexistent?debug=true", nil)
 	w := httptest.NewRecorder()
 
-	cm.handleComponentStatus(w, req)
+	cm.handleComponentStatus("/components/status/")(w, req)
 
 	require.Equal(t, http.StatusNotFound, w.Code)
 }
@@ -203,18 +203,19 @@ func TestHandleComponentStatus_MethodNotAllowed(t *testing.T) {
 			req := httptest.NewRequest(method, "/components/status/test-component?debug=true", nil)
 			w := httptest.NewRecorder()
 
-			cm.handleComponentStatus(w, req)
+			cm.handleComponentStatus("/components/status/")(w, req)
 
 			require.Equal(t, http.StatusMethodNotAllowed, w.Code)
 		})
 	}
 }
 
-// TestExtractComponentNameRefusesUnsafeNames: the name is the whole of the path after the route's
-// segment, read from the request httptest.NewRequest parses (its Path already decoded, the encoded
-// form kept in RawPath), as a handler receives it. A name that is empty, "." or "..", has a second
-// segment, or decodes to a path separator, is refused, which the status route answers with a 400
-// (design D5; #365). It decodes with path semantics, so "+" stays "+".
+// TestExtractComponentNameRefusesUnsafeNames: the name is the whole of the path after the route the
+// handler was registered under (a prefix holding a route word included, #366), read from the
+// request httptest.NewRequest parses (its Path already decoded, the encoded form kept in RawPath),
+// as a handler receives it. A name that is empty, "." or "..", has a second segment, or decodes to
+// a path separator, is refused, which the status route answers with a 400 (design D5; #365). It
+// decodes with path semantics, so "+" stays "+".
 func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 	cases := []struct {
 		route string
@@ -222,23 +223,29 @@ func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 		name  string
 		ok    bool
 	}{
-		{route: "status", path: "/components/status/test-component", name: "test-component", ok: true},
-		{route: "status", path: "/components/status/test-component/", name: "test-component", ok: true},
-		{route: "status", path: "/components/status/a+b", name: "a+b", ok: true},
-		{route: "config", path: "/components/config/test-component", name: "test-component", ok: true},
-		{route: "types", path: "/components/types/udp", name: "udp", ok: true},
-		{route: "status", path: "/components/status/"},
-		{route: "status", path: "/components/status//"},
-		{route: "status", path: "/components/status/test-component//"},
-		{route: "status", path: "/components/status/."},
-		{route: "status", path: "/components/status/.."},
-		{route: "status", path: "/components/status/%2E%2E"},
-		{route: "status", path: "/components/status/test%2Fcomponent"},
-		{route: "status", path: "/components/status/unknown%2Ftest-component"},
-		{route: "status", path: "/components/status/unknown/test-component"},
-		{route: "status", path: "/components/status/test%5Ccomponent"},
-		{route: "status", path: `/components/status/test\component`},
-		{route: "status", path: "/components/config/test-component"},
+		{route: "/components/status/", path: "/components/status/test-component", name: "test-component", ok: true},
+		{route: "/components/status/", path: "/components/status/test-component/", name: "test-component", ok: true},
+		{route: "/components/status/", path: "/components/status/a+b", name: "a+b", ok: true},
+		{route: "/components/config/", path: "/components/config/test-component", name: "test-component", ok: true},
+		{route: "/components/types/", path: "/components/types/udp", name: "udp", ok: true},
+		{
+			route: "/api/status/components/status/",
+			path:  "/api/status/components/status/test-component",
+			name:  "test-component",
+			ok:    true,
+		},
+		{route: "/components/status/", path: "/components/status/"},
+		{route: "/components/status/", path: "/components/status//"},
+		{route: "/components/status/", path: "/components/status/test-component//"},
+		{route: "/components/status/", path: "/components/status/."},
+		{route: "/components/status/", path: "/components/status/.."},
+		{route: "/components/status/", path: "/components/status/%2E%2E"},
+		{route: "/components/status/", path: "/components/status/test%2Fcomponent"},
+		{route: "/components/status/", path: "/components/status/unknown%2Ftest-component"},
+		{route: "/components/status/", path: "/components/status/unknown/test-component"},
+		{route: "/components/status/", path: "/components/status/test%5Ccomponent"},
+		{route: "/components/status/", path: `/components/status/test\component`},
+		{route: "/components/status/", path: "/components/config/test-component"},
 	}
 	for _, tc := range cases {
 		request := httptest.NewRequest(http.MethodGet, tc.path, nil)
@@ -251,7 +258,7 @@ func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 	cm := newDebugStatusComponentManager(t)
 	for _, target := range []string{"/components/status/..", "/components/status/test%5Ccomponent"} {
 		w := httptest.NewRecorder()
-		cm.handleComponentStatus(w, httptest.NewRequest(http.MethodGet, target, nil))
+		cm.handleComponentStatus("/components/status/")(w, httptest.NewRequest(http.MethodGet, target, nil))
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("GET %s = %d, want %d", target, w.Code, http.StatusBadRequest)
 		}
@@ -285,6 +292,23 @@ func TestComponentRoutesRejectMalformedName(t *testing.T) {
 		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
 		if w.Code != http.StatusBadRequest {
 			t.Errorf("GET %s: got %d, want 400: %s", path, w.Code, w.Body.String())
+		}
+	}
+}
+
+// TestComponentRoutesRespectTheirMountPrefix: a name is read after the exact prefix the routes were
+// registered under, so a prefix that itself holds a route word still serves a valid name (#366).
+func TestComponentRoutesRespectTheirMountPrefix(t *testing.T) {
+	cm := newDebugStatusComponentManager(t)
+	for _, route := range []string{"status", "config", "types"} {
+		prefix := "/api/" + route + "/components"
+		mux := http.NewServeMux()
+		cm.RegisterHTTPHandlers(prefix, mux)
+		path := prefix + "/" + route + "/test-component"
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, httptest.NewRequest(http.MethodGet, path, nil))
+		if w.Code != http.StatusOK {
+			t.Errorf("GET %s: got %d, want 200: %s", path, w.Code, w.Body.String())
 		}
 	}
 }

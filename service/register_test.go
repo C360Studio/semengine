@@ -27,17 +27,20 @@ var retiredFlowRoutes = []string{
 // entry mentions — deleting the constructor without deleting the declaration
 // would leave the routes published and unserved.
 //
-// RegisterAll registers only metrics until each other service's owner lands
-// (design D1), so the guard also checks that metrics is offered: a RegisterAll
-// that registered nothing would pass the absence checks vacuously.
+// RegisterAll registers metrics and the component manager until each other
+// service's owner lands (design D1), so the guard also checks that both are
+// offered: a RegisterAll that registered nothing would pass the absence checks
+// vacuously.
 func TestServiceRegistryHasNoFlowBuilder(t *testing.T) {
 	registry := NewServiceRegistry()
 	if err := RegisterAll(registry); err != nil {
 		t.Fatalf("RegisterAll: %v", err)
 	}
 
-	if _, exists := registry.Constructor("metrics"); !exists {
-		t.Error(`RegisterAll does not offer "metrics"`)
+	for _, name := range []string{"metrics", "component-manager"} {
+		if _, exists := registry.Constructor(name); !exists {
+			t.Errorf("RegisterAll does not offer %q", name)
+		}
 	}
 	for _, name := range []string{"flow-builder", "flow-service", "flowbuilder"} {
 		if _, exists := registry.Constructor(name); exists {

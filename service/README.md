@@ -3,14 +3,14 @@
 Package `service` holds what every long-running SemEngine service shares: `BaseService`, which a service embeds for
 its name, status and health check, and the `Service` interface a service manager drives. `Manager` is that service
 manager: it builds the services a configuration names, starts them, serves the HTTP routes around them and stops
-them. `Metrics` is the service that serves the Prometheus endpoint. The package also holds the helpers a composition
-root (the process's `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`,
-`WireGraphRuntime` and the OpenAPI registry, plus the service-configuration and schema helpers the service manager
-reads.
+them. `ComponentManager` is the service that owns the components. `Metrics` is the service that serves the Prometheus
+endpoint. The package also holds the helpers a composition root (the process's `main` function, which builds and wires
+everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
+service-configuration and schema helpers the service manager reads.
 
 The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
-this one carries `Manager` and `Metrics`. The component manager and the other services arrive with the later ones;
-until then a composition supplies its own `component-manager` service (see [Composing](#composing-and-starting)).
+the second `Manager` and `Metrics`; this one carries `ComponentManager`, the service that owns the components
+([The component manager](#the-component-manager)). The other services arrive with the later ones.
 
 ## Embedding BaseService
 
@@ -78,16 +78,18 @@ the configuration, and starts it:
 
 ```go
 services := service.NewServiceRegistry()
-if err := service.RegisterAll(services); err != nil { // offers "metrics"
+if err := service.RegisterAll(services); err != nil { // offers "metrics" and "component-manager"
     return err
 }
-// Until the component manager is ported, register a constructor for "component-manager" here too:
-// services.Register("component-manager", ...)
 
 manager := service.NewServiceManager(services)
 manager.UseHTTPMiddleware(authMiddleware) // optional; before StartAll
 
-deps := &service.Dependencies{NATSClient: client, MetricsRegistry: registry, Logger: logger}
+deps := &service.Dependencies{
+    NATSClient: client, MetricsRegistry: registry, Logger: logger,
+    Platform: platform, Manager: configManager,
+    ComponentRegistry: components, PayloadRegistry: payloads,
+}
 if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
     return err
 }
@@ -107,8 +109,9 @@ if err := manager.StopAll(stopCtx); err != nil {
 `ConfigureFromServices` resolves the configuration with `ResolveServiceConfigs` and constructs every enabled service
 from its registered constructor. Nothing is composed unless every constructor succeeds. `component-manager` and
 `service-manager` may not be disabled, and a composition whose `component-manager` has no registered constructor is
-refused. `CreateService` and `RegisterInstance` compose one more service by hand, and `GetService` finds a composed
-one.
+refused. `RegisterAll` registers one, and the component manager needs the `Manager`, `ComponentRegistry`, `Platform` and
+`PayloadRegistry` fields shown above (see [Composing it](#composing-it)). `CreateService` and `RegisterInstance`
+compose one more service by hand, and `GetService` finds a composed one.
 
 The `service-manager` entry configures the `Manager` itself (`ManagerConfig`):
 
@@ -121,9 +124,9 @@ The `service-manager` entry configures the `Manager` itself (`ManagerConfig`):
 | `http_write_timeout` | `120s` | how long a response may take |
 
 A service's `config` is decoded strictly. An unknown key is refused, and so is a key that differs from a field's name
-only in letter case (`"Port"` for `"port"`), with both spellings named in the error. This holds for the `service-manager`
-and `metrics` entries, which this package decodes. A service defined elsewhere decodes its own `config`, and the
-check applies to it only if it makes it.
+only in letter case (`"Port"` for `"port"`), with both spellings named in the error. This holds for the `service-manager`,
+`metrics` and `component-manager` entries, which this package decodes. A service defined elsewhere decodes its own
+`config`, and the check applies to it only if it makes it.
 
 ### Starting and stopping
 
@@ -199,12 +202,184 @@ method other than `GET` is `405`, and a bucket that cannot be read is `500`. Wit
 `Dependencies`, it answers `[]` for every query: there is no store to read. The `Manager` only reads the bucket
 (ADR-110).
 
+## The component manager
+
+A *component* is one unit of a running composition: an input, processor, output or storage unit. A binary makes the
+component factories available through a `component.Registry`, and the `components` section of the configuration names
+the instances to build. `ComponentManager` is the service that builds every enabled component, starts them, serves
+their status over HTTP and stops them. Every composition has one: `component-manager` may not be disabled.
+
+### Composing it
+
+`RegisterAll` registers the constructor, `NewComponentManager`, and the component manager's OpenAPI spec (see
+[OpenAPI](#the-component-managers-openapi-spec)). The `component-manager` entry takes no configuration: `"config": {}`
+or none at all. Any key is refused, naming it. The components come from the `Dependencies` the composition root passes
+to `ConfigureFromServices`:
+
+| `Dependencies` field | What the component manager does with it |
+| --- | --- |
+| `Manager` (`*config.Manager`) | required; the boot configuration it reads, once |
+| `ComponentRegistry` | required; the factories it builds from, and the registry it seals |
+| `PayloadRegistry` | given to each component |
+| `NATSClient` | given to each component; with none, the manager publishes no component health |
+| `Platform` | the deployment's identity, given to each component |
+| `MetricsRegistry`, `Logger` | given to each component; the manager's own metrics and log lines |
+
+`NewComponentManager` reads the boot configuration once, and later writes to it change nothing in the running set: they
+are desired state for the next boot (SemStreams ADR-094 and ADR-096, carried in
+[docs/adr](../docs/adr/094-boot-only-composition-and-observable-rule-activation.md)). It builds each enabled component
+through `Registry.CreateComponent`, in instance-name order, and skips the disabled ones. It then checks the whole set
+with `composition.Analyze` and seals the registry (ADR-100). It returns an error, and no service, when:
+
+- the `Manager` or the `ComponentRegistry` is missing;
+- any enabled component cannot be built. The error names every one that failed, because a boot that quietly runs
+  without a configured component would report ready while doing less than it was told;
+- the composition has an error-severity finding. The error reads `composition validation refused boot with N error
+  finding(s): ...` and names each finding.
+
+### Starting and stopping
+
+`Start(ctx)` refuses a `nil` or ended `ctx`, a second `Start`, and a `Start` after any `Stop`
+(`errs.ErrAlreadyStarted`). The start order is fixed when the manager is built: components that provide stores
+(`component.StoreProvider`) by instance name, then the rest by instance name. `Start` runs in two phases, providers
+first. Each phase starts its components concurrently, and the next phase begins only after every `Start` in the
+current one returned, so a provider's stores are in the shared store registry before any consumer starts. A failure in
+the first phase starts nothing of the second. A component that does not implement `component.LifecycleComponent` is
+built and listed but never started or stopped.
+
+Each component's `Start` receives the context the manager's `Start` received, the same value. The manager keeps no
+context of its own for a component and never ends the one it was given, `Stop` included (ADR-113). A component
+therefore makes its own run context in `Start` and ends it in `Stop`; a component that hangs its continuing work on its
+`Start` context stops when the caller ends that context, which for a program that passes its signal context is the
+start of shutdown, before `Stop` reaches the component. For the same reason ending the manager's `Start` context after
+`Start` returned stops nothing. The manager's health publisher and override-expiry reporter (below) run under a run
+context that `Start` creates and `Stop` ends.
+
+A failed `Start` returns every component failure joined, each naming its component, after one rollback: it stops every
+component it launched, the failing ones included, in reverse start order. A component whose `Start` returned `nil`
+after `ctx` ended counts as failed. If the rollback fails too, its error is joined into `Start`'s and the next `Stop`
+runs it again.
+
+`Stop(ctx)` is the only stop. It refuses a `nil` `ctx`. Given an ended `ctx` it returns that error and stops nothing,
+so give it a fresh bounded context, never the signal context that is ending the program. Before any `Start` it returns
+`nil`, and a later `Start` is refused. Otherwise it marks the stop begun (`/readyz` answers `503 NOT READY` from then),
+stops each started component with `ctx` in reverse start order (just before a provider's own `Stop`, it removes that
+provider's stores from the store registry), then ends the manager's own loops and its base service. It returns `nil`
+only once everything is released. A component whose `Stop` failed, or was not reached because `ctx` ended, is stopped
+again by the next `Stop`; one whose `Stop` returned `nil` is not called again. A `Stop` after one that returned `nil`
+returns `nil`, and a `Stop` while another runs is refused as transient. A `Stop` that arrives while `Start` is still
+running waits for every component's `Start` to return, or returns its own context's error first; if that `Start`
+failed, it then stops only what the rollback left. A caller cuts a slow boot short only by ending the context it gave `Start`.
+
+### Reading status during and after Stop
+
+`GetComponentHealth`, `GetComponentStatus`, the `/components` routes and the manager's own health check wait on no lock
+and not on `Start` or `Stop`. Each reads the component's record and asks the component itself, so a request that
+arrives during or after `Stop` gets whatever the component answers then. SemStreams kept such requests away from a
+stopping component; this manager does not. The line a component author holds is in `component.LifecycleComponent`:
+`Health`, `DataFlow` and `DebugStatus` may be called at any time and return without waiting for `Start` or `Stop`. The
+tree enforces it for graph-ingest (`TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop`); for a component
+outside this module it is review only, and its author checks it.
+
+The manager's own health, which `BaseService` runs and `/readyz` reads, is unhealthy while any component is in the
+failed state. It names each failed component in name order with its last error, and reads every component each time.
+
+### What it publishes and reports
+
+- **Component health.** With a NATS client, the manager publishes `{"timestamp","name","health"}` for each admitted
+  component on `health.component.<name>`, once as `Start` returns and then every 5 seconds. A publish or encode that
+  fails is counted on `semengine_errors_total{service="component-manager",type="health_publish"}` and logged at Debug
+  with the subject. The next component and the next round are still published, because a missed report is replaced by
+  the next one.
+- **Stream migration overrides.** A `stream_migration_overrides` entry admits an existing unbounded stream as a named,
+  time-limited bridge. The manager evaluates the live configuration when it is built and then every minute from
+  `Start` to `Stop`, and sets the gauge `semengine_streams_migration_override_expired{stream,owner}` to 0 for each
+  declared bridge and to 1 for a lapsed one, with a Warn line per lapsed bridge. It only reports: readiness is
+  unaffected, and the refusal comes at the next boot.
+
+### The routes
+
+The routes are mounted under `/components` and answer `GET` only (`405` otherwise). A component name that is empty,
+`.`, `..` or decodes to a path separator is `400`, and an unknown one is `404`. Until `StartAll` commits the full route
+set, only `health`, `list` and `status/{name}` are served, and every other path answers `503 NOT READY`.
+
+| Route | Answer |
+| --- | --- |
+| `/components/health` | each admitted component's health and their aggregate; `503` when any component is unhealthy |
+| `/components/list` | each admitted component's name, state, factory, category, `enabled` and health, in no fixed order |
+| `/components/types` | the registered factories with their schemas and default ports, as an array |
+| `/components/types/{id}` | one factory's entry |
+| `/components/status/{name}` | one component's state, health and last error; `?debug=true` adds its `DebugStatus` when it has one |
+| `/components/config/{name}` | the boot configuration the instance was built from |
+| `/components/flowgraph` | the composition's graph as JSON, or Mermaid text with `?format=mermaid` |
+| `/components/validate` | the composition check's result: status, errors and warnings |
+| `/components/paths` | for each input component, every component reachable from it, with counts |
+
+`flowgraph`, `validate` and `paths` project the result kept when the manager was built and compute nothing, so they
+cannot disagree with the check that admitted the boot (ADR-100). `GetFlowPaths` is the same projection as a call.
+`BuildComponentTypeCatalog(registry, logger)` returns what `/components/types` serves, for a product that serves the
+catalog elsewhere. `GetComponentStatus` and `ComponentStatus` are read inside this package only.
+
+A declared difference you may meet: `GET /components/types/{id}` for an unregistered type answers `404` with the body
+`{"error":"Component type <id> not found"}` sent as `text/plain`, not JSON, with the request's own path segment in it.
+SemStreams answers it the same way, and no contract line promises the body, so read the status code and not the text.
+
+### Rule packs
+
+A rule processor (a component this repository has not ported yet) can declare *contracts* for the predicate groups it
+writes, and replace a whole group with one reconcile call (`projection.PredicateReconciler`, implemented by
+`projection.MutationClient`). It implements `ProjectionBinder` to receive that client. The component manager does not
+hand it one; the composition root does, in this order, after `ConfigureFromServices` and before `StartAll`:
+
+```go
+if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+    return err
+}
+if err := service.ConfigureRulePackMutations(manager); err != nil {
+    return err
+}
+if err := manager.StartAll(startCtx); err != nil {
+    return err
+}
+```
+
+`ConfigureRulePackMutations` finds the admitted components that implement `ProjectionBinder` and runs every binder's
+`PreflightProjectionMutations` before changing anything, so one failure injects nothing. It then validates each
+`pack_id` and refuses a duplicate, copies and validates each pack's contracts, refuses contracts when there is no NATS
+client, and builds one `projection.MutationClient` per pack that has contracts and hands it to that binder's
+`SetPredicateReconciler`. If a composition root never makes the call, no binder is given a reconciler. No rule
+processor is in this tree yet, so today that has no effect; what a rule processor does without one is stated when it
+is ported. `ComponentsImplementing[T](manager)` returns the admitted components that implement `T`, in start order, and
+`nil` before a component manager is composed. `Manager.ProjectionBinders` is that call for `ProjectionBinder`.
+
+### The component manager's OpenAPI spec
+
+`/openapi.json` takes its schemas, here `Graph` and `Result` for the flowgraph and validate responses, only from the
+process-wide registry that `RegisterOpenAPISpec` fills. `RegisterAll` registers the component manager's spec there,
+because importing the package registers nothing. A composition that registers `NewComponentManager` by hand instead of
+calling `RegisterAll` must register the spec itself, or those two references name schemas the document does not carry:
+
+```go
+if svc, ok := manager.GetService("component-manager"); ok {
+    service.RegisterOpenAPISpec("component-manager", svc.(service.HTTPHandler).OpenAPISpec())
+}
+```
+
+The rule for any service that does this is in the developer contract: every `SchemaRef` type is listed in its spec's
+`ResponseTypes` or `RequestBodyTypes`, and the composition root registers the spec.
+
+### Not ported
+
+`Initialize` (construction does that work), `IsInitialized`, `IsStarted`, `GetHealthyComponents`,
+`GetUnhealthyComponents`, `DefaultComponentManagerConfig`, the configuration's `enabled_components` key and its
+`Validate`, and the component manager's config subscribers and live-configuration routes, which ADR-094 retired.
+
 ## The metrics service
 
 `Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
 `/metrics`). Started by itself, it binds the port between `Start` and `Stop`. Composed under a `Manager`, the
 `Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
-the server runs. `RegisterAll` registers `metrics` and nothing else today. A `Metrics` runs once: a second `Start`,
+the server runs. `RegisterAll` registers `metrics` and `component-manager`. A `Metrics` runs once: a second `Start`,
 and a `Start` after any `Stop`, are refused with `errs.ErrAlreadyStarted`, and the context given to `Start` bounds
 `Start` only.
 

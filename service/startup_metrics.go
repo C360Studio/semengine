@@ -101,6 +101,17 @@ func (w *startupMetricWriter) publishServices() {
 	w.writeServices(w.serviceSnapshot())
 }
 
+// publishComponents publishes the component counts. A nil writer publishes
+// nothing: a component manager started on its own is handed none.
+func (w *startupMetricWriter) publishComponents() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.writeComponents(w.componentSnapshot())
+}
+
 func (w *startupMetricWriter) writeServices(counts serviceStartupCounts) {
 	w.units.WithLabelValues("services", "admitted").Set(float64(counts.Admitted))
 	w.units.WithLabelValues("services", "starts_invoked").Set(float64(counts.StartsInvoked))

@@ -301,8 +301,14 @@ Carried with `message`, `payloadregistry` and graph-ingest from SemStreams' deve
 Carried with graph-ingest and `component` from SemStreams' developer contract at the pin (§ State ownership and
 component wiring). The pin's rules for `internal/boot` and schema generation are not carried: this module has no
 binary and no schema generator. `service` has the OpenAPI types and registry (`RegisterOpenAPISpec`); the pin's rule
-to register every OpenAPI `SchemaRef` type arrives with the first service that registers a spec (PR 3 of the `service`
-port).
+to register every OpenAPI `SchemaRef` type is the first bullet below.
+
+- Every `SchemaRef` type a service's OpenAPI spec names is listed in that spec's `ResponseTypes` or
+  `RequestBodyTypes`, and the composition root registers the spec (`RegisterAll` does so for the framework's
+  services), never an `init` function. `/openapi.json` takes its schemas only from that registry, so a type left out
+  or a spec left unregistered leaves a `$ref` that names no schema. A composition that registers a service by hand
+  registers its spec by hand. `TestOpenAPIDocumentResolvesEverySchemaRef` checks the services `RegisterAll`
+  registers; a service registered anywhere else is review only.
 
 - Only graph-ingest writes domain entities to `ENTITY_STATES`. Other code emits a `graph.Graphable` payload or uses a
   bucket it owns, declared in `graph/kvcatalog` when the framework guarantees its ownership or retention.

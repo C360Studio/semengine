@@ -227,19 +227,20 @@ func TestComponentStartupGatesReadiness(t *testing.T) {
 	}
 }
 
-// TestConfigureRefusesACompositionWithoutAComponentManager: until PR 3 registers the
-// component-manager constructor, a registry holding only RegisterAll's services cannot compose
-// the mandatory component-manager, so ConfigureFromServices refuses naming the missing
-// constructor and StartAll refuses likewise, binding nothing (design D3, "Default composition until
-// PR 3"). With a component-manager constructor registered, here one returning the
-// componentStartup double, the default composition holds component-manager and metrics.
+// TestConfigureRefusesACompositionWithoutAComponentManager: a registry offering metrics but no
+// component-manager constructor (a composition that registers its services by hand instead of
+// calling RegisterAll) cannot compose the mandatory component-manager, so ConfigureFromServices
+// refuses naming the missing constructor and StartAll refuses likewise, binding nothing
+// (setup-04a-03-boot-service-manager design D3). With a component-manager constructor
+// registered, here one returning the componentStartup double, the default composition holds
+// component-manager and metrics.
 //
 // spec: service-lifecycle / Every composition has a component manager
 func TestConfigureRefusesACompositionWithoutAComponentManager(t *testing.T) {
 	registryWithoutComponentManager := func(t *testing.T) *Registry {
 		t.Helper()
 		registry := NewServiceRegistry()
-		require.NoError(t, RegisterAll(registry))
+		require.NoError(t, registry.Register("metrics", NewMetrics))
 		return registry
 	}
 
@@ -287,8 +288,10 @@ func TestManagerLogsThroughTheInjectedLogger(t *testing.T) {
 	slog.SetDefault(slog.New(fallback))
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
+	// RegisterAll's component manager needs a configuration manager this test does not build, so
+	// the registry offers metrics and a stand-in component manager instead.
 	registry := NewServiceRegistry()
-	require.NoError(t, RegisterAll(registry))
+	require.NoError(t, registry.Register("metrics", NewMetrics))
 	require.NoError(t, registry.Register("component-manager", func(json.RawMessage, *Dependencies) (Service, error) {
 		return newStandInComponentManager(), nil
 	}))

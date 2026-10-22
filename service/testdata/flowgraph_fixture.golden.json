@@ -1,0 +1,115 @@
+{
+  "nodes": [
+    {
+      "instance": "enricher",
+      "factory": "enricher",
+      "type": "processor",
+      "inputs": [
+        {
+          "name": "raw",
+          "direction": "input",
+          "type": "",
+          "required": true,
+          "connection_id": "EVENTS",
+          "pattern": "stream",
+          "description": "",
+          "kind": "jetstream"
+        }
+      ],
+      "outputs": [
+        {
+          "name": "enriched",
+          "direction": "output",
+          "type": "",
+          "required": false,
+          "connection_id": "events.enriched",
+          "pattern": "stream",
+          "description": "",
+          "kind": "nats"
+        },
+        {
+          "name": "state",
+          "direction": "output",
+          "type": "",
+          "required": false,
+          "connection_id": "kv:ENRICHED_STATE",
+          "pattern": "watch",
+          "description": "",
+          "kind": "kv-write"
+        }
+      ]
+    },
+    {
+      "instance": "sink",
+      "factory": "sink",
+      "type": "output",
+      "inputs": [
+        {
+          "name": "enriched",
+          "direction": "input",
+          "type": "",
+          "required": false,
+          "connection_id": "events.enriched",
+          "pattern": "stream",
+          "description": "",
+          "kind": "nats"
+        },
+        {
+          "name": "state",
+          "direction": "input",
+          "type": "",
+          "required": false,
+          "connection_id": "kv:ENRICHED_STATE",
+          "pattern": "read",
+          "description": "",
+          "kind": "kv-read"
+        }
+      ],
+      "outputs": []
+    },
+    {
+      "instance": "source",
+      "factory": "source",
+      "type": "input",
+      "inputs": [],
+      "outputs": [
+        {
+          "name": "raw",
+          "direction": "output",
+          "type": "",
+          "required": false,
+          "connection_id": "EVENTS",
+          "pattern": "stream",
+          "description": "raw events",
+          "kind": "jetstream"
+        }
+      ]
+    }
+  ],
+  "edges": [
+    {
+      "from": "enricher",
+      "from_port": "enriched",
+      "to": "sink",
+      "to_port": "enriched",
+      "pattern": "stream",
+      "connection_id": "events.enriched"
+    },
+    {
+      "from": "enricher",
+      "from_port": "state",
+      "to": "sink",
+      "to_port": "state",
+      "pattern": "read",
+      "connection_id": "kv:ENRICHED_STATE"
+    },
+    {
+      "from": "source",
+      "from_port": "raw",
+      "to": "enricher",
+      "to_port": "raw",
+      "pattern": "stream",
+      "connection_id": "EVENTS"
+    }
+  ]
+}

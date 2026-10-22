@@ -9,11 +9,12 @@
 > - Issue and pull request numbers in the text below (`#1008`, `#1060`, `#1087`, `#1088`, `#1089`) are SemStreams',
 >   not SemEngine's, and so are the proposal documents, specs and `task e2e:*` targets it names.
 > - Decision 4's CLI entry point is `composition/cli`, which SemEngine ports in a later change. The component
->   manager it names is `service`'s, also not yet ported; until it is, nothing runs the validator at boot.
+>   manager it names is `service.ComponentManager`, ported in change `setup-04a-03-boot-service-component-manager`:
+>   it runs `composition.Analyze` when it is constructed and refuses boot on an error finding.
 > - Decision 5 names SemStreams packages, buckets, services and tools (`flowstore`, `flowtemplate`, `engine`,
 >   `flow-builder`, `semstreams_flows`, `FLOW_TEMPLATES`) that SemEngine never had.
-> - ADR-026, ADR-027, ADR-029, ADR-061, ADR-094, ADR-095, ADR-096 and ADR-099 are not ported, so the superseded
->   clauses below are a record of SemStreams' history.
+> - ADR-026, ADR-027, ADR-029, ADR-061 and ADR-099 are not ported, so the clauses below that supersede them are a
+>   record of SemStreams' history. ADR-094, ADR-095 and ADR-096 are ported, each with its own port note.
 > - Decision 3 is kept and strengthened: the offline exclusive-claim judgment calls
 >   `component.Declaration.ConflictWith`, the rule boot admission applies (#338). The changes from the pin are at
 >   spec level, not here: the pin's test helper `AssertValid` is not ported (products call `composition.Validate` and

@@ -84,6 +84,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `verify+review` | Ported components whose failed `Start` cannot clean up report both errors and retain handles for `Stop` | `lifecycle-suite` spec |
 | `review` | Every polymorphic payload is published inside a `message.BaseMessage` | `dev`, `rev` |
 | `verify+review` | Payload packages export `RegisterPayloads`, component packages `Register`, imports register nothing, only `main` aggregates, and tests decode via `message.NewDecoder` | `component-registration`, `harness-boundaries` specs; `dev`, `rev` |
+| `verify+review` | Every `SchemaRef` type in a service's OpenAPI spec is listed in its `ResponseTypes` or `RequestBodyTypes`, and the composition root registers the spec (`RegisterAll` for the framework's services), never `init` | `dev`, `rev`; `operator-surface` spec |
 | `review` | Failure paths fail closed; any skip, drop, or degrade is declared | `dev` |
 
 ### 2. Graph, identity, and NATS storage

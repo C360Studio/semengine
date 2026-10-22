@@ -4,7 +4,8 @@
 > at SemStreams commit `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It came with the service manager, whose seal
 > (`CompositionSealedError`) and `/services` `restart_required` answer implement "Boot seals service and component
 > composition", in the second pull request of package `service`'s port (OpenSpec change
-> `setup-04a-03-boot-service-manager`); its admission-ledger row is
+> `setup-04a-03-boot-service-manager`), and its component half came with the component manager in the third (change
+> `setup-04a-03-boot-service-component-manager`); its admission-ledger row is
 > `docs/adr/094-boot-only-composition-and-observable-rule-activation.md` in `docs/admission-ledger.yaml`. The text
 > below is unchanged. Read it with these facts about this repository:
 >
@@ -17,11 +18,16 @@
 > - **Kept in this pull request:** the boot seal of the service composition. After `StartAll`, `CreateService`,
 >   `RegisterInstance` and `ConfigureFromServices` are refused, and `/services` reports a change to the
 >   configuration's `services` section made after boot as `restart_required`, with the pending changes listed.
-> - **Not ported yet.** The component manager's part (component composition, `ComponentManager`, the retired
->   config subscribers) arrives with the third pull request of `service`'s port. The rule activation parts (the
->   Rule processor's hot activation, the activation facts in KV, the flow `restart_required` reads) come with the rule
->   processor, in change 6 of the port. The restart-safe shutdown and crash-recovery sections describe the
->   SemStreams process and its proofs; this repository has no binary yet, and none of their tests is carried.
+> - **Kept in the third pull request:** the component half of the same section. `service.ComponentManager` reads the
+>   configuration once, in `NewComponentManager`, builds the fixed component set, checks it with `composition.Analyze`
+>   and seals the component registry. A later write to `components`, `model_registry` or the streams is desired state
+>   for the next boot and changes nothing in the running set. The retired parts (the config subscribers, the generic
+>   live-config PUT, runtime reconcile and replacement) were never ported: the component manager has no route that
+>   writes a configuration, and its `/components/config/{name}` route answers `GET` only.
+> - **Not ported yet.** The rule activation parts (the Rule processor's hot activation, the activation facts in KV,
+>   the flow `restart_required` reads) come with the rule processor, in change 6 of the port. The restart-safe
+>   shutdown and crash-recovery sections describe the SemStreams process and its proofs; this repository has no
+>   binary yet, and none of their tests is carried.
 > - ADR-026 and ADR-028, which the References list, are not ported. The archive path in References is the pin's.
 
 ## Status

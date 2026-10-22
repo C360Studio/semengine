@@ -337,12 +337,23 @@ func SubjectsOverlap(a, b string) bool {
 	}
 }
 
+// ValidSubject reports whether subject is well formed under the grammar
+// SubjectCovers and SubjectsOverlap read: one or more `.`-separated tokens,
+// none empty; `*` and `>` only as whole tokens, `>` only last; no space, tab,
+// line feed, carriage return or form feed in any token (nats-server's
+// whitespace set). It is stricter than NATS, which takes a token mixing a
+// wildcard with other text, such as `a*`, as a literal.
+func ValidSubject(subject string) bool {
+	return validSubjectTokens(strings.Split(subject, "."))
+}
+
 func validSubjectTokens(tokens []string) bool {
 	if len(tokens) == 0 {
 		return false
 	}
 	for index, token := range tokens {
-		if token == "" || (strings.ContainsAny(token, "*>") && token != "*" && token != ">") ||
+		if token == "" || strings.ContainsAny(token, " \t\n\r\f") ||
+			(strings.ContainsAny(token, "*>") && token != "*" && token != ">") ||
 			(token == ">" && index != len(tokens)-1) {
 			return false
 		}

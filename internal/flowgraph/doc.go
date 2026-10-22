@@ -42,6 +42,13 @@
 // covers every subject a pattern can name; [SubjectsOverlap] answers the
 // two-way question of whether any one subject matches both.
 //
+// [ValidSubject] reports whether a subject is well formed under the grammar both
+// read: one or more "."-separated tokens, none empty; "*" and ">" only as a whole
+// token, ">" only last; no space, tab, line feed, carriage return or form feed
+// in any token. A malformed subject covers nothing, is covered by nothing and
+// overlaps nothing. The grammar is stricter than NATS, which takes a token such
+// as "a*" as plain text and accepts a form feed.
+//
 // # What the analysis reports
 //
 // [FlowGraph.AnalyzeConnectivity] reports the connected groups of components,

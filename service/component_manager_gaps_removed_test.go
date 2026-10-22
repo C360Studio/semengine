@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/types"
 )
 
@@ -150,28 +151,36 @@ func declaredMethods(item PathSpec) []string {
 // same document carries, the component manager's Graph and Result among them. /openapi.json takes
 // its schemas only from the process-wide OpenAPI registry, so the refs resolve only because
 // RegisterAll registered the component manager's spec there; importing the package registers
-// nothing (design D5, option (a); sweep C9).
+// nothing (design D5, option (a); sweep C9). The message logger is composed too, so its
+// MessageLogEntry ref resolves only if RegisterAll registered its spec (PR 4 design D4, M15).
 //
 // spec: operator-surface / The component manager's routes are served under /components
 func TestOpenAPIDocumentResolvesEverySchemaRef(t *testing.T) {
 	// The OpenAPI registry is process-wide and other tests call RegisterAll too: forget any
 	// earlier registration of the component manager's spec, so the one this test reads is the
 	// RegisterAll call below, and put the registry back as it was when the test ends.
-	openAPIRegistryMu.Lock()
-	previous, registered := openAPIRegistry[componentManagerName]
-	delete(openAPIRegistry, componentManagerName)
-	openAPIRegistryMu.Unlock()
-	t.Cleanup(func() {
+	for _, name := range []string{componentManagerName, "message-logger"} {
 		openAPIRegistryMu.Lock()
-		defer openAPIRegistryMu.Unlock()
-		delete(openAPIRegistry, componentManagerName)
-		if registered {
-			openAPIRegistry[componentManagerName] = previous
-		}
-	})
+		previous, registered := openAPIRegistry[name]
+		delete(openAPIRegistry, name)
+		openAPIRegistryMu.Unlock()
+		t.Cleanup(func() {
+			openAPIRegistryMu.Lock()
+			defer openAPIRegistryMu.Unlock()
+			delete(openAPIRegistry, name)
+			if registered {
+				openAPIRegistry[name] = previous
+			}
+		})
+	}
 
-	manager := createTestServiceManager(ManagerConfig{}, testComponentDependencies(t, component.NewRegistry()))
+	deps := testComponentDependencies(t, component.NewRegistry())
+	deps.PayloadRegistry = payloadregistry.New()
+	manager := createTestServiceManager(ManagerConfig{}, deps)
 	require.NoError(t, RegisterAll(manager.registry))
+	// The message logger, enabled with "*" over the empty component registry, needs no NATS (design D4).
+	_, err := manager.CreateService("message-logger", json.RawMessage(`{"monitor_subjects":["*"]}`), deps)
+	require.NoError(t, err)
 	startTestManager(t, manager)
 
 	status, body, err := httpGet(t.Context(), observedManagerHTTPURL(t, manager)+"/openapi.json")
@@ -186,6 +195,8 @@ func TestOpenAPIDocumentResolvesEverySchemaRef(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(body), &document))
 	require.Contains(t, document.Paths, "/components/flowgraph",
 		"the document does not list the component manager's paths under /components")
+	require.Contains(t, document.Paths, "/message-logger/entries",
+		"the document does not list the message logger's paths under /message-logger")
 
 	var whole any
 	require.NoError(t, json.Unmarshal([]byte(body), &whole))

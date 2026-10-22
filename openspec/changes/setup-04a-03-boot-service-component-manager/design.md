@@ -443,7 +443,7 @@ Sweep S8; pin ADR-098 (substrate observability is logs and metrics, `098:58-62`)
   | a manager-wide mutex held by a phase across a component's `Start` and taken by status reads | `TestComponentReadsReturnWhileAComponentStartIsBlocked` |
   | a manager-wide mutex held by `Stop` across a component's `Stop` and taken by status reads | `TestComponentReadsReturnWhileAComponentStopIsBlocked` |
   | the health check answering healthy before `Start` completed (the pin's `:1156-1159`; the function's contract, reached by a direct call, not by `BaseService`) | `TestComponentManagerHealthNamesAComponentLeftFailedByARollback` |
-  | graph-ingest's release holding `c.mu` across its cleanup (`processor/graph-ingest/component.go:1102-1107`) | `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` (the test does not return; `go test -timeout` reports it) |
+  | graph-ingest's release holding `c.mu` across its cleanup (`processor/graph-ingest/component.go:1102-1107`) | `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` (each read is bounded, so the mutant fails an assertion) |
   | the health check naming only the first failed component | `TestComponentManagerHealthNamesEveryFailedComponent` |
   | `withComponents` handing its callback the manager's own records | `TestComponentListIsFixedAtConstruction` |
   | `GetComponentHealth` asking no component after `Stop` (the pin's fence) | `TestComponentHealthAfterStopAsksEachComponent` |

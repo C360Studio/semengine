@@ -413,8 +413,8 @@ dropped-event Warn (D4).
   ADR-110: the logger writes no entity. No ADR is drafted.
 - **Guidance:** none at the pin (`sweep.md` § 5).
 - **Coverage:** `service merged` floor (`scripts/cover-check.sh:46`) holds.
-- **Issues:** retired none. #196, #195 and #280 stay (`sweep.md` § 4). To file: each Q1 item the owner chooses to
-  carry; no other defect is left unfixed.
+- **Issues:** retired none. #196, #195 and #280 stay (`sweep.md` § 4). None to file: the owner ruled all five Q1 items
+  fixed here; no other defect is left unfixed. #280 item 2 is settled by this change (Q2), items 1 and 3 stay.
 
 ## D9. Spec deltas (written after acceptance; `skip_specs` removed then)
 
@@ -425,7 +425,7 @@ dropped-event Warn (D4).
     the first check of a normal boot; unhealthy within one 30 s check interval after a failed subscribe; healthy
     again within one interval after the retry succeeds)
   - "The message logger subscribes to a fixed subject set, covered subjects once" (D3, the law as stated)
-  - "A malformed monitored subject fails the logger's Start" (D3, if Q3 is accepted)
+  - "A malformed monitored subject fails the logger's Start" (D3, Q3)
   - "The message logger's construction refuses an incomplete composition" (D1).
 - **`operator-surface`, ADDED:**
   - "The message logger's routes are served under /message-logger" (D4: routes, clamped limits, 400/404/405/503,
@@ -436,6 +436,9 @@ dropped-event Warn (D4).
   No MODIFIED requirement: "/openapi.json documents the mounted routes" already covers the paths.
 
 ## Owner questions
+
+Ruled 2026-10-22 (#9 comment 6343081407; #280 comment 6343082392): Q1 fix all five here; Q2 keep the two lists and
+document the pairing (D5 option A); Q3 fail boot, naming the subject. The questions are kept as asked.
 
 - **Q1. Recommended: fix, in this port, the five wrong answers the logger's pages give at the pin.** Each is small and
   makes a page do what its documentation already says. Fix (a) even if you carry the rest, because one bad message

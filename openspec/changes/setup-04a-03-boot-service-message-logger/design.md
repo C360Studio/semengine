@@ -285,7 +285,8 @@ with its proving test (D7 units in brackets):
   ends the stream:
   - the watcher is stopped, the events already buffered are sent, then one `error` event,
     `{"error":"watch fell behind: events were dropped"}`, and the response ends;
-  - no `kv_change` or `initial_sync_complete` is sent after a dropped event;
+  - events buffered before the dropped one are still sent; no event after the gap is accepted, so no `kv_change` or
+    `initial_sync_complete` follows a dropped event;
   - the Warn line stays (bucket, key, revision). The `error` event is the one the pin already sends when its watcher
     closes (`:337-340`); a client that reconnects after the stream's `retry: 5000` starts a new initial replay (how
     a client reconnects is the client's, not promised here).
@@ -437,6 +438,11 @@ the one production way, `NewMessageLoggerService`, through U-a's helper; none ca
   first with U-a: U-b's malformed-subject tests need `ValidSubject`.
   - `TestValidSubject`: valid (`a`, `a.b`, `*`, `>`, `a.*.c`, `a.>`) and malformed (`""`, `a..b`, `.a`, `a.`,
     `a.>.b`, `a*`, `b*.c`, and each of space, tab, line feed, carriage return, form feed inside a token).
+  - `FuzzValidSubject` (Codex design re-review, #367 comment 6344010703): the oracle is a reference written in the
+    test, independent of `validSubjectTokens`: split on `.`; every token is `*`, `>` (last only), or a non-empty run
+    with no `*`, `>`, space, tab, line feed, carriage return or form feed. Seeds: every `TestValidSubject` case. Also
+    asserts `SubjectCovers(s, s) == ValidSubject(s)`. Seed replay runs in `task test:unit`; exploration is reported
+    apart (`docs/testing.md`).
   - `TestSubjectHelpersRefuseWhitespace`: #368's reproduction, widened to form feed: both helpers return false for
     `("a.>", "a.foo<ws>bar")` with each whitespace byte. The existing cover cases stay.
 - **Integration with PR 3's test:** `TestOpenAPIDocumentResolvesEverySchemaRef` gains the logger (D4); one line in its
@@ -477,7 +483,7 @@ bounded context and asserts the result.
 | `RegisterAll` not registering the logger's spec | `TestOpenAPIDocumentResolvesEverySchemaRef` |
 | a covered subject also subscribed | `TestPropCoveredSubjectsSubscribedOnce`; `TestMessageLoggerCapturesCoveredSubjectOnce` |
 | validation dropped, the subscribe's `ErrBadSubject` left to refuse (the previous draft) | `TestMessageLoggerRefusesMalformedSubject`: on the never-connected client `Start` returns nil and retries |
-| validation after the cover reduction | `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` |
+| validation after the cover reduction | survivor once #368 is fixed: `SubjectCovers` returns false for a malformed subject, so it stays in the set and validation still refuses it. `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` stays as the regression for the combined failure |
 | `validSubjectTokens` without the whitespace check (#368) | `TestSubjectHelpersRefuseWhitespace`; `TestValidSubject`; `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader` |
 | a full watch buffer drops and continues (the pin's `:293-298`) | `TestKVWatchFallingBehindEndsStream`: `initial_sync_complete` is sent |
 | a nil payload registry accepted | `TestMessageLoggerConstructionRefusals` |

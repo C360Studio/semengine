@@ -415,12 +415,14 @@ func (ml *MessageLogger) queryKVBucket(
 			return nil, fmt.Errorf("read key %q of %s: %w", key, bucket, err)
 		}
 
-		var value any
-		if err := json.Unmarshal(entry.Value(), &value); err != nil {
-			value = string(entry.Value())
-		}
-		if !recordMatchesStatus(value, statusFilter) {
+		if !recordMatchesStatus(entry.Value(), statusFilter) {
 			continue
+		}
+		// The stored JSON goes out byte for byte, so no number is rounded through float64 (#370);
+		// a value that is not JSON travels as a JSON string, as the watch sends it.
+		value := json.RawMessage(entry.Value())
+		if !json.Valid(value) {
+			value, _ = json.Marshal(string(entry.Value()))
 		}
 
 		entries = append(entries, map[string]any{
@@ -433,21 +435,25 @@ func (ml *MessageLogger) queryKVBucket(
 	return entries, nil
 }
 
-// recordMatchesStatus reports whether a decoded KV value passes the opt-in status
+// recordMatchesStatus reports whether a stored KV value passes the opt-in status
 // filter (#613). An EMPTY filter matches everything (the filter is off, so the endpoint
 // is unchanged). A non-empty filter matches only a JSON object whose top-level "status"
-// string equals it; a non-object value (raw string, array, number) never matches, so a
-// bucket without status-shaped records returns nothing under a filter rather than leaking
-// unfiltered rows.
-func recordMatchesStatus(value any, statusFilter string) bool {
+// string equals it; any other value (not JSON, a string, array, number, or an object
+// whose status is not a string) never matches, so a bucket without status-shaped records
+// returns nothing under a filter rather than leaking unfiltered rows. Only the status
+// field is decoded; the value itself is answered as stored (#370).
+func recordMatchesStatus(value []byte, statusFilter string) bool {
 	if statusFilter == "" {
 		return true
 	}
-	obj, ok := value.(map[string]any)
-	if !ok {
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(value, &obj); err != nil {
 		return false
 	}
-	s, _ := obj["status"].(string)
+	var s string
+	if err := json.Unmarshal(obj["status"], &s); err != nil {
+		return false
+	}
 	return s == statusFilter
 }
 
@@ -470,7 +476,9 @@ func matchesPattern(str, pattern string) bool {
 		}
 		parts := strings.Split(pattern, "*")
 		if len(parts) == 2 {
-			return strings.HasPrefix(str, parts[0]) && strings.HasSuffix(str, parts[1])
+			// The length check keeps the prefix and suffix from sharing a character (#371).
+			return len(str) >= len(parts[0])+len(parts[1]) &&
+				strings.HasPrefix(str, parts[0]) && strings.HasSuffix(str, parts[1])
 		}
 	}
 

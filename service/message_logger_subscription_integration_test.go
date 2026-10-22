@@ -12,8 +12,10 @@ import (
 
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/payloadregistry"
 )
 
 // The message logger's subscriptions against the package's shared NATS server (design D2, D3;
@@ -374,4 +376,50 @@ func TestMessageLoggerRetriesSubscribeUntilConnected(t *testing.T) {
 	require.Equal(t, []capturedMessage{want}, capturedMessages(ml))
 	require.Empty(t, (&messageLoggerOwner{ml: ml}).Observe().Unresolved,
 		"a Stop that returned nil leaves no retry, subscription or base service running")
+}
+
+// TestMessageLoggerDiscoversAdmittedComponentSubjects is D7 U-c's default discovery through a
+// registry holding an admitted component: with monitor_subjects ["*"] the logger monitors the NATS
+// subjects the component's ports declare, and stores a message published on one. The component is
+// admitted the boot way, by NewComponentManager, which creates it and seals the composition.
+//
+// spec: operator-surface / The message logger's routes are served under /message-logger
+func TestMessageLoggerDiscoversAdmittedComponentSubjects(t *testing.T) {
+	client := fixtureClient(t)
+	registry := component.NewRegistry()
+	admitTestRegistryComponent(t, registry, "source", &mockDiscoverableComponent{
+		inputPorts: []component.Port{{
+			Name: "in", Direction: component.DirectionInput,
+			Config: component.NATSPort{Subject: "logger.discovered.in"},
+		}},
+		outputPorts: []component.Port{{
+			Name: "out", Direction: component.DirectionOutput,
+			Config: component.NATSPort{Subject: "logger.discovered.out"},
+		}},
+	})
+	_, err := NewComponentManager(nil, testComponentDependencies(t, registry, "source"))
+	require.NoError(t, err)
+
+	built, err := NewMessageLoggerService(json.RawMessage(`{"monitor_subjects":["*"]}`), &Dependencies{
+		NATSClient:        client,
+		ComponentRegistry: registry,
+		PayloadRegistry:   payloadregistry.New(),
+	})
+	require.NoError(t, err)
+	ml, ok := built.(*MessageLogger)
+	require.True(t, ok, "NewMessageLoggerService returned %T, want *MessageLogger", built)
+	stopLoggerOnCleanup(t, ml)
+	startCtx, cancel := context.WithTimeout(t.Context(), stopBound)
+	defer cancel()
+	require.NoError(t, ml.Start(startCtx))
+
+	stats := readSubscriptionStats(t, ml)
+	require.Equal(t, []string{"logger.discovered.in", "logger.discovered.out"}, stats.MonitoredSubjects)
+	require.False(t, stats.Degraded, "a normal boot is not degraded: %q", stats.DegradedReason)
+
+	want := capturedMessage{Subject: "logger.discovered.out", Payload: `{"n":1}`}
+	publishAndFlush(t, client, want, capturedMessage{Subject: "logger.undeclared", Payload: `{"n":0}`})
+	require.NoError(t, stopLogger(t, ml))
+
+	require.Equal(t, []capturedMessage{want}, capturedMessages(ml))
 }

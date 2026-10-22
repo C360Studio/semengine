@@ -264,3 +264,60 @@ func TestKVQuerySortsKeysBeforeLimit(t *testing.T) {
 	all := decodeKVRoute(t, serveKVRoute(ctx, mux, "/message-logger/kv/"+bucket))
 	require.Equal(t, []string{"k.a", "k.b", "k.c", "k.d"}, entryKeys(all))
 }
+
+// TestKVQueryPreservesValueBytes: the query answers each stored JSON value byte for byte, with and
+// without the status filter, so an integer past 2^53, a nested number and a float spelling come back
+// as stored (#370). The oracle is the stored bytes; JSONEq would decode both sides into float64 and
+// hide the rounding. A value that is not JSON comes back as a JSON string, as the watch sends it.
+//
+// spec: operator-surface / The message logger's routes are served under /message-logger
+func TestKVQueryPreservesValueBytes(t *testing.T) {
+	client := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), kvRouteBudget)
+	defer cancel()
+
+	const bucket = "MESSAGE_LOGGER_NUMBER_FIXTURE"
+	kv, err := client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{Bucket: bucket})
+	require.NoError(t, err)
+	const failedValue = `{"sequence":9007199254740993,"nested":{"n":[18446744073709551615,1.0e2,-0.0]},"status":"failed"}`
+	_, err = kv.Put(ctx, "a.failed", []byte(failedValue))
+	require.NoError(t, err)
+	_, err = kv.Put(ctx, "b.raw", []byte("not json 9007199254740993"))
+	require.NoError(t, err)
+
+	mux := kvRouteMux(newTestMessageLogger(t, client, `{"monitor_subjects":["*"]}`, nil))
+
+	filtered := decodeKVRoute(t, serveKVRoute(ctx, mux, "/message-logger/kv/"+bucket+"?status=failed"))
+	require.Len(t, filtered.Entries, 1)
+	require.Equal(t, failedValue, string(filtered.Entries[0].Value), "the filtered route changed the stored value")
+
+	all := decodeKVRoute(t, serveKVRoute(ctx, mux, "/message-logger/kv/"+bucket))
+	require.Equal(t, []string{"a.failed", "b.raw"}, entryKeys(all))
+	require.Equal(t, failedValue, string(all.Entries[0].Value), "the unfiltered route changed the stored value")
+	require.Equal(t, `"not json 9007199254740993"`, string(all.Entries[1].Value), "a non-JSON value must come back as a JSON string")
+}
+
+// TestKVQueryPatternMatchesBeforeLimit: a middle-wildcard pattern matches only keys long enough to
+// hold both literal parts (#371), and a key it does not match never counts toward limit. In byte
+// order the keys are aaXaa, aaa, aaaa; aa*aa matches aaXaa and aaaa (empty wildcard) but not aaa,
+// whose prefix and suffix would share a character.
+//
+// spec: operator-surface / The message logger's routes are served under /message-logger
+func TestKVQueryPatternMatchesBeforeLimit(t *testing.T) {
+	client := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), kvRouteBudget)
+	defer cancel()
+
+	const bucket = "MESSAGE_LOGGER_PATTERN_FIXTURE"
+	kv, err := client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{Bucket: bucket})
+	require.NoError(t, err)
+	for _, key := range []string{"aaa", "aaaa", "aaXaa"} {
+		_, err := kv.Put(ctx, key, []byte(`{}`))
+		require.NoError(t, err)
+	}
+
+	mux := kvRouteMux(newTestMessageLogger(t, client, `{"monitor_subjects":["*"]}`, nil))
+
+	limited := decodeKVRoute(t, serveKVRoute(ctx, mux, "/message-logger/kv/"+bucket+"?pattern=aa*aa&limit=2"))
+	require.Equal(t, []string{"aaXaa", "aaaa"}, entryKeys(limited), "a nonmatching key consumed the limit")
+}

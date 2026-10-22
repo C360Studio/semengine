@@ -398,18 +398,37 @@ func TestKVRoutesRejectMalformedBucket(t *testing.T) {
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestRecordMatchesStatus(t *testing.T) {
-	failed := map[string]any{"entity_id": "acme.ops.src.embed.record.e1", "status": "failed", "reason": "connection_refused", "error_msg": "dial: connection refused"}
-	generated := map[string]any{"entity_id": "acme.ops.src.embed.record.e2", "status": "generated"}
-	numeric := map[string]any{"status": 3}
+	failed := []byte(`{"entity_id":"acme.ops.src.embed.record.e1","status":"failed","reason":"connection_refused","error_msg":"dial: connection refused"}`)
+	generated := []byte(`{"entity_id":"acme.ops.src.embed.record.e2","status":"generated"}`)
+	numeric := []byte(`{"status":3}`)
+	raw := []byte("raw string value")
 
 	assert.True(t, recordMatchesStatus(failed, ""), "an empty filter must match every record")
 	assert.True(t, recordMatchesStatus(generated, ""), "an empty filter must match every record")
-	assert.True(t, recordMatchesStatus("raw string value", ""), "an empty filter must match a non-object too")
+	assert.True(t, recordMatchesStatus(raw, ""), "an empty filter must match a non-JSON value too")
 	assert.True(t, recordMatchesStatus(failed, "failed"), "a failed record must pass status=failed")
 	assert.False(t, recordMatchesStatus(generated, "failed"), "a generated record must not pass status=failed")
 	assert.False(t, recordMatchesStatus(numeric, "3"), "a non-string status must not match")
-	assert.False(t, recordMatchesStatus("raw string value", "failed"), "a non-object value must never match a status filter")
-	assert.False(t, recordMatchesStatus([]any{"failed"}, "failed"), "an array must never match a status filter")
+	assert.False(t, recordMatchesStatus(raw, "failed"), "a non-JSON value must never match a status filter")
+	assert.False(t, recordMatchesStatus([]byte(`"failed"`), "failed"), "a JSON string must never match a status filter")
+	assert.False(t, recordMatchesStatus([]byte(`["failed"]`), "failed"), "an array must never match a status filter")
+	assert.False(t, recordMatchesStatus([]byte(`{"Status":"failed"}`), "failed"), "the field name is matched exactly")
+	assert.False(t, recordMatchesStatus([]byte(`{"status":null}`), "failed"), "a null status must not match")
+}
+
+// TestMatchesPatternMiddleWildcard: a middle `*` matches only a key at least as long as its two
+// literal parts together, so the parts never share a character (#371).
+//
+// spec: operator-surface / The message logger's routes are served under /message-logger
+func TestMatchesPatternMiddleWildcard(t *testing.T) {
+	for key, want := range map[string]bool{
+		"aaa":   false, // prefix and suffix would overlap
+		"aaaa":  true,  // empty wildcard
+		"aaXaa": true,
+		"aXaa":  false,
+	} {
+		assert.Equal(t, want, matchesPattern(key, "aa*aa"), "matchesPattern(%q, %q)", key, "aa*aa")
+	}
 }
 
 // TestMessageLoggerRoutesAfterStop: after Stop, /entries, /stats and /trace still answer from memory,

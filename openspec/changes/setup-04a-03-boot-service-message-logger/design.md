@@ -199,10 +199,11 @@ with its proving test (D7 units in brackets):
     `internal/flowgraph/subject_cover_test.go` and `composition/reserved_test.go:161-165`, whose alphabets hold no
     whitespace, unchanged. `matchNATSPattern` (edge derivation) does not read the grammar and is untouched. The pull
     request body carries `Closes #368`.
-  - **Stricter than NATS, declared.** A token mixing a wildcard with other text (`a*`, `b*.c`) is a literal to NATS
-    (probe: subscribed, connection healthy) and malformed here, as composition already treats it; a form feed passes
-    the wire (probe: subscribed, no error) and is refused here. A subject NATS accepts but this grammar refuses fails
-    boot, named; that is the fail-closed side. semteams' configured subjects (addendum) all pass.
+  - **Stricter than NATS, declared; the owner kept it (#9 comment 6343904612).** A token mixing a wildcard with other
+    text (`a*`, `b*.c`) is a literal to NATS (probe: subscribed, connection healthy) and malformed here, as composition
+    already treats it; a form feed passes the wire (probe: subscribed, no error) and is refused here. A subject NATS
+    accepts but this grammar refuses fails boot, named; that is the fail-closed side. semteams' configured subjects
+    (addendum) all pass.
   - Since every subject reaching a subscribe has passed a grammar stricter than nats.go's, D2's retry treats every
     subscribe error alike; a later nats.go refusing more would show as a retried subject and an unhealthy logger
     (D2), not a silent one.
@@ -545,8 +546,8 @@ of a malformed subject declared by a component (D3: same loop as `monitor_subjec
 
 ## Owner questions
 
-Ruled 2026-10-22 (#9 comment 6343081407; #280 comment 6343082392): Q1 fix all five here; Q2 keep the two lists and
-document the pairing (D5 option A); Q3 fail boot, naming the subject. The questions are kept as asked.
+Ruled 2026-10-22 (#9 comments 6343081407 and 6343904612; #280 comment 6343082392): Q1 fix all five here; Q2
+keep the two lists and document the pairing (D5 option A); Q3 fail boot, naming the subject. The questions are kept as asked.
 
 - **Q1. Recommended: fix, in this port, the five wrong answers the logger's pages give at the pin.** Each is small and
   makes a page do what its documentation already says. Fix (a) even if you carry the rest, because one bad message

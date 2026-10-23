@@ -15,7 +15,7 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 2. Tests and code
 
-- [ ] 2.1 Tests first. `runSpecQueue` bounds each run under a deadline derived from `t.Context()`, and a run that has
+- [x] 2.1 Tests first. `runSpecQueue` bounds each run under a deadline derived from `t.Context()`, and a run that has
   not ended fails, saying so. `TestSpecQueueArguments` covers cases A1–A6 of `design.md` with expected values written
   by hand. The file comment's "all four requirements" becomes "all six". Gate: A1 fails at the bound and A2, A3 and
   A6 fail with exit 0 on the base, recorded in `notes/2.1.md`.

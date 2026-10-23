@@ -737,10 +737,11 @@ Each sample goes to the subject `metrics.<component>.<name>`, where `<component>
 `timestamp` (Unix milliseconds; the samples of one round share it), `name`, `component`, `type` (`counter`, `gauge`,
 `histogram`, `summary` or `untyped`), `value` and `labels` (an object, `{}` when the sample has none). `value` is the
 counter, gauge or untyped value; for a histogram or summary it is the number of observations, not a distribution. A
-JetStream stream must capture `metrics.>` for the samples to be kept; the forwarder creates none, and a deployment
-that wants them names its own (the integration tests use one called `METRICS`). The SemStreams pin's metrics carried
-the prefix `semstreams_`; these are named `semengine_*`, and nothing renames the old series, so a reader still on the
-old names finds none.
+JetStream stream must capture `metrics.>` for the samples to be kept. The forwarder creates none: `config` already
+declares the framework's `METRICS` stream over `metrics.>` (`config/streams.go`), and the composition provisions it
+with `config.StreamsManager.EnsureStreams`, or points at an existing stream that captures `metrics.>`. The
+SemStreams pin's metrics carried the prefix `semstreams_`; these are named `semengine_*`, and nothing renames the old
+series, so a reader still on the old names finds none.
 
 A sample that cannot be published is dropped and counted; the loop goes on and the next round publishes the series
 again. A sample that does not encode (a NaN or infinite value) or does not publish increments
@@ -752,7 +753,8 @@ state on `semengine_service_status{service="metrics-forwarder"}` (0 stopped, 2 r
 `Start(ctx)` refuses a nil or ended `ctx`, a second `Start` and a `Start` after any `Stop`
 (`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. It does no I/O: it starts one background loop and
 returns, and a NATS client that is not connected makes each publish fail and be counted. `ctx` bounds `Start` only;
-ending it afterwards stops nothing (the pin stopped the loop). `Stop(ctx)` is the only stop and behaves as the
+ending it afterwards stops nothing (at the pin it marked the service stopped while the loop went on publishing).
+`Stop(ctx)` is the only stop and behaves as the
 heartbeat's does.
 
 ### Not ported

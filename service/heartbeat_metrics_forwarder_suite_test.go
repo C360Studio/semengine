@@ -75,8 +75,8 @@ func TestHeartbeatPassesTheLifecycleSuite(t *testing.T) {
 }
 
 // TestMetricsForwarderPassesTheLifecycleSuite runs the lifecycle suite on the metrics forwarder
-// (ADR-113; design D2; the pin stopped its loop when Start's context ended, probe sweep.md § 3,
-// H6). Every forwarder is built through NewMetricsForwarderService over a client that never
+// (ADR-113; design D2; at the pin, Start's context ending marked the forwarder stopped while its
+// loop went on publishing, probe sweep.md § 3, H6). Every forwarder is built through NewMetricsForwarderService over a client that never
 // connects: Start does no I/O, and a failed publish is the loop's to log (design D2, "Startup
 // work"). The must-fail owner is a forwarder stopped before Start. The service is one-shot.
 //

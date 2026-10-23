@@ -160,7 +160,8 @@ SHALL share one timestamp in Unix milliseconds. Families named `go_*` SHALL be l
 true, and families named `process_*` unless `include_proc_metrics` is true. A sample that does not encode or does not
 publish SHALL increment `semengine_errors_total{service="metrics-forwarder",type="metrics_publish"}`; a gather that
 fails SHALL increment `type="metrics_gather"` and skip that round; each SHALL be logged at Debug, and the loop SHALL go
-on. The forwarder SHALL create no stream: a stream that captures `metrics.>` is the deployment's.
+on. The forwarder SHALL create no stream: the framework's `METRICS` stream over `metrics.>`, declared in `config`, is
+provisioned by the composition (`config.StreamsManager.EnsureStreams`).
 
 #### Scenario: One round per interval
 

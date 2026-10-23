@@ -107,7 +107,7 @@ Task 2.1; each new test fails on the base.
 | T1 | A request arriving after the setup context was cancelled gets a live handler context | `TestRequestHandlerContextOutlivesSetupContext` (natsclient, embedded server) | handler sees `context.Canceled` |
 | T2 | `Close` beginning while a handler runs ends its context; `Close` returns nil after it returns | `TestRequestHandlerContextEndsWhenCloseBegins` | context stays live until the test's bound |
 | T3 | Same, after `Unsubscribe` while the handler still runs | `TestRequestHandlerContextEndsWhenCloseBeginsAfterUnsubscribe` | as T2 |
-| T4 | A Start context ending during a query or a mutation registration fails graph-ingest `Start` at that registration and holds nothing | T-G4, two rows (D2) | `mutation` row and the call-count assertions are new; the query row passes on the base |
+| T4 | A Start context ending during a query or a mutation registration fails graph-ingest `Start` at that registration and holds nothing | T-G4, two rows (D2) | both rows fail on the base through the call count (every registration runs under `runCtx`) |
 | T5 | With `WithMaxReconnects(0)`, after the broker restarts: once `GetConnection().IsClosed()` (awaited with `probe.Await`, not read once), `Status` is Disconnected and `Connect` matches `errs.ErrAlreadyStarted` with the D3 text | extend `TestIntegration_ReconnectionIsRedial` | text says "already connected" |
 
 T1-T3 use a real connection, so they do not run inside `synctest` (#156). T5 is also the pinned-version probe for

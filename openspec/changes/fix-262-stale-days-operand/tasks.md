@@ -27,9 +27,8 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 3. Code review
 
-- [ ] 3.1 Claude code review. A Claude `semengine-reviewer` passes the code at a named commit with a local
-  `task verify`.
-  Hold: waits for the Claude reviewer's PASS, recorded as a PR comment naming the commit.
+- [x] 3.1 Claude code review. A Claude `semengine-reviewer` passes the code at a named commit with a local
+  `task verify`. Passed at f508fda10be54bd48a0eb1332514ee7c890fc06c, local `task verify` exit 0; recorded on PR #381.
 - [ ] 3.2 Codex code review of record. Codex passes the code at a named commit with a local `task verify`; the PR body
   carries `implemented-by: claude (opus)` and `reviewed-by: codex`.
   Hold: waits for Codex's PASS, recorded as a PR comment naming the commit.

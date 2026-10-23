@@ -66,8 +66,11 @@ unchanged. It is the guard that the new type does not refuse the shipped example
 
 ## Proving tests
 
-The oracle is the #367 probe list with the expected verdicts written by hand: malformed where the probe shows
-`server.IsValidSubject=false`, plus the two documented stricter points. No test calls `ValidSubject`.
+The oracle is a list of verdicts written by hand. No test calls `ValidSubject`. Its sources: the #367 probe for
+`a.foo bar`, `a.foo\fbar`, `a.>.b`, `a*`, `a.b*.c`, `a..b`, `a.>` and `a.*.c` (malformed where the probe shows
+`server.IsValidSubject=false`, plus the two documented stricter points); the spec's grammar text (composition-validation,
+"One subject grammar decides validity, cover and overlap") for the tab, line feed, carriage return, `""`, `>` and
+`$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` verdicts.
 
 - T1 `TestAnalyzeReportsMalformedSubject` (through `composition.Validate`). Malformed: `a.foo bar`, `a.foo\fbar`,
   `a.>.b`, `a*`, `a.b*.c`, `a..b`, and subjects holding a tab, a line feed and a carriage return; also `""` at the
@@ -76,7 +79,9 @@ The oracle is the #367 probe list with the expected verdicts written by hand: ma
   input `subjects[1]`; JetStream output `subjects[1]`; explicit stream `subjects[1]`.
   - Each malformed subject at each site yields exactly one `malformed_subject` error, with the expected component,
     port and message as literal text.
-  - Each valid subject yields none.
+  - Each valid subject yields no `malformed_subject`. The assertion counts `malformed_subject` findings only, never an
+    empty `Errors` list: `>` on an explicit stream or a JetStream output also raises `reserved_subject_capture`, and
+    some cases may also carry `config_invalid` through `Validate`.
 - T2 `TestAnalyzeReportsMalformedSubjectBeforeEarlyReturns`: an explicit stream `a..b` with no enabled component, and
   again beside two writers to one KV bucket. Each result carries the `malformed_subject` beside `empty_composition` or
   `connection_pattern_error`.

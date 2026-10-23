@@ -17,7 +17,7 @@ Each task ends only when `task verify` passes on a clean tree at its commit (#17
   (`notes/2.1.md`).
 - [x] 2.2 `SubscribeForRequests` handler root, its callers, and the `Connect` doc and refusal text. Gate:
   `task verify` green.
-- [ ] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
+- [x] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
 
 ## 3. Docs and archive
 

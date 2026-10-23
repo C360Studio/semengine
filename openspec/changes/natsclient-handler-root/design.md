@@ -135,7 +135,9 @@ Task 2.3.
 
 - M1: `requestCallback` gets the call's context again. Expected detector: T1.
 - M2: the handler root is not cancelled when `Close` begins. Expected detectors: T2, T3.
-- M3: the root is cancelled on `Close` only while delivery has not ended. Expected detector: T3.
+- M3: the root is cancelled on `Close` only while delivery has not ended. Expected detector: T3. Result (2.3):
+  survivor, equivalent for `SubscribeForRequests` at nats.go v1.54.0 — the closed handler runs only after the running
+  callback returns (nats.go:3807, :3829-3835, read; not promised). See notes/2.3.md.
 - M4: `:467` says "already connected" again. Expected detector: T5.
 - M5: `ErrAlreadyStarted` is dropped from `:467`. Expected detectors: T5 and `client_close_final_test.go:702`.
 - M6q: only `setupQueryHandlers` gets `runCtx` again. Expected detector: T4 `query` row (call count).

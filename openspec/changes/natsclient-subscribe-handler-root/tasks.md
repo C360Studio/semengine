@@ -26,7 +26,7 @@ only when `task verify` passes on a clean tree at its commit (#171).
   - It lands with T5 and T6, the comments at `message_logger.go:205`, `:250-256`, `:274-275` and `:800-803`,
     `service/doc.go:351`, and the test comments design D6 lists.
   - Gate: T5 and T6 fail on the base (`notes/2.3.md`); `task verify` green.
-- [ ] 2.4 Sensitivity: M1-M8 run with `task mutate:check`, each reported as detected or as a survivor (`notes/2.4.md`).
+- [x] 2.4 Sensitivity: M1-M8 run with `task mutate:check`, each reported as detected or as a survivor (`notes/2.4.md`).
 - [ ] 2.5 Code review.
   Hold: the Codex code review PASSes 2.2-2.4 at a named commit with local `task verify`. Section 3 starts after it.
 

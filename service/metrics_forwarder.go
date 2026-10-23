@@ -91,7 +91,8 @@ func NewMetricsForwarderService(rawConfig json.RawMessage, deps *Dependencies) (
 	}
 
 	return &MetricsForwarder{
-		BaseService:        NewBaseServiceWithOptions(metricsForwarderServiceName, WithLogger(deps.Logger)),
+		BaseService: NewBaseServiceWithOptions(metricsForwarderServiceName,
+			WithLogger(deps.Logger), WithMetrics(deps.MetricsRegistry)),
 		interval:           interval,
 		includeGoMetrics:   cfg.IncludeGoMetrics,
 		includeProcMetrics: cfg.IncludeProcMetrics,

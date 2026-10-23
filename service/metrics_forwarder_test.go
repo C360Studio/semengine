@@ -182,6 +182,20 @@ func TestMetricsForwarderConstructionRefusals(t *testing.T) {
 
 // --- lifecycle edges (design D2) ---------------------------------------------------------------
 
+// TestMetricsForwarderReportsItsStatus is the pin's WithMetrics (metrics_forwarder.go:70): the
+// forwarder's status is recorded on the injected registry as semengine_service_status, stopped (0)
+// once built, running (2) after Start and stopped (0) again after Stop (#387).
+func TestMetricsForwarderReportsItsStatus(t *testing.T) {
+	mf, registry := newTestMetricsForwarder(t, newUnconnectedClient(t), `{}`, discardLogger)
+	labels := map[string]string{"service": "metrics-forwarder"}
+
+	require.Equal(t, 0.0, requireGauge(t, registry, "semengine_service_status", labels), "built")
+	require.NoError(t, mf.Start(t.Context()))
+	require.Equal(t, 2.0, requireGauge(t, registry, "semengine_service_status", labels), "started")
+	require.NoError(t, mf.Stop(stopContext(t)))
+	require.Equal(t, 0.0, requireGauge(t, registry, "semengine_service_status", labels), "stopped")
+}
+
 // TestMetricsForwarderFailedStopIsRetried is D2's "Stop": a Stop whose context ends before the
 // loop returns reports that context's error, and the next Stop waits for the loop again. The
 // composition's logger holds the loop's first "failed to publish metrics to NATS" record (every

@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -52,14 +55,75 @@ func heldPort(t *testing.T) int {
 	return held.Addr().(*net.TCPAddr).Port
 }
 
-// requireListenerReleased fails unless a dial to addr is refused.
+// requireListenerReleased fails unless listenerReleased reports addr, the address a listener
+// reported, released.
 func requireListenerReleased(t *testing.T, addr string) {
 	t.Helper()
-	conn, err := net.DialTimeout("tcp", addr, time.Second)
-	if conn != nil {
-		_ = conn.Close()
+	require.NoError(t, listenerReleased(addr), "the listener at %s is not released", addr)
+}
+
+// listenerReleased returns nil when a dial to the listener's loopback address is refused. A
+// listener bound on every address reports an unspecified host ("[::]" or "0.0.0.0"); a dial to
+// that reaches the local system in both families, so any other process whose loopback socket
+// shares the port answers it. On the owner's Mac a daemon holds 127.0.0.1:63150, and macOS hands
+// 63150 to a port-0 listener on every address regardless, so the released port read as still
+// accepting (#388; #372 was the same socket answering 404). The dial goes to the loopback address
+// of the listener's own family, which only that listener serves. Only a refused connection counts:
+// any other dial error is a broken probe, not a released port.
+func listenerReleased(addr string) error {
+	target, err := loopbackAddr(addr)
+	if err != nil {
+		return err
 	}
-	require.Error(t, err, "the listener at %s still accepts connections", addr)
+	conn, err := net.DialTimeout("tcp", target, time.Second)
+	if err == nil {
+		_ = conn.Close()
+		return fmt.Errorf("the listener at %s still accepts connections on %s", addr, target)
+	}
+	if !errors.Is(err, syscall.ECONNREFUSED) {
+		return fmt.Errorf("probe of %s: %w", target, err)
+	}
+	return nil
+}
+
+// loopbackAddr returns addr with an unspecified host replaced by the loopback address of its
+// family; any other host is kept.
+func loopbackAddr(addr string) (string, error) {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		return "", err
+	}
+	ip := net.ParseIP(host)
+	if ip == nil || !ip.IsUnspecified() {
+		return addr, nil
+	}
+	if ip.To4() != nil {
+		return net.JoinHostPort("127.0.0.1", port), nil
+	}
+	return net.JoinHostPort("::1", port), nil
+}
+
+// TestListenerReleasedSeesOnlyTheListenersOwnFamily: a loopback socket of another process on the
+// port a listener bound on every address has just released must not read as that listener still
+// accepting (#388). A Go tcp4 loopback listener stands in for the daemon: macOS lets it bind beside
+// the open wildcard listener, Linux refuses it, and the check runs either way. The open listener
+// must still read as held, so the check is shown able to fail.
+func TestListenerReleasedSeesOnlyTheListenersOwnFamily(t *testing.T) {
+	wildcard, err := net.Listen("tcp", ":0")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = wildcard.Close() })
+	addr := wildcard.Addr().String()
+	port := wildcard.Addr().(*net.TCPAddr).Port
+	require.Error(t, listenerReleased(addr), "an open listener read as released")
+
+	standIn, err := net.Listen("tcp4", net.JoinHostPort("127.0.0.1", strconv.Itoa(port)))
+	if err != nil {
+		t.Logf("this OS refuses a loopback socket beside %s: %v", addr, err)
+	} else {
+		t.Cleanup(func() { _ = standIn.Close() })
+	}
+	require.NoError(t, wildcard.Close())
+	require.NoError(t, listenerReleased(addr))
 }
 
 // blockingCollector is a Prometheus collector whose Collect blocks until unblock is called, so a

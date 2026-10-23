@@ -1,8 +1,14 @@
 # port-status Specification
 
 ## Purpose
-TBD - created by archiving change port-status-tracker. Update Purpose after archive.
+
+`scripts/port-status.sh` (run as `task status`) reports the Slice 04A 65-package port scoreboard from
+`docs/admission-ledger.yaml` (`--offline` requires no network access), checks GitHub milestone and issue hygiene
+(`--check`), and synchronizes open issues and pull requests into the `SemEngine Port Tracker` GitHub Project v2 board
+(`--sync-project`).
+
 ## Requirements
+
 ### Requirement: Port scoreboard from the admission ledger
 
 `scripts/port-status.sh` (invoked by `task status`) SHALL read `docs/admission-ledger.yaml` and report the Slice 04A

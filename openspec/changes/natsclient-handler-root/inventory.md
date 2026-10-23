@@ -21,7 +21,8 @@ call's context. Confirmed.
 - `Subscribe` has the same shape: `client.go:1035-1038` wraps the call's own context in
   `context.WithTimeout(ctx, 30*time.Second)`. Its one production caller is `service/message_logger.go:437`, which passes
   `runCtx`. The owner ruling (#9 comment 5994720412, item 2) covers "any other function with the same shape"; this
-  change does not fix `Subscribe`, so it is filed as its own issue.
+  change does not fix `Subscribe`; it is filed as #378 (bug, status:blocked). Both go through `subscribeOwned`
+  (`client.go:1060`).
 
 ## 3. Adjacent claims
 
@@ -36,12 +37,15 @@ call's context. Confirmed.
     (`service/storage_observability*.go` at `8b99efe9`) call neither `Subscribe` nor `SubscribeForRequests`. No overlap.
   - #374 (status tracker, draft, 15 files): no natsclient, graph-ingest or transport-client file. No overlap.
   - #358 (Dependabot prometheus bump): no overlap.
-  - Merge order: any; the later PR merges `origin/main`.
+  - Merge order: any; the later PR merges `origin/main`. #374 edits `docs/repository-map.md` and `AGENTS.md`; if this
+    change's archive adds a `docs/repository-map.md` row, the two overlap on that file only.
 - Open issues naming natsclient:
   - #311 and #317 are retired by this change.
   - #83 stays (non-goal; not about handler contexts).
   - #301 stays: T-G4 and the failed-start tests still use graph-ingest's test-only `subscribeRequests` field
-    (`component.go:425-431`); this change adds no reader of it.
+    (`component.go:425-431`). This change adds a second T-G4 row (cancelling at the first mutation registration)
+    that reads the same field; it adds no field.
+  - #378 (`Subscribe` parents handlers on its call context) stays: filed from this inventory; not fixed here.
   - #195, #141, #68, #162, #24, #300, #134, #216, #196 and #281 name natsclient symbols this change does not touch;
     they stay. #314, #280, #60 and #103 use the word, not the package.
 

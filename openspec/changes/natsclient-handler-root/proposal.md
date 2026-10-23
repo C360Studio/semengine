@@ -26,8 +26,9 @@ Two `natsclient` defects are open for a claim.
 
 ## Capabilities
 
-To be filled by the design: the `transport-client` delta for the request-handler context promise. `skip_specs` is set
-until the design names the deltas.
+- `transport-client` (modified): "A consumer's setup context does not parent its handlers" is renamed "A setup context
+  does not parent its handlers" and covers `SubscribeForRequests`; "Subscribe returns after the server has read the
+  SUB" changes one clause on whose context parents a handler.
 
 ## Non-goals
 

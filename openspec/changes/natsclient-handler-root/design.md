@@ -1,6 +1,7 @@
 # Design: natsclient-handler-root
 
-Base `c499381` (code = `05d6ec6`). Retires #311 and #317. Inventory: `inventory.md`.
+Base `c499381` (code = `05d6ec6`). Retires #311 and #317. Inventory: `inventory.md`. `Subscribe`'s defect of the same
+shape is #378, not fixed here.
 
 ## Context
 
@@ -16,9 +17,10 @@ ADR-112 cites `client.go:355-356` for the reconnect defaults, now at `:308-309`.
 
 ## Options
 
-0. Do nothing. Every adopter of `SubscribeForRequests` (graph-ingest now; agentic-loop, agentic-tools and graph-query
-   when ported, all passing a run context at the pin) must pass its run context and re-check its Start context, a fact
-   found only in a doc; passing the Start context silently kills every later handler.
+0. Do nothing. Every adopter of `SubscribeForRequests` must pass its run context and then re-check its Start context
+   itself. That is graph-ingest now, and agentic-loop, agentic-tools and graph-query once ported; all three pass a run
+   context at the pin. The only place an adopter learns this is a doc, and passing the Start context silently kills
+   every later handler.
 1. **Give `SubscribeForRequests` the consume split (recommended).** No new surface; the signature is unchanged.
 2. Option 1 plus a `SubscribeForRequestsContexts` taking a caller handler parent, mirroring
    `ConsumeStreamWithConfigContexts`. Rejected: no caller needs it. graph-ingest drains its subscriptions before it
@@ -28,23 +30,51 @@ ADR-112 cites `client.go:355-356` for the reconnect defaults, now at `:308-309`.
 
 **D1. `SubscribeForRequests`' context bounds setup only.** It bounds the subscribe and the PING/PONG wait, as now
 (`client.go:1060-1150`; the round trip at `:1114-1116`), and is not retained. Each handler invocation's context
-descends from a context the client owns for that subscription, not from the call's context. The client cancels it when
-`Close` begins, including when the subscription's delivery has already ended while a handler still runs. `Close` still
-joins every invocation. Each invocation keeps its per-request timeout (`request.go:351`) and the trace from the
-request's headers (`:343-345`); it carries no value of the call's context. Mechanism (where the cancel lives, how the
-watcher at `client.go:1112`/`:1156` sees Close) is the developer's; it mirrors `ownConsumer`. Binding: no
-`context.Context` is stored on `Client`. The root is created in the call, like `clientOwnedHandlerContext`, and only its
-cancel is kept (ADR-113; developer contract, Context ownership).
+descends from a context the client owns for that subscription, made with `clientOwnedHandlerContext`
+(`stream.go:460-461`, the consumers' constructor, reused; no second root constructor). The client cancels it when
+`Close` begins, including after the subscription's delivery has ended while a handler still runs. It also cancels it
+once delivery has ended and the last handler invocation has returned, as `ownConsumer` does
+(`owned_delivery.go:160-165`). That second cancel cannot be seen through a handler: each invocation's context already
+ends when the handler returns (`request.go:351-352`). So it has no test and no mutant; it is stated so that the root
+does not outlive its subscription. `Close` still joins every invocation. Each invocation keeps its per-request timeout
+(`request.go:351`) and the trace from the request's headers (`:343-345`), and carries no value of the call's context.
+
+Where the cancel lives and how the watcher (`client.go:1112`, `:1156`) sees `Close` is the developer's choice. The
+binding constraint: no `context.Context` is stored on `Client`, and only the root's cancel is kept (ADR-113; developer
+contract, Context ownership).
+
+`Subscribe` also goes through `subscribeOwned`, and its handler parent is unchanged: still the call's context
+(`client.go:1035-1038`). That is #378. The change to `SubscribeForRequests` must not alter `Subscribe`'s behaviour.
 
 **D2. graph-ingest passes its Start context.** `setupQueryHandlers(ctx)` and `setupMutationHandlers(ctx)` at
-`component.go:1024` and `:1027`. The registration then fails on an ended Start context itself (`client.go:1073-1076`
-pre-check; `:1137-1138` after the round trip). The `ctx.Err()` block at `:1030-1035` is deleted: its stated premise
+`component.go:1024` and `:1027`. The registration then fails on an ended Start context itself (`client.go:1070-1073`
+pre-check; `:1140-1141` after the round trip). The `ctx.Err()` block at `:1030-1035` is deleted: its stated premise
 ("register under the run context") no longer holds. The `errors.Join(err, ctx.Err())` at `:1025` and `:1028` stays
 (#315; the failing fake in `TestGraphIngest_StartReportsItsContextWhenHandlerSetupFails` returns `ErrNotConnected`
-without the context). The `Start` doc (`:958-963`) changes "request handlers … run under a run context" to "request
-handlers run under a context natsclient owns; release drains their subscriptions". The doc comment of
-`TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup` (`lifecycle_integration_test.go:438-444`) changes to
-"the registration itself sees the ending"; its body is unchanged.
+without the context).
+
+Doc and test-comment edits:
+
+- `Start` doc (`component.go:958-963`): "request handlers … run under a run context" becomes "request handlers run
+  under a context natsclient owns; release drains their subscriptions".
+- `TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup` (`lifecycle_integration_test.go:438-444`): "the
+  registration itself does not see the ending; start's check of its context before the status loop does" becomes "the
+  registration itself sees the ending".
+- `TestGraphIngest_StartReportsItsContextWhenHandlerSetupFails` (`lifecycle_integration_test.go:476-483`): "T-G4 lets
+  the registration succeed, so it reaches start's final ctx.Err check; here the registration fails and start returns
+  early" becomes "T-G4's registration fails on the ended Start context itself; here the fake fails the registration
+  with an error of its own".
+
+T-G4 becomes table-driven, with two rows that mirror `:497-500`:
+
+- `query`: cancel at call 1.
+- `mutation`: cancel at call `len(querySubjects)+1`.
+
+Each row asserts that `Start` wraps `context.Canceled`, holds nothing, and makes no registration after the one during
+which its context ended (the fake's call count equals the cancelling call). The count assertion is what catches a
+revert of the query loop alone: without it, the first mutation registration's ended-context check still fails `Start`
+with `context.Canceled`. Both rows read #301's `subscribeRequests` field, as T-G4 does today; this change adds no
+field.
 
 **D3. `Connect` names the closed case (#317; MEDIUM under #185; no mechanism).** The doc at `client.go:444-445` says
 it refuses a client that already has a connection installed: one that is connected, one nats.go is reconnecting, or
@@ -56,29 +86,32 @@ live.
 
 **D4. Docs.**
 
-- `request.go:278-316` gains the D1 paragraph with the ruling's cite; the comment at `:323` no longer says each request
-  derives from ctx.
-- README: "Consumer contexts and handler panics" becomes "Handler contexts and handler panics", with one sentence for
-  `SubscribeForRequests`; `:38-39` gains one sentence for the finite-reconnect case.
-- ADR-112 gets a Status amendment line (natsclient-handler-root, #317). §5's cite is corrected to `client.go:308-309`
-  at the archive commit, re-measured then. §5 gains one bullet: "With a finite `WithMaxReconnects`, nats.go closes the
-  connection once its attempts run out (`nats.go:3591-3597` at v1.54.0; measured at 0 by
-  `TestIntegration_ReconnectionIsRedial`, read but not measured above 0). The client keeps it installed and reports
-  Disconnected, and `Connect` refuses with `errs.ErrAlreadyStarted`. Recovery is a new Client."
+- `request.go:278-316`: add the D1 paragraph, with the ruling's cite.
+- `request.go:323`: the comment no longer says each request derives from ctx.
+- README "Consumer contexts and handler panics" becomes "Handler contexts and handler panics", with one sentence for
+  `SubscribeForRequests` and a note that `Subscribe` does not yet follow it (#378).
+- README `:38-39`: one sentence for the finite-reconnect case.
+- ADR-112 Status gains an amendment line (natsclient-handler-root, #317) covering two edits:
+  - §5's cite is corrected to `client.go:308-309` at the archive commit, re-measured then.
+  - §5 gains one bullet: "With a finite `WithMaxReconnects`, nats.go closes the connection once its attempts run out.
+    The client keeps it installed and reports Disconnected, and `Connect` refuses with `errs.ErrAlreadyStarted`;
+    recovery is a new Client. Measured at 0 by `TestIntegration_ReconnectionIsRedial`; above 0 not promised (read at
+    `nats.go:3591-3597`, v1.54.0)."
 
 ## Observable behaviour and proving tests
 
-Task 2.1; each fails on the base.
+Task 2.1; each new test fails on the base.
 
 | # | Behaviour | Test | Base failure |
 | --- | --- | --- | --- |
 | T1 | A request arriving after the setup context was cancelled gets a live handler context | `TestRequestHandlerContextOutlivesSetupContext` (natsclient, embedded server) | handler sees `context.Canceled` |
-| T2 | `Close` beginning while a handler runs ends its context; `Close` returns nil after it returns | `TestRequestHandlerContextEndsWhenCloseBegins` | context stays live until the bound |
+| T2 | `Close` beginning while a handler runs ends its context; `Close` returns nil after it returns | `TestRequestHandlerContextEndsWhenCloseBegins` | context stays live until the test's bound |
 | T3 | Same, after `Unsubscribe` while the handler still runs | `TestRequestHandlerContextEndsWhenCloseBeginsAfterUnsubscribe` | as T2 |
-| T4 | A Start context ending during request registration fails graph-ingest `Start` and holds nothing | existing T-G4 | none (guards D2) |
-| T5 | After the broker restarts with `WithMaxReconnects(0)`: `GetConnection().IsClosed()`, `Status` Disconnected, `Connect` matches `errs.ErrAlreadyStarted` with the D3 text | extend `TestIntegration_ReconnectionIsRedial` | text says "already connected" |
+| T4 | A Start context ending during a query or a mutation registration fails graph-ingest `Start` at that registration and holds nothing | T-G4, two rows (D2) | `mutation` row and the call-count assertions are new; the query row passes on the base |
+| T5 | With `WithMaxReconnects(0)`, after the broker restarts: once `GetConnection().IsClosed()` (awaited with `probe.Await`, not read once), `Status` is Disconnected and `Connect` matches `errs.ErrAlreadyStarted` with the D3 text | extend `TestIntegration_ReconnectionIsRedial` | text says "already connected" |
 
-T1-T3 use a real connection, so they do not run inside `synctest` (#156).
+T1-T3 use a real connection, so they do not run inside `synctest` (#156). T5 is also the pinned-version probe for
+"nats.go closes the connection after its reconnects run out".
 
 ## Mutants
 
@@ -88,49 +121,40 @@ Task 2.3.
 - M2: the handler root is not cancelled when `Close` begins. Expected detectors: T2, T3.
 - M3: the root is cancelled on `Close` only while delivery has not ended. Expected detector: T3.
 - M4: `:467` says "already connected" again. Expected detector: T5.
-- M5: `ErrAlreadyStarted` is dropped from `:467`. Expected detectors: T5 and `client_lifecycle_test.go:319`.
-- M6: graph-ingest passes `runCtx` to the registrations again (D2). Expected detector: T-G4.
+- M5: `ErrAlreadyStarted` is dropped from `:467`. Expected detectors: T5 and `client_close_final_test.go:702`.
+- M6q: only `setupQueryHandlers` gets `runCtx` again. Expected detector: T4 `query` row (call count).
+- M6m: only `setupMutationHandlers` gets `runCtx` again. Expected detector: T4 `mutation` row.
 
 ## Spec delta
 
-File: `openspec/changes/natsclient-handler-root/specs/transport-client/spec.md`.
+`specs/transport-client/spec.md`:
 
 - RENAMED: "A consumer's setup context does not parent its handlers" becomes "A setup context does not parent its
   handlers".
-- MODIFIED "A setup context does not parent its handlers": `ConsumeStreamWithConfig`,
-  `ConsumeInternalStreamWithConfig` and `SubscribeForRequests` SHALL use their context for setup only and SHALL NOT
-  retain it; a write the server is not reading holds the setup as "A write the server is not reading holds the
-  connection" states. Each handler's context SHALL descend from a context the client owns for that consumer or
-  subscription, which the client SHALL cancel when `Close` begins, also when delivery has already ended; `Close` SHALL
-  still join every handler invocation (owner ruling, #9 comment 5994720412 item 2). `ConsumeStreamWithConfigContexts`
-  keeps the caller's `handlerCtx` as the handlers' parent. A `SubscribeForRequests` handler's context carries the trace
-  from the request's headers when it has one and no value of the call's context. `Subscribe` is not covered by this
-  requirement. Scenarios: a handler after the setup deadline; `Close` begins while a handler runs; `Close` begins after
-  the subscription ended while a handler runs.
-- MODIFIED "Subscribe returns after the server has read the SUB": the current text unchanged except the clause at
-  `:268-269`, which becomes "a core subscription holds no claim, a `Subscribe` handler's context descends from the
-  call's own context and a `SubscribeForRequests` handler's from a context the client owns ("A setup context does not
-  parent its handlers"),".
+- MODIFIED, under the new name: the requirement now covers `SubscribeForRequests`, says `Subscribe` does not yet follow
+  it (#378), and gains one scenario.
+- MODIFIED: "Subscribe returns after the server has read the SUB", one clause at `:268-269`.
 
-If `RENAMED` trips `task spec:check`, the fallback is an ADDED requirement "A request subscription's setup context does
-not parent its handlers". The proposal's Capabilities section names `transport-client`, and `skip_specs` is removed.
+`.openspec.yaml` drops `skip_specs`. The proposal's Capabilities section names `transport-client`.
 
 ## Residual risk
 
 Declared under #185.
 
 - A caller that cancelled its subscribe context to stop in-flight handlers must now drain or unsubscribe. graph-ingest
-  already drains first (`component.go:1139-1147`); the pin adopters change when they are ported.
-- A handler running after a failed registration keeps a live context until `Close` begins or its request timeout ends.
-  graph-ingest refuses such a handler at entry (`component.go:1059-1074`).
+  already drains first (`component.go:1139-1147`). The pin adopters change when they are ported.
+- A handler running after a failed registration keeps a live context until `Close` begins, its delivery ends, or its
+  request timeout ends. graph-ingest refuses such a handler at entry (`component.go:1059-1074`).
 - A Start context ending at the moment the last PONG arrives may let `Start` commit: the round trip's select picks one
   at random, and neither ended first.
 - A request without trace headers no longer inherits a trace from the subscribe context.
 - With a finite `WithMaxReconnects`, graph-ingest's `Start` on a closed connection waits in `WaitForConnection` until
   its context ends (`component.go:991-1001`). No production code sets a finite limit.
-- `Subscribe` keeps the old shape; filed as its own issue, linked from #377 without a closing keyword.
+- `Subscribe` keeps the old shape until #378.
 
 ## Merge order
 
-No open PR overlaps: #376 and #374 touch no natsclient, graph-ingest or transport-client file. Either order works; the
-later one merges `origin/main`.
+PR #376 touches no natsclient, graph-ingest or transport-client file. #374 edits `docs/repository-map.md` and `AGENTS.md`.
+If this change's archive (task 3.2) adds a `docs/repository-map.md` row for the archived change, it overlaps #374 on
+that file. Either may land first, and the later one merges `origin/main` and keeps both rows. This change does not
+edit `AGENTS.md`.

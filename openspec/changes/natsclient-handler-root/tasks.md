@@ -7,7 +7,8 @@ Each task ends only when `task verify` passes on a clean tree at its commit (#17
 ## 1. Design
 
 - [ ] 1.1 Inventory and design (`design.md`) pass review, with a pin-version nats.go probe for every library-timing
-  statement (ADR-112). Gate: `task spec:check` and `task docs:check`.
+  statement (ADR-112); the `transport-client` delta is written under `specs/`, `skip_specs` is dropped, and
+  `task spec:check` is green. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Code
 

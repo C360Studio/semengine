@@ -13,7 +13,7 @@ commit (#171).
 
 ## 2. Port
 
-- [ ] 2.1 Tests first: the pin test files the design lists, adapted as the design says. Gate: the tests fail on the
+- [x] 2.1 Tests first: the pin test files the design lists, adapted as the design says. Gate: the tests fail on the
   base (compile errors noted in `notes/2.1.md`).
 - [ ] 2.2 The three pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
   updated. Gate: `go test -race ./service/` green and `task verify` green.

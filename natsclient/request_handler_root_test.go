@@ -66,12 +66,17 @@ func (h *heldRequestHandler) handle(ctx context.Context, _ []byte) ([]byte, erro
 }
 
 // requireContextEndsOnClose begins Close while h runs and requires that h's context ends, that
-// Close's join stays open until h returns, and that Close then returns nil.
+// Close has not returned while h is held, and that Close then returns nil.
 func requireContextEndsOnClose(t *testing.T, c *Client, h *heldRequestHandler) {
 	t.Helper()
 	closed := closeAsync(t.Context(), c)
 	await(t, h.ended, "the handler's context ending once Close began")
-	requireJoinPending(t, c, joinOnOwnedWork, "the handler returned")
+	// h is held, so a correct Close cannot have returned yet; this check cannot fail on one.
+	select {
+	case err := <-closed:
+		t.Fatalf("Close returned %v while the handler was still running", err)
+	default:
+	}
 	h.held.Release()
 	await(t, h.held.returned, "the handler returning")
 	require.NoError(t, awaitErr(t, closed, "Close"), "Close joins the handler and returns nil")

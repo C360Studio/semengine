@@ -12,10 +12,10 @@ Each task ends only when `task verify` passes on a clean tree at its commit (#17
 
 ## 2. Code
 
-- [ ] 2.1 Tests first for the request-handler context (#311) and the closed-connection refusal (#317), and T6 for
+- [x] 2.1 Tests first for the request-handler context (#311) and the closed-connection refusal (#317), and T6 for
   graph-ingest's kept final check. Gate: the tests fail on the base, T6 excepted, whose sensitivity is M7 in 2.3
   (`notes/2.1.md`).
-- [ ] 2.2 `SubscribeForRequests` handler root, its callers, and the `Connect` doc and refusal text. Gate:
+- [x] 2.2 `SubscribeForRequests` handler root, its callers, and the `Connect` doc and refusal text. Gate:
   `task verify` green.
 - [ ] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
 

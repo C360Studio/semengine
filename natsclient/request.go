@@ -315,22 +315,36 @@ func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []by
 //
 // It does not wait for a running invocation of handler; Close joins that
 // invocation.
+//
+// ctx is used for the setup only (the subscribe and the round trip above) and
+// is not retained (owner ruling, #9 comment 5994720412 item 2). Each handler
+// invocation's context descends from a context the client owns for this
+// subscription, not from ctx: ending ctx after the call returned does not end a
+// handler. The client cancels that context when Close begins, also when the
+// subscription's delivery has already ended while a handler still runs, and
+// once delivery has ended and the last invocation has returned. A handler's
+// context also ends when the per-request handler timeout passes, and carries
+// the trace from the request's headers when it has one, and no value of ctx.
+// Unsubscribe stops delivery but does not wait for a running handler;
+// Subscription.Drain returning nil is what proves every handler has returned.
 func (c *Client) SubscribeForRequests(
 	ctx context.Context,
 	subject string,
 	handler func(ctx context.Context, data []byte) ([]byte, error),
 ) (*Subscription, error) {
-	// Refused here, not in the callback: each request derives its handler context from ctx.
+	// Refused here: subscribeOwned reads ctx for the setup.
 	if ctx == nil {
 		return nil, nilContextError("SubscribeForRequests")
 	}
-	return c.subscribeOwned(ctx, "SubscribeForRequests", subject, func(conn *nats.Conn) nats.MsgHandler {
-		return c.requestCallback(ctx, conn, subject, handler)
+	handlerCtx, cancelHandlers := clientOwnedHandlerContext()
+	return c.subscribeOwned(ctx, "SubscribeForRequests", subject, cancelHandlers, func(conn *nats.Conn) nats.MsgHandler {
+		return c.requestCallback(handlerCtx, conn, subject, handler)
 	})
 }
 
 // requestCallback is SubscribeForRequests' native callback for a subscription
-// made on conn.
+// made on conn. ctx is the parent of every invocation's context: the context the
+// client owns for the subscription.
 func (c *Client) requestCallback(
 	ctx context.Context,
 	conn *nats.Conn,

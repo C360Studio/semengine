@@ -453,10 +453,11 @@ func (c *Client) ConsumeStreamWithConfig(
 }
 
 // clientOwnedHandlerContext is the parent of a consumer's handler contexts when the caller gave
-// none (owner ruling, #9 comment 5994720412 item 2). It is a root this client owns, like the
-// metrics poller's: the setup context must not parent handlers that outlive it, and no other
-// context of the client lives as long as the consumer. The consumer's ownership goroutine cancels
-// it when Close begins and once the last handler has returned (ownConsumer).
+// none, and of a SubscribeForRequests subscription's (owner ruling, #9 comment 5994720412 item 2).
+// It is a root this client owns, like the metrics poller's: the setup context must not parent
+// handlers that outlive it, and no other context of the client lives as long as the consumer or
+// subscription. The consumer's ownership goroutine (ownConsumer), or the subscription's watcher
+// (watchOwnedSubscription), cancels it when Close begins and once the last handler has returned.
 func clientOwnedHandlerContext() (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
 }

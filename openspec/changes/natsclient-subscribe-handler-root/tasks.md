@@ -7,9 +7,9 @@ only when `task verify` passes on a clean tree at its commit (#171).
 ## 1. Design
 
 - [x] 1.1 Inventory passes review (`inventory.md`, INVENTORY PASS, `4675084`).
-- [ ] 1.2 Design, proposal and spec deltas written; `task spec:check` and `task docs:check` green.
-  Hold: the Claude design review and the Codex design review both PASS this design, and the owner accepts it. Section
-  2 starts after that.
+- [x] 1.2 Design, proposal and spec deltas written; `task spec:check` and `task docs:check` green. Claude DESIGN REVIEW
+  PASS at `6566fd4` (round 3), Codex DESIGN REVIEW PASS at `98b2a95` (PR #382 comment, 2026-10-23), owner go-ahead
+  2026-10-23.
 
 ## 2. Code
 

@@ -19,7 +19,7 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   not ended fails, saying so. `TestSpecQueueArguments` covers cases A1–A6 of `design.md` with expected values written
   by hand. The file comment's "all four requirements" becomes "all six". Gate: A1 fails at the bound and A2, A3 and
   A6 fail with exit 0 on the base, recorded in `notes/2.1.md`.
-- [ ] 2.2 The operand check at `scripts/openspec-queue.sh:63` plus the range check the owner chose for Q1. The usage
+- [x] 2.2 The operand check at `scripts/openspec-queue.sh:63` plus the range check the owner chose for Q1. The usage
   line `:50` and the exit-2 sentence `:41` are edited in place, so the header keeps its line count and the `--help`
   range at `:64` stays right. Gate: `task verify` green.
 - [ ] 2.3 Sensitivity by hand: mutants M1–M4 of `design.md`, each run against `TestSpecQueueArguments`, with baseline,

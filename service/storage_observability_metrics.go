@@ -294,7 +294,7 @@ func newStorageObservabilityMetrics() *storageObservabilityMetrics {
 			Help: "Unix timestamp of the freshest published report row's COLLECTION time. " +
 				"Alert on `time() - this > horizon` to catch a collector that stopped: every other " +
 				"series here is stamped with SCRAPE time, so a stopped collector otherwise looks " +
-				"identical to a calm account. Absent until the first row is read.",
+				"identical to a calm account. Zero until a row with a collection time has been read.",
 		}),
 
 		tracked:      make(map[string]trackedResource, 32),

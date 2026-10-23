@@ -361,10 +361,11 @@ Uncovered, recorded in `notes/2.3.md`: a collection in progress when `Stop` begi
 - **Guidance:** none to carry (`sweep.md` § 5).
 - **Coverage:** the `service` floor (`scripts/cover-check.sh`) holds; no new target.
 - **Issues:** retires none. Comments on #195 (fixture adopted for these tests) and #196 (guard composed). Nothing to
-  file: every finding is fixed here or retained with its reason (O12); Q1's "drop" branch files one issue.
-- **Merge order:** #374 (Gemini) and this PR both edit `docs/repository-map.md`, in different rows; whichever merges
-  second merges `origin/main` and keeps both edits. #374's `scripts/port-status.sh` reads the ledger; if it parses the
-  `service` row, its own tests on the merged head say so. #358 (`client_golang` 1.25.0) shares no file; either order.
+  file: every finding is fixed here or retained with its reason (O12); Q1 keeps the rules, so no issue is filed for
+  them.
+- **Merge order:** #374 (Gemini), #377 (natsclient handler root) and this PR all edit `docs/repository-map.md`;
+  whichever merges later merges `origin/main` and keeps every edit. #374's `scripts/port-status.sh` reads the ledger;
+  if it parses the `service` row, its own tests on the merged head say so. #358 (`client_golang` 1.25.0) shares no file; either order.
 
 ## D9. Spec deltas (written after acceptance; `skip_specs` removed then)
 
@@ -389,15 +390,9 @@ Uncovered, recorded in `notes/2.3.md`: a collection in progress when `Stop` begi
 
 ## Owner questions
 
-- **Q1. Recommended: keep the example alert rules that come with the storage metrics, renamed to the new metric
-  names.** At the pin the storage metrics ship with a file of 13 example Prometheus alerts (339 lines), and four tests
-  check it against the metrics: every alert reads a metric the service publishes, none fires on a report row
-  disappearing, unbounded storage is named, and each alert says nothing is enforced. Keeping it is the first piece of
-  the dashboard-and-drift-test item still open on the epic (#9, item 5), and the pin's decision record on substrate
-  observability lists alert rules among the report's consumers. Cost: a new directory, `configs/prometheus/rules/`,
-  holding one YAML file that is an example operators copy, not something the engine loads. The other choice: drop the
-  file and its four tests, and file an issue under #9 item 5. Keep it at `configs/prometheus/rules/`, put it elsewhere,
-  or drop it?
-
-ADR-113 is applied, not asked. D1's drops follow the surface audit; D3's strict keys follow the owner's 2026-10-19
-intent; ADR-098 is carried under the binding-ADR rule (#157).
+- **Q1. Decided (owner, 2026-10-23, PR #376 comment 6363685574): keep the example alert rules, renamed to the
+  `semengine_storage_*` names, at `configs/prometheus/rules/`, with their four tests.** At the pin the storage metrics
+  ship with a file of 13 example Prometheus alerts (339 lines), and the four tests check it against the metrics: every
+  alert reads a metric the service publishes, none fires on a report row disappearing, unbounded storage is named, and
+  each alert says nothing is enforced. It is the first piece of the dashboard-and-drift-test item still open on the
+  epic (#9, item 5). The file is an example operators copy, not something the engine loads.

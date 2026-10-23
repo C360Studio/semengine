@@ -115,9 +115,9 @@ SHALL be a `malformed_subject` here.
 #### Scenario: The probe's subjects at every site
 
 - **WHEN** each of `a.foo bar`, `a.foo` + form feed + `bar`, `a.>.b`, `a*`, `a.b*.c`, `a..b`, and a subject holding a
-  tab, a line feed or a carriage return is declared on a NATS input, a NATS output, a NATS-request input, a JetStream
-  input's and a JetStream output's second subject, and an explicit stream's second subject; and an empty subject on
-  the explicit stream
+  tab, a line feed or a carriage return is declared on a NATS input, a NATS output, a NATS-request input, a
+  NATS-request output, a JetStream input's and a JetStream output's second subject, and an explicit stream's second
+  subject; and an empty subject on the explicit stream
 - **THEN** each yields exactly one `malformed_subject` error naming the component, port, lane, field and subject, or
   the stream key, index and subject
 - **AND** `a.>`, `a.*.c`, `>` and `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` at the same sites yield none

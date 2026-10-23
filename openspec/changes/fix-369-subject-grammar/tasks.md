@@ -13,7 +13,7 @@ not compile without it; the failing run on the base is recorded in `notes/2.1.md
   owner's ruling on #369 (2026-10-23). Gate: `task spec:check` and `task docs:check`.
 - [x] 1.3 Claude design review. A Claude `semengine-reviewer` passes `design.md` and the delta; its verdict is
   linked from a PR comment.
-- [ ] 1.4 Hold: Codex design review. Codex passes `design.md` and the delta; its verdict is linked from a PR comment.
+- [x] 1.4 Codex design review. Codex passes `design.md` and the delta; its verdict is linked from a PR comment.
 - [ ] 1.5 Hold: owner design acceptance. The owner accepts the design on #369 or PR #380.
 
 ## 2. Code

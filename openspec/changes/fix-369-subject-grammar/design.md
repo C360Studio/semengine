@@ -75,8 +75,8 @@ The oracle is a list of verdicts written by hand. No test calls `ValidSubject`. 
 - T1 `TestAnalyzeReportsMalformedSubject` (through `composition.Validate`). Malformed: `a.foo bar`, `a.foo\fbar`,
   `a.>.b`, `a*`, `a.b*.c`, `a..b`, and subjects holding a tab, a line feed and a carriage return; also `""` at the
   stream site only, since the port codec already refuses an empty port subject. Valid: `a.>`, `a.*.c`, `>`,
-  `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>`. Six sites: NATS input; NATS output; NATS-request input; JetStream
-  input `subjects[1]`; JetStream output `subjects[1]`; explicit stream `subjects[1]`.
+  `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>`. Seven sites: NATS input; NATS output; NATS-request input;
+  NATS-request output; JetStream input `subjects[1]`; JetStream output `subjects[1]`; explicit stream `subjects[1]`.
   - Each malformed subject at each site yields exactly one `malformed_subject` error, with the expected component,
     port and message as literal text.
   - Each valid subject yields no `malformed_subject`. The assertion counts `malformed_subject` findings only, never an
@@ -104,7 +104,7 @@ run with `task mutate:check`, must be detected; a survivor is reported as a surv
 | M7 | the validity guard dropped from `flowgraph.SubjectsOverlap` (`internal/flowgraph/flowgraph.go:323-325`) | T3 |
 
 Examples, not generated checks. The grammar's law already has `TestValidSubject` and `FuzzValidSubject`. This change
-only maps each site to a finding. Its inputs are a finite cross product (six sites by the verdict list), which T1
+only maps each site to a finding. Its inputs are a finite cross product (seven sites by the verdict list), which T1
 covers exhaustively. Output order is the only order-dependent property, and it is held by `finalize` and
 `TestValidateIsDeterministic`.
 

@@ -21,7 +21,7 @@ Each task names its outcome and the gate that proves it.
 
 ## 3. Review and archive
 
-- [ ] 3.1 Cross-agent implementation review of record on the pull request, with any findings fixed and `reviewed-by:`
+- [x] 3.1 Cross-agent implementation review of record on the pull request, with any findings fixed and `reviewed-by:`
   recorded in the PR description beside `implemented-by:`.
-- [ ] 3.2 Archive `port-status-tracker`, sync `openspec/specs/port-status/spec.md`, and update `docs/repository-map.md`
+- [x] 3.2 Archive `port-status-tracker`, sync `openspec/specs/port-status/spec.md`, and update `docs/repository-map.md`
   with the archive row as the final content commit. Gate: `task spec:check` and `task docs:check`.

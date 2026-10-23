@@ -45,7 +45,8 @@ func TestIntegration_ConnectToRealNATS(t *testing.T) {
 
 // TestIntegration_ReconnectionIsRedial proves re-dial, not nats.go's automatic reconnect: when the
 // broker restarts, a client on it observes the loss (its connection-lost callback fires and its
-// Status leaves connected), and a client dialled from the restarted broker's URL is healthy.
+// Status leaves connected), Connect on it refuses once nats.go has closed its connection, and a
+// client dialled from the restarted broker's URL is healthy.
 // The pin skipped this test because Docker could map the restarted broker to another host port
 // (integration_test.go:63-65). natsfixture keeps the host port across a restart (#209); the first
 // client here has no reconnects because the test proves a re-dial, not a reconnect. Rewritten on
@@ -90,6 +91,18 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 		func(s ConnectionStatus) bool { return s == StatusDisconnected })
 	require.NoError(t, err, "status after the loss: %v", status)
 	assert.False(t, manager.IsHealthy())
+
+	// With no reconnects left, nats.go closes the connection; the client keeps it installed, so
+	// Status stays Disconnected and Connect refuses, naming the case (design
+	// natsclient-handler-root D3, T5; #317). This is also the pinned-version probe for nats.go
+	// closing the connection once its reconnects run out.
+	closed, err := probe.Await(waitCtx, func(context.Context) (bool, error) { return manager.GetConnection().IsClosed(), nil },
+		func(closed bool) bool { return closed })
+	require.NoError(t, err, "nats.go closed the connection: %v", closed)
+	require.Equal(t, StatusDisconnected, manager.Status(), "status once nats.go closed the connection")
+	err = manager.Connect(ctx)
+	require.ErrorIs(t, err, errs.ErrAlreadyStarted, "Connect on a client whose connection nats.go closed")
+	require.ErrorContains(t, err, "connection already installed; a Client connects once")
 
 	redialled, err := NewClient(f.URL(), WithMaxReconnects(0), WithHealthInterval(0))
 	require.NoError(t, err)

@@ -169,23 +169,33 @@ process lets a panic end it). A Nak that fails SHALL be logged with the panic, n
 - **WHEN** a handler panics and the Nak that follows returns an error
 - **THEN** the error record names the panic, the subject and the Nak error
 
-### Requirement: A consumer's setup context does not parent its handlers
+### Requirement: A setup context does not parent its handlers
 
-`ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` SHALL use their context for setup only and SHALL
-NOT retain it; a write the server is not reading holds the setup as "A write the server is not reading holds the
-connection" states. Each handler's context SHALL descend from a context the client owns for that consumer, which the
-client SHALL cancel when `Close` begins; `Close` SHALL still join every handler invocation (owner ruling, #9 comment
-5994720412 item 2). `ConsumeStreamWithConfigContexts` keeps the caller's `handlerCtx` as the handlers' parent.
+`ConsumeStreamWithConfig`, `ConsumeInternalStreamWithConfig` and `SubscribeForRequests` SHALL use their context for
+setup only and SHALL NOT retain it; a write the server is not reading holds the setup as "A write the server is not
+reading holds the connection" states. Each handler's context SHALL descend from a context the client owns for that
+consumer or subscription, which the client SHALL cancel when `Close` begins, also when the consumer's or
+subscription's delivery has already ended while a handler still runs; `Close` SHALL still join every handler
+invocation (owner ruling, #9 comment 5994720412 item 2). `ConsumeStreamWithConfigContexts` keeps the caller's
+`handlerCtx` as the handlers' parent. A `SubscribeForRequests` handler's context SHALL carry the trace from the
+request's headers when it has one and no value of the call's context. `Subscribe` does not yet follow this
+requirement (#378): its handlers' context descends from the call's own context.
 
 #### Scenario: A handler after the setup deadline
 
-- **GIVEN** a consumer started with a setup context whose deadline then passes
-- **WHEN** a message is delivered after that deadline
+- **GIVEN** a consumer, or a `SubscribeForRequests` subscription, started with a setup context that then ends
+- **WHEN** a message or request is delivered after that
 - **THEN** its handler receives a context that has not ended
 
 #### Scenario: Close begins while a handler runs
 
-- **GIVEN** a consumer whose handler is running
+- **GIVEN** a consumer or a `SubscribeForRequests` subscription whose handler is running
+- **WHEN** `Close` begins
+- **THEN** the handler's context ends, and `Close` returns nil only after the handler has returned
+
+#### Scenario: Close begins after the subscription ended while a handler runs
+
+- **GIVEN** a `SubscribeForRequests` subscription unsubscribed while its handler still runs
 - **WHEN** `Close` begins
 - **THEN** the handler's context ends, and `Close` returns nil only after the handler has returned
 
@@ -266,8 +276,9 @@ subscription when it reads that line; on a connection Close is draining or has c
 ends it instead. The call SHALL NOT wait for a handler invocation of the subscription that is still running; Close
 joins that invocation as it joins every other. This differs from a consumer setup refused
 during Close ("A consumer refused during Close keeps its claim"), which waits for its handlers: a core subscription
-holds no claim, its handlers' context descends from the call's own context, and Close's join already covers every
-subscription of a failed setup.
+holds no claim, a `Subscribe` handler's context descends from the call's own context and a `SubscribeForRequests`
+handler's from a context the client owns ("A setup context does not parent its handlers"), and Close's join already
+covers every subscription of a failed setup.
 
 The error SHALL be decided in this order. If Close has begun when the call fails, the call SHALL return
 `nats.ErrConnectionClosed`, whatever the round trip's outcome and whether or not the call's context has ended, decided

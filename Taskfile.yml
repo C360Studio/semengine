@@ -122,6 +122,11 @@ tasks:
     cmds:
       - scripts/openspec-queue.sh
 
+  status:
+    desc: Print the Slice 04A 65-package port scoreboard, open PR claims, flakes, and milestone/issue hygiene (-- --offline, --check, or --sync-project); reads GitHub unless --offline
+    cmds:
+      - 'scripts/port-status.sh {{.CLI_ARGS}}'
+
   docs:check:
     desc: Lint Markdown with markdownlint-cli2
     cmds:

@@ -13,7 +13,7 @@ only when `task verify` passes on a clean tree at its commit (#171).
 
 ## 2. Code
 
-- [ ] 2.1 Merge `origin/main` (#376 landed) into the branch, without rebase; re-measure the cites design D6 gives at
+- [x] 2.1 Merge `origin/main` (#376 landed) into the branch, without rebase; re-measure the cites design D6 gives at
   `46d3cd5` and record the new lines in `notes/2.1.md`. Gate: `task verify`.
 - [ ] 2.2 `Subscribe` handler root (D1), with T1-T4 and the doc comments at `client.go:997`, `:1036` and
   `stream.go:455-460`, in one commit. T4 publishes on the raw connection (design, T4 note). Gate: T1-T4 fail on the

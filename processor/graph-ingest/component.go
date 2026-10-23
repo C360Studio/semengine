@@ -958,9 +958,10 @@ func (c *Component) Initialize() error {
 // ctx bounds Start only. Everything Start does before it returns runs under ctx:
 // connecting to NATS (or waiting while the client reconnects), bucket setup, the
 // ENTITY_STATES sweep and consumer setup. A ctx that ends first fails Start.
-// Subscriptions, request handlers, the ingest pool, the entity cache's expiry sweep and
-// the status loop run under a run context start creates and release ends, so ending ctx
-// after Start returned stops nothing (ADR-113).
+// Subscriptions, the ingest pool, the entity cache's expiry sweep and the status loop run
+// under a run context start creates and release ends, so ending ctx after Start returned
+// stops nothing (ADR-113). Request handlers run under a context natsclient owns; release
+// drains their subscriptions, which waits for running handlers.
 func (c *Component) Start(ctx context.Context) error {
 	c.mu.RLock()
 	initialized := c.initialized
@@ -1021,15 +1022,15 @@ func (c *Component) start(ctx context.Context) error {
 	if err := c.setupSubscriptions(ctx, submitCtx); err != nil {
 		return errs.Wrap(err, "Component", "Start", "subscription setup")
 	}
-	if err := c.setupQueryHandlers(runCtx); err != nil {
+	if err := c.setupQueryHandlers(ctx); err != nil {
 		return errs.Wrap(errors.Join(err, ctx.Err()), "Component", "Start", "query handler setup")
 	}
-	if err := c.setupMutationHandlers(runCtx); err != nil {
+	if err := c.setupMutationHandlers(ctx); err != nil {
 		return errs.Wrap(errors.Join(err, ctx.Err()), "Component", "Start", "mutation handler setup")
 	}
-	// The request handlers register under the run context, which does not end with ctx, so
-	// start reads ctx itself: joined to a failed registration's error above, and here
-	// after the registrations succeed (ADR-113). The guard's rollback then runs release.
+	// A Start context that ends after the last registration succeeded, while setup is still
+	// running, fails Start here (ADR-113: if ctx ends before Start returns, Start returns its
+	// error and holds nothing). The guard's rollback then runs release.
 	if err := ctx.Err(); err != nil {
 		return errs.Wrap(err, "Component", "Start", "context ended during startup")
 	}

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"slices"
 	"strings"
@@ -437,27 +438,119 @@ func TestGraphIngest_StartBoundedByItsContext(t *testing.T) {
 
 // TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup: a Start context that
 // ends while the request handlers are being registered fails Start (ADR-113: if ctx ends
-// first, Start returns that error and holds nothing; design D6, T-G4). The handlers
-// register under the run context, so the registration itself does not see the ending;
-// start's check of its context before the status loop does. The test's subscribe
-// function, through the subscribeRequests field (#301), cancels the Start context at the
-// first registration and then registers as the client would.
+// first, Start returns that error and holds nothing; design D6, T-G4; design
+// natsclient-handler-root D2, T4). The handlers register under the Start context, so the
+// registration itself sees the ending. The test's subscribe function, through the
+// subscribeRequests field (#301), cancels the Start context at the first query
+// registration, or at the first mutation registration, which follows one registration per
+// query verb graph-ingest answers, and then registers as the client would. No
+// registration may follow the one during which the context ended.
 func TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup(t *testing.T) {
-	comp := createTestComponentForLifecycle(t)
+	querySubjects := map[string]bool{}
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder == graph.ResponderGraphIngest {
+			querySubjects[verb.Subject] = true
+		}
+	}
+	for _, row := range []struct {
+		name     string
+		cancelAt int // the 1-based registration call during which the Start context ends
+	}{
+		{name: "query", cancelAt: 1},
+		{name: "mutation", cancelAt: len(querySubjects) + 1},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			comp := createTestComponentForLifecycle(t)
+			if err := comp.Initialize(); err != nil {
+				t.Fatalf("Initialize: %v", err)
+			}
+			owner := newSuiteOwner(comp)
+			startCtx, cancelStart := context.WithCancel(t.Context())
+			defer cancelStart()
+			calls := 0
+			cancelledSubject := ""
+			comp.subscribeRequests = func(
+				ctx context.Context,
+				subject string,
+				handler func(context.Context, []byte) ([]byte, error),
+			) (*natsclient.Subscription, error) {
+				calls++
+				if calls == row.cancelAt {
+					cancelledSubject = subject
+					cancelStart()
+				}
+				return comp.natsClient.SubscribeForRequests(ctx, subject, handler)
+			}
+
+			startErr := owner.Start(startCtx)
+			if cancelledSubject == "" || querySubjects[cancelledSubject] != (row.name == "query") {
+				t.Fatalf("registration %d was %q, want a %s subject", row.cancelAt, cancelledSubject, row.name)
+			}
+			if !errors.Is(startErr, context.Canceled) {
+				t.Errorf("Start error = %v, want it to wrap context.Canceled", startErr)
+			}
+			if calls != row.cancelAt {
+				t.Errorf("registrations = %d, want %d: none after the one during which the Start context ended",
+					calls, row.cancelAt)
+			}
+			if held := owner.Observe().Unresolved; len(held) != 0 {
+				t.Errorf("held after a Start whose context ended = %v, want nothing", held)
+			}
+			stopCtx, cancelStop := context.WithTimeout(t.Context(), 30*time.Second)
+			defer cancelStop()
+			if err := owner.Stop(stopCtx); err != nil {
+				t.Fatalf("Stop after a failed Start: %v", err)
+			}
+		})
+	}
+}
+
+// cancelOnRecordHandler is the component's logger handler: it cancels when it handles the
+// record whose message is msg.
+type cancelOnRecordHandler struct {
+	msg    string
+	cancel context.CancelFunc
+}
+
+func (h *cancelOnRecordHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return level >= slog.LevelInfo
+}
+
+func (h *cancelOnRecordHandler) Handle(_ context.Context, record slog.Record) error {
+	if record.Message == h.msg {
+		h.cancel()
+	}
+	return nil
+}
+
+func (h *cancelOnRecordHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+func (h *cancelOnRecordHandler) WithGroup(string) slog.Handler      { return h }
+
+// TestGraphIngest_StartFailsWhenItsContextEndsAfterHandlerSetup: a Start context that ends
+// after the last request registration succeeded, while setup is still running, fails
+// Start, which holds nothing, and a later Stop returns nil (ADR-113; design
+// natsclient-handler-root D2, T6). The component's logger, given through deps.Logger,
+// cancels the Start context when it handles "mutation handlers registered", which
+// setupMutationHandlers logs after its last registration and before it returns. It passes
+// on the base too: it guards start's final check of its context (mutant M7).
+func TestGraphIngest_StartFailsWhenItsContextEndsAfterHandlerSetup(t *testing.T) {
+	startCtx, cancelStart := context.WithCancel(t.Context())
+	defer cancelStart()
+	deps := testDependencies(t, newFixtureClient(t, entityStream))
+	deps.Logger = slog.New(&cancelOnRecordHandler{msg: "mutation handlers registered", cancel: cancelStart})
+	configJSON, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	created, err := CreateGraphIngest(configJSON, deps)
+	if err != nil {
+		t.Fatalf("CreateGraphIngest: %v", err)
+	}
+	comp := created.(*Component)
 	if err := comp.Initialize(); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	owner := newSuiteOwner(comp)
-	startCtx, cancelStart := context.WithCancel(t.Context())
-	defer cancelStart()
-	comp.subscribeRequests = func(
-		ctx context.Context,
-		subject string,
-		handler func(context.Context, []byte) ([]byte, error),
-	) (*natsclient.Subscription, error) {
-		cancelStart()
-		return comp.natsClient.SubscribeForRequests(ctx, subject, handler)
-	}
 
 	startErr := owner.Start(startCtx)
 	if !errors.Is(startErr, context.Canceled) {
@@ -476,8 +569,8 @@ func TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup(t *testing.T
 // TestGraphIngest_StartReportsItsContextWhenHandlerSetupFails: a Start context that ends
 // while a request handler registration is failing still fails Start with that context's
 // error, beside the registration error (ADR-113: if ctx ends first, Start returns that
-// error and holds nothing; #315). T-G4 lets the registration succeed, so it reaches
-// start's final ctx.Err check; here the registration fails and start returns early. The
+// error and holds nothing; #315). T-G4's registration fails on the ended Start context
+// itself; here the fake fails the registration with an error of its own. The
 // test's subscribe function, through the subscribeRequests field (#301), cancels the
 // Start context and fails the first query registration, or the first mutation
 // registration, which follows one registration per query verb graph-ingest answers.

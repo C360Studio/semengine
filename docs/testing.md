@@ -369,8 +369,9 @@ The repository's own checks follow the same pattern, built into the tests:
   `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`; the fixed-port script has its own fixture test,
   `scripts/lint-test-ports_fixture_test.sh`; `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge
   check against canned GitHub answers; and `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`,
-  `TestSpecQueueCheck` and `TestSpecCheckWiring` run the OpenSpec queue script, `scripts/openspec-queue.sh`, against
-  a stand-in `openspec` command and planted `tasks.md` files.
+  `TestSpecQueueCheck`, `TestSpecCheckWiring` and `TestSpecQueueArguments` run the OpenSpec queue script,
+  `scripts/openspec-queue.sh`, against a stand-in `openspec` command and planted `tasks.md` files, each run under a
+  deadline so a script that does not end fails the test.
 - `TestEachFailpointTripsExactlyItsCheck` in `internal/harness/lifecycletest/` runs every lifecycle check against a
   reference component with one defect switched on at a time, and requires exactly the matching check to fail.
 

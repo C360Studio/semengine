@@ -35,9 +35,9 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 4. Docs and archive
 
-- [ ] 4.1 `docs/testing.md:371-372` names `TestSpecQueueArguments` beside the other spec-queue tests. Gate:
+- [x] 4.1 `docs/testing.md:371-372` names `TestSpecQueueArguments` beside the other spec-queue tests. Gate:
   `task docs:check`.
-- [ ] 4.2 Delta synced into `openspec/specs/spec-queue/spec.md`, with the Purpose's "exit 2 means it could not read
+- [x] 4.2 Delta synced into `openspec/specs/spec-queue/spec.md`, with the Purpose's "exit 2 means it could not read
   the changes" made "exit 2 means it could not read the changes or refused its arguments". `docs/repository-map.md`
   `:91` adds "and the `fix-262-stale-days-operand` archive", plus an archived-change row like `:100-101`. Archived as
   the last content commit. Gate: `task spec:check` and `task docs:check`.

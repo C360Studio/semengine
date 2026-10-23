@@ -1036,7 +1036,7 @@ func (s *Subscription) Drain(ctx context.Context) error {
 // is not retained (owner ruling, #9 comment 5994720412 item 2). Each handler
 // invocation's context descends from a context the client owns for this
 // subscription, not from ctx: ending ctx after the call returned does not end a
-// handler. The client cancels that context when Close begins, also after
+// handler. The client cancels that context after Close has begun, also after
 // Unsubscribe while a handler still runs, and once delivery has ended and the
 // last invocation has returned. A handler's context also ends when its
 // 30-second processing timeout passes, and carries the trace from the
@@ -1075,18 +1075,15 @@ func (m *Client) Subscribe(ctx context.Context, subject string, handler func(con
 // nats.go's connection lock that each step here makes (design
 // subscribe-registers-interest, D1 to D5, L8).
 //
-// cancelHandlers, when not nil, cancels the context the client owns for the
-// subscription's handlers (design natsclient-handler-root D1). subscribeOwned
-// calls it when it returns before the subscription is watched; after that the
-// watcher calls it when Close begins and once the last handler invocation has
-// returned.
+// cancelHandlers cancels the context the client owns for the subscription's
+// handlers; every caller gives one (designs natsclient-handler-root and
+// natsclient-subscribe-handler-root, D1). subscribeOwned calls it when it
+// returns before the subscription is watched; after that the watcher calls it
+// after Close has begun and once the last handler invocation has returned.
 func (m *Client) subscribeOwned(
 	ctx context.Context, operation, subject string, cancelHandlers context.CancelFunc,
 	build func(conn *nats.Conn) nats.MsgHandler,
 ) (*Subscription, error) {
-	if cancelHandlers == nil {
-		cancelHandlers = func() {}
-	}
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()

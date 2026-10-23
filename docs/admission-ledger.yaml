@@ -845,7 +845,8 @@
     (PublisherConfig, Publisher, ResourceKey, Observer, Snapshot, ConsumerConfig, Consumer, NewPublisher,
     NewConsumer); Client.AccountStreamLister is the function storagereport.AccountStreamLister(client) (D2); 22
     names with no caller in this repository are unexported (D2, Exports); Observer gains ForgetAccount(row), called
-    when the consumer drops a held account row, so an observer is told as it is for resources (D3, #85).
+    when the consumer drops a held account row, so an observer is told as it is for resources (D3, #85); its one
+    implementer is the metrics of service's storage observability service (setup-04a-03-boot-service-storage-observability).
     Changed surface, simplify-04a-16 (#222): the connection circuit breaker is removed, and the
     connection status is a typed atomic that Status() reads without the client's lock. Removed:
     StatusCircuitOpen, natsclient.ErrCircuitOpen (and errs.ErrCircuitOpen), Client.Failures,
@@ -2824,7 +2825,12 @@
     (configs/e2e-flow-bootstrap.json: agent.>, tool.>, user.>, graph.mutation.>, discovery.>); no Go caller outside
     service at the pin (0 typed uses of any exported name). Its surface is the configuration and the routes: semteams'
     UI reads /message-logger/entries (ui/src/lib/services/messageLoggerApi.ts:42, components/board/TaskTrace.svelte:66)
-    and its dev tasks read stats, trace/{id}, kv/{bucket} and kv/{bucket}/watch (taskfiles/dev.yml:140-181)
+    and its dev tasks read stats, trace/{id}, kv/{bucket} and kv/{bucket}/watch (taskfiles/dev.yml:140-181).
+    PR 5: the storage observability service (storage_observability.go, storage_observability_http.go,
+    storage_observability_metrics.go), framework API reached through configuration, the route
+    /storage-observability/report, the semengine_storage_* metrics and the health message; no consumer enables it and
+    no Go caller outside service exists at the pin; the 03B operator-surface row for the report says Keep
+    (openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:728)
   destination: service
   contract: >-
     the service-lifecycle and operator-surface specs; ADR-113; ADR-088 and ADR-109 (/readyz); the background-work
@@ -2851,7 +2857,17 @@
     (the SSE wire shapes); read by the routes and kept as at the pin: GetLogEntries, GetEntriesByTrace,
     GetStatistics; the HTTPHandler methods RegisterHTTPHandlers and OpenAPISpec. The service-lifecycle,
     operator-surface and composition-validation specs state the logger's lifecycle, health, routes, watch stream and
-    subject grammar
+    subject grammar. PR 5: the service-lifecycle requirements on the storage observability service's construction,
+    Start and Stop, and report-only health, and the operator-surface requirements on its route and its metrics; pin
+    ADR-098 Decisions 3 and 4 (substrate facts leave as logs and metrics, the framework enforces nothing), carried as
+    docs/adr/098-observability-splits-by-subject.md; ADR-113; ADR-108 Decision 2 (the service composes
+    internal/lifecycleguard); ADR-110 (the service writes no ENTITY_STATES entry and owns the STORAGE_REPORT bucket
+    through kvcatalog.EnsureCatalogBucket); pin ADR-068 D1 as graph/kvcatalog implements it. Kept with contract
+    lines: NewStorageObservabilityService (registered by RegisterAll under storage-observability, with no OpenAPI spec
+    because the route's spec names no schema), StorageObservabilityConfig, StorageObservabilityService, the
+    HTTPHandler methods RegisterHTTPHandlers and OpenAPISpec, StorageReportResponse and StorageReportSummary (the
+    route's wire shape), and the example alert rules at configs/prometheus/rules/storage-pressure.yml with their four
+    tests (owner, PR 376 comment 6363685574)
   dependencies_and_side_effects: >-
     component, config, graph, graph/kvcatalog, health, internal/httpadmission, internal/keycase,
     internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup,
@@ -2865,7 +2881,10 @@
     health.component.<name> every 5 s, and re-reads the configuration's stream overrides every minute; the message
     logger subscribes to its monitored subjects under one run context, retries a failed subscribe every 100 ms until
     it succeeds, keeps up to max_entries messages in memory, and runs one KV watcher per open watch stream, each
-    ended and joined by Stop
+    ended and joined by Stop; the storage observability service uses natsclient/storagereport and runs two goroutines
+    under one run context (a collection of the account's streams and buckets every interval, 1 minute by default, and
+    a watch of STORAGE_REPORT retried every 5 s), both ended and joined by Stop; it creates or reconciles the
+    STORAGE_REPORT bucket on first use and registers 19 collectors under the name storage-observability
   known_risks: >-
     PR 1 of 7 (base.go, pprof.go, graph_runtime.go, service_configs.go, schema.go, openapi.go, openapi_types.go,
     openapi_registry.go, configurable.go (removed in PR 4), doc.go, README.md); the managers and services follow. Dropped as unread:
@@ -2976,7 +2995,22 @@
     test detects it), and an unjoined retry under TestMessageLoggerRetriesSubscribeUntilConnected (the retry has
     ended before Stop). Review only: if more than 256 entries reach nats.go's watch Updates channel between the
     reader's last receive and its Stop after a fall-behind, a nats.go goroutine could stay blocked until Stop;
-    not probed, no real-world trigger named
+    not probed, no real-world trigger named. PR 5 of 7 (storage_observability.go, storage_observability_http.go,
+    storage_observability_metrics.go; it edits register.go). Dropped as unread: Snapshot, RegisterMetrics, the schema
+    struct tags on StorageObservabilityConfig, and the pin's reader-function fields on the two surfaces. Changed from
+    the pin: construction refuses a key the configuration does not define (nested keys and another letter case
+    included) and a nil metrics registry, as invalid data naming the input; the metrics are named
+    semengine_storage_*, where the pin published semstreams_storage_* (no migration of the old names); the metrics
+    surface writes to the collector RegisterOrGet returns, and retracts the account's per-tier series when the
+    consumer drops the account row (ForgetAccount); HEAD is answered as GET; ending Start's context stops nothing and
+    Stop is the only stop, retried after a failure (ADR-113). Retained, declared: the bucket lock is held while the
+    bucket is created or reconciled, so a slow server holds a second caller behind the first (no named trigger beyond
+    a slow server); pressure is report-only and gates nothing, as the pin's spec records until its four-condition
+    capacity-admission gate (pin openspec/specs/storage-observability/spec.md:169-218) is met. Not covered: a
+    collection already inside the JetStream account listing when Stop begins (how soon nats.go's listing sees its
+    context end is not promised), and the listing's own cancellation. Mutation survivor, reported as a survivor:
+    removing clear(m.accountTiers) from ForgetAccount (deleting a series already gone does nothing and the next
+    ObserveAccount replaces the record)
   proving_tests: >-
     service/*_test.go, service/*_integration_test.go, and processor/graph-ingest/discoverable_reads_test.go
     (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop, the read line's test)
@@ -3000,6 +3034,26 @@
     labels under Consequences made headings for markdownlint
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-03-boot-service-base developer
+  disposition: adapt
+
+- source_path: docs/adr/098-observability-splits-by-subject.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the decision record that names the storage observability service the model for substrate observability (its
+    Neutral consequence), whose Decisions 3 and 4 the service keeps: substrate facts leave as logs and metrics, and
+    the framework publishes facts and enforces nothing; ported with the service that implements them (design
+    setup-04a-03-boot-service-storage-observability, D8); the metrics forwarder and heartbeat (PR 6) cite it
+  destination: docs/adr/098-observability-splits-by-subject.md
+  contract: >-
+    the decision text as at the pin, read with its port note: Decisions 3 and 4 kept; ADR-027, the ops agent and
+    emit_diagnosis (Decision 1), and the agent-execution conditions of Decision 2 are not ported
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    a port note under the title naming the pin path and commit, the package it came with, its ledger row and what it
+    names that is not ported (ADR-027, the ops agent and emit_diagnosis, the agent-execution conditions of Decisions 1
+    and 2, and the pin's ADR-080, ADR-049, ADR-055 and ADR-068); ADR-088 is carried
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-03-boot-service-storage-observability developer
   disposition: adapt
 
 - source_path: docs/adr/030-http-middleware-and-identity-pattern.md

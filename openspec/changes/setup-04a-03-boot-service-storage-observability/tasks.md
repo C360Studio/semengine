@@ -21,5 +21,6 @@ commit (#171).
 
 ## 3. Docs, ledger and follow-ups
 
-- [ ] 3.1 `service/README.md`, `service/doc.go` and the admission ledger rows updated.
+- [x] 3.1 `service/README.md`, `service/doc.go`, the admission ledger rows, `docs/repository-map.md` and ADR-098 (carried
+  to `docs/adr/`) updated. Gate: `task spec:check`, `task docs:check` and `task ledger:check` exit 0.
 - [ ] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.

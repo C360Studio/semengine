@@ -45,7 +45,7 @@ func (o *storageObservabilityOwner) Observe() lifecycletest.Observation {
 // "Startup work"). The must-fail owner is a service stopped before Start, whose Start is refused
 // (base_lifecycle_test.go's precedent). The service is one-shot: no restart is promised.
 //
-// spec: service-lifecycle / The storage observability service's Start bounds Start and Stop is the only stop
+// spec: service-lifecycle / Storage observability's Start bounds Start; Stop is the only stop
 func TestStorageObservabilityPassesTheLifecycleSuite(t *testing.T) {
 	newOwner := func() *storageObservabilityOwner {
 		s, _ := newTestStorageObservability(t, newUnconnectedClient(t), suiteStorageObservabilityConfig, nil)

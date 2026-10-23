@@ -271,7 +271,7 @@ func TestStorageObservabilityCollectsPublishesAndServes(t *testing.T) {
 // given, after Start returned, stops nothing. The stream is created only after that context
 // ended, so only a collection made after it can put the stream's row on the route (design D2).
 //
-// spec: service-lifecycle / The storage observability service's Start bounds Start and Stop is the only stop
+// spec: service-lifecycle / Storage observability's Start bounds Start; Stop is the only stop
 func TestStorageObservabilityKeepsCollectingAfterStartContextEnds(t *testing.T) {
 	client := fixtureClient(t)
 	js, err := client.JetStream()

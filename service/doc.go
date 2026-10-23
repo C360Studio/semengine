@@ -5,17 +5,19 @@
 // HTTP routes around them and stops them. ComponentManager is the service that
 // owns the components. Metrics is the service that serves the Prometheus
 // endpoint. MessageLogger is the service that keeps the newest messages seen on
-// chosen NATS subjects for inspection. The package also holds the helpers a
-// composition root (the process's main function, which builds and wires
-// everything) calls itself:
+// chosen NATS subjects for inspection. StorageObservabilityService is the
+// service that reports how full the NATS account's storage is. The package also
+// holds the helpers a composition root (the process's main function, which
+// builds and wires everything) calls itself:
 // MaybeStartPProf, WireGraphRuntime and the OpenAPI registry, plus the
 // service-configuration and schema helpers the service manager reads.
 //
 // This package is ported from SemStreams in seven pull requests. The first
 // carried BaseService and the shared files; the second Manager and Metrics; the
 // third ComponentManager, the service that owns the components (see the
-// component manager section); this one carries MessageLogger (see the message
-// logger section). The other services arrive with the later ones.
+// component manager section); the fourth MessageLogger (see the message logger
+// section); this one carries StorageObservabilityService (see the storage
+// observability section). The other services arrive with the later ones.
 //
 // # Embedding BaseService
 //
@@ -70,7 +72,7 @@
 // hands it the services section of the configuration, and starts it:
 //
 //	services := service.NewServiceRegistry()
-//	if err := service.RegisterAll(services); err != nil { // "metrics", "component-manager", "message-logger"
+//	if err := service.RegisterAll(services); err != nil { // every built-in service
 //		return err
 //	}
 //
@@ -372,6 +374,62 @@
 // does not read Last-Event-ID; a client that reconnects gets a new initial
 // replay.
 //
+// # The storage observability service
+//
+// StorageObservabilityService reports how full the NATS account's storage is.
+// Each interval it lists the account's JetStream streams and key-value buckets
+// (its resources), derives usage, growth and pressure for each, and publishes
+// the result as a report in the STORAGE_REPORT bucket. A second loop watches
+// that bucket and feeds three surfaces from one view: Prometheus metrics, the
+// health message and GET /storage-observability/report. It writes no graph
+// entity.
+//
+// It is report-only. It rejects no write, throttles no component, fails no
+// readiness or health check and applies no retention because of pressure; the
+// pin's storage observability spec defers capacity admission until four
+// conditions hold (the report runs in production, the projection is checked
+// against outcome on at least three real resources, no critical state clears
+// without an operator, and the rejection path classifies transient and NAKs),
+// and a consumer that wants backpressure reads the report and decides itself.
+//
+// It is off unless the configuration enables it: ResolveServiceConfigs does not
+// add it. RegisterAll registers its constructor, NewStorageObservabilityService,
+// under storage-observability and no OpenAPI spec, because the route's spec
+// names no schema. It needs Dependencies.NATSClient and
+// Dependencies.MetricsRegistry. Its keys are interval (default 1m), timeout
+// (default 15s, at most the interval) and pressure_thresholds (warning_headroom
+// 0.25, high_headroom 0.15, critical_headroom 0.05, warning_horizon 72h,
+// high_horizon 24h, critical_horizon 4h). Construction refuses, as invalid data
+// naming the input, an unknown key (nested keys and another letter case
+// included), nil dependencies, a nil NATS client, a nil metrics registry, an
+// interval or timeout that does not parse or is not positive, a timeout above
+// the interval and thresholds that are out of order or out of range.
+// Configuration is read once; restart to change it.
+//
+// Start refuses a nil or ended ctx, a second Start and a Start after any Stop
+// (errs.ErrAlreadyStarted), and does no I/O: it starts the collection loop and
+// the watch loop and returns, so a deployment still boots when the account
+// cannot be read; each loop retries on its own schedule (the watch every 5
+// seconds). ctx bounds Start only (ADR-113). Stop is the only stop: it ends both
+// loops, waits for them and stops the base service, and if its ctx ends first
+// the next Stop waits again. How soon a collection already inside the account
+// listing sees Stop begin depends on nats.go, which does not promise it.
+//
+// Health returns the base service's verdict untouched and appends the storage
+// picture to its message, so critical pressure leaves /readyz answering READY
+// and /health answering 200. After Stop the verdict is the base service's own.
+// GET /storage-observability/report (HEAD is answered as GET, other methods get
+// 405) always answers 200 with report_only, synced, updated_at (once a change
+// was read), a summary (resources, pressure, not_evaluated, and worst_pressure
+// when anything was evaluated), account (once an account row was read) and
+// every published row in resources, unfiltered.
+//
+// The 19 metrics are named semengine_storage_*, where the SemStreams pin used
+// semstreams_storage_*. A value that was not measured has no series, and a
+// series is deleted when its value goes away. configs/prometheus/rules holds
+// example alert rules over these names; the engine does not load them. See
+// service/README.md for the full list.
+//
 // # The metrics service
 //
 // Metrics serves the Prometheus endpoint. Its config keys are port (default
@@ -380,8 +438,8 @@
 // before any service starts, serves it until StopAll, and Metrics reports healthy
 // while the server runs. A Metrics runs once: a second Start, and a Start after
 // any Stop, are refused with errs.ErrAlreadyStarted, and the context given to
-// Start bounds Start only. RegisterAll registers Metrics, the component manager
-// and the message logger.
+// Start bounds Start only. RegisterAll registers Metrics, the component manager,
+// the message logger and storage observability.
 //
 // # The profiling server
 //

@@ -324,13 +324,24 @@ for p in projects:
         nodes {
           id
           number
+          title
+          milestone { title }
           closingIssuesReferences(first: 20) { nodes { number } }
           projectItems(first: 10) {
             nodes {
               id
               project { number }
-              fieldValueByName(name: "Status") {
+              status: fieldValueByName(name: "Status") {
                 ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+              }
+              stage: fieldValueByName(name: "Stage") {
+                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+              }
+              startDate: fieldValueByName(name: "Start Date") {
+                ... on ProjectV2ItemFieldDateValue { date }
+              }
+              targetDate: fieldValueByName(name: "Target Date") {
+                ... on ProjectV2ItemFieldDateValue { date }
               }
             }
           }
@@ -340,12 +351,23 @@ for p in projects:
         nodes {
           id
           number
+          title
+          milestone { title }
           projectItems(first: 10) {
             nodes {
               id
               project { number }
-              fieldValueByName(name: "Status") {
+              status: fieldValueByName(name: "Status") {
                 ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+              }
+              stage: fieldValueByName(name: "Stage") {
+                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+              }
+              startDate: fieldValueByName(name: "Start Date") {
+                ... on ProjectV2ItemFieldDateValue { date }
+              }
+              targetDate: fieldValueByName(name: "Target Date") {
+                ... on ProjectV2ItemFieldDateValue { date }
               }
             }
           }
@@ -358,7 +380,7 @@ for p in projects:
   fi
 
   python3 - "$PROJECT_NUM" "$proj_view_json" "$fields_json" "$gql_json" <<'PY'
-import json, subprocess, sys
+import datetime, json, re, subprocess, sys
 
 proj_num = int(sys.argv[1])
 proj_view = json.loads(sys.argv[2])
@@ -367,16 +389,49 @@ gql = json.loads(sys.argv[4]).get("data", {}).get("repository", {})
 
 proj_id = proj_view.get("id")
 status_field_id = None
+stage_field_id = None
+start_field_id = None
+target_field_id = None
 todo_opt = None
 in_prog_opt = None
+stage_opts = {}
 for f in fields:
-    if f.get("name") == "Status":
+    fname = f.get("name")
+    if fname == "Status":
         status_field_id = f.get("id")
         for opt in f.get("options", []):
             if opt.get("name") == "Todo":
                 todo_opt = opt.get("id")
             elif opt.get("name") == "In Progress":
                 in_prog_opt = opt.get("id")
+    elif fname == "Stage":
+        stage_field_id = f.get("id")
+        for opt in f.get("options", []):
+            oname = opt.get("name", "")
+            for idx in range(1, 7):
+                if oname.startswith(f"{idx}."):
+                    stage_opts[idx] = opt.get("id")
+    elif fname == "Start Date":
+        start_field_id = f.get("id")
+    elif fname == "Target Date":
+        target_field_id = f.get("id")
+
+today = datetime.date.today()
+def iso(days):
+    return (today + datetime.timedelta(days=days)).isoformat()
+
+stage_dates = {
+    1: (iso(-3), iso(2)),
+    2: (iso(-7), iso(3)),
+    3: (iso(0),  iso(8)),
+    4: (iso(8),  iso(18)),
+    5: (iso(18), iso(32)),
+    6: (iso(32), iso(46)),
+}
+ch4_7_re = re.compile(
+    r"(rule|fusion|buffer|websocket|embedding|clustering|spatial|temporal|geojson|acme|maxdelivery|cli|datalog|inference|IndexEntry|hierarchy|sibling|query\.entity|path\s+search|PathSearch)",
+    re.I,
+)
 
 prs = gql.get("pullRequests", {}).get("nodes", [])
 issues = gql.get("issues", {}).get("nodes", [])
@@ -391,34 +446,66 @@ added = 0
 status_mutations = []
 mut_idx = 0
 
-def ensure_item(node, want_in_prog):
+def ensure_item(node, is_pr, want_in_prog):
     global added, mut_idx
     item_id = None
     cur_status = None
+    cur_stage = None
+    cur_start = None
+    cur_target = None
     for pi in (node.get("projectItems") or {}).get("nodes", []):
         if pi and (pi.get("project") or {}).get("number") == proj_num:
             item_id = pi.get("id")
-            fv = pi.get("fieldValueByName") or {}
-            cur_status = fv.get("name")
+            cur_status = (pi.get("status") or {}).get("name")
+            cur_stage = (pi.get("stage") or {}).get("name")
+            cur_start = (pi.get("startDate") or {}).get("date")
+            cur_target = (pi.get("targetDate") or {}).get("date")
             break
     if not item_id:
         q = f'mutation {{ addProjectV2ItemById(input: {{projectId: "{proj_id}", contentId: "{node["id"]}"}}) {{ item {{ id }} }} }}'
         out = subprocess.check_output(["gh", "api", "graphql", "-f", f"query={q}"], text=True)
         item_id = json.loads(out)["data"]["addProjectV2ItemById"]["item"]["id"]
         added += 1
+    ms = ((node.get("milestone") or {}).get("title") or "").lower()
+    title = node.get("title") or ""
+    if is_pr or want_in_prog:
+        st_idx = 1
+    elif ms == "setup":
+        st_idx = 2
+    elif ms == "slice-04b":
+        st_idx = 5
+    elif ms == "slice-04c":
+        st_idx = 6
+    else:
+        st_idx = 4 if ch4_7_re.search(title) else 3
     if status_field_id and item_id:
-        want_name = "In Progress" if want_in_prog else "Todo"
         want_opt = in_prog_opt if want_in_prog else todo_opt
         if want_opt and (cur_status is None or (want_in_prog and cur_status != "In Progress")):
             mut_idx += 1
             status_mutations.append(
                 f'm{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{status_field_id}", value: {{singleSelectOptionId: "{want_opt}"}}}}) {{ projectV2Item {{ id }} }}'
             )
+    if stage_field_id and st_idx in stage_opts and (cur_stage is None or (st_idx == 1 and not cur_stage.startswith("1."))):
+        mut_idx += 1
+        status_mutations.append(
+            f's{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{stage_field_id}", value: {{singleSelectOptionId: "{stage_opts[st_idx]}"}}}}) {{ projectV2Item {{ id }} }}'
+        )
+    start_d, target_d = stage_dates[st_idx]
+    if start_field_id and cur_start is None:
+        mut_idx += 1
+        status_mutations.append(
+            f'd1_{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{start_field_id}", value: {{date: "{start_d}"}}}}) {{ projectV2Item {{ id }} }}'
+        )
+    if target_field_id and cur_target is None:
+        mut_idx += 1
+        status_mutations.append(
+            f'd2_{mut_idx}: updateProjectV2ItemFieldValue(input: {{projectId: "{proj_id}", itemId: "{item_id}", fieldId: "{target_field_id}", value: {{date: "{target_d}"}}}}) {{ projectV2Item {{ id }} }}'
+        )
 
 for pr in prs:
-    ensure_item(pr, True)
+    ensure_item(pr, True, True)
 for iss in issues:
-    ensure_item(iss, iss.get("number") in claimed_issues)
+    ensure_item(iss, False, iss.get("number") in claimed_issues)
 
 for i in range(0, len(status_mutations), 25):
     chunk = status_mutations[i:i+25]

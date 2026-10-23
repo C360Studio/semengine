@@ -96,7 +96,11 @@ Measured with `gopls references request.go:318:18`, with and without `-tags=inte
 
 Today an adopter of `SubscribeForRequests` must pass its run context and re-check its Start context; passing the Start
 context instead gives every later handler an ended context, reported nowhere but the doc. After the change the adopter
-needs the one fact consumers already need: Stop drains or unsubscribes the subscription, which joins the handler.
+needs one fact: Stop calls `Subscription.Drain(ctx)`, which waits for every callback to return (`client.go:965`).
+`Unsubscribe` stops delivery without waiting for a running handler (`client.go:950-955`). A running handler's context
+ends only when `Close` begins or its per-request timeout passes (`request.go:351`). An adopter whose `start` does work
+after its last registration still re-checks its Start context before returning, as graph-ingest does
+(`component.go:1030-1035`).
 
 ## Library-behaviour statements
 

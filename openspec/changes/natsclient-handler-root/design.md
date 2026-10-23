@@ -48,15 +48,29 @@ contract, Context ownership).
 
 **D2. graph-ingest passes its Start context.** `setupQueryHandlers(ctx)` and `setupMutationHandlers(ctx)` at
 `component.go:1024` and `:1027`. The registration then fails on an ended Start context itself (`client.go:1070-1073`
-pre-check; `:1140-1141` after the round trip). The `ctx.Err()` block at `:1030-1035` is deleted: its stated premise
-("register under the run context") no longer holds. The `errors.Join(err, ctx.Err())` at `:1025` and `:1028` stays
-(#315; the failing fake in `TestGraphIngest_StartReportsItsContextWhenHandlerSetupFails` returns `ErrNotConnected`
-without the context).
+pre-check; `:1140-1141` after the round trip). The `ctx.Err()` block at `:1030-1035` stays. It still covers a Start
+context that ends after the last registration succeeded but before `start` returns. Examples: during
+`setupMutationHandlers`' log line (`mutation_runtime.go:33`), or at the moment the last PONG arrives. Nothing else reads
+the context then: `subscribeOwned` returns on success without reading it (`client.go:1121`), and `Guard.Start` commits
+without reading it (`internal/lifecycleguard/guard.go:86`). Under ADR-113 a context that ends before `Start` returns
+fails `Start`.
+
+Its comment's premise ("register under the run context") no longer holds, so the comment becomes: "A Start context
+that ends after the last registration succeeded, while setup is still running, fails Start here (ADR-113: if ctx ends
+before Start returns, Start returns its error and holds nothing). The guard's rollback then runs release." The
+`errors.Join(err, ctx.Err())` at `:1025` and `:1028` stays (#315; the failing fake in
+`TestGraphIngest_StartReportsItsContextWhenHandlerSetupFails` returns `ErrNotConnected` without the context).
+
+A new regression, T6, guards the kept check. It builds the component with `deps.Logger` set to a `slog.Handler` that
+cancels the Start context when it handles the record "mutation handlers registered". That record is logged after the
+last registration succeeded and before setup returns. T6 requires that `Start` wraps `context.Canceled`, holds nothing,
+and that a later `Stop` returns nil. It uses the production logger dependency (`component.go:678`) and needs no new
+field.
 
 Doc and test-comment edits:
 
 - `Start` doc (`component.go:958-963`): "request handlers … run under a run context" becomes "request handlers run
-  under a context natsclient owns; release drains their subscriptions".
+  under a context natsclient owns; release drains their subscriptions, which waits for running handlers".
 - `TestGraphIngest_StartFailsWhenItsContextEndsDuringHandlerSetup` (`lifecycle_integration_test.go:438-444`): "the
   registration itself does not see the ending; start's check of its context before the status loop does" becomes "the
   registration itself sees the ending".
@@ -71,9 +85,10 @@ T-G4 becomes table-driven, with two rows that mirror `:497-500`:
 - `mutation`: cancel at call `len(querySubjects)+1`.
 
 Each row asserts that `Start` wraps `context.Canceled`, holds nothing, and makes no registration after the one during
-which its context ended (the fake's call count equals the cancelling call). The count assertion is what catches a
-revert of the query loop alone: without it, the first mutation registration's ended-context check still fails `Start`
-with `context.Canceled`. Both rows read #301's `subscribeRequests` field, as T-G4 does today; this change adds no
+which its context ended (the fake's call count equals the cancelling call). The count assertion is the only part that
+catches a loop reverted to `runCtx`. If the query loop is reverted, the first mutation registration fails on the ended
+context. If the mutation loop is reverted, the kept final check fails `Start`. Either way `Start` still wraps
+`context.Canceled`. Both rows read #301's `subscribeRequests` field, as T-G4 does today; this change adds no
 field.
 
 **D3. `Connect` names the closed case (#317; MEDIUM under #185; no mechanism).** The doc at `client.go:444-445` says
@@ -100,7 +115,7 @@ live.
 
 ## Observable behaviour and proving tests
 
-Task 2.1; each new test fails on the base.
+Task 2.1; each new test fails on the base, except T6, a regression guard whose sensitivity is M7.
 
 | # | Behaviour | Test | Base failure |
 | --- | --- | --- | --- |
@@ -109,6 +124,7 @@ Task 2.1; each new test fails on the base.
 | T3 | Same, after `Unsubscribe` while the handler still runs | `TestRequestHandlerContextEndsWhenCloseBeginsAfterUnsubscribe` | as T2 |
 | T4 | A Start context ending during a query or a mutation registration fails graph-ingest `Start` at that registration and holds nothing | T-G4, two rows (D2) | both rows fail on the base through the call count (every registration runs under `runCtx`) |
 | T5 | With `WithMaxReconnects(0)`, after the broker restarts: once `GetConnection().IsClosed()` (awaited with `probe.Await`, not read once), `Status` is Disconnected and `Connect` matches `errs.ErrAlreadyStarted` with the D3 text | extend `TestIntegration_ReconnectionIsRedial` | text says "already connected" |
+| T6 | A Start context that ends after the last request registration succeeded, before setup returns, fails graph-ingest `Start`, which holds nothing; a later `Stop` returns nil | `TestGraphIngest_StartFailsWhenItsContextEndsAfterHandlerSetup` (integration; `deps.Logger` handler cancels on "mutation handlers registered") | passes on the base; guards M7 |
 
 T1-T3 use a real connection, so they do not run inside `synctest` (#156). T5 is also the pinned-version probe for
 "nats.go closes the connection after its reconnects run out".
@@ -124,6 +140,7 @@ Task 2.3.
 - M5: `ErrAlreadyStarted` is dropped from `:467`. Expected detectors: T5 and `client_close_final_test.go:702`.
 - M6q: only `setupQueryHandlers` gets `runCtx` again. Expected detector: T4 `query` row (call count).
 - M6m: only `setupMutationHandlers` gets `runCtx` again. Expected detector: T4 `mutation` row.
+- M7: graph-ingest's final `ctx.Err()` check (`component.go:1030-1035`) is deleted. Expected detector: T6.
 
 ## Spec delta
 
@@ -141,12 +158,14 @@ Task 2.3.
 
 Declared under #185.
 
-- A caller that cancelled its subscribe context to stop in-flight handlers must now drain or unsubscribe. graph-ingest
-  already drains first (`component.go:1139-1147`). The pin adopters change when they are ported.
-- A handler running after a failed registration keeps a live context until `Close` begins, its delivery ends, or its
-  request timeout ends. graph-ingest refuses such a handler at entry (`component.go:1059-1074`).
-- A Start context ending at the moment the last PONG arrives may let `Start` commit: the round trip's select picks one
-  at random, and neither ended first.
+- A caller that cancelled its subscribe context to stop in-flight handlers can no longer do so. A running handler's
+  context now ends only when `Close` begins or its per-request timeout passes (`request.go:351`).
+  `Subscription.Drain(ctx)` returning nil is what proves every callback has returned (`client.go:965`). `Unsubscribe`
+  stops delivery but does not wait for a running handler (`client.go:950-955`; T3 relies on that), so a caller must not
+  release what its handler uses on `Unsubscribe` alone. graph-ingest already drains, and does so before it cancels its
+  run context (`component.go:1139-1147`). The pin adopters change when they are ported.
+- A handler running after a failed registration keeps a live context until `Close` begins or its request timeout
+  passes. graph-ingest refuses such a handler at entry (`component.go:1059-1074`).
 - A request without trace headers no longer inherits a trace from the subscribe context.
 - With a finite `WithMaxReconnects`, graph-ingest's `Start` on a closed connection waits in `WaitForConnection` until
   its context ends (`component.go:991-1001`). No production code sets a finite limit.

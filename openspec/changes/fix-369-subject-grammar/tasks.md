@@ -18,10 +18,10 @@ not compile without it; the failing run on the base is recorded in `notes/2.1.md
 
 ## 2. Code
 
-- [ ] 2.1 Tests first: T1–T3 and the T4 vocabulary case, with the "fourteen" comment above
+- [x] 2.1 Tests first: T1–T3 and the T4 vocabulary case, with the "fourteen" comment above
   `TestValidateFindingsVocabularyIsClosed` made "fifteen" (`design.md`, "Proving tests"), against the hand-written
   oracle. Gate: each fails on the base (`notes/2.1.md`).
-- [ ] 2.2 `TypeMalformedSubject` and the check in `composition.Analyze`, before the early returns. No change to
+- [x] 2.2 `TypeMalformedSubject` and the check in `composition.Analyze`, before the early returns. No change to
   `component/`, `config/` or `service/`. Gate: `task verify` green.
 - [ ] 2.3 Sensitivity: mutants M1–M7 run with `task mutate:check`, each reported as detected or as a survivor
   (`notes/2.3.md`). Gate: the notes file.

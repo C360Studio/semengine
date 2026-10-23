@@ -29,11 +29,12 @@ var allFindingTypes = []string{
 	composition.TypeMissingInterface,
 	composition.TypeEmptyComposition,
 	composition.TypeReservedSubjectCapture,
+	composition.TypeMalformedSubject,
 }
 
 // TestValidateFindingsVocabularyIsClosed drives compositions that exhibit each
-// of the fourteen conditions and asserts every emitted type is one of the
-// fourteen constants and every constant is emitted at least once.
+// of the fifteen conditions and asserts every emitted type is one of the
+// fifteen constants and every constant is emitted at least once.
 func TestValidateFindingsVocabularyIsClosed(t *testing.T) {
 	registry := fakeRegistry(t,
 		fakeSpec{name: "src", typ: "input", outputs: []component.PortDefinition{natsOut("out", "data.raw", nil)}},
@@ -50,6 +51,8 @@ func TestValidateFindingsVocabularyIsClosed(t *testing.T) {
 	)
 	reservedCapture := compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)})
 	reservedCapture.Streams = config.StreamConfigs{"GRAPH": {Subjects: []string{"graph.>"}}}
+	malformed := compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)})
+	malformed.Streams = config.StreamConfigs{"BAD": {Subjects: []string{"a..b"}}}
 	cases := map[string]*config.Config{
 		"config_invalid": {Platform: config.PlatformConfig{ID: "x"}, Components: config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)}},
 		"unknown":        compositionOf(config.ComponentConfigs{"ghost": instance("nope", types.ComponentTypeProcessor)}),
@@ -65,6 +68,7 @@ func TestValidateFindingsVocabularyIsClosed(t *testing.T) {
 		"missing":        compositionOf(config.ComponentConfigs{"a": instance("untyped-src", types.ComponentTypeInput), "b": instance("requiring-sink", types.ComponentTypeOutput)}),
 		"empty":          compositionOf(config.ComponentConfigs{}),
 		"reserved":       reservedCapture,
+		"malformed":      malformed,
 	}
 	allowed := map[string]bool{}
 	for _, typ := range allFindingTypes {

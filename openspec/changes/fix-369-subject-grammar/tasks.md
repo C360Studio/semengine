@@ -23,7 +23,7 @@ not compile without it; the failing run on the base is recorded in `notes/2.1.md
   oracle. Gate: each fails on the base (`notes/2.1.md`).
 - [x] 2.2 `TypeMalformedSubject` and the check in `composition.Analyze`, before the early returns. No change to
   `component/`, `config/` or `service/`. Gate: `task verify` green.
-- [ ] 2.3 Sensitivity: mutants M1–M7 run with `task mutate:check`, each reported as detected or as a survivor
+- [x] 2.3 Sensitivity: mutants M1–M7 run with `task mutate:check`, each reported as detected or as a survivor
   (`notes/2.3.md`). Gate: the notes file.
 - [ ] 2.4 Hold: Codex code review. Codex passes the code at a named commit with a local `task verify`; the PR body
   carries `implemented-by:` and `reviewed-by:`.

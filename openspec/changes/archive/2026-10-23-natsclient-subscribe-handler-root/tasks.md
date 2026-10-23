@@ -35,5 +35,5 @@ only when `task verify` passes on a clean tree at its commit (#171).
 - [x] 3.1 `natsclient/README.md`, `service/README.md` (the Start text and the `/stats` table), `docs/admission-ledger.yaml`,
   and the ADR-113 `:47` cite (corrected in place, no Status line), as design D6 lists. Gate: `task docs:check` and
   `task ledger:check`.
-- [ ] 3.2 Spec deltas (`transport-client`, `service-lifecycle`, `operator-surface`) synced into `openspec/specs/`; the
+- [x] 3.2 Spec deltas (`transport-client`, `service-lifecycle`, `operator-surface`) synced into `openspec/specs/`; the
   change archived as the last content commit. Gate: `task spec:check`.

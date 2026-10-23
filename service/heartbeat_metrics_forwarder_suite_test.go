@@ -66,7 +66,7 @@ func observeOneLoop(status Status, loopDone chan struct{}) lifecycletest.Observa
 // Start, whose Start is refused (base_lifecycle_test.go's precedent). The service is one-shot: no
 // restart is promised.
 //
-// spec: service-lifecycle / The heartbeat service's Start bounds Start and Stop is the only stop
+// spec: service-lifecycle / The heartbeat's Start bounds Start; Stop is the only stop
 func TestHeartbeatPassesTheLifecycleSuite(t *testing.T) {
 	newOwner := func() *heartbeatOwner {
 		return &heartbeatOwner{hb: newTestHeartbeat(t, suiteHeartbeatMetricsForwarderConfig, discardLogger)}
@@ -80,7 +80,7 @@ func TestHeartbeatPassesTheLifecycleSuite(t *testing.T) {
 // connects: Start does no I/O, and a failed publish is the loop's to log (design D2, "Startup
 // work"). The must-fail owner is a forwarder stopped before Start. The service is one-shot.
 //
-// spec: service-lifecycle / The metrics forwarder's Start bounds Start and Stop is the only stop
+// spec: service-lifecycle / The forwarder's Start bounds Start; Stop is the only stop
 func TestMetricsForwarderPassesTheLifecycleSuite(t *testing.T) {
 	newOwner := func() *metricsForwarderOwner {
 		mf, _ := newTestMetricsForwarder(t, newUnconnectedClient(t), suiteHeartbeatMetricsForwarderConfig,

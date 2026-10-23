@@ -208,7 +208,7 @@ func TestMetricsForwarderReportsItsStatus(t *testing.T) {
 // is an observation: a forwarder that forgets its loop after a failed Stop returns nil from the
 // second Stop at once; a correct one waits for the held loop.
 //
-// spec: service-lifecycle / The metrics forwarder's Start bounds Start and Stop is the only stop
+// spec: service-lifecycle / The forwarder's Start bounds Start; Stop is the only stop
 func TestMetricsForwarderFailedStopIsRetried(t *testing.T) {
 	const window = 200 * time.Millisecond
 	handler := newHoldingHandler(t, forwarderPublishFailedLog)

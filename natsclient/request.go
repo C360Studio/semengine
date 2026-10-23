@@ -320,9 +320,9 @@ func (c *Client) ReplyWithHeaders(ctx context.Context, replyTo string, data []by
 // is not retained (owner ruling, #9 comment 5994720412 item 2). Each handler
 // invocation's context descends from a context the client owns for this
 // subscription, not from ctx: ending ctx after the call returned does not end a
-// handler. The client cancels that context when Close begins, also when the
-// subscription's delivery has already ended while a handler still runs, and
-// once delivery has ended and the last invocation has returned. A handler's
+// handler. The client cancels that context when Close begins, also after
+// Unsubscribe while a handler still runs, and once delivery has ended and the
+// last invocation has returned. A handler's
 // context also ends when the per-request handler timeout passes, and carries
 // the trace from the request's headers when it has one, and no value of ctx.
 // Unsubscribe stops delivery but does not wait for a running handler;

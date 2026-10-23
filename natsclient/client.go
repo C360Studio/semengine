@@ -445,18 +445,18 @@ func (m *Client) GetStatus() *Status {
 // error and before any dial (T3). A connection is installed while it is
 // connected, while nats.go reconnects it, and after nats.go has closed it
 // because a finite WithMaxReconnects ran out (Status then reports
-// Disconnected); that refusal matches errs.ErrAlreadyStarted. A Client connects
-// once; recovery is a new Client. When its context ends during the attempt, it ends the
-// dial, a host name's lookup included, or closes the socket while it waits for
-// the server's answer, and returns a transient error matching the context's
-// error (T4). The context does not bound the connection's later reconnects
-// (T5). Once Close has begun it returns nats.ErrConnectionClosed before
-// dialling, whether or not its context has ended (T3). Connect returns an error
-// when Close has begun before it finished; the connection it dialled is then
-// closed and nothing it would have started runs. A Connect that returns an
-// error has no event handler of the connection it dialled still running, and
-// does not change the status of a connection another Connect installed
-// (design D3).
+// Disconnected); that refusal matches errs.ErrAlreadyStarted. A Client
+// connects once; recovery is a new Client. When its context ends during the
+// attempt, it ends the dial, a host name's lookup included, or closes the
+// socket while it waits for the server's answer, and returns a transient error
+// matching the context's error (T4). The context does not bound the
+// connection's later reconnects (T5). Once Close has begun it returns
+// nats.ErrConnectionClosed before dialling, whether or not its context has
+// ended (T3). Connect returns an error when Close has begun before it
+// finished; the connection it dialled is then closed and nothing it would have
+// started runs. A Connect that returns an error has no event handler of the
+// connection it dialled still running, and does not change the status of a
+// connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
@@ -1175,7 +1175,9 @@ func (m *Client) subscribeOwned(
 // the client's connection, which ends the subscriptions made on it. It calls
 // cancelHandlers as soon as Close begins, also when delivery has already ended
 // while a handler still runs, and once the last handler invocation has returned,
-// as ownConsumer does.
+// as ownConsumer does. For a core subscription that "already ended" branch is
+// equivalent at nats.go v1.54.0: the closed handler runs only after the running
+// callback returns (openspec/changes/natsclient-handler-root/notes/2.3.md, M3).
 func (m *Client) watchOwnedSubscription(
 	d *ownedDelivery, closing <-chan struct{}, cancelHandlers context.CancelFunc, finish func(),
 ) {

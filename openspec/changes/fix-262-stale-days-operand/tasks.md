@@ -9,9 +9,9 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   Gate: the reviewer's verdict.
 - [x] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and the `spec-queue`
   delta; its verdict is linked from a PR comment.
-- [ ] 1.3 Codex design review and owner design acceptance on #262 or PR #381, including Q1 (range check, or a filed
-  defect). Gate: the comments.
-  Hold: waits for Codex's design review, then the owner's acceptance and Q1 answer.
+- [ ] 1.3 Codex design review and owner design acceptance on #262 or PR #381. Q1 is answered: the range check
+  (2026-10-23). Gate: the comments.
+  Hold: waits for Codex's design review, then the owner's acceptance.
 
 ## 2. Tests and code
 
@@ -19,7 +19,7 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   not ended fails, saying so. `TestSpecQueueArguments` covers cases A1–A6 of `design.md` with expected values written
   by hand. The file comment's "all four requirements" becomes "all six". Gate: A1 fails at the bound and A2, A3 and
   A6 fail with exit 0 on the base, recorded in `notes/2.1.md`.
-- [ ] 2.2 The operand check at `scripts/openspec-queue.sh:63` (plus the Q1 condition if the owner chose it). The usage
+- [ ] 2.2 The operand check at `scripts/openspec-queue.sh:63` plus the range check the owner chose for Q1. The usage
   line `:50` and the exit-2 sentence `:41` are edited in place, so the header keeps its line count and the `--help`
   range at `:64` stays right. Gate: `task verify` green.
 - [ ] 2.3 Sensitivity by hand: mutants M1–M4 of `design.md`, each run against `TestSpecQueueArguments`, with baseline,

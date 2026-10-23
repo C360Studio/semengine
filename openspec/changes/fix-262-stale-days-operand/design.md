@@ -12,11 +12,11 @@ Base: main 46d3cd5. Rests on `inventory.md`. Issue #262, claim PR #381.
    refusal shape, `unknown argument: $1` with exit 2 at `:65`. Without a range check, a digit string above bash's
    largest integer (`9223372036854775808` and up) is accepted and fails open at `:237`, and the PR files that as a
    defect against its own new line.
-4. **Option 3 plus a range check** (`[ "$2" -ge 0 ] 2>/dev/null`). Recommended; owner question Q1. One condition on
+4. **Option 3 plus a range check** (`[ "$2" -ge 0 ] 2>/dev/null`). Chosen: the owner answered Q1 with the range
+   check on 2026-10-23 (PR #381). One condition on
    the line the fix already edits, no new mechanism. It reads the number exactly as `:237` will: `08` as 8, `000` as
    0, and it refuses both out-of-range values (probed on bash 3.2.57). A `[[ ]]` or `$(( ))` guard would read `08` as
-   octal and refuse it; row A4 catches that spelling. The rest of this design assumes option 4; if the owner picks
-   option 3, row A6 and mutant M4 drop and the requirement's range clause goes.
+   octal and refuse it; row A4 catches that spelling.
 
 ## Observable behaviour
 
@@ -66,5 +66,5 @@ Each must be detected.
 
 ## Merge order
 
-The only overlapping open PR is #376 (draft), and the only shared file is `docs/repository-map.md`. Neither PR
+The only overlapping open PR is #376, and the only shared file is `docs/repository-map.md`. Neither PR
 depends on the other. Whichever lands second merges `origin/main` and resolves the map rows.

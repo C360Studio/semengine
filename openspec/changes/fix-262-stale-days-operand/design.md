@@ -51,10 +51,11 @@ The stand-in CLI gives no `lastModified`, so A4 proves `08` is accepted, not tha
 as the base already does it at `:237`.
 
 The bound: every `runSpecQueue` run gets a deadline derived from `t.Context()`, as in
-`message/generic_json_shape_test.go:166-168`. A run that has not ended by then is killed; the test checks the
-context's error before it reads the exit code (a killed child reports -1) and fails with a message saying the run did
-not end. No sleep, no port. The developer picks the bound value. Examples are enough here, because the operand grammar is one shell pattern and every input class has a row. Sensitivity is checked by hand
-(`docs/testing.md`, "Run it by hand", because `task mutate:check` takes only `.go` files) with four mutants:
+`message/generic_json_shape_test.go:166-168`. A run that has not ended by then is killed; the test checks the context's
+error before it reads the exit code (a killed child reports -1) and fails with a message saying the run did not end. No
+sleep, no port. The developer picks the bound value. Examples are enough here, because the operand grammar is one shell
+pattern and every input class has a row. Sensitivity is checked by hand (`docs/testing.md`, "Run it by hand", because
+`task mutate:check` takes only `.go` files) with four mutants:
 
 - M1: the base line.
 - M2: the pattern without `''`.

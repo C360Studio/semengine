@@ -32,5 +32,5 @@ not compile without it; the failing run on the base is recorded in `notes/2.1.md
 
 - [x] 3.1 `composition/doc.go` names `malformed_subject`; the `composition` row's `contract` in
   `docs/admission-ledger.yaml` gains the `malformed_subject` clause. Gate: `task verify` green.
-- [ ] 3.2 Delta synced into `openspec/specs/composition-validation/spec.md`, with the Purpose line's "fourteen" made
+- [x] 3.2 Delta synced into `openspec/specs/composition-validation/spec.md`, with the Purpose line's "fourteen" made
   "fifteen"; archived as the last content commit. Gate: `task spec:check` and `task docs:check`.

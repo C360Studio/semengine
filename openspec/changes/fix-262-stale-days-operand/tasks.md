@@ -22,7 +22,7 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 - [x] 2.2 The operand check at `scripts/openspec-queue.sh:63` plus the range check the owner chose for Q1. The usage
   line `:50` and the exit-2 sentence `:41` are edited in place, so the header keeps its line count and the `--help`
   range at `:64` stays right. Gate: `task verify` green.
-- [ ] 2.3 Sensitivity by hand: mutants M1–M4 of `design.md`, each run against `TestSpecQueueArguments`, with baseline,
+- [x] 2.3 Sensitivity by hand: mutants M1–M4 of `design.md`, each run against `TestSpecQueueArguments`, with baseline,
   mutant and restored runs reported as detected or survived (`notes/2.3.md`). Gate: the notes file.
 
 ## 3. Code review

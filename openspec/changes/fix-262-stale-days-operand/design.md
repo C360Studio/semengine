@@ -28,8 +28,9 @@ Base: main 46d3cd5. Rests on `inventory.md`. Issue #262, claim PR #381.
   `--strict` or `--check` sits in the argument list. An option that follows `--stale-days` is never read as that
   option.
 - An unknown argument still prints `unknown argument: <arg>` and exits 2, as it does today.
-- Every run ends. Invariant: for every argument list the script terminates, and an operand is accepted exactly when
-  it matches `^[0-9]+$` and bash's integer test reads it (Q1). Spec home: the ADDED requirements.
+- Argument processing ends. Invariant: for every argument list the argument loop terminates, a missing or invalid
+  operand is refused before the change list is read, and an operand is accepted exactly when it matches `^[0-9]+$` and
+  bash's integer test reads it (Q1). Spec home: the ADDED requirements.
 - The header keeps its line count, so `--help` (`sed -n '2,51p'`, `:64`) still prints the whole header. If a line is
   added anyway, the range moves with it in the same commit.
 
@@ -66,5 +67,5 @@ Each must be detected.
 
 ## Merge order
 
-The only overlapping open PR is #376, and the only shared file is `docs/repository-map.md`. Neither PR
-depends on the other. Whichever lands second merges `origin/main` and resolves the map rows.
+The only overlapping PR was #376, sharing only `docs/repository-map.md`. It merged first (a1c5f21); this branch
+merged `origin/main` after it, so this PR lands second and resolves any map-row conflict at archive.

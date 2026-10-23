@@ -7,7 +7,7 @@
 `scripts/openspec-queue.sh` SHALL accept `--stale-days` only when the next argument is ASCII digits alone that
 bash's integer test reads, as a decimal number of days. Otherwise it SHALL print `--stale-days needs a whole number
 of days` on standard error, print nothing on standard output, and exit 2, before it reads the change list or what
-follows. It SHALL never read another option as the operand, and SHALL end on every argument list.
+follows. It SHALL never read another option as the operand, and its argument processing SHALL end on every argument list.
 
 #### Scenario: --stale-days is the last argument
 

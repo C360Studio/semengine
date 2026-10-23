@@ -156,12 +156,13 @@ func TestMessageLoggerMonitorsOnlyConfiguredSubjects(t *testing.T) {
 	require.Equal(t, int64(2), readSubscriptionStats(t, ml).TotalMessages)
 }
 
-// TestMessageLoggerKeepsCapturingAfterStartContextEnds is D2's "Ending the Start context after
-// Start returned stops nothing": the Start context is cancelled once Start returns, and a message
-// published afterwards is stored and counted. natsclient makes a subscription's context the parent
-// of every message's context (natsclient/client.go:1036-1047) and the logger drops a message whose
-// context has ended (pin message_logger.go:945-951), so a logger that subscribes under the Start
-// context, or derives its run context from it, stores nothing here.
+// TestMessageLoggerKeepsCapturingAfterStartContextEnds is "Ending the Start context after Start
+// returned stops nothing": the Start context is cancelled once Start returns, and a message
+// published afterwards is stored and counted. The logger subscribes under its Start context, so
+// this guards natsclient.Client.Subscribe across the seam: Subscribe's context bounds its setup
+// only, and each message's context descends from one the client owns. The logger drops a message
+// whose context has ended (MessageLogger.handleMessage), so a Subscribe that built each message's
+// context on its own context again stores nothing here.
 func TestMessageLoggerKeepsCapturingAfterStartContextEnds(t *testing.T) {
 	client := fixtureClient(t)
 	ml := newTestMessageLogger(t, client, `{"monitor_subjects":["logger.after-start"]}`, nil)
@@ -187,8 +188,8 @@ func TestMessageLoggerKeepsCapturingAfterStartContextEnds(t *testing.T) {
 // logger writes after storing it, so message 1's callback has not returned; message 2 is published
 // and flushed behind it, then Stop begins. Message 2 reaching the handler during the drain is
 // measured, not promised (design D2, drain probe: 200 of 200 runs at nats.go v1.54.0). A Stop that
-// ends the run context before it drains drops message 2: the logger drops a message whose context
-// has ended.
+// unsubscribes instead of draining (mutant M6) loses message 2. Ending the run context first no
+// longer drops it: the run context is no message's parent.
 func TestMessageLoggerStopDrainsInFlightMessage(t *testing.T) {
 	client := fixtureClient(t)
 	handler := newHoldingHandler(t, messageSample)
@@ -321,7 +322,7 @@ func TestMessageLoggerCapturesCoveredSubjectOnce(t *testing.T) {
 // message_logger_registry_test.go:58-73 (a subscribe that fails is retried and the degraded state
 // clears) without its injected subscriber and retry clock. The logger starts on a client built for
 // the shared server's URL but not yet connected, so every subscribe fails with ErrNotConnected
-// (natsclient/client.go:1074-1078), the state a NATS outage during boot leaves. Start returns nil;
+// (natsclient.Client.Subscribe), the state a NATS outage during boot leaves. Start returns nil;
 // /stats reports the subject unsubscribed and the logger's health check, run through the base
 // service's production path, turns it unhealthy. Once the client connects, the retry subscribes:
 // the degraded state clears, the logger is healthy again, and a message published then is stored.

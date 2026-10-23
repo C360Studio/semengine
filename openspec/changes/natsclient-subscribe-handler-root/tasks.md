@@ -18,7 +18,7 @@ only when `task verify` passes on a clean tree at its commit (#171).
 - [x] 2.2 `Subscribe` handler root (D1), with T1-T4 and the doc comments at `client.go:997`, `:1036` and
   `stream.go:455-460`, in one commit. T4 publishes on the raw connection (design, T4 note). Gate: T1-T4 fail on the
   base (`notes/2.2.md`); `task verify` green.
-- [ ] 2.3 Message logger (D2-D5), in one commit:
+- [x] 2.3 Message logger (D2-D5), in one commit:
   - Start subscribes under its context, and the final check sits after the loop, before the retry and the
     "MessageLogger started" record.
   - The ended-context branch of `handleMessage` writes the Warn record and counts `dropped_messages` (served in

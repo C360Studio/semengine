@@ -336,9 +336,12 @@
 // a message on both is stored twice.
 //
 // Start refuses a nil or ended ctx, a second Start, and a Start after any Stop
-// (errs.ErrAlreadyStarted); ctx bounds Start only and ending it afterwards stops
-// nothing (ADR-113). A subscribe that fails does not fail Start: the subject is
-// retried every 100 ms until it succeeds. Meanwhile /stats reports
+// (errs.ErrAlreadyStarted). Start subscribes under ctx and checks it before each
+// subscribe and once more after the last; if ctx has ended, Start returns its
+// error and holds nothing, except that a message delivered to a subscribe ctx cut
+// after its SUB was sent can still be stored. Ending ctx after Start returned
+// stops nothing (ADR-113). A subscribe that fails does not fail Start: the
+// subject is retried every 100 ms until it succeeds. Meanwhile /stats reports
 // subject_reconciliation_degraded true with subject_reconciliation_error, and
 // the logger's health check fails naming the subjects, so IsHealthy turns false
 // and /readyz answers not ready; health checks run every 30 seconds, so each
@@ -351,9 +354,12 @@
 // A message that decodes as a typed envelope is stored under its type name and
 // counted in valid_messages; any other is stored with type "raw" and counted in
 // invalid_messages. A payload that is not JSON is stored as a JSON string.
-// /stats also reports total_messages, sampled_messages, sample_rate,
-// max_entries, start_time, last_message_time, uptime_seconds,
-// monitored_subjects (empty after Stop) and subject_overlaps.
+// A message whose handler context has ended (the NATS client ends it once its
+// Close has begun) is not stored: it is logged at Warn, naming the subject, and
+// counted in dropped_messages, not in total_messages. /stats also reports
+// total_messages, dropped_messages, sampled_messages, sample_rate, max_entries,
+// start_time, last_message_time, uptime_seconds, monitored_subjects (empty after
+// Stop) and subject_overlaps.
 //
 // The routes, mounted under /message-logger and answering GET and HEAD (405
 // for any other method), are entries (newest first; limit defaults to 100, capped at

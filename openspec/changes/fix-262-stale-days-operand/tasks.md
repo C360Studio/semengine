@@ -5,25 +5,24 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 1. Design
 
-- [ ] 1.1 Inventory (`inventory.md`) passes independent inventory review (`INVENTORY PASS`), recorded on PR #381.
+- [x] 1.1 Inventory (`inventory.md`) passes independent inventory review (`INVENTORY PASS`), recorded on PR #381.
   Gate: the reviewer's verdict.
-  Hold: waits for the Claude reviewer's INVENTORY PASS.
-- [ ] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and the `spec-queue`
+- [x] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and the `spec-queue`
   delta; its verdict is linked from a PR comment.
-  Hold: waits for the Claude reviewer's design PASS.
-- [ ] 1.3 Owner design acceptance on #262 or PR #381, including Q1 (range check or a filed defect). Gate: the comment.
-  Hold: waits for the owner's acceptance and Q1 answer.
+- [ ] 1.3 Codex design review and owner design acceptance on #262 or PR #381, including Q1 (range check, or a filed
+  defect). Gate: the comments.
+  Hold: waits for Codex's design review, then the owner's acceptance and Q1 answer.
 
 ## 2. Tests and code
 
 - [ ] 2.1 Tests first. `runSpecQueue` bounds each run under a deadline derived from `t.Context()`, and a run that has
-  not ended fails, saying so. `TestSpecQueueArguments` covers cases A1–A5 of `design.md` with expected values written
-  by hand. The file comment's "all four requirements" becomes "all five". Gate: A1 fails at the bound and A2–A3 fail
-  with exit 0 on the base, recorded in `notes/2.1.md`.
+  not ended fails, saying so. `TestSpecQueueArguments` covers cases A1–A6 of `design.md` with expected values written
+  by hand. The file comment's "all four requirements" becomes "all six". Gate: A1 fails at the bound and A2, A3 and
+  A6 fail with exit 0 on the base, recorded in `notes/2.1.md`.
 - [ ] 2.2 The operand check at `scripts/openspec-queue.sh:63` (plus the Q1 condition if the owner chose it). The usage
   line `:50` and the exit-2 sentence `:41` are edited in place, so the header keeps its line count and the `--help`
   range at `:64` stays right. Gate: `task verify` green.
-- [ ] 2.3 Sensitivity by hand: mutants M1–M3 of `design.md`, each run against `TestSpecQueueArguments`, with baseline,
+- [ ] 2.3 Sensitivity by hand: mutants M1–M4 of `design.md`, each run against `TestSpecQueueArguments`, with baseline,
   mutant and restored runs reported as detected or survived (`notes/2.3.md`). Gate: the notes file.
 
 ## 3. Code review

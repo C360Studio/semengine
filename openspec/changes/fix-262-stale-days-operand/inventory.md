@@ -20,8 +20,10 @@ Other operands, as the base reads them:
 
 - `0` and `08` work: the test reads `08` as decimal, and `0` marks every dated change stale.
 - `-1` is accepted and marks every dated change stale.
-- `99999999999999999999` passes the issue's digit pattern but fails `[ -ge ]`, so stale notes drop silently (owner
-  question Q1 in `design.md`).
+- A digit string above bash's largest integer, from `9223372036854775808` (19 digits) up, passes the issue's digit
+  pattern but fails `[ -ge ]`: each change prints `integer expression expected` on standard error, every stale note
+  drops, and the run exits 0. It fails open (owner question Q1 in `design.md`).
+- Every probe ran on bash 3.2.57 only. CI runs bash 5; its run of the new test cases is the bash 5 probe.
 - There is no `--stale-days=N` form; it already exits 2 as an unknown argument.
 
 ## 2. Other spellings
@@ -50,8 +52,8 @@ Other operands, as the base reads them:
 - `.agents/rules-index.md:99` and `AGENTS.md:154` are about holds, not arguments; neither changes.
 - `task mutate:check` takes only `.go` files (`internal/harness/mutcheck/inputs.go:131`), so sensitivity runs by hand
   (`docs/testing.md:230`).
-- Open PRs: #381 (this claim) and #376 (draft, 29 files under `service/`, `docs/`, and
-  `openspec/changes/setup-04a-03-boot-service-storage-observability/`). The only shared file is
+- Open PRs: #381 (this claim) and #376 (ready for review since this inventory began, 29 files under `service/`,
+  `docs/`, and `openspec/changes/setup-04a-03-boot-service-storage-observability/`). The only shared file is
   `docs/repository-map.md`. Neither depends on the other; whichever lands second merges `origin/main` and resolves the
   map rows.
 - Open issues: `openspec-queue` finds #262 and #7; `stale-days` finds #262 and #9. #7 and #9 contain neither string in

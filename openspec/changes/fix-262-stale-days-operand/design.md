@@ -8,11 +8,15 @@ Base: main 46d3cd5. Rests on `inventory.md`. Issue #262, claim PR #381.
    "Failure paths fail closed").
 2. **Default a missing operand to 7 and shift once.** This keeps the intent of `${2:-7}`. Rejected: it guesses, and
    `--stale-days --strict` would still be ambiguous.
-3. **Refuse the operand unless it is all digits (#262's text, semsparql 289d791).** Recommended. It reuses the
-   script's existing refusal shape, `unknown argument: $1` with exit 2 at `:65`.
-4. **Option 3 plus a range check** (`[ "$2" -ge 0 ] 2>/dev/null`), which also refuses an operand that bash's
-   integer test cannot read (20 digits or more). This is owner question Q1. Without it, such an operand is accepted
-   and drops every stale note, and the PR files that as a defect.
+3. **Refuse the operand unless it is all digits (#262's text, semsparql 289d791).** It reuses the script's existing
+   refusal shape, `unknown argument: $1` with exit 2 at `:65`. Without a range check, a digit string above bash's
+   largest integer (`9223372036854775808` and up) is accepted and fails open at `:237`, and the PR files that as a
+   defect against its own new line.
+4. **Option 3 plus a range check** (`[ "$2" -ge 0 ] 2>/dev/null`). Recommended; owner question Q1. One condition on
+   the line the fix already edits, no new mechanism. It reads the number exactly as `:237` will: `08` as 8, `000` as
+   0, and it refuses both out-of-range values (probed on bash 3.2.57). A `[[ ]]` or `$(( ))` guard would read `08` as
+   octal and refuse it; row A4 catches that spelling. The rest of this design assumes option 4; if the owner picks
+   option 3, row A6 and mutant M4 drop and the requirement's range clause goes.
 
 ## Observable behaviour
 
@@ -25,7 +29,7 @@ Base: main 46d3cd5. Rests on `inventory.md`. Issue #262, claim PR #381.
   option.
 - An unknown argument still prints `unknown argument: <arg>` and exits 2, as it does today.
 - Every run ends. Invariant: for every argument list the script terminates, and an operand is accepted exactly when
-  it matches `^[0-9]+$` (subject to Q1). Spec home: the ADDED requirements.
+  it matches `^[0-9]+$` and bash's integer test reads it (Q1). Spec home: the ADDED requirements.
 - The header keeps its line count, so `--help` (`sed -n '2,51p'`, `:64`) still prints the whole header. If a line is
   added anyway, the range moves with it in the same commit.
 
@@ -41,16 +45,21 @@ Base: main 46d3cd5. Rests on `inventory.md`. Issue #262, claim PR #381.
 | A3 | `--stale-days --strict`; `--strict --stale-days abc` | same | exit 0 |
 | A4 | `--stale-days 0`, `--stale-days 08` | exit 0, `ok` line, empty stderr | passes (guards against over-refusal) |
 | A5 | `--bogus` | `unknown argument: --bogus`, exit 2 | passes |
+| A6 | `--stale-days 9223372036854775808`, `--stale-days 99999999999999999999` | as A1 | exit 0 |
+
+The stand-in CLI gives no `lastModified`, so A4 proves `08` is accepted, not that it is read as 8; the reading stays
+as the base already does it at `:237`.
 
 The bound: every `runSpecQueue` run gets a deadline derived from `t.Context()`, as in
-`message/generic_json_shape_test.go:166-168`. A run that has not ended by then is killed, and the test fails with a
-message saying it did not end. No sleep, no port. The developer picks the bound value. Examples are enough here,
-because the operand grammar is one shell pattern and every input class has a row. Sensitivity is checked by hand
-(`docs/testing.md`, "Run it by hand", because `task mutate:check` takes only `.go` files) with three mutants:
+`message/generic_json_shape_test.go:166-168`. A run that has not ended by then is killed; the test checks the
+context's error before it reads the exit code (a killed child reports -1) and fails with a message saying the run did
+not end. No sleep, no port. The developer picks the bound value. Examples are enough here, because the operand grammar is one shell pattern and every input class has a row. Sensitivity is checked by hand
+(`docs/testing.md`, "Run it by hand", because `task mutate:check` takes only `.go` files) with four mutants:
 
 - M1: the base line.
 - M2: the pattern without `''`.
 - M3: the refusal's `exit 2` changed to `exit 0`.
+- M4: the range check dropped (caught by A6).
 
 Each must be detected.
 

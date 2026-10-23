@@ -4,10 +4,10 @@
 
 ### Requirement: --stale-days takes a whole number of days
 
-`scripts/openspec-queue.sh` SHALL accept `--stale-days` only when the next argument is one or more ASCII digits and
-nothing else, read as a decimal number of days. Otherwise it SHALL print `--stale-days needs a whole number of days`
-on standard error, print nothing on standard output, and exit 2, before it reads the change list and whatever else
-is given. It SHALL never read another option as the operand, and SHALL end on every argument list.
+`scripts/openspec-queue.sh` SHALL accept `--stale-days` only when the next argument is ASCII digits alone that
+bash's integer test reads, as a decimal number of days. Otherwise it SHALL print `--stale-days needs a whole number
+of days` on standard error, print nothing on standard output, and exit 2, before it reads the change list or what
+follows. It SHALL never read another option as the operand, and SHALL end on every argument list.
 
 #### Scenario: --stale-days is the last argument
 
@@ -17,7 +17,7 @@ is given. It SHALL never read another option as the operand, and SHALL end on ev
 
 #### Scenario: The operand is not a whole number
 
-- **WHEN** the script is run with `--stale-days abc`, `--stale-days -1`, `--stale-days 7d`, or `--stale-days ''`
+- **WHEN** the script is run with `--stale-days abc`, `-1`, `7d`, `''`, or `99999999999999999999`
 - **THEN** it prints `--stale-days needs a whole number of days` on standard error, prints nothing on standard
   output, and exits 2
 

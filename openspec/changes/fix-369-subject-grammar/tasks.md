@@ -25,12 +25,12 @@ not compile without it; the failing run on the base is recorded in `notes/2.1.md
   `component/`, `config/` or `service/`. Gate: `task verify` green.
 - [x] 2.3 Sensitivity: mutants M1–M7 run with `task mutate:check`, each reported as detected or as a survivor
   (`notes/2.3.md`). Gate: the notes file.
-- [ ] 2.4 Hold: Codex code review. Codex passes the code at a named commit with a local `task verify`; the PR body
+- [x] 2.4 Codex code review. Codex passes the code at a named commit with a local `task verify`; the PR body
   carries `implemented-by:` and `reviewed-by:`.
 
 ## 3. Docs and archive
 
-- [ ] 3.1 `composition/doc.go` names `malformed_subject`; the `composition` row's `contract` in
+- [x] 3.1 `composition/doc.go` names `malformed_subject`; the `composition` row's `contract` in
   `docs/admission-ledger.yaml` gains the `malformed_subject` clause. Gate: `task verify` green.
 - [ ] 3.2 Delta synced into `openspec/specs/composition-validation/spec.md`, with the Purpose line's "fourteen" made
   "fifteen"; archived as the last content commit. Gate: `task spec:check` and `task docs:check`.

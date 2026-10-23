@@ -50,6 +50,9 @@ func TestResolveServiceConfigsIsPureAndCanonical(t *testing.T) {
 	if _, ok := resolved["message-logger"]; ok {
 		t.Fatal("message-logger must not be injected")
 	}
+	if _, ok := resolved[StorageObservabilityServiceName]; ok {
+		t.Fatal("storage-observability must not be injected")
+	}
 
 	resolved["optional"] = types.ServiceConfig{Enabled: false}
 	if !original["optional"].Enabled {

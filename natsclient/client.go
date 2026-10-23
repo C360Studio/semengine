@@ -1176,7 +1176,8 @@ func (m *Client) subscribeOwned(
 // cancelHandlers as soon as Close begins, also when delivery has already ended
 // while a handler still runs, and once the last handler invocation has returned,
 // as ownConsumer does. No test distinguishes that "already ended" branch for a
-// core subscription (openspec/changes/natsclient-handler-root/notes/2.3.md, M3).
+// core subscription (M3 in
+// openspec/changes/archive/2026-10-23-natsclient-handler-root/notes/2.3.md).
 func (m *Client) watchOwnedSubscription(
 	d *ownedDelivery, closing <-chan struct{}, cancelHandlers context.CancelFunc, finish func(),
 ) {

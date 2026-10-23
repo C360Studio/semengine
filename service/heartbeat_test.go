@@ -297,6 +297,17 @@ func TestHeartbeatFailedStopIsRetried(t *testing.T) {
 // and the record written at Start, read from Dependencies.Logger, counts 2 of 3 at Info (owner,
 // Q1; the pin's was Debug). The oracle is the three health answers the test composes. The manager
 // is not started: its health read waits on nothing.
+// stopHeartbeatAtCleanup stops hb when the test ends, so a failed assertion inside a synctest
+// bubble does not leave the loop running and turn the failure into a bubble deadlock.
+func stopHeartbeatAtCleanup(t *testing.T, hb *HeartbeatService) {
+	t.Helper()
+	t.Cleanup(func() {
+		if err := hb.Stop(stopContext(t)); err != nil {
+			t.Errorf("cleanup Stop: %v", err)
+		}
+	})
+}
+
 func TestHeartbeatRecordsComponentHealth(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		recorder := &heartbeatRecorder{}
@@ -306,6 +317,7 @@ func TestHeartbeatRecordsComponentHealth(t *testing.T) {
 			testComponent{name: "unhealthy", instance: &healthComponent{healthy: false}},
 		)
 		require.NoError(t, hb.Start(t.Context()))
+		stopHeartbeatAtCleanup(t, hb)
 		synctest.Wait()
 
 		records := recorder.recorded()
@@ -316,8 +328,6 @@ func TestHeartbeatRecordsComponentHealth(t *testing.T) {
 		assert.Equal(t, "3", record.attrs["components_total"])
 		assert.Equal(t, "0s", record.attrs["uptime"], "the base service's uptime, rounded to the second")
 		assert.Contains(t, record.attrs, "goroutines")
-
-		require.NoError(t, hb.Stop(stopContext(t)))
 	})
 }
 
@@ -341,6 +351,7 @@ func TestHeartbeatCadence(t *testing.T) {
 				recorder := &heartbeatRecorder{}
 				hb := newTestHeartbeat(t, tc.config, slog.New(recorder))
 				require.NoError(t, hb.Start(t.Context()))
+				stopHeartbeatAtCleanup(t, hb)
 				synctest.Wait()
 				require.Len(t, recorder.recorded(), 1, "the first round runs at Start")
 
@@ -357,8 +368,6 @@ func TestHeartbeatCadence(t *testing.T) {
 						records[round-1].attrs["uptime"])
 					<-time.After(tc.interval - time.Millisecond)
 				}
-
-				require.NoError(t, hb.Stop(stopContext(t)))
 			})
 		})
 	}

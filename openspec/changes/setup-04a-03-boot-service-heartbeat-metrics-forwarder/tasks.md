@@ -17,7 +17,7 @@ commit (#171).
   base (compile errors noted in `notes/2.1.md`).
 - [x] 2.2 The two pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
   updated. Gate: `go test -race ./service/` green and `task verify` green.
-- [ ] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
+- [x] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
 
 ## 3. Docs, ledger and follow-ups
 

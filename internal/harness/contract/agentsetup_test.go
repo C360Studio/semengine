@@ -48,6 +48,7 @@ var (
 		{"semengine-handoff", "semengine-handoff"},
 		{"semengine-pickup", "semengine-pickup"},
 		{"semengine-preflight", "preflight"},
+		{"semengine-status", "semengine-status"},
 	}
 	expectedRuleDomains = []string{
 		"1. Go, state, and component lifecycle",

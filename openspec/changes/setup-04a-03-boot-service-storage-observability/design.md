@@ -365,7 +365,8 @@ Uncovered, recorded in `notes/2.3.md`: a collection in progress when `Stop` begi
   them.
 - **Merge order:** #374 (Gemini), #377 (natsclient handler root) and this PR all edit `docs/repository-map.md`;
   whichever merges later merges `origin/main` and keeps every edit. #374's `scripts/port-status.sh` reads the ledger;
-  if it parses the `service` row, its own tests on the merged head say so. #358 (`client_golang` 1.25.0) shares no file; either order.
+  if it parses the `service` row, its own tests on the merged head say so. #358 (`client_golang` 1.25.0) shares no
+  file; either order.
 
 ## D9. Spec deltas (written after acceptance; `skip_specs` removed then)
 

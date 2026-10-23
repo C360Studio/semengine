@@ -15,7 +15,7 @@ commit (#171).
 
 - [x] 2.1 Tests first: the pin test files the design lists, adapted as the design says. Gate: the tests fail on the
   base (compile errors noted in `notes/2.1.md`).
-- [ ] 2.2 The three pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
+- [x] 2.2 The three pin files with the module path rewritten, the design's surface and lifecycle, and `RegisterAll`
   updated. Gate: `go test -race ./service/` green and `task verify` green.
 - [ ] 2.3 Sensitivity: the mutants the design names, each detected or reported as a survivor (`notes/2.3.md`).
 

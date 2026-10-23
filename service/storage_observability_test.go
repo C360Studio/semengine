@@ -12,6 +12,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/health"
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient/storagereport"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -248,6 +250,10 @@ func TestStorageObservabilityFailedStopIsRetried(t *testing.T) {
 // no I/O and returns nil, both loops fail and log, and the service stays healthy and says it has
 // read nothing. The pin's three-second sleep is replaced by the two warnings themselves, and its
 // Snapshot accessor by the operator's route.
+//
+// The base service is unhealthy until its first health check, which runs on its own goroutine and
+// is not ordered before the warnings (#385), so the test waits for a healthy verdict. A service an
+// unreadable account made unhealthy never gives one, and the wait fails with the last status seen.
 func TestStorageObservabilityBootsWithoutAReachableAccount(t *testing.T) {
 	handler := newHoldingHandler(t, "")
 	s, _ := newTestStorageObservability(t, newUnconnectedClient(t), storageLoopsConfig, slog.New(handler))
@@ -260,8 +266,12 @@ func TestStorageObservabilityBootsWithoutAReachableAccount(t *testing.T) {
 	awaitStorageLog(t, collectorFailed, "the collector's failure warning")
 	awaitStorageLog(t, watchFailed, "the consumer's watch warning")
 
-	status := s.Health()
-	assert.True(t, status.Healthy, "an unreadable account must not make the service unhealthy: %+v", status)
+	ctx, cancel := context.WithTimeout(t.Context(), storageLoopBound)
+	defer cancel()
+	status, err := probe.Await(ctx,
+		func(context.Context) (health.Status, error) { return s.Health(), nil },
+		func(status health.Status) bool { return status.Healthy })
+	require.NoError(t, err, "an unreadable account must not make the service unhealthy")
 	assert.Contains(t, status.Message, "storage report has not been read yet")
 
 	mux := http.NewServeMux()

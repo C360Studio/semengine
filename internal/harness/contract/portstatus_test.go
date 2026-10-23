@@ -2,6 +2,7 @@ package contract
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 
 type statusRun struct {
 	stdout, stderr string
+	ghLog          string
 	status         int
 }
 
@@ -44,9 +46,11 @@ func runPortStatus(t *testing.T, ghScript string, args ...string) statusRun {
 	if err := os.MkdirAll(bin, 0o755); err != nil {
 		t.Fatal(err)
 	}
+	logFile := filepath.Join(root, "gh.log")
 	if ghScript != "" {
 		ghPath := filepath.Join(bin, "gh")
-		if err := os.WriteFile(ghPath, []byte("#!/bin/sh\n"+ghScript+"\n"), 0o755); err != nil {
+		script := fmt.Sprintf("#!/bin/sh\nprintf '%%s\\n' \"$*\" >> %q\n%s\n", logFile, ghScript)
+		if err := os.WriteFile(ghPath, []byte(script), 0o755); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -56,7 +60,8 @@ func runPortStatus(t *testing.T, ghScript string, args ...string) statusRun {
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
-	r := statusRun{stdout: stdout.String(), stderr: stderr.String()}
+	logData, _ := os.ReadFile(logFile)
+	r := statusRun{stdout: stdout.String(), stderr: stderr.String(), ghLog: string(logData)}
 	var exit *exec.ExitError
 	switch {
 	case errors.As(err, &exit):
@@ -84,10 +89,16 @@ func TestPortStatusOffline(t *testing.T) {
 		"setup-04a-07-substrate-seam",
 		"Service PR 1/7",
 		"Service PR 4/7",
+		"present in tree",
 		"/ 65 tier-0 packages",
 	} {
 		if !strings.Contains(r.stdout, want) {
 			t.Errorf("offline stdout missing %q:\n%s", want, r.stdout)
+		}
+	}
+	for _, unwanted := range []string{"merged on main", "PRs on main"} {
+		if strings.Contains(r.stdout, unwanted) {
+			t.Errorf("offline stdout must not claim local files are %q:\n%s", unwanted, r.stdout)
 		}
 	}
 }
@@ -161,6 +172,158 @@ func TestPortStatusCheck(t *testing.T) {
 		}
 		if !strings.Contains(r.stderr, "unavailable") {
 			t.Errorf("stderr should report unavailable read:\n%s", r.stderr)
+		}
+	})
+}
+
+func makeIssuesJSON(n int) (string, string, string) {
+	var listItems, gqlPage1, gqlPage2 []string
+	for i := 1; i <= n; i++ {
+		listItems = append(listItems, fmt.Sprintf(`{"number":%d,"title":"issue %d","milestone":{"title":"slice-04a"},"labels":[{"name":"bug"}]}`, i, i))
+		node := fmt.Sprintf(`{"id":"I%d","number":%d,"title":"issue %d","milestone":{"title":"slice-04a"},"projectItems":{"nodes":[]}}`, i, i, i)
+		if i <= 100 {
+			gqlPage1 = append(gqlPage1, node)
+		} else {
+			gqlPage2 = append(gqlPage2, node)
+		}
+	}
+	return "[" + strings.Join(listItems, ",") + "]",
+		"[" + strings.Join(gqlPage1, ",") + "]",
+		"[" + strings.Join(gqlPage2, ",") + "]"
+}
+
+// port-status › "GitHub Project v2 sync": --sync-project selects the exact "SemEngine Port Tracker"
+// project (or explicit number), refuses malformed discovery or truncated GraphQL collections before
+// any write, paginates open issues/PRs beyond 100, and updates item fields.
+func TestPortStatusSyncProject(t *testing.T) {
+	t.Run("selects exact SemEngine Port Tracker title over substring match", func(t *testing.T) {
+		gh := `case "$*" in
+  *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + cleanIssuesJSON + `' ;;
+  *"pr list"*) printf '%s\n' '` + cleanPRsJSON + `' ;;
+  *"project list"*) printf '%s\n' '{"projects":[{"number":99,"title":"SemEngine experiments"},{"number":7,"title":"SemEngine Port Tracker"}],"totalCount":2}' ;;
+  *"project field-list 7"*) printf '%s\n' '{"fields":[{"id":"F_STATUS","name":"Status","options":[{"id":"OPT_TODO","name":"Todo"},{"id":"OPT_INPROG","name":"In Progress"}]},{"id":"F_STAGE","name":"Stage","options":[{"id":"OPT_S1","name":"1. In Progress"},{"id":"OPT_S3","name":"3. Slice 04A"}]},{"id":"F_START","name":"Start Date"},{"id":"F_TARGET","name":"Target Date"}]}' ;;
+  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":3}}' ;;
+  *addProjectV2ItemById*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_NEW"}}}}' ;;
+  *updateProjectV2ItemFieldValue*) printf '%s\n' '{"data":{"m1":{"projectV2Item":{"id":"PVTI_NEW"}}}}' ;;
+  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"totalCount":1,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"PR367","number":367,"title":"port message logger","milestone":{"title":"slice-04a"},"closingIssuesReferences":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]},"issues":{"totalCount":2,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[{"id":"I9","number":9,"title":"epic","milestone":{"title":"slice-04a"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}},{"id":"I372","number":372,"title":"service flake","milestone":{"title":"slice-04a"},"projectItems":{"totalCount":0,"pageInfo":{"hasNextPage":false},"nodes":[]}}]}}}}' ;;
+  *) echo "unexpected gh call: $*" >&2; exit 3 ;;
+esac`
+		r := runPortStatus(t, gh, "--sync-project")
+		if r.status != 0 {
+			t.Fatalf("exit %d, want 0\nstdout:\n%s\nstderr:\n%s\nghLog:\n%s", r.status, r.stdout, r.stderr, r.ghLog)
+		}
+		if !strings.Contains(r.stdout, "project #7") {
+			t.Errorf("expected sync to select project #7:\n%s", r.stdout)
+		}
+		if strings.Contains(r.ghLog, "field-list 99") || strings.Contains(r.ghLog, "view 99") {
+			t.Errorf("must not touch substring-matched project #99:\n%s", r.ghLog)
+		}
+		if !strings.Contains(r.ghLog, "updateProjectV2ItemFieldValue") {
+			t.Errorf("expected field update mutations in gh log:\n%s", r.ghLog)
+		}
+	})
+
+	t.Run("malformed project list JSON exits 2 with zero writes", func(t *testing.T) {
+		gh := `case "$*" in
+  *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + cleanIssuesJSON + `' ;;
+  *"pr list"*) printf '%s\n' '` + cleanPRsJSON + `' ;;
+  *"project list"*) printf '%s\n' 'not json' ;;
+  *) echo "unexpected write/follow-up gh call: $*" >&2; exit 3 ;;
+esac`
+		r := runPortStatus(t, gh, "--sync-project")
+		if r.status != 2 {
+			t.Fatalf("exit %d, want 2\nstdout:\n%s\nstderr:\n%s\nghLog:\n%s", r.status, r.stdout, r.stderr, r.ghLog)
+		}
+		if !strings.Contains(r.stderr, "unavailable") {
+			t.Errorf("stderr should report unavailable discovery:\n%s", r.stderr)
+		}
+		if strings.Contains(r.ghLog, "project create") || strings.Contains(r.ghLog, "mutation") {
+			t.Errorf("malformed discovery must not trigger project create or mutations:\n%s", r.ghLog)
+		}
+	})
+
+	t.Run("refuses truncated GraphQL issues before any write", func(t *testing.T) {
+		issuesList, gqlPage1, _ := makeIssuesJSON(101)
+		gh := `case "$*" in
+  *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + issuesList + `' ;;
+  *"pr list"*) printf '%s\n' '[]' ;;
+  *"project list"*) printf '%s\n' '{"projects":[{"number":7,"title":"SemEngine Port Tracker"}],"totalCount":1}' ;;
+  *"project field-list 7"*) printf '%s\n' '{"fields":[]}' ;;
+  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":0}}' ;;
+  *addProjectV2ItemById*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_NEW"}}}}' ;;
+  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"nodes":[]},"issues":{"pageInfo":{"hasNextPage":true},"nodes":` + gqlPage1 + `}}}}' ;;
+  *) echo "unexpected gh call: $*" >&2; exit 3 ;;
+esac`
+		r := runPortStatus(t, gh, "--sync-project")
+		if r.status != 2 {
+			t.Fatalf("exit %d, want 2 on truncated GraphQL issues\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
+		}
+		if strings.Contains(r.ghLog, "addProjectV2ItemById") {
+			t.Errorf("truncated GraphQL read must fail before any item mutation:\n%s", r.ghLog)
+		}
+	})
+
+	t.Run("paginates multi-page issues beyond first 100", func(t *testing.T) {
+		issuesList, gqlPage1, gqlPage2 := makeIssuesJSON(101)
+		gh := `case "$*" in
+  *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + issuesList + `' ;;
+  *"pr list"*) printf '%s\n' '[]' ;;
+  *"project list"*) printf '%s\n' '{"projects":[{"number":7,"title":"SemEngine Port Tracker"}],"totalCount":1}' ;;
+  *"project field-list 7"*) printf '%s\n' '{"fields":[]}' ;;
+  *"project view 7"*) printf '%s\n' '{"id":"P7","items":{"totalCount":101}}' ;;
+  *addProjectV2ItemById*) printf '%s\n' '{"data":{"addProjectV2ItemById":{"item":{"id":"PVTI_NEW"}}}}' ;;
+  *cursor-100*) printf '%s\n' '{"data":{"repository":{"issues":{"totalCount":101,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":` + gqlPage2 + `}}}}' ;;
+  *graphql*) printf '%s\n' '{"data":{"repository":{"pullRequests":{"totalCount":0,"pageInfo":{"hasNextPage":false,"endCursor":null},"nodes":[]},"issues":{"totalCount":101,"pageInfo":{"hasNextPage":true,"endCursor":"cursor-100"},"nodes":` + gqlPage1 + `}}}}' ;;
+  *) echo "unexpected gh call: $*" >&2; exit 3 ;;
+esac`
+		r := runPortStatus(t, gh, "--sync-project")
+		if r.status != 0 {
+			t.Fatalf("exit %d, want 0\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
+		}
+		if !strings.Contains(r.stdout, "Synced 101 open items") {
+			t.Errorf("expected all 101 open items synced:\n%s", r.stdout)
+		}
+		if !strings.Contains(r.ghLog, `contentId: "I101"`) {
+			t.Errorf("expected mutation for page-2 item I101 in gh log:\n%s", r.ghLog)
+		}
+	})
+
+	t.Run("refuses ambiguous duplicate SemEngine Port Tracker projects before any write", func(t *testing.T) {
+		gh := `case "$*" in
+  *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + cleanIssuesJSON + `' ;;
+  *"pr list"*) printf '%s\n' '` + cleanPRsJSON + `' ;;
+  *"project list"*) printf '%s\n' '{"projects":[{"number":4,"title":"SemEngine Port Tracker"},{"number":7,"title":"SemEngine Port Tracker"}],"totalCount":2}' ;;
+  *) echo "unexpected gh call: $*" >&2; exit 3 ;;
+esac`
+		r := runPortStatus(t, gh, "--sync-project")
+		if r.status != 2 {
+			t.Fatalf("exit %d, want 2\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
+		}
+		if !strings.Contains(r.stderr, "ambiguous") {
+			t.Errorf("stderr should report ambiguous match:\n%s", r.stderr)
+		}
+	})
+
+	t.Run("malformed project create JSON exits 2 before any item write", func(t *testing.T) {
+		gh := `case "$*" in
+  *milestones*) printf '%s\n' '` + cleanMilestonesJSON + `' ;;
+  *"issue list"*) printf '%s\n' '` + cleanIssuesJSON + `' ;;
+  *"pr list"*) printf '%s\n' '` + cleanPRsJSON + `' ;;
+  *"project list"*) printf '%s\n' '{"projects":[],"totalCount":0}' ;;
+  *"project create"*) printf '%s\n' 'not json' ;;
+  *) echo "unexpected gh call: $*" >&2; exit 3 ;;
+esac`
+		r := runPortStatus(t, gh, "--sync-project")
+		if r.status != 2 {
+			t.Fatalf("exit %d, want 2\nstdout:\n%s\nstderr:\n%s", r.status, r.stdout, r.stderr)
+		}
+		if strings.Contains(r.ghLog, "project link") || strings.Contains(r.ghLog, "graphql") {
+			t.Errorf("malformed create response must not proceed to link or graphql:\n%s", r.ghLog)
 		}
 	})
 }

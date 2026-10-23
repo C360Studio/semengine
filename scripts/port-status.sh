@@ -144,7 +144,7 @@ for cname, pkgs in changes:
             c_excl.append(p)
         elif p == "service" and svc_done < len(service_prs):
             partial += 1
-            c_partial.append(f"service ({svc_done}/7 PRs on main)")
+            c_partial.append(f"service ({svc_done}/7 PRs in tree)")
         elif p == "graph/inference":
             partial += 1
             c_partial.append("graph/inference (hierarchy slice; rest in change 7)")
@@ -172,7 +172,7 @@ for cname, pkgs in changes:
 print("\nChange 3 `service` Lifecycle-Owner Split:")
 for label, desc, path in service_prs:
     mark = "x" if os.path.exists(path) else " "
-    state = "merged on main" if os.path.exists(path) else "pending"
+    state = "present in tree" if os.path.exists(path) else "pending"
     print(f"  [{mark}] {label}: {desc:<38} ({state})")
 
 rem_total = total - in_ledger
@@ -202,10 +202,10 @@ read_gh() {
 read_gh "repository milestones" gh api "repos/:owner/:repo/milestones?state=open&per_page=100"
 milestones_json=$answer
 
-read_gh "open pull requests" gh pr list --state open --limit 100 --json number,title,isDraft,headRefName,milestone,labels
+read_gh "open pull requests" gh pr list --state open --limit 500 --json number,title,isDraft,headRefName,milestone,labels
 prs_json=$answer
 
-read_gh "open issues" gh issue list --state open --limit 200 --json number,title,milestone,labels
+read_gh "open issues" gh issue list --state open --limit 500 --json number,title,milestone,labels
 issues_json=$answer
 
 python3 - "$CHECK" "$milestones_json" "$prs_json" "$issues_json" <<'PY'
@@ -220,8 +220,27 @@ except Exception as e:
     print(f"port-status: unavailable: invalid JSON from gh: {e}", file=sys.stderr)
     sys.exit(2)
 
-if not isinstance(milestones, list) or not isinstance(prs, list) or not isinstance(issues, list):
-    print("port-status: unavailable: expected JSON arrays from gh", file=sys.stderr)
+def valid_list(items):
+    return isinstance(items, list) and all(
+        isinstance(x, dict)
+        and isinstance(x.get("number"), int)
+        and not isinstance(x.get("number"), bool)
+        and isinstance(x.get("title"), str)
+        for x in items
+    )
+
+if not valid_list(milestones) or not valid_list(prs) or not valid_list(issues):
+    print("port-status: unavailable: expected JSON arrays of numbered records from gh", file=sys.stderr)
+    sys.exit(2)
+
+if len(milestones) >= 100:
+    print("port-status: unavailable: milestones read returned 100 of 100 asked for and may be incomplete", file=sys.stderr)
+    sys.exit(2)
+if len(prs) >= 500:
+    print("port-status: unavailable: open PR read returned 500 of 500 asked for and may be incomplete", file=sys.stderr)
+    sys.exit(2)
+if len(issues) >= 500:
+    print("port-status: unavailable: open issues read returned 500 of 500 asked for and may be incomplete", file=sys.stderr)
     sys.exit(2)
 
 print("\nGitHub Milestones (open):")
@@ -284,21 +303,54 @@ status=$?
 if [ "$SYNC_PROJECT" -eq 1 ]; then
   echo ""
   echo "Syncing GitHub Project v2 board..."
-  if ! proj_list=$(gh project list --owner C360Studio --format json 2>"$errfile"); then
-    echo "port-status: unavailable: cannot read GitHub Projects for C360Studio: $(cat "$errfile")" >&2
-    echo "port-status: run 'gh auth refresh -s project' in your terminal to grant project scope." >&2
-    exit 2
-  fi
-  if [ -z "$PROJECT_NUM" ]; then
+  if [ -n "$PROJECT_NUM" ]; then
+    case "$PROJECT_NUM" in
+      ''|*[!0-9]*|0*)
+        echo "port-status: unavailable: invalid project number: ${PROJECT_NUM}" >&2
+        exit 2
+        ;;
+    esac
+  else
+    if ! proj_list=$(gh project list --owner C360Studio --limit 100 --format json 2>"$errfile"); then
+      echo "port-status: unavailable: cannot read GitHub Projects for C360Studio: $(cat "$errfile")" >&2
+      echo "port-status: run 'gh auth refresh -s project' in your terminal to grant project scope." >&2
+      exit 2
+    fi
     PROJECT_NUM=$(printf '%s' "$proj_list" | python3 -c '
 import json, sys
-data = json.load(sys.stdin)
-projects = data.get("projects", []) if isinstance(data, dict) else []
+try:
+    data = json.loads(sys.stdin.read())
+except Exception as e:
+    print(f"port-status: unavailable: invalid JSON from gh project list: {e}", file=sys.stderr)
+    sys.exit(2)
+if not isinstance(data, dict) or not isinstance(data.get("projects"), list):
+    print("port-status: unavailable: gh project list did not return a projects array", file=sys.stderr)
+    sys.exit(2)
+projects = data["projects"]
 for p in projects:
-    if "semengine" in p.get("title", "").lower():
-        print(p.get("number", ""))
-        break
+    if (
+        not isinstance(p, dict)
+        or not isinstance(p.get("number"), int)
+        or isinstance(p.get("number"), bool)
+        or p["number"] <= 0
+        or not isinstance(p.get("title"), str)
+    ):
+        print("port-status: unavailable: malformed project entry in gh project list", file=sys.stderr)
+        sys.exit(2)
+total_count = data.get("totalCount")
+if (isinstance(total_count, int) and total_count > len(projects)) or len(projects) >= 100:
+    print("port-status: unavailable: gh project list returned incomplete results", file=sys.stderr)
+    sys.exit(2)
+matches = [p["number"] for p in projects if p.get("title") == "SemEngine Port Tracker"]
+if len(matches) > 1:
+    nums = ", ".join(f"#{n}" for n in matches)
+    print(f"port-status: unavailable: ambiguous projects titled '\''SemEngine Port Tracker'\'' ({nums}); pass --sync-project <number>", file=sys.stderr)
+    sys.exit(2)
+if len(matches) == 1:
+    print(matches[0])
 ')
+    status=$?
+    [ "$status" -eq 0 ] || exit "$status"
   fi
   if [ -z "$PROJECT_NUM" ]; then
     echo "Creating GitHub Project 'SemEngine Port Tracker' under C360Studio..."
@@ -306,7 +358,21 @@ for p in projects:
       echo "port-status: unavailable: failed to create project: $(cat "$errfile")" >&2
       exit 2
     fi
-    PROJECT_NUM=$(printf '%s' "$created" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("number",""))')
+    PROJECT_NUM=$(printf '%s' "$created" | python3 -c '
+import json, sys
+try:
+    data = json.loads(sys.stdin.read())
+except Exception as e:
+    print(f"port-status: unavailable: invalid JSON from gh project create: {e}", file=sys.stderr)
+    sys.exit(2)
+num = data.get("number") if isinstance(data, dict) else None
+if not isinstance(num, int) or isinstance(num, bool) or num <= 0:
+    print("port-status: unavailable: gh project create did not return a valid project number", file=sys.stderr)
+    sys.exit(2)
+print(num)
+')
+    status=$?
+    [ "$status" -eq 0 ] || exit "$status"
     gh project link "$PROJECT_NUM" --owner C360Studio --repo C360Studio/semengine >/dev/null 2>&1 || true
   fi
   echo "Syncing open issues and PRs to C360Studio project #${PROJECT_NUM} (https://github.com/orgs/C360Studio/projects/${PROJECT_NUM})..."
@@ -318,76 +384,205 @@ for p in projects:
     echo "port-status: unavailable: cannot read project #${PROJECT_NUM}: $(cat "$errfile")" >&2
     exit 2
   fi
-  if ! gql_json=$(gh api graphql -f query='query {
-    repository(owner: "C360Studio", name: "semengine") {
-      pullRequests(first: 100, states: OPEN) {
-        nodes {
-          id
-          number
-          title
-          milestone { title }
-          closingIssuesReferences(first: 20) { nodes { number } }
-          projectItems(first: 10) {
-            nodes {
-              id
-              project { number }
-              status: fieldValueByName(name: "Status") {
-                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
-              }
-              stage: fieldValueByName(name: "Stage") {
-                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
-              }
-              startDate: fieldValueByName(name: "Start Date") {
-                ... on ProjectV2ItemFieldDateValue { date }
-              }
-              targetDate: fieldValueByName(name: "Target Date") {
-                ... on ProjectV2ItemFieldDateValue { date }
-              }
-            }
-          }
-        }
-      }
-      issues(first: 100, states: OPEN) {
-        nodes {
-          id
-          number
-          title
-          milestone { title }
-          projectItems(first: 10) {
-            nodes {
-              id
-              project { number }
-              status: fieldValueByName(name: "Status") {
-                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
-              }
-              stage: fieldValueByName(name: "Stage") {
-                ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
-              }
-              startDate: fieldValueByName(name: "Start Date") {
-                ... on ProjectV2ItemFieldDateValue { date }
-              }
-              targetDate: fieldValueByName(name: "Target Date") {
-                ... on ProjectV2ItemFieldDateValue { date }
-              }
-            }
-          }
-        }
-      }
-    }
-  }' 2>"$errfile"); then
-    echo "port-status: unavailable: GraphQL project sync query failed: $(cat "$errfile")" >&2
-    exit 2
-  fi
 
-  python3 - "$PROJECT_NUM" "$proj_view_json" "$fields_json" "$gql_json" <<'PY'
+  python3 - "$PROJECT_NUM" "$proj_view_json" "$fields_json" "$prs_json" "$issues_json" <<'PY'
 import datetime, json, re, subprocess, sys
 
-proj_num = int(sys.argv[1])
-proj_view = json.loads(sys.argv[2])
-fields = json.loads(sys.argv[3]).get("fields", [])
-gql = json.loads(sys.argv[4]).get("data", {}).get("repository", {})
+def die_unavail(msg):
+    print(f"port-status: unavailable: {msg}", file=sys.stderr)
+    sys.exit(2)
 
-proj_id = proj_view.get("id")
+proj_num = int(sys.argv[1])
+try:
+    proj_view = json.loads(sys.argv[2])
+    fields_obj = json.loads(sys.argv[3])
+    expected_prs = json.loads(sys.argv[4])
+    expected_issues = json.loads(sys.argv[5])
+except Exception as e:
+    die_unavail(f"invalid JSON in project metadata: {e}")
+
+if not isinstance(proj_view, dict) or not isinstance(proj_view.get("id"), str) or not proj_view["id"]:
+    die_unavail(f"project #{proj_num} view JSON is missing a string id")
+if not isinstance(fields_obj, dict) or not isinstance(fields_obj.get("fields"), list):
+    die_unavail(f"project #{proj_num} field-list JSON is missing a fields array")
+
+proj_id = proj_view["id"]
+fields = fields_obj["fields"]
+
+ITEM_FIELDS_GQL = """
+projectItems(first: 10) {
+  totalCount
+  pageInfo { hasNextPage }
+  nodes {
+    id
+    project { number }
+    status: fieldValueByName(name: "Status") {
+      ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+    }
+    stage: fieldValueByName(name: "Stage") {
+      ... on ProjectV2ItemFieldSingleSelectValue { name optionId }
+    }
+    startDate: fieldValueByName(name: "Start Date") {
+      ... on ProjectV2ItemFieldDateValue { date }
+    }
+    targetDate: fieldValueByName(name: "Target Date") {
+      ... on ProjectV2ItemFieldDateValue { date }
+    }
+  }
+}
+"""
+
+INITIAL_QUERY = f"""query {{
+  repository(owner: "C360Studio", name: "semengine") {{
+    pullRequests(first: 100, states: OPEN) {{
+      totalCount
+      pageInfo {{ hasNextPage endCursor }}
+      nodes {{
+        id
+        number
+        title
+        milestone {{ title }}
+        closingIssuesReferences(first: 20) {{
+          totalCount
+          pageInfo {{ hasNextPage }}
+          nodes {{ number }}
+        }}
+        {ITEM_FIELDS_GQL}
+      }}
+    }}
+    issues(first: 100, states: OPEN) {{
+      totalCount
+      pageInfo {{ hasNextPage endCursor }}
+      nodes {{
+        id
+        number
+        title
+        milestone {{ title }}
+        {ITEM_FIELDS_GQL}
+      }}
+    }}
+  }}
+}}"""
+
+def run_gql(query):
+    proc = subprocess.run(
+        ["gh", "api", "graphql", "-f", f"query={query}"],
+        capture_output=True,
+        text=True,
+    )
+    if proc.returncode != 0:
+        die_unavail(f"GraphQL request failed: {proc.stderr.strip()}")
+    try:
+        payload = json.loads(proc.stdout)
+    except Exception as e:
+        die_unavail(f"invalid JSON from GraphQL: {e}")
+    if not isinstance(payload, dict) or payload.get("errors"):
+        die_unavail(f"GraphQL errors: {payload.get('errors') if isinstance(payload, dict) else payload}")
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        die_unavail("GraphQL response missing data object")
+    return data
+
+repo_data = run_gql(INITIAL_QUERY).get("repository")
+if not isinstance(repo_data, dict):
+    die_unavail("GraphQL response missing repository object")
+
+def collect_connection(conn_name, initial_conn, page_fields_gql):
+    if not isinstance(initial_conn, dict) or not isinstance(initial_conn.get("nodes"), list):
+        die_unavail(f"GraphQL {conn_name} missing nodes array")
+    nodes = list(initial_conn["nodes"])
+    seen_ids = {n.get("id") for n in nodes if isinstance(n, dict) and n.get("id")}
+    seen_cursors = set()
+    conn = initial_conn
+    while True:
+        pi = conn.get("pageInfo")
+        has_next = pi.get("hasNextPage") if isinstance(pi, dict) else False
+        if not has_next:
+            break
+        cursor = pi.get("endCursor") if isinstance(pi, dict) else None
+        if not isinstance(cursor, str) or not cursor or cursor in seen_cursors:
+            die_unavail(f"GraphQL {conn_name} reported hasNextPage=true without an advancing endCursor")
+        seen_cursors.add(cursor)
+        q = f"""query {{
+  repository(owner: "C360Studio", name: "semengine") {{
+    {conn_name}(first: 100, states: OPEN, after: {json.dumps(cursor)}) {{
+      totalCount
+      pageInfo {{ hasNextPage endCursor }}
+      nodes {{
+        {page_fields_gql}
+      }}
+    }}
+  }}
+}}"""
+        next_repo = run_gql(q).get("repository")
+        conn = next_repo.get(conn_name) if isinstance(next_repo, dict) else None
+        if not isinstance(conn, dict) or not isinstance(conn.get("nodes"), list):
+            die_unavail(f"GraphQL {conn_name} page missing nodes array")
+        page_nodes = conn["nodes"]
+        new_count = 0
+        for n in page_nodes:
+            if not isinstance(n, dict) or not n.get("id"):
+                die_unavail(f"GraphQL {conn_name} node missing id")
+            if n["id"] not in seen_ids:
+                seen_ids.add(n["id"])
+                nodes.append(n)
+                new_count += 1
+        if new_count == 0:
+            die_unavail(f"GraphQL {conn_name} pagination returned no new nodes while hasNextPage=true")
+    total_cnt = conn.get("totalCount")
+    if isinstance(total_cnt, int) and len(nodes) != total_cnt:
+        die_unavail(f"GraphQL {conn_name} count {len(nodes)} does not match totalCount {total_cnt}")
+    return nodes
+
+PR_NODE_GQL = f"""id number title milestone {{ title }}
+closingIssuesReferences(first: 20) {{ totalCount pageInfo {{ hasNextPage }} nodes {{ number }} }}
+{ITEM_FIELDS_GQL}"""
+
+ISSUE_NODE_GQL = f"""id number title milestone {{ title }}
+{ITEM_FIELDS_GQL}"""
+
+prs = collect_connection("pullRequests", repo_data.get("pullRequests"), PR_NODE_GQL)
+issues = collect_connection("issues", repo_data.get("issues"), ISSUE_NODE_GQL)
+
+def validate_nodes(nodes, expected_list, kind, check_closing=False):
+    got_nums = set()
+    for n in nodes:
+        if (
+            not isinstance(n, dict)
+            or not isinstance(n.get("id"), str)
+            or not n["id"]
+            or not isinstance(n.get("number"), int)
+            or isinstance(n.get("number"), bool)
+        ):
+            die_unavail(f"GraphQL {kind} node has invalid id or number")
+        got_nums.add(n["number"])
+        pi_conn = n.get("projectItems")
+        if not isinstance(pi_conn, dict) or not isinstance(pi_conn.get("nodes"), list):
+            die_unavail(f"GraphQL {kind} #{n['number']} missing projectItems.nodes")
+        pi_page = pi_conn.get("pageInfo")
+        if isinstance(pi_page, dict) and pi_page.get("hasNextPage"):
+            die_unavail(f"GraphQL {kind} #{n['number']} projectItems connection is truncated")
+        pi_tot = pi_conn.get("totalCount")
+        if isinstance(pi_tot, int) and pi_tot > len(pi_conn["nodes"]):
+            die_unavail(f"GraphQL {kind} #{n['number']} projectItems count is incomplete")
+        if check_closing:
+            cl_conn = n.get("closingIssuesReferences") or {}
+            cl_page = cl_conn.get("pageInfo") if isinstance(cl_conn, dict) else None
+            if isinstance(cl_page, dict) and cl_page.get("hasNextPage"):
+                die_unavail(f"GraphQL {kind} #{n['number']} closingIssuesReferences connection is truncated")
+            cl_tot = cl_conn.get("totalCount") if isinstance(cl_conn, dict) else None
+            cl_nodes = cl_conn.get("nodes") if isinstance(cl_conn, dict) else None
+            if isinstance(cl_tot, int) and isinstance(cl_nodes, list) and cl_tot > len(cl_nodes):
+                die_unavail(f"GraphQL {kind} #{n['number']} closingIssuesReferences count is incomplete")
+    want_nums = {x["number"] for x in expected_list}
+    if got_nums != want_nums:
+        missing = sorted(want_nums - got_nums)
+        extra = sorted(got_nums - want_nums)
+        die_unavail(f"GraphQL {kind} set mismatch vs list read (missing={missing}, extra={extra})")
+
+validate_nodes(prs, expected_prs, "pullRequest", check_closing=True)
+validate_nodes(issues, expected_issues, "issue", check_closing=False)
+
 status_field_id = None
 stage_field_id = None
 start_field_id = None
@@ -396,17 +591,19 @@ todo_opt = None
 in_prog_opt = None
 stage_opts = {}
 for f in fields:
+    if not isinstance(f, dict):
+        continue
     fname = f.get("name")
     if fname == "Status":
         status_field_id = f.get("id")
-        for opt in f.get("options", []):
+        for opt in f.get("options") or []:
             if opt.get("name") == "Todo":
                 todo_opt = opt.get("id")
             elif opt.get("name") == "In Progress":
                 in_prog_opt = opt.get("id")
     elif fname == "Stage":
         stage_field_id = f.get("id")
-        for opt in f.get("options", []):
+        for opt in f.get("options") or []:
             oname = opt.get("name", "")
             for idx in range(1, 7):
                 if oname.startswith(f"{idx}."):
@@ -433,12 +630,9 @@ ch4_7_re = re.compile(
     re.I,
 )
 
-prs = gql.get("pullRequests", {}).get("nodes", [])
-issues = gql.get("issues", {}).get("nodes", [])
-
 claimed_issues = {7, 9}
 for pr in prs:
-    for ref in (pr.get("closingIssuesReferences") or {}).get("nodes", []):
+    for ref in ((pr.get("closingIssuesReferences") or {}).get("nodes") or []):
         if ref and ref.get("number"):
             claimed_issues.add(ref["number"])
 
@@ -453,7 +647,7 @@ def ensure_item(node, is_pr, want_in_prog):
     cur_stage = None
     cur_start = None
     cur_target = None
-    for pi in (node.get("projectItems") or {}).get("nodes", []):
+    for pi in ((node.get("projectItems") or {}).get("nodes") or []):
         if pi and (pi.get("project") or {}).get("number") == proj_num:
             item_id = pi.get("id")
             cur_status = (pi.get("status") or {}).get("name")
@@ -463,8 +657,10 @@ def ensure_item(node, is_pr, want_in_prog):
             break
     if not item_id:
         q = f'mutation {{ addProjectV2ItemById(input: {{projectId: "{proj_id}", contentId: "{node["id"]}"}}) {{ item {{ id }} }} }}'
-        out = subprocess.check_output(["gh", "api", "graphql", "-f", f"query={q}"], text=True)
-        item_id = json.loads(out)["data"]["addProjectV2ItemById"]["item"]["id"]
+        data = run_gql(q)
+        item_id = ((data.get("addProjectV2ItemById") or {}).get("item") or {}).get("id")
+        if not isinstance(item_id, str) or not item_id:
+            die_unavail(f"addProjectV2ItemById for {node['id']} returned no item id")
         added += 1
     ms = ((node.get("milestone") or {}).get("title") or "").lower()
     title = node.get("title") or ""
@@ -510,7 +706,7 @@ for iss in issues:
 for i in range(0, len(status_mutations), 25):
     chunk = status_mutations[i:i+25]
     q = "mutation {\n  " + "\n  ".join(chunk) + "\n}"
-    subprocess.check_output(["gh", "api", "graphql", "-f", f"query={q}"], text=True)
+    run_gql(q)
 
 total = len(prs) + len(issues)
 indexed = (proj_view.get("items") or {}).get("totalCount", 0)
@@ -518,4 +714,6 @@ print(f"Synced {total} open items ({added} added, {len(status_mutations)} status
 if indexed < total:
     print(f"Note: all {total} items are attached on their issues/PRs; GitHub's async ProjectV2 board index currently shows {indexed}/{total} (check https://www.githubstatus.com if GitHub Projects indexing is delayed).")
 PY
+  status=$?
+  [ "$status" -eq 0 ] || exit "$status"
 fi

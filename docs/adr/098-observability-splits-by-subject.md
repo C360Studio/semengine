@@ -17,7 +17,8 @@
 > - **Not ported: the agent-execution conditions of Decisions 1 and 2.** `agent.loop.terminal-reason` and
 >   `agent.loop.evidence-integrity` belong to agent packages this repository has not admitted.
 > - **Not carried: ADR-080, ADR-049, ADR-055 and ADR-068.** Under Related decisions they are the pin's numbers.
->   Where this repository leans on ADR-068 Decision 1 (a reader of a bucket never creates it), `graph/kvcatalog`
+>   Where this repository leans on ADR-068 Decision 1 (bucket TTL, size or age limits and stream retention never
+>   decide entity lifecycle; storage caps are backstops that never bind in normal operation), `graph/kvcatalog`
 >   implements it. ADR-088 is carried as `docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md`.
 > - `path:line` cites and dates are the pin's.
 

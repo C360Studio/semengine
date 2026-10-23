@@ -37,7 +37,8 @@ spec names no schema.
 
 - **WHEN** a row is at critical pressure
 - **THEN** the route answers 200
-- **AND** the test that verifies this is `TestStorageReportHTTP_CriticalPressureFailsNothing`
+- **AND** the test that verifies this is `TestStorageObservabilityCriticalPressureKeepsReadiness`, which reads the
+  critical row through the route; `TestStorageReportHTTP_CriticalPressureFailsNothing` checks the body it serves
 
 #### Scenario: Methods and prefix
 
@@ -118,8 +119,10 @@ disappearing, SHALL name unbounded resources, and SHALL state that nothing is en
 #### Scenario: The example alert rules read only published names
 
 - **WHEN** the example rules file is parsed
-- **THEN** every metric an alert reads is one the service publishes, no alert fires on a series disappearing, unbounded
-  storage is named, and each alert says nothing is enforced
+- **THEN** every `semengine_storage_*` name an alert reads is one the service publishes (the migration alert reads
+  `semengine_streams_migration_override_expired`, which the component manager publishes), no alert fires on a series
+  disappearing, unbounded storage is named, every alert has a summary, a description and a `for` window, and at least
+  one description states that the report is report-only
 - **AND** the tests that verify this are `TestStorageAlertRules_ReferenceOnlyPublishedMetrics`,
   `TestStorageAlertRules_KeyNothingOnRowDisappearance`, `TestStorageAlertRules_MakeUnboundedResourcesVisible` and
   `TestStorageAlertRules_AreAnnotatedAndReportOnly`

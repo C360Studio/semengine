@@ -2849,7 +2849,7 @@
     component.LifecycleComponent gains the read line: Health, DataFlow and DebugStatus may be called at any time and
     return without waiting for Start or Stop (tested for graph-ingest, review only outside this module). The
     composition root calls ConfigureRulePackMutations after ConfigureFromServices and before StartAll. PR 4: pin ADR-093
-    (decoding is observability evidence, the logger an observer); pin ADR-068 D1 (a reader never creates a bucket);
+    (decoding is observability evidence, the logger an observer); pin ADR-068 D1 (storage limits never decide entity lifecycle);
     ADR-108 Decision 2 (the logger composes internal/lifecycleguard); ADR-110 (the logger writes no entity); ADR-113
     changes pin ADR-095's final failed Stop as in PR 3; pin ADR-081 not done (one KV watcher per watch stream). Kept
     with contract lines: NewMessageLoggerService (registered by RegisterAll with the logger's OpenAPI spec),

@@ -395,6 +395,8 @@ Uncovered, recorded in `notes/2.3.md`: a collection in progress when `Stop` begi
 - **Q1. Decided (owner, 2026-10-23, PR #376 comment 6363685574): keep the example alert rules, renamed to the
   `semengine_storage_*` names, at `configs/prometheus/rules/`, with their four tests.** At the pin the storage metrics
   ship with a file of 13 example Prometheus alerts (339 lines), and the four tests check it against the metrics: every
-  alert reads a metric the service publishes, none fires on a report row disappearing, unbounded storage is named, and
-  each alert says nothing is enforced. It is the first piece of the dashboard-and-drift-test item still open on the
-  epic (#9, item 5). The file is an example operators copy, not something the engine loads.
+  `semengine_storage_*` name an alert reads is published by the service (the migration alert reads the component
+  manager's `semengine_streams_migration_override_expired`), none fires on a report row disappearing, unbounded storage
+  is named, and at least one description states that the report is report-only. It is the first piece of the
+  dashboard-and-drift-test item still open on the epic (#9, item 5). The file is an example operators copy, not
+  something the engine loads.

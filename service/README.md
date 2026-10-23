@@ -564,7 +564,7 @@ the registry it holds.
 
 | Key | Meaning |
 | --- | --- |
-| `interval` | How often the account is listed. Default `1m`. Every process that polls multiplies the cost, so turn this down when many instances run. |
+| `interval` | How often the account is listed. Default `1m`. Every process that polls multiplies the cost, so increase the interval to poll less often when many instances run. |
 | `timeout` | The bound on one collection, both listings included. Default `15s`; it must not exceed `interval`. |
 | `pressure_thresholds` | When a resource counts as `warning`, `high` or `critical`: `warning_headroom` (default 0.25), `high_headroom` (0.15) and `critical_headroom` (0.05) are the free fraction at or below which the state applies; `warning_horizon` (`72h`), `high_horizon` (`24h`) and `critical_horizon` (`4h`) are the projected time until the critical level is reached. |
 

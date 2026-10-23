@@ -7,6 +7,7 @@ import (
 	"io"
 	"reflect"
 	"sort"
+	"time"
 
 	"github.com/c360studio/semengine/internal/keycase"
 	"github.com/c360studio/semengine/types"
@@ -149,6 +150,23 @@ func decodeStrictServiceJSON(raw json.RawMessage, target any) error {
 		return err
 	}
 	return ensureJSONEOF(decoder)
+}
+
+// serviceDuration is the one duration parse for every service's configuration: an empty value
+// takes fallback; one that does not parse or is not positive is refused, naming the service and
+// the field.
+func serviceDuration(service, field, value string, fallback time.Duration) (time.Duration, error) {
+	if value == "" {
+		return fallback, nil
+	}
+	parsed, err := time.ParseDuration(value)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s %s %q: %w", service, field, value, err)
+	}
+	if parsed <= 0 {
+		return 0, fmt.Errorf("invalid %s %s: must be positive, got %q", service, field, value)
+	}
+	return parsed, nil
 }
 
 func cloneResolvedServiceConfigs(configs types.ServiceConfigs) types.ServiceConfigs {

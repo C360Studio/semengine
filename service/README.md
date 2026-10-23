@@ -443,11 +443,12 @@ stored with type `raw`. A payload that is not JSON is stored as a JSON string, s
 (`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. `ctx` bounds `Start` only: ending it afterwards stops
 nothing, and messages keep being stored, because each message's context belongs to the NATS client, not to `ctx`.
 `Start` checks `ctx` before each subscribe and once more after the last; if `ctx` has ended at any check, `Start`
-returns its error and releases what the logger holds. A subscribe already running is not shortened by `ctx`, and how
-long `Start` can outlast its context is not promised.
+returns its error and releases what the logger holds. Ending `ctx` also ends a running subscribe's wait for the
+server's answer, but not its waits for the connection itself (see "A write the server is not reading holds the
+connection" in the transport-client spec), so how long `Start` can outlast its context is not promised.
 
-A subscribe that fails does not fail `Start`. The logger keeps running and retries that subject every 100 ms until it
-succeeds. While any subject is unsubscribed:
+A subscribe that fails for any other reason does not fail `Start`. The logger keeps running and retries that subject
+every 100 ms until it succeeds. While any subject is unsubscribed:
 
 - `/stats` reports `subject_reconciliation_degraded` as true and `subject_reconciliation_error` names each subject with
   its last error;

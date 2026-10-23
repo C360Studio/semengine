@@ -819,4 +819,3 @@ collection.
   `TestStorageObservabilityHealth_ReportsWhenNothingHasBeenReadYet`,
   `TestInheritedPressure_HealthMessageNamesTheCeilingItCameFrom` and
   `TestInheritedPressure_DoesNotEvictOwnBoundFindingsFromTheHealthMessage`
-

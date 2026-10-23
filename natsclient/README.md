@@ -56,8 +56,9 @@ begins; `Close` still waits for every handler to return. `ConsumeStreamWithConfi
 
 `Subscribe` and `SubscribeForRequests` follow the same rule: the context bounds setup only, and each handler's context
 descends from a context the client owns for that subscription, not from the context given to the call. Ending the call's
-context after it returned does not end a handler. The client ends the subscription's context when `Close` begins, after
-`Unsubscribe` while a handler still runs, and once delivery has ended and the last handler has returned. A `Subscribe`
+context after it returned does not end a handler. The client cancels that context after `Close` has begun, including
+when the subscription was already unsubscribed while a handler still runs; it also cancels it once delivery has ended
+and the last handler has returned. `Unsubscribe` alone cancels nothing. A `Subscribe`
 handler's context also carries the trace from the message's headers (none from the call's context) and ends after 30
 seconds. `Subscription.Drain(ctx)` returning nil proves every running handler has returned; `Unsubscribe` stops
 delivery but does not wait for a running handler.

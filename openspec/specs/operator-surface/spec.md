@@ -492,4 +492,3 @@ disappearing, SHALL name unbounded resources, and SHALL state that nothing is en
 - **AND** the tests that verify this are `TestStorageAlertRules_ReferenceOnlyPublishedMetrics`,
   `TestStorageAlertRules_KeyNothingOnRowDisappearance`, `TestStorageAlertRules_MakeUnboundedResourcesVisible` and
   `TestStorageAlertRules_AreAnnotatedAndReportOnly`
-

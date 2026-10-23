@@ -594,4 +594,3 @@ lister's channel closed with the context live (#222).
 
 - **WHEN** no key in a bucket on a NATS server matches the filter
 - **THEN** either call returns nil and no error
-

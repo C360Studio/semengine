@@ -1014,8 +1014,9 @@
     (12) natsclient-consume-handler-context (owner ruling, #9 comment 5994720412, item 2): in
     ConsumeStreamWithConfig, ConsumeInternalStreamWithConfig, Subscribe and SubscribeForRequests the
     caller's context bounds setup only; handlers run under a context the Client owns per consumer or
-    subscription, cancelled when Close begins and after the last handler returns (a Subscribe or
-    SubscribeForRequests subscription's also after Unsubscribe while a handler still runs); at the
+    subscription, cancelled after Close has begun and once delivery has ended and the last handler
+    returned (for a Subscribe or SubscribeForRequests subscription, also when it was unsubscribed while
+    a handler still runs, once Close has begun; Unsubscribe alone cancels nothing); at the
     pin the caller's context parented every handler, so a short setup deadline ended later handlers
     (TestConsumeSetupDeadlineDoesNotEndLaterHandlers, TestConsumeHandlerContextEndsWhenCloseBegins;
     both failed first on the internal and port paths; Subscribe: TestSubscribeHandlerContextOutlivesSetupContext,

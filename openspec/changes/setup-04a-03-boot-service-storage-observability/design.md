@@ -88,7 +88,8 @@ behaviour, each with its proving test (D7 units in brackets):
   - Suite `RepeatedStopIsNoOp`.
 - **Reads during and after Stop.** `Health` and `GET /report` read the consumer's snapshot and the collector's last
   inventory, which do no I/O (`storagereport`: `storage_report_consumer.go:174-186`, `storage_inventory.go:247-254`),
-  so they answer at any time; after `Stop` the report is the last one read and the base verdict is "Service is stopped".
+  so they answer at any time; after `Stop` the report is the last one read and the verdict is the base service's own
+  after its stop (unhealthy, "Service is unhealthy (failed checks: 0)": `service/base.go:160-165`, `:246`).
   Proof: `TestStorageObservabilityRoutesAfterStop` [U-e].
 - **Context rules:** the service keeps no `context.Context`; it holds one private cancel. Locks, the join and its order
   are the developer's (failing-first under `-race`).

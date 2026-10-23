@@ -58,7 +58,9 @@ type Registration struct {
 // Declaration is the immutable port shape of one component instance: what the
 // Registry retains for an admitted component, and what Declare produces for a
 // configured-but-unconstructed one. It carries no lifecycle, health,
-// readiness, grouping, or orchestration state.
+// readiness, grouping, or orchestration state. InputFacts[i] describes
+// InputPorts[i] and OutputFacts[i] describes OutputPorts[i]: both lists of
+// each pair come from one projection, so readers take them by index together.
 type Declaration struct {
 	InstanceName    string
 	FactoryIdentity string
@@ -685,7 +687,8 @@ func cloneAndProjectPorts(ports []Port) ([]Port, []PortFacts, error) {
 // is a copy that shares no slice with the registry. It exists for the
 // component manager (service.ComponentManager): a consumer reads admitted
 // components through that manager, and a direct call bypasses the manager's
-// bookkeeping.
+// bookkeeping. The message logger (service.MessageLogger) is its second
+// reader: with "*" it monitors the subjects the admitted declarations name.
 func (r *Registry) Snapshots() []Declaration {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

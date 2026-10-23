@@ -55,6 +55,12 @@ either side of a pair may hold the wildcard. When one side holds a wildcard, the
 subject. `SubjectCovers(filter, pattern)` answers a different, one-way question: whether every subject `pattern` can
 name also matches `filter`.
 
+`ValidSubject(subject)` reports whether a subject is well formed under the grammar both helpers read: one or more
+`.`-separated tokens, none empty; `*` and `>` only as a whole token, `>` only last; no space, tab, line feed, carriage
+return or form feed in any token. A malformed subject covers nothing, is covered by nothing and overlaps nothing. The
+grammar is stricter than NATS, which takes a token such as `a*` as plain text and accepts a form feed. The message
+logger's `Start` calls `ValidSubject` to refuse a malformed subject.
+
 ## What the analysis reports
 
 ```go

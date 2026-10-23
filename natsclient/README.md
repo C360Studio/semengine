@@ -37,19 +37,27 @@ import "github.com/c360studio/semengine/natsclient"
 ### Connection Lifecycle
 
 Connection states transition through: Disconnected → Connecting → Connected → Reconnecting (on failure) → Connected.
-The client handles all transitions automatically.
+The client handles all transitions automatically. With a finite `WithMaxReconnects`, nats.go closes the connection once
+its attempts run out; the client keeps it installed and reports Disconnected, and `Connect` refuses with
+`errs.ErrAlreadyStarted`. A Client connects once; recovery is a new Client
+(measured at 0 by `TestIntegration_ReconnectionIsRedial`; above 0 not promised).
 
 ### KVStore Abstraction
 
 A high-level abstraction over NATS KV providing automatic CAS (Compare-And-Swap) retry logic, JSON helpers, and
 consistent error handling for configuration management scenarios.
 
-### Consumer contexts and handler panics
+### Handler contexts and handler panics
 
 The context passed to `ConsumeStreamWithConfig` and `ConsumeInternalStreamWithConfig` bounds the consumer's setup
 only. Each handler's context descends from a context the client owns for that consumer, which it cancels when `Close`
 begins; `Close` still waits for every handler to return. `ConsumeStreamWithConfigContexts` takes a second context,
 `handlerCtx`, when the caller wants to choose the handlers' parent itself.
+
+`SubscribeForRequests` follows the same rule: its context bounds setup only, and its handlers run under a context the
+client owns, which `Close` ends. `Subscription.Drain(ctx)` returning nil proves every running handler has returned;
+`Unsubscribe` stops delivery but does not wait for a running handler. `Subscribe` does not follow this rule yet: its
+handlers still descend from the context given to the call (#378).
 
 A panic in a message handler is recovered: it is logged at error level with the message's subject, counted on the
 JetStream error metric as operation `handler_panic`, and the message is Nak'd

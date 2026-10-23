@@ -63,10 +63,19 @@ func (cs State) String() string {
 //   - Configuration is validated once, at construction, and Initialize is
 //     idempotent and does no I/O.
 //
-// Concurrent lifecycle calls are not part of the contract. graph-ingest breaks
-// the last rule today: it validates its configuration in its factory and again
-// in Initialize, and the second check leaves with simplification wave PR 10 or
-// the processor shell (#109).
+// Concurrent lifecycle calls are not part of the contract. Reads are: Health,
+// DataFlow and DebugStatus may be called at any time, during Start or Stop and
+// after Stop, and return without waiting for either; after Stop they report
+// what the component knows then. Callers do so without waiting for Stop: the
+// component manager's health and status routes, its health publisher (which
+// ends only after the components have stopped) and the service manager's
+// /readyz. The rule is tested for graph-ingest
+// (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop) and is review
+// only for components outside this module.
+//
+// graph-ingest breaks the last rule today: it validates its configuration in
+// its factory and again in Initialize, and the second check leaves with
+// simplification wave PR 10 or the processor shell (#109).
 type LifecycleComponent interface {
 	Discoverable
 	Initialize() error
@@ -83,11 +92,9 @@ type ManagedComponent struct {
 	// State tracks the current lifecycle state
 	State State
 
-	// Config is the effective component configuration this instance was
-	// created from. The ComponentManager retains it so a per-component runtime
-	// config update can restart the component only when the effective config
-	// actually changed — a no-op update is skipped instead of stop/start-cycling
-	// a healthy running component (gh#520).
+	// Config is the boot configuration this instance was created from. The
+	// component set and each component's configuration are fixed at
+	// construction, so it never changes for the life of the instance.
 	Config types.ComponentConfig
 
 	// StartOrder tracks the order components were started for reverse shutdown

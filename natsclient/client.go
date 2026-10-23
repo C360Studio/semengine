@@ -441,18 +441,22 @@ func (m *Client) GetStatus() *Status {
 }
 
 // Connect establishes connection to NATS server. It refuses a nil context, an
-// ended context and a client that is already connected, with an error and
-// before any dial (T3). When its context ends during the attempt, it ends the
-// dial, a host name's lookup included, or closes the socket while it waits for
-// the server's answer, and returns a transient error matching the context's
-// error (T4). The context does not bound the connection's later reconnects
-// (T5). Once Close has begun it returns nats.ErrConnectionClosed before
-// dialling, whether or not its context has ended (T3). Connect returns an error
-// when Close has begun before it finished; the connection it dialled is then
-// closed and nothing it would have started runs. A Connect that returns an
-// error has no event handler of the connection it dialled still running, and
-// does not change the status of a connection another Connect installed
-// (design D3).
+// ended context and a client that already has a connection installed, with an
+// error and before any dial (T3). A connection is installed while it is
+// connected, while nats.go reconnects it, and after nats.go has closed it
+// because a finite WithMaxReconnects ran out (Status then reports
+// Disconnected); that refusal matches errs.ErrAlreadyStarted. A Client
+// connects once; recovery is a new Client. When its context ends during the
+// attempt, it ends the dial, a host name's lookup included, or closes the
+// socket while it waits for the server's answer, and returns a transient error
+// matching the context's error (T4). The context does not bound the
+// connection's later reconnects (T5). Once Close has begun it returns
+// nats.ErrConnectionClosed before dialling, whether or not its context has
+// ended (T3). Connect returns an error when Close has begun before it
+// finished; the connection it dialled is then closed and nothing it would have
+// started runs. A Connect that returns an error has no event handler of the
+// connection it dialled still running, and does not change the status of a
+// connection another Connect installed (design D3).
 func (m *Client) Connect(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(stderrors.New("nil context"), "Client", "Connect", "missing context")
@@ -464,7 +468,8 @@ func (m *Client) Connect(ctx context.Context) error {
 		return errs.Wrap(nats.ErrConnectionClosed, "Client", "Connect", "client closed")
 	}
 	if started {
-		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect", "already connected")
+		return errs.WrapInvalid(errs.ErrAlreadyStarted, "Client", "Connect",
+			"connection already installed; a Client connects once")
 	}
 	if err := ctx.Err(); err != nil {
 		return errs.WrapTransient(err, "Client", "Connect", "connection cancelled")
@@ -1032,7 +1037,7 @@ func (m *Client) Subscribe(ctx context.Context, subject string, handler func(con
 	if ctx == nil {
 		return nil, nilContextError("Subscribe")
 	}
-	return m.subscribeOwned(ctx, "Subscribe", subject, func(*nats.Conn) nats.MsgHandler {
+	return m.subscribeOwned(ctx, "Subscribe", subject, nil, func(*nats.Conn) nats.MsgHandler {
 		return func(msg *nats.Msg) {
 			// Create per-message context with timeout
 			msgCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
@@ -1057,23 +1062,36 @@ func (m *Client) Subscribe(ctx context.Context, subject string, handler func(con
 // DefaultRequestTimeout bound the wait for the PONG, not the waits for
 // nats.go's connection lock that each step here makes (design
 // subscribe-registers-interest, D1 to D5, L8).
+//
+// cancelHandlers, when not nil, cancels the context the client owns for the
+// subscription's handlers (design natsclient-handler-root D1). subscribeOwned
+// calls it when it returns before the subscription is watched; after that the
+// watcher calls it when Close begins and once the last handler invocation has
+// returned.
 func (m *Client) subscribeOwned(
-	ctx context.Context, operation, subject string, build func(conn *nats.Conn) nats.MsgHandler,
+	ctx context.Context, operation, subject string, cancelHandlers context.CancelFunc,
+	build func(conn *nats.Conn) nats.MsgHandler,
 ) (*Subscription, error) {
+	if cancelHandlers == nil {
+		cancelHandlers = func() {}
+	}
 	m.mu.Lock()
 	if m.closing {
 		m.mu.Unlock()
+		cancelHandlers()
 		return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
 	}
 	// Checked before acting: with a PONG and an ended context both ready, the
 	// round trip's select would pick one at random.
 	if err := ctx.Err(); err != nil {
 		m.mu.Unlock()
+		cancelHandlers()
 		return nil, errs.WrapTransient(err, "Client", operation, "subscribe")
 	}
 	conn := m.conn
 	if conn == nil {
 		m.mu.Unlock()
+		cancelHandlers()
 		return nil, ErrNotConnected
 	}
 	d := newOwnedDelivery(m, slog.String("ack_policy", "core"))
@@ -1084,6 +1102,7 @@ func (m *Client) subscribeOwned(
 	// lock, which a held write keeps, and Close needs mu to begin (T2; P21).
 	if !conn.IsConnected() {
 		finish()
+		cancelHandlers()
 		select {
 		case <-closing:
 			return nil, errs.Wrap(nats.ErrConnectionClosed, "Client", operation, "client closed")
@@ -1098,6 +1117,7 @@ func (m *Client) subscribeOwned(
 	})
 	if err != nil {
 		finish()
+		cancelHandlers()
 		// Once Close has begun, nats.go refuses with ErrConnectionDraining or
 		// ErrConnectionClosed (nats.go:5114-5119); Close having begun decides,
 		// as at the connection check above.
@@ -1109,7 +1129,7 @@ func (m *Client) subscribeOwned(
 		}
 	}
 	s := newSubscription(sub, d.end)
-	go m.watchOwnedSubscription(d, finish)
+	go m.watchOwnedSubscription(d, closing, cancelHandlers, finish)
 
 	// The round trip runs on conn, the connection the SUB went to.
 	roundTrip, cancel := context.WithTimeout(ctx, DefaultRequestTimeout)
@@ -1152,10 +1172,23 @@ func (m *Client) subscribeOwned(
 // watchOwnedSubscription is a client-owned subscription's share of Close's join;
 // it was admitted with the subscription and finishes once the subscription's
 // delivery has ended and its last handler invocation has returned. Close drains
-// the client's connection, which ends the subscriptions made on it.
-func (m *Client) watchOwnedSubscription(d *ownedDelivery, finish func()) {
+// the client's connection, which ends the subscriptions made on it. It calls
+// cancelHandlers as soon as Close begins, also when delivery has already ended
+// while a handler still runs, and once the last handler invocation has returned,
+// as ownConsumer does. No test distinguishes that "already ended" branch for a
+// core subscription (M3 in
+// openspec/changes/archive/2026-10-23-natsclient-handler-root/notes/2.3.md).
+func (m *Client) watchOwnedSubscription(
+	d *ownedDelivery, closing <-chan struct{}, cancelHandlers context.CancelFunc, finish func(),
+) {
 	defer finish()
-	<-d.done
+	defer cancelHandlers()
+	select {
+	case <-d.done:
+	case <-closing:
+		cancelHandlers()
+		<-d.done
+	}
 }
 
 // closingSignalLocked returns the channel the first Close closes; mu must be held.

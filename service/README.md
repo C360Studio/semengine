@@ -1,14 +1,18 @@
 # service
 
 Package `service` holds what every long-running SemEngine service shares: `BaseService`, which a service embeds for
-its name, status and health check, and the `Service` interface a service manager drives. It also holds the helpers a
-composition root (the process's `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`,
-`WireGraphRuntime` and the OpenAPI registry, plus the service-configuration and schema helpers the service manager
-reads.
+its name, status and health check, and the `Service` interface a service manager drives. `Manager` is that service
+manager: it builds the services a configuration names, starts them, serves the HTTP routes around them and stops
+them. `ComponentManager` is the service that owns the components. `Metrics` is the service that serves the Prometheus
+endpoint. `MessageLogger` is the service that keeps the newest messages seen on chosen NATS subjects for
+inspection. The package also holds the helpers a composition root (the process's `main` function, which builds and
+wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
+service-configuration and schema helpers the service manager reads.
 
-The package is ported from SemStreams in seven pull requests. This first one carries `BaseService` and the shared
-files. The service manager, the component manager and the services themselves arrive with the later ones; until then
-nothing in this repository starts a `Service` for you.
+The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
+the second `Manager` and `Metrics`; the third `ComponentManager`, the service that owns the components
+([The component manager](#the-component-manager)); this one carries `MessageLogger`
+([The message logger](#the-message-logger)). The other services arrive with the later ones.
 
 ## Embedding BaseService
 
@@ -66,6 +70,459 @@ The health check fails when the function set with `SetHealthCheck` returns an er
 `WithNATS` is not healthy. `IsHealthy()` is then false and `Health()` reports unhealthy; the next passing check makes
 the service healthy again. While the last check passed, `Health()` reports a running service as healthy and a
 stopping one as degraded; a stopped service is unhealthy. `GetStatus()` returns the counts of checks run and failed.
+
+## The service manager
+
+### Composing and starting
+
+A composition root builds a `Manager` from a `Registry` of service constructors, hands it the `services` section of
+the configuration, and starts it:
+
+```go
+services := service.NewServiceRegistry()
+if err := service.RegisterAll(services); err != nil { // offers "metrics", "component-manager", "message-logger"
+    return err
+}
+
+manager := service.NewServiceManager(services)
+manager.UseHTTPMiddleware(authMiddleware) // optional; before StartAll
+
+deps := &service.Dependencies{
+    NATSClient: client, MetricsRegistry: registry, Logger: logger,
+    Platform: platform, Manager: configManager,
+    ComponentRegistry: components, PayloadRegistry: payloads,
+}
+if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+    return err
+}
+if err := manager.StartAll(startCtx); err != nil {
+    return err
+}
+
+// ... run ...
+
+stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+defer cancel()
+if err := manager.StopAll(stopCtx); err != nil {
+    logger.Warn("stop services", "error", err)
+}
+```
+
+`ConfigureFromServices` resolves the configuration with `ResolveServiceConfigs` and constructs every enabled service
+from its registered constructor. Nothing is composed unless every constructor succeeds. `component-manager` and
+`service-manager` may not be disabled, and a composition whose `component-manager` has no registered constructor is
+refused. `RegisterAll` registers one, and the component manager needs the `Manager`, `ComponentRegistry`, `Platform` and
+`PayloadRegistry` fields shown above (see [Composing it](#composing-it)). `CreateService` and `RegisterInstance`
+compose one more service by hand, and `GetService` finds a composed one.
+
+The `service-manager` entry configures the `Manager` itself (`ManagerConfig`):
+
+| Key | Default | What it does |
+| --- | --- | --- |
+| `http_port` | `8080` | the main listener's port, on every interface |
+| `swagger_ui` | `false` | serves `/docs` when true |
+| `server_info` | `SemEngine API`, `SemEngine framework API`, `0.0.0` | `title`, `description` and `version` of the API document |
+| `http_read_timeout` | `30s` | how long a request body may take (a Go duration string) |
+| `http_write_timeout` | `120s` | how long a response may take |
+
+A service's `config` is decoded strictly. An unknown key is refused, and so is a key that differs from a field's name
+only in letter case (`"Port"` for `"port"`), with both spellings named in the error. This holds for the `service-manager`,
+`metrics` and `component-manager` entries, which this package decodes. A service defined elsewhere decodes its own
+`config`, and the check applies to it only if it makes it.
+
+### Starting and stopping
+
+`StartAll(ctx)` creates `component-manager` if no service has that name, then seals the composition:
+`CreateService`, `RegisterInstance` and `ConfigureFromServices` are refused from then on. It binds the main listener
+on `http_port`, starts the metrics server it claims, starts every service in registration order, builds the full
+route set, and starts a publisher that sends each service's health on `health.service.<name>` every 5 seconds. It
+runs once: a second `StartAll`, and a `StartAll` after `StopAll`, are refused with `errs.ErrAlreadyStarted`. If a step
+fails, `StartAll` stops what it started and returns both errors; if that stop fails too, `StopAll` runs it again.
+
+The context given to `StartAll` bounds `StartAll` and nothing else. Ending it after `StartAll` returned stops no
+service, and no request's context derives from it (ADR-113). `StopAll(ctx)` is the only stop. It stops the services
+in reverse registration order, then the health publisher, the listeners and the metrics server. Each listener
+refuses new requests and `StopAll` waits for those in flight. If `ctx` ends first, `StopAll` closes every connection
+still open and returns `ctx`'s error, and a later `StopAll` waits again for the handlers that are still running. So a
+service that serves a long-lived response, such as a stream, ends it in its own `Stop`.
+
+A `StopAll` given a context that has already ended stops nothing: give it a fresh bounded context, never the signal
+context that is ending the program. A service whose `Stop` returns `errs.ErrAlreadyStopped` counts as stopped. Any
+other failure is returned naming the service, and the next `StopAll` runs the whole stop again. A `StopAll` after one
+that returned `nil` returns `nil`; one while another runs is refused as transient.
+
+`StartHealthListener(ctx, port)` binds a second listener that serves only `/health` and `/healthz`, for container
+probes that want a port apart from `http_port`. Call it before `StartAll` and probes work while a slow boot runs.
+Port 0 does nothing, a second call is refused, and `StopAll` stops the listener whether or not `StartAll` ran.
+
+### Middleware
+
+`UseHTTPMiddleware(mws...)` wraps every route the main listener serves, the startup routes as well as the full set.
+The first middleware passed is the outermost. The framework ships none: authentication, request logging, panic
+recovery, rate limiting and CORS are the product's. The dedicated health listener takes no middleware. Call it before
+`StartAll`; a later call is ignored with a Warn, because the listener's handler is built when it binds. This is
+phase 1 of SemStreams ADR-030, carried as
+[docs/adr/030-http-middleware-and-identity-pattern.md](../docs/adr/030-http-middleware-and-identity-pattern.md).
+
+### Boot seals the composition
+
+A change to the `services` section of the configuration after `StartAll` is desired state for the next boot. It
+starts, stops and reconfigures nothing, and `/services` reports it with `restart_required` set. This is the part of
+SemStreams ADR-094 that the `Manager` carries, in
+[docs/adr/094-boot-only-composition-and-observable-rule-activation.md](../docs/adr/094-boot-only-composition-and-observable-rule-activation.md).
+
+### The routes
+
+The main listener serves the first five routes below from the moment `StartAll` binds it, and answers every other path
+`503 NOT READY` until `StartAll` has started every service and committed the full route set. The last four come with
+the commit.
+
+| Route | Answer |
+| --- | --- |
+| `/health` | every service's health and the NATS connection's, aggregated; 503 when unhealthy |
+| `/healthz` | `200 OK` while the listener serves |
+| `/readyz` | `200 READY` once every service has started and is running and healthy; `503 NOT READY` while starting, after a start failed, and from the moment `StopAll` is entered, even while a service's `Start` is still running |
+| `/services` | each service's status and health, the startup counts, and `restart_required` with the pending configuration changes |
+| `/services/health` | each service's health and their aggregate; 503 when unhealthy |
+| `/graph/triples` | triples read from the graph's `ENTITY_STATES` bucket (below) |
+| each `HTTPHandler` service's routes | under a prefix taken from the service's name: the name with its hyphens removed, except `component-manager` at `/components` and `message-logger` and `storage-observability` as named |
+| `/openapi.json` | the API document, in OpenAPI 3.0 form: the paths of every `HTTPHandler` service under its prefix, and the schemas of the types registered with `RegisterOpenAPISpec` |
+| `/docs` | a Swagger UI page for `/openapi.json`, only when `swagger_ui` is true; it loads its script and style sheet from `unpkg.com`, so the browser needs network access to it |
+
+`GET /graph/triples` is for an operator or a test, not a query API: it scans the bucket. Its query parameters are all
+optional:
+
+| Parameter | Meaning |
+| --- | --- |
+| `subject` | a literal entity ID |
+| `predicate` | a three-part predicate |
+| `object` | compared as text |
+| `limit` | default 100, at most 1000 |
+
+It answers a JSON array sorted by entity ID, never `null`. A malformed parameter is `400` naming the parameter, a
+method other than `GET` is `405`, and a bucket that cannot be read is `500`. With no NATS client in the
+`Dependencies`, it answers `[]` for every query: there is no store to read. The `Manager` only reads the bucket
+(ADR-110).
+
+## The component manager
+
+A *component* is one unit of a running composition: an input, processor, output or storage unit. A binary makes the
+component factories available through a `component.Registry`, and the `components` section of the configuration names
+the instances to build. `ComponentManager` is the service that builds every enabled component, starts them, serves
+their status over HTTP and stops them. Every composition has one: `component-manager` may not be disabled.
+
+### Composing it
+
+`RegisterAll` registers the constructor, `NewComponentManager`, and the component manager's OpenAPI spec (see
+[OpenAPI](#the-component-managers-openapi-spec)). The `component-manager` entry takes no configuration: `"config": {}`
+or none at all. Any key is refused, naming it. The components come from the `Dependencies` the composition root passes
+to `ConfigureFromServices`:
+
+| `Dependencies` field | What the component manager does with it |
+| --- | --- |
+| `Manager` (`*config.Manager`) | required; the boot configuration it reads, once |
+| `ComponentRegistry` | required; the factories it builds from, and the registry it seals |
+| `PayloadRegistry` | given to each component |
+| `NATSClient` | given to each component; with none, the manager publishes no component health |
+| `Platform` | the deployment's identity, given to each component |
+| `MetricsRegistry`, `Logger` | given to each component; the manager's own metrics and log lines |
+
+`NewComponentManager` reads the boot configuration once, and later writes to it change nothing in the running set: they
+are desired state for the next boot (SemStreams ADR-094 and ADR-096, carried in
+[docs/adr](../docs/adr/094-boot-only-composition-and-observable-rule-activation.md)). It builds each enabled component
+through `Registry.CreateComponent`, in instance-name order, and skips the disabled ones. It then checks the whole set
+with `composition.Analyze` and seals the registry (ADR-100). It returns an error, and no service, when:
+
+- the `Manager` or the `ComponentRegistry` is missing;
+- any enabled component cannot be built. The error names every one that failed, because a boot that quietly runs
+  without a configured component would report ready while doing less than it was told;
+- the composition has an error-severity finding. The error reads `composition validation refused boot with N error
+  finding(s): ...` and names each finding.
+
+### Starting and stopping
+
+`Start(ctx)` refuses a `nil` or ended `ctx`, a second `Start`, and a `Start` after any `Stop`
+(`errs.ErrAlreadyStarted`). The start order is fixed when the manager is built: components that provide stores
+(`component.StoreProvider`) by instance name, then the rest by instance name. `Start` runs in two phases, providers
+first. Each phase starts its components concurrently, and the next phase begins only after every `Start` in the
+current one returned, so a provider's stores are in the shared store registry before any consumer starts. A failure in
+the first phase starts nothing of the second. A component that does not implement `component.LifecycleComponent` is
+built and listed but never started or stopped.
+
+Each component's `Start` receives the context the manager's `Start` received, the same value. The manager keeps no
+context of its own for a component and never ends the one it was given, `Stop` included (ADR-113). A component
+therefore makes its own run context in `Start` and ends it in `Stop`; a component that hangs its continuing work on its
+`Start` context stops when the caller ends that context, which for a program that passes its signal context is the
+start of shutdown, before `Stop` reaches the component. For the same reason ending the manager's `Start` context after
+`Start` returned stops nothing. The manager's health publisher and override-expiry reporter (below) run under a run
+context that `Start` creates and `Stop` ends.
+
+A failed `Start` returns every component failure joined, each naming its component, after one rollback: it stops every
+component it launched, the failing ones included, in reverse start order. A component whose `Start` returned `nil`
+after `ctx` ended counts as failed. If the rollback fails too, its error is joined into `Start`'s and the next `Stop`
+runs it again.
+
+`Stop(ctx)` is the only stop. It refuses a `nil` `ctx`. Given an ended `ctx` it returns that error and stops nothing,
+so give it a fresh bounded context, never the signal context that is ending the program. Before any `Start` it returns
+`nil`, and a later `Start` is refused. Otherwise it marks the stop begun (`/readyz` answers `503 NOT READY` from then),
+stops each started component with `ctx` in reverse start order (just before a provider's own `Stop`, it removes that
+provider's stores from the store registry), then ends the manager's own loops and its base service. It returns `nil`
+only once everything is released. A component whose `Stop` failed, or was not reached because `ctx` ended, is stopped
+again by the next `Stop`; one whose `Stop` returned `nil` is not called again. A `Stop` after one that returned `nil`
+returns `nil`, and a `Stop` while another runs is refused as transient. A `Stop` that arrives while `Start` is still
+running waits for every component's `Start` to return, or returns its own context's error first; if that `Start`
+failed, it then stops only what the rollback left. A caller cuts a slow boot short only by ending the context it gave `Start`.
+
+### Reading status during and after Stop
+
+`GetComponentHealth`, `GetComponentStatus`, the `/components` routes and the manager's own health check wait on no lock
+and not on `Start` or `Stop`. Each reads the component's record and asks the component itself, so a request that
+arrives during or after `Stop` gets whatever the component answers then. SemStreams kept such requests away from a
+stopping component; this manager does not. The line a component author holds is in `component.LifecycleComponent`:
+`Health`, `DataFlow` and `DebugStatus` may be called at any time and return without waiting for `Start` or `Stop`. The
+tree enforces it for graph-ingest (`TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop`); for a component
+outside this module it is review only, and its author checks it.
+
+The manager's own health, which `BaseService` runs and `/readyz` reads, is unhealthy while any component is in the
+failed state. It names each failed component in name order with its last error, and reads every component each time.
+
+### What it publishes and reports
+
+- **Component health.** With a NATS client, the manager publishes `{"timestamp","name","health"}` for each admitted
+  component on `health.component.<name>`, once as `Start` returns and then every 5 seconds. A publish or encode that
+  fails is counted on `semengine_errors_total{service="component-manager",type="health_publish"}` and logged at Debug
+  with the subject. The next component and the next round are still published, because a missed report is replaced by
+  the next one.
+- **Stream migration overrides.** A `stream_migration_overrides` entry admits an existing unbounded stream as a named,
+  time-limited bridge. The manager evaluates the live configuration when it is built and then every minute from
+  `Start` to `Stop`, and sets the gauge `semengine_streams_migration_override_expired{stream,owner}` to 0 for each
+  declared bridge and to 1 for a lapsed one, with a Warn line per lapsed bridge. It only reports: readiness is
+  unaffected, and the refusal comes at the next boot.
+
+### The routes
+
+The routes are mounted under `/components` and answer `GET` only (`405` otherwise). A component name that is empty,
+`.`, `..` or decodes to a path separator is `400`, and an unknown one is `404`. Until `StartAll` commits the full route
+set, only `health`, `list` and `status/{name}` are served, and every other path answers `503 NOT READY`.
+
+| Route | Answer |
+| --- | --- |
+| `/components/health` | each admitted component's health and their aggregate; `503` when any component is unhealthy |
+| `/components/list` | each admitted component's name, state, factory, category, `enabled` and health, in no fixed order |
+| `/components/types` | the registered factories with their schemas and default ports, as an array |
+| `/components/types/{id}` | one factory's entry |
+| `/components/status/{name}` | one component's state, health and last error; `?debug=true` adds its `DebugStatus` when it has one |
+| `/components/config/{name}` | the boot configuration the instance was built from |
+| `/components/flowgraph` | the composition's graph as JSON, or Mermaid text with `?format=mermaid` |
+| `/components/validate` | the composition check's result: status, errors and warnings |
+| `/components/paths` | for each input component, every component reachable from it, with counts |
+
+`flowgraph`, `validate` and `paths` project the result kept when the manager was built and compute nothing, so they
+cannot disagree with the check that admitted the boot (ADR-100). `GetFlowPaths` is the same projection as a call.
+`BuildComponentTypeCatalog(registry, logger)` returns what `/components/types` serves, for a product that serves the
+catalog elsewhere. `GetComponentStatus` and `ComponentStatus` are read inside this package only.
+
+A declared difference you may meet: `GET /components/types/{id}` for an unregistered type answers `404` with the body
+`{"error":"Component type <id> not found"}` sent as `text/plain`, not JSON, with the request's own path segment in it.
+SemStreams answers it the same way, and no contract line promises the body, so read the status code and not the text.
+
+### Rule packs
+
+A rule processor (a component this repository has not ported yet) can declare *contracts* for the predicate groups it
+writes, and replace a whole group with one reconcile call (`projection.PredicateReconciler`, implemented by
+`projection.MutationClient`). It implements `ProjectionBinder` to receive that client. The component manager does not
+hand it one; the composition root does, in this order, after `ConfigureFromServices` and before `StartAll`:
+
+```go
+if err := manager.ConfigureFromServices(cfg.Services, deps); err != nil {
+    return err
+}
+if err := service.ConfigureRulePackMutations(manager); err != nil {
+    return err
+}
+if err := manager.StartAll(startCtx); err != nil {
+    return err
+}
+```
+
+`ConfigureRulePackMutations` finds the admitted components that implement `ProjectionBinder` and runs every binder's
+`PreflightProjectionMutations` before changing anything, so one failure injects nothing. It then validates each
+`pack_id` and refuses a duplicate, copies and validates each pack's contracts, refuses contracts when there is no NATS
+client, and builds one `projection.MutationClient` per pack that has contracts and hands it to that binder's
+`SetPredicateReconciler`. If a composition root never makes the call, no binder is given a reconciler. No rule
+processor is in this tree yet, so today that has no effect; what a rule processor does without one is stated when it
+is ported. `ComponentsImplementing[T](manager)` returns the admitted components that implement `T`, in start order, and
+`nil` before a component manager is composed. `Manager.ProjectionBinders` is that call for `ProjectionBinder`.
+
+### The component manager's OpenAPI spec
+
+`/openapi.json` takes its schemas, here `Graph` and `Result` for the flowgraph and validate responses, only from the
+process-wide registry that `RegisterOpenAPISpec` fills. `RegisterAll` registers the component manager's spec there,
+because importing the package registers nothing. A composition that registers `NewComponentManager` by hand instead of
+calling `RegisterAll` must register the spec itself, or those two references name schemas the document does not carry:
+
+```go
+if svc, ok := manager.GetService("component-manager"); ok {
+    service.RegisterOpenAPISpec("component-manager", svc.(service.HTTPHandler).OpenAPISpec())
+}
+```
+
+The rule for any service that does this is in the developer contract: every `SchemaRef` type is listed in its spec's
+`ResponseTypes` or `RequestBodyTypes`, and the composition root registers the spec.
+
+### Not ported
+
+`Initialize` (construction does that work), `IsInitialized`, `IsStarted`, `GetHealthyComponents`,
+`GetUnhealthyComponents`, `DefaultComponentManagerConfig`, the configuration's `enabled_components` key and its
+`Validate`, and the component manager's config subscribers and live-configuration routes, which ADR-094 retired.
+
+## The message logger
+
+`MessageLogger` is a service that subscribes to NATS subjects and keeps the newest messages it sees in memory, so a
+developer can look at what flows through a running system. It also reads NATS KV buckets (NATS's key-value store) over
+HTTP. It writes nothing to NATS and nothing to the graph.
+
+### Enabling it
+
+The message logger is off unless the configuration turns it on: `ResolveServiceConfigs` adds `component-manager`,
+`service-manager` and `metrics` when they are missing, and does not add `message-logger`. `RegisterAll` registers its
+constructor, `NewMessageLoggerService`, and its OpenAPI spec. Enable it in the `services` section:
+
+```json
+{
+  "services": {
+    "message-logger": {
+      "enabled": true,
+      "config": {
+        "monitor_subjects": ["agent.>", "tool.>"],
+        "max_entries": 10000
+      }
+    }
+  }
+}
+```
+
+Its `Dependencies` fields: `NATSClient` and `PayloadRegistry` are required, `ComponentRegistry` is required when
+`monitor_subjects` holds `"*"`, and `MetricsRegistry` and `Logger` are optional.
+
+| Key | Meaning |
+| --- | --- |
+| `monitor_subjects` | NATS subjects to watch. `"*"` stands for the NATS, NATS-request and JetStream port subjects of every admitted component (never `*`, `>` or `_INBOX` subjects). Empty means `["*"]`. |
+| `max_entries` | How many messages to keep, 0 to 100000. 0 means 10000. The oldest are overwritten. |
+| `sample_rate` | Store one message in every `sample_rate` and only count the rest. 0 and 1 store every message. |
+| `output_to_stdout` | Also print one line per stored message. |
+
+Construction refuses, naming the problem: an unknown key (or a key in another letter case), a nil NATS client, a nil
+payload registry, `"*"` without a component registry, `max_entries` below 0 or above 100000, and `sample_rate` below 0.
+
+### What it captures
+
+`Start` works out the subject set once. Each subject is then checked against one grammar, owned by
+`internal/flowgraph`: one or more `.`-separated tokens, none empty; `*` and `>` only as a whole token; `>` only as the
+last; no space, tab, line feed, carriage return or form feed. This is stricter than NATS in two ways: NATS takes a token
+such as `a*` as plain text and accepts a form feed, and the logger refuses both. A subject that fails the check
+makes `Start` fail, as invalid data, with an error naming the subject and where it came from (`monitor_subjects`, or
+the component and port that declare it). The check runs before the base service starts and before any NATS call, so a
+refused `Start` holds nothing, connected or not.
+
+A subject that another subject in the set covers (`a.>` covers `a.b`) is not subscribed, and the omission is listed
+in `/stats` under `subject_overlaps`. Two subscribed subjects can still overlap without either covering the other
+(`a.b.*` and `*.b.c` both match `a.b.c`); a message on such a subject is then stored twice.
+
+Each message is stored as an entry: a sequence number, the time, the subject, the message type and summary, the
+trace and span IDs when the message carries them, and the payload as `raw_data`. A message that decodes as a typed
+envelope (a `message.BaseMessage` whose type is in the payload registry) is stored under its type name; any other is
+stored with type `raw`. A payload that is not JSON is stored as a JSON string, so every entry can be served.
+
+### Starting and stopping
+
+`Start(ctx)` refuses a nil or ended `ctx`, a second `Start`, and a `Start` after any `Stop`
+(`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. `ctx` bounds `Start` only: ending it afterwards stops
+nothing, and messages keep being stored. `Start` checks `ctx` before each subscribe; a subscribe already running is
+not shortened by it, and how long `Start` can outlast its context is not promised.
+
+A subscribe that fails does not fail `Start`. The logger keeps running and retries that subject every 100 ms until it
+succeeds. While any subject is unsubscribed:
+
+- `/stats` reports `subject_reconciliation_degraded` as true and `subject_reconciliation_error` names each subject with
+  its last error;
+- the logger's health check fails, naming the subjects, so `IsHealthy` turns false and `/readyz` answers not ready.
+  Health checks run every 30 seconds, so the change shows within one interval of the failure and again within one
+  interval of the retry succeeding. On a normal boot the first check runs before any subscribe and is healthy.
+
+`Stop(ctx)` is the only stop. It refuses a nil `ctx`; given an ended `ctx` it returns that error and stops nothing.
+Otherwise it ends the retry, drains every subscription (a message being handled when `Stop` begins is stored), ends
+every open KV watch stream, and stops the base service, returning nil once all are released. If `ctx` ends first, or a
+drain fails, `Stop` returns the error and leaves what is left for the next `Stop`. A `Stop` after one that returned nil
+returns nil; a `Stop` while another runs is refused as transient. Messages published after `Stop` are not stored.
+
+### What `/stats` reports
+
+| Key | Meaning |
+| --- | --- |
+| `total_messages` | Every message received, sampled or not. |
+| `sampled_messages` | Messages stored under `sample_rate`. |
+| `valid_messages` | Stored messages that decoded as typed envelopes. |
+| `invalid_messages` | Stored messages that did not (type `raw`). |
+| `sample_rate`, `max_entries` | The configured values, after defaults. |
+| `start_time`, `last_message_time`, `uptime_seconds` | Logger start, last message received, and seconds since start. |
+| `monitored_subjects` | The subjects currently subscribed, sorted; empty after `Stop`. |
+| `subject_overlaps` | Each omitted covered subject: `broader`, `covered`, and `resolution` (`covered subscription omitted`). |
+| `subject_reconciliation_degraded` | True while a subject is unsubscribed. |
+| `subject_reconciliation_error` | The unsubscribed subjects and their last errors; empty when none. |
+
+### The routes
+
+Mounted under `/message-logger/` and answering `GET` and `HEAD` (405 for any other method). `entries`, `stats` and
+`trace` answer from memory at any time, including after `Stop`.
+
+- `entries`: the newest entries, newest first. `limit` defaults to 100 and is capped at 10000; a missing, non-numeric,
+  zero or negative value gives 100. `subject` is a NATS subject pattern (`*` one token, `>` the remaining tokens)
+  applied before the limit; a pattern NATS cannot parse matches nothing. `subject=*` matches only one-token subjects:
+  write `>` for all, and `agent.>` for everything under `agent`.
+- `stats`: the object above.
+- `subjects`: the subscribed subjects as a JSON array; `[]` after `Stop`.
+- `trace/{traceID}`: the entries still held for a trace ID (32 hex characters, else 400), oldest first, as
+  `{"trace_id", "count", "entries"}`. An entry the buffer has overwritten is gone.
+- `kv/{bucket}`: the entries of an existing KV bucket, keys sorted before `limit` applies. `pattern` is a key glob: one
+  `*` as prefix, suffix, both ends or in the middle, or none for an exact key; the default matches every key. `limit`
+  defaults to 100 and is capped at 1000. `status` keeps only records whose top-level JSON `status` equals it. Values
+  are answered as stored (a value that is not JSON as a JSON string). A bucket that does not exist is 404 and is never
+  created; a bucket name that is empty, `.`, `..` or holds `/`, `\`, `*` or `>` is 400; a lookup, listing or read
+  failure is 500, naming the key for a read.
+- `kv/{bucket}/watch`: a stream of Server-Sent Events (SSE), described next.
+
+### The watch stream
+
+`kv/{bucket}/watch` answers 503 once `Stop` has begun, 400 for a bad bucket name or `pattern` (empty or `*` watches
+every key; anything else must be a NATS KV key filter, and a final `>` is accepted), 404 for a missing bucket and 500
+for another lookup failure; none of these opens a stream. Otherwise it sends:
+
+1. `event: connected` with `{"bucket","pattern","message"}`, then `retry: 5000`;
+2. one `event: kv_change` for each key's current value, then one with `operation` `initial_sync_complete`;
+3. one `kv_change` per later change. `operation` is what NATS records for the entry: `put`, `delete` or `purge`.
+   `value` is present for a `put` only.
+
+The logger does not read `Last-Event-ID`: a client that reconnects gets a new initial replay. Each stream buffers up to
+100 events between its KV watcher and the client. If the client reads too slowly and an event does not fit, the stream
+ends: the events already buffered are sent, then one `event: error` with `{"error":"watch fell behind: events were
+dropped"}`, and the response ends. No `kv_change`, and no `initial_sync_complete`, follows a dropped event, so a
+client that sees `initial_sync_complete` has seen every initial value. Each stream runs its own KV watcher.
+
+### Not ported
+
+`GetMessages`, `ConfigSchema`, `DefaultMessageLoggerConfig`, the exported `NewMessageLogger` and `SetDecoder`, the
+reconciliation of a changing subject set, and the test-only seams the pin carried. `service/configurable.go`
+(`ConfigSchema`, `PropertySchema`, `NewConfigSchema`) is removed with them.
+
+## The metrics service
+
+`Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
+`/metrics`). Started by itself, it binds the port between `Start` and `Stop`. Composed under a `Manager`, the
+`Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
+the server runs. A `Metrics` runs once: a second `Start`, and a `Start` after any `Stop`, are refused with
+`errs.ErrAlreadyStarted`, and the context given to `Start` bounds `Start` only. `RegisterAll` registers `metrics`,
+`component-manager` and `message-logger`.
 
 ## The profiling server
 
@@ -127,7 +584,7 @@ a change made through one is seen by every later caller.
 
 ## Configuration helpers
 
-These are read by the service manager, which arrives in the next pull request.
+These are read by the service manager.
 
 - `ResolveServiceConfigs(configs)` turns the `services` section of a configuration into the map a service manager
   starts from. Each entry's `config` is rewritten in one canonical JSON form, and `component-manager`,
@@ -135,8 +592,4 @@ These are read by the service manager, which arrives in the next pull request.
   `"enabled": false` stays). It never reads inside a service's `config`; the service that decodes it does.
 - `PendingServiceChange`, `CompositionSealedError`, `DuplicateServiceError` and `MandatoryServiceDisabledError` are what
   the service manager reports about that map.
-- `ConfigSchema`, `PropertySchema` and `NewConfigSchema` describe a service's configuration keys. `SchemaFromType` and
-  `TypeNameFromReflect` build the JSON schema of a Go type for an OpenAPI document.
-
-A key in a service's `config` written in another letter case (`"Port"` for `"port"`) is accepted today. `config`
-already refuses such keys in its own document; the service manager is to adopt the same check when it arrives.
+- `SchemaFromType` and `TypeNameFromReflect` build the JSON schema of a Go type for an OpenAPI document.

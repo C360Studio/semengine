@@ -1,6 +1,7 @@
 package projection
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -153,3 +154,12 @@ func (e *MutationError) Unwrap() error {
 	}
 	return e.Err
 }
+
+// PredicateReconciler reconciles one declared predicate group. It is the one type both ends of
+// the rule-pack binding name: service.ProjectionBinder receives it and the rule processor that
+// binds the pack calls it, so neither names *MutationClient.
+type PredicateReconciler interface {
+	Reconcile(context.Context, ReconcileMutation) (MutationReceipt, error)
+}
+
+var _ PredicateReconciler = (*MutationClient)(nil)

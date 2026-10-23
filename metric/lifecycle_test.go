@@ -50,7 +50,7 @@ func (o *serverOwner) Observe() lifecycletest.Observation {
 	if o.s.serveDone != nil && len(o.s.serveDone) == 0 {
 		held = append(held, "serve goroutine")
 	}
-	if o.s.requests != nil && o.s.requests.pending() > 0 {
+	if o.s.requests != nil && o.s.requests.Pending() > 0 {
 		held = append(held, "admitted request")
 	}
 	return lifecycletest.Observation{Unresolved: held}

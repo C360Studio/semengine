@@ -1,6 +1,7 @@
 package contract
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,11 +12,12 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
 
-// spec-queue › all four requirements: scripts/openspec-queue.sh runs from a throwaway root with a
+// spec-queue › all six requirements: scripts/openspec-queue.sh runs from a throwaway root with a
 // stand-in openspec CLI and one planted tasks.md, as openspec/changes/fx/tasks.md. The stand-in
 // answers `list --json` as the case says and refuses any other call, so a case cannot pass on an
 // answer to another question. Its JSON has no lastModified, so no staleness note depends on the
@@ -44,9 +46,13 @@ type queueRun struct {
 	status         int
 }
 
+// specQueueBound is how long one run of the script may take. A run takes well under a second; the
+// bound only has to end a run that loops forever (#262) without hanging the suite.
+const specQueueBound = 10 * time.Second
+
 // runSpecQueue copies the script into a throwaway root, plants the stand-in CLI with the given
 // answer to `list --json` and tasks as openspec/changes/fx/tasks.md, and runs the script with
-// bash and args.
+// bash and args. A run that has not ended within specQueueBound is killed and fails the test.
 func runSpecQueue(t *testing.T, list, tasks string, args ...string) queueRun {
 	t.Helper()
 	root := copyScript(t, "openspec-queue.sh")
@@ -63,11 +69,21 @@ func runSpecQueue(t *testing.T, list, tasks string, args ...string) queueRun {
 	if err := os.WriteFile(filepath.Join(change, "tasks.md"), []byte(tasks), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("bash", append([]string{filepath.Join("scripts", "openspec-queue.sh")}, args...)...)
+	ctx, cancel := context.WithTimeout(t.Context(), specQueueBound)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "bash", append([]string{filepath.Join("scripts", "openspec-queue.sh")}, args...)...)
 	cmd.Dir = root
+	// A child the script started can keep the output pipes open after bash is killed; without a
+	// WaitDelay, Run would wait on it and the bound would not hold.
+	cmd.WaitDelay = time.Second
 	var stdout, stderr strings.Builder
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	err := cmd.Run()
+	// Checked before the exit status: a killed run reports -1, which no case would read as a hang.
+	if ctx.Err() != nil {
+		t.Fatalf("openspec-queue.sh %q did not end within %v (%v)\nstdout:\n%s\nstderr:\n%s",
+			args, specQueueBound, ctx.Err(), stdout.String(), stderr.String())
+	}
 	r := queueRun{stdout: stdout.String(), stderr: stderr.String()}
 	var exit *exec.ExitError
 	switch {
@@ -392,6 +408,53 @@ func TestSpecQueueCheck(t *testing.T) {
 		requireCannotRead(t, r)
 		if strings.Contains(r.stdout, "holds: ok") {
 			t.Errorf("stdout has %q, want none\nstdout:\n%s", "holds: ok", r.stdout)
+		}
+	})
+}
+
+// spec-queue › "--stale-days takes a whole number of days" and "An unknown argument is refused":
+// cases A1–A6 of the fix-262-stale-days-operand design. Each run gets the one listed change and a
+// tasks.md with no caveat, so a run the script accepts prints that change's ok line.
+func TestSpecQueueArguments(t *testing.T) {
+	const staleDaysRefusal = "--stale-days needs a whole number of days\n"
+	cleanTasks := lines("- [ ] 2.1 (D) Write the reader.")
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"A1 no operand", []string{"--stale-days"}},
+		{"A2 letters", []string{"--stale-days", "abc"}},
+		{"A2 a sign", []string{"--stale-days", "-1"}},
+		{"A2 empty", []string{"--stale-days", ""}},
+		{"A2 a suffix", []string{"--stale-days", "7d"}},
+		{"A3 an option in the operand's place", []string{"--stale-days", "--strict"}},
+		{"A3 after another option", []string{"--strict", "--stale-days", "abc"}},
+		{"A6 one above bash's largest integer", []string{"--stale-days", "9223372036854775808"}},
+		{"A6 twenty digits", []string{"--stale-days", "99999999999999999999"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := runSpecQueue(t, listOneChange, cleanTasks, tc.args...)
+			if r.status != 2 || r.stderr != staleDaysRefusal || r.stdout != "" {
+				t.Fatalf("exit %d, stdout %q, stderr %q\nwant exit 2, stdout %q, stderr %q",
+					r.status, r.stdout, r.stderr, "", staleDaysRefusal)
+			}
+		})
+	}
+
+	for _, days := range []string{"0", "08"} {
+		t.Run("A4 --stale-days "+days, func(t *testing.T) {
+			r := runSpecQueue(t, listOneChange, cleanTasks, "--stale-days", days)
+			requireReported(t, r)
+			if r.stderr != "" {
+				t.Fatalf("stderr %q, want none", r.stderr)
+			}
+		})
+	}
+
+	t.Run("A5 an unknown argument", func(t *testing.T) {
+		const want = "unknown argument: --bogus\n"
+		if r := runSpecQueue(t, listOneChange, cleanTasks, "--bogus"); r.status != 2 || r.stderr != want {
+			t.Fatalf("exit %d, stderr %q\nwant exit 2, stderr %q", r.status, r.stderr, want)
 		}
 	})
 }

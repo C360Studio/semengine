@@ -38,7 +38,7 @@
 # Exit status is advisory-by-default and deliberately so: this is a
 # reporting aid for humans and session startup, not a merge gate. Use
 # --strict to exit non-zero when any caveat is found (for CI or a
-# pre-archive hook). Exit 2 means the queue could not be read.
+# pre-archive hook). Exit 2: queue unreadable or arguments refused.
 #
 # --check prints no queue; `task spec:check` runs it. A `Hold:` below a
 # tasks.md's first "## " heading that lies in no task's block, ticked tasks
@@ -47,7 +47,7 @@
 # exits 0. An unreadable change list or tasks.md exits 2, as for the queue.
 #
 # Run from repo root:
-#   scripts/openspec-queue.sh [--strict] [--stale-days N]
+#   scripts/openspec-queue.sh [--strict] [--stale-days N]  (N: whole days, digits only)
 #   scripts/openspec-queue.sh --check
 
 set -uo pipefail
@@ -60,7 +60,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --strict) STRICT=1; shift ;;
     --check) CHECK=1; shift ;;
-    --stale-days) STALE_DAYS="${2:-7}"; shift 2 ;;
+    --stale-days)
+      # Digits only, and a number the integer test below reads: never an option, a sign or a
+      # value past bash's largest integer. [[ ]] and $(( )) would read 08 as octal; [ ] reads 8.
+      case "${2:-}" in
+        '' | *[!0-9]*) echo "--stale-days needs a whole number of days" >&2; exit 2 ;;
+      esac
+      [ "$2" -ge 0 ] 2>/dev/null || { echo "--stale-days needs a whole number of days" >&2; exit 2; }
+      STALE_DAYS="$2"; shift 2 ;;
     -h|--help) sed -n '2,51p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac

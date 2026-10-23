@@ -5,7 +5,7 @@ The spec queue is `scripts/openspec-queue.sh`, run as `task spec:queue`: for eac
 prints how many tasks are ticked and one line for each open task that carries a label, so a reader sees why a change
 is still open. It reads every line of each open task, and it prints a hold (the text `Hold:`) from `Hold:` on,
 wherever in the task the hold is written. The queue is advisory: it exits 0 whatever it shows unless run with
-`--strict`, exit 2 means it could not read the changes, and neither `task verify` nor CI runs it. Run with `--check`,
+`--strict`, exit 2 means it could not read the changes or refused its arguments, and neither `task verify` nor CI runs it. Run with `--check`,
 as `task spec:check` runs it, the same script fails on a hold written below the file's first `##` heading and outside
 every task, where the queue cannot show it.
 
@@ -227,3 +227,43 @@ that change's own count line, which the queue prints before it reads the change'
   `scripts/openspec-queue.sh --check` is run
 - **THEN** it prints `queue unavailable: cannot read openspec/changes/<name>/tasks.md` as a line on standard error,
   prints no `holds: ok`, and exits 2
+
+### Requirement: --stale-days takes a whole number of days
+
+`scripts/openspec-queue.sh` SHALL accept `--stale-days` only when the next argument is ASCII digits alone that
+bash's integer test reads, as a decimal number of days. Otherwise it SHALL print `--stale-days needs a whole number
+of days` on standard error, print nothing on standard output, and exit 2, before it reads the change list or what
+follows. It SHALL never read another option as the operand, and its argument processing SHALL end on every argument list.
+
+#### Scenario: --stale-days is the last argument
+
+- **WHEN** `scripts/openspec-queue.sh --stale-days` is run
+- **THEN** it ends, prints `--stale-days needs a whole number of days` as a line on standard error, prints nothing
+  on standard output, and exits 2
+
+#### Scenario: The operand is not a whole number
+
+- **WHEN** the script is run with `--stale-days abc`, `-1`, `7d`, `''`, or `99999999999999999999`
+- **THEN** it prints `--stale-days needs a whole number of days` on standard error, prints nothing on standard
+  output, and exits 2
+
+#### Scenario: An option in the operand's place
+
+- **WHEN** the script is run with `--stale-days --strict`, or with `--strict --stale-days abc`
+- **THEN** it prints `--stale-days needs a whole number of days` on standard error, prints nothing on standard
+  output, and exits 2
+
+#### Scenario: Zero and leading zeros are whole numbers
+
+- **WHEN** the script is run with `--stale-days 0` or `--stale-days 08` on a change whose open tasks carry no caveat
+- **THEN** it prints the queue with that change's `ok` line, prints nothing on standard error, and exits 0
+
+### Requirement: An unknown argument is refused
+
+For an argument it does not know, `scripts/openspec-queue.sh` SHALL print `unknown argument: <arg>` on standard error
+and exit 2.
+
+#### Scenario: An unknown argument
+
+- **WHEN** the script is run with `--bogus`
+- **THEN** it prints `unknown argument: --bogus` on standard error and exits 2

@@ -38,6 +38,9 @@ const (
 	// TypeReservedSubjectCapture: a stream's subject filter shares a concrete subject with a request
 	// subject graph-ingest serves or with the graph mutation family, so the stream would store requests.
 	TypeReservedSubjectCapture = "reserved_subject_capture"
+	// TypeMalformedSubject: a port's or an explicit stream's subject fails the subject grammar
+	// (flowgraph.ValidSubject), which is stricter than NATS: a token such as "a*" is refused.
+	TypeMalformedSubject = "malformed_subject"
 )
 
 // Finding severities.

@@ -2,6 +2,8 @@ package composition
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"sort"
 	"strings"
 
@@ -31,6 +33,11 @@ func Analyze(declarations []component.Declaration, streams config.StreamConfigs)
 	// before the early returns: an explicit stream is refused even when no
 	// component is enabled or the graph cannot be built.
 	for _, finding := range reservedCaptureFindings(sorted, streams) {
+		result.add(finding)
+	}
+	// The subject grammar check also reads only streams and port facts, and
+	// runs before the early returns for the same reason.
+	for _, finding := range malformedSubjectFindings(sorted, streams) {
 		result.add(finding)
 	}
 
@@ -174,6 +181,59 @@ func reservedCaptureFindings(declarations []component.Declaration, streams confi
 			}
 			check(declaration.InstanceName, port.Name, name, subjects)
 		}
+	}
+	return findings
+}
+
+// malformedSubjectFindings reports each subject that fails the subject
+// grammar (#369): every subject of every NATS, NATS-request and JetStream
+// port, in both lanes, and of every explicit stream. A stream derived from a
+// JetStream output holds that port's subjects, so it is not checked again.
+// One finding per subject names where it is declared: the lane, port and
+// field for a port, the stream key and field for an explicit stream.
+func malformedSubjectFindings(declarations []component.Declaration, streams config.StreamConfigs) []Finding {
+	var findings []Finding
+	check := func(owner, port, where, field, subject string) {
+		if flowgraph.ValidSubject(subject) {
+			return
+		}
+		findings = append(findings, Finding{
+			Type: TypeMalformedSubject, Severity: severityOf(TypeMalformedSubject, nil),
+			Component: owner,
+			Port:      port,
+			Message:   fmt.Sprintf("%s field %q: subject %q is not a valid subject", where, field, subject),
+			Suggestions: []string{
+				"Write the subject as '.'-separated tokens, none empty, with no space, tab, line feed, carriage return or form feed",
+				"Use '*' and '>' only as whole tokens, '>' only last; a token such as 'a*' is refused here although NATS reads it as a literal",
+			},
+		})
+	}
+	for _, name := range slices.Sorted(maps.Keys(streams)) {
+		for index, subject := range streams[name].Subjects {
+			check("config", "", fmt.Sprintf("stream %q", name), fmt.Sprintf("subjects[%d]", index), subject)
+		}
+	}
+	checkLane := func(declaration component.Declaration, lane string, ports []component.Port, facts []component.PortFacts) {
+		for index, port := range ports {
+			if index >= len(facts) {
+				continue
+			}
+			where := fmt.Sprintf("%s port %q", lane, port.Name)
+			switch facts[index].Kind() {
+			case component.PortKindNATS, component.PortKindNATSRequest:
+				for _, subject := range facts[index].NATSSubjects() {
+					check(declaration.InstanceName, port.Name, where, "subject", subject)
+				}
+			case component.PortKindJetStream:
+				for i, subject := range facts[index].NATSSubjects() {
+					check(declaration.InstanceName, port.Name, where, fmt.Sprintf("subjects[%d]", i), subject)
+				}
+			}
+		}
+	}
+	for _, declaration := range declarations {
+		checkLane(declaration, "input", declaration.InputPorts, declaration.InputFacts)
+		checkLane(declaration, "output", declaration.OutputPorts, declaration.OutputFacts)
 	}
 	return findings
 }

@@ -3,7 +3,7 @@
 ## Purpose
 `composition` judges whether a configuration's components are wired correctly, without starting anything: `Validate`
 checks the configured components against a registry's factories and reports every problem as a finding from one
-closed list of fourteen types, and `Analyze` judges the graph those components form. `Catalog` lists the registered
+closed list of fifteen types, and `Analyze` judges the graph those components form. `Catalog` lists the registered
 factories with their default ports, and `Mermaid` draws the graph as a diagram. A product runs it in CI and checks
 that no error finding is reported; once `service` is ported, the component manager runs the same judgment at boot
 (ADR-100). Ported from SemStreams by change `port-composition` (epic #9).
@@ -26,9 +26,9 @@ array non-nil. Each finding SHALL carry `type`, `severity`, a non-empty `compone
 `type` SHALL be one of the exported constants `config_invalid`, `unknown_component`, `component_type_mismatch`,
 `component_config_invalid`, `port_declaration_error`, `exclusive_resource_conflict`, `connection_pattern_error`,
 `stream_requirement`, `disconnected_node`, `orphaned_port`, `interface_mismatch`, `missing_interface`,
-`empty_composition` and `reserved_subject_capture`. Severity SHALL be warning for `disconnected_node`,
-`missing_interface`, `empty_composition` and for every `orphaned_port` except a required stream input with no publisher.
-Severity SHALL be error for every other type.
+`empty_composition`, `reserved_subject_capture` and `malformed_subject`. Severity SHALL be warning for
+`disconnected_node`, `missing_interface`, `empty_composition` and for every `orphaned_port` except a required stream
+input with no publisher. Severity SHALL be error for every other type.
 
 Two enabled components whose exclusive claims clash SHALL yield one `exclusive_resource_conflict` error, on the
 component later in instance-name order. Its message SHALL be the error text `component.Declaration.ConflictWith`
@@ -42,7 +42,7 @@ emitted in a stable order, so equal inputs marshal to byte-equal JSON.
 #### Scenario: The vocabulary is closed
 
 - **WHEN** compositions exhibiting each condition are validated
-- **THEN** every emitted `type` is one of the fourteen constants and each constant is emitted by at least one case
+- **THEN** every emitted `type` is one of the fifteen constants and each constant is emitted by at least one case
   (`TestValidateFindingsVocabularyIsClosed`)
 
 #### Scenario: Offline clash judgment matches admission
@@ -151,3 +151,47 @@ no second copy.
 - **WHEN** `ValidSubject` is asked of the valid and malformed subjects in the tests, and of generated strings
 - **THEN** it accepts exactly the subjects the grammar admits, and a subject covers itself exactly when it is valid
 - **AND** the tests that verify this are `TestValidSubject` and `FuzzValidSubject`
+
+### Requirement: A malformed port or stream subject is an error finding
+
+`composition.Analyze` SHALL check, with `flowgraph.ValidSubject`, every subject of every NATS, NATS-request and
+JetStream port of every declaration, in the input and the output lane, and every subject of every explicit stream in
+`streams`. Each subject that fails SHALL yield one `malformed_subject` error.
+
+A port's finding SHALL carry the component's instance name and the port's name. Its message SHALL name the lane, the
+field (`subject`, or `subjects[i]` for a JetStream port) and the subject. An explicit stream's finding SHALL carry the
+component `config` and no port. Its message SHALL name the stream key, the field `subjects[i]` and the subject. A
+stream derived from a JetStream output SHALL NOT be reported again under its stream name.
+
+The check SHALL run before `Analyze` returns early, so it is reported when no component is enabled and when the flow
+graph cannot be built. A subject that fails the grammar overlaps nothing ("One subject grammar decides validity, cover
+and overlap"), so it SHALL yield no `reserved_subject_capture`.
+
+The grammar is stricter than NATS: a token that mixes a wildcard with other text, such as `a*`, is a NATS literal and
+SHALL be a `malformed_subject` here.
+
+#### Scenario: The probe's subjects at every site
+
+- **WHEN** each of `a.foo bar`, `a.foo` + form feed + `bar`, `a.>.b`, `a*`, `a.b*.c`, `a..b`, and a subject holding a
+  tab, a line feed or a carriage return is declared on a NATS input, a NATS output, a NATS-request input, a
+  NATS-request output, a JetStream input's and a JetStream output's second subject, and an explicit stream's second
+  subject; and an empty subject on the explicit stream
+- **THEN** each yields exactly one `malformed_subject` error naming the component, port, lane, field and subject, or
+  the stream key, index and subject
+- **AND** `a.>`, `a.*.c`, `>` and `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` at the same sites yield none
+- **AND** the test that verifies this is `TestAnalyzeReportsMalformedSubject`
+
+#### Scenario: Reported when analysis stops early
+
+- **WHEN** an explicit stream holds `a..b` and no component is enabled, and again beside two writers to one KV bucket
+- **THEN** the result carries the `malformed_subject` error beside `empty_composition` or `connection_pattern_error`
+- **AND** the test that verifies this is `TestAnalyzeReportsMalformedSubjectBeforeEarlyReturns`
+
+#### Scenario: A malformed filter is not a reserved capture
+
+- **WHEN** an explicit stream holds `graph.mutation.>.x`
+- **THEN** the result carries one `malformed_subject` and no `reserved_subject_capture`
+- **AND** the test that verifies this is `TestAnalyzeMalformedFilterIsNotAReservedCapture`
+
+Not covered by a test in this change: boot refusal on `malformed_subject` in particular. It follows from the error
+severity and the component manager's refusal on any error finding (`TestComponentManagerRefusesBootOnErrorFinding`).

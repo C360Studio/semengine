@@ -1175,9 +1175,8 @@ func (m *Client) subscribeOwned(
 // the client's connection, which ends the subscriptions made on it. It calls
 // cancelHandlers as soon as Close begins, also when delivery has already ended
 // while a handler still runs, and once the last handler invocation has returned,
-// as ownConsumer does. For a core subscription that "already ended" branch is
-// equivalent at nats.go v1.54.0: the closed handler runs only after the running
-// callback returns (openspec/changes/natsclient-handler-root/notes/2.3.md, M3).
+// as ownConsumer does. No test distinguishes that "already ended" branch for a
+// core subscription (openspec/changes/natsclient-handler-root/notes/2.3.md, M3).
 func (m *Client) watchOwnedSubscription(
 	d *ownedDelivery, closing <-chan struct{}, cancelHandlers context.CancelFunc, finish func(),
 ) {

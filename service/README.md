@@ -5,14 +5,17 @@ its name, status and health check, and the `Service` interface a service manager
 manager: it builds the services a configuration names, starts them, serves the HTTP routes around them and stops
 them. `ComponentManager` is the service that owns the components. `Metrics` is the service that serves the Prometheus
 endpoint. `MessageLogger` is the service that keeps the newest messages seen on chosen NATS subjects for
-inspection. The package also holds the helpers a composition root (the process's `main` function, which builds and
-wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
+inspection. `StorageObservabilityService` is the service that reports how full the NATS account's storage is. The
+package also holds the helpers a composition root (the process's `main` function, which builds and wires everything)
+calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
 service-configuration and schema helpers the service manager reads.
 
 The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
 the second `Manager` and `Metrics`; the third `ComponentManager`, the service that owns the components
-([The component manager](#the-component-manager)); this one carries `MessageLogger`
-([The message logger](#the-message-logger)). The other services arrive with the later ones.
+([The component manager](#the-component-manager)); the fourth `MessageLogger`
+([The message logger](#the-message-logger)); this one carries `StorageObservabilityService`
+([The storage observability service](#the-storage-observability-service)). The other services arrive with the later
+ones.
 
 ## Embedding BaseService
 
@@ -80,7 +83,7 @@ the configuration, and starts it:
 
 ```go
 services := service.NewServiceRegistry()
-if err := service.RegisterAll(services); err != nil { // offers "metrics", "component-manager", "message-logger"
+if err := service.RegisterAll(services); err != nil { // offers every built-in service
     return err
 }
 
@@ -515,6 +518,140 @@ client that sees `initial_sync_complete` has seen every initial value. Each stre
 reconciliation of a changing subject set, and the test-only seams the pin carried. `service/configurable.go`
 (`ConfigSchema`, `PropertySchema`, `NewConfigSchema`) is removed with them.
 
+## The storage observability service
+
+`StorageObservabilityService` watches how full the NATS account's storage is. Every minute it lists the account's
+JetStream streams and key-value buckets (JetStream is NATS's persistent storage; each stream or bucket is one
+"resource"), works out how much each holds, how fast that grows and how close it is to its limit, and publishes the
+result as a report in the `STORAGE_REPORT` bucket. It then serves that one report three ways: Prometheus metrics, a
+health message and an HTTP route. It writes no graph entity.
+
+The service is report-only. It rejects no write, throttles no component, fails no readiness or health check and applies
+no retention because of what it reports. A pressure state ("normal", "warning", "high" or "critical", set by how much
+of a limit is still free and how soon growth would use it up) is a fact for a human or an alert rule to act on. The
+SemStreams pin's storage observability spec records why nothing gates on pressure yet: capacity admission (refusing a
+write when storage is tight) stays deferred until four conditions hold. The report runs in production; the projection
+has been checked against what happened on at least three real resources; no critical state has cleared without an
+operator acting; and the rejection path is proven to classify a refusal as transient and NAK it (ask the sender to
+retry) instead of acknowledging and dropping the write. That text is the pin's
+(`openspec/specs/storage-observability/spec.md:169-218`) and is not ported here. A consumer that wants backpressure
+today reads the report and decides in its own code. The reasoning behind reporting through logs and metrics, not graph
+triples, is [ADR-098](../docs/adr/098-observability-splits-by-subject.md).
+
+### Enabling it
+
+The service is off unless the configuration turns it on: `ResolveServiceConfigs` does not add it. `RegisterAll`
+registers its constructor, `NewStorageObservabilityService`, under `storage-observability`, and no OpenAPI spec for it
+(the route's spec names no schema). Enable it in the `services` section; every key is optional:
+
+```json
+{
+  "services": {
+    "storage-observability": {
+      "enabled": true,
+      "config": {
+        "interval": "1m",
+        "timeout": "15s",
+        "pressure_thresholds": {"critical_headroom": 0.05}
+      }
+    }
+  }
+}
+```
+
+It needs `Dependencies.NATSClient` and `Dependencies.MetricsRegistry`; `Logger` is optional. The service manager passes
+the registry it holds.
+
+| Key | Meaning |
+| --- | --- |
+| `interval` | How often the account is listed. Default `1m`. Every process that polls multiplies the cost, so increase the interval to poll less often when many instances run. |
+| `timeout` | The bound on one collection, both listings included. Default `15s`; it must not exceed `interval`. |
+| `pressure_thresholds` | When a resource counts as `warning`, `high` or `critical`: `warning_headroom` (default 0.25), `high_headroom` (0.15) and `critical_headroom` (0.05) are the free fraction at or below which the state applies; `warning_horizon` (`72h`), `high_horizon` (`24h`) and `critical_horizon` (`4h`) are the projected time until the critical level is reached. |
+
+Construction refuses, as invalid data naming the input: an unknown key (nested keys under `pressure_thresholds`
+included, and a key in another letter case), nil dependencies, a nil NATS client, a nil metrics registry, an `interval`
+or `timeout` that does not parse or is not positive, a `timeout` above the `interval`, and thresholds that are out of
+order or out of range. Configuration is read once; to change a value, restart.
+
+### Starting and stopping
+
+`Start(ctx)` refuses a nil or ended `ctx`, a second `Start`, and a `Start` after any `Stop` (`errs.ErrAlreadyStarted`);
+a refused `Start` holds nothing. It does no I/O and never fails on account or bucket state: it starts two background
+loops and returns. One collects every `interval`. The other watches `STORAGE_REPORT` and feeds the metrics, the health
+message and the route. The service creates or reconciles `STORAGE_REPORT` on first use, so a deployment that names this
+service still boots when the account cannot be read; each loop retries on its own schedule (the watch every 5 seconds).
+`ctx` bounds `Start` only: ending it afterwards stops nothing.
+
+`Stop(ctx)` is the only stop. It ends both loops, waits for them and stops the base service, returning nil once all
+three are done. If `ctx` ends first, `Stop` returns that error and the next `Stop` waits again. How soon a collection
+already inside the account listing notices that `Stop` began depends on nats.go's listing honouring its context, which
+nats.go does not promise; `Stop` stays bounded by its own `ctx` either way. A `Stop` after one that returned nil
+returns nil; a `Stop` while another runs is refused as transient.
+
+### The health message
+
+`Health` returns the base service's verdict untouched and appends the storage picture to its message, joined with a semicolon.
+Pressure never changes `Healthy`, `Status` or a sub-status, so critical pressure leaves `/readyz` answering `READY` and
+`/health` answering 200. The picture is one line, for example
+`storage pressure (report-only): critical=1 high=0 warning=0 normal=12 not-evaluated=0; worst: ORDERS critical
+(headroom)`, then any over-committed tier, then how long ago the last collection ran. Before the first report is read
+it says `storage report has not been read yet`; after a failed collection it says so and serves the last result. After
+`Stop` the verdict is the base service's own (`Service is unhealthy (failed checks: 0)`) with the last picture appended.
+Both reads do no I/O.
+
+### The route
+
+`GET /storage-observability/report` (mounted by the service manager; `HEAD` is answered as `GET`, any other method
+gets 405) always answers 200, whatever the report says. The body:
+
+- `report_only`: always `true`.
+- `synced`: whether the watch has read every current value at least once. Until then an empty `resources` means "not
+  read yet", not "the account holds nothing".
+- `updated_at`: when the last change reached this process; absent before the first.
+- `summary`: `resources` (a count), `pressure` (rows per evaluated state, `{}` when none), `not_evaluated` (rows with no
+  pressure state because their capacity could not be read, or because they are unbounded and their tier has no limit
+  either) and `worst_pressure` (absent when nothing was evaluated; absent does not mean normal).
+- `account`: per storage tier (`file`, `memory`, `unknown`), the declared bounds against the account limit; absent until
+  an account row is read.
+- `resources`: every published row, sorted by name, never `null`, never filtered. A resource with no bound of its own is
+  evaluated against its tier's account limit and says so in `pressure.evaluated_against` (`account-tier`): that state is
+  shared by every unbounded resource in the tier, and changing one resource cannot relieve it.
+
+The health message, the metrics and the route read one consumer of the report, so they cannot disagree.
+
+### The metrics
+
+The service registers 19 gauges on the injected registry under the name `storage-observability`, all named
+`semengine_storage_*`. The SemStreams pin published the same series as `semstreams_storage_*`; nothing renames them for
+you, so an alert or dashboard still on the old names reads nothing.
+
+- Per resource, labelled `resource`, `owner`, `kind` and `tier`: `resource_used_bytes`, `resource_limit_bytes`,
+  `resource_headroom_bytes`, `resource_headroom_ratio`, `resource_growth_bytes_per_second`,
+  `resource_time_to_threshold_seconds` and `resource_pressure` (0 normal, 1 warning, 2 high, 3 critical).
+- Counts: `resources` (by `tier` and `capacity_state`) and `pressure_resources` (by `tier` and `pressure_state`,
+  including `not-evaluated`).
+- Per storage tier, labelled `tier` (and `state` for the three that carry one): `account_limit_bytes`,
+  `account_used_bytes`, `account_declared_bytes`, `account_limit_state`, `account_overcommitment`,
+  `account_growth_bytes_per_second`, `account_headroom_bytes`, `account_time_to_threshold_seconds` and
+  `account_pressure_state`.
+- `report_collected_timestamp_seconds`: when the freshest row was collected (not scraped), so
+  `time() - semengine_storage_report_collected_timestamp_seconds > 900` catches a collector that stopped. It is zero
+  until a row with a collection time is read.
+
+A value that was not measured has no series; it is never zero, because zero means "measured, and not growing". A series
+is deleted when its value goes away, when a resource leaves the report, and, for the per-tier series, when the account
+row is dropped. The count and state families are always emitted in full.
+
+Example Prometheus alert rules are at `configs/prometheus/rules/storage-pressure.yml`: 13 alerts, each reading only
+published names, none firing because a report row disappeared, with unbounded and unreadable resources kept visible.
+Copy the file and tune it; the engine does not load it. `service/storage_observability_http_test.go` checks it against
+the metric names.
+
+### Not ported
+
+`Snapshot` and `RegisterMetrics` (nothing read them), the `schema` struct tags on `StorageObservabilityConfig`, and the
+pin's function fields and nil checks on the two surfaces.
+
 ## The metrics service
 
 `Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
@@ -522,7 +659,7 @@ reconciliation of a changing subject set, and the test-only seams the pin carrie
 `Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
 the server runs. A `Metrics` runs once: a second `Start`, and a `Start` after any `Stop`, are refused with
 `errs.ErrAlreadyStarted`, and the context given to `Start` bounds `Start` only. `RegisterAll` registers `metrics`,
-`component-manager` and `message-logger`.
+`component-manager`, `message-logger` and `storage-observability`.
 
 ## The profiling server
 

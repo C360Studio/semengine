@@ -7,7 +7,7 @@
 `ConsumeStreamWithConfig`, `ConsumeInternalStreamWithConfig`, `Subscribe` and `SubscribeForRequests` SHALL use their
 context for setup only and SHALL NOT retain it; a write the server is not reading holds the setup as "A write the server
 is not reading holds the connection" states. Each handler's context SHALL descend from a context the client owns for
-that consumer or subscription, which the client SHALL cancel when `Close` begins, also when the consumer's or
+that consumer or subscription, which the client SHALL cancel after `Close` has begun, also when the consumer's or
 subscription's delivery has already ended while a handler still runs; `Close` SHALL still join every handler
 invocation (owner ruling, #9 comment 5994720412 item 2). `ConsumeStreamWithConfigContexts` keeps the caller's
 `handlerCtx` as the handlers' parent. A `Subscribe` or `SubscribeForRequests` handler's context SHALL carry the trace

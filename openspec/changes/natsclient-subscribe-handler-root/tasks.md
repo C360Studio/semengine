@@ -36,4 +36,5 @@ only when `task verify` passes on a clean tree at its commit (#171).
   and the ADR-113 `:47` cite (corrected in place, no Status line), as design D6 lists. Gate: `task docs:check` and
   `task ledger:check`.
 - [ ] 3.2 Spec deltas (`transport-client`, `service-lifecycle`, `operator-surface`) synced into `openspec/specs/`; the
-  change archived as the last content commit. Gate: `task spec:check`.
+  change archived as the last content commit. The service-lifecycle text "One exception, accepted by the owner"
+  cites the owner's OA1 acceptance comment. Gate: `task spec:check`.

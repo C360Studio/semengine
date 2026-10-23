@@ -13,7 +13,9 @@
 //     function over declarations and the configuration's explicit streams.
 //     It refuses any stream, explicit or derived from a JetStream output,
 //     whose subject filter could capture a graph request subject
-//     (reserved_subject_capture).
+//     (reserved_subject_capture), and reports every NATS, NATS-request or
+//     JetStream port subject, in either lane, and every explicit stream
+//     subject that fails the subject grammar (malformed_subject).
 //     The boot caller is service's component manager, not yet ported: it will
 //     run Analyze over what was admitted and refuse to boot on an
 //     error-severity finding (ADR-100 decision 3).

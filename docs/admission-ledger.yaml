@@ -3153,11 +3153,13 @@
     graph-transport-boundary spec (the composition share of #16): Analyze gives one reserved_subject_capture error for
     each explicit stream filter and JetStream output filter that overlaps a subject of graph.QueryVerbs() or
     graphmutation.SubjectFamily, read from those declarations, naming the stream (a derived one by
-    config.DeriveStreamName), the filter and the first reserved subject captured; Analyze, Catalog and Mermaid
-    otherwise as at the pin
+    config.DeriveStreamName), the filter and the first reserved subject captured; Analyze gives one malformed_subject
+    error for each NATS, NATS-request or JetStream port subject, in either lane, and each explicit stream subject that
+    fails flowgraph.ValidSubject, before its early returns, naming the lane and field or the stream and index (#369);
+    Analyze, Catalog and Mermaid otherwise as at the pin
   dependencies_and_side_effects: >-
     component, config, graph, internal/flowgraph, internal/graphmutation, types (in-set); stdlib (cmp, encoding/json,
-    errors, fmt, slices, sort, strings); no goroutine, no I/O, no context
+    errors, fmt, maps, slices, sort, strings); no goroutine, no I/O, no context
   known_risks: >-
     dropped: assert.go (AssertValid imports testing from production code; owner ruling 1, products call Validate and
     require an empty Errors list), assert_test.go, fmt_test.go (read only by assert_test.go) and

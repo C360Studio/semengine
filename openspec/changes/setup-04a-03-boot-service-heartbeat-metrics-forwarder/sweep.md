@@ -99,8 +99,8 @@ WithoutCancel|WithValue|ctx\.Value|select \{\}'`: 0 hits); a `context.Context` f
 The inventory's § 7 ran the lifecycle suite on both owners and found each failing `StartContextEndStopsNothing`
 only. Re-run 2026-10-23 with an `Observe` that also reports the loop's join channel, plus the configuration and logger
 checks above. Scratch: a copy of the pin with this tree's `internal/harness/lifecycletest/lifecycletest.go` at
-`internal/lifecycletest` (as PR 5's probe), and `/tmp/pr6probe-src/zz_pr6_probe_test.go` (local only; the
-orchestrating session posts it with this output on #383). go1.26.10 darwin/arm64. The heartbeat is built through a
+`internal/lifecycletest` (as PR 5's probe), and `zz_pr6_probe_test.go` (source, setup and output posted
+as #383 comment 6372739056). go1.26.10 darwin/arm64. The heartbeat is built through a
 `Manager` holding the pin's `mockComponentHealthGetter` as `component-manager`; the forwarder through
 `newMetricsForwarderForTest` with the pin's mock publisher. Command: `GOFLAGS=-mod=mod GOPROXY=off go test -race
 -count=1 -run 'TestPR6Probe' -v ./service/`. Output (log lines removed):
@@ -126,7 +126,7 @@ Read: S1 for both (the heartbeat's loop and status end with the Start context; t
 loop keeps publishing, H6); S6 (a misspelt key is dropped for the default; a miscased key is applied, and beside the
 correct spelling the later one wins, the #344 shape); H2; H1.
 
-**Tree probe for #344.** `git archive` of the base with `/tmp/pr6probe-src/zz_pr6_tree_probe_test.go` (local only)
+**Tree probe for #344.** `git archive` of the base with `zz_pr6_tree_probe_test.go` (#383 comment 6372739056)
 added to `service`: each document is loaded with `config.NewLoader().LoadFromBytes`, and the merged `heartbeat` payload
 decoded both ways into a struct whose one field, `Interval`, is tagged `json:"interval"`:
 
@@ -138,9 +138,9 @@ merged payload={"interval":"30s"}; json.Unmarshal interval="30s" err=<nil>; deco
 
 Read: the loader's merge creates the second spelling (#344's body), and the decoder PR 2 already gave every strictly
 decoded service payload (`service/service_configs.go:136-152`, `internal/keycase`) refuses it, naming both spellings.
-A second tree probe, `zz_pr6_tree_probe2_test.go`: a composition built from a loaded document's default services with
-`RegisterAll` fails today with `create configured service heartbeat: no constructor registered for service heartbeat`
-(D7).
+A second tree probe, `zz_pr6_tree_probe2_test.go` (same comment): a composition built from a loaded document's
+default services with `RegisterAll` fails today with
+`create configured service heartbeat: no constructor registered for service heartbeat` (D7).
 
 Not re-run: the unit runs (once under `-race`, five times shuffled), the integration run and the test-text guards are
 the inventory's § 7, run on the whole package; their hits in this PR's tests are § 1's last row.

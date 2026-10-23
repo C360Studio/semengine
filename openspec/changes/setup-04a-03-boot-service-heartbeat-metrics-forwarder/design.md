@@ -126,8 +126,8 @@ interval`; `TestHeartbeatAndMetricsForwarderAreRegistered` [U-b].
 
 - **Heartbeat.** At once and then every `interval`, one record "System heartbeat" with `uptime` (the base service's,
   rounded to the second, H5), `goroutines`, `components_healthy` and `components_total` (from
-  `GetComponentHealth`; healthy means `HealthStatus.Healthy`), at the level Q1 settles (Info recommended; the pin's is
-  Debug, H11). Proofs [U-b]: `TestHeartbeatRecordsComponentHealth` (pin `heartbeat_test.go:379-459` on the production
+  `GetComponentHealth`; healthy means `HealthStatus.Healthy`), at Info (owner, Q1, 2026-10-23; the pin's is Debug,
+  H11). Proofs [U-b]: `TestHeartbeatRecordsComponentHealth` (pin `heartbeat_test.go:379-459` on the production
   path: a manager holding `newTestComponentManager(t, ...)` with one healthy and one unhealthy component, the record
   read from `deps.Logger`, not a swapped field; asserts the level); `TestHeartbeatCadence` (inside `synctest`,
   `interval` 1s: one record at `Start` and one per second).
@@ -324,7 +324,6 @@ Intent check: no boundary moves.
 
 ## Owner questions
 
-- **Q1. Heartbeat level: recommend Info.** The heartbeat service is on by default and its only output is one line per
-  interval, which the pin writes at Debug, so at the default log level it shows nothing after the line that says it
-  started. Should the "System heartbeat" line be written at Info, so the service does what it is enabled for, or stay
-  at Debug as at the pin? The design proceeds with Info; Debug is a one-word change if you prefer it.
+- **Q1. Heartbeat level: Info (owner, 2026-10-23, Enjoy).** The heartbeat service is on by default and its only output
+  is one line per interval, which the pin writes at Debug, so at the default log level it shows nothing after the line
+  that says it started. The "System heartbeat" line is written at Info.

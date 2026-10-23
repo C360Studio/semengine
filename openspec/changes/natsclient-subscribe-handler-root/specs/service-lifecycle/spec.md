@@ -10,7 +10,7 @@ under its context, check that context before each subscribe and once more after 
 it started, and, if it has ended at any of these checks, return that error and release everything the logger holds
 (ADR-113). A subscribe that `Start`'s context ends records its subject as failed, and the next check fails `Start`.
 
-One exception, accepted by the owner: when `Start`'s context cuts a subscribe after its SUB was sent, the NATS client
+One exception is declared: when `Start`'s context cuts a subscribe after its SUB was sent, the NATS client
 removes that subscription and returns none, so the logger never holds it. A message delivered to it before its removal
 can still be stored after `Start` failed. The NATS client owns that callback, and its `Close` waits for it.
 

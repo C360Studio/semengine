@@ -22,8 +22,9 @@ so its Start context does not bound the subscribe. The message logger, the one p
   subscribe, so a `Start` whose context ended fails. Its retry keeps the run context.
 - The message logger already drops a message whose handler context has ended. It now logs that drop at Warn and counts
   it in a new `/stats` key, `dropped_messages`, so the drop is no longer silent.
-- One exception is put to the owner (design, Owner acceptance). After a failed `Start`, the handler of a subscribe the
-  Start context cut can still store a message; the NATS client, not the logger, waits for that handler.
+- One residual is declared (design, R1), as the handler-root change declared it for `SubscribeForRequests`. After a
+  failed `Start`, the handler of a subscribe the Start context cut can still store a message; the NATS client, not the
+  logger, waits for that handler.
 - Docs, ledger text and an ADR-113 cite that describe the old shape are corrected.
 
 ## Capabilities

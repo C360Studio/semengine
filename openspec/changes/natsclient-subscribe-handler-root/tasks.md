@@ -8,8 +8,8 @@ only when `task verify` passes on a clean tree at its commit (#171).
 
 - [x] 1.1 Inventory passes review (`inventory.md`, INVENTORY PASS, `4675084`).
 - [ ] 1.2 Design, proposal and spec deltas written; `task spec:check` and `task docs:check` green.
-  Hold: the Claude design review and the Codex design review both PASS this design, and the owner accepts it, OA1
-  included. Section 2 starts after that.
+  Hold: the Claude design review and the Codex design review both PASS this design, and the owner accepts it. Section
+  2 starts after that.
 
 ## 2. Code
 
@@ -36,5 +36,4 @@ only when `task verify` passes on a clean tree at its commit (#171).
   and the ADR-113 `:47` cite (corrected in place, no Status line), as design D6 lists. Gate: `task docs:check` and
   `task ledger:check`.
 - [ ] 3.2 Spec deltas (`transport-client`, `service-lifecycle`, `operator-surface`) synced into `openspec/specs/`; the
-  change archived as the last content commit. The service-lifecycle text "One exception, accepted by the owner"
-  cites the owner's OA1 acceptance comment. Gate: `task spec:check`.
+  change archived as the last content commit. Gate: `task spec:check`.

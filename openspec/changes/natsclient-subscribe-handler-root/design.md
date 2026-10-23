@@ -26,7 +26,7 @@ the message logger's caller."
    - Cost: a residual Option 2 does not have. A subscribe the Start context cuts after its SUB was sent is unsubscribed
      (`client.go:1153`). Its handler context is now the client's and still live, and the subscription is in no logger
      map. A message delivered between that SUB and its UNSUB can be stored after `Start` failed and rolled back. Only
-     the client's `Close` joins that handler, not the logger's `Stop`. This needs the owner's acceptance (OA1).
+     the client's `Close` joins that handler, not the logger's `Stop`. It is declared as R1.
 2. **The split; the logger keeps the run context for its Start subscribes, plus the same final check.**
    - Gain: no Start subscribe is ever cut, so the residual above cannot happen.
    - Cost: a Start deadline cannot cut a subscribe waiting on a slow server. `Start` runs past its deadline by up to
@@ -39,7 +39,7 @@ shared-server tests cannot produce (M5). The choice therefore rests on two groun
 - ADR-113's Decision: `Start` "does its startup work under `ctx`" (`docs/adr/113-start-context-bounds-start.md:59`).
 - The owner's fix shape: "change the message logger's caller".
 
-On those grounds Option 1 is recommended, with its residual put to the owner (OA1). Option 1 with graph-ingest's entry
+On those grounds Option 1 is recommended, with its residual declared (R1). Option 1 with graph-ingest's entry
 check (a handler refused until start completes, `component.go:1069-1071`) would close that window. It is rejected: the
 logger stores messages delivered during `Start` today, and the check would drop them. A failed-Start flag instead would
 be new state guarding a diagnostic entry in a logger that cannot run again.
@@ -75,12 +75,12 @@ be new state guarding a diagnostic entry in a logger that cannot run again.
     unsubscribed that subscription and returned none, so the logger never held it, and the client still owns its
     callback until its delivery ends; `Close` joins it.
   - That callback can store a message after `Start` failed. This is the one exception to "a failed Start holds
-    nothing", and it is put to the owner (OA1).
+    nothing", declared as R1.
 - A subscribe that the Start context cuts returns a transient error (`client.go:1086-1089`, `:1160-1161`). The subject
   is recorded as pending and logged once as "retrying", and the loop's check or the final check then fails `Start`.
 - A context that ends while the "started" record is being written does not fail `Start`. No check can close the last
   instant before `Start` returns; this one comes after the last subscribe, the last step that does startup work.
-- Apart from OA1, nothing in this logger's `Start` departs from ADR-113.
+- Apart from R1, nothing in this logger's `Start` departs from ADR-113.
 
 **D3. A message whose handler context has ended is dropped, logged and counted.**
 
@@ -176,26 +176,31 @@ Task 2.4, run with `task mutate:check`.
     new scenario.
   - MODIFIED "Subscribe returns after the server has read the SUB": one clause.
 - `specs/service-lifecycle/spec.md`: MODIFIED "The message logger's Start bounds Start and Stop is the only stop": D2,
-  D3, OA1's exception, and the T5 and T6 scenarios. That `Start`'s subscribes run under its context is listed as
+  D3, R1, and the T5 and T6 scenarios. That `Start`'s subscribes run under its context is listed as
   reviewed only (M5).
 - `specs/operator-surface/spec.md`: MODIFIED "The message logger's routes are served under /message-logger": `stats`
   reports `dropped_messages`.
 
-## Owner acceptance
+## Declared residual
 
-- **OA1. The failed-Start exception.** Under Option 1, a message delivered to a Start subscribe that the Start context
+ADR-113 settles lifecycle ownership. This residual applies it and the precedent below; it is not a new question.
+
+- **R1. The cut-subscribe residual.** Under Option 1, a message delivered to a Start subscribe that the Start context
   cut, between its SUB and its UNSUB, can be stored by a handler still running after `Start` failed and rolled back.
   - The logger's rollback releases everything the logger holds (D2). The NATS client owns that one callback until its
     delivery ends, and the client's `Close` joins it.
   - No new state or joining code is proposed for it. It is MEDIUM at most (#185): it needs that delivery inside the
     window of a `Start` that is already failing, and the logger cannot start again afterwards.
-  - If the owner does not accept it, the alternative is Option 2, at the cost Options states.
+  - It is the same residual the handler-root change declared for `SubscribeForRequests`
+    (`openspec/changes/archive/2026-10-23-natsclient-handler-root/design.md:172-173`): "A handler running after a
+    failed registration keeps a live context until `Close` begins". graph-ingest closes it with an entry check; the
+    logger does not, for the reason Options gives.
 
 ## Residual risk
 
 Declared under #185.
 
-- OA1's exception, if the owner accepts it.
+- R1, the cut-subscribe residual.
 - A caller that cancelled its subscribe context to stop running handlers no longer can. `Subscription.Drain(ctx)`
   returning nil, or `Close`, is the proof that handlers have returned. The only production caller drains (`:522`).
 - A message without trace headers no longer inherits a trace from the subscribe context. The logger loses nothing

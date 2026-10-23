@@ -441,8 +441,10 @@ stored with type `raw`. A payload that is not JSON is stored as a JSON string, s
 
 `Start(ctx)` refuses a nil or ended `ctx`, a second `Start`, and a `Start` after any `Stop`
 (`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. `ctx` bounds `Start` only: ending it afterwards stops
-nothing, and messages keep being stored. `Start` checks `ctx` before each subscribe; a subscribe already running is
-not shortened by it, and how long `Start` can outlast its context is not promised.
+nothing, and messages keep being stored, because each message's context belongs to the NATS client, not to `ctx`.
+`Start` checks `ctx` before each subscribe and once more after the last; if `ctx` has ended at any check, `Start`
+returns its error and releases what the logger holds. A subscribe already running is not shortened by `ctx`, and how
+long `Start` can outlast its context is not promised.
 
 A subscribe that fails does not fail `Start`. The logger keeps running and retries that subject every 100 ms until it
 succeeds. While any subject is unsubscribed:
@@ -463,7 +465,8 @@ returns nil; a `Stop` while another runs is refused as transient. Messages publi
 
 | Key | Meaning |
 | --- | --- |
-| `total_messages` | Every message received, sampled or not. |
+| `total_messages` | Every message received and not dropped, sampled or not. |
+| `dropped_messages` | Messages not stored (and not in `total_messages`) because their handler context had ended; the NATS client ends it once its `Close` has begun. Each is logged at Warn with its subject. |
 | `sampled_messages` | Messages stored under `sample_rate`. |
 | `valid_messages` | Stored messages that decoded as typed envelopes. |
 | `invalid_messages` | Stored messages that did not (type `raw`). |

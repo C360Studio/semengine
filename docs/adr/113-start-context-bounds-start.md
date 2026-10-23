@@ -44,7 +44,7 @@ One layer down, this repository already keeps the two contexts apart. natsclient
 which "does not bound later reconnects" (ADR-112, `docs/adr/112-natsclient-contract.md:121-127`). Its metrics poller
 runs under a root the client owns, which "outlives Connect's dial-scoped context on purpose"; `Close` cancels and joins
 it (`natsclient/client.go:602-604`). Consumer handlers run under a root the client owns, because "the setup context must
-not parent handlers that outlive it" (`natsclient/stream.go:455-459`). The ruling behind it, #9 comment 5994720412 item
+not parent handlers that outlive it" (`natsclient/stream.go:455-461`). The ruling behind it, #9 comment 5994720412 item
 2, named the failure: a setup deadline cancelled every later handler while messages kept arriving. The keyed pool's
 constructor context stops nothing: "Shutdown is the only stop" (`internal/dispatch/keyed_pool.go:115-118`). The
 component contract is the one place left with two stops.

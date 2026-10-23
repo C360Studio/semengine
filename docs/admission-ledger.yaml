@@ -1012,12 +1012,14 @@
     jetstream_metrics.go:290-294 at the pin, :296-300 at 931d90f) (TestJetStreamConsumerMetricsDropSeriesWhenInfoFails);
     with two clients on one registry the deletion is the shared-series case under known_risks.
     (12) natsclient-consume-handler-context (owner ruling, #9 comment 5994720412, item 2): in
-    ConsumeStreamWithConfig and ConsumeInternalStreamWithConfig the caller's context bounds setup
-    only; handlers run under a context the Client owns per consumer, cancelled when Close begins and
-    after the consumer's last handler returns (at the pin the caller's context parented every
-    handler, so a short setup deadline ended later handlers)
+    ConsumeStreamWithConfig, ConsumeInternalStreamWithConfig, Subscribe and SubscribeForRequests the
+    caller's context bounds setup only; handlers run under a context the Client owns per consumer or
+    subscription, cancelled when Close begins and after the last handler returns (a Subscribe or
+    SubscribeForRequests subscription's also after Unsubscribe while a handler still runs); at the
+    pin the caller's context parented every handler, so a short setup deadline ended later handlers
     (TestConsumeSetupDeadlineDoesNotEndLaterHandlers, TestConsumeHandlerContextEndsWhenCloseBegins;
-    both failed first on the internal and port paths).
+    both failed first on the internal and port paths; Subscribe: TestSubscribeHandlerContextOutlivesSetupContext,
+    TestSubscribeHandlerContextEndsWhenCloseBegins, TestSubscribeHandlerContextEndsWhenCloseBeginsAfterUnsubscribe).
     jetstream.New's error, dropped at the pin
     (:525), is returned by Connect
     with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
@@ -1128,8 +1130,9 @@
     so the poller outlives Connect's dial-scoped context, publishes its cancel before admitting the
     poller, and Close cancels the poller's in-flight work and joins it; stream.go
     clientOwnedHandlerContext, a context.WithCancel(context.Background()) root the Client owns per
-    consumer (#9 comment 5994720412, item 2), cancelled by the consumer's ownership goroutine
-    (owned_delivery.go ownConsumer) when Close begins and after its last handler returns; trace.go:56, DetachContextWithTrace, left with that function in task
+    consumer, Subscribe or SubscribeForRequests subscription (#9 comment 5994720412, item 2),
+    cancelled by the consumer's ownership goroutine (owned_delivery.go ownConsumer) or the
+    subscription's watcher (watchOwnedSubscription) when Close begins and after its last handler returns; trace.go:56, DetachContextWithTrace, left with that function in task
     3.7a. kv.go:700 is a bounded terminal drain, context.WithTimeout(context.WithoutCancel(ctx),
     filteredWatcherDrainTimeout), the developer contract's admitted shape, not a root. Dropped
     surface, not ported (design D8, "A test of a removed feature"): kv_temporal.go

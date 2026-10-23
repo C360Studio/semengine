@@ -54,10 +54,13 @@ only. Each handler's context descends from a context the client owns for that co
 begins; `Close` still waits for every handler to return. `ConsumeStreamWithConfigContexts` takes a second context,
 `handlerCtx`, when the caller wants to choose the handlers' parent itself.
 
-`SubscribeForRequests` follows the same rule: its context bounds setup only, and its handlers run under a context the
-client owns, which `Close` ends. `Subscription.Drain(ctx)` returning nil proves every running handler has returned;
-`Unsubscribe` stops delivery but does not wait for a running handler. `Subscribe` does not follow this rule yet: its
-handlers still descend from the context given to the call (#378).
+`Subscribe` and `SubscribeForRequests` follow the same rule: the context bounds setup only, and each handler's context
+descends from a context the client owns for that subscription, not from the context given to the call. Ending the call's
+context after it returned does not end a handler. The client ends the subscription's context when `Close` begins, after
+`Unsubscribe` while a handler still runs, and once delivery has ended and the last handler has returned. A `Subscribe`
+handler's context also carries the trace from the message's headers (none from the call's context) and ends after 30
+seconds. `Subscription.Drain(ctx)` returning nil proves every running handler has returned; `Unsubscribe` stops
+delivery but does not wait for a running handler.
 
 A panic in a message handler is recovered: it is logged at error level with the message's subject, counted on the
 JetStream error metric as operation `handler_panic`, and the message is Nak'd

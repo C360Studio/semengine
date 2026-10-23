@@ -21,5 +21,5 @@ Each task ends only when `task verify` passes on a clean tree at its commit (#17
 
 ## 3. Docs and archive
 
-- [ ] 3.1 `natsclient` README/doc and ADR-112 cites updated.
+- [x] 3.1 `natsclient` README/doc and ADR-112 cites updated.
 - [ ] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.

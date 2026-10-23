@@ -16,16 +16,19 @@ only when `task verify` passes on a clean tree at its commit (#171).
 - [ ] 2.1 Merge `origin/main` (#376 landed) into the branch, without rebase; re-measure the cites design D6 gives at
   `46d3cd5` and record the new lines in `notes/2.1.md`. Gate: `task verify`.
 - [ ] 2.2 `Subscribe` handler root (D1), with T1-T4 and the doc comments at `client.go:997`, `:1036` and
-  `stream.go:455-460`, in one commit. Gate: T1-T4 fail on the base (`notes/2.2.md`); `task verify` green.
-- [ ] 2.3 Message logger (D2, D4, D5), with T5, the comments at `message_logger.go:205`, `:250-256` and `:274-275`, and
-  the test comments design D6 lists, in one commit. Gate: T5 fails on the base (`notes/2.3.md`); `task verify` green.
+  `stream.go:455-460`, in one commit. T4 publishes on the raw connection (design, T4 note). Gate: T1-T4 fail on the
+  base (`notes/2.2.md`); `task verify` green.
+- [ ] 2.3 Message logger (D2, D4, D5): Start subscribes under its context, and the final check sits after the loop,
+  before the retry and the "MessageLogger started" record. It lands with T5, the comments at `message_logger.go:205`,
+  `:250-256` and `:274-275`, and the test comments design D6 lists, in one commit. Gate: T5 fails on the base
+  (`notes/2.3.md`); `task verify` green.
 - [ ] 2.4 Sensitivity: M1-M6 run with `task mutate:check`, each reported as detected or as a survivor (`notes/2.4.md`).
 - [ ] 2.5 Code review.
   Hold: the Codex code review PASSes 2.2-2.4 at a named commit with local `task verify`. Section 3 starts after it.
 
 ## 3. Docs and archive
 
-- [ ] 3.1 `natsclient/README.md`, `service/README.md`, `docs/admission-ledger.yaml` and the ADR-113 cite with its Status
-  amendment line, as design D6 lists. Gate: `task docs:check` and `task ledger:check`.
+- [ ] 3.1 `natsclient/README.md`, `service/README.md`, `docs/admission-ledger.yaml`, and the ADR-113 `:47` cite
+  (corrected in place, no Status line), as design D6 lists. Gate: `task docs:check` and `task ledger:check`.
 - [ ] 3.2 Spec deltas synced into `openspec/specs/`; the change archived as the last content commit. Gate:
   `task spec:check`.

@@ -6,22 +6,24 @@
 
 `MessageLogger.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start` and a `Start`
 after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. `Start` SHALL make each subscribe
-under its context, check that context before each subscribe and once more as its last step, and, if it has ended at
-any of these checks, return that error and release what it took (ADR-113). A subscribe that `Start`'s context ends
-records its subject as failed, and the next check fails `Start`. Ending `Start`'s context after `Start` returned SHALL
-stop nothing: later messages are stored. `Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its
-error and stop nothing. Otherwise it SHALL end the subscribe retry and wait for it, drain every subscription so that a
-message being handled when `Stop` begins is stored, end every open KV watch stream and wait for its KV watcher to stop,
-and stop the base service, returning nil only once all are released. If its context ends first, or a drain fails,
-`Stop` SHALL return that error and leave what is not yet released for the next `Stop`, which runs the same steps. A
-`Stop` after one that returned nil SHALL return nil; a `Stop` while another runs SHALL be refused as transient. A
-message published after `Stop` SHALL NOT be stored. A message whose handler runs after the logger's NATS client has
-begun `Close` is not stored: the client ends the handler's context when `Close` begins (transport-client, "A setup
-context does not parent its handlers") and the logger drops a message whose context has ended. How many messages
-nats.go delivers during `Close`'s drain is not promised (ADR-112); a composition root that stops the logger before
-closing its client loses none. How long `Start` can run past its context's end is not promised: its context ends a
-subscribe's wait for the server's answer, but not the waits for the connection that transport-client's "A write the
-server is not reading holds the connection" states.
+under its context, check that context before each subscribe and once more after the last subscribe, before it logs that
+it started, and, if it has ended at any of these checks, return that error and release what it took (ADR-113). A
+subscribe that `Start`'s context ends records its subject as failed, and the next check fails `Start`. A message
+delivered to such a subscribe before its subscription was removed can still be stored after `Start` failed; the NATS
+client's `Close` waits for that handler. Ending `Start`'s context after `Start` returned SHALL stop nothing: later
+messages are stored. `Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop
+nothing. Otherwise it SHALL end the subscribe retry and wait for it, drain every subscription so that a message being
+handled when `Stop` begins is stored, end every open KV watch stream and wait for its KV watcher to stop, and stop the
+base service, returning nil only once all are released. If its context ends first, or a drain fails, `Stop` SHALL
+return that error and leave what is not yet released for the next `Stop`, which runs the same steps. A `Stop` after one
+that returned nil SHALL return nil; a `Stop` while another runs SHALL be refused as transient. A message published
+after `Stop` SHALL NOT be stored. A message whose handler starts after the logger's NATS client has begun `Close` is not
+stored: the client ends the handler's context when `Close` begins (transport-client, "A setup context does not parent
+its handlers") and the logger drops a message whose context has ended. How many messages nats.go delivers during
+`Close`'s drain is not promised (ADR-112); a composition root that stops the logger before closing its client loses
+none. How long `Start` can run past its context's end is not promised: its context ends a subscribe's wait for the
+server's answer, but not the waits for the connection that transport-client's "A write the server is not reading holds
+the connection" states.
 
 #### Scenario: The lifecycle suite
 
@@ -32,9 +34,10 @@ server is not reading holds the connection" states.
 
 #### Scenario: A Start context that ends after the last subscribe
 
-- **WHEN** the context given to `Start` is cancelled after every subscribe succeeded, while `Start` still logs that it
-  started
-- **THEN** `Start` returns an error matching `context.Canceled`, holds nothing, and a later `Stop` returns nil
+- **WHEN** the context given to `Start` is cancelled after its last subscribe succeeded, while `Start` still logs that
+  subscribe
+- **THEN** `Start` returns an error matching `context.Canceled`, logs no "MessageLogger started" record, holds nothing,
+  and a later `Stop` returns nil
 - **AND** the test that verifies this is `TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing`
 
 #### Scenario: Messages are still stored after the Start context ends
@@ -70,9 +73,11 @@ server is not reading holds the connection" states.
 
 Not covered by a test, and reviewed only:
 
-- a context that ends between two subscribes of one `Start`, or during a subscribe's wait for the server's answer (it
-  needs a hook this repository does not keep in production code, or a server that withholds its answer, which the
-  logger's tests on the shared server do not have);
+- that `Start`'s subscribes run under its context rather than the run context, and a context that ends between two
+  subscribes of one `Start` or during a subscribe's wait for the server's answer (these need a hook this repository
+  does not keep in production code, or a server that withholds its answer, which the logger's tests on the shared
+  server do not have);
+- a message stored by the handler of a subscribe that a failed `Start` cut;
 - a `Stop` that must wait for a subscribe retry still running (`TestMessageLoggerRetriesSubscribeUntilConnected` stops
   the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one);
-- a message delivered during the client's `Close`.
+- a message whose handler starts during the client's `Close`.

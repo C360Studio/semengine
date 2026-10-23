@@ -18,9 +18,10 @@ so its Start context does not bound the subscribe. The message logger, the one p
 - `Subscribe` takes the same split as `SubscribeForRequests`. Its context bounds the subscribe and the wait for the
   server's answer (PING/PONG) only. Each handler runs under a context the client owns, which `Close` ends. No new
   surface; the signature is unchanged.
-- The message logger subscribes at `Start` under its Start context. It checks that context once more at the end of
-  `Start`, so a `Start` whose context ended fails. Its retry keeps the run context.
-- The message logger declares that a message delivered during the client's `Close` is not stored.
+- The message logger subscribes at `Start` under its Start context. It checks that context once more after its last
+  subscribe, so a `Start` whose context ended fails. Its retry keeps the run context.
+- The message logger declares two drops: a message whose handler starts during the client's `Close`, and a message
+  delivered to a subscribe that a failed `Start` cut.
 - Docs, ledger text and an ADR-113 cite that describe the old shape are corrected.
 
 ## Capabilities
@@ -33,6 +34,7 @@ so its Start context does not bound the subscribe. The message logger, the one p
 ## Non-goals
 
 - Moving the logger's run-context cancel ahead of the retry join (D4).
+- An entry check in the logger's handler like graph-ingest's (D2).
 - Any other `natsclient` behaviour.
 - The pin's other `Subscribe` callers. They are ported later, and either context works for them after this change.
 

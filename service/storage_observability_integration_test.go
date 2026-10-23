@@ -248,8 +248,7 @@ func TestStorageObservabilityCollectsPublishesAndServes(t *testing.T) {
 	})
 
 	t.Run("health reports the picture and keeps the base verdict", func(t *testing.T) {
-		status := storage.Health()
-		assert.True(t, status.Healthy)
+		status := awaitStorageHealthy(t, storage, "a collected report must not make the service unhealthy")
 		assert.Contains(t, status.Message, "storage pressure (report-only)")
 		assert.Contains(t, status.Message, "collected")
 	})

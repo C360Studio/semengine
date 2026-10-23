@@ -42,6 +42,21 @@ const storageLoopBound = 10 * time.Second
 // is due well inside storageLoopBound.
 const storageLoopsConfig = `{"interval":"1s","timeout":"1s"}`
 
+// awaitStorageHealthy waits, within storageLoopBound, for s.Health() to report healthy and returns
+// that status. The base service is unhealthy until its first health check, which runs on its own
+// goroutine and is not ordered before anything else a test observes (#385). A service that never
+// becomes healthy fails the test with the last status seen.
+func awaitStorageHealthy(t *testing.T, s *StorageObservabilityService, why string) health.Status {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(t.Context(), storageLoopBound)
+	defer cancel()
+	status, err := probe.Await(ctx,
+		func(context.Context) (health.Status, error) { return s.Health(), nil },
+		func(status health.Status) bool { return status.Healthy })
+	require.NoError(t, err, why)
+	return status
+}
+
 // awaitStorageLog fails the test unless ch closes within storageLoopBound.
 func awaitStorageLog(t *testing.T, ch <-chan struct{}, what string) {
 	t.Helper()
@@ -251,9 +266,8 @@ func TestStorageObservabilityFailedStopIsRetried(t *testing.T) {
 // read nothing. The pin's three-second sleep is replaced by the two warnings themselves, and its
 // Snapshot accessor by the operator's route.
 //
-// The base service is unhealthy until its first health check, which runs on its own goroutine and
-// is not ordered before the warnings (#385), so the test waits for a healthy verdict. A service an
-// unreadable account made unhealthy never gives one, and the wait fails with the last status seen.
+// The test waits for a healthy verdict rather than reading one (awaitStorageHealthy, #385). A
+// service an unreadable account made unhealthy never gives one.
 func TestStorageObservabilityBootsWithoutAReachableAccount(t *testing.T) {
 	handler := newHoldingHandler(t, "")
 	s, _ := newTestStorageObservability(t, newUnconnectedClient(t), storageLoopsConfig, slog.New(handler))
@@ -266,12 +280,7 @@ func TestStorageObservabilityBootsWithoutAReachableAccount(t *testing.T) {
 	awaitStorageLog(t, collectorFailed, "the collector's failure warning")
 	awaitStorageLog(t, watchFailed, "the consumer's watch warning")
 
-	ctx, cancel := context.WithTimeout(t.Context(), storageLoopBound)
-	defer cancel()
-	status, err := probe.Await(ctx,
-		func(context.Context) (health.Status, error) { return s.Health(), nil },
-		func(status health.Status) bool { return status.Healthy })
-	require.NoError(t, err, "an unreadable account must not make the service unhealthy")
+	status := awaitStorageHealthy(t, s, "an unreadable account must not make the service unhealthy")
 	assert.Contains(t, status.Message, "storage report has not been read yet")
 
 	mux := http.NewServeMux()

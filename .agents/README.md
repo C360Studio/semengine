@@ -113,6 +113,8 @@ metadata and argument handling, not another rule set. Repository protocol and ro
   command `/semengine-handoff`.
 - [semengine-pickup](skills/semengine-pickup/SKILL.md): reconcile current state and verify worktree ownership. Claude
   command `/semengine-pickup`.
+- [semengine-status](skills/semengine-status/SKILL.md): report Slice 04A package port status, audit milestone/issue
+  hygiene, and sync the GitHub Project tracker. Claude command `/semengine-status`.
 
 Engine-capability skills, carried from SemStreams with the packages they govern (change
 `setup-04a-02-ingest-kernel`, design D12):

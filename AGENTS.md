@@ -35,6 +35,7 @@ task fmt          # format Go sources (the only command that writes)
 task fmt:check    # fail on formatting drift
 task spec:check   # strict OpenSpec validation; fails on a Hold: outside every task
 task spec:queue   # in-flight OpenSpec changes and their holds
+task status       # Slice 04A 65-pkg port scoreboard, open PRs/flakes, issue/milestone hygiene (-- --offline|--check|--sync-project)
 task docs:check   # markdownlint
 task tidy:check   # go.mod / go.sum tidy
 task build        # build

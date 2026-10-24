@@ -37,7 +37,7 @@ tree at its commit (#171). Review stops (Codex) after the design, after task 2.3
   `service/service_manager_http.go` (`:65`, `:272`, `:478`; drop the check at `:514`; `startupComponentPrefix`
   comment) and `service/rule_pack_bind.go` (`:41` and its doc) check `.(*ComponentManager)`. Gate:
   `go test -race ./service/` and `task verify`.
-- [ ] 2.3 Sensitivity (`notes/2.3.md`): each mutant detected or reported as a survivor: the collector caches the
+- [x] 2.3 Sensitivity (`notes/2.3.md`): each mutant detected or reported as a survivor: the collector caches the
   component counts at registration (`TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts`); the
   collector omits `starts_failed` (`TestStartupCollectorReportsExactlyNineSeries`); the manager treats every
   `component-manager` as a stand-in (`TestComponentStartupGatesReadiness`); `ComponentsImplementing` returns nil for

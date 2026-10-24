@@ -34,8 +34,12 @@ func TestDefaultConfigDeclaresRequiredMutationProvider(t *testing.T) {
 // literals, never built from graphmutation's constants, so a change to either
 // shows here.
 func TestConfigValidateMutationProviderRefusals(t *testing.T) {
-	const malformed = "graph mutation provider must be a required semengine.graph.mutation v1 nats-request " +
-		"input on graph.mutation.>"
+	const (
+		malformedMutations = `graph mutation provider port "mutations" must be a required semengine.graph.mutation v1 ` +
+			`nats-request input on graph.mutation.>`
+		malformedLegacy = `graph mutation provider port "legacy" must be a required semengine.graph.mutation v1 ` +
+			`nats-request input on graph.mutation.>`
+	)
 	entityStream := component.PortDefinition{
 		Name: "entity_stream", Config: component.JetStreamPort{StreamName: "ENTITY", Subjects: []string{"entity.>"}},
 	}
@@ -72,12 +76,19 @@ func TestConfigValidateMutationProviderRefusals(t *testing.T) {
 			config: configWith(entityStream, valid, provider("mutations_2", "graph.mutation.>", "v1", true)),
 			want:   "graph mutation provider port is ambiguous",
 		},
-		{name: "wrong version", config: configWith(entityStream, provider("mutations", "graph.mutation.>", "v2", true)), want: malformed},
-		{name: "not required", config: configWith(entityStream, provider("mutations", "graph.mutation.>", "v1", false)), want: malformed},
-		{name: "untyped graph.mutation.*", config: configWith(entityStream, untyped("graph.mutation.*")), want: malformed},
+		{name: "wrong version", config: configWith(entityStream, provider("mutations", "graph.mutation.>", "v2", true)), want: malformedMutations},
+		{name: "not required", config: configWith(entityStream, provider("mutations", "graph.mutation.>", "v1", false)), want: malformedMutations},
+		{name: "untyped graph.mutation.*", config: configWith(entityStream, untyped("graph.mutation.*")), want: malformedLegacy},
 		{
 			name: "untyped graph.mutation.entity.create", config: configWith(entityStream, untyped("graph.mutation.entity.create")),
-			want: malformed,
+			want: malformedLegacy,
+		},
+		{
+			// The malformed input is not the last input, so a refusal naming
+			// the last input fails here.
+			name:   "malformed before a non-member",
+			config: configWith(provider("mutations", "graph.mutation.>", "v2", true), entityStream),
+			want:   malformedMutations,
 		},
 		{
 			// Ruled on #323 (Q1): any one subject on graph.mutation. makes a

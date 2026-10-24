@@ -3264,3 +3264,46 @@
   proving_tests: n/a (task docs:check lints it)
   owner: port-composition developer
   disposition: adapt
+
+# Change setup-04a-04-graph-roots-revlag (PR #407, epic #9): pkg/revlag ported as adapt to internal/revlag ahead
+# of its importers, processor/graph-index and processor/graph-embedding (owner, 2026-10-24: Q1 yes).
+
+- source_path: pkg/revlag
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the low-water-of-pending caught-up watermark that graph-index (pin component.go:706, :1017, :1031, :1146,
+    :1364; watermark.go:59) and graph-embedding (pin component.go:732, :1474, :1516; readiness.go:43, :126) feed
+    their readiness envelopes from; both admitted (04A D2, changes 4 and 5) and ported later; internal because no
+    starter consumer imports it and no exported signature names its type (#9 comment 5953295358)
+  destination: internal/revlag
+  contract: >-
+    03B retained-contract-matrix row (design.md:703, "Readiness": honest readiness, ADR-066/084): the watermark is
+    the revision-lag input to it. openspec/specs/revision-watermark/spec.md: the floor is the highest observed
+    revision when none is in flight, else the lowest in-flight revision minus 1; Complete(key, rev) drains that
+    key's in-flight revisions at or below rev and no other key's; Observed is the highest revision observed;
+    Observe ignores revision 0; under ascending observation the floor never falls, and IndexedAt pairs it with the
+    commit time of a completed observed revision at or below it (zero means unknown), exact when none is in flight
+    (pin ADR-066 section 1, ADR-083 decision 3)
+  dependencies_and_side_effects: >-
+    stdlib only (container/list, slices, sync, time); no goroutine, no I/O; per-revision state only while a
+    revision is in flight
+  known_risks: >-
+    Indexed() dropped as unread (no production reader at the pin; 30 test call sites in graph-index and
+    graph-embedding read the IndexedAt floor when they port; its doc mentions reworded); the in-flight scan in
+    Complete and the floor read replaced (owner, Q1, PR #407 comment 6388065578; at the pin, draining 40,000 took
+    16.8 s, against 5.6 ms here, one local run, notes/3.2.md), every result equal to the pin's
+    (TestPropWatermarkHistory against the pin's code); Observe of a revision below one in flight now costs time
+    proportional to the in-flight revisions above it (40,000 observed in descending order took 1.6 s, against 2 ms
+    at the pin; ascending observation, the caller's precondition, is constant per call); the caller keeps Observe
+    ascending and the watermark does not check it: a lower revision observed after catch-up lowers the floor and
+    pairs it with a newer commit time, as at the pin; the covered commit time may be older than the newest covered
+    revision's, never newer; "gh#590" in the package comment is SemStreams' issue; no class:port-refactor issue
+    exists for the package; no importer until graph-index; a known gap in the proving tests, tracked as #408:
+    TestWatermark_ConcurrentReadersAndWriters can pass without the reader observing writer progress
+  proving_tests: >-
+    internal/revlag/watermark_test.go (the pin's 13 tests, TestWatermark_ObservedIsHighestDelivered,
+    TestWatermark_DrainAtFloorIsCovered, TestWatermark_CompleteWithNothingInFlight,
+    TestWatermark_ConcurrentReadersAndWriters, TestWatermark_RetentionTracksInFlight, TestPropWatermarkHistory
+    against internal/revlag/pinref_test.go, the pin's code)
+  owner: setup-04a-04-graph-roots-revlag developer
+  disposition: adapt

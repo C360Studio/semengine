@@ -10,14 +10,14 @@ not a task tracker and not a description of the tree.
   (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **Four and a half of the seven Slice 04A implementation changes.** SETUP 02, SETUP 03B, the Slice 04A design,
-  `flake-defense` and the first two implementation changes, `setup-04a-01-floor` and `setup-04a-02-ingest-kernel`
-  (PR #93), are archived; the capability specs under `openspec/specs/` are the current truth, and `docs/contract.md`
-  states the tier-0 contract 03B approved. Of the seven implementation changes in the Slice 04A design
-  (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`), change 3 (`setup-04a-03-boot`) is in progress (six of its
-  seven packages and four of `service`'s seven lifecycle-owner pull requests have merged; `service` PRs 5 to 7 remain),
-  `vocabulary/export` was ported ahead of change 7 (#234), and `setup-04a-04` to `setup-04a-07` are otherwise not
-  started.
+- **Four of the seven Slice 04A implementation changes are unfinished.** SETUP 02, SETUP 03B, the Slice 04A design,
+  `flake-defense` and the first three implementation changes, `setup-04a-01-floor`, `setup-04a-02-ingest-kernel`
+  (PR #93) and `setup-04a-03-boot` (all seven of its packages, the last being `service` in seven lifecycle-owner pull
+  requests ending with PR #393), are archived; the capability specs under `openspec/specs/` are the current truth, and
+  `docs/contract.md` states the tier-0 contract 03B approved. Of the seven implementation changes in the Slice 04A
+  design (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`), change 4 (`setup-04a-04-graph-roots`) has started
+  with one of its eight packages, `internal/revlag` (`setup-04a-04-graph-roots-revlag`); `vocabulary/export` was
+  ported ahead of change 7 (#234), and `setup-04a-05` to `setup-04a-07` are otherwise not started.
 
 ## Present
 
@@ -86,7 +86,8 @@ not a task tracker and not a description of the tree.
 | `internal/logforwarderpolicy/` | Carried from the pin by `port-logforwarderpolicy`, ahead of its importer: the log-forwarder service's configuration policy (`Resolve` decodes `min_level` and `exclude_sources`, defaults and validates them; the excluded sources are exactly the configured ones). Adapted from the pin: the pin's mandatory `flow-service.websocket` exclusion is dropped. Its one importer is `service`'s log forwarder, which reports the resolved values and applies none |
 | `internal/flowgraph/` | Ported from the pin's `component/flowgraph` by `port-flowgraph`, ahead of its importer: `BuildFromDeclarations` builds a graph of how components connect through their declared ports and refuses declarations that cannot form a valid one (a repeated name, two writers to one KV bucket, a malformed graph-mutation topology); `AnalyzeConnectivity` reports connected groups, lone components and ports nothing matches, with no severity. `composition` imports it |
 | `composition/` | Ported from the pin by `port-composition`, ahead of its boot importer: `Validate` judges a configuration's components against a registry's factories offline, with no NATS and no construction, and reports every problem as a finding of one closed vocabulary (an unknown factory, a port declarer's refusal, two components whose exclusive claims clash under the registry's own rule, `component.Declaration.ConflictWith`, a stream input nothing feeds, an interface mismatch); `Analyze` is the graph half, `Catalog` lists the factories with their default ports, and `Mermaid` draws the graph. ADR-100 governs it. The pin's `AssertValid` test helper is not ported: a product calls `Validate` and requires no errors. `service`'s component manager is its importer: it runs `Analyze` at construction and serves the result |
-| `docs/admission-ledger.yaml` | The admission ledger: 91 entries at full SemStreams SHAs, checked by `task ledger:check`, which also fails a `carry` entry that differs from the pin; four are `carry` (`storage`, `internal/semantictest`, and the files `config/stream_bounds.go` and `config/stream_drift.go`) |
+| `internal/revlag/` | Ported from the pin's `pkg/revlag` by `setup-04a-04-graph-roots-revlag`, ahead of its importers: `Watermark`, the revision-lag "caught up" watermark for a component that follows a NATS KV bucket. `Observe` records each delivered revision, `Complete` drains a key's revisions at or below the one a worker finished, and `IndexedAt` returns the floor (the highest revision with nothing at or below it still in flight) with the commit time of a completed revision it covers; `Observed` returns the highest revision delivered. The pin's `Indexed()` is not ported (`IndexedAt` returns the same floor), and `Complete` and the floor read no longer scan every in-flight revision. The callers, `processor/graph-index` and `processor/graph-embedding`, are not ported yet |
+| `docs/admission-ledger.yaml` | The admission ledger: 92 entries at full SemStreams SHAs, checked by `task ledger:check`, which also fails a `carry` entry that differs from the pin; four are `carry` (`storage`, `internal/semantictest`, and the files `config/stream_bounds.go` and `config/stream_drift.go`) |
 | `docs/tier1-cross-check.md` | The tier-0 port set (65 packages) compared with SemStreams' Tier 1 sister-import list at the pin: 39 in both, 23 Tier-1-only (each with its disposition), 26 tier-0-only, with what `setup-04a-02-ingest-kernel` and `vocab-export-packs` did; a record that changes no ledger row |
 | `LICENSE` | MIT, Copyright (c) 2025 C360 |
 | `package-lock.json`, `.gitignore` | npm lockfile for the pinned tools; ignore rules for Go, Node, editors, coverage |

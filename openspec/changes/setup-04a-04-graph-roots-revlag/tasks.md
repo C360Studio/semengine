@@ -27,14 +27,15 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 4. Ledger, status, docs
 
-- [ ] 4.1 The `adapt` row (design D10); the `internal/revlag/` map row and the corrected `docs/repository-map.md`
+- [x] 4.1 The `adapt` row (design D10); the `internal/revlag/` map row and the corrected `docs/repository-map.md`
   lines 12-19; the ADR-066 port note (design D11). Gate: `task ledger:check`, `task docs:check`, `task status --
   --offline` showing change 4 at 1/8.
 
 ## 5. Evidence and review
 
-- [ ] 5.1 `task mutate:check` for M1-M6 (detections) and S1 (survivor recorded, or dropped) in `notes/5.1.md`;
-  coverage recorded on the PR; `task verify` passes on a clean tree.
+- [x] 5.1 `task mutate:check` for M1-M6 (detections) and S1 (survivor recorded), and coverage, in `notes/5.1.md`
+  (verdicts from `notes/3.2.md:169-178`, run on the file the code stop approved).
+- [ ] 5.1a Coverage (100%, `notes/5.1.md`) recorded on the PR; `task verify` passes on a clean tree at the final head.
 - [ ] 5.2 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 
 ## 6. Close

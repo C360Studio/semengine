@@ -12,10 +12,12 @@
 >   repository's, not SemEngine's.
 > - Of the records and specs named here, ADR-083 and ADR-084 are ported with this one. ADR-062, ADR-065 and the
 >   `graph-index-readiness` spec are not yet ported.
-> - Of the code named here, `natsclient` is ported, with `BucketLastSeq` and `CreateKeyValueBucket`; file paths and line
->   numbers in the text are those at that commit. `processor/graph-index`, `processor/graph-ingest`,
->   `processor/graph-embedding`, `graph`, `graph/embedding`, `pkg/worker`, `pkg/revlag`, `pkg/fusion` and the `configs/`
->   files are not yet ported. The `semsource` code and decisions named here are that repository's.
+> - Of the code named here, `natsclient` is ported, with `BucketLastSeq` and `CreateKeyValueBucket`; `graph` and
+>   `processor/graph-ingest` are ported (change 2, PR #93; `graph.ComputeIndexStatus` returns with graph-index); and
+>   `pkg/revlag` is ported as `internal/revlag` (its admission-ledger row is `pkg/revlag`). File paths and line numbers
+>   in the text are those at that commit. `processor/graph-index`, `processor/graph-embedding`, `graph/embedding`,
+>   `pkg/worker`, `pkg/fusion` and the `configs/` files are not yet ported. The `semsource` code and decisions named
+>   here are that repository's.
 
 ## Status
 

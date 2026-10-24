@@ -21,11 +21,13 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 2. Tests and code
 
-- [ ] 2.1 Tests first (design "Proving tests"). Gate: the new assertions fail on the base, recorded in
-  `notes/2.1.md` with the failing output.
-- [ ] 2.2 The fix (design D1), plus D3's clause in item (8) of the `processor/graph-ingest` row's `contract` in
+- [x] 2.1 Tests first (design "Proving tests"). Gate: the new assertions fail on the base, recorded in
+  `notes/2.1.md` with the failing output. Done at 859ea96: all five malformed cases fail at
+  `mutation_port_contract_test.go:110` on the base (`notes/2.1.md`).
+- [x] 2.2 The fix (design D1), plus D3's clause in item (8) of the `processor/graph-ingest` row's `contract` in
   `docs/admission-ledger.yaml`. Gate: `task verify` green, plus the design's mutants each reporting `verdict: detection`
-  under `task mutate:check`, recorded in `notes/2.2.md`.
+  under `task mutate:check`, recorded in `notes/2.2.md`. Done at acc3563: `task verify` exited 0 on a clean tree, and
+  M1 to M4 each reported `verdict: detection` (M4 caught only by `malformed before a non-member`) (`notes/2.2.md`).
 
 ## 3. Code review
 

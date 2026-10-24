@@ -9,8 +9,7 @@
     "jetstream": { "enabled": true }
   },
   "services": {
-    "message-logger": {"enabled": true, "config": {}},
-    "discovery": {"enabled": true, "config": {}}
+    "message-logger": {"enabled": true, "config": {}}
   },
   "components": {
     "graph-ingest": {

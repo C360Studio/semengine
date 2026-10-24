@@ -44,8 +44,8 @@ func (s ServiceConfig) Validate() error {
 }
 
 // ServiceConfigs holds service instance configurations.
-// The map key is the service name (e.g., "metrics", "discovery").
+// The map key is the service name (e.g., "metrics", "heartbeat").
 // Services are only created if both:
-// 1. They have registered a constructor via init()
+// 1. A constructor is registered under that name (service.RegisterAll registers the framework's)
 // 2. They have an entry in this config map with enabled=true
 type ServiceConfigs map[string]ServiceConfig

@@ -90,6 +90,7 @@ func TestMaybeStartPProfDisabledStartsNothing(t *testing.T) {
 //
 // spec: service-lifecycle / The profiling server stops on Shutdown
 func TestMaybeStartPProfLogsABindFailure(t *testing.T) {
+	// Every address: blocks MaybeStartPProf's ":port" bind (pprof.go).
 	held, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = held.Close() })

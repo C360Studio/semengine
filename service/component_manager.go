@@ -86,11 +86,6 @@ type ComponentManager struct {
 	// NOT READY.
 	stopBegun atomic.Bool
 
-	// startupMetrics is the writer the service manager hands in after
-	// construction (setStartupMetricWriter); nil until then, and for a manager
-	// started on its own.
-	startupMetrics atomic.Pointer[startupMetricWriter]
-
 	// The supervisor (the health publisher and the override-expiry reporter): its
 	// run context's cancel, and the channel closed once both loops returned.
 	// Start's function in the lifecycle guard writes them and the stop sequence

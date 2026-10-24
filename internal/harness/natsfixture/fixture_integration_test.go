@@ -6,10 +6,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net"
 	"os/exec"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -176,16 +174,11 @@ func stopHoldsNothing(t *testing.T, f *Fixture) bool {
 	return f.Stop(ctx) == nil
 }
 
-// deadPort returns a port nothing listens on: the operating system handed it out and it was
-// closed again at once.
+// deadPort returns a port nothing listens on: freePort's pick, closed again at once.
 func deadPort(t *testing.T) string {
 	t.Helper()
-	l, err := net.Listen("tcp", ":0")
+	port, err := freePort()
 	if err != nil {
-		t.Fatal(err)
-	}
-	port := strconv.Itoa(l.Addr().(*net.TCPAddr).Port)
-	if err := l.Close(); err != nil {
 		t.Fatal(err)
 	}
 	return port

@@ -34,7 +34,8 @@ const (
 	// context is already cancelled when cleanups run.
 	cleanupBudget = 60 * time.Second
 	// startAttempts bounds how many times the start phase tries to create and start a container when
-	// another process binds the host port freePort just released before Docker binds it (#345).
+	// another process binds the host port freePort just released before Docker binds it (#345). That
+	// gap is open on every operating system, whatever family freePort picks in, so the retry stays.
 	startAttempts = 2
 	// readyLog is the line nats-server logs once per boot when it accepts clients.
 	readyLog = "Server is ready"
@@ -310,17 +311,21 @@ func isAddressInUse(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "address already in use")
 }
 
-// freePort asks the operating system for a free TCP port on all addresses and releases it, so the
-// start phase can give Docker that exact host port. Left to pick, Docker Desktop for Mac takes the
-// next port of a counter of its own, which does not see the Mac's listeners, and a container whose
-// port a Mac process holds runs with an empty port list (#209; the probe on PR #210, comment
-// 6151736554; TestStartPastHeldPorts). The macOS kernel hands ports out in sequence (the same
-// probe), so a port-0 listener does not get this port back until the range wraps; a process that
-// binds it before Docker does fails the container start with "address already in use", which the
-// start phase retries once with a new port (#345; TestStartRetriesOnceOnPortInUse). Restart keeps
-// the binding (TestRestartURLDials).
+// freePort asks the operating system for a free TCP port on every IPv4 address and releases it, so
+// the start phase can give Docker that exact host port. It picks with "tcp4" because Docker's bind
+// was seen on every IPv4 address (#345's error text; Docker's choice is not promised), and an
+// every-address "tcp" pick was handed a port a daemon held on 127.0.0.1 (#390). That a "tcp4" pick
+// skips a port an IPv4 socket holds was measured on one Mac (PR #404 comment 6386556253, go1.26.10,
+// macOS 26.5.2), not promised. Left to pick, Docker Desktop for Mac takes the next port of a
+// counter of its own, which does not see the Mac's listeners, and a container whose port a Mac
+// process holds runs with an empty port list (#209; the probe on PR #210, comment 6151736554;
+// TestStartPastHeldPorts). The macOS kernel hands ports out in sequence (the same probe), so a
+// port-0 listener does not get this port back until the range wraps; a process that binds it
+// before Docker does fails the container start with "address already in use", which the start
+// phase retries once with a new port (#345; TestStartRetriesOnceOnPortInUse). Restart keeps the
+// binding (TestRestartURLDials).
 func freePort() (string, error) {
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp4", ":0")
 	if err != nil {
 		return "", err
 	}

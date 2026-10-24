@@ -14,7 +14,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/config"
 	"github.com/c360studio/semengine/internal/httpadmission"
 	"github.com/c360studio/semengine/internal/lifecycleguard"
@@ -30,21 +29,6 @@ const componentManagerName = "component-manager"
 // healthPublishInterval is how often the health publisher publishes each
 // service's health after its first publish.
 const healthPublishInterval = 5 * time.Second
-
-// componentStartup is what the manager reads from the component-manager service
-// beyond Service: its startup counts and stop, the startup metric writer it is
-// handed, its read-only startup routes, its components' own routes and their
-// health. A component-manager that does not implement it gets no component
-// routes and zero component counts, and readiness is read from services alone
-// (setup-04a-03-boot-service-manager design D3).
-type componentStartup interface {
-	startupSnapshot() startupUnitCounts
-	startupStopBegun() bool
-	setStartupMetricWriter(writer *startupMetricWriter)
-	registerStartupHTTPHandlers(prefix string, mux *http.ServeMux)
-	withComponents(fn func(map[string]*component.ManagedComponent) error) error
-	GetComponentHealth() map[string]component.HealthStatus
-}
 
 // Manager composes services, starts them in registration order and stops them
 // in reverse, and serves the HTTP surface around them: the main listener, an
@@ -71,7 +55,6 @@ type Manager struct {
 	bootServiceConfigs types.ServiceConfigs
 	sealedServices     []string
 	serviceOutcomes    map[string]*serviceInvocationOutcome
-	startupMetrics     *startupMetricWriter
 	// stopping is set when a stop of the started services begins.
 	stopping bool
 	// stopCalled is set by the first StopAll given a live context: from then
@@ -458,28 +441,22 @@ func (m *Manager) sealComposition() ([]admittedService, error) {
 	return services, nil
 }
 
-// recordStartInvoked records that the service's Start was called and publishes
-// the service startup counts.
+// recordStartInvoked records that the service's Start was called.
 func (m *Manager) recordStartInvoked(name string) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if outcome := m.serviceOutcomes[name]; outcome != nil {
 		outcome.startInvoked = true
 	}
-	writer := m.startupMetrics
-	m.mu.Unlock()
-	writer.publishServices()
 }
 
-// recordStartCompleted records that the service's Start returned startErr and
-// publishes the service startup counts.
+// recordStartCompleted records that the service's Start returned startErr.
 func (m *Manager) recordStartCompleted(name string, startErr error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if outcome := m.serviceOutcomes[name]; outcome != nil {
 		outcome.startCompleted, outcome.startErr = true, startErr
 	}
-	writer := m.startupMetrics
-	m.mu.Unlock()
-	writer.publishServices()
 }
 
 func (m *Manager) serviceStartupCountsLocked() serviceStartupCounts {
@@ -504,16 +481,18 @@ func (m *Manager) serviceStartupCounts() serviceStartupCounts {
 	return m.serviceStartupCountsLocked()
 }
 
-// initializeStartupMetrics registers the startup metric writer, hands it to a
-// component-manager that implements componentStartup, and claims the metrics
-// service's server.
+// initializeStartupMetrics registers the startup collector on the injected
+// metrics registry, else the metrics service's, and claims the metrics
+// service's server. With neither registry no collector is registered. The
+// component series read the component-manager's counts when it is the
+// framework's *ComponentManager, and zero otherwise.
 func (m *Manager) initializeStartupMetrics() error {
 	m.mu.RLock()
 	var registry *metric.MetricsRegistry
 	if m.dependencies != nil {
 		registry = m.dependencies.MetricsRegistry
 	}
-	components, _ := m.services[componentManagerName].(componentStartup)
+	components, _ := m.services[componentManagerName].(*ComponentManager)
 	metricsService, _ := m.services["metrics"].(*Metrics)
 	m.mu.RUnlock()
 	if registry == nil && metricsService != nil {
@@ -525,15 +504,8 @@ func (m *Manager) initializeStartupMetrics() error {
 		if components != nil {
 			componentSnapshot = components.startupSnapshot
 		}
-		writer, err := newStartupMetricWriter(registry, m.serviceStartupCounts, componentSnapshot)
-		if err != nil {
+		if err := registerStartupCollector(registry, m.serviceStartupCounts, componentSnapshot); err != nil {
 			return err
-		}
-		m.mu.Lock()
-		m.startupMetrics = writer
-		m.mu.Unlock()
-		if components != nil {
-			components.setStartupMetricWriter(writer)
 		}
 	}
 

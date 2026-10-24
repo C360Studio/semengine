@@ -200,6 +200,12 @@ the commit.
 | `/openapi.json` | the API document, in OpenAPI 3.0 form: the paths of every `HTTPHandler` service under its prefix, and the schemas of the types registered with `RegisterOpenAPISpec` |
 | `/docs` | a Swagger UI page for `/openapi.json`, only when `swagger_ui` is true; it loads its script and style sheet from `unpkg.com`, so the browser needs network access to it |
 
+The counts `/services` reports are also exported as the gauge `semengine_startup_units`, with an `owner` label
+(`services` or `components`) and a `stage` label. It has nine series: `admitted`, `starts_invoked`, `starts_completed`
+and `starts_failed` for services, and those four plus `lifecycle_participants` for components. The gauge is read from
+the same counts each time Prometheus collects, so it is never older than `/services`. `StartAll` registers it on the
+injected metrics registry, else on the `metrics` service's, and registers nothing when neither exists.
+
 `GET /graph/triples` is for an operator or a test, not a query API: it scans the bucket. Its query parameters are all
 optional:
 

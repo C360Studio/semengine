@@ -11,8 +11,9 @@ starts with `graph.mutation.`. A member SHALL be valid only when it is a require
 are exactly `graph.mutation.>` and whose interface is `semengine.graph.mutation` `v1`. Flowgraph SHALL refuse a
 member that is not valid, on an input or an output, with an error wrapping `errs.ErrInvalidConfig` that names the
 component and the port. graph-ingest SHALL refuse a member input that is not valid, in `Config.Validate` and when it
-builds its mutation routes, with an error that names the port. Each caller keeps its own refusal texts, direction
-rule and provider count.
+builds its mutation routes; when that input is its first member input, the refusal SHALL name the port, and a member
+input after the first is refused as ambiguous. Each caller keeps its own refusal texts, direction rule and provider
+count.
 
 #### Scenario: A nats port on a graph.mutation subject
 
@@ -29,8 +30,8 @@ rule and provider count.
 
 #### Scenario: A graph-ingest input with the wrong interface version
 
-- **WHEN** graph-ingest's configuration declares a required `nats-request` input `mutations` on `graph.mutation.>`
-  with interface `semengine.graph.mutation` `v2`
+- **WHEN** graph-ingest's configuration declares a JetStream input `entity_stream` on `entity.>` and a required
+  `nats-request` input `mutations` on `graph.mutation.>` with interface `semengine.graph.mutation` `v2`
 - **THEN** `Config.Validate` refuses it with an invalid-class error containing `graph mutation provider port
   "mutations" must be a required semengine.graph.mutation v1 nats-request input on graph.mutation.>`
 

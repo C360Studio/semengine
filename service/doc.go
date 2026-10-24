@@ -7,8 +7,10 @@
 // endpoint. MessageLogger is the service that keeps the newest messages seen on
 // chosen NATS subjects for inspection. StorageObservabilityService is the
 // service that reports how full the NATS account's storage is. HeartbeatService
-// is the service that logs a liveness line at a fixed interval, and
-// MetricsForwarder is the service that publishes the process's metrics on NATS.
+// is the service that logs a liveness line at a fixed interval,
+// MetricsForwarder is the service that publishes the process's metrics on NATS,
+// and LogForwarder is the service that checks the log-forwarding settings and
+// says it forwards nothing yet.
 // The package also holds the helpers a composition root (the process's main function, which
 // builds and wires everything) calls itself:
 // MaybeStartPProf, WireGraphRuntime and the OpenAPI registry, plus the
@@ -19,9 +21,9 @@
 // third ComponentManager, the service that owns the components (see the
 // component manager section); the fourth MessageLogger (see the message logger
 // section); the fifth StorageObservabilityService (see the storage observability
-// section); this one carries HeartbeatService and MetricsForwarder (see the
-// heartbeat and metrics forwarder sections). The last service arrives with the
-// seventh.
+// section); the sixth HeartbeatService and MetricsForwarder (see the heartbeat
+// and metrics forwarder sections); the seventh, the last, LogForwarder (see the
+// log forwarder section).
 //
 // # Embedding BaseService
 //
@@ -468,6 +470,20 @@
 // unknown key, a key in another letter case, nil dependencies, a nil NATS
 // client, a nil metrics registry and a bad push_interval. See service/README.md.
 //
+// # The log forwarder
+//
+// LogForwarder forwards nothing yet: no log handler in this module publishes
+// logs to NATS, and pkg/logging and the boot wiring that would install one are
+// not ported. It checks its settings, runs the base service's lifecycle and, at
+// Start, writes one record at Warn saying so, with the resolved min_level
+// (DEBUG, INFO, WARN or ERROR, default INFO) and exclude_sources (the
+// configured source prefixes, trimmed and de-duplicated, with nothing added).
+// Both values are checked and reported, not applied. It is off unless the
+// configuration enables it, needs no NATS client and does no I/O. Construction
+// refuses an unknown key, a key in another letter case, nil dependencies and a
+// bad min_level, as invalid data naming the input. Start bounds Start only and
+// Stop is the only stop. See service/README.md.
+//
 // # The metrics service
 //
 // Metrics serves the Prometheus endpoint. Its config keys are port (default
@@ -477,8 +493,8 @@
 // while the server runs. A Metrics runs once: a second Start, and a Start after
 // any Stop, are refused with errs.ErrAlreadyStarted, and the context given to
 // Start bounds Start only. RegisterAll registers Metrics, the component manager,
-// the message logger, storage observability, the heartbeat and the metrics
-// forwarder.
+// the message logger, storage observability, the heartbeat, the metrics
+// forwarder and the log forwarder.
 //
 // # The profiling server
 //

@@ -20,6 +20,18 @@ configuration enables it.
 - **THEN** it returns an invalid-class error naming the input and no service
 - **AND** the test that verifies this is `TestLogForwarderConstructionRefusals`
 
+#### Scenario: Defaults and normalisation
+
+- **WHEN** the policy resolves `{}`, `{"exclude_sources":[]}`, a lower-case and an upper-case level, and a list
+  with repeated or padded entries
+- **THEN** the level defaults to `INFO`, the list is a non-nil slice holding the configured entries once each, and no
+  entry is added
+- **AND** whitespace-only input, an explicit empty level and a padded level (`" warn "`) give the defaults or the
+  trimmed level, as `TestResolveOwnsDefaultsNormalizationAndValidation` and the "padded level" row of
+  `TestLogForwarderSaysItForwardsNothing` check
+- **AND** the tests that verify this are `TestResolveOwnsDefaultsNormalizationAndValidation` and
+  `TestValidateLevelAcceptsOnlyTheFourUpperCaseLevels`
+
 #### Scenario: The constructor is registered and runs only when enabled
 
 - **WHEN** `RegisterAll` has filled a registry, and separately a document enabling `log-forwarder` and one naming no
@@ -48,10 +60,11 @@ stopped; a `Stop` after one that returned nil SHALL return nil.
 
 The log forwarder SHALL publish nothing, subscribe to nothing and hold no NATS connection: no log handler in this
 module publishes logs to NATS. When it starts it SHALL write one record at level Warn, through the logger in its
-dependencies, with the message `log-forwarder forwards nothing: no log handler in this module publishes logs to NATS`
-and the attributes `service` (`log-forwarder`), `min_level` (the resolved level's name) and `exclude_sources` (the
-resolved list), and SHALL write no other record while it runs. It SHALL record its status on the injected metrics
-registry as `semengine_service_status{service="log-forwarder"}`, as every service built on `BaseService` does.
+dependencies (`slog.Default()` when none is given) carrying `service` set to `log-forwarder`, with the message
+`log-forwarder forwards nothing: no log handler in this module publishes logs to NATS` and the attributes `service`
+(`log-forwarder`, once), `min_level` (the resolved level's name) and `exclude_sources` (the resolved list, `[]` when
+empty), and SHALL write no other record while it runs. It SHALL record its status on the injected metrics registry as
+`semengine_service_status{service="log-forwarder"}`, as every service built on `BaseService` does.
 
 #### Scenario: The record states the applied configuration
 

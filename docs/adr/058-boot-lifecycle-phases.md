@@ -28,8 +28,9 @@
 >   `service.Manager` and `RegisterInstance` (the service manager comes in the next pull request of the port), the
 >   Status amendment's `service.ConfigureRulePackMutations` (not in this pull request),
 >   `FlowService`, the milestone subscriber, and the lifecycle `Manager`'s ownership calls (`AttachOwnership`,
->   `WaitOwnership`). ADR-047 and ADR-056 are not ported. Not yet ported (later pull requests of the `service`
->   port): `LogForwarder`. `HeartbeatService`, `Metrics` and `MessageLogger` are ported.
+>   `WaitOwnership`). ADR-047 and ADR-056 are not ported. `HeartbeatService`, `Metrics`, `MessageLogger` and
+>   `LogForwarder` are ported; `LogForwarder` forwards nothing yet (no log handler in this module publishes logs to
+>   NATS).
 > - `path:line` cites below are the pin's; issue numbers (`gh#279`) are SemStreams'.
 
 - **Status**: Draft; ownership-specific boot service, watcher, heartbeat, and shutdown sections superseded by ADR-091

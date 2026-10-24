@@ -2739,7 +2739,8 @@
     env vars, refused until boot wires them (Q1, #74); the key refusals and the platform.instance_id refusal match
     in any letter case, as encoding/json does; a malformed document or trailing data fails the load (Q2); numbers
     are kept as written through the merge (json.Number), so a large integer in a raw config and a fraction in an
-    integer field are not rounded; env prefix SEMENGINE_ (#69). Retained: unknown keys elsewhere accepted,
+    integer field are not rounded; env prefix SEMENGINE_ (#69); the pin's dormant discovery default, for a service
+    that exists neither at the pin nor here, is dropped, so heartbeat is the only default service (#384). Retained: unknown keys elsewhere accepted,
     gulf_mexico default region, framework streams for writers not yet ported. Manager (change 3, config part 2):
     OnChange and Update unexported, PushToKV dropped; Stop takes a context and Start is one-shot, a run context
     created in Start and ended in Stop, so ending Start's context stops nothing (Q1); Stop closes the subscriber

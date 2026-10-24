@@ -488,10 +488,6 @@ func (l *Loader) getDefaults() *Config {
 			},
 		},
 		Services: types.ServiceConfigs{
-			"discovery": types.ServiceConfig{
-				Enabled: false, // Dormant by default
-				Config:  json.RawMessage(`{}`),
-			},
 			"heartbeat": types.ServiceConfig{
 				Enabled: true,
 				Config:  json.RawMessage(`{"interval": "30s"}`),

@@ -2580,33 +2580,36 @@
   disposition: defer-exclude
 
 # Change port-logforwarderpolicy (PR #319, epic #9): internal/logforwarderpolicy carried unchanged ahead
-# of its importer, service/log_forwarder.go (owner, 2026-10-19: Decision A).
+# of its importer, service/log_forwarder.go (owner, 2026-10-19: Decision A). Adapted by change
+# setup-04a-03-boot-service-log-forwarder (PR #393): the mandatory exclusion dropped (owner, 2026-10-24).
 
 - source_path: internal/logforwarderpolicy
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the log-forwarder service's inner configuration policy; its reader is service/log_forwarder.go
-    (pin :17, :58, :72), ported later in change 3 (setup-04a-foundation design D2 row 3); carried ahead of its
-    importer in the owner's order (#9 comment 6270875286; architect contract, One package per pull request)
+    (service PR 7 of change 3, PR #393)
   destination: internal/logforwarderpolicy
   contract: >-
-    as at the pin; every .go file matches it (task ledger:check). Resolve decodes one JSON object strictly
-    (unknown keys and a second value refused; empty, whitespace or null input gives the defaults), defaults
-    min_level to INFO, trims and upper-cases it, accepts DEBUG, INFO, WARN or ERROR, and returns ExcludeSources
-    with flow-service.websocket first, then the configured sources trimmed, empties dropped and duplicates
-    removed in first-seen order; ValidateFields accepts exactly the four upper-case levels and ignores its
-    second argument
+    adapted from the pin (task ledger:diff -- internal/logforwarderpolicy prints the lines). Resolve decodes one
+    JSON object strictly (unknown keys and a second value refused; empty, whitespace or null input gives the
+    defaults), defaults min_level to INFO, trims and upper-cases it, accepts DEBUG, INFO, WARN or ERROR, and
+    returns ExcludeSources as exactly the configured sources, trimmed, empties dropped and duplicates removed in
+    first-seen order, a non-nil empty slice when none. Changed from the pin: the mandatory flow-service.websocket
+    entry the pin put first is dropped (owner, 2026-10-24, PR #393), and ValidateFields, whose only outside reader
+    was the dropped LogForwarderConfig.Validate, is the unexported validateLevel without its unread second argument
   dependencies_and_side_effects: stdlib only (bytes, encoding/json, fmt, io, log/slog, strings); no goroutine, no I/O
   known_risks: >-
-    no importer until service's log-forwarder lands; the policy's behaviour readers at the pin
-    (internal/bootstrapobservability, pkg/logging) are not in the port set; the mandatory exclusion names a
-    source of the retired flow-service; five behaviours are untested at the pin: a second JSON value,
-    empty sources dropped, sources trimmed, whitespace-only input, the level trimmed (S1-S5, notes/2.2.md)
+    the policy's behaviour readers at the pin (internal/bootstrapobservability, pkg/logging) are not in the port
+    set, so nothing applies the policy to log records yet; the log-forwarder says so at Start; three behaviours are
+    untested by the policy's own tests, as at the pin: a second JSON value, empty sources dropped, sources trimmed
+    (S1-S3, archived port-logforwarderpolicy notes/2.2.md); whitespace-only input and the level trimmed (S4, S5) are
+    now tested
   proving_tests: >-
-    internal/logforwarderpolicy/policy_test.go (TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion,
-    TestValidateFieldsPreservesPublicConfigValidationSemantics)
-  owner: port-logforwarderpolicy developer
-  disposition: carry
+    internal/logforwarderpolicy/policy_test.go (TestResolveOwnsDefaultsNormalizationAndValidation,
+    TestValidateLevelAcceptsOnlyTheFourUpperCaseLevels); service/log_forwarder_test.go
+    (TestLogForwarderSaysItForwardsNothing)
+  owner: setup-04a-03-boot-service-log-forwarder developer
+  disposition: adapt
 
 # Change setup-04a-03-boot-health (PR #318, epic #9): health, the first package of change 3, ported ahead
 # of its importer, service (owner, 2026-10-19: #9 comment 6270875286).
@@ -2839,7 +2842,10 @@
     (openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:728). PR 6: the heartbeat service
     (heartbeat.go) and the metrics forwarder (metrics_forwarder.go), framework API reached through configuration: the
     heartbeat record and the metrics.> samples; semsource enables the heartbeat, semteams the forwarder; no Go caller
-    outside service at the pin
+    outside service at the pin. PR 7: the log forwarder (log_forwarder.go), framework API reached through
+    configuration (the min_level and exclude_sources keys and the one record it writes at Start); semteams enables the
+    block and reads it itself; no Go caller outside service at the pin. It forwards nothing yet (owner, #9 comment
+    6272104271)
   destination: service
   contract: >-
     the service-lifecycle and operator-surface specs; ADR-113; ADR-088 and ADR-109 (/readyz); the background-work
@@ -2882,7 +2888,12 @@
     internal/lifecycleguard); pin ADR-095 as carried and changed by ADR-113; ADR-110 (neither writes an ENTITY_STATES
     entry). Kept with contract lines: NewHeartbeatService and NewMetricsForwarderService (both registered by
     RegisterAll, with no OpenAPI spec because neither serves a route), HeartbeatConfig, HeartbeatService,
-    MetricsForwarderConfig and MetricsForwarder
+    MetricsForwarderConfig and MetricsForwarder. PR 7: the service-lifecycle requirements on the log forwarder's
+    construction, Start and Stop, and the record that says it forwards nothing, and on the service package reaching no
+    agentic package; the owner's ruling that log forwarding to NATS stays deferred (#9 comment 6272104271); ADR-113;
+    ADR-108 Decision 2 (the log forwarder gets its lifecycle from BaseService, which composes internal/lifecycleguard);
+    ADR-110 (it writes no ENTITY_STATES entry). Kept with contract lines: NewLogForwarderService (registered by
+    RegisterAll, with no OpenAPI spec because it serves no route), LogForwarderConfig and LogForwarder
   dependencies_and_side_effects: >-
     component, config, graph, graph/kvcatalog, health, internal/httpadmission, internal/keycase,
     internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup,
@@ -2902,7 +2913,9 @@
     STORAGE_REPORT bucket on first use and registers 19 collectors under the name storage-observability; the heartbeat runs one goroutine under a run context,
     ended and joined by Stop, and reads the component manager's health; the metrics forwarder runs one goroutine
     under a run context, ended and joined by Stop, gathers the injected metrics registry, publishes to the METRICS
-    stream through natsclient and counts its drops on semengine_errors_total
+    stream through natsclient and counts its drops on semengine_errors_total; the log forwarder imports
+    internal/logforwarderpolicy, starts no goroutine of its own (only the base service's health check), holds no NATS
+    connection, publishes and subscribes to nothing, and writes one Warn record at Start
   known_risks: >-
     PR 1 of 7 (base.go, pprof.go, graph_runtime.go, service_configs.go, schema.go, openapi.go, openapi_types.go,
     openapi_registry.go, configurable.go (removed in PR 4), doc.go, README.md); the managers and services follow. Dropped as unread:
@@ -3040,10 +3053,26 @@
     semengine_errors_total{type="metrics_publish"} and a failed gather on type="metrics_gather", and records its
     status on semengine_service_status (#387); the forwarded samples of one round share one timestamp. Retained,
     declared: a failed gather skips the whole round; a label value is spliced into the subject, and a publish that fails
-    for that reason is counted like any other failed publish
+    for that reason is counted like any other failed publish.
+    PR 7 of 7 (log_forwarder.go; it edits register.go). Dropped as unread: NewLogForwarder with its nil-config branch
+    (folded into NewLogForwarderService), LogForwarderConfig.Validate, LogForwarder.Config, the pin's config field (the
+    service keeps the resolved logforwarderpolicy.Policy), the Stop override (BaseService.Stop is promoted) and the
+    two validateLifecycleContext calls (BaseService's guard refuses a nil or ended context). Changed from the pin:
+    the service forwards nothing and says so in one record at Warn at Start (message, min_level, exclude_sources),
+    where the pin's comments said logs reach NATS, because no log handler in this module publishes logs to NATS and
+    pkg/logging and the boot wiring stay out (owner, #9 comment 6272104271; Q2, 2026-10-24); construction refuses a
+    key the configuration does not define or one in another letter case, as invalid data naming the key, where the
+    pin applied or dropped it; nil dependencies are refused; the mandatory flow-service.websocket exclusion is
+    dropped, so exclude_sources is what was configured (Q1, owner, 2026-10-24); ending Start's context stops nothing
+    and Stop is the only stop (ADR-113); the service logs through one logger, the injected one (slog.Default when
+    none), carrying service=log-forwarder, and records its status on semengine_service_status (#387). Not ported:
+    service/milestone_service.go, the pin's only service-to-agentic edge (03B design D4a). Issue #30
+    (class:port-refactor) asked for exactly that; the contract test TestServiceReachesNoAgenticPackage holds that
+    the service package reaches no agentic package, so this PR retires #30 (Q3, owner, 2026-10-24)
   proving_tests: >-
     service/*_test.go, service/*_integration_test.go, and processor/graph-ingest/discoverable_reads_test.go
-    (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop, the read line's test)
+    (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop, the read line's test);
+    internal/harness/contract/servicedeps_test.go (TestServiceReachesNoAgenticPackage)
   owner: setup-04a-03-boot-service-component-manager developer
   disposition: adapt
 

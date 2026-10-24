@@ -111,8 +111,8 @@ runs the base service's lifecycle, and says so:
 - **Why Warn.** An operator who enables `log-forwarder` asks for something the module does not do. Warn is the level
   this package already uses for a configured request it cannot honour as asked: a composition finding
   (`service/component_manager.go:366`) and a profiling-server bind failure (ledger `service` row, PR 1). Options: Warn
-  (chosen); Info (the pin's level for its "started" line, `lf:104`); refuse to construct (contradicts ruling (b)). The
-  owner may prefer Info; nothing else changes.
+  (chosen; owner ruling below); Info (the pin's level for its "started" line, `lf:104`); refuse to construct
+  (contradicts ruling (b)).
 - **Health.** `Health()` is the base's: healthy while running. The service does everything this module promises of it,
   so it does not report degraded (degraded would read as a fault in `/health` and `/readyz` for a configuration
   choice).
@@ -139,7 +139,7 @@ loaded with `config.NewLoader().LoadFromBytes`, then `ConfigureFromServices` wit
 `testComponentDependencies`: `GetService("log-forwarder")` finds a `*LogForwarder`; the same document without the
 `services` block: not found).
 
-## D6. The mandatory `flow-service.websocket` exclusion (owner question Q1)
+## D6. The `flow-service.websocket` exclusion (Q1: dropped)
 
 `pol:14`, `pol:87` put `flow-service.websocket` first in every resolved exclusion list (`sweep.md` L12). At the pin it
 kept SemStreams' flow-service WebSocket worker logs out of the NATS log stream, so streaming logs to a browser did not
@@ -289,13 +289,13 @@ Intent check: no boundary moves in this PR. Log forwarding to NATS stays deferre
   forwarder's payload and adds `service.LogForwarderConfig` to the guard's list.
 - **`operator-surface`:** none; the service serves no route.
 
-Draft: `specs/service-lifecycle/spec.md` beside this file, written for D6 option B. Under A or C its exclusion
-sentence reads "with `flow-service.websocket` first, then the configured `exclude_sources`, ..." and the record
-scenario expects `["flow-service.websocket","a","b"]`.
+Draft: `specs/service-lifecycle/spec.md` beside this file, written for D6 option B, which the owner chose.
 
-## Owner questions
+## Owner rulings
 
-- **Q1. Does the mandatory `flow-service.websocket` exclusion stay?** Recommendation: drop it (D6 option B). The
-  log-forwarder would otherwise report a SemStreams service name in its exclusion list on every boot, for a guard that
-  protects a log stream nothing in SemEngine produces; semteams keeps its own copy and is not affected. If a log
-  handler is admitted later, its design decides what it must exclude.
+Asked and answered in the Enjoy design stop, 2026-10-24 (record: PR #393 comment):
+
+- **Q1. Does the mandatory `flow-service.websocket` exclusion stay?** Dropped (D6 option B, as recommended). Units U-b
+  and P-2 stay in.
+- **Q2. The level of the forwards-nothing record (D4).** Warn, as recommended.
+- **Q3. Does this PR retire #30?** Yes (`Closes #30`); unit U-c stays in.

@@ -8,7 +8,7 @@ commit (#171).
 
 ## 1. Design
 
-- [ ] 1.1 Shape sweep (`sweep.md`) and design (`design.md`) pass review and are accepted by the owner. Gate:
+- [x] 1.1 Shape sweep (`sweep.md`) and design (`design.md`) pass review and are accepted by the owner. Gate:
   `task spec:check` and `task docs:check`; each comment read back.
 
 ## 2. Port

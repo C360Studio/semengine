@@ -149,7 +149,7 @@ forwards, no `flow-service` exists or is planned in the port set, and semteams k
 | Option | What changes | Cost |
 | --- | --- | --- |
 | A. Keep | Nothing; `policy.go` stays byte-equal to the pin (ledger `carry`) | The framework's reported config names a SemStreams service; docs must explain a list entry nobody configured; the decision moves to whoever admits the handler |
-| B. Drop now (recommended) | `pol:14` and `pol:87` removed, `policy_test.go`'s expected lists lose the entry; ledger row `carry` to `adapt`; the spec states the list is exactly what was configured, normalised | About 4 production and 5 test lines in a second package, which the ruling put in this PR |
+| B. Drop now (recommended) | `pol:14` and `pol:87` removed, `policy_test.go`'s expected lists lose the inserted entry (configured ones stay); ledger row `carry` to `adapt`; the spec states the list is exactly what was configured, normalised | About 4 production and 5 test lines in a second package, which the ruling put in this PR |
 | C. Keep and defer by issue | As A, plus an issue scheduling the decision with the `pkg/logging` admission | An issue that waits on an admission nobody has scheduled; the ruling asked this PR to decide |
 | D. Replace with a SemEngine safety exclusion | A different mandatory source, such as the forwarder's own | A guard against a loop no code here can make; no handler to test it against |
 
@@ -184,8 +184,11 @@ outside the repository, so `notes/2.1.md` records assertion failures, not only c
     `Registry.Constructor`, `NewServiceManager`, `ConfigureFromServices`, `GetService`, `config.NewLoader`,
     `LoadFromBytes`, `createTestServiceDependencies`, `testComponentDependencies`, `metric.NewMetricsRegistry`,
     `requireGauge`, `stopContext`, `baseServiceOwner`, `lifecycletest.Run`, `errs.IsInvalid`, `slog.NewJSONHandler`.
-- **U-b** (D6 option B only) `internal/logforwarderpolicy/policy_test.go`: each expected list without
-  `flow-service.websocket`; the case `exclude_sources: []` expects an empty list. D6.
+- **U-b** (D6 option B only) `internal/logforwarderpolicy/policy_test.go`: each expected list loses only the
+  automatically inserted `flow-service.websocket`. A source the case configures itself stays, in its first-seen
+  position: "normalizes and deduplicates" configures `["metrics-forwarder", "flow-service.websocket",
+  "metrics-forwarder"]` and expects `["metrics-forwarder", "flow-service.websocket"]`. The case
+  `exclude_sources: []` expects an empty list. D6.
 - **U-c** (#30) `internal/harness/contract/servicedeps_test.go` (new): `TestServiceReachesNoAgenticPackage` (`go list
   -deps ./service` names no path with an `agentic` element, the test `componentDepViolations` makes for
   `./component`, `internal/harness/contract/componentdeps_test.go:86-121`, with the agentic check only) and its paired
@@ -273,9 +276,9 @@ Intent check: no boundary moves in this PR. Log forwarding to NATS stays deferre
   last `service` PR, is where the inventory scheduled its proof (inventory § 9). Comments on #196 (`LogForwarder`
   composes the guard through `BaseService`) and, after merge, #364 (unblocked). No other open issue names this file
   or the policy package (`sweep.md` § 4).
-- **Merge order:** #382 first. It is ready and touches `service/README.md`, `service/doc.go`, the ledger, the
-  repository map and the `service-lifecycle` spec in hunks this PR does not edit (`sweep.md` § 4). This PR then merges
-  `origin/main` (never a rebase) before task 3.2's spec sync, keeping every edit of both.
+- **Merge order:** #382 merged first (`c770283`) and `origin/main` is merged into this branch. Open PR #395 (docs,
+  `metric/README.md` and `docs/repository-map.md`) also edits the repository map that task 3.1 updates; whichever
+  merges second merges `origin/main` (never a rebase) and keeps every edit of both, before task 3.2's spec sync.
 
 ## D10. Spec deltas (written after acceptance; `skip_specs` removed then)
 

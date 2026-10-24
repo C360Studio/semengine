@@ -16,6 +16,8 @@
 package revlag
 
 import (
+	"container/list"
+	"slices"
 	"sync"
 	"time"
 )
@@ -44,10 +46,15 @@ type Watermark struct {
 	mu             sync.Mutex
 	observedHigh   uint64    // highest revision ever delivered
 	observedHighAt time.Time // commit time of observedHigh
-	// pending maps an in-flight revision to its key and KV commit time. It is the
-	// ONLY per-revision state; it drains to empty when the pipeline catches up, so
-	// memory tracks in-flight work, never cumulative throughput.
-	pending map[uint64]inflight
+	// order lists the in-flight revisions in ascending order, so the floor is read
+	// from its front; pending maps each in-flight revision to its element there;
+	// byKey lists each key's in-flight revisions, so Complete visits only that key's.
+	// A drained revision leaves all three at once: they are the ONLY per-revision
+	// state, they drain to empty when the pipeline catches up, and memory tracks
+	// in-flight work, never cumulative throughput.
+	pending map[uint64]*list.Element
+	order   list.List
+	byKey   map[string][]uint64
 	// coveredRev is the newest revision known to be BOTH observed and covered by
 	// the current floor; coveredAt is its commit time. Carried forward as
 	// one scalar pair rather than retaining timestamps for every completed revision
@@ -64,16 +71,17 @@ type Watermark struct {
 	coveredAt  time.Time
 }
 
-// inflight is the per-pending-revision record: the key it belongs to (completion is
-// key-scoped) and the KV entry's commit time (entry.Created()).
+// inflight is the per-pending-revision record: the revision, the key it belongs to
+// (completion is key-scoped) and the KV entry's commit time (entry.Created()).
 type inflight struct {
+	rev      uint64
 	key      string
 	commitAt time.Time
 }
 
 // New returns an empty Watermark (its floor is 0 until the first Observe).
 func New() *Watermark {
-	return &Watermark{pending: make(map[uint64]inflight)}
+	return &Watermark{pending: make(map[uint64]*list.Element), byKey: make(map[string][]uint64)}
 }
 
 // Observe records revision r (for key, committed at commitAt) as
@@ -87,7 +95,9 @@ func New() *Watermark {
 //
 // observedHigh is monotonic; ascending delivery means r exceeds any prior, but max()
 // is kept for defensiveness. Revision 0 ("no revision") is ignored — KV stream
-// sequences start at 1.
+// sequences start at 1. A revision observed again while in flight takes the newer
+// key and commit time. Ascending delivery appends in constant time; a lower revision
+// walks back from the highest in-flight revision to its place.
 func (w *Watermark) Observe(r uint64, key string, commitAt time.Time) {
 	if r == 0 {
 		return
@@ -98,7 +108,37 @@ func (w *Watermark) Observe(r uint64, key string, commitAt time.Time) {
 		w.observedHigh = r
 		w.observedHighAt = commitAt
 	}
-	w.pending[r] = inflight{key: key, commitAt: commitAt}
+	in := &inflight{rev: r}
+	if e, ok := w.pending[r]; ok {
+		in = e.Value.(*inflight)
+		w.dropFromKeyLocked(in.key, r)
+	} else {
+		w.pending[r] = w.insertLocked(in)
+	}
+	in.key, in.commitAt = key, commitAt
+	w.byKey[key] = append(w.byKey[key], r)
+}
+
+// insertLocked places in among the in-flight revisions in ascending order and
+// returns its element; r is not already in flight. Caller holds w.mu.
+func (w *Watermark) insertLocked(in *inflight) *list.Element {
+	for e := w.order.Back(); e != nil; e = e.Prev() {
+		if e.Value.(*inflight).rev < in.rev {
+			return w.order.InsertAfter(in, e)
+		}
+	}
+	return w.order.PushFront(in)
+}
+
+// dropFromKeyLocked removes r from key's in-flight revisions, and the key once it
+// has none. Caller holds w.mu.
+func (w *Watermark) dropFromKeyLocked(key string, r uint64) {
+	revs := slices.DeleteFunc(w.byKey[key], func(x uint64) bool { return x == r })
+	if len(revs) == 0 {
+		delete(w.byKey, key)
+		return
+	}
+	w.byKey[key] = revs
 }
 
 // Complete drains every in-flight revision for key with revision <= rev — the single
@@ -107,41 +147,48 @@ func (w *Watermark) Observe(r uint64, key string, commitAt time.Time) {
 // sees individually; an inline delete handler calls it with the tombstone's
 // revision, which drains an earlier pending update the delete supersedes. Key-scoped
 // (never global-<=-rev) so one key's completion cannot drop a different key's pending
-// revision.
+// revision. It visits only key's own in-flight revisions.
 func (w *Watermark) Complete(key string, rev uint64) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	var drained []uint64
-	for r, in := range w.pending {
-		if in.key == key && r <= rev {
-			drained = append(drained, r)
+	var drained []*inflight
+	var kept []uint64
+	for _, r := range w.byKey[key] {
+		if r > rev {
+			kept = append(kept, r)
+			continue
 		}
+		e := w.pending[r]
+		w.order.Remove(e)
+		delete(w.pending, r)
+		drained = append(drained, e.Value.(*inflight))
 	}
 	if len(drained) == 0 {
 		return
 	}
-	// Capture the drained commit times BEFORE deleting, then advance the covered
-	// floor over the post-drain state.
-	times := make([]time.Time, len(drained))
-	for i, r := range drained {
-		times[i] = w.pending[r].commitAt
-		delete(w.pending, r)
+	if len(kept) == 0 {
+		delete(w.byKey, key)
+	} else {
+		w.byKey[key] = kept
 	}
-	w.advanceCoveredLocked(drained, times)
+	// Every drained revision has left the in-flight set, so the covered floor
+	// advances over the post-drain state.
+	w.advanceCoveredLocked(drained)
 }
 
 // advanceCoveredLocked moves the covered (rev, commit time) pair forward using the
-// revisions just drained. Caller holds w.mu.
+// revisions just drained, each with its commit time. Caller holds w.mu.
 //
 // Two cases, mirroring indexedLocked:
 //   - pending empty: the floor IS observedHigh, which was itself observed, so the
 //     covered timestamp is exactly observedHighAt. This is the caught-up case an
 //     operator sees most, and it is exact.
-//   - pending non-empty: the floor is minPending-1 and the only newly-covered
-//     revisions are those just drained at or below it. A revision drained EARLIER
-//     while it sat above the then-floor is not reconsidered — that is the
-//     deliberate memory/precision trade documented on coveredRev.
-func (w *Watermark) advanceCoveredLocked(drained []uint64, times []time.Time) {
+//   - pending non-empty: the floor is one less than the lowest in-flight revision
+//     (the front of order) and the only newly-covered revisions are those just
+//     drained at or below it. A revision drained EARLIER while it sat above the
+//     then-floor is not reconsidered — that is the deliberate memory/precision
+//     trade documented on coveredRev.
+func (w *Watermark) advanceCoveredLocked(drained []*inflight) {
 	if len(w.pending) == 0 {
 		if w.observedHigh > w.coveredRev {
 			w.coveredRev = w.observedHigh
@@ -150,10 +197,10 @@ func (w *Watermark) advanceCoveredLocked(drained []uint64, times []time.Time) {
 		return
 	}
 	floor := w.indexedLocked()
-	for i, r := range drained {
-		if r <= floor && r > w.coveredRev {
-			w.coveredRev = r
-			w.coveredAt = times[i]
+	for _, in := range drained {
+		if in.rev <= floor && in.rev > w.coveredRev {
+			w.coveredRev = in.rev
+			w.coveredAt = in.commitAt
 		}
 	}
 }
@@ -193,16 +240,12 @@ func (w *Watermark) IndexedAt() (indexed uint64, commitAt time.Time) {
 	return w.indexedLocked(), w.coveredAt
 }
 
-// indexedLocked computes the floor IndexedAt returns; caller holds w.mu.
+// indexedLocked computes the floor IndexedAt returns from the lowest in-flight
+// revision, the front of order, without a scan; caller holds w.mu.
 func (w *Watermark) indexedLocked() uint64 {
-	if len(w.pending) == 0 {
+	lowest := w.order.Front()
+	if lowest == nil {
 		return w.observedHigh
 	}
-	minRev := ^uint64(0)
-	for r := range w.pending {
-		if r < minRev {
-			minRev = r
-		}
-	}
-	return minRev - 1
+	return lowest.Value.(*inflight).rev - 1
 }

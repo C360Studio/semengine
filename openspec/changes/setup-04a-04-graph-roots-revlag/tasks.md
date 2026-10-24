@@ -10,18 +10,18 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 2. Tests
 
-- [ ] 2.1 `internal/revlag/watermark_test.go` (design D7, D8): the pin's 13 tests with each `Indexed()` read taken
+- [x] 2.1 `internal/revlag/watermark_test.go` (design D7, D8): the pin's 13 tests with each `Indexed()` read taken
   from `IndexedAt()`; `TestWatermark_ObservedIsHighestDelivered`, `TestWatermark_DrainAtFloorIsCovered`,
   `TestWatermark_CompleteWithNothingInFlight`, `TestWatermark_ConcurrentReadersAndWriters`; `TestPropWatermarkHistory`
   against `internal/revlag/pinref_test.go`, the pin's code. Written before the package source. Gate: in 3.1.
 
 ## 3. Port
 
-- [ ] 3.1 `internal/revlag/watermark.go` as design D2-D4: the pin's code without `Indexed`, with the doc lines that
+- [x] 3.1 `internal/revlag/watermark.go` as design D2-D4: the pin's code without `Indexed`, with the doc lines that
   name it reworded. Gate: `go test -race -count=1 ./internal/revlag`, `go test -count=5 -cpu 1 -shuffle=on
   ./internal/revlag`, `go list -deps ./internal/revlag` naming only standard-library packages; seed and checks
   completed for `TestPropWatermarkHistory` in `notes/3.1.md`.
-- [ ] 3.2 Design D5 (Q1 yes): `Complete` and the floor read no longer scan every in-flight revision; the 2.1 tests pass
+- [x] 3.2 Design D5 (Q1 yes): `Complete` and the floor read no longer scan every in-flight revision; the 2.1 tests pass
   unchanged; new `TestWatermark_RetentionTracksInFlight` (design D7) passes; benchmark at 10,000 and 40,000 in flight
   in `notes/3.2.md`. Gate: as 3.1.
 

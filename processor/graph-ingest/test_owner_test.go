@@ -19,7 +19,6 @@ func (d *graphIngestTestDrain) Drain(ctx context.Context) error {
 	return d.drain(ctx)
 }
 
-// spec: test-cleanup-policy / Lexical ownership of lifecycle test fixtures
 func TestGraphIngestTestOwnerControlledStopPreservesAuthority(t *testing.T) {
 	opCtx, cancelOperation := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancelOperation()
@@ -54,7 +53,6 @@ func TestGraphIngestTestOwnerControlledStopPreservesAuthority(t *testing.T) {
 	}
 }
 
-// spec: test-cleanup-policy / Lexical ownership of lifecycle test fixtures
 func TestGraphIngestTestOwnerFailedAttemptIsNotRetried(t *testing.T) {
 	opCtx, cancelOperation := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancelOperation()
@@ -73,7 +71,6 @@ func TestGraphIngestTestOwnerFailedAttemptIsNotRetried(t *testing.T) {
 	}
 }
 
-// spec: test-cleanup-policy / Lexical ownership of lifecycle test fixtures
 func TestGraphIngestTestOwnerCanceledOperationKeepsFreshTerminalAuthority(t *testing.T) {
 	operationCtx, cancelOperation := context.WithCancel(t.Context())
 	want := errors.New("core subscription cleanup failed")
@@ -102,7 +99,6 @@ func TestGraphIngestTestOwnerCanceledOperationKeepsFreshTerminalAuthority(t *tes
 	}
 }
 
-// spec: test-cleanup-policy / Lexical ownership of lifecycle test fixtures
 func TestGraphIngestTestOwnerWaitsForObservedClosure(t *testing.T) {
 	operationCtx, cancelOperation := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancelOperation()

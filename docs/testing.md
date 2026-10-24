@@ -484,6 +484,11 @@ including those.
 
 - Wait on a signal, never on `time.Sleep`. Prefer a channel, callback or `sync.WaitGroup`; next, an injected clock;
   last, bounded polling with `probe.Await`. A longer sleep does not make an observation causal.
+- Before asserting on state another goroutine writes, wait on the event that puts your read after that write: a
+  channel receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
+  `probe.Await` on that value. If the wait is not the line just before the assertion, add a comment naming the event.
+  Time passing is not such an event, and neither is a log line that can print before the write; a real-clock timer
+  may still bound how long the wait runs (#392).
 - Run with `-race`. `task test:unit` and `task test:integration` both do.
 - Pass contexts in. Derive test contexts from `t.Context()` and narrow them with `context.WithTimeout`. Helpers take
   the caller's context rather than making their own.

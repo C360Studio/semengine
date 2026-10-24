@@ -358,6 +358,12 @@ is the first bullet below.
   missing from the handoff is a finding.
 - Network listeners use ephemeral ports. Tests mutating global state such as `slog.SetDefault` are not parallel.
 - Wall-clock assertions have a rationale and realistic tolerance; concurrent tests use explicit synchronization.
+- An assertion on state another goroutine writes is a finding when nothing orders the read after the write: its only
+  ordering is elapsed wall clock, or a log line the write does not come after. The ordering event is a channel
+  receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
+  `probe.Await` on that value; where that wait is not the line just before the assertion and no comment names the
+  event, that is a finding too. A real-clock timer that only bounds the wait is not a finding (`docs/testing.md`,
+  "Concurrency and cleanup"; #392).
 - A new **exported** parse/decode/validate surface without a fuzz target and seed corpus is a finding; check the
   harness asserts an invariant, not a table of expected outputs replayed through `f.Add`. Seed replay reported as
   fuzz exploration is a finding.

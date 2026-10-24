@@ -358,6 +358,11 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
   original (`docs/testing.md`, "Show that the test can fail").
 - Use ephemeral ports, explicit synchronization instead of sleeps, and no `t.Parallel()` around process-global state
   such as `slog.SetDefault`. Explain wall-clock assertions and give them realistic tolerance.
+- An assertion on state another goroutine writes first waits on the event that orders the read after the write: a
+  channel receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
+  `probe.Await` on that value. Where that wait is not the line just before the assertion, a comment names the event.
+  Elapsed wall clock alone, or a log line the write does not come after, orders nothing; a real-clock timer may still
+  bound how long the wait runs (`docs/testing.md`, "Concurrency and cleanup"; #392).
 - Run gates through the Task entrypoint: focused tests during iteration, then `task verify` before an implementation
   push; `scripts/verify.sh` lists the gates it runs, including `task test:integration` and `task cover:check`.
   Consumer lanes are added to the gate graph when their packages and workload exist; until then there is no such

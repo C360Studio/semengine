@@ -15,8 +15,7 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
   and `tcp` `"127.0.0.1:0"`, recording per kind the hits on 63150 and on 63145-63155. Run B: hold a `tcp` `":0"`
   listener, pick with `tcp4` `":0"` as many times, recording hits on the held port and its neighbours, then bind the
   held port explicitly with `tcp4` and record the error. D1 and D2 cite this comment. Gate: the PR comment link.
-- [ ] 1.4 Codex design review and owner design acceptance on #404. Gate: the comments.
-  Hold: Codex design review of record and the owner's acceptance, on PR #404.
+- [x] 1.4 Codex design review and owner design acceptance on #404. Gate: the comments.
 
 ## 2. Tests and code
 

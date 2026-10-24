@@ -22,4 +22,4 @@ commit (#171).
 ## 3. Docs, ledger and follow-ups
 
 - [x] 3.1 `service/README.md`, `service/doc.go` and the admission ledger rows updated.
-- [ ] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.
+- [x] 3.2 Spec deltas synced into `openspec/specs/` and `skip_specs` removed; archive as the last content commit.

@@ -12,10 +12,10 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   verdict is linked from a PR comment. Gate: the verdict. Passed at ef6848b with four MEDIUM findings (holds for the
   review stops, task lines for the ledger and #398 steps, file the ambiguous-refusal defect, a case where the malformed
   input is not last) and one NIT, all applied (PR #397 comment 6384552461).
-- [ ] 1.3 Codex design review on the PR. Gate: Codex's comment.
-  Hold: Codex design review (the owner starts Codex).
-- [ ] 1.4 Owner design acceptance on #331 or the PR. Gate: the owner's comment.
-  Hold: owner design acceptance.
+- [x] 1.3 Codex design review on the PR. Gate: Codex's comment. Codex passed at 270690e with no findings (PR #397
+  comment 6384611022).
+- [x] 1.4 Owner design acceptance on #331 or the PR. Gate: the owner's comment. Accepted 2026-10-24 (PR #397 comment
+  6384623561).
 - [x] 1.5 The ambiguous refusal the design leaves alone is filed as #399 (`status:blocked`, linked from the PR without a
   closing keyword). Gate: the issue.
 

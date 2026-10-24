@@ -13,7 +13,7 @@ tree at its commit (#171). Review stops (Codex) after the design, after task 2.3
 
 ## 2. Refactor
 
-- [ ] 2.1 Tests first, the concrete component manager (design D2, "Proving tests"): rewrite
+- [x] 2.1 Tests first, the concrete component manager (design D2, "Proving tests"): rewrite
   `service/component_startup_test.go` on `newTestComponentManager`, deleting `componentStartupDouble`; cases
   `TestComponentStartupServesStartupRoutesCountsAndComponentRoutes`, `TestComponentStartupGatesReadiness` (healthy,
   unhealthy, starting, failed, stopping), `TestConfigureRefusesACompositionWithoutAComponentManager`. The rewritten

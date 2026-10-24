@@ -46,7 +46,7 @@ func Resolve(raw json.RawMessage) (Policy, error) {
 	}
 	cfg.MinLevel = strings.ToUpper(strings.TrimSpace(cfg.MinLevel))
 	cfg.ExcludeSources = normalizeExclusions(cfg.ExcludeSources)
-	if err := ValidateFields(cfg.MinLevel, cfg.ExcludeSources); err != nil {
+	if err := validateLevel(cfg.MinLevel); err != nil {
 		return Policy{}, err
 	}
 
@@ -56,9 +56,9 @@ func Resolve(raw json.RawMessage) (Policy, error) {
 	}, nil
 }
 
-// ValidateFields validates the public service type's field semantics without
-// applying decode-time defaults or normalization.
-func ValidateFields(minLevel string, _ []string) error {
+// validateLevel accepts exactly the four upper-case level names; Resolve
+// trims and upper-cases before calling it.
+func validateLevel(minLevel string) error {
 	switch minLevel {
 	case "DEBUG", "INFO", "WARN", "ERROR":
 		return nil

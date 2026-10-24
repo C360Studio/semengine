@@ -49,8 +49,8 @@ func TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion(t *testing
 	}
 }
 
-func TestValidateFieldsPreservesPublicConfigValidationSemantics(t *testing.T) {
-	require.NoError(t, ValidateFields("WARN", []string{"component"}))
-	require.ErrorContains(t, ValidateFields("", nil), "invalid log level")
-	require.ErrorContains(t, ValidateFields("trace", nil), "invalid log level")
+func TestValidateLevelAcceptsOnlyTheFourUpperCaseLevels(t *testing.T) {
+	require.NoError(t, validateLevel("WARN"))
+	require.ErrorContains(t, validateLevel(""), "invalid log level")
+	require.ErrorContains(t, validateLevel("trace"), "invalid log level")
 }

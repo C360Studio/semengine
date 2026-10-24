@@ -4,6 +4,7 @@ package service
 
 import (
 	"context"
+	"log/slog"
 	"slices"
 	"strconv"
 	"testing"
@@ -98,4 +99,39 @@ func TestMessageLoggerPassesTheLifecycleSuite(t *testing.T) {
 		require.ErrorIs(t, owner.Start(t.Context()), errs.ErrAlreadyStarted)
 		require.Empty(t, owner.Observe().Unresolved)
 	})
+}
+
+// TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing is design D2's final check: with
+// one subject, the Start context is cancelled while the logger writes that subject's Debug
+// "Subscribed to subject" record, which it writes after its last subscribe has succeeded and been
+// recorded. Start then returns an error matching context.Canceled, writes no "MessageLogger
+// started" record, and holds nothing; a later Stop returns nil (ADR-113: if ctx ends before Start
+// returns, Start returns its error and holds nothing). A logger without the check after its loop
+// starts with the subscription held.
+//
+// spec: service-lifecycle / The message logger's Start bounds Start and Stop is the only stop
+func TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing(t *testing.T) {
+	client := fixtureClient(t)
+	handler := newHoldingHandler(t, "Subscribed to subject")
+	owner := &messageLoggerOwner{ml: newTestMessageLogger(t, client,
+		`{"monitor_subjects":["suite.logger.final-check"]}`, slog.New(handler))}
+	stopLoggerOnCleanup(t, owner.ml)
+	started := handler.arrived("MessageLogger started")
+
+	startCtx, cancelStart := context.WithCancel(t.Context())
+	defer cancelStart()
+	startResult := make(chan error, 1)
+	go func() { startResult <- owner.Start(startCtx) }()
+	awaitSignal(t, handler.heldRecord(), "the subject's Subscribed record held")
+	cancelStart()
+	handler.releaseHeld()
+
+	require.ErrorIs(t, <-startResult, context.Canceled, "a Start whose context ended after its last subscribe fails")
+	select {
+	case <-started:
+		t.Fatal(`a failed Start wrote "MessageLogger started"`)
+	default:
+	}
+	require.Empty(t, owner.Observe().Unresolved, "a failed Start holds nothing")
+	require.NoError(t, owner.Stop(stopContext(t)))
 }

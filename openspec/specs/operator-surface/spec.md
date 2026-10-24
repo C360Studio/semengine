@@ -11,9 +11,7 @@ contains and in which shape, and what readiness means, so that a deployment's pr
 written against promises rather than against the pin's code. It is created by the `service` port (change 3 of epic
 #9, service PR 2) and grows as later owners (the component manager, the heartbeat and the other services) add their
 routes.
-
 ## Requirements
-
 ### Requirement: The service manager serves only diagnostics until boot commits
 
 From the moment `StartAll` binds its main listener (`http_port`, default 8080, on every interface) until it commits,
@@ -232,7 +230,8 @@ The message logger SHALL serve, under `/message-logger/`, `entries`, `stats`, `s
 `entries` SHALL return the newest stored entries, newest first; its `limit` SHALL default to 100 and be clamped to
 10000, and a missing, non-numeric, zero or negative value SHALL give 100. Its `subject` filter SHALL be a NATS subject
 pattern matched with `flowgraph.SubjectCovers` and applied before the limit, and a pattern NATS cannot parse SHALL match
-nothing. `stats` SHALL report `total_messages`, `sampled_messages`, `valid_messages` (messages that decoded as typed
+nothing. `stats` SHALL report `total_messages`, `dropped_messages` (messages not stored because their handler context
+had ended; not counted in `total_messages`), `sampled_messages`, `valid_messages` (messages that decoded as typed
 envelopes), `invalid_messages` (the rest), `sample_rate`, `max_entries`, `start_time`, `last_message_time`,
 `uptime_seconds`, `monitored_subjects`, `subject_overlaps`, `subject_reconciliation_degraded` and
 `subject_reconciliation_error`. `trace/{traceID}` SHALL answer 400 unless the ID is 32 hex characters, and otherwise
@@ -264,6 +263,12 @@ JSON string, so every entry can be served. `RegisterAll` SHALL register the mess
 - **WHEN** a typed envelope and a raw payload are stored
 - **THEN** `valid_messages` counts the first and `invalid_messages` the second
 - **AND** the test that verifies this is `TestStatsCountsOnlyTypedEnvelopesValid`
+
+#### Scenario: Dropped messages are counted
+
+- **WHEN** the logger's callback is handed a message whose context has ended
+- **THEN** `stats` reports `dropped_messages` 1 and `total_messages` 0
+- **AND** the test that verifies this is `TestMessageLoggerCountsAndLogsADroppedMessage`
 
 #### Scenario: A malformed trace ID, or a method other than GET or HEAD
 

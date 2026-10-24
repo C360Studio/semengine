@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -206,7 +207,8 @@ func TestEntriesSubjectFilterUsesNATSMatching(t *testing.T) {
 // those bytes (Q1(a)), so /entries and /trace still serve valid JSON with every entry, and the
 // string reads back as the bytes sent; a JSON payload is still served as itself. At the pin one
 // such message made both routes fail for as long as it was held. The trace ID rides in the
-// callback's context as natsclient.Subscribe puts it there (natsclient/client.go:1042-1043).
+// callback's context as natsclient.Client.Subscribe puts it there, read from the message's
+// headers.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestEntriesServeNonJSONPayload(t *testing.T) {
@@ -291,6 +293,60 @@ func TestStatsCountsOnlyTypedEnvelopesValid(t *testing.T) {
 	assert.Equal(t, 2, *stats.Sampled)
 	assert.Equal(t, 0, *stats.Valid)
 	assert.Equal(t, 2, *stats.Invalid)
+}
+
+// TestMessageLoggerCountsAndLogsADroppedMessage is design D3: a message the subscription callback
+// is handed with a context that has ended is not stored and not counted in total_messages; /stats
+// reports it in dropped_messages, and one Warn record names its subject and the context's error.
+// natsclient ends a handler's context once its Close has begun (T2, T3); which messages arrive that
+// late is not promised, so the test hands the callback's body an ended context directly.
+//
+// spec: service-lifecycle / The message logger's Start bounds Start and Stop is the only stop
+// spec: operator-surface / The message logger's routes are served under /message-logger
+func TestMessageLoggerCountsAndLogsADroppedMessage(t *testing.T) {
+	records := &recordingHandler{} // pprof_test.go's: it keeps each record's level and attributes
+	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["*"]}`, slog.New(records))
+	rl := routeLogger{ml: ml, mux: http.NewServeMux()}
+	ml.RegisterHTTPHandlers("/message-logger", rl.mux)
+
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
+	rl.store(ended, "logger.dropped", []byte(`{"n":1}`))
+
+	rec := rl.serve(t, http.MethodGet, "/message-logger/stats")
+	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
+	var stats struct {
+		Total   *int `json:"total_messages"`
+		Dropped *int `json:"dropped_messages"`
+	}
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &stats), rec.Body.String())
+	require.NotNil(t, stats.Dropped, "dropped_messages missing: %s", rec.Body.String())
+	require.NotNil(t, stats.Total, "total_messages missing: %s", rec.Body.String())
+	assert.Equal(t, 1, *stats.Dropped)
+	assert.Equal(t, 0, *stats.Total)
+	assert.Empty(t, ml.GetLogEntries(0), "a message whose context has ended is not stored")
+
+	records.mu.Lock()
+	var dropped []slog.Record
+	for _, r := range records.records {
+		if r.Message == "Message dropped: its handler context has ended" {
+			dropped = append(dropped, r)
+		}
+	}
+	records.mu.Unlock()
+	require.Len(t, dropped, 1, "one Warn record for the dropped message")
+	assert.Equal(t, slog.LevelWarn, dropped[0].Level)
+	attrs := map[string]slog.Value{}
+	dropped[0].Attrs(func(a slog.Attr) bool {
+		attrs[a.Key] = a.Value
+		return true
+	})
+	require.Contains(t, attrs, "subject")
+	assert.Equal(t, "logger.dropped", attrs["subject"].String())
+	require.Contains(t, attrs, "error")
+	err, ok := attrs["error"].Any().(error)
+	require.True(t, ok, "the error attribute is an error, got %T", attrs["error"].Any())
+	assert.True(t, errors.Is(err, context.Canceled), "the error attribute is the context's error, got %v", err)
 }
 
 // TestTraceRouteRefusesMalformedID: /trace/{traceID} answers 400 unless the ID is 32 hex digits,

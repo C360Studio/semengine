@@ -302,3 +302,15 @@ Asked and answered in the Enjoy design stop, 2026-10-24 (record: PR #393 comment
   and P-2 stay in.
 - **Q2. The level of the forwards-nothing record (D4).** Warn, as recommended.
 - **Q3. Does this PR retire #30?** Yes (`Closes #30`); unit U-c stays in.
+
+## Addenda from task 2.1
+
+Recorded at the end so the brief line ranges above stay valid.
+
+- **Empty exclusion list.** `Resolve` returns a non-nil empty slice when nothing is configured, and the record writes
+  it as `[]`, never `null` (U-a and U-b assert this; today's `normalizeExclusions` already builds a non-nil slice).
+- **The `service` attribute** appears once on the record: set through the logger, not repeated on the record (D1).
+- **Text that P-2 makes untrue, for task 3.1:** `docs/admission-ledger.yaml:2595` (the policy row's mandatory
+  exclusion) and `:2605` (cites `TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion`, whose name keeps
+  "SafetyExclusion"; task 3.1 renames the test and the citation together), and `docs/repository-map.md:86` ("always
+  excludes `flow-service.websocket`").

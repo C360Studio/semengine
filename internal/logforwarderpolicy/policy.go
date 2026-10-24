@@ -11,9 +11,7 @@ import (
 	"strings"
 )
 
-const mandatoryWebSocketExclusion = "flow-service.websocket"
-
-// Policy is the normalized log-forwarder policy consumed by boot composition.
+// Policy is the normalized log-forwarder policy consumed by the log-forwarder service.
 type Policy struct {
 	MinLevel       slog.Level
 	ExcludeSources []string
@@ -70,8 +68,8 @@ func ValidateFields(minLevel string, _ []string) error {
 }
 
 func normalizeExclusions(configured []string) []string {
-	result := make([]string, 0, len(configured)+1)
-	seen := make(map[string]struct{}, len(configured)+1)
+	result := make([]string, 0, len(configured))
+	seen := make(map[string]struct{}, len(configured))
 	appendUnique := func(source string) {
 		source = strings.TrimSpace(source)
 		if source == "" {
@@ -84,7 +82,6 @@ func normalizeExclusions(configured []string) []string {
 		result = append(result, source)
 	}
 
-	appendUnique(mandatoryWebSocketExclusion)
 	for _, source := range configured {
 		appendUnique(source)
 	}

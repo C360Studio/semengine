@@ -123,8 +123,8 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 		}
 		if !valid {
 			return fmt.Errorf(
-				"graph mutation provider must be a required %s %s nats-request input on %s",
-				graphmutation.InterfaceType, graphmutation.InterfaceVersion, graphmutation.SubjectFamily,
+				"graph mutation provider port %q must be a required %s %s nats-request input on %s",
+				definition.Name, graphmutation.InterfaceType, graphmutation.InterfaceVersion, graphmutation.SubjectFamily,
 			)
 		}
 		found = true

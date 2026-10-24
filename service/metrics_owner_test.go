@@ -49,6 +49,7 @@ func boundMetricsListener(t *testing.T) net.Listener {
 // binding ":port" fails (probe H1 on #343, as TestMaybeStartPProfLogsABindFailure holds its port).
 func heldPort(t *testing.T) int {
 	t.Helper()
+	// Every address: blocks a server's ":port" bind (probe H1 on #343).
 	held, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = held.Close() })
@@ -109,6 +110,7 @@ func loopbackAddr(addr string) (string, error) {
 // the open wildcard listener, Linux refuses it, and the check runs either way. The open listener
 // must still read as held, so the check is shown able to fail.
 func TestListenerReleasedSeesOnlyTheListenersOwnFamily(t *testing.T) {
+	// Every address: plays the manager's every-address listener, as #388 needs.
 	wildcard, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = wildcard.Close() })

@@ -1,0 +1,55 @@
+# Tasks: fix-390-391-port-pick-family
+
+Each task names its outcome and the gate that proves it. Tests come first. Record in `notes/<task>.md` how each test
+fails on the base commit. Each code task ends only when `task verify` passes on a clean tree at its commit (#171),
+except task 2.1, whose red test is ticked with task 2.4 (below).
+
+## 1. Design
+
+- [x] 1.1 Inventory (`inventory.md`) passes independent inventory review (`INVENTORY PASS`), recorded on PR #404.
+  Gate: the reviewer's verdict.
+- [x] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and both spec deltas; its
+  verdict is linked from a PR comment.
+- [x] 1.3 The port-pick walk, posted on PR #404 with program source, command, go and macOS versions, and output, on the
+  owner's Mac with the daemon on `127.0.0.1:63150`. Run A: 20,000 or more binds each for `tcp` `":0"`, `tcp4` `":0"`
+  and `tcp` `"127.0.0.1:0"`, recording per kind the hits on 63150 and on 63145-63155. Run B: hold a `tcp` `":0"`
+  listener, pick with `tcp4` `":0"` as many times, recording hits on the held port and its neighbours, then bind the
+  held port explicitly with `tcp4` and record the error. D1 and D2 cite this comment. Gate: the PR comment link.
+- [x] 1.4 Codex design review and owner design acceptance on #404. Gate: the comments.
+
+## 2. Tests and code
+
+- [x] 2.1 Tests first: `TestEveryAddressPortPickSaysWhy` and its sensitivity test in
+  `internal/harness/contract/addresses_test.go` (design "Proving tests"). Gate: the first fails on the base naming the
+  nine sites; the sensitivity test passes; output in `notes/2.1.md`. A red test fails `task verify`, so it lands in
+  task 2.4's commit and 2.1 is ticked with 2.4.
+- [x] 2.2 `internal/harness/natsfixture/fixture.go` (`freePort` picks `tcp4`; comments `:36-37`, `:313-321` per D1)
+  and `fixture_integration_test.go` (`deadPort` returns `freePort()`). Gate: `task verify`.
+- [x] 2.3 `internal/harness/natsfixture/start_port_integration_test.go`: `// Every address:` reasons at `:37`, `:57`,
+  `:64`. Gate: `task test:integration` for the package.
+- [x] 2.4 `metric/lifecycle_test.go:70`, `service/pprof_test.go:93`, `service/metrics_owner_test.go:52,112`:
+  reasons (D4), comment lines only. Gate: `TestEveryAddressPortPickSaysWhy` passes; `task verify` green.
+- [x] 2.5 `scripts/lint-test-ports.sh`: header, scan, exit handling and patterns (D6), with
+  `TestLintTestPortsSkipsIgnoredFiles` written first. Gate: the new test fails on the base and passes after;
+  `task verify` green; `notes/2.5.md` records the by-hand run from the main checkout before and after.
+
+## 3. Code review
+
+- [x] 3.1 Claude code review. A Claude `semengine-reviewer` passes the code at a named commit with a local
+  `task verify`; recorded on PR #404.
+- [x] 3.2 Codex code review of record at a named commit with a local `task verify`; the PR body carries
+  `implemented-by: claude (opus)` and `reviewed-by: codex`.
+
+## 4. Docs and archive
+
+- [x] 4.1 `docs/testing.md:498-500` (the family to pick, the reason comment, the release-check line, D5) and
+  `docs/test-infrastructure.md:139-148` (the `tcp4` pick, measured by task 1.3 and not promised; the retry covers the
+  gap). Gate: `task docs:check`.
+- [x] 4.2 `AGENTS.md` § 3 and `.agents/rules-index.md` § 3: one new row each, carrying the guard, D3's review-only
+  remainder and D5. Gate: `task verify` (row-count check) and `AGENTS.md` under 24,000 bytes.
+- [x] 4.3 `.agents/contracts/semengine-reviewer.md:359`: the one line of D5. Gate: `task verify` (the adapter-match
+  check passes with the adapters unchanged).
+- [x] 4.4 `docs/admission-ledger.yaml:248-265`: the `lint-test-ports.sh` destination notes the header, the scan of
+  unignored files and the `[[:space:]]` patterns, by this change (#391). Gate: `task ledger:check`.
+- [x] 4.5 Both deltas synced into `openspec/specs/`; archived as the last content commit. Gate: `task spec:check` and
+  `task docs:check`.

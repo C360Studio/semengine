@@ -356,7 +356,9 @@ is the first bullet below.
   assertion, and restored baseline. A completion checkbox is not evidence. A survivor or inconclusive run claimed as
   a detection, a generated failure not replayed with the same input against both versions, or an unresolved survivor
   missing from the handoff is a finding.
-- Network listeners use ephemeral ports. Tests mutating global state such as `slog.SetDefault` are not parallel.
+- Network listeners use ephemeral ports. A port-0 pick is in the family that is bound, an every-address pick's
+  `// Every address:` reason holds, and a release check dials the listener's own loopback and counts only a refused
+  connection (#390, #391; `docs/testing.md`). Tests mutating global state such as `slog.SetDefault` are not parallel.
 - Wall-clock assertions have a rationale and realistic tolerance; concurrent tests use explicit synchronization.
 - An assertion on state another goroutine writes is a finding when nothing orders the read after the write: its only
   ordering is elapsed wall clock, or a log line that can print before the write. The ordering event is a channel

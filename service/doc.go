@@ -6,8 +6,10 @@
 // owns the components. Metrics is the service that serves the Prometheus
 // endpoint. MessageLogger is the service that keeps the newest messages seen on
 // chosen NATS subjects for inspection. StorageObservabilityService is the
-// service that reports how full the NATS account's storage is. The package also
-// holds the helpers a composition root (the process's main function, which
+// service that reports how full the NATS account's storage is. HeartbeatService
+// is the service that logs a liveness line at a fixed interval, and
+// MetricsForwarder is the service that publishes the process's metrics on NATS.
+// The package also holds the helpers a composition root (the process's main function, which
 // builds and wires everything) calls itself:
 // MaybeStartPProf, WireGraphRuntime and the OpenAPI registry, plus the
 // service-configuration and schema helpers the service manager reads.
@@ -16,8 +18,10 @@
 // carried BaseService and the shared files; the second Manager and Metrics; the
 // third ComponentManager, the service that owns the components (see the
 // component manager section); the fourth MessageLogger (see the message logger
-// section); this one carries StorageObservabilityService (see the storage
-// observability section). The other services arrive with the later ones.
+// section); the fifth StorageObservabilityService (see the storage observability
+// section); this one carries HeartbeatService and MetricsForwarder (see the
+// heartbeat and metrics forwarder sections). The last service arrives with the
+// seventh.
 //
 // # Embedding BaseService
 //
@@ -430,6 +434,34 @@
 // example alert rules over these names; the engine does not load them. See
 // service/README.md for the full list.
 //
+// # The heartbeat service
+//
+// HeartbeatService logs one line, "System heartbeat", at Info when it starts
+// and then every interval, so an operator can see the process is alive. The
+// line carries uptime, goroutines, components_healthy and components_total.
+// It is on by default: the configuration loader's defaults enable a heartbeat
+// service at 30 s, so a composition that names no services still gets it. Its
+// only key is interval (default 30s, at least 1s; an empty value takes the
+// default). Construction refuses an unknown key, a key in another letter case,
+// nil dependencies, a nil service manager and a bad interval, as invalid data
+// naming the input. Start refuses, naming component-manager, when the service
+// manager holds no *ComponentManager; that manager need only be composed. Start
+// bounds Start only and Stop is the only stop. See service/README.md.
+//
+// # The metrics forwarder
+//
+// MetricsForwarder publishes the metrics registry it is given on NATS, at
+// Start and then every push_interval (default 5s). Each sample is one JSON
+// object {timestamp, name, component, type, value, labels} on
+// metrics.<component>.<name>, where component is the sample's component label,
+// else "system". The go_* and process_* families are left out unless
+// include_go_metrics or include_proc_metrics is set. It is off unless the
+// configuration enables it. A sample that does not encode or publish is
+// counted on semengine_errors_total with type metrics_publish, a failed gather
+// with type metrics_gather, and the loop goes on. Construction refuses an
+// unknown key, a key in another letter case, nil dependencies, a nil NATS
+// client, a nil metrics registry and a bad push_interval. See service/README.md.
+//
 // # The metrics service
 //
 // Metrics serves the Prometheus endpoint. Its config keys are port (default
@@ -439,7 +471,8 @@
 // while the server runs. A Metrics runs once: a second Start, and a Start after
 // any Stop, are refused with errs.ErrAlreadyStarted, and the context given to
 // Start bounds Start only. RegisterAll registers Metrics, the component manager,
-// the message logger and storage observability.
+// the message logger, storage observability, the heartbeat and the metrics
+// forwarder.
 //
 // # The profiling server
 //

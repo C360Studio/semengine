@@ -2830,7 +2830,10 @@
     storage_observability_metrics.go), framework API reached through configuration, the route
     /storage-observability/report, the semengine_storage_* metrics and the health message; no consumer enables it and
     no Go caller outside service exists at the pin; the 03B operator-surface row for the report says Keep
-    (openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:728)
+    (openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md:728). PR 6: the heartbeat service
+    (heartbeat.go) and the metrics forwarder (metrics_forwarder.go), framework API reached through configuration: the
+    heartbeat record and the metrics.> samples; semsource enables the heartbeat, semteams the forwarder; no Go caller
+    outside service at the pin
   destination: service
   contract: >-
     the service-lifecycle and operator-surface specs; ADR-113; ADR-088 and ADR-109 (/readyz); the background-work
@@ -2867,7 +2870,13 @@
     because the route's spec names no schema), StorageObservabilityConfig, StorageObservabilityService, the
     HTTPHandler methods RegisterHTTPHandlers and OpenAPISpec, StorageReportResponse and StorageReportSummary (the
     route's wire shape), and the example alert rules at configs/prometheus/rules/storage-pressure.yml with their four
-    tests (owner, PR 376 comment 6363685574)
+    tests (owner, PR 376 comment 6363685574). PR 6: the service-lifecycle requirements on the heartbeat service's and
+    the metrics forwarder's construction, Start and Stop, the heartbeat record and the forwarded samples; ADR-098
+    Decision 3 (the heartbeat and the samples leave as logs and metrics); ADR-113; ADR-108 Decision 2 (both compose
+    internal/lifecycleguard); pin ADR-095 as carried and changed by ADR-113; ADR-110 (neither writes an ENTITY_STATES
+    entry). Kept with contract lines: NewHeartbeatService and NewMetricsForwarderService (both registered by
+    RegisterAll, with no OpenAPI spec because neither serves a route), HeartbeatConfig, HeartbeatService,
+    MetricsForwarderConfig and MetricsForwarder
   dependencies_and_side_effects: >-
     component, config, graph, graph/kvcatalog, health, internal/httpadmission, internal/keycase,
     internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup,
@@ -2884,7 +2893,10 @@
     ended and joined by Stop; the storage observability service uses natsclient/storagereport and runs two goroutines
     under one run context (a collection of the account's streams and buckets every interval, 1 minute by default, and
     a watch of STORAGE_REPORT retried every 5 s), both ended and joined by Stop; it creates or reconciles the
-    STORAGE_REPORT bucket on first use and registers 19 collectors under the name storage-observability
+    STORAGE_REPORT bucket on first use and registers 19 collectors under the name storage-observability; the heartbeat runs one goroutine under a run context,
+    ended and joined by Stop, and reads the component manager's health; the metrics forwarder runs one goroutine
+    under a run context, ended and joined by Stop, gathers the injected metrics registry, publishes to the METRICS
+    stream through natsclient and counts its drops on semengine_errors_total
   known_risks: >-
     PR 1 of 7 (base.go, pprof.go, graph_runtime.go, service_configs.go, schema.go, openapi.go, openapi_types.go,
     openapi_registry.go, configurable.go (removed in PR 4), doc.go, README.md); the managers and services follow. Dropped as unread:
@@ -3010,7 +3022,19 @@
     collection already inside the JetStream account listing when Stop begins (how soon nats.go's listing sees its
     context end is not promised), and the listing's own cancellation. Mutation survivor, reported as a survivor:
     removing clear(m.accountTiers) from ForgetAccount (deleting a series already gone does nothing and the next
-    ObserveAccount replaces the record)
+    ObserveAccount replaces the record).
+    PR 6 of 7 (heartbeat.go, metrics_forwarder.go; it edits register.go and service_configs.go). Dropped as unread:
+    the MetricsGatherer interface, HeartbeatConfig.Validate and MetricsForwarderConfig.Validate, the test-only
+    constructors and the pin's componentHealthGetter. Changed from the pin: construction refuses a key the
+    configuration does not define or one in another letter case, as invalid data naming the key, where the pin took
+    the default and dropped the operator's value (#344); nil dependencies and a nil NATS client or metrics registry
+    are refused; an empty push_interval takes 5 s; both services log through the injected logger; the heartbeat
+    record is written at Info, where the pin wrote Debug (owner, 2026-10-23); ending Start's context stops nothing and
+    Stop is the only stop, retried after a failure (ADR-113); the forwarder counts an encode or publish failure on
+    semengine_errors_total{type="metrics_publish"} and a failed gather on type="metrics_gather", and records its
+    status on semengine_service_status (#387); the forwarded samples of one round share one timestamp. Retained,
+    declared: a failed gather skips the whole round; a label value is spliced into the subject, and a publish that fails
+    for that reason is counted like any other failed publish
   proving_tests: >-
     service/*_test.go, service/*_integration_test.go, and processor/graph-ingest/discoverable_reads_test.go
     (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop, the read line's test)

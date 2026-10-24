@@ -5,17 +5,22 @@ its name, status and health check, and the `Service` interface a service manager
 manager: it builds the services a configuration names, starts them, serves the HTTP routes around them and stops
 them. `ComponentManager` is the service that owns the components. `Metrics` is the service that serves the Prometheus
 endpoint. `MessageLogger` is the service that keeps the newest messages seen on chosen NATS subjects for
-inspection. `StorageObservabilityService` is the service that reports how full the NATS account's storage is. The
-package also holds the helpers a composition root (the process's `main` function, which builds and wires everything)
-calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the OpenAPI registry, plus the
-service-configuration and schema helpers the service manager reads.
+inspection. `StorageObservabilityService` is the service that reports how full the NATS account's storage is.
+`HeartbeatService` is the service that logs a liveness line at a fixed interval, and `MetricsForwarder` is the service
+that publishes the process's metrics on NATS. The package also holds the helpers a composition root (the process's
+`main` function, which builds and wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the
+OpenAPI registry, plus the service-configuration and schema helpers the service manager reads.
 
 The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
 the second `Manager` and `Metrics`; the third `ComponentManager`, the service that owns the components
 ([The component manager](#the-component-manager)); the fourth `MessageLogger`
-([The message logger](#the-message-logger)); this one carries `StorageObservabilityService`
-([The storage observability service](#the-storage-observability-service)). The other services arrive with the later
-ones.
+([The message logger](#the-message-logger)); the fifth `StorageObservabilityService`
+([The storage observability service](#the-storage-observability-service)).
+
+The sixth pull request, this one, carries `HeartbeatService` ([The heartbeat service](#the-heartbeat-service)) and
+`MetricsForwarder` ([The metrics forwarder](#the-metrics-forwarder)). Of the two, only the heartbeat is on by default;
+the forwarder, like the message logger and storage observability, runs only when the configuration enables it. The
+last service arrives with the seventh.
 
 ## Embedding BaseService
 
@@ -652,6 +657,110 @@ the metric names.
 `Snapshot` and `RegisterMetrics` (nothing read them), the `schema` struct tags on `StorageObservabilityConfig`, and the
 pin's function fields and nil checks on the two surfaces.
 
+## The heartbeat service
+
+`HeartbeatService` writes one log line at a fixed interval so an operator can see the process is alive and how many
+of its components are healthy. It is on by default: the configuration loader's defaults turn on a `heartbeat` service
+with a 30 second interval, so a composition that names no services still gets it. `RegisterAll` registers its
+constructor, `NewHeartbeatService`, under `heartbeat`, with no OpenAPI spec because it serves no route. To change the
+interval, or to turn it off, name it in `services`:
+
+```json
+{
+  "services": {
+    "heartbeat": {"enabled": true, "config": {"interval": "1m"}}
+  }
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `interval` | How often a line is written. Default `30s`; an empty value takes the default; it must be at least `1s`. |
+
+It needs `Dependencies.ServiceManager`; `Logger` is optional. Construction refuses, as invalid data naming the input:
+an unknown key or a key in another letter case, nil dependencies, a nil service manager, and an `interval` that does
+not parse or is under `1s`. A miscased key matters because the loader merges your `services` block with the defaults:
+`{"Interval":"5s"}` beside the default `{"interval":"30s"}` used to run at 30 seconds without a word; now the
+composition is refused, naming both spellings. Configuration is read once; to change a value, restart.
+
+The line is written at Info, once when the service starts and then once per interval. Its message is
+`System heartbeat`, and it carries `uptime` (the service's, rounded to the second), `goroutines` (the process's
+count), `components_healthy` and `components_total` (how many of the component manager's components report healthy,
+out of how many it holds). The SemStreams pin wrote it at Debug, which shows nothing at the default log level; the
+owner chose Info (2026-10-23).
+
+`Start(ctx)` looks up the component manager through the service manager the heartbeat was built with and refuses,
+naming `component-manager`, when there is none or it is not the framework's `*ComponentManager`; the component manager
+need only be composed, not started. It also refuses a nil or ended `ctx`, a second `Start` and a `Start` after any
+`Stop` (`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. It starts one background loop and returns; `ctx`
+bounds `Start` only, and ending it afterwards stops nothing. `Stop(ctx)` is the only stop: it ends the loop, waits for
+it and stops the base service. If `ctx` ends first, `Stop` returns that error and the next `Stop` waits again. A
+`Stop` after one that returned nil returns nil; a `Stop` while another runs is refused as transient.
+
+### Not ported
+
+`HeartbeatConfig.Validate`, the test-only constructor and the interface the pin used to swap the component manager in
+tests.
+
+## The metrics forwarder
+
+`MetricsForwarder` copies the process's own metrics onto NATS. At `Start` and then every `push_interval` it reads every
+metric from the metrics registry it was given (`Dependencies.MetricsRegistry`) and publishes each sample as one JSON
+object through the NATS client's JetStream publish. It is off unless the configuration enables it:
+`ResolveServiceConfigs` does not add it. `RegisterAll` registers its constructor, `NewMetricsForwarderService`, under
+`metrics-forwarder`, with no OpenAPI spec because it serves no route.
+
+```json
+{
+  "services": {
+    "metrics-forwarder": {
+      "enabled": true,
+      "config": {"push_interval": "5s", "include_go_metrics": false, "include_proc_metrics": false}
+    }
+  }
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `push_interval` | How often a round is published. Default `5s`; an empty value takes the default; it must be positive. |
+| `include_go_metrics` | Also forward the `go_*` runtime families (goroutines, memory, garbage collection). Default `false`. |
+| `include_proc_metrics` | Also forward the `process_*` families (CPU, open files, memory). Default `false`. |
+
+It needs `Dependencies.NATSClient` and `Dependencies.MetricsRegistry`; `Logger` is optional. Construction refuses, as
+invalid data naming the input: an unknown key or a key in another letter case, nil dependencies, a nil NATS client, a
+nil metrics registry, and a `push_interval` that does not parse or is not positive. Configuration is read once; to
+change a value, restart.
+
+Each sample goes to the subject `metrics.<component>.<name>`, where `<component>` is the sample's `component` label
+(`system` when it has none) and `<name>` is the metric's name. The payload is one JSON object with six fields:
+`timestamp` (Unix milliseconds; the samples of one round share it), `name`, `component`, `type` (`counter`, `gauge`,
+`histogram`, `summary` or `untyped`), `value` and `labels` (an object, `{}` when the sample has none). `value` is the
+counter, gauge or untyped value; for a histogram or summary it is the number of observations, not a distribution. A
+JetStream stream must capture `metrics.>` for the samples to be kept. The forwarder creates none: `config` already
+declares the framework's `METRICS` stream over `metrics.>` (`config/streams.go`), and the composition provisions it
+with `config.StreamsManager.EnsureStreams`, or points at an existing stream that captures `metrics.>`. The
+SemStreams pin's metrics carried the prefix `semstreams_`; these are named `semengine_*`, and nothing renames the old
+series, so a reader still on the old names finds none.
+
+A sample that cannot be published is dropped and counted; the loop goes on and the next round publishes the series
+again. A sample that does not encode (a NaN or infinite value) or does not publish increments
+`semengine_errors_total{service="metrics-forwarder",type="metrics_publish"}`. A gather that fails increments
+`type="metrics_gather"` and skips the whole round. Each is also logged at Debug. A label value is spliced into the
+subject unchecked, and a publish that fails for that reason is counted like any other. The forwarder also records its
+state on `semengine_service_status{service="metrics-forwarder"}` (0 stopped, 2 running), as the other services do.
+
+`Start(ctx)` refuses a nil or ended `ctx`, a second `Start` and a `Start` after any `Stop`
+(`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. It does no I/O: it starts one background loop and
+returns, and a NATS client that is not connected makes each publish fail and be counted. `ctx` bounds `Start` only;
+ending it afterwards stops nothing (at the pin it marked the service stopped while the loop went on publishing).
+`Stop(ctx)` is the only stop and behaves as the
+heartbeat's does.
+
+### Not ported
+
+The `MetricsGatherer` interface, `MetricsForwarderConfig.Validate` and the test-only constructors.
+
 ## The metrics service
 
 `Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
@@ -659,7 +768,7 @@ pin's function fields and nil checks on the two surfaces.
 `Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
 the server runs. A `Metrics` runs once: a second `Start`, and a `Start` after any `Stop`, are refused with
 `errs.ErrAlreadyStarted`, and the context given to `Start` bounds `Start` only. `RegisterAll` registers `metrics`,
-`component-manager`, `message-logger` and `storage-observability`.
+`component-manager`, `message-logger`, `storage-observability`, `heartbeat` and `metrics-forwarder`.
 
 ## The profiling server
 

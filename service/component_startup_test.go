@@ -49,10 +49,9 @@ func awaitStartupStatus(t *testing.T, baseURL, status string) {
 	require.NoError(t, err, "/services never reported startup status %q", status)
 }
 
-// TestComponentStartupServesStartupRoutesCountsAndComponentRoutes: the component manager is
-// handed the startup metric writer before its components start, serves its read-only startup
-// routes under /components before the commit, reports its component counts in /services and in
-// the startup gauge, and has the routes of components that register their own mounted with the
+// TestComponentStartupServesStartupRoutesCountsAndComponentRoutes: the component manager serves
+// its read-only startup routes under /components before the commit, its component counts are
+// reported in /services and, while a component's Start is held, in the startup gauge, and has the routes of components that register their own mounted with the
 // full route set (design D3 and D6; pin service_manager.go:593, :1142, :1543).
 //
 // spec: operator-surface / The service manager serves only diagnostics until boot commits
@@ -81,10 +80,9 @@ func TestComponentStartupServesStartupRoutesCountsAndComponentRoutes(t *testing.
 			map[string]string{"owner": "components", "stage": stage})
 	}
 	require.Equal(t, float64(2), gauge("admitted"))
-	// The gated component's start was published on the gauge, so the component manager held the
-	// startup metric writer before its components started.
+	// The gauge reads the gated component's start while that Start is held.
 	require.Equal(t, float64(1), gauge("starts_invoked"),
-		"the component manager was not handed the startup metric writer before its components started")
+		"the startup gauge did not read the held component start")
 
 	release.release()
 	require.NoError(t, start.wait(t))

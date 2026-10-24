@@ -19,7 +19,7 @@ tree at its commit (#171). Review stops (Codex) after the design, after task 2.3
   unhealthy, starting, failed, stopping), `TestConfigureRefusesACompositionWithoutAComponentManager`. The rewritten
   tests drive a real `ComponentManager`, which implements `componentStartup` on the base, so they pass on the base with
   no production change. Gate: `task verify`.
-- [ ] 2.2 One compiling unit: the collector and the concrete type (design D1 and D2). Tests first, in the working tree
+- [x] 2.2 One compiling unit: the collector and the concrete type (design D1 and D2). Tests first, in the working tree
   only: in `service/startup_observability_test.go` and `service/startup_observability_amendment_test.go`, call
   `registerStartupCollector(registry, serviceSnapshot, componentSnapshot) error` in place of `newStartupMetricWriter`;
   drop both `cm.setStartupMetricWriter(writer)` lines; rename `TestStartupCollectorReportsExactlyNineSeries` and

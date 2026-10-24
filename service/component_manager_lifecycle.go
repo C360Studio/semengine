@@ -91,7 +91,6 @@ func (cm *ComponentManager) startPhase(ctx context.Context, records []*component
 func (cm *ComponentManager) startComponent(ctx context.Context, record *componentRecord) error {
 	lifecycle, _ := component.AsLifecycleComponent(record.component)
 	record.update(func(s *componentState) { s.startInvoked = true })
-	cm.recordComponentStartupMetrics()
 
 	err := cm.runComponentStart(ctx, record, lifecycle)
 	record.update(func(s *componentState) {
@@ -103,7 +102,6 @@ func (cm *ComponentManager) startComponent(ctx context.Context, record *componen
 			s.state, s.lastError = component.StateStarted, nil
 		}
 	})
-	cm.recordComponentStartupMetrics()
 	return err
 }
 
@@ -308,19 +306,6 @@ func (cm *ComponentManager) startupSnapshot() startupUnitCounts {
 		}
 	}
 	return counts
-}
-
-// recordComponentStartupMetrics publishes the startup counts through the
-// writer the service manager handed in; with none yet, as for a manager
-// started on its own, it publishes nothing.
-func (cm *ComponentManager) recordComponentStartupMetrics() {
-	cm.startupMetrics.Load().publishComponents()
-}
-
-// setStartupMetricWriter is how the service manager hands in its startup
-// metric writer.
-func (cm *ComponentManager) setStartupMetricWriter(writer *startupMetricWriter) {
-	cm.startupMetrics.Store(writer)
 }
 
 // startupStopBegun reports whether a stop sequence has begun.

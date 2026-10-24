@@ -246,7 +246,7 @@ func TestServicesResponseIncludesStartupCounts(t *testing.T) {
 // design D1).
 func TestStartupMetricsExposeFixedOwnerStagePairs(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
-	_, err := newStartupMetricWriter(
+	err := registerStartupCollector(
 		registry,
 		func() serviceStartupCounts { return serviceStartupCounts{Admitted: 3} },
 		func() startupUnitCounts { return startupUnitCounts{LifecycleParticipants: 7} },
@@ -502,7 +502,7 @@ func TestStopAllReversesRegistrationOrder(t *testing.T) {
 // TestStartupMetricHasNoUnitIdentityLabel (pin :801).
 func TestStartupMetricHasNoUnitIdentityLabel(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
-	_, err := newStartupMetricWriter(
+	err := registerStartupCollector(
 		registry,
 		func() serviceStartupCounts { return serviceStartupCounts{Admitted: 1} },
 		func() startupUnitCounts { return startupUnitCounts{} },
@@ -621,13 +621,11 @@ func TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts(t *test
 	gated.release = release.ch
 
 	registry := metric.NewMetricsRegistry()
-	writer, err := newStartupMetricWriter(
+	require.NoError(t, registerStartupCollector(
 		registry,
 		func() serviceStartupCounts { return serviceStartupCounts{} },
 		cm.startupSnapshot,
-	)
-	require.NoError(t, err)
-	cm.setStartupMetricWriter(writer)
+	))
 	componentGauge := func(stage string) float64 {
 		return requireGauge(t, registry, "semengine_startup_units", map[string]string{
 			"owner": "components", "stage": stage,

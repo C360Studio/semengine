@@ -2,7 +2,6 @@ package service
 
 import (
 	"fmt"
-	"sync"
 
 	"github.com/prometheus/client_golang/prometheus"
 
@@ -28,101 +27,69 @@ type serviceStartupCounts struct {
 	StartsFailed    int `json:"starts_failed"`
 }
 
-// startupMetricWriter is the sole production owner of the startup GaugeVec.
-// Its mutex serializes observation with publication so an older snapshot can
-// never overwrite a newer manager-owned outcome.
-type startupMetricWriter struct {
-	mu                sync.Mutex
-	units             *prometheus.GaugeVec
+// startupUnitsDesc describes semengine_startup_units{owner,stage}, the gauge the
+// startup collector reports.
+var startupUnitsDesc = prometheus.NewDesc(
+	"semengine_startup_units",
+	"Process-local startup unit counts by manager owner and fixed lifecycle stage",
+	[]string{"owner", "stage"}, nil,
+)
+
+// startupCollector reports the startup counts as they are when the registry is
+// gathered. It holds no value of its own, so a collected count is never older
+// than the counts at the start of that collection.
+type startupCollector struct {
 	serviceSnapshot   func() serviceStartupCounts
 	componentSnapshot func() startupUnitCounts
 }
 
-// newStartupMetricWriter registers the gauge semengine_startup_units{owner,stage}
-// directly on the injected registry and publishes both snapshots once. It refuses
-// a registry that already holds a collector of that name rather than adopting
-// another writer's gauge, which metric.RegisterOrGet would do.
-func newStartupMetricWriter(
+// registerStartupCollector registers the startup collector directly on the
+// registry. It refuses a registry that already holds a collector of that name
+// rather than adopting another one's gauge, which metric.RegisterOrGet would do.
+func registerStartupCollector(
 	registry *metric.MetricsRegistry,
 	serviceSnapshot func() serviceStartupCounts,
 	componentSnapshot func() startupUnitCounts,
-) (*startupMetricWriter, error) {
+) error {
 	if registry == nil {
-		return nil, errs.WrapFatal(
+		return errs.WrapFatal(
 			fmt.Errorf("metrics registry is nil"),
-			"startupMetricWriter", "new", "startup metric registry unavailable",
+			"startupCollector", "register", "startup metric registry unavailable",
 		)
 	}
 	if serviceSnapshot == nil || componentSnapshot == nil {
-		return nil, errs.WrapFatal(
+		return errs.WrapFatal(
 			fmt.Errorf("startup snapshot function is nil"),
-			"startupMetricWriter", "new", "startup metric observation unavailable",
+			"startupCollector", "register", "startup metric observation unavailable",
 		)
 	}
-
-	units := prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Namespace: "semengine",
-			Subsystem: "startup",
-			Name:      "units",
-			Help:      "Process-local startup unit counts by manager owner and fixed lifecycle stage",
-		},
-		[]string{"owner", "stage"},
-	)
-	if err := registry.PrometheusRegistry().Register(units); err != nil {
-		return nil, errs.WrapFatal(
-			err,
-			"startupMetricWriter", "new", "register fresh startup metric collector",
-		)
+	collector := &startupCollector{serviceSnapshot: serviceSnapshot, componentSnapshot: componentSnapshot}
+	if err := registry.PrometheusRegistry().Register(collector); err != nil {
+		return errs.WrapFatal(err, "startupCollector", "register", "register fresh startup metric collector")
 	}
+	return nil
+}
 
-	writer := &startupMetricWriter{
-		units:             units,
-		serviceSnapshot:   serviceSnapshot,
-		componentSnapshot: componentSnapshot,
+// Describe implements prometheus.Collector.
+func (c *startupCollector) Describe(ch chan<- *prometheus.Desc) {
+	ch <- startupUnitsDesc
+}
+
+// Collect implements prometheus.Collector: nine series, four for services and
+// five for components.
+func (c *startupCollector) Collect(ch chan<- prometheus.Metric) {
+	gauge := func(owner, stage string, value int) {
+		ch <- prometheus.MustNewConstMetric(startupUnitsDesc, prometheus.GaugeValue, float64(value), owner, stage)
 	}
-	writer.publishAll()
-	return writer, nil
-}
-
-func (w *startupMetricWriter) publishAll() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.writeServices(w.serviceSnapshot())
-	w.writeComponents(w.componentSnapshot())
-}
-
-func (w *startupMetricWriter) publishServices() {
-	if w == nil {
-		return
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.writeServices(w.serviceSnapshot())
-}
-
-// publishComponents publishes the component counts. A nil writer publishes
-// nothing: a component manager started on its own is handed none.
-func (w *startupMetricWriter) publishComponents() {
-	if w == nil {
-		return
-	}
-	w.mu.Lock()
-	defer w.mu.Unlock()
-	w.writeComponents(w.componentSnapshot())
-}
-
-func (w *startupMetricWriter) writeServices(counts serviceStartupCounts) {
-	w.units.WithLabelValues("services", "admitted").Set(float64(counts.Admitted))
-	w.units.WithLabelValues("services", "starts_invoked").Set(float64(counts.StartsInvoked))
-	w.units.WithLabelValues("services", "starts_completed").Set(float64(counts.StartsCompleted))
-	w.units.WithLabelValues("services", "starts_failed").Set(float64(counts.StartsFailed))
-}
-
-func (w *startupMetricWriter) writeComponents(counts startupUnitCounts) {
-	w.units.WithLabelValues("components", "admitted").Set(float64(counts.Admitted))
-	w.units.WithLabelValues("components", "lifecycle_participants").Set(float64(counts.LifecycleParticipants))
-	w.units.WithLabelValues("components", "starts_invoked").Set(float64(counts.StartsInvoked))
-	w.units.WithLabelValues("components", "starts_completed").Set(float64(counts.StartsCompleted))
-	w.units.WithLabelValues("components", "starts_failed").Set(float64(counts.StartsFailed))
+	services := c.serviceSnapshot()
+	gauge("services", "admitted", services.Admitted)
+	gauge("services", "starts_invoked", services.StartsInvoked)
+	gauge("services", "starts_completed", services.StartsCompleted)
+	gauge("services", "starts_failed", services.StartsFailed)
+	components := c.componentSnapshot()
+	gauge("components", "admitted", components.Admitted)
+	gauge("components", "lifecycle_participants", components.LifecycleParticipants)
+	gauge("components", "starts_invoked", components.StartsInvoked)
+	gauge("components", "starts_completed", components.StartsCompleted)
+	gauge("components", "starts_failed", components.StartsFailed)
 }

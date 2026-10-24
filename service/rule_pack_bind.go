@@ -28,8 +28,8 @@ func (m *Manager) ProjectionBinders() []ProjectionBinder {
 // the component manager's start order. The component set is fixed when the
 // component manager is constructed, so a composition root can wire a
 // component-facing seam once, after ConfigureFromServices. It returns nil
-// before a component manager is composed, or when the one composed does not
-// expose its components.
+// before a component manager is composed, or when the one composed is not the
+// framework's *ComponentManager.
 func ComponentsImplementing[T any](m *Manager) []T {
 	if m == nil {
 		return nil
@@ -38,7 +38,7 @@ func ComponentsImplementing[T any](m *Manager) []T {
 	if !exists {
 		return nil
 	}
-	components, ok := service.(componentStartup)
+	components, ok := service.(*ComponentManager)
 	if !ok {
 		return nil
 	}

@@ -8,7 +8,6 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
-	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -19,6 +18,7 @@ import (
 	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 )
@@ -30,8 +30,8 @@ import (
 // (task 2.1, part 4). The two commit tests, which drove
 // the pin's private startup steps and flags, now drive StartAll and read the main listener.
 
-// foreignStartupGauge returns a collector under the startup gauge's name that the startup metric
-// writer did not create.
+// foreignStartupGauge returns a collector under the startup gauge's name that the service manager
+// did not create.
 func foreignStartupGauge(labels []string) *prometheus.GaugeVec {
 	return prometheus.NewGaugeVec(prometheus.GaugeOpts{
 		Namespace: "semengine", Subsystem: "startup", Name: "units",
@@ -39,18 +39,16 @@ func foreignStartupGauge(labels []string) *prometheus.GaugeVec {
 	}, labels)
 }
 
-// TestStartupMetricWriterInitializesExactlyNinePrivateSeries (pin :27).
-func TestStartupMetricWriterInitializesExactlyNinePrivateSeries(t *testing.T) {
+// TestStartupCollectorReportsExactlyNineSeries (pin :27, which named the writer).
+func TestStartupCollectorReportsExactlyNineSeries(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
-	writer, err := newStartupMetricWriter(
+	require.NoError(t, registerStartupCollector(
 		registry,
 		func() serviceStartupCounts { return serviceStartupCounts{Admitted: 3} },
 		func() startupUnitCounts {
 			return startupUnitCounts{Admitted: 4, LifecycleParticipants: 2}
 		},
-	)
-	require.NoError(t, err)
-	require.NotNil(t, writer)
+	))
 
 	family := requireMetricFamily(t, registry, "semengine_startup_units")
 	require.Len(t, family.Metric, 9)
@@ -65,24 +63,70 @@ func TestStartupMetricWriterInitializesExactlyNinePrivateSeries(t *testing.T) {
 	}))
 }
 
-// TestStartupMetricWriterRejectsForeignCollectorInsteadOfAdoptingIt (pin :52): the writer
-// registers directly on the injected registry and refuses a gauge it did not create, which
-// metric.RegisterOrGet would adopt (design D4, S13).
-func TestStartupMetricWriterRejectsForeignCollectorInsteadOfAdoptingIt(t *testing.T) {
+// TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt (pin :52): the collector is
+// registered directly on the injected registry, which refuses a gauge of that name it did not
+// create; metric.RegisterOrGet would adopt it (design D4, S13).
+func TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt(t *testing.T) {
 	for _, labels := range [][]string{{"owner", "stage"}, {"owner", "stage", "unit"}} {
 		t.Run(labels[len(labels)-1], func(t *testing.T) {
 			registry := metric.NewMetricsRegistry()
 			require.NoError(t, registry.PrometheusRegistry().Register(foreignStartupGauge(labels)))
 
-			writer, err := newStartupMetricWriter(
+			err := registerStartupCollector(
 				registry,
 				func() serviceStartupCounts { return serviceStartupCounts{} },
 				func() startupUnitCounts { return startupUnitCounts{} },
 			)
 			require.Error(t, err)
-			require.Nil(t, writer)
 		})
 	}
+}
+
+// TestComponentManagerOnItsOwnPublishesNoStartupGauge: a component manager started with no
+// service manager registers no startup gauge on its metrics registry; only the service manager
+// registers it (design D1).
+func TestComponentManagerOnItsOwnPublishesNoStartupGauge(t *testing.T) {
+	registry := component.NewRegistry()
+	lifecycle := newBarrierTestComponent("lifecycle")
+	admitTestRegistryComponent(t, registry, lifecycle.name, lifecycle)
+	deps := testComponentDependencies(t, registry, lifecycle.name)
+	built, err := NewComponentManager(nil, deps)
+	require.NoError(t, err)
+	cm, ok := built.(*ComponentManager)
+	require.True(t, ok, "NewComponentManager returned %T, want *ComponentManager", built)
+	startTestComponentManager(t, cm)
+	require.Equal(t, 1, cm.startupSnapshot().StartsCompleted)
+
+	families, err := deps.MetricsRegistry.PrometheusRegistry().Gather()
+	require.NoError(t, err)
+	for _, family := range families {
+		require.NotEqual(t, "semengine_startup_units", family.GetName())
+	}
+}
+
+// TestStartupGaugeReadsZeroComponentsForAStandInComponentManager: when the component-manager
+// service is not the framework's *ComponentManager, the five component series read zero while the
+// service series count the composition (design D1 and D2).
+func TestStartupGaugeReadsZeroComponentsForAStandInComponentManager(t *testing.T) {
+	deps := createTestServiceDependencies()
+	manager := createTestServiceManager(ManagerConfig{}, deps)
+	require.NoError(t, manager.RegisterInstance("component-manager", newStandInComponentManager()))
+	stopManagerAtEnd(t, manager)
+	require.NoError(t, manager.StartAll(t.Context()))
+
+	gauge := func(owner, stage string) float64 {
+		return requireGauge(t, deps.MetricsRegistry, "semengine_startup_units", map[string]string{
+			"owner": owner, "stage": stage,
+		})
+	}
+	require.Len(t, requireMetricFamily(t, deps.MetricsRegistry, "semengine_startup_units").Metric, 9)
+	for _, stage := range []string{
+		"admitted", "lifecycle_participants", "starts_invoked", "starts_completed", "starts_failed",
+	} {
+		require.Equal(t, float64(0), gauge("components", stage), "components/%s", stage)
+	}
+	require.Equal(t, float64(1), gauge("services", "admitted"))
+	require.Equal(t, float64(1), gauge("services", "starts_completed"))
 }
 
 // TestMetricCoreExportsNoStartupLifecycleWriter (pin :73).
@@ -92,9 +136,9 @@ func TestMetricCoreExportsNoStartupLifecycleWriter(t *testing.T) {
 	require.False(t, exists)
 }
 
-// TestStartupGaugeVecHasOnlyPrivateServicePackageOwner (pin :79). The pin matched the struct
-// field with gofmt's exact padding; the field is matched with any spacing here, so a realigned
-// struct cannot pass the holder check by no longer matching.
+// TestStartupGaugeVecHasOnlyPrivateServicePackageOwner (pin :79). The pin matched a GaugeVec
+// field; the gauge is now read at collection, so the check finds the gauge's name in exactly one
+// non-test file of the package (design D1).
 func TestStartupGaugeVecHasOnlyPrivateServicePackageOwner(t *testing.T) {
 	for _, path := range []string{"../metric/core.go", "../metric/registry.go"} {
 		source, err := os.ReadFile(path)
@@ -103,7 +147,6 @@ func TestStartupGaugeVecHasOnlyPrivateServicePackageOwner(t *testing.T) {
 		require.NotContains(t, string(source), "startupUnits")
 	}
 
-	holder := regexp.MustCompile(`(?m)^\s*units\s+\*prometheus\.GaugeVec\s*$`)
 	paths, err := filepath.Glob("*.go")
 	require.NoError(t, err)
 	holders := make([]string, 0, 1)
@@ -113,7 +156,7 @@ func TestStartupGaugeVecHasOnlyPrivateServicePackageOwner(t *testing.T) {
 		}
 		source, readErr := os.ReadFile(path)
 		require.NoError(t, readErr)
-		if holder.Match(source) {
+		if strings.Contains(string(source), "semengine_startup_units") {
 			holders = append(holders, path)
 		}
 	}
@@ -359,9 +402,9 @@ func requireMetricFamily(t *testing.T, registry *metric.MetricsRegistry, name st
 
 // awaitComponentStartupGauges reads semengine_startup_units{owner="components"} on registry until
 // every stage in want has its value, failing the test once stopBound passes. A component's start
-// outcome is published by the component manager's goroutine for that component after the
+// outcome is recorded by the component manager's goroutine for that component after the
 // component's Start returned, so a test that released the component has nothing to wait on but
-// the published value.
+// the value the gauge reads.
 func awaitComponentStartupGauges(t *testing.T, registry *metric.MetricsRegistry, want map[string]float64) {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), stopBound)
@@ -432,13 +475,11 @@ func TestComponentMetricPublicationRemainsMonotonicUnderReverseCompletion(t *tes
 	first.release, second.release = firstRelease.ch, secondRelease.ch
 
 	registry := metric.NewMetricsRegistry()
-	writer, err := newStartupMetricWriter(
+	require.NoError(t, registerStartupCollector(
 		registry,
 		func() serviceStartupCounts { return serviceStartupCounts{} },
 		cm.startupSnapshot,
-	)
-	require.NoError(t, err)
-	cm.setStartupMetricWriter(writer)
+	))
 
 	done := make(chan error, 1)
 	go func() { done <- cm.Start(t.Context()) }()

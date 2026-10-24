@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"maps"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -314,6 +315,21 @@ func TestLoad_RefusesNullDocument(t *testing.T) {
 			require.Error(t, err, "a null document must not load as the defaults")
 			assert.Nil(t, cfg)
 			assert.Contains(t, err.Error(), "not a JSON object")
+		})
+	}
+}
+
+// TestLoad_DefaultServicesAreHeartbeatOnly pins #384: a document that names no
+// services loads with one default service, heartbeat, enabled. The pin's
+// dormant discovery default named a service that exists neither at the pin nor
+// here.
+func TestLoad_DefaultServicesAreHeartbeatOnly(t *testing.T) {
+	for _, path := range loadPaths {
+		t.Run(path.name, func(t *testing.T) {
+			cfg, err := path.load(t, validDocument)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"heartbeat"}, slices.Sorted(maps.Keys(cfg.Services)))
+			assert.True(t, cfg.Services["heartbeat"].Enabled, "the heartbeat default must be enabled")
 		})
 	}
 }

@@ -1,8 +1,10 @@
 package config
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -111,9 +113,7 @@ func TestLoader_Defaults(t *testing.T) {
 	assert.Equal(t, defaultURLs, cfg.NATS.URLs)         // default URL
 	// Parse service config from types.ServiceConfigs
 	_, msgLoggerExists := cfg.Services["message-logger"]
-	discoveryEnabled := getServiceEnabled(cfg.Services["discovery"])
 	assert.False(t, msgLoggerExists)           // default-off by omission
-	assert.False(t, discoveryEnabled)          // dormant by default
 	assert.True(t, cfg.NATS.JetStream.Enabled) // default enabled
 	// ObjectStore moved to components
 	// assert.True(t, cfg.ObjectStore.Enabled) // default enabled
@@ -247,9 +247,8 @@ func TestLoader_ExampleConfig(t *testing.T) {
 	assert.Equal(t, "edge", cfg.Platform.Type)
 	// Parse service config from types.ServiceConfigs
 	msgLoggerEnabled := getServiceEnabled(cfg.Services["message-logger"])
-	discoveryEnabled := getServiceEnabled(cfg.Services["discovery"])
 	assert.True(t, msgLoggerEnabled)
-	assert.True(t, discoveryEnabled)
+	assert.Equal(t, []string{"heartbeat", "message-logger"}, slices.Sorted(maps.Keys(cfg.Services)))
 
 	// One component: graph-ingest, the one factory SemEngine registers. That
 	// it validates against graph-ingest's Register is proven in

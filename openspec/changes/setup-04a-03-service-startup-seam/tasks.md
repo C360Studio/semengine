@@ -45,7 +45,7 @@ tree at its commit (#171). Review stops (Codex) after the design, after task 2.3
 
 ## 3. Docs, ledger and archive
 
-- [ ] 3.1 `service/README.md` names the gauge beside `/services`; `docs/admission-ledger.yaml:2996` drops
+- [x] 3.1 `service/README.md` names the gauge beside `/services`; `docs/admission-ledger.yaml:2996` drops
   "withComponents and the post-construction startup metric setter stay for the service manager (#364)" and states the
   collected gauge.
 - [ ] 3.2 Spec delta synced into `openspec/specs/operator-surface/spec.md`; archive as the last content commit.

@@ -8,9 +8,11 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 - [x] 1.1 Inventory (`inventory.md`) passes independent inventory review (`INVENTORY PASS`), recorded on the PR.
   Gate: the reviewer's verdict. Passed with two LOW findings, both absorbed into § 1 and § 3 (PR #394 comment
   6383590713).
-- [ ] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and the spec delta; its
-  verdict is linked from a PR comment.
+- [x] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and the spec delta; its
+  verdict is linked from a PR comment. Passed at 3a276d6 with one MEDIUM (the example's trailing comma) and one LOW
+  (an `-expect` line per mutant), both applied.
 - [ ] 1.3 Codex design review and owner design acceptance on #384 or the PR. Gate: the comments.
+  Hold: waits for the Codex design review and the owner's acceptance.
 
 ## 2. Tests and code
 
@@ -23,7 +25,7 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   Gate: both new assertions fail on the base, recorded in `notes/2.1.md` with the failing output.
 - [ ] 2.2 The fix:
   - drop the `discovery` entry from `getDefaults` (`config/config.go:491-494`);
-  - delete `config/example_config.json:13`;
+  - delete `config/example_config.json:13` and the trailing comma on `:12`;
   - correct the comment at `types/service.go:47-50` (design D3).
 
   Gate: `task verify` green, plus mutants M1-M3 each reporting `verdict: detection` under `task mutate:check`, with

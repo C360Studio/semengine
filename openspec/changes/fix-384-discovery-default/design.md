@@ -19,7 +19,8 @@ Base: main c770283. Rests on `inventory.md`. Issue #384, claim PR #394.
   The wider wording "the defaults name only services the tree can build" was not chosen: proving it needs `config`'s
   tests to import `service` (`RegisterAll`), and the exact set says the same thing more plainly.
   `.openspec.yaml` drops `skip_specs: true`.
-- **D2, `config/example_config.json:13`: fixed here** by deleting the line. The example is the file a developer copies
+- **D2, `config/example_config.json:13`: fixed here** by deleting the line and the trailing comma on `:12`,
+  so the file stays valid JSON. The example is the file a developer copies
   first (`composition/example_config_test.go:13-14`). It enables the same phantom name, and composing it would fail at
   `service/service_manager.go:219`. Afterwards the example names `message-logger` (registered, `service/register.go:23`)
   and loads `heartbeat` from the defaults.
@@ -47,10 +48,12 @@ Base: main c770283. Rests on `inventory.md`. Issue #384, claim PR #394.
   keys are the literal `[]string{"heartbeat", "message-logger"}`. On the base it fails, because the file names
   `discovery`.
 - **Mutation runs,** each `task mutate:check -- -pkg ./config -test TestLoad_DefaultServicesAreHeartbeatOnly
-  -file config/config.go -mutant <copy> -expect load_test.go:<assertion line>`, and each must report detection:
-  - M1: the base entry restored.
-  - M2: the `heartbeat` default removed. This guards against removing too much.
-  - M3: `heartbeat` `Enabled: false`.
+  -file config/config.go -mutant <copy> -expect load_test.go:<assertion line>`, and each must report detection.
+  The key-set check and the `Enabled` check are separate assertion lines, and each run names the line its mutant
+  fails:
+  - M1: the base entry restored. Expects the key-set line.
+  - M2: the `heartbeat` default removed. This guards against removing too much. Expects the key-set line.
+  - M3: `heartbeat` `Enabled: false`. Expects the `Enabled` line.
 - The example file is not a Go source file, so `mutate:check` does not take it. Its proof is the base failure of
   `TestLoader_ExampleConfig`, recorded in `notes/2.1.md`.
 - Examples are enough: the default set is one fixed value with no interacting inputs.

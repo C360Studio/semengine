@@ -437,8 +437,9 @@ carriage return at the end of a line SHALL NOT change any of this.
 
 An agent name is the word `claude`, the word `codex`, or the word `gemini`, in any letter case, with no letter or digit
 directly before or after it. Unless GitHub reports the pull request's author as a bot, the `implemented-by:` line
-SHALL name at least one agent, and the `reviewed-by:` line SHALL name exactly one agent, and not an agent the
-`implemented-by:` line names, unless that line names more than one agent. Nothing else in either line is read.
+SHALL name at least one agent. The `reviewed-by:` line SHALL name exactly one agent, and, unless the author is a bot
+or the `implemented-by:` line names more than one agent, not an agent that line names. Nothing else in either line is
+read.
 
 #### Scenario: Implementer line missing or naming no agent
 

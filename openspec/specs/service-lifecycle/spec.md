@@ -1056,6 +1056,9 @@ is under 1 second. It SHALL look nothing up and do no I/O. An omitted or empty `
   service manager holds no heartbeat
 - **AND** the test that verifies this is `TestHeartbeatRefusesAMiscasedKeyBesideTheDefault`
 
+Not covered by a test, and reviewed only: the heartbeat constructor's "looks nothing up" and "no I/O" (no test
+observes it for I/O; the code makes none).
+
 ### Requirement: The heartbeat is registered and composed by the defaults
 
 `RegisterAll` SHALL register the constructor under `heartbeat`, and a composition built from a loaded document that
@@ -1133,7 +1136,8 @@ components report healthy, out of how many it holds).
   a `goroutines` attribute
 - **AND** the test that verifies this is `TestHeartbeatRecordsComponentHealth`
 
-Not covered by a test, and reviewed only: the heartbeat's `goroutines` value (the test asserts the attribute exists, not its value).
+Not covered by a test, and reviewed only: the heartbeat's `goroutines` value (the test asserts the attribute exists,
+not its value).
 
 ### Requirement: The metrics forwarder refuses an invalid configuration
 
@@ -1157,7 +1161,8 @@ parse or is not positive. It SHALL do no I/O. An omitted or empty `push_interval
   written
 - **AND** the test that verifies this is `TestMetricsForwarderConstructionRefusals`
 
-Not covered by a test, and reviewed only: the constructors' "no I/O" (no test observes the constructors for I/O; the code makes none).
+Not covered by a test, and reviewed only: the forwarder constructor's "no I/O" (no test observes it for I/O; the code
+makes none).
 
 ### Requirement: The metrics forwarder is registered and runs only when enabled
 
@@ -1252,9 +1257,9 @@ one timestamp in Unix milliseconds.
   `type` `untyped`
 - **AND** the tests that verify this are `TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`
 
-Not covered by a test, and reviewed only: a label value spliced into a subject, whose publish outcome is counted like any other and is not tested. The sample
-mapping, including a histogram's and a summary's sample count and the `untyped` fallback, is covered by
-`TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`.
+Not covered by a test, and reviewed only: a label value spliced into a subject, whose publish outcome is counted like
+any other and is not tested. The sample mapping, including a histogram's and a summary's sample count and the `untyped`
+fallback, is covered by `TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`.
 
 ### Requirement: The include flags select the families
 

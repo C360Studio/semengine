@@ -155,12 +155,12 @@ because of the record's sequence.
 - **WHEN** an input carries a generation other than the stored record's, at a sequence the record covers
 - **THEN** it is not dropped because of the record's sequence
 
-### Requirement: Replay protection holds only within one stream generation
+### Requirement: A recreated or restored stream can be mistaken for a redelivery
 
-Replay protection SHALL NOT be relied on across stream generations. An input from a stream that was deleted and created
-again, or restored, can carry the generation an older record holds; such an input, at a sequence that record covers, is
-acknowledged without being applied and counted in `semengine_graph_ingest_redeliveries_dropped_total`, as a redelivery
-is. These cases are declared limitations, not promises.
+Replay protection SHALL NOT be relied on to tell stream generations apart. An input from a stream that was deleted and
+created again, or restored, can carry the generation an older record holds; such an input, at a sequence that record
+covers, is acknowledged without being applied and counted in `semengine_graph_ingest_redeliveries_dropped_total`, as a
+redelivery is. These cases are declared limitations, not promises.
 
 #### Scenario: Recreated between the generation read and the consumer's creation
 

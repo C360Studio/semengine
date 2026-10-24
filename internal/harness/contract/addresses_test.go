@@ -236,3 +236,42 @@ func TestLintTestPortsHonoursNoMarker(t *testing.T) {
 		t.Errorf("guidance names a Go file:\n%s", g)
 	}
 }
+
+// TestLintTestPortsSkipsIgnoredFiles (design D6): the guard reads no git-ignored path, such as a
+// main checkout's .worktrees/ copies, yet still refuses the same fixed port at a path git does not
+// ignore. The planted line is assembled at run time so this file does not trip the guard itself.
+func TestLintTestPortsSkipsIgnoredFiles(t *testing.T) {
+	planted := "package x\n\nfunc f() { net." + "Listen(\"tcp\", \"127.0.0.1:18082\") }\n"
+	for _, tc := range []struct {
+		dir      string
+		wantExit int
+	}{
+		{dir: "ign", wantExit: 0},
+		{dir: "kept", wantExit: 1},
+	} {
+		t.Run(tc.dir, func(t *testing.T) {
+			root := copyScript(t, "lint-test-ports.sh")
+			if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("ign/\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(root, tc.dir), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, tc.dir, "x_test.go"), []byte(planted), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			out, err := runLintTestPorts(root)
+			got := 0
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				got = exit.ExitCode()
+			} else if err != nil {
+				t.Fatalf("running the guard: %v\n%s", err, out)
+			}
+			if got != tc.wantExit {
+				t.Fatalf("fixed port in %s/x_test.go with .gitignore naming ign/: exit %d, want %d\n%s",
+					tc.dir, got, tc.wantExit, out)
+			}
+		})
+	}
+}

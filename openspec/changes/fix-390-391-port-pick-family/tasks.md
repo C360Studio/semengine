@@ -29,7 +29,7 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
   `:64`. Gate: `task test:integration` for the package.
 - [x] 2.4 `metric/lifecycle_test.go:70`, `service/pprof_test.go:93`, `service/metrics_owner_test.go:52,112`:
   reasons (D4), comment lines only. Gate: `TestEveryAddressPortPickSaysWhy` passes; `task verify` green.
-- [ ] 2.5 `scripts/lint-test-ports.sh`: header, scan, exit handling and patterns (D6), with
+- [x] 2.5 `scripts/lint-test-ports.sh`: header, scan, exit handling and patterns (D6), with
   `TestLintTestPortsSkipsIgnoredFiles` written first. Gate: the new test fails on the base and passes after;
   `task verify` green; `notes/2.5.md` records the by-hand run from the main checkout before and after.
 

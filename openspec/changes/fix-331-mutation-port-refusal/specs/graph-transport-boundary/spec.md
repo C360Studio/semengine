@@ -2,24 +2,11 @@
 
 ## MODIFIED Requirements
 
-### Requirement: One decision on graph-mutation ports
+### Requirement: graph-ingest refuses an invalid member input
 
-Whether a component port is a graph-mutation port, and whether it has the valid shape, SHALL be decided in
-`internal/graphmutation` (`ClassifyPort`), and `internal/flowgraph` and graph-ingest SHALL both use that decision. A
-port SHALL be a member when its interface type is `semengine.graph.mutation`, or when any one of its NATS subjects
-starts with `graph.mutation.`. A member SHALL be valid only when it is a required `nats-request` port whose subjects
-are exactly `graph.mutation.>` and whose interface is `semengine.graph.mutation` `v1`. Flowgraph SHALL refuse a
-member that is not valid, on an input or an output, with an error wrapping `errs.ErrInvalidConfig` that names the
-component and the port. graph-ingest SHALL refuse a member input that is not valid, in `Config.Validate` and when it
-builds its mutation routes; when that input is its first member input, the refusal SHALL name the port, and a member
-input after the first is refused as ambiguous. Each caller keeps its own refusal texts, direction rule and provider
-count.
-
-#### Scenario: A nats port on a graph.mutation subject
-
-- **WHEN** a flow declares a `nats` output on `graph.mutation.entity.create` beside one valid provider
-- **THEN** flowgraph refuses it with `component requester port legacy is not a required nats-request
-  semengine.graph.mutation v1 port on graph.mutation.>`
+graph-ingest SHALL refuse a member input that is not valid, in `Config.Validate` and when it builds its mutation routes.
+When that input is its first member input, the refusal SHALL name the port; a member input after the first is refused
+as ambiguous. Each caller keeps its own refusal texts, direction rule and provider count.
 
 #### Scenario: A JetStream input with one graph.mutation subject
 
@@ -34,9 +21,3 @@ count.
   `nats-request` input `mutations` on `graph.mutation.>` with interface `semengine.graph.mutation` `v2`
 - **THEN** `Config.Validate` refuses it with an invalid-class error containing `graph mutation provider port
   "mutations" must be a required semengine.graph.mutation v1 nats-request input on graph.mutation.>`
-
-#### Scenario: The valid provider
-
-- **WHEN** a port is a required `nats-request` port on `graph.mutation.>` with interface `semengine.graph.mutation`
-  `v1`
-- **THEN** `ClassifyPort` reports it a member and valid, and both callers accept it

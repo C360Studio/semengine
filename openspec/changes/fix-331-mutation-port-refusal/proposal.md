@@ -19,7 +19,8 @@ component at `Config.Validate` and at Start; only the message is less useful tha
 
 ### Modified Capabilities
 
-- `graph-transport-boundary`: the requirement "One decision on graph-mutation ports" says graph-ingest's refusal of its
+- `graph-transport-boundary`: the requirement "graph-ingest refuses an invalid member input" (split out of "One
+  decision on graph-mutation ports" by #398) says graph-ingest's refusal of its
   first member input that is not valid names the port.
 
 ## Impact

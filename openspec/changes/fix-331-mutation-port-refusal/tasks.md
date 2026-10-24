@@ -40,8 +40,11 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 4. Docs and archive
 
-- [ ] 4.0 Before archive, merge `origin/main`. If #398 (#305) has merged, re-copy the delta from whichever
+- [x] 4.0 Before archive, merge `origin/main`. If #398 (#305) has merged, re-copy the delta from whichever
   requirement on main carries graph-ingest's refusal sentence after the split, and apply D2's clause to it. If the
-  openspec 1.14.1 bump has landed, keep each requirement under 500 characters. Gate: `task spec:check`.
+  openspec 1.14.1 bump has landed, keep each requirement under 500 characters. Gate: `task spec:check`. #398 merged
+  (5542936) and split the requirement; graph-ingest's sentence is now "graph-ingest refuses an invalid member input",
+  and the delta is re-copied onto it with D2's clause and the wrong-version scenario (331 characters of requirement
+  text; openspec is still 1.14.0).
 - [ ] 4.1 The `graph-transport-boundary` delta synced into `openspec/specs/graph-transport-boundary/spec.md`;
   archived as the last content commit. Gate: `task spec:check` and `task docs:check`.

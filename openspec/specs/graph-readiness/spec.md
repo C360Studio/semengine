@@ -15,8 +15,7 @@ states what the gate answers for a reading, and which wiring the publisher and t
 order: `status_unknown` when the reading is not fresh; `unrecognized_state` when the state is not one of
 `graph.IndexStates()`; `hard_stop` when the state is `degraded` or `reset_required`; `bootstrap_incomplete` when the
 envelope's `bootstrap_complete` is false; otherwise `DeferNone`, whatever the envelope's `ready`, `lag` or
-`staleness_ms`. The zero `Reading` SHALL give `status_unknown`. `readiness.DeferReasons()` SHALL return the four
-non-empty reasons as a new slice on every call.
+`staleness_ms`.
 
 #### Scenario: A stale reading of a healthy envelope
 
@@ -27,6 +26,19 @@ non-empty reasons as a new slice on every call.
 
 - **WHEN** the gate reads a fresh `Reading` whose state is `degraded` and whose `bootstrap_complete` is false
 - **THEN** it returns `hard_stop`
+
+### Requirement: The zero reading is status_unknown
+
+The zero `Reading` SHALL give `status_unknown`.
+
+#### Scenario: The zero reading
+
+- **WHEN** the gate reads the zero `Reading`
+- **THEN** it returns `status_unknown`
+
+### Requirement: The reason list is a new slice on every call
+
+`readiness.DeferReasons()` SHALL return the four non-empty reasons as a new slice on every call.
 
 #### Scenario: The reason list is a copy
 

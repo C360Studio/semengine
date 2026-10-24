@@ -12,11 +12,7 @@ IDs and the static identity across hot reload are their rules, not this package'
 ### Requirement: A rule-pack ID is one bounded literal token
 
 `rulepack.ValidateID` SHALL accept a rule-pack ID of 1 to 246 bytes in which every byte matches `[A-Za-z0-9_=-]`, and
-SHALL refuse every other value without trimming, folding or otherwise normalizing it. The checks run in order:
-required, then length, then token, then alphabet. A nonempty value within the bound that is not one literal NATS KV
-token SHALL be refused with natsclient's classified `kv_token_invalid` error wrapped; an empty or overlength value is
-refused by the required or length check first, without that code. `PackIDCharset` and `MaxPackIDBytes` SHALL state
-the same alphabet and bound.
+SHALL refuse every other value without trimming, folding or otherwise normalizing it.
 
 #### Scenario: Boundary IDs are accepted unchanged
 
@@ -29,6 +25,12 @@ the same alphabet and bound.
   dot, space, wildcard or non-ASCII)
 - **THEN** it returns an error and accepts no normalized form
 
+### Requirement: Rule-pack ID checks run in a fixed order
+
+The checks run in order: required, then length, then token, then alphabet. A nonempty value within the bound that is not
+one literal NATS KV token SHALL be refused with natsclient's classified `kv_token_invalid` error wrapped; an empty or
+overlength value is refused by the required or length check first, without that code.
+
 #### Scenario: A non-token ID carries the KV code
 
 - **WHEN** `ValidateID` receives `pack.one`
@@ -38,3 +40,12 @@ the same alphabet and bound.
 
 - **WHEN** `ValidateID` receives an empty ID, or a 247-byte ID made of 246 alphabet bytes and a dot
 - **THEN** each is refused, and neither error unwraps to a classified error with code `kv_token_invalid`
+
+### Requirement: The published alphabet and bound match ValidateID
+
+`PackIDCharset` and `MaxPackIDBytes` SHALL state the same alphabet and bound.
+
+#### Scenario: The constants state the grammar
+
+- **WHEN** `PackIDCharset` and `MaxPackIDBytes` are read
+- **THEN** they give the alphabet `[A-Za-z0-9_=-]` and the bound of 246 bytes that `ValidateID` enforces

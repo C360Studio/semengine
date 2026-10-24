@@ -14,17 +14,34 @@ the caller gave and never reads the clock.
 
 `projection.ReconcileMutation` SHALL carry an expected revision, sent through the typed `MutationClient`. When it is
 set, graph-ingest SHALL apply the mutation only if that revision is the entity's current revision, and otherwise
-SHALL return a revision-conflict error and SHALL change nothing. The error SHALL name the expected revision, and
-SHALL also name the current revision when graph-ingest's own read of the entity found a different one; when the
-bucket refuses the write because another write landed after that read, the error SHALL name only the expected
-revision, and graph-ingest SHALL NOT read the entity again to learn the current one. The request SHALL name its
-source, taken from the mutation's metadata, which `Reconcile` requires as `Create` and `Append` do; the reconcile
-replaces only that source's statements of the named predicates.
+SHALL return a revision-conflict error and SHALL change nothing.
 
 #### Scenario: Concurrent update between read and reconcile
 
 - **WHEN** the caller read revision R, another writer committed R+1, and the caller reconciles at R
 - **THEN** the result is a revision conflict naming R and R+1, and the entity is unchanged at R+1
+
+#### Scenario: Unchanged revision
+
+- **WHEN** the caller reconciles at the current revision R
+- **THEN** the mutation is applied, no error is returned, and the receipt holds the new revision
+
+### Requirement: A revision-conflict error names the revisions
+
+The error SHALL name the expected revision, and SHALL also name the current revision when graph-ingest's own read of
+the entity found a different one; when the bucket refuses the write because another write landed after that read, the
+error SHALL name only the expected revision, and graph-ingest SHALL NOT read the entity again to learn the current
+one.
+
+#### Scenario: Another write lands after graph-ingest's read
+
+- **WHEN** the bucket refuses the reconcile because another write landed after graph-ingest's own read of the entity
+- **THEN** the error names only the expected revision, and graph-ingest does not read the entity again
+
+### Requirement: A reconcile names its source
+
+The request SHALL name its source, taken from the mutation's metadata, which `Reconcile` requires as `Create` and
+`Append` do; the reconcile replaces only that source's statements of the named predicates.
 
 #### Scenario: Reconcile without a source
 
@@ -37,39 +54,45 @@ replaces only that source's statements of the named predicates.
   a timeout or a client that is not connected
 - **THEN** the error reports not-committed with operation `read-authoritative`, and no mutation request is sent
 
-#### Scenario: Unchanged revision
-
-- **WHEN** the caller reconciles at the current revision R
-- **THEN** the mutation is applied, no error is returned, and the receipt holds the new revision
-
 ### Requirement: Commit ambiguity is preserved
 
 graph-ingest SHALL classify a mutation failure as not committed only when the failure is proven to precede any storage
 effect: an invalid request, a revision conflict, an entity not found, or a stored value refused as graph state
-(`graph_state_reset_required`, raised before the write). Every other failure, including a key-value write whose outcome
-the server did not confirm, SHALL reach the caller of the typed client as commit-unknown.
-
-One exception is a declared limitation (owner ruling, #91 comment 6113959050). A create refused with
-`entity_already_exists` is reported not committed, even though nats.go's own `Create` may have stored an earlier write
-in the same call. That happens when the first write was stored but its acknowledgement was malformed, and other writers
-then deleted the key and created it again: nats.go writes a second time when its first write fails and the key reads
-as deleted (nats.go v1.54.0 `jetstream/kv.go:1072-1079`), and that second write is refused because the key exists.
-
-#### Scenario: Backend write timeout
-
-- **WHEN** the entity bucket's update reaches the server and its reply is lost or times out
-- **THEN** the typed client's error reports commit-unknown, never not-committed
+(`graph_state_reset_required`, raised before the write).
 
 #### Scenario: Revision conflict
 
 - **WHEN** the entity bucket refuses the update for a revision mismatch
 - **THEN** the error reports not-committed with the conflict classification
 
+### Requirement: Every other failure is commit-unknown
+
+Every failure not proven to precede any storage effect, including a key-value write whose outcome the server did not
+confirm, SHALL reach the caller of the typed client as commit-unknown.
+
+#### Scenario: Backend write timeout
+
+- **WHEN** the entity bucket's update reaches the server and its reply is lost or times out
+- **THEN** the typed client's error reports commit-unknown, never not-committed
+
 #### Scenario: An append's write stands and the entity then changes
 
 - **WHEN** an append's update is stored but returns an error, and another writer then deletes the entity or stores a
   value graph-ingest refuses
 - **THEN** the typed client's error reports commit-unknown, never not-committed
+
+### Requirement: A create refused as already existing is reported not committed
+
+One exception is a declared limitation (owner ruling, #91 comment 6113959050). A create refused with
+`entity_already_exists` SHALL be reported not committed, even though nats.go's own `Create` may have stored an earlier
+write in the same call.
+
+#### Scenario: A create whose first write was stored
+
+- **WHEN** a create's first write was stored but its acknowledgement was malformed, other writers then deleted the key
+  and created it again, and nats.go writes a second time (it does so when its first write fails and the key reads as
+  deleted, nats.go v1.54.0 `jetstream/kv.go:1072-1079`) and that second write is refused because the key exists
+- **THEN** the create is reported not committed with `entity_already_exists`, although an earlier write was stored
 
 ### Requirement: The typed client never reads the clock
 
@@ -86,12 +109,7 @@ SHALL be refused as invalid before any request is sent, and its error SHALL repo
 
 A `*projection.MutationError` that reports commit-unknown (`Commit` is `CommitUnknown`, `Kind` is
 `MutationCommitUnknown`), whether `projection.MutationClient` or `pkg/lifecycle`'s graph emitter returns it, SHALL
-carry `Class` `errs.ErrorFatal` whatever error it wraps. For that error, and for any error that wraps it,
-`errs.IsTransient` SHALL report false, `errs.IsFatal` SHALL report true, and `errs.Classify` SHALL return
-`errs.ErrorFatal`. `errors.As` to `*errs.ClassifiedError` SHALL yield class fatal with the reply's `Code`, and with the
-reply's `Detail` when that `Code` is not empty (a reply with no code passes no detail on). `errors.Is`, and
-`errors.As` to any other type, SHALL still reach the error it wraps, and the `MutationError`'s `Code` and `Detail`
-SHALL be the reply's.
+carry `Class` `errs.ErrorFatal` whatever error it wraps.
 
 #### Scenario: Deadline after the request was sent
 
@@ -99,11 +117,43 @@ SHALL be the reply's.
 - **THEN** the error is commit-unknown with class fatal, `errs.IsTransient` reports false, and
   `errors.Is(err, context.DeadlineExceeded)` reports true
 
+### Requirement: A commit-unknown error classifies as fatal, wrapped or not
+
+For a commit-unknown `*projection.MutationError`, and for any error that wraps it, `errs.IsTransient` SHALL report
+false, `errs.IsFatal` SHALL report true, and `errs.Classify` SHALL return `errs.ErrorFatal`.
+
+#### Scenario: A wrapped commit-unknown error
+
+- **WHEN** a commit-unknown `*projection.MutationError` is wrapped in another error
+- **THEN** `errs.IsTransient` reports false, `errs.IsFatal` reports true, and `errs.Classify` returns `errs.ErrorFatal`
+
+### Requirement: A commit-unknown error yields a fatal classified error carrying the reply's code
+
+For a commit-unknown `*projection.MutationError` or an error wrapping it, `errors.As` to `*errs.ClassifiedError` SHALL
+yield class fatal with the reply's `Code`, and with the reply's `Detail` when that `Code` is not empty (a reply with no
+code passes no detail on).
+
 #### Scenario: A transient reply after a possible write
 
 - **WHEN** graph-ingest answers a typed-client write with class transient and code `internal`
 - **THEN** the error is commit-unknown with class fatal and code `internal`, `errs.IsTransient` reports false, and
   `errors.As` to `*errs.ClassifiedError` yields class fatal and code `internal`
+
+#### Scenario: A reply with no code
+
+- **WHEN** graph-ingest's reply to a typed-client write has no code
+- **THEN** `errors.As` to `*errs.ClassifiedError` yields class fatal and passes no detail on
+
+### Requirement: A commit-unknown error still reaches what it wraps
+
+`errors.Is`, and `errors.As` to any other type, SHALL still reach the error a commit-unknown `MutationError` wraps, and
+the `MutationError`'s `Code` and `Detail` SHALL be the reply's.
+
+#### Scenario: The wrapped error is reachable
+
+- **WHEN** a commit-unknown `MutationError` wraps `context.DeadlineExceeded`
+- **THEN** `errors.Is(err, context.DeadlineExceeded)` reports true, and the `MutationError`'s `Code` and `Detail` are
+  the reply's
 
 ### Requirement: A request no responder took keeps the transient class
 
@@ -120,18 +170,54 @@ A `*projection.MutationError` reporting that no mutation responder took the requ
 
 `projection.ClassifyMutationError(operation, err)` SHALL return nil for a nil error. Otherwise it SHALL return a
 `*projection.MutationError` with the given `Operation`, and every `projection.MutationClient` write and every
-`pkg/lifecycle` graph emitter write SHALL report its request's failure through it. The lifecycle emitter MAY wrap the
-result in `lifecycle.ErrEntityNotFound` or `lifecycle.ErrAlreadyExists`, and the wrapped error SHALL still be reached by
-`errors.As`. The error SHALL be not committed when its chain holds a classified error whose code graph-ingest sends only
-before writing (invalid request, structural invalid, message type unregistered, entity ID invalid, entity ID authority
-invalid, revision mismatch, entity exists, entity not found, graph state reset required), with that error's class, code
-and detail. The typed client's own refusals before sending (a client that is not initialized, a missing context, an
-operation not admitted, a request that does not encode as JSON, a create without an entity) SHALL be such an error, with
-class invalid and code `invalid_request`, and SHALL send no request. The error SHALL be not committed, `Kind`
-`MutationUnavailable`, class transient, in three cases: no responder took the request; natsclient refused it before
-sending (`natsclient.ErrNotConnected`), with `errors.Is` still reaching that error; or the context ended before the
-request was sent. Every other error SHALL be commit-unknown as the requirement "A commit-unknown error is never
-retryable" states.
+`pkg/lifecycle` graph emitter write SHALL report its request's failure through it.
+
+#### Scenario: A lifecycle write answered after a possible write
+
+- **WHEN** a lifecycle emitter create, reconcile or delete receives graph-ingest's transient `internal` reply
+- **THEN** the error is a commit-unknown `*projection.MutationError` with class fatal, `errs.IsTransient` reports
+  false, and the error does not match `lifecycle.ErrEmitFailed`
+
+### Requirement: The lifecycle emitter may wrap the mapped error
+
+The lifecycle emitter MAY wrap the result in `lifecycle.ErrEntityNotFound` or `lifecycle.ErrAlreadyExists`, and the
+wrapped error SHALL still be reached by `errors.As`.
+
+#### Scenario: A wrapped mapped error
+
+- **WHEN** the lifecycle emitter wraps the mapped error in `lifecycle.ErrEntityNotFound` or `lifecycle.ErrAlreadyExists`
+- **THEN** `errors.As` still reaches the `*projection.MutationError`
+
+### Requirement: A reply sent only before writing maps to not committed
+
+The error `ClassifyMutationError` returns SHALL be not committed when its chain holds a classified error whose code
+graph-ingest sends only before writing (invalid request, structural invalid, message type unregistered, entity ID
+invalid, entity ID authority invalid, revision mismatch, entity exists, entity not found, graph state reset required),
+with that error's class, code and detail.
+
+#### Scenario: A reply that proves nothing was stored
+
+- **WHEN** the mapping is given a classified reply with a code graph-ingest sends only before writing, such as
+  revision mismatch
+- **THEN** it returns a not-committed error with that reply's class, code and detail
+
+### Requirement: The client's own refusals before sending are invalid and not committed
+
+The typed client's own refusals before sending (a client that is not initialized, a missing context, an operation not
+admitted, a request that does not encode as JSON, a create without an entity) SHALL be a not-committed error, with class
+invalid and code `invalid_request`, and SHALL send no request.
+
+#### Scenario: A request the client cannot encode
+
+- **WHEN** a typed-client Append carries a statement whose object does not encode as JSON
+- **THEN** no request reaches the broker, and the error is not committed, `MutationInvalid`, class invalid, code
+  `invalid_request`
+
+### Requirement: A request that was never sent is not committed and transient
+
+The error `ClassifyMutationError` returns SHALL be not committed, `Kind` `MutationUnavailable`, class transient, in
+three cases: no responder took the request; natsclient refused it before sending (`natsclient.ErrNotConnected`), with
+`errors.Is` still reaching that error; or the context ended before the request was sent.
 
 #### Scenario: Context ended before the request was sent
 
@@ -145,28 +231,21 @@ retryable" states.
 - **THEN** the error is not committed, `MutationUnavailable`, class transient, and `errors.Is` reaches the
   natsclient error
 
-#### Scenario: A request the client cannot encode
-
-- **WHEN** a typed-client Append carries a statement whose object does not encode as JSON
-- **THEN** no request reaches the broker, and the error is not committed, `MutationInvalid`, class invalid, code
-  `invalid_request`
-
-#### Scenario: A reply that does not prove nothing was stored
-
-- **WHEN** the mapping is given graph-ingest's transient `internal` reply
-- **THEN** it returns a commit-unknown error with class fatal and code `internal`
-
-#### Scenario: A lifecycle write answered after a possible write
-
-- **WHEN** a lifecycle emitter create, reconcile or delete receives graph-ingest's transient `internal` reply
-- **THEN** the error is a commit-unknown `*projection.MutationError` with class fatal, `errs.IsTransient` reports
-  false, and the error does not match `lifecycle.ErrEmitFailed`
-
 #### Scenario: A lifecycle write whose context ended before sending
 
 - **WHEN** a lifecycle emitter write is called with a context that is already cancelled
 - **THEN** no request reaches the broker, the error is not committed, `MutationUnavailable`, class transient, and
   `errors.Is(err, context.Canceled)` reports true
+
+### Requirement: Every other error maps to commit-unknown
+
+`ClassifyMutationError` SHALL return a commit-unknown error for every other error, as the requirement "A commit-unknown
+error is never retryable" states.
+
+#### Scenario: A reply that does not prove nothing was stored
+
+- **WHEN** the mapping is given graph-ingest's transient `internal` reply
+- **THEN** it returns a commit-unknown error with class fatal and code `internal`
 
 ### Requirement: The commit state is reported on the error
 

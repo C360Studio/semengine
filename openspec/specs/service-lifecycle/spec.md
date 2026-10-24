@@ -14,15 +14,8 @@ the services arrive in later pull requests of the port and extend this capabilit
 ### Requirement: BaseService's Start bounds Start and Stop is the only stop
 
 `service.BaseService.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second Start and a
-Start after any Stop, and a refused Start SHALL start nothing. A started `BaseService` SHALL report `StatusRunning`,
-run its health check once at Start and then every 30 seconds, and SHALL keep doing so when the context given to Start
-ends. `Stop(ctx)` SHALL be the only stop. It SHALL refuse a nil context. Given a context that has already ended, it
-SHALL return that context's error and stop nothing. Given a live context, it SHALL report `StatusStopping`, start no
-further health check, and return nil only after the health goroutine has exited, leaving `StatusStopped` and
-`IsHealthy()` false; if that context ends while Stop waits, Stop SHALL return its error and a later Stop SHALL wait
-again. A repeated Stop after one that returned nil SHALL return nil. `BaseService` SHALL pass the `lifecycle-suite`
-checks through a test-side adapter (ADR-113). The package SHALL declare no stop sentinel of its own;
-`errs.ErrAlreadyStopped` is the one.
+Start after any Stop, and a refused Start SHALL start nothing. A started `BaseService` SHALL report `StatusRunning`, run
+its health check once at Start and then every 30 seconds, and SHALL keep doing so when the context given to Start ends.
 
 #### Scenario: The Start context ends after Start
 
@@ -31,6 +24,13 @@ checks through a test-side adapter (ADR-113). The package SHALL declare no stop 
 - **AND** the tests that verify this are `TestStartContextEndingKeepsHealthChecksRunning` and
   `TestBaseServicePassesTheLifecycleSuite`
 
+### Requirement: BaseService's Stop(ctx) is the only stop
+
+`Stop(ctx)` SHALL be the only stop. It SHALL refuse a nil context. Given a context that has already ended, it SHALL
+return that context's error and stop nothing. Given a live context, it SHALL report `StatusStopping`, start no further
+health check, and return nil only after the health goroutine has exited, leaving `StatusStopped` and `IsHealthy()`
+false.
+
 #### Scenario: Stop is given a context that has already ended
 
 - **WHEN** a started `BaseService`'s Stop is called with a cancelled context
@@ -38,12 +38,33 @@ checks through a test-side adapter (ADR-113). The package SHALL declare no stop 
   context returns nil
 - **AND** the test that verifies this is `TestStopWithAnEndedContextStopsNothing`
 
+### Requirement: BaseService's Stop can be cut short and repeated
+
+If the context ends while Stop waits, Stop SHALL return its error and a later Stop SHALL wait again. A repeated Stop
+after one that returned nil SHALL return nil.
+
 #### Scenario: Stop's context ends while a health check blocks
 
 - **WHEN** a health check blocks and Stop, called with a live context, has that context cancelled while it waits
 - **THEN** Stop returns `context.Canceled` and the status is `StatusStopping`; a second Stop does not return while
   the check blocks, and returns nil once it returns, with no further check run
 - **AND** the test that verifies this is `TestRepeatedStopWaitsForABlockedHealthCheck`
+
+### Requirement: BaseService passes the lifecycle suite and declares no stop sentinel
+
+`BaseService` SHALL pass the `lifecycle-suite` checks through a test-side adapter (ADR-113). The package SHALL declare
+no stop sentinel of its own; `errs.ErrAlreadyStopped` is the one.
+
+#### Scenario: The lifecycle suite
+
+- **WHEN** the `lifecycle-suite` checks run against a `BaseService` through the test-side adapter
+- **THEN** every check passes
+- **AND** the test that verifies this is `TestBaseServicePassesTheLifecycleSuite`
+
+#### Scenario: The stop sentinel
+
+- **WHEN** a caller must tell that a service was already stopped
+- **THEN** the error to match is `errs.ErrAlreadyStopped`, and package `service` declares no other
 
 ### Requirement: A failed health check makes the service unhealthy
 
@@ -59,25 +80,10 @@ passes and the client is healthy.
 
 ### Requirement: The profiling server stops on Shutdown
 
-`service.MaybeStartPProf(debug, port, logger)` SHALL start nothing and return nil when `debug` is false or `port` is
-not positive. Otherwise it SHALL bind `:port` before it returns and serve `http.DefaultServeMux`; when the bind fails
-it SHALL log a Warn naming the port and the error on `logger` (`slog.Default()` when nil), start nothing and return
-nil. `Shutdown(ctx)` SHALL refuse a nil context before anything else, on a nil server too; a nil server's Shutdown
-with a context SHALL return nil. Otherwise Shutdown SHALL stop accepting and return nil only after every in-flight
-request has finished and the serving goroutine has exited. If `ctx` ends first, it SHALL return that error, and a
-later Shutdown SHALL wait again.
-
-#### Scenario: Disabled
-
-- **WHEN** `MaybeStartPProf(false, 1, logger)` is called
-- **THEN** it returns nil, and that nil server's Shutdown with a live context returns nil
-- **AND** the test that verifies this is `TestMaybeStartPProfDisabledStartsNothing`
-
-#### Scenario: Port already bound
-
-- **WHEN** `MaybeStartPProf(true, port, logger)` is called with the port of a listener the test holds
-- **THEN** it returns nil, and `logger` has recorded one Warn naming that port
-- **AND** the test that verifies this is `TestMaybeStartPProfLogsABindFailure`
+`Shutdown(ctx)` SHALL refuse a nil context before anything else, on a nil server too; a nil server's Shutdown with a
+context SHALL return nil. Otherwise Shutdown SHALL stop accepting and return nil only after every in-flight request has
+finished and the serving goroutine has exited. If `ctx` ends first, it SHALL return that error, and a later Shutdown
+SHALL wait again.
 
 #### Scenario: Nil context
 
@@ -97,6 +103,24 @@ later Shutdown SHALL wait again.
   status 200, and is shut down
 - **THEN** Shutdown returns nil and the bubble returns
 - **AND** the test that verifies this is `TestPProfServesTheIndexAndLeavesNothingRunning`
+
+### Requirement: MaybeStartPProf starts the profiling server only when asked
+
+`service.MaybeStartPProf(debug, port, logger)` SHALL start nothing and return nil when `debug` is false or `port` is not
+positive. Otherwise it SHALL bind `:port` before it returns and serve `http.DefaultServeMux`; when the bind fails it
+SHALL log a Warn naming the port and the error on `logger` (`slog.Default()` when nil), start nothing and return nil.
+
+#### Scenario: Disabled
+
+- **WHEN** `MaybeStartPProf(false, 1, logger)` is called
+- **THEN** it returns nil, and that nil server's Shutdown with a live context returns nil
+- **AND** the test that verifies this is `TestMaybeStartPProfDisabledStartsNothing`
+
+#### Scenario: Port already bound
+
+- **WHEN** `MaybeStartPProf(true, port, logger)` is called with the port of a listener the test holds
+- **THEN** it returns nil, and `logger` has recorded one Warn naming that port
+- **AND** the test that verifies this is `TestMaybeStartPProfLogsABindFailure`
 
 ### Requirement: WireGraphRuntime cleans catalog retention first
 
@@ -122,18 +146,31 @@ the backstop's error and no client when it fails, including for a nil context, a
 `service.Manager.StartAll(ctx)` SHALL refuse a nil context, a context that has already ended, a second `StartAll` and a
 `StartAll` after `StopAll` (`errs.ErrAlreadyStarted`), and a refused `StartAll` SHALL start nothing. Otherwise it SHALL
 seal the composition, bind its main listener and the metrics server it claimed before it starts any service, start every
-service in registration order, and commit the full route set and readiness only after every service started. A failure
-at any step SHALL be returned joined with the rollback's error, and the rollback SHALL stop what had started; a rollback
-that fails SHALL be run again by `StopAll`. Ending the context given to `StartAll` after it returned SHALL stop nothing:
-no service, no health publishing, no listener, and no request's context. `StopAll(ctx)` SHALL be the only stop. It SHALL
-refuse a nil context; given a context that has already ended it SHALL return that context's error and stop nothing;
-before any `StartAll` it SHALL return nil, stopping only a health listener that was started. Otherwise it SHALL stop
-every service in reverse registration order, then the health publisher, the listeners and the metrics server, and return
-nil only when all are released; a listener SHALL stop accepting and `StopAll` SHALL wait for its in-flight requests. If
-`ctx` ends first, `StopAll` SHALL close every connection still open on its listeners, ending each open request's
-context, and return that error; a later `StopAll` SHALL return nil only once every handler has returned. A `StopAll`
-after one that returned nil SHALL return nil and stop nothing. The manager and the metrics service SHALL pass the
-`lifecycle-suite` checks through test-side adapters (ADR-113).
+service in registration order, and commit the full route set and readiness only after every service started.
+
+#### Scenario: The main port is already bound
+
+- **WHEN** `StartAll` is called with the port of a listener the test holds
+- **THEN** it returns the bind error and no service's `Start` has been called
+- **AND** the test that verifies this is `TestStartAllMainBindFailureStartsNoService`
+
+### Requirement: A failed StartAll rolls back what it started
+
+A failure at any step of `StartAll` SHALL be returned joined with the rollback's error, and the rollback SHALL stop what
+had started; a rollback that fails SHALL be run again by `StopAll`.
+
+#### Scenario: A service fails to start
+
+- **WHEN** the second of two services returns an error from `Start` during `StartAll`
+- **THEN** `StartAll` returns that error, the first service has been stopped, and the main listener no longer
+  accepts connections
+- **AND** the test that verifies this is `TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext`
+
+### Requirement: Ending the StartAll context stops nothing
+
+Ending the context given to `StartAll` after it returned SHALL stop nothing: no service, no health publishing, no
+listener, and no request's context. The manager and the metrics service SHALL pass the `lifecycle-suite` checks through
+test-side adapters (ADR-113).
 
 #### Scenario: The StartAll context ends after StartAll
 
@@ -144,12 +181,36 @@ after one that returned nil SHALL return nil and stop nothing. The manager and t
 - **AND** the tests that verify this are `TestManagerPassesTheLifecycleSuite` and
   `TestRequestContextOutlivesStartContext`
 
+### Requirement: The service manager's StopAll is the only stop
+
+`StopAll(ctx)` SHALL be the only stop. It SHALL refuse a nil context; given a context that has already ended it SHALL
+return that context's error and stop nothing; before any `StartAll` it SHALL return nil, stopping only a health listener
+that was started. A `StopAll` after one that returned nil SHALL return nil and stop nothing.
+
 #### Scenario: StopAll is given a context that has already ended
 
 - **WHEN** a started manager's `StopAll` is called with a cancelled context
 - **THEN** `StopAll` returns `context.Canceled`, every service is still running, and a following `StopAll` with a
   live context returns nil
 - **AND** the test that verifies this is `TestStopAllWithAnEndedContextStopsNothing`
+
+### Requirement: StopAll releases services, publisher, listeners and metrics server in order
+
+Given a live context, `StopAll` SHALL stop every service in reverse registration order, then the health publisher, the
+listeners and the metrics server, and return nil only when all are released; a listener SHALL stop accepting and
+`StopAll` SHALL wait for its in-flight requests.
+
+#### Scenario: Services stop in reverse registration order
+
+- **WHEN** a started manager holding several services is stopped with a live context
+- **THEN** the services are stopped in reverse registration order, then the health publisher, the listeners and the
+  metrics server, and `StopAll` returns nil once all are released
+
+### Requirement: StopAll cuts open connections when its context ends
+
+If `ctx` ends before `StopAll` has released everything, `StopAll` SHALL close every connection still open on its
+listeners, ending each open request's context, and return that error; a later `StopAll` SHALL return nil only once every
+handler has returned.
 
 #### Scenario: StopAll's context ends while a request is open
 
@@ -159,19 +220,6 @@ after one that returned nil SHALL return nil and stop nothing. The manager and t
   connection to the listener is refused; a second `StopAll` does not return before the release, and returns nil
   after it
 - **AND** the test that verifies this is `TestStopAllCutsOpenConnectionsAtItsDeadline`
-
-#### Scenario: A service fails to start
-
-- **WHEN** the second of two services returns an error from `Start` during `StartAll`
-- **THEN** `StartAll` returns that error, the first service has been stopped, and the main listener no longer
-  accepts connections
-- **AND** the test that verifies this is `TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext`
-
-#### Scenario: The main port is already bound
-
-- **WHEN** `StartAll` is called with the port of a listener the test holds
-- **THEN** it returns the bind error and no service's `Start` has been called
-- **AND** the test that verifies this is `TestStartAllMainBindFailureStartsNoService`
 
 ### Requirement: StopAll counts a service already stopped as stopped
 
@@ -214,18 +262,20 @@ missing constructor when none is registered. Once `StartAll` has sealed the comp
 
 ### Requirement: The service manager publishes health and counts its drops
 
-With a NATS client, the manager SHALL publish one JSON object with the keys `timestamp`, `name`, `status` and
-`health` for every composed service on `health.service.<name>` at once when `StartAll`, after every service has
-started, starts the publisher, and then every 5 seconds until `StopAll`; with none it SHALL publish nothing. A
-publish or encode that fails SHALL increment
-`semengine_errors_total{service="service-manager",type="health_publish"}` on the injected metrics registry, SHALL be
-logged at Debug naming the subject, and SHALL not stop the loop.
+With a NATS client, the manager SHALL publish one JSON object with the keys `timestamp`, `name`, `status` and `health`
+for every composed service on `health.service.<name>` at once when `StartAll`, after every service has started, starts
+the publisher, and then every 5 seconds until `StopAll`; with none it SHALL publish nothing.
 
 #### Scenario: Publish at StartAll
 
 - **WHEN** a manager with a connected client and a stream on `health.>` starts a service named `probe`
 - **THEN** a message on `health.service.probe` arrives with `name` equal to `probe` and `status` equal to `running`
 - **AND** the test that verifies this is `TestHealthPublisherPublishesEachServiceAtStart`
+
+### Requirement: A failed health publish is counted and does not stop the loop
+
+A publish or encode that fails SHALL increment `semengine_errors_total{service="service-manager",type="health_publish"}`
+on the injected metrics registry, SHALL be logged at Debug naming the subject, and SHALL not stop the loop.
 
 #### Scenario: Publish fails
 
@@ -236,11 +286,9 @@ logged at Debug naming the subject, and SHALL not stop the loop.
 
 ### Requirement: The metrics service serves on its own or through the manager
 
-`service.NewMetrics` SHALL default `port` to 9090 and `path` to `/metrics`. Standalone, `Metrics.Start(ctx)` SHALL
-bind its port before it returns, returning a bind failure and holding nothing, and `Stop` SHALL stop its server and
-its health check. When the manager has claimed its server, the manager SHALL start that server before any service
-starts and stop it after every service stopped, and `Metrics` SHALL report healthy only while that server serves. A
-claim after `Metrics.Start` or `Stop` was called, or a second claim, SHALL be refused.
+`service.NewMetrics` SHALL default `port` to 9090 and `path` to `/metrics`. Standalone, `Metrics.Start(ctx)` SHALL bind
+its port before it returns, returning a bind failure and holding nothing, and `Stop` SHALL stop its server and its
+health check.
 
 #### Scenario: Standalone bind failure
 
@@ -248,27 +296,30 @@ claim after `Metrics.Start` or `Stop` was called, or a second claim, SHALL be re
 - **THEN** it returns an error and the service holds no server
 - **AND** the test that verifies this is `TestMetricsStartReportsServerBindFailureBeforeReturning`
 
-#### Scenario: Claim after Start
-
-- **WHEN** a started `Metrics` is asked for its server by the manager
-- **THEN** the claim returns an error wrapping `errs.ErrAlreadyStarted`
-- **AND** the test that verifies this is `TestMetricsRefusesAClaimAfterStart`
-
 #### Scenario: The lifecycle floor
 
 - **WHEN** the lifecycle suite runs against a standalone `Metrics` on a test listener
 - **THEN** every check passes, `StartContextEndStopsNothing` included
 - **AND** the test that verifies this is `TestMetricsPassesTheLifecycleSuite`
 
+### Requirement: The manager can claim the metrics server
+
+When the manager has claimed its server, the manager SHALL start that server before any service starts and stop it after
+every service stopped, and `Metrics` SHALL report healthy only while that server serves. A claim after `Metrics.Start`
+or `Stop` was called, or a second claim, SHALL be refused.
+
+#### Scenario: Claim after Start
+
+- **WHEN** a started `Metrics` is asked for its server by the manager
+- **THEN** the claim returns an error wrapping `errs.ErrAlreadyStarted`
+- **AND** the test that verifies this is `TestMetricsRefusesAClaimAfterStart`
+
 ### Requirement: A service configuration key in another letter case is refused
 
 A service payload decoded strictly (the service manager's, the metrics service's, the heartbeat service's, the
 metrics forwarder's and the log forwarder's) SHALL be refused when a key differs only in letter case from the name of
 the field it decodes into, in any struct field, pointer or map value the payload type reaches, with an error naming
-the key as written and as declared. This SHALL be the same check `config` applies to its own document. A guard test
-SHALL fail if `config.Config`, `service.ManagerConfig`, `service.MetricsConfig`, `service.HeartbeatConfig`,
-`service.MetricsForwarderConfig` or `service.LogForwarderConfig` reaches a shape the check does not walk: an embedded
-struct, a slice or array of structs or maps, or a type that decodes itself.
+the key as written and as declared. This SHALL be the same check `config` applies to its own document.
 
 #### Scenario: A metrics key in another letter case
 
@@ -290,6 +341,12 @@ struct, a slice or array of structs or maps, or a type that decodes itself.
 - **THEN** it returns an invalid-class error naming the key as written and no service
 - **AND** the test that verifies this is `TestLogForwarderConstructionRefusals`
 
+### Requirement: A guard test fails when a payload reaches a shape the letter-case check does not walk
+
+A guard test SHALL fail if `config.Config`, `service.ManagerConfig`, `service.MetricsConfig`, `service.HeartbeatConfig`,
+`service.MetricsForwarderConfig` or `service.LogForwarderConfig` reaches a shape the check does not walk: an embedded
+struct, a slice or array of structs or maps, or a type that decodes itself.
+
 #### Scenario: A payload type grows a shape the check does not walk
 
 - **WHEN** the guard runs over the six payload types, and over a type with each unwalked shape
@@ -300,19 +357,9 @@ struct, a slice or array of structs or maps, or a type that decodes itself.
 ### Requirement: The component manager's Start bounds Start
 
 `ComponentManager.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start` and a
-`Start` after `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL start nothing. Otherwise it SHALL start the
-admitted lifecycle components in two phases, `component.StoreProvider` components first and then the rest, each phase's
-components concurrently with its start order recorded by name, and SHALL begin a phase only after every `Start` of the
-one before returned. Each component's `Start` SHALL get the context the manager's `Start` got, which the manager never
-ends (ADR-113). A failed `Start` SHALL return every failure joined, each naming its component, after one rollback that
-stops every launched component in reverse launch order; what that rollback could not stop SHALL be stopped by the next
-`Stop`. Ending `Start`'s context after `Start` returned SHALL stop nothing the manager owns. `Stop(ctx)` SHALL be the
-only stop: it SHALL refuse a nil context, return an ended context's error and stop nothing, and otherwise stop each
-lifecycle component with `ctx` in reverse start order, then the health publisher, the override reporter and the base
-service, returning nil only when all are released. A `Stop` during `Start` SHALL wait for every `Start` to return, or
-return its own context's error first. A component whose `Stop` failed, or was not reached because `ctx` ended, SHALL be
-stopped again by the next `Stop`; one whose `Stop` returned nil SHALL not be called again. The manager SHALL pass the
-`lifecycle-suite` checks through a test-side adapter.
+`Start` after `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL start nothing. Ending `Start`'s context
+after `Start` returned SHALL stop nothing the manager owns. The manager SHALL pass the `lifecycle-suite` checks through
+a test-side adapter.
 
 #### Scenario: The Start context ends after Start
 
@@ -323,12 +370,29 @@ stopped again by the next `Stop`; one whose `Stop` returned nil SHALL not be cal
 - **AND** the tests that verify this are `TestComponentManagerPassesTheLifecycleSuite` and
   `TestComponentStartContextIsTheManagersStartContext`
 
-#### Scenario: Stop during Start
+### Requirement: The component manager starts store providers first
 
-- **WHEN** one component's `Start` is held open and `Stop` is called
-- **THEN** `Stop` does not return before that `Start` returns, then stops each component once in reverse order and
-  returns nil
-- **AND** the test that verifies this is `TestStopDuringStartWaitsForComponentStarts`
+A `Start` that is not refused SHALL start the admitted lifecycle components in two phases, `component.StoreProvider`
+components first and then the rest, each phase's components concurrently with its start order recorded by name, and
+SHALL begin a phase only after every `Start` of the one before returned. Each component's `Start` SHALL get the context
+the manager's `Start` got, which the manager never ends (ADR-113).
+
+#### Scenario: A phase begins after the one before
+
+- **WHEN** a composition has a store provider and another component
+- **THEN** the other component's `Start` begins only after the provider's `Start` returned
+- **AND** the test that verifies this is `TestComponentManagerStart_ProvidersRegisterBeforeConcurrentConsumers`
+
+#### Scenario: A component gets the manager's Start context
+
+- **WHEN** the manager starts a component
+- **THEN** the context the component's `Start` receives is the one the manager's `Start` got
+- **AND** the test that verifies this is `TestComponentStartContextIsTheManagersStartContext`
+
+### Requirement: A failed component Start rolls back what was launched
+
+A failed `Start` SHALL return every failure joined, each naming its component, after one rollback that stops every
+launched component in reverse launch order; what that rollback could not stop SHALL be stopped by the next `Stop`.
 
 #### Scenario: A failed Start's cleanup fails
 
@@ -336,6 +400,25 @@ stopped again by the next `Stop`; one whose `Stop` returned nil SHALL not be cal
 - **THEN** `Start` returns both errors, and the waiting `Stop` calls that component's `Stop` again and returns nil
 - **AND** the tests that verify this are `TestStopDuringAFailingStartStopsWhatTheRollbackLeft` and
   `TestComponentManagerFailedStartCleanupFailureRetainsAuthorityForLaterStop`
+
+### Requirement: The component manager's Stop is the only stop and waits for a Start in progress
+
+`Stop(ctx)` SHALL be the only stop: it SHALL refuse a nil context, return an ended context's error and stop nothing, and
+otherwise stop each lifecycle component with `ctx` in reverse start order, then the health publisher, the override
+reporter and the base service, returning nil only when all are released. A `Stop` during `Start` SHALL wait for every
+`Start` to return, or return its own context's error first.
+
+#### Scenario: Stop during Start
+
+- **WHEN** one component's `Start` is held open and `Stop` is called
+- **THEN** `Stop` does not return before that `Start` returns, then stops each component once in reverse order and
+  returns nil
+- **AND** the test that verifies this is `TestStopDuringStartWaitsForComponentStarts`
+
+### Requirement: A component whose Stop failed is stopped again
+
+A component whose `Stop` failed, or was not reached because `ctx` ended, SHALL be stopped again by the next `Stop`; one
+whose `Stop` returned nil SHALL not be called again.
 
 #### Scenario: A failed Stop is retried
 
@@ -347,19 +430,26 @@ stopped again by the next `Stop`; one whose `Stop` returned nil SHALL not be cal
 ### Requirement: The component manager composes the boot set once
 
 `NewComponentManager(raw, deps)` SHALL decode `raw` strictly and refuse every key, naming it, and SHALL refuse a nil
-`deps`, a nil `deps.Manager`, a configuration manager with no configuration and a nil `deps.ComponentRegistry`. It
-SHALL read the configuration once and build each enabled component through `Registry.CreateComponent`. When any
-configured component cannot be built, construction SHALL be refused, naming every component that failed; enabled
-`rule-processor` instances that fail SHALL be refused together, sorted by instance. It SHALL run `composition.Analyze`
-over the admitted declarations and the configuration's explicit streams, log every finding, keep the result, and
-refuse construction when any finding has error severity, naming each; then it SHALL seal the component registry.
-Writes to the configuration after construction SHALL not change the composed set.
+`deps`, a nil `deps.Manager`, a configuration manager with no configuration and a nil `deps.ComponentRegistry`. It SHALL
+read the configuration once and build each enabled component through `Registry.CreateComponent`. Writes to the
+configuration after construction SHALL not change the composed set.
 
-#### Scenario: An error finding refuses construction
+#### Scenario: A nil component registry
 
-- **WHEN** the boot composition has a finding of error severity
-- **THEN** `NewComponentManager` returns an error naming the finding, and nothing is started
-- **AND** the test that verifies this is `TestComponentManagerRefusesBootOnErrorFinding`
+- **WHEN** `NewComponentManager` is given dependencies with no component registry
+- **THEN** it returns an error saying the component manager requires a component registry
+- **AND** the test that verifies this is `TestNewComponentManagerRefusesANilComponentRegistry`
+
+#### Scenario: A key in the payload
+
+- **WHEN** the component manager's payload is `{"enabled_components": []}`
+- **THEN** construction is refused naming `enabled_components`
+- **AND** the test that verifies this is `TestComponentManagerConfigRefusesEveryKey`
+
+### Requirement: A component that cannot be built refuses construction
+
+When any configured component cannot be built, construction SHALL be refused, naming every component that failed;
+enabled `rule-processor` instances that fail SHALL be refused together, sorted by instance.
 
 #### Scenario: A component cannot be built
 
@@ -373,17 +463,17 @@ Writes to the configuration after construction SHALL not change the composed set
 - **THEN** construction is refused with both named, sorted by instance
 - **AND** the test that verifies this is `TestComponentManagerInitializeAggregatesEnabledRulePackFailuresDeterministically`
 
-#### Scenario: A nil component registry
+### Requirement: An error finding in the boot composition refuses construction
 
-- **WHEN** `NewComponentManager` is given dependencies with no component registry
-- **THEN** it returns an error saying the component manager requires a component registry
-- **AND** the test that verifies this is `TestNewComponentManagerRefusesANilComponentRegistry`
+`NewComponentManager` SHALL run `composition.Analyze` over the admitted declarations and the configuration's explicit
+streams, log every finding, keep the result, and refuse construction when any finding has error severity, naming each;
+then it SHALL seal the component registry.
 
-#### Scenario: A key in the payload
+#### Scenario: An error finding refuses construction
 
-- **WHEN** the component manager's payload is `{"enabled_components": []}`
-- **THEN** construction is refused naming `enabled_components`
-- **AND** the test that verifies this is `TestComponentManagerConfigRefusesEveryKey`
+- **WHEN** the boot composition has a finding of error severity
+- **THEN** `NewComponentManager` returns an error naming the finding, and nothing is started
+- **AND** the test that verifies this is `TestComponentManagerRefusesBootOnErrorFinding`
 
 ### Requirement: Providers start before consumers and own their stores
 
@@ -470,12 +560,22 @@ inject one `projection.PredicateReconciler` per pack that has contracts.
 ### Requirement: The component manager's reads wait on no lock and not on Stop
 
 The component manager's set of components SHALL be fixed at construction, and each component's state (its lifecycle
-state, last error, startup counts, provided stores and whether its `Stop` returned nil) SHALL be held on its own,
-under no manager-wide lock. A read of component state or health (`GetComponentStatus`, `GetComponentHealth`, the
-health publisher and the `/components` routes) SHALL not wait for any component's `Start` or `Stop` and SHALL not be
-refused during or after `Stop`; a read during or after `Stop` SHALL ask the component itself. A component's `Health`,
-`DataFlow` and `DebugStatus` SHALL be callable at any time, during `Start` or `Stop` and after `Stop`, and return
-without waiting for either; this is tested for the components in this module and review only for others.
+state, last error, startup counts, provided stores and whether its `Stop` returned nil) SHALL be held on its own, under
+no manager-wide lock.
+
+#### Scenario: The component set is fixed
+
+- **WHEN** the component list is read before `Start`, after it, after `Stop` and after a failed `Start`, and a
+  `withComponents` callback writes a component's `State`
+- **THEN** every read gives the same names and start positions, and the write changes nothing the manager reports
+- **AND** the tests that verify this are `TestComponentListIsFixedAtConstruction` and
+  `TestComponentReadsRaceStartAndStop`
+
+### Requirement: A component read does not wait for Start or Stop
+
+A read of component state or health (`GetComponentStatus`, `GetComponentHealth`, the health publisher and the
+`/components` routes) SHALL not wait for any component's `Start` or `Stop` and SHALL not be refused during or after
+`Stop`; a read during or after `Stop` SHALL ask the component itself.
 
 #### Scenario: A read while a component's Start is blocked
 
@@ -497,13 +597,17 @@ without waiting for either; this is tested for the components in this module and
 - **THEN** `GetComponentHealth` and `/components/health` return each component's own answer after its `Stop`
 - **AND** the test that verifies this is `TestComponentHealthAfterStopAsksEachComponent`
 
-#### Scenario: The component set is fixed
+### Requirement: A component's Health, DataFlow and DebugStatus answer at any time
 
-- **WHEN** the component list is read before `Start`, after it, after `Stop` and after a failed `Start`, and a
-  `withComponents` callback writes a component's `State`
-- **THEN** every read gives the same names and start positions, and the write changes nothing the manager reports
-- **AND** the tests that verify this are `TestComponentListIsFixedAtConstruction` and
-  `TestComponentReadsRaceStartAndStop`
+A component's `Health`, `DataFlow` and `DebugStatus` SHALL be callable at any time, during `Start` or `Stop` and after
+`Stop`, and return without waiting for either; this is tested for the components in this module and review only for
+others.
+
+#### Scenario: Graph ingest answers during and after Stop
+
+- **WHEN** the `graph-ingest` component's `Health` and `DataFlow` are called during and after its `Stop`
+- **THEN** each call returns without waiting for `Stop`
+- **AND** the test that verifies this is `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop`
 
 ### Requirement: The component manager's health reads every component
 
@@ -528,10 +632,7 @@ could not read, whether or not `Start` has completed.
 
 `NewMessageLoggerService` SHALL refuse, as invalid data and naming the input: an unknown configuration key or a key in
 another letter case, a nil NATS client, a nil payload registry, `"*"` in `monitor_subjects` (the default) without a
-component registry, `max_entries` below 0 or above 100000, and `sample_rate` below 0. Defaults SHALL have one home: 0
-`max_entries` means 10000, 0 `sample_rate` means every message, and an empty `monitor_subjects` means `["*"]`.
-`RegisterAll` SHALL register the constructor under `message-logger`, and `ResolveServiceConfigs` SHALL NOT add it: the
-service runs only when the configuration enables it.
+component registry, `max_entries` below 0 or above 100000, and `sample_rate` below 0.
 
 #### Scenario: A refused construction
 
@@ -540,34 +641,32 @@ service runs only when the configuration enables it.
 - **THEN** it returns an invalid-class error naming the input and no service
 - **AND** the test that verifies this is `TestMessageLoggerConstructionRefusals`
 
+### Requirement: The message logger's defaults have one home
+
+Defaults SHALL have one home: 0 `max_entries` means 10000, 0 `sample_rate` means every message, and an empty
+`monitor_subjects` means `["*"]`.
+
+#### Scenario: Omitted fields take the defaults
+
+- **WHEN** `max_entries` is 0, `sample_rate` is 0 and `monitor_subjects` is empty
+- **THEN** the logger applies 10000 entries, every message, and `["*"]`
+
+### Requirement: The message logger is registered and runs only when enabled
+
+`RegisterAll` SHALL register the constructor under `message-logger`, and `ResolveServiceConfigs` SHALL NOT add it: the
+service runs only when the configuration enables it.
+
+#### Scenario: The constructor is registered and not added by default
+
+- **WHEN** `RegisterAll` has filled a registry and `ResolveServiceConfigs` resolves a configuration that does not enable
+  the logger
+- **THEN** the registry offers a constructor under `message-logger` and the resolved services do not include it
+
 ### Requirement: The message logger's Start bounds Start and Stop is the only stop
 
 `MessageLogger.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start` and a `Start`
-after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. `Start` SHALL make each subscribe
-under its context, check that context before each subscribe and once more after the last subscribe, before it logs that
-it started, and, if it has ended at any of these checks, return that error and release everything the logger holds
-(ADR-113). A subscribe that `Start`'s context ends records its subject as failed, and the next check fails `Start`.
-
-One exception is declared: when `Start`'s context cuts a subscribe after its SUB was sent, the NATS client
-removes that subscription and returns none, so the logger never holds it. A message delivered to it before its removal
-can still be stored after `Start` failed. The NATS client owns that callback, and its `Close` waits for it.
-
-Ending `Start`'s context after `Start` returned SHALL stop nothing: later messages are stored. `Stop(ctx)` SHALL refuse
-a nil context and, given an ended context, return its error and stop nothing. Otherwise it SHALL end the subscribe retry
-and wait for it, drain every subscription so that a message being handled when `Stop` begins is stored, end every open
-KV watch stream and wait for its KV watcher to stop, and stop the base service, returning nil only once all are
-released. If its context ends first, or a drain fails, `Stop` SHALL return that error and leave what is not yet
-released for the next `Stop`, which runs the same steps. A `Stop` after one that returned nil SHALL return nil; a `Stop`
-while another runs SHALL be refused as transient. A message published after `Stop` SHALL NOT be stored.
-
-The logger SHALL NOT store a message whose handler context has ended. It SHALL log each such message at Warn, naming
-the subject, and count it in `dropped_messages`, not in `total_messages`. The NATS client ends a handler's context
-after its `Close` has begun (transport-client, "A setup context does not parent its handlers"). Which messages arrive
-after that is not promised (ADR-112); a composition root that stops the logger before closing its client drops none.
-
-How long `Start` can run past its context's end is not promised: its context ends a subscribe's wait for the server's
-answer, but not the waits for the connection that transport-client's "A write the server is not reading holds the
-connection" states.
+after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. Ending `Start`'s context after
+`Start` returned SHALL stop nothing: later messages are stored.
 
 #### Scenario: The lifecycle suite
 
@@ -575,6 +674,20 @@ connection" states.
 - **THEN** every check passes, including that a failed `Start` holds nothing and that ending `Start`'s context stops
   nothing
 - **AND** the test that verifies this is `TestMessageLoggerPassesTheLifecycleSuite`
+
+#### Scenario: Messages are still stored after the Start context ends
+
+- **WHEN** the context given to `Start`, under which the logger subscribed, is cancelled after `Start` returned and a
+  message is published
+- **THEN** the message is stored
+- **AND** the test that verifies this is `TestMessageLoggerKeepsCapturingAfterStartContextEnds`
+
+### Requirement: The message logger's subscribes run under Start's context
+
+`Start` SHALL make each subscribe under its context, check that context before each subscribe and once more after the
+last subscribe, before it logs that it started, and, if it has ended at any of these checks, return that error and
+release everything the logger holds (ADR-113). A subscribe that `Start`'s context ends records its subject as failed,
+and the next check fails `Start`.
 
 #### Scenario: A Start context that ends after the last subscribe
 
@@ -584,43 +697,16 @@ connection" states.
   and a later `Stop` returns nil
 - **AND** the test that verifies this is `TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing`
 
-#### Scenario: A message whose handler context has ended
+#### Scenario: How long Start runs past its context's end is not promised
 
-- **WHEN** the logger's subscription callback is handed a message with a context that has ended
-- **THEN** the message is not stored and not counted in `total_messages`, `dropped_messages` counts it, and a Warn
-  record names its subject
-- **AND** the test that verifies this is `TestMessageLoggerCountsAndLogsADroppedMessage`
+- **WHEN** `Start`'s context ends while `Start` is subscribing
+- **THEN** the context ends a subscribe's wait for the server's answer, but not the waits for the connection that
+  transport-client's "A write the server is not reading holds the connection" states, so how long `Start` can run past
+  its context's end is not promised
 
-#### Scenario: Messages are still stored after the Start context ends
-
-- **WHEN** the context given to `Start`, under which the logger subscribed, is cancelled after `Start` returned and a
-  message is published
-- **THEN** the message is stored
-- **AND** the test that verifies this is `TestMessageLoggerKeepsCapturingAfterStartContextEnds`
-
-#### Scenario: Stop stores the message being handled
-
-- **WHEN** `Stop` begins while one message's handler is still running
-- **THEN** `Stop` returns nil and that message and the one published after it are stored
-- **AND** the test that verifies this is `TestMessageLoggerStopDrainsInFlightMessage`
-
-#### Scenario: A failed Stop is retried
-
-- **WHEN** the first `Stop` returns its context's error while a handler is held
-- **THEN** a second `Stop` does not return nil until the handler is released, and a third `Stop` returns nil
-- **AND** the test that verifies this is `TestMessageLoggerFailedStopIsRetried`
-
-#### Scenario: Stop ends open watch streams
-
-- **WHEN** `Stop` runs while a KV watch stream is open
-- **THEN** `Stop` returns nil, the stream's body reaches its end and no stream is left open
-- **AND** the test that verifies this is `TestMessageLoggerStopEndsOpenWatchStreams`
-
-#### Scenario: Nothing is stored after Stop
-
-- **WHEN** a message is published after `Stop` returned
-- **THEN** it is not stored
-- **AND** the test that verifies this is `TestMessageLoggerIgnoresPublishesAfterStop`
+One exception is declared: when `Start`'s context cuts a subscribe after its SUB was sent, the NATS client removes
+that subscription and returns none, so the logger never holds it. A message delivered to it before its removal can
+still be stored after `Start` failed. The NATS client owns that callback, and its `Close` waits for it.
 
 Not covered by a test, and reviewed only:
 
@@ -628,28 +714,78 @@ Not covered by a test, and reviewed only:
   subscribes of one `Start` or during a subscribe's wait for the server's answer (these need a hook this repository
   does not keep in production code, or a server that withholds its answer, which the logger's tests on the shared
   server do not have);
-- a message stored by the handler of a subscribe that a failed `Start` cut;
+- a message stored by the handler of a subscribe that a failed `Start` cut.
+
+### Requirement: The message logger's Stop drains and releases what it holds
+
+`Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop nothing. Otherwise it
+SHALL end the subscribe retry and wait for it, drain every subscription so that a message being handled when `Stop`
+begins is stored, end every open KV watch stream and wait for its KV watcher to stop, and stop the base service,
+returning nil only once all are released.
+
+#### Scenario: Stop stores the message being handled
+
+- **WHEN** `Stop` begins while one message's handler is still running
+- **THEN** `Stop` returns nil and that message and the one published after it are stored
+- **AND** the test that verifies this is `TestMessageLoggerStopDrainsInFlightMessage`
+
+#### Scenario: Stop ends open watch streams
+
+- **WHEN** `Stop` runs while a KV watch stream is open
+- **THEN** `Stop` returns nil, the stream's body reaches its end and no stream is left open
+- **AND** the test that verifies this is `TestMessageLoggerStopEndsOpenWatchStreams`
+
+Not covered by a test, and reviewed only:
+
 - a `Stop` that must wait for a subscribe retry still running (`TestMessageLoggerRetriesSubscribeUntilConnected` stops
-  the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one);
+  the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one).
+
+### Requirement: The message logger's Stop can be retried and stores nothing after it
+
+If its context ends first, or a drain fails, `Stop` SHALL return that error and leave what is not yet released for the
+next `Stop`, which runs the same steps. A `Stop` after one that returned nil SHALL return nil; a `Stop` while another
+runs SHALL be refused as transient. A message published after `Stop` SHALL NOT be stored.
+
+#### Scenario: A failed Stop is retried
+
+- **WHEN** the first `Stop` returns its context's error while a handler is held
+- **THEN** a second `Stop` does not return nil until the handler is released, and a third `Stop` returns nil
+- **AND** the test that verifies this is `TestMessageLoggerFailedStopIsRetried`
+
+#### Scenario: Nothing is stored after Stop
+
+- **WHEN** a message is published after `Stop` returned
+- **THEN** it is not stored
+- **AND** the test that verifies this is `TestMessageLoggerIgnoresPublishesAfterStop`
+
+### Requirement: The logger drops a message whose handler context has ended
+
+The logger SHALL NOT store a message whose handler context has ended. It SHALL log each such message at Warn, naming the
+subject, and count it in `dropped_messages`, not in `total_messages`. The NATS client ends a handler's context after its
+`Close` has begun (transport-client, "A handler's context descends from one the client owns").
+
+#### Scenario: A message whose handler context has ended
+
+- **WHEN** the logger's subscription callback is handed a message with a context that has ended
+- **THEN** the message is not stored and not counted in `total_messages`, `dropped_messages` counts it, and a Warn
+  record names its subject
+- **AND** the test that verifies this is `TestMessageLoggerCountsAndLogsADroppedMessage`
+
+#### Scenario: Which messages arrive after Close has begun is not promised
+
+- **WHEN** the NATS client's `Close` has begun
+- **THEN** its handlers' contexts end; which messages arrive after that is not promised (ADR-112), and a composition
+  root that stops the logger before closing its client drops none
+
+Not covered by a test, and reviewed only:
+
 - which messages reach the logger with an ended context during the NATS client's `Close` (the drop's signal is tested;
   its timing is not promised).
 
 ### Requirement: The logger is unhealthy while a subject has failed to subscribe
 
 A subscribe that fails, with any error, SHALL NOT fail `Start`: the logger SHALL keep running and retry each failed
-subject every 100 ms until it subscribes. While any subject is unsubscribed, `/stats` SHALL report
-`subject_reconciliation_degraded` as true with `subject_reconciliation_error` naming each subject and its last error,
-and the logger's health check SHALL return an error naming those subjects, so that `IsHealthy` is false and `/readyz`
-answers not ready. The base service runs its health check every 30 seconds, so each change in health SHALL show within
-one interval. The first check, which runs before any subscribe, SHALL find a normal boot healthy.
-
-#### Scenario: Healthy at the first check of a normal boot
-
-- **WHEN** the logger starts with a connected NATS client
-- **THEN** no subject is pending, so `/stats` does not report the logger degraded and the health check, which reads
-  the same pending set, passes
-- **AND** the test that verifies the statistics is `TestMessageLoggerMonitorsOnlyConfiguredSubjects`; no test runs the
-  health check at the first interval of a normal boot, so that half is reviewed from the code only
+subject every 100 ms until it subscribes.
 
 #### Scenario: Unhealthy after a failed subscribe, healthy after the retry succeeds
 
@@ -659,15 +795,62 @@ one interval. The first check, which runs before any subscribe, SHALL find a nor
   retry subscribes, both clear, and a published message is stored
 - **AND** the test that verifies this is `TestMessageLoggerRetriesSubscribeUntilConnected`
 
+### Requirement: A failed subject is reported in stats and health
+
+While any subject is unsubscribed, `/stats` SHALL report `subject_reconciliation_degraded` as true with
+`subject_reconciliation_error` naming each subject and its last error, and the logger's health check SHALL return an
+error naming those subjects, so that `IsHealthy` is false and `/readyz` answers not ready.
+
+#### Scenario: A subject that failed to subscribe is named
+
+- **WHEN** a subject has failed to subscribe
+- **THEN** `/stats` reports `subject_reconciliation_degraded` as true with `subject_reconciliation_error` naming the
+  subject and its last error, and the health check returns an error naming it
+- **AND** the test `TestMessageLoggerRetriesSubscribeUntilConnected` verifies only that the statistics report degraded
+  with a non-empty error and that `IsHealthy()` is false; that the error names each subject and its last error is
+  reviewed from the code only
+
+### Requirement: A change in the logger's health shows within one health interval
+
+The base service runs its health check every 30 seconds, so each change in health SHALL show within one interval. The
+first check, which runs before any subscribe, SHALL find a normal boot healthy.
+
+#### Scenario: Healthy at the first check of a normal boot
+
+- **WHEN** the logger starts with a connected NATS client
+- **THEN** no subject is pending, so `/stats` does not report the logger degraded and the health check, which reads
+  the same pending set, passes
+- **AND** the test that verifies the statistics is `TestMessageLoggerMonitorsOnlyConfiguredSubjects`; no test runs the
+  health check at the first interval of a normal boot, so that half is reviewed from the code only
+
 ### Requirement: The logger subscribes to a fixed subject set, covered ones once
 
 `Start` SHALL compute the subject set once: the explicit `monitor_subjects` and, with `"*"`, the NATS, NATS-request and
 JetStream port subjects of every component declaration the component registry holds, skipping `*`, `>` and `_INBOX`
-subjects. After duplicates are removed, a subject that another subject in the set covers (`flowgraph.SubjectCovers`)
-SHALL NOT be subscribed and SHALL be reported in `/stats` `subject_overlaps` as `broader`, `covered` and `resolution`
-`covered subscription omitted`. Every subject in the set SHALL be covered by at least one subscribed subject, and no
-subscribed subject SHALL cover another. Two subscribed subjects that overlap without either covering the other MAY
-capture one message twice.
+subjects.
+
+#### Scenario: Component subjects are discovered with "*"
+
+- **WHEN** `monitor_subjects` holds `"*"` and the component registry holds an admitted component
+- **THEN** the logger subscribes to that component's declared subjects and stores a message published on one
+- **AND** the test that verifies this is `TestMessageLoggerDiscoversAdmittedComponentSubjects`
+
+### Requirement: A subject another subject covers is not subscribed
+
+After duplicates are removed, a subject that another subject in the set covers (`flowgraph.SubjectCovers`) SHALL NOT be
+subscribed and SHALL be reported in `/stats` `subject_overlaps` as `broader`, `covered` and `resolution` `covered
+subscription omitted`.
+
+#### Scenario: A covered subject's message is stored once
+
+- **WHEN** `monitor_subjects` holds a subject and one it covers, and a message is published on the covered one
+- **THEN** the covered subject is not subscribed, `subject_overlaps` lists it, and the message is stored once
+- **AND** the test that verifies this is `TestMessageLoggerCapturesCoveredSubjectOnce`
+
+### Requirement: Every subject is covered by a subscribed one, and overlaps may capture twice
+
+Every subject in the set SHALL be covered by at least one subscribed subject, and no subscribed subject SHALL cover
+another. Two subscribed subjects that overlap without either covering the other MAY capture one message twice.
 
 #### Scenario: Covered subjects are subscribed once
 
@@ -676,25 +859,23 @@ capture one message twice.
 - **AND** the tests that verify this are `TestPropCoveredSubjectsSubscribedOnce` and
   `TestResolveLoggerSubjectsOmitsCoveredSubjects`
 
-#### Scenario: A covered subject's message is stored once
-
-- **WHEN** `monitor_subjects` holds a subject and one it covers, and a message is published on the covered one
-- **THEN** the covered subject is not subscribed, `subject_overlaps` lists it, and the message is stored once
-- **AND** the test that verifies this is `TestMessageLoggerCapturesCoveredSubjectOnce`
-
-#### Scenario: Component subjects are discovered with "*"
-
-- **WHEN** `monitor_subjects` holds `"*"` and the component registry holds an admitted component
-- **THEN** the logger subscribes to that component's declared subjects and stores a message published on one
-- **AND** the test that verifies this is `TestMessageLoggerDiscoversAdmittedComponentSubjects`
-
 ### Requirement: A malformed monitored subject fails the logger's Start
 
 `Start` SHALL check every subject of the set with `flowgraph.ValidSubject` before it removes duplicates or covered
-subjects, before it starts the base service and before any NATS call. The first subject that fails SHALL refuse `Start`
-as invalid data, with an error naming the subject and its source: `monitor_subjects`, or the component and port that
-declare it. A refused `Start` SHALL hold nothing, and the refusal SHALL be the same whether or not the NATS client is
-connected. The grammar is stricter than NATS on a wildcard inside a token (`a*`) and on form feed.
+subjects, before it starts the base service and before any NATS call. The grammar is stricter than NATS on a wildcard
+inside a token (`a*`) and on form feed.
+
+#### Scenario: Refused when a broader subject covers it
+
+- **WHEN** `monitor_subjects` is `["a.>", "a.foo bar"]`
+- **THEN** `Start` is refused, naming `a.foo bar`
+- **AND** the test that verifies this is `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader`
+
+### Requirement: A refused malformed subject names its source and holds nothing
+
+The first subject that fails SHALL refuse `Start` as invalid data, with an error naming the subject and its source:
+`monitor_subjects`, or the component and port that declare it. A refused `Start` SHALL hold nothing, and the refusal
+SHALL be the same whether or not the NATS client is connected.
 
 #### Scenario: Refused while disconnected, holding nothing
 
@@ -703,24 +884,15 @@ connected. The grammar is stricter than NATS on a wildcard inside a token (`a*`)
   subscription is held
 - **AND** the test that verifies this is `TestMessageLoggerRefusesMalformedSubject`
 
-#### Scenario: Refused when a broader subject covers it
-
-- **WHEN** `monitor_subjects` is `["a.>", "a.foo bar"]`
-- **THEN** `Start` is refused, naming `a.foo bar`
-- **AND** the test that verifies this is `TestMessageLoggerRefusesMalformedSubjectCoveredByBroader`
-
 Not covered by a test: the error text that names the component and port of a malformed subject a component declares. It
 is the same `flowgraph.ValidSubject` call as the `monitor_subjects` check; only its wording is untested.
 
 ### Requirement: Storage observability's construction refuses an unusable configuration
 
-`NewStorageObservabilityService` SHALL refuse, as invalid data and naming the input: an unknown configuration key
-(keys nested under `pressure_thresholds` included) or a key in another letter case, nil dependencies, a nil NATS
-client, a nil metrics registry, an `interval` or `timeout` that does not parse or is not positive, a `timeout` above
-the `interval`, and pressure thresholds that do not resolve. It SHALL do no I/O. Defaults SHALL have one home: an
-omitted `interval` is 1 minute, an omitted `timeout` is 15 seconds and omitted thresholds are the storage report
-package's defaults. `RegisterAll` SHALL register the constructor under `storage-observability`, and
-`ResolveServiceConfigs` SHALL NOT add the service: it runs only when the configuration enables it.
+`NewStorageObservabilityService` SHALL refuse, as invalid data and naming the input: an unknown configuration key (keys
+nested under `pressure_thresholds` included) or a key in another letter case, nil dependencies, a nil NATS client, a nil
+metrics registry, an `interval` or `timeout` that does not parse or is not positive, a `timeout` above the `interval`,
+and pressure thresholds that do not resolve. It SHALL do no I/O.
 
 #### Scenario: A refused construction
 
@@ -730,12 +902,22 @@ package's defaults. `RegisterAll` SHALL register the constructor under `storage-
 - **THEN** it returns an invalid-class error naming the input and no service
 - **AND** the test that verifies this is `TestStorageObservabilityConstructionRefusals`
 
+### Requirement: Storage observability's defaults have one home
+
+Defaults SHALL have one home: an omitted `interval` is 1 minute, an omitted `timeout` is 15 seconds and omitted
+thresholds are the storage report package's defaults.
+
 #### Scenario: Omitted fields take the documented defaults
 
 - **WHEN** the configuration is `{}`
 - **THEN** the applied interval is 1 minute, the applied timeout is 15 seconds and the thresholds equal the storage
   report package's resolved defaults
 - **AND** the test that verifies this is `TestStorageObservabilityConfig_OmittedFieldsTakeDocumentedDefaults`
+
+### Requirement: Storage observability is registered and runs only when enabled
+
+`RegisterAll` SHALL register the constructor under `storage-observability`, and `ResolveServiceConfigs` SHALL NOT add
+the service: it runs only when the configuration enables it.
 
 #### Scenario: The constructor is registered
 
@@ -750,15 +932,7 @@ it; the test that verifies this is `TestResolveServiceConfigsIsPureAndCanonical`
 
 `StorageObservabilityService.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start`
 and a `Start` after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. `Start` SHALL start
-the base service, then the collection loop and the report-watch loop, and return nil. It SHALL do no I/O and SHALL NOT
-fail on account or bucket state: an account that cannot be read, or a report bucket that cannot be acquired, SHALL be
-retried by the loops, each on its own schedule. Ending `Start`'s context after `Start` returned SHALL stop nothing:
-later collections still publish. `Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error
-and stop nothing. Otherwise it SHALL end both loops, wait for them and stop the base service, returning nil only once
-all three are done. If its context ends first, `Stop` SHALL return that error and the next `Stop` SHALL wait again. A
-`Stop` after one that returned nil SHALL return nil, and a `Stop` while another runs SHALL be refused as transient.
-`Health` and the report route SHALL answer before `Start`, while running and after `Stop`, from the last report read.
-How soon a collection already inside the account listing sees `Stop` begin is not promised: it depends on nats.go.
+the base service, then the collection loop and the report-watch loop, and return nil.
 
 #### Scenario: The lifecycle suite
 
@@ -767,6 +941,11 @@ How soon a collection already inside the account listing sees `Stop` begin is no
   nothing
 - **AND** the test that verifies this is `TestStorageObservabilityPassesTheLifecycleSuite`
 
+### Requirement: Storage observability's Start does no I/O and does not fail on account state
+
+`Start` SHALL do no I/O and SHALL NOT fail on account or bucket state: an account that cannot be read, or a report
+bucket that cannot be acquired, SHALL be retried by the loops, each on its own schedule.
+
 #### Scenario: Start succeeds with the account unreadable
 
 - **WHEN** `Start` is given a service built over a client that never connects
@@ -774,11 +953,22 @@ How soon a collection already inside the account listing sees `Stop` begin is no
   has not been read yet, and the route answers `synced` false
 - **AND** the test that verifies this is `TestStorageObservabilityBootsWithoutAReachableAccount`
 
+### Requirement: Ending the storage observability Start context stops nothing
+
+Ending `Start`'s context after `Start` returned SHALL stop nothing: later collections still publish.
+
 #### Scenario: Collection continues after the Start context ends
 
 - **WHEN** the context given to `Start` is cancelled after `Start` returned and a stream is then created
 - **THEN** the stream's row appears on the report route
 - **AND** the test that verifies this is `TestStorageObservabilityKeepsCollectingAfterStartContextEnds`
+
+### Requirement: Storage observability's Stop is the only stop and can be retried
+
+`Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop nothing. Otherwise it
+SHALL end both loops, wait for them and stop the base service, returning nil only once all three are done. If its
+context ends first, `Stop` SHALL return that error and the next `Stop` SHALL wait again. A `Stop` after one that
+returned nil SHALL return nil, and a `Stop` while another runs SHALL be refused as transient.
 
 #### Scenario: A failed Stop is retried
 
@@ -787,6 +977,19 @@ How soon a collection already inside the account listing sees `Stop` begin is no
   return nil
 - **AND** the test that verifies this is `TestStorageObservabilityFailedStopIsRetried`
 
+#### Scenario: A collection already inside the account listing
+
+- **WHEN** `Stop` begins while a collection is already inside the account listing
+- **THEN** how soon that collection sees `Stop` begin is not promised: it depends on nats.go
+
+Not covered by a test, and reviewed only: a collection already inside the JetStream account listing when `Stop` begins
+(no test holds a loop inside the listing), and the report bucket's lock, which `lazyReportBucket.resolve` holds while
+the bucket is created or reconciled, so a slow server holds a second caller behind the first.
+
+### Requirement: Storage observability answers reads before Start, while running and after Stop
+
+`Health` and the report route SHALL answer before `Start`, while running and after `Stop`, from the last report read.
+
 #### Scenario: Reads answer before Start, while running and after Stop
 
 - **WHEN** the report route is read before `Start`, while running and after `Stop`
@@ -794,19 +997,11 @@ How soon a collection already inside the account listing sees `Stop` begin is no
   with the last storage picture appended
 - **AND** the test that verifies this is `TestStorageObservabilityRoutesAfterStop`
 
-Not covered by a test, and reviewed only: a collection already inside the JetStream account listing when `Stop` begins
-(no test holds a loop inside the listing), and the report bucket's lock, which `lazyReportBucket.resolve` holds while
-the bucket is created or reconciled, so a slow server holds a second caller behind the first.
-
 ### Requirement: Storage pressure is reported and gates nothing
 
 `StorageObservabilityService.Health` SHALL return the base service's `Healthy`, `Status` and sub-statuses unchanged for
 every report, and SHALL only append the storage picture to the base message (joined with a semicolon, the base message
-first when it is not empty). A critical pressure state, an over-committed tier, a report not yet read and a failed collection
-SHALL NOT make the service unhealthy, degraded or not ready. The service SHALL set no health check of its own. The
-health message SHALL name the pressure counts, up to five worst resources (own-bound findings before ones inherited
-from the account tier, at equal severity), the over-committed or unknown-limit tiers, and the freshness of the last
-collection.
+first when it is not empty). The service SHALL set no health check of its own.
 
 #### Scenario: Health keeps the base verdict for any report
 
@@ -818,12 +1013,23 @@ collection.
   `TestStorageObservabilityHealth_NeverCarriesANonHealthySubStatus` and
   `TestStorageObservabilityHealth_PreservesTheBaseVerdictsReason`
 
+### Requirement: Storage pressure never makes the service unhealthy or not ready
+
+A critical pressure state, an over-committed tier, a report not yet read and a failed collection SHALL NOT make the
+service unhealthy, degraded or not ready.
+
 #### Scenario: Critical pressure leaves readiness and health green
 
 - **WHEN** a manager composes the service over a server holding a stream whose pressure is critical, and the report
   route has served that critical row
 - **THEN** `/readyz` answers `READY` and `/health` answers 200 with the critical count in the service's message
 - **AND** the test that verifies this is `TestStorageObservabilityCriticalPressureKeepsReadiness`
+
+### Requirement: The storage health message names what an operator should look at
+
+The health message SHALL name the pressure counts, up to five worst resources (own-bound findings before ones inherited
+from the account tier, at equal severity), the over-committed or unknown-limit tiers, and the freshness of the last
+collection.
 
 #### Scenario: The message names what an operator should look at
 
@@ -842,8 +1048,6 @@ collection.
 `NewHeartbeatService` SHALL refuse, as invalid data and naming the input: an unknown configuration key or a key in
 another letter case, nil dependencies, a nil service manager, and an `interval` that does not parse, is not positive or
 is under 1 second. It SHALL look nothing up and do no I/O. An omitted or empty `interval` SHALL be 30 seconds.
-`RegisterAll` SHALL register the constructor under `heartbeat`, and a composition built from a loaded document that
-names no services SHALL construct the heartbeat, because `config`'s defaults enable it, and no metrics forwarder.
 
 #### Scenario: A refused construction
 
@@ -860,6 +1064,14 @@ names no services SHALL construct the heartbeat, because `config`'s defaults ena
   service manager holds no heartbeat
 - **AND** the test that verifies this is `TestHeartbeatRefusesAMiscasedKeyBesideTheDefault`
 
+Not covered by a test, and reviewed only: the heartbeat constructor's "looks nothing up" and "no I/O" (no test
+observes it for I/O; the code makes none).
+
+### Requirement: The heartbeat is registered and composed by the defaults
+
+`RegisterAll` SHALL register the constructor under `heartbeat`, and a composition built from a loaded document that
+names no services SHALL construct the heartbeat, because `config`'s defaults enable it, and no metrics forwarder.
+
 #### Scenario: The constructor is registered and the defaults compose it
 
 - **WHEN** `RegisterAll` has filled a registry, and separately a document with only a `platform` block is composed
@@ -871,15 +1083,8 @@ names no services SHALL construct the heartbeat, because `config`'s defaults ena
 ### Requirement: The heartbeat's Start bounds Start; Stop is the only stop
 
 `HeartbeatService.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start` and a
-`Start` after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. It SHALL look up the
-service named `component-manager` through the service manager it was built with and refuse, naming
-`component-manager`, when there is none or it is not the framework's `*ComponentManager`; that manager SHALL need to
-be composed, not started. Otherwise it SHALL start the base service, then the heartbeat loop, and return nil. Ending
-`Start`'s context after `Start` returned SHALL stop nothing. `Stop(ctx)` SHALL refuse a nil context and, given an ended
-context, return its error and stop nothing. Otherwise it SHALL end the loop, wait for it and stop the base service,
-returning nil only once both are done. If its context ends first, `Stop` SHALL return that error and the next `Stop`
-SHALL wait again. A `Stop` after one that returned nil SHALL return nil, and a `Stop` while another runs SHALL be
-refused as transient.
+`Start` after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. Ending `Start`'s context
+after `Start` returned SHALL stop nothing.
 
 #### Scenario: The lifecycle suite
 
@@ -888,12 +1093,25 @@ refused as transient.
   nothing
 - **AND** the test that verifies this is `TestHeartbeatPassesTheLifecycleSuite`
 
+### Requirement: The heartbeat's Start needs the framework's component manager
+
+`Start` SHALL look up the service named `component-manager` through the service manager it was built with and refuse,
+naming `component-manager`, when there is none or it is not the framework's `*ComponentManager`; that manager SHALL need
+to be composed, not started. Otherwise it SHALL start the base service, then the heartbeat loop, and return nil.
+
 #### Scenario: Start refuses without the framework's component manager
 
 - **WHEN** `Start` is called on a heartbeat whose service manager holds no `component-manager`, or holds a stand-in
   that is not a `*ComponentManager`
 - **THEN** `Start` returns an error naming `component-manager`, the status stays stopped and no loop is held
 - **AND** the test that verifies this is `TestHeartbeatStartRefusesWithoutTheComponentManager`
+
+### Requirement: The heartbeat's Stop is the only stop
+
+`Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop nothing. Otherwise it
+SHALL end the loop, wait for it and stop the base service, returning nil only once both are done. If its context ends
+first, `Stop` SHALL return that error and the next `Stop` SHALL wait again. A `Stop` after one that returned nil SHALL
+return nil, and a `Stop` while another runs SHALL be refused as transient.
 
 #### Scenario: A failed Stop is retried
 
@@ -903,18 +1121,8 @@ refused as transient.
 
 ### Requirement: The heartbeat logs system health at Start and every interval
 
-The heartbeat service SHALL log one record, with the message `System heartbeat`, at level Info, once when it starts
-and then once per `interval` until `Stop`, through the logger in its dependencies. The record SHALL carry `uptime` (the
-base service's uptime rounded to the second, as a duration string), `goroutines` (the process's goroutine count),
-`components_healthy` and `components_total` (how many of the component manager's components report healthy, out of how
-many it holds). No record SHALL be written between ticks.
-
-#### Scenario: A record states component health at Info
-
-- **WHEN** the heartbeat starts over a component manager holding two healthy components and one unhealthy one
-- **THEN** exactly one record is written at Info, with `components_healthy` 2, `components_total` 3, `uptime` `0s` and
-  a `goroutines` attribute
-- **AND** the test that verifies this is `TestHeartbeatRecordsComponentHealth`
+The heartbeat service SHALL log one record, with the message `System heartbeat`, at level Info, once when it starts and
+then once per `interval` until `Stop`, through the logger in its dependencies. No record SHALL be written between ticks.
 
 #### Scenario: One record at Start and one per interval
 
@@ -923,14 +1131,28 @@ many it holds). No record SHALL be written between ticks.
   carrying the uptime of its round; the default and the empty value both give 30 s
 - **AND** the test that verifies this is `TestHeartbeatCadence`
 
+### Requirement: The heartbeat record carries uptime, goroutines and component health
+
+The record SHALL carry `uptime` (the base service's uptime rounded to the second, as a duration string), `goroutines`
+(the process's goroutine count), `components_healthy` and `components_total` (how many of the component manager's
+components report healthy, out of how many it holds).
+
+#### Scenario: A record states component health at Info
+
+- **WHEN** the heartbeat starts over a component manager holding two healthy components and one unhealthy one
+- **THEN** exactly one record is written at Info, with `components_healthy` 2, `components_total` 3, `uptime` `0s` and
+  a `goroutines` attribute
+- **AND** the test that verifies this is `TestHeartbeatRecordsComponentHealth`
+
+Not covered by a test, and reviewed only: the heartbeat's `goroutines` value (the test asserts the attribute exists,
+not its value).
+
 ### Requirement: The metrics forwarder refuses an invalid configuration
 
 `NewMetricsForwarderService` SHALL refuse, as invalid data and naming the input: an unknown configuration key or a key
-in another letter case, nil dependencies, a nil NATS client, a nil metrics registry, and a `push_interval` that does
-not parse or is not positive. It SHALL do no I/O. An omitted or empty `push_interval` SHALL be 5 seconds, and
-`include_go_metrics` and `include_proc_metrics` SHALL default to false. `RegisterAll` SHALL register the constructor
-under `metrics-forwarder`, and `ResolveServiceConfigs` SHALL NOT add the service: it runs only when the configuration
-enables it.
+in another letter case, nil dependencies, a nil NATS client, a nil metrics registry, and a `push_interval` that does not
+parse or is not positive. It SHALL do no I/O. An omitted or empty `push_interval` SHALL be 5 seconds, and
+`include_go_metrics` and `include_proc_metrics` SHALL default to false.
 
 #### Scenario: A refused construction
 
@@ -947,16 +1169,27 @@ enables it.
   written
 - **AND** the test that verifies this is `TestMetricsForwarderConstructionRefusals`
 
+Not covered by a test, and reviewed only: the forwarder constructor's "no I/O" (no test observes it for I/O; the code
+makes none).
+
+### Requirement: The metrics forwarder is registered and runs only when enabled
+
+`RegisterAll` SHALL register the constructor under `metrics-forwarder`, and `ResolveServiceConfigs` SHALL NOT add the
+service: it runs only when the configuration enables it.
+
+#### Scenario: The constructor is registered
+
+- **WHEN** `RegisterAll` has filled a registry
+- **THEN** the registry offers a constructor under `metrics-forwarder`, and `ResolveServiceConfigs` does not add the
+  service
+- **AND** the test that verifies the registration is `TestHeartbeatAndMetricsForwarderAreRegistered`
+
 ### Requirement: The forwarder's Start bounds Start; Stop is the only stop
 
 `MetricsForwarder.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start` and a
 `Start` after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing. Otherwise it SHALL start
 the base service, then the publish loop, and return nil; it SHALL do no I/O and SHALL NOT fail on account of the NATS
-connection. Ending `Start`'s context after `Start` returned SHALL stop nothing: later rounds still publish. `Stop(ctx)`
-SHALL behave as the heartbeat's does: it ends the loop, waits for it and stops the base service; if its context ends
-first it returns that error and the next `Stop` waits again. The forwarder SHALL record its state on
-`semengine_service_status{service="metrics-forwarder"}`: stopped once built, running after `Start` and stopped after
-`Stop`.
+connection.
 
 #### Scenario: The lifecycle suite
 
@@ -965,17 +1198,31 @@ first it returns that error and the next `Stop` waits again. The forwarder SHALL
   nothing
 - **AND** the test that verifies this is `TestMetricsForwarderPassesTheLifecycleSuite`
 
-#### Scenario: A failed Stop is retried
+### Requirement: Ending the forwarder's Start context stops nothing
 
-- **WHEN** the first `Stop` returns its context's error while the loop is held inside a log call
-- **THEN** a second `Stop` has not returned while the loop is held, and after release a later `Stop` returns nil
-- **AND** the test that verifies this is `TestMetricsForwarderFailedStopIsRetried`
+Ending `Start`'s context after `Start` returned SHALL stop nothing: later rounds still publish.
 
 #### Scenario: Publishing continues after the Start context ends
 
 - **WHEN** the context given to `Start` is cancelled after `Start` returned and a counter is then raised
 - **THEN** a later round publishes the raised value on the counter's subject
 - **AND** the test that verifies this is `TestMetricsForwarderKeepsPublishingAfterStartContextEnds`
+
+### Requirement: The forwarder's Stop is the only stop
+
+`Stop(ctx)` SHALL behave as the heartbeat's does: it ends the loop, waits for it and stops the base service; if its
+context ends first it returns that error and the next `Stop` waits again.
+
+#### Scenario: A failed Stop is retried
+
+- **WHEN** the first `Stop` returns its context's error while the loop is held inside a log call
+- **THEN** a second `Stop` has not returned while the loop is held, and after release a later `Stop` returns nil
+- **AND** the test that verifies this is `TestMetricsForwarderFailedStopIsRetried`
+
+### Requirement: The forwarder records its status
+
+The forwarder SHALL record its state on `semengine_service_status{service="metrics-forwarder"}`: stopped once built,
+running after `Start` and stopped after `Stop`.
 
 #### Scenario: The status is recorded
 
@@ -985,31 +1232,15 @@ first it returns that error and the next `Stop` waits again. The forwarder SHALL
 
 ### Requirement: The metrics forwarder publishes every sample and counts its drops
 
-At `Start` and then every `push_interval`, the forwarder SHALL gather the metrics registry it was given and publish,
-for each sample of each family, one JSON object with the fields `timestamp`, `name`, `component`, `type`, `value` and
-`labels` on the subject `metrics.<component>.<name>`, through the NATS client's JetStream publish under its run
-context. `component` SHALL be the sample's `component` label, else `system`. `type` SHALL be the family's type in lower
-case, `untyped` when absent or of another kind. `value` SHALL be the counter, gauge or untyped value, or the sample
-count of a histogram or summary. `labels` SHALL be an object, `{}` when the sample has none. The samples of one round
-SHALL share one timestamp in Unix milliseconds. Families named `go_*` SHALL be left out unless `include_go_metrics` is
-true, and families named `process_*` unless `include_proc_metrics` is true. A sample that does not encode or does not
-publish SHALL increment `semengine_errors_total{service="metrics-forwarder",type="metrics_publish"}`; a gather that
-fails SHALL increment `type="metrics_gather"` and skip that round; each SHALL be logged at Debug, and the loop SHALL go
-on. The forwarder SHALL create no stream: the framework's `METRICS` stream over `metrics.>`, declared in `config`, is
-provisioned by the composition (`config.StreamsManager.EnsureStreams`).
+At `Start` and then every `push_interval`, the forwarder SHALL gather the metrics registry it was given and publish, for
+each sample of each family, one JSON object with the fields `timestamp`, `name`, `component`, `type`, `value` and
+`labels` on the subject `metrics.<component>.<name>`, through the NATS client's JetStream publish under its run context.
 
 #### Scenario: One round per interval
 
 - **WHEN** the forwarder runs with a `push_interval` of 100 ms over a client that never connects, for 350 ms
 - **THEN** the probe counter's subject is attempted four times: once at `Start` and once per tick
 - **AND** the test that verifies this is `TestMetricsForwarderCadence`
-
-#### Scenario: The include flags select the families
-
-- **WHEN** a `go_` counter, a `process_` counter and a plain counter are registered and the flags are varied
-- **THEN** the plain counter is always attempted, the `go_` counter only with `include_go_metrics`, and the
-  `process_` counter only with `include_proc_metrics`
-- **AND** the test that verifies this is `TestMetricsForwarderIncludeFlagsReachThePublisher`
 
 #### Scenario: Each sample is published with its subject, type, value and labels
 
@@ -1019,6 +1250,42 @@ provisioned by the composition (`config.StreamsManager.EnsureStreams`).
   `metrics.system.probe_free_bytes`, each carrying exactly the six payload fields, the type and value, the labels as
   set (`{}` for the gauge) and a timestamp between the call to `Start` and the read
 - **AND** the test that verifies this is `TestMetricsForwarderPublishesEachSample`
+
+### Requirement: The forwarder maps a sample to its fields
+
+`component` SHALL be the sample's `component` label, else `system`. `type` SHALL be the family's type in lower case,
+`untyped` when absent or of another kind. `value` SHALL be the counter, gauge or untyped value, or the sample count of a
+histogram or summary. `labels` SHALL be an object, `{}` when the sample has none. The samples of one round SHALL share
+one timestamp in Unix milliseconds.
+
+#### Scenario: Histogram, summary and untyped samples
+
+- **WHEN** samples of a histogram, a summary and an untyped family are mapped
+- **THEN** each `value` is the sample count (histogram, summary) or the untyped value, and a family of another kind has
+  `type` `untyped`
+- **AND** the tests that verify this are `TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`
+
+Not covered by a test, and reviewed only: a label value spliced into a subject, whose publish outcome is counted like
+any other and is not tested. The sample mapping, including a histogram's and a summary's sample count and the `untyped`
+fallback, is covered by `TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`.
+
+### Requirement: The include flags select the families
+
+Families named `go_*` SHALL be left out unless `include_go_metrics` is true, and families named `process_*` unless
+`include_proc_metrics` is true.
+
+#### Scenario: The include flags select the families
+
+- **WHEN** a `go_` counter, a `process_` counter and a plain counter are registered and the flags are varied
+- **THEN** the plain counter is always attempted, the `go_` counter only with `include_go_metrics`, and the
+  `process_` counter only with `include_proc_metrics`
+- **AND** the test that verifies this is `TestMetricsForwarderIncludeFlagsReachThePublisher`
+
+### Requirement: The forwarder counts its drops and keeps going
+
+A sample that does not encode or does not publish SHALL increment
+`semengine_errors_total{service="metrics-forwarder",type="metrics_publish"}`; a gather that fails SHALL increment
+`type="metrics_gather"` and skip that round; each SHALL be logged at Debug, and the loop SHALL go on.
 
 #### Scenario: A failed publish is counted and the loop goes on
 
@@ -1040,22 +1307,23 @@ provisioned by the composition (`config.StreamsManager.EnsureStreams`).
 - **THEN** the counter is delivered, the NaN sample is not, and the failure is counted once on `metrics_publish`
 - **AND** the test that verifies this is `TestMetricsForwarderCountsAnUnencodableSample`
 
-Not covered by a test, and reviewed only: the construction's "no I/O" (no test observes the constructors for I/O; the
-code makes none); the heartbeat's `goroutines` value (the test asserts the attribute exists, not its value); and a
-label value spliced into a subject, whose publish outcome is counted like any other and is not tested. The sample
-mapping, including a histogram's and a summary's sample count and the `untyped` fallback, is covered by
-`TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`.
+### Requirement: The forwarder creates no stream
+
+The forwarder SHALL create no stream: the framework's `METRICS` stream over `metrics.>`, declared in `config`, is
+provisioned by the composition (`config.StreamsManager.EnsureStreams`).
+
+#### Scenario: The METRICS stream comes from the composition
+
+- **WHEN** the forwarder runs
+- **THEN** it creates no stream; the `METRICS` stream over `metrics.>` is provisioned by the composition through
+  `config.StreamsManager.EnsureStreams`
 
 ### Requirement: The log forwarder refuses an invalid configuration
 
 `NewLogForwarderService` SHALL refuse, as invalid data and naming the input: nil dependencies, a document that does not
 parse or holds more than one JSON value, an unknown configuration key or a key in another letter case, and a
 `min_level` other than `DEBUG`, `INFO`, `WARN` or `ERROR` after it is trimmed and upper-cased. It SHALL NOT require a
-NATS client and SHALL do no I/O. An empty, whitespace-only or `null` configuration, and an omitted or empty
-`min_level`, SHALL give `INFO`. Its exclusion list SHALL be the configured `exclude_sources`, each trimmed, with empty
-entries dropped and duplicates removed in first-seen order, and nothing added. `RegisterAll` SHALL register the
-constructor under `log-forwarder`, and `ResolveServiceConfigs` SHALL NOT add it: the service runs only when the
-configuration enables it.
+NATS client and SHALL do no I/O.
 
 #### Scenario: A refused construction
 
@@ -1063,6 +1331,12 @@ configuration enables it.
   `{"min_level":"INVALID"}`, `{"min_levl":"debug"}`, `{"Min_Level":"debug"}` or `{"Exclude_Sources":["a"]}`
 - **THEN** it returns an invalid-class error naming the input and no service
 - **AND** the test that verifies this is `TestLogForwarderConstructionRefusals`
+
+### Requirement: The log forwarder's configuration has defaults and a normalised exclusion list
+
+An empty, whitespace-only or `null` log forwarder configuration, and an omitted or empty `min_level`, SHALL give
+`INFO`. Its exclusion list SHALL be the configured `exclude_sources`, each trimmed, with empty entries dropped and
+duplicates removed in first-seen order, and nothing added.
 
 #### Scenario: Defaults and normalisation
 
@@ -1075,6 +1349,11 @@ configuration enables it.
   `TestLogForwarderSaysItForwardsNothing` check
 - **AND** the tests that verify this are `TestResolveOwnsDefaultsNormalizationAndValidation` and
   `TestValidateLevelAcceptsOnlyTheFourUpperCaseLevels`
+
+### Requirement: The log forwarder is registered and runs only when enabled
+
+`RegisterAll` SHALL register the log forwarder's constructor under `log-forwarder`, and `ResolveServiceConfigs` SHALL
+NOT add it: the service runs only when the configuration enables it.
 
 #### Scenario: The constructor is registered and runs only when enabled
 
@@ -1089,9 +1368,7 @@ configuration enables it.
 `LogForwarder.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second `Start` and a
 `Start` after any `Stop` (`errs.ErrAlreadyStarted`), and a refused `Start` SHALL hold nothing and write no record.
 Otherwise it SHALL start its base service and return nil; it SHALL start no goroutine of its own. Ending `Start`'s
-context after `Start` returned SHALL stop nothing. `Stop(ctx)` SHALL be the base service's: it SHALL refuse a nil
-context, return an ended context's error and stop nothing, and otherwise return nil once the base service has
-stopped; a `Stop` after one that returned nil SHALL return nil.
+context after `Start` returned SHALL stop nothing.
 
 #### Scenario: The lifecycle suite
 
@@ -1100,15 +1377,23 @@ stopped; a `Stop` after one that returned nil SHALL return nil.
   nothing
 - **AND** the test that verifies this is `TestLogForwarderPassesTheLifecycleSuite`
 
+### Requirement: The log forwarder's Stop is the base service's
+
+`LogForwarder.Stop(ctx)` SHALL be the base service's: it SHALL refuse a nil context, return an ended context's error
+and stop nothing, and otherwise return nil once the base service has stopped; a `Stop` after one that returned nil
+SHALL return nil.
+
+#### Scenario: Stop under a nil, an ended and a live context
+
+- **WHEN** a started log forwarder's `Stop` is called with a nil context, then an ended one, then a live one twice
+- **THEN** the nil context is refused, the ended one returns its error and stops nothing, and both live calls return
+  nil
+
 ### Requirement: The log forwarder forwards nothing and says so
 
 The log forwarder SHALL publish nothing, subscribe to nothing and hold no NATS connection: no log handler in this
-module publishes logs to NATS. When it starts it SHALL write one record at level Warn, through the logger in its
-dependencies (`slog.Default()` when none is given) carrying `service` set to `log-forwarder`, with the message
-`log-forwarder forwards nothing: no log handler in this module publishes logs to NATS` and the attributes `service`
-(`log-forwarder`, once), `min_level` (the resolved level's name) and `exclude_sources` (the resolved list, `[]` when
-empty), and SHALL write no other record while it runs. It SHALL record its status on the injected metrics registry as
-`semengine_service_status{service="log-forwarder"}`, as every service built on `BaseService` does.
+module publishes logs to NATS. When it starts it SHALL write one record at level Warn, and SHALL write no other record
+while it runs.
 
 #### Scenario: The record states the applied configuration
 
@@ -1117,6 +1402,23 @@ empty), and SHALL write no other record while it runs. It SHALL record its statu
 - **THEN** exactly one record is written, at Warn, with `min_level` `WARN` and `exclude_sources` `["a","b"]`, and the
   second `Start` is refused
 - **AND** the test that verifies this is `TestLogForwarderSaysItForwardsNothing`
+
+### Requirement: The log forwarder's start record names the applied configuration
+
+The log forwarder's start record SHALL be written through the logger in its dependencies (`slog.Default()` when none
+is given) carrying `service` set to `log-forwarder`, with the message `log-forwarder forwards nothing: no log handler in
+this module publishes logs to NATS` and the attributes `service` (`log-forwarder`, once), `min_level` (the resolved
+level's name) and `exclude_sources` (the resolved list, `[]` when empty).
+
+#### Scenario: An empty exclusion list in the record
+
+- **WHEN** the service is built from `{}` and started
+- **THEN** its one record carries `service` `log-forwarder` once, `min_level` `INFO` and `exclude_sources` `[]`
+
+### Requirement: The log forwarder records its status
+
+The log forwarder SHALL record its status on the injected metrics registry as
+`semengine_service_status{service="log-forwarder"}`, as every service built on `BaseService` does.
 
 #### Scenario: The status is recorded
 

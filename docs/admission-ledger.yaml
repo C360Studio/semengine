@@ -2341,7 +2341,8 @@
     and 6-position wildcard Pattern filtering on graph.ingest.query.prefix (#259); (8) the mutation provider
     input is decided by graphmutation.ClassifyPort: any input whose interface type is semengine.graph.mutation
     or any one of whose NATS subjects starts with graph.mutation. is a graph-mutation port, and exactly one,
-    a required nats-request input on graph.mutation.> for semengine.graph.mutation v1, is accepted
+    a required nats-request input on graph.mutation.> for semengine.graph.mutation v1, is accepted; a first
+    graph-mutation input that is not valid is refused with an error naming the port (#331)
     (one-mutation-port-check, #323)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,

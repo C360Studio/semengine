@@ -47,9 +47,7 @@ whitespace or any open issue lacks a milestone or has zero labels; otherwise it 
 
 When run with `--sync-project [<number>]`, `scripts/port-status.sh` SHALL resolve the exact `SemEngine Port Tracker`
 project (or explicit `<number>`), refuse malformed or ambiguous project discovery with exit code 2 before any write,
-create and link the project when absent, refuse truncated GraphQL collections with exit code 2 before any item or field
-mutation, paginate open issues and pull requests beyond the first 100, and sync open items and field values (`Status`,
-`Stage`, `Start Date`, `Target Date`).
+and create and link the project when absent.
 
 #### Scenario: Exact project matching and multi-page sync
 
@@ -58,3 +56,24 @@ mutation, paginate open issues and pull requests beyond the first 100, and sync 
   absent), paginates every open issue and pull request, and exits 0; if discovery is malformed/ambiguous it exits 2
   before any write, and if a GraphQL connection is truncated it exits 2 before any item or field mutation
 
+### Requirement: GitHub Project v2 sync refuses truncated collections and pages through all items
+
+When run with `--sync-project`, `scripts/port-status.sh` SHALL refuse truncated GraphQL collections with exit code 2
+before any item or field mutation, and SHALL paginate open issues and pull requests beyond the first 100.
+
+#### Scenario: A truncated collection or more than 100 open items
+
+- **WHEN** `scripts/port-status.sh --sync-project` runs and a GraphQL connection is truncated, or more than 100 issues
+  are open
+- **THEN** it exits 2 before any item or field mutation for a truncated connection, and paginates every open issue and
+  pull request otherwise
+
+### Requirement: GitHub Project v2 sync writes open items and field values
+
+When run with `--sync-project`, `scripts/port-status.sh` SHALL sync open items and field values (`Status`, `Stage`,
+`Start Date`, `Target Date`).
+
+#### Scenario: Open items and their fields
+
+- **WHEN** `scripts/port-status.sh --sync-project` runs against a project with open issues and pull requests
+- **THEN** each open item is synced with its `Status`, `Stage`, `Start Date` and `Target Date` field values

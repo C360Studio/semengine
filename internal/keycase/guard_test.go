@@ -24,6 +24,8 @@ func TestPayloadTypesReachOnlyShapesTheLetterCaseCheckWalks(t *testing.T) {
 		reflect.TypeFor[config.Config](),
 		reflect.TypeFor[service.ManagerConfig](),
 		reflect.TypeFor[service.MetricsConfig](),
+		reflect.TypeFor[service.HeartbeatConfig](),
+		reflect.TypeFor[service.MetricsForwarderConfig](),
 	} {
 		assert.Empty(t, letterCaseWalkerGaps(typ), typ.String())
 	}

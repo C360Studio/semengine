@@ -105,11 +105,13 @@ type appliedStorageObservabilityConfig struct {
 // applied validates the operator's configuration and fills the documented
 // defaults. Defaults have this one home.
 func (c StorageObservabilityConfig) applied() (appliedStorageObservabilityConfig, error) {
-	interval, err := storageDuration(c.Interval, "interval", storagereport.DefaultStorageInventoryInterval)
+	interval, err := serviceDuration(StorageObservabilityServiceName, "interval", c.Interval,
+		storagereport.DefaultStorageInventoryInterval)
 	if err != nil {
 		return appliedStorageObservabilityConfig{}, err
 	}
-	timeout, err := storageDuration(c.Timeout, "timeout", storagereport.DefaultStorageInventoryTimeout)
+	timeout, err := serviceDuration(StorageObservabilityServiceName, "timeout", c.Timeout,
+		storagereport.DefaultStorageInventoryTimeout)
 	if err != nil {
 		return appliedStorageObservabilityConfig{}, err
 	}
@@ -132,20 +134,6 @@ func (c StorageObservabilityConfig) applied() (appliedStorageObservabilityConfig
 		timeout:    timeout,
 		thresholds: c.PressureThresholds,
 	}, nil
-}
-
-func storageDuration(value, field string, fallback time.Duration) (time.Duration, error) {
-	if value == "" {
-		return fallback, nil
-	}
-	parsed, err := time.ParseDuration(value)
-	if err != nil {
-		return 0, fmt.Errorf("invalid storage-observability %s %q: %w", field, value, err)
-	}
-	if parsed <= 0 {
-		return 0, fmt.Errorf("invalid storage-observability %s: must be positive, got %q", field, value)
-	}
-	return parsed, nil
 }
 
 // StorageObservabilityService collects the account storage inventory, publishes

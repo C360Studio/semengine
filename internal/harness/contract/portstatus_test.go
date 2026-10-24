@@ -101,6 +101,30 @@ func TestPortStatusOffline(t *testing.T) {
 			t.Errorf("offline stdout must not claim local files are %q:\n%s", unwanted, r.stdout)
 		}
 	}
+	// The floor cut pkg/acme and its ACME loaders; the internal/tlsutil ledger row defers both to
+	// change 5, so the scoreboard counts pkg/acme there and not against change 1. The remaining
+	// list is printed only for short lists, so the check reads each change's package total.
+	floor := between(r.stdout, "1. setup-04a-01-floor", "2. setup-04a-02-ingest-kernel")
+	consumer := between(r.stdout, "5. setup-04a-05-first-consumer", "6. setup-04a-06-rule-core")
+	if !strings.Contains(floor, "/15 ") || strings.Contains(floor, "pkg/acme") {
+		t.Errorf("change 1 should count 15 packages without pkg/acme:\n%s", floor)
+	}
+	if !strings.Contains(consumer, "/9 ") {
+		t.Errorf("change 5 should count 9 packages, pkg/acme among them:\n%s", consumer)
+	}
+}
+
+// between returns the text of s from the start of from up to the start of to, or "" when either is missing.
+func between(s, from, to string) string {
+	i := strings.Index(s, from)
+	if i < 0 {
+		return ""
+	}
+	j := strings.Index(s[i:], to)
+	if j < 0 {
+		return ""
+	}
+	return s[i : i+j]
 }
 
 const cleanMilestonesJSON = `[{"number":1,"title":"setup","open_issues":9,"closed_issues":15},{"number":2,"title":"slice-04a","open_issues":72,"closed_issues":63},{"number":3,"title":"slice-04b","open_issues":1,"closed_issues":0},{"number":4,"title":"slice-04c","open_issues":1,"closed_issues":0}]`

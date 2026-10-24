@@ -424,6 +424,7 @@ type GPSService struct {
     queueSize           prometheus.Gauge
 
     cancel context.CancelFunc // ends the processing loop's run context
+    done   chan struct{}      // closed when the processing loop has returned
 }
 
 func NewGPSService(registry *metric.MetricsRegistry) (*GPSService, error) {
@@ -481,10 +482,6 @@ func NewGPSService(registry *metric.MetricsRegistry) (*GPSService, error) {
 func (g *GPSService) Start(ctx context.Context) error {
     // Record service startup
     g.coreMetrics.RecordServiceStatus(g.name, 1) // starting
-
-    // Simulate startup delay
-    time.Sleep(100 * time.Millisecond)
-
     g.coreMetrics.RecordServiceStatus(g.name, 2) // running
     g.coreMetrics.RecordHealthStatus(g.name, true)
 
@@ -492,15 +489,23 @@ func (g *GPSService) Start(ctx context.Context) error {
     // after Start returned stops nothing, and Stop cancels the run context.
     runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
     g.cancel = cancel
+    g.done = make(chan struct{})
     go g.processingLoop(runCtx)
 
     log.Printf("GPS service started")
     return nil
 }
 
-func (g *GPSService) Stop() error {
-    g.cancel() // end the processing loop first
+// Stop ends the processing loop and waits for it to return, for no longer
+// than ctx allows.
+func (g *GPSService) Stop(ctx context.Context) error {
     g.coreMetrics.RecordServiceStatus(g.name, 3) // stopping
+    g.cancel()
+    select {
+    case <-g.done:
+    case <-ctx.Done():
+        return ctx.Err()
+    }
 
     // Cleanup custom metrics
     g.registry.Unregister("gps-service", "coordinates_processed")
@@ -513,6 +518,7 @@ func (g *GPSService) Stop() error {
 }
 
 func (g *GPSService) processingLoop(ctx context.Context) {
+    defer close(g.done)
     ticker := time.NewTicker(1 * time.Second)
     defer ticker.Stop()
 
@@ -576,9 +582,11 @@ func main() {
     time.Sleep(30 * time.Second)
 
     // Cleanup
-    gpsService.Stop()
     shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
     defer cancel()
+    if err := gpsService.Stop(shutdownCtx); err != nil {
+        log.Printf("Failed to stop GPS service: %v", err)
+    }
     if err := server.Stop(shutdownCtx); err != nil {
         log.Printf("Failed to stop metrics server: %v", err)
     }
@@ -595,7 +603,6 @@ import (
     "fmt"
     "log"
     "math/rand"
-    "sync"
     "time"
 
     "github.com/c360studio/semengine/metric"
@@ -615,8 +622,8 @@ type MonitoredService struct {
     errorRate       prometheus.Counter
 
     // Control
-    stopCh chan struct{}
-    wg     sync.WaitGroup
+    stopCh chan struct{} // closed by Stop to end the metrics loop
+    done   chan struct{} // closed when the metrics loop has returned
 }
 
 func NewMonitoredService(name string, registry *metric.MetricsRegistry) (*MonitoredService, error) {
@@ -625,6 +632,7 @@ func NewMonitoredService(name string, registry *metric.MetricsRegistry) (*Monito
         registry:    registry,
         coreMetrics: registry.CoreMetrics(),
         stopCh:      make(chan struct{}),
+        done:        make(chan struct{}),
     }
 
     // Create metrics
@@ -679,26 +687,27 @@ func NewMonitoredService(name string, registry *metric.MetricsRegistry) (*Monito
 
 func (s *MonitoredService) Start() error {
     s.coreMetrics.RecordServiceStatus(s.name, 1) // starting
-
-    // Simulate startup
-    time.Sleep(time.Duration(rand.Intn(100)) * time.Millisecond)
-
     s.coreMetrics.RecordServiceStatus(s.name, 2) // running
     s.coreMetrics.RecordHealthStatus(s.name, true)
 
     // Start metrics collection
-    s.wg.Add(1)
     go s.metricsLoop()
 
     log.Printf("Service %s started", s.name)
     return nil
 }
 
-func (s *MonitoredService) Stop() error {
+// Stop ends the metrics loop and waits for it to return, for no longer than
+// ctx allows.
+func (s *MonitoredService) Stop(ctx context.Context) error {
     s.coreMetrics.RecordServiceStatus(s.name, 3) // stopping
 
     close(s.stopCh)
-    s.wg.Wait()
+    select {
+    case <-s.done:
+    case <-ctx.Done():
+        return ctx.Err()
+    }
 
     // Unregister metrics
     s.registry.Unregister(s.name, "requests")
@@ -712,7 +721,7 @@ func (s *MonitoredService) Stop() error {
 }
 
 func (s *MonitoredService) metricsLoop() {
-    defer s.wg.Done()
+    defer close(s.done)
 
     ticker := time.NewTicker(500 * time.Millisecond)
     defer ticker.Stop()
@@ -795,12 +804,14 @@ func main() {
 
     // Shutdown all services
     log.Printf("Shutting down services...")
-    for _, service := range services {
-        service.Stop()
-    }
-
     shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
     defer cancel()
+    for _, service := range services {
+        if err := service.Stop(shutdownCtx); err != nil {
+            log.Printf("Failed to stop service %s: %v", service.name, err)
+        }
+    }
+
     if err := server.Stop(shutdownCtx); err != nil {
         log.Printf("Failed to stop metrics server: %v", err)
     }

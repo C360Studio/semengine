@@ -6,8 +6,9 @@ manager: it builds the services a configuration names, starts them, serves the H
 them. `ComponentManager` is the service that owns the components. `Metrics` is the service that serves the Prometheus
 endpoint. `MessageLogger` is the service that keeps the newest messages seen on chosen NATS subjects for
 inspection. `StorageObservabilityService` is the service that reports how full the NATS account's storage is.
-`HeartbeatService` is the service that logs a liveness line at a fixed interval, and `MetricsForwarder` is the service
-that publishes the process's metrics on NATS. The package also holds the helpers a composition root (the process's
+`HeartbeatService` is the service that logs a liveness line at a fixed interval, `MetricsForwarder` is the service
+that publishes the process's metrics on NATS, and `LogForwarder` is the service that checks the log-forwarding
+settings and says it forwards nothing yet. The package also holds the helpers a composition root (the process's
 `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the
 OpenAPI registry, plus the service-configuration and schema helpers the service manager reads.
 
@@ -17,10 +18,12 @@ the second `Manager` and `Metrics`; the third `ComponentManager`, the service th
 ([The message logger](#the-message-logger)); the fifth `StorageObservabilityService`
 ([The storage observability service](#the-storage-observability-service)).
 
-The sixth pull request, this one, carries `HeartbeatService` ([The heartbeat service](#the-heartbeat-service)) and
-`MetricsForwarder` ([The metrics forwarder](#the-metrics-forwarder)). Of the two, only the heartbeat is on by default;
-the forwarder, like the message logger and storage observability, runs only when the configuration enables it. The
-last service arrives with the seventh.
+The sixth carried `HeartbeatService` ([The heartbeat service](#the-heartbeat-service)) and `MetricsForwarder`
+([The metrics forwarder](#the-metrics-forwarder)). Of the two, only the heartbeat is on by default; the forwarder, like
+the message logger and storage observability, runs only when the configuration enables it.
+
+The seventh pull request, this one and the last, carries `LogForwarder` ([The log forwarder](#the-log-forwarder)). It
+forwards nothing yet. It is the last service the port carries.
 
 ## Embedding BaseService
 
@@ -765,6 +768,61 @@ heartbeat's does.
 
 The `MetricsGatherer` interface, `MetricsForwarderConfig.Validate` and the test-only constructors.
 
+## The log forwarder
+
+`LogForwarder` forwards nothing yet. Its name comes from SemStreams, where a log handler that boot installed
+(`pkg/logging`) sent log records to NATS and this service only checked the handler's settings. This module has no log
+handler that publishes logs to NATS, and `pkg/logging` and the boot wiring that would install one are not ported. What
+the service does today is check its settings, run the base service's lifecycle, and write one record saying so. It is
+off unless the configuration enables it: `ResolveServiceConfigs` does not add it. `RegisterAll` registers its
+constructor, `NewLogForwarderService`, under `log-forwarder`, with no OpenAPI spec because it serves no route.
+
+```json
+{
+  "services": {
+    "log-forwarder": {
+      "enabled": true,
+      "config": {"min_level": "INFO", "exclude_sources": ["a.b"]}
+    }
+  }
+}
+```
+
+| Key | Meaning |
+| --- | --- |
+| `min_level` | The lowest level a forwarded record would need: `DEBUG`, `INFO`, `WARN` or `ERROR`, in any letter case. Default `INFO`; an empty value takes the default. |
+| `exclude_sources` | Source prefixes, in dotted notation, whose records would not be forwarded: `a.b` would also exclude `a.b.c` but not `a`. Each entry is trimmed, empty entries are dropped and duplicates are removed. Nothing is added to the list. |
+
+Both values are checked and reported, not applied: nothing reads them to filter a record. A composition root that
+wants logs on NATS installs its own `slog.Handler` that publishes them (semteams does so in its own code;
+`cmd/semteams/logging.go:71-93` at the time the design was written).
+
+Construction needs `Dependencies` and nothing else: no NATS client, no I/O. `Logger` and `MetricsRegistry` are
+optional. It refuses, as invalid data naming the input: nil dependencies, a document that does not parse or holds more
+than one JSON value, an unknown key or a key in another letter case (`Min_Level` is refused, `min_level` is
+written), and a `min_level` other than the four names above. An empty, whitespace-only or `null` configuration takes
+the defaults. Configuration is read once; to change a value, restart.
+
+At `Start` the service writes one record at Warn, through the injected logger (`slog.Default()` when none), with the
+message `log-forwarder forwards nothing: no log handler in this module publishes logs to NATS` and the attributes
+`min_level` (the resolved level's name) and `exclude_sources` (the resolved list, `[]` when empty). The logger carries
+`service=log-forwarder`, so the record has that attribute once. It writes no other record while it runs, and none when
+`Start` is refused. The service also records its state on `semengine_service_status{service="log-forwarder"}` (0
+stopped, 2 running), as the other services do.
+
+`Start(ctx)` refuses a nil or ended `ctx`, a second `Start` and a `Start` after any `Stop` (`errs.ErrAlreadyStarted`);
+a refused `Start` holds nothing. It starts no goroutine of its own; the one the base service runs is its health check.
+`ctx` bounds `Start` only; ending it afterwards stops nothing. `Stop(ctx)` is the base service's, and the only stop: it
+refuses a nil `ctx`, returns an ended `ctx`'s error and stops nothing, and otherwise returns nil once the base service
+has stopped; a `Stop` after one that returned nil returns nil.
+
+### Not ported
+
+`NewLogForwarder`, `LogForwarderConfig.Validate`, `LogForwarder.Config` and the `Stop` override. The SemStreams
+service also always excluded the source `flow-service.websocket`; this one adds nothing to the configured list.
+`service/milestone_service.go`, the one file in SemStreams' `service` package that reached an agentic package, is not
+ported either; a contract test (`TestServiceReachesNoAgenticPackage`) fails if `service` comes to depend on one.
+
 ## The metrics service
 
 `Metrics` serves the Prometheus endpoint. Its config keys are `port` (default `9090`) and `path` (default
@@ -772,7 +830,7 @@ The `MetricsGatherer` interface, `MetricsForwarderConfig.Validate` and the test-
 `Manager` claims the server before any service starts, serves it until `StopAll`, and `Metrics` reports healthy while
 the server runs. A `Metrics` runs once: a second `Start`, and a `Start` after any `Stop`, are refused with
 `errs.ErrAlreadyStarted`, and the context given to `Start` bounds `Start` only. `RegisterAll` registers `metrics`,
-`component-manager`, `message-logger`, `storage-observability`, `heartbeat` and `metrics-forwarder`.
+`component-manager`, `message-logger`, `storage-observability`, `heartbeat`, `metrics-forwarder` and `log-forwarder`.
 
 ## The profiling server
 

@@ -12,24 +12,47 @@ where it is passed in, and a `synctest` unit test that shows no goroutine is lef
 
 Background work is a goroutine that outlives the call that started it, in code that is not a service; a service is
 held to the `lifecycle-suite` capability instead. A goroutine joined before the call that started it returns is not
-background work. Background work SHALL stop in one of three shapes. `Run(ctx) error` is preferred: no goroutine is
-started for the caller, the caller runs `Run` on a goroutine it owns, cancelling the context stops the work, and
-`Run` returning is the join. `Close() error`, or a stop function the starting call returns, cancels and joins with no
-timeout, and SHALL be used only when the goroutine waits on nothing but what the stop controls, such as its own ticker
-or done channel; a goroutine that calls a caller-supplied callback, waits on in-flight requests, or performs network
-I/O the cancel cannot end does not qualify. `Shutdown(ctx) error` SHALL be used for those: it stops the work, waits
-for it, and returns `ctx.Err()` when the context ends first; the work then exits once what it waited on returns, and a
-later `Shutdown` returns nil. The rule binds every package in the module and every later port.
+background work. Background work SHALL stop in one of three shapes: `Run(ctx) error`, `Close() error` or
+`Shutdown(ctx) error`, each stated in the requirements below. The rule binds every package in the module and every
+later port.
+
+#### Scenario: A goroutine joined before the call returns
+
+- **WHEN** a call starts a goroutine and joins it before the call returns
+- **THEN** it is not background work and none of the three shapes is required
+
+### Requirement: Run(ctx) is the preferred shape
+
+`Run(ctx) error` is preferred: no goroutine is started for the caller, the caller runs `Run` on a goroutine it owns,
+cancelling the context SHALL stop the work, and `Run` returning SHALL be the join.
 
 #### Scenario: Run returns when its context ends
 
 - **WHEN** a caller cancels the context of a running `Run(ctx)`
 - **THEN** `Run` returns `ctx.Err()`, and no goroutine it started is still running
 
+### Requirement: Close joins a goroutine that waits on nothing outside the stop
+
+`Close() error`, or a stop function the starting call returns, cancels and joins with no timeout, and SHALL be used only
+when the goroutine waits on nothing but what the stop controls, such as its own ticker or done channel; a goroutine
+that calls a caller-supplied callback, waits on in-flight requests, or performs network I/O the cancel cannot end does
+not qualify.
+
 #### Scenario: Close joins the goroutine it owns
 
 - **WHEN** `Close()` is called on a type whose goroutine waits only on its own ticker and done channel
 - **THEN** `Close` returns after that goroutine has exited
+
+#### Scenario: Close chosen for a goroutine that runs a callback
+
+- **WHEN** a type whose goroutine calls a caller-supplied callback stops through `Close()`
+- **THEN** the port review rejects it for `Shutdown(ctx)` or `Run(ctx)`
+
+### Requirement: Shutdown(ctx) is for work that waits on something the stop cannot end
+
+`Shutdown(ctx) error` SHALL be used for a goroutine that does not qualify for `Close`: it stops the work, waits for it,
+and returns `ctx.Err()` when the context ends first; the work then exits once what it waited on returns, and a later
+`Shutdown` returns nil.
 
 #### Scenario: Shutdown under a blocked callback
 
@@ -40,11 +63,6 @@ later `Shutdown` returns nil. The rule binds every package in the module and eve
 
 - **WHEN** `Shutdown(ctx)` has returned `ctx.Err()` and the blocked callback then returns
 - **THEN** the goroutine exits, and a later `Shutdown` returns nil
-
-#### Scenario: Close chosen for a goroutine that runs a callback
-
-- **WHEN** a type whose goroutine calls a caller-supplied callback stops through `Close()`
-- **THEN** the port review rejects it for `Shutdown(ctx)` or `Run(ctx)`
 
 ### Requirement: No fixed shutdown timeout
 

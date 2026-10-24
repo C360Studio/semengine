@@ -11,20 +11,27 @@ accepts is processed, that `Shutdown(ctx)` is the pool's only stop, and what the
 
 `internal/dispatch.KeyedPool` SHALL send each item that `SubmitBlocking(ctx, key, work)` accepts to the lane
 `fnv1a(key) % Lanes`, which stays the same for the pool's lifetime. Each lane SHALL run its items one at a time, in the
-order they were accepted, on one goroutine, and SHALL pass `Process` its lane index. When the lane's queue is full,
-`SubmitBlocking` SHALL wait until the lane has room, or return `ctx.Err()` when its context ends first. A panic in
-`Process` SHALL be recovered: `OnPanic`, when set, SHALL be called with the item and the recovered value, and the lane
-SHALL go on to its next item.
+order they were accepted, on one goroutine, and SHALL pass `Process` its lane index.
 
 #### Scenario: Items with one key run in submit order
 
 - **WHEN** items a, b and c are submitted with the same key
 - **THEN** `Process` is called with a, then b, then c, on one lane, and no two of those calls overlap
 
+### Requirement: A full lane makes the submit wait
+
+When the lane's queue is full, `SubmitBlocking` SHALL wait until the lane has room, or return `ctx.Err()` when its
+context ends first.
+
 #### Scenario: A full lane makes the submit wait
 
 - **WHEN** the lane's queue is full and `SubmitBlocking` is called for it
 - **THEN** the call has not returned while the lane is still busy, and it returns `ctx.Err()` when its context ends
+
+### Requirement: A panic in Process is recovered
+
+A panic in `Process` SHALL be recovered: `OnPanic`, when set, SHALL be called with the item and the recovered value, and
+the lane SHALL go on to its next item.
 
 #### Scenario: A panic does not stop the lane
 
@@ -34,12 +41,17 @@ SHALL go on to its next item.
 ### Requirement: Every accepted item reaches Process, and Shutdown is the only stop
 
 `SubmitBlocking` SHALL return nil only for an item that `Process` is then called with exactly once, before `Shutdown`
-returns nil. A `SubmitBlocking` call that begins after the first `Shutdown` call SHALL return `ErrStopped`. The context
-given to `NewKeyedPool` SHALL reach only `Process`: ending it SHALL NOT stop a lane, refuse a submit, or drop a queued
-item, and each `Process` call after it ended SHALL receive the ended context. `Shutdown(ctx)` SHALL return nil once
-every accepted item has been processed and every lane has exited, also when ctx has ended by then, and SHALL return
-`ctx.Err()` when ctx ends first, as the `background-work` requirement "Background work takes one of three shapes" states
-for `Shutdown`.
+returns nil. A `SubmitBlocking` call that begins after the first `Shutdown` call SHALL return `ErrStopped`.
+
+#### Scenario: A submit after Shutdown
+
+- **WHEN** `SubmitBlocking` is called after the first `Shutdown` call
+- **THEN** it returns `ErrStopped`
+
+### Requirement: The run context reaches only Process
+
+The context given to `NewKeyedPool` SHALL reach only `Process`: ending it SHALL NOT stop a lane, refuse a submit, or
+drop a queued item, and each `Process` call after it ended SHALL receive the ended context.
 
 #### Scenario: A submit after the run context ended
 
@@ -50,6 +62,12 @@ for `Shutdown`.
 
 - **WHEN** items wait in a lane's queue and the context given to `NewKeyedPool` is cancelled
 - **THEN** `Process` is called with each of them, with the ended context, before `Shutdown` returns nil
+
+### Requirement: Shutdown returns nil once every item is processed
+
+`Shutdown(ctx)` SHALL return nil once every accepted item has been processed and every lane has exited, also when ctx
+has ended by then, and SHALL return `ctx.Err()` when ctx ends first, as the `background-work` requirement "Background
+work takes one of three shapes" states for `Shutdown`.
 
 #### Scenario: Shutdown after the lanes exited, with an ended context
 

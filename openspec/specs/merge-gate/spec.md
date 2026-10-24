@@ -12,12 +12,9 @@ and marking a draft ready starts the run that applies it.
 ### Requirement: Varied and repeated unit runs
 
 `task test:unit` SHALL run `scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...`. `task test:repeat` SHALL run
-`scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on` over `./...`, or over the packages given after `--`.
-`scripts/verify.sh` SHALL run both, with `test:repeat` as its last step. Together with the integration runner's
-invocation, every test without a build tag then runs once under the race detector at one CPU, once under the race
-detector on every CPU, and five times without the race detector at one CPU in shuffled order. Tests tagged
-`integration` SHALL NOT be repeated: they stay at the one execution the `integration-test-runner` capability fixes. A
-contract test SHALL fail when either command line, or the step list, differs from this requirement.
+`scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on` over `./...`, or over the packages given after `--`. A contract
+test SHALL fail when either command line, or the step list of `scripts/verify.sh`, differs from this requirement or from
+the requirement "Verify runs both unit steps, the repeat step last".
 
 #### Scenario: Count lowered
 
@@ -34,6 +31,12 @@ contract test SHALL fail when either command line, or the step list, differs fro
 - **WHEN** the `test:repeat` command in `Taskfile.yml` carries `-race`
 - **THEN** the contract test fails naming the task and the required command
 
+### Requirement: Verify runs both unit steps, the repeat step last
+
+`scripts/verify.sh` SHALL run `task test:unit` and `task test:repeat`, with `test:repeat` as its last step. Together
+with the integration runner's invocation, every test without a build tag then runs once under the race detector at one
+CPU, once under the race detector on every CPU, and five times without the race detector at one CPU in shuffled order.
+
 #### Scenario: Step removed from verify
 
 - **WHEN** `scripts/verify.sh` does not list `test:repeat`
@@ -43,6 +46,17 @@ contract test SHALL fail when either command line, or the step list, differs fro
 
 - **WHEN** `scripts/verify.sh` lists a step after `test:repeat`
 - **THEN** the contract test fails saying `test:repeat` must be the last step
+
+### Requirement: Integration tests are not repeated
+
+Tests tagged `integration` SHALL NOT be repeated: they stay at the one execution the `integration-test-runner`
+capability fixes.
+
+#### Scenario: Integration test under the repeat step
+
+- **WHEN** a test carries the `integration` tag
+- **THEN** it is not run by `task test:repeat` and stays at the one execution the `integration-test-runner` capability
+  fixes
 
 ### Requirement: Coverage gate names a failing test
 
@@ -57,29 +71,8 @@ failing in that run is named in the output of `task cover:check`.
 ### Requirement: Known-flake check
 
 A known flake is an open GitHub issue labelled `class:flake`. While one is open, `scripts/merge-check.sh` SHALL fail
-every pull-request run except that of a pull request whose closing references include every open one. There SHALL be
-no waiver: no comment and no label on the pull request SHALL exempt it, and no environment variable SHALL change which
-checks apply, other than the two that select the kind of run as stated below.
-
-The label is for a failure that a pull request in this repository can end: a test or check that passes and fails on
-the same tree. A failed network fetch SHALL NOT be filed under it. No command sorts the two, so this part of the rule
-is checked in review only.
-
-The script SHALL take the kind of run from `GITHUB_EVENT_NAME` only when `GITHUB_ACTIONS` is `true`. There,
-`pull_request` is a pull-request run and `push` is a push run; any other value, or none, SHALL make the script exit
-non-zero naming the event. When `GITHUB_ACTIONS` is not `true` the script SHALL NOT read `GITHUB_EVENT_NAME`, and the
-run is a pull-request run. A pull-request run needs a pull request number and SHALL exit non-zero without one. The
-script SHALL print the kind of run and, on a pull-request run, the number it checks. The two variables select the kind
-of run and do nothing else. A local run with both set by hand takes the push path, and no command can tell that from a
-real push run, so the rule that a local run is made with `GITHUB_ACTIONS` unset is checked in review only.
-
-On a pull-request run the script SHALL exit non-zero naming every open `class:flake` issue that is not among the pull
-request's closing references. When every open `class:flake` issue is among them it SHALL exit zero, print each
-exempting issue, and print a `::warning::` line naming them. Issues SHALL be compared by URL. The script SHALL exit
-non-zero when the label `class:flake` does not exist, when any read from GitHub fails or returns something other than
-the list asked for, naming the read, and when the issue list reaches the number asked for; none of these is ever
-treated as no known flake. The base branch of the pull request SHALL NOT change any of this. On a push run the script
-SHALL NOT apply this check and SHALL say so.
+every pull-request run except that of a pull request whose closing references include every open one. The base branch of
+the pull request SHALL NOT change this outcome.
 
 #### Scenario: Open flake and an unrelated pull request
 
@@ -105,12 +98,6 @@ SHALL NOT apply this check and SHALL say so.
   include both
 - **THEN** the script exits zero and names both as exempting it
 
-#### Scenario: Same number in another repository
-
-- **WHEN** issue 40 is open with the label `class:flake` and the pull request's only closing reference is issue 40
-  of another repository
-- **THEN** the script exits non-zero and its output names issue 40
-
 #### Scenario: Pull request on another base
 
 - **WHEN** issue 40 is open with the label `class:flake` and a pull request whose base is not the default branch
@@ -121,6 +108,97 @@ SHALL NOT apply this check and SHALL say so.
 
 - **WHEN** the label exists and no open issue carries it
 - **THEN** the script exits zero
+
+### Requirement: Known-flake check reports on a pull-request run
+
+On a pull-request run the script SHALL exit non-zero naming every open `class:flake` issue that is not among the pull
+request's closing references. When every open `class:flake` issue is among them it SHALL exit zero, print each exempting
+issue, and print a `::warning::` line naming them. Issues SHALL be compared by URL.
+
+#### Scenario: Same number in another repository
+
+- **WHEN** issue 40 is open with the label `class:flake` and the pull request's only closing reference is issue 40
+  of another repository
+- **THEN** the script exits non-zero and its output names issue 40
+
+### Requirement: No waiver for the known-flake check
+
+There SHALL be no waiver: no comment and no label on the pull request SHALL exempt it, and no environment variable SHALL
+change which checks apply, other than the two that select the kind of run, as stated in the requirement "Kind of run
+comes from the Actions event".
+
+#### Scenario: Exemption claimed in a label or comment
+
+- **WHEN** issue 40 is open with the label `class:flake` and the pull request carries a label or comment saying it is
+  exempt, without closing issue 40
+- **THEN** the script exits non-zero and its output names issue 40
+
+### Requirement: The flake label is for failures a pull request can end
+
+The label `class:flake` is for a failure that a pull request in this repository can end: a test or check that passes and
+fails on the same tree. A failed network fetch SHALL NOT be filed under it. No command sorts the two, so this part of
+the rule is checked in review only.
+
+#### Scenario: Failed network fetch
+
+- **WHEN** a network fetch fails
+- **THEN** it is not filed under `class:flake`; review checks this, as no command sorts the two
+
+### Requirement: Kind of run comes from the Actions event
+
+The script SHALL take the kind of run from `GITHUB_EVENT_NAME` only when `GITHUB_ACTIONS` is `true`. There,
+`pull_request` is a pull-request run and `push` is a push run; any other value, or none, SHALL make the script exit
+non-zero naming the event. When `GITHUB_ACTIONS` is not `true` the script SHALL NOT read `GITHUB_EVENT_NAME`, and the
+run is a pull-request run.
+
+#### Scenario: Push event named outside Actions
+
+- **WHEN** `GITHUB_ACTIONS` is not `true`, `GITHUB_EVENT_NAME` is `push`, a pull request number is given, and issue 40
+  is open with the label `class:flake` and is not among that pull request's closing references
+- **THEN** the script says it is a pull-request run, exits non-zero and names issue 40
+
+#### Scenario: Event with no rule
+
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `merge_group`
+- **THEN** the script exits non-zero naming the event
+
+#### Scenario: No event inside Actions
+
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is not set
+- **THEN** the script exits non-zero saying the event is missing
+
+### Requirement: A pull-request run needs a number, and the run is printed
+
+A pull-request run needs a pull request number and SHALL exit non-zero without one. The script SHALL print the kind of
+run and, on a pull-request run, the number it checks.
+
+#### Scenario: Pull-request run without a number
+
+- **WHEN** `GITHUB_ACTIONS` is `true`, `GITHUB_EVENT_NAME` is `pull_request` and no pull request number is given
+- **THEN** the script exits non-zero saying a pull request number is required
+
+#### Scenario: Local run without a number
+
+- **WHEN** `GITHUB_ACTIONS` is not `true` and no pull request number is given
+- **THEN** the script exits non-zero saying a pull request number is required
+
+### Requirement: The two run-kind variables do nothing else
+
+The two variables SHALL select the kind of run and do nothing else. A local run with both set by hand takes the push
+path, and no command can tell that from a real push run, so the rule that a local run is made with `GITHUB_ACTIONS`
+unset is checked in review only.
+
+#### Scenario: Local run with both variables set by hand
+
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `push` on a developer machine
+- **THEN** the script takes the push path, and review, not a command, checks that a local run is made with
+  `GITHUB_ACTIONS` unset
+
+### Requirement: Known-flake check fails closed
+
+The script SHALL exit non-zero when the label `class:flake` does not exist, when any read from GitHub fails or returns
+something other than the list asked for, naming the read, and when the issue list reaches the number asked for; none of
+these is ever treated as no known flake.
 
 #### Scenario: Label missing
 
@@ -137,45 +215,32 @@ SHALL NOT apply this check and SHALL say so.
 - **WHEN** the read of open `class:flake` issues returns as many issues as the script asked for
 - **THEN** the script exits non-zero saying the list may be incomplete
 
+### Requirement: Known-flake check does not apply to a push run
+
+On a push run the script SHALL NOT apply the known-flake check and SHALL say so.
+
 #### Scenario: Push run
 
 - **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `push`
 - **THEN** the script says the known-flake check does not apply and checks the up-to-date rule only
 
-#### Scenario: Push event named outside Actions
-
-- **WHEN** `GITHUB_ACTIONS` is not `true`, `GITHUB_EVENT_NAME` is `push`, a pull request number is given, and issue 40
-  is open with the label `class:flake` and is not among that pull request's closing references
-- **THEN** the script says it is a pull-request run, exits non-zero and names issue 40
-
-#### Scenario: Pull-request run without a number
-
-- **WHEN** `GITHUB_ACTIONS` is `true`, `GITHUB_EVENT_NAME` is `pull_request` and no pull request number is given
-- **THEN** the script exits non-zero saying a pull request number is required
-
-#### Scenario: Local run without a number
-
-- **WHEN** `GITHUB_ACTIONS` is not `true` and no pull request number is given
-- **THEN** the script exits non-zero saying a pull request number is required
-
-#### Scenario: Event with no rule
-
-- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `merge_group`
-- **THEN** the script exits non-zero naming the event
-
-#### Scenario: No event inside Actions
-
-- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is not set
-- **THEN** the script exits non-zero saying the event is missing
-
 ### Requirement: Up-to-date rule
 
 The rules in force on the default branch SHALL require the status check `Required` with
-`strict_required_status_checks_policy` set to `true`, in a ruleset whose enforcement is `active`, so that a pull
-request whose head does not contain the tip of `main` cannot merge. `scripts/merge-check.sh` SHALL read the rules
-in force on the default branch from GitHub on every run and exit non-zero, printing what it found, unless a rule of
-type `required_status_checks` has the context `Required` and the strict setting on and the ruleset it comes from
-reports `enforcement` as `active`. No other field of those answers SHALL change the script's result.
+`strict_required_status_checks_policy` set to `true`, in a ruleset whose enforcement is `active`, so that a pull request
+whose head does not contain the tip of `main` cannot merge.
+
+#### Scenario: Head behind main
+
+- **WHEN** a pull request's head does not contain the tip of `main`
+- **THEN** the rules in force on the default branch do not let it merge
+
+### Requirement: The up-to-date rule is read on every run
+
+`scripts/merge-check.sh` SHALL read the rules in force on the default branch from GitHub on every run and exit non-zero,
+printing what it found, unless a rule of type `required_status_checks` has the context `Required` and the strict setting
+on and the ruleset it comes from reports `enforcement` as `active`. No other field of those answers SHALL change the
+script's result.
 
 #### Scenario: Setting turned off in GitHub
 
@@ -200,20 +265,10 @@ reports `enforcement` as `active`. No other field of those answers SHALL change 
 
 ### Requirement: Required needs both jobs
 
-The CI workflow SHALL run `scripts/merge-check.sh` in a job `merge-check`, passing the pull request's number on a
-pull-request run, under a token limited to `contents: read`, `issues: read` and `pull-requests: read`. No job in
-the workflow SHALL be granted a write permission. The job `verify` SHALL have a limit of 15 minutes. The job
-`required` SHALL need `verify` and `merge-check` and SHALL fail unless both succeeded. For that it SHALL run whatever
-the results of the jobs it needs (`if: always()`), and its step SHALL read the result of every job it needs and exit
-non-zero unless each is `success`: a needed job that failed, was cancelled or was skipped fails `Required`, and so
-does an empty list of results. A contract test SHALL fail when the workflow differs from this requirement in any of
-these ways: the permissions of `merge-check`, a write permission on any job, the limit of `verify`, the jobs
-`required` needs, the condition `required` runs under, or what its step does with the results.
-
-#### Scenario: Job dropped from Required
-
-- **WHEN** `required` in `.github/workflows/ci.yml` needs only `verify`
-- **THEN** the contract test fails naming the missing job
+The job `required` SHALL need `verify` and `merge-check` and SHALL fail unless both succeeded. For that it SHALL run
+whatever the results of the jobs it needs (`if: always()`), and its step SHALL read the result of every job it needs and
+exit non-zero unless each is `success`: a needed job that failed, was cancelled or was skipped fails `Required`, and so
+does an empty list of results.
 
 #### Scenario: Merge check fails
 
@@ -226,16 +281,11 @@ these ways: the permissions of `merge-check`, a write permission on any job, the
   `cancelled` or `skipped` for the other, or no result at all
 - **THEN** the step exits non-zero
 
-#### Scenario: Required can be skipped
+### Requirement: The merge-check job runs read-only
 
-- **WHEN** `required` in `.github/workflows/ci.yml` has no `if: always()`
-- **THEN** the contract test fails naming the job and the missing condition
-
-#### Scenario: Step passes a result other than success
-
-- **WHEN** the step of `required` in `.github/workflows/ci.yml` exits zero for a needed job whose result is
-  `skipped`, or takes its results from `verify` alone
-- **THEN** the contract test fails naming the job and what its step let through
+The CI workflow SHALL run `scripts/merge-check.sh` in a job `merge-check`, passing the pull request's number on a
+pull-request run, under a token limited to `contents: read`, `issues: read` and `pull-requests: read`. No job in the
+workflow SHALL be granted a write permission.
 
 #### Scenario: Write permission added
 
@@ -247,49 +297,44 @@ these ways: the permissions of `merge-check`, a write permission on any job, the
 - **WHEN** the `merge-check` job is granted a permission other than its three reads
 - **THEN** the contract test fails naming the permission
 
+### Requirement: The verify job has a time limit
+
+The job `verify` SHALL have a limit of 15 minutes.
+
 #### Scenario: Verify limit changed
 
 - **WHEN** the `verify` job in `.github/workflows/ci.yml` has a limit other than 15 minutes
 - **THEN** the contract test fails naming the limit
 
+### Requirement: A contract test guards the CI workflow
+
+A contract test SHALL fail when the workflow differs from the requirements "The merge-check job runs read-only", "The
+verify job has a time limit" and "Required needs both jobs" in any of these ways: the permissions of `merge-check`, a
+write permission on any job, the limit of `verify`, the jobs `required` needs, the condition `required` runs under, or
+what its step does with the results.
+
+#### Scenario: Job dropped from Required
+
+- **WHEN** `required` in `.github/workflows/ci.yml` needs only `verify`
+- **THEN** the contract test fails naming the missing job
+
+#### Scenario: Required can be skipped
+
+- **WHEN** `required` in `.github/workflows/ci.yml` has no `if: always()`
+- **THEN** the contract test fails naming the job and the missing condition
+
+#### Scenario: Step passes a result other than success
+
+- **WHEN** the step of `required` in `.github/workflows/ci.yml` exits zero for a needed job whose result is
+  `skipped`, or takes its results from `verify` alone
+- **THEN** the contract test fails naming the job and what its step let through
+
 ### Requirement: Cross-agent review check
 
 On a pull-request run `scripts/merge-check.sh` SHALL apply a review check. A code pull request that is not a draft
 passes only when its description says which agent implemented it and names another agent as its reviewer. A
-documents-only pull request passes without that. The script SHALL exit zero only when the review check, the
-known-flake check and the up-to-date rule all pass. There SHALL be no waiver: no label, no comment and no
-environment variable SHALL change the result, other than the two variables that select the kind of run. On a push
-run the script SHALL NOT apply the check, SHALL say so, and SHALL NOT read a pull request or its files.
-
-**Documents only.** The script SHALL read every page of the pull request's list of changed files, and the number of
-changed files GitHub reports for it. Each entry gives one name, and a renamed file gives two: its new name and its
-previous name. A name is a document name when it ends in `.md` or starts with `openspec/`, and does not start with
-`.claude/agents/` or `.agents/contracts/`. Every other name is a code name, including the name of a file the pull
-request deletes. A pull request with at least one code name is a code pull request. Every other pull request is
-documents only, one that changes no file included. When the entries read are not as many as GitHub reports, the script
-SHALL exit non-zero, say the list is incomplete and give both numbers, whatever the names it read.
-
-**The two lines.** The description of a code pull request SHALL have exactly one line that starts `reviewed-by:`
-and, unless GitHub reports the pull request's author as a bot, exactly one line that starts `implemented-by:`. A
-line starts in the first column. An agent name is the word `claude`, the word `codex`, or the word `gemini`, in any
-letter case, with no letter or digit directly before or after it. The `implemented-by:` line SHALL name at least one
-agent. The `reviewed-by:` line SHALL name exactly one agent, and not an agent the `implemented-by:` line names, unless
-that line names more than one agent. For a bot's pull request the `implemented-by:` line is not read, and the
-`reviewed-by:` line may name any of the three agents. Nothing else in either line is read. A carriage return at the end
-of a line SHALL NOT change any of this.
-
-**Drafts.** While the pull request is a draft the script SHALL make the same reads and print the same findings,
-SHALL say that they do not fail a draft, and SHALL NOT exit non-zero because of them.
-
-**Reads.** The script SHALL exit non-zero, naming the read, when the read of the pull request or of its files fails
-or returns something other than what was asked for, and when the step that sorts the names fails. This holds for a
-draft too. None of these is ever treated as documents only or as a pass.
-
-**What is printed.** The script SHALL print whether the pull request is documents only or a code pull request, and
-for a code pull request its code names, up to ten of them. For each finding it SHALL print what is missing and the
-line to write. When a pull request that is not a draft has a finding, it SHALL also print that editing the
-description starts no run, so the job has to be run again. When a code pull request passes it SHALL print the
-reviewing agent.
+documents-only pull request passes without that. The script SHALL exit zero only when the review check, the known-flake
+check and the up-to-date rule all pass.
 
 #### Scenario: Documents only
 
@@ -303,15 +348,32 @@ reviewing agent.
   `reviewed-by:` line
 - **THEN** the script exits non-zero, names `scripts/x.sh`, and says a `reviewed-by:` line is missing
 
-#### Scenario: Names near the rule
+### Requirement: No waiver for the review check
 
-- **WHEN** one pull request changes `AGENTS.md`, `.claude/skills/preflight/SKILL.md`, `x/.claude/agents/a.md`,
-  `x/.agents/contracts/a.md`, `openspec/changes/x/.openspec.yaml` and `openspec/x.sh`, and a second changes those six
-  and also `README.MD`, `docs/a.md.txt`, `openspecs/a.yaml`, `docs/openspec/a.yaml`, `Taskfile.yml`,
-  `docs/admission-ledger.yaml`, `.claude/agents/semengine-reviewer.md`, `.agents/contracts/semengine-reviewer.md`,
-  `.codex/agents/semengine-reviewer.toml`, and deletes `scripts/x.sh`
-- **THEN** the script says the first is documents only, and treats the second as a code pull request and names each
-  of the ten files that the first does not change
+There SHALL be no waiver: no label, no comment and no environment variable SHALL change the result of the review check,
+other than the two variables that select the kind of run.
+
+#### Scenario: Exemption claimed in a label or comment
+
+- **WHEN** a code pull request that is not a draft has no `reviewed-by:` line and carries a label or comment saying
+  review is waived
+- **THEN** the script exits non-zero and says a `reviewed-by:` line is missing
+
+### Requirement: The review check does not apply to a push run
+
+On a push run the script SHALL NOT apply the review check, SHALL say so, and SHALL NOT read a pull request or its files.
+
+#### Scenario: Push run and the review check
+
+- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `push`
+- **THEN** the script says the review check does not apply and reads no pull request and no file list
+
+### Requirement: The changed-file list is read whole
+
+The script SHALL read every page of the pull request's list of changed files, and the number of changed files GitHub
+reports for it. Each entry gives one name, and a renamed file gives two: its new name and its previous name. When the
+entries read are not as many as GitHub reports, the script SHALL exit non-zero, say the list is incomplete and give both
+numbers, whatever the names it read.
 
 #### Scenario: Renamed file
 
@@ -329,25 +391,55 @@ reviewing agent.
 - **WHEN** GitHub reports 101 changed files, the list read has 100 entries, and every one is a Markdown file
 - **THEN** the script exits non-zero, says the list has 100 of 101 files, and does not say documents only
 
+### Requirement: Names are sorted into document names and code names
+
+The script SHALL treat a name as a document name when it ends in `.md` or starts with `openspec/`, and does not start
+with `.claude/agents/` or `.agents/contracts/`. Every other name is a code name, including the name of a file the pull
+request deletes. A pull request with at least one code name is a code pull request. Every other pull request is
+documents only, one that changes no file included.
+
+#### Scenario: Names near the rule
+
+- **WHEN** one pull request changes `AGENTS.md`, `.claude/skills/preflight/SKILL.md`, `x/.claude/agents/a.md`,
+  `x/.agents/contracts/a.md`, `openspec/changes/x/.openspec.yaml` and `openspec/x.sh`, and a second changes those six
+  and also `README.MD`, `docs/a.md.txt`, `openspecs/a.yaml`, `docs/openspec/a.yaml`, `Taskfile.yml`,
+  `docs/admission-ledger.yaml`, `.claude/agents/semengine-reviewer.md`, `.agents/contracts/semengine-reviewer.md`,
+  `.codex/agents/semengine-reviewer.toml`, and deletes `scripts/x.sh`
+- **THEN** the script says the first is documents only, and treats the second as a code pull request and names each
+  of the ten files that the first does not change
+
 #### Scenario: No changed file
 
 - **WHEN** GitHub reports no changed file and the list read is empty
 - **THEN** the script exits zero and says the pull request is documents only
 
-#### Scenario: The other agent is named
+### Requirement: The reviewed-by and implemented-by lines are written once
 
-- **WHEN** a code pull request that is not a draft has the line `implemented-by: claude (opus)` and the line
-  `reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.`, or
-  has the line `implemented-by: gemini (pro)` and the line `reviewed-by: claude (opus)`
-- **THEN** the script exits zero and prints `codex` in the first case and `claude` in the second as the reviewing
-  agent; what follows the agent's name is not read
+The description of a code pull request SHALL have exactly one line that starts `reviewed-by:` and, unless GitHub reports
+the pull request's author as a bot, exactly one line that starts `implemented-by:`. A line starts in the first column. A
+carriage return at the end of a line SHALL NOT change any of this.
 
-#### Scenario: No reviewed-by line
+#### Scenario: Line not written once at the start of a line
 
-- **WHEN** a code pull request that is not a draft has the line `implemented-by: claude (opus)` and no
-  `reviewed-by:` line
-- **THEN** the script exits non-zero, says to add a line `reviewed-by: codex (or reviewed-by: gemini)`, and says that
-  editing the description starts no run
+- **WHEN** the description of a code pull request has two lines that start `reviewed-by:`, or has
+  `- reviewed-by: codex` as a list item and no line that starts with it, or has one `reviewed-by:` line and two
+  lines that start `implemented-by:`
+- **THEN** the script exits non-zero each time, and says there are two `reviewed-by:` lines in the first case, none
+  in the second, and two `implemented-by:` lines in the third
+
+#### Scenario: Carriage returns
+
+- **WHEN** every line of the description ends in a carriage return and a line feed, and the two lines are otherwise
+  as required
+- **THEN** the script exits zero
+
+### Requirement: The two lines name the agents
+
+An agent name is the word `claude`, the word `codex`, or the word `gemini`, in any letter case, with no letter or digit
+directly before or after it. Unless GitHub reports the pull request's author as a bot, the `implemented-by:` line
+SHALL name at least one agent. The `reviewed-by:` line SHALL name exactly one agent, and, unless the author is a bot
+or the `implemented-by:` line names more than one agent, not an agent that line names. Nothing else in either line is
+read.
 
 #### Scenario: Implementer line missing or naming no agent
 
@@ -381,25 +473,25 @@ reviewing agent.
   `reviewed-by: codex`, or has the lines `implemented-by: codex` and `reviewed-by: codex`
 - **THEN** the script exits zero in both cases
 
-#### Scenario: Line not written once at the start of a line
+For a bot's pull request the `implemented-by:` line is not read, and the `reviewed-by:` line may name any of the three
+agents.
 
-- **WHEN** the description of a code pull request has two lines that start `reviewed-by:`, or has
-  `- reviewed-by: codex` as a list item and no line that starts with it, or has one `reviewed-by:` line and two
-  lines that start `implemented-by:`
-- **THEN** the script exits non-zero each time, and says there are two `reviewed-by:` lines in the first case, none
-  in the second, and two `implemented-by:` lines in the third
+### Requirement: Drafts are not failed by the review check
 
-#### Scenario: Carriage returns
-
-- **WHEN** every line of the description ends in a carriage return and a line feed, and the two lines are otherwise
-  as required
-- **THEN** the script exits zero
+While the pull request is a draft the script SHALL make the same reads and print the same findings, SHALL say that they
+do not fail a draft, and SHALL NOT exit non-zero because of them.
 
 #### Scenario: Draft
 
 - **WHEN** a draft code pull request has no `reviewed-by:` line, no known flake is open and the up-to-date rule
   holds
 - **THEN** the script exits zero, prints that a `reviewed-by:` line is missing, and says this does not fail a draft
+
+### Requirement: The review check fails closed on its reads
+
+The script SHALL exit non-zero, naming the read, when the read of the pull request or of its files fails or returns
+something other than what was asked for, and when the step that sorts the names fails. This holds for a draft too. None
+of these is ever treated as documents only or as a pass.
 
 #### Scenario: A read for the review check fails
 
@@ -412,18 +504,47 @@ reviewing agent.
 - **WHEN** the step that sorts the changed files into code names fails
 - **THEN** the script exits non-zero, and does not say documents only
 
-#### Scenario: Push run and the review check
+### Requirement: The review check prints its findings
 
-- **WHEN** `GITHUB_ACTIONS` is `true` and `GITHUB_EVENT_NAME` is `push`
-- **THEN** the script says the review check does not apply and reads no pull request and no file list
+The script SHALL print whether the pull request is documents only or a code pull request, and for a code pull request
+its code names, up to ten of them. When a code pull request passes it SHALL print the reviewing agent.
+
+#### Scenario: The other agent is named
+
+- **WHEN** a code pull request that is not a draft has the line `implemented-by: claude (opus)` and the line
+  `reviewed-by: codex semengine-reviewer — targeted (3.1–3.3 fixes) APPROVE at 0a86a9a; full-diff review pending.`, or
+  has the line `implemented-by: gemini (pro)` and the line `reviewed-by: claude (opus)`
+- **THEN** the script exits zero and prints `codex` in the first case and `claude` in the second as the reviewing
+  agent; what follows the agent's name is not read
+
+### Requirement: Each finding says how to fix it
+
+For each finding the script SHALL print what is missing and the line to write. When a pull request that is not a draft
+has a finding, it SHALL also print that editing the description starts no run, so the job has to be run again.
+
+#### Scenario: No reviewed-by line
+
+- **WHEN** a code pull request that is not a draft has the line `implemented-by: claude (opus)` and no
+  `reviewed-by:` line
+- **THEN** the script exits non-zero, says to add a line `reviewed-by: codex (or reviewed-by: gemini)`, and says that
+  editing the description starts no run
 
 ### Requirement: A run when a pull request is marked ready
 
 The `pull_request` trigger of the CI workflow SHALL list the activity types `opened`, `synchronize`, `reopened` and
 `ready_for_review`, so that a run starts when a pull request is opened, pushed to or reopened, and when a draft is
-marked ready for review. The review check does not fail a draft, so the run that marking it ready starts is the one
-that applies the check to the head that can now merge. A contract test SHALL fail when the workflow has no
-`pull_request` trigger, when the trigger lists no activity types, and when it lacks any one of the four.
+marked ready for review. The review check does not fail a draft, so the run that marking it ready starts is the one that
+applies the check to the head that can now merge.
+
+#### Scenario: Ready type listed
+
+- **WHEN** the `pull_request` trigger lists `opened`, `synchronize`, `reopened` and `ready_for_review`
+- **THEN** a run starts when a draft is marked ready for review, and applies the review check to that head
+
+### Requirement: A contract test guards the activity types
+
+A contract test SHALL fail when the workflow has no `pull_request` trigger, when the trigger lists no activity types,
+and when it lacks any one of the four.
 
 #### Scenario: Ready type missing
 
@@ -438,20 +559,33 @@ that applies the check to the head that can now merge. A contract test SHALL fai
 
 ### Requirement: Pinned runner image
 
-Every job in the CI workflow SHALL run on the GitHub-hosted image `ubuntu-24.04`, written as the one label
-`runs-on: ubuntu-24.04`: not `ubuntu-latest`, not another label, not a list of labels, not a runner group and not an
-expression. `ubuntu-latest` moves to a new Ubuntu release on GitHub's schedule, with no change in this repository, and
-a run of the same commit can then pass on one release and fail on the other. The label `ubuntu-24.04` still moves
-between GitHub's builds of Ubuntu 24.04, and that is accepted. A move to another image is a change to this
-requirement, made in its own pull request, whose CI run is the `task verify` run on the new image. A contract test
-SHALL fail, naming the job and what it runs on, when any job in the workflow has no `runs-on`, or a `runs-on` other
-than the one label `ubuntu-24.04`.
+Every job in the CI workflow SHALL run on the GitHub-hosted image `ubuntu-24.04`, written as the one label `runs-on:
+ubuntu-24.04`: not `ubuntu-latest`, not another label, not a list of labels, not a runner group and not an expression.
+`ubuntu-latest` moves to a new Ubuntu release on GitHub's schedule, with no change in this repository, and a run of the
+same commit can then pass on one release and fail on the other.
 
 #### Scenario: A job on the moving label
 
 - **WHEN** a job in `.github/workflows/ci.yml` has `runs-on: ubuntu-latest`, whether it is `verify`, `merge-check`,
   `required` or a job added beside them
 - **THEN** the contract test fails naming the job, `ubuntu-latest` and `ubuntu-24.04`
+
+### Requirement: The runner image moves only in its own pull request
+
+The label `ubuntu-24.04` still moves between GitHub's builds of Ubuntu 24.04, and that is accepted. A move to another
+image SHALL be a change to the requirement "Pinned runner image", made in its own pull request, whose CI run is the
+`task verify` run on the new image. No command checks this; it is checked in review only.
+
+#### Scenario: A move to a new Ubuntu release
+
+- **WHEN** the runner image is to move from `ubuntu-24.04` to another image
+- **THEN** one pull request changes "Pinned runner image" and the workflow labels together, and its `task verify` run
+  on the new image is the evidence for the move
+
+### Requirement: A contract test guards the runner label
+
+A contract test SHALL fail, naming the job and what it runs on, when any job in the workflow has no `runs-on`, or a
+`runs-on` other than the one label `ubuntu-24.04`.
 
 #### Scenario: A job with no runner
 
@@ -467,4 +601,3 @@ than the one label `ubuntu-24.04`.
 
 - **WHEN** a job's `runs-on` is a list of labels that includes `ubuntu-24.04`, a runner group, or an expression
 - **THEN** the contract test fails naming the job and what it runs on
-

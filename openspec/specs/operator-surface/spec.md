@@ -14,12 +14,9 @@ routes.
 ## Requirements
 ### Requirement: The service manager serves only diagnostics until boot commits
 
-From the moment `StartAll` binds its main listener (`http_port`, default 8080, on every interface) until it commits,
-the listener SHALL serve `/health`, `/healthz`, `/readyz`, `/services` and `/services/health`, and the component
-manager's read-only routes when it provides them, and SHALL answer any other path with status 503 and the body
-`NOT READY`. After the commit it SHALL serve the full route set: those five,
-`/graph/triples`, `/openapi.json`, `/docs` when `swagger_ui` is true, each service's routes under its prefix, and the
-routes of components that register their own. A route set prepared but not committed SHALL never be served.
+From the moment `StartAll` binds its main listener (`http_port`, default 8080, on every interface) until it commits, the
+listener SHALL serve `/health`, `/healthz`, `/readyz`, `/services` and `/services/health`, and the component manager's
+read-only routes when it provides them, and SHALL answer any other path with status 503 and the body `NOT READY`.
 
 #### Scenario: Before and after the commit
 
@@ -28,6 +25,21 @@ routes of components that register their own. A route set prepared but not commi
 - **THEN** before the commit `/readyz` and `/graph/triples` each answer 503 with `NOT READY`; after it a committed
   route answers, and `/readyz` answers 200 with `READY`
 - **AND** the test that verifies this is `TestStartupReadinessAndAtomicPromotion`
+
+### Requirement: The full route set is served after boot commits
+
+After the commit the manager SHALL serve the full route set: `/health`, `/healthz`, `/readyz`, `/services`,
+`/services/health`, `/graph/triples`, `/openapi.json`, `/docs` when `swagger_ui` is true, each service's routes under
+its prefix, and the routes of components that register their own.
+
+#### Scenario: A committed route answers
+
+- **WHEN** every service has started and the full route set is committed
+- **THEN** a route of the full route set, such as `/graph/triples`, answers instead of 503 `NOT READY`
+
+### Requirement: A route set prepared but not committed is never served
+
+A route set prepared but not committed SHALL never be served.
 
 #### Scenario: The health publisher fails to start
 
@@ -57,17 +69,21 @@ answer 503 with `NOT READY`. It SHALL answer `NOT READY` from the moment `StopAl
 ### Requirement: Health and service listings are served as at the pin
 
 `/health` SHALL answer the aggregate (`health.Aggregate`) of every service's `Health()` plus a `nats` sub-status when
-the manager has a NATS client, with status 503 when the aggregate is unhealthy and 200 otherwise. The `nats`
-sub-status SHALL be healthy with the message `Connected (RTT: <rtt>)` while connected, and unhealthy with a message
-beginning `Disconnected:` otherwise. `/services` SHALL list each composed service's `name`, `status` and `healthy`,
-with the `startup` snapshot, `restart_required` and `pending_service_changes`. `/services/health` SHALL answer each
-service's health and their aggregate under `overall`, with status 503 when `overall` is unhealthy.
+the manager has a NATS client, with status 503 when the aggregate is unhealthy and 200 otherwise. The `nats` sub-status
+SHALL be healthy with the message `Connected (RTT: <rtt>)` while connected, and unhealthy with a message beginning
+`Disconnected:` otherwise.
 
 #### Scenario: NATS disconnected
 
 - **WHEN** `/health` is requested from a manager whose NATS client is not connected
 - **THEN** it answers 503, and its `nats` sub-status is unhealthy with a message beginning `Disconnected:`
 - **AND** the test that verifies this is `TestSystemHealthReportsNATSDisconnected`
+
+### Requirement: /services and /services/health list the services
+
+`/services` SHALL list each composed service's `name`, `status` and `healthy`, with the `startup` snapshot,
+`restart_required` and `pending_service_changes`. `/services/health` SHALL answer each service's health and their
+aggregate under `overall`, with status 503 when `overall` is unhealthy.
 
 #### Scenario: Composed services are listed
 
@@ -79,10 +95,7 @@ service's health and their aggregate under `overall`, with status 503 when `over
 
 `/openapi.json` SHALL answer an OpenAPI 3.0.0 document whose `info` is `server_info` (defaults `SemEngine API`,
 `SemEngine framework API`, `0.0.0`), whose paths are each `HTTPHandler` service's paths under its prefix, and whose
-component schemas are those of every registered spec's request and response types. `TypeNameFromReflect` SHALL name
-a pointer by its element, keep a named type's bare name, and give a slice, an array, a map and an anonymous struct
-names that differ from their element's and from each other and match `^[A-Za-z0-9._-]+$`. `/docs` SHALL serve the
-Swagger UI page, which loads its scripts from `unpkg.com`, only when `swagger_ui` is true.
+component schemas are those of every registered spec's request and response types.
 
 #### Scenario: A mounted service's routes
 
@@ -90,6 +103,11 @@ Swagger UI page, which loads its scripts from `unpkg.com`, only when `swagger_ui
   requested after boot
 - **THEN** the body parses as JSON, its `openapi` is `3.0.0`, and its paths include `/widgets/items`
 - **AND** the test that verifies this is `TestOpenAPIDocumentListsMountedRoutes`
+
+### Requirement: Schema type names are distinct
+
+`TypeNameFromReflect` SHALL name a pointer by its element, keep a named type's bare name, and give a slice, an array, a
+map and an anonymous struct names that differ from their element's and from each other and match `^[A-Za-z0-9._-]+$`.
 
 #### Scenario: Collections are named apart
 
@@ -99,22 +117,52 @@ Swagger UI page, which loads its scripts from `unpkg.com`, only when `swagger_ui
   matches `^[A-Za-z0-9._-]+$`
 - **AND** the test that verifies this is `TestTypeNameFromReflectNamesEachShapeApart`
 
+### Requirement: /docs serves the Swagger UI only when swagger_ui is true
+
+`/docs` SHALL serve the Swagger UI page, which loads its scripts from `unpkg.com`, only when `swagger_ui` is true.
+
+#### Scenario: Swagger UI switched off
+
+- **WHEN** `swagger_ui` is false
+- **THEN** `/docs` does not serve the Swagger UI page
+
 ### Requirement: /graph/triples answers a sorted, validated read of ENTITY_STATES
 
 `GET /graph/triples` SHALL read `ENTITY_STATES` through the read-only catalog reader and answer a JSON array, never
-`null`, of the triples matching every given filter: `subject` exactly, `predicate` exactly, `object` by its `%v`
-text. `limit` SHALL default to 100, treat 0 as the default, clamp to 1000, and refuse a negative or non-integer value
-with 400. A `subject` that is not a literal entity ID (`types.ValidateEntityID`) or a `predicate` that is not three
-parts (`vocabulary.ParsePredicate`) SHALL be refused with 400 naming the parameter. The answer SHALL be the first
-`limit` matching triples of all entities taken in sorted key order. A key deleted between listing and reading SHALL
-be skipped; any other read error, and an entity that `graph.UnmarshalEntityState` refuses, SHALL answer 500. A method
-other than `GET` SHALL answer 405. With no NATS client the manager SHALL answer `[]`.
+`null`, of the triples matching every given filter: `subject` exactly, `predicate` exactly, `object` by its `%v` text. A
+method other than `GET` SHALL answer 405. With no NATS client the manager SHALL answer `[]`.
+
+#### Scenario: Read from a live bucket
+
+- **WHEN** entities are written to `ENTITY_STATES` on a NATS server and `/graph/triples` is requested with a
+  `subject`
+- **THEN** it answers 200 with that entity's triples and no other entity's
+- **AND** the test that verifies this is `TestGraphTriplesReadsEntityStates`
+
+### Requirement: /graph/triples limit
+
+`limit` SHALL default to 100, treat 0 as the default, clamp to 1000, and refuse a negative or non-integer value with
+400.
+
+#### Scenario: Limit values
+
+- **WHEN** `/graph/triples` is requested with no `limit`, `limit=0`, `limit=5000`, `limit=-1` and `limit=abc`
+- **THEN** the limits applied are 100, 100 and 1000, and the last two answer 400
+
+### Requirement: /graph/triples refuses a malformed subject or predicate
+
+A `subject` that is not a literal entity ID (`types.ValidateEntityID`) or a `predicate` that is not three parts
+(`vocabulary.ParsePredicate`) SHALL be refused with 400 naming the parameter.
 
 #### Scenario: Malformed filters
 
 - **WHEN** `/graph/triples?subject=a.b` and `/graph/triples?predicate=x` are requested
 - **THEN** each answers 400 with a body naming `subject` and `predicate` respectively
 - **AND** the test that verifies this is `TestGraphTriplesRefusesMalformedSubjectAndPredicate`
+
+### Requirement: /graph/triples sorts before the limit
+
+The `/graph/triples` answer SHALL be the first `limit` matching triples of all entities taken in sorted key order.
 
 #### Scenario: Sorted before the limit
 
@@ -123,12 +171,10 @@ other than `GET` SHALL answer 405. With no NATS client the manager SHALL answer 
   position
 - **AND** the test that verifies this is `TestScanGraphTriplesMatchesSortedOracle`
 
-#### Scenario: Read from a live bucket
+### Requirement: /graph/triples read errors
 
-- **WHEN** entities are written to `ENTITY_STATES` on a NATS server and `/graph/triples` is requested with a
-  `subject`
-- **THEN** it answers 200 with that entity's triples and no other entity's
-- **AND** the test that verifies this is `TestGraphTriplesReadsEntityStates`
+A key deleted between listing and reading SHALL be skipped; any other read error, and an entity that
+`graph.UnmarshalEntityState` refuses, SHALL answer 500.
 
 #### Scenario: A read error other than a deleted key
 
@@ -178,13 +224,20 @@ SHALL be refused.
 
 ### Requirement: The component manager's routes are served under /components
 
-The component manager SHALL serve, under `/components/`, `health`, `list`, `types`, `types/{id}`, `status/{name}`
-(with `?debug=true` adding a component's `DebugStatus`), `config/{name}`, `flowgraph` (JSON, or Mermaid with
+The component manager SHALL serve, under `/components/`, `health`, `list`, `types`, `types/{id}`, `status/{name}` (with
+`?debug=true` adding a component's `DebugStatus`), `config/{name}`, `flowgraph` (JSON, or Mermaid with
 `format=mermaid`), `validate` and `paths`. Each route SHALL answer only `GET` and SHALL answer any other method with
-405. A name that is empty, `.`, `..` or decodes to a path separator SHALL be answered with 400, and an unknown name
-with 404. Before boot commits only `health`, `list` and `status/` SHALL be served. `RegisterAll` SHALL register the
-component manager's OpenAPI spec, so that every `$ref` in `/openapi.json` names a schema it contains; importing the
-package SHALL register nothing.
+405.
+
+#### Scenario: A method other than GET
+
+- **WHEN** a route is asked with `POST`
+- **THEN** the answer is 405
+- **AND** the test that verifies this is `TestAttack_HandleComponentStatus_InvalidHTTPMethods`
+
+### Requirement: Component routes refuse a malformed or unknown name
+
+A name that is empty, `.`, `..` or decodes to a path separator SHALL be answered with 400, and an unknown name with 404.
 
 #### Scenario: A malicious component name
 
@@ -193,11 +246,19 @@ package SHALL register nothing.
 - **AND** the tests that verify this are `TestAttack_HandleComponentStatus_MaliciousComponentName` and
   `TestComponentRoutesRejectMalformedName`
 
-#### Scenario: A method other than GET
+### Requirement: Only some component routes are served before boot commits
 
-- **WHEN** a route is asked with `POST`
-- **THEN** the answer is 405
-- **AND** the test that verifies this is `TestAttack_HandleComponentStatus_InvalidHTTPMethods`
+Before boot commits only `health`, `list` and `status/` SHALL be served under `/components/`.
+
+#### Scenario: A component route before the commit
+
+- **WHEN** boot has not committed and `/components/flowgraph` is requested
+- **THEN** it is not served; `health`, `list` and `status/` are
+
+### Requirement: The component manager's OpenAPI spec is registered by RegisterAll
+
+`RegisterAll` SHALL register the component manager's OpenAPI spec, so that every `$ref` in `/openapi.json` names a
+schema it contains; importing the package SHALL register nothing.
 
 #### Scenario: Every schema reference resolves
 
@@ -226,19 +287,21 @@ stable: its JSON and Mermaid forms are a tested contract.
 ### Requirement: The message logger's routes are served under /message-logger
 
 The message logger SHALL serve, under `/message-logger/`, `entries`, `stats`, `subjects`, `trace/{traceID}`,
-`kv/{bucket}` and `kv/{bucket}/watch`. Each route SHALL answer `GET` and `HEAD` and SHALL answer any other method with 405.
+`kv/{bucket}` and `kv/{bucket}/watch`. Each route SHALL answer `GET` and `HEAD` and SHALL answer any other method with
+405.
+
+#### Scenario: A malformed trace ID, or a method other than GET or HEAD
+
+- **WHEN** `trace/` is asked for an ID that is not 32 hex characters, or any route is asked with `POST`, or
+  `stats` with `HEAD`
+- **THEN** the answers are 400, 405 and 200
+- **AND** the tests that verify this are `TestTraceRouteRefusesMalformedID` and
+  `TestMessageLoggerRoutesRefuseOtherMethods`
+
+### Requirement: The message logger entries route returns the newest entries
+
 `entries` SHALL return the newest stored entries, newest first; its `limit` SHALL default to 100 and be clamped to
-10000, and a missing, non-numeric, zero or negative value SHALL give 100. Its `subject` filter SHALL be a NATS subject
-pattern matched with `flowgraph.SubjectCovers` and applied before the limit, and a pattern NATS cannot parse SHALL match
-nothing. `stats` SHALL report `total_messages`, `dropped_messages` (messages not stored because their handler context
-had ended; not counted in `total_messages`), `sampled_messages`, `valid_messages` (messages that decoded as typed
-envelopes), `invalid_messages` (the rest), `sample_rate`, `max_entries`, `start_time`, `last_message_time`,
-`uptime_seconds`, `monitored_subjects`, `subject_overlaps`, `subject_reconciliation_degraded` and
-`subject_reconciliation_error`. `trace/{traceID}` SHALL answer 400 unless the ID is 32 hex characters, and otherwise
-the entries still held for the trace, oldest first. `entries`, `stats` and `trace` SHALL answer from memory during and
-after `Stop`, and `subjects` SHALL answer `[]` after `Stop`. A payload that is not JSON SHALL be stored and served as a
-JSON string, so every entry can be served. `RegisterAll` SHALL register the message logger's OpenAPI spec, so that every
-`$ref` in `/openapi.json` names a schema it contains; importing the package SHALL register nothing.
+10000, and a missing, non-numeric, zero or negative value SHALL give 100.
 
 #### Scenario: The entries limit
 
@@ -246,17 +309,23 @@ JSON string, so every entry can be served. `RegisterAll` SHALL register the mess
 - **THEN** the limits applied are 100, 10000 and 100
 - **AND** the test that verifies this is `TestEntriesLimit`
 
+### Requirement: The message logger entries subject filter
+
+The `subject` filter of `entries` SHALL be a NATS subject pattern matched with `flowgraph.SubjectCovers` and applied
+before the limit, and a pattern NATS cannot parse SHALL match nothing.
+
 #### Scenario: The subject filter applies before the limit
 
 - **WHEN** `entries` is asked with a `subject` filter and a `limit` smaller than the number of entries that match
 - **THEN** the answer holds that many matching entries, not the matches among the newest `limit` entries
 - **AND** the tests that verify this are `TestEntriesFilterBeforeLimit` and `TestEntriesSubjectFilterUsesNATSMatching`
 
-#### Scenario: A message that is not JSON
+### Requirement: The message logger stats route
 
-- **WHEN** a payload that is not JSON has been stored
-- **THEN** `entries` and `trace` answer every entry, the payload as a JSON string
-- **AND** the test that verifies this is `TestEntriesServeNonJSONPayload`
+`stats` SHALL report `total_messages`, `dropped_messages` (messages not stored because their handler context had ended;
+not counted in `total_messages`), `sampled_messages`, `valid_messages` (messages that decoded as typed envelopes),
+`invalid_messages` (the rest), `sample_rate`, `max_entries`, `start_time`, `last_message_time`, `uptime_seconds`,
+`monitored_subjects`, `subject_overlaps`, `subject_reconciliation_degraded` and `subject_reconciliation_error`.
 
 #### Scenario: Valid and invalid counts
 
@@ -270,19 +339,41 @@ JSON string, so every entry can be served. `RegisterAll` SHALL register the mess
 - **THEN** `stats` reports `dropped_messages` 1 and `total_messages` 0
 - **AND** the test that verifies this is `TestMessageLoggerCountsAndLogsADroppedMessage`
 
-#### Scenario: A malformed trace ID, or a method other than GET or HEAD
+### Requirement: The message logger trace route
 
-- **WHEN** `trace/` is asked for an ID that is not 32 hex characters, or any route is asked with `POST`, or
-  `stats` with `HEAD`
-- **THEN** the answers are 400, 405 and 200
-- **AND** the tests that verify this are `TestTraceRouteRefusesMalformedID` and
-  `TestMessageLoggerRoutesRefuseOtherMethods`
+`trace/{traceID}` SHALL answer 400 unless the ID is 32 hex characters, and otherwise the entries still held for the
+trace, oldest first.
+
+#### Scenario: A well-formed trace ID
+
+- **WHEN** `trace/` is asked for an ID of 32 hex characters
+- **THEN** the answer holds the entries still held for that trace, oldest first
+
+### Requirement: The message logger answers during and after Stop
+
+`entries`, `stats` and `trace` SHALL answer from memory during and after `Stop`, and `subjects` SHALL answer `[]` after
+`Stop`.
 
 #### Scenario: Reads during and after Stop
 
 - **WHEN** `entries`, `stats`, `trace` and `subjects` are asked after `Stop`
 - **THEN** the first three answer from memory and `subjects` answers `[]`
 - **AND** the test that verifies this is `TestMessageLoggerRoutesAfterStop`
+
+### Requirement: The message logger serves a payload that is not JSON
+
+A payload that is not JSON SHALL be stored and served as a JSON string, so every entry can be served.
+
+#### Scenario: A message that is not JSON
+
+- **WHEN** a payload that is not JSON has been stored
+- **THEN** `entries` and `trace` answer every entry, the payload as a JSON string
+- **AND** the test that verifies this is `TestEntriesServeNonJSONPayload`
+
+### Requirement: The message logger's OpenAPI spec is registered by RegisterAll
+
+`RegisterAll` SHALL register the message logger's OpenAPI spec, so that every `$ref` in `/openapi.json` names a schema
+it contains; importing the package SHALL register nothing.
 
 #### Scenario: Every schema reference resolves
 
@@ -293,13 +384,18 @@ JSON string, so every entry can be served. `RegisterAll` SHALL register the mess
 ### Requirement: The KV query reads an existing bucket and never creates one
 
 `kv/{bucket}` SHALL answer 400 for a bucket name that is empty, `.`, `..` or holds `/`, `\`, `*` or `>`, a check shared
-with the watch route. It SHALL look the bucket up without creating it and answer 404 when it does not exist, 500 for
-another lookup, listing or read failure, and an empty result for a bucket with no keys. It SHALL sort keys before
-`limit` applies (default 100, clamped to 1000), and `pattern` SHALL be a key glob: `*` or empty for every key, one `*`
-as prefix, suffix, both ends or in the middle (the prefix and suffix not sharing a character), or none for an exact key.
-It SHALL answer each value as stored, so large numbers are not rounded, and a value that is not JSON as a JSON string.
-`status` SHALL keep only records whose top-level JSON `status` string equals it. A key deleted or purged between the
-listing and its read SHALL be left out; any other read error SHALL answer 500 naming the key.
+with the watch route.
+
+#### Scenario: A malformed bucket name
+
+- **WHEN** either KV route is asked for a bucket name that is empty, a path step or holds a separator or wildcard
+- **THEN** the answer is 400
+- **AND** the tests that verify this are `TestKVRoutesRejectMalformedBucket` and `TestIsValidBucketName`
+
+### Requirement: The KV query looks the bucket up without creating it
+
+The KV query SHALL look the bucket up without creating it and answer 404 when it does not exist, 500 for another lookup,
+listing or read failure, and an empty result for a bucket with no keys.
 
 #### Scenario: A missing bucket
 
@@ -307,6 +403,12 @@ listing and its read SHALL be left out; any other read error SHALL answer 500 na
 - **THEN** the answer is 404 and no bucket was created; a lookup failure other than not-found answers 500
 - **AND** the tests that verify this are `TestKVQueryMissingBucketIs404AndCreatesNothing` and
   `TestKVQueryLookupFailureIs500`
+
+### Requirement: The KV query sorts keys before the limit and matches a key glob
+
+The KV query SHALL sort keys before `limit` applies (default 100, clamped to 1000), and `pattern` SHALL be a key glob:
+`*` or empty for every key, one `*` as prefix, suffix, both ends or in the middle (the prefix and suffix not sharing a
+character), or none for an exact key.
 
 #### Scenario: Reads of existing buckets
 
@@ -317,37 +419,37 @@ listing and its read SHALL be left out; any other read error SHALL answer 500 na
   `TestKVQueryPreservesJSONValues`, `TestKVQueryPatternMatchesBeforeLimit`, `TestRecordMatchesStatus` and
   `TestMatchesPatternMiddleWildcard`
 
-#### Scenario: A malformed bucket name
+Sorting the keys is not detected by `TestKVQuerySortsKeysBeforeLimit`: the pinned `nats.go` already returns them sorted,
+so removing the sort does not fail the test, and the sort is kept because that order is not promised.
 
-- **WHEN** either KV route is asked for a bucket name that is empty, a path step or holds a separator or wildcard
-- **THEN** the answer is 400
-- **AND** the tests that verify this are `TestKVRoutesRejectMalformedBucket` and `TestIsValidBucketName`
+### Requirement: The KV query answers values as stored
+
+The KV query SHALL answer each value as stored, so large numbers are not rounded, and a value that is not JSON as a JSON
+string. `status` SHALL keep only records whose top-level JSON `status` string equals it.
+
+#### Scenario: Values and status filter
+
+- **WHEN** a record holds a large number, another value is not JSON, and `status` is given
+- **THEN** the large number is not rounded, the value that is not JSON is a JSON string, and only records whose
+  top-level `status` equals the filter are kept
+
+### Requirement: The KV query leaves out a key deleted before its read
+
+A key deleted or purged between the listing and its read SHALL be left out by the KV query; any other read error SHALL
+answer 500 naming the key.
+
+#### Scenario: A key deleted between listing and read
+
+- **WHEN** a key is deleted or purged between the listing and its read
+- **THEN** the key is left out; any other read error answers 500 naming the key
 
 Not covered by a test: the two read branches that need the bucket to change, or the server to fail, between the key
-listing and the read (a key left out because it was deleted; any other error answering 500). Sorting the keys is also
-not detected by `TestKVQuerySortsKeysBeforeLimit`: the pinned `nats.go` already returns them sorted, so removing the
-sort does not fail the test, and the sort is kept because that order is not promised.
+listing and the read (a key left out because it was deleted; any other error answering 500).
 
 ### Requirement: The KV watch ends on client exit, falling behind or Stop
 
 `kv/{bucket}/watch` SHALL answer 503 once `Stop` has begun, 400 for a bad bucket name or `pattern`, 404 for a bucket
-that does not exist and 500 for another lookup failure, and none of these SHALL open a stream or create a bucket. An
-empty or `*` `pattern` SHALL watch every key; any other SHALL be a NATS KV key filter, a final `>` accepted and a space
-refused. Otherwise it SHALL stream Server-Sent Events: `connected` with the bucket, pattern and a message, `retry:
-5000`, one `kv_change` for each key's current value, one `kv_change` with operation `initial_sync_complete`, then one
-`kv_change` for each later change. A `kv_change` event's `operation` SHALL be what NATS records, `put`, `delete` or
-`purge`, and its `value` SHALL be present for a `put` only. The logger SHALL NOT read `Last-Event-ID`. Each stream SHALL
-buffer at most 100 events between its KV watcher and the client; the first event that does not fit SHALL stop the
-watcher, and the stream SHALL send the events already buffered, then one `error` event with
-`{"error":"watch fell behind: events were dropped"}`, and end, so no `kv_change`, and no `initial_sync_complete`,
-follows a dropped event. The stream SHALL end when the client leaves or the logger stops, and the KV watcher and its
-reader SHALL have ended before the handler returns.
-
-#### Scenario: Initial values, then changes
-
-- **WHEN** a watch is opened on a bucket that holds keys and a key is then written and deleted
-- **THEN** the stream carries `connected`, the current values, `initial_sync_complete`, then the `put` and `delete`
-- **AND** the test that verifies this is `TestKVWatchStreamsInitialValuesThenChanges`
+that does not exist and 500 for another lookup failure, and none of these SHALL open a stream or create a bucket.
 
 #### Scenario: Refusals open nothing
 
@@ -355,6 +457,56 @@ reader SHALL have ended before the handler returns.
 - **THEN** the answers are 400, 404 and 503
 - **AND** the tests that verify this are `TestKVWatchRejectsInvalidFilter`, `TestKVWatchMissingBucketIs404` and
   `TestKVWatchAfterStopIs503`
+
+### Requirement: The KV watch pattern
+
+An empty or `*` `pattern` SHALL watch every key; any other SHALL be a NATS KV key filter, a final `>` accepted and a
+space refused.
+
+#### Scenario: A watch filter
+
+- **WHEN** the watch is asked for a `pattern` that is empty or `*`, one with a final `>`, and one with a space
+- **THEN** the first watches every key, the second is accepted as a NATS KV key filter, and the third is refused with
+  400
+
+### Requirement: The KV watch streams Server-Sent Events in order
+
+When none of the refusals in the requirement "The KV watch ends on client exit, falling behind or Stop" applies, the
+watch SHALL stream Server-Sent Events: `connected` with the bucket, pattern and a message, `retry: 5000`, one
+`kv_change` for each key's current value, one `kv_change` with operation `initial_sync_complete`, then one `kv_change`
+for each later change.
+
+#### Scenario: Initial values, then changes
+
+- **WHEN** a watch is opened on a bucket that holds keys and a key is then written and deleted
+- **THEN** the stream carries `connected`, the current values, `initial_sync_complete`, then the `put` and `delete`
+- **AND** the test that verifies this is `TestKVWatchStreamsInitialValuesThenChanges`
+
+### Requirement: A kv_change event carries what NATS records
+
+A `kv_change` event's `operation` SHALL be what NATS records, `put`, `delete` or `purge`, and its `value` SHALL be
+present for a `put` only. The logger SHALL NOT read `Last-Event-ID`.
+
+#### Scenario: Operation and value
+
+- **WHEN** a key is put, deleted and purged under a watch
+- **THEN** the `kv_change` events carry `put`, `delete` and `purge`, and only the `put` event carries a `value`
+
+### Requirement: A KV watch stream buffers at most 100 events
+
+Each stream SHALL buffer at most 100 events between its KV watcher and the client; the first event that does not fit
+SHALL stop the watcher.
+
+#### Scenario: The buffer is full
+
+- **WHEN** a client does not read and more than 100 events arrive
+- **THEN** the first event that does not fit stops the KV watcher
+
+### Requirement: A dropped event ends the stream with an error event
+
+After the watcher stops for a dropped event, the stream SHALL send the events already buffered, then one `error` event
+with `{"error":"watch fell behind: events were dropped"}`, and end, so no `kv_change`, and no `initial_sync_complete`,
+follows a dropped event.
 
 #### Scenario: A client that falls behind
 
@@ -368,20 +520,47 @@ updates channel. If more than 256 entries arrive between the reader's last recei
 could stay blocked until the stop. This was not probed and no real-world trigger is named, so the behaviour is not
 promised.
 
+### Requirement: The KV watch ends cleanly
+
+The stream SHALL end when the client leaves or the logger stops, and the KV watcher and its reader SHALL have ended
+before the handler returns.
+
+#### Scenario: Client leaves
+
+- **WHEN** a client closes a watch stream
+- **THEN** the stream ends, and the KV watcher and its reader have ended before the handler returns
+
 ### Requirement: The storage report is served at /storage-observability/report
 
 The storage observability service SHALL serve `GET <prefix>/report`, mounted under `/storage-observability`. The route
-SHALL answer `GET` and `HEAD` and any other method with 405, and SHALL answer 200 whatever the report says: critical
-pressure, an over-committed tier, an unreadable account and a report not yet read each answer 200 with the fact in the
-body. The body SHALL carry `report_only` (always true), `synced` (whether the watch has read every current value at
-least once), `updated_at` (present only once a change was applied), `summary` (`resources`, `pressure` as an object
-that is never null, `not_evaluated`, and `worst_pressure` only when some row was evaluated), `account` (present only
-once an account row was read) and `resources`. `resources` SHALL be every published row sorted by resource name, never
-null and never filtered; the route SHALL take no filter parameter, so a row with no pressure state is still served. A
-row with no bound of its own SHALL carry `pressure.evaluated_against` `account-tier` when its tier has a limit. The
-route SHALL read the one consumer that feeds the metrics and the health message and SHALL NOT recompute any value. The
-route's OpenAPI document SHALL describe `/report`, and `RegisterAll` SHALL register no spec for the service because its
-spec names no schema.
+SHALL answer `GET` and `HEAD` and any other method with 405.
+
+#### Scenario: Methods and prefix
+
+- **WHEN** the route is called with `GET`, `HEAD` and another method, and mounted with a prefix with and without a
+  trailing slash
+- **THEN** `GET` and `HEAD` answer 200, another method answers 405, and both prefixes serve the route
+- **AND** the tests that verify this are `TestStorageReportHTTP_AnswersGETAndHEAD`,
+  `TestStorageReportHTTP_RejectsNonGET` and `TestStorageReportHTTP_PrefixWithOrWithoutTrailingSlash`
+
+### Requirement: The storage report answers 200 whatever the report says
+
+The route SHALL answer 200 whatever the report says: critical pressure, an over-committed tier, an unreadable account
+and a report not yet read each answer 200 with the fact in the body.
+
+#### Scenario: Critical pressure answers 200
+
+- **WHEN** a row is at critical pressure
+- **THEN** the route answers 200
+- **AND** the test that verifies this is `TestStorageObservabilityCriticalPressureKeepsReadiness`, which reads the
+  critical row through the route; `TestStorageReportHTTP_CriticalPressureFailsNothing` checks the body it serves
+
+### Requirement: The storage report body fields
+
+The body SHALL carry `report_only` (always true), `synced` (whether the watch has read every current value at least
+once), `updated_at` (present only once a change was applied), `summary` (`resources`, `pressure` as an object that is
+never null, `not_evaluated`, and `worst_pressure` only when some row was evaluated), `account` (present only once an
+account row was read) and `resources`.
 
 #### Scenario: The shape of the response
 
@@ -391,6 +570,12 @@ spec names no schema.
 - **AND** the tests that verify this are `TestStorageReportHTTP_ResponseRoundTrips`,
   `TestStorageReportHTTP_UnknownAccountIsAbsentNotZero` and `TestStorageReportHTTP_UnreadReportSaysSo`
 
+### Requirement: The storage report lists every published row
+
+`resources` SHALL be every published row sorted by resource name, never null and never filtered; the route SHALL take no
+filter parameter, so a row with no pressure state is still served. A row with no bound of its own SHALL carry
+`pressure.evaluated_against` `account-tier` when its tier has a limit.
+
 #### Scenario: Not-evaluated rows stay visible
 
 - **WHEN** the report holds a row with no pressure state
@@ -399,20 +584,9 @@ spec names no schema.
 - **AND** the tests that verify this are `TestStorageReportHTTP_NotEvaluatedRowsStayVisible` and
   `TestStorageReportHTTP_WorstPressureIsEmptyWhenNothingIsEvaluated`
 
-#### Scenario: Critical pressure answers 200
+### Requirement: The storage report and the metrics read one consumer
 
-- **WHEN** a row is at critical pressure
-- **THEN** the route answers 200
-- **AND** the test that verifies this is `TestStorageObservabilityCriticalPressureKeepsReadiness`, which reads the
-  critical row through the route; `TestStorageReportHTTP_CriticalPressureFailsNothing` checks the body it serves
-
-#### Scenario: Methods and prefix
-
-- **WHEN** the route is called with `GET`, `HEAD` and another method, and mounted with a prefix with and without a
-  trailing slash
-- **THEN** `GET` and `HEAD` answer 200, another method answers 405, and both prefixes serve the route
-- **AND** the tests that verify this are `TestStorageReportHTTP_AnswersGETAndHEAD`,
-  `TestStorageReportHTTP_RejectsNonGET` and `TestStorageReportHTTP_PrefixWithOrWithoutTrailingSlash`
+The route SHALL read the one consumer that feeds the metrics and the health message and SHALL NOT recompute any value.
 
 #### Scenario: The route and the metrics read one consumer
 
@@ -426,21 +600,23 @@ spec names no schema.
 - **THEN** their rows, growth and pressure appear on the route and in the registry
 - **AND** the test that verifies this is `TestStorageObservabilityCollectsPublishesAndServes`
 
+### Requirement: The storage report's OpenAPI document
+
+The route's OpenAPI document SHALL describe `/report`, and `RegisterAll` SHALL register no spec for the service because
+its spec names no schema.
+
+#### Scenario: OpenAPI document and RegisterAll
+
+- **WHEN** a composition is built through `RegisterAll` with the storage observability service
+- **THEN** the service's `OpenAPISpec` describes `/report`, and `RegisterAll` registers no spec for it
+
 ### Requirement: The storage metrics are published under semengine_storage_
 
 The storage observability service SHALL register 19 collectors on the injected metrics registry under the name
-`storage-observability`, each named `semengine_storage_*`: `resource_used_bytes`, `resource_limit_bytes`,
-`resource_headroom_bytes`, `resource_headroom_ratio`, `resource_growth_bytes_per_second`,
-`resource_time_to_threshold_seconds` and `resource_pressure` (0 normal to 3 critical), labelled `resource`, `owner`,
-`kind` and `tier`; `resources` and `pressure_resources`; nine `account_*` families per storage tier; and
-`report_collected_timestamp_seconds`. The service SHALL write to the collector `metric.RegisterOrGet` returns, so a
-second service built on the same registry writes the series the registry serves. A value that was not measured SHALL
-publish no series, never zero. A series SHALL be deleted when its value goes away, when a resource leaves the report
-(under the label tuple it was published with) and, for the per-tier series, when the consumer drops the account row.
-The count and state families SHALL be emitted in full on every rebuild. The freshness gauge SHALL carry the newest
-collection time of a published row, never move backwards, and ignore a zero time. The example alert rules at
-`configs/prometheus/rules/storage-pressure.yml` SHALL read only published metric names, SHALL NOT fire on a report row
-disappearing, SHALL name unbounded resources, and SHALL state that nothing is enforced.
+`storage-observability`, each named `semengine_storage_*`. Seven are labelled `resource`, `owner`, `kind` and `tier`:
+`resource_used_bytes`, `resource_limit_bytes`, `resource_headroom_bytes`, `resource_headroom_ratio`,
+`resource_growth_bytes_per_second`, `resource_time_to_threshold_seconds` and `resource_pressure` (0 normal to 3
+critical).
 
 #### Scenario: Per-resource series and absence
 
@@ -450,6 +626,41 @@ disappearing, SHALL name unbounded resources, and SHALL state that nothing is en
   `TestStorageMetrics_AbsentMeasurementsPublishNoSeries`, `TestStorageMetrics_PressureSeverityEncoding` and
   `TestStorageMetrics_UnboundedResourceCarriesNoPressureSeries`
 
+### Requirement: The other twelve storage collectors
+
+The other twelve collectors SHALL be `resources` and `pressure_resources`; nine `account_*` families per storage tier;
+and `report_collected_timestamp_seconds`.
+
+#### Scenario: The registered collectors
+
+- **WHEN** the service registers on a metrics registry
+- **THEN** 19 collectors named `semengine_storage_*` are registered under `storage-observability`
+
+### Requirement: The storage metrics write the canonical collectors
+
+The service SHALL write to the collector `metric.RegisterOrGet` returns, so a second service built on the same registry
+writes the series the registry serves.
+
+#### Scenario: A second registration writes the canonical collectors
+
+- **WHEN** a second metrics surface registers on the same registry
+- **THEN** its observations appear in the series the registry serves
+- **AND** the test that verifies this is `TestStorageMetrics_SecondRegistrationWritesTheCanonicalCollectors`
+
+### Requirement: A storage value that was not measured publishes no series
+
+A value that was not measured SHALL publish no series, never zero.
+
+#### Scenario: Unmeasured value
+
+- **WHEN** a row has no measurement of one value
+- **THEN** no series is published for that value, and no zero
+
+### Requirement: Storage series are deleted when their value goes away
+
+A series SHALL be deleted when its value goes away, when a resource leaves the report (under the label tuple it was
+published with) and, for the per-tier series, when the consumer drops the account row.
+
 #### Scenario: Retraction
 
 - **WHEN** a resource changes state or owner, or is forgotten, or the account row is dropped
@@ -458,6 +669,10 @@ disappearing, SHALL name unbounded resources, and SHALL state that nothing is en
   `TestStorageMetrics_OwnerChangeDoesNotStrandTheOldSeries`, `TestStorageMetrics_ForgetRemovesEveryOneOfItsSeries`,
   `TestStorageAccountMetrics_TierThatDisappearsIsRetracted` and
   `TestStorageAccountMetrics_ForgetAccountRetractsEveryTierSeries`
+
+### Requirement: The storage count and state families are emitted in full
+
+The count and state families SHALL be emitted in full on every rebuild.
 
 #### Scenario: Aggregates and tier series
 
@@ -469,11 +684,10 @@ disappearing, SHALL name unbounded resources, and SHALL state that nothing is en
   `TestStorageAccountMetrics_UnknownLimitIsDistinctFromUnbounded`,
   `TestAccountTierMetrics_PublishTheCeilingsOwnCapacity` and `TestAccountTierMetrics_AnUnevaluableCeilingIsExplicit`
 
-#### Scenario: A second registration writes the canonical collectors
+### Requirement: The storage freshness gauge
 
-- **WHEN** a second metrics surface registers on the same registry
-- **THEN** its observations appear in the series the registry serves
-- **AND** the test that verifies this is `TestStorageMetrics_SecondRegistrationWritesTheCanonicalCollectors`
+The freshness gauge SHALL carry the newest collection time of a published row, never move backwards, and ignore a zero
+time.
 
 #### Scenario: The freshness gauge
 
@@ -481,6 +695,11 @@ disappearing, SHALL name unbounded resources, and SHALL state that nothing is en
 - **THEN** the gauge carries the newest collection time and never moves backwards
 - **AND** the tests that verify this are `TestStorageMetrics_FreshnessGaugeCarriesCollectionTime`,
   `TestStorageMetrics_FreshnessGaugeNeverMovesBackwards` and `TestStorageMetrics_FreshnessGaugeIgnoresAZeroTimestamp`
+
+### Requirement: The example storage alert rules
+
+The example alert rules at `configs/prometheus/rules/storage-pressure.yml` SHALL read only published metric names, SHALL
+NOT fire on a report row disappearing, SHALL name unbounded resources, and SHALL state that nothing is enforced.
 
 #### Scenario: The example alert rules read only published names
 

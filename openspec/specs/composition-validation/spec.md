@@ -14,36 +14,74 @@ that no error finding is reported; once `service` is ported, the component manag
 
 `composition.Validate(catalog, cfg)` SHALL be a deterministic function of a `*component.Registry` and a `*config.Config`
 that performs no I/O, opens no connection and constructs no component; it SHALL return an error only for a nil
-argument, and every judgment SHALL be a finding. It SHALL judge the configuration document with
-`config.Config.ValidateDocument`, so its result does not depend on files on the host and it writes nothing to standard
-error. The one input it reads from outside its arguments is the current time, used to judge whether a stream migration
-override has expired. `composition.Analyze(declarations, streams)` SHALL be the graph-level half of the same function,
-over declarations and the configuration's explicit `streams`. The result SHALL carry `status` (`errors` when any error
-finding exists, else `warnings` when any warning exists, else `valid`), `errors`, `warnings` and `graph`, with every
-array non-nil. Each finding SHALL carry `type`, `severity`, a non-empty `component`, an optional `port`, a non-empty
-`message` and a non-nil `suggestions`.
+argument, and every judgment SHALL be a finding.
+
+#### Scenario: Findings, not error returns
+
+- **WHEN** a configuration names an unknown factory, a required stream input with no publisher, an interface
+  mismatch, a JetStream input fed only by core NATS, or two writers to one KV bucket
+- **THEN** each is reported with its type and severity, other components are still analyzed, and `Validate` returns
+  no error (`TestValidateReportsUnknownComponent`, `TestValidateReportsRequiredStreamInputWithoutPublisher`,
+  `TestValidateReportsInterfaceMismatch`, `TestValidateReportsStreamRequirement`,
+  `TestValidateReportsConnectionPatternConflict`)
+
+### Requirement: Validation reads no host files and one clock
+
+`composition.Validate` SHALL judge the configuration document with `config.Config.ValidateDocument`, so its result does
+not depend on files on the host and it writes nothing to standard error. The one input it reads from outside its
+arguments is the current time, used to judge whether a stream migration override has expired.
+
+#### Scenario: Files on the host do not change the result
+
+- **WHEN** a configuration names a client CA file, and validation runs with the file absent and again with it present,
+  and once more with `insecure_skip_verify` set
+- **THEN** the first two results marshal to byte-equal JSON and nothing is written to standard error
+  (`TestValidateReadsNoTLSFile`)
+
+### Requirement: Analyze judges the graph and the result has a fixed shape
+
+`composition.Analyze(declarations, streams)` SHALL be the graph-level half of the same function, over declarations and
+the configuration's explicit `streams`. The result SHALL carry `status` (`errors` when any error finding exists, else
+`warnings` when any warning exists, else `valid`), `errors`, `warnings` and `graph`, with every array non-nil. Each
+finding SHALL carry `type`, `severity`, a non-empty `component`, an optional `port`, a non-empty `message` and a non-nil
+`suggestions`.
+
+#### Scenario: Status follows the worst finding
+
+- **WHEN** a result holds an error finding, or only warning findings, or no findings
+- **THEN** its `status` is `errors`, `warnings` or `valid` respectively, and `errors`, `warnings` and `graph` are
+  non-nil arrays
+
+### Requirement: Finding types are a closed list
 
 `type` SHALL be one of the exported constants `config_invalid`, `unknown_component`, `component_type_mismatch`,
 `component_config_invalid`, `port_declaration_error`, `exclusive_resource_conflict`, `connection_pattern_error`,
 `stream_requirement`, `disconnected_node`, `orphaned_port`, `interface_mismatch`, `missing_interface`,
-`empty_composition`, `reserved_subject_capture` and `malformed_subject`. Severity SHALL be warning for
-`disconnected_node`, `missing_interface`, `empty_composition` and for every `orphaned_port` except a required stream
-input with no publisher. Severity SHALL be error for every other type.
-
-Two enabled components whose exclusive claims clash SHALL yield one `exclusive_resource_conflict` error, on the
-component later in instance-name order. Its message SHALL be the error text `component.Declaration.ConflictWith`
-returns. A component whose own claims clash SHALL yield `port_declaration_error`. A JetStream input SHALL NOT be a
-`stream_requirement` finding when an explicit stream that it binds to by name has subjects that cover each of the
-input's subjects. An input declared `external` SHALL raise no `orphaned_port` finding for a missing publisher. A port's
-interface contract and its connected state SHALL be judged in its own lane (input or output), so a port in one lane
-never stands in for a same-named port in the other. Components SHALL be visited in instance-name order and edges
-emitted in a stable order, so equal inputs marshal to byte-equal JSON.
+`empty_composition`, `reserved_subject_capture` and `malformed_subject`.
 
 #### Scenario: The vocabulary is closed
 
 - **WHEN** compositions exhibiting each condition are validated
 - **THEN** every emitted `type` is one of the fifteen constants and each constant is emitted by at least one case
   (`TestValidateFindingsVocabularyIsClosed`)
+
+### Requirement: Finding severity is fixed per type
+
+Severity SHALL be warning for `disconnected_node`, `missing_interface`, `empty_composition` and for every
+`orphaned_port` except a required stream input with no publisher. Severity SHALL be error for every other type.
+
+#### Scenario: Warning and error types
+
+- **WHEN** a `disconnected_node`, a `missing_interface`, an `empty_composition`, an `orphaned_port` that is not a
+  required stream input without a publisher, a required stream input with no publisher, and a `stream_requirement` are
+  each reported
+- **THEN** the first four are warnings and the last two are errors
+
+### Requirement: Exclusive resource claims yield conflict findings
+
+Two enabled components whose exclusive claims clash SHALL yield one `exclusive_resource_conflict` error, on the
+component later in instance-name order. Its message SHALL be the error text `component.Declaration.ConflictWith`
+returns. A component whose own claims clash SHALL yield `port_declaration_error`.
 
 #### Scenario: Offline clash judgment matches admission
 
@@ -59,23 +97,11 @@ emitted in a stable order, so equal inputs marshal to byte-equal JSON.
 - **THEN** the result carries one `port_declaration_error` for that component and no `exclusive_resource_conflict`
   (`TestValidateSelfClashIsPortDeclarationError`)
 
-#### Scenario: Findings, not error returns
+### Requirement: Stream and external inputs are judged against explicit streams
 
-- **WHEN** a configuration names an unknown factory, a required stream input with no publisher, an interface
-  mismatch, a JetStream input fed only by core NATS, or two writers to one KV bucket
-- **THEN** each is reported with its type and severity, other components are still analyzed, and `Validate` returns
-  no error (`TestValidateReportsUnknownComponent`, `TestValidateReportsRequiredStreamInputWithoutPublisher`,
-  `TestValidateReportsInterfaceMismatch`, `TestValidateReportsStreamRequirement`,
-  `TestValidateReportsConnectionPatternConflict`)
-
-#### Scenario: A same-named output does not hide an input
-
-- **WHEN** a source output providing `a.v1` feeds a processor input `data` requiring `b.v1`, and the processor's output
-  is also named `data` and provides `a.v1`
-- **THEN** the result carries one `interface_mismatch`, as it does when that output is renamed `out`
-  (`TestValidateKeepsSameNamedLanesApart`)
-- **AND** a required stream input `data` with no publisher is an `orphaned_port` error even when the same component's
-  output `data` is connected (`TestValidateReportsOrphanBesideSameNamedOutput`)
+A JetStream input SHALL NOT be a `stream_requirement` finding when an explicit stream that it binds to by name has
+subjects that cover each of the input's subjects. An input declared `external` SHALL raise no `orphaned_port` finding
+for a missing publisher.
 
 #### Scenario: Explicit streams and external inputs
 
@@ -86,12 +112,24 @@ emitted in a stable order, so equal inputs marshal to byte-equal JSON.
   `TestValidateStreamRequirementNeedsTheNamedStream`, `TestValidateStreamRequirementNeedsCoverNotOverlap`,
   `TestValidateSuppressesOrphanOnlyForExternallyFedInput`, `TestValidateImportLaneIsExternallyFedWithoutASecondKnob`)
 
-#### Scenario: Files on the host do not change the result
+### Requirement: Ports are judged in their own lane
 
-- **WHEN** a configuration names a client CA file, and validation runs with the file absent and again with it present,
-  and once more with `insecure_skip_verify` set
-- **THEN** the first two results marshal to byte-equal JSON and nothing is written to standard error
-  (`TestValidateReadsNoTLSFile`)
+A port's interface contract and its connected state SHALL be judged in its own lane (input or output), so a port in one
+lane never stands in for a same-named port in the other.
+
+#### Scenario: A same-named output does not hide an input
+
+- **WHEN** a source output providing `a.v1` feeds a processor input `data` requiring `b.v1`, and the processor's output
+  is also named `data` and provides `a.v1`
+- **THEN** the result carries one `interface_mismatch`, as it does when that output is renamed `out`
+  (`TestValidateKeepsSameNamedLanesApart`)
+- **AND** a required stream input `data` with no publisher is an `orphaned_port` error even when the same component's
+  output `data` is connected (`TestValidateReportsOrphanBesideSameNamedOutput`)
+
+### Requirement: Validation output order is stable
+
+Components SHALL be visited in instance-name order and edges emitted in a stable order, so equal inputs marshal to
+byte-equal JSON.
 
 #### Scenario: Validation is deterministic
 
@@ -133,11 +171,19 @@ and a unit test SHALL assert it.
 
 `internal/flowgraph` SHALL own one subject grammar, and `ValidSubject`, `SubjectCovers` and `SubjectsOverlap` SHALL all
 read it: a subject is one or more `.`-separated tokens, none empty; `*` and `>` appear only as a whole token and `>`
-only last; and no token holds a space, tab, line feed, carriage return or form feed. A subject that fails the grammar
-SHALL be invalid, SHALL cover nothing, SHALL be covered by nothing and SHALL overlap nothing, so a stream filter holding
-whitespace is not treated as covering a subject or as capturing a reserved one. The grammar is stricter than NATS on a
-wildcard inside a token and on form feed. The message logger's `Start` SHALL read `ValidSubject`; the grammar SHALL have
-no second copy.
+only last; and no token holds a space, tab, line feed, carriage return or form feed. The grammar is stricter than NATS
+on a wildcard inside a token and on form feed.
+
+#### Scenario: ValidSubject accepts exactly the grammar
+
+- **WHEN** `ValidSubject` is asked of the valid and malformed subjects in the tests, and of generated strings
+- **THEN** it accepts exactly the subjects the grammar admits, and a subject covers itself exactly when it is valid
+- **AND** the tests that verify this are `TestValidSubject` and `FuzzValidSubject`
+
+### Requirement: A subject that fails the grammar matches nothing
+
+A subject that fails the grammar SHALL be invalid, SHALL cover nothing, SHALL be covered by nothing and SHALL overlap
+nothing, so a stream filter holding whitespace is not treated as covering a subject or as capturing a reserved one.
 
 #### Scenario: Whitespace in a token
 
@@ -146,29 +192,20 @@ no second copy.
 - **THEN** both return false
 - **AND** the test that verifies this is `TestSubjectHelpersRefuseWhitespace`
 
-#### Scenario: ValidSubject accepts exactly the grammar
+### Requirement: The grammar has one copy
 
-- **WHEN** `ValidSubject` is asked of the valid and malformed subjects in the tests, and of generated strings
-- **THEN** it accepts exactly the subjects the grammar admits, and a subject covers itself exactly when it is valid
-- **AND** the tests that verify this are `TestValidSubject` and `FuzzValidSubject`
+The message logger's `Start` SHALL read `ValidSubject`; the grammar SHALL have no second copy.
+
+#### Scenario: The message logger reads the shared check
+
+- **WHEN** the message logger's `Start` is given a subject
+- **THEN** it judges the subject with `flowgraph.ValidSubject`
 
 ### Requirement: A malformed port or stream subject is an error finding
 
 `composition.Analyze` SHALL check, with `flowgraph.ValidSubject`, every subject of every NATS, NATS-request and
 JetStream port of every declaration, in the input and the output lane, and every subject of every explicit stream in
 `streams`. Each subject that fails SHALL yield one `malformed_subject` error.
-
-A port's finding SHALL carry the component's instance name and the port's name. Its message SHALL name the lane, the
-field (`subject`, or `subjects[i]` for a JetStream port) and the subject. An explicit stream's finding SHALL carry the
-component `config` and no port. Its message SHALL name the stream key, the field `subjects[i]` and the subject. A
-stream derived from a JetStream output SHALL NOT be reported again under its stream name.
-
-The check SHALL run before `Analyze` returns early, so it is reported when no component is enabled and when the flow
-graph cannot be built. A subject that fails the grammar overlaps nothing ("One subject grammar decides validity, cover
-and overlap"), so it SHALL yield no `reserved_subject_capture`.
-
-The grammar is stricter than NATS: a token that mixes a wildcard with other text, such as `a*`, is a NATS literal and
-SHALL be a `malformed_subject` here.
 
 #### Scenario: The probe's subjects at every site
 
@@ -181,17 +218,60 @@ SHALL be a `malformed_subject` here.
 - **AND** `a.>`, `a.*.c`, `>` and `$JS.EVENT.ADVISORY.CONSUMER.MAX_DELIVERIES.>` at the same sites yield none
 - **AND** the test that verifies this is `TestAnalyzeReportsMalformedSubject`
 
+### Requirement: A malformed subject finding names its site
+
+A port's finding SHALL carry the component's instance name and the port's name. Its message SHALL name the lane, the
+field (`subject`, or `subjects[i]` for a JetStream port) and the subject.
+
+#### Scenario: A port finding
+
+- **WHEN** a NATS output's `subject` and a JetStream input's second subject are malformed
+- **THEN** each finding carries the component's instance name and the port's name, and its message names the lane,
+  the field (`subject` or `subjects[1]`) and the subject
+
+### Requirement: A malformed explicit stream subject finding names the stream
+
+An explicit stream's finding SHALL carry the component `config` and no port. Its message SHALL name the stream key, the
+field `subjects[i]` and the subject. A stream derived from a JetStream output SHALL NOT be reported again under its
+stream name.
+
+#### Scenario: A stream finding
+
+- **WHEN** an explicit stream's second subject is malformed
+- **THEN** the finding carries the component `config` and no port, and its message names the stream key,
+  `subjects[1]` and the subject
+
+### Requirement: The malformed subject check runs before early returns
+
+The check SHALL run before `Analyze` returns early, so it is reported when no component is enabled and when the flow
+graph cannot be built.
+
 #### Scenario: Reported when analysis stops early
 
 - **WHEN** an explicit stream holds `a..b` and no component is enabled, and again beside two writers to one KV bucket
 - **THEN** the result carries the `malformed_subject` error beside `empty_composition` or `connection_pattern_error`
 - **AND** the test that verifies this is `TestAnalyzeReportsMalformedSubjectBeforeEarlyReturns`
 
+### Requirement: A malformed subject is not a reserved capture
+
+A subject that fails the grammar overlaps nothing ("One subject grammar decides validity, cover and overlap"), so it
+SHALL yield no `reserved_subject_capture`.
+
 #### Scenario: A malformed filter is not a reserved capture
 
 - **WHEN** an explicit stream holds `graph.mutation.>.x`
 - **THEN** the result carries one `malformed_subject` and no `reserved_subject_capture`
 - **AND** the test that verifies this is `TestAnalyzeMalformedFilterIsNotAReservedCapture`
+
+### Requirement: A wildcard mixed with text is malformed
+
+The grammar is stricter than NATS: a token that mixes a wildcard with other text, such as `a*`, is a NATS literal and
+SHALL be a `malformed_subject` here.
+
+#### Scenario: A wildcard inside a token
+
+- **WHEN** a port subject is `a*`
+- **THEN** the result carries one `malformed_subject` error (`TestAnalyzeReportsMalformedSubject`)
 
 Not covered by a test in this change: boot refusal on `malformed_subject` in particular. It follows from the error
 severity and the component manager's refusal on any error finding (`TestComponentManagerRefusesBootOnErrorFinding`).

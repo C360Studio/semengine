@@ -51,5 +51,5 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
   check passes with the adapters unchanged).
 - [x] 4.4 `docs/admission-ledger.yaml:248-265`: the `lint-test-ports.sh` destination notes the header, the scan of
   unignored files and the `[[:space:]]` patterns, by this change (#391). Gate: `task ledger:check`.
-- [ ] 4.5 Both deltas synced into `openspec/specs/`; archived as the last content commit. Gate: `task spec:check` and
+- [x] 4.5 Both deltas synced into `openspec/specs/`; archived as the last content commit. Gate: `task spec:check` and
   `task docs:check`.

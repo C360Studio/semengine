@@ -16,20 +16,21 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 2. Tests and code
 
-- [ ] 2.1 Tests first (design "Proving tests"):
+- [x] 2.1 Tests first (design "Proving tests"):
   - add `TestLoad_DefaultServicesAreHeartbeatOnly` to `config/load_test.go`;
   - delete `config/config_test.go:114` and `:116` in `TestLoader_Defaults`;
   - replace the discovery lines `:250` and `:252` in `TestLoader_ExampleConfig` with the literal service-key
     assertion.
 
-  Gate: both new assertions fail on the base, recorded in `notes/2.1.md` with the failing output.
-- [ ] 2.2 The fix:
+  Gate: both new assertions fail on the base, recorded in `notes/2.1.md` with the failing output. Done at aae6c29.
+- [x] 2.2 The fix:
   - drop the `discovery` entry from `getDefaults` (`config/config.go:491-494`);
   - delete `config/example_config.json:13` and the trailing comma on `:12`;
   - correct the comment at `types/service.go:47-50` (design D3).
 
   Gate: `task verify` green, plus mutants M1-M3 each reporting `verdict: detection` under `task mutate:check`, with
-  the commands and output recorded in `notes/2.2.md`.
+  the commands and output recorded in `notes/2.2.md`. Done at 90ae0d2: `task verify` exit 0,
+  M1-M3 all detected.
 
 ## 3. Code review
 
@@ -37,6 +38,7 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   `task verify`.
 - [ ] 3.2 Codex code review of record at a named commit with a local `task verify`; the PR body carries
   `implemented-by: claude (opus)` and `reviewed-by: codex`.
+  Hold: waits for the Codex code review.
 
 ## 4. Docs and archive
 

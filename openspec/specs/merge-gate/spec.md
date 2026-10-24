@@ -72,7 +72,7 @@ failing in that run is named in the output of `task cover:check`.
 
 A known flake is an open GitHub issue labelled `class:flake`. While one is open, `scripts/merge-check.sh` SHALL fail
 every pull-request run except that of a pull request whose closing references include every open one. The base branch of
-the pull request SHALL NOT change any of the known-flake requirements.
+the pull request SHALL NOT change this outcome.
 
 #### Scenario: Open flake and an unrelated pull request
 
@@ -436,9 +436,9 @@ carriage return at the end of a line SHALL NOT change any of this.
 ### Requirement: The two lines name the agents
 
 An agent name is the word `claude`, the word `codex`, or the word `gemini`, in any letter case, with no letter or digit
-directly before or after it. The `implemented-by:` line SHALL name at least one agent. The `reviewed-by:` line SHALL
-name exactly one agent, and not an agent the `implemented-by:` line names, unless that line names more than one agent.
-Nothing else in either line is read.
+directly before or after it. Unless GitHub reports the pull request's author as a bot, the `implemented-by:` line
+SHALL name at least one agent, and the `reviewed-by:` line SHALL name exactly one agent, and not an agent the
+`implemented-by:` line names, unless that line names more than one agent. Nothing else in either line is read.
 
 #### Scenario: Implementer line missing or naming no agent
 
@@ -569,9 +569,17 @@ same commit can then pass on one release and fail on the other.
   `required` or a job added beside them
 - **THEN** the contract test fails naming the job, `ubuntu-latest` and `ubuntu-24.04`
 
+### Requirement: The runner image moves only in its own pull request
+
 The label `ubuntu-24.04` still moves between GitHub's builds of Ubuntu 24.04, and that is accepted. A move to another
-image is a change to the requirement "Pinned runner image", made in its own pull request, whose CI run is the `task
-verify` run on the new image.
+image SHALL be a change to the requirement "Pinned runner image", made in its own pull request, whose CI run is the
+`task verify` run on the new image. No command checks this; it is checked in review only.
+
+#### Scenario: A move to a new Ubuntu release
+
+- **WHEN** the runner image is to move from `ubuntu-24.04` to another image
+- **THEN** one pull request changes "Pinned runner image" and the workflow labels together, and its `task verify` run
+  on the new image is the evidence for the move
 
 ### Requirement: A contract test guards the runner label
 

@@ -706,11 +706,7 @@ Not covered by a test, and reviewed only:
   subscribes of one `Start` or during a subscribe's wait for the server's answer (these need a hook this repository
   does not keep in production code, or a server that withholds its answer, which the logger's tests on the shared
   server do not have);
-- a message stored by the handler of a subscribe that a failed `Start` cut;
-- a `Stop` that must wait for a subscribe retry still running (`TestMessageLoggerRetriesSubscribeUntilConnected` stops
-  the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one);
-- which messages reach the logger with an ended context during the NATS client's `Close` (the drop's signal is tested;
-  its timing is not promised).
+- a message stored by the handler of a subscribe that a failed `Start` cut.
 
 ### Requirement: The message logger's Stop drains and releases what it holds
 
@@ -730,6 +726,11 @@ returning nil only once all are released.
 - **WHEN** `Stop` runs while a KV watch stream is open
 - **THEN** `Stop` returns nil, the stream's body reaches its end and no stream is left open
 - **AND** the test that verifies this is `TestMessageLoggerStopEndsOpenWatchStreams`
+
+Not covered by a test, and reviewed only:
+
+- a `Stop` that must wait for a subscribe retry still running (`TestMessageLoggerRetriesSubscribeUntilConnected` stops
+  the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one).
 
 ### Requirement: The message logger's Stop can be retried and stores nothing after it
 
@@ -767,6 +768,11 @@ subject, and count it in `dropped_messages`, not in `total_messages`. The NATS c
 - **WHEN** the NATS client's `Close` has begun
 - **THEN** its handlers' contexts end; which messages arrive after that is not promised (ADR-112), and a composition
   root that stops the logger before closing its client drops none
+
+Not covered by a test, and reviewed only:
+
+- which messages reach the logger with an ended context during the NATS client's `Close` (the drop's signal is tested;
+  its timing is not promised).
 
 ### Requirement: The logger is unhealthy while a subject has failed to subscribe
 
@@ -968,6 +974,10 @@ returned nil SHALL return nil, and a `Stop` while another runs SHALL be refused 
 - **WHEN** `Stop` begins while a collection is already inside the account listing
 - **THEN** how soon that collection sees `Stop` begin is not promised: it depends on nats.go
 
+Not covered by a test, and reviewed only: a collection already inside the JetStream account listing when `Stop` begins
+(no test holds a loop inside the listing), and the report bucket's lock, which `lazyReportBucket.resolve` holds while
+the bucket is created or reconciled, so a slow server holds a second caller behind the first.
+
 ### Requirement: Storage observability answers reads before Start, while running and after Stop
 
 `Health` and the report route SHALL answer before `Start`, while running and after `Stop`, from the last report read.
@@ -978,10 +988,6 @@ returned nil SHALL return nil, and a `Stop` while another runs SHALL be refused 
 - **THEN** each read answers 200 with `report_only` true, and after `Stop` the health verdict is the base service's own
   with the last storage picture appended
 - **AND** the test that verifies this is `TestStorageObservabilityRoutesAfterStop`
-
-Not covered by a test, and reviewed only: a collection already inside the JetStream account listing when `Stop` begins
-(no test holds a loop inside the listing), and the report bucket's lock, which `lazyReportBucket.resolve` holds while
-the bucket is created or reconciled, so a slow server holds a second caller behind the first.
 
 ### Requirement: Storage pressure is reported and gates nothing
 
@@ -1127,6 +1133,8 @@ components report healthy, out of how many it holds).
   a `goroutines` attribute
 - **AND** the test that verifies this is `TestHeartbeatRecordsComponentHealth`
 
+Not covered by a test, and reviewed only: the heartbeat's `goroutines` value (the test asserts the attribute exists, not its value).
+
 ### Requirement: The metrics forwarder refuses an invalid configuration
 
 `NewMetricsForwarderService` SHALL refuse, as invalid data and naming the input: an unknown configuration key or a key
@@ -1148,6 +1156,8 @@ parse or is not positive. It SHALL do no I/O. An omitted or empty `push_interval
 - **THEN** the applied interval is 5 seconds and both include flags are false; set flags and intervals are applied as
   written
 - **AND** the test that verifies this is `TestMetricsForwarderConstructionRefusals`
+
+Not covered by a test, and reviewed only: the constructors' "no I/O" (no test observes the constructors for I/O; the code makes none).
 
 ### Requirement: The metrics forwarder is registered and runs only when enabled
 
@@ -1242,6 +1252,10 @@ one timestamp in Unix milliseconds.
   `type` `untyped`
 - **AND** the tests that verify this are `TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`
 
+Not covered by a test, and reviewed only: a label value spliced into a subject, whose publish outcome is counted like any other and is not tested. The sample
+mapping, including a histogram's and a summary's sample count and the `untyped` fallback, is covered by
+`TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`.
+
 ### Requirement: The include flags select the families
 
 Families named `go_*` SHALL be left out unless `include_go_metrics` is true, and families named `process_*` unless
@@ -1290,9 +1304,3 @@ provisioned by the composition (`config.StreamsManager.EnsureStreams`).
 - **WHEN** the forwarder runs
 - **THEN** it creates no stream; the `METRICS` stream over `metrics.>` is provisioned by the composition through
   `config.StreamsManager.EnsureStreams`
-
-Not covered by a test, and reviewed only: the construction's "no I/O" (no test observes the constructors for I/O; the
-code makes none); the heartbeat's `goroutines` value (the test asserts the attribute exists, not its value); and a
-label value spliced into a subject, whose publish outcome is counted like any other and is not tested. The sample
-mapping, including a histogram's and a summary's sample count and the `untyped` fallback, is covered by
-`TestMetricSamples*` in `service/metrics_forwarder_samples_test.go`.

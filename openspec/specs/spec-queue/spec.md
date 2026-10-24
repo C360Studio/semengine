@@ -297,10 +297,18 @@ is `openspec/changes/<name>/tasks.md`, and SHALL exit 2. This holds when the scr
 - **THEN** it prints `queue unavailable: cannot read openspec/changes/<name>/tasks.md` as a line on standard error,
   prints no `holds: ok`, and exits 2
 
-What the script printed before it reached that file can already be on standard output when it exits: the queue's lines
-for the changes listed before it, and that change's own count line, which the queue prints before it reads the change's
-`tasks.md`; or the `<path>:<line>:` lines that `--check` printed for the changes listed before it. The exit is 2 as
-"A tasks.md that cannot be read stops the queue and the check" states, whatever was already printed.
+### Requirement: An unreadable tasks.md exits 2 whatever was already printed
+
+The script SHALL exit 2 as "A tasks.md that cannot be read stops the queue and the check" states, whatever it has
+already printed. What the script printed before it reached that file can already be on standard output when it exits:
+the queue's lines for the changes listed before it, and that change's own count line, which the queue prints before it
+reads the change's `tasks.md`; or the `<path>:<line>:` lines that `--check` printed for the changes listed before it.
+
+#### Scenario: Output was already printed
+
+- **WHEN** the script has printed lines for earlier changes, or the unreadable change's count line, before it reaches
+  that change's `tasks.md`
+- **THEN** it exits 2, whether or not the count line was already printed
 
 ### Requirement: An unread file is never reported as free of caveats
 

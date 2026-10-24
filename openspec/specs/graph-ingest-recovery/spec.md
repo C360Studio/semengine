@@ -105,8 +105,15 @@ acknowledgement wait; SHALL log it, and count it once in an interrupted-work cou
 - **THEN** the application is cancelled, the input is not settled, and the interrupted-work count for
   `heartbeat_failed` rises by one
 
-A panic in a payload's own code while the message is decoded, validated or asked for its entity is poison instead (the
-requirement "A failing payload is poison, not a redelivery loop").
+### Requirement: A panic in payload code is poison, not an interruption
+
+A panic in a payload's own code while the message is decoded, validated or asked for its entity SHALL be poison instead
+(the requirement "A failing payload is poison, not a redelivery loop").
+
+#### Scenario: A payload panics while it is decoded
+
+- **WHEN** a payload's own code panics while its message is decoded
+- **THEN** the message is terminated as poison and the interrupted-work count does not rise
 
 ### Requirement: An interruption does not add to the health error count
 
@@ -148,10 +155,12 @@ because of the record's sequence.
 - **WHEN** an input carries a generation other than the stored record's, at a sequence the record covers
 - **THEN** it is not dropped because of the record's sequence
 
-The cases below are declared limitations, not promises. An input from a stream that was deleted and created again, or
-restored, can carry the generation an older record holds. Such an input, at a sequence that record covers, is
+### Requirement: Replay protection holds only within one stream generation
+
+Replay protection SHALL NOT be relied on across stream generations. An input from a stream that was deleted and created
+again, or restored, can carry the generation an older record holds; such an input, at a sequence that record covers, is
 acknowledged without being applied and counted in `semengine_graph_ingest_redeliveries_dropped_total`, as a redelivery
-is.
+is. These cases are declared limitations, not promises.
 
 #### Scenario: Recreated between the generation read and the consumer's creation
 

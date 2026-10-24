@@ -199,13 +199,12 @@ and the holder's claim.
 - **WHEN** two components each declare a file port on the same path
 - **THEN** both are admitted
 
-Claims that do not clash MAY both be admitted, and a resource that is not exclusive, such as a file path, MAY be
-shared.
-
 ### Requirement: A refusal names the first holder and changes nothing
 
 When several admitted components hold clashing claims, the refusal SHALL name the first holder in instance-name order,
 and the admitted set SHALL be left unchanged.
+Claims that do not clash MAY both be admitted, and a resource that is not exclusive, such as a file path, MAY be
+shared.
 
 #### Scenario: Several holders clash
 

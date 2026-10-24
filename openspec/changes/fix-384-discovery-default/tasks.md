@@ -11,8 +11,8 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 - [x] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and the spec delta; its
   verdict is linked from a PR comment. Passed at 3a276d6 with one MEDIUM (the example's trailing comma) and one LOW
   (an `-expect` line per mutant), both applied.
-- [ ] 1.3 Codex design review and owner design acceptance on #384 or the PR. Gate: the comments.
-  Hold: waits for the Codex design review and the owner's acceptance.
+- [x] 1.3 Codex design review and owner design acceptance on #384 or the PR. Gate: the comments. Codex passed at
+  89b17a7 with no findings, and the owner accepted the design on 2026-10-24, both on PR #394.
 
 ## 2. Tests and code
 

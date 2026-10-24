@@ -464,7 +464,7 @@ func (m *Manager) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 // start failed, stopping once StopAll was called or a stop began, starting
 // until every service and component lifecycle participant has started,
 // not_ready until the commit or while a service is not running and healthy or
-// a component is unhealthy or missing from health, and ready otherwise.
+// a component is unhealthy, and ready otherwise.
 func (m *Manager) currentStartupSnapshot() startupSnapshot {
 	m.mu.RLock()
 	sealed, stopping := m.sealed, m.stopping || m.stopCalled

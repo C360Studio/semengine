@@ -43,6 +43,12 @@ service's or component's `Start` or `Stop`: the component counts are lock-free r
 (`openspec/specs/service-lifecycle/spec.md:470-475`) and the manager releases its lock before calling any service
 (`service/service_manager.go:725-739`).
 
+Example tests suffice here, with no generated checks (`docs/testing.md`, order-dependent histories): each count only
+grows, and the collector holds no state between collections, so no ordering of starts and collections can leave an
+older value standing. The orderings that matter are a start held mid-way, a failure, a later start finishing before an
+earlier one, and a finished startup; the synchronized examples below drive each of them, holding and releasing starts
+on explicit signals.
+
 Proving tests (kept, constructor renamed): `TestStartupCollectorReportsExactlyNineSeries` (was
 `TestStartupMetricWriterInitializesExactlyNinePrivateSeries`), `TestStartupMetricsExposeFixedOwnerStagePairs`,
 `TestStartupMetricHasNoUnitIdentityLabel`, `TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt`,

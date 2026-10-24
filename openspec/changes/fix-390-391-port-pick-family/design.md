@@ -23,9 +23,9 @@ Base: main 6b23fdf. Rests on `inventory.md`. Issues #390, #391; claim PR #404.
   process, on Linux too. The retry (`startAttempts = 2`, PR #351) is what covers it, and `docs/test-infrastructure.md`
   § "Retiring harness code" removes harness code only when its failure can no longer happen.
   `TestStartRetriesOnceOnPortInUse` is unchanged. For the `nats-fixture` scenario at `:77` (ports held on every
-  address), task 1.3 measures whether a `tcp4` pick is handed a port a `tcp ":0"` listener holds; a preliminary local
-  run (the reviewer's, go1.26.10 macOS) saw it never in 33,000 picks, and an explicit `tcp4` bind of the held port
-  failed "address already in use". The retry covers it either way.
+  address), task 1.3's walk (PR #404 comment 6386556253, go1.26.10, macOS 26.5.2) handed a `tcp4` pick the port a
+  `tcp ":0"` listener holds 0 times in 33,000 picks (25 beside it), and an explicit `tcp4` bind of the held port
+  failed "address already in use"; measured on one Mac, not promised. The retry covers it either way.
 - **D3, the guard (#391).** In every `*_test.go` file and every Go file under `internal/harness/`, a `net.Listen` call
   with the literal network `"tcp"` and the literal address `""`, or a literal address whose host is empty, `0.0.0.0`
   or `[::]` and whose port is empty or `0`, is refused unless the line above begins `// Every address:` followed by a
@@ -56,7 +56,9 @@ Base: main 6b23fdf. Rests on `inventory.md`. Issues #390, #391; claim PR #404.
   `git grep --no-index --exclude-standard -nE ... -- '*_test.go'`, so git-ignored paths such as `.worktrees/` are not
   read (inventory § 1: 144 such files today from the main checkout), and `\s*` becomes `[[:space:]]*` in both
   patterns (`:46`, `:51`), which git grep's ERE needs (inventory § 2). `--no-index` keeps the fixture test's and
-  `copyScript`'s temp directories, which are not repositories, working. Exit codes and what is refused are unchanged.
+  `copyScript`'s temp directories, which are not repositories, working. What is refused is unchanged. Only git
+  grep's exit 1 (no match) counts as a clean scan: any other failure (for example exit 128 on a bad pattern) fails the
+  guard with git's error shown, where the scan now discards stderr and passes (`2>/dev/null || true`).
 
 ## Observable behaviour
 
@@ -80,9 +82,11 @@ Base: main 6b23fdf. Rests on `inventory.md`. Issues #390, #391; claim PR #404.
   counter reaches next; showing it in a test means walking the counter past a held socket, which is macOS-only, slow
   and clever. Rejected. D1's evidence is task 1.3's posted walk; a revert of the spelling fails
   `TestEveryAddressPortPickSaysWhy` naming `fixture.go`.
-- **D6's scan.** The fixture test's `check` writes one file, so it cannot plant an ignored directory without changing
-  the helper; no case is added. `notes/2.5.md` records a by-hand run from the main checkout, before and after (files
-  read under `.worktrees/`), and the fixture test and `TestLintTestPortsHonoursNoMarker` stay green.
+- **D6's scan: new `TestLintTestPortsSkipsIgnoredFiles`** in `addresses_test.go`, beside
+  `TestLintTestPortsHonoursNoMarker` and using its `copyScript` temp root: a `.gitignore` naming `ign/` and a fixed
+  port in `ign/x_test.go` exits 0; the same fixed port at an unignored path exits 1. It fails on the base (the
+  `grep -r` scan reads `ign/`). `notes/2.5.md` also records a by-hand run from the main checkout, before and after
+  (files read under `.worktrees/`); the fixture test and `TestLintTestPortsHonoursNoMarker` stay green.
 - Unchanged and still green: `TestStartRetriesOnceOnPortInUse`, `TestStartPastHeldPorts`, `TestS1_1PartialStartupCleanup`
   (`task test:integration`), and the `service`/`metric` tests at the exception sites.
 - Examples suffice: a fixed set of literal spellings, no interacting inputs.

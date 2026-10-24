@@ -6,11 +6,11 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
 
 ## 1. Design
 
-- [ ] 1.1 Inventory (`inventory.md`) passes independent inventory review (`INVENTORY PASS`), recorded on PR #404.
+- [x] 1.1 Inventory (`inventory.md`) passes independent inventory review (`INVENTORY PASS`), recorded on PR #404.
   Gate: the reviewer's verdict.
-- [ ] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and both spec deltas; its
+- [x] 1.2 Claude design review. A Claude `semengine-reviewer` passes `design.md`, this file and both spec deltas; its
   verdict is linked from a PR comment.
-- [ ] 1.3 The port-pick walk, posted on PR #404 with program source, command, go and macOS versions, and output, on the
+- [x] 1.3 The port-pick walk, posted on PR #404 with program source, command, go and macOS versions, and output, on the
   owner's Mac with the daemon on `127.0.0.1:63150`. Run A: 20,000 or more binds each for `tcp` `":0"`, `tcp4` `":0"`
   and `tcp` `"127.0.0.1:0"`, recording per kind the hits on 63150 and on 63145-63155. Run B: hold a `tcp` `":0"`
   listener, pick with `tcp4` `":0"` as many times, recording hits on the held port and its neighbours, then bind the
@@ -30,8 +30,9 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
   `:64`. Gate: `task test:integration` for the package.
 - [ ] 2.4 `metric/lifecycle_test.go:70`, `service/pprof_test.go:93`, `service/metrics_owner_test.go:52,112`:
   reasons (D4), comment lines only. Gate: `TestEveryAddressPortPickSaysWhy` passes; `task verify` green.
-- [ ] 2.5 `scripts/lint-test-ports.sh`: header, scan and patterns (D6). Gate: `task lint` and `task test:unit` green;
-  `notes/2.5.md` records the by-hand run from the main checkout before and after.
+- [ ] 2.5 `scripts/lint-test-ports.sh`: header, scan, exit handling and patterns (D6), with
+  `TestLintTestPortsSkipsIgnoredFiles` written first. Gate: the new test fails on the base and passes after;
+  `task verify` green; `notes/2.5.md` records the by-hand run from the main checkout before and after.
 
 ## 3. Code review
 

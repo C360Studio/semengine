@@ -359,7 +359,7 @@ is the first bullet below.
 - Network listeners use ephemeral ports. Tests mutating global state such as `slog.SetDefault` are not parallel.
 - Wall-clock assertions have a rationale and realistic tolerance; concurrent tests use explicit synchronization.
 - An assertion on state another goroutine writes is a finding when nothing orders the read after the write: its only
-  ordering is elapsed wall clock, or a log line the write does not come after. The ordering event is a channel
+  ordering is elapsed wall clock, or a log line that can print before the write. The ordering event is a channel
   receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
   `probe.Await` on that value; where that wait is not the line just before the assertion and no comment names the
   event, that is a finding too. A real-clock timer that only bounds the wait is not a finding (`docs/testing.md`,

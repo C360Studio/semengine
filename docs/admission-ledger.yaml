@@ -2579,33 +2579,35 @@
   disposition: defer-exclude
 
 # Change port-logforwarderpolicy (PR #319, epic #9): internal/logforwarderpolicy carried unchanged ahead
-# of its importer, service/log_forwarder.go (owner, 2026-10-19: Decision A).
+# of its importer, service/log_forwarder.go (owner, 2026-10-19: Decision A). Adapted by change
+# setup-04a-03-boot-service-log-forwarder (PR #393): the mandatory exclusion dropped (owner, 2026-10-24).
 
 - source_path: internal/logforwarderpolicy
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     the log-forwarder service's inner configuration policy; its reader is service/log_forwarder.go
-    (pin :17, :58, :72), ported later in change 3 (setup-04a-foundation design D2 row 3); carried ahead of its
-    importer in the owner's order (#9 comment 6270875286; architect contract, One package per pull request)
+    (service PR 7 of change 3, PR #393)
   destination: internal/logforwarderpolicy
   contract: >-
-    as at the pin; every .go file matches it (task ledger:check). Resolve decodes one JSON object strictly
-    (unknown keys and a second value refused; empty, whitespace or null input gives the defaults), defaults
-    min_level to INFO, trims and upper-cases it, accepts DEBUG, INFO, WARN or ERROR, and returns ExcludeSources
-    with flow-service.websocket first, then the configured sources trimmed, empties dropped and duplicates
-    removed in first-seen order; ValidateFields accepts exactly the four upper-case levels and ignores its
-    second argument
+    adapted from the pin (task ledger:diff -- internal/logforwarderpolicy prints the lines). Resolve decodes one
+    JSON object strictly (unknown keys and a second value refused; empty, whitespace or null input gives the
+    defaults), defaults min_level to INFO, trims and upper-cases it, accepts DEBUG, INFO, WARN or ERROR, and
+    returns ExcludeSources as exactly the configured sources, trimmed, empties dropped and duplicates removed in
+    first-seen order, a non-nil empty slice when none. Changed from the pin: the mandatory flow-service.websocket
+    entry the pin put first is dropped (owner, 2026-10-24, PR #393), and ValidateFields, whose only outside reader
+    was the dropped LogForwarderConfig.Validate, is the unexported validateLevel without its unread second argument
   dependencies_and_side_effects: stdlib only (bytes, encoding/json, fmt, io, log/slog, strings); no goroutine, no I/O
   known_risks: >-
-    no importer until service's log-forwarder lands; the policy's behaviour readers at the pin
-    (internal/bootstrapobservability, pkg/logging) are not in the port set; the mandatory exclusion names a
-    source of the retired flow-service; five behaviours are untested at the pin: a second JSON value,
-    empty sources dropped, sources trimmed, whitespace-only input, the level trimmed (S1-S5, notes/2.2.md)
+    the policy's behaviour readers at the pin (internal/bootstrapobservability, pkg/logging) are not in the port
+    set, so nothing applies the policy to log records yet; the log-forwarder says so at Start; five behaviours are
+    untested at the pin: a second JSON value, empty sources dropped, sources trimmed, whitespace-only input, the
+    level trimmed (S1-S5, archived port-logforwarderpolicy notes/2.2.md)
   proving_tests: >-
     internal/logforwarderpolicy/policy_test.go (TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion,
-    TestValidateFieldsPreservesPublicConfigValidationSemantics)
-  owner: port-logforwarderpolicy developer
-  disposition: carry
+    TestValidateLevelAcceptsOnlyTheFourUpperCaseLevels); service/log_forwarder_test.go
+    (TestLogForwarderSaysItForwardsNothing)
+  owner: setup-04a-03-boot-service-log-forwarder developer
+  disposition: adapt
 
 # Change setup-04a-03-boot-health (PR #318, epic #9): health, the first package of change 3, ported ahead
 # of its importer, service (owner, 2026-10-19: #9 comment 6270875286).

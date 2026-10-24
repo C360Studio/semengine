@@ -5,8 +5,8 @@
 ### Requirement: A port-0 pick on every address in test code says why
 
 Every `net.Listen` call in a `*_test.go` file or in any Go file under `internal/harness/` whose network is the literal
-`"tcp"` and whose address is a literal with an empty, `0.0.0.0` or `[::]` host and an empty or `0` port SHALL have,
-on the line above it, a comment beginning `// Every address:` followed by a reason.
+`"tcp"` and whose address is the literal `""` or a literal with an empty, `0.0.0.0` or `[::]` host and an empty or
+`0` port SHALL have, on the line above it, a comment beginning `// Every address:` followed by a reason.
 
 #### Scenario: Every-address pick without a reason
 

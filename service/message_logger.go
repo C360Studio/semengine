@@ -202,7 +202,7 @@ type MessageLogger struct {
 	// lifecycleMu guards the fields below it. It is never held across a call that can block:
 	// a subscribe, a drain, a join or a log line.
 	lifecycleMu sync.Mutex
-	// runCancel ends the run context Start creates, which every subscription runs under.
+	// runCancel ends the run context Start creates; the run context bounds the retry's subscribes.
 	runCancel context.CancelFunc
 	// subscriptions holds each subscribed subject's subscription until a Stop drained it.
 	subscriptions map[string]*natsclient.Subscription
@@ -232,6 +232,7 @@ type MessageLogger struct {
 
 	stats struct {
 		totalMessages   atomic.Int64
+		droppedMessages atomic.Int64
 		validMessages   atomic.Int64
 		invalidMessages atomic.Int64
 		sampledMessages atomic.Int64
@@ -252,8 +253,13 @@ type MessageLogger struct {
 //
 // A subscribe that fails leaves the logger running: the subject is retried every 100 ms until it
 // subscribes, and meanwhile the statistics report the logger degraded and its health check fails,
-// naming the subject. ctx bounds Start only; ending it after Start returned stops nothing. ctx is
-// checked before each subscribe, but a subscribe already in progress runs to its own end.
+// naming the subject. Start subscribes under ctx and checks it before each subscribe and once more
+// after the last, before it logs that it started; if ctx has ended at any of these checks, Start
+// returns its error and releases everything the logger holds. A subscribe ctx cuts after its SUB
+// was sent is removed by the NATS client, which returns no subscription; a message delivered to it
+// before that can still be stored after Start failed, and the client's Close waits for its
+// callback. Ending ctx after Start returned stops nothing: each message's context is the NATS
+// client's, not ctx's (natsclient.Client.Subscribe).
 func (ml *MessageLogger) Start(ctx context.Context) error {
 	return ml.lifecycle.Start(ctx, ml.start, ml.cleanup)
 }
@@ -271,8 +277,8 @@ func (ml *MessageLogger) start(ctx context.Context) error {
 	}
 	ml.logger.Info("MessageLogger starting")
 
-	// The run context: Start's values without its cancellation, ended only by Stop. natsclient
-	// makes it the parent of every message's context.
+	// The run context: Start's values without its cancellation, ended only by Stop. The run
+	// context bounds the retry's subscribes, which outlive Start (ADR-113).
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	ml.lifecycleMu.Lock()
 	ml.runCancel = cancel
@@ -285,9 +291,14 @@ func (ml *MessageLogger) start(ctx context.Context) error {
 		if err := ctx.Err(); err != nil {
 			return errs.WrapTransient(err, "MessageLogger", "Start", "context ended before subscribe "+subject)
 		}
-		if ml.subscribeSubject(runCtx, subject) != nil {
+		if ml.subscribeSubject(ctx, subject) != nil {
 			failed++
 		}
+	}
+	// The last subscribe is the last step that does startup work; a ctx that ended during it fails
+	// Start before the retry starts or "started" is logged (ADR-113).
+	if err := ctx.Err(); err != nil {
+		return errs.WrapTransient(err, "MessageLogger", "Start", "context ended after the last subscribe")
 	}
 	if failed > 0 {
 		stop, done := make(chan struct{}), make(chan struct{})
@@ -431,10 +442,10 @@ func resolveLoggerSubjects(desired map[string]struct{}) ([]string, []subjectOver
 	return subjects, overlaps
 }
 
-// subscribeSubject subscribes to subject under runCtx and records the outcome: the subscription,
-// or the subject as pending with its error, logged.
-func (ml *MessageLogger) subscribeSubject(runCtx context.Context, subject string) error {
-	subscription, err := ml.natsClient.Subscribe(runCtx, subject, func(msgCtx context.Context, msg *nats.Msg) {
+// subscribeSubject subscribes to subject under ctx, which bounds the subscribe only, and records
+// the outcome: the subscription, or the subject as pending with its error, logged.
+func (ml *MessageLogger) subscribeSubject(ctx context.Context, subject string) error {
+	subscription, err := ml.natsClient.Subscribe(ctx, subject, func(msgCtx context.Context, msg *nats.Msg) {
 		ml.handleMessage(msgCtx, msg.Subject, msg.Data)
 	})
 	ml.lifecycleMu.Lock()
@@ -647,8 +658,16 @@ func (ml *MessageLogger) shouldSample() bool {
 // handleMessage counts a message and, when sampled, stores it. A message that decodes as a typed
 // envelope is counted valid; any other is counted invalid and stored as "raw". A payload that is
 // not JSON is stored as a JSON string, so every stored entry encodes.
+//
+// A message whose context has ended is dropped: logged at Warn and counted in dropped_messages,
+// never in total_messages. The NATS client ends it once its Close has begun; which messages arrive
+// that late is not promised. Dropping is safe: the logger is an in-memory diagnostic buffer and a
+// core NATS delivery has no acknowledgement, so nothing depends on the entry, and returning at once
+// does not hold up Close's wait for this callback.
 func (ml *MessageLogger) handleMessage(ctx context.Context, subject string, data []byte) {
-	if ctx.Err() != nil {
+	if err := ctx.Err(); err != nil {
+		ml.stats.droppedMessages.Add(1)
+		ml.logger.Warn("Message dropped: its handler context has ended", "subject", subject, "error", err)
 		return
 	}
 
@@ -798,9 +817,10 @@ func newestEntries(entries []MessageLogEntry, limit int) []MessageLogEntry {
 }
 
 // GetStatistics returns the logger's counts and subject state. valid_messages counts the messages
-// decoded as typed envelopes, invalid_messages the rest. subject_reconciliation_degraded is true
-// while a subject is not subscribed, and subject_reconciliation_error names each one with its
-// last subscribe error.
+// decoded as typed envelopes, invalid_messages the rest. dropped_messages counts the messages not
+// stored because their handler context had ended; total_messages does not count them.
+// subject_reconciliation_degraded is true while a subject is not subscribed, and
+// subject_reconciliation_error names each one with its last subscribe error.
 func (ml *MessageLogger) GetStatistics() map[string]any {
 	lastMessageTime, _ := ml.stats.lastMessageTime.Load().(time.Time)
 	subjects, overlaps := ml.subjectInspection()
@@ -814,6 +834,7 @@ func (ml *MessageLogger) GetStatistics() map[string]any {
 
 	return map[string]any{
 		"total_messages":                  ml.stats.totalMessages.Load(),
+		"dropped_messages":                ml.stats.droppedMessages.Load(),
 		"sampled_messages":                ml.stats.sampledMessages.Load(),
 		"valid_messages":                  ml.stats.validMessages.Load(),
 		"invalid_messages":                ml.stats.invalidMessages.Load(),

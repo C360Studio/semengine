@@ -45,7 +45,7 @@ file and writes nothing, so a configuration reviewed on another machine (as `com
 answer. Both check component entries in name order, so the first error for a document is the same on every run.
 
 The defaults are: `platform.region` `gulf_mexico`, `nats.urls` `["nats://localhost:4222"]`, `nats.jetstream.enabled`
-`true`, and two services, `discovery` (disabled) and `heartbeat` (enabled, every 30 seconds).
+`true`, and one service, `heartbeat` (enabled, every 30 seconds).
 
 ### An example document
 

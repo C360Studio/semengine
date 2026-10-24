@@ -23,6 +23,16 @@ relative, and a file that is not regular after following links.
 - **WHEN** `LoadFile` reads `{"platform":{"org":"acme","id":"p1"}}`
 - **THEN** it returns a `Config` whose `NATS.URLs` are the loader's default and no error
 
+### Requirement: The default services are the heartbeat alone
+
+`LoadFile` and `LoadFromBytes` SHALL default `Services` to one entry, `heartbeat`, enabled, and SHALL default no other
+service, so a loaded document holds the services it names and the heartbeat.
+
+#### Scenario: A document that names no services
+
+- **WHEN** `LoadFile` or `LoadFromBytes` reads `{"platform":{"org":"acme","id":"p1","type":"vessel"}}`
+- **THEN** the returned `Config.Services` has exactly one key, `heartbeat`, and that entry is enabled
+
 ### Requirement: A malformed document is refused
 
 When a document is valid JSON but one of its values does not fit the field it names, or a strictly decoded entry

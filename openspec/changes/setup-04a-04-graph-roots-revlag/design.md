@@ -1,8 +1,9 @@
 # Design: setup-04a-04-graph-roots-revlag
 
-Pin `8b99efe9`. Ledger row: `pkg/revlag` (D10). Inventory: `inventory.md` (not yet reviewed). Pre-owner design review:
-round 1 findings addressed (PR #407). Owner acceptance: Q1 answered 2026-10-24 (see Owner rulings); design acceptance
-follows review.
+Pin `8b99efe9`. Ledger row: `pkg/revlag` (D10). Inventory: `inventory.md` (reviewed by Codex at 0f54d1a). Pre-owner
+design review: round 1 findings addressed (PR #407). Owner acceptance: Q1 answered 2026-10-24 (see Owner rulings); Codex
+review of record at 0f54d1a found nothing to correct (PR #407 comment 6388455177) and the owner accepted the design the
+same day.
 
 ## Options
 

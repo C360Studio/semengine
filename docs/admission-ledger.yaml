@@ -47,7 +47,8 @@
     production package imported testing/testcontainers upstream (not carried); mutable tag pin upstream
     (replaced by digest); eleven caller knobs upstream (dropped)
   proving_tests: >-
-    natsfixture owner tests S1-1..S1-9; lifecycletest.Run over the fixture adapter; T-B1, T-B2, T-B3.
+    natsfixture owner tests S1-1, S1-2 and S1-6..S1-8 (test-infra-audit, #205, removed S1-3, S1-4,
+    S1-5 and S1-9 with the code they tested); T-B1, T-B2, T-B3.
     Not ported with the natsclient package (task 3.7; source_sha moved to the package's pin, where the
     file is 987 lines): the two declarations a ported unit test reads, testStreamMaxAge and
     testStreamMaxBytes (pin test_client.go:912-913, read at client_test.go:373-374), are defined in

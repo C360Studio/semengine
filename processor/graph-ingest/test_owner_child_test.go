@@ -49,7 +49,6 @@ func TestGraphIngestOwnerChildRequestRejectsOtherSelections(t *testing.T) {
 	}
 }
 
-// spec: test-cleanup-policy / Lexical ownership of lifecycle test fixtures
 func TestGraphIngestOwnerAssertionExitAndCleanupError(t *testing.T) {
 	for _, tt := range []struct {
 		mode    string

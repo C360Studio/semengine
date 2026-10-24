@@ -7,7 +7,8 @@
 `internal/revlag.Watermark` SHALL report, as the first result of `IndexedAt`, a floor equal to the highest revision
 passed to `Observe` when no observed revision is in flight, and otherwise one less than the lowest in-flight revision,
 whatever order the revisions were observed in. A revision is in flight from its `Observe` until a `Complete` drains
-it. A new `Watermark` reports floor 0.
+it; observing a revision again puts it back in flight under the key and commit time last given. A new `Watermark`
+reports floor 0.
 
 #### Scenario: A sparse build reports below its lowest pending revision
 
@@ -18,6 +19,11 @@ it. A new `Watermark` reports floor 0.
 
 - **WHEN** revisions 50, 72 and 100 are observed and all three complete
 - **THEN** the floor is 100
+
+#### Scenario: A revision observed again belongs to its last key
+
+- **WHEN** revision 10 is observed for key A, observed again for key B, and `Complete(A, 10)` is called
+- **THEN** the floor is 9 until `Complete(B, 10)` is called, and 10 after it
 
 #### Scenario: A new watermark
 
@@ -75,9 +81,10 @@ not check it, and makes no promise about the commit time for a caller that break
 ### Requirement: IndexedAt pairs the floor with a covered commit time
 
 Under ascending observation, `IndexedAt` SHALL return, read together with the floor, the commit time passed to
-`Observe` for a completed observed revision at or below the floor, never one above it. When no revision is in flight
-it SHALL be the highest observed revision's time. It SHALL be the zero time when no observed revision is at or below
-the floor or that revision's time was zero; zero means unknown.
+`Observe` for one completed observed revision at or below the floor (the covered revision), never one above it. With
+nothing in flight, the covered revision SHALL be the highest observed one. The time SHALL be zero when no observed
+revision is at or below the floor, or when the covered revision was observed with the zero time; zero means
+unknown.
 
 #### Scenario: Exact when caught up
 
@@ -120,6 +127,13 @@ per-revision state it keeps while others complete above it.
 Every method of `Watermark` SHALL be safe to call from many goroutines at once. After concurrent `Complete` calls drain
 every observed revision, `IndexedAt` SHALL return the highest observed revision and its commit time, whatever order
 the completions ran in.
+
+#### Scenario: Reads alongside observation and completion
+
+- **WHEN** one goroutine observes revisions 1 to 2,000 in order, workers complete each one, and a reader calls
+  `IndexedAt` and `Observed` throughout
+- **THEN** each floor the reader sees is no lower than the one before, and after all have returned `IndexedAt` returns
+  floor 2,000 and revision 2,000's commit time
 
 #### Scenario: Concurrent completion
 

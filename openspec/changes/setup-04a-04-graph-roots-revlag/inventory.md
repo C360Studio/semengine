@@ -29,20 +29,24 @@ go1.26.4 darwin/arm64, package only. The lifecycle suite does not apply (no owne
   in flight).
 - Test-text rules: no `time.Sleep`, `Skip`, build tag or `t.Parallel` in either file. gofmt and the tree's pinned
   revive (`go tool revive -config revive.toml`): no findings.
-- Behaviour probe (throwaway test in a temp copy outside both repositories, removed):
+- Behaviour probe: PR #407 probe comment (issuecomment-6388227813) (probe test source, commands, versions and output;
+  local copy
+  `/tmp/change4/probe-revlag.md`, local only until posted). One run each, go1.26.4 darwin/arm64, in a temp module
+  outside both repositories:
   - Out-of-order observation: `Observe(10,A)`, `Complete(A,10)`, `Observe(5,B)` gives `IndexedAt() = (4, commit time
     of 10)`: a floor paired with a revision above it. The doc's promise "never newer" (`:194`) holds only under
     ascending observation, the precondition stated at `:32-35`.
   - Cost: `Complete` and the floor read scan every in-flight revision (`:115`, `:207`). N revisions in flight, then N
-    completions: N=1,000 9 ms; N=10,000 914 ms; N=40,000 15.4 s (quadratic).
-  - Mutants against the pin's own tests: detected: floor off by one (`:212`), completion not key-scoped (`:116`),
-    exact-revision completion (`:116`), covered floor check dropped (`:154`), revision 0 accepted (`:92-94`),
-    caught-up time taken from the last drained revision (`:148`), `observedHighAt` not recorded (`:99`), `IndexedAt`
-    returning `observedHighAt` (`:198`). Survivors: `Observed` returning the floor (`:182`); `r <= floor` as
-    `r < floor` (`:154`, the boundary); the nothing-drained return deleted (`:120-122`). Two new examples detected the
-    first two (an `Observed` read; `Observe(10,A)`, `Observe(11,B)`, `Complete(A,10)` expecting `(10, commit time of
-    10)`). The third is equivalent: whenever nothing is in flight, the covered revision already equals the highest
-    observed one.
+    completions: N=10,000 874 ms; N=40,000 14.5 s (quadratic).
+  - Retention: one revision stuck in flight while 1,000,000 others are observed and completed. After `runtime.GC()`,
+    the pin's code grew the live heap by -3,968 bytes (1,864 under `-race`); one 8-byte entry kept per completion
+    grew it by a further 8.45 MB.
+  - Mutants against the pin's tests plus two new examples: detected: floor off by one (`:212`), exact-revision
+    completion (`:116`), `Observed` returning the floor (`:182`, caught only by the new `Observed` example), `r <=
+    floor` as `r < floor` (`:154`, caught only by the new example `Observe(10,A)`, `Observe(11,B)`, `Complete(A,10)`
+    expecting `(10, commit time of 10)`), caught-up time from the last drained revision (`:148`). Survivor: the
+    nothing-drained return deleted (`:120-122`). It is equivalent: whenever nothing is in flight, the covered revision
+    already equals the highest observed one.
 
 ## Reader concurrency at the pin (who makes the in-flight set large)
 
@@ -124,8 +128,9 @@ All 85 records at the pin searched for `revlag`, `IndexedAt`, `low-water`, `Obse
   (`pin:...082-...md:103-107`): rejected a bounded-ready predicate in `pkg/revlag`. Neither is binding here; ADR-082
   keeps the package to the watermark only.
 - In-tree ADRs that name the package: ADR-108 `:25`, `:130` (the follower and the shared projection run over the
-  watermark); ADR-109 `:59`, `:180` (the first-build target is `Observed()` at enumeration end, through graph-index).
-  Both cite pin paths, which the ledger's `source_path` to `destination` maps.
+  watermark), naming `pkg/revlag` as the pin had it when the record was accepted. ADR-109 `:59`, `:180` do not name
+  the package (`git grep -n revlag docs/adr/109-ready-after-boot.md`: empty). They cite graph-index's files, whose
+  first-build target is `Observed()` at enumeration end (`pin:processor/graph-index/component.go:1017`).
 - Context ownership: none in the package; ADR-113 does not arise.
 - Guidance: the pin's watermark lines (`pin:.agents/contracts/semstreams-developer.md:123`, `semstreams-reviewer.md:166`)
   already have tree equivalents (`.agents/contracts/semengine-developer.md:152-153`, `semengine-reviewer.md:222`). No pin
@@ -143,8 +148,8 @@ All 85 records at the pin searched for `revlag`, `IndexedAt`, `low-water`, `Obse
 
 `gh pr list --state open --json number,title,changedFiles,files`:
 
-- #401 (draft, 21 files): edits `docs/admission-ledger.yaml` inside the `service` row (hunks at `:2962`, `:2993`). This
-  change appends a row at the end of the file. No shared lines.
+- #401: merged (`a8715ef`, 2026-10-24). It edited `docs/admission-ledger.yaml` inside the `service` row only. This
+  change appends a row at the end of the file, so the lines are not shared; the branch merges `origin/main`.
 - #403 (draft, 2 files): `scripts/port-status.sh`, `internal/harness/contract/portstatus_test.go`. This change does not
   touch either (below).
 - #404 (draft, 6 files): its own `openspec/changes/fix-390-391-port-pick-family/` with `harness-boundaries` and

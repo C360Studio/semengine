@@ -14,9 +14,10 @@ use to report, honestly, how far they have caught up (pin ADR-066 section 1, ADR
   consumer imports it and no exported signature names its type (#9 comment 5953295358).
 - Keep `Watermark`, `New`, `Observe`, `Complete`, `Observed` and `IndexedAt`. Drop `Indexed`, which has no production
   reader at the pin and returns the same floor as `IndexedAt`. Reword the doc lines that name it.
-- Port the pin's 13 tests. Add three examples the pin lacks and a Rapid history checked against a reference model.
-- If the owner answers design Q1 yes: `Complete` and the floor read stop scanning every in-flight revision. Results
-  stay the same.
+- Port the pin's 13 tests. Add three examples the pin lacks, a concurrent reader-and-writer test, a retention test,
+  and a Rapid history checked after every step against the pin's own code.
+- `Complete` and the floor read stop scanning every in-flight revision (owner, Q1, PR #407 comment 6388065578). Every
+  result stays equal to the pin's, and retained state stays proportional to the in-flight count.
 - Correct `docs/repository-map.md` (change 3 is complete) and ADR-066's port note.
 
 ## Capabilities
@@ -26,6 +27,6 @@ use to report, honestly, how far they have caught up (pin ADR-066 section 1, ADR
 
 ## Impact
 
-- New package `internal/revlag` (about 200 production lines; about 230 if Q1 is yes), its ledger row, a map row, the
-  ADR-066 port-note edit, and the `revision-watermark` spec. No importer until graph-index. `scripts/port-status.sh`
+- New package `internal/revlag` (about 230 production lines), its ledger row, a map row, the ADR-066 port-note edit,
+  and the `revision-watermark` spec. No importer until graph-index. `scripts/port-status.sh`
   counts it with no change.

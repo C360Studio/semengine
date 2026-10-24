@@ -43,10 +43,11 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 
 ## 4. Docs and archive
 
-- [ ] 4.1 `config/README.md:48` says the defaults name one service, `heartbeat` (enabled, every 30 seconds). The
+- [x] 4.1 `config/README.md:48` says the defaults name one service, `heartbeat` (enabled, every 30 seconds). The
   `config` row of `docs/admission-ledger.yaml` records the change in its "Changed from the pin" list in
   `known_risks` (`:2729-2747`): the pin's dormant `discovery` default, for a service that exists neither at the pin
-  nor here, is dropped (#384). Gate: `task docs:check` and `task ledger:check`.
-- [ ] 4.2 The `config-loading` delta synced into `openspec/specs/config-loading/spec.md`; `docs/repository-map.md`
+  nor here, is dropped (#384). Gate: `task docs:check` and `task ledger:check`. Done at a5b37df.
+- [x] 4.2 The `config-loading` delta synced into `openspec/specs/config-loading/spec.md`; `docs/repository-map.md`
   names the archive (merging `origin/main` first if #395 has landed); archived as the last content commit. Gate:
-  `task spec:check` and `task docs:check`.
+  `task spec:check` and `task docs:check`. #395 landed first and made the map describe the archive folder generically
+  (`docs/repository-map.md:63`), naming no archived change, so the map needs no row for this one.

@@ -37,9 +37,8 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
 
 - [x] 3.1 Claude code review. A Claude `semengine-reviewer` passes the code at a named commit with a local
   `task verify`; recorded on PR #404.
-- [ ] 3.2 Codex code review of record at a named commit with a local `task verify`; the PR body carries
+- [x] 3.2 Codex code review of record at a named commit with a local `task verify`; the PR body carries
   `implemented-by: claude (opus)` and `reviewed-by: codex`.
-  Hold: Codex code review of record on PR #404.
 
 ## 4. Docs and archive
 

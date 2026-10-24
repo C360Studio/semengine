@@ -26,10 +26,10 @@ Every `net.Listen` call in a `*_test.go` file or in any Go file under `internal/
 ### Requirement: The every-address pick check names the fix and can fail
 
 The every-address pick check's failure SHALL name the file and line and tell the author to pick in the family that is
-bound (`tcp4` for a port handed to Docker, `127.0.0.1:0` or the listener itself for a test server). A paired
-sensitivity test SHALL show the check fails on a planted call without a reason. The check reads code before a line
-comment; an address in a variable, `ListenConfig.Listen`, a production listener a test configures with port 0, and
-whether the reason holds are review only.
+bound (`tcp4` for Docker, `127.0.0.1:0` or the listener itself for a test server), and a paired sensitivity test SHALL
+show it fails on a planted call without a reason. It reads code before a line comment; an address in a variable, a
+raw string, a call split over lines, `ListenConfig.Listen`, a production listener given port 0, and whether the
+reason holds are review only.
 
 #### Scenario: Planted call in a fake tree
 

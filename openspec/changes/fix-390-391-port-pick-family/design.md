@@ -32,7 +32,8 @@ Base: main 6b23fdf. Rests on `inventory.md`. Issues #390, #391; claim PR #404.
   reason. The check reads code before a line comment. The failure names `file:line` and says: pick in the family that
   is bound (`tcp4` for a port handed to Docker, `127.0.0.1:0` or the listener itself for a test server); a port held
   to make an every-address bind fail says why with `// Every address: <reason>`. Review only: an address in a
-  variable, `ListenConfig.Listen`, a production listener a test configures with port 0, and whether the reason holds.
+  variable, a raw (backquoted) string, a call split over lines (Codex code review on #404), `ListenConfig.Listen`, a
+  production listener a test configures with port 0, and whether the reason holds.
   D7 of `flake-defense` removed a marker that exempted a line *with no reason*; this one requires a reason, as
   `// Own server:` does.
 - **D4, the seven exceptions** get a reason comment directly above the call (inventory § 1): the three in

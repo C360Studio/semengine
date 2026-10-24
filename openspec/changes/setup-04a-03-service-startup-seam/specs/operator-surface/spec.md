@@ -5,11 +5,12 @@
 ### Requirement: The startup gauge reports the startup counts as they are when collected
 
 From the moment `StartAll` has sealed the composition, before it binds any listener, the service manager SHALL expose
-the gauge `semengine_startup_units{owner,stage}` on the injected metrics registry with exactly nine series:
+the gauge `semengine_startup_units{owner,stage}` on its metrics registry (the injected one, else the `metrics`
+service's) with exactly nine series:
 `owner="services"` with `stage` `admitted`, `starts_invoked`, `starts_completed` and `starts_failed`, and
 `owner="components"` with `stage` `admitted`, `lifecycle_participants`, `starts_invoked`, `starts_completed` and
 `starts_failed`. Each collection SHALL report the counts `/services` reports at that moment, so no count falls while
-startup runs.
+startup runs. With neither registry, no gauge is registered and `StartAll` proceeds.
 
 #### Scenario: A component manager that is not the framework's
 

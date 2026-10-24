@@ -1,6 +1,6 @@
 # Design: setup-04a-03-service-startup-seam
 
-Base `b3a4fa9`. Inventory: `inventory.md`. Retires #364 (`Closes #364`, tasks 2.1-2.5).
+Base `b3a4fa9`. Inventory: `inventory.md`. Retires #364 (`Closes #364`, tasks 2.1-2.2).
 
 ## Context
 

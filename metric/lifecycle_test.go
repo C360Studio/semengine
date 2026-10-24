@@ -67,6 +67,7 @@ func newEphemeralServer() *Server {
 func TestServerLifecycleSuite(t *testing.T) {
 	// The test holds a port on every interface, so the must-fail Server's own bind of ":port" fails
 	// synchronously in Start (handler.go, net.Listen) on Linux and macOS alike.
+	// Every address: blocks the must-fail Server's ":port" bind.
 	held, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("hold a port: %v", err)

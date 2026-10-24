@@ -19,15 +19,15 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
 
 ## 2. Tests and code
 
-- [ ] 2.1 Tests first: `TestEveryAddressPortPickSaysWhy` and its sensitivity test in
+- [x] 2.1 Tests first: `TestEveryAddressPortPickSaysWhy` and its sensitivity test in
   `internal/harness/contract/addresses_test.go` (design "Proving tests"). Gate: the first fails on the base naming the
   nine sites; the sensitivity test passes; output in `notes/2.1.md`. A red test fails `task verify`, so it lands in
   task 2.4's commit and 2.1 is ticked with 2.4.
-- [ ] 2.2 `internal/harness/natsfixture/fixture.go` (`freePort` picks `tcp4`; comments `:36-37`, `:313-321` per D1)
+- [x] 2.2 `internal/harness/natsfixture/fixture.go` (`freePort` picks `tcp4`; comments `:36-37`, `:313-321` per D1)
   and `fixture_integration_test.go` (`deadPort` returns `freePort()`). Gate: `task verify`.
-- [ ] 2.3 `internal/harness/natsfixture/start_port_integration_test.go`: `// Every address:` reasons at `:37`, `:57`,
+- [x] 2.3 `internal/harness/natsfixture/start_port_integration_test.go`: `// Every address:` reasons at `:37`, `:57`,
   `:64`. Gate: `task test:integration` for the package.
-- [ ] 2.4 `metric/lifecycle_test.go:70`, `service/pprof_test.go:93`, `service/metrics_owner_test.go:52,112`:
+- [x] 2.4 `metric/lifecycle_test.go:70`, `service/pprof_test.go:93`, `service/metrics_owner_test.go:52,112`:
   reasons (D4), comment lines only. Gate: `TestEveryAddressPortPickSaysWhy` passes; `task verify` green.
 - [ ] 2.5 `scripts/lint-test-ports.sh`: header, scan, exit handling and patterns (D6), with
   `TestLintTestPortsSkipsIgnoredFiles` written first. Gate: the new test fails on the base and passes after;

@@ -33,7 +33,6 @@ type LogForwarder struct {
 	*BaseService
 
 	policy logforwarderpolicy.Policy
-	logger *slog.Logger
 }
 
 // NewLogForwarderService builds the log forwarder from its JSON configuration
@@ -61,9 +60,8 @@ func NewLogForwarderService(rawConfig json.RawMessage, deps *Dependencies) (Serv
 
 	return &LogForwarder{
 		BaseService: NewBaseServiceWithOptions(logForwarderServiceName,
-			WithLogger(deps.Logger), WithMetrics(deps.MetricsRegistry)),
+			WithLogger(logger), WithMetrics(deps.MetricsRegistry)),
 		policy: policy,
-		logger: logger,
 	}, nil
 }
 

@@ -57,8 +57,8 @@ func (m *MockService) Health() health.Status {
 }
 
 // newStandInComponentManager returns the plain Service named component-manager that every
-// composition here holds until PR 3 registers the real constructor (design D3, "Tests"). It does
-// not implement componentStartup, so the manager takes the pin's not-concrete path: no component
+// composition here holds until PR 3 registers the real constructor (design D3, "Tests"). It
+// is not a *ComponentManager, so the manager takes the pin's not-concrete path: no component
 // routes, zero component counts, readiness from services.
 func newStandInComponentManager() *MockService {
 	return &MockService{name: "component-manager", status: StatusRunning, healthy: true}

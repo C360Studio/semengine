@@ -19,11 +19,6 @@ import (
 // Ensure ComponentManager implements HTTPHandler interface
 var _ HTTPHandler = (*ComponentManager)(nil)
 
-// The service manager reads component counts, the stop signal, component health
-// and the startup routes through componentStartup; without it /readyz and
-// /services would see no components.
-var _ componentStartup = (*ComponentManager)(nil)
-
 // extractComponentName returns the name a status, config or types route
 // carries: the whole of the request path after route, the exact pattern the
 // handler was registered under (<prefix>/status/ and so on), with one trailing

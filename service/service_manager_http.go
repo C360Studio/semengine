@@ -25,7 +25,7 @@ import (
 // registered under.
 const StorageObservabilityServiceName = "storage-observability"
 
-// startupComponentPrefix is where a componentStartup component-manager's
+// startupComponentPrefix is where a *ComponentManager component-manager's
 // startup routes, and its routes after the commit, are mounted.
 const startupComponentPrefix = "/components"
 
@@ -62,7 +62,7 @@ func (m *Manager) startMainListener() error {
 	m.httpStarted = true
 	middleware := m.httpMiddleware
 	cfg := m.config
-	components, _ := m.services[componentManagerName].(componentStartup)
+	components, _ := m.services[componentManagerName].(*ComponentManager)
 	m.mu.Unlock()
 
 	startup := http.NewServeMux()
@@ -266,10 +266,11 @@ func (m *Manager) sealedServiceList() []admittedService {
 }
 
 // registerComponentHandlers mounts, at /<name>, the routes of every component
-// that registers its own, when component-manager implements componentStartup.
+// that registers its own, when component-manager is the framework's
+// *ComponentManager.
 func (m *Manager) registerComponentHandlers(mux *http.ServeMux) error {
 	m.mu.RLock()
-	components, ok := m.services[componentManagerName].(componentStartup)
+	components, ok := m.services[componentManagerName].(*ComponentManager)
 	m.mu.RUnlock()
 	if !ok {
 		return nil
@@ -463,7 +464,7 @@ func (m *Manager) handleReadiness(w http.ResponseWriter, _ *http.Request) {
 // start failed, stopping once StopAll was called or a stop began, starting
 // until every service and component lifecycle participant has started,
 // not_ready until the commit or while a service is not running and healthy or
-// a component is unhealthy or missing from health, and ready otherwise.
+// a component is unhealthy, and ready otherwise.
 func (m *Manager) currentStartupSnapshot() startupSnapshot {
 	m.mu.RLock()
 	sealed, stopping := m.sealed, m.stopping || m.stopCalled
@@ -475,7 +476,7 @@ func (m *Manager) currentStartupSnapshot() startupSnapshot {
 	m.mu.RUnlock()
 
 	componentManager, hasComponentManager := services[componentManagerName]
-	components, hasComponents := componentManager.(componentStartup)
+	components, hasComponents := componentManager.(*ComponentManager)
 	var componentCounts startupUnitCounts
 	if hasComponents {
 		componentCounts = components.startupSnapshot()
@@ -510,12 +511,7 @@ func (m *Manager) currentStartupSnapshot() startupSnapshot {
 		}
 	}
 	if hasComponents {
-		healthByName := components.GetComponentHealth()
-		if len(healthByName) != componentCounts.Admitted {
-			snapshot.Status = "not_ready"
-			return snapshot
-		}
-		for _, status := range healthByName {
+		for _, status := range components.GetComponentHealth() {
 			if !status.Healthy {
 				snapshot.Status = "not_ready"
 				return snapshot

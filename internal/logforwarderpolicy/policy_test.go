@@ -18,16 +18,18 @@ func TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion(t *testing
 		wantErr     string
 	}{
 		{name: "empty defaults to info", raw: json.RawMessage(`{}`), wantLevel: slog.LevelInfo,
-			wantExclude: []string{"flow-service.websocket"}},
+			wantExclude: []string{}},
 		{name: "normalizes and deduplicates", raw: json.RawMessage(`{
 			"min_level":"warn",
 			"exclude_sources":["metrics-forwarder", "flow-service.websocket", "metrics-forwarder"]
 		}`), wantLevel: slog.LevelWarn,
-			wantExclude: []string{"flow-service.websocket", "metrics-forwarder"}},
+			wantExclude: []string{"metrics-forwarder", "flow-service.websocket"}},
+		{name: "empty exclusion list stays empty", raw: json.RawMessage(`{"exclude_sources":[]}`),
+			wantLevel: slog.LevelInfo, wantExclude: []string{}},
 		{name: "debug", raw: json.RawMessage(`{"min_level":"DEBUG"}`), wantLevel: slog.LevelDebug,
-			wantExclude: []string{"flow-service.websocket"}},
+			wantExclude: []string{}},
 		{name: "error", raw: json.RawMessage(`{"min_level":"ERROR"}`), wantLevel: slog.LevelError,
-			wantExclude: []string{"flow-service.websocket"}},
+			wantExclude: []string{}},
 		{name: "rejects unknown fields", raw: json.RawMessage(`{"unexpected":true}`), wantErr: "unknown field"},
 		{name: "rejects malformed JSON", raw: json.RawMessage(`{"min_level":`), wantErr: "decode"},
 		{name: "rejects invalid level", raw: json.RawMessage(`{"min_level":"TRACE"}`), wantErr: "invalid log level"},

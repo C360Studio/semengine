@@ -28,8 +28,8 @@ collector before any listener binds, and a component manager started on its own 
 
 ## Capabilities
 
-`operator-surface`: one ADDED requirement stating the startup gauge's series and that it reports the counts as they
-are when collected (design D1).
+`operator-surface`: three ADDED requirements (design D1): who registers the startup gauge and where, its nine fixed
+series, and that it reports the counts as they are when collected.
 
 ## Non-goals
 

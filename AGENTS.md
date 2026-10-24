@@ -106,7 +106,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `verify+review` | Test cleanup never stops, closes, or terminates under an unbounded context | `harness-boundaries` spec |
 | `review` | Tests confirm a child process is still running before inspecting it (`ps`, signal, output) | `docs/testing.md` |
 | `review` | A test running a `nats.go` connection inside `testing/synctest` runs in its own test process (#156) | `docs/testing.md` |
-| `review` | An assertion on state another goroutine writes waits on, and names, the event ordering the read after the write; never elapsed wall clock alone or an unordered log line (#392) | `docs/testing.md`; `dev`, `rev` |
+| `review` | An assertion on state another goroutine writes waits on the event ordering the read after the write, named in a comment when not the line before; never elapsed wall clock alone or an unordered log line (#392) | `docs/testing.md`; `dev`, `rev` |
 | `verify` | Tests bind no fixed address or port | `harness-boundaries` spec |
 | `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |
 | `verify+review` | No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec |

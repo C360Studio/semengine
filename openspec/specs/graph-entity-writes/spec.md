@@ -14,29 +14,20 @@ hierarchy inference enabled, that a new entity is stored with its hierarchy stat
 ### Requirement: One rule per write mode
 
 graph-ingest SHALL change a stored entity through one write path, whatever lane the change arrives on (a stream
-message, a mutation request, or a call inside graph-ingest). Each write mode SHALL have one identity rule, the same on
-every lane: a create stores a new entity and refuses an existing key; a replace and a conditional replace treat the
-statements of one (subject, predicate, source) as one set and replace that set whole, keeping the statements of the
-same predicate from every other source; an append adds a statement only when no stored statement has the same
-subject, predicate, datatype, source, context and object; a delete removes the entity at the caller's expected
-revision. A conditional replace SHALL name one source, a request without one SHALL be refused as `invalid_request`
-and store nothing, every statement it carries SHALL have that source, and an empty
-set SHALL clear only that source's statements of the named predicates. A conditional replace SHALL report "unchanged"
-only when the stored statements of its predicates from its source equal the requested ones in every field. Within one
-write, statements equal in every field SHALL count once. An append that adds no statement SHALL write nothing and
-report unchanged at the revision it read. No non-test file of graph-ingest other than the write path's own SHALL call a
-write method of the entity bucket.
+message, a mutation request, or a call inside graph-ingest). No non-test file of graph-ingest other than the write
+path's own SHALL call a write method of the entity bucket.
 
-#### Scenario: A statement repeated in one write is stored once
+#### Scenario: A write outside the write path
 
-- **WHEN** a stream message carries the same statement twice, equal in every field, and a third that differs from it
-  only in `Timestamp`, `Confidence` or `ExpiresAt`
-- **THEN** the replaced set holds the repeated statement once and the third beside it
+- **WHEN** a non-test file of graph-ingest other than the write path's calls a write method of the entity bucket
+- **THEN** the package's seam test fails naming the file and line
 
-#### Scenario: An append that adds nothing
+### Requirement: Each write mode has one identity rule
 
-- **WHEN** an entity is at revision R and an append request carries only statements it already holds
-- **THEN** nothing is written, and the reply reports unchanged at revision R
+Each write mode SHALL have one identity rule, the same on every lane: a create stores a new entity and refuses an
+existing key; a replace and a conditional replace treat the statements of one (subject, predicate, source) as one set
+and replace that set whole, keeping the statements of the same predicate from every other source; a delete removes the
+entity at the caller's expected revision.
 
 #### Scenario: Each source replaces only its own statements
 
@@ -44,6 +35,32 @@ write method of the entity bucket.
   from source B
 - **THEN** P holds both statements, and a later stream message replacing P from source B leaves source A's statement
   in place
+
+### Requirement: An append adds only a new statement
+
+An append SHALL add a statement only when no stored statement has the same subject, predicate, datatype, source,
+context and object. An append that adds no statement SHALL write nothing and report unchanged at the revision it read.
+
+#### Scenario: An append that adds nothing
+
+- **WHEN** an entity is at revision R and an append request carries only statements it already holds
+- **THEN** nothing is written, and the reply reports unchanged at revision R
+
+### Requirement: Equal statements in one write count once
+
+Within one write, statements equal in every field SHALL count once.
+
+#### Scenario: A statement repeated in one write is stored once
+
+- **WHEN** a stream message carries the same statement twice, equal in every field, and a third that differs from it
+  only in `Timestamp`, `Confidence` or `ExpiresAt`
+- **THEN** the replaced set holds the repeated statement once and the third beside it
+
+### Requirement: A conditional replace names one source
+
+A conditional replace SHALL name one source, a request without one SHALL be refused as `invalid_request` and store
+nothing, and every statement it carries SHALL have that source. An empty set SHALL clear only that source's statements
+of the named predicates.
 
 #### Scenario: A conditional replace with an empty set
 
@@ -61,10 +78,16 @@ write method of the entity bucket.
 - **WHEN** a conditional replace from source A carries a statement whose source is B
 - **THEN** it is refused as `invalid_request` naming the statement's index, and nothing is stored
 
-#### Scenario: A write outside the write path
+### Requirement: A conditional replace reports unchanged only on equal statements
 
-- **WHEN** a non-test file of graph-ingest other than the write path's calls a write method of the entity bucket
-- **THEN** the package's seam test fails naming the file and line
+A conditional replace SHALL report "unchanged" only when the stored statements of its predicates from its source equal
+the requested ones in every field.
+
+#### Scenario: A field differs
+
+- **WHEN** the stored statements of P from source A equal a conditional replace's requested ones in every field except
+  one
+- **THEN** the reply does not report unchanged
 
 ### Requirement: A single-value read picks one statement the same way every time
 
@@ -82,32 +105,64 @@ reads of `graph` (`EntityState.GetTriple`, `EntityState.GetPropertyValue`) SHALL
 Every statement graph-ingest stores SHALL carry a non-empty `Source` and a non-zero `Timestamp`, and neither SHALL be
 taken from the clock by graph-ingest, or as a default for a value the writer left out; a writer that originates a
 statement MAY assert its own time. A write carrying a statement without them SHALL be refused as `invalid_request`,
-naming the statement's index and the missing field, and SHALL store nothing. A statement a write keeps from the stored
-value is not the write's; one without them is refused as "The write path refuses a stored value it cannot change"
-states, never as `invalid_request`. On the stream lane, a statement that lacks
-`Source` or `Timestamp` SHALL take the message envelope's source or creation time before its replace set is formed; a
-message whose envelope lacks the needed value SHALL be terminated as poison and counted. The stream lane SHALL refuse a
-message any of whose statements, once stamped, carries a reserved source, the names graph-ingest and `pkg/lifecycle`
-write under (`graph-ingest-indexing-profile`, `graph-ingest-hierarchy` and `semengine-lifecycle`): the message SHALL be
-terminated as poison with an `invalid_request`-class error naming the statement's index and the source, counted on
-`predicate_contract_rejections_total` with `reason="reserved_source"`, and nothing of it SHALL be stored. The mutation
-lane accepts the reserved sources, since `pkg/lifecycle` writes there under its own. Statements graph-ingest derives
-itself (the indexing profile, hierarchy statements, a hierarchy container's statements) SHALL name graph-ingest's
-producer in `Source` and SHALL carry the triggering message's time: the latest `Timestamp` among the write's own
-statements, on the stream lane once stamped from the envelope. A create on the mutation or in-process lane that carries
-no statement SHALL be refused as `invalid_request`. A stream message with no statement SHALL be terminated as poison
-and counted. `Confidence` and `Context` SHALL be stored as given and SHALL NOT decide whether a write applies.
+naming the statement's index and the missing field, and SHALL store nothing.
 
 #### Scenario: A mutation without a timestamp
 
 - **WHEN** a create, append or reconcile request carries a statement with no `Timestamp`
 - **THEN** it is refused as `invalid_request` naming the statement's index and `timestamp`, and nothing is stored
 
+### Requirement: A kept stored statement is not the write's
+
+A statement a write keeps from the stored value is not the write's. A kept statement without them SHALL be refused as
+"The write path refuses a stored value it cannot change" states, never as `invalid_request`.
+
+#### Scenario: A kept statement without a source
+
+- **WHEN** a write keeps a stored statement that has no `Source`
+- **THEN** the write is refused as the stored-value refusal, not as `invalid_request`
+
+### Requirement: The stream lane stamps missing metadata
+
+On the stream lane, a statement that lacks `Source` or `Timestamp` SHALL take the message envelope's source or creation
+time before its replace set is formed; a message whose envelope lacks the needed value SHALL be terminated as poison
+and counted.
+
 #### Scenario: A stream message without statement metadata
 
 - **WHEN** a `Graphable` payload's statements carry no `Source` or `Timestamp` and its envelope has a source and a
   creation time
 - **THEN** the stored statements carry the envelope's source and creation time
+
+### Requirement: The stream lane refuses reserved sources
+
+The stream lane SHALL refuse a message any of whose statements, once stamped, carries a reserved source, the names
+graph-ingest and `pkg/lifecycle` write under (`graph-ingest-indexing-profile`, `graph-ingest-hierarchy` and
+`semengine-lifecycle`): the message SHALL be terminated as poison with an `invalid_request`-class error naming the
+statement's index and the source, counted on `predicate_contract_rejections_total` with `reason="reserved_source"`, and
+nothing of it SHALL be stored.
+
+#### Scenario: A stream message names a reserved source
+
+- **WHEN** a `Graphable` payload carries a statement whose `Source` is `graph-ingest-hierarchy`, or carries none and
+  its envelope's source is `semengine-lifecycle`
+- **THEN** the message is terminated as poison with an `invalid_request`-class error naming the statement's index and
+  the source, the refusal is counted, and nothing of the message is stored
+
+### Requirement: The mutation lane accepts reserved sources
+
+The mutation lane SHALL accept the reserved sources, since `pkg/lifecycle` writes there under its own.
+
+#### Scenario: A mutation under a reserved source
+
+- **WHEN** `pkg/lifecycle` writes a statement on the mutation lane under `semengine-lifecycle`
+- **THEN** the write is not refused for its source
+
+### Requirement: Derived statements take the triggering time
+
+Statements graph-ingest derives itself (the indexing profile, hierarchy statements, a hierarchy container's
+statements) SHALL name graph-ingest's producer in `Source` and SHALL carry the triggering message's time: the latest
+`Timestamp` among the write's own statements, on the stream lane once stamped from the envelope.
 
 #### Scenario: Derived statements take the triggering time
 
@@ -122,12 +177,19 @@ and counted. `Confidence` and `Context` SHALL be stored as given and SHALL NOT d
   carries time T2, after T
 - **THEN** its derived statements carry timestamp T2
 
-#### Scenario: A stream message names a reserved source
+### Requirement: A write with no statement is refused
 
-- **WHEN** a `Graphable` payload carries a statement whose `Source` is `graph-ingest-hierarchy`, or carries none and
-  its envelope's source is `semengine-lifecycle`
-- **THEN** the message is terminated as poison with an `invalid_request`-class error naming the statement's index and
-  the source, the refusal is counted, and nothing of the message is stored
+A create on the mutation or in-process lane that carries no statement SHALL be refused as `invalid_request`. A stream
+message with no statement SHALL be terminated as poison and counted.
+
+#### Scenario: A create without statements
+
+- **WHEN** a create request on the mutation lane carries no statement
+- **THEN** it is refused as `invalid_request`
+
+### Requirement: Confidence and Context do not decide a write
+
+`Confidence` and `Context` SHALL be stored as given and SHALL NOT decide whether a write applies.
 
 #### Scenario: Confidence does not order
 
@@ -139,21 +201,8 @@ and counted. `Confidence` and `Context` SHALL be stored as given and SHALL NOT d
 
 On the stream lane, for each (predicate, source) set an arriving message carries, graph-ingest SHALL replace the
 stored statements of that predicate from that source only when the latest `Timestamp` in the message's set is not
-older than the latest `Timestamp` among those stored statements; equal timestamps SHALL apply in arrival order. A set
-not applied SHALL leave its stored statements as they are, the message's other sets SHALL still apply, and each set
-not applied SHALL be counted and logged with the entity, predicate and source. The entity's message type and storage
-reference SHALL take the message's values only when none of its sets was skipped. A message with at least one set, none
-of which applies, SHALL write nothing, unless the stored entity has no indexing profile, which the write then stamps
-(ADR-054). On an entity with an indexing profile, an arriving indexing-profile statement SHALL be dropped, and a message
-with no statement left after that SHALL write nothing, not even its message type or storage reference, whatever its
-time, and SHALL count no set as not applied. A conditional replace SHALL be fenced by its expected revision, not
-ordered by `Timestamp`.
-
-#### Scenario: An older arrival
-
-- **WHEN** the stored statements of P from source A carry timestamp T, and a message from source A carries P at a time
-  before T together with a newer predicate Q
-- **THEN** P keeps its stored statements, Q is applied, and the count of sets not applied rises by one
+older than the latest `Timestamp` among those stored statements; equal timestamps SHALL apply in arrival order. A
+conditional replace SHALL be fenced by its expected revision, not ordered by `Timestamp`.
 
 #### Scenario: Another source's older statement
 
@@ -166,11 +215,34 @@ ordered by `Timestamp`.
 - **WHEN** a message carries P from source A at the same timestamp as the stored statements of P from source A
 - **THEN** the message's statements replace them
 
+### Requirement: A set not applied is counted
+
+A set not applied SHALL leave its stored statements as they are, the message's other sets SHALL still apply, and each
+set not applied SHALL be counted and logged with the entity, predicate and source. The entity's message type and
+storage reference SHALL take the message's values only when none of its sets was skipped.
+
+#### Scenario: An older arrival
+
+- **WHEN** the stored statements of P from source A carry timestamp T, and a message from source A carries P at a time
+  before T together with a newer predicate Q
+- **THEN** P keeps its stored statements, Q is applied, and the count of sets not applied rises by one
+
+### Requirement: A message whose every set is skipped writes nothing
+
+A message with at least one set, none of which applies, SHALL write nothing, unless the stored entity has no indexing
+profile, which the write then stamps (ADR-054).
+
 #### Scenario: Every set is older
 
 - **WHEN** a stored entity with an indexing profile is at revision R, and a message's every set is older than the
   stored statements of its predicate from its source
 - **THEN** nothing is written, the entity stays at revision R, and each set not applied is counted
+
+### Requirement: An arriving indexing-profile statement is dropped
+
+On an entity with an indexing profile, an arriving indexing-profile statement SHALL be dropped, and a message with no
+statement left after that SHALL write nothing, not even its message type or storage reference, whatever its time, and
+SHALL count no set as not applied.
 
 #### Scenario: A profile-only arrival
 
@@ -183,10 +255,7 @@ ordered by `Timestamp`.
 A stored value that is empty at a nonzero revision, that does not decode as an entity, or that names another entity
 than its key, and a change whose result keeps from the stored value a statement the canonical contract refuses or a
 statement with no `Source` or no `Timestamp`, SHALL be refused: nothing SHALL be written, and the refusal SHALL be
-recorded at the revision read. A delete SHALL NOT be refused for its stored value: it removes the entity at the
-caller's expected revision, the revision check being the fence (ruled O, #91 comment 6080973822; #148). A graph-ingest
-read of an entity whose stored value holds a statement with no `Source` or no `Timestamp` SHALL be refused with
-`graph_state_reset_required` and recorded at the revision read; the value SHALL NOT be served or cached.
+recorded at the revision read.
 
 #### Scenario: A stored value under another key
 
@@ -205,11 +274,27 @@ read of an entity whose stored value holds a statement with no `Source` or no `T
 - **WHEN** A holds a statement of predicate P from source S with no `Timestamp`, and a stream message from S carries P
 - **THEN** S's statements of P are replaced, and A holds no statement without a `Timestamp`
 
+### Requirement: A delete is not refused for its stored value
+
+A delete SHALL NOT be refused for its stored value: it removes the entity at the caller's expected revision, the
+revision check being the fence (ruled O, #91 comment 6080973822; #148).
+
 #### Scenario: A stored value that cannot be read is deleted
 
 - **WHEN** the value stored at entity A's key does not decode as an entity, and a delete request names A's current
   revision
 - **THEN** A is deleted and a later create births it; a delete naming an older revision is refused
+
+### Requirement: A read of a stored value without metadata is refused
+
+A graph-ingest read of an entity whose stored value holds a statement with no `Source` or no `Timestamp` SHALL be
+refused with `graph_state_reset_required` and recorded at the revision read; the value SHALL NOT be served or cached.
+
+#### Scenario: A read of a stored statement without a timestamp
+
+- **WHEN** graph-ingest reads an entity whose stored value holds a statement with no `Timestamp`
+- **THEN** the read is refused with `graph_state_reset_required`, the refusal is recorded at the revision read, and the
+  value is neither served nor cached
 
 ### Requirement: The revision is the only fence
 
@@ -237,20 +322,34 @@ consumer need.
 
 With hierarchy inference enabled, an entity born on a lane that infers hierarchy (the stream lane and the in-process
 lane) SHALL be stored with its hierarchy statements or not at all. When the inference fails for any part (a container or
-a forward edge), graph-ingest SHALL store nothing for the entity and
-return the failure classified as transient; on the stream lane the message SHALL not be acknowledged, so it is
-delivered again. An entity created through a mutation request SHALL get no hierarchy statements. A birth SHALL leave an
-existing container entity unchanged.
+a forward edge), graph-ingest SHALL store nothing for the entity and return the failure classified as transient.
+
+#### Scenario: The inference fails for a container
+
+- **WHEN** hierarchy inference fails for a container while an entity is born
+- **THEN** nothing is stored for the entity and the failure is returned classified as transient
+
+### Requirement: A failed birth is redelivered on the stream lane
+
+When a birth fails on the stream lane, the message SHALL not be acknowledged, so it is delivered again.
 
 #### Scenario: The inference fails once
 
 - **WHEN** hierarchy inference fails while an entity is born from a stream message, and succeeds on the redelivery
 - **THEN** the entity is absent after the first attempt and is stored with its container edges after the second
 
+### Requirement: Birth through a mutation gets no hierarchy statements
+
+An entity created through a mutation request SHALL get no hierarchy statements.
+
 #### Scenario: Birth on the mutation lane
 
 - **WHEN** hierarchy inference is enabled and an entity is created through a mutation request
 - **THEN** the stored entity carries the request's statements and its indexing profile, and no hierarchy statement
+
+### Requirement: A birth leaves an existing container unchanged
+
+A birth SHALL leave an existing container entity unchanged.
 
 #### Scenario: A member's birth leaves its container unchanged
 
@@ -268,25 +367,6 @@ existing container entity unchanged.
 3. an entity whose ID is not `key` (`noncanonical_entity_id`);
 4. a statement with no `Source` or no `Timestamp` (`missing_statement_metadata`).
 
-Each refusal SHALL carry exactly one classified error above its `*graph.StateContractError`, with class fatal and code
-`graph_state_reset_required`; `errors.As` yields that `*graph.StateContractError`, whose `Reason` is the refusal's reason
-and whose `EntityID` is `key`. The cause beneath it keeps its own classification, if it has one (an invalid entity ID
-keeps `entity_id_invalid`).
-
-graph-ingest's validated read of an entity (the entity, batch and prefix verbs, reconcile, append and delete), its
-boot sweep of `ENTITY_STATES`, and its re-check of a stored value after a failed read-modify-write SHALL apply this
-rule; so SHALL `pkg/lifecycle`'s `Watch` and `WatchEvents`, and `graph.ExactEntityReader`. The write seam's own read
-of the value it changes is the one exception: it decodes without the canonical contract and checks only the key
-(ADR-110 Decision 6; "The write path refuses a stored value it cannot change"), and when it refuses, the refusal
-SHALL be the one this rule gives for those bytes. A watch SHALL return the refusal as its error and SHALL NOT deliver
-the entity. A mutation reply that refuses for a stored value SHALL carry the refusal without adding a classification.
-
-#### Scenario: A watched value without a source
-
-- **WHEN** a lifecycle `Watch` receives a value under key K whose statement has no `Source`
-- **THEN** the watch returns an error with code `graph_state_reset_required`, reason `missing_statement_metadata` and
-  entity K, and its callback is not called for that value
-
 #### Scenario: A value stored under another key
 
 - **WHEN** the bytes under key K hold entity J, and every statement has a `Source` and a `Timestamp`
@@ -297,10 +377,50 @@ the entity. A mutation reply that refuses for a stored value SHALL carry the ref
 - **WHEN** the bytes under key K hold entity J with a noncanonical predicate
 - **THEN** the refusal's reason is `noncanonical_predicate`
 
+### Requirement: A decode refusal carries one classified error
+
+Each refusal SHALL carry exactly one classified error above its `*graph.StateContractError`, with class fatal and code
+`graph_state_reset_required`; `errors.As` yields that `*graph.StateContractError`, whose `Reason` is the refusal's reason
+and whose `EntityID` is `key`. The cause beneath it keeps its own classification, if it has one (an invalid entity ID
+keeps `entity_id_invalid`).
+
 #### Scenario: One classification
 
 - **WHEN** any refusal is returned
 - **THEN** unwrapping it down to its `*graph.StateContractError` yields one `*errs.ClassifiedError`, not two
+
+### Requirement: Readers of a stored entity apply the one decode rule
+
+graph-ingest's validated read of an entity (the entity, batch and prefix verbs, reconcile, append and delete), its
+boot sweep of `ENTITY_STATES`, and its re-check of a stored value after a failed read-modify-write SHALL apply the
+decode rule; so SHALL `pkg/lifecycle`'s `Watch` and `WatchEvents`, and `graph.ExactEntityReader`.
+
+#### Scenario: An exact read of bytes that do not decode
+
+- **WHEN** `graph.ExactEntityReader` reads bytes that do not decode as an entity
+- **THEN** it refuses them with reason `unreadable_entity_state`
+
+### Requirement: The write seam's read is the one exception
+
+The write seam's own read of the value it changes SHALL decode without the canonical contract and check only the key
+(ADR-110 Decision 6; "The write path refuses a stored value it cannot change"), and when it refuses, the refusal SHALL
+be the one the decode rule gives for those bytes.
+
+#### Scenario: The write seam reads a value under another key
+
+- **WHEN** the bytes under key K hold entity J, and a write to K reads them
+- **THEN** the write seam refuses them with reason `noncanonical_entity_id` and entity K
+
+### Requirement: A watch and a mutation reply carry the decode refusal
+
+A watch SHALL return the refusal as its error and SHALL NOT deliver the entity. A mutation reply that refuses for a
+stored value SHALL carry the refusal without adding a classification.
+
+#### Scenario: A watched value without a source
+
+- **WHEN** a lifecycle `Watch` receives a value under key K whose statement has no `Source`
+- **THEN** the watch returns an error with code `graph_state_reset_required`, reason `missing_statement_metadata` and
+  entity K, and its callback is not called for that value
 
 #### Scenario: A reconcile refused for its stored value
 

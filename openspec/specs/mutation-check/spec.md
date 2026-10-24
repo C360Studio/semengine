@@ -15,26 +15,57 @@ program SHALL take these flags:
 - `-pkg`: one package path. A pattern containing `...` SHALL be refused.
 - `-test`: the name of a top-level test, or of a top-level test and one of its subtests written `Name/Sub`, each part
   matched exactly.
+
+#### Scenario: A package pattern
+
+- **WHEN** `-pkg` is `./...`
+- **THEN** the program starts no run and exits non-zero, saying that one package is named
+
+### Requirement: Flags that name the target and its wrong change
+
+The program SHALL also take these flags:
+
 - `-file`: the file the wrong change is made to (the target).
 - `-mutant`: the path of a copy of the target with the wrong change made in it.
-- `-expect`: a location `file.go:N` as Go prints it at the start of an output line of the named test. The file may be
-  a test file, a non-test file such as a helper in another package, or a file of Go's `testing` package. `-expect-text`:
-  a fixed string that an output line of the named test contains. At least one of the two SHALL be given; each may be
-  given more than once.
-- `-seed` (default 1), `-timeout` (the `go test` timeout of each run, default two minutes) and `-runs` (the number of
-  baseline runs and of mutant runs, default 3, at least 1).
 
-Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when the target
-does not exist, is outside the module, is not a Go source file, or is a `_test.go` file; when the mutant is inside the
-module or has the same content as the target; when neither `-expect` nor `-expect-text` is given; when an `-expect`
-value is not `file.go:N` with N a positive whole number, or an `-expect-text` value is empty; when there is no `go.mod`
-at the repository's root; when the directory for temporary files (`TMPDIR`) does not exist, or lies inside the module so
-that the program's own files would land in the repository; when `-seed` is 0, which Rapid takes as "choose a random
-seed"; when the caller's `GOFLAGS` sets `-overlay`, or sets `-cover`, `-coverpkg`, `-covermode` or `-coverprofile`,
-under which Go builds the target from the file on disk and the wrong change would not run; or when a file that git does
-not track exists under the package's `testdata/rapid/` directory. A refusal because of the kind of target SHALL say that
-the manual procedure of `docs/testing.md` applies to it. The caller's `GOFLAGS` is what `go env GOFLAGS` prints in the
-program's environment, so a value set with `go env -w` counts.
+#### Scenario: Target and mutant given
+
+- **WHEN** `-file` names a Go source file and `-mutant` names a copy of it with the wrong change made in it
+- **THEN** the program makes its runs with the copy as the wrong change to that file
+
+### Requirement: Flags that name the expected failure
+
+The program SHALL also take these flags:
+
+- `-expect`: a location `file.go:N` as Go prints it at the start of an output line of the named test. The file may be
+  a test file, a non-test file such as a helper in another package, or a file of Go's `testing` package.
+- `-expect-text`: a fixed string that an output line of the named test contains.
+
+At least one of the two SHALL be given; each may be given more than once.
+
+#### Scenario: Both kinds of expectation
+
+- **WHEN** `-expect` is given twice and `-expect-text` once
+- **THEN** the program accepts all three as expected lines
+
+### Requirement: Flags that control the runs
+
+The program SHALL also take these flags: `-seed` (default 1), `-timeout` (the `go test` timeout of each run, default
+two minutes) and `-runs` (the number of baseline runs and of mutant runs, default 3, at least 1). Before it starts any
+run the program SHALL refuse, exiting non-zero and naming the input and the reason, when `-seed` is 0, which Rapid takes
+as "choose a random seed".
+
+#### Scenario: A zero seed
+
+- **WHEN** `-seed` is 0
+- **THEN** the program starts no run, exits non-zero, and names the flag
+
+### Requirement: A wrong target or mutant is refused
+
+Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when the
+target does not exist, is outside the module, is not a Go source file, or is a `_test.go` file; or when the mutant is
+inside the module or has the same content as the target. A refusal because of the kind of target SHALL say that the
+manual procedure of `docs/testing.md` applies to it.
 
 #### Scenario: A script as the target
 
@@ -48,15 +79,16 @@ program's environment, so a value set with `go env -w` counts.
 - **THEN** the program starts no run, exits non-zero, and says that the test, its inputs and its expectations stay
   unchanged
 
+### Requirement: A missing or malformed expectation is refused
+
+Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when neither
+`-expect` nor `-expect-text` is given, when an `-expect` value is not `file.go:N` with N a positive whole number, or
+when an `-expect-text` value is empty.
+
 #### Scenario: No expected assertion
 
 - **WHEN** neither `-expect` nor `-expect-text` is given
 - **THEN** the program starts no run, exits non-zero, and names both flags
-
-#### Scenario: A package pattern
-
-- **WHEN** `-pkg` is `./...`
-- **THEN** the program starts no run and exits non-zero, saying that one package is named
 
 #### Scenario: A malformed expected location
 
@@ -67,6 +99,12 @@ program's environment, so a value set with `go env -w` counts.
 
 - **WHEN** `-expect-text` is given an empty string
 - **THEN** the program starts no run and exits non-zero, naming the flag
+
+### Requirement: A wrong repository root or temporary directory is refused
+
+Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when there is
+no `go.mod` at the repository's root, or when the directory for temporary files (`TMPDIR`) does not exist, or lies
+inside the module so that the program's own files would land in the repository.
 
 #### Scenario: No go.mod at the root
 
@@ -83,11 +121,23 @@ program's environment, so a value set with `go env -w` counts.
 - **WHEN** `TMPDIR` names a directory inside the module
 - **THEN** the program starts no run, exits non-zero, and says that its files would be written into the repository
 
+### Requirement: GOFLAGS that hide the wrong change are refused
+
+Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when the
+caller's `GOFLAGS` sets `-overlay`, or sets `-cover`, `-coverpkg`, `-covermode` or `-coverprofile`, under which Go
+builds the target from the file on disk and the wrong change would not run. The caller's `GOFLAGS` is what
+`go env GOFLAGS` prints in the program's environment, so a value set with `go env -w` counts.
+
 #### Scenario: Coverage in GOFLAGS
 
 - **WHEN** `GOFLAGS` was set to `-cover` with `go env -w`, and the process environment has no `GOFLAGS`
 - **THEN** the program starts no run, exits non-zero, and says that under coverage Go would build the target from the
   file on disk
+
+### Requirement: An untracked Rapid failure file is refused
+
+Before it starts any run the program SHALL refuse, exiting non-zero and naming the input and the reason, when a file
+that git does not track exists under the package's `testdata/rapid/` directory.
 
 #### Scenario: A failure file left by an earlier run
 
@@ -103,24 +153,19 @@ program's environment, so a value set with `go env -w` counts.
 
 The program itself SHALL NOT write, create or remove any file inside the repository, however it ends, SIGKILL
 included. The changed copy, the logs and every file the program makes SHALL be outside the repository. Reading the
-tree's state SHALL NOT refresh git's index. Every Go build that a mutant run makes SHALL see the wrong change: the test
-binary, and a `go build` or `go run` that the test itself starts; this holds also when the repository is reached
-through a symbolic link. A file that the test reads while it runs is not
-replaced; that is why a target that is not Go source is refused.
-
-The program SHALL take the fingerprint of the tree that `scripts/tree-state.sh` prints before its first run and after
-its last run. When the two differ, whoever changed the tree, the verdict SHALL be inconclusive and the report SHALL say
-that the tree changed during the check.
-
-On SIGINT or SIGTERM the program SHALL stop the process group of the run in progress before it exits, SHALL exit
-non-zero, and SHALL print no verdict. Every run is started in a process group of its own; a process that the run starts
-in yet another process group is not stopped.
+tree's state SHALL NOT refresh git's index.
 
 #### Scenario: A read-only tree
 
 - **WHEN** the program checks a wrong change that is detected, against a planted module whose every directory is
   read-only
 - **THEN** the check reaches its verdict, and the content hash of every file in the module is the same afterwards
+
+### Requirement: Every build of a mutant run sees the wrong change
+
+Every Go build that a mutant run makes SHALL see the wrong change: the test binary, and a `go build` or `go run` that
+the test itself starts; this holds also when the repository is reached through a symbolic link. A file that the test
+reads while it runs is not replaced; that is why a target that is not Go source is refused.
 
 #### Scenario: A build the test starts
 
@@ -134,6 +179,23 @@ in yet another process group is not stopped.
   link, and the wrong change is detected when the repository is reached directly
 - **THEN** the verdict is detection
 
+### Requirement: A tree that changes during the check gives no verdict of detection
+
+The program SHALL take the fingerprint of the tree that `scripts/tree-state.sh` prints before its first run and after
+its last run. When the two differ, whoever changed the tree, the verdict SHALL be inconclusive and the report SHALL say
+that the tree changed during the check.
+
+#### Scenario: The tree changes during the check
+
+- **WHEN** the named test writes a file into its package directory that git does not ignore
+- **THEN** the verdict is inconclusive and the report says the tree changed during the check
+
+### Requirement: An interrupt stops the run in progress
+
+On SIGINT or SIGTERM the program SHALL stop the process group of the run in progress before it exits, SHALL exit
+non-zero, and SHALL print no verdict. Every run is started in a process group of its own; a process that the run starts
+in yet another process group is not stopped.
+
 #### Scenario: Interrupted
 
 - **WHEN** the program receives SIGTERM while the test of a run waits, and the run has started a further process in
@@ -141,39 +203,23 @@ in yet another process group is not stopped.
 - **THEN** no process of the run's process group is running when the program exits, it exits non-zero, it prints no
   verdict, and the tree is unchanged
 
-#### Scenario: The tree changes during the check
-
-- **WHEN** the named test writes a file into its package directory that git does not ignore
-- **THEN** the verdict is inconclusive and the report says the tree changed during the check
-
 ### Requirement: The runs
 
 Every run of one check SHALL use the same command line and environment, apart from what this requirement adds for a
 mutant run and for the reach run. That command line is `go test -json -count=1 -cpu 1 -race -timeout <timeout> -run
-<the name, anchored> <pkg>`. The environment sets `GOFLAGS` explicitly to the caller's `GOFLAGS`, read once, sets
-`RAPID_SEED` to the seed, and sets `RAPID_NOFAILFILE` to `true`. A mutant run appends the overlay that maps the target
-to the mutant to `GOFLAGS`. The reach run adds coverage of the target's package, and has no overlay.
+<the name, anchored> <pkg>`. A mutant run appends the overlay that maps the target to the mutant to `GOFLAGS`. The reach
+run adds coverage of the target's package, and has no overlay.
 
-The program SHALL make, in this order: `-runs` baseline runs on the unchanged code; `-runs` mutant runs with the wrong
-change; one after-run on the unchanged code; and, only when every mutant run passed the named test, one reach run on
-the unchanged code. A baseline run that does not pass SHALL end the check before any mutant run. A mutant run that ends
-by the timeout, by a signal or by the bound below SHALL be the last mutant run. A run that has not ended by twice its
-timeout SHALL be stopped, with its process group; the report states that bound.
+#### Scenario: What differs between runs
 
-#### Scenario: A baseline run fails
+- **WHEN** a check makes its baseline, mutant and reach runs
+- **THEN** all use the same command line, only the mutant runs' `GOFLAGS` carry the overlay, and the reach run adds
+  coverage of the target's package without an overlay
 
-- **WHEN** the second of three baseline runs fails
-- **THEN** no mutant run is made, and the verdict is inconclusive and names that run
+### Requirement: The run environment
 
-#### Scenario: A mutant run times out
-
-- **WHEN** the first mutant run ends by the timeout
-- **THEN** no second mutant run is made and the verdict is inconclusive
-
-#### Scenario: A run that does not end
-
-- **WHEN** the `go` command of a run does not exit by twice the timeout
-- **THEN** the run is stopped with its process group, and the verdict is inconclusive and names the bound
+The environment of every run SHALL set `GOFLAGS` explicitly to the caller's `GOFLAGS`, read once, SHALL set
+`RAPID_SEED` to the seed, and SHALL set `RAPID_NOFAILFILE` to `true`.
 
 #### Scenario: The environment is the same in every run
 
@@ -196,29 +242,72 @@ timeout SHALL be stopped, with its process group; the report states that bound.
 - **WHEN** the named test is a Rapid property that passes on the wrong change for the given seed
 - **THEN** the verdict is survivor, and its reason says that the result holds for that seed
 
+### Requirement: The order of the runs
+
+The program SHALL make, in this order: `-runs` baseline runs on the unchanged code; `-runs` mutant runs with the wrong
+change; one after-run on the unchanged code; and, only when every mutant run passed the named test, one reach run on
+the unchanged code. A baseline run that does not pass SHALL end the check before any mutant run.
+
+#### Scenario: A baseline run fails
+
+- **WHEN** the second of three baseline runs fails
+- **THEN** no mutant run is made, and the verdict is inconclusive and names that run
+
+### Requirement: A run is bounded
+
+A mutant run that ends by the timeout, by a signal or by the bound below SHALL be the last mutant run. A run that has
+not ended by twice its timeout SHALL be stopped, with its process group; the report states that bound.
+
+#### Scenario: A mutant run times out
+
+- **WHEN** the first mutant run ends by the timeout
+- **THEN** no second mutant run is made and the verdict is inconclusive
+
+#### Scenario: A run that does not end
+
+- **WHEN** the `go` command of a run does not exit by twice the timeout
+- **THEN** the run is stopped with its process group, and the verdict is inconclusive and names the bound
+
 ### Requirement: The changed region and reach
 
 The program SHALL take the wrong change's hunks from a line diff of the target against the mutant with no context lines,
-which no external diff program, text conversion or hunk-merging setting that the caller configures can change. A hunk
-that removes or replaces lines has those lines of the target as its region. A hunk that only inserts lines after target
-line k has, as its region, the place between lines k and k+1; when that place lies outside every function body of the
-target, the region is not measurable. A mutant with more than one hunk SHALL be accepted, and the report SHALL list
-every hunk and say that there is more than one.
+which no external diff program, text conversion or hunk-merging setting that the caller configures can change. A mutant
+with more than one hunk SHALL be accepted, and the report SHALL list every hunk and say that there is more than one.
+
+#### Scenario: Hunks are not merged
+
+- **WHEN** the caller's git configuration sets `diff.interHunkContext` to 5, and the wrong change replaces two lines
+  three lines apart
+- **THEN** the report lists two hunks, and the unchanged lines between them are in neither region
+
+### Requirement: A hunk has a region
+
+A hunk that removes or replaces lines SHALL have those lines of the target as its region. A hunk that only inserts
+lines after target line k SHALL have, as its region, the place between lines k and k+1; when that place lies outside
+every function body of the target, the region is not measurable.
+
+#### Scenario: Regions are read in the target's line numbers
+
+- **WHEN** the wrong change deletes three lines that executed, and the lines with the same numbers in the mutant lie in
+  a block of the target that did not execute
+- **THEN** the wrong change is reached
+
+#### Scenario: A method added before a function that did not run
+
+- **WHEN** the wrong change only inserts a new method between two top-level declarations, the function right after it
+  did not execute, and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
+
+#### Scenario: A change to a declaration
+
+- **WHEN** the wrong change only changes a package-level constant, and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
+
+### Requirement: Reach of removed or replaced lines
 
 The reach run measures the unchanged code; Go builds a file it covers from the file on disk, so an overlay would not
-apply in that run anyway. A region of removed or replaced lines is reached when the reach run's profile shows an
-executed block that overlaps those lines. An insertion inside a function body belongs to the innermost statement list
-that holds its place, as Go's parser reads the target: a function body, a block, a branch of an `if`, or a clause of a
-`switch` or `select`. It is reached when the block holding the first statement of that list after the place executed;
-when no statement of that list follows the place, when the block holding the last statement before it executed. When
-that last statement is labeled, the region is not measurable: a label reached by `goto` sits on the inclusive end of the
-block before it, which `goto` skips. A block of a sibling branch or clause never decides it. When the place lies inside
-a statement of that list, so that the statement begins on or before line k and ends on or after line k+1 (a condition,
-call or literal written over several lines, or the place between a label and its statement), the region is not
-measurable: Go's coverage counts statements, and no block measures a place inside one. A region is not measurable when
-no block decides it: no block overlaps the lines, the list has no statement, or no block holds the statement that would
-decide. The wrong change is reached when any of its regions is reached; not reached when every region is measurable and
-none is reached; and not measurable otherwise.
+apply in that run anyway. A region of removed or replaced lines SHALL be reached when the reach run's profile
+shows an executed block that overlaps those lines.
 
 #### Scenario: A deletion that was reached
 
@@ -231,17 +320,22 @@ none is reached; and not measurable otherwise.
   passes
 - **THEN** the verdict is invalid, and says the test did not reach the wrong change
 
-#### Scenario: Regions are read in the target's line numbers
+### Requirement: An insertion belongs to the innermost statement list
 
-- **WHEN** the wrong change deletes three lines that executed, and the lines with the same numbers in the mutant lie in
-  a block of the target that did not execute
-- **THEN** the wrong change is reached
+An insertion inside a function body SHALL belong to the innermost statement list that holds its place, as Go's parser
+reads the target: a function body, a block, a branch of an `if`, or a clause of a `switch` or `select`.
 
 #### Scenario: An insertion in a branch that did not run
 
 - **WHEN** the wrong change only inserts a line into a branch that the reach run shows did not execute, and every
   mutant run passes
 - **THEN** the verdict is invalid
+
+### Requirement: Reach of an insertion
+
+An insertion SHALL be reached when the block holding the first statement of its list after the place executed; when no
+statement of that list follows the place, when the block holding the last statement before it executed. A block of a
+sibling branch or clause SHALL never decide it.
 
 #### Scenario: An insertion at the end of an if-branch whose else ran
 
@@ -255,6 +349,24 @@ none is reached; and not measurable otherwise.
   next `case` clause executed, and every mutant run passes
 - **THEN** the wrong change is not reached, and the verdict is invalid
 
+### Requirement: An insertion after a labeled statement is not measurable
+
+When the last statement before the place of an insertion is labeled, the region SHALL be not
+measurable: a label reached by `goto` sits on the inclusive end of the block before it, which `goto` skips.
+
+#### Scenario: An insertion after a labeled last statement
+
+- **WHEN** the wrong change only inserts a line after a labeled statement that is the last of its list, the label is
+  reached by `goto` that skips the statement before it, and every mutant run passes
+- **THEN** the verdict is survivor, and the report says reach could not be measured
+
+### Requirement: An insertion inside a statement is not measurable
+
+When the place lies inside a statement of the list, so that the statement begins on or before line k and ends on or
+after line k+1 (a condition, call or literal written over several lines, or the place between a label and its
+statement), the region SHALL be not measurable: Go's coverage counts statements, and no block measures a place
+inside one.
+
 #### Scenario: An insertion inside a multi-line condition
 
 - **WHEN** the wrong change only inserts a line inside an `if` condition written over two lines, the reach run shows
@@ -267,60 +379,78 @@ none is reached; and not measurable otherwise.
   and every mutant run passes
 - **THEN** the verdict is survivor, and the report says reach could not be measured
 
-#### Scenario: An insertion after a labeled last statement
+### Requirement: A region no block decides is not measurable
 
-- **WHEN** the wrong change only inserts a line after a labeled statement that is the last of its list, the label is
-  reached by `goto` that skips the statement before it, and every mutant run passes
-- **THEN** the verdict is survivor, and the report says reach could not be measured
+A region SHALL be not measurable when no block decides it: no block overlaps the lines, the list has no statement, or no
+block holds the statement that would decide.
 
-#### Scenario: Hunks are not merged
+#### Scenario: No block overlaps the region
 
-- **WHEN** the caller's git configuration sets `diff.interHunkContext` to 5, and the wrong change replaces two lines
-  three lines apart
-- **THEN** the report lists two hunks, and the unchanged lines between them are in neither region
+- **WHEN** the reach run's profile has no block that overlaps the lines of a region
+- **THEN** the region is not measurable
 
-#### Scenario: A method added before a function that did not run
+### Requirement: Reach of the whole wrong change
 
-- **WHEN** the wrong change only inserts a new method between two top-level declarations, the function right after it
-  did not execute, and every mutant run passes
-- **THEN** the verdict is survivor, and the report says reach could not be measured
+The wrong change SHALL be reached when any of its regions is reached; not reached when every region is measurable and
+none is reached; and not measurable otherwise.
 
 #### Scenario: Two hunks
 
 - **WHEN** the wrong change has two hunks, an import removed and a call removed, and the call's line executed
 - **THEN** the wrong change is reached, and the report lists both hunks and says there is more than one
 
-#### Scenario: A change to a declaration
-
-- **WHEN** the wrong change only changes a package-level constant, and every mutant run passes
-- **THEN** the verdict is survivor, and the report says reach could not be measured
-
 ### Requirement: Outcome classification
 
 The program SHALL give exactly one verdict: detection, survivor, invalid or inconclusive. An expected line is an output
 line of the named test or of its subtests that begins with an expected location or contains an expected text.
 
-- **Detection:** every baseline run passed; every mutant run failed the named test and printed at least one expected
-  line; the after-run passed; and the tree did not change.
-- **Survivor:** every baseline run passed; every mutant run passed the named test and exited zero; the after-run passed;
-  the tree did not change; the reach run passed; and the wrong change is reached or not measurable.
-- **Invalid:** every baseline run passed, the after-run passed and the tree did not change; and either the wrong
-  change does not build, or every other condition for survivor holds and the wrong change is not reached.
-- **Inconclusive:** every other case, including a baseline run that did not pass, a run that selected no test, a run
-  that ended by the timeout (even when an expected line was printed before it), a run ended by a signal, a run stopped
-  by the bound, a failure with no expected line, mutant runs that disagree, an after-run or a reach run that did not
-  pass, and a tree that changed.
+#### Scenario: One verdict
 
-A failing exit status alone SHALL never give detection. A report of the race detector counts as an expected line only
-when an expected location or text matches it. A panic or a further failure line printed after an expected line SHALL be
-recorded in the report and SHALL NOT change a detection. Go prints a log line of a test the same way as a failure line,
-so the report SHALL print every expected line in full. No verdict SHALL be named "equivalent": whether a survivor is
-equivalent is a reviewer's assessment.
+- **WHEN** a check ends without an interrupt
+- **THEN** the report names exactly one of detection, survivor, invalid or inconclusive
+
+### Requirement: Detection
+
+The verdict SHALL be detection when every baseline run passed; every mutant run failed the named test and printed at
+least one expected line; the after-run passed; and the tree did not change.
 
 #### Scenario: Detected
 
 - **WHEN** each mutant run fails the named test and prints a line at the expected location
 - **THEN** the verdict is detection, and the report prints that line
+
+#### Scenario: A failure that names no expected location
+
+- **WHEN** each mutant run exits non-zero with no expected line
+- **THEN** the verdict is not detection
+
+### Requirement: Survivor
+
+The verdict SHALL be survivor when every baseline run passed; every mutant run passed the named test and exited zero;
+the after-run passed; the tree did not change; the reach run passed; and the wrong change is reached or not measurable.
+
+#### Scenario: Every mutant run passes
+
+- **WHEN** every mutant run passes the named test, and the reach run shows the wrong change reached
+- **THEN** the verdict is survivor
+
+### Requirement: Invalid
+
+The verdict SHALL be invalid when every baseline run passed, the after-run passed and the tree did not change; and
+either the wrong change does not build, or every other condition for survivor holds and the wrong change is not
+reached.
+
+#### Scenario: The wrong change does not build
+
+- **WHEN** the mutant does not compile
+- **THEN** the verdict is invalid
+
+### Requirement: Inconclusive
+
+The verdict SHALL be inconclusive in every other case, including a baseline run that did not pass, a run that selected
+no test, a run that ended by the timeout (even when an expected line was printed before it), a run ended by a signal, a
+run stopped by the bound, a failure with no expected line, mutant runs that disagree, an after-run or a reach run that
+did not pass, and a tree that changed.
 
 #### Scenario: A different assertion fails
 
@@ -337,27 +467,11 @@ equivalent is a reviewer's assessment.
 - **WHEN** a mutant run's process is killed by a signal before the named test reports a result
 - **THEN** the verdict is inconclusive, and its reason names the signal
 
-#### Scenario: A race report that is not expected
-
-- **WHEN** each mutant run fails only with `race detected during execution of test` and no expected text or location
-  matches that line
-- **THEN** the verdict is inconclusive
-
-#### Scenario: A race report that is expected
-
-- **WHEN** each mutant run fails with `race detected during execution of test` and `-expect-text` names that text
-- **THEN** the verdict is detection, and the report prints the line
-
 #### Scenario: Nothing selected
 
 - **WHEN** `-test` names no test of the package
 - **THEN** the verdict is inconclusive and says the name selected no test, and that a test in a file built only with
   the `integration` tag is not run by this command
-
-#### Scenario: The wrong change does not build
-
-- **WHEN** the mutant does not compile
-- **THEN** the verdict is invalid
 
 #### Scenario: The build breaks after the baselines
 
@@ -374,27 +488,62 @@ equivalent is a reviewer's assessment.
 - **WHEN** one mutant run is detected and another passes
 - **THEN** the verdict is inconclusive
 
-#### Scenario: A failure that names no expected location
+### Requirement: An expected line decides detection
 
-- **WHEN** each mutant run exits non-zero with no expected line
-- **THEN** the verdict is not detection
+A failing exit status alone SHALL never give detection. A report of the race detector counts as an expected line only
+when an expected location or text matches it. A panic or a further failure line printed after an expected line SHALL be
+recorded in the report and SHALL NOT change a detection.
+
+#### Scenario: A race report that is not expected
+
+- **WHEN** each mutant run fails only with `race detected during execution of test` and no expected text or location
+  matches that line
+- **THEN** the verdict is inconclusive
+
+#### Scenario: A race report that is expected
+
+- **WHEN** each mutant run fails with `race detected during execution of test` and `-expect-text` names that text
+- **THEN** the verdict is detection, and the report prints the line
 
 #### Scenario: A panic after the expected failure
 
 - **WHEN** each mutant run prints an expected line and then panics
 - **THEN** the verdict is detection, and the report records the panic
 
+### Requirement: The report prints every expected line in full
+
+Go prints a log line of a test the same way as a failure line, so the report SHALL print every expected line in full.
+
+#### Scenario: A log line that matches
+
+- **WHEN** a mutant run prints a log line that contains an expected text
+- **THEN** the report prints that line in full
+
+### Requirement: No verdict is named equivalent
+
+No verdict SHALL be named "equivalent": whether a survivor is equivalent is a reviewer's assessment.
+
+#### Scenario: A survivor
+
+- **WHEN** a wrong change survives
+- **THEN** the verdict is survivor, and no verdict named equivalent is given
+
 ### Requirement: Report and exit status
 
 The program SHALL print a report block that a pull request can quote. It SHALL contain: the command as given; the
 commit, the tree's fingerprint, and whether the tree has uncommitted changes; the Go version; the package and the test;
 the target's path and its SHA-256 before and after; the wrong change as a unified diff from the target to the mutant,
-with its hunks and their regions; the expected locations and texts; the seed; each run's command line, `GOFLAGS`,
-result, expected lines, failure locations, wall time and verdict; for a reach run, whether the wrong change was
-reached, not reached or not measurable, with the blocks that decided it; the directory holding the logs, said to be on
-this machine only; and, as its last line, the verdict and its reason. A survivor's reason SHALL say that, for a test
-that generates its inputs, the result holds for the given seed. The program SHALL exit zero only for detection.
-Through `task`, only pass or fail and the report are promised.
+with its hunks and their regions; the expected locations and texts; and the seed.
+
+#### Scenario: A report block
+
+- **WHEN** any verdict is reached
+- **THEN** the report block holds the command as given, the tree's state, the target's hashes, the wrong change as a
+  diff, the expected locations and texts, and the seed
+
+### Requirement: Exit status
+
+The program SHALL exit zero only for detection. Through `task`, only pass or fail and the report are promised.
 
 #### Scenario: A detection passes
 
@@ -405,6 +554,24 @@ Through `task`, only pass or fail and the report are promised.
 
 - **WHEN** the verdict is survivor
 - **THEN** the program exits non-zero and the last line of its output names the verdict, its reason and the seed
+
+### Requirement: The report describes each run
+
+The report SHALL contain each run's command line, `GOFLAGS`, result, expected lines, failure locations, wall time and
+verdict; and, for a reach run, whether the wrong change was reached, not reached or not measurable, with the blocks
+that decided it.
+
+#### Scenario: A reach run in the report
+
+- **WHEN** a check made a reach run
+- **THEN** the report says whether the wrong change was reached, not reached or not measurable, and names the blocks
+  that decided it
+
+### Requirement: The report names the logs and ends with the verdict
+
+The report SHALL name the directory holding the logs, said to be on this machine only, and SHALL end with a last line
+that holds the verdict and its reason. A survivor's reason SHALL say that, for a test that generates its inputs, the
+result holds for the given seed.
 
 #### Scenario: Logs are named as local
 

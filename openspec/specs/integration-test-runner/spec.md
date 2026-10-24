@@ -9,29 +9,47 @@ records which tree its coverage profile measured, so `task cover:check` can refu
 ### Requirement: Integration test command
 
 `task test:integration` SHALL run `go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m
--coverprofile=coverage/integration.coverprofile <packages>`, with `./...` when no package is given. It SHALL remove
-`coverage/integration.tree` before `go test` starts and, only when `go test` exits zero, write the tree fingerprint
-`scripts/tree-state.sh` prints to that file. `task cover:check` SHALL read the integration profile from
-`coverage/integration.coverprofile` and SHALL refuse it when `coverage/integration.tree` is missing or differs from
-the fingerprint of the tree as it is now. The task SHALL take no lock, set no environment variable, write no evidence
-directory and pull no image itself. The same task runs locally and in CI. A contract test SHALL fail when the command
-differs from this requirement.
+-coverprofile=coverage/integration.coverprofile <packages>`, with `./...` when no package is given. The same task
+SHALL run locally and in CI.
 
 #### Scenario: Task and CI converge
 
 - **WHEN** `task test:integration` runs locally or in CI
 - **THEN** the same command and flags are used
 
-#### Scenario: Plain go test runs an integration test
+### Requirement: The task records which tree its profile measured
 
-- **WHEN** a developer runs `go test -tags integration ./natsclient` without Task, on a machine with Docker
-- **THEN** the integration tests start their containers and run; nothing refuses them
+`task test:integration` SHALL remove `coverage/integration.tree` before `go test` starts and, only when `go test` exits
+zero, write the tree fingerprint `scripts/tree-state.sh` prints to that file.
 
 #### Scenario: A failed run's profile is refused
 
 - **WHEN** `go test` fails in `task test:integration` and `task cover:check` runs next
 - **THEN** `coverage/integration.tree` is absent and `cover:check` exits non-zero saying no passing integration run
   measured this tree
+
+### Requirement: Cover check refuses a profile from another tree
+
+`task cover:check` SHALL read the integration profile from `coverage/integration.coverprofile` and SHALL refuse it when
+`coverage/integration.tree` is missing or differs from the fingerprint of the tree as it is now.
+
+#### Scenario: A profile from a changed tree
+
+- **WHEN** `coverage/integration.tree` differs from the fingerprint of the tree as it is now
+- **THEN** `task cover:check` refuses the integration profile
+
+### Requirement: The task takes no lock and sets nothing up
+
+The task SHALL take no lock, set no environment variable, write no evidence directory and pull no image itself.
+
+#### Scenario: Plain go test runs an integration test
+
+- **WHEN** a developer runs `go test -tags integration ./natsclient` without Task, on a machine with Docker
+- **THEN** the integration tests start their containers and run; nothing refuses them
+
+### Requirement: A contract test pins the command
+
+A contract test SHALL fail when the command differs from the requirement "Integration test command".
 
 #### Scenario: Command drift fails
 

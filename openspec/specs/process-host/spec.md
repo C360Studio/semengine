@@ -12,20 +12,33 @@ the test that started it.
 
 `internal/harness/prochost` SHALL start a child process by re-executing the running test binary with a named helper
 selected through an environment marker, in its own process group, with stdout and stderr captured in files under the
-test's temporary directory; when the test has failed by the time its cleanup reaps the child, prochost SHALL write the
-child's stdout and stderr to the test log. A helper SHALL run only when its marker is set and SHALL be a no-op in a
-normal test run. No runtime binary SHALL be required.
-
-#### Scenario: Helper runs only under its marker
-
-- **WHEN** the test binary runs without the marker
-- **THEN** the helper test returns immediately and starts nothing
+test's temporary directory.
 
 #### Scenario: Helper is started
 
 - **WHEN** a test starts the helper named by the marker
 - **THEN** a child process exists in its own process group and its output is written under the test's temporary
   directory, and into the test log when the test fails
+
+### Requirement: A failed test gets the child's output in its log
+
+When the test has failed by the time its cleanup reaps the child, prochost SHALL write the child's stdout and stderr to
+the test log.
+
+#### Scenario: Output of a failed test
+
+- **WHEN** a test fails while its helper has written to stdout and stderr
+- **THEN** the child's stdout and stderr are written to the test log when cleanup reaps it
+
+### Requirement: A helper runs only under its marker
+
+A helper SHALL run only when its marker is set and SHALL be a no-op in a normal test run. No runtime binary SHALL be
+required.
+
+#### Scenario: Helper runs only under its marker
+
+- **WHEN** the test binary runs without the marker
+- **THEN** the helper test returns immediately and starts nothing
 
 ### Requirement: Signals and bounded wait
 
@@ -64,11 +77,6 @@ that process ended:
 - by a signal sent to its process group or to it alone, SIGKILL included;
 - by a panic on a goroutine other than the test's own, the `-timeout` alarm included.
 
-On that exit the helper SHALL write a line naming the reason to its stderr and SHALL exit with a non-zero status. While
-the test process runs, prochost SHALL NOT end a helper except by the test's own calls and its cleanup. A helper's
-standard input is reserved for prochost, and a helper function SHALL NOT read it. A helper stopped by `Pause` is not
-covered until it is resumed.
-
 #### Scenario: Test process killed alone
 
 - **WHEN** the test process is sent SIGKILL while its helper is running in the helper's own process group
@@ -86,7 +94,39 @@ covered until it is resumed.
   `-timeout` alarm does, so its cleanups do not run
 - **THEN** the helper's pid is gone within the test's failure bound, and its stderr names the reason
 
+### Requirement: A helper that exits on its own says why
+
+On that exit the helper SHALL write a line naming the reason to its stderr and SHALL exit with a non-zero status.
+
+#### Scenario: The exit line
+
+- **WHEN** the test process ends and its helper exits on its own
+- **THEN** the helper's stderr holds a line naming the reason and its exit status is non-zero
+
+### Requirement: A helper is not ended while its test process runs
+
+While the test process runs, prochost SHALL NOT end a helper except by the test's own calls and its cleanup.
+
 #### Scenario: Helper keeps running while its test process runs
 
 - **WHEN** a test starts a helper and then sends it SIGTERM
 - **THEN** the helper was running until then, and it exits with status 0
+
+### Requirement: A helper's standard input is reserved for prochost
+
+A helper's standard input is reserved for prochost, and a helper function SHALL NOT read it.
+
+#### Scenario: A helper function does not read standard input
+
+- **WHEN** a helper function runs
+- **THEN** it does not read its standard input, which prochost uses to see the test process end
+
+### Requirement: A paused helper is not covered until resumed
+
+A helper stopped by `Pause` is not covered by the requirement "A helper ends when its test process ends" until it is
+resumed; until then a caller SHALL NOT rely on it to exit.
+
+#### Scenario: A helper stopped by Pause
+
+- **WHEN** a helper is stopped by `Pause` and the test process ends
+- **THEN** the helper is not promised to exit until it is resumed

@@ -23,7 +23,7 @@ strict decoder already in the package (owner 2026-10-19).
   semboids: no use. The surface reached from outside is the `log-forwarder` configuration block and the record the
   service writes.
 - **How it is reached today.** `RegisterAll` does not register it (`service/register.go:19-27`); `config`'s defaults
-  do not enable it (`config/config.go:491-498`: `discovery` and `heartbeat` only). A document that enables
+  do not enable it (`config/config.go:490-495`: `heartbeat` only, since #394). A document that enables
   `log-forwarder` is refused at composition through the same path PR 6's tree probe showed for `heartbeat` ("no
   constructor registered for service ...").
 - **Open pull requests and issues:** `sweep.md` § 4. This PR retires #30 (D9).

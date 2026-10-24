@@ -770,12 +770,12 @@ The `MetricsGatherer` interface, `MetricsForwarderConfig.Validate` and the test-
 
 ## The log forwarder
 
-`LogForwarder` forwards nothing yet. Its name comes from SemStreams, where it sent log records to NATS; this module has
-no log handler that publishes logs to NATS, and `pkg/logging` and the boot wiring that would install one are not
-ported. What the service does today is check its settings, run the base service's lifecycle, and write one record
-saying so. It is off unless the configuration enables it: `ResolveServiceConfigs` does not add it. `RegisterAll`
-registers its constructor, `NewLogForwarderService`, under `log-forwarder`, with no OpenAPI spec because it serves no
-route.
+`LogForwarder` forwards nothing yet. Its name comes from SemStreams, where a log handler that boot installed
+(`pkg/logging`) sent log records to NATS and this service only checked the handler's settings. This module has no log
+handler that publishes logs to NATS, and `pkg/logging` and the boot wiring that would install one are not ported. What
+the service does today is check its settings, run the base service's lifecycle, and write one record saying so. It is
+off unless the configuration enables it: `ResolveServiceConfigs` does not add it. `RegisterAll` registers its
+constructor, `NewLogForwarderService`, under `log-forwarder`, with no OpenAPI spec because it serves no route.
 
 ```json
 {

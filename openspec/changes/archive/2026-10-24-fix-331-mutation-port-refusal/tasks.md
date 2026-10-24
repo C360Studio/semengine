@@ -34,9 +34,9 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
 - [x] 3.1 Claude code review. A Claude `semengine-reviewer` passes the code at a named commit with a local
   `task verify`. Approved at 2f93cd43aa133e27d51a793451e341b68338ae79 with one NIT (link the notes from the PR,
   done), local `task verify` exit 0, M1 and M4 re-run as detections (PR #397 comment 6384985360).
-- [ ] 3.2 Codex code review of record at a named commit with a local `task verify`; the PR body carries
-  `implemented-by: claude (opus)` and `reviewed-by: codex`.
-  Hold: Codex code review (the owner starts Codex).
+- [x] 3.2 Codex code review of record at a named commit with a local `task verify`; the PR body carries
+  `implemented-by: claude (opus)` and `reviewed-by: codex`. Codex approved at
+  d6de27b232b79bb6c655c931a0bbaa35e4792208 with no findings, local `task verify` exit 0 (PR #397 comment 6385597225).
 
 ## 4. Docs and archive
 
@@ -46,5 +46,6 @@ fails on the base commit. Each code task ends only when `task verify` passes on 
   (5542936) and split the requirement; graph-ingest's sentence is now "graph-ingest refuses an invalid member input",
   and the delta is re-copied onto it with D2's clause and the wrong-version scenario (331 characters of requirement
   text; openspec is still 1.14.0).
-- [ ] 4.1 The `graph-transport-boundary` delta synced into `openspec/specs/graph-transport-boundary/spec.md`;
-  archived as the last content commit. Gate: `task spec:check` and `task docs:check`.
+- [x] 4.1 The `graph-transport-boundary` delta synced into `openspec/specs/graph-transport-boundary/spec.md`;
+  archived as the last content commit. Gate: `task spec:check` and `task docs:check`. Synced and archived together by
+  `openspec archive`.

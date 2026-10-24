@@ -35,11 +35,11 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 - [x] 5.1 `task mutate:check` for M1-M6 (detections) and S1 (survivor recorded), and coverage, in `notes/5.1.md`
   (verdicts from `notes/3.2.md:169-178`, run on the file the code stop approved).
-- [ ] 5.1a Coverage (100%, `notes/5.1.md`) recorded on the PR; `task verify` passes on a clean tree at the final head.
-- [ ] 5.2 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
+- [x] 5.1a Coverage (100%, `notes/5.1.md`) recorded on the PR; `task verify` passes on a clean tree at the final head.
+- [x] 5.2 Cross-agent review stop (Codex); `reviewed-by:` in the PR body.
 
 ## 6. Close
 
-- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-revlag`) as the last content commit, syncing
+- [x] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-revlag`) as the last content commit, syncing
   `revision-watermark` into `openspec/specs/` with the Purpose design D6 gives. Gate: `task spec:check` and
   `task docs:check`.

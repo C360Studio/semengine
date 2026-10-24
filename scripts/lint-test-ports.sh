@@ -15,21 +15,19 @@
 #
 # Known false-negative shapes (acceptable for Step 1 — sweep in
 # follow-up if violations surface):
-#   - tcp6 protocol variant: net.Listen("tcp6", ":1234")
 #   - Multi-line: net.Listen("tcp",\n\t":1234")
 #   - String concatenation: net.Listen("tcp", host+":"+portStr)
 #   - Variable indirection: addr := ":1234"; net.Listen("tcp", addr)
 #   - Non-net.Listen APIs: http.Server{Addr: fmt.Sprintf(":%d", N)} etc.
-#     (the github-webhook tests use this — sweep in Subclass 2 follow-up)
 #   - Bind-then-close-then-bind: net.Listen("tcp4", ":0"), read the port,
 #     close the listener, and bind that port again. Another process can
 #     take the port in between; SemStreams removed its freePort helper
 #     for this race (its #1120). natsfixture's freePort (fixture.go, not
 #     a test file, so not scanned) is the one deliberate use here, and
 #     it is this guard's rule applied: the kernel picks the port, on
-#     tcp4 (#390; freePort's doc comment says why). It
-#     closes the listener because Docker, another process, can be given
-#     only the number; a process that takes the port in between fails
+#     tcp4 (#390; freePort's doc comment says why). It closes the
+#     listener because Docker, another process, can be given only the
+#     number; a process that takes the port in between fails
 #     Docker's start loudly with "address already in use" (SemEngine #209;
 #     measured on macOS by the probe on PR #210, comment 6151736554), and
 #     Start removes that unstarted container and tries once more with a

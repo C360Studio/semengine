@@ -127,6 +127,9 @@ func TestEveryAddressPortPickSaysWhySensitivity(t *testing.T) {
 		{"empty reason", map[string]string{
 			"x/x_test.go": "package x\n\n// Every address:   \nvar l, _ = " + call("tcp", ":0") + "\n",
 		}, "x/x_test.go:4"},
+		{"second call on the line", map[string]string{
+			"x/x_test.go": "package x\n\nvar a, _, b, _ = " + call("tcp", "127.0.0.1:0") + ", " + call("tcp", ":0") + "\n",
+		}, "x/x_test.go:3"},
 		{"non-test file under internal/harness", map[string]string{
 			"x/x_test.go":             "package x\n",
 			"internal/harness/h/h.go": "package h\n\nvar l, _ = " + call("tcp", ":0") + "\n",
@@ -157,8 +160,14 @@ func everyAddressViolations(t *testing.T, root string, files []string) []string 
 		}
 		lines := readLines(t, root, name)
 		for i, line := range lines {
-			m := tcpListenLiteral.FindStringSubmatch(codeBeforeLineComment(line))
-			if m == nil || !isEveryAddressPick(m[1]) {
+			addr, found := "", false
+			for _, m := range tcpListenLiteral.FindAllStringSubmatch(codeBeforeLineComment(line), -1) {
+				if isEveryAddressPick(m[1]) {
+					addr, found = m[1], true
+					break
+				}
+			}
+			if !found {
 				continue
 			}
 			prev := ""
@@ -169,7 +178,7 @@ func everyAddressViolations(t *testing.T, root string, files []string) []string 
 			if !ok || strings.TrimSpace(reason) == "" {
 				violations = append(violations, fmt.Sprintf("%s:%d: port-0 pick on every address (%q) without `// Every address: <reason>` on the line above; "+
 					"pick in the family that is bound (`tcp4` for a port handed to Docker, `127.0.0.1:0` or the listener itself for a test server)",
-					name, i+1, m[1]))
+					name, i+1, addr))
 			}
 		}
 	}

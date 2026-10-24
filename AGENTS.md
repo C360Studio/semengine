@@ -108,6 +108,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | A test running a `nats.go` connection inside `testing/synctest` runs in its own test process (#156) | `docs/testing.md` |
 | `review` | An assertion on state another goroutine writes waits on the event ordering the read after the write, named in a comment when not the line before; never elapsed wall clock alone or an unordered log line (#392) | `docs/testing.md`; `dev`, `rev` |
 | `verify` | Tests bind no fixed address or port | `harness-boundaries` spec |
+| `verify+review` | A test's port-0 pick is in the family that is bound (`tcp4` for Docker, `127.0.0.1:0` or the listener itself for a test server); an every-address pick says why with `// Every address: <reason>` on the line above; a release check dials the listener's own loopback (#390, #391) | `harness-boundaries` spec; `docs/testing.md`; `rev` |
 | `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |
 | `verify+review` | No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec |
 | `verify` | Unit tests also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |

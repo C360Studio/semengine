@@ -252,7 +252,11 @@
     scripts/lint-test-ports.sh (adapted by openspec change flake-defense, design D7: the inline marker
     `// gh#220:allow-fixed-port` exempts nothing; the failure message says to bind port 0 and hand the
     listener to the code under test, where the pin named SemStreams' freePort helper, which SemStreams
-    removed as a race in its #1120; the header lists bind-then-close-then-bind as a false negative)
+    removed as a race in its #1120; the header lists bind-then-close-then-bind as a false negative;
+    corrected by openspec change fix-390-391-port-pick-family (#391): the header says the guard does not judge
+    port-0 picks, which TestEveryAddressPortPickSaysWhy does; the scan reads only files git does not ignore
+    (git grep --no-index --exclude-standard), so .worktrees/ is skipped; the patterns use [[:space:]]; a scan
+    error fails the guard instead of passing)
   contract: exits 1 on a literal fixed port in net.Listen("tcp[46]?", ...), on every line, with no exemption
   dependencies_and_side_effects: bash, grep
   known_risks: >-

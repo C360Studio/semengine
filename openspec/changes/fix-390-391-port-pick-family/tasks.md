@@ -42,14 +42,14 @@ except task 2.1, whose red test is ticked with task 2.4 (below).
 
 ## 4. Docs and archive
 
-- [ ] 4.1 `docs/testing.md:498-500` (the family to pick, the reason comment, the release-check line, D5) and
+- [x] 4.1 `docs/testing.md:498-500` (the family to pick, the reason comment, the release-check line, D5) and
   `docs/test-infrastructure.md:139-148` (the `tcp4` pick, measured by task 1.3 and not promised; the retry covers the
   gap). Gate: `task docs:check`.
-- [ ] 4.2 `AGENTS.md` § 3 and `.agents/rules-index.md` § 3: one new row each, carrying the guard, D3's review-only
+- [x] 4.2 `AGENTS.md` § 3 and `.agents/rules-index.md` § 3: one new row each, carrying the guard, D3's review-only
   remainder and D5. Gate: `task verify` (row-count check) and `AGENTS.md` under 24,000 bytes.
-- [ ] 4.3 `.agents/contracts/semengine-reviewer.md:359`: the one line of D5. Gate: `task verify` (the adapter-match
+- [x] 4.3 `.agents/contracts/semengine-reviewer.md:359`: the one line of D5. Gate: `task verify` (the adapter-match
   check passes with the adapters unchanged).
-- [ ] 4.4 `docs/admission-ledger.yaml:248-265`: the `lint-test-ports.sh` destination notes the header, the scan of
+- [x] 4.4 `docs/admission-ledger.yaml:248-265`: the `lint-test-ports.sh` destination notes the header, the scan of
   unignored files and the `[[:space:]]` patterns, by this change (#391). Gate: `task ledger:check`.
 - [ ] 4.5 Both deltas synced into `openspec/specs/`; archived as the last content commit. Gate: `task spec:check` and
   `task docs:check`.

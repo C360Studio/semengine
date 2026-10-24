@@ -140,12 +140,17 @@ removes only containers that carry our label, and never runs `docker … prune` 
 
 When Docker picks the host port and a Mac program already listens on it, Docker Desktop reports the container's port
 as missing (#180, #209). The fixture no longer lets Docker pick: it asks the operating system for a free port and
-gives Docker that exact port (#209, #210), so Docker's pick no longer applies. That Docker then publishes the port, and
-keeps it across a stop and start, is not promised by Docker: it rests on one macOS probe (Docker Desktop 29.8.2,
-testcontainers v0.44.0, PR #210 comment 6151736554) and on every run since, and `TestRestartURLDials` checks it. A
-port another program takes in the moment before Docker binds it fails the container start with "address already in
-use", and `Start` removes that unstarted container, takes a new port, and tries once more (#345).
-Linux has not been measured. When a mapped port is missing, the error says what an inspect of the container showed.
+gives Docker that exact port (#209, #210), so Docker's pick no longer applies. It asks with `tcp4`, a listener on every
+IPv4 address, because the one Docker bind error seen named an IPv4 address (#345); Docker's choice of family is not
+promised. An every-address `tcp` pick was once handed a port that a daemon held on `127.0.0.1` (#390). That a `tcp4`
+pick skips such a port was measured on one Mac (PR #404 comment 6386556253, go1.26.10, macOS 26.5.2), not promised.
+That Docker then publishes the port, and keeps it across a stop and start, is not promised by Docker: it rests on one
+macOS probe (Docker Desktop 29.8.2, testcontainers v0.44.0, PR #210 comment 6151736554) and on every run since, and
+`TestRestartURLDials` checks it. A port another program takes in the moment before Docker binds it fails the container
+start with "address already in use", and `Start` removes that unstarted container, takes a new port, and tries once
+more (#345). The `tcp4` pick does not close the gap between the fixture releasing the port and Docker binding it, so
+the retry stays. Linux has not been measured. When a mapped port is missing, the error says what an inspect of the
+container showed.
 
 ## When we write harness code
 

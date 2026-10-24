@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion(t *testing.T) {
+func TestResolveOwnsDefaultsNormalizationAndValidation(t *testing.T) {
 	tests := []struct {
 		name        string
 		raw         json.RawMessage
@@ -26,6 +26,12 @@ func TestResolveOwnsDefaultsNormalizationValidationAndSafetyExclusion(t *testing
 			wantExclude: []string{"metrics-forwarder", "flow-service.websocket"}},
 		{name: "empty exclusion list stays empty", raw: json.RawMessage(`{"exclude_sources":[]}`),
 			wantLevel: slog.LevelInfo, wantExclude: []string{}},
+		{name: "whitespace-only input gives the defaults", raw: json.RawMessage(" \n\t "), wantLevel: slog.LevelInfo,
+			wantExclude: []string{}},
+		{name: "explicit empty level defaults to info", raw: json.RawMessage(`{"min_level":""}`),
+			wantLevel: slog.LevelInfo, wantExclude: []string{}},
+		{name: "padded level is trimmed", raw: json.RawMessage(`{"min_level":" warn "}`), wantLevel: slog.LevelWarn,
+			wantExclude: []string{}},
 		{name: "debug", raw: json.RawMessage(`{"min_level":"DEBUG"}`), wantLevel: slog.LevelDebug,
 			wantExclude: []string{}},
 		{name: "error", raw: json.RawMessage(`{"min_level":"ERROR"}`), wantLevel: slog.LevelError,

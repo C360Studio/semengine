@@ -112,6 +112,7 @@ func TestLogForwarderSaysItForwardsNothing(t *testing.T) {
 		"empty block":        {config: `{}`, minLevel: "INFO", exclusions: []any{}},
 		"null":               {config: `null`, minLevel: "INFO", exclusions: []any{}},
 		"lower-case level":   {config: `{"min_level":"debug"}`, minLevel: "DEBUG", exclusions: []any{}},
+		"padded level":       {config: `{"min_level":" warn "}`, minLevel: "WARN", exclusions: []any{}},
 		"exclusions trimmed": {config: `{"min_level":"warn","exclude_sources":[" a ","a","","b"]}`, minLevel: "WARN", exclusions: []any{"a", "b"}},
 	}
 	for name, tc := range rows {
@@ -129,6 +130,9 @@ func TestLogForwarderSaysItForwardsNothing(t *testing.T) {
 			assert.Equal(t, "log-forwarder", record["service"])
 			assert.Equal(t, tc.minLevel, record["min_level"])
 			assert.Equal(t, tc.exclusions, record["exclude_sources"])
+
+			require.ErrorIs(t, lf.Start(t.Context()), errs.ErrAlreadyStarted)
+			require.Len(t, jsonRecords(t, logs), 1, "a second Start while running writes no record")
 
 			require.NoError(t, lf.Stop(stopContext(t)))
 			require.Len(t, jsonRecords(t, logs), 1, "Stop writes no record")

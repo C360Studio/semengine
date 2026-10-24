@@ -114,8 +114,8 @@ naming the statement's index and the missing field, and SHALL store nothing.
 
 ### Requirement: A kept stored statement is not the write's
 
-A statement a write keeps from the stored value is not the write's. A kept statement without them SHALL be refused as
-"The write path refuses a stored value it cannot change" states, never as `invalid_request`.
+A statement a write keeps from the stored value is not the write's. A kept statement without a `Source` or a `Timestamp`
+SHALL be refused as "The write path refuses a stored value it cannot change" states, never as `invalid_request`.
 
 #### Scenario: A kept statement without a source
 
@@ -331,7 +331,8 @@ a forward edge), graph-ingest SHALL store nothing for the entity and return the 
 
 ### Requirement: A failed birth is redelivered on the stream lane
 
-When a birth fails on the stream lane, the message SHALL not be acknowledged, so it is delivered again.
+When hierarchy inference fails for a birth on the stream lane, the message SHALL not be acknowledged, so it is delivered
+again.
 
 #### Scenario: The inference fails once
 
@@ -379,10 +380,10 @@ A birth SHALL leave an existing container entity unchanged.
 
 ### Requirement: A decode refusal carries one classified error
 
-Each refusal SHALL carry exactly one classified error above its `*graph.StateContractError`, with class fatal and code
-`graph_state_reset_required`; `errors.As` yields that `*graph.StateContractError`, whose `Reason` is the refusal's reason
-and whose `EntityID` is `key`. The cause beneath it keeps its own classification, if it has one (an invalid entity ID
-keeps `entity_id_invalid`).
+Each refusal `graph.UnmarshalEntityState(key, …)` returns SHALL carry exactly one classified error above its
+`*graph.StateContractError`, with class fatal and code `graph_state_reset_required`; `errors.As` yields that
+`*graph.StateContractError`, whose `Reason` is the refusal's reason and whose `EntityID` is `key`. The cause beneath it
+keeps its own classification, if it has one (an invalid entity ID keeps `entity_id_invalid`).
 
 #### Scenario: One classification
 

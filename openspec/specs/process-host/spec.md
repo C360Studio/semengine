@@ -77,6 +77,8 @@ that process ended:
 - by a signal sent to its process group or to it alone, SIGKILL included;
 - by a panic on a goroutine other than the test's own, the `-timeout` alarm included.
 
+A helper stopped by `Pause` is not covered until it is resumed.
+
 #### Scenario: Test process killed alone
 
 - **WHEN** the test process is sent SIGKILL while its helper is running in the helper's own process group
@@ -94,9 +96,15 @@ that process ended:
   `-timeout` alarm does, so its cleanups do not run
 - **THEN** the helper's pid is gone within the test's failure bound, and its stderr names the reason
 
+#### Scenario: A helper stopped by Pause
+
+- **WHEN** a helper is stopped by `Pause` and the test process ends
+- **THEN** the helper is not promised to exit until it is resumed
+
 ### Requirement: A helper that exits on its own says why
 
-On that exit the helper SHALL write a line naming the reason to its stderr and SHALL exit with a non-zero status.
+When a helper exits because its test process ended, it SHALL write a line naming the reason to its
+stderr and SHALL exit with a non-zero status.
 
 #### Scenario: The exit line
 
@@ -119,14 +127,4 @@ A helper's standard input is reserved for prochost, and a helper function SHALL 
 #### Scenario: A helper function does not read standard input
 
 - **WHEN** a helper function runs
-- **THEN** it does not read its standard input, which prochost uses to see the test process end
-
-### Requirement: A paused helper is not covered until resumed
-
-A helper stopped by `Pause` is not covered by the requirement "A helper ends when its test process ends" until it is
-resumed; until then a caller SHALL NOT rely on it to exit.
-
-#### Scenario: A helper stopped by Pause
-
-- **WHEN** a helper is stopped by `Pause` and the test process ends
-- **THEN** the helper is not promised to exit until it is resumed
+- **THEN** it does not read its standard input

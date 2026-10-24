@@ -129,8 +129,9 @@ false, `errs.IsFatal` SHALL report true, and `errs.Classify` SHALL return `errs.
 
 ### Requirement: A commit-unknown error yields a fatal classified error carrying the reply's code
 
-`errors.As` to `*errs.ClassifiedError` SHALL yield class fatal with the reply's `Code`, and with the reply's `Detail`
-when that `Code` is not empty (a reply with no code passes no detail on).
+For a commit-unknown `*projection.MutationError` or an error wrapping it, `errors.As` to `*errs.ClassifiedError` SHALL
+yield class fatal with the reply's `Code`, and with the reply's `Detail` when that `Code` is not empty (a reply with no
+code passes no detail on).
 
 #### Scenario: A transient reply after a possible write
 
@@ -189,10 +190,10 @@ wrapped error SHALL still be reached by `errors.As`.
 
 ### Requirement: A reply sent only before writing maps to not committed
 
-The error SHALL be not committed when its chain holds a classified error whose code graph-ingest sends only before
-writing (invalid request, structural invalid, message type unregistered, entity ID invalid, entity ID authority
-invalid, revision mismatch, entity exists, entity not found, graph state reset required), with that error's class, code
-and detail.
+The error `ClassifyMutationError` returns SHALL be not committed when its chain holds a classified error whose code
+graph-ingest sends only before writing (invalid request, structural invalid, message type unregistered, entity ID
+invalid, entity ID authority invalid, revision mismatch, entity exists, entity not found, graph state reset required),
+with that error's class, code and detail.
 
 #### Scenario: A reply that proves nothing was stored
 
@@ -203,7 +204,7 @@ and detail.
 ### Requirement: The client's own refusals before sending are invalid and not committed
 
 The typed client's own refusals before sending (a client that is not initialized, a missing context, an operation not
-admitted, a request that does not encode as JSON, a create without an entity) SHALL be such an error, with class
+admitted, a request that does not encode as JSON, a create without an entity) SHALL be a not-committed error, with class
 invalid and code `invalid_request`, and SHALL send no request.
 
 #### Scenario: A request the client cannot encode
@@ -214,9 +215,9 @@ invalid and code `invalid_request`, and SHALL send no request.
 
 ### Requirement: A request that was never sent is not committed and transient
 
-The error SHALL be not committed, `Kind` `MutationUnavailable`, class transient, in three cases: no responder took
-the request; natsclient refused it before sending (`natsclient.ErrNotConnected`), with `errors.Is` still reaching that
-error; or the context ended before the request was sent.
+The error `ClassifyMutationError` returns SHALL be not committed, `Kind` `MutationUnavailable`, class transient, in
+three cases: no responder took the request; natsclient refused it before sending (`natsclient.ErrNotConnected`), with
+`errors.Is` still reaching that error; or the context ended before the request was sent.
 
 #### Scenario: Context ended before the request was sent
 
@@ -238,7 +239,8 @@ error; or the context ended before the request was sent.
 
 ### Requirement: Every other error maps to commit-unknown
 
-Every other error SHALL be commit-unknown as the requirement "A commit-unknown error is never retryable" states.
+`ClassifyMutationError` SHALL return a commit-unknown error for every other error, as the requirement "A commit-unknown
+error is never retryable" states.
 
 #### Scenario: A reply that does not prove nothing was stored
 

@@ -175,8 +175,8 @@ Words SHALL be matched without regard to case, at word boundaries, except `still
 ### Requirement: A labelled first line is printed once; other tasks print nothing
 
 A task whose first line matches a label SHALL print one line numbered at the first line, with the line's text after its
-checkbox, `**` removed, cut at the queue's width. A first line that matches none of them is not printed. A ticked task
-is not labelled.
+checkbox, `**` removed, cut at the queue's width. A first line that matches none of the labels is not printed. A ticked
+task is not labelled.
 
 #### Scenario: Unlabelled and ticked tasks print nothing
 
@@ -243,10 +243,10 @@ ticked tasks included, and its block is as defined above.
 
 ### Requirement: The check prints each stray hold and exits by what it found
 
-For each such line it SHALL print the file's path and the line's number, `<path>:<line>:`, then a message saying that
-`task spec:queue` cannot show a hold outside a task and that the hold belongs in the task it stops. It SHALL then exit
-1. When there is no such line it SHALL print `holds: ok (<n> tasks.md read)` and exit 0. With `--check` the script does
-not print the queue.
+For each hold outside every task it SHALL print the file's path and the line's number, `<path>:<line>:`, then a message
+saying that `task spec:queue` cannot show a hold outside a task and that the hold belongs in the task it stops. It SHALL
+then exit 1. When there is no such line it SHALL print `holds: ok (<n> tasks.md read)` and exit 0. With `--check` the
+script does not print the queue.
 
 #### Scenario: The message names the fix
 
@@ -297,11 +297,16 @@ is `openspec/changes/<name>/tasks.md`, and SHALL exit 2. This holds when the scr
 - **THEN** it prints `queue unavailable: cannot read openspec/changes/<name>/tasks.md` as a line on standard error,
   prints no `holds: ok`, and exits 2
 
+What the script printed before it reached that file can already be on standard output when it exits: the queue's lines
+for the changes listed before it, and that change's own count line, which the queue prints before it reads the change's
+`tasks.md`; or the `<path>:<line>:` lines that `--check` printed for the changes listed before it. The exit is 2 as
+"A tasks.md that cannot be read stops the queue and the check" states, whatever was already printed.
+
 ### Requirement: An unread file is never reported as free of caveats
 
-The script SHALL NOT print the `ok` line of requirement "Labels on a task's first line" for that change, and with
-`--check` it SHALL NOT print `holds: ok`: a file the script did not read is never reported as free of caveats or of
-misplaced holds.
+The script SHALL NOT print the `ok` line of requirement "A change with no reported line prints ok" for a change whose
+`tasks.md` cannot be read, and with `--check` it SHALL NOT print `holds: ok`: a file the script did not read is never
+reported as free of caveats or of misplaced holds.
 
 #### Scenario: No ok line for an unread file
 
@@ -311,8 +316,9 @@ misplaced holds.
 ### Requirement: An unreadable file takes precedence over earlier reports
 
 The requirement "A tasks.md that cannot be read stops the queue and the check" SHALL take precedence over the `ok` and
-`holds: ok` lines and over the exit 0 and exit 1 that the requirements above state, also when a change listed before
-that file has already reported a line.
+`holds: ok` lines and over the exit 0 and exit 1 that "A hold line counts as a reported line under --strict",
+"Without --strict the queue exits 0" and "The check prints each stray hold and exits by what it found" state, also when
+a change listed before that file has already reported a line.
 
 #### Scenario: An earlier change reported a line
 
@@ -328,17 +334,6 @@ before that line on standard error.
 
 - **WHEN** the reader prints its own error before the script reaches the line
 - **THEN** `queue unavailable: cannot read <path>` is still printed as a line on standard error
-
-### Requirement: Output printed before the unreadable file stays on standard output
-
-The script SHALL exit as above even when what it printed before it reached that file is already on standard output: the
-queue's lines for the changes listed before it, and that change's own count line, which the queue prints before it reads
-the change's `tasks.md`; or the `<path>:<line>:` lines that `--check` printed for the changes listed before it.
-
-#### Scenario: A count line precedes the failure
-
-- **WHEN** the queue prints a change's count line and then cannot read that change's `tasks.md`
-- **THEN** the count line is already on standard output and the script exits 2
 
 ### Requirement: --stale-days takes a whole number of days
 

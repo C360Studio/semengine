@@ -46,7 +46,7 @@ At least one of the two SHALL be given; each may be given more than once.
 #### Scenario: Both kinds of expectation
 
 - **WHEN** `-expect` is given twice and `-expect-text` once
-- **THEN** the program accepts all three as expected lines
+- **THEN** the program accepts two expected locations and one expected text
 
 ### Requirement: Flags that control the runs
 
@@ -213,13 +213,13 @@ run adds coverage of the target's package, and has no overlay.
 #### Scenario: What differs between runs
 
 - **WHEN** a check makes its baseline, mutant and reach runs
-- **THEN** all use the same command line, only the mutant runs' `GOFLAGS` carry the overlay, and the reach run adds
-  coverage of the target's package without an overlay
+- **THEN** all use the same command line except that the reach run adds coverage flags, only the mutant runs'
+  `GOFLAGS` carry the overlay, and the reach run has no overlay
 
 ### Requirement: The run environment
 
-The environment of every run SHALL set `GOFLAGS` explicitly to the caller's `GOFLAGS`, read once, SHALL set
-`RAPID_SEED` to the seed, and SHALL set `RAPID_NOFAILFILE` to `true`.
+The environment of every run SHALL set `GOFLAGS` explicitly to the caller's `GOFLAGS`, read once (plus, on a mutant run,
+the overlay that "The runs" states), SHALL set `RAPID_SEED` to the seed, and SHALL set `RAPID_NOFAILFILE` to `true`.
 
 #### Scenario: The environment is the same in every run
 

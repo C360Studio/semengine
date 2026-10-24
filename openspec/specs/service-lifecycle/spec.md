@@ -364,10 +364,10 @@ a test-side adapter.
 
 ### Requirement: The component manager starts store providers first
 
-Otherwise `Start` SHALL start the admitted lifecycle components in two phases, `component.StoreProvider` components
-first and then the rest, each phase's components concurrently with its start order recorded by name, and SHALL begin a
-phase only after every `Start` of the one before returned. Each component's `Start` SHALL get the context the manager's
-`Start` got, which the manager never ends (ADR-113).
+A `Start` that is not refused SHALL start the admitted lifecycle components in two phases, `component.StoreProvider`
+components first and then the rest, each phase's components concurrently with its start order recorded by name, and
+SHALL begin a phase only after every `Start` of the one before returned. Each component's `Start` SHALL get the context
+the manager's `Start` got, which the manager never ends (ADR-113).
 
 #### Scenario: A phase begins after the one before
 
@@ -696,18 +696,21 @@ and the next check fails `Start`.
   transport-client's "A write the server is not reading holds the connection" states, so how long `Start` can run past
   its context's end is not promised
 
-### Requirement: A subscribe cut by Start's context is never held
+One exception is declared: when `Start`'s context cuts a subscribe after its SUB was sent, the NATS client removes
+that subscription and returns none, so the logger never holds it. A message delivered to it before its removal can
+still be stored after `Start` failed. The NATS client owns that callback, and its `Close` waits for it.
 
-The logger SHALL NOT hold a subscription that `Start`'s context cut after its SUB was sent: the NATS client removes that
-subscription and returns none. A message delivered to it before its removal can still be stored after `Start` failed.
-The NATS client owns that callback, and its `Close` waits for it.
+Not covered by a test, and reviewed only:
 
-#### Scenario: A subscribe cut after its SUB was sent
-
-- **WHEN** `Start`'s context cuts a subscribe after its SUB was sent
-- **THEN** the NATS client removes the subscription and returns none, so the logger holds none; a message delivered to
-  it before its removal can still be stored after `Start` failed
-- **AND** no test covers that message (see the reviewed-only list below)
+- that `Start`'s subscribes run under its context rather than the run context, and a context that ends between two
+  subscribes of one `Start` or during a subscribe's wait for the server's answer (these need a hook this repository
+  does not keep in production code, or a server that withholds its answer, which the logger's tests on the shared
+  server do not have);
+- a message stored by the handler of a subscribe that a failed `Start` cut;
+- a `Stop` that must wait for a subscribe retry still running (`TestMessageLoggerRetriesSubscribeUntilConnected` stops
+  the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one);
+- which messages reach the logger with an ended context during the NATS client's `Close` (the drop's signal is tested;
+  its timing is not promised).
 
 ### Requirement: The message logger's Stop drains and releases what it holds
 
@@ -750,7 +753,7 @@ runs SHALL be refused as transient. A message published after `Stop` SHALL NOT b
 
 The logger SHALL NOT store a message whose handler context has ended. It SHALL log each such message at Warn, naming the
 subject, and count it in `dropped_messages`, not in `total_messages`. The NATS client ends a handler's context after its
-`Close` has begun (transport-client, "A setup context does not parent its handlers").
+`Close` has begun (transport-client, "A handler's context descends from one the client owns").
 
 #### Scenario: A message whose handler context has ended
 
@@ -764,18 +767,6 @@ subject, and count it in `dropped_messages`, not in `total_messages`. The NATS c
 - **WHEN** the NATS client's `Close` has begun
 - **THEN** its handlers' contexts end; which messages arrive after that is not promised (ADR-112), and a composition
   root that stops the logger before closing its client drops none
-
-Not covered by a test, and reviewed only:
-
-- that `Start`'s subscribes run under its context rather than the run context, and a context that ends between two
-  subscribes of one `Start` or during a subscribe's wait for the server's answer (these need a hook this repository
-  does not keep in production code, or a server that withholds its answer, which the logger's tests on the shared
-  server do not have);
-- a message stored by the handler of a subscribe that a failed `Start` cut;
-- a `Stop` that must wait for a subscribe retry still running (`TestMessageLoggerRetriesSubscribeUntilConnected` stops
-  the logger after the retry has ended, so it cannot tell a joined retry from an unjoined one);
-- which messages reach the logger with an ended context during the NATS client's `Close` (the drop's signal is tested;
-  its timing is not promised).
 
 ### Requirement: The logger is unhealthy while a subject has failed to subscribe
 
@@ -801,7 +792,9 @@ error naming those subjects, so that `IsHealthy` is false and `/readyz` answers 
 - **WHEN** a subject has failed to subscribe
 - **THEN** `/stats` reports `subject_reconciliation_degraded` as true with `subject_reconciliation_error` naming the
   subject and its last error, and the health check returns an error naming it
-- **AND** the test that verifies this is `TestMessageLoggerRetriesSubscribeUntilConnected`
+- **AND** the test `TestMessageLoggerRetriesSubscribeUntilConnected` verifies only that the statistics report degraded
+  with a non-empty error and that `IsHealthy()` is false; that the error names each subject and its last error is
+  reviewed from the code only
 
 ### Requirement: A change in the logger's health shows within one health interval
 

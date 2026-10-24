@@ -13,8 +13,8 @@ and marking a draft ready starts the run that applies it.
 
 `task test:unit` SHALL run `scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...`. `task test:repeat` SHALL run
 `scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on` over `./...`, or over the packages given after `--`. A contract
-test SHALL fail when either command line, or the step list of `scripts/verify.sh`, differs from this requirement or the
-next.
+test SHALL fail when either command line, or the step list of `scripts/verify.sh`, differs from this requirement or from
+the requirement "Verify runs both unit steps, the repeat step last".
 
 #### Scenario: Count lowered
 
@@ -33,9 +33,9 @@ next.
 
 ### Requirement: Verify runs both unit steps, the repeat step last
 
-`scripts/verify.sh` SHALL run both, with `test:repeat` as its last step. Together with the integration runner's
-invocation, every test without a build tag then runs once under the race detector at one CPU, once under the race
-detector on every CPU, and five times without the race detector at one CPU in shuffled order.
+`scripts/verify.sh` SHALL run `task test:unit` and `task test:repeat`, with `test:repeat` as its last step. Together
+with the integration runner's invocation, every test without a build tag then runs once under the race detector at one
+CPU, once under the race detector on every CPU, and five times without the race detector at one CPU in shuffled order.
 
 #### Scenario: Step removed from verify
 
@@ -72,7 +72,7 @@ failing in that run is named in the output of `task cover:check`.
 
 A known flake is an open GitHub issue labelled `class:flake`. While one is open, `scripts/merge-check.sh` SHALL fail
 every pull-request run except that of a pull request whose closing references include every open one. The base branch of
-the pull request SHALL NOT change this.
+the pull request SHALL NOT change any of the known-flake requirements.
 
 #### Scenario: Open flake and an unrelated pull request
 
@@ -308,9 +308,10 @@ The job `verify` SHALL have a limit of 15 minutes.
 
 ### Requirement: A contract test guards the CI workflow
 
-A contract test SHALL fail when the workflow differs from the requirements above in any of these ways: the permissions
-of `merge-check`, a write permission on any job, the limit of `verify`, the jobs `required` needs, the condition
-`required` runs under, or what its step does with the results.
+A contract test SHALL fail when the workflow differs from the requirements "The merge-check job runs read-only", "The
+verify job has a time limit" and "Required needs both jobs" in any of these ways: the permissions of `merge-check`, a
+write permission on any job, the limit of `verify`, the jobs `required` needs, the condition `required` runs under, or
+what its step does with the results.
 
 #### Scenario: Job dropped from Required
 
@@ -392,10 +393,10 @@ numbers, whatever the names it read.
 
 ### Requirement: Names are sorted into document names and code names
 
-A name SHALL be a document name when it ends in `.md` or starts with `openspec/`, and does not start with
-`.claude/agents/` or `.agents/contracts/`. Every other name SHALL be a code name, including the name of a file the pull
-request deletes. A pull request with at least one code name SHALL be a code pull request. Every other pull request SHALL
-be documents only, one that changes no file included.
+The script SHALL treat a name as a document name when it ends in `.md` or starts with `openspec/`, and does not start
+with `.claude/agents/` or `.agents/contracts/`. Every other name is a code name, including the name of a file the pull
+request deletes. A pull request with at least one code name is a code pull request. Every other pull request is
+documents only, one that changes no file included.
 
 #### Scenario: Names near the rule
 
@@ -465,16 +466,14 @@ Nothing else in either line is read.
   `reviewed-by: claude`
 - **THEN** the script exits zero
 
-### Requirement: A pull request by a bot
-
-For a bot's pull request the `implemented-by:` line SHALL NOT be read, and the `reviewed-by:` line MAY name any of the
-three agents.
-
 #### Scenario: Pull request by a bot
 
 - **WHEN** a code pull request whose author GitHub reports as a bot has no `implemented-by:` line and has the line
   `reviewed-by: codex`, or has the lines `implemented-by: codex` and `reviewed-by: codex`
 - **THEN** the script exits zero in both cases
+
+For a bot's pull request the `implemented-by:` line is not read, and the `reviewed-by:` line may name any of the three
+agents.
 
 ### Requirement: Drafts are not failed by the review check
 
@@ -570,17 +569,9 @@ same commit can then pass on one release and fail on the other.
   `required` or a job added beside them
 - **THEN** the contract test fails naming the job, `ubuntu-latest` and `ubuntu-24.04`
 
-### Requirement: Moves of the runner image
-
 The label `ubuntu-24.04` still moves between GitHub's builds of Ubuntu 24.04, and that is accepted. A move to another
-image SHALL be a change to the pinned-runner requirement, made in its own pull request, whose CI run is the `task
+image is a change to the requirement "Pinned runner image", made in its own pull request, whose CI run is the `task
 verify` run on the new image.
-
-#### Scenario: A move to another image
-
-- **WHEN** the runner image changes from `ubuntu-24.04` to another
-- **THEN** the pinned-runner requirement changes in its own pull request, and that pull request's CI run is the `task
-  verify` run on the new image
 
 ### Requirement: A contract test guards the runner label
 

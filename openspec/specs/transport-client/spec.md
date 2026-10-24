@@ -52,7 +52,9 @@ heartbeat policy while the work runs, and SHALL be redelivered when the heartbea
 
 `Subscription.Drain(ctx)` SHALL refuse a nil context (kept from the pin). `Client.Close(ctx)` and `Client.Connect(ctx)`
 SHALL refuse a nil context without touching the connection (changed behaviour: at the pin `Close(nil)` panics on a
-connected client, and `Connect(nil)` dials, then panics, leaking the dialled connection; design P13).
+connected client, and `Connect(nil)` dials, then panics, leaking the dialled connection; design P13). The bound Close
+puts on its drain is stated in "Close bounds its drain by the caller's context" and "Close ends a connection the server
+is not reading".
 
 #### Scenario: Nil Close context
 
@@ -307,6 +309,9 @@ subscription only after the NATS server has read its SUB (changed behaviour, #14
   at once
 - **THEN** the handler answers it, and the request never fails with "no responders"
 
+This requirement does not say when a responder in another component has subscribed, nor what holds after a reconnect or
+across servers in a cluster.
+
 ### Requirement: Subscribe sends a PING and waits for the PONG
 
 After subscribing, the client SHALL send a PING on the connection the subscription was made on and wait for the PONG
@@ -355,17 +360,15 @@ the pending PONG and writing the UNSUB) first waits for any write in progress on
 - **WHEN** another goroutine's write on the connection is in progress when the call needs the connection lock
 - **THEN** the call's step waits for that write, whatever the call's context
 
-### Requirement: A held write holds the Subscribe call
-
-While the server is not reading and the connection's send buffer is full, a write on that connection, the call's own SUB
-or PING or another goroutine's, SHALL hold the call until that write completes or nats.go's write timeout (one minute by
-default) ends it; a call behind more than one held write waits for each in turn. This requirement does not bound those
-waits; "A write the server is not reading holds the connection" states them for every call the client makes.
-
 #### Scenario: A call behind a held write
 
 - **WHEN** the server is not reading, the send buffer is full and a write is held on the connection
 - **THEN** the call is held until that write completes or nats.go's write timeout ends it
+
+While the server is not reading and the connection's send buffer is full, a write on that connection, the call's own SUB
+or PING or another goroutine's, is held, and so is the call, until that write completes or nats.go's write timeout (one
+minute by default) ends it; a call behind more than one held write waits for each in turn. This requirement does not
+bound those waits; "A write the server is not reading holds the connection" states them for every call the client makes.
 
 ### Requirement: A failed Subscribe ends its subscription
 
@@ -394,9 +397,9 @@ its claim"), which waits for its handlers.
 
 ### Requirement: Close's join covers every subscription of a failed Subscribe
 
-A core subscription SHALL hold no claim; the handlers of both `Subscribe` and `SubscribeForRequests` run under a context
-the client owns ("A setup context does not parent its handlers"), and Close's join covers every subscription of a failed
-setup.
+Close's join SHALL cover every subscription of a failed setup, because a core subscription holds no claim and the
+handlers of both `Subscribe` and `SubscribeForRequests` run under a context the client owns ("A handler's context
+descends from one the client owns").
 
 #### Scenario: Close joins the handler of a failed setup
 
@@ -438,9 +441,7 @@ connection was lost or closed by anything other than this client's Close.
 ### Requirement: Subscribe does not promise to report a refused SUB
 
 The call SHALL NOT be relied on to report a SUB the server refused, for permissions or for the connection's limit on
-subscriptions; with nats.go v1.54.0 the call returns the subscription and nil. This requirement SHALL NOT be read as
-saying when a responder in another component has subscribed, nor what holds after a reconnect or across servers in a
-cluster.
+subscriptions; with nats.go v1.54.0 the call returns the subscription and nil.
 
 #### Scenario: A refused SUB
 
@@ -477,11 +478,7 @@ matching the context's error. The context SHALL NOT bound the connection's later
 
 ### Requirement: A write the server is not reading holds the connection
 
-nats.go takes one lock for every write on a connection. While the server is not reading and the connection's send buffer
-is full, a write holds that lock until it completes or nats.go's write timeout (one minute by default,
-`WithWriteTimeout`) ends it, and every call that needs the lock SHALL wait, whatever its context: `Publish`,
-`RequestWithHeaders` (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a
-consumer's setup.
+The client SHALL NOT bound the wait of a call held behind a write the server is not reading (ADR-112).
 
 #### Scenario: A held write holds every call that needs the lock
 
@@ -489,20 +486,22 @@ consumer's setup.
 - **THEN** a call that needs the connection lock, such as Publish or Subscribe, waits for that write whatever its
   context
 
-### Requirement: The client does not bound the waits behind a held write
+nats.go takes one lock for every write on a connection. While the server is not reading and the connection's send buffer
+is full, a write holds that lock until it completes or nats.go's write timeout (one minute by default,
+`WithWriteTimeout`) ends it, and every call that needs the lock waits, whatever its context: `Publish`,
+`RequestWithHeaders` (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a
+consumer's setup. A call behind more than one held write waits for each in turn.
 
-A call behind more than one held write SHALL wait for each in turn. The client SHALL NOT bound these waits (ADR-112).
-
-#### Scenario: Two held writes
-
-- **WHEN** a call needs the connection lock behind more than one held write
-- **THEN** it waits for each in turn, and the client adds no bound to the wait
+When the write timeout ends a write that was partly sent, the connection can stay connected and carry nothing until
+nats.go's stale-connection check closes it and reconnects. That check sends a PING every 30 s by default
+(`WithPingInterval`), and nats.go declares the connection stale at the third PING with no answer. The client does not
+promise when that happens, nor that the connection is usable sooner.
 
 ### Requirement: A held call does not hold Close or Connect
 
-`Close` is the exception: on a connection the client dialled it closes the socket when its context ends ("Close and
-Drain are bounded by the caller's context"), and every held call then returns an error. The client SHALL NOT hold its
-own lock while it calls into nats.go, so a call held this way does not hold `Close` or `Connect`.
+`Close` is the exception: on a connection the client dialled it closes the socket when its context ends ("Close ends a
+connection the server is not reading"), and every held call then returns an error. The client SHALL NOT hold its own
+lock while it calls into nats.go, so a call held this way does not hold `Close` or `Connect`.
 
 #### Scenario: A held call does not hold Close
 
@@ -510,19 +509,6 @@ own lock while it calls into nats.go, so a call held this way does not hold `Clo
 - **WHEN** Close is called with a 50 ms deadline
 - **THEN** Close returns the context's error within the deadline, and the `Subscribe` returns an error matching
   `nats.ErrConnectionClosed`
-
-### Requirement: A write cut short by the write timeout can leave a connection that carries nothing
-
-When the write timeout ends a write that was partly sent, the connection can stay connected and carry nothing until
-nats.go's stale-connection check closes it and reconnects. That check sends a PING every 30 s by default
-(`WithPingInterval`), and nats.go declares the connection stale at the third PING with no answer. The client SHALL NOT
-promise when that happens, nor that the connection is usable sooner.
-
-#### Scenario: A partly sent write times out
-
-- **WHEN** the write timeout ends a write that was partly sent
-- **THEN** the connection can stay connected and carry nothing until nats.go's stale-connection check closes it and
-  reconnects, and the client promises no time for that
 
 ### Requirement: The write timeout and the PING interval are settable
 
@@ -728,6 +714,8 @@ refused publish and a refused SUB count alike.
 - **WHEN** the server answers a publish from a client with metrics with a permissions violation
 - **THEN** the `permission_violation` count rises by one
 
+This requirement does not say how soon after the call returns the counter rises.
+
 ### Requirement: The count is made before the log line
 
 The count SHALL be made before the client's `NATS error` log line for that refusal is written.
@@ -742,8 +730,7 @@ The count SHALL be made before the client's `NATS error` log line for that refus
 ### Requirement: Subscribe still returns the subscription for a refused SUB
 
 `Subscribe` and `SubscribeForRequests` SHALL still return the subscription and nil for a SUB the server refused (owner
-ruling on #169, 2026-10-12; changed: before this change a refusal was only logged). This requirement does not say how
-soon after the call returns the counter rises.
+ruling on #169, 2026-10-12; changed: before this change a refusal was only logged).
 
 #### Scenario: A refused SUB returns the subscription
 

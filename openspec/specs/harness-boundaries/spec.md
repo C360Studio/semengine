@@ -400,8 +400,8 @@ include a trailing `.` or `/`.
 ### Requirement: Only carry and adapt entries move a package
 
 A moved package is a `carry` or `adapt` entry with the same `source_sha` as the file, whose `source_path` is a directory
-at the pin and whose destination path is a directory in the tree and differs from `source_path`; an entry with any other
-disposition SHALL move nothing.
+at the pin and whose destination path is a directory in the tree and differs from `source_path`; an entry with a
+disposition other than `carry` or `adapt` SHALL move nothing.
 
 #### Scenario: Excluded entry moves nothing
 
@@ -421,8 +421,8 @@ Text outside import paths and comments, string literals included, SHALL NOT be r
 
 ### Requirement: Both sides are formatted and compared byte for byte
 
-Both sides of the file SHALL then be formatted with gofmt. A `.go` file gofmt cannot parse, and every other covered
-file, is compared as it stands. Two files are equal when the results are byte-identical.
+After the rewrite, both sides of each covered `.go` file SHALL be formatted with gofmt. A `.go` file gofmt cannot parse,
+and every other covered file, is compared as it stands. Two files are equal when the results are byte-identical.
 
 #### Scenario: Imports sorted differently after a move
 
@@ -496,7 +496,7 @@ The output SHALL say that `task ledger:diff -- <source_path>` prints the lines, 
 
 ### Requirement: Other dispositions are not compared by the check
 
-Entries with any other disposition SHALL NOT be compared by the check.
+Entries with a disposition other than `carry` SHALL NOT be compared by the check.
 
 #### Scenario: Adapted entry differs
 
@@ -564,8 +564,8 @@ every entry whose disposition is `carry` or `adapt`, in ledger order.
 
 ### Requirement: A differing file prints a unified diff
 
-For each covered file that differs it SHALL print on standard output a unified diff from the rewritten pin text,
-labelled `pin/` followed by the file's SemStreams path, to the tree file, labelled with its path.
+For each covered file that differs, `task ledger:diff` SHALL print on standard output a unified diff from the rewritten
+pin text, labelled `pin/` followed by the file's SemStreams path, to the tree file, labelled with its path.
 
 #### Scenario: Changed line is printed
 
@@ -574,7 +574,7 @@ labelled `pin/` followed by the file's SemStreams path, to the tree file, labell
 
 ### Requirement: A file on one side only is named
 
-For a file on one side only it SHALL print `only at the pin: pin/<path>` or `only in the tree: <path>`.
+For a file on one side only, `task ledger:diff` SHALL print `only at the pin: pin/<path>` or `only in the tree: <path>`.
 
 #### Scenario: A file only at the pin
 
@@ -592,9 +592,9 @@ An equal file SHALL print nothing, so standard output is empty when nothing diff
 
 ### Requirement: Standard error carries one line per entry
 
-On standard error it SHALL print one line per entry: the `source_path`, the disposition, and either the number of files
-compared (covered files present on both sides), differing, only at the pin and only in the tree, or `not compared` with
-the reason.
+On standard error, `task ledger:diff` SHALL print one line per entry: the `source_path`, the disposition, and either the
+number of files compared (covered files present on both sides), differing, only at the pin and only in the tree, or `not
+compared` with the reason.
 
 #### Scenario: Entry that cannot be compared, no argument given
 
@@ -614,7 +614,7 @@ message are promised.
 
 ### Requirement: The pin difference command writes nothing in the repository
 
-It SHALL write nothing inside the repository.
+`task ledger:diff` SHALL write nothing inside the repository.
 
 #### Scenario: Repository unchanged
 
@@ -704,10 +704,47 @@ to components once as `deps.Platform`, and SHALL become positions 1–2 of an id
 `FrameworkIdentityFamily.EntityID` (#72 ruling A as extended, comment 5969505488). No other package SHALL compute,
 parse, re-join or carry it, and no message, envelope or metadata SHALL hold a copy.
 
+#### Scenario: A deployment-authority name is exported
+
+- **WHEN** a fixture module declares an exported name containing `Federation`, `GlobalID` or `EntityIRI` in a
+  public, an internal or a `main` package: a type, function, variable or constant, a method (of an unexported type
+  too), a struct field or an interface method, or a type alias, or a member of the struct or interface an alias
+  stands for
+- **THEN** the contract test fails naming each one once, with its file, line and qualified identifier and the rule
+
+#### Scenario: The words appear where the rule does not apply
+
+- **WHEN** the same words appear only in unexported names, in an exported name that holds one of them in lower case
+  only (`Confederation`), in a name such as `Federated` that does not contain one of them, in a comment or a string
+  literal, or in a test file
+- **THEN** the contract test reports nothing for them
+
+#### Scenario: An authority field outside the owners fails
+
+- **WHEN** a non-test file of a fixture module declares, outside the excepted packages, an exported struct field
+  `Org` or `Platform` of type `string` on a named struct (the shape of `graph/inference.HierarchyConfig` and
+  `graph/llm.EntityParts` at the pin), on an anonymous struct, or on a struct in an internal or a `main` package;
+  or a field `Platform` of type `types.PlatformMeta` on a struct other than the three the exception names
+- **THEN** the contract test fails naming each field with its file, line and struct type
+
+#### Scenario: The owners, the carrier and the caller's claim pass
+
+- **WHEN** a fixture module declares `Org` and `Platform` fields in its `pkg/types`, `pkg/platform` and `config`
+  packages; a type `PlatformMeta` in its top-level `types` package with fields `Org` and `Platform`; the carrier
+  field `Platform` of that type on `component.Dependencies`, `service.Dependencies` and
+  `processor/rule.Dependencies`; a field `Org` on `processor/rule.CallerContext`; and unexported fields `org` and
+  `platform` of type `string` anywhere
+- **THEN** the contract test reports nothing for any of them
+
 #### Scenario: A test file is not checked
 
 - **WHEN** a `_test.go` file declares an exported struct field `Org` or an exported function `EntityIRI`
 - **THEN** neither contract test reports it
+
+#### Scenario: This module passes
+
+- **WHEN** both contract tests run over this module
+- **THEN** they pass, each reporting the number of packages it checked
 
 ### Requirement: Two contract tests enforce the static part of deployment authority
 
@@ -715,10 +752,11 @@ Two contract tests in `internal/harness/contract`, both run by `task test:unit`,
 spelling of deployment authority" a static check can see; each has a sensitivity test that plants the violation in a
 temporary module and requires the check to name it.
 
-#### Scenario: This module passes
+#### Scenario: Both tests run
 
-- **WHEN** both contract tests run over this module
-- **THEN** they pass, each reporting the number of packages it checked
+- **WHEN** `task test:unit` runs
+- **THEN** both contract tests run, each with a sensitivity test that plants its violation and requires the check to
+  name it
 
 ### Requirement: No exported name carries Federation, GlobalID or EntityIRI
 
@@ -727,13 +765,10 @@ No exported name in a non-test package of this module, internal and `main` packa
 exported methods, struct fields and interface methods of package-level types, whether the type is exported or not. A
 failure names the file, line, qualified identifier and the requirement "No second spelling of deployment authority".
 
-#### Scenario: A deployment-authority name is exported
+#### Scenario: An exported name with a retired word
 
-- **WHEN** a fixture module declares an exported name containing `Federation`, `GlobalID` or `EntityIRI` in a
-  public, an internal or a `main` package: a type, function, variable or constant, a method (of an unexported type
-  too), a struct field or an interface method, or a type alias, or a member of the struct or interface an alias
-  stands for
-- **THEN** the contract test fails naming each one once, with its file, line and qualified identifier and the rule
+- **WHEN** a non-test package declares an exported name containing `Federation`, `GlobalID` or `EntityIRI`
+- **THEN** the contract test fails naming the file, line and qualified identifier
 
 ### Requirement: A type alias is checked by name and by members
 
@@ -749,11 +784,9 @@ members of a type this module declares SHALL be reported once, at that declarati
 
 Unexported names, test files, comments and string literals SHALL NOT be checked by the name check.
 
-#### Scenario: The words appear where the rule does not apply
+#### Scenario: Unexported names and test files
 
-- **WHEN** the same words appear only in unexported names, in an exported name that holds one of them in lower case
-  only (`Confederation`), in a name such as `Federated` that does not contain one of them, in a comment or a string
-  literal, or in a test file
+- **WHEN** the retired words appear only in unexported names, in comments or string literals, or in a test file
 - **THEN** the contract test reports nothing for them
 
 ### Requirement: No exported Org or Platform field outside the listed exceptions
@@ -763,13 +796,10 @@ a named or an anonymous struct, except the fields listed in "Owner packages may 
 caller's claim and the carrier may declare Org and Platform". The failure SHALL name the file, the line, the struct
 type, the field and the requirement "No second spelling of deployment authority".
 
-#### Scenario: An authority field outside the owners fails
+#### Scenario: An authority field outside the exceptions
 
-- **WHEN** a non-test file of a fixture module declares, outside the excepted packages, an exported struct field
-  `Org` or `Platform` of type `string` on a named struct (the shape of `graph/inference.HierarchyConfig` and
-  `graph/llm.EntityParts` at the pin), on an anonymous struct, or on a struct in an internal or a `main` package;
-  or a field `Platform` of type `types.PlatformMeta` on a struct other than the three the exception names
-- **THEN** the contract test fails naming each field with its file, line and struct type
+- **WHEN** a non-test file outside the excepted packages declares an exported struct field `Org` or `Platform`
+- **THEN** the contract test fails naming the file, line, struct type and field
 
 ### Requirement: Owner packages may declare Org and Platform
 
@@ -777,14 +807,11 @@ Any field in the packages `pkg/types`, `pkg/platform` and `config` (the source a
 and so SHALL the two fields of the type `PlatformMeta` in the top-level package `types` (import path `<module>/types` —
 not `pkg/types`, and not Go's `go/types`).
 
-#### Scenario: The owners, the carrier and the caller's claim pass
+#### Scenario: An owner package
 
-- **WHEN** a fixture module declares `Org` and `Platform` fields in its `pkg/types`, `pkg/platform` and `config`
-  packages; a type `PlatformMeta` in its top-level `types` package with fields `Org` and `Platform`; the carrier
-  field `Platform` of that type on `component.Dependencies`, `service.Dependencies` and
-  `processor/rule.Dependencies`; a field `Org` on `processor/rule.CallerContext`; and unexported fields `org` and
-  `platform` of type `string` anywhere
-- **THEN** the contract test reports nothing for any of them
+- **WHEN** `pkg/types`, `pkg/platform` or `config` declares `Org` and `Platform` fields, or the top-level `types`
+  package declares `PlatformMeta` with them
+- **THEN** the contract test reports nothing for them
 
 ### Requirement: The caller's claim and the carrier may declare Org and Platform
 

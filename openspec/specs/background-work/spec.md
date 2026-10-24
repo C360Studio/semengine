@@ -23,8 +23,8 @@ later port.
 
 ### Requirement: Run(ctx) is the preferred shape
 
-`Run(ctx) error` SHALL be preferred: no goroutine is started for the caller, the caller runs `Run` on a goroutine it
-owns, cancelling the context stops the work, and `Run` returning is the join.
+`Run(ctx) error` is preferred: no goroutine is started for the caller, the caller runs `Run` on a goroutine it owns,
+cancelling the context SHALL stop the work, and `Run` returning SHALL be the join.
 
 #### Scenario: Run returns when its context ends
 

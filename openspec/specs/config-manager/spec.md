@@ -165,7 +165,8 @@ semantic version (a file with no `version` among them) cannot be compared, and S
 
 #### Scenario: File with no version
 
-- **WHEN** the file has no `version` and the bucket holds `services.*` entries
+- **WHEN** on a later boot (the identity record is present) the file has no `version` and the bucket holds `services.*`
+  entries
 - **THEN** the version cannot be compared and Start selects the bucket
 
 ### Requirement: Start refuses names that are not one key
@@ -296,7 +297,7 @@ Start SHALL open the family's watch `<prefix>.*` before publishing its handles, 
 #### Scenario: Nil family or a prefix the Manager owns
 
 - **WHEN** `NewConfigManager` is given `WithKeyFamily` with a nil family, or with a prefix the Manager owns
-- **THEN** it refuses; `TestNewConfigManagerRefusesAFamilyOnTheManagersOwnKeys` verifies this
+- **THEN** it refuses; `TestNewConfigManagerRefusesAFamilyOnTheManagersOwnKeys` verifies the prefix the Manager owns
 
 ### Requirement: A key family handler receives its snapshot and then its changes
 

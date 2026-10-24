@@ -87,8 +87,8 @@ register them nowhere.
 
 ### Requirement: A contract test fails on a global registration
 
-A contract test run by `task test:unit` SHALL fail, naming the file and line, on such a call, and a sensitivity test
-SHALL plant one in a temporary module and require the failure.
+A contract test run by `task test:unit` SHALL fail, naming the file and line, on a call that registers on Prometheus'
+process-global registry, and a sensitivity test SHALL plant one in a temporary module and require the failure.
 
 #### Scenario: A planted global registration
 

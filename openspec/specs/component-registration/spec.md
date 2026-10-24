@@ -194,6 +194,14 @@ and the holder's claim.
   `resource conflict: component 'second' claims tcp:127.0.0.1:8080, held by component 'first' as tcp:127.0.0.1:8080`,
   and `Snapshots` holds only `first`
 
+#### Scenario: Two components on one file path
+
+- **WHEN** two components each declare a file port on the same path
+- **THEN** both are admitted
+
+Claims that do not clash MAY both be admitted, and a resource that is not exclusive, such as a file path, MAY be
+shared.
+
 ### Requirement: A refusal names the first holder and changes nothing
 
 When several admitted components hold clashing claims, the refusal SHALL name the first holder in instance-name order,
@@ -293,16 +301,6 @@ two of whose own claims clash, in either direction, naming the component and bot
   `ws:0.0.0.0:8080`
 - **THEN** `Declare` and `CreateComponent` each fail with an invalid-class error reading
   `resource conflict: component 'gateway' claims ws:0.0.0.0:8080, held by another of its ports as http:0.0.0.0:8080`
-
-### Requirement: Claims that do not clash are admitted
-
-Admission SHALL NOT refuse claims that do not clash, which MAY both be admitted, and a resource that is not
-exclusive, such as a file path, MAY be shared.
-
-#### Scenario: Two components on one file path
-
-- **WHEN** two components each declare a file port on the same path
-- **THEN** both are admitted
 
 ### Requirement: A declaration names its first clash with another
 

@@ -337,9 +337,9 @@ process's package and process ID.
 
 ### Requirement: Sweep of old labelled containers
 
-In the same once-per-process step, natsfixture SHALL remove, with force, every container carrying that label that
-Docker created more than 30 minutes earlier, running or not. It SHALL choose containers by that label and Docker's
-creation time only, never by name or by whether a process is alive.
+In the once-per-process step that sets Ryuk off, natsfixture SHALL remove, with force, every container carrying the
+label `org.c360studio.semengine.test` that Docker created more than 30 minutes earlier, running or not. It SHALL
+choose containers by that label and Docker's creation time only, never by name or by whether a process is alive.
 
 #### Scenario: Only old labelled containers are swept
 

@@ -11,8 +11,7 @@ exactly as written.
 ### Requirement: Message timestamps travel as integer milliseconds
 
 `BaseMessage.MarshalJSON` SHALL write `meta.created_at` and `meta.received_at` as integer milliseconds since the Unix
-epoch, writing the zero time as 0. This is changed behaviour: at the pin, decoding read a number up to 10^12 as
-seconds, so an instant before 2001-09-09 came back wrong.
+epoch, writing the zero time as 0.
 
 #### Scenario: An instant before 2001 survives the wire
 
@@ -22,7 +21,8 @@ seconds, so an instant before 2001-09-09 came back wrong.
 ### Requirement: Decode reads an absent, null or integer timestamp
 
 `Decoder.Decode` SHALL read a timestamp that is absent, `null`, or an integer literal in `int64`'s range as that many
-milliseconds, with absent, `null` and 0 each meaning the zero time.
+milliseconds, with absent, `null` and 0 each meaning the zero time. This is changed behaviour: at the pin, decoding
+read a number up to 10^12 as seconds, so an instant before 2001-09-09 came back wrong.
 
 #### Scenario: No timestamp
 
@@ -120,7 +120,7 @@ invalid-data error that names its type and its path (#9 comments 5972117486, 597
 ### Requirement: Validate runs the same shape check
 
 `GenericJSONPayload.Validate` SHALL refuse, with an invalid-data error naming the same type and path, every non-nil
-`Data` that this check refuses, including a string or map key that is not valid UTF-8.
+`Data` that the `MarshalJSON` shape check refuses, including a string or map key that is not valid UTF-8.
 
 #### Scenario: Validate runs the shape check
 

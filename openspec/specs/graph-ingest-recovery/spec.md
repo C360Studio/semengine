@@ -39,7 +39,9 @@ or broker restart, and applying it again SHALL leave the entity state equal to t
 
 graph-ingest SHALL acknowledge an input only after the input's effect and its applied-sequence record are committed,
 and SHALL tell the transport that an input is still in progress while its application outlasts the consumer's
-acknowledgement wait. The signal starts when the application starts.
+acknowledgement wait. The signal starts when the application starts. An input that waits in its lane for half the
+acknowledgement wait or longer before its application starts MAY be delivered again; replay protection (below) keeps
+that copy from applying twice.
 
 #### Scenario: Durable record fails
 
@@ -51,11 +53,6 @@ acknowledgement wait. The signal starts when the application starts.
 - **WHEN** an input's application starts before half the consumer's acknowledgement wait has passed since delivery,
   and takes longer than the consumer's acknowledgement wait
 - **THEN** the input is not delivered again while it is still being applied
-
-### Requirement: An input that waits long in its lane may be delivered again
-
-An input that waits in its lane for half the acknowledgement wait or longer before its application starts MAY be
-delivered again; replay protection (below) SHALL keep that copy from applying twice.
 
 #### Scenario: A long wait before the application starts
 
@@ -108,26 +105,20 @@ acknowledgement wait; SHALL log it, and count it once in an interrupted-work cou
 - **THEN** the application is cancelled, the input is not settled, and the interrupted-work count for
   `heartbeat_failed` rises by one
 
+A panic in a payload's own code while the message is decoded, validated or asked for its entity is poison instead (the
+requirement "A failing payload is poison, not a redelivery loop").
+
 ### Requirement: An interruption does not add to the health error count
 
-The interruption SHALL NOT add to the error count `Health()` reports: a write the interruption cut counts there once,
-at its own site, and an interruption anywhere else leaves that count unchanged (owner ruling, #91 comment 6124130342).
+An interruption (panic, failed heartbeat, invalid decision) SHALL NOT add to the error count `Health()` reports: a
+write the interruption cut counts there once, at its own site, and an interruption anywhere else leaves that count
+unchanged (owner ruling, #91 comment 6124130342).
 
 #### Scenario: A write cut by an interruption
 
 - **WHEN** an interruption cuts a write
 - **THEN** the `ErrorCount` `Health()` reports rises once, at the write's own site, and not again for the
   interruption
-
-### Requirement: A panic in payload code is poison, not an interruption
-
-A panic in a payload's own code while the message is decoded, validated or asked for its entity SHALL be poison
-instead (the requirement "A failing payload is poison, not a redelivery loop").
-
-#### Scenario: A payload panics while it is decoded
-
-- **WHEN** a payload's own code panics while its message is decoded
-- **THEN** the message is terminated as poison and the interrupted-work count does not rise
 
 ### Requirement: Replay protection uses the generation read before the bind
 
@@ -157,33 +148,10 @@ because of the record's sequence.
 - **WHEN** an input carries a generation other than the stored record's, at a sequence the record covers
 - **THEN** it is not dropped because of the record's sequence
 
-### Requirement: An input with no stored record is applied as first seen
-
-An input with no stored record SHALL be applied as first seen; when graph-ingest has no applied-sequence bucket at all,
-it SHALL log and count that it is treating the input as first seen.
-
-#### Scenario: No applied-sequence bucket
-
-- **WHEN** graph-ingest has no applied-sequence bucket and an input is delivered
-- **THEN** the input is applied as first seen, and graph-ingest logs and counts that it is treating the input as first
-  seen
-
-### Requirement: A stored record that cannot be decoded is refused
-
-A stored record graph-ingest cannot decode SHALL be refused: the input SHALL NOT be applied or acknowledged, the
-refusal SHALL be counted and logged once per key with the key, and the input SHALL be delivered again.
-
-#### Scenario: A record that cannot be decoded
-
-- **WHEN** the stored applied-sequence record for an input's entity and stream is three bytes long
-- **THEN** the input is neither applied nor acknowledged and the refusal count rises by one, and once the record is
-  deleted the redelivered input is applied
-
-### Requirement: A recreated or restored stream can carry an older record's generation
-
-An input from a stream that was deleted and created again, or restored, can carry the generation an older record
-holds. Such an input, at a sequence that record covers, SHALL be acknowledged without being applied and counted in
-`semengine_graph_ingest_redeliveries_dropped_total`, as a redelivery is. These cases are declared limitations.
+The cases below are declared limitations, not promises. An input from a stream that was deleted and created again, or
+restored, can carry the generation an older record holds. Such an input, at a sequence that record covers, is
+acknowledged without being applied and counted in `semengine_graph_ingest_redeliveries_dropped_total`, as a redelivery
+is.
 
 #### Scenario: Recreated between the generation read and the consumer's creation
 
@@ -206,6 +174,28 @@ holds. Such an input, at a sequence that record covers, SHALL be acknowledged wi
   disconnected from the server (owner ruling, #91 comment 6113959050)
 - **THEN** an input at a sequence the older record covers is acknowledged without being applied and counted as a
   dropped redelivery
+
+### Requirement: An input with no stored record is applied as first seen
+
+An input with no stored record SHALL be applied as first seen; when graph-ingest has no applied-sequence bucket at all,
+it SHALL log and count that it is treating the input as first seen.
+
+#### Scenario: No applied-sequence bucket
+
+- **WHEN** graph-ingest has no applied-sequence bucket and an input is delivered
+- **THEN** the input is applied as first seen, and graph-ingest logs and counts that it is treating the input as first
+  seen
+
+### Requirement: A stored record that cannot be decoded is refused
+
+A stored record graph-ingest cannot decode SHALL be refused: the input SHALL NOT be applied or acknowledged, the
+refusal SHALL be counted and logged once per key with the key, and the input SHALL be delivered again.
+
+#### Scenario: A record that cannot be decoded
+
+- **WHEN** the stored applied-sequence record for an input's entity and stream is three bytes long
+- **THEN** the input is neither applied nor acknowledged and the refusal count rises by one, and once the record is
+  deleted the redelivered input is applied
 
 ### Requirement: A later Start recovers a recreated stream except after a restore
 

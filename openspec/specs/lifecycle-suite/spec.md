@@ -92,7 +92,9 @@ is nil.
 ### Requirement: Failed-start check
 
 The failed-start check SHALL require that Start returns a non-nil error, that the owner then reports nothing
-unresolved, and that a following Stop returns nil and changes no call count.
+unresolved, and that a following Stop returns nil and changes no call count. It judges a failed Start whose own cleanup
+succeeded; a failed Start whose own cleanup also fails is governed by "Failed start whose own cleanup fails" and is not
+judged by this check.
 
 #### Scenario: Failed start that holds a resource
 
@@ -103,16 +105,6 @@ unresolved, and that a following Stop returns nil and changes no call count.
 
 - **WHEN** the `mustFail` factory's owner returns nil from Start
 - **THEN** the failed-start check fails stating that the factory did not fail
-
-### Requirement: Failed-start check judges only a cleanup that succeeded
-
-The failed-start check judges a failed Start whose own cleanup succeeded; a failed Start whose own cleanup also fails
-is governed by "Failed start whose own cleanup fails" and SHALL NOT be judged by this check.
-
-#### Scenario: Failed start whose cleanup also fails
-
-- **WHEN** a component's failed Start leaves what its own cleanup could not release, retained for a later Stop
-- **THEN** the shared failed-start check is not run on it, and the component's own test proves the branch
 
 ### Requirement: A panic is not a refusal
 
@@ -203,8 +195,9 @@ is provable.
 ### Requirement: Failed start whose own cleanup fails
 
 A component this module ports MAY return from a failed Start still holding what its own cleanup could not release,
-provided that Start's error SHALL report both the start failure and the cleanup failure, and that the component SHALL
-keep what is left on record so that a later Stop tries again to release it.
+provided that Start's error reports both the start failure and the cleanup failure, and that the component keeps what
+is left on record so that a later Stop tries again to release it. A Stop that then completes the cleanup SHALL return
+nil and leave nothing unresolved.
 
 #### Scenario: graph-ingest's cleanup fails after a failed start
 
@@ -218,21 +211,12 @@ keep what is left on record so that a later Stop tries again to release it.
 - **WHEN** graph-ingest's failing factory makes Start fail and the cleanup it runs succeeds
 - **THEN** the shared failed-start check passes: Start returned an error and nothing is unresolved
 
-### Requirement: A later Stop completes the retained cleanup
-
-A Stop that then completes the cleanup of a failed Start SHALL return nil and leave nothing unresolved.
-
-#### Scenario: Later Stop completes the cleanup
-
-- **WHEN** a failed Start left what its cleanup could not release, and a later Stop can complete that cleanup
-- **THEN** Stop returns nil and Observe lists nothing unresolved
-
 ### Requirement: Each ported component proves its failed-cleanup branch
 
-Each such component SHALL prove this branch with its own test, named in that component's admission-ledger row under
-`proving_tests`; the shared failed-start check of "Portable floor" is not run on it. This requirement binds the
-components this module ports; a component outside this module is proven by its own tests (#77 ruling, comment
-6035317931).
+Each ported component that may return from a failed Start holding resources SHALL prove this branch with its own test,
+named in that component's admission-ledger row under `proving_tests`; the shared failed-start check of "Portable floor"
+is not run on it. This requirement binds the components this module ports; a component outside this module is proven by
+its own tests (#77 ruling, comment 6035317931).
 
 #### Scenario: The proving test is named in the ledger
 
@@ -260,7 +244,7 @@ deadline five seconds after the call.
 
 ### Requirement: The rollback helper reports the rollback's error and the budget
 
-`RollbackFailedStart` SHALL return the rollback's error joined with that context's error, and nil only when the
+`RollbackFailedStart` SHALL return the rollback's error joined with the budget context's error, and nil only when the
 rollback returned nil within the budget.
 
 #### Scenario: Rollback outlives the budget

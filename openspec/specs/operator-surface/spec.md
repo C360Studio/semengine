@@ -28,8 +28,9 @@ read-only routes when it provides them, and SHALL answer any other path with sta
 
 ### Requirement: The full route set is served after boot commits
 
-After the commit the manager SHALL serve the full route set: those five, `/graph/triples`, `/openapi.json`, `/docs` when
-`swagger_ui` is true, each service's routes under its prefix, and the routes of components that register their own.
+After the commit the manager SHALL serve the full route set: `/health`, `/healthz`, `/readyz`, `/services`,
+`/services/health`, `/graph/triples`, `/openapi.json`, `/docs` when `swagger_ui` is true, each service's routes under
+its prefix, and the routes of components that register their own.
 
 #### Scenario: A committed route answers
 
@@ -418,6 +419,9 @@ character), or none for an exact key.
   `TestKVQueryPreservesJSONValues`, `TestKVQueryPatternMatchesBeforeLimit`, `TestRecordMatchesStatus` and
   `TestMatchesPatternMiddleWildcard`
 
+Sorting the keys is not detected by `TestKVQuerySortsKeysBeforeLimit`: the pinned `nats.go` already returns them sorted,
+so removing the sort does not fail the test, and the sort is kept because that order is not promised.
+
 ### Requirement: The KV query answers values as stored
 
 The KV query SHALL answer each value as stored, so large numbers are not rounded, and a value that is not JSON as a JSON
@@ -440,9 +444,7 @@ answer 500 naming the key.
 - **THEN** the key is left out; any other read error answers 500 naming the key
 
 Not covered by a test: the two read branches that need the bucket to change, or the server to fail, between the key
-listing and the read (a key left out because it was deleted; any other error answering 500). Sorting the keys is also
-not detected by `TestKVQuerySortsKeysBeforeLimit`: the pinned `nats.go` already returns them sorted, so removing the
-sort does not fail the test, and the sort is kept because that order is not promised.
+listing and the read (a key left out because it was deleted; any other error answering 500).
 
 ### Requirement: The KV watch ends on client exit, falling behind or Stop
 
@@ -469,9 +471,10 @@ space refused.
 
 ### Requirement: The KV watch streams Server-Sent Events in order
 
-Otherwise the watch SHALL stream Server-Sent Events: `connected` with the bucket, pattern and a message, `retry: 5000`,
-one `kv_change` for each key's current value, one `kv_change` with operation `initial_sync_complete`, then one
-`kv_change` for each later change.
+When none of the refusals in the requirement "The KV watch ends on client exit, falling behind or Stop" applies, the
+watch SHALL stream Server-Sent Events: `connected` with the bucket, pattern and a message, `retry: 5000`, one
+`kv_change` for each key's current value, one `kv_change` with operation `initial_sync_complete`, then one `kv_change`
+for each later change.
 
 #### Scenario: Initial values, then changes
 
@@ -605,7 +608,7 @@ its spec names no schema.
 #### Scenario: OpenAPI document and RegisterAll
 
 - **WHEN** a composition is built through `RegisterAll` with the storage observability service
-- **THEN** `/openapi.json` describes `/report`, and no spec is registered for the service
+- **THEN** the service's `OpenAPISpec` describes `/report`, and `RegisterAll` registers no spec for it
 
 ### Requirement: The storage metrics are published under semengine_storage_
 

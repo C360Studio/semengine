@@ -30,8 +30,8 @@ Base: main 2dab437 (claim commit bdd25af). Rests on `inventory.md`. Issue #331, 
   (5) (`:2336`) is the precedent for recording a refusal-text change. Done with the code in task 2.2.
 - **D4, no README change.** `processor/graph-ingest/README.md:80` says any other graph-mutation input "is refused".
   Most such inputs reach the ambiguous refusal, so adding "with an error naming the port" there would be false.
-- **D5, proposal corrections.** What Changes: "names the port when that input is graph-ingest's first graph-mutation
-  input". Why: flowgraph's refusal is at `internal/flowgraph/flowgraph.go:213-215`. Impact: add
+- **D5, proposal corrections (applied at ef6848b).** What Changes: "names the port when that input is graph-ingest's
+  first graph-mutation input". Why: flowgraph's refusal is at `internal/flowgraph/flowgraph.go:213-215`. Impact: add
   `docs/admission-ledger.yaml`.
 
 ## Observable behaviour
@@ -57,7 +57,10 @@ mutation routes at Start returns the plain error, wrapped as `resolve mutation p
   ```
 
   `wrong version` and `not required` want `malformedMutations`; the two `untyped` cases want `malformedLegacy`.
-  On the base all four fail at the `Fatalf` (`:99` today), for example `Validate() = Config.Validate: graph mutation
+  One case is added, `malformed before a non-member`: `configWith(provider("mutations", "graph.mutation.>", "v2",
+  true), entityStream)`, wanting `malformedMutations`. In the other four the malformed input is also the last input,
+  so without this case a refusal naming the last input would pass (M4).
+  On the base all five fail at the `Fatalf` (`:99` today), for example `Validate() = Config.Validate: graph mutation
   provider must be a required ... failed: invalid configuration, want an invalid-class refusal containing "graph
   mutation provider port \"mutations\" must be ..."`. Recorded verbatim in `notes/2.1.md`.
 - No route-path test is added: both callers share the one function, and
@@ -69,14 +72,16 @@ mutation routes at Start returns the plain error, wrapped as `resolve mutation p
   - M2: `ports.Inputs[0].Name` in place of `definition.Name`, so the refusal names `entity_stream`, the first input
     of every case: naming the wrong port.
   - M3: `%s` in place of `%q`, so the name is unquoted.
-- Examples are enough: one format string, and the table already covers the four malformed shapes.
+  - M4: `ports.Inputs[len(ports.Inputs)-1].Name` in place of `definition.Name`, so the refusal names the last input;
+    detected only by the added case.
+- Examples are enough: one format string, and the table covers the four malformed shapes and both input orders.
 
 ## Non-goals
 
 - **The ambiguous refusal** (`canonical_mutations.go:121-122`) names neither port, and because it is checked first, a
   stray graph-mutation input after a valid provider gets it instead of the named refusal. Same operator cost as #331,
-  LOW per #185, but Q2 kept that text and #331 does not ask for it. Recommended: file it as its own issue (below);
-  this change does not touch it.
+  LOW per #185, but #331 does not ask for it. Filed as #399 (`status:blocked` while this PR is open, linked without a
+  closing keyword); this change does not touch it.
 - Flowgraph's text (`%s`, unchanged, Q2); the `port is required` texts (no port to name); the unclassified error on
   the route path.
 
@@ -140,11 +145,3 @@ count.
   `v1`
 - **THEN** `ClassifyPort` reports it a member and valid, and both callers accept it
 ```
-
-## Follow-up to file (recommended)
-
-Title: `graph-ingest: the ambiguous graph-mutation port refusal names no port`. Body: `canonical_mutations.go:121-122`
-refuses a second graph-mutation input with `graph mutation provider port is ambiguous`, naming neither input; because
-the check runs before the validity check, a stray input (for example a JetStream input with one `graph.mutation.`
-subject, the `graph-transport-boundary` scenario) after a valid provider gets this text, not the named one #331
-adds. LOW per #185. The owner kept the text on #323 (Q2), so whether to change it is his call.

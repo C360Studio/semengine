@@ -49,7 +49,8 @@ graph.mutation.*` and `untyped graph.mutation.entity.create` (port `legacy`). Th
 !errs.IsInvalid(err) || !strings.Contains(err.Error(), tt.want) {`. The old text is not a substring of the wanted new
 one (`provider must` becomes `provider port "<name>" must`), so these four cases fail after the fix until their wanted
 text changes. In every case the first input is `entity_stream` (`configWith(entityStream, ...)`, `:39-41`), so a
-refusal that named the wrong input would be told apart from one naming the right one.
+refusal that named the first input instead of the right one would be told apart. In all four cases the malformed
+input is also the last input, so a refusal naming the last input would not be (design adds a case).
 
 `processor/graph-ingest/canonical_mutations_test.go:48-55` (`TestCanonicalMutationRoutesRejectLegacyCompanionPort`)
 appends `legacy_mutations` after the default provider, so it reaches the ambiguous branch, and checks only
@@ -59,7 +60,7 @@ appends `legacy_mutations` after the default provider, so it reaches the ambiguo
 
 - Readers of the old text: `git grep -n -E "must be a required|nats-request input on|provider must be" --
   ':!openspec/changes/archive'` gives the code (`canonical_mutations.go:126`), the test
-  (`mutation_port_contract_test.go:37`), this change's `proposal.md:6-7` and delta `:35`, and
+  (`mutation_port_contract_test.go:37`), this change's `proposal.md:6-7` and delta `:36`, and
   `docs/admission-ledger.yaml:2344`, which describes the accepted port shape, not the refusal. History only:
   `openspec/changes/archive/2026-10-19-one-mutation-port-check/design.md:30`. The live spec pins no
   graph-ingest malformed text (§ 3).
@@ -81,10 +82,10 @@ appends `legacy_mutations` after the default provider, so it reaches the ambiguo
 - Spec: `openspec/specs/graph-transport-boundary/spec.md:208` — `### Requirement: One decision on graph-mutation
   ports`. `:215-217` — "graph-ingest SHALL refuse a member input that is not valid, in `Config.Validate` and when it
   builds its mutation routes. Each caller keeps its own refusal texts, direction rule and provider count." Scenarios at
-  `:219` (flowgraph's text), `:225` (graph-ingest, JetStream input, `ambiguous`) and `:231` (the valid provider).
+  `:219` (flowgraph's text), `:225` (graph-ingest, JetStream input, `ambiguous`) and `:232` (the valid provider).
 - The drafted delta against the live text: the requirement is the live text word for word plus ", with an error that
   names the port", and one scenario is added (wrong interface version). The added clause is false for a shape the live
-  spec already pins: in the JetStream scenario (`:225-229`, kept in the delta), the `events` input is a graph-mutation
+  spec already pins: in the JetStream scenario (`:225-230`, kept in the delta), the `events` input is a graph-mutation
   input that is not valid, and graph-ingest refuses it as ambiguous, naming no port, because it follows the valid
   provider (§ 1). As drafted, the requirement contradicts its own scenario.
 - Owner ruling: #323 comment 6279624359 (2026-10-19), Q2: "the refusal texts: both stay as they are. Graph-ingest's
@@ -97,7 +98,7 @@ appends `legacy_mutations` after the default provider, so it reaches the ambiguo
   `processor/graph-ingest/component.go` row (`:2376`, `adapt`) is not touched: the fix is in `canonical_mutations.go`.
 - Open PRs (`gh pr list --state open --json number,title,changedFiles,files`):
   - #397, this claim: four files under `openspec/changes/fix-331-mutation-port-refusal/`.
-  - Draft #393, the log forwarder: 21 files. No file under `processor/graph-ingest/` or a `graph-transport-boundary`
+  - Draft #393, the log forwarder: 22 files at ba27e15. No file under `processor/graph-ingest/` or a `graph-transport-boundary`
     delta. It shares `docs/admission-ledger.yaml` (its own rows).
   - Draft #398, the spec split for #305: no files yet (head 52f565e, one empty commit ahead of 2dab437,
     `gh api repos/C360Studio/semengine/compare/2dab437...52f565e`). Its body: split every requirement over 500

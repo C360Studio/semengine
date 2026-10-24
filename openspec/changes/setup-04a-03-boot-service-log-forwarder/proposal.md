@@ -25,8 +25,8 @@ boot wiring stay out of the port set, and that this same pull request decides wh
 
 ## Capabilities
 
-To be filled by the design: the `service-lifecycle` deltas for the log forwarder's start, stop and readiness promises.
-`skip_specs` is set until the design names the deltas.
+The `service-lifecycle` deltas in `specs/service-lifecycle/spec.md` (design D10): the log forwarder's construction,
+lifecycle and forwards-nothing promises.
 
 ## Non-goals
 

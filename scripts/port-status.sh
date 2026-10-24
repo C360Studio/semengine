@@ -77,7 +77,7 @@ if cur:
 
 changes = [
     ("1. setup-04a-01-floor", [
-        "message", "metric", "natsclient", "payloadregistry", "pkg/acme", "pkg/cache",
+        "message", "metric", "natsclient", "payloadregistry", "pkg/cache",
         "pkg/errs", "pkg/platform", "pkg/projection/contract", "pkg/resource", "pkg/retry",
         "pkg/security", "pkg/timestamp", "pkg/tlsutil", "pkg/types", "vocabulary",
     ]),
@@ -96,7 +96,7 @@ changes = [
         "pkg/revlag", "processor/graph-index", "processor/graph-query", "storage/objectstore",
     ]),
     ("5. setup-04a-05-first-consumer", [
-        "output/websocket", "pkg/buffer", "pkg/fusion", "pkg/fusion/fusionnats",
+        "output/websocket", "pkg/acme", "pkg/buffer", "pkg/fusion", "pkg/fusion/fusionnats",
         "pkg/fusion/fusionvocab", "processor/graph-embedding", "vocabulary/bfo", "vocabulary/cco",
     ]),
     ("6. setup-04a-06-rule-core", [

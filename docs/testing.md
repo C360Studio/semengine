@@ -498,6 +498,18 @@ including those.
 - Use ephemeral ports. Listen on `127.0.0.1:0` and read back the port; reach the NATS fixture through
   `shared.Reset(t)` or `f.URL()`. `task lint` and a contract test refuse fixed `net.Listen` ports and fixed broker
   addresses in tests.
+- Pick a port in the address family that will be bound (#390, #391). A port-0 pick (asking the operating system for
+  any free port) on every address, such as `net.Listen("tcp", ":0")`, can return a port that another program holds on
+  one family only: on a Mac, an every-address pick was handed a port a daemon held on `127.0.0.1` (#390). Use
+  `tcp4` for a port handed to Docker, and `127.0.0.1:0` (or the listener itself) for a test server. A test that holds a
+  port on every address on purpose, for example so a server's `:port` bind fails, says why with a
+  `// Every address: <reason>` comment on the line above the call. `TestEveryAddressPortPickSaysWhy` refuses a literal
+  `net.Listen("tcp", ...)` on every address without that comment. It does not read an address held in a variable, a
+  raw string, a call split over lines, `ListenConfig.Listen`, or a production listener a test configures with port 0,
+  and it cannot tell whether the reason is true; a reviewer checks those.
+- When a test checks that a listener released its port, dial the loopback address of the listener's own family and
+  count only a refused connection as released. A dial that times out or fails another way does not show the port is
+  free.
 - Keep tests independent. A test must not depend on another test's stream, bucket, file or goroutine, and must be
   safe to run after a failure. Do not use `t.Parallel()` in integration-tagged files or in tests that change
   process-wide state.

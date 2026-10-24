@@ -34,6 +34,7 @@ func TestStartPastHeldPorts(t *testing.T) {
 
 	var heldAddrs []string
 	for range heldPorts {
+		// Every address: plays the #209 Mac program, which holds ports on all addresses.
 		held, err := net.Listen("tcp", ":0")
 		if err != nil {
 			t.Fatalf("listen :0: %v", err)
@@ -54,6 +55,7 @@ func TestStartPastHeldPorts(t *testing.T) {
 // when both attempts hit a held port, or when the caller context is cancelled, Start fails in the
 // start phase and leaves no container behind.
 func TestStartRetriesOnceOnPortInUse(t *testing.T) {
+	// Every address: held on all addresses so Docker's bind of this port fails (#345).
 	held1, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("listen :0: %v", err)
@@ -61,6 +63,7 @@ func TestStartRetriesOnceOnPortInUse(t *testing.T) {
 	t.Cleanup(func() { _ = held1.Close() })
 	heldPort1 := strconv.Itoa(held1.Addr().(*net.TCPAddr).Port)
 
+	// Every address: held on all addresses so Docker's bind of this port fails (#345).
 	held2, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("listen :0: %v", err)

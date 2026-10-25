@@ -143,7 +143,17 @@ Queries: `graph-ingest`, `lifecycleguard`, `component`, `processor shell`, `Data
 - `openspec/specs/service-lifecycle/spec.md:600` — `### Requirement: A component's Health, DataFlow and DebugStatus
   answer at any time`.
 - `openspec/specs/graph-ingest-recovery/spec.md:242` — `### Requirement: graph-ingest's data flow counts input
-  messages`.
+  messages`; its proving tests read exact totals: `dataflow_integration_test.go:109`, `:111` and
+  `metrics_test.go:48-49`, `:55-56`, `:64` (`git grep -n -E "&[a-z]+\.(messagesProcessed|bytesProcessed)"
+  processor/graph-ingest/*_test.go`; `discoverable_reads_test.go:28` is a write).
+- Rule text that sends a ported component to the guard: `AGENTS.md:83`, `.agents/rules-index.md:28`,
+  `.agents/contracts/semengine-developer.md:326`, `.agents/contracts/semengine-reviewer.md:344`. ADR-108 D1 sends
+  components to the shell.
+- `FlowMetrics` readers: `service/component_manager.go:575` builds the status record; `component_manager_http.go:341`
+  and `:478` serve it, so `data_flow.last_activity` and any new field reach operators.
+- `internal/cache/cache.go:49-50`: `Close`'s doc promises nothing about use after `Close`; no `internal/cache` test
+  calls `Get`, `Set` or `Delete` after an explicit `Close` (`background_test.go:209-210`, `:278`, `:359`,
+  `benchmark_test.go:344`; the rest are deferred or cleanup calls).
 - `docs/admission-ledger.yaml:2267` (`component`, `adapt`, adaptations (1)-(14)), `:2325` (`processor/graph-ingest`,
   item (6) names `internal/lifecycleguard`, `:2341`), `:2381` (`processor/graph-ingest/component.go` row, destination
   "decodeEntity and consume closure").
@@ -156,6 +166,8 @@ Queries: `graph-ingest`, `lifecycleguard`, `component`, `processor shell`, `Data
   SemEngine component implements `LifecycleComponent`"), owner question 1 ruled yes (#9 comment 6097814764). Contract
   line to name: `component/README.md` (the `LifecycleComponent` paragraph, `:123-125`) and the new spec capability;
   a test calling it as a product would is owed (an example in package `component_test`).
+- Two `FlowMetrics` fields for the exact totals (added in the design's revision): read by graph-ingest's exact-count
+  tests and served by the status routes (section 3); contract line, the `component-shell` `DataFlow` requirement.
 - External adopters (ADR-108 Consequences, measured there, not re-read): semboids' sim component writes its own
   lifecycle (`internal/sim/component.go:146`, `:546` at `8c03cc53`); semteams unmeasured.
 
@@ -202,14 +214,15 @@ The shell is reached by component authors outside this repository.
 1. **What must they know?** (a) Hold one shell per component and route `Initialize`, `Start`, `Stop`, `Health`,
    `DataFlow` through it. (b) Their start creates the run context and their cleanup ends it (ADR-113); the shell
    makes none. (c) Count inputs and errors on the shell, or DataFlow reads zero. (d) Their cleanup must tolerate a
-   partial start and must not panic (#309). Four facts: over the two-fact line, a design finding.
+   partial start and must not panic (#309). Four facts, over the two-fact line; (b) and (d) are settled below.
 2. **If they do nothing?** Not composing the shell: as today (ADR-108 D3(e)). Composing it but skipping (c): zero
    rates, Health still right. Skipping (b): continuing work dies with the Start context; nothing outside this module
    catches it (the suite is internal, ADR-113 Consequences). A panicking cleanup: later Stops refused or waiting.
 3. **Where do they find out?** (a) compile error for a missing method, else nowhere if they hand-write Health; (b)
    doc only; (c) visible as zero rates; (d) doc only.
 4. **What should they have to know?** Supply start, cleanup and stuck states; count inputs. The gap is (b) and (d):
-   correctness facts at "doc". (b) is ADR-113's recorded gap; (d) is #309.
+   correctness facts at "doc". (b) is ADR-113's recorded gap, caught inside this module by the suite. (d) is #309,
+   optional under #185 (no real-world trigger); the shell's `Start` doc states it.
 
 Prefer observation: counting inputs (c) could be observed only by wrapping the author's handlers, a second channel
 beside natsclient's callbacks; not proposed.
@@ -244,5 +257,7 @@ objectstore's missing Initialize gate) are behaviour changes their own ports car
   `messagesProcessed` 1, `atomic.LoadInt64(&c.errors)` 14 reads in 5 files; searches `git grep -n -E
   "\.(running|startTime|messagesProcessed|errors)( |\)|,)" processor/graph-ingest/*_test.go` and `git grep -c
   "atomic.LoadInt64(&[a-z]*\.errors)"`), and 8 files reach the guard through `c.lifecycle` or its three helpers
-  (`test_owner_support_test.go:80-125`). These are setup lines; no assertion reads them except the `errors` reads.
+  (`test_owner_support_test.go:80-125`). Most are setup lines. Assertions read the moving counters in two places:
+  the 14 `errors` reads, and the exact message and byte totals at `dataflow_integration_test.go:109`, `:111` and
+  `metrics_test.go:48-49`, `:55-56`, `:64`.
 - #306: about 15 lines and one test. #300 G/D: a move of roughly 800-1,000 lines out of `component.go`.

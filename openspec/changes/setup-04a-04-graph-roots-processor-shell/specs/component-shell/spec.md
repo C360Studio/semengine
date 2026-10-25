@@ -40,28 +40,35 @@ shell running.
 
 ### Requirement: Health reads running and the stuck states it is given
 
-A shell's `Health(stuck...)` SHALL report: when not running, `Healthy` false, `Status` `stopped`, `Uptime` zero and
-no `LastError`; when running with no stuck state, `Healthy` true and `Status` `running`; when running with stuck
-states, `Healthy` false, `Status` `degraded` and `LastError` the states joined by `"; "`. `ErrorCount` SHALL be the
-number of `CountError` calls and SHALL never lower `Healthy`.
+A shell's `Health(stuck...)` SHALL report: when not running, `Healthy` false, `Status` `stopped`, `Uptime` zero and no
+`LastError`; when running with no stuck state, `Healthy` true and `Status` `running`; when running with one or more
+non-empty stuck states (an empty string is ignored), `Healthy` false, `Status` `degraded` and `LastError` the states
+joined by `"; "`. `ErrorCount` SHALL be the number of `CountError` calls and SHALL never lower `Healthy`.
 
 #### Scenario: Every state
 
 - **WHEN** `Health` is read in each state, with and without stuck states, with and without counted errors
 - **THEN** each field matches the rule above
-- **AND** the test that verifies this is `TestShellReads`
+- **AND** the test that verifies this is `TestShellReadsInEveryPhase`
 
-### Requirement: DataFlow reports counted inputs over uptime
+### Requirement: DataFlow reports counted inputs and their rates
 
-A shell's `DataFlow` SHALL report the `CountInput` message and byte totals divided by uptime while running, and zero
-rates when not running; `ErrorRate` SHALL be counted errors per counted input while running and at least one input was
-counted, else zero; `LastActivity` SHALL be the time of the last `CountInput`, or the zero time before the first.
+A shell's `DataFlow` SHALL report as `Messages` and `Bytes` the `CountInput` totals since construction, running or
+not; as `MessagesPerSecond` and `BytesPerSecond` those totals over uptime while running, else zero; as `ErrorRate`
+counted errors per counted input while running with at least one input, else zero; and as `LastActivity` the time of
+the last `CountInput`, or the zero time before the first.
 
-#### Scenario: Rates while running and after Stop
+#### Scenario: Totals and rates while running and after Stop
 
 - **WHEN** inputs and errors are counted on a running shell and it is then stopped
-- **THEN** the rates are above zero while running and zero after the stop
-- **AND** the test that verifies this is `TestShellReads`
+- **THEN** the totals equal what was counted throughout, and the rates are above zero while running and zero after
+- **AND** the test that verifies this is `TestShellReadsInEveryPhase`
+
+#### Scenario: graph-ingest's exact counts
+
+- **WHEN** graph-ingest receives a known number of stream messages and mutation requests
+- **THEN** `DataFlow().Messages` and `DataFlow().Bytes` equal the test's own tally
+- **AND** the test that verifies this is `TestIntegration_DataFlowCountsInputMessages`
 
 ### Requirement: The shell's reads never wait
 

@@ -50,11 +50,27 @@ func (s *Shell) Health(stuck ...string) HealthStatus
 func (s *Shell) DataFlow() FlowMetrics
 func (s *Shell) CountInput(bytes int)
 func (s *Shell) CountError()
+
+// FlowMetrics gains two fields (component/discovery.go:83-88):
+Messages int64 `json:"messages"` // input messages counted since construction
+Bytes    int64 `json:"bytes"`    // their payload bytes
 ```
 
 A component supplies `start` (acquires its resources, creates its run context), `cleanup` (releases them in its own
 order and ends its run context), and its current stuck states at each `Health` call. That is ADR-108's "composes one
-type and supplies two functions", plus the stuck states ADR-109 D2 has each component name.
+type and supplies two functions". `Initialize` returns an error, always nil, only so a component's `Initialize` is
+the one line `return c.shell.Initialize()`.
+
+`Health` takes zero or more stuck states where ADR-108 D3(c) says "one verdict the follower or the plug-in supplies"
+(`docs/adr/108-processor-shell.md:84-86`). The list generalises it because ADR-109 D2 has a component name each of
+its stuck states, and graph-ingest has two (poison, backlog fault) and graph-index will have the follower's and the
+plug-in's. An empty string is not a stuck state and is ignored, so a caller passes its states without branching.
+
+The two totals are the exact counts the rates are derived from. They are read by graph-ingest's two exact-count tests
+(D6) and served by the component manager's status routes as `data_flow.messages` and `data_flow.bytes`
+(`service/component_manager.go:575`; `service/component_manager_http.go:341`, `:478`). Their contract line is the
+`component-shell` requirement on `DataFlow`. Every other `FlowMetrics` builder in the tree is a test literal
+(`component/registry_integration_test.go:121`), which compiles unchanged.
 
 ## D3. What a caller observes: lifecycle
 
@@ -80,11 +96,13 @@ Both reads may be called at any time, during `Start` or `Stop` and after `Stop`,
 | running, stuck states given | false | `degraded` | the states joined by `"; "` | since `start` returned |
 
 `ErrorCount` is the `CountError` total and never lowers `Healthy` (ADR-109 D2). `LastCheck` is the time of the read.
-`DataFlow`: `MessagesPerSecond` and `BytesPerSecond` are the `CountInput` totals over uptime, zero when not running;
-`ErrorRate` is errors per input while running and at least one input was counted, else zero; `LastActivity` is the
-time of the last `CountInput`, the zero time before the first. These are graph-ingest's rules today
-(`component.go:841-926`), moved; the three words are graph-ingest's (its tests pin `degraded`,
-`health_integration_test.go:71`). The vocabulary itself stays #110 item 3's.
+`DataFlow`: `Messages` and `Bytes` are the `CountInput` totals since construction, whether running or not;
+`MessagesPerSecond` and `BytesPerSecond` are those totals over uptime, zero when not running; `ErrorRate` is errors
+per input while running and at least one input was counted, else zero; `LastActivity` is the time of the last
+`CountInput`, the zero time before the first. These are graph-ingest's rules today (`component.go:841-926`), moved,
+plus the two totals; the three words are graph-ingest's (its tests pin `degraded`, `health_integration_test.go:71`).
+The shell's literal `degraded` and graph-ingest's `graph.IndexStateDegraded` (`component.go:869`) become two
+spellings of one word; a note on #110 (item 3, the vocabulary) records it (task 6.3).
 
 ## D5. What the shell does not own
 
@@ -105,21 +123,31 @@ Leaves `processor/graph-ingest/component.go`: the fields `running`, `initialized
 - `Initialize` returns `c.shell.Initialize()`. `Start` keeps its nil-client refusal (`:972-974`), then returns
   `c.shell.Start(ctx, c.start, c.release)`. `Stop` returns `c.shell.Stop(ctx)`. `DataFlow` returns
   `c.shell.DataFlow()`.
-- `Health` returns `c.shell.Health(stuck...)`, where `stuck` holds the poison message when the inventory is
-  non-empty and the backlog fault when one is held (`:854-863`, unchanged).
+- `Health` returns `c.shell.Health(poison, fault)`, the poison message when the inventory is non-empty and the
+  backlog fault when one is held, each empty otherwise (`:854-863`).
 
-Declared behaviour changes, three, each small: `Initialize` no longer re-validates (`component/lifecycle.go:76-78`
-promised it); `LastActivity` before the first input is the zero time, not the construction time (a construction is
-not activity; no test or reader depends on it, inventory section 1); the "component initialized" log line goes.
+Declared behaviour changes, three, each small:
+
+- `Initialize` no longer re-validates (`component/lifecycle.go:76-78` promised it).
+- `LastActivity` before the first input is the zero time, not the construction time: the status routes serve
+  `data_flow.last_activity` as `0001-01-01T00:00:00Z` until graph-ingest counts an input (`component_manager.go:575`,
+  `component_manager_http.go:341`, `:478`). The old value claimed activity at construction; no test reads it.
+- The "component initialized" log line goes.
+
+Plus one addition: the routes serve `data_flow.messages` and `data_flow.bytes` (D2).
 
 Proof the rest is unchanged: every assertion in the package's tests stays as written, except
-`TestComponent_Initialize_InvalidConfig` (`component_test.go:657`), which tests the removed duplicate check and
-becomes a test that the factory refuses that configuration and `Initialize` succeeds after a valid construction. Test
-setup lines change spelling only: `c.running = true` (11 sites) and `startTime`/`messagesProcessed` writes become a
-shell `Initialize` and `Start` with a start that acquires nothing (and, where the test never stops the component,
-a cleanup that releases nothing) and `CountInput` calls; the 14 `atomic.LoadInt64(&c.errors)` reads
-become `c.Health().ErrorCount`; the three guard helpers (`test_owner_support_test.go:80-125`) call `c.shell.Start`.
-The tests that carry the lifecycle: `TestGraphIngestLifecycleSuite`,
+`TestComponent_Initialize_InvalidConfig` (`component_test.go:657`), which tests the removed duplicate check and becomes
+a test that the factory refuses that configuration and `Initialize` succeeds after a valid construction. Reads change
+spelling, oracles do not: `TestIntegration_DataFlowCountsInputMessages` (`dataflow_integration_test.go:109-111`) and
+`TestComponent_MetricsAtomic_MessageProcessing` (`metrics_test.go:48-49`, `:55-56`, `:64`) keep comparing exact counts
+with their own tallies, reading `c.DataFlow().Messages` and `.Bytes` for `messagesProcessed` and `bytesProcessed`; the
+14 `atomic.LoadInt64(&c.errors)` reads become `c.Health().ErrorCount`. Setup lines: `c.running = true` (11 sites) and
+the `startTime` and `messagesProcessed` writes become a shell `Initialize` and `Start` with a start that acquires
+nothing (and, where the test never stops the component, a cleanup that releases nothing) and `CountInput` calls; the
+three guard helpers (`test_owner_support_test.go:80-125`) call `c.shell.Initialize` and `c.shell.Start`. The comment on
+`TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` (`discoverable_reads_test.go:16-17`) names a mutant site that
+leaves `release`; it names M7 instead. The tests that carry the lifecycle: `TestGraphIngestLifecycleSuite`,
 `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`,
 `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop`, `TestComponent_Start_BeforeInitialize`,
 `TestComponent_Stop_BeforeStart`, `TestPoisonRepairRecoveryWithoutRestart`, `TestIntegration_HealthReadsLostConsumer`,
@@ -128,14 +156,20 @@ The tests that carry the lifecycle: `TestGraphIngestLifecycleSuite`,
 
 ## D7. #306: the entity cache handle stays valid through Stop
 
-Smallest fix, mirroring what the code already does for `running`: the cache handle is read once per operation, under
-the same synchronization as its clear, and used through that local. `memCache.Close` only stops the expiry sweep
+Smallest fix: each operation reads the cache handle once, under `c.mu`, the lock `clearLifecycleHandles` then also
+takes for the clear, and uses that local copy. `memCache.Close` only stops the expiry sweep
 (`internal/cache/cache.go:346-353`); `Get`, `Set` and `Delete` take the cache's own lock (`:133`, `:207`, `:261`), so a
-read that loaded the handle before the clear and runs after `Close` is safe. The handle is still cleared only by a
-cleanup that succeeded (design D22 of the ingest kernel), so the suite adapter (`lifecycle_adapter_test.go:98`) is
-unchanged. The other fix #306 lists (never clear the handle) would break that adapter. Observable: a query or
-`CreateEntity` running during or after `Stop` neither panics nor races. Proving test: `TestEntityCacheUseDuringStop`
-(unit, under `-race`), which runs the three readers on goroutines while `Stop` runs and is shown to fail at the base.
+use that loaded the handle before the clear and runs after `Close` is safe. That is read from the code; `Cache.Close`'s
+doc (`cache.go:49-50`) promises nothing and no test uses a cache after `Close`. So this change adds one sentence to
+that doc ("After Close, Get, Set and Delete keep working; only background expiry stops") and one test,
+`TestCacheUsableAfterClose`, run in `internal/cache`'s suite over every implementation; the `pkg/cache` ledger row
+(`docs/admission-ledger.yaml:803`, `adapt`) names it under `proving_tests`.
+
+The handle is still cleared only by a cleanup that succeeded (design D22 of the ingest kernel), so the suite adapter
+(`lifecycle_adapter_test.go:98`) is unchanged. The other fix #306 lists (never clear the handle) would break that
+adapter. Observable: a query or `CreateEntity` running during or after `Stop` neither panics nor races. Proving test:
+`TestEntityCacheUseDuringStop` (unit, under `-race`), which runs the three readers on goroutines while `Stop` runs and
+is shown to fail at the base.
 
 ## D8. #300 sections G and D
 
@@ -148,96 +182,122 @@ decode, ingest and write paths (`:1689-2615`, less cache coherence) to `ingest.g
 Recommended: its own pull request right after this one (owner question 1), so the behaviour diff here is not hidden
 in a 1,000-line move.
 
-## D9. #309 stays
+## D9. #309 stays, and #109 stays open
 
-The shell inherits the guard's panic behaviour. No cleanup in the tree panics (#309 body), and no outside component
-composes the shell yet, so there is no real-world trigger (#185). The shell's `Start` doc says, in plain words, that
-`cleanup` must tolerate a partial start and must not panic, citing #309. Owner question 3.
+Issue #309: the shell inherits the guard's panic behaviour. No cleanup in the tree panics (#309 body) and no outside
+component composes the shell yet, so there is no real-world trigger, and under #185 the fix is not required work.
+The shell's `Start` doc says, in plain words, that `cleanup` must tolerate a partial start and must not panic, and
+cites that issue.
+
+Issue #109: ADR-108's Status says the record does not close #109, which stays the refactor
+(`docs/adr/108-processor-shell.md:9-11`); its follower, plug-in and adoption work is in later pull requests. This one
+addresses it and posts what landed (task 6.3).
 
 ## D10. Proving tests
 
-In `component/shell_test.go` (unit; `component` stays on the 80% coverage list):
+In `component/shell_test.go` (unit; `component` stays on the 80% coverage list). Every shell test runs inside
+`synctest.Test`, as `internal/harness/lifecycletest/refowner_test.go:429-434` and `internal/cache/cache_test.go:132`
+do: `Uptime`, the rates and `LastCheck` read the bubble's clock, which a test moves with `<-time.After(d)` followed by
+`synctest.Wait()` (`internal/cache/background_test.go:93-94`), and the suite's 100 ms settle window
+(`lifecycletest.go:27-29`, `:200-206`) is exact inside the bubble.
 
 - `TestShellOwnerPassesTheLifecycleSuite`: `lifecycletest.Run` over an owner built only from a `Shell` and one worker
   goroutine under its own run context, with a failing factory (ADR-108 D3, "tested in the shell's package by the suite
   on a shell-only owner").
-- `TestShellReads`: a table over every state D4 lists × {no stuck state, stuck states} × {no errors, errors},
-  asserting every field of both reads. Examples suffice, no generated check: the reads depend only on the current
-  phase, which the guard's tests already cover over every ordering they name, and on two inputs the table enumerates
-  whole.
-- `TestShellReadsDuringStopReportStopped`: `cleanup` blocks on a channel; `Health` during it reads `stopped`.
-- `TestShellReadsDoNotWaitForStartOrStop`: reads return while `start` and then `cleanup` are held open.
+- `TestShellReadsInEveryPhase`: one example per history the shell can be in, each read with and without stuck states
+  and with and without counted errors, asserting every field of both reads: new; `start` held open; running; a
+  `start` that failed, rolled back; a rollback's `cleanup` held open; a `Stop`'s `cleanup` held open; after a `Stop`
+  whose `cleanup` failed; after a `Stop` that succeeded; `Stop` before `Start`. A held phase is entered on an explicit
+  signal: the held function closes an `entered` channel and waits on a `release` channel, and the test reads only
+  after `<-entered`. Examples suffice, with no generated check: the shell's reads depend only on which of these nine
+  histories it is in and on the two inputs, and the table enumerates all of them.
+- `TestShellReadsDoNotWaitForStartOrStop`: both reads return while `start`, then `cleanup`, is held open (inside the
+  bubble a read that blocks deadlocks the bubble and fails the test).
 - `TestShellStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestShellFailedStartNeverRuns`.
 - `TestShellSuiteCatchesWorkUnderTheStartContext`: a shell owner whose `start` runs its worker under `ctx` fails
   `lifecycletest.CheckStartContextEndStopsNothing`. This is how a test shows a rule the shell cannot enforce (ADR-113's
   run context) is still caught: by the suite on the component's own run.
 - `ExampleShell` in package `component_test`: a component composing the shell as an outside author would.
 
-graph-ingest: D6's list, plus D7's test. Mutation rows (`task mutate:check`, recorded in `notes/6.1.md`):
+In `internal/cache`: `TestCacheUsableAfterClose` (D7). In graph-ingest: D6's list, plus `TestEntityCacheUseDuringStop`.
+
+Mutation rows (`task mutate:check`, recorded in `notes/6.1.md`). Each names unit tests only: `task mutate:check`
+cannot run an integration test (#129).
 
 | Row | Mutant | Expected to fail |
 | --- | --- | --- |
-| M1 | `Healthy` drops the running term | `TestShellReads` |
-| M2 | `Healthy` also requires zero errors | `TestShellReads`, `TestIntegration_HealthIgnoresErrorCount` |
-| M3 | running cleared after `cleanup` returns, not before it runs | `TestShellReadsDuringStopReportStopped`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
+| M1 | `Healthy` drops the running term | `TestShellReadsInEveryPhase` |
+| M2 | `Healthy` also requires zero errors | `TestShellReadsInEveryPhase` |
+| M3 | running cleared after `cleanup` returns, not before it runs | `TestShellReadsInEveryPhase`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
 | M4 | `Start` skips the Initialize check | `TestShellStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestComponent_Start_BeforeInitialize` |
 | M5 | running set before `start` returns | `TestShellFailedStartNeverRuns` |
-| M6 | the #306 fix reverted (handle read twice, cleared unsynchronized) | `TestEntityCacheUseDuringStop` |
+| M6 | the #306 fix reverted (handle read twice, cleared without the lock) | `TestEntityCacheUseDuringStop` |
+| M7 | the shell holds its lock across `start` and `cleanup` | `TestShellReadsDoNotWaitForStartOrStop`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
+| M8 | `DataFlow` reports `Messages` as zero when not running | `TestShellReadsInEveryPhase`, `TestComponent_MetricsAtomic_MessageProcessing` |
 
 ## D11. Ledger
 
 Tree code: no new row. `component` (`docs/admission-ledger.yaml:2267`): adaptation (15), "`Shell` composes
-`internal/lifecycleguard` and answers Health and DataFlow (ADR-108 D1, D3)"; dependencies add
-`internal/lifecycleguard`, `pkg/lifecyclecleanup`; `proving_tests` add `shell_test.go`. `processor/graph-ingest`
-(`:2325`): item (6) becomes "owner lifecycle through `component.Shell`"; `dependencies_and_side_effects` drops
-`internal/lifecycleguard`. Disposition unchanged on both. The `component.go` row (`:2381`) changes only if D8 moves
-the consume closure.
+`internal/lifecycleguard` and answers Health and DataFlow; `FlowMetrics` carries the `Messages` and `Bytes` totals
+(ADR-108 D1, D3)"; dependencies add `internal/lifecycleguard`, `pkg/lifecyclecleanup`; `proving_tests` add
+`shell_test.go`. `processor/graph-ingest` (`:2325`): item (6) becomes "owner lifecycle through `component.Shell`";
+`dependencies_and_side_effects` drops `internal/lifecycleguard`. `pkg/cache` (`:803`): `proving_tests` add
+`TestCacheUsableAfterClose`. Dispositions unchanged. The `component.go` row (`:2381`) changes only if D8 moves the
+consume closure.
 
 ## D12. Spec delta
 
 New capability `component-shell` (requirements in `specs/component-shell/spec.md`): Initialize and Start-before-
 Initialize; one Start and Stop the only stop through the shell; running from `start`'s return to `cleanup`'s start;
-the Health table; ErrorCount never lowers Healthy; DataFlow; reads never wait; the shell holds no context. Purpose for
-the archive: "The processor shell, `component.Shell`: the lifecycle and the two reads every component shares
-(ADR-108)." One requirement added to `graph-entity-writes` for #306. Each requirement is under 500 characters.
+the Health table; ErrorCount never lowers Healthy; DataFlow with its totals; reads never wait; the shell holds no
+context. Purpose for the archive: "The processor shell, `component.Shell`: the lifecycle and the two reads every
+component shares (ADR-108)." The #306 requirement goes to `graph-ingest-recovery`, whose Purpose is what graph-ingest
+promises when a process stops, and which already holds graph-ingest's data-flow requirement (`spec.md:242`);
+`graph-entity-writes` is about write modes. Each requirement is under 500 characters.
 
 ## D13. Docs and records
 
-`component/lifecycle.go:43-78`: drop `:76-78` and add "`Shell` implements every rule above". `component/README.md`
-`:123-125`: the shell paragraph and the example, the framework-API contract line. `docs/repository-map.md`: the
-`component/` row (`:81`) names the shell; the `internal/lifecycleguard/` row (`:83`) says components reach it through
-`component.Shell`. ADR-108 Status: a one-line note naming `component.Shell` and this change, as ADR-113's 2026-10-21
-note does; no decision changes. Comments on #196 (graph-ingest's row: adopted through the shell) and #109 (shell
-landed; follower open).
+- `component/lifecycle.go:43-78`: drop `:76-78` and add "`Shell` implements every rule above".
+- `component/README.md` `:123-125`: the shell paragraph and the example, the framework-API contract line; the two
+  `FlowMetrics` totals.
+- Rule text that still sends a component to the guard, contradicting ADR-108 D1: `AGENTS.md:83`,
+  `.agents/rules-index.md:28`, `.agents/contracts/semengine-developer.md:326`,
+  `.agents/contracts/semengine-reviewer.md:344`. Each becomes "a component keeps its lifecycle state in
+  `component.Shell`, a service in `internal/lifecycleguard`, never in a copy of its own". The row count in `AGENTS.md`
+  and `rules-index.md` does not change.
+- `internal/cache/cache.go:49-50`: D7's sentence.
+- `docs/repository-map.md`: the `component/` row (`:81`) names the shell; the `internal/lifecycleguard/` row (`:83`)
+  says components reach it through `component.Shell`.
+- ADR-108 Status: a one-line note naming `component.Shell` and this change, as ADR-113's 2026-10-21 note does.
+- Comments on #196 (graph-ingest's row: adopted through the shell), #109 (shell landed; follower open) and #110
+  (D4's two spellings of `degraded`).
 
 ## D14. Issues and merge order
 
-Retires #306. Addresses #109 and #196 (comments only). Stays: #309 (D9), #300 (D8; sections C, D-rest, F, H stay
-parked), #301 (its reasons are untouched), #216 (consumer rebinding, not lifecycle), #361 (a consumer's composition
-root), #399 (refusal text, another function), #110 item 3 (vocabulary at temporal's port). No open pull request
-overlaps; #362 and #363 touch no file here. Merge before graph-index (PR 3), which composes the shell.
+Retires #306. Addresses #109 and #196 (comments only). Stays: #309 and #109 (D9), #300 (D8; sections C, D-rest, F,
+H stay parked), #301 (its reasons are untouched), #216 (consumer rebinding, not lifecycle), #361 (a consumer's
+composition root), #399 (refusal text, another function), #110 item 3 (vocabulary at temporal's port). No open pull
+request overlaps; #362 and #363 touch no file here. Merge before graph-index (PR 3), which composes the shell.
 
 ## D15. ADRs kept, changed, dropped
 
 Kept: ADR-108 D1-D3 (implemented), D3(a) no restart; ADR-113 (the shell makes no run context); ADR-095 (one Start,
 retained cleanup); ADR-109 D2 (one implementation); ADR-058 (collectors at construction); ADR-096 (the manager's
-`ManagedComponent.State` stays its own record). Changed or dropped: none.
+`ManagedComponent.State` stays its own record). Generalised, not changed: D3(c)'s "one verdict" becomes a list of
+stuck states (D2), which ADR-109 D2 already implies. Dropped: none.
 
 ## Unit of work
 
 One pull request. The shell's only production caller is graph-ingest; a shell landed alone would have tests as its
 only callers, which the surface rule reads as a finding until graph-index arrives. The change is tree code of about
-180 added and 110 removed non-test lines across one new type and one adopter, well under the one-owner bound (#159);
-no waiver is needed.
+190 added and 110 removed non-test lines across one new type, two new fields and one adopter, well under the
+one-owner bound (#159); no waiver is needed.
 
-## Owner questions
+## Owner question
 
 1. **Split `component.go` (#300 G/D) in its own pull request right after this one?** Recommended yes: the move is
    about 1,000 lines with no edits, and inside this PR it would bury the lifecycle change a reviewer has to read
    closely. The other answer saves one review round and makes this PR several times larger.
-2. **Keep #109 open until the last follower lands (change 7)?** Recommended yes: this PR says "Addresses #109" and
-   posts what landed; the other answer splits the shell into its own issue, closed here, and leaves #109 as the
-   follower and plug-in work.
-3. **Leave the panic-in-cleanup defect (#309) open?** Recommended yes: nothing in the tree triggers it and no outside
-   component uses the shell yet; the shell's doc says a cleanup must not panic. The other answer fixes it here, about
-   fifteen lines and two tests in `internal/lifecycleguard`, before any outside author can hit it.
+
+Not owner questions, settled by records: #109 stays open (ADR-108 Status, `:9-11`); #309 stays open (#185: no
+real-world trigger, so not required work). See D9.

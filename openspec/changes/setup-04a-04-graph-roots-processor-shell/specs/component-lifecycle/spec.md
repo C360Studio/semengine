@@ -1,10 +1,10 @@
-# component-shell
+# component-lifecycle
 
 ## ADDED Requirements
 
 ### Requirement: The shell admits one Start after Initialize
 
-`component.Shell`'s `Initialize` SHALL return nil every time and do no I/O. A `Start` before `Initialize` SHALL return
+`component.Lifecycle`'s `Initialize` SHALL return nil every time and do no I/O. A `Start` before `Initialize` SHALL return
 an error and leave the shell unused, so that a `Start` after `Initialize` is admitted. After `Initialize`, `Start` and
 `Stop` SHALL follow the lifecycle suite's portable floor and the retained failed-start cleanup rule.
 
@@ -12,13 +12,13 @@ an error and leave the shell unused, so that a `Start` after `Initialize` is adm
 
 - **WHEN** `Start` is called on a shell that was never initialized, then `Initialize` and `Start` are called
 - **THEN** the first `Start` returns an error and runs nothing, and the second is admitted
-- **AND** the test that verifies this is `TestShellStartBeforeInitializeIsRefusedAndLeavesItUnused`
+- **AND** the test that verifies this is `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`
 
 #### Scenario: A shell-only owner passes the suite
 
 - **WHEN** the lifecycle suite runs over an owner built only from a shell and one worker
 - **THEN** every check passes, the failed-start check on a factory whose start fails
-- **AND** the test that verifies this is `TestShellOwnerPassesTheLifecycleSuite`
+- **AND** the test that verifies this is `TestLifecycleOwnerPassesTheLifecycleSuite`
 
 ### Requirement: The shell is running from start's return until cleanup begins
 
@@ -30,13 +30,13 @@ shell running.
 
 - **WHEN** `Health` is called while the cleanup of a `Stop` is held open
 - **THEN** it reports `Healthy` false and `Status` `stopped`
-- **AND** the test that verifies this is `TestShellReadsDuringStopReportStopped`
+- **AND** the test that verifies this is `TestLifecycleReadsDuringStopReportStopped`
 
 #### Scenario: A failed start
 
 - **WHEN** the `start` given to `Start` returns an error
 - **THEN** no read taken during or after that `Start` reports running
-- **AND** the test that verifies this is `TestShellFailedStartNeverRuns`
+- **AND** the test that verifies this is `TestLifecycleFailedStartNeverRuns`
 
 ### Requirement: Health reads running and the stuck states it is given
 
@@ -49,7 +49,7 @@ joined by `"; "`. `ErrorCount` SHALL be the number of `CountError` calls and SHA
 
 - **WHEN** `Health` is read in each state, with and without stuck states, with and without counted errors
 - **THEN** each field matches the rule above
-- **AND** the test that verifies this is `TestShellReadsInEveryPhase`
+- **AND** the test that verifies this is `TestLifecycleReadsInEveryPhase`
 
 ### Requirement: DataFlow reports counted inputs and their rates
 
@@ -62,7 +62,7 @@ the last `CountInput`, or the zero time before the first.
 
 - **WHEN** inputs and errors are counted on a running shell and it is then stopped
 - **THEN** the totals equal what was counted throughout, and the rates are above zero while running and zero after
-- **AND** the test that verifies this is `TestShellReadsInEveryPhase`
+- **AND** the test that verifies this is `TestLifecycleReadsInEveryPhase`
 
 #### Scenario: graph-ingest's exact counts
 
@@ -78,7 +78,7 @@ A shell's `Health` and `DataFlow` SHALL return without waiting for a `Start` or 
 
 - **WHEN** both reads are called while `start` is held open, then while `cleanup` is held open
 - **THEN** each read returns
-- **AND** the test that verifies this is `TestShellReadsDoNotWaitForStartOrStop`
+- **AND** the test that verifies this is `TestLifecycleReadsDoNotWaitForStartOrStop`
 
 ### Requirement: The shell holds no context
 
@@ -90,4 +90,4 @@ continuing work under the Start context fails the lifecycle suite.
 
 - **WHEN** a shell owner's `start` runs its worker under the Start context
 - **THEN** the suite's check that ending the Start context stops nothing fails for it
-- **AND** the test that verifies this is `TestShellSuiteCatchesWorkUnderTheStartContext`
+- **AND** the test that verifies this is `TestLifecycleSuiteCatchesWorkUnderTheStartContext`

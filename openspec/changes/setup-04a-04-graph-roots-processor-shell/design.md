@@ -29,7 +29,8 @@ shell public in `component`, composing the guard, landing in change 4 with graph
 
 ## D1. Home and name
 
-`component.Shell`, one exported type in `component/shell.go`. Its zero value is an unstarted shell; it must not be
+`component.Lifecycle`, one exported type in `component/lifecycle_type.go`. Its zero value is an unstarted shell; it
+must not be
 copied after first use (`go vet` copylocks reports it). A component holds it as an unexported named field. It composes
 `internal/lifecycleguard.Guard`; `component` gains the imports `internal/lifecycleguard` and, through it,
 `pkg/lifecyclecleanup`. Neither reaches a graph or agentic package, so `TestComponentReachesNoAgenticOrGraphPackage`
@@ -41,15 +42,15 @@ the owner's call at acceptance.
 ## D2. Surface
 
 ```go
-type Shell struct{ /* unexported */ }
+type Lifecycle struct{ /* unexported */ }
 
-func (s *Shell) Initialize() error
-func (s *Shell) Start(ctx context.Context, start, cleanup func(context.Context) error) error
-func (s *Shell) Stop(ctx context.Context) error
-func (s *Shell) Health(stuck ...string) HealthStatus
-func (s *Shell) DataFlow() FlowMetrics
-func (s *Shell) CountInput(bytes int)
-func (s *Shell) CountError()
+func (l *Lifecycle) Initialize() error
+func (l *Lifecycle) Start(ctx context.Context, start, cleanup func(context.Context) error) error
+func (l *Lifecycle) Stop(ctx context.Context) error
+func (l *Lifecycle) Health(stuck ...string) HealthStatus
+func (l *Lifecycle) DataFlow() FlowMetrics
+func (l *Lifecycle) CountInput(bytes int)
+func (l *Lifecycle) CountError()
 
 // FlowMetrics gains two fields (component/discovery.go:83-88):
 Messages int64 `json:"messages"` // input messages counted since construction
@@ -69,8 +70,20 @@ plug-in's. An empty string is not a stuck state and is ignored, so a caller pass
 The two totals are the exact counts the rates are derived from. They are read by graph-ingest's two exact-count tests
 (D6) and served by the component manager's status routes as `data_flow.messages` and `data_flow.bytes`
 (`service/component_manager.go:575`; `service/component_manager_http.go:341`, `:478`). Their contract line is the
-`component-shell` requirement on `DataFlow`. Every other `FlowMetrics` builder in the tree is a test literal
+`component-lifecycle` requirement on `DataFlow`. Every other `FlowMetrics` builder in the tree is a test literal
 (`component/registry_integration_test.go:121`), which compiles unchanged.
+
+### D2a. The name: `component.Lifecycle` (owner, 2026-10-25)
+
+ADR-108 calls the concept the processor shell; the owner chose `component.Lifecycle` for the type on 2026-10-25
+("shell" reads as a boundary one talks through; this is the component's own lifecycle state). Measured collision
+risk: `pkg/lifecycle` is the workflow-entity substrate (its doc, `pkg/lifecycle/doc.go:1-12`) and has no non-test
+importer in the tree, so the two never meet in one file today; graph-ingest already names its guard field
+`lifecycle` (`processor/graph-ingest/component.go:446`, `:975`, `:1093`), so `lifecycle component.Lifecycle` keeps
+the existing reads. The type sits beside `component.LifecycleComponent` (the interface the manager calls,
+`component/lifecycle.go:79`): a `LifecycleComponent` holds a `Lifecycle` to answer the lifecycle half of that
+interface. The type's doc comment says both things in one sentence. File: `component/lifecycle_type.go`, since
+`component/lifecycle.go` already holds `State` and the interface.
 
 ## D3. What a caller observes: lifecycle
 
@@ -195,29 +208,29 @@ addresses it and posts what landed (task 6.3).
 
 ## D10. Proving tests
 
-In `component/shell_test.go` (unit; `component` stays on the 80% coverage list). Every shell test runs inside
+In `component/lifecycle_type_test.go` (unit; `component` stays on the 80% coverage list). Every shell test runs inside
 `synctest.Test`, as `internal/harness/lifecycletest/refowner_test.go:429-434` and `internal/cache/cache_test.go:132`
 do: `Uptime`, the rates and `LastCheck` read the bubble's clock, which a test moves with `<-time.After(d)` followed by
 `synctest.Wait()` (`internal/cache/background_test.go:93-94`), and the suite's 100 ms settle window
 (`lifecycletest.go:27-29`, `:200-206`) is exact inside the bubble.
 
-- `TestShellOwnerPassesTheLifecycleSuite`: `lifecycletest.Run` over an owner built only from a `Shell` and one worker
+- `TestLifecycleOwnerPassesTheLifecycleSuite`: `lifecycletest.Run` over an owner built only from a `Lifecycle` and one worker
   goroutine under its own run context, with a failing factory (ADR-108 D3, "tested in the shell's package by the suite
   on a shell-only owner").
-- `TestShellReadsInEveryPhase`: one example per history the shell can be in, each read with and without stuck states
+- `TestLifecycleReadsInEveryPhase`: one example per history the shell can be in, each read with and without stuck states
   and with and without counted errors, asserting every field of both reads: new; `start` held open; running; a
   `start` that failed, rolled back; a rollback's `cleanup` held open; a `Stop`'s `cleanup` held open; after a `Stop`
   whose `cleanup` failed; after a `Stop` that succeeded; `Stop` before `Start`. A held phase is entered on an explicit
   signal: the held function closes an `entered` channel and waits on a `release` channel, and the test reads only
   after `<-entered`. Examples suffice, with no generated check: the shell's reads depend only on which of these nine
   histories it is in and on the two inputs, and the table enumerates all of them.
-- `TestShellReadsDoNotWaitForStartOrStop`: both reads return while `start`, then `cleanup`, is held open (inside the
+- `TestLifecycleReadsDoNotWaitForStartOrStop`: both reads return while `start`, then `cleanup`, is held open (inside the
   bubble a read that blocks deadlocks the bubble and fails the test).
-- `TestShellStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestShellFailedStartNeverRuns`.
-- `TestShellSuiteCatchesWorkUnderTheStartContext`: a shell owner whose `start` runs its worker under `ctx` fails
+- `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestLifecycleFailedStartNeverRuns`.
+- `TestLifecycleSuiteCatchesWorkUnderTheStartContext`: a shell owner whose `start` runs its worker under `ctx` fails
   `lifecycletest.CheckStartContextEndStopsNothing`. This is how a test shows a rule the shell cannot enforce (ADR-113's
   run context) is still caught: by the suite on the component's own run.
-- `ExampleShell` in package `component_test`: a component composing the shell as an outside author would.
+- `ExampleLifecycle` in package `component_test`: a component composing the shell as an outside author would.
 
 In `internal/cache`: `TestCacheUsableAfterClose` (D7). In graph-ingest: D6's list, plus `TestEntityCacheUseDuringStop`.
 
@@ -226,49 +239,49 @@ cannot run an integration test (#129).
 
 | Row | Mutant | Expected to fail |
 | --- | --- | --- |
-| M1 | `Healthy` drops the running term | `TestShellReadsInEveryPhase` |
-| M2 | `Healthy` also requires zero errors | `TestShellReadsInEveryPhase` |
-| M3 | running cleared after `cleanup` returns, not before it runs | `TestShellReadsInEveryPhase`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
-| M4 | `Start` skips the Initialize check | `TestShellStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestComponent_Start_BeforeInitialize` |
-| M5 | running set before `start` returns | `TestShellFailedStartNeverRuns` |
+| M1 | `Healthy` drops the running term | `TestLifecycleReadsInEveryPhase` |
+| M2 | `Healthy` also requires zero errors | `TestLifecycleReadsInEveryPhase` |
+| M3 | running cleared after `cleanup` returns, not before it runs | `TestLifecycleReadsInEveryPhase`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
+| M4 | `Start` skips the Initialize check | `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestComponent_Start_BeforeInitialize` |
+| M5 | running set before `start` returns | `TestLifecycleFailedStartNeverRuns` |
 | M6 | the #306 fix reverted (handle read twice, cleared without the lock) | `TestEntityCacheUseDuringStop` |
-| M7 | the shell holds its lock across `start` and `cleanup` | `TestShellReadsDoNotWaitForStartOrStop`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
-| M8 | `DataFlow` reports `Messages` as zero when not running | `TestShellReadsInEveryPhase`, `TestComponent_MetricsAtomic_MessageProcessing` |
+| M7 | the shell holds its lock across `start` and `cleanup` | `TestLifecycleReadsDoNotWaitForStartOrStop`, `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop` |
+| M8 | `DataFlow` reports `Messages` as zero when not running | `TestLifecycleReadsInEveryPhase`, `TestComponent_MetricsAtomic_MessageProcessing` |
 
 ## D11. Ledger
 
-Tree code: no new row. `component` (`docs/admission-ledger.yaml:2267`): adaptation (15), "`Shell` composes
+Tree code: no new row. `component` (`docs/admission-ledger.yaml:2267`): adaptation (15), "`Lifecycle` composes
 `internal/lifecycleguard` and answers Health and DataFlow; `FlowMetrics` carries the `Messages` and `Bytes` totals
 (ADR-108 D1, D3)"; dependencies add `internal/lifecycleguard`, `pkg/lifecyclecleanup`; `proving_tests` add
-`shell_test.go`. `processor/graph-ingest` (`:2325`): item (6) becomes "owner lifecycle through `component.Shell`";
+`shell_test.go`. `processor/graph-ingest` (`:2325`): item (6) becomes "owner lifecycle through `component.Lifecycle`";
 `dependencies_and_side_effects` drops `internal/lifecycleguard`. `pkg/cache` (`:803`): `proving_tests` add
 `TestCacheUsableAfterClose`. Dispositions unchanged. The `component.go` row (`:2381`) changes only if D8 moves the
 consume closure.
 
 ## D12. Spec delta
 
-New capability `component-shell` (requirements in `specs/component-shell/spec.md`): Initialize and Start-before-
+New capability `component-lifecycle` (requirements in `specs/component-lifecycle/spec.md`): Initialize and Start-before-
 Initialize; one Start and Stop the only stop through the shell; running from `start`'s return to `cleanup`'s start;
 the Health table; ErrorCount never lowers Healthy; DataFlow with its totals; reads never wait; the shell holds no
-context. Purpose for the archive: "The processor shell, `component.Shell`: the lifecycle and the two reads every
+context. Purpose for the archive: "The processor shell, `component.Lifecycle`: the lifecycle and the two reads every
 component shares (ADR-108)." The #306 requirement goes to `graph-ingest-recovery`, whose Purpose is what graph-ingest
 promises when a process stops, and which already holds graph-ingest's data-flow requirement (`spec.md:242`);
 `graph-entity-writes` is about write modes. Each requirement is under 500 characters.
 
 ## D13. Docs and records
 
-- `component/lifecycle.go:43-78`: drop `:76-78` and add "`Shell` implements every rule above".
+- `component/lifecycle.go:43-78`: drop `:76-78` and add "`Lifecycle` implements every rule above".
 - `component/README.md` `:123-125`: the shell paragraph and the example, the framework-API contract line; the two
   `FlowMetrics` totals.
 - Rule text that still sends a component to the guard, contradicting ADR-108 D1: `AGENTS.md:83`,
   `.agents/rules-index.md:28`, `.agents/contracts/semengine-developer.md:326`,
   `.agents/contracts/semengine-reviewer.md:344`. Each becomes "a component keeps its lifecycle state in
-  `component.Shell`, a service in `internal/lifecycleguard`, never in a copy of its own". The row count in `AGENTS.md`
+  `component.Lifecycle`, a service in `internal/lifecycleguard`, never in a copy of its own". The row count in `AGENTS.md`
   and `rules-index.md` does not change.
 - `internal/cache/cache.go:49-50`: D7's sentence.
 - `docs/repository-map.md`: the `component/` row (`:81`) names the shell; the `internal/lifecycleguard/` row (`:83`)
-  says components reach it through `component.Shell`.
-- ADR-108 Status: a one-line note naming `component.Shell` and this change, as ADR-113's 2026-10-21 note does.
+  says components reach it through `component.Lifecycle`.
+- ADR-108 Status: a one-line note naming `component.Lifecycle` and this change, as ADR-113's 2026-10-21 note does.
 - Comments on #196 (graph-ingest's row: adopted through the shell), #109 (shell landed; follower open) and #110
   (D4's two spellings of `degraded`).
 

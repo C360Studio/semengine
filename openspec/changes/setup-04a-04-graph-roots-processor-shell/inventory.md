@@ -50,7 +50,7 @@ Briefing hypotheses that did not hold:
 
 ### graph-ingest's inline lifecycle (all `processor/graph-ingest/component.go`)
 
-| Range | What | Shell-owned under ADR-108 D3? |
+| Range | What | Lifecycle-owned under ADR-108 D3? |
 | --- | --- | --- |
 | `:441-450` | `mu`, `running`, `initialized`, `startTime`, `lifecycle lifecycleguard.Guard`, `startCompleted` | all but `startCompleted` and `mu` (ports) |
 | `:516-520` | `messagesProcessed`, `bytesProcessed`, `errors`, `lastActivity` | yes (D3(c) counters) |
@@ -167,7 +167,7 @@ Queries: `graph-ingest`, `lifecycleguard`, `component`, `processor shell`, `Data
   line to name: `component/README.md` (the `LifecycleComponent` paragraph, `:123-125`) and the new spec capability;
   a test calling it as a product would is owed (an example in package `component_test`).
 - Two `FlowMetrics` fields for the exact totals (added in the design's revision): read by graph-ingest's exact-count
-  tests and served by the status routes (section 3); contract line, the `component-shell` `DataFlow` requirement.
+  tests and served by the status routes (section 3); contract line, the `component-lifecycle` `DataFlow` requirement.
 - External adopters (ADR-108 Consequences, measured there, not re-read): semboids' sim component writes its own
   lifecycle (`internal/sim/component.go:146`, `:546` at `8c03cc53`); semteams unmeasured.
 
@@ -250,7 +250,7 @@ objectstore's missing Initialize gate) are behaviour changes their own ports car
 
 ## 10. Size
 
-- Shell: about 150-180 non-test lines with doc comments (D3's rules; the guard stays where it is).
+- The Lifecycle type: about 150-180 non-test lines with doc comments (D3's rules; the guard stays where it is).
 - graph-ingest: about 110 lines leave or shrink (`:441-450`, `:516-520`, `:696`, `:841-950`, `:965-976`,
   `:1039-1043`, `:1103-1105`); ten counter sites change spelling.
 - Tests: 14 graph-ingest test files set or read the moving fields (`c.running = true` 11 sites, `startTime` 4,

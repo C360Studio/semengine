@@ -10,19 +10,20 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 2. Tests
 
-- [ ] 2.1 `component/shell_test.go` and `component/shell_example_test.go` (design D10), each shell test inside
-  `synctest.Test`: the suite on a shell-only owner, `TestShellReadsInEveryPhase`,
-  `TestShellReadsDoNotWaitForStartOrStop`, `TestShellStartBeforeInitializeIsRefusedAndLeavesItUnused`,
-  `TestShellFailedStartNeverRuns`, `TestShellSuiteCatchesWorkUnderTheStartContext`, `ExampleShell`. Written before
-  `component/shell.go`. Gate: in 3.1.
+- [ ] 2.1 `component/lifecycle_type_test.go` and `component/shell_example_test.go` (design D10), each shell test inside
+  `synctest.Test`: the suite on a shell-only owner, `TestLifecycleReadsInEveryPhase`,
+  `TestLifecycleReadsDoNotWaitForStartOrStop`, `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`,
+  `TestLifecycleFailedStartNeverRuns`, `TestLifecycleSuiteCatchesWorkUnderTheStartContext`, `ExampleLifecycle`. Written
+  before
+  `component/lifecycle_type.go`. Gate: in 3.1.
 - [ ] 2.2 `TestEntityCacheUseDuringStop` in `processor/graph-ingest` (design D7), shown failing at the base under
   `-race` with the output in `notes/2.2.md`. Gate: in 4.2.
 - [ ] 2.3 `TestCacheUsableAfterClose` in `internal/cache`'s suite over every implementation (design D7). Gate:
   `go test -race -count=1 ./internal/cache`.
 
-## 3. Shell
+## 3. The Lifecycle type
 
-- [ ] 3.1 `component/shell.go` and the two `FlowMetrics` fields as design D1-D5, and the `LifecycleComponent` doc
+- [ ] 3.1 `component/lifecycle_type.go` and the two `FlowMetrics` fields as design D1-D5, and the `LifecycleComponent` doc
   comment (D13). Gate: `go test -race -count=1 ./component`, `go test -count=5 -cpu 1 -shuffle=on ./component`,
   `TestComponentReachesNoAgenticOrGraphPackage`, then `task test:integration` (whose profile `task cover:check`
   reads) followed by `task cover:check`.
@@ -55,5 +56,5 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 ## 7. Close
 
 - [ ] 7.1 Archive (`openspec archive setup-04a-04-graph-roots-processor-shell`) as the last content commit, syncing
-  `component-shell` and `graph-ingest-recovery` into `openspec/specs/` with the Purpose design D12 gives. Gate:
+  `component-lifecycle` and `graph-ingest-recovery` into `openspec/specs/` with the Purpose design D12 gives. Gate:
   `task spec:check` and `task docs:check` on the archive commit.

@@ -12,7 +12,7 @@ bring their own copy from the pin.
 
 ## What Changes
 
-- Add `component.Shell`: one exported type, zero value ready, held as a named field. It runs `Initialize`, `Start`
+- Add `component.Lifecycle`: one exported type, zero value ready, held as a named field. It runs `Initialize`, `Start`
   and `Stop` through the guard and answers `Health` and `DataFlow` from its running state, its counters, and the
   stuck states the component passes in (ADR-108 D3, ADR-109 D2). It holds no context (ADR-113).
 - `component.FlowMetrics` gains `Messages` and `Bytes`, the exact totals its rates are derived from; the status
@@ -27,7 +27,7 @@ bring their own copy from the pin.
 
 ## Capabilities
 
-- New capability `component-shell`: the shell's lifecycle and its two reads.
+- New capability `component-lifecycle`: the shell's lifecycle and its two reads.
 - Modified capability `graph-ingest-recovery`: the entity cache stays usable through `Stop`.
 
 ## Impact

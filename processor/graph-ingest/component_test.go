@@ -678,10 +678,11 @@ func TestComponent_Start_BeforeInitialize(t *testing.T) {
 	comp := createTestComponent(t)
 	ctx := context.Background()
 
-	// Start without Initialize
+	// Start without Initialize: the refusal is the shell's (component.Lifecycle), named as
+	// such; an unconnected NATS client would also fail Start, so the message is the oracle.
 	err := comp.Start(ctx)
 
-	assert.Error(t, err, "Start should fail if not initialized")
+	assert.ErrorContains(t, err, "not initialized", "Start should be refused before Initialize")
 }
 
 func TestComponent_Stop_BeforeStart(t *testing.T) {

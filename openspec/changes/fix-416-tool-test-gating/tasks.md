@@ -15,13 +15,13 @@ notes, and they are committed with the code of 4.1 and 4.2, so every commit pass
 
 ## 2. Probe
 
-- [ ] 2.1 Repeat the proposal's Task 3.51.1 probe (a failing `sh:` variable fails the task before its commands; the
+- [x] 2.1 Repeat the proposal's Task 3.51.1 probe (a failing `sh:` variable fails the task before its commands; the
   output is split into words; `-- <pkgs>` replaces the default) and record its Taskfile, command and output in
   `notes/2.1.md`. Gate: the output. If Task behaves otherwise, stop and report on PR #419 before task 4.2.
 
 ## 3. Tests
 
-- [ ] 3.1 The package move: `git mv` the seven files the proposal names into `internal/harness/toolcheck/`. Move
+- [x] 3.1 The package move: `git mv` the seven files the proposal names into `internal/harness/toolcheck/`. Move
   `TestLintTestPortsHonoursNoMarker` and `TestLintTestPortsSkipsIgnoredFiles` into `toolcheck/lintports_test.go`;
   `TestLintTestPortsPasses` stays in `contract`. Copy into each package the helpers it calls and only those. Add
   `toolcheck/doc.go`, which names the trigger paths, the rule for which tests belong in the package, and the
@@ -29,19 +29,19 @@ notes, and they are committed with the code of 4.1 and 4.2, so every commit pass
   ./internal/harness/toolcheck/` passes. The test names (`go test -list '.*'`) of the two packages together equal
   `contract`'s list at the base. `go list -deps -test ./internal/harness/toolcheck/` names no
   `github.com/c360studio/semengine` package except toolcheck. `task verify` passes.
-- [ ] 3.2 Pins written before the code: in `TestUnitInvocationsPinned`, the new command lines, the `vars` parsing,
+- [x] 3.2 Pins written before the code: in `TestUnitInvocationsPinned`, the new command lines, the `vars` parsing,
   and the sensitivity cases; in `TestCIWorkflowPinned`, the `fetch-depth: 0` case (proposal, "Pins and their failure
   tests"). Gate: both fail against the unchanged `Taskfile.yml`, `scripts/verify.sh` and `ci.yml`, with the output in
   `notes/3.2.md`. Committed with 4.2.
-- [ ] 3.3 `TestTestPkgsLists` (`toolcheck/testpkgs_test.go`, planted modules only) and `TestToolsChanged`
+- [x] 3.3 `TestTestPkgsLists` (`toolcheck/testpkgs_test.go`, planted modules only) and `TestToolsChanged`
   (`toolcheck/toolschanged_test.go`, local cases without the `GITHUB_*` variables), with the cases the proposal lists.
   Gate: both fail with the scripts absent, with the output in `notes/3.3.md`. Committed with 4.1.
 
 ## 4. Code
 
-- [ ] 4.1 `scripts/test-pkgs.sh` and `scripts/tools-changed.sh`. Gate: 3.3 passes;
+- [x] 4.1 `scripts/test-pkgs.sh` and `scripts/tools-changed.sh`. Gate: 3.3 passes;
   `go test -count=5 -cpu 1 -shuffle=on ./internal/harness/toolcheck/` passes.
-- [ ] 4.2 `Taskfile.yml` (`test:unit`, `test:repeat`, `test:integration`, `test:tools`, `test:tools:changed`),
+- [x] 4.2 `Taskfile.yml` (`test:unit`, `test:repeat`, `test:integration`, `test:tools`, `test:tools:changed`),
   `scripts/verify.sh` steps, and `fetch-depth: 0` in `ci.yml`. Gate: 3.2 passes; `task test:integration` runs
   exactly the packages `scripts/test-pkgs.sh integration` prints and `task cover:check` passes after it;
   `task verify` passes on a clean tree.

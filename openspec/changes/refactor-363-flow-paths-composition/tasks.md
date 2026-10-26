@@ -16,11 +16,11 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
 
 ## 2. Refactor
 
-- [ ] 2.1 Tests first, the route body (design D2): add `TestFlowPathsRouteServesTheLibraryAnswer` to
+- [x] 2.1 Tests first, the route body (design D2): add `TestFlowPathsRouteServesTheLibraryAnswer` to
   `service/component_manager_paths_test.go`. Use a composition whose origins reach paths of different lengths, and
   assert `paths`, the four `statistics` values (hand-written; a non-integer average) and an RFC 3339 `timestamp`. It
   passes on the base with no production change (`notes/2.1.md`). Gate: `go test -race ./service/` and `task verify`.
-- [ ] 2.2 `composition.FlowPaths` (design D1), in `composition/flowpaths_test.go` and `composition/flowpaths.go`.
+- [x] 2.2 `composition.FlowPaths` (design D1), in `composition/flowpaths_test.go` and `composition/flowpaths.go`.
   - Tests first: `TestFlowPathsKeysEachOrigin`, `TestFlowPathsWalksDepthFirstInEdgeOrder`,
     `TestFlowPathsVisitsEachNodeOnce` and `TestFlowPathsOverAnEmptyGraph`, over hand-built `Graph` values.
   - Record the base compile failure in `notes/2.2.md`. That failure is not fail-first evidence; the tests' ability to

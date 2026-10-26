@@ -34,9 +34,12 @@ reviews the code.
 - **`scripts/test-pkgs.sh unit|integration|tools`** prints one package list on one line, separated by spaces.
   `tools` prints the three tool packages, and the script is the only place they are named. `unit` prints
   `go list ./...` without them. `integration` reads the build lines directly:
-  `git grep --untracked -l '^[[:space:]]*//go:build integration[[:space:]]*$' -- '*_test.go' ':!**/testdata/**'`,
-  then each file's directory as `./<dir>`, sorted and unique. This is the same line the testtext guard accepts, after
-  it trims the line (`contract/testtext_test.go:184`). `--untracked` adds new files that git does not ignore
+  `git grep --untracked -l '^[[:space:]]*//go:build integration[[:space:]]*$' -- '*_test.go'
+  ':(exclude,glob)**/testdata/**'` (the glob form also excludes a top-level `testdata/`), then each file's directory
+  as `./<dir>`, sorted and unique. It matches the line the testtext guard accepts after trimming it
+  (`contract/testtext_test.go:184`), but anywhere in the file, where the guard reads only the lines before the
+  package clause; a match later in a file (a fixture string, say) can only add a package, never drop one.
+  `--untracked` adds new files that git does not ignore
   (`.worktrees/` is ignored). `go list` cannot be used here. Without the tag it does not list a directory whose only
   Go files are `integration`-tagged tests, and it still exits 0, so the package would be dropped. On today's tree the
   `git grep` list is the ten packages of inventory §3. The script exits non-zero on an empty list or a failing

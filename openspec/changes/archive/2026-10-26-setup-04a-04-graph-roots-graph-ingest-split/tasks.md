@@ -20,20 +20,21 @@ oracle is design D3's script against the base `c1caa45` and the existing tests. 
 
 ## 3. Citations and ledger
 
-- [ ] 3.1 The three Go comments of design D4 and the ledger destination of D5, in one commit. Gate: `task verify`,
+- [x] 3.1 The three Go comments of design D4 and the ledger destination of D5, in one commit. Gate: `task verify`,
   and `git diff --name-only <move commit> HEAD` lists only those four files and paths under `openspec/`.
 
 ## 4. Review and records
 
-- [ ] 4.1 Codex code review of the pull request: its review record approves a named head commit, citing a local
+- [x] 4.1 Codex code review of the pull request: its review record approves a named head commit, citing a local
   `task verify` at that commit; the pull request body carries `implemented-by:` and `reviewed-by:`, says "addresses
   #300" and "addresses #109", and has no closing keyword. Gate: the approving review record and the `reviewed-by:`
-  line.
-- [ ] 4.2 The issue comments of design D4 on #300, #109, #111, #134, #301 and #106, each naming the move commit,
+  line (Codex APPROVE at `588bf70` with its own `task verify`; `reviewed-by: codex` in the body).
+- [x] 4.2 The issue comments of design D4 on #300, #109, #111, #134, #301 and #106, each naming the move commit,
   "pending merge", and the new `file:line` by function. Gate: each comment read back with
-  `gh issue view <n> --comments`.
+  `gh issue view <n> --comments` (comments 6424320603, 6424321547, 6424322281, 6424322833, 6424323346,
+  6424323856, read back).
 
 ## 5. Archive
 
-- [ ] 5.1 `openspec archive setup-04a-04-graph-roots-graph-ingest-split --yes` as the last content commit; with
+- [x] 5.1 `openspec archive setup-04a-04-graph-roots-graph-ingest-split --yes` as the last content commit; with
   `skip_specs: true` there is no spec to sync. Gate: `task spec:check` and `task docs:check`.

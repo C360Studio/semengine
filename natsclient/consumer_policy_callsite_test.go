@@ -314,13 +314,13 @@ func consumerPolicyCallsiteCensusViolations(files []productionGoFile) []string {
 	// SemEngine's tree at task 3.7: no production package outside natsclient consumed a stream,
 	// and natsclient calls none of the four through a selector. Task 3.12 ports graph-ingest,
 	// whose JetStream input ports are its one canonical port consumer and its one
-	// GetConsumerConfig reader (the pin's census names the same file once).
+	// GetConsumerConfig reader, both in consume.go (at the pin both are in graph-ingest's component.go).
 	var violations []string
 	wantInternal := map[string]int{}
 	if !reflect.DeepEqual(internalCallers, wantInternal) {
 		violations = append(violations, fmt.Sprintf("internal consumer census = %#v, want %#v", internalCallers, wantInternal))
 	}
-	wantPort := map[string]int{"processor/graph-ingest/component.go": 1}
+	wantPort := map[string]int{"processor/graph-ingest/consume.go": 1}
 	if !reflect.DeepEqual(portCallers, wantPort) {
 		violations = append(violations, fmt.Sprintf("canonical port consumer census = %#v, want %#v", portCallers, wantPort))
 	}
@@ -328,7 +328,7 @@ func consumerPolicyCallsiteCensusViolations(files []productionGoFile) []string {
 	if !reflect.DeepEqual(contextsPortCallers, wantContextsPort) {
 		violations = append(violations, fmt.Sprintf("split-context canonical port census = %#v, want %#v", contextsPortCallers, wantContextsPort))
 	}
-	wantPortConfig := map[string]struct{}{"processor/graph-ingest/component.go": {}}
+	wantPortConfig := map[string]struct{}{"processor/graph-ingest/consume.go": {}}
 	if !reflect.DeepEqual(portConfigCallers, wantPortConfig) {
 		violations = append(violations, fmt.Sprintf("GetConsumerConfig production files = %#v, want %#v", portConfigCallers, wantPortConfig))
 	}

@@ -23,6 +23,7 @@ package graphingest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -30,6 +31,8 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -287,4 +290,165 @@ func (c *Component) DebugStatus() any {
 		PoisonedEntityCount: len(entries),
 		PoisonedEntities:    entries,
 	}
+}
+
+// startEntityStateGuard synchronously validates the resident ENTITY_STATES
+// snapshot into the per-entity poison inventory, then STOPS the watcher —
+// graph-ingest holds no steady-state self-watch on the bucket it writes
+// (steady-state detection rides the read points that already exist). A sweep
+// that cannot reach the end of the snapshot returns an error, which fails Start.
+//
+// Snapshot completeness leans on ENTITY_STATES History=1: with a per-subject
+// limit of 1 the pre-marker replay carries exactly the latest revision per
+// key, so gap-resets cannot inflate the received set and the nil
+// end-of-snapshot marker means the full resident state was seen. Raising the
+// bucket's history depth invalidates this marker math.
+func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclient.KVStore) error {
+	watch := bucket.Watch
+	if c.watchEntityStates != nil {
+		watch = c.watchEntityStates
+	}
+	watcher, err := watch(ctx, ">")
+	if err != nil {
+		return errs.WrapTransient(err, "Component", "startEntityStateGuard", "open ENTITY_STATES snapshot watcher")
+	}
+
+	// Drain bookkeeping is LAST-REVISION-WINS per key: a poisoned revision
+	// superseded by a valid (or tombstoned) pre-marker revision of the same
+	// key ends with no inventory entry.
+	sweep := make(map[string]entityPoisonRecord)
+	updates := watcher.Updates()
+	for {
+		select {
+		case <-ctx.Done():
+			c.stopEntityStateGuardWatcher(watcher, updates)
+			return errs.WrapTransient(ctx.Err(), "Component", "startEntityStateGuard", "ENTITY_STATES snapshot sweep")
+		case entry, ok := <-updates:
+			if !ok {
+				// The channel closed before the end-of-snapshot marker, so the
+				// snapshot was not seen in full; no poison is recorded from it.
+				_ = watcher.Stop()
+				cause := ctx.Err()
+				if cause == nil {
+					cause = errors.New("watch closed before the end of the snapshot")
+				}
+				return errs.WrapTransient(cause, "Component", "startEntityStateGuard", "ENTITY_STATES snapshot sweep")
+			}
+			if entry == nil {
+				// End-of-snapshot marker: the full resident snapshot was seen.
+				// Stop deliberately, then record the surviving sweep entries.
+				c.stopEntityStateGuardWatcher(watcher, updates)
+				c.recordBootSweepPoison(ctx, sweep)
+				return nil
+			}
+			sweepEntityStateGuardEntry(sweep, entry)
+		}
+	}
+}
+
+// stopEntityStateGuardWatcher performs the deliberate snapshot-watcher stop
+// (design D1 mandatory shape): Stop(), then KEEP READING the updates channel
+// until nats.go closes it, discarding entries. The nats.go update callback
+// blocks on a full channel while holding the watcher mutex, so an unread
+// channel would wedge the connection's async-callback dispatcher (via
+// SetClosedHandler). The post-Stop closure here is deliberate and is not a sweep
+// failure.
+func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, updates <-chan jetstream.KeyValueEntry) {
+	_ = watcher.Stop()
+	discarded := 0
+	for range updates {
+		discarded++ // deliberate drain-to-close; entries are discarded unvalidated
+	}
+	if discarded > 0 {
+		c.logger.Debug("snapshot sweep watcher drained to close",
+			slog.Int("discarded_entries", discarded))
+	}
+}
+
+// sweepEntityStateGuardEntry folds one pre-marker snapshot delivery into the
+// sweep map, last-revision-wins per key: a valid or tombstoned delivery erases
+// an earlier poisoned one for the same key. A delivery is judged by
+// decodeStoredEntity, the rule readEntity applies, so a value naming another
+// entity than its key is inventoried at boot, not at its first read.
+func sweepEntityStateGuardEntry(sweep map[string]entityPoisonRecord, entry jetstream.KeyValueEntry) {
+	if natsclient.IsKVTombstone(entry.Operation()) {
+		delete(sweep, entry.Key()) // key deleted: nothing resident to inventory
+		return
+	}
+	_, err := decodeStoredEntity(entry.Key(), entry.Value())
+	if err == nil {
+		delete(sweep, entry.Key()) // valid revision supersedes an earlier poisoned one
+		return
+	}
+	var contractErr *graph.StateContractError
+	errors.As(err, &contractErr) // every refusal of the stored-value rule is a state error
+	sweep[entry.Key()] = entityPoisonRecord{contractErr: contractErr, revision: entry.Revision()}
+}
+
+// recordBootSweepPoison moves the surviving sweep entries into the poison
+// inventory. The first bootSweepErrorLogCap new entries log individually as
+// structured ERRORs; the remainder is summarized by one count-only WARN so a
+// mass-poison boot cannot flood the log.
+func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]entityPoisonRecord) {
+	if len(sweep) == 0 {
+		return
+	}
+	keys := make([]string, 0, len(sweep))
+	for key := range sweep {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	logged := 0
+	for _, key := range keys {
+		rec := sweep[key]
+		if c.recordEntityPoison(rec.contractErr, rec.revision) {
+			if logged < bootSweepErrorLogCap {
+				c.logEntityPoisonRecorded(rec.contractErr, rec.revision)
+				logged++
+			}
+			// Close the cross-process record/repair window: a repair that
+			// completed after this key's snapshot delivery found no entry to
+			// clear; verifying against current bytes drops the stale record.
+			c.verifyEntityPoisonRecord(ctx, key)
+		}
+	}
+	if len(keys) > logged {
+		c.logger.Warn("boot snapshot sweep: additional poisoned entities inventoried past the log cap",
+			slog.Int("total", len(keys)),
+			slog.Int("logged_individually", logged))
+	}
+}
+
+// classifyStoredStateRMWError re-attributes a read-modify-write failure to
+// resident stored-state poison (SemStreams gh#562). The owner's own RMW reads check only
+// the trusted decode and the key (decodeStoredForWrite, design D23), so a
+// noncanonical STORED statement, or one with no Source or no Timestamp
+// (checkpoint 3 H3), does not fail on the read — it surfaces either as a
+// trusted-decode failure (unreadable JSON) or as a rejection by the merge's
+// metadata check or MarshalEntityState write gate (encodeMerge) that would
+// otherwise blame the merged CANDIDATE the caller submitted. On this slow path
+// (the write is already failing)
+// re-validate the stored bytes under decodeStoredEntity, the rule readEntity
+// and the boot sweep apply: when the poison predates the merge, record it,
+// stamped with the RMW target's entity ID, in the per-entity poison inventory
+// at revision, the revision the RMW read current at, and return the
+// graph-state-reset-required classification instead of a candidate-invalid
+// error. A canonical stored state returns cycleErr unchanged — the candidate
+// really was at fault. Every caller's bytes have already failed the decode or
+// passed the key check, so only the decode or the statement-metadata rule can
+// refuse them here.
+//
+// entityID is the RMW target (the CAS key) — the closures are the only place
+// the identity is reliably in scope, so stamping happens here rather than at
+// any outer helper (design D4).
+func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID string, current []byte, revision uint64, cycleErr error) error {
+	_, err := decodeStoredEntity(entityID, current)
+	if err == nil {
+		return cycleErr
+	}
+	var contractErr *graph.StateContractError
+	if errors.As(err, &contractErr) {
+		c.inventoryEntityPoison(ctx, contractErr, revision)
+	}
+	return err
 }

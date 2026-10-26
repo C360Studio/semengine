@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -15,22 +16,40 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// merge-gate › "Varied and repeated unit runs": the two unit invocations task verify runs, held to
-// the exact command lines of the spec. test:unit runs once under the race detector at one CPU;
-// test:repeat runs five times without it at one CPU in shuffled order, over ./... or the packages
-// given after --. Neither line is read from the file under test: these constants are the spec.
+// merge-gate › "Varied and repeated unit runs" and "Each test task reads its own package list", and
+// integration-test-runner › "Integration test command" and "Only packages with integration tests":
+// the test tasks task verify runs, held to the exact lines of the specs. Each test task reads its
+// package list into PKGS from scripts/test-pkgs.sh and runs plain go test over it. test:unit runs
+// once under the race detector at one CPU; test:repeat runs five times without it at one CPU in
+// shuffled order, over the unit packages or the packages given after --; test:tools runs the tool
+// packages as test:unit runs the unit ones; test:tools:changed runs only scripts/tools-changed.sh.
+// Neither line is read from the file under test: these constants are the spec.
 const (
-	requiredUnitCmd   = "scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./..."
-	requiredRepeatCmd = `scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}`
+	requiredUnitCmd         = "go test -race -count=1 -cpu 1 {{.PKGS}}"
+	requiredRepeatCmd       = "go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default .PKGS}}"
+	requiredToolsCmd        = "go test -race -count=1 -cpu 1 {{.PKGS}}"
+	requiredToolsChangedCmd = "scripts/tools-changed.sh"
 )
 
-// integration-test-runner › "Integration test command": test:integration is plain go test over
-// ./... or the packages given after --. The fingerprint cover:check compares is written only after
-// go test passed, because Task runs a task's commands in order and stops at the first that fails.
+// The fingerprint cover:check compares is written only after go test passed, because Task runs a
+// task's commands in order and stops at the first that fails.
 var requiredIntegrationCmds = []string{
 	"rm -f coverage/integration.tree && mkdir -p coverage",
-	`go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m -coverprofile=coverage/integration.coverprofile {{.CLI_ARGS | default "./..."}}`,
+	"go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m -coverprofile=coverage/integration.coverprofile {{.CLI_ARGS | default .PKGS}}",
 	"scripts/tree-state.sh > coverage/integration.tree",
+}
+
+// pinnedTestTasks is each test task with the spec that pins it, the list its PKGS reads ("" for
+// no vars at all) and its exact commands.
+var pinnedTestTasks = []struct {
+	task, spec, list string
+	cmds             []string
+}{
+	{"test:unit", "merge-gate", "unit", []string{requiredUnitCmd}},
+	{"test:repeat", "merge-gate", "unit", []string{requiredRepeatCmd}},
+	{"test:integration", "integration-test-runner", "integration", requiredIntegrationCmds},
+	{"test:tools", "merge-gate", "tools", []string{requiredToolsCmd}},
+	{"test:tools:changed", "merge-gate", "", []string{requiredToolsChangedCmd}},
 }
 
 func TestUnitInvocationsPinned(t *testing.T) {
@@ -46,56 +65,94 @@ func TestUnitInvocationsPinned(t *testing.T) {
 }
 
 func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
-	integrationTask := func(cmds ...string) string {
-		s := "  test:integration:\n    cmds:\n"
-		for _, c := range cmds {
+	pkgs := func(list string) string {
+		return "    vars:\n      PKGS:\n        sh: scripts/test-pkgs.sh " + list + "\n"
+	}
+	cmds := func(cs ...string) string {
+		s := "    cmds:\n"
+		for _, c := range cs {
 			s += "      - '" + c + "'\n"
 		}
 		return s
 	}
-	taskfile := func(unit, repeat string, integration ...string) []byte {
-		if integration == nil {
-			integration = requiredIntegrationCmds
+	good := map[string]string{}
+	for _, want := range pinnedTestTasks {
+		body := cmds(want.cmds...)
+		if want.list != "" {
+			body = pkgs(want.list) + body
 		}
-		return []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + unit +
-			"\n  test:repeat:\n    cmds:\n      - '" + repeat + "'\n" + integrationTask(integration...))
+		good[want.task] = body
+	}
+	// taskfile is the good Taskfile with each named task's body replaced; an empty body drops the task.
+	taskfile := func(replace map[string]string) []byte {
+		tasks := maps.Clone(good)
+		for name, body := range replace {
+			if body == "" {
+				delete(tasks, name)
+			} else {
+				tasks[name] = body
+			}
+		}
+		s := "version: '3'\ntasks:\n"
+		for _, name := range slices.Sorted(maps.Keys(tasks)) {
+			s += "  " + name + ":\n" + tasks[name]
+		}
+		return []byte(s)
 	}
 	verify := func(steps string) []byte {
-		return []byte("#!/usr/bin/env bash\nsteps=(spec:check build\n  test:unit test:integration " + steps + ")\n")
+		return []byte("#!/usr/bin/env bash\nsteps=(spec:check build\n  " + steps + ")\n")
 	}
-	goodTaskfile, goodVerify := taskfile(requiredUnitCmd, requiredRepeatCmd), verify("cover:check test:repeat")
+	goodTaskfile, goodVerify := taskfile(nil), verify("test:unit test:tools:changed test:integration cover:check test:repeat")
 	requireNoViolations(t, "clean fixture", unitInvocationViolations(goodTaskfile, goodVerify))
 	rm, goTest, fingerprint := requiredIntegrationCmds[0], requiredIntegrationCmds[1], requiredIntegrationCmds[2]
+	integration := func(cs ...string) map[string]string {
+		return map[string]string{"test:integration": pkgs("integration") + cmds(cs...)}
+	}
 
 	for _, tc := range []struct {
 		name             string
 		taskfile, verify []byte
 		wants            []string
 	}{
-		{"count lowered", taskfile(requiredUnitCmd, strings.Replace(requiredRepeatCmd, "-count=5", "-count=1", 1)), goodVerify,
+		{"count lowered", taskfile(map[string]string{"test:repeat": pkgs("unit") + cmds(strings.Replace(requiredRepeatCmd, "-count=5", "-count=1", 1))}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
-		{"cpu setting dropped", taskfile(strings.Replace(requiredUnitCmd, " -cpu 1", "", 1), requiredRepeatCmd), goodVerify,
+		{"cpu setting dropped", taskfile(map[string]string{"test:unit": pkgs("unit") + cmds(strings.Replace(requiredUnitCmd, " -cpu 1", "", 1))}), goodVerify,
 			[]string{"test:unit", requiredUnitCmd}},
-		{"race added to repeat", taskfile(requiredUnitCmd, strings.Replace(requiredRepeatCmd, "go test", "go test -race", 1)), goodVerify,
+		{"race added to repeat", taskfile(map[string]string{"test:repeat": pkgs("unit") + cmds(strings.Replace(requiredRepeatCmd, "go test", "go test -race", 1))}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
-		{"repeat task missing", []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + requiredUnitCmd + "\n" +
-			integrationTask(requiredIntegrationCmds...)), goodVerify,
+		{"repeat task missing", taskfile(map[string]string{"test:repeat": ""}), goodVerify,
 			[]string{"test:repeat", "no such task"}},
-		{"integration shuffle dropped", taskfile(requiredUnitCmd, requiredRepeatCmd, rm, strings.Replace(goTest, " -shuffle=on", "", 1), fingerprint),
+		{"integration shuffle dropped", taskfile(integration(rm, strings.Replace(goTest, " -shuffle=on", "", 1), fingerprint)),
 			goodVerify, []string{"test:integration", "integration-test-runner", goTest}},
-		{"integration fingerprint written before go test", taskfile(requiredUnitCmd, requiredRepeatCmd, rm, fingerprint, goTest),
+		{"integration fingerprint written before go test", taskfile(integration(rm, fingerprint, goTest)),
 			goodVerify, []string{"test:integration", fingerprint}},
-		{"integration fingerprint not removed first", taskfile(requiredUnitCmd, requiredRepeatCmd, goTest, fingerprint),
+		{"integration fingerprint not removed first", taskfile(integration(goTest, fingerprint)),
 			goodVerify, []string{"test:integration", rm}},
-		{"integration through a wrapper", taskfile(requiredUnitCmd, requiredRepeatCmd, rm, "scripts/run.sh "+goTest, fingerprint),
+		{"integration through a wrapper", taskfile(integration(rm, "scripts/run.sh "+goTest, fingerprint)),
 			goodVerify, []string{"test:integration", goTest}},
-		{"integration task missing", []byte("version: '3'\ntasks:\n  test:unit:\n    cmds:\n      - " + requiredUnitCmd +
-			"\n  test:repeat:\n    cmds:\n      - '" + requiredRepeatCmd + "'\n"), goodVerify,
+		{"integration task missing", taskfile(map[string]string{"test:integration": ""}), goodVerify,
 			[]string{"test:integration", "no such task"}},
-		{"step removed from verify", goodTaskfile, verify("cover:check"),
+		{"step removed from verify", goodTaskfile, verify("test:unit test:tools:changed cover:check"),
 			[]string{"scripts/verify.sh", "test:repeat", "missing"}},
-		{"repeat step not last", goodTaskfile, verify("test:repeat cover:check"),
+		{"repeat step not last", goodTaskfile, verify("test:unit test:tools:changed test:repeat cover:check"),
 			[]string{"scripts/verify.sh", "test:repeat must be the last step", "cover:check"}},
+		// "Each test task reads its own package list" and "Only packages with integration tests".
+		{"unit reads the tool list", taskfile(map[string]string{"test:unit": pkgs("tools") + cmds(requiredUnitCmd)}), goodVerify,
+			[]string{"test:unit", "scripts/test-pkgs.sh unit"}},
+		{"repeat has no PKGS and defaults to every package", taskfile(map[string]string{"test:repeat": cmds(`go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}`)}), goodVerify,
+			[]string{"test:repeat", requiredRepeatCmd}},
+		{"integration reads the unit list", taskfile(map[string]string{"test:integration": pkgs("unit") + cmds(requiredIntegrationCmds...)}), goodVerify,
+			[]string{"test:integration", "scripts/test-pkgs.sh integration"}},
+		{"tools reads the unit list", taskfile(map[string]string{"test:tools": pkgs("unit") + cmds(requiredToolsCmd)}), goodVerify,
+			[]string{"test:tools", "scripts/test-pkgs.sh tools"}},
+		{"tools:changed runs the tool tests directly", taskfile(map[string]string{"test:tools:changed": cmds("task test:tools")}), goodVerify,
+			[]string{"test:tools:changed", requiredToolsChangedCmd}},
+		{"tool step removed from verify", goodTaskfile, verify("test:unit test:integration cover:check test:repeat"),
+			[]string{"scripts/verify.sh", "test:tools:changed", "missing"}},
+		{"tool step before the unit step", goodTaskfile, verify("test:tools:changed test:unit test:integration cover:check test:repeat"),
+			[]string{"scripts/verify.sh", "test:tools:changed must follow test:unit"}},
+		{"tools command drift", taskfile(map[string]string{"test:tools": pkgs("tools") + cmds(strings.Replace(requiredToolsCmd, " -race", "", 1))}), goodVerify,
+			[]string{"test:tools", requiredToolsCmd}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireViolation(t, unitInvocationViolations(tc.taskfile, tc.verify), tc.wants...)
@@ -105,31 +162,34 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 
 var verifySteps = regexp.MustCompile(`(?s)\bsteps=\(([^)]*)\)`)
 
-// unitInvocationViolations checks the three test task commands in a Taskfile and the step list of a
-// verify.sh against the spec.
+// unitInvocationViolations checks the vars and commands of the test tasks in a Taskfile and the step
+// list of a verify.sh against the specs.
 func unitInvocationViolations(taskfile, verify []byte) []string {
 	var violations []string
 	var tf struct {
 		Tasks map[string]struct {
-			Cmds []any `yaml:"cmds"`
+			Vars map[string]any `yaml:"vars"`
+			Cmds []any          `yaml:"cmds"`
 		} `yaml:"tasks"`
 	}
 	if err := yaml.Unmarshal(taskfile, &tf); err != nil {
 		return []string{fmt.Sprintf("Taskfile.yml: %v", err)}
 	}
-	for _, want := range []struct {
-		task, spec string
-		cmds       []string
-	}{
-		{"test:unit", "merge-gate", []string{requiredUnitCmd}},
-		{"test:repeat", "merge-gate", []string{requiredRepeatCmd}},
-		{"test:integration", "integration-test-runner", requiredIntegrationCmds},
-	} {
+	for _, want := range pinnedTestTasks {
 		required := "`" + strings.Join(want.cmds, "`, then `") + "`"
 		task, ok := tf.Tasks[want.task]
 		if !ok {
 			violations = append(violations, fmt.Sprintf("Taskfile.yml: no such task %s; the %s spec requires it to run %s", want.task, want.spec, required))
 			continue
+		}
+		var wantVars map[string]any
+		requiredVars := "no vars"
+		if want.list != "" {
+			wantVars = map[string]any{"PKGS": map[string]any{"sh": "scripts/test-pkgs.sh " + want.list}}
+			requiredVars = "exactly `PKGS: {sh: scripts/test-pkgs.sh " + want.list + "}`"
+		}
+		if len(task.Vars) != len(wantVars) || (wantVars != nil && !reflect.DeepEqual(task.Vars, wantVars)) {
+			violations = append(violations, fmt.Sprintf("Taskfile.yml: task %s sets vars %v; the %s spec requires %s", want.task, task.Vars, want.spec, requiredVars))
 		}
 		if !slices.EqualFunc(task.Cmds, want.cmds, func(got any, cmd string) bool { return got == cmd }) {
 			violations = append(violations, fmt.Sprintf("Taskfile.yml: task %s runs %v; the %s spec requires exactly %s", want.task, task.Cmds, want.spec, required))
@@ -141,10 +201,13 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 		return append(violations, "scripts/verify.sh: no steps=(...) list")
 	}
 	steps := strings.Fields(string(m[1]))
-	for _, step := range []string{"test:unit", "test:repeat"} {
+	for _, step := range []string{"test:unit", "test:tools:changed", "test:repeat"} {
 		if !slices.Contains(steps, step) {
 			violations = append(violations, fmt.Sprintf("scripts/verify.sh: step %s is missing from %v", step, steps))
 		}
+	}
+	if u, c := slices.Index(steps, "test:unit"), slices.Index(steps, "test:tools:changed"); u >= 0 && c >= 0 && c < u {
+		violations = append(violations, fmt.Sprintf("scripts/verify.sh: test:tools:changed must follow test:unit; the steps are %v", steps))
 	}
 	if i := slices.Index(steps, "test:repeat"); i >= 0 && i != len(steps)-1 {
 		violations = append(violations, fmt.Sprintf("scripts/verify.sh: test:repeat must be the last step; %v follow it", steps[i+1:]))
@@ -157,7 +220,8 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 // exactly three read permissions; no permission anywhere in the workflow is a write; required needs
 // verify and merge-check; verify's limit is 15 minutes; required runs under if: always(), and its
 // step, which takes its results from needs.*.result, exits 0 only when every needed job succeeded;
-// the pull_request trigger lists four activity types; every job runs on the one label ubuntu-24.04.
+// the pull_request trigger lists four activity types; every job runs on the one label ubuntu-24.04;
+// verify's checkout fetches full history (fetch-depth: 0), so scripts/tools-changed.sh finds the base.
 // The step is shown by running its script as the workflow writes it, with each set of results
 // planted. As above, the expected values are constants here, never read from the file under test.
 var (
@@ -191,7 +255,11 @@ jobs:
   verify:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    steps: [{run: task verify}]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - run: task verify
   merge-check:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -306,6 +374,9 @@ jobs:
 			[]string{"job merge-check", "group:ci", "labels:ubuntu-24.04"}},
 		{"required on an expression", "  required:\n    runs-on: ubuntu-24.04\n", "  required:\n    runs-on: ${{ vars.RUNNER_IMAGE }}\n",
 			[]string{"job required", "runs on ${{ vars.RUNNER_IMAGE }}"}},
+		// "How the changed files are found": the scenario "Full history dropped from CI".
+		{"fetch-depth dropped", "        with:\n          fetch-depth: 0\n", "",
+			[]string{"job verify", "fetch-depth: 0"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			requireViolation(t, ciWorkflowViolations(t, plant(t, tc.old, tc.repl)), tc.wants...)
@@ -336,6 +407,7 @@ type ciStep struct {
 	If              any            `yaml:"if"`
 	ContinueOnError any            `yaml:"continue-on-error"`
 	Uses            string         `yaml:"uses"`
+	With            map[string]any `yaml:"with"`
 	Shell           string         `yaml:"shell"`
 	Env             map[string]any `yaml:"env"`
 	Run             string         `yaml:"run"`
@@ -408,6 +480,14 @@ func ciWorkflowViolations(t *testing.T, data []byte) []string {
 		violations = append(violations, "ci.yml: no job verify; the merge-gate spec requires it")
 	} else if limit, ok := v.TimeoutMinutes.(int); !ok || limit != verifyTimeoutMinutes {
 		violations = append(violations, fmt.Sprintf("ci.yml: job verify has timeout-minutes %v; the merge-gate spec requires %d minutes", v.TimeoutMinutes, verifyTimeoutMinutes))
+	}
+	if v, ok := wf.Jobs["verify"]; ok {
+		i := slices.IndexFunc(v.Steps, func(s ciStep) bool { return strings.HasPrefix(s.Uses, "actions/checkout@") })
+		if i < 0 {
+			violations = append(violations, "ci.yml: job verify has no actions/checkout step; the merge-gate spec requires one with fetch-depth: 0")
+		} else if depth, ok := v.Steps[i].With["fetch-depth"].(int); !ok || depth != 0 {
+			violations = append(violations, fmt.Sprintf("ci.yml: job verify checks out with fetch-depth %v; the merge-gate spec (\"How the changed files are found\") requires fetch-depth: 0", v.Steps[i].With["fetch-depth"]))
+		}
 	}
 	return violations
 }

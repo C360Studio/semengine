@@ -81,25 +81,47 @@ tasks:
       - scripts/gopkgs.sh go tool govulncheck ./...
 
   test:unit:
-    desc: Run unit tests once with the race detector at one CPU (the integration run covers every CPU)
+    desc: Run unit tests (every package but the tool packages) once with the race detector at one CPU (the integration run covers every CPU)
+    vars:
+      PKGS:
+        sh: scripts/test-pkgs.sh unit
     cmds:
-      - scripts/gopkgs.sh go test -race -count=1 -cpu 1 ./...
+      - go test -race -count=1 -cpu 1 {{.PKGS}}
 
   test:repeat:
     desc: Run unit tests five times at one CPU without the race detector, shuffled; -- <pkgs> to focus
+    vars:
+      PKGS:
+        sh: scripts/test-pkgs.sh unit
     cmds:
       # The count, the CPU setting and the absence of -race are pinned by the merge-gate spec
-      # (contract test TestUnitInvocationsPinned); one CPU without -race is the setting that found #40.
-      - 'scripts/gopkgs.sh go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}'
+      # (toolcheck's TestUnitInvocationsPinned); one CPU without -race is the setting that found #40.
+      - 'go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default .PKGS}}'
 
   test:integration:
-    desc: Run Docker-backed tests with plain go test, shuffled, two packages at a time; on a pass, record the tree it measured for cover:check; -- <pkgs> to focus
+    desc: Run Docker-backed tests with plain go test over the packages with integration tests, shuffled, two packages at a time; on a pass, record the tree it measured for cover:check; -- <pkgs> to focus
+    vars:
+      PKGS:
+        sh: scripts/test-pkgs.sh integration
     cmds:
-      # Pinned by contract test TestUnitInvocationsPinned (integration-test-runner spec). Task stops
+      # Pinned by toolcheck's TestUnitInvocationsPinned (integration-test-runner spec). Task stops
       # at the first failing command, so the fingerprint exists only after go test passed.
       - rm -f coverage/integration.tree && mkdir -p coverage
-      - 'go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m -coverprofile=coverage/integration.coverprofile {{.CLI_ARGS | default "./..."}}'
+      - 'go test -race -failfast -tags=integration -count=1 -p 2 -shuffle=on -timeout 10m -coverprofile=coverage/integration.coverprofile {{.CLI_ARGS | default .PKGS}}'
       - scripts/tree-state.sh > coverage/integration.tree
+
+  test:tools:
+    desc: Run the tool tests (mutcheck, pindiff, toolcheck, the tests of scripts, Taskfile.yml and CI) once with the race detector at one CPU
+    vars:
+      PKGS:
+        sh: scripts/test-pkgs.sh tools
+    cmds:
+      - go test -race -count=1 -cpu 1 {{.PKGS}}
+
+  test:tools:changed:
+    desc: Run test:tools when a file the tool tests read changed against the base (scripts/, internal/harness/, .github/, Taskfile.yml, go.mod and others); otherwise say they were skipped
+    cmds:
+      - scripts/tools-changed.sh
 
   merge:check:
     desc: Fail while a class:flake issue is open that PR <n> does not close, main's rules lack the up-to-date setting, or PR <n> is a code PR, not a draft, without implemented-by and reviewed-by lines naming the agents; -- <n>. Reads GitHub, so not in verify

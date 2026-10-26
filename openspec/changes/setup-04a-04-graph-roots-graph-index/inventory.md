@@ -115,6 +115,7 @@ other. The gap is real.
 | The owned-bucket set | `pin:…/component.go:71-76` (Validate), `:871-876` (createOutputBuckets "belt"), `:952-965` (assignBucket), `:132-176` (ApplyDefaults), `:178-205` (DefaultConfig) | `graph/kvcatalog/kvcatalog.go:171-176` (owner `graph-index`) |
 | Request subjects `graph.index.query.*` | `pin:processor/graph-index/query.go:31-80`, `:94-105` | none; the verb table `graph/query_verbs.go:29` holds graph-ingest's three |
 | Reply envelope | `graph.NewQueryResponse` at 11 sites (`query.go:141`…`:679`, `name_index.go:310`, `:348`) | none (D18 shape decided, code deferred) |
+| Stream generation (a stream deleted and created again under a reader) | none in graph-index (G5: no check) | `processor/graph-ingest/consume.go:249-265`: `waitForStream` returns `stream.CachedInfo().Created`, "the stream's generation (#15)"; `openspec/specs/graph-ingest-recovery/spec.md:130-140` (read before the bind), `:158-163` (a recreated or restored stream is a declared limit); issue #216 (graph-ingest stalls when its input stream is recreated) |
 | A handler's deadline | `context.WithTimeout(ctx, 5*time.Second)` in each handler (`query.go:114`, `:265`, `:333`, `:371`, `:577`, `:620`, `name_index.go:269`; predicateList has none) | natsclient's per-request handler timeout (`natsclient/request.go:326-327`) |
 
 ## 3. Adjacent claims
@@ -122,7 +123,8 @@ other. The gap is real.
 ### Open pull requests
 
 `gh pr list --state open --json number,title,isDraft,headRefName,changedFiles,files` on 2026-10-26: #414 (this claim,
-draft, 0 files) and #413 (`claude/flow-paths-composition-363`, draft, 0 files; its body says flow-path reachability
+draft, 0 files) and #413 (`claude/flow-paths-composition-363`, draft; 6 files on the round-5 re-check, all under
+`openspec/changes/refactor-363-flow-paths-composition`; its body says flow-path reachability
 moves from `service` into `composition`, as a function over the graph `composition.Analyze` builds). This change edits
 neither package, but it changes what `composition.Analyze` refuses: the capture check reads `graph.QueryVerbs()`
 (`composition/analyze.go:123-142`), which gains eight subjects here. Behavioural overlap, merge order in design D17.
@@ -148,8 +150,9 @@ Queries, each `gh issue list --state open --search <q> --limit 200`: `graph-inde
 | #300 | graph-ingest only (sections C, D, F, H) | named by the brief; touches no graph-index file |
 | #415 | `processor/graph-index` alias index (G8), filed from this design | stale aliases keep resolving; `status:blocked`; stays open: an ADR for the alias key layout, then its own PR before PR 9 (owner ruling, PR #414 comment 6426254115, item 3) |
 | #16 | its 2026-10-24 drift note: change 4's adopter inventory names the widened capture refusal once `graph.index.query.*` joins `QueryVerbs()` | the composition half is done (`composition/analyze.go:123-142`); a stream on `graph.index.>` fails at boot after this PR (section 12) |
+| #216 | graph-ingest stops receiving when its input stream is created again while it runs | same class as trigger (iii) (design D3): a reader of a recreated stream stalls silently. Its reader is graph-ingest's consumer, not the follower's watch; it is the parallel lane's next fix; it stays open, and this PR does not touch graph-ingest |
 
-Names the word, not the package: #405, #141, #111, #161, #216, #280, #9 (epic), #7 (epic).
+Names the word, not the package: #405, #141, #111, #161, #280, #9 (epic), #7 (epic).
 
 ### Specs and records
 
@@ -213,7 +216,9 @@ Adopters, never an obligation of this change; tracking issue: #109 (already open
 `pin:processor/graph-index-spatial/component.go:690-856`
 and `pin:processor/graph-index-temporal/component.go:712-886` (change 7); `pin:processor/rule` decides in change 6
 (ADR-108 Consequences). `ComputeIndexStatus`'s other producer: graph-embedding
-(`pin:processor/graph-embedding/readiness.go:43`).
+(`pin:processor/graph-embedding/readiness.go:43`). The stream generation the follower reads for trigger (iii) has one
+reader in the tree, graph-ingest (`processor/graph-ingest/consume.go:249-265`, #15); #216's fix is the next candidate
+to read it. Whether the two share one reader is design D3's.
 
 ## 6. The pin's decision records for the carried packages
 
@@ -318,6 +323,7 @@ tier-0 ruling (#9 comment 6386603659).
 | Ownership | one follower per component instance; graph-index is a singleton per process at the pin (one `GRAPH_STATUS` key) — two instances would publish one key twice: searched `KeyGraphIndex` (one writer) |
 | Readers | graph-index's query gate and `Health`; operators and semsource's MCP gateway read the key (`semsource:processor/mcp-gateway/tools.go:141`, `processor/supersession/versiondiff_serve.go:204`, `processor/source-manifest/workbench_capabilities.go:30`); semconnect's conformance probe (`semconnect:conformance/cmd/index-readiness/main.go:35`) |
 | Writers | the follower only (publisher), graph-index never |
+| Stream generation | the follower reads `ENTITY_STATES`'s creation time per heartbeat (trigger (iii), design D3); graph-ingest reads its input streams' the same way (`processor/graph-ingest/consume.go:249-265`, the generation of #15); #216 (graph-ingest's recreated input stream) is the same class, unfixed |
 | Recovery | rebuild from scratch on every process start (#108); reset latch holds until restart (ADR-074 `:69-71`, ADR-084 D4); a lost feed: no recovery at the pin (G5) |
 
 ## 10. Size against the one-package rule
@@ -341,7 +347,7 @@ about 3,630 pin lines.
 | Statement | Probe at nats.go v1.54.0 / nats-server v2.15.1 (`go.mod:16-17`) |
 | --- | --- |
 | `WatchAll` sends one `nil` entry after the initial values | empty bucket only: `natsclient/kv_integration_test.go:239-245`. Non-empty: no probe; the follower's integration test drives it (design D11) |
-| `Updates()` closes when the watcher ends for a reason other than `Stop` | a restart with its store does not close it; it stalls and resumes within two activity checks, 20 s (`js.go:218-222`, `:2496`; probe PR #414 comment 6425769680). A deleted bucket closes it (`js.go:2354-2358`, `:2415`; `jetstream/kv.go:1364-1367`; measured 18.00 s, `/tmp/gi-probe-delete/out-delete.txt`, posted by task 1.3). A deleted and recreated bucket does not close it and skips the new stream's first revisions (`out-recreate-6puts.txt`); its creation time changes (`out-recreate-created.txt`). Design D3 |
+| `Updates()` closes when the watcher ends for a reason other than `Stop` | a restart with its store does not close it; it stalls and resumes within two activity checks, 20 s (`js.go:218-222`, `:2496`; probe PR #414 comment 6425769680). A deleted bucket closes it (`js.go:2354-2358`, `:2415`; `jetstream/kv.go:1364-1367`; measured 18.00 s; probe PR #414 comment 6426443564). A deleted and recreated bucket does not close it and skips the new stream's first revisions; its creation time changes (same comment; the program and outputs under `/tmp/gi-probe-delete/` are local only). Design D3 |
 | `ENTITY_STATES` keeps one revision per key | `graph/kvcatalog/kvcatalog.go:79-87` (`History: 1`): a revision overwritten before a watcher reads it is never delivered (restart probe run 3) |
 | A KV revision and `LastSeq` share one sequence space | `natsclient/kv.go:100-110` states it; probe: `pin:processor/graph-index/revision_space_integration_test.go:38` returns with the port (ADR-109 D4) |
 | Concurrent `Status` and `Get` on one KV handle race under `-race` (`pin:…/component.go:236-239`) | carried comment; not promised (Bounded port scope) |

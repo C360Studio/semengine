@@ -128,10 +128,12 @@ What a caller observes:
   the highest revision observed.
 - The *feed lost* state is set when (i) `WatchAll` fails, (ii) the `Updates()` channel closes while `Run`'s context is
   live, or (iii) a heartbeat's status read shows that `ENTITY_STATES`'s backing stream was created after the one `Open`
-  bound (its creation time differs). `Stuck` names it, the envelope reads `degraded` from the next tick, queries are
-  refused (D5), and `Run` keeps publishing until its context ends. Nothing rebinds the watcher; the state holds until
-  the process restarts (owner ruling, PR #414 comment 6426254115, item 2). At the pin graph-index's two paths returned
-  with no mark (G5); ADR-108 D4 (`:104-106`) asks that the loss be declared, with a failing test first.
+  bound (its creation time differs: the stream's generation of #15, as graph-ingest reads it,
+  `processor/graph-ingest/consume.go:249-265`, `openspec/specs/graph-ingest-recovery/spec.md:130-140`). `Stuck` names
+  it, the envelope reads `degraded` from the next tick, queries are refused (D5), and `Run` keeps publishing until its
+  context ends. Nothing rebinds the watcher; the state holds until the process restarts (owner ruling, PR #414 comment
+  6426254115, item 2). At the pin graph-index's two paths returned with no mark (G5); ADR-108 D4 (`:104-106`) asks that
+  the loss be declared, with a failing test first.
 
   The real triggers, measured at nats.go v1.54.0 / nats-server v2.15.1 (embedded server, JetStream file store, client
   `MaxReconnects(-1)`, `ReconnectWait(2s)` as natsclient's defaults, `natsclient/client.go:308-309`):
@@ -155,8 +157,18 @@ What a caller observes:
     floor). The old handle's status read returns the new stream, whose creation time differs. Trigger (iii) catches
     it at the next heartbeat.
 
-  Delete and recreate probe: program and output in `/tmp/gi-probe-delete/` (`main.go`, `out-delete.txt`,
-  `out-recreate.txt`, `out-recreate-6puts.txt`, `out-recreate-created.txt`), to be posted on PR #414 by task 1.3. One
+  - *A restored stream* can get past trigger (iii), a declared limit as for graph-ingest
+    (`openspec/specs/graph-ingest-recovery/spec.md:158-163`): a restore can bring back the creation time `Open` read,
+    so a delete and restore inside one stall window reads as the same generation and its skipped revisions go
+    undeclared. A delete caught first by trigger (ii) is declared. Not probed.
+  - *One generation reader with #216?* Not in this PR. graph-ingest reads it from `jetstream.Stream` in an unexported
+    method; the follower reads it from the bucket status it already reads for the target. Sharing means a new exported
+    natsclient function and an edit to graph-ingest, which this PR does not touch; and #216's fix is unmeasured (its
+    nats.go probe is open) and may rebind rather than read the generation. #216's design decides whether to lift one
+    reader, with the follower as its second caller.
+
+  Delete and recreate probe: PR #414 comment 6426443564 (program and outputs under `/tmp/gi-probe-delete/` are local
+  only). One
   status read per heartbeat gives both the last sequence (the target, as `natsclient.BucketLastSeq` reads it,
   `natsclient/kv.go:110`) and the creation time; one read site, not two.
 

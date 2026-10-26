@@ -9,7 +9,8 @@ notes, and they are committed with the code of 4.1 and 4.2, so every commit pass
 
 - [x] 1.1 Inventory (`inventory.md`) committed at d61fcad; the owner ruled its open question on PR #419 (comment
   6429349207, "Yes, split it"). Gate: the comment read back.
-- [ ] 1.2 Proposal, tasks and the `merge-gate` and `integration-test-runner` deltas committed. Gate: `task spec:check`
+- [x] 1.2 Proposal, tasks and the `merge-gate` and `integration-test-runner` deltas committed (Claude-side review
+  PASS on `918cebc`, its two LOWs applied in `0b9d396`). Gate: `task spec:check`
   and `task docs:check`.
 
 ## 2. Probe

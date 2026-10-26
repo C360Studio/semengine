@@ -6,7 +6,9 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 ## 1. Design
 
 - [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner, with owner question 1 answered. Gate: `task spec:check` and `task docs:check`.
+  owner (2026-10-26). Owner question 1 was still open at acceptance and is task 4.3's input; the owner answered it
+  on 2026-10-26: the file split goes in its own pull request right after this one. Gate: `task spec:check` and
+  `task docs:check`.
 
 ## 2. Tests
 

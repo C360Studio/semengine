@@ -55,6 +55,11 @@ func (l *Lifecycle) Initialize() error {
 // Start are refused; start runs under ctx; a start that fails or panics is rolled back through
 // cleanup, and a rollback that fails stays pending for the next Stop. The shell is running from
 // the moment start returns nil until cleanup begins.
+//
+// cleanup runs after a partial start as well as a complete one, so it must tolerate handles that
+// were never acquired. It must not panic: a cleanup that panics leaves the guard's state behind
+// it, so a later Stop cannot try again. The shell inherits that limitation from
+// internal/lifecycleguard (#309).
 func (l *Lifecycle) Start(ctx context.Context, start, cleanup func(context.Context) error) error {
 	l.mu.Lock()
 	initialized := l.initialized

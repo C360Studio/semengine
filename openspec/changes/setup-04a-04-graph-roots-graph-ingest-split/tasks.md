@@ -11,10 +11,10 @@ oracle is design D3's script against the base `c1caa45` and the existing tests. 
 
 ## 2. The move
 
-- [ ] 2.1 One commit, `refactor(graph-ingest): split component.go into files, moves only (addresses #300)`: the
-  moves of design D1 and the census update of D4 in `natsclient/consumer_policy_callsite_test.go`, nothing else. Run
-  D3's script with `bash` against `c1caa45` and this commit, and record in `notes/2.1.md` the script, its output (the
-  pass line), and `git diff -M -C --stat c1caa45 HEAD`. Gate: the script exits 0 and `task verify` passes.
+- [ ] 2.1 One commit, `refactor(graph-ingest): split component.go into files, moves only (addresses #300)`: the moves
+  of design D1 and the census update of D4 in `natsclient/consumer_policy_callsite_test.go`, nothing else. Its parent is
+  the design head. Run D3's script as `bash proof.sh c1caa45 <this commit>`, and record in `notes/2.1.md` the script,
+  its output (the pass line), and `git diff -M -C --stat HEAD^ HEAD`. Gate: the script exits 0 and `task verify` passes.
 
 ## 3. Citations and ledger
 

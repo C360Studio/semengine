@@ -62,7 +62,9 @@ leave a file of a struct and a factory, and the lifecycle is what the next chang
 
 ## D3. Proof of "moves only"
 
-One script, run under bash from the repository root as `bash proof.sh c1caa45 <move commit>`. Its text goes in
+One script, run under bash from the repository root as `bash proof.sh c1caa45 <move commit>`. The base `c1caa45` is
+the source the code is compared with; the move commit's parent is the design head (the OpenSpec commits sit between
+the base and the move), so check A0 first shows the parent's code is still the base's. Its text goes in
 `notes/2.1.md` with the run; it is not committed as a harness script, since it proves one pull request and harness
 code exists only for a failure on today's tree (`docs/test-infrastructure.md`). It stops at the first failure
 (`set -euo pipefail`) and prints its last line only when every check passes.
@@ -81,8 +83,10 @@ ranges() { case $1 in              # D1's base line ranges of component.go, in o
 body() { awk '/^import \($/{skip=1;next} skip{if(/^\)$/)skip=0;next} /^package /{next} NF'; }
 imports() { awk '/^import \($/{skip=1;next} skip&&/^\)$/{exit} skip&&NF{sub(/^[ \t]+/,"");print}'; }
 git show "$base:$d/component.go" > "$t/base.go"
-# A: the move commit changes exactly these paths.
-git diff --name-only "$base" "$move" > "$t/paths"
+# A0: the move commit's parent holds the base's code for these paths, so B to D can compare with the base.
+git diff --quiet "$base" "$move^" -- "$d" natsclient/consumer_policy_callsite_test.go
+# A: the move commit changes exactly these paths, against its parent.
+git diff --name-only "$move^" "$move" > "$t/paths"
 printf '%s\n' natsclient/consumer_policy_callsite_test.go $(for f in $files; do echo "$d/$f.go"; done) |
   LC_ALL=C sort | diff - "$t/paths"
 # B: the ranges cover every non-blank base line once; each file is its base text, then its ranges, in order.
@@ -110,13 +114,15 @@ srcdoc before "$base" > "$t/before"; srcdoc after "$move" > "$t/after"
 [ "$(grep -c '^=== ' "$t/after")" -eq 83 ]
 awk '/^=== /{if(h&&!n)bad=1;h=1;n=0;next} /^(func|type) /{n=1} END{exit (bad||!n)}' "$t/after"
 diff "$t/before" "$t/after"
-echo "moves only: A, B, C and D pass"
+echo "moves only: A0, A, B, C and D pass"
 ```
 
 What each check covers:
 
-- **A.** The move commit changes exactly eight paths: the seven files and the census test. An edit anywhere else
-  fails it.
+- **A0.** The move commit's parent has the base's `processor/graph-ingest/` and census test (`git diff --quiet`), so
+  B to D may compare with `c1caa45`. A code change between the base and the move fails it.
+- **A.** The move commit changes exactly eight paths against its parent: the seven files and the census test. An
+  edit anywhere else in the move commit fails it.
 - **B.** D1's ranges cover every non-blank line of the base `component.go` once, and each of the seven files, blank
   lines, package clause and import block left out, is its own base text (none for a new file) followed by its ranges,
   in order. A changed, added, removed or reordered line, or a declaration in the wrong file, fails it.
@@ -129,14 +135,17 @@ What each check covers:
 
 Not covered: blank lines between declarations; a second blank line beside an existing one inside a body, which
 `go doc` prints as one but `task fmt:check` refuses (`gofmt -l` lists such a file, measured); the census test's text,
-read in the diff (D4); and anything after the move commit, which task 3.1 bounds by the paths it may change.
+read in the diff (D4); and anything after the move commit. The script proves the move commit only: run on the pull request's
+later head, A0 fails, since the move changed `processor/graph-ingest/`. Task 3.1's gate is its own name-only diff.
 
-Measured on a scratch repository holding the base and the dry-run move as two commits: the script passes; each
-mutant below, committed on top of the move, fails it at the check named, and a variant with one symbol that does not
-exist stops at that symbol's `go doc` with exit 1.
+Measured on a scratch history shaped like the branch: the base, a commit adding this change's five OpenSpec files,
+then the dry-run move. The script passes on the move. Each mutant below is a move commit on the same parent with one
+change, and fails at the check named (traced with `bash -x`); a variant with one symbol that does not exist stops at
+that symbol's `go doc` with exit 1; run on a later commit that only edits a test comment, the script fails at A0.
 
 | Mutant | Fails at |
 | --- | --- |
+| a comment added to `keyed_ingest.go` in the parent, the move on top | A0 |
 | a comment added to `keyed_ingest.go` | A |
 | "Subscription Management" banner changed to "Subscription management" in `consume.go` | B |
 | two lines of `waitForStream` swapped | B |
@@ -144,7 +153,7 @@ exist stops at that symbol's `go doc` with exit 1.
 | `_ "net/http/pprof"` added to `consume.go`'s imports | C |
 | a blank line inserted between two statements of `waitForStream` | D |
 
-Review aids, not proof: `git diff -M -C --stat c1caa45 <move>` (dry run: `component.go` 1,859 deletions; `config.go`
+Review aids, not proof: `git diff -M -C --stat <move>^ <move>` (dry run: `component.go` 1,859 deletions; `config.go`
 120, `consume.go` 286, `ingest.go` 896, `metrics.go` 366 insertions; `poison_inventory.go` 164 and `query.go` 77
 insertions; the `natsclient` test); `git blame -C -C` on each new file, which on the dry run attributes every line to
 the base except package clauses, import lines and blank lines. `git log --follow` does not trace a split, since

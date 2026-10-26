@@ -201,7 +201,7 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	// consumer counts it as outstanding and no envelope can read caught-up, however
 	// the goroutines are scheduled; the backlog's size alone gave no such ordering.
 	// The barrier wraps the real handler through the consumeStream acquisition seam
-	// (component.go), which lifecycle_integration_test.go also wraps. The deferred
+	// (consume.go), which lifecycle_integration_test.go also wraps. The deferred
 	// release runs before owner.finish, so a failed assertion cannot hold Stop.
 	held := make(chan struct{})
 	release := make(chan struct{})

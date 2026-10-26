@@ -5,12 +5,12 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
   owner, with owner question 1 answered. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Tests
 
-- [ ] 2.1 `component/lifecycle_type_test.go` and `component/shell_example_test.go` (design D10):
+- [ ] 2.1 `component/lifecycle_type_test.go` and `component/lifecycle_example_test.go` (design D10):
   `TestLifecycleOwnerPassesTheLifecycleSuite` on the real clock through `lifecycletest.Run`; inside `synctest.Test`,
   `TestLifecycleReadsInEveryPhase`, `TestLifecycleReadsDoNotWaitForStartOrStop`,
   `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestLifecycleFailedStartNeverRuns` and

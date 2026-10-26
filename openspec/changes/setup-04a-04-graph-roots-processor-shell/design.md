@@ -1,7 +1,8 @@
 # Design: setup-04a-04-graph-roots-processor-shell
 
-Base `7615030`. Inventory: `inventory.md` (drafted in the same pass; no `INVENTORY PASS` yet). Change 4, PR 2 of 9
-(#9 comment 6386856657). Retires #306 (`Closes #306`, tasks 2.2 and 4.2). Addresses #109 (the shell half; the
+Base `7615030`. Inventory: `inventory.md` (Codex `INVENTORY PASS` at 9bfc576, PR #409 comment 6403099787; `DESIGN REVIEW
+PASS` at 17b3dcb, comment 6414155933; owner accepted the design 2026-10-26 with question 1 still open). Change 4, PR 2
+of 9 (#9 comment 6386856657). Retires #306 (`Closes #306`, tasks 2.2 and 4.2). Addresses #109 (the shell half; the
 follower lands with graph-index). Governing records: ADR-108 D1-D3, ADR-113, ADR-095, ADR-109 D2, ADR-058.
 
 ## Context

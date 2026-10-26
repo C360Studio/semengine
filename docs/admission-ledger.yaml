@@ -2400,8 +2400,8 @@
     entering as its own row per docs/provenance.md rule 4): validates a decoded payload and fences
     panics in payload code on the Graphable lane
   destination: >-
-    processor/graph-ingest/component.go (decodeEntity and consume closure), with
-    processor/graph-ingest/fact_lane_fence_test.go and fact_lane_fence_integration_test.go
+    processor/graph-ingest/ingest.go (decodeEntity) and processor/graph-ingest/consume.go (consume
+    closure), with processor/graph-ingest/fact_lane_fence_test.go and fact_lane_fence_integration_test.go
   contract: >-
     decodeEntity runs envelope Validate before extraction and converts panics in payload methods
     into a classified invalid error naming the payload type and subject; the stream lane terminates,

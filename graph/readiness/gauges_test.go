@@ -41,7 +41,7 @@ func TestGauges_FullyQualifiedNamesPreserveTheWireContract(t *testing.T) {
 		}
 	}
 
-	// graph-ingest's set, built as component.go builds it, exposes exactly its five
+	// graph-ingest's set, built as metrics.go builds it, exposes exactly its five
 	// semengine families: none missing, none renamed, nothing extra.
 	t.Run("graph_ingest exposes exactly its five families", func(t *testing.T) {
 		registry := metric.NewMetricsRegistry()

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/cache"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
@@ -650,4 +651,80 @@ func decodeCursor(cursor string) (string, error) {
 		return "", err
 	}
 	return string(b), nil
+}
+
+// invalidateEntityCacheEntry drops a stale entity-query-cache entry after a
+// direct entityBucket write, preserving read-after-write coherence for callers
+// that query via graph.ingest.query.* (e.g. the gated-DAG executor reading the
+// whole unit set right after committing a claim, or any read-after-mutate via
+// the NATS mutation API). This is the single invalidation primitive for every
+// write path (canonical create/reconcile/append/delete, Graphable merge, and
+// hierarchy inference) so the coherence guard below is uniform.
+//
+// Read-after-write cache-coherence contract: a repopulating Set is dropped if
+// the key was invalidated during the read window, so a slow reader cannot
+// resurrect pre-write state past a concurrent invalidate. This method bumps the
+// per-key invalidation generation AND drops the entry under cacheGenMu; the
+// cache-miss repopulate (repopulateEntityCacheEntry) captures the generation
+// before its KV Get and re-checks it under the same lock before Setting, so
+// {bump+delete} and {gen-check+set} are mutually atomic. An invalidation that
+// lands after a reader's KV Get is therefore guaranteed to be observed by that
+// reader (it skips its Set); an invalidation that lands after a reader's Set is
+// guaranteed to delete the value it wrote. No-op when the cache is disabled.
+//
+// Correctness precondition: entityBucket.Get is read-your-writes/monotonic
+// relative to a committed write's invalidate — a Get issued after an
+// invalidation is reflected in gen0 returns that write's revision or newer.
+// This holds for single-server NATS (all integration/e2e testcontainers) and
+// for leader reads. A clustered deployment serving stale allow_direct reads
+// from a lagging replica could return a revision older than an acknowledged
+// write — but such a Get already returns stale data on a cold cache, so the
+// guard introduces no regression relative to the no-cache baseline.
+func (c *Component) invalidateEntityCacheEntry(id string) {
+	entityCache := c.entityCacheHandle()
+	if entityCache == nil {
+		return
+	}
+	c.cacheGenMu.Lock()
+	defer c.cacheGenMu.Unlock()
+	c.cacheGen[id]++
+	entityCache.Delete(id) //nolint:errcheck
+}
+
+// entityCacheHandle reads the entity cache handle once, under mu. A caller uses the copy
+// it got: release may close and clear the handle meanwhile, and a closed cache still
+// serves Get, Set and Delete (cache.Cache's Close), so a use during or after Stop is
+// safe (#306). Nil when the cache is disabled or released.
+func (c *Component) entityCacheHandle() cache.Cache[graph.EntityState] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.entityCache
+}
+
+// loadEntityCacheGen captures the current invalidation generation for a key.
+// The cache-miss read path calls this BEFORE its KV Get so a later repopulating
+// Set can detect an invalidation that raced the read window. Returns 0 for a
+// never-invalidated key (map zero value), which is a valid baseline.
+func (c *Component) loadEntityCacheGen(id string) uint64 {
+	c.cacheGenMu.Lock()
+	g := c.cacheGen[id]
+	c.cacheGenMu.Unlock()
+	return g
+}
+
+// repopulateEntityCacheEntry stores a freshly-read entity into the query cache
+// UNLESS the key was invalidated during the read window — i.e. gen0 (captured
+// before the KV Get that produced entity) no longer matches the key's current
+// generation. See invalidateEntityCacheEntry for the coherence contract and the
+// happens-before argument. No-op when the cache is disabled.
+func (c *Component) repopulateEntityCacheEntry(id string, entity graph.EntityState, gen0 uint64) {
+	entityCache := c.entityCacheHandle()
+	if entityCache == nil {
+		return
+	}
+	c.cacheGenMu.Lock()
+	defer c.cacheGenMu.Unlock()
+	if c.cacheGen[id] == gen0 {
+		entityCache.Set(id, entity) //nolint:errcheck
+	}
 }

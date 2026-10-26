@@ -4,7 +4,7 @@
 // append already-present triples or advance entity revisions when nothing in
 // the world changed.
 //
-// createEntity calls AddToContainers UNCONDITIONALLY (component.go, before the
+// createEntity calls AddToContainers UNCONDITIONALLY (ingest.go, before the
 // KV write), so a re-registration of an already-present ID runs the inference
 // again before the atomic Create returns natsclient.ErrKVKeyExists.
 // mergeEntityOnLane (the pin's MergeEntity, design D6), by contrast, gates

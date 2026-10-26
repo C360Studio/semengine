@@ -28,7 +28,7 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
   - Then `FlowPaths`, its origin rule and its walk, moved from `service/component_manager.go:626-664` with their doc
     comments adapted.
   - Gate: `go test -race ./composition/` and `task verify`.
-- [ ] 2.3 `service` projects it (design D2), in `service/component_manager.go` and `service/component_manager_http.go`.
+- [x] 2.3 `service` projects it (design D2), in `service/component_manager.go` and `service/component_manager_http.go`.
   - `GetFlowPaths` returns `composition.FlowPaths(result.Graph)`, keeping its nil-result refusal and doc (reworded).
   - `isInputNode` and `reachableFrom` are deleted.
   - The `types` import stays, because `service/component_manager.go:43,118,396` still read it.

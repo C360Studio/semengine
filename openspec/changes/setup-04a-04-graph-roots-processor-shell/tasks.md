@@ -10,11 +10,11 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 2. Tests
 
-- [ ] 2.1 `component/lifecycle_type_test.go` and `component/shell_example_test.go` (design D10), each shell test inside
-  `synctest.Test`: the suite on a shell-only owner, `TestLifecycleReadsInEveryPhase`,
-  `TestLifecycleReadsDoNotWaitForStartOrStop`, `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`,
-  `TestLifecycleFailedStartNeverRuns`, `TestLifecycleSuiteCatchesWorkUnderTheStartContext`, `ExampleLifecycle`. Written
-  before
+- [ ] 2.1 `component/lifecycle_type_test.go` and `component/shell_example_test.go` (design D10):
+  `TestLifecycleOwnerPassesTheLifecycleSuite` on the real clock through `lifecycletest.Run`; inside `synctest.Test`,
+  `TestLifecycleReadsInEveryPhase`, `TestLifecycleReadsDoNotWaitForStartOrStop`,
+  `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestLifecycleFailedStartNeverRuns` and
+  `TestLifecycleSuiteCatchesWorkUnderTheStartContext` (the check called directly); `ExampleLifecycle`. Written before
   `component/lifecycle_type.go`. Gate: in 3.1.
 - [ ] 2.2 `TestEntityCacheUseDuringStop` in `processor/graph-ingest` (design D7), shown failing at the base under
   `-race` with the output in `notes/2.2.md`. Gate: in 4.2.
@@ -23,10 +23,10 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 
 ## 3. The Lifecycle type
 
-- [ ] 3.1 `component/lifecycle_type.go` and the two `FlowMetrics` fields as design D1-D5, and the `LifecycleComponent` doc
-  comment (D13). Gate: `go test -race -count=1 ./component`, `go test -count=5 -cpu 1 -shuffle=on ./component`,
-  `TestComponentReachesNoAgenticOrGraphPackage`, then `task test:integration` (whose profile `task cover:check`
-  reads) followed by `task cover:check`.
+- [ ] 3.1 `component/lifecycle_type.go` and the two `FlowMetrics` fields as design D1-D5, and the `LifecycleComponent`
+  doc comment (D13). Gate: `go test -race -count=1 ./component`, `go test -count=5 -cpu 1 -shuffle=on ./component`,
+  `TestComponentReachesNoAgenticOrGraphPackage`, then `task test:integration` (whose profile `task cover:check` reads)
+  followed by `task cover:check`.
 
 ## 4. graph-ingest
 
@@ -50,8 +50,9 @@ Each task names its outcome and the gate that proves it. Tests come first. Each 
 - [ ] 6.1 `task mutate:check` for M1-M8 (design D10) and coverage of `component`, in `notes/6.1.md`; `task verify`
   passes on a clean tree at the last commit before the archive commit.
 - [ ] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body.
-- [ ] 6.3 Comments on #196 (graph-ingest adopts the guard through the shell), #109 (the shell landed; the follower
-  stays) and #110 (the two spellings of `degraded`, design D4), each read back.
+- [ ] 6.3 Comments on #196 (graph-ingest's row, through the shell), #109 (follower stays open) and #110 (the two
+  spellings of `degraded`, design D4), each saying "implemented in PR #409 at `<SHA>`, pending merge" and read back.
+  The update after merge goes in the PR body or a note on those issues, not in this checklist.
 
 ## 7. Close
 

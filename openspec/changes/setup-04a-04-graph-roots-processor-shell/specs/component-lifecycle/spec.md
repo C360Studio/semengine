@@ -4,9 +4,9 @@
 
 ### Requirement: The shell admits one Start after Initialize
 
-`component.Lifecycle`'s `Initialize` SHALL return nil every time and do no I/O. A `Start` before `Initialize` SHALL return
-an error and leave the shell unused, so that a `Start` after `Initialize` is admitted. After `Initialize`, `Start` and
-`Stop` SHALL follow the lifecycle suite's portable floor and the retained failed-start cleanup rule.
+`component.Lifecycle`'s `Initialize` SHALL return nil every time and do no I/O. A `Start` before `Initialize` SHALL
+return an error and leave the shell unused, so that a `Start` after `Initialize` is admitted. After `Initialize`,
+`Start` and `Stop` SHALL follow the lifecycle suite's portable floor and the retained failed-start cleanup rule.
 
 #### Scenario: Start before Initialize
 

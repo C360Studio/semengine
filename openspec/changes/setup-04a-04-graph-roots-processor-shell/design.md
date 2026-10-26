@@ -204,19 +204,25 @@ cites that issue.
 
 Issue #109: ADR-108's Status says the record does not close #109, which stays the refactor
 (`docs/adr/108-processor-shell.md:9-11`); its follower, plug-in and adoption work is in later pull requests. This one
-addresses it and posts what landed (task 6.3).
+addresses it, and task 6.3 posts "implemented in PR #409 at `<SHA>`, pending merge".
 
 ## D10. Proving tests
 
-In `component/lifecycle_type_test.go` (unit; `component` stays on the 80% coverage list). Every shell test runs inside
-`synctest.Test`, as `internal/harness/lifecycletest/refowner_test.go:429-434` and `internal/cache/cache_test.go:132`
-do: `Uptime`, the rates and `LastCheck` read the bubble's clock, which a test moves with `<-time.After(d)` followed by
-`synctest.Wait()` (`internal/cache/background_test.go:93-94`), and the suite's 100 ms settle window
-(`lifecycletest.go:27-29`, `:200-206`) is exact inside the bubble.
+In `component/lifecycle_type_test.go` (unit; `component` stays on the 80% coverage list). Two clocks:
 
-- `TestLifecycleOwnerPassesTheLifecycleSuite`: `lifecycletest.Run` over an owner built only from a `Lifecycle` and one worker
-  goroutine under its own run context, with a failing factory (ADR-108 D3, "tested in the shell's package by the suite
-  on a shell-only owner").
+- **Real clock:** `TestLifecycleOwnerPassesTheLifecycleSuite` only. It calls `lifecycletest.Run`, which calls `t.Run`
+  for each check (`internal/harness/lifecycletest/lifecycletest.go:118`), and Go 1.26 refuses `t.Run` inside a
+  `synctest` bubble (`testing: t.Run called inside synctest bubble`). It runs as every other suite caller does
+  (`internal/lifecycleguard/guard_test.go:110`), with the suite's 100 ms settle window on the real clock: best-effort
+  there by the suite's own design (`lifecycletest.go:24-29`), which the owner accepted.
+- **Inside `synctest.Test`:** every other test below. `Uptime`, the rates and `LastCheck` read the bubble's clock,
+  which a test moves with `<-time.After(d)` followed by `synctest.Wait()` (`internal/cache/background_test.go:93-94`).
+  No test calls `t.Run` inside a bubble; a table test opens one bubble per row inside its `t.Run`, as
+  `refowner_test.go:429-434` does.
+
+- `TestLifecycleOwnerPassesTheLifecycleSuite`: `lifecycletest.Run` over an owner built only from a `Lifecycle` and one
+  worker goroutine under its own run context, with a failing factory (ADR-108 D3, "tested in the shell's package by the
+  suite on a shell-only owner").
 - `TestLifecycleReadsInEveryPhase`: one example per history the shell can be in, each read with and without stuck states
   and with and without counted errors, asserting every field of both reads: new; `start` held open; running; a
   `start` that failed, rolled back; a rollback's `cleanup` held open; a `Stop`'s `cleanup` held open; after a `Stop`
@@ -227,8 +233,10 @@ do: `Uptime`, the rates and `LastCheck` read the bubble's clock, which a test mo
 - `TestLifecycleReadsDoNotWaitForStartOrStop`: both reads return while `start`, then `cleanup`, is held open (inside the
   bubble a read that blocks deadlocks the bubble and fails the test).
 - `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestLifecycleFailedStartNeverRuns`.
-- `TestLifecycleSuiteCatchesWorkUnderTheStartContext`: a shell owner whose `start` runs its worker under `ctx` fails
-  `lifecycletest.CheckStartContextEndStopsNothing`. This is how a test shows a rule the shell cannot enforce (ADR-113's
+- `TestLifecycleSuiteCatchesWorkUnderTheStartContext`: inside one bubble, a shell owner whose `start` runs its worker
+  under `ctx` fails `lifecycletest.CheckStartContextEndStopsNothing`, called directly, not through `Run`, as
+  `refowner_test.go:429-434` calls single checks; the settle window is then exact, so the catch needs no sleep and is
+  deterministic. This is how a test shows a rule the shell cannot enforce (ADR-113's
   run context) is still caught: by the suite on the component's own run.
 - `ExampleLifecycle` in package `component_test`: a component composing the shell as an outside author would.
 
@@ -270,19 +278,29 @@ promises when a process stops, and which already holds graph-ingest's data-flow 
 
 ## D13. Docs and records
 
-- `component/lifecycle.go:43-78`: drop `:76-78` and add "`Lifecycle` implements every rule above".
+- `component/lifecycle.go:43-78`: drop `:76-78` and add this paragraph, which claims only what the type does
+  (`component/lifecycle.go:49-74`, D3-D5, D10):
+
+  > `component.Lifecycle` implements these rules for a component that holds one: nil and ended contexts refused,
+  > Stop before Start safe, one Start and no restart, a repeated Stop a no-op, a failed Start rolled back and a failed
+  > cleanup kept for the next Stop, Start refused before Initialize, Initialize idempotent with no I/O, and Health and
+  > DataFlow answering at any time without waiting. The component keeps the rest: its start creates the run context
+  > for its continuing work and its cleanup ends it, drains and joins that work within Stop's context and tolerates
+  > a partial start; it validates its configuration at construction; and its DebugStatus, if it has one, must not
+  > wait for Start or Stop.
 - `component/README.md` `:123-125`: the shell paragraph and the example, the framework-API contract line; the two
   `FlowMetrics` totals.
 - Rule text that still sends a component to the guard, contradicting ADR-108 D1: `AGENTS.md:83`,
   `.agents/rules-index.md:28`, `.agents/contracts/semengine-developer.md:326`,
   `.agents/contracts/semengine-reviewer.md:344`. Each becomes "a component keeps its lifecycle state in
-  `component.Lifecycle`, a service in `internal/lifecycleguard`, never in a copy of its own". The row count in `AGENTS.md`
-  and `rules-index.md` does not change.
+  `component.Lifecycle`, a service in `internal/lifecycleguard`, never in a copy of its own". The row count in
+  `AGENTS.md` and `rules-index.md` does not change.
 - `internal/cache/cache.go:49-50`: D7's sentence.
 - `docs/repository-map.md`: the `component/` row (`:81`) names the shell; the `internal/lifecycleguard/` row (`:83`)
   says components reach it through `component.Lifecycle`.
 - ADR-108 Status: a one-line note naming `component.Lifecycle` and this change, as ADR-113's 2026-10-21 note does.
-- Comments on #196 (graph-ingest's row: adopted through the shell), #109 (shell landed; follower open) and #110
+- Comments, each "implemented in PR #409 at `<SHA>`, pending merge", on #196 (graph-ingest's row, through the
+  shell), #109 ("implemented in PR #409 at `<SHA>`, pending merge"; follower open) and #110
   (D4's two spellings of `degraded`).
 
 ## D14. Issues and merge order

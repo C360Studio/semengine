@@ -22,7 +22,7 @@ passes on a clean tree at its commit (#171).
 
 ## 2. Tests first
 
-- [ ] 2.1 `graph`: `TestQueryResponseCarriesIndexedRevisionAndProducer` and the empty-producer refusal; `graph/readiness`:
+- [x] 2.1 `graph`: `TestQueryResponseCarriesIndexedRevisionAndProducer` and the empty-producer refusal; `graph/readiness`:
   the ported `ComputeIndexStatus` tests and the revision gauges' names against the registry. Gate: in 3.1.
 - [ ] 2.2 Follower tests of design D11 (`TestFollowerRunReturnsAndLeavesNothing`, `TestFollowerPublishesOnEveryHeartbeat`,
   `TestFollowerSnapshotEndSetsBootstrapTarget`, `TestFollowerLatchesResetOnUnreadableSnapshotValue`,
@@ -34,7 +34,7 @@ passes on a clean tree at its commit (#171).
 
 ## 3. Shared pieces
 
-- [ ] 3.1 `graph/query_response.go`, `graph.QueryVerbs()` entries and `ResponderGraphIndex`; `ComputeIndexStatus`,
+- [x] 3.1 `graph/query_response.go`, `graph.QueryVerbs()` entries and `ResponderGraphIndex`; `ComputeIndexStatus`,
   `IndexStatusInputs` and the revision gauges in `graph/readiness` (design D2, D6, D10). Gate: `go test -race
   -count=1 ./graph/...`, `TestGraphImportsNoTransport`, `TestReservedSubjectsDeclaredOnce`.
 - [ ] 3.2 `graph/follower` (design D3). Gate: `go test -race -count=1 ./graph/follower`, `task test:integration --

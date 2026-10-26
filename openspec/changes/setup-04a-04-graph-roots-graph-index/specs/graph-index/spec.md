@@ -5,13 +5,19 @@
 ### Requirement: Configuration is strict
 
 graph-index's factory SHALL refuse an unknown configuration key, naming it. The keys SHALL be `ports`, `workers`
-(1 to 16, default 1), `coalesce_ms`, `startup_attempts` and `startup_interval_ms`; each SHALL change behaviour.
+(0 means the default, 1; otherwise 1 to 16), `coalesce_ms`, `startup_attempts` and `startup_interval_ms`; each SHALL
+change behaviour.
 
 #### Scenario: A configuration carrying batch_size
 
 - **WHEN** graph-index is constructed from a configuration with the key `batch_size`
 - **THEN** construction fails with an error naming `batch_size`
 - **AND** the test that verifies this is `TestUnknownConfigKeyIsRefused`
+
+#### Scenario: workers 0
+
+- **WHEN** graph-index is constructed with `"workers": 0`
+- **THEN** construction succeeds and the index runs one lane
 
 ### Requirement: Startup-replay queries get a retryable refusal
 
@@ -61,19 +67,10 @@ given to `Start` after it returned SHALL stop nothing.
 ### Requirement: Indexes implement replacement
 
 For outgoing, incoming, predicate (exact, value, list, stats, compound) and name reads, a change of an entity's
-statements from A to B and then to none SHALL leave each read answering B and then nothing for that entity.
+statements from A to B and then to none SHALL leave each read answering B and then nothing for that entity. The alias
+read is the one exception until its filed issue lands (design D12, answer (b); number filled in at acceptance).
 
 #### Scenario: A then B then none
 
 - **WHEN** an entity's statements go from A to B to none
 - **THEN** each read listed answers A, then B, then nothing for that entity
-
-### Requirement: Stop processes queued work
-
-Work already queued for indexing when `Stop` runs SHALL be processed before `Stop` returns nil.
-
-#### Scenario: Queued work at Stop
-
-- **WHEN** `Stop` is called with entries queued in the index lanes
-- **THEN** each queued entry is processed before `Stop` returns
-- **AND** the test that verifies this is `TestStopProcessesQueuedWork`

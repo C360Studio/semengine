@@ -5,15 +5,18 @@ passes on a clean tree at its commit (#171).
 
 ## 1. Design and measurement
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner, with owner questions 1-3 answered. Gate: `task spec:check` and `task docs:check`.
+- [ ] 1.1 nats.go v1.54.0 / nats-server v2.15.1 probe, run before the owner sees question 2: does a broker restart
+  close a KV watcher's `Updates()`? Run 2026-10-26 outside the repo (`/tmp/gi-probe`, design D3): it stalls and
+  resumes, it does not close. Remaining: post program, commands, versions and output on PR #414. Gate: the comment
+  read back.
+- [ ] 1.2 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
+  owner, with owner questions 1-3 answered (question 2 carrying 1.1's result). Gate: `task spec:check` and
+  `task docs:check`.
   Hold: owner acceptance and the size waiver (design D1).
-- [ ] 1.2 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.2.md`. Gate: the note.
-- [ ] 1.3 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
-  recording entities, KV writes and the `index_not_ready` window, posted on #108 and in `notes/1.3.md` (design D13).
+- [ ] 1.3 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.3.md`. Gate: the note.
+- [ ] 1.4 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
+  recording entities, KV writes and the `index_not_ready` window, posted on #108 and in `notes/1.4.md` (design D13).
   Gate: the comment read back.
-- [ ] 1.4 nats.go v1.54.0 probe: does a broker restart close a KV watcher's `Updates()`? Program, command, versions and
-  output on PR #414 (inventory E2). Gate: the comment read back.
 
 ## 2. Tests first
 
@@ -57,11 +60,11 @@ passes on a clean tree at its commit (#171).
 
 ## 6. Evidence and review
 
-- [ ] 6.1 `task mutate:check` for M1-M7 (design D11) and coverage of `processor/graph-index` and `graph/follower`, in
+- [ ] 6.1 `task mutate:check` for M1-M6 (design D11) and coverage of `processor/graph-index` and `graph/follower`, in
   `notes/6.1.md`; `task verify` passes on a clean tree at the last commit before the archive commit.
 - [ ] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body.
-- [ ] 6.3 Comments on #107, #109, #110, #103, #106, #68, #195, #196, each "implemented in PR #414 at `<SHA>`, pending
-  merge", read back.
+- [ ] 6.3 Comments on #107, #109, #110, #103, #106, #68, #195, #196 and #16 (the widened capture check, design
+  D17), each "implemented in PR #414 at `<SHA>`, pending merge", read back.
 
 ## 7. Close
 

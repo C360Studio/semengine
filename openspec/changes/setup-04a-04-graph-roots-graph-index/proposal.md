@@ -39,4 +39,6 @@ debt". graph-index has no external-provider code, so the tier-0 ruling (#9 comme
 - New subjects `graph.index.query.*` (8), declared in the verb table. New buckets: none (the five are in
   `graph/kvcatalog` already). New config keys: none (`batch_size` removed). New exported surface: the follower,
   `QueryResponse` fields, `ResponderGraphIndex`, the revision gauge constructor.
+- Consumers: removing `batch_size` fails semconnect's two configs at boot until they delete the line; eight new reserved
+  subjects make a stream on `graph.index.query.*` fail at boot (none found in consumer configs) (design D9, D17).
 - Addresses #107, #109, #110, #103, #106, #68, #195, #196. Retires no issue by itself (design D17).

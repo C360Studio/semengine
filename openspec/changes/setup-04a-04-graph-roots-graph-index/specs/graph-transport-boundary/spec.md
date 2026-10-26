@@ -50,4 +50,5 @@ Every successful reply on `graph.index.query.*` SHALL be a `graph.QueryResponse`
 
 - **WHEN** graph-index answers a request with `indexed_revision` R
 - **THEN** every write to `ENTITY_STATES` at revision R or below is reflected in the reply
-- **AND** the tests that verify this are `TestQueryResponseCarriesIndexedRevisionAndProducer` and `TestReplyRevisionIsALowerBound`
+- **AND** the test that verifies this is `TestQueryResponseCarriesIndexedRevisionAndProducer`; the read order that
+  makes R a lower bound is checked in review and recorded as an uncovered case

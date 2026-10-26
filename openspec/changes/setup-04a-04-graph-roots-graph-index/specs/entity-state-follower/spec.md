@@ -6,7 +6,7 @@
 
 `follower.Open` SHALL wait for the `ENTITY_STATES` bucket at most `StartupAttempts` times `StartupInterval` and then
 return a transient error naming the bucket, holding nothing. It SHALL refuse a nil context, a nil client, an empty
-status key, a nil `Deliver` and a nil `Failed`.
+status key, a nil `Deliver` and a nil `Failed`. The gauges' Prometheus subsystem SHALL be derived from the status key.
 
 #### Scenario: The bucket never appears
 

@@ -1,6 +1,6 @@
 # Design: setup-04a-04-graph-roots-graph-index
 
-Base `39a17a9`. Inventory: `inventory.md` (not yet reviewed; drafted in the same pass at the caller's direction).
+Base `39a17a9`. Inventory: `inventory.md` (round 2, after DESIGN CHANGES REQUESTED on `ad8460a`; not yet passed).
 Change 4, PR 4 of 9 (#9 comment 6386856657, item 3: "`processor/graph-index` with the follower
 (#107, #108, #110, #103; ADR-109 reader)"). Tier-0 only (#9 comment 6386603659): graph-index has no provider
 code (inventory 8).
@@ -66,8 +66,8 @@ type Entry struct {
 
 type Config struct {
     Client          *natsclient.Client
-    Key             string        // GRAPH_STATUS key, readiness.KeyGraphIndex
-    Subsystem       string        // Prometheus subsystem, "graph_index"
+    Key             string        // GRAPH_STATUS key, readiness.KeyGraphIndex; the gauges' subsystem is derived
+                                  // from it ("graph-index" -> "graph_index"), so the name is spelled once
     MetricsRegistry *metric.MetricsRegistry
     Logger          *slog.Logger
     StartupAttempts int           // bounded wait for ENTITY_STATES
@@ -89,6 +89,17 @@ Two functions in a config, not an interface: one plug-in today, and `internal/di
 shape for this (`internal/dispatch/keyed_pool.go:89`). No exported signature names an internal type: the watermark is
 held, never returned.
 
+This changes the letter of ADR-108 D4, which has the plug-in "return one of: applied, failed …, or a reset reason"
+(`docs/adr/108-processor-shell.md:111-112`). `Deliver` returns nothing; the three outcomes come back later, through
+`Complete` (applied), `Failed` (the unresolved count) and `Reset`. The reason: graph-index's apply is asynchronous.
+Between delivery and apply sit the coalescer and the keyed pool, which ADR-108 D4 itself gives to the plug-in
+(`:112-113`), so the outcome does not exist when `Deliver` returns. Listed under D18 "Changed".
+
+Where the code comes from: graph-index's loop has no validating phase and no lost-feed mark (G5, G6). The three later
+adopters have both, and the follower is ported from their shape: `validating := true` and the decode at
+`pin:processor/graph-index-spatial/component.go:718-757`, `:766-775` (also temporal `:738-786`, embedding
+`:1444-1500`); the lost-feed flag at spatial `:705`, `:731` (temporal `:727`, `:749`; embedding `:1432`, `:1455`).
+
 What a caller observes:
 
 - `Open` does startup work under its context and holds nothing it does not return: it waits for `ENTITY_STATES` up to
@@ -100,12 +111,30 @@ What a caller observes:
   `Run` publishes the envelope once at once, then every `readiness.DefaultHeartbeat`.
 - Every delivered revision is observed in the watermark before `Deliver` is called with it. Until the snapshot's end
   marker, each non-deleted value is decoded with `graph.UnmarshalEntityState(key, value)`; a refusal latches reset with
-  the refusal's reason, and the entry is still delivered (ADR-108 D4; the pin had no validating phase, G6). At the end
-  marker the bootstrap target is the highest revision observed.
+  the refusal's reason, and the entry is still delivered (ADR-108 D4; graph-index's pin loop had no validating phase,
+  G6; spatial, temporal and embedding stop applying after a reset, so whether to apply after a reset stays the
+  plug-in's: graph-index keeps indexing the other entities, as at the pin). At the end marker the bootstrap target is
+  the highest revision observed.
 - A `WatchAll` that fails, or an `Updates()` channel that closes while `Run`'s context is live, sets the *feed lost*
   state: `Stuck` names it, the envelope reads `degraded` from the next tick, and `Run` keeps publishing until its
-  context ends. Nothing rebinds the watcher; the state holds until the process restarts (owner question 2). At the pin
-  both paths returned with no mark (G5); ADR-108 D4 orders a failing test first.
+  context ends. Nothing rebinds the watcher; the state holds until the process restarts. At the pin graph-index's two
+  paths returned with no mark (G5); ADR-108 D4 (`:104-106`) asks only that the loss be declared, with a failing test
+  first. Whether queries are refused meanwhile is owner question 2.
+
+  The probe (task 1.1, run before the owner sees question 2): a nats-server restart on the same port and store dir
+  does **not** close `Updates()` at nats.go v1.54.0 / nats-server v2.15.1. In four runs the channel stayed open, stalled,
+  and resumed: a write made 0.4-1.5 s after the restart arrived 8-16 s later (about 18 s after the server stopped, both
+  for a 1 s and a 10 s outage), with no snapshot replay, no second end marker and no close. In one run a write the
+  client had timed out on during reconnect was stored as revision 4 and then overwritten by revision 5 before the
+  watcher resumed; the watcher delivered only 5. Program `/tmp/gi-probe/main.go` (module pins the two versions), built
+  `go build`, run `./probe <seconds down>`; output `/tmp/gi-probe/out-down1s.txt`, `out-down1s-run2.txt`,
+  `out-down1s-run3.txt`, `out-down10s.txt` (local only; posted on PR #414 by task 1.1). Embedded server
+  (`server.NewServer`, JetStream file store), client `MaxReconnects(-1)`, `ReconnectWait(2s)` as natsclient's defaults
+  (`natsclient/client.go:308-309`). What follows: an ordinary broker restart is not a lost feed; it is a stall of up to
+  about 18 s that nothing declares (the stuck detector needs 30 s). The lost feed fires on a `WatchAll` that fails at
+  start, or a close the probe did not produce. A revision superseded during a stall is never delivered, which the
+  watermark tolerates (it floors over observed revisions) and which is evidence for #103's open conflict (ADR-066
+  `:408-409` against ADR-110 `:192`).
 - `Reset` latches the first reason and holds it for the process lifetime (ADR-074 `:69-71`, ADR-084 D4); later calls
   change nothing.
 - `Indexed` is the watermark's floor: every delivered revision at or below it has been completed.
@@ -144,8 +173,11 @@ Declared behaviour changes, each from a binding record:
   `ErrorCount` counts each entity whose required writes ultimately failed and each reset. The pin counted index writes
   as messages at eight sites with three meanings (S7); `Messages` now means what the shell's spec says ("input
   messages counted"), as graph-ingest's #307 ruling 1 did.
-- On `Stop`, work already queued in the keyed pool is processed (with the ended run context) before `Stop` returns;
-  the pin's dispatcher dropped it (D7).
+
+Not a change: work still queued in the keyed pool at `Stop` writes nothing. `cleanup` ends the run context before the
+pool's `Shutdown`, and the pool hands that context to every `Process` call (`internal/dispatch/keyed_pool.go:115-118`),
+so each queued item sees an ended context and its KV calls fail. The pin's dispatcher dropped queued items; the effect
+is the same, and the next start rebuilds every index (D13). No requirement promises otherwise.
 
 ## D5. The readiness reader (ADR-109 D1)
 
@@ -155,8 +187,12 @@ bootstrap latched → nil, at once, with no target read (the sticky path, kept: 
 serving, ADR-084 D7 as ADR-109 changed it); otherwise compute the envelope, latch if built, and ask
 `readiness.EvaluateReadinessGate(readiness.Reading{Status: s, Fresh: true})` (the call the gate's doc names,
 `graph/readiness/readiness_gate.go:80-81`): `DeferNone` → nil, any other reason → transient `index_not_ready`
-("initial build has not completed"), the reason in the debug log. A lost feed refuses nothing: the reply carries
-`indexed_revision`, so a caller sees how far the answer reaches (ADR-109 D4).
+("initial build has not completed"), the reason in the debug log. A lost feed: owner question 2. As drafted it refuses
+nothing and the reply's `indexed_revision` shows how far the answer reaches (ADR-109 D4). At the pin the three later
+adopters refuse with transient `index_not_ready` while their watch is unavailable
+(`pin:processor/graph-embedding/component.go:1727-1729`, `pin:processor/graph-index-spatial/component.go:869-871`,
+`pin:processor/graph-index-temporal/component.go:899-901`); ADR-109 D1 reserves that code for the startup replay and
+unresolved writes, so refusing on a lost feed widens ADR-109 and is the owner's call.
 
 Which calls withhold: all eight handlers, as at the pin (ADR-109 D1 lists them). The first-build window gets the test
 ADR-109 D1 asked change 4 to name: `TestQueryDuringStartupReplayIsIndexNotReady`. The pin's
@@ -217,9 +253,17 @@ inside natsclient's own; cost: two deadlines, the shorter wins), S8 (two narrow 
 ## D9. Configuration
 
 Strict decoding (`DisallowUnknownFields`, as graph-ingest's `resolveConfig`); an unknown key fails construction naming
-it. Keys: `ports`, `workers` (1-16, default 1; lanes), `coalesce_ms` (0 = no coalescing), `startup_attempts` (default
-30), `startup_interval_ms` (default 500). Each has a test that fails when it is ignored. `batch_size` is refused as
-unknown (semsource does not set it, `cmd/semsource/run.go:772-781` *(local checkout, unpinned)*).
+it. Keys: `ports`, `workers` (0 means the default, 1; otherwise 1-16; the lane count), `coalesce_ms` (0 = no
+coalescing), `startup_attempts` (default 30), `startup_interval_ms` (default 500). Each has a test that fails when it is
+ignored. `workers: 0` must keep working: semsource sends it to mean "use the default"
+(`semsource:cmd/semsource/run.go:805-807` at `e4febc0d`), as the pin turns 0 into 1 (`pin:…/component.go:133-135`).
+
+`batch_size` is refused as unknown (the strict-config rule is a verify gate, and nothing reads the field). That breaks
+two consumer configs at boot, each naming the key: semconnect's `deploy/semstreams.json:65` and
+`conformance/compose.semstreams.config.json:65` (both `"batch_size": 50` under `graph-index`, at `d0d06e00`); and
+semteams publishes the field in `schemas/graph-index.v1.json:8` (at `ab480702`). semsource does not set it for
+graph-index (`run.go:800-810` at `e4febc0d`). Each consumer deletes one line when it adopts SemEngine; listed under D18
+"Changed".
 
 ## D10. Metrics (#68, ADR-058)
 
@@ -235,8 +279,11 @@ Unit tests run under `-race` and five times shuffled at one CPU; integration tes
 graph-index line). Ported pin tests keep their oracles; the 24 sleeps and 11 skips go (harness rules), each skip's
 test either rewritten against a real server or dropped with its reason in a task note.
 
-- `TestGraphIndexLifecycleSuite` (integration): `lifecycletest.Run` through an `Observe` adapter listing the follower's
-  watcher, the pool, the coalescer and the subscriptions; failing factory: `ENTITY_STATES` absent.
+- `TestGraphIndexLifecycleSuite` (integration): `lifecycletest.Run` through an `Observe` adapter listing what
+  graph-index itself holds (the pool, the coalescer, the subscriptions); failing factory: `ENTITY_STATES` absent. The
+  follower's watcher is private to `graph/follower` and is not listed (no test-only export, #186): after `Stop`, the
+  test reads from the server that `ENTITY_STATES`'s backing stream has no consumer left, and the follower's own
+  `TestFollowerRunReturnsAndLeavesNothing` covers its goroutines.
 - `TestFollowerRunReturnsAndLeavesNothing` (`synctest`): after `Run`'s context ends, `Run` returns nil and no goroutine
   or ticker remains.
 - `TestFollowerPublishesOnEveryHeartbeat` (`synctest`): envelopes at 0 and each `DefaultHeartbeat`.
@@ -261,34 +308,46 @@ test either rewritten against a real server or dropped with its reason in a task
 - Replacement through every read (developer contract `:158`): the pin's `replacement_reconcile_integration_test.go`
   and `predicate_layout_smoke_integration_test.go`, ported; `[A] -> [B] -> []` on outgoing, incoming, predicate (exact,
   value, list, stats, compound) and name. Alias: D12.
-- `TestStopProcessesQueuedWork`: work queued in the pool when `Stop` runs is processed before `Stop` returns (D7).
 
 Generated checks: the pin's `reconciliation_prop_test.go` with its reference model (`reconciliation_model_test.go`)
 ports, recording seed and completed checks. Mutation rows (`task mutate:check`, unit tests only, `notes/6.1.md`): M1
 `QueryReady` skips the failed check; M2 the latch uses the live target; M3 the validating phase skipped; M4 the lost
-feed not marked; M5 `Healthy` reads `ErrorCount`; M6 `indexed_revision` read after the bucket read (expected
-`TestReplyRevisionIsALowerBound`: a write landing between the two reads); M7 completion skipped on a failed write
-(watermark pins). Each names the test expected to fail.
+feed not marked; M5 `Healthy` reads `ErrorCount`; M6 completion skipped on a failed write (watermark pins). Each names
+the test expected to fail.
+
+Uncovered case, recorded as such in `notes/6.1.md`: `indexed_revision` is read before the handler's first bucket read
+(D6). Showing that the order matters needs a write to land between the two reads, a timing only a test hook could
+choose (#186), so no test forces it and there is no mutation row for it; review checks the order. The reply's revision
+is still tested as a value (`TestQueryResponseCarriesIndexedRevisionAndProducer`, and an integration test that a reply
+after a write at R carries at least R once the floor reaches R).
 
 ## D12. The alias index (G8; owner question 3)
 
 At the pin a dropped or changed alias, and a deleted entity's aliases, keep resolving: `ALIAS_INDEX` is `alias →
 entity` with no owner axis, and "production removal is incomplete" (`pin:docs/adr/068…:34-36`; ADR-077 `:44`, `:188`
 left it for later). The developer contract (`:158`) requires `[A] -> [B] -> []` on every read a query can see, and the
-alias query is one. Two answers: (a) fix it here with an owner-keyed record per alias, reconciled the way
-`owner_reconcile.go` already reconciles PREDICATE, NAME and INCOMING (about 80 lines and a layout ADR-077 did not
-choose); (b) keep the pin's behaviour, file the defect (`status:blocked` on this PR), and have the owner waive the gate
-for this one index. Recommended: (b), because this PR is already over the size bound, the alias layout is a decision
-ADR-077 deferred, and no consumer in scope calls `graph.index.query.alias` directly (searched semsource, semconnect,
-semteams, semboids *(local checkouts, unpinned)*: no hit). Its one reader at the pin is graph-query's entity resolver
-(`pin:processor/graph-query/entity_resolver.go:14`, `router.go:26`), which arrives in PR 9: a stale alias resolves a
-name to the entity that once carried it. The filed issue names that reader, so PR 9's design meets it.
+alias query is one.
+
+Who meets it: no consumer calls `graph.index.query.alias` directly, but semsource wires `graph.query.entityByAlias`
+(`semsource:cmd/semsource/run_test.go:261`, `cmd/semsource/subject_ownership_test.go:44` at `e4febc0d`), which
+graph-query (PR 9) answers by asking graph-index's alias verb and taking a hit as its answer, with no check that the
+entity still carries the alias (`pin:processor/graph-query/query.go:157-175`; resolver `entity_resolver.go:14`,
+`router.go:26`). Once PR 9 lands, an entity that dropped an alias is still returned for it with no error, and a deleted
+entity's alias resolves to an ID that no longer exists.
+
+Two answers: (a) fix it here: an owner-keyed record per alias, reconciled the way `owner_reconcile.go` already
+reconciles PREDICATE, NAME and INCOMING; its size is not measured (the earlier "about 80 lines" was an estimate and is
+withdrawn), and it chooses a layout ADR-077 left open; (b) keep the pin's behaviour, file the defect (`status:blocked`,
+linked from this PR without a closing keyword), and have the owner waive the integrity gate for this one index until
+the filed issue lands, at the latest with PR 9. Under (b) the `graph-index` spec's replacement requirement names alias
+as the exception with that issue's number. Recommended: (b), because this PR is already over the size bound and the
+layout is a decision; the issue names PR 9 as the last point it can land, since that is when a consumer first sees it.
 
 ## D13. #108: measure, record, decide later
 
-Kept: rebuild on every start (`WatchAll` replays every key), as at the pin. Task 1.3 runs the pin's
+Kept: rebuild on every start (`WatchAll` replays every key), as at the pin. Task 1.4 runs the pin's
 `owner_filter_load_integration_test.go` load shape at the pin and on the port, recording entities, KV writes and the
-`index_not_ready` window on #108 and in `notes/1.3.md`. A resume point or skip-unchanged writes is new mechanism and
+`index_not_ready` window on #108 and in `notes/1.4.md`. A resume point or skip-unchanged writes is new mechanism and
 waits for the owner's decision on #108 with that number. #108 stays open.
 
 ## D14. Ledger and decision records
@@ -310,8 +369,8 @@ is kept here), ADR-082 (replaced for consumers by ADR-109 D4), ADR-048 (stale at
 ## D15. Spec deltas
 
 - New `graph-index`: configuration; the reply envelope on every verb; the startup-replay refusal; reset fatal;
-  Health's stuck states; DataFlow inputs; second Start refused; replacement through every read; Stop processes queued
-  work.
+  Health's stuck states; DataFlow inputs; second Start refused; replacement through every read except alias, which is
+  named with its issue under owner question 3's answer (b).
 - New `entity-state-follower`: Open's bounded wait and refusals; Run's shape; observe-before-deliver; the validating
   phase; the bootstrap target and latch; the lost feed; the reset latch; the envelope rules of D3.
 - `graph-readiness` ADDED: `ComputeIndexStatus`'s projection; revision gauges.
@@ -337,8 +396,19 @@ graph-index relies on and the watermark's own property test already runs against
 only on the owner's word), #300 (graph-ingest's sections; this PR touches no graph-ingest file). New, filed by the
 orchestrator: G8 if owner question 3 is answered (b).
 
-Merge order: no open PR overlaps (#413 touches `service` and `composition` only). This PR merges before PRs 8
-(`graph/clustering`) and 9 (`processor/graph-query`), which read its buckets and verbs.
+Adopter effect through #16's check: `composition/analyze.go:123-142` refuses any stream filter that captures a subject
+in `graph.QueryVerbs()` (`reservedSubjects`, `:127-131`). Adding the eight `graph.index.query.*` verbs widens that
+refusal with no code change: a composition with a stream on `graph.>`, `graph.index.>` or `graph.index.query.*` that
+boots today fails at boot after this PR, naming the subject (#16's 2026-10-24 drift note asks this inventory to say
+so). Searched at pinned SHAs: semconnect `deploy/semstreams.json` and `conformance/compose.semstreams.config.json`
+(`d0d06e00`) and semsource `cmd/semsource/run.go` (`e4febc0d`) declare no such stream; semsource's
+`graph.index.query.*` (`run.go:892`) is a request port, not a stream filter. Comment on #16, task 6.3.
+
+Merge order, on behaviour: #413 (draft, no files yet) moves flow-path reachability into `composition`, beside the
+capture check this PR widens. Neither depends on the other. Whichever merges second merges `origin/main` and re-runs
+`composition`'s tests, which then exercise the widened reserved set; #413 must read reserved subjects from
+`graph.QueryVerbs()` and not re-spell them (`TestReservedSubjectsDeclaredOnce` enforces it). This PR merges before PRs
+8 (`graph/clustering`) and 9 (`processor/graph-query`), which read its buckets and verbs.
 
 ## D18. Decisions kept, changed, dropped
 
@@ -346,25 +416,38 @@ Kept: ADR-066 (watermark, LastSeq target, stuck detector in the envelope), ADR-0
 ADR-084 D2 and D4, ADR-085's gate as ADR-109 narrowed it, ADR-088 (one key), ADR-109 D1-D4, ADR-113, ADR-095, ADR-058,
 ADR-074 `:69-71`, ADR-077, ADR-078, ADR-081's raw-watch rule. Applied, already decided: ADR-108 D3(a) second Start
 refused; D4 validating phase and declared lost feed; ADR-109 D2 error count leaves `Healthy`. Changed, for the owner:
-graph-index's envelope now carries `failed_count` (pin: 0) (D3); `DataFlow` counts inputs, not writes (D4); `Stop`
-processes queued pool work (D7, from #107's pool). Dropped: `batch_size`; the dead writers (D8). ADR-068's alias
-exception: owner question 3.
+
+- ADR-108 D4's plug-in contract (`docs/adr/108-processor-shell.md:111-112`): the plug-in does not return its outcome
+  from delivery; outcomes come back through `Complete`, `Failed` and `Reset`, because graph-index's coalescer and keyed
+  pool make apply asynchronous (D3).
+- graph-index's envelope carries `failed_count` (pin: 0) (D3).
+- `DataFlow` counts inputs, not writes (D4).
+- `batch_size` is refused: semconnect's two configs fail at boot until the line is deleted; semteams' published schema
+  lists it (D9).
+- Eight more reserved subjects: a stream capturing `graph.index.query.*` is refused at boot (D17, #16).
+
+Dropped: the dead writers (D8). Open for the owner: ADR-068's alias exception (question 3); widening ADR-109 D1's
+`index_not_ready` to a lost feed (question 2).
 
 ## Owner questions
 
 1. **Size: one pull request of about 4,660 pin lines (about 3,800 in the tree), or two?** Recommended one, with your
    waiver for that number: the follower and the index it feeds are one unit, and the query half without the writer
-   (or the writer without its queries) is half a component. The other answer (Option D) is two reviews of about 3,630
-   and 1,030 pin lines; the first is still over the bound.
-2. **When graph-index loses its feed from `ENTITY_STATES`, does it stay unhealthy until restart?** Recommended yes for
-   this pull request: it reports the loss (health, envelope) and an operator or supervisor restarts it, as ADR-108
-   asks. Whether a broker restart closes the watcher at all is not measured (inventory E2); if a probe shows it does,
-   reconnecting becomes its own issue, like graph-ingest's #216. The other answer is reconnect logic now, which is new
-   mechanism with no measured trigger.
+   (or the writer without its queries) is half a component. Your order ruling itself measured graph-index at 4,527
+   lines and listed it, with the follower, as one item (#9 comment 6386856657, item 3). The other answer (Option D) is
+   two reviews of about 3,630 and 1,030 pin lines; the first is still over the bound.
+2. **When graph-index has lost its feed from `ENTITY_STATES`, should its queries be refused as "not ready", or keep
+   answering?** The probe (D3) shows an ordinary NATS server restart does not lose the feed: the watch pauses for up to
+   about 18 seconds and then catches up by itself. A lost feed only happens when the watch cannot start, or ends for a
+   reason the probe did not produce; it is reported in health and the status record and lasts until restart.
+   Recommended: refuse with the retryable "not ready" code while it lasts, as the pin's embedding, spatial and temporal
+   indexes do, so nobody reads a frozen index as live. This widens ADR-109, which keeps that code for startup and
+   unrepaired writes. The other answer keeps answering, with the reply's revision showing how stale it is.
 3. **The alias index keeps old aliases (D12): fix it here, or keep the pin's behaviour and file it?** Recommended keep
-   and file, with your waiver for this one index: the fix needs a layout the pin's records left open, and the only
-   reader, graph-query's name resolver, arrives two pull requests later. Until it is fixed, a renamed or deleted
-   entity's old alias still finds it. The other answer adds about 80 lines and a layout decision to an already large PR.
+   and file, with your waiver for this one index, the fix landing no later than graph-query (PR 9). Until then nothing
+   reads it; from PR 9 on, semsource's look-up by alias would return an entity that dropped the alias, or the ID of a
+   deleted entity, with no error. The other answer fixes it here: unmeasured size, plus a key-layout decision the
+   pin's records left open, in an already large PR.
 
 Not owner questions, settled by records: the second Start refusal (ADR-108 D3(a)); the error count leaving `Healthy`
 (ADR-109 D2); context ownership (ADR-113); `min_revision` waiting for graph-query (ingest-kernel D18).

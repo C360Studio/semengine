@@ -3,12 +3,14 @@
 base: `39a17a959216fe4f82564b89caf6df5ea671c889` (origin/main after PR #411; the claim commit `c4fe354` on
 `claude/port-graph-index` adds no file). Pin paths are SemStreams `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`, written
 `pin:<path>:<line>`, read from a copy of the pin fetched with `gh api repos/C360Studio/semstreams/tarball/8b99efe9`
-into `/tmp/pin-8b99efe9-gi/src` (local only). Consumer cites marked *(local checkout, unpinned)* were read from the
-owner's sister checkouts without git; the reviewer re-checks them with `gh api … ?ref=<sha>` (`docs/inventory-scope.md`
-rule 4).
+into `/tmp/pin-8b99efe9-gi/src` (local only). Consumer cites are at a named SHA, each file fetched with
+`gh api repos/C360Studio/<repo>/contents/<path>?ref=<sha>` (`docs/inventory-scope.md` rule 4), the default-branch heads
+on 2026-10-26: semconnect `d0d06e00bf05a545f30ceea798db1c2b1ee47d4f`, semteams
+`ab480702270ca7f293ecbf5f7ea51daef512e86f`, semsource `e4febc0d2e23bf33811edc20b9a4159cf5275dc4`, semboids
+`8c03cc53836ced93a5df7064473c63ff144e64f1`; written `<repo>:<path>:<line>`.
 
-Status: not yet reviewed. No `INVENTORY PASS`; the design was drafted in the same pass at the caller's direction, as
-on the three earlier change 4 pull requests.
+Status: round 2, answering the early reviewer's INVENTORY CHANGES REQUESTED on `ad8460a`. No `INVENTORY PASS`; the
+design was drafted in the same pass at the caller's direction, as on the three earlier change 4 pull requests.
 
 Kind of change: a port. It carries `processor/graph-index` (4,527 non-test pin lines, 16 files) and, from packages
 already ported, the pieces the ingest-kernel design deferred to graph-index: `graph.ComputeIndexStatus` with
@@ -35,13 +37,13 @@ go1.26.4 darwin/arm64, on the pin copy, unit tests only (no build tag).
 
 - `go test -race -count=1 -p 1 -cpu 1 -cover ./processor/graph-index`: ok, 10.4 s, coverage 80.0%.
 - `go test -count=5 -p 1 -cpu 1 -shuffle=on ./processor/graph-index`: ok, 31.3 s. The shuffle seed was not printed
-  (no `-v`); a re-run with `-v` records it (task 1.2).
+  (no `-v`); a re-run with `-v` records it (task 1.3).
 - The lifecycle suite is not run against the pin: it is this tree's harness (`internal/harness/lifecycletest`), and
   graph-index at the pin does not build against it. The pin's own lifecycle tests are
   `pin:processor/graph-index/lifecycle_order_test.go`, `failed_start_subscription_test.go:48`, `:125`, `:201`,
   `lifecycle_integration_test.go` (integration, not run). The suite runs on the port (design D11).
 - Integration tests (13 files, `//go:build integration`) were not run at the pin (Docker cost; #108's measurement in
-  task 1.3 runs one of them).
+  task 1.4 runs one of them).
 - Test-text rules (`grep` over `pin:processor/graph-index/*_test.go`, 13,936 lines, 246 `func Test`):
   `time.Sleep` 24 (component_test.go 3, attack_test.go 1, attack_integration_test.go 7, index_operations_test.go 2,
   integration_test.go 4, predicate_layout_smoke_integration_test.go 1, query_integration_test.go 6); `t.Skip` 11
@@ -117,9 +119,10 @@ other. The gap is real.
 ### Open pull requests
 
 `gh pr list --state open --json number,title,isDraft,headRefName,changedFiles,files` on 2026-10-26: #414 (this claim,
-draft, 0 files) and #413 (`claude/flow-paths-composition-363`, draft, 0 files, "flow-path reachability moves out of
-service (closes #363)"; its body names `service` and `composition`). This change edits neither package. No overlap;
-no merge order between them.
+draft, 0 files) and #413 (`claude/flow-paths-composition-363`, draft, 0 files; its body says flow-path reachability
+moves from `service` into `composition`, as a function over the graph `composition.Analyze` builds). This change edits
+neither package, but it changes what `composition.Analyze` refuses: the capture check reads `graph.QueryVerbs()`
+(`composition/analyze.go:123-142`), which gains eight subjects here. Behavioural overlap, merge order in design D17.
 
 ### Open issues naming a carried package
 
@@ -140,8 +143,9 @@ Queries, each `gh issue list --state open --search <q> --limit 200`: `graph-inde
 | #196 | ADR-108 adoption order includes graph-index | guard adoption, through the shell |
 | #408 | `internal/revlag/watermark_test.go:501-519` | revlag's concurrent-reader test can pass without observing progress |
 | #300 | graph-ingest only (sections C, D, F, H) | named by the brief; touches no graph-index file |
+| #16 | its 2026-10-24 drift note: change 4's adopter inventory names the widened capture refusal once `graph.index.query.*` joins `QueryVerbs()` | the composition half is done (`composition/analyze.go:123-142`); a stream on `graph.index.>` fails at boot after this PR (section 12) |
 
-Names the word, not the package: #405, #141, #111, #16, #161, #216, #280, #9 (epic), #7 (epic).
+Names the word, not the package: #405, #141, #111, #161, #216, #280, #9 (epic), #7 (epic).
 
 ### Specs and records
 
@@ -171,8 +175,8 @@ to change 4"), `pkg/revlag` (`:3286-3324`, "no importer until graph-index"), `co
 | New surface (the pin lacks it) | For |
 | --- | --- |
 | The follower package and its exported type and methods | plumbing: production caller `processor/graph-index` (this change); adopters in changes 5 and 7 (ADR-108 Consequences) |
-| `graph.QueryResponse` fields `indexed_revision`, `producer` | framework API: D18's contract line; consumer semconnect decodes `graph.QueryResponse[graph.PredicateData]` (`gateway/cs-api/systems.go:993`, *(local checkout, unpinned)*) |
-| Eight `graph.QueryVerbs()` entries, responder `graph-index` | plumbing: graph-index subscribes from them; graph-query (PR 9) routes to them; consumer semsource wires `graph.index.query.*` (`cmd/semsource/run.go:864` *(local checkout, unpinned)*) |
+| `graph.QueryResponse` fields `indexed_revision`, `producer` | framework API: D18's contract line; consumer `semconnect:gateway/cs-api/systems.go:993` decodes `graph.QueryResponse[graph.PredicateData]` |
+| Eight `graph.QueryVerbs()` entries, responder `graph-index` | plumbing: graph-index subscribes from them; graph-query (PR 9) routes to them; consumer `semsource:cmd/semsource/run.go:892` declares a request port on `graph.index.query.*` |
 | `readiness.NewRevisionGauges` (name proposed) | plumbing: the follower |
 
 ## 5. The problem shape
@@ -187,6 +191,15 @@ per-revision pipelines "Stay raw `WatchAll`" (`pin:docs/adr/081-graph-view-subsc
 (2) *Readiness rides the reply*: an in-process gate answering a classified refusal. Closest instance:
 graph-ingest's request gate `startCompleted` (`processor/graph-ingest/component.go`, processor-shell D5) and the
 classified refusals of graph-ingest's query handlers (`processor/graph-ingest/query.go`).
+
+Source for the follower's validating phase and lost-feed state: not graph-index's loop, which has neither (G5, G6),
+but the three later adopters, which have both. Validating phase: `pin:processor/graph-index-spatial/component.go:718`
+— `validating := true`, the decode `:750-757` and `:766-775` (`validateEntityStateEntry`); temporal `:738-786`;
+embedding `:1444-1500`. Lost feed: spatial `:705`, `:731` — `c.watchUnavailable.Store(true)`; temporal `:727`, `:749`;
+embedding `:1432`, `:1455`. Each refuses queries with transient `index_not_ready` while the watch is unavailable:
+embedding `:1727-1729`, spatial `:869-871`, temporal `:899-901`. Two differences from graph-index: after a reset the
+three stop applying entries (spatial `:754-756`, `:759-761`), and they withhold the bootstrap latch while reset holds
+(`:740-744`).
 
 ### Adoption sweep (the follower establishes a primitive)
 
@@ -246,7 +259,21 @@ returned 20; read for what they decide about graph-index. Plus ADR-072 and ADR-0
 | S14 | 4 dead fallback | `component.go:269` `nameIndexReady` ("DEPRECATED by ADR-066"), `name_index.go:239` `nameIndexIsReady`, `watermark.go:42-58` and `:62-66` (pre-Start/unit-test fallbacks), `query.go:224-226` (`watermark == nil` → ready) | R |
 | S15 | 4 phantom config | `component.go:45` — `BatchSize int` (validated `:124`, defaulted `:136`, read by nothing) | R |
 | S16 | 4 test-only atomics | `component.go:305-306` `reindexTotal`, `reindexUnchanged` (no production reader; the metric `reindex_events_total` is the reader) | O |
+| S18 | 1 second spelling | `incoming_index.go:109` — `if !message.IsValidEntityID(targetID) {` beside `semtypes.ValidateEntityID` (`:66`, `:90`) and `validateEntityLiteralKey` (`key_validation.go:8`): three names for one check (`message.IsValidEntityID` delegates, `pin:message/triple.go:160-161`) | O |
+| S19 | 1 second spelling | `predicate_codec.go:14` — `func encodePredicateToken(predicate string) string { return graph.EncodePredicateToken(predicate) }` (and `decodePredicateToken`): thin renames | O |
+| S20 | 4 doc describes absent behaviour | `doc.go:15` — "updates four index buckets" (there are five, with NAME_INDEX; also `:27`), `:50` `"workers": 4` (default 1), `:82` "graph-gateway: reads indexes" (excluded consumer adapter); README the same | R (surface audit (c)) |
+| S21 | 4 dead after removal | `pin:graph/query_contracts.go:30-37` — `queryResponseDataKey`, `queryResponseTimestampKey` (only `UnwrapQueryResponse` reads them; not ported) | R |
+| S22 | 1 second spelling | `pin:graph/index_status.go:254-256` — `resp.Revision = strconv.FormatUint(in.Indexed, 10)`; `:175` `LastSynced` (#110 item 1) | R |
+| S23 | 4 stale doc | `pin:graph/index_status.go:168` — "Indexed is the low-water-of-pending watermark (revlag.Watermark.Indexed)" (`Indexed` is not ported; `IndexedAt`) | R (doc only) |
+| S24 | 3 one-implementation option | `pin:graph/readiness/gauges.go:55-60` — `type GaugeOption func(*Gauges)` with one option, `WithRevisionGauges` | O (design D10 uses a constructor instead) |
 | S17 | 5 classification by error text | none: a `grep -n -E` for `strings.Contains` or `strings.HasPrefix` on an error, or for `.Error()`, over the non-test files came back empty | — |
+
+No finding, read in full: `owner_reconcile.go` (`reconcileOwnedRows` validates the filter and every key before any
+list, put or delete, sorts before acting, and joins failures; its counters are S7's), `predicate_index.go` (key and
+filter builders; `wildcardPositions` from `kv_contract_benchmark.go` moves here), `key_validation.go` (two delegating
+helpers; S18 names the overlap), `revision_coalescer.go` beyond S11 (keeps the greatest revision per key, as ADR-081
+describes). `incoming_index.go` beyond S18: `:91` logs through the process-global `slog.Debug` instead of the
+component's logger (O).
 
 Defects and gates found in the same read (not shapes):
 
@@ -257,7 +284,7 @@ Defects and gates found in the same read (not shapes):
 | G3 | `component.go:527` — `Healthy:    c.running && errorCount == 0,` | error count lowers Healthy (ADR-109 D2) |
 | G4 | `component.go:390` — `if err := json.Unmarshal(rawConfig, &config); err != nil {` | unknown config keys accepted (`AGENTS.md` § 1, verify+review) |
 | G5 | `component.go:974-985`, `:1000-1004` | failed `WatchAll` and a closed `Updates()` return with no mark (ADR-108 D4) |
-| G6 | `component.go:971-1066` | no validating phase in the snapshot (ADR-108 D4) |
+| G6 | `component.go:971-1066` | graph-index's loop has no validating phase in the snapshot (ADR-108 D4); spatial, temporal and embedding have one (section 5) |
 | G7 | `metrics.go:36-37` `metricsOnce sync.Once`; `:112-119` `prometheus.DefaultRegisterer`; `:46` `Namespace: "semstreams"`; `:103-109` returns ignored | metric-registry spec (verify), #68, `RegisterOrGet` rule |
 | G8 | `component.go:1500-1507` (`ALIAS_INDEX has no owner-complete axis… alias retirement remains explicit`); `pin:docs/adr/068…:34-36` | a dropped or changed alias, or a deleted entity's alias, keeps resolving: `[A] -> [B]` fails on the alias read (developer contract `:158`) |
 | G9 | `component.go:580-598` | `Initialize` re-validates config (ADR-108 D3(d)) |
@@ -281,7 +308,7 @@ tier-0 ruling (#9 comment 6386603659).
 | Status | `GRAPH_STATUS` key `graph-index` (`graph/readiness/watcher.go:49`); gauges `semengine_graph_index_*`; `Health()` stuck states; the classified `index_not_ready` / `graph_state_reset_required` replies |
 | Lifecycle | started by graph-index's `start` under its run context; ended by its cleanup; no restart (ADR-108 D3(a)) |
 | Ownership | one follower per component instance; graph-index is a singleton per process at the pin (one `GRAPH_STATUS` key) — two instances would publish one key twice: searched `KeyGraphIndex` (one writer) |
-| Readers | graph-index's query gate and `Health`; operators and semsource's MCP gateway read the key (`processor/mcp-gateway/tools.go:141`, `processor/supersession/versiondiff_serve.go:204`, `processor/source-manifest/workbench_capabilities.go:30` *(local checkout, unpinned)*); semconnect's conformance probe (`conformance/cmd/index-readiness/main.go:35`) |
+| Readers | graph-index's query gate and `Health`; operators and semsource's MCP gateway read the key (`semsource:processor/mcp-gateway/tools.go:141`, `processor/supersession/versiondiff_serve.go:204`, `processor/source-manifest/workbench_capabilities.go:30`); semconnect's conformance probe (`semconnect:conformance/cmd/index-readiness/main.go:35`) |
 | Writers | the follower only (publisher), graph-index never |
 | Recovery | rebuild from scratch on every process start (#108); reset latch holds until restart (ADR-074 `:69-71`, ADR-084 D4); a lost feed: no recovery at the pin (G5) |
 
@@ -306,7 +333,7 @@ about 3,630 pin lines.
 | Statement | Probe at nats.go v1.54.0 / nats-server v2.15.1 (`go.mod:16-17`) |
 | --- | --- |
 | `WatchAll` sends one `nil` entry after the initial values | empty bucket only: `natsclient/kv_integration_test.go:239-245`. Non-empty: no probe; the follower's integration test drives it (design D11) |
-| `Updates()` closes when the watcher ends for a reason other than `Stop` | not promised; no probe. The design treats a close as a lost feed whatever caused it |
+| `Updates()` closes when the watcher ends for a reason other than `Stop` | a broker restart does not close it: probe `/tmp/gi-probe` (design D3), it stalls and resumes. Other causes: not promised; the design treats any close as a lost feed |
 | A KV revision and `LastSeq` share one sequence space | `natsclient/kv.go:100-110` states it; probe: `pin:processor/graph-index/revision_space_integration_test.go:38` returns with the port (ADR-109 D4) |
 | Concurrent `Status` and `Get` on one KV handle race under `-race` (`pin:…/component.go:236-239`) | carried comment; not promised (Bounded port scope) |
 | `watcher.Stop()` via `defer` races nats.go's handler (`pin:…/component.go:986-988`) | carried comment; not promised |
@@ -317,26 +344,42 @@ about 3,630 pin lines.
 Surfaces reached from outside: the component (`graphindex.Register`, its config keys), its eight request subjects and
 their replies, its `GRAPH_STATUS` key, and the follower package (component authors in later changes).
 
-Consumers at symbol level *(local checkout, unpinned)*: semconnect `cmd/cs-graph-backend/main.go:126`
-(`graphindex.Register`), `gateway/cs-api/systems.go:79`, `:993` (`graph.index.query.predicate`, decodes
-`graph.QueryResponse[graph.PredicateData]`); semteams `internal/runtimecatalog/components.go:64`; semboids
-`componentregistry/register.go:35`; semsource `cmd/semsource/run.go:772-781` (config `coalesce_ms`, `workers`), `:864`
-(port `graph.index.query.*`), three readers of key `graph-index`.
+Consumers at symbol level, at the SHAs in the header:
 
-1. **What must a config author or caller know?** (a) `workers` (lanes) and `coalesce_ms` mean what they did;
-   (b) `batch_size` is gone and a config carrying it fails at construction naming the key; (c) a query during the
-   startup replay is refused with the transient code `index_not_ready` and should be retried; (d) a reply now carries
-   `indexed_revision` and `producer`.
-2. **If they do nothing:** (b) boot error naming `batch_size` (semsource does not set it for graph-index); (c) a caller
-   that treats any error as final gives up during startup, as at the pin; (d) additive JSON fields, decoders keep working.
-3. **Where they find out:** (b) boot error; (c) typed runtime error (`RequestClassified`), as at the pin; (d) compile
-   time for Go decoders that use `graph.QueryResponse`.
+- semconnect: `deploy/semstreams.json:50-66` and `conformance/compose.semstreams.config.json:50-66` configure
+  `graph-index` with `"workers": 2` and `"batch_size": 50` (line 65 in both); `gateway/cs-api/systems.go:79`, `:993`
+  (`graph.index.query.predicate`, decodes `graph.QueryResponse[graph.PredicateData]`);
+  `conformance/cmd/index-readiness/main.go:35` (watches key `graph-index`). The local checkout's
+  `cmd/cs-graph-backend/main.go` does not exist at `d0d06e00` (404), so it is not cited.
+- semteams: `internal/runtimecatalog/components.go:28`, `:64` (`graphindex.Register`); `schemas/graph-index.v1.json:8`
+  publishes `batch_size` ("Batch size for index updates").
+- semboids: `componentregistry/register.go:10`, `:24` (`graphindex.Register`).
+- semsource: `cmd/semsource/run.go:800-810` (config `coalesce_ms`, `workers`; `:805-806` "workers=0 → graph-index
+  applies its own default (1)"), `:892` (request port `graph.index.query.*`); `cmd/semsource/run_test.go:261` and
+  `cmd/semsource/subject_ownership_test.go:44` (`graph.query.entityByAlias`, answered by graph-query from graph-index's
+  alias verb, design D12); readers of key `graph-index`: `processor/mcp-gateway/tools.go:141`,
+  `processor/supersession/versiondiff_serve.go:204`, `processor/source-manifest/workbench_capabilities.go:30`.
+- Streams that capture the new reserved subjects (#16): none in semconnect's two configs or semsource's `run.go`
+  (`grep -n -E '"graph\.(>|\*|index)'` over the fetched files: only the request port at `run.go:892`).
+
+1. **What must a config author or caller know?** (a) `workers` (lanes; 0 means the default, 1) and `coalesce_ms`
+   mean what they did; (b) `batch_size` is gone and a config carrying it fails at construction naming the key; (c) a
+   query during the startup replay is refused with the transient code `index_not_ready` and should be retried; (d) a
+   reply now carries `indexed_revision` and `producer`; (e) no stream may capture `graph.index.query.*`.
+2. **If they do nothing:** (b) semconnect's two configs fail at boot naming `batch_size`, and semteams' published schema
+   still offers the key; semsource does not set it; (c) a caller that treats any error as final gives up during
+   startup, as at the pin; (d) additive JSON fields, decoders keep working; (e) a stream on `graph.>` or
+   `graph.index.>` fails at boot naming the subject (none found).
+3. **Where they find out:** (b) and (e) boot error; (c) typed runtime error (`RequestClassified`), as at the pin; (d)
+   compile time for Go decoders that use `graph.QueryResponse`.
 4. **What should they have to know:** (c) only. A follower author (changes 5, 7) must know to report every delivered
    revision as complete exactly once it is applied: forgetting holds the watermark, and the envelope reads
    `building`, then `degraded` after the stuck window (observable, not silent).
 
 ## Open evidence questions
 
-- E1. #108's number (rebuild time and KV writes per entity at the pin's load shape): not measured; task 1.3.
-- E2. Does a broker restart close a KV watcher's `Updates()` at nats.go v1.54.0? Not probed; decides whether a lost
-  feed happens on ordinary restarts (owner question 2).
+- E1. #108's number (rebuild time and KV writes per entity at the pin's load shape): not measured; task 1.4.
+- E2. Does a broker restart close a KV watcher's `Updates()` at nats.go v1.54.0? Probed 2026-10-26 (design D3,
+  `/tmp/gi-probe`): no. Four runs (1 s and 10 s outages, same port and store dir): the channel stayed open, stalled
+  8-16 s after the restart, then resumed with the next write; no replay, no close. A revision superseded during the
+  stall was not delivered.

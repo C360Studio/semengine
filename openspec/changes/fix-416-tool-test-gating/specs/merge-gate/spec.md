@@ -57,10 +57,9 @@ the race detector on every CPU.
 ### Requirement: Tool tests and repository guards are separate packages
 
 The tool packages SHALL be `internal/harness/toolcheck`, `internal/harness/mutcheck` and `internal/harness/pindiff`,
-named once, in `scripts/test-pkgs.sh`. A test that runs a repository script, or pins `Taskfile.yml`,
-`scripts/verify.sh` or `.github/workflows/ci.yml`, SHALL live in `toolcheck`. A check over the repository's own files
-SHALL stay in `internal/harness/contract`, a unit package. `task test:tools` SHALL run the tool packages with
-`go test -race -count=1 -cpu 1`.
+named once, in `scripts/test-pkgs.sh`. A test SHALL live in `toolcheck` when every file of the real tree it reads is
+under a trigger path, and in `internal/harness/contract`, a unit package, when it reads any other file.
+`task test:tools` SHALL run the tool packages with `go test -race -count=1 -cpu 1`.
 
 #### Scenario: A tool package among the unit packages
 
@@ -71,6 +70,32 @@ SHALL stay in `internal/harness/contract`, a unit package. `task test:tools` SHA
 
 - **WHEN** `scripts/test-pkgs.sh unit` does not list `internal/harness/contract`
 - **THEN** `TestTestPkgsLists` fails naming the package
+
+#### Scenario: A real-tree test in toolcheck
+
+- **WHEN** a test that runs `scripts/lint-test-ports.sh` over the real tree's test files is placed in `toolcheck`
+- **THEN** review refuses it; no command fails, because which files a test reads is review only
+
+### Requirement: Each test task reads its own package list
+
+`test:unit` and `test:repeat` SHALL set `PKGS` from `scripts/test-pkgs.sh unit` and `test:tools` from
+`scripts/test-pkgs.sh tools`, with no other `vars`. `test:tools:changed` SHALL run exactly `scripts/tools-changed.sh`.
+`TestUnitInvocationsPinned` SHALL fail, naming the task, when its `vars` or its command differ from this.
+
+#### Scenario: The unit run reads the tool list
+
+- **WHEN** `test:unit` sets `PKGS` from `scripts/test-pkgs.sh tools`
+- **THEN** the pinning test fails naming `test:unit` and the required line
+
+#### Scenario: The repeat run loses its list
+
+- **WHEN** `test:repeat` has no `PKGS` and its command defaults to `./...`
+- **THEN** the pinning test fails naming `test:repeat` and the required line
+
+#### Scenario: The tool step runs something else
+
+- **WHEN** `test:tools:changed` runs `task test:tools` directly
+- **THEN** the pinning test fails naming `test:tools:changed` and the required command
 
 ### Requirement: Tool tests run when their files change
 

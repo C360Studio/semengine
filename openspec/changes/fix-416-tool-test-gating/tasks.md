@@ -1,7 +1,9 @@
 # Tasks: fix-416-tool-test-gating
 
 Light process, owner 2026-10-26: inventory, proposal, spec deltas and tasks; no design document; Codex reviews the
-code. Tests come first. Each code task ends only when `task verify` passes on a clean tree at its commit (#171).
+code. Tests come first: 3.2 and 3.3 are written and shown failing before their code, with the failure recorded in
+notes, and they are committed with the code of 4.1 and 4.2, so every commit passes `task verify` on a clean tree
+(#171).
 
 ## 1. Inventory and proposal
 
@@ -18,18 +20,21 @@ code. Tests come first. Each code task ends only when `task verify` passes on a 
 
 ## 3. Tests
 
-- [ ] 3.1 The package move: `git mv` the seven files the proposal names into `internal/harness/toolcheck/`, move the
-  `TestLintTestPorts*` tests out of `addresses_test.go` into `toolcheck/lintports_test.go`, copy into each package
-  the helpers it calls and only those, and add `toolcheck/doc.go`, which names the trigger paths and the repository
-  files each tool test reads. Test bodies stay as they are. Gate: `go test -count=1 ./internal/harness/contract/
+- [ ] 3.1 The package move: `git mv` the seven files the proposal names into `internal/harness/toolcheck/`. Move
+  `TestLintTestPortsHonoursNoMarker` and `TestLintTestPortsSkipsIgnoredFiles` into `toolcheck/lintports_test.go`;
+  `TestLintTestPortsPasses` stays in `contract`. Copy into each package the helpers it calls and only those. Add
+  `toolcheck/doc.go`, which names the trigger paths, the rule for which tests belong in the package, and the
+  repository files each tool test reads. Test bodies stay as they are. Gate: `go test -count=1 ./internal/harness/contract/
   ./internal/harness/toolcheck/` passes. The test names (`go test -list '.*'`) of the two packages together equal
   `contract`'s list at the base. `go list -deps -test ./internal/harness/toolcheck/` names no
   `github.com/c360studio/semengine` package except toolcheck. `task verify` passes.
-- [ ] 3.2 Pins written before the code: the new command lines and sensitivity cases in `TestUnitInvocationsPinned`,
-  and the `fetch-depth: 0` case in `TestCIWorkflowPinned` (proposal, "Pins and their failure tests"). Gate: both
-  fail against the unchanged `Taskfile.yml`, `scripts/verify.sh` and `ci.yml`, output in `notes/3.2.md`.
-- [ ] 3.3 `TestTestPkgsLists` (`toolcheck/testpkgs_test.go`) and `TestToolsChanged` (`toolcheck/toolschanged_test.go`)
-  with the oracles and cases the proposal lists. Gate: both fail with the scripts absent, output in `notes/3.3.md`.
+- [ ] 3.2 Pins written before the code: in `TestUnitInvocationsPinned`, the new command lines, the `vars` parsing,
+  and the sensitivity cases; in `TestCIWorkflowPinned`, the `fetch-depth: 0` case (proposal, "Pins and their failure
+  tests"). Gate: both fail against the unchanged `Taskfile.yml`, `scripts/verify.sh` and `ci.yml`, with the output in
+  `notes/3.2.md`. Committed with 4.2.
+- [ ] 3.3 `TestTestPkgsLists` (`toolcheck/testpkgs_test.go`, planted modules only) and `TestToolsChanged`
+  (`toolcheck/toolschanged_test.go`, local cases without the `GITHUB_*` variables), with the cases the proposal lists.
+  Gate: both fail with the scripts absent, with the output in `notes/3.3.md`. Committed with 4.1.
 
 ## 4. Code
 
@@ -45,12 +50,14 @@ code. Tests come first. Each code task ends only when `task verify` passes on a 
 - [ ] 5.1 `AGENTS.md` and `.agents/rules-index.md`, row for row. Edit rows `AGENTS.md:114` and `:116`, matching
   rules-index `:59` and `:61`. In rules-index `:78`, `:101`, `:104` and `:112`, the enforcer cells name tests that
   now run under `task test:tools`. Add one new row in domain 3, in both files: tool tests run only when their trigger
-  paths change, the repository guards run on every verify. Add `task test:tools` to the commands block. `AGENTS.md`
+  paths change, the repository guards run on every verify. Add `task test:tools` to the commands block, and
+  `test:tools:changed` to its `task verify` step list (`AGENTS.md:51-52`). `AGENTS.md`
   stays under 24,000 bytes (23,082 at the base). Gate: `TestAgentSetupParity` in `task verify`, and
   `task docs:check`.
 - [ ] 5.2 `docs/testing.md` `:41-44` (the unit line no longer says every package, plus a "Tool tests" line),
   `docs/test-infrastructure.md:114`, `docs/repository-map.md:44` (the contract line, plus a toolcheck line),
-  `.agents/skills/semengine-preflight/SKILL.md:41-47` and the `test:integration` row of
+  `.agents/skills/semengine-preflight/SKILL.md:41-47` (including the `task verify` line at `:47`, which gains
+  `test:tools:changed`) and the `test:integration` row of
   `docs/admission-ledger.yaml` (`:212-217`). `.agents/README.md:138` and
   `internal/harness/contract/ledger_test.go:16` are checked and left unchanged, because both stay true after the
   split. Gate: `task docs:check`, `task ledger:check` and `task verify`.

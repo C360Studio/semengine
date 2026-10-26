@@ -5,7 +5,6 @@ package graphingest
 import (
 	"context"
 	"encoding/json"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -62,7 +61,7 @@ func assertPoisonTerminated(
 	ctx context.Context, t *testing.T, c *Component, natsClient *natsclient.Client, data []byte,
 ) {
 	t.Helper()
-	before := atomic.LoadInt64(&c.errors)
+	before := c.Health().ErrorCount
 
 	// The broker publishes this advisory when a consumer terminates a message; an
 	// acknowledgement publishes none. Subscribed before the publish so it cannot be
@@ -96,7 +95,7 @@ func assertPoisonTerminated(
 	}, wireRequestTimeout, 20*time.Millisecond, "both messages are settled")
 	_, _, redelivered := entityStreamConsumerState(ctx, t, natsClient)
 	assert.Zero(t, redelivered, "the poison message is not redelivered")
-	assert.Equal(t, before+1, atomic.LoadInt64(&c.errors), "the poison message is counted once")
+	assert.Equal(t, before+1, c.Health().ErrorCount, "the poison message is counted once")
 }
 
 // startFenceWireComponent starts graph-ingest on a fixture broker under the

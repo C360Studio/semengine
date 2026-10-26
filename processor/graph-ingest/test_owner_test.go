@@ -33,7 +33,6 @@ func TestGraphIngestTestOwnerControlledStopPreservesAuthority(t *testing.T) {
 		return nil
 	}}
 	component := createTestComponent(t)
-	component.running = true
 	component.subscriptions = []graphIngestCoreSubscription{drain}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)
@@ -84,7 +83,6 @@ func TestGraphIngestTestOwnerCanceledOperationKeepsFreshTerminalAuthority(t *tes
 		return want
 	}}
 	component := createTestComponent(t)
-	component.running = true
 	component.subscriptions = []graphIngestCoreSubscription{drain}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)
@@ -106,7 +104,6 @@ func TestGraphIngestTestOwnerWaitsForObservedClosure(t *testing.T) {
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
 	}
 	component := createTestComponent(t)
-	component.running = true
 	component.consumers = []graphIngestConsumerBinding{{handle: consumer}}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)

@@ -47,6 +47,7 @@ type Cache[V any] interface {
 	Stats() *Statistics
 
 	// Close shuts down the cache and releases any resources (e.g., background goroutines).
+	// After Close, Get, Set and Delete keep working; only background expiry stops.
 	Close() error
 }
 

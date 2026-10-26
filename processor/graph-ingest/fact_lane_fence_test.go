@@ -232,10 +232,10 @@ func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 			c.decoder = message.NewDecoder(c.payloadRegistry)
 			var logs bytes.Buffer
 			c.logger = slog.New(slog.NewTextHandler(&logs, nil))
-			before := atomic.LoadInt64(&c.errors)
+			before := c.Health().ErrorCount
 
 			assert.Equal(t, "term", deliverStreamLane(t, handler, fenceWireJSON(t, mode), 1), "disposition")
-			assert.Equal(t, before+1, atomic.LoadInt64(&c.errors), "the poison count rises by one")
+			assert.Equal(t, before+1, c.Health().ErrorCount, "the poison count rises by one")
 			// The subject is the delivered message's (streamLaneMsg.Subject), not the
 			// port's filter.
 			logLine := logs.String()
@@ -252,7 +252,7 @@ func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 				"the next message's disposition")
 			_, _, stored = storedRevision(t, c, fenceEntityID)
 			assert.True(t, stored, "the next message on the stream is applied")
-			assert.Equal(t, before+1, atomic.LoadInt64(&c.errors), "the poison message is counted once")
+			assert.Equal(t, before+1, c.Health().ErrorCount, "the poison message is counted once")
 		})
 	}
 }

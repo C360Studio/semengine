@@ -35,8 +35,9 @@ import (
 func poisonScopingTestComponent(t *testing.T) (*Component, *mockKVBucket) {
 	t.Helper()
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
-	c.running = true
-	c.startTime = time.Now()
+	nothing := func(context.Context) error { return nil }
+	require.NoError(t, c.lifecycle.Initialize())
+	require.NoError(t, c.lifecycle.Start(t.Context(), nothing, nothing))
 	c.poisonedEntities = prometheus.NewGauge(prometheus.GaugeOpts{Name: "test_poison_scoping_gauge"})
 	return c, bucket
 }

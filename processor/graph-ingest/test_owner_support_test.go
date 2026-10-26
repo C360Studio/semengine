@@ -79,6 +79,9 @@ func (o *graphIngestTestOwner) transfer() {
 // start function that acquires nothing.
 func startGuardAcquiringNothing(tb testing.TB, c *Component) {
 	tb.Helper()
+	if err := c.lifecycle.Initialize(); err != nil {
+		tb.Fatalf("lifecycle Initialize: %v", err)
+	}
 	if err := c.lifecycle.Start(tb.Context(), func(context.Context) error { return nil }, c.release); err != nil {
 		tb.Fatalf("guard Start that acquires nothing: %v", err)
 	}
@@ -94,6 +97,9 @@ func leaveGuardCleanupPending(tb testing.TB, c *Component) {
 	errStart := errors.New("setup: start fails")
 	errRollback := errors.New("setup: rollback fails")
 	rolledBack := false // the guard runs the cleanup one call at a time
+	if err := c.lifecycle.Initialize(); err != nil {
+		tb.Fatalf("lifecycle Initialize: %v", err)
+	}
 	err := c.lifecycle.Start(tb.Context(),
 		func(context.Context) error { return errStart },
 		func(ctx context.Context) error {
@@ -114,6 +120,9 @@ func leaveGuardCleanupPending(tb testing.TB, c *Component) {
 // of lifecycleUsed; it uses the guard up, so it is a test's last step.
 func assertGuardUnused(tb testing.TB, c *Component) {
 	tb.Helper()
+	if err := c.lifecycle.Initialize(); err != nil {
+		tb.Fatalf("lifecycle Initialize: %v", err)
+	}
 	err := c.lifecycle.Start(tb.Context(), func(context.Context) error { return nil }, c.release)
 	if errors.Is(err, errs.ErrAlreadyStarted) {
 		tb.Fatalf("lifecycle guard already used: a following Start = %v", err)

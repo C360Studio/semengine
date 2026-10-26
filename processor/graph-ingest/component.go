@@ -24,7 +24,6 @@ import (
 	"github.com/c360studio/semengine/internal/cache"
 	"github.com/c360studio/semengine/internal/dispatch"
 	"github.com/c360studio/semengine/internal/graphmutation"
-	"github.com/c360studio/semengine/internal/lifecycleguard"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
@@ -437,16 +436,17 @@ type Component struct {
 	// Inference components
 	hierarchyInference *inference.HierarchyInference
 
-	// Lifecycle state
-	mu          sync.RWMutex
-	running     bool
-	initialized bool
-	startTime   time.Time
-	// lifecycle is the owner-lifecycle state (design D13); Start and Stop go through it.
-	lifecycle lifecycleguard.Guard
+	// mu guards the ports and the entityCache handle: each cache use reads the handle
+	// once under mu and uses that copy, and clearLifecycleHandles clears it under mu, so
+	// a use running during or after Stop holds a handle that stays usable (#306).
+	mu sync.RWMutex
+	// shell is the lifecycle state, Health and DataFlow (component.Lifecycle, ADR-108);
+	// Initialize, Start, Stop, Health and DataFlow go through it.
+	lifecycle component.Lifecycle
 	// startCompleted is set as start's last step and never cleared, since graph-ingest is
 	// one-shot (D13). Request handlers refuse until it is set (subscribeForRequests).
-	// running cannot stand in: release clears it before Stop's drain, which still serves.
+	// The shell's running state cannot stand in: it ends when release begins, before
+	// Stop's drain, which still serves.
 	startCompleted atomic.Bool
 	// The handles start records for release: release reads and clears them. Both run
 	// under the lifecycle guard, one at a time, so no lock is needed (ruling I, #91
@@ -511,13 +511,6 @@ type Component struct {
 	// never re-derived from a candidate, a payload or a subject. The authority gate
 	// and hierarchy inference both read it.
 	platform types.PlatformMeta
-
-	// Metrics (atomic). The first two count input messages, stream deliveries
-	// and mutation requests, and their payload bytes (DataFlow).
-	messagesProcessed int64
-	bytesProcessed    int64
-	errors            int64
-	lastActivity      atomic.Value // stores time.Time
 
 	// Prometheus metrics. The historical exported series name remains stable
 	// because dashboards and operator alerts consume it as an external contract.
@@ -692,9 +685,6 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 		platform:        deps.Platform,
 	}
 
-	// Initialize last activity
-	comp.lastActivity.Store(time.Now())
-
 	if err := comp.registerMetrics(deps.MetricsRegistry); err != nil {
 		return nil, errs.Wrap(err, "CreateGraphIngest", "factory", "register metrics")
 	}
@@ -837,123 +827,48 @@ func (c *Component) OutputPorts() []component.Port {
 	return append([]component.Port(nil), c.outputs...)
 }
 
-// Health returns current health status
+// Health reports the shell's verdict (component.Lifecycle.Health) over graph-ingest's
+// stuck states, not a count of past errors (ADR-109 Decision 2): a poisoned entity, or
+// a backlog the latest status tick could not read. ErrorCount is reported and never
+// lowers Healthy. A non-empty poison inventory degrades Health per-entity: status is
+// "degraded", NOT "reset_required" (that stays a per-read error code, design D6), and
+// the message carries count + a bounded ID/reason sample. Full enumeration rides
+// DebugStatus.
 func (c *Component) Health() component.HealthStatus {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-
-	uptime := time.Duration(0)
-	if c.running && !c.startTime.IsZero() {
-		uptime = time.Since(c.startTime)
+	var poison, fault string
+	if c.entityPoisonSize.Load() > 0 {
+		poison = c.entityPoisonHealthMessage()
 	}
-
-	// Health reads stuck states, not a count of past errors (ADR-109 Decision 2): a
-	// poisoned entity, or a backlog the latest status tick could not read. ErrorCount
-	// is reported and never lowers Healthy.
-	var stuck []string
-	if c.running {
-		// A non-empty poison inventory degrades Health per-entity: status is
-		// "degraded", NOT "reset_required" (that stays a per-read error code —
-		// design D6), and the message carries count + a bounded ID/reason
-		// sample. Full enumeration rides DebugStatus.
-		if c.entityPoisonSize.Load() > 0 {
-			stuck = append(stuck, c.entityPoisonHealthMessage())
-		}
-		if fault := c.backlogObservationFault.Load(); fault != nil {
-			stuck = append(stuck, *fault)
-		}
+	if f := c.backlogObservationFault.Load(); f != nil {
+		fault = *f
 	}
-	status := "stopped"
-	switch {
-	case c.running && len(stuck) > 0:
-		status = string(graph.IndexStateDegraded)
-	case c.running:
-		status = "running"
-	}
-
-	return component.HealthStatus{
-		Healthy:    c.running && len(stuck) == 0,
-		LastCheck:  time.Now(),
-		ErrorCount: int(atomic.LoadInt64(&c.errors)),
-		LastError:  strings.Join(stuck, "; "),
-		Uptime:     uptime,
-		Status:     status,
-	}
+	return c.lifecycle.Health(poison, fault)
 }
 
-// DataFlow reports input messages since start: each delivery on a stream input,
-// redeliveries included, and each mutation request. Queries, in-process creates
-// and the containers hierarchy inference creates are not input messages.
-// ErrorRate is the processing errors counted since start (Health's ErrorCount)
-// per input message.
+// DataFlow reports input messages: each delivery on a stream input, redeliveries
+// included, and each mutation request. Queries, in-process creates and the containers
+// hierarchy inference creates are not input messages. ErrorRate is the processing
+// errors counted (Health's ErrorCount) per input message.
 func (c *Component) DataFlow() component.FlowMetrics {
-	messages := atomic.LoadInt64(&c.messagesProcessed)
-	bytes := atomic.LoadInt64(&c.bytesProcessed)
-	errorCount := atomic.LoadInt64(&c.errors)
-
-	c.mu.RLock()
-	uptime := time.Duration(0)
-	if c.running && !c.startTime.IsZero() {
-		uptime = time.Since(c.startTime)
-	}
-	c.mu.RUnlock()
-
-	// Calculate rates
-	var messagesPerSec, bytesPerSec, errorRate float64
-	if uptime > 0 {
-		seconds := uptime.Seconds()
-		messagesPerSec = float64(messages) / seconds
-		bytesPerSec = float64(bytes) / seconds
-		if messages > 0 {
-			errorRate = float64(errorCount) / float64(messages)
-		}
-	}
-
-	lastAct := time.Now()
-	if stored := c.lastActivity.Load(); stored != nil {
-		if t, ok := stored.(time.Time); ok {
-			lastAct = t
-		}
-	}
-
-	return component.FlowMetrics{
-		MessagesPerSecond: messagesPerSec,
-		BytesPerSecond:    bytesPerSec,
-		ErrorRate:         errorRate,
-		LastActivity:      lastAct,
-	}
+	return c.lifecycle.DataFlow()
 }
 
 // ============================================================================
 // LifecycleComponent Interface (3 methods)
 // ============================================================================
 
-// Initialize validates configuration and sets up ports (no I/O)
+// Initialize marks the component initialized (no I/O). The factory validated the
+// configuration.
 func (c *Component) Initialize() error {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.initialized {
-		return nil // Idempotent
-	}
-
-	// Validate configuration
-	if err := c.config.Validate(); err != nil {
-		return errs.Wrap(err, "Component", "Initialize", "config validation")
-	}
-
-	c.initialized = true
-	c.logger.Info("component initialized", slog.String("component", "graph-ingest"))
-
-	return nil
+	return c.lifecycle.Initialize()
 }
 
 // Start begins processing (must be initialized first). The lifecycle state is the
-// guard's (internal/lifecycleguard, design D13): a nil or ended context and a second
-// Start are refused before anything is acquired; a Start that fails is rolled back
-// through release, and a rollback that fails leaves release pending for the next Stop.
-// An uninitialized component, or one with no NATS client, is refused before the guard
-// is consulted, so a later Start after Initialize is still admitted.
+// shell's (component.Lifecycle, over internal/lifecycleguard): a nil or ended context and
+// a second Start are refused before anything is acquired; a Start that fails is rolled
+// back through release, and a rollback that fails leaves release pending for the next
+// Stop. A component with no NATS client, or an uninitialized one, is refused before the
+// guard is consulted, so a later Start after Initialize is still admitted.
 //
 // ctx bounds Start only. Everything Start does before it returns runs under ctx:
 // connecting to NATS (or waiting while the client reconnects), bucket setup, the
@@ -963,12 +878,6 @@ func (c *Component) Initialize() error {
 // stops nothing (ADR-113). Request handlers run under a context natsclient owns; release
 // drains their subscriptions, which waits for running handlers.
 func (c *Component) Start(ctx context.Context) error {
-	c.mu.RLock()
-	initialized := c.initialized
-	c.mu.RUnlock()
-	if !initialized {
-		return errs.WrapFatal(fmt.Errorf("component not initialized"), "Component", "Start", "initialization check")
-	}
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")
 	}
@@ -1036,14 +945,9 @@ func (c *Component) start(ctx context.Context) error {
 	}
 
 	c.startStatusMetricsLoop(runCtx)
-	c.mu.Lock()
-	c.running = true
-	c.startTime = time.Now()
-	startTime := c.startTime
-	c.mu.Unlock()
 	c.logger.Info("component started",
 		slog.String("component", "graph-ingest"),
-		slog.Time("start_time", startTime))
+		slog.Time("start_time", time.Now()))
 	// The last step: nothing between here and the guard's commit can fail.
 	c.startCompleted.Store(true)
 	return nil
@@ -1083,7 +987,7 @@ func (c *Component) startStatusMetricsLoop(ctx context.Context) {
 	}()
 }
 
-// Stop gracefully shuts down the component through the guard, which runs release, the
+// Stop gracefully shuts down the component through the shell, which runs release, the
 // cleanup Start gave it: Stop before Start releases nothing; Stop during Start waits for
 // it, or returns ctx's error first; a Stop whose release fails keeps it pending, and the
 // next Stop runs it again; after a release that succeeded, Stop returns nil and runs
@@ -1093,16 +997,13 @@ func (c *Component) Stop(ctx context.Context) error {
 	return c.lifecycle.Stop(ctx)
 }
 
-// release is the cleanup the guard runs, for a Stop or for a failed Start's rollback.
+// release is the cleanup the shell runs, for a Stop or for a failed Start's rollback.
 // The handles stay set when cleanup fails, so the next Stop releases them again; they
 // are cleared only by a cleanup that succeeded (design D22). A consumer whose drain was
 // already issued is not drained again (drainIssued). Each release that succeeds logs
 // "component stopped gracefully" once, after the handles are cleared, whether it ran
 // for a Stop or for a failed Start's rollback; one that fails logs nothing.
 func (c *Component) release(ctx context.Context) error {
-	c.mu.Lock()
-	c.running = false
-	c.mu.Unlock()
 	if err := c.cleanup(ctx); err != nil {
 		return err
 	}
@@ -1167,7 +1068,9 @@ func (c *Component) clearLifecycleHandles() {
 	c.statusDone = nil
 	c.consumers = nil
 	c.subscriptions = nil
+	c.mu.Lock()
 	c.entityCache = nil
+	c.mu.Unlock()
 	c.statusPublisher = nil
 	c.clearBoundConsumers()
 }
@@ -1199,7 +1102,9 @@ func (c *Component) initStorage(ctx, runCtx context.Context) error {
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "entity cache creation")
 	}
+	c.mu.Lock()
 	c.entityCache = entityCache
+	c.mu.Unlock()
 
 	// SemStreams ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
 	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`
@@ -1541,9 +1446,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
 		// Every delivery is one input message on DataFlow, a redelivery and a message
 		// refused below included.
-		atomic.AddInt64(&c.messagesProcessed, 1)
-		atomic.AddInt64(&c.bytesProcessed, int64(len(msg.Data())))
-		c.lastActivity.Store(time.Now())
+		c.lifecycle.CountInput(len(msg.Data()))
 		// SemStreams ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
 		// the redelivery guard, apply, and ack move into processIngest (run on a
 		// pool lane, not this consumer goroutine). Metadata carries the stream name
@@ -1552,7 +1455,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		if metaErr != nil {
 			c.logger.Warn("graph-ingest: message missing JetStream metadata; dropping",
 				slog.String("subject", subject), slog.Any("error", metaErr))
-			atomic.AddInt64(&c.errors, 1)
+			c.lifecycle.CountError()
 			if ackErr := msg.Ack(); ackErr != nil {
 				c.logger.Error("Failed to ack metadata-less message", slog.Any("error", ackErr))
 			}
@@ -1583,7 +1486,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 			// The error names the payload type where the message has one.
 			c.logger.Warn("graph-ingest: poison message; terminating",
 				slog.String("subject", msg.Subject()), slog.Any("error", derr))
-			atomic.AddInt64(&c.errors, 1)
+			c.lifecycle.CountError()
 			if termErr := msg.Term(); termErr != nil {
 				c.logger.Error("Failed to terminate poison message", slog.Any("error", termErr))
 			}
@@ -2181,7 +2084,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 
 	revision, err := c.replaceEntity(ctx, entity, hierarchyTriples, readFound, at)
 	if err != nil {
-		atomic.AddInt64(&c.errors, 1)
+		c.lifecycle.CountError()
 		return errs.Wrap(err, "Component", "mergeEntityOnLane", "CAS update")
 	}
 
@@ -2281,7 +2184,7 @@ func (c *Component) createEntityWithReceipt(
 	// Serialize entity (now includes hierarchy triples if enabled)
 	data, err := graph.MarshalEntityState(entity)
 	if err != nil {
-		atomic.AddInt64(&c.errors, 1)
+		c.lifecycle.CountError()
 		return nil, 0, errs.Wrap(err, "Component", "CreateEntity", "entity serialization")
 	}
 
@@ -2292,7 +2195,7 @@ func (c *Component) createEntityWithReceipt(
 		return nil, 0, writeErr
 	}
 	if writeErr != nil {
-		atomic.AddInt64(&c.errors, 1)
+		c.lifecycle.CountError()
 		return nil, 0, errs.Wrap(writeErr, "Component", "CreateEntity", "KV store")
 	}
 
@@ -2328,7 +2231,7 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 		// outcome, as on the reconcile lane and CreateEntity's key-exists, not a processing
 		// error counted in ErrorCount.
 		if !errors.Is(err, natsclient.ErrKVRevisionMismatch) {
-			atomic.AddInt64(&c.errors, 1)
+			c.lifecycle.CountError()
 		}
 		return err
 	}
@@ -2367,13 +2270,24 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 // write — but such a Get already returns stale data on a cold cache, so the
 // guard introduces no regression relative to the no-cache baseline.
 func (c *Component) invalidateEntityCacheEntry(id string) {
-	if c.entityCache == nil {
+	entityCache := c.entityCacheHandle()
+	if entityCache == nil {
 		return
 	}
 	c.cacheGenMu.Lock()
 	defer c.cacheGenMu.Unlock()
 	c.cacheGen[id]++
-	c.entityCache.Delete(id) //nolint:errcheck
+	entityCache.Delete(id) //nolint:errcheck
+}
+
+// entityCacheHandle reads the entity cache handle once, under mu. A caller uses the copy
+// it got: release may close and clear the handle meanwhile, and a closed cache still
+// serves Get, Set and Delete (cache.Cache's Close), so a use during or after Stop is
+// safe (#306). Nil when the cache is disabled or released.
+func (c *Component) entityCacheHandle() cache.Cache[graph.EntityState] {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.entityCache
 }
 
 // loadEntityCacheGen captures the current invalidation generation for a key.
@@ -2393,13 +2307,14 @@ func (c *Component) loadEntityCacheGen(id string) uint64 {
 // generation. See invalidateEntityCacheEntry for the coherence contract and the
 // happens-before argument. No-op when the cache is disabled.
 func (c *Component) repopulateEntityCacheEntry(id string, entity graph.EntityState, gen0 uint64) {
-	if c.entityCache == nil {
+	entityCache := c.entityCacheHandle()
+	if entityCache == nil {
 		return
 	}
 	c.cacheGenMu.Lock()
 	defer c.cacheGenMu.Unlock()
 	if c.cacheGen[id] == gen0 {
-		c.entityCache.Set(id, entity) //nolint:errcheck
+		entityCache.Set(id, entity) //nolint:errcheck
 	}
 }
 
@@ -2531,13 +2446,13 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 			}
 			// A cancelled batch is NOT a pure entity-not-found batch.
 			allAbsences = false
-			atomic.AddInt64(&c.errors, 1)
+			c.lifecycle.CountError()
 			break
 		}
 		group := bySubject[subject]
 		appended, casErr := c.appendEntityTriples(ctx, subject, group)
 		if casErr != nil {
-			atomic.AddInt64(&c.errors, 1)
+			c.lifecycle.CountError()
 			failedSubjects[subject] = casErr.Error()
 			if errors.Is(casErr, natsclient.ErrKVKeyNotFound) {
 				notFoundSubjects[subject] = struct{}{}

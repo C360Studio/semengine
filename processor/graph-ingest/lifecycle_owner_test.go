@@ -55,7 +55,6 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 	runCtx, runCancel := context.WithCancel(t.Context())
 	submitCtx, submitCancel := context.WithCancel(runCtx)
 	owner := createTestComponent(t)
-	owner.running = true
 	owner.cancel = runCancel
 	owner.ingestPool = pool
 	owner.ingestPoolCancel = poolCancel
@@ -191,7 +190,6 @@ func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
 	if err := owner.Initialize(); err != nil { // so Start reaches the guard (design D13)
 		t.Fatalf("Initialize: %v", err)
 	}
-	owner.running = true
 	owner.cancel = func() {}
 	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
 	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)

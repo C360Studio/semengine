@@ -30,7 +30,7 @@ shell running.
 
 - **WHEN** `Health` is called while the cleanup of a `Stop` is held open
 - **THEN** it reports `Healthy` false and `Status` `stopped`
-- **AND** the test that verifies this is `TestLifecycleReadsDuringStopReportStopped`
+- **AND** the test that verifies this is the `stop cleanup held open` row of `TestLifecycleReadsInEveryPhase`
 
 #### Scenario: A failed start
 

@@ -323,10 +323,10 @@ to register every OpenAPI `SchemaRef` type is the first bullet below.
 - A ported component refuses, at construction, a configuration key it does not define, naming the key, and proves it
   with its own test (`component-registration` spec, "Unknown configuration keys are refused";
   `TestCreateGraphIngestRefusesUnknownKey`). Test a configuration through its production JSON path.
-- A ported component keeps its `Start`, `Stop` and failed-start state in `internal/lifecycleguard`, never in its own
-  copy of that state machine. When its failed `Start` cannot clean up, `Start` reports both errors and keeps what is
-  left for a later `Stop`, proven by the component's own test (`lifecycle-suite` spec, "Failed start whose own cleanup
-  fails"; `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`).
+- A component keeps its lifecycle state (`Start`, `Stop` and failed-start state) in `component.Lifecycle`, a service
+  in `internal/lifecycleguard`, never in a copy of its own. When its failed `Start` cannot clean up, `Start` reports
+  both errors and keeps what is left for a later `Stop`, proven by the component's own test (`lifecycle-suite` spec,
+  "Failed start whose own cleanup fails"; `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`).
 
 ## Test and operational fidelity
 

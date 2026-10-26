@@ -341,9 +341,10 @@ is the first bullet below.
 - A ported component without its own test that it refuses an unknown configuration key, naming the key
   (`component-registration` spec), is a finding. Configuration a consumer can set has a round-trip test through the
   production JSON path that keeps each field's destination type.
-- A ported component that keeps its own owner-lifecycle state instead of composing `internal/lifecycleguard` is a
-  finding. One whose failed `Start` can fail to clean up needs its own test that `Start` reports both errors and that
-  a later `Stop` releases what was left (`lifecycle-suite` spec, "Failed start whose own cleanup fails").
+- A component that keeps its own lifecycle state instead of composing `component.Lifecycle` (a service:
+  `internal/lifecycleguard`) is a finding. One whose failed `Start` can fail to clean up needs its own test that
+  `Start` reports both errors and that a later `Stop` releases what was left (`lifecycle-suite` spec, "Failed start
+  whose own cleanup fails").
 
 ### Test fidelity
 

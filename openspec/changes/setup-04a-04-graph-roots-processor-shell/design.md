@@ -231,8 +231,10 @@ In `component/lifecycle_type_test.go` (unit; `component` stays on the 80% covera
   signal: the held function closes an `entered` channel and waits on a `release` channel, and the test reads only
   after `<-entered`. Examples suffice, with no generated check: the shell's reads depend only on which of these nine
   histories it is in and on the two inputs, and the table enumerates all of them.
-- `TestLifecycleReadsDoNotWaitForStartOrStop`: both reads return while `start`, then `cleanup`, is held open (inside the
-  bubble a read that blocks deadlocks the bubble and fails the test).
+- `TestLifecycleReadsDoNotWaitForStartOrStop`: both reads return while `start`, then `cleanup`, is held open. A read
+  that waits on the shell's lock is not a bubble deadlock, so each read runs on a goroutine and is bounded by a
+  real-clock deadline (`realDeadline`, ten seconds, made outside the bubble): a read still waiting at the deadline
+  fails the test.
 - `TestLifecycleStartBeforeInitializeIsRefusedAndLeavesItUnused`, `TestLifecycleFailedStartNeverRuns`.
 - `TestLifecycleSuiteCatchesWorkUnderTheStartContext`: inside one bubble, a shell owner whose `start` runs its worker
   under `ctx` fails `lifecycletest.CheckStartContextEndStopsNothing`, called directly, not through `Run`, as

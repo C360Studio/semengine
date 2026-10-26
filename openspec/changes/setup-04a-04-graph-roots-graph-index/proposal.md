@@ -19,7 +19,8 @@ debt". graph-index has no external-provider code, so the tier-0 ruling (#9 comme
   private dispatcher (#107).
 - Add the follower package under `graph/` (name proposed `graph/follower`), built from graph-index's watch loop and
   readiness glue, with the validating phase and the declared lost feed ADR-108 D4 asks for.
-- graph-index's queries answer `index_not_ready` during the startup replay, in process (ADR-109 D1), and every reply
+- graph-index's queries answer `index_not_ready` during the startup replay and while the feed is lost, in process
+  (ADR-109 D1; owner ruling, PR #414 comment 6426254115, item 2), and every reply
   carries `indexed_revision` and `producer` (`graph.QueryResponse`, ingest-kernel D18; #103's producer half).
 - graph-index's eight verbs join `graph.QueryVerbs()` (#106's graph-index half).
 - `ComputeIndexStatus` and the revision gauges move into `graph/readiness`, without the legacy fields (#110 item 1).
@@ -35,10 +36,14 @@ debt". graph-index has no external-provider code, so the tier-0 ruling (#9 comme
 ## Impact
 
 - New `processor/graph-index` (about 3,250 tree lines) and `graph/follower` (about 450); `graph`, `graph/readiness`
-  about 130. About 4,660 pin lines carried: over the one-package bound (#159), owner waiver asked (design D1).
+  about 130. About 4,660 pin lines carried: over the one-package bound (#159), waived by count (design D1).
 - New subjects `graph.index.query.*` (8), declared in the verb table. New buckets: none (the five are in
   `graph/kvcatalog` already). New config keys: none (`batch_size` removed). New exported surface: the follower,
   `QueryResponse` fields, `ResponderGraphIndex`, the revision gauge constructor.
 - Consumers: removing `batch_size` fails semconnect's two configs at boot until they delete the line; eight new reserved
   subjects make a stream on `graph.index.query.*` fail at boot (none found in consumer configs) (design D9, D17).
-- Addresses #107, #109, #110, #103, #106, #68, #195, #196. Retires no issue by itself (design D17).
+- Owner ruling (PR #414 comment 6426254115): one PR with a waiver by count; refuse queries while the feed is lost;
+  the alias index keeps the pin's behaviour and #415 (stale aliases, `status:blocked`) stays open for its own PR before
+  PR 9.
+- Addresses #107, #109, #110, #103, #106, #68, #195, #196. Retires no issue by itself; #415, #108, #408, #300 stay open
+  (design D17).

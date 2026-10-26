@@ -68,9 +68,30 @@ given to `Start` after it returned SHALL stop nothing.
 
 For outgoing, incoming, predicate (exact, value, list, stats, compound) and name reads, a change of an entity's
 statements from A to B and then to none SHALL leave each read answering B and then nothing for that entity. The alias
-read is the one exception until its filed issue lands (design D12, answer (b); number filled in at acceptance).
+read is the one exception until #415 lands (owner ruling, PR #414 comment 6426254115, item 3).
 
 #### Scenario: A then B then none
 
 - **WHEN** an entity's statements go from A to B to none
 - **THEN** each read listed answers A, then B, then nothing for that entity
+
+### Requirement: Queries are refused while the feed is lost
+
+While graph-index's follower reports its `ENTITY_STATES` feed lost, each of the eight verbs SHALL answer class
+transient, code `index_not_ready`; `Healthy` SHALL be false and the envelope `degraded` until the process restarts.
+
+#### Scenario: The bucket is deleted under a running graph-index
+
+- **WHEN** `ENTITY_STATES` is deleted while graph-index runs
+- **THEN** within two activity checks every verb answers `index_not_ready` and `Healthy` is false
+- **AND** the test that verifies this is `TestFollowerDeclaresLostFeed`
+
+### Requirement: Stop writes accepted work
+
+Index work the keyed pool accepted before `Stop` SHALL be written before `Stop` returns nil, without counting an error.
+
+#### Scenario: Accepted work at Stop
+
+- **WHEN** `Stop` is called with entries accepted by the index lanes
+- **THEN** each entry's index rows are stored when `Stop` returns nil, and `ErrorCount` is unchanged
+- **AND** the test that verifies this is `TestStopWritesAcceptedWork`

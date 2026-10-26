@@ -9,13 +9,15 @@ on 2026-10-26: semconnect `d0d06e00bf05a545f30ceea798db1c2b1ee47d4f`, semteams
 `ab480702270ca7f293ecbf5f7ea51daef512e86f`, semsource `e4febc0d2e23bf33811edc20b9a4159cf5275dc4`, semboids
 `8c03cc53836ced93a5df7064473c63ff144e64f1`; written `<repo>:<path>:<line>`.
 
-Status: round 2, answering the early reviewer's INVENTORY CHANGES REQUESTED on `ad8460a`. No `INVENTORY PASS`; the
+Status: round 3, folding in the owner ruling (PR #414 comment 6426254115) and the Fable read (comment 6426199810). No
+`INVENTORY PASS`; the
 design was drafted in the same pass at the caller's direction, as on the three earlier change 4 pull requests.
 
 Kind of change: a port. It carries `processor/graph-index` (4,527 non-test pin lines, 16 files) and, from packages
 already ported, the pieces the ingest-kernel design deferred to graph-index: `graph.ComputeIndexStatus` with
 `IndexStatusInputs` (`pin:graph/index_status.go:167-258`), `readiness.WithRevisionGauges`
-(`pin:graph/readiness/gauges.go:57-76`) and `graph.QueryResponse`/`NewQueryResponse` (`pin:graph/query_contracts.go:17-28`;
+(`pin:graph/readiness/gauges.go:57-76`) and `graph.QueryResponse`/`NewQueryResponse`
+(`pin:graph/query_contracts.go:17-28`;
 design D18 of `setup-04a-02-ingest-kernel`). It adds one tree package, the ENTITY_STATES follower (ADR-108 D1, D4),
 built from graph-index's watch loop.
 
@@ -37,13 +39,13 @@ go1.26.4 darwin/arm64, on the pin copy, unit tests only (no build tag).
 
 - `go test -race -count=1 -p 1 -cpu 1 -cover ./processor/graph-index`: ok, 10.4 s, coverage 80.0%.
 - `go test -count=5 -p 1 -cpu 1 -shuffle=on ./processor/graph-index`: ok, 31.3 s. The shuffle seed was not printed
-  (no `-v`); a re-run with `-v` records it (task 1.3).
+  (no `-v`); a re-run with `-v` records it (task 1.5).
 - The lifecycle suite is not run against the pin: it is this tree's harness (`internal/harness/lifecycletest`), and
   graph-index at the pin does not build against it. The pin's own lifecycle tests are
   `pin:processor/graph-index/lifecycle_order_test.go`, `failed_start_subscription_test.go:48`, `:125`, `:201`,
   `lifecycle_integration_test.go` (integration, not run). The suite runs on the port (design D11).
 - Integration tests (13 files, `//go:build integration`) were not run at the pin (Docker cost; #108's measurement in
-  task 1.4 runs one of them).
+  task 1.6 runs one of them).
 - Test-text rules (`grep` over `pin:processor/graph-index/*_test.go`, 13,936 lines, 246 `func Test`):
   `time.Sleep` 24 (component_test.go 3, attack_test.go 1, attack_integration_test.go 7, index_operations_test.go 2,
   integration_test.go 4, predicate_layout_smoke_integration_test.go 1, query_integration_test.go 6); `t.Skip` 11
@@ -76,7 +78,8 @@ the query data types `graph/query_index_types.go:6-35`, `graph/query_name_types.
 `graph/readiness/publisher.go:41` `NewPublisher`; `graph/readiness/gauges.go:37` `NewGauges`, `:109` `Set`, `:120`
 `RecordPublishFailure`; `graph/readiness/readiness_gate.go:117` `EvaluateReadinessGate(r Reading)`;
 `internal/resource/watcher.go:67`, `:78`; `internal/revlag/watermark.go:83` `New`, `:101` `Observe`, `:151` `Complete`,
-`:217` `Observed`, `:237` `IndexedAt`; `pkg/lifecyclecleanup/lifecyclecleanup.go:36`; `internal/dispatch/keyed_pool.go:123`
+`:217` `Observed`, `:237` `IndexedAt`; `pkg/lifecyclecleanup/lifecyclecleanup.go:36`;
+`internal/dispatch/keyed_pool.go:123`
 `NewKeyedPool`, `:198` `SubmitBlocking`, `:284` `Shutdown`; `component/lifecycle_type.go` (`component.Lifecycle`);
 `vocabulary/registry.go:452`, `:477`; `vocabulary/predicate_contract.go:70`; `pkg/types/entity_id.go:149`.
 
@@ -143,6 +146,7 @@ Queries, each `gh issue list --state open --search <q> --limit 200`: `graph-inde
 | #196 | ADR-108 adoption order includes graph-index | guard adoption, through the shell |
 | #408 | `internal/revlag/watermark_test.go:501-519` | revlag's concurrent-reader test can pass without observing progress |
 | #300 | graph-ingest only (sections C, D, F, H) | named by the brief; touches no graph-index file |
+| #415 | `processor/graph-index` alias index (G8), filed from this design | stale aliases keep resolving; `status:blocked`; stays open: an ADR for the alias key layout, then its own PR before PR 9 (owner ruling, PR #414 comment 6426254115, item 3) |
 | #16 | its 2026-10-24 drift note: change 4's adopter inventory names the widened capture refusal once `graph.index.query.*` joins `QueryVerbs()` | the composition half is done (`composition/analyze.go:123-142`); a stream on `graph.index.>` fails at boot after this PR (section 12) |
 
 Names the word, not the package: #405, #141, #111, #161, #216, #280, #9 (epic), #7 (epic).
@@ -156,7 +160,8 @@ Names the word, not the package: #405, #141, #111, #161, #216, #280, #9 (epic), 
   `lifecycle-suite/spec.md`, `component-registration/spec.md`.
 - Ingest-kernel design D18 (`openspec/changes/archive/*-setup-04a-02-ingest-kernel/design.md:1159-1210`): envelope
   `data, indexed_revision, producer, timestamp`, constructor refuses an empty producer; `min_revision` declared with its
-  first embedder, the `graph.query.*` request types, which arrive with graph-query; `TestQueryResponseCarriesIndexedRevisionAndProducer`
+  first embedder, the `graph.query.*` request types, which arrive with graph-query;
+  `TestQueryResponseCarriesIndexedRevisionAndProducer`
   named for change 4.
 - Developer contract `:155-158` and reviewer contract `:226-228`: "For the indexes graph-index brings in change 4 (none
   is written in this tree yet)… Every index a query can see implements replacement, including `[A] -> [B] -> []`".
@@ -204,13 +209,16 @@ three stop applying entries (spatial `:754-756`, `:759-761`), and they withhold 
 ### Adoption sweep (the follower establishes a primitive)
 
 Adopters, never an obligation of this change; tracking issue: #109 (already open for exactly this).
-`pin:processor/graph-embedding/component.go:1417-1716` (change 5), `pin:processor/graph-index-spatial/component.go:690-856`
+`pin:processor/graph-embedding/component.go:1417-1716` (change 5),
+`pin:processor/graph-index-spatial/component.go:690-856`
 and `pin:processor/graph-index-temporal/component.go:712-886` (change 7); `pin:processor/rule` decides in change 6
-(ADR-108 Consequences). `ComputeIndexStatus`'s other producer: graph-embedding (`pin:processor/graph-embedding/readiness.go:43`).
+(ADR-108 Consequences). `ComputeIndexStatus`'s other producer: graph-embedding
+(`pin:processor/graph-embedding/readiness.go:43`).
 
 ## 6. The pin's decision records for the carried packages
 
-Fetched from the pin copy (`docs/adr`, 85 files); `grep -l -E 'graph-index|graphindex|revlag|ensureQueryReady|keyed_dispatcher|KeyedPool|revision_coalescer|NAME_INDEX|PREDICATE_INDEX|INCOMING_INDEX|OUTGOING_INDEX|ALIAS_INDEX|ComputeIndexStatus'`
+Fetched from the pin copy (`docs/adr`, 85 files); `grep -l -E
+'graph-index|graphindex|revlag|ensureQueryReady|keyed_dispatcher|KeyedPool|revision_coalescer|NAME_INDEX|PREDICATE_INDEX|INCOMING_INDEX|OUTGOING_INDEX|ALIAS_INDEX|ComputeIndexStatus'`
 returned 20; read for what they decide about graph-index. Plus ADR-072 and ADR-079 (title match: keyed lanes; poison).
 
 | ADR | Decides for graph-index | In `docs/adr/` |
@@ -333,7 +341,8 @@ about 3,630 pin lines.
 | Statement | Probe at nats.go v1.54.0 / nats-server v2.15.1 (`go.mod:16-17`) |
 | --- | --- |
 | `WatchAll` sends one `nil` entry after the initial values | empty bucket only: `natsclient/kv_integration_test.go:239-245`. Non-empty: no probe; the follower's integration test drives it (design D11) |
-| `Updates()` closes when the watcher ends for a reason other than `Stop` | a broker restart does not close it: probe `/tmp/gi-probe` (design D3), it stalls and resumes. Other causes: not promised; the design treats any close as a lost feed |
+| `Updates()` closes when the watcher ends for a reason other than `Stop` | a restart with its store does not close it; it stalls and resumes within two activity checks, 20 s (`js.go:218-222`, `:2496`; probe PR #414 comment 6425769680). A deleted bucket closes it (`js.go:2354-2358`, `:2415`; `jetstream/kv.go:1364-1367`; measured 18.00 s, `/tmp/gi-probe-delete/out-delete.txt`, posted by task 1.3). A deleted and recreated bucket does not close it and skips the new stream's first revisions (`out-recreate-6puts.txt`); its creation time changes (`out-recreate-created.txt`). Design D3 |
+| `ENTITY_STATES` keeps one revision per key | `graph/kvcatalog/kvcatalog.go:79-87` (`History: 1`): a revision overwritten before a watcher reads it is never delivered (restart probe run 3) |
 | A KV revision and `LastSeq` share one sequence space | `natsclient/kv.go:100-110` states it; probe: `pin:processor/graph-index/revision_space_integration_test.go:38` returns with the port (ADR-109 D4) |
 | Concurrent `Status` and `Get` on one KV handle race under `-race` (`pin:…/component.go:236-239`) | carried comment; not promised (Bounded port scope) |
 | `watcher.Stop()` via `defer` races nats.go's handler (`pin:…/component.go:986-988`) | carried comment; not promised |
@@ -378,8 +387,8 @@ Consumers at symbol level, at the SHAs in the header:
 
 ## Open evidence questions
 
-- E1. #108's number (rebuild time and KV writes per entity at the pin's load shape): not measured; task 1.4.
-- E2. Does a broker restart close a KV watcher's `Updates()` at nats.go v1.54.0? Probed 2026-10-26 (design D3,
-  `/tmp/gi-probe`): no. Four runs (1 s and 10 s outages, same port and store dir): the channel stayed open, stalled
-  8-16 s after the restart, then resumed with the next write; no replay, no close. A revision superseded during the
-  stall was not delivered.
+- E1. #108's number (rebuild time and KV writes per entity at the pin's load shape): not measured; task 1.6.
+- E2. Does a broker restart close a KV watcher's `Updates()` at nats.go v1.54.0? Answered: no (PR #414 comment
+  6425769680; design D3). Four runs, all resumed at 20.04 s, two activity checks (Fable read H1). What does close it is
+  a
+  deleted bucket (18.00 s, one run); a deleted-and-recreated bucket stalls silently instead (design D3, trigger (iii)).

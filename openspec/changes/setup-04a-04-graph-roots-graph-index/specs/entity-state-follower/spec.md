@@ -18,7 +18,7 @@ status key, a nil `Deliver` and a nil `Failed`. The gauges' Prometheus subsystem
 
 `Follower.Run` SHALL run on the caller's goroutine until its context ends, then return nil with no watcher, ticker or
 goroutine of its own left. It SHALL refuse a nil context. It SHALL publish the envelope once at once and then every
-`readiness.DefaultHeartbeat`.
+`readiness.DefaultHeartbeat`, on a goroutine `Run` joins, so a blocked `Deliver` never delays a heartbeat.
 
 #### Scenario: Run's context ends
 
@@ -60,15 +60,21 @@ bootstrap latch SHALL set once the floor reaches that target, or the envelope re
 
 ### Requirement: A lost feed is declared
 
-When the watch cannot start, or its update channel closes while `Run`'s context is live, the follower SHALL report the
-lost feed through `Stuck` and as state `degraded` in the next envelope, and SHALL keep publishing until `Run`'s
-context ends. The state SHALL hold until the process restarts.
+When the watch cannot start, its update channel closes while `Run`'s context is live, or a heartbeat finds
+`ENTITY_STATES`'s backing stream created after the one `Open` bound, the follower SHALL report the lost feed through
+`Stuck`, `degraded` in the next envelope and `index_not_ready` from `QueryReady`, and SHALL keep publishing. The state
+SHALL hold until the process restarts.
 
 #### Scenario: The update channel closes
 
-- **WHEN** the watcher's update channel closes while `Run` runs
+- **WHEN** `ENTITY_STATES` is deleted while `Run` runs
 - **THEN** `Stuck` names the lost feed and the next envelope's state is `degraded`
 - **AND** the test that verifies this is `TestFollowerDeclaresLostFeed`
+
+#### Scenario: The bucket is recreated
+
+- **WHEN** `ENTITY_STATES` is deleted and created again while `Run` runs
+- **THEN** within one heartbeat `Stuck` names the lost feed, although the update channel stays open
 
 ### Requirement: Reset is sticky
 

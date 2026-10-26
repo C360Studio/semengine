@@ -5,17 +5,18 @@ passes on a clean tree at its commit (#171).
 
 ## 1. Design and measurement
 
-- [ ] 1.1 nats.go v1.54.0 / nats-server v2.15.1 probe, run before the owner sees question 2: does a broker restart
-  close a KV watcher's `Updates()`? Run 2026-10-26 outside the repo (`/tmp/gi-probe`, design D3): it stalls and
-  resumes, it does not close. Remaining: post program, commands, versions and output on PR #414. Gate: the comment
-  read back.
-- [ ] 1.2 Inventory reviewed (`INVENTORY PASS`); proposal and design pass pre-owner review and are accepted by the
-  owner, with owner questions 1-3 answered (question 2 carrying 1.1's result). Gate: `task spec:check` and
-  `task docs:check`.
-  Hold: owner acceptance and the size waiver (design D1).
-- [ ] 1.3 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.3.md`. Gate: the note.
-- [ ] 1.4 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
-  recording entities, KV writes and the `index_not_ready` window, posted on #108 and in `notes/1.4.md` (design D13).
+- [x] 1.1 nats.go v1.54.0 / nats-server v2.15.1 restart probe, run before the owner saw question 2: a broker restart
+  does not close a KV watcher's `Updates()`; it stalls and resumes (design D3). Posted on PR #414, comment
+  6425769680.
+- [x] 1.2 Owner rulings on questions 1-3 and the size waiver: PR #414 comment 6426254115 (one PR with a waiver by count;
+  refuse queries while the feed is lost; keep the alias behaviour, #415).
+- [x] 1.3 Delete and recreate probe (design D3, Fable read H2): program and output posted on PR #414, comment
+  6426443564. Gate: the comment read back.
+- [ ] 1.4 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review on the
+  ruled text. Gate: `task spec:check` and `task docs:check`.
+- [ ] 1.5 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.5.md`. Gate: the note.
+- [ ] 1.6 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
+  recording entities, KV writes and the `index_not_ready` window, posted on #108 and in `notes/1.6.md` (design D13).
   Gate: the comment read back.
 
 ## 2. Tests first
@@ -48,8 +49,8 @@ passes on a clean tree at its commit (#171).
   `TestGraphIndexLifecycleSuite`.
 - [ ] 4.4 Query handlers from the verb table, `QueryReady`, the reply envelope (design D5, D6). Gate: as 4.2 and
   `TestQueryDuringStartupReplayIsIndexNotReady`, `TestGraphIndexServesExactlyTheDeclaredVerbs`.
-- [ ] 4.5 The alias index as owner question 3 is answered: the fix and its `[A] -> [B] -> []` test, or the filed
-  issue linked from the PR without a closing keyword (design D12). Gate: the test, or the issue read back.
+- [ ] 4.5 The alias index as ruled (comment 6426254115, item 3): no fix here; #415 linked from the PR without a
+  closing keyword, and the alias read's exception in the spec names it (design D12). Gate: the link read back.
 
 ## 5. Ledger, records and docs
 

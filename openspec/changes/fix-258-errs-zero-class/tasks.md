@@ -12,8 +12,9 @@ Each code task ends only when `task verify` passes on a clean tree at its commit
 
 - [x] 2.1 Tests first: `TestClassifiedErrorWithoutClass` in `pkg/errs/errs_test.go` fails on the base, recorded in
   `notes/2.1.md`. Gate: the failing output.
-- [ ] 2.2 `ErrorTransient ErrorClass = iota + 1`, plus a `contract` and `known_risks` line in the `pkg/errs` row of
-  `docs/admission-ledger.yaml`. Gate: `task verify` green on a clean tree.
+- [x] 2.2 `ErrorTransient ErrorClass = iota + 1`, plus a `contract` and `known_risks` line in the `pkg/errs` row of
+  `docs/admission-ledger.yaml`. Gate: `task verify` green on a clean tree. Done at 7640c34: `task verify` printed `verify: ok`
+  on a clean tree.
 
 ## 3. Code review
 

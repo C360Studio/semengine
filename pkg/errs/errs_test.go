@@ -153,6 +153,36 @@ func TestClassify(t *testing.T) {
 	}
 }
 
+// TestClassifiedErrorWithoutClass pins that a ClassifiedError literal that leaves
+// Class unset is not retryable (#258): the zero class names no class, so Classify
+// gives it the unclassified default, fatal, even over a transient sentinel.
+func TestClassifiedErrorWithoutClass(t *testing.T) {
+	var unset ErrorClass
+	if got := unset.String(); got != "unknown" {
+		t.Errorf("zero ErrorClass String() = %q, want %q", got, "unknown")
+	}
+
+	tests := []struct {
+		name string
+		err  error
+	}{
+		{"bare cause", &ClassifiedError{Err: errors.New("boom")}},
+		{"transient sentinel cause", &ClassifiedError{Err: context.DeadlineExceeded}},
+		{"wrapped", fmt.Errorf("handler: %w", &ClassifiedError{Err: errors.New("publish")})},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if IsTransient(test.err) || IsInvalid(test.err) || IsFatal(test.err) {
+				t.Errorf("an unset class reads as a class: transient=%v invalid=%v fatal=%v",
+					IsTransient(test.err), IsInvalid(test.err), IsFatal(test.err))
+			}
+			if got := Classify(test.err).String(); got != "fatal" {
+				t.Errorf("Classify(%v) = %q, want %q", test.err, got, "fatal")
+			}
+		})
+	}
+}
+
 func TestClassifiedError(t *testing.T) {
 	baseErr := fmt.Errorf("base error")
 	ce := newClassified(ErrorTransient, baseErr, "testComponent", "testOperation", "custom message")

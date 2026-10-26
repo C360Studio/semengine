@@ -12,9 +12,11 @@ import (
 // ErrorClass represents the classification of errors for handling purposes
 type ErrorClass int
 
+// The zero ErrorClass names no class, so a ClassifiedError built without one is
+// not read as retryable: Classify gives it ErrorFatal (#258).
 const (
 	// ErrorTransient represents temporary errors that may be retried
-	ErrorTransient ErrorClass = iota
+	ErrorTransient ErrorClass = iota + 1
 	// ErrorInvalid represents errors due to invalid input or configuration
 	ErrorInvalid
 	// ErrorFatal represents unrecoverable errors that should stop processing

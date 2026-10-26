@@ -452,13 +452,19 @@
     unclassified error, while IsTransient, IsFatal, and IsInvalid report false for it (#167); WrapTransient, WrapFatal, and
     WrapInvalid return nil when err == nil regardless of action (#218); duplicate RetryConfig,
     DefaultRetryConfig, ShouldRetry, ToRetryConfig, and BackoffDelay removed (#218). Changed surface,
-    simplify-04a-16 (#222): ErrCircuitOpen is removed with natsclient's circuit breaker
+    simplify-04a-16 (#222): ErrCircuitOpen is removed with natsclient's circuit breaker; ErrorClass's
+    zero value names no class (ErrorTransient is iota + 1), so a *ClassifiedError built without Class
+    is none of the three to the predicates and Classify returns ErrorFatal for it (#258)
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
   known_risks: >-
     no production context roots. Classify defaults unclassified errors without a listed sentinel to
     ErrorFatal regardless of error text, a change from the pin's transient default (#167); a caller
     that retried on Classify now stops on an error it did not classify; duplicate RetryConfig removed and
-    WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match
+    WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match. A
+    *ClassifiedError literal that leaves Class unset read transient at the pin and reads fatal here,
+    even over a transient sentinel such as context.DeadlineExceeded. Named classes keep their string
+    spellings and the class is never encoded as a number; a classless error's X-Error-Class header
+    changes from transient to fatal, which is the intended fix (#258)
   proving_tests: >-
     pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
     pkg/errs/classify_by_type_test.go

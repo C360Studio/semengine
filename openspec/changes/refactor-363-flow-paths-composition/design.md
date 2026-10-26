@@ -126,7 +126,7 @@ Three places decide whether an input comes from outside the composition:
 | Spelling | Where | What it decides |
 | --- | --- | --- |
 | `isInputNode`, now `FlowPaths`'s origin rule | `service/component_manager.go:631` | where a data path starts: type `input`, or a `network` or `http-client` input |
-| flowgraph's orphan skip | `internal/flowgraph/flowgraph.go:786` | which unmatched inputs are not orphaned: those four patterns plus `store` and `timer` |
+| flowgraph's orphan skip | `internal/flowgraph/flowgraph.go:786` | which unmatched inputs are not orphaned: those two patterns plus `store` and `timer` |
 | `externalInputs` | `composition/analyze.go:290` | which ports are declared `External` and exempt from a no-publisher finding |
 
 They answer three different questions, and their pattern lists differ on purpose: a timer input is not a data source,

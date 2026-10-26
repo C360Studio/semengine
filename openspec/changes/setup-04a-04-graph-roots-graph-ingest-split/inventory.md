@@ -17,8 +17,8 @@ Briefing hypotheses that did not hold:
   processor/graph-ingest/ingest.go` lists the move commit alone. `git blame -C -C` is the tool that traces moved lines
   (design D3).
 - "One commit for the move plus one for docs": the repository squash-merges (`AGENTS.md`, "Merge"), so `main` gets
-  one commit. The proof of design D3 reads only the seven production files, which the docs commit does not touch, so
-  it runs on the squash commit as on the move commit.
+  one commit. The proof of design D3 runs against the move commit, which stays reachable with the pull request
+  (`refs/pull/<n>/head`).
 - "Moves only, no edits": one test outside the package names `component.go` as the file holding graph-ingest's stream
   consumer, and fails once the consumer setup moves (section 3). Its two expected file names change in the move
   commit.
@@ -87,8 +87,9 @@ Same package, so no call needs a change; listed for the design's grouping.
 - `query.go:540` — `gen0 := c.loadEntityCacheGen(entityID)`; `query.go:562` —
   `c.repopulateEntityCacheEntry(entityID, entity, gen0)`; `invalidateEntityCacheEntry` is called from
   `entity_writes.go:476`, `:485`, `:501` and `poison_inventory.go:103`.
-- `classifyStoredStateRMWError` is called from `component.go:2017` (comment), `entity_writes.go:97`, `:211`, `:341`
-  and `keyed_ingest.go:308`.
+- `classifyStoredStateRMWError` is called at `entity_writes.go:101`, `:105` and `:341` (`return ...,
+  c.classifyStoredStateRMWError(ctx, key, current, revision, err)`) and named in comments at `entity_writes.go:97`,
+  `:211`, `keyed_ingest.go:308` and `component.go:2017`.
 
 ## 3. Rules and guards that name a file
 

@@ -62,38 +62,93 @@ leave a file of a struct and a factory, and the lifecycle is what the next chang
 
 ## D3. Proof of "moves only"
 
-Two checks, run from the repository root with the base and the move commit. Neither is committed as a script: it is
-a one-time proof for this pull request, and harness code exists only for a failure on today's tree
-(`docs/test-infrastructure.md`). Task 2.1 records the run in `notes/2.1.md`.
+One script, run under bash from the repository root as `bash proof.sh c1caa45 <move commit>`. Its text goes in
+`notes/2.1.md` with the run; it is not committed as a harness script, since it proves one pull request and harness
+code exists only for a failure on today's tree (`docs/test-infrastructure.md`). It stops at the first failure
+(`set -euo pipefail`) and prints its last line only when every check passes.
 
 ```bash
-base=c1caa45 move=HEAD d=processor/graph-ingest
-strip() { awk '/^import \($/{skip=1;next} skip{if(/^\)$/)skip=0;next} /^package /{next} NF' | LC_ALL=C sort; }
-# P1: every non-blank line outside package clauses and import blocks, as a sorted list.
-diff <(git show "$base:$d/component.go" "$base:$d/poison_inventory.go" "$base:$d/query.go" | strip) \
-     <(for f in component config consume ingest metrics poison_inventory query; do git show "$move:$d/$f.go"; done | strip)
-# P2: go doc for the package, then the source of each function, method and type component.go declared at the base.
-syms=$(git show "$base:$d/component.go" |
-  grep -oE '^(func( \([a-z]+ \*?[A-Za-z]+\))? [A-Za-z_]+|type [A-Za-z_]+)' |
+#!/usr/bin/env bash
+# Moves-only proof for the graph-ingest split. Run from the repository root: bash proof.sh <base> <move>.
+set -euo pipefail
+base=$1 move=$2 d=processor/graph-ingest
+t=$(mktemp -d); trap 'rm -rf "$t"' EXIT
+files="component config consume ingest metrics poison_inventory query"
+ranges() { case $1 in              # D1's base line ranges of component.go, in order
+  component) echo 1,44 386,395 397,692 793,1124 1287,1305 ;;  metrics) echo 46,275 694,791 2532,2558 ;;
+  config) echo 277,384 ;;  poison_inventory) echo 1126,1285 ;;  consume) echo 1306,1576 ;;
+  query) echo 2245,2319 ;;  ingest) echo 1578,2244 2321,2530 ;; esac; }
+body() { awk '/^import \($/{skip=1;next} skip{if(/^\)$/)skip=0;next} /^package /{next} NF'; }
+imports() { awk '/^import \($/{skip=1;next} skip&&/^\)$/{exit} skip&&NF{sub(/^[ \t]+/,"");print}'; }
+git show "$base:$d/component.go" > "$t/base.go"
+# A: the move commit changes exactly these paths.
+git diff --name-only "$base" "$move" > "$t/paths"
+printf '%s\n' natsclient/consumer_policy_callsite_test.go $(for f in $files; do echo "$d/$f.go"; done) |
+  LC_ALL=C sort | diff - "$t/paths"
+# B: the ranges cover every non-blank base line once; each file is its base text, then its ranges, in order.
+for f in $files; do for r in $(ranges "$f"); do seq "${r%,*}" "${r#*,}"; done; done | LC_ALL=C sort > "$t/used"
+uniq -d "$t/used" | { ! grep .; }
+awk 'NF{print NR}' "$t/base.go" | LC_ALL=C sort | comm -23 - "$t/used" | { ! grep .; }
+for f in $files; do
+  { [ "$f" = component ] || git show "$base:$d/$f.go" 2>/dev/null || true
+    for r in $(ranges "$f"); do sed -n "${r}p" "$t/base.go"; done; } | body > "$t/want"
+  git show "$move:$d/$f.go" | body | diff "$t/want" -
+done
+# C: every import of the seven files was already in base component.go or in that file at the base.
+for f in $files; do
+  { imports < "$t/base.go"; git show "$base:$d/$f.go" 2>/dev/null | imports || true; } | LC_ALL=C sort -u > "$t/allowed"
+  git show "$move:$d/$f.go" | imports | LC_ALL=C sort -u | comm -23 - "$t/allowed" | { ! grep .; }
+done
+# D: go doc for the package, then each function, method and type base component.go declares; stops on any failure.
+syms=()
+while read -r s; do syms+=("$s"); done < <(grep -oE '^(func( \([a-z]+ \*?[A-Za-z]+\))? [A-Za-z_]+|type [A-Za-z_]+)' "$t/base.go" |
   sed -E 's/^func \([a-z]+ \*?([A-Za-z]+)\) /\1./; s/^(func|type) //')
-p2() { local t; t=$(mktemp -d); git archive "$1" | tar -x -C "$t"
-  (cd "$t/$d" && go doc -all -u . && for s in $syms; do echo "=== $s"; go doc -u -src "$s"; done); rm -rf "$t"; }
-diff <(p2 "$base") <(p2 "$move")
+[ "${#syms[@]}" -eq 83 ]
+srcdoc() { mkdir "$t/tree-$1"; git archive "$2" | tar -x -C "$t/tree-$1"; cd "$t/tree-$1/$d"; go doc -all -u .
+  for s in "${syms[@]}"; do echo "=== $s"; go doc -u -src "$s"; done; cd - > /dev/null; }
+srcdoc before "$base" > "$t/before"; srcdoc after "$move" > "$t/after"
+[ "$(grep -c '^=== ' "$t/after")" -eq 83 ]
+awk '/^=== /{if(h&&!n)bad=1;h=1;n=0;next} /^(func|type) /{n=1} END{exit (bad||!n)}' "$t/after"
+diff "$t/before" "$t/after"
+echo "moves only: A, B, C and D pass"
 ```
 
-Expected: both `diff`s print nothing and exit 0. P1 catches any added, removed or changed line, comments and banners
-included. P2 lists the same 83 declarations with their source in a fixed order, so it also catches lines reordered
-within a declaration, which P1 cannot see; its `go doc -all -u` part shows the package's symbols are the same. Both
-ran on the dry run and printed nothing. Shown able to fail on the dry run: one banner word changed
-(`Subscription Management` to `Subscription management` in `consume.go`) fails P1; two lines of `waitForStream`
-swapped pass P1 and fail P2.
+What each check covers:
+
+- **A.** The move commit changes exactly eight paths: the seven files and the census test. An edit anywhere else
+  fails it.
+- **B.** D1's ranges cover every non-blank line of the base `component.go` once, and each of the seven files, blank
+  lines, package clause and import block left out, is its own base text (none for a new file) followed by its ranges,
+  in order. A changed, added, removed or reordered line, or a declaration in the wrong file, fails it.
+- **C.** Every import line of the seven files was in the base `component.go` import block or in that file's base
+  import block. An added import, such as a blank `_ "net/http/pprof"`, fails it.
+- **D.** `go doc -all -u` for the package, then `go doc -u -src` for each of the 83 functions, methods and types the
+  base `component.go` declares, is the same before and after; the script checks there are 83 sections, each with a
+  `func` or `type` line, and stops if any `go doc` call fails. This adds the blank lines inside declarations, which B
+  leaves out.
+
+Not covered: blank lines between declarations; a second blank line beside an existing one inside a body, which
+`go doc` prints as one but `task fmt:check` refuses (`gofmt -l` lists such a file, measured); the census test's text,
+read in the diff (D4); and anything after the move commit, which task 3.1 bounds by the paths it may change.
+
+Measured on a scratch repository holding the base and the dry-run move as two commits: the script passes; each
+mutant below, committed on top of the move, fails it at the check named, and a variant with one symbol that does not
+exist stops at that symbol's `go doc` with exit 1.
+
+| Mutant | Fails at |
+| --- | --- |
+| a comment added to `keyed_ingest.go` | A |
+| "Subscription Management" banner changed to "Subscription management" in `consume.go` | B |
+| two lines of `waitForStream` swapped | B |
+| `wireMessageType` moved from `ingest.go` to the end of `consume.go` | B |
+| `_ "net/http/pprof"` added to `consume.go`'s imports | C |
+| a blank line inserted between two statements of `waitForStream` | D |
 
 Review aids, not proof: `git diff -M -C --stat c1caa45 <move>` (dry run: `component.go` 1,859 deletions; `config.go`
 120, `consume.go` 286, `ingest.go` 896, `metrics.go` 366 insertions; `poison_inventory.go` 164 and `query.go` 77
 insertions; the `natsclient` test); `git blame -C -C` on each new file, which on the dry run attributes every line to
 the base except package clauses, import lines and blank lines. `git log --follow` does not trace a split, since
-`component.go` stays (inventory, first list). The checks read only the seven production files, so they pass on the
-squash commit on `main` as on the branch.
+`component.go` stays (inventory, first list).
 
 ## D4. Citations and issue comments
 
@@ -126,10 +181,11 @@ pin's file name. The disposition stays `adapt`; `ledger:check` compares `carry` 
 
 ## D6. Tests
 
-No new test. The evidence is D3 and `task verify` on the move commit and at the head, integration tests included. No
-test cites a line of `component.go` (inventory section 4). On the dry run, `go test ./...` failed only the census
-test until its names changed (inventory section 3); `go vet`, `gofmt -l` and the pinned `revive` were clean. Examples
-suffice, with no generated check: D3 compares every line and every declaration, so there is no input left to vary.
+No new test. The evidence is D3 on the move commit and `task verify` on the move commit and at the head, integration
+tests included. No test cites a line of `component.go` (inventory section 4). On the dry run, `go test ./...` failed
+only the census test until its names changed (inventory section 3); `go vet`, `gofmt -l` and the pinned `revive` were
+clean. Examples suffice, with no generated check: D3's B compares every line of the seven files with its source line,
+so there is no input left to vary.
 
 ## D7. ADRs
 
@@ -143,6 +199,16 @@ OpenSpec records. About 1,860 lines move; the #159 bound counts pin lines ported
 is needed. No open pull request overlaps (`gh pr list`: empty). Merge before the next change-4 pull request that
 edits `processor/graph-ingest`, so it starts from the split files.
 
-## Owner question
+## Owner acceptance
 
-None. Option C is open to the reviewer or owner at acceptance; the design recommends B.
+No owner question. What the owner accepts with this design, beyond moving whole declarations:
+
+- **Imports.** Each new file gets a package line and an import block, and `query.go` and `poison_inventory.go` each
+  gain the import lines the moved code needs (D1).
+- **One test in another package.** `natsclient/consumer_policy_callsite_test.go` checks which file holds
+  graph-ingest's stream consumer. Its two expected file names change from `component.go` to `consume.go`, and one
+  comment line says so, in the move commit, because the test fails otherwise (D4).
+- **Three code comments** that say the code is in `component.go` name its new file: two graph-ingest test files and
+  `graph/readiness/gauges_test.go` (D4).
+- **One admission-ledger entry.** The destination of the `component.go` row names `ingest.go` and `consume.go` (D5).
+- **The file map's choice.** Option B, D8's six files with `ingest.go` at 896 lines, over option C's seventh file.

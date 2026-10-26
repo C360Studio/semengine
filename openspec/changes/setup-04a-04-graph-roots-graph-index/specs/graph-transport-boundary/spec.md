@@ -43,12 +43,24 @@ When `Start` returns, the server SHALL route each of those subjects to it from a
 ### Requirement: Index replies carry the revision they reflect
 
 Every successful reply on `graph.index.query.*` SHALL be a `graph.QueryResponse` carrying `data`, `indexed_revision`,
-`producer` and `timestamp`, where every `ENTITY_STATES` revision at or below `indexed_revision` is reflected in `data`.
-`graph.NewQueryResponse` SHALL refuse an empty producer.
+`producer` and `timestamp`, where every `ENTITY_STATES` revision at or below `indexed_revision` is reflected in `data`,
+except on `alias` replies (see the next requirement). `graph.NewQueryResponse` SHALL refuse an empty producer.
 
 #### Scenario: A reply's revision is a lower bound
 
 - **WHEN** graph-index answers a request with `indexed_revision` R
-- **THEN** every write to `ENTITY_STATES` at revision R or below is reflected in the reply
+- **THEN** every write to `ENTITY_STATES` at revision R or below is reflected in the reply, except that an `alias`
+  reply reflects only the aliases added at R or below until issue #415 lands
 - **AND** the test that verifies this is `TestQueryResponseCarriesIndexedRevisionAndProducer`; the read order that
   makes R a lower bound is checked in review and recorded as an uncovered case
+
+### Requirement: Alias replies may resolve stale aliases while issue #415 is open
+
+While issue #415 is open (owner ruling, PR #414 comment 6426254115, item 3), an `alias` reply with `indexed_revision`
+R SHALL resolve every alias added at or below R, and MAY resolve an alias dropped, changed or deleted at or below R to
+the old entity.
+
+#### Scenario: A dropped alias still resolves
+
+- **WHEN** an entity drops alias A at revision R and graph-index has indexed through R
+- **THEN** an `alias` request for A may still answer the old entity, with `indexed_revision` at least R

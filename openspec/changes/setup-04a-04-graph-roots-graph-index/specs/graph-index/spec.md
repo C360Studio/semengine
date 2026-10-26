@@ -45,13 +45,21 @@ required index write unresolved, or the feed lost. `ErrorCount` SHALL never lowe
 
 ### Requirement: DataFlow counts deliveries
 
-graph-index's `DataFlow` SHALL count one input per delivered `ENTITY_STATES` entry, update or delete, with the value's
-bytes, and SHALL not count index writes.
+graph-index's `DataFlow` SHALL count one input per delivered `ENTITY_STATES` entry, update or delete, with the
+delivered value's byte length, counted before coalescing, and SHALL not count index writes. The apply SHALL still read
+the key's current authoritative state.
 
 #### Scenario: One entity with three relationships
 
 - **WHEN** one entity with three relationships is written once
 - **THEN** `DataFlow().Messages` rises by one
+
+#### Scenario: Coalesced updates are each counted
+
+- **GIVEN** `coalesce_ms` above zero
+- **WHEN** one entity is written three times in quick succession with values of different sizes
+- **THEN** `DataFlow().Messages` rises by three and `DataFlow().Bytes` by the sum of the three values' lengths
+- **AND** the test that verifies this is `TestDataFlowCountsEachDeliveryBeforeCoalescing`
 
 ### Requirement: One Start per instance
 

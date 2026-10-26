@@ -85,4 +85,6 @@ type FlowMetrics struct {
 	BytesPerSecond    float64   `json:"bytes_per_second"`
 	ErrorRate         float64   `json:"error_rate"`
 	LastActivity      time.Time `json:"last_activity"`
+	Messages          int64     `json:"messages"` // input messages counted since construction
+	Bytes             int64     `json:"bytes"`    // their payload bytes
 }

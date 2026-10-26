@@ -73,9 +73,16 @@ func (cs State) String() string {
 // (TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop) and is review
 // only for components outside this module.
 //
-// graph-ingest breaks the last rule today: it validates its configuration in
-// its factory and again in Initialize, and the second check leaves with
-// simplification wave PR 10 or the processor shell (#109).
+// component.Lifecycle implements these rules for a component that holds one:
+// nil and ended contexts refused, Stop before Start safe, one Start and no
+// restart, a repeated Stop a no-op, a failed Start rolled back and a failed
+// cleanup kept for the next Stop, Start refused before Initialize, Initialize
+// idempotent with no I/O, and Health and DataFlow answering at any time without
+// waiting. The component keeps the rest: its start creates the run context for
+// its continuing work and its cleanup ends it, drains and joins that work within
+// Stop's context and tolerates a partial start; it validates its configuration
+// at construction; and its DebugStatus, if it has one, must not wait for Start
+// or Stop.
 type LifecycleComponent interface {
 	Discoverable
 	Initialize() error

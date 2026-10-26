@@ -474,7 +474,13 @@ func newIngestGuardTestComponent(t *testing.T, bucket *mockKVBucket) *Component 
 	c := createTestComponent(t, withAuthority("acme", "ops"))
 	c.entityBucket = bucketStoreForTest(bucket)
 	c.logger = slog.New(slog.NewTextHandler(io.Discard, nil))
-	c.running = true
+	nothing := func(context.Context) error { return nil }
+	if err := c.lifecycle.Initialize(); err != nil {
+		t.Fatalf("lifecycle Initialize: %v", err)
+	}
+	if err := c.lifecycle.Start(t.Context(), nothing, nothing); err != nil {
+		t.Fatalf("lifecycle Start: %v", err)
+	}
 	return c
 }
 

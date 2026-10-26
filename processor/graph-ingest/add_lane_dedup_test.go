@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -88,7 +87,7 @@ func TestAddTriple_DuplicateSuppressed_NoRevisionAdvance(t *testing.T) {
 	afterFirst, revAfterFirst := readDedupEntity(t, comp, dedupSubject)
 	require.Equal(t, 1, countDedupTriples(afterFirst, triple.Predicate))
 
-	errorsBefore := atomic.LoadInt64(&comp.errors)
+	errorsBefore := comp.Health().ErrorCount
 	suppressedBefore := testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneAddBatch)))
 
 	appendDedupTriple(ctx, t, comp, triple)
@@ -97,7 +96,7 @@ func TestAddTriple_DuplicateSuppressed_NoRevisionAdvance(t *testing.T) {
 	assert.Equal(t, revAfterFirst, revAfterSecond, "no KV revision may advance on a duplicate add")
 	assert.True(t, afterFirst.UpdatedAt.Equal(afterSecond.UpdatedAt), "UpdatedAt must be unchanged")
 	assert.Equal(t, 1, countDedupTriples(afterSecond, triple.Predicate), "exactly one copy stored")
-	assert.Equal(t, errorsBefore, atomic.LoadInt64(&comp.errors),
+	assert.Equal(t, errorsBefore, comp.Health().ErrorCount,
 		"suppression must not increment the component error counter")
 	assert.InDelta(t, suppressedBefore+1,
 		testutil.ToFloat64(comp.duplicateTriplesSuppressed.WithLabelValues(string(dedupLaneAddBatch))), 0.0001,
@@ -208,7 +207,7 @@ func TestAddTriples_FullyDuplicateBatchReportsZeroWrittenAndNoFailures(t *testin
 	require.Equal(t, 0, result.Deduplicated)
 	_, revAfterFirst := readDedupEntity(t, comp, dedupSubject)
 
-	errorsBefore := atomic.LoadInt64(&comp.errors)
+	errorsBefore := comp.Health().ErrorCount
 	result, err = comp.addTriplesLane(ctx, batch, dedupLaneAddBatch)
 
 	require.NoError(t, err, "a wholly duplicate batch is not an error")
@@ -217,7 +216,7 @@ func TestAddTriples_FullyDuplicateBatchReportsZeroWrittenAndNoFailures(t *testin
 	assert.Empty(t, result.FailedSubjects, "a suppressed subject must never appear among failed subjects")
 	assert.NotContains(t, result.CommittedRevisions, dedupSubject,
 		"a wholly suppressed subject committed nothing, so it must not appear as committed")
-	assert.Equal(t, errorsBefore, atomic.LoadInt64(&comp.errors))
+	assert.Equal(t, errorsBefore, comp.Health().ErrorCount)
 
 	stored, rev := readDedupEntity(t, comp, dedupSubject)
 	assert.Equal(t, revAfterFirst, rev, "no revision may advance")

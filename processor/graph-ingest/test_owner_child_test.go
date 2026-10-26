@@ -119,7 +119,6 @@ func TestGraphIngestOwnerChildFixture(t *testing.T) {
 		return nil
 	}}
 	component := createTestComponent(t)
-	component.running = true
 	component.subscriptions = []graphIngestCoreSubscription{drain}
 	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
 	owner := newGraphIngestTestOwner(component)

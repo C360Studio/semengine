@@ -614,9 +614,10 @@ func TestComponent_Health_NotStarted(t *testing.T) {
 func TestComponent_DataFlow_ReturnsMetrics(t *testing.T) {
 	comp, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	// DataFlow reports rates over uptime, which only a started component has; the
-	// unit test marks the component started a second ago, as poison_scoping_test.go does.
-	comp.running = true
-	comp.startTime = time.Now().Add(-time.Second)
+	// unit test starts the shell with nothing to acquire, as poison_scoping_test.go does.
+	nothing := func(context.Context) error { return nil }
+	require.NoError(t, comp.lifecycle.Initialize())
+	require.NoError(t, comp.lifecycle.Start(t.Context(), nothing, nothing))
 	ctx := newTestContext(t)
 
 	idle := comp.DataFlow()
@@ -654,25 +655,34 @@ func TestComponent_Initialize_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TestComponent_Initialize_InvalidConfig: the factory is the one configuration check
+// (design D6). It refuses a configuration Config.Validate refuses, here a ports block with
+// no input port (a configuration with no ports block takes the default ports, ruling K),
+// and Initialize after a valid construction succeeds without checking again.
 func TestComponent_Initialize_InvalidConfig(t *testing.T) {
-	// The factory never builds a component without ports (ruling K fills them in), so the
-	// test removes them after construction to reach Initialize's own check.
-	comp := createTestComponent(t)
-	comp.config.Ports = nil
+	config := DefaultConfig()
+	config.Ports.Inputs = nil
+	configJSON, err := json.Marshal(config)
+	require.NoError(t, err)
+	natsClient, err := natsclient.NewClient("")
+	require.NoError(t, err)
 
-	err := comp.Initialize()
+	comp, err := CreateGraphIngest(configJSON, testDependencies(t, natsClient))
 
-	assert.Error(t, err, "Initialize should fail with invalid config")
+	assert.ErrorIs(t, err, errs.ErrInvalidConfig, "the factory should refuse a configuration with no input port")
+	assert.Nil(t, comp)
+	assert.NoError(t, createTestComponent(t).Initialize(), "Initialize should succeed after a valid construction")
 }
 
 func TestComponent_Start_BeforeInitialize(t *testing.T) {
 	comp := createTestComponent(t)
 	ctx := context.Background()
 
-	// Start without Initialize
+	// Start without Initialize: the refusal is the shell's (component.Lifecycle), named as
+	// such; an unconnected NATS client would also fail Start, so the message is the oracle.
 	err := comp.Start(ctx)
 
-	assert.Error(t, err, "Start should fail if not initialized")
+	assert.ErrorContains(t, err, "not initialized", "Start should be refused before Initialize")
 }
 
 func TestComponent_Stop_BeforeStart(t *testing.T) {

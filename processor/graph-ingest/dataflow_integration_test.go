@@ -5,7 +5,6 @@ package graphingest
 import (
 	"context"
 	"encoding/json"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -106,8 +105,8 @@ func TestIntegration_DataFlowCountsInputMessages(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, int64(4), sentMessages, "two stream messages and two mutation requests were sent")
-	assert.Equal(t, sentMessages, atomic.LoadInt64(&comp.messagesProcessed),
+	assert.Equal(t, sentMessages, comp.DataFlow().Messages,
 		"one count per stream delivery and per mutation request")
-	assert.Equal(t, sentBytes, atomic.LoadInt64(&comp.bytesProcessed),
+	assert.Equal(t, sentBytes, comp.DataFlow().Bytes,
 		"the payload bytes of the counted messages")
 }

@@ -80,7 +80,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `verify+review` | Components register collectors only on the injected `metric.MetricsRegistry`, never Prometheus' global or a self-built registry | `metric-registry` spec |
 | `review` | Callers use the collector `metric.RegisterOrGet` returns, never their own candidate | `metric/registry.go`; ledger `metric` |
 | `verify+review` | Ported components refuse unknown config keys at construction, naming the key | `component-registration` spec; `dev` |
-| `review` | Ported components keep owner-lifecycle state in `internal/lifecycleguard`, not a local copy | `dev`, `rev`; `internal/lifecycleguard` |
+| `review` | A component keeps its lifecycle state in `component.Lifecycle`, a service in `internal/lifecycleguard`, never in a copy of its own | `dev`, `rev`; `component/lifecycle_type.go`, `internal/lifecycleguard` |
 | `review` | Consumers call `CreateComponent`, `SealComposition`, and `Snapshots` only via `service.ComponentManager` (#91) | `component/registry.go`; `dev` |
 | `verify+review` | Ported components whose failed `Start` cannot clean up report both errors and retain handles for `Stop` | `lifecycle-suite` spec |
 | `review` | Every polymorphic payload is published inside a `message.BaseMessage` | `dev`, `rev` |

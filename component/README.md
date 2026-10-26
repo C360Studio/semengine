@@ -124,6 +124,64 @@ A component that does work also implements `LifecycleComponent`: `Initialize() e
 `Stop(ctx) error` beside `Discoverable`. `Start` and `Stop` refuse a nil context, and `Stop` joins the work `Start`
 began. `AsLifecycleComponent` reports whether a `Discoverable` implements it.
 
+### Lifecycle: the part every component shares
+
+Writing that contract out for each component is repetitive and easy to get wrong, so `component.Lifecycle` implements
+it once. (ADR-108 calls this the processor shell.) A component holds a `Lifecycle` as an unexported field and answers
+`LifecycleComponent` and `Discoverable`'s `Health` and `DataFlow` with one-line calls to it:
+
+- `Initialize()` marks the shell initialized and returns nil every time, with no I/O. `Start` before `Initialize` is
+  refused.
+- `Start(ctx, start, cleanup)` admits one `Start`. A failed `start` is rolled back through `cleanup`; a `cleanup` that
+  fails stays for the next `Stop`.
+- `Stop(ctx)` runs `cleanup`. It is safe before `Start` and safe to repeat.
+- `Health(stuck...)` reports `stopped` when not running, `running` and healthy when running, and `degraded` with the
+  stuck states joined by `"; "` when running with any.
+- `DataFlow()` reports the counted inputs, their rates while running, and the time of the last one.
+- `CountInput(bytes)` and `CountError()` add one input of that many bytes, or one error, to the counts.
+
+The shell is running from the moment `start` returns nil until `cleanup` begins. `Health` and `DataFlow` may be called
+at any time and never wait for a `Start` or `Stop` in progress. An error count never makes `Health` unhealthy; only a
+stuck state does.
+
+The component keeps the rest. Its `start` acquires its resources and creates the run context for its continuing work
+(ending the context given to `Start` must stop nothing, ADR-113); its `cleanup` releases them in its own order, ends
+that run context, and joins the work within `Stop`'s context. It decides which stuck states exist and passes them to
+each `Health` call. It registers its own metrics, validates its configuration at construction, and, if it has a
+`DebugStatus`, makes sure that does not wait for `Start` or `Stop`. The shell holds no context and no cancel function.
+
+```go
+type sensor struct {
+    lifecycle       component.Lifecycle
+    calibrationLost atomic.Bool // the sensor's one stuck state
+    // ... the run context's cancel function and the worker's done channel
+}
+
+func (s *sensor) Initialize() error               { return s.lifecycle.Initialize() }
+func (s *sensor) Start(ctx context.Context) error { return s.lifecycle.Start(ctx, s.start, s.cleanup) }
+func (s *sensor) Stop(ctx context.Context) error  { return s.lifecycle.Stop(ctx) }
+func (s *sensor) DataFlow() component.FlowMetrics { return s.lifecycle.DataFlow() }
+func (s *sensor) Health() component.HealthStatus  {
+    if s.calibrationLost.Load() {
+        return s.lifecycle.Health("calibration lost")
+    }
+    return s.lifecycle.Health()
+}
+
+// receive is what the sensor's subscription calls for each reading.
+func (s *sensor) receive(payload []byte) { s.lifecycle.CountInput(len(payload)) }
+```
+
+`start` and `cleanup` are the sensor's own functions; the complete, runnable version, with both written out, is
+`ExampleLifecycle` in `lifecycle_example_test.go`. `component.Lifecycle` is framework API, offered to products built
+on SemEngine: that example calls it as a product would, and `lifecycle_type_test.go` proves each rule above, including
+that a component whose `start` runs its work under the `Start` context fails the lifecycle suite
+(`internal/harness/lifecycletest`).
+
+`FlowMetrics` carries two totals beside the rates: `Messages`, the input messages counted since construction, and
+`Bytes`, their payload bytes. `DataFlow` reports them whether or not the component is running; the component manager
+serves them as `data_flow.messages` and `data_flow.bytes`.
+
 ## core Concepts
 
 ### Discoverable Interface

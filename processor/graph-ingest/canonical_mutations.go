@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"sort"
-	"sync/atomic"
 	"time"
 
 	"github.com/c360studio/semengine/component"
@@ -37,9 +36,7 @@ type canonicalMutationRoute struct {
 // reaches the handler is one input message on DataFlow.
 func (c *Component) meteredCanonicalMutation(route canonicalMutationRoute) mutationHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
-		atomic.AddInt64(&c.messagesProcessed, 1)
-		atomic.AddInt64(&c.bytesProcessed, int64(len(data)))
-		c.lastActivity.Store(time.Now())
+		c.lifecycle.CountInput(len(data))
 		response, err := route.handler(ctx, data)
 		if err == nil {
 			return response, nil

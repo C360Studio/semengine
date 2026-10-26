@@ -115,8 +115,11 @@ func TestIntegration_UnconfirmedDeleteClearsPoison(t *testing.T) {
 
 	c, bucket, entityStates := newUnconfirmedWriteComponent(ctx, t)
 	// Health reads running; the component is not started (the tests call the write methods
-	// directly), so the test marks it running as poisonScopingTestComponent does.
-	c.running = true
+	// directly), so the test starts the shell with nothing to acquire, as
+	// poisonScopingTestComponent does.
+	nothing := func(context.Context) error { return nil }
+	require.NoError(t, c.lifecycle.Initialize())
+	require.NoError(t, c.lifecycle.Start(ctx, nothing, nothing))
 	const id = "c360.test.unconfirmed.system.widget.poisoned"
 	revision, err := entityStates.Put(ctx, id,
 		[]byte(`{"id":"`+id+`","triples":[{"subject":"`+id+`","predicate":"legacy.predicate","object":1}]}`)) // predicate-audit:invalid {"kind":"stored-predicate","value":"legacy.predicate","reason":"arity"}

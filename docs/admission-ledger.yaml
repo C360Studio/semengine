@@ -835,7 +835,8 @@
     collapsed into cache.go; doc.go and README.md updated to match
   proving_tests: >-
     internal/cache/*_test.go (synctest-based unit, property, and fuzz tests in background_test.go,
-    coalescing_set_prop_test.go, coalescing_panic_test.go, metrics_test.go, config_fuzz_test.go)
+    coalescing_set_prop_test.go, coalescing_panic_test.go, metrics_test.go, config_fuzz_test.go);
+    close_test.go (TestCacheUsableAfterClose, a cache stays usable after Close, #306)
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -2301,10 +2302,13 @@
     ignored), not by resource text; the refusal names the refused component, the holder and both claims;
     and, in port-composition (#338): (14) Declaration.ConflictWith(held) returns the first clash between
     two declarations' exclusive claims under that rule, as a plain error with the refusal's text, and
-    CreateComponent's conflict check calls it for each admitted holder in instance-name order
+    CreateComponent's conflict check calls it for each admitted holder in instance-name order;
+    and, in setup-04a-04-graph-roots-processor-shell (#109, ADR-108 D1, D3): (15) Lifecycle composes
+    internal/lifecycleguard and answers Health and DataFlow, and FlowMetrics carries the Messages and
+    Bytes totals
   dependencies_and_side_effects: >-
-    internal/cache, metric, model, natsclient, payloadregistry, pkg/errs, pkg/security, storage,
-    storage/storeregistry, types (in-set); stdlib
+    internal/cache, internal/lifecycleguard, metric, model, natsclient, payloadregistry, pkg/errs,
+    pkg/security, storage, storage/storeregistry, types (in-set); stdlib
   known_risks: >-
     not ported: lifecycle_test_suite.go (in internal/harness/lifecycletest), config_validator.go,
     metrics.go, registerable.go, logging.go, and component/flowgraph/. Dead surface removed (design
@@ -2324,7 +2328,9 @@
     (TestDeclarationConflictWithMatchesAdmission, TestDeclarationConflictWithAdmitsNonClashingClaims),
     registry_test.go, registry_integration_test.go,
     register_test.go, validation_test.go, schema_words_test.go, discovery_test.go
-    (TestDiscoverableNeedsOnlyPortsHealthAndFlow)
+    (TestDiscoverableNeedsOnlyPortsHealthAndFlow), lifecycle_type_test.go (TestLifecycleReadsInEveryPhase,
+    TestLifecycleReadsDoNotWaitForStartOrStop, TestLifecycleOwnerPassesTheLifecycleSuite),
+    lifecycle_example_test.go (ExampleLifecycle)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2343,8 +2349,9 @@
     from graph.QueryVerbs (#16, design D20); (3) input settled only after effect + durable guard
     stamp with heartbeat progress, and interrupted work left unsettled and counted in
     work_interrupted_total (Q18, #91); (4) poison/panicking Graphable inputs terminated and counted
-    (Q13); (5) hierarchy refusal names inference.RegisterPayloads (#33); (6) owner lifecycle guarded
-    by internal/lifecycleguard with RollbackFailedStart (SS#1411, design D13); (7) single entity
+    (Q13); (5) hierarchy refusal names inference.RegisterPayloads (#33); (6) owner lifecycle through
+    component.Lifecycle, which composes internal/lifecycleguard with RollbackFailedStart (SS#1411,
+    design D13; ADR-108); (7) single entity
     write seam (#100), required statement metadata and source-keyed write modes (#98), fail-closed
     hierarchy/guard births (#111), suffix index/verb dropped (#104), strict config validation,
     metrics registered only on the injected registry under the semengine namespace (#69, design D4),
@@ -2356,7 +2363,7 @@
     (one-mutation-port-check, #323)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
-    internal/dispatch, internal/graphmutation, internal/lifecycleguard, message, metric, natsclient,
+    internal/dispatch, internal/graphmutation, message, metric, natsclient,
     payloadregistry, pkg/errs, pkg/retry, pkg/types, types, vocabulary (in-set); nats.go/jetstream,
     prometheus/client_golang; JetStream consumers, KV reads/writes, request subscriptions, keyed
     lane pool, and status loop started in Start and released by Stop
@@ -2380,7 +2387,9 @@
     commit_ambiguity_integration_test.go,
     unconfirmed_write_integration_test.go, dataflow_integration_test.go
     (TestIntegration_DataFlowCountsInputMessages, proving the graph-ingest-recovery requirement
-    "graph-ingest's data flow counts input messages")
+    "graph-ingest's data flow counts input messages"), entity_cache_stop_test.go
+    (TestEntityCacheUseDuringStop, proving the graph-ingest-recovery requirement "The entity cache
+    stays usable through Stop", #306)
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

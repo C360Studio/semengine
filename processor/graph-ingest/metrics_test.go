@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync/atomic"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
@@ -45,23 +44,23 @@ func TestComponent_MetricsUpdate_EntityOperations(t *testing.T) {
 func TestComponent_MetricsAtomic_MessageProcessing(t *testing.T) {
 	comp, bucket := createTestComponentWithMockKVBucket(t)
 	ctx := newTestContext(t)
-	messages := atomic.LoadInt64(&comp.messagesProcessed)
-	bytes := atomic.LoadInt64(&comp.bytesProcessed)
-	errorCount := atomic.LoadInt64(&comp.errors)
+	messages := comp.DataFlow().Messages
+	bytes := comp.DataFlow().Bytes
+	errorCount := comp.Health().ErrorCount
 
 	// An in-process create is not an input message (#302; design D2): DataFlow counts
 	// stream deliveries and mutation requests only.
 	require.NoError(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.001")))
-	assert.Equal(t, messages, atomic.LoadInt64(&comp.messagesProcessed), "an in-process create counts no message")
-	assert.Equal(t, bytes, atomic.LoadInt64(&comp.bytesProcessed), "an in-process create counts no bytes")
-	assert.Equal(t, errorCount, atomic.LoadInt64(&comp.errors), "a successful write counts no error")
+	assert.Equal(t, messages, comp.DataFlow().Messages, "an in-process create counts no message")
+	assert.Equal(t, bytes, comp.DataFlow().Bytes, "an in-process create counts no bytes")
+	assert.Equal(t, errorCount, comp.Health().ErrorCount, "a successful write counts no error")
 
 	bucket.createFunc = func(context.Context, string, []byte, ...jetstream.KVCreateOpt) (uint64, error) {
 		return 0, errors.New("injected KV failure")
 	}
 	require.Error(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.002")))
-	assert.Equal(t, errorCount+1, atomic.LoadInt64(&comp.errors), "a failed write counts one error")
-	assert.Equal(t, messages, atomic.LoadInt64(&comp.messagesProcessed), "a failed in-process write counts no message")
+	assert.Equal(t, errorCount+1, comp.Health().ErrorCount, "a failed write counts one error")
+	assert.Equal(t, messages, comp.DataFlow().Messages, "a failed in-process write counts no message")
 }
 
 func TestComponent_MetricsRegistry_CreateComponent(t *testing.T) {

@@ -243,7 +243,7 @@ func TestProcessIngest_InvalidGraphableTerminatesBeforeGuardIO(t *testing.T) {
 			component.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
 			msg := &keyedIngestTestMsg{}
 			work := ingestWork{entity: tt.entity, msg: msg, consumer: testConsumer, heartbeat: testHeartbeat, entityID: tt.entity.ID, stream: "ENTITY", seq: 1}
-			errorsBefore := atomic.LoadInt64(&component.errors)
+			errorsBefore := component.Health().ErrorCount
 
 			var before float64
 			if tt.predicate {
@@ -259,7 +259,7 @@ func TestProcessIngest_InvalidGraphableTerminatesBeforeGuardIO(t *testing.T) {
 			require.True(t, msg.term.Load(), "immutable invalid message must Term")
 			require.False(t, msg.nak.Load(), "immutable invalid message must not redeliver")
 			require.False(t, msg.ack.Load(), "terminal rejection is not an ack path")
-			require.Equal(t, errorsBefore, atomic.LoadInt64(&component.errors), "pre-guard rejection must not poison sticky error state")
+			require.Equal(t, errorsBefore, component.Health().ErrorCount, "pre-guard rejection must not poison sticky error state")
 
 			if !tt.unmetered && tt.predicate {
 				assert.InDelta(t, before+1, testutil.ToFloat64(component.predicateContractRejections.WithLabelValues("graphable", tt.reason)), 0.0001)

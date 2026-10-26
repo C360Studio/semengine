@@ -475,6 +475,7 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 	var cached []graph.EntityState
 	var missIDs []string
 	var invalid []string
+	entityCache := c.entityCacheHandle()
 	for _, id := range ids {
 		if id == "" {
 			// Reported, not skipped. The response contract is that every requested ID
@@ -484,8 +485,8 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 			invalid = append(invalid, id)
 			continue
 		}
-		if c.entityCache != nil {
-			if entity, ok := c.entityCache.Get(id); ok {
+		if entityCache != nil {
+			if entity, ok := entityCache.Get(id); ok {
 				cached = append(cached, entity)
 				continue
 			}

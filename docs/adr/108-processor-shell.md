@@ -2,6 +2,10 @@
 
 ## Status
 
+**Implemented as `component.Lifecycle` (2026-10-26)** by `setup-04a-04-graph-roots-processor-shell` (PR #409): the
+type in `component/lifecycle_type.go`, which graph-ingest now composes. The follower, the plug-in and the other
+adopters are later pull requests, and #109 stays open.
+
 **Decision 3's 'controlled and abort Stop' superseded by ADR-113 (2026-10-18).** The context given to `Start` bounds
 only `Start`; `Stop(ctx)` is the only stop, and a `Stop` whose context ends first returns that error so a later `Stop`
 tries again.

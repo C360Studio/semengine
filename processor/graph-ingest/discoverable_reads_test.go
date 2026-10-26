@@ -2,7 +2,6 @@ package graphingest
 
 import (
 	"context"
-	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -11,21 +10,22 @@ import (
 // component.LifecycleComponent's read line (design D2, "No wait for readers"): Health and
 // DataFlow return while the component's own Stop is still running, and again after it
 // returned, each reporting a stopped component. Stop is held open by the consumer fixture
-// of TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder: release clears running,
-// the cleanup drains the consumer, and then waits for its Closed, which the test holds.
-// On today's tree the test passes; it is shown able to fail by design D7's mutant (release
-// holding c.mu across its cleanup), under which Health does not return within readBound.
+// of TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder: the shell clears running
+// as release begins, the cleanup drains the consumer, and then waits for its Closed, which
+// the test holds. On today's tree the test passes; it is shown able to fail by mutation
+// row M7 of design D10 (the shell holding its lock across start and cleanup), under which
+// Health does not return within readBound.
 func TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop(t *testing.T) {
 	consumer := &graphIngestLifecycleConsumeContext{
 		closed: make(chan struct{}), drainSeen: make(chan struct{}),
 	}
 	runCtx, runCancel := context.WithCancel(t.Context())
 	owner := createTestComponent(t)
-	owner.running = true
-	// A start a minute ago and sixty messages since: while running, DataFlow reports a
-	// rate above zero, so the zero rate after release cleared running is a change.
-	owner.startTime = time.Now().Add(-time.Minute)
-	atomic.StoreInt64(&owner.messagesProcessed, 60)
+	// Sixty messages: while running, DataFlow reports a rate above zero, so the zero rate
+	// after release began is a change.
+	for range 60 {
+		owner.lifecycle.CountInput(0)
+	}
 	owner.cancel = runCancel
 	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
 	startGuardAcquiringNothing(t, owner)

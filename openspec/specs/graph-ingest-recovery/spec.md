@@ -255,3 +255,21 @@ SHALL be the processing errors counted since start divided by the input messages
 
 - **WHEN** one append request writes three entities
 - **THEN** `DataFlow()` counts one message
+
+### Requirement: The entity cache stays usable through Stop
+
+A graph-ingest query, `CreateEntity` call or write that reads or updates the entity query cache while `Stop` runs, or
+after it, SHALL neither panic nor race with `Stop` clearing the cache: it uses the cache it found, which stays usable
+after it is closed.
+
+#### Scenario: Cache use during Stop
+
+- **WHEN** cache reads, invalidations and repopulations run on goroutines while `Stop` runs, under the race detector
+- **THEN** none panics and the race detector reports nothing
+- **AND** the test that verifies this is `TestEntityCacheUseDuringStop`
+
+#### Scenario: A cache after Close
+
+- **WHEN** `Get`, `Set` and `Delete` are called on each `internal/cache` implementation after `Close`
+- **THEN** each works as before `Close`
+- **AND** the test that verifies this is `TestCacheUsableAfterClose`

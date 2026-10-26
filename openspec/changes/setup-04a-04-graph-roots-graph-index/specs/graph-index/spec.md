@@ -57,8 +57,9 @@ the key's current authoritative state.
 #### Scenario: Coalesced updates are each counted
 
 - **GIVEN** `coalesce_ms` above zero
-- **WHEN** one entity is written three times in quick succession with values of different sizes
-- **THEN** `DataFlow().Messages` rises by three and `DataFlow().Bytes` by the sum of the three values' lengths
+- **WHEN** graph-index receives three delivered updates of one entity, with values of different sizes, inside one
+  coalescing window
+- **THEN** `DataFlow().Messages` rises by three and `DataFlow().Bytes` by the sum of the three delivered values' lengths
 - **AND** the test that verifies this is `TestDataFlowCountsEachDeliveryBeforeCoalescing`
 
 ### Requirement: One Start per instance

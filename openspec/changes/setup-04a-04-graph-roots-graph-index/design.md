@@ -244,9 +244,10 @@ inherited-structure exception does not cover a test seam in it.
   `indexed_revision`, `producer`, `timestamp`; `graph.NewQueryResponse(producer string, indexedRevision uint64, data T)
   (QueryResponse[T], error)` refuses an empty producer (D18). Every successful reply of the eight handlers is one,
   with producer `graph-index` and `indexed_revision` = `follower.Indexed()` read before the handler's first bucket
-  read, so every revision at or below it is reflected, with one exception while #415 is open (D12): on an `alias`
-  reply, R means every alias added at revision R or below resolves; an alias dropped or changed, or whose entity was
-  deleted, at R or below may still resolve to the old entity. The alias index is not repaired here. Refusals stay
+  read, so every revision at or below it is reflected, with one exception while #415 is open (D12): an `alias` reply
+  carries the same watermark but promises nothing about which aliases resolve. An alias dropped or changed, or whose
+  entity was deleted, may still resolve to the old entity, and with `History: 1` an alias added and dropped before
+  graph-index read the key was never seen. The alias index is not repaired here. Refusals stay
   classified errors with no envelope.
 - `min_revision` is not here: D18 declares it with its first embedder, the `graph.query.*` request types graph-query
   brings (PR 9). #103 stays open for it and for the generation marker (#15).
@@ -342,9 +343,11 @@ test either rewritten against a real server or dropped with its reason in a task
 - `TestLatchBootstrap_ContinuousWrite` (ported, `pin:…/watermark_test.go:271`): the latch sets at the fixed target
   while writes continue (ADR-109 D4).
 - `TestIntegration_KVRevisionAndIndexedRevisionShareOneSpace` (ported, `revision_space_integration_test.go:38`).
-- `TestDataFlowCountsEachDeliveryBeforeCoalescing` (integration, Codex review M1): with `coalesce_ms` above zero,
-  three quick updates of one entity with values of different sizes raise `Messages` by three and `Bytes` by the sum of
-  the lengths the test wrote, and the index holds the last value's statements.
+- `TestDataFlowCountsEachDeliveryBeforeCoalescing` (integration, Codex review M1 and re-review M1): with
+  `coalesce_ms` above zero, the test writes one entity three times with values of different sizes, and before each next
+  write waits until `DataFlow().Messages` has risen by one, so each write is a delivery, not a revision `History: 1`
+  may supersede. It then asserts `Messages` rose by three and `Bytes` by the sum of the three lengths, and the index
+  holds the last value's statements.
 - `TestHealthIgnoresErrorCountAndTracksStuckStates`: a failed write lowers `Healthy` and its repair raises it; a
   nonzero `ErrorCount` alone reads healthy (ADR-109 D2 asks each port for both).
 - `TestSecondStartIsRefused`, `TestStartContextEndStopsNothing` (also in the suite), `TestUnknownConfigKeyIsRefused`,

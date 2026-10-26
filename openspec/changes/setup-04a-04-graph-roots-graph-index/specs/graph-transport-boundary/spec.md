@@ -49,16 +49,16 @@ except on `alias` replies (see the next requirement). `graph.NewQueryResponse` S
 #### Scenario: A reply's revision is a lower bound
 
 - **WHEN** graph-index answers a request with `indexed_revision` R
-- **THEN** every write to `ENTITY_STATES` at revision R or below is reflected in the reply, except that an `alias`
-  reply reflects only the aliases added at R or below until issue #415 lands
+- **THEN** every write to `ENTITY_STATES` at revision R or below is reflected in the reply, except on an `alias`
+  reply while issue #415 is open
 - **AND** the test that verifies this is `TestQueryResponseCarriesIndexedRevisionAndProducer`; the read order that
   makes R a lower bound is checked in review and recorded as an uncovered case
 
 ### Requirement: Alias replies may resolve stale aliases while issue #415 is open
 
-While issue #415 is open (owner ruling, PR #414 comment 6426254115, item 3), an `alias` reply with `indexed_revision`
-R SHALL resolve every alias added at or below R, and MAY resolve an alias dropped, changed or deleted at or below R to
-the old entity.
+While issue #415 is open (owner ruling, PR #414 comment 6426254115, item 3), an `alias` reply SHALL carry the
+follower's watermark as `indexed_revision`, as every reply does, and MAY resolve an alias that was dropped or changed,
+or whose entity was deleted, to the old entity. The reply's revision promises nothing about which aliases resolve.
 
 #### Scenario: A dropped alias still resolves
 

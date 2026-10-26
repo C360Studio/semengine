@@ -22,31 +22,38 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
 - [ ] 2.2 `composition.FlowPaths` (design D1), in `composition/flowpaths_test.go` and `composition/flowpaths.go`.
   - Tests first: `TestFlowPathsKeysEachOrigin`, `TestFlowPathsWalksDepthFirstInEdgeOrder`,
     `TestFlowPathsVisitsEachNodeOnce` and `TestFlowPathsOverAnEmptyGraph`, over hand-built `Graph` values.
-  - Record the base compile failure in `notes/2.2.md`.
+  - Record the base compile failure in `notes/2.2.md`. That failure is not fail-first evidence; the tests' ability to
+    fail is shown by the mutants in 2.4.
   - Then `FlowPaths`, its origin rule and its walk, moved from `service/component_manager.go:626-664` with their doc
     comments adapted.
   - Gate: `go test -race ./composition/` and `task verify`.
 - [ ] 2.3 `service` projects it (design D2), in `service/component_manager.go` and `service/component_manager_http.go`.
   - `GetFlowPaths` returns `composition.FlowPaths(result.Graph)`, keeping its nil-result refusal and doc (reworded).
-  - `isInputNode` and `reachableFrom` are deleted, and the `types` import goes if nothing else reads it.
-  - Reword the field comment `:53-56` and the handler comment `service/component_manager_http.go:623-625`, so neither
-    says the route recomputes nothing: it serves `composition`'s answer, counted.
+  - `isInputNode` and `reachableFrom` are deleted.
+  - The `types` import stays, because `service/component_manager.go:43,118,396` still read it.
+  - Reword the field comment `:53-56` and the handler comment `service/component_manager_http.go:623-625` to D2's
+    wording: `validate` serves the kept result as is, `flowgraph` its graph (JSON or `composition.Mermaid`), and
+    `paths` `composition.FlowPaths` of its graph, counted.
   - Every test named in D1 and D2 passes unchanged.
   - Gate: `go test -race ./service/ ./composition/` and `task verify`.
 - [ ] 2.4 Sensitivity (`notes/2.4.md`): report each mutant as detected (naming the test) or as a survivor.
   - Remove each of the three origin arms in turn (`TestFlowPathsKeysEachOrigin`, `TestFlowPathsTraverseTheRetainedGraph`).
+  - Change the origin rule's final `return false` to `return true` (`TestFlowPathsKeysEachOrigin`, its negative case).
   - Append a node after its children instead of before (`TestFlowPathsWalksDepthFirstInEdgeOrder`).
-  - Return nil for an empty graph (`TestFlowPathsOverAnEmptyGraph`, `TestComponentManagerCompositionProjection`).
+  - Append the node before the visited check returns, so a revisited node is listed twice but the walk still stops
+    (`TestFlowPathsVisitsEachNodeOnce`).
+  - Return nil for an empty graph (`TestFlowPathsOverAnEmptyGraph`).
   - `GetFlowPaths` returns an empty map (`TestFlowPathsTraverseTheRetainedGraph`).
   - The handler reports `max_path_length` as the average (`TestFlowPathsRouteServesTheLibraryAnswer`).
-  - Use `task mutate:check`.
+  - Use `task mutate:check`, with unit tests only.
   - Hold: Codex code review (APPROVE on the head after 2.4, citing that commit and a local `task verify`).
 
 ## 3. Docs, ledger and archive
 
 - [ ] 3.1 Docs and ledger (technical writer):
-  - `service/README.md:337-338`: `flowgraph` and `validate` serve the kept result; `paths` serves
-    `composition.FlowPaths` of its graph, with counts of that answer; `GetFlowPaths` is the same answer as a call.
+  - `service/README.md:337-338`: `validate` serves the kept result as is; `flowgraph` serves its graph (JSON or
+    `composition.Mermaid`); `paths` serves `composition.FlowPaths` of its graph, with counts of that answer;
+    `GetFlowPaths` is the same answer as a call.
   - `composition/doc.go`: line 19's "not yet ported" sentence states that the component manager runs `Analyze` at
     boot, and the doc names `FlowPaths` beside `Mermaid`.
   - `docs/admission-ledger.yaml`: the three edits in design "Ledger".

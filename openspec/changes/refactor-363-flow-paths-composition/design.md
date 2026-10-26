@@ -7,11 +7,11 @@ Base `39a17a9`. Inventory: `inventory.md` (INVENTORY PASS, commit `2205025`). Re
 
 - The component manager runs `composition.Analyze` once, at construction, and keeps the result
   (`service/component_manager.go:357-358`). Nothing writes that result afterwards.
-- `/components/flowgraph` serves the result's graph as is, or `composition.Mermaid(result.Graph)`
-  (`service/component_manager_http.go:584`). `/components/validate` serves the result as is.
+- `/components/validate` serves the result as is (`service/component_manager_http.go:606`). `/components/flowgraph`
+  serves its graph, or `composition.Mermaid(result.Graph)` with `format=mermaid` (`:584`).
 - `/components/paths` instead reads the graph and decides two things inside `service`:
-  - which nodes are origins: `isInputNode`, `:631-642`, true for type `input` or an input port of pattern
-    `network` or `http-client`;
+  - which nodes are origins: `isInputNode`, `service/component_manager.go:631-642`, true for type `input` or an input
+    port of pattern `network` or `http-client`;
   - what each origin reaches: `reachableFrom`, `:647-664`, depth-first in the projection's sorted edge order
     (`composition/graph.go:102`).
 - The handler then counts that answer (`service/component_manager_http.go:642-656`) and sends it with a timestamp
@@ -41,8 +41,10 @@ Base `39a17a9`. Inventory: `inventory.md` (INVENTORY PASS, commit `2205025`). Re
     `GetFlowPaths` signature, and the timestamp still added in `service`.
   - It is more surface for about 15 lines of arithmetic.
 - **D. As B, and `GetFlowPaths` goes; the handler calls `composition` directly.** This removes an exported method the
-  ledger keeps (`docs/admission-ledger.yaml:2883`) and that five tests call, which saves one line. Removing exported
-  surface is outside a port-refactor's scope without an owner ruling.
+  ledger keeps (`docs/admission-ledger.yaml:2883`) and that four tests call
+  (`service/component_manager_paths_test.go:77`, `service/component_manager_port_facts_test.go:157`,
+  `service/component_manager_integration_test.go:70,91`), which saves one line. Removing exported surface is outside
+  a port-refactor's scope without an owner ruling.
 
 Recommendation: **B**, the smallest change mirroring a shape the code already accepts.
 
@@ -97,7 +99,9 @@ Kept unchanged in `service`:
     no keys;
   - `timestamp`.
 - The route derives no graph, origin, reachability or severity of its own.
-- The four statements become true by rewording, not by moving the counts:
+- The four statements become true by rewording, not by moving the counts. Each says that `validate` serves the kept
+  result as is, `flowgraph` serves its graph (as JSON or as `composition.Mermaid`), and `paths` serves
+  `composition.FlowPaths` of its graph with counts of that answer. They are:
   - spec `operator-surface:273-274` (the MODIFIED requirement);
   - the handler comment `service/component_manager_http.go:623-625`;
   - the field comment `service/component_manager.go:53-56`;
@@ -109,7 +113,8 @@ Proving test (new, task 2.1): `TestFlowPathsRouteServesTheLibraryAnswer`.
   whole number.
 - It asserts the `paths` object and all four `statistics` values against hand-written numbers, and that `timestamp`
   parses as RFC 3339; it does not compare the timestamp's value.
-- It passes on the base, so it proves the answer is unchanged across the move.
+- It is written and passes on the base, before `FlowPaths` exists, so it proves the answer is unchanged across the
+  move.
 
 The flowgraph golden test (`TestFlowGraphMatchesGoldenForFixtureComposition`) never runs this code. It stays green
 because nothing it reads changes, but it is not this change's proof.
@@ -127,8 +132,10 @@ Three places decide whether an input comes from outside the composition:
 They answer three different questions, and their pattern lists differ on purpose: a timer input is not a data source,
 yet it is not an orphan either. Under Bounded port scope (`.agents/protocol.md`) consolidating them is optional
 inherited maintenance with no binding basis: no admission gate, ruling or spec line requires one rule. Moving the
-origin rule into `composition` puts the first and third in one package, which is as close as this change needs. This
-change does not file an issue, because this is a choice, not a defect; see "Open for the owner".
+origin rule into `composition` puts the first and third in one package, which is as close as this change needs.
+
+This change does not file an issue, because this is a choice, not a defect. Changing which nodes count as origins
+(for example, a port declared `External`) is a non-goal of this change (`proposal.md`, Non-goals).
 
 ## Ledger
 
@@ -166,11 +173,3 @@ change does not file an issue, because this is a choice, not a defect; see "Open
 
 Not an establishing change: `FlowPaths` follows the existing shape of `Mermaid`. There is no primitive for other
 packages to adopt.
-
-## Open for the owner
-
-- Should an input port declared `External` also make its node an origin of a flow path? Today it does not, at the pin
-  or here.
-  - Recommendation: no change and no issue. The behaviour is the pin's, and nothing in the tree or a scoped consumer is
-    known to read a path from an `External` input. Ask again if a consumer does.
-- No other question needs the owner. Option B over C is a design choice that independent design review checks.

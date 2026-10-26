@@ -7,8 +7,8 @@
 `/components/flowgraph`, `/components/validate` and `/components/paths` SHALL project the result the component manager
 kept at construction: `validate` the result as is, `flowgraph` its graph as JSON or `composition.Mermaid`, `paths`
 `composition.FlowPaths` of its graph with counts of that answer and a timestamp. None SHALL compute a graph,
-reachability or severity of its own. The flowgraph answer SHALL be stable: its JSON and Mermaid forms are a tested
-contract.
+reachability or severity of its own. The flowgraph answer for a given composition SHALL be stable: its JSON and
+Mermaid forms are a tested contract.
 
 #### Scenario: The flowgraph for a fixture composition
 

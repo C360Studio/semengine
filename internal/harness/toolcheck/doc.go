@@ -18,6 +18,8 @@
 //   - portstatus_test.go: scripts/port-status.sh, docs/admission-ledger.yaml,
 //     service/base.go, service/service_manager.go and service/component_manager.go.
 //   - specqueue_test.go: scripts/openspec-queue.sh and Taskfile.yml.
+//   - testpkgs_test.go: scripts/test-pkgs.sh.
+//   - toolschanged_test.go: scripts/tools-changed.sh.
 //
 // repo_test.go reads go.mod's location only, to find the repository root. The package has no
 // non-test code; this file exists so the directory is an ordinary package.

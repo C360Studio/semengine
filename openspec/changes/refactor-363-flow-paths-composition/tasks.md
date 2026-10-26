@@ -10,8 +10,9 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
 
 ## 1. Design
 
-- [ ] 1.1 Inventory and design pass review and are accepted by the owner. Hold: Codex design review (APPROVE on the
-  design commit) and the owner's acceptance, recorded on PR #413. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory and design pass review and are accepted by the owner: Codex DESIGN REVIEW PASS on `9fb423f`
+  (its NIT applied in `9595973`) and the owner's acceptance on `9595973`, recorded on PR #413 (comment 6426252783).
+  Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Refactor
 

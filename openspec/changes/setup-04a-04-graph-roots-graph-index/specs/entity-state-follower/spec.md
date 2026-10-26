@@ -78,13 +78,13 @@ SHALL hold until the process restarts.
 
 ### Requirement: A restored stream is a declared limit
 
-A backing stream restored with the creation time `Open` read SHALL NOT be detected as a lost feed by the follower; this
-is a declared limit, as in `graph-ingest-recovery`.
+The follower's documentation SHALL declare that a backing stream restored with the creation time `Open` read may go
+undetected as a lost feed: a declared limit, not a promise, as in `graph-ingest-recovery`.
 
 #### Scenario: Delete and restore inside one stall window
 
 - **WHEN** `ENTITY_STATES` is deleted and restored with its original creation time before the watch resumes
-- **THEN** the follower does not report a lost feed
+- **THEN** a lost feed is not promised to be reported
 
 ### Requirement: Reset is sticky
 

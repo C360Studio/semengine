@@ -12,8 +12,9 @@ passes on a clean tree at its commit (#171).
   refuse queries while the feed is lost; keep the alias behaviour, #415).
 - [x] 1.3 Delete and recreate probe (design D3, Fable read H2): program and output posted on PR #414, comment
   6426443564. Gate: the comment read back.
-- [ ] 1.4 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review on the
-  ruled text. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.4 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review on the
+  ruled text. Gate: `task spec:check` and `task docs:check`. Claude reviewer INVENTORY PASS and DESIGN PASS at
+  `ebd77d9` (PR #414 comment recording it); Codex accepted the corrections at `58814ca` (comment 6426969384).
 - [ ] 1.5 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.5.md`. Gate: the note.
 - [ ] 1.6 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
   recording entities, KV writes and the `index_not_ready` window, posted on #108 and in `notes/1.6.md` (design D13).

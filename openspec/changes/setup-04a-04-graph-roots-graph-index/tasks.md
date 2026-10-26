@@ -24,20 +24,20 @@ passes on a clean tree at its commit (#171).
 
 - [x] 2.1 `graph`: `TestQueryResponseCarriesIndexedRevisionAndProducer` and the empty-producer refusal; `graph/readiness`:
   the ported `ComputeIndexStatus` tests and the revision gauges' names against the registry. Gate: in 3.1.
-- [ ] 2.2 Follower tests of design D11 (`TestFollowerRunReturnsAndLeavesNothing`, `TestFollowerPublishesOnEveryHeartbeat`,
+- [x] 2.2 Follower tests of design D11 (`TestFollowerRunReturnsAndLeavesNothing`, `TestFollowerPublishesOnEveryHeartbeat`,
   `TestFollowerSnapshotEndSetsBootstrapTarget`, `TestFollowerLatchesResetOnUnreadableSnapshotValue`,
   `TestFollowerDeclaresLostFeed`), the lost-feed test shown failing against the pin's loop shape first (`notes/2.2.md`).
   Gate: in 3.2.
-- [ ] 2.3 graph-index tests of design D11, the ported pin tests rewritten without sleeps, skips, `t.Parallel` in
-  integration files, the six writer back doors and `subscribeForRequests`; each dropped pin test named with its reason
-  in `notes/2.3.md`. Gate: in 4.x.
+- [ ] 2.3 graph-index tests of design D11 (with `TestLatchBootstrap_ContinuousWrite`, `notes/3.2.md`), the ported pin
+  tests rewritten without sleeps, skips, `t.Parallel` in integration files, the six writer back doors and
+  `subscribeForRequests`; each dropped pin test named with its reason in `notes/2.3.md`. Gate: in 4.x.
 
 ## 3. Shared pieces
 
 - [x] 3.1 `graph/query_response.go`, `graph.QueryVerbs()` entries and `ResponderGraphIndex`; `ComputeIndexStatus`,
   `IndexStatusInputs` and the revision gauges in `graph/readiness` (design D2, D6, D10). Gate: `go test -race
   -count=1 ./graph/...`, `TestGraphImportsNoTransport`, `TestReservedSubjectsDeclaredOnce`.
-- [ ] 3.2 `graph/follower` (design D3). Gate: `go test -race -count=1 ./graph/follower`, `task test:integration --
+- [x] 3.2 `graph/follower` (design D3). Gate: `go test -race -count=1 ./graph/follower`, `task test:integration --
   ./graph/follower`, `go test -count=5 -cpu 1 -shuffle=on ./graph/follower`.
 
 ## 4. graph-index

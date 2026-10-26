@@ -6,8 +6,9 @@ oracle is design D3's script against the base `c1caa45` and the existing tests. 
 
 ## 1. Design
 
-- [ ] 1.1 Inventory and design pass Codex review (`INVENTORY PASS`, then design review) and the owner accepts the
-  design, with option B or C of its Options section. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory and design pass Codex review (`INVENTORY PASS` at `d3c178c`, design pass at `6fd50fe`) and the
+  owner accepts the design (2026-10-26): option B, and the non-move edits of the Owner acceptance section. Gate:
+  `task spec:check` and `task docs:check`.
 
 ## 2. The move
 

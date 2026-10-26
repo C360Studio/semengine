@@ -38,10 +38,11 @@ being protected.
 
 | Level | Command | What it can show |
 |---|---|---|
-| Unit | `task test:unit` | One function or in-process behavior. Runs every package with `-race`; no Docker, no network. |
+| Unit | `task test:unit` | One function or in-process behavior. Runs every package except the three tool packages (below) with `-race`; no Docker, no network. |
 | Unit, repeated | `task test:repeat` | A test that depends on run order, on state left by another test, or on timing. Runs the unit tests five times at one CPU in shuffled order, without `-race`. |
 | Integration | `task test:integration` | Behavior that depends on a real NATS server: JetStream delivery, key-value buckets, consumers. |
-| Structural guards | `task test:unit`, `task verify` | Repository-wide rules, checked by tests in `internal/harness/contract/`. |
+| Tool tests | `task test:tools`, or `task test:tools:changed` | The repository's own tools: the tests of the scripts, `Taskfile.yml` and the CI workflow (`internal/harness/toolcheck/`), `mutate:check` (`internal/harness/mutcheck/`) and the ledger program (`internal/harness/pindiff/`). `task verify` runs them through `test:tools:changed`, which skips them when no file they read has changed; `task test:repeat` never runs them. |
+| Structural guards | `task test:unit`, `task verify` | Repository-wide rules, checked by tests in `internal/harness/contract/`. They run on every change. |
 
 Consumer qualification runs live in the consumer repositories, not here.
 
@@ -143,6 +144,15 @@ from SemStreams). Four more guards are shell scripts: `task cleanup-roots:check`
 `task verify` runs as their own steps; the fixed-port guard `scripts/lint-test-ports.sh`, which `task lint` runs; and
 `scripts/merge-check.sh`, which CI's `merge-check` job runs and `task verify` does not, because it reads GitHub
 state that changes from one run to the next.
+
+The tests that run those scripts, and that pin `Taskfile.yml` and the CI workflow, are not in `contract`. They are in
+`internal/harness/toolcheck/`, one of three tool packages with `mutcheck` and `pindiff`. A test belongs in `toolcheck`
+when every file of the real tree it reads is one of: `scripts/`, `internal/harness/`, `.github/`, `Taskfile.yml`,
+`go.mod`, `go.sum`, `docs/admission-ledger.yaml`, `service/base.go`, `service/service_manager.go` or
+`service/component_manager.go`; anything else it needs, it plants in a temporary tree. A test that reads any other
+file stays in `contract`. `task test:tools` runs the tool packages; `task test:tools:changed`, a step of `task verify`,
+runs them only when one of those paths changed against the base and says so when it skips them. Nothing but review
+checks which package a test belongs in.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;
@@ -365,13 +375,17 @@ The repository's own checks follow the same pattern, built into the tests:
   `TestNoDeploymentAuthorityNames` and `TestNoDeploymentAuthorityNamesSensitivity`, and `TestNoSecondAuthorityField`
   and `TestNoSecondAuthorityFieldSensitivity`). The sensitivity test plants the violation in a temporary tree and
   requires the guard to name the planted file and what it violates, so a guard that fires for the wrong reason, or
-  matches nothing, fails. Two script guards are covered the same way by
-  `TestCleanupRootsCheckSensitivity` and `TestCoverCheckSensitivity`; the fixed-port script has its own fixture test,
-  `scripts/lint-test-ports_fixture_test.sh`; `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge
-  check against canned GitHub answers; and `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`,
-  `TestSpecQueueCheck`, `TestSpecCheckWiring` and `TestSpecQueueArguments` run the OpenSpec queue script,
-  `scripts/openspec-queue.sh`, against a stand-in `openspec` command and planted `tasks.md` files, each run under a
-  deadline so a script that does not end fails the test.
+  matches nothing, fails.
+- The tests that drive a script, `Taskfile.yml` or the CI workflow are in `internal/harness/toolcheck/` and are shown
+  able to fail the same way. Two script guards are covered by `TestCleanupRootsCheckSensitivity` and
+  `TestCoverCheckSensitivity`. The fixed-port script has its own fixture test,
+  `scripts/lint-test-ports_fixture_test.sh`, and `TestLintTestPortsHonoursNoMarker` and
+  `TestLintTestPortsSkipsIgnoredFiles` run it on a planted tree (`TestLintTestPortsPasses`, which runs it over the
+  real tree, stays in `contract`). `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge check against
+  canned GitHub answers. `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`, `TestSpecQueueCheck`,
+  `TestSpecCheckWiring` and `TestSpecQueueArguments` run the OpenSpec queue script, `scripts/openspec-queue.sh`,
+  against a stand-in `openspec` command and planted `tasks.md` files, each run under a deadline so a script that does
+  not end fails the test.
 - `TestEachFailpointTripsExactlyItsCheck` in `internal/harness/lifecycletest/` runs every lifecycle check against a
   reference component with one defect switched on at a time, and requires exactly the matching check to fail.
 
@@ -609,7 +623,7 @@ What the repository enforces today:
   `lifecycletest`, `probe`, `message`, `payloadregistry`, `graph/readiness`, `graph/inference`, `pkg/projection`,
   `internal/graphmutation` and `storage/storeregistry` (from the unit run); and `natsclient`,
   `processor/graph-ingest`, `graph`, `graph/kvcatalog`, `component` and `pkg/lifecycle` (the unit and integration runs
-  merged). `TestCoverCheckSensitivity` (`internal/harness/contract/cover_test.go`) holds that each target is
+  merged). `TestCoverCheckSensitivity` (`internal/harness/toolcheck/cover_test.go`) holds that each target is
   checked, from its profile.
 - `task test:integration` runs `go test` with `-timeout 10m` (`go help testflag` says what the flag bounds).
 - One NATS fixture is one container. The fixture's cleanup gets 60 seconds.

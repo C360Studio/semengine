@@ -48,14 +48,14 @@ notes, and they are committed with the code of 4.1 and 4.2, so every commit pass
 
 ## 5. Docs and rules
 
-- [ ] 5.1 `AGENTS.md` and `.agents/rules-index.md`, row for row. Edit rows `AGENTS.md:114` and `:116`, matching
+- [x] 5.1 `AGENTS.md` and `.agents/rules-index.md`, row for row. Edit rows `AGENTS.md:114` and `:116`, matching
   rules-index `:59` and `:61`. In rules-index `:78`, `:101`, `:104` and `:112`, the enforcer cells name tests that
   now run under `task test:tools`. Add one new row in domain 3, in both files: tool tests run only when their trigger
   paths change, the repository guards run on every verify. Add `task test:tools` to the commands block, and
   `test:tools:changed` to its `task verify` step list (`AGENTS.md:51-52`). `AGENTS.md`
   stays under 24,000 bytes (23,082 at the base). Gate: `TestAgentSetupParity` in `task verify`, and
   `task docs:check`.
-- [ ] 5.2 `docs/testing.md` `:41-44` (the unit line no longer says every package, plus a "Tool tests" line),
+- [x] 5.2 `docs/testing.md` `:41-44` (the unit line no longer says every package, plus a "Tool tests" line),
   `docs/test-infrastructure.md:114`, `docs/repository-map.md:44` (the contract line, plus a toolcheck line),
   `.agents/skills/semengine-preflight/SKILL.md:41-47` (including the `task verify` line at `:47`, which gains
   `test:tools:changed`) and the `test:integration` row of

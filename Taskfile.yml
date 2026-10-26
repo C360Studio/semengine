@@ -61,7 +61,7 @@ tasks:
   ledger:check:
     desc: Validate docs/admission-ledger.yaml against its schema (T-B7), then fail if a carry entry differs from its SemStreams pin; fetches the pin from GitHub when a carry entry exists
     cmds:
-      # Order and exit status are pinned by contract test TestLedgerCheckWiring.
+      # Order and exit status are pinned by toolcheck test TestLedgerCheckWiring.
       - go test -count=1 -run '^TestAdmissionLedger' ./internal/harness/contract/
       - go run ./internal/harness/pindiff check
 

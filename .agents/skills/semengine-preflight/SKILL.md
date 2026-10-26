@@ -38,13 +38,14 @@ with current CI.
 | `task vuln` | Pinned `govulncheck`; review findings against reachable behavior |
 | `task cleanup-roots:check` | Fails if a test stops, closes, or terminates under `context.Background()` or `TODO()` |
 | `task ledger:check` | Validates `docs/admission-ledger.yaml` against its schema |
-| `task test:unit` | Unit tests once with the race detector at one CPU |
-| `task test:integration` | Docker-backed tests: plain `go test -tags=integration` with pinned flags (race detector, two packages at a time, shuffled, 10-minute timeout) and the coverage profile `task cover:check` reads; `-- <pkgs>` to focus |
+| `task test:unit` | Unit tests once with the race detector at one CPU; every package except the three tool packages (`toolcheck`, `mutcheck`, `pindiff`) |
+| `task test:tools` | The tool packages once with the race detector at one CPU; `task test:tools:changed` runs the same only when a file under their trigger paths (`scripts/`, `internal/harness/`, `.github/`, `Taskfile.yml`, `go.mod`, `go.sum` and the others in `toolcheck/doc.go`) changed against the base, and says so when it skips |
+| `task test:integration` | Docker-backed tests: plain `go test -tags=integration` with pinned flags (race detector, two packages at a time, shuffled, 10-minute timeout) and the coverage profile `task cover:check` reads; runs only packages that have an `integration`-tagged test; `-- <pkgs>` to focus |
 | `task cover:check` | Fails below 80% coverage on each target in `scripts/cover-check.sh` (16 today: the harness's `natsfixture`, `lifecycletest`, `probe`, and each ported package on the SETUP 03B critical list, `setup-03b-contract-boundary` `design.md` D10); a package on that list joins when it is ported |
-| `task test:repeat` | Unit tests five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
+| `task test:repeat` | Unit tests (not the tool packages) five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
 | `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
 | `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head, or while PR `n` is a code pull request, not a draft, whose `implemented-by:` and `reviewed-by:` lines do not name the implementing and reviewing agents; reads GitHub |
-| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:repeat` last; prints each step's time; fails on tracked-file change |
+| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:tools:changed` after `test:unit` and `test:repeat` last; prints each step's time; fails on tracked-file change |
 
 CI has three jobs: `verify` runs `task verify`; `merge-check` runs `scripts/merge-check.sh` for the pull request (on a
 push to `main`, only its up-to-date half); `required` fails if `verify` or `merge-check` failed, is missing, or was
@@ -57,7 +58,9 @@ Select by what the diff changes:
 - **Documentation or skill instructions only:** `task fmt:check`, `task docs:check`, and `git diff --check`; add
   `task spec:check` when `openspec/` changed.
 - **An OpenSpec change:** `task spec:check`, then read `task spec:queue` in this worktree.
-- **Go behavior:** `task test:unit`, `task vet`, `task lint`, `task build`; focused tests first during iteration.
+- **Go behavior:** `task test:unit` (plus `task test:tools` when `scripts/`,
+  `internal/harness/`, `.github/` or `Taskfile.yml` changed), `task vet`, `task lint`, `task build`; focused tests first
+  during iteration.
 - **Docker-backed behavior (`internal/harness/natsfixture`, any `*_integration_test.go`):**
   `task test:integration -- <pkgs>` to focus, then `task cover:check`, which reads the profile of the last passing
   integration run and refuses one taken on a different tree. A plain `go test -tags integration` run is fine while

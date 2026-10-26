@@ -18,11 +18,13 @@ Each code task ends only when `task verify` passes on a clean tree at its commit
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record at a named commit with a local `task verify`; the PR body carries
-  `implemented-by: claude (opus)` and `reviewed-by: codex`. Gate: Codex's comment.
-  Hold: Codex code review (owner starts Codex).
+- [x] 3.1 Codex code review of record at a named commit with a local `task verify`; the PR body carries
+  `implemented-by: claude (opus)` and `reviewed-by: codex`. Gate: Codex's comment. Codex approved at
+  c23e3eadcde3673e9a837068140f6c13401fd036 with two documentation NITs, both applied (the oracle wording in
+  `notes/2.1.md`; the header change named in the ledger row and the proposal), and a mutation check reporting
+  `verdict: detection`; it reran the package tests, not `task verify` (PR #410 comment 6416348848).
 
 ## 4. Archive
 
-- [ ] 4.1 The `error-classification` delta synced into `openspec/specs/error-classification/spec.md`; archived as the
+- [x] 4.1 The `error-classification` delta synced into `openspec/specs/error-classification/spec.md`; archived as the
   last content commit. Gate: `task spec:check` and `task docs:check`.

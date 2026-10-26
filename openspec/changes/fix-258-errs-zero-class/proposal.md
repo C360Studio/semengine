@@ -34,7 +34,8 @@ separate design document.
 - Code: `pkg/errs/errs.go`; `pkg/errs/errs_test.go`.
 - Docs: the `pkg/errs` row of `docs/admission-ledger.yaml` (`contract` and `known_risks`).
 - Behaviour: an unset-class `ClassifiedError` reads fatal, not transient. That includes one wrapping a transient
-  sentinel such as `context.DeadlineExceeded`, because `errors.As` stops at the first `ClassifiedError`. The class
-  is never encoded as a number (`inventory.md` §2c), so no stored or wire value changes. graph-ingest's keyed ingest
+  sentinel such as `context.DeadlineExceeded`, because `errors.As` stops at the first `ClassifiedError`. Named
+  classes keep their string spellings and the class is never encoded as a number (`inventory.md` §2c); a classless
+  error's `X-Error-Class` header changes from `transient` to `fatal`, which is the intended fix. graph-ingest's keyed ingest
   still retries an error that is neither invalid nor fatal (`processor/graph-ingest/keyed_ingest.go:322`), as ADR-111
   Decision 3 allows; that path reads the predicates, not `Classify`.

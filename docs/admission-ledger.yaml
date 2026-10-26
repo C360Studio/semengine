@@ -462,8 +462,9 @@
     that retried on Classify now stops on an error it did not classify; duplicate RetryConfig removed and
     WrapTransient/WrapFatal/WrapInvalid made nil-safe (#218); doc.go updated to match. A
     *ClassifiedError literal that leaves Class unset read transient at the pin and reads fatal here,
-    even over a transient sentinel such as context.DeadlineExceeded; the class is never encoded as a
-    number, so no stored or wire value changes (#258)
+    even over a transient sentinel such as context.DeadlineExceeded. Named classes keep their string
+    spellings and the class is never encoded as a number; a classless error's X-Error-Class header
+    changes from transient to fatal, which is the intended fix (#258)
   proving_tests: >-
     pkg/errs/errs_test.go, pkg/errs/classified_is_test.go, pkg/errs/shutdown_test.go,
     pkg/errs/classify_by_type_test.go

@@ -240,6 +240,63 @@ func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
 	}
 }
 
+// TestMaximumLengthIDsAndPredicatesThroughPublicReads: a 256-byte entity ID and a 194-byte predicate
+// are indexed, read through every public verb that sees them, and replaced to nothing, so the
+// longest key of each index layout is proved on a real server, not by arithmetic (spec "Indexes
+// implement replacement"; developer contract, "Prove the longest supported key").
+func TestMaximumLengthIDsAndPredicatesThroughPublicReads(t *testing.T) {
+	id := func(prefix, last string) string { return prefix + ".b.c.d.e." + strings.Repeat("z", 245) + last }
+	src, other, target := id("a", "a"), id("a", "b"), id("b", "a")
+	pred := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("c", 64)
+	label := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("d", 64)
+	if len(src) != 256 || len(target) != 256 || len(pred) != 194 {
+		t.Fatalf("fixture is not maximum length: %d %d %d", len(src), len(target), len(pred))
+	}
+	vocabulary.Register(label, vocabulary.WithAlias(vocabulary.AliasTypeLabel, 0))
+	h := startIndex(t, fixtureClient(t), `{}`)
+	h.put(t, other, entityValue(t, other, stmt{pred, target}))
+	rev := h.put(t, src, entityValue(t, src, stmt{pred, target}, stmt{label, "Longest"}))
+	h.awaitIndexed(t, rev)
+
+	out := answer[graph.OutgoingRelationshipsData](t, h.client, "outgoing", map[string]any{"entity_id": src}, rev)
+	if len(out.Relationships) != 1 || out.Relationships[0].ToEntityID != target {
+		t.Fatalf("outgoing = %+v", out)
+	}
+	in := answer[graph.IncomingRelationshipsData](t, h.client, "incoming", map[string]any{"entity_id": target}, rev)
+	if len(in.Relationships) != 2 || in.Relationships[0].FromEntityID != src || in.Relationships[1].FromEntityID != other {
+		t.Fatalf("incoming = %+v", in)
+	}
+	pm := answer[graph.PredicateData](t, h.client, "predicate", map[string]any{"predicate": pred}, rev)
+	if !slices.Equal(pm.Entities, []string{src, other}) {
+		t.Fatalf("predicate = %+v", pm)
+	}
+	names := answer[graph.NameData](t, h.client, "byName", map[string]any{"name": "Longest"}, rev)
+	if len(names.Matches) != 1 || names.Matches[0].EntityID != src {
+		t.Fatalf("name = %+v", names)
+	}
+	for _, scope := range []string{strings.Repeat("a", 64), strings.Repeat("a", 64) + "." + strings.Repeat("b", 64)} {
+		list := answer[graph.PredicateListData](t, h.client, "predicateList", map[string]any{"namespace": scope}, rev)
+		if len(list.Predicates) != 2 || list.Predicates[0].EntityCount != 2 || list.Predicates[1].EntityCount != 1 {
+			t.Fatalf("namespace %s = %+v", scope, list)
+		}
+	}
+
+	rev = h.put(t, src, entityValue(t, src))
+	h.awaitIndexed(t, rev)
+	in = answer[graph.IncomingRelationshipsData](t, h.client, "incoming", map[string]any{"entity_id": target}, rev)
+	if len(in.Relationships) != 1 || in.Relationships[0].FromEntityID != other {
+		t.Fatalf("incoming after replacement = %+v", in)
+	}
+	pm = answer[graph.PredicateData](t, h.client, "predicate", map[string]any{"predicate": pred}, rev)
+	if !slices.Equal(pm.Entities, []string{other}) {
+		t.Fatalf("predicate after replacement = %+v", pm)
+	}
+	names = answer[graph.NameData](t, h.client, "byName", map[string]any{"name": "Longest"}, rev)
+	if len(names.Matches) != 0 {
+		t.Fatalf("name after replacement = %+v", names)
+	}
+}
+
 // TestQueryReadsImplementReplacement drives one entity's statements from A to B to none and,
 // after each step, reads it through every public read but alias: outgoing, incoming, predicate
 // (exact and by value), predicateList, predicateStats, predicateCompound and byName. Each answers

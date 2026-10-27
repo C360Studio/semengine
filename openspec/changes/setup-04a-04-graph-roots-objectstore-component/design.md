@@ -148,6 +148,16 @@ resolution are unit tests over pure functions. The pin's `lifecycle_owner_test.g
 `payloadbuiltins` or `examples/processors/document` are rewritten on a local `ContentStorable` test type through
 `payloadfixture`; dropped tests are named in `notes/2.1.md`. Pin `time.Sleep`s (inventory probe 4) do not port.
 
+The lifecycle suite does not judge a failed `Start` whose own cleanup also fails (`openspec/specs/lifecycle-suite/spec.md:214`
+leaves it to a component-owned test). The trigger is real: an input that is still finishing a write can outlast
+rollback's five-second budget (`pkg/lifecyclecleanup/lifecyclecleanup.go:29`), and `Subscription.Drain` returns the
+context error before the native close and allows a later join (`natsclient/client.go:962`).
+`TestFailedCleanupRetainsInputsForLaterStop` proves it as graph-ingest's
+`TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` does (`processor/graph-ingest/lifecycle_owner_test.go:121`):
+the test calls `lifecycle.Start` with a start function that fails after binding and a rollback that releases under an
+already-ended context. It asserts that `Start` returns both errors, that `Observe` still lists the inputs, and that a
+later `Stop` with a fresh finite context returns nil and leaves nothing. It needs no production hook.
+
 ## D9. Gates and records
 
 - #422: `storage/objectstore/component.go` joins `policyEntryPointAllowlist`

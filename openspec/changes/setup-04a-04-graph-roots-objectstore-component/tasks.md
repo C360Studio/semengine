@@ -14,8 +14,9 @@ passes on a clean tree at its commit (#171).
 - [ ] 2.1 Unit tests (no Docker): `TestComponentConfigRefusesUnknownKey` (`data_cache`, a misspelt key; error names it),
   `TestComponentRefusesOutputOtherThanStored`, `TestDeclarePortsMatchesComponentPorts`, `TestRegisterRegistersObjectstore`,
   `TestClassifyWriteDisposition`, `TestStoredMessageRoundTripsThroughDecoder`, `TestStoredMessageValidate`,
-  `TestComponentRefusesInputWithoutStoredOutput`. Each shown
-  failing first; pin tests dropped or rewritten named in `notes/2.1.md`.
+  `TestComponentRefusesInputWithoutStoredOutput`, `TestFailedCleanupRetainsInputsForLaterStop` (design D8: `Start`
+  returns the start and cleanup errors, `Observe` still lists the unreleased inputs, a later `Stop` with a fresh finite
+  context returns nil and leaves nothing). Each shown failing first; pin tests dropped or rewritten named in `notes/2.1.md`.
 - [ ] 2.2 Integration tests (`natsfixture`, shared server via the reset): `TestObjectStoreLifecycleSuite` (core and
   JetStream inputs), `TestStartContextEndKeepsBothLanesWriting` (fails against the pin's shape),
   `TestFailedStartReleasesBoundInputs`, `TestProvidedStoresUnderObjectstore`, `TestSecondComponentRefusedAtStart`, `TestLostJetStreamInputReportsUnhealthy`
@@ -43,7 +44,8 @@ passes on a clean tree at its commit (#171).
 
 - [ ] 4.1 Remove `storage.KeyGenerator`, `storage.MetadataExtractor` and their `storage/doc.go` examples (D6). Gate:
   `task build`, `task docs:check`.
-- [ ] 4.2 Ledger rows (`storage/objectstore`, `storage`), ADR-063 port note (D7), package `doc.go` and `README.md`
+- [ ] 4.2 Ledger rows (`storage/objectstore`, `storage`; `proving_tests` names
+  `TestFailedCleanupRetainsInputsForLaterStop`), ADR-063 port note (D7), package `doc.go` and `README.md`
   (D6, N2), `docs/repository-map.md`. Gate: `task ledger:check`, `task docs:check`.
 
 ## 5. Evidence and review

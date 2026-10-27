@@ -23,6 +23,20 @@ record no mutation outcome or rejection; the requester receives the refusal as a
   mutation outcome or rejection is recorded
 - **AND** once `Start` has completed, the same mutation stores the entity
 
+## MODIFIED Requirements
+
+### Requirement: Query refusals carry a code
+
+Once `Start` has completed, every refusal graph-ingest's query handlers return on `graph.ingest.query.entity`,
+`graph.ingest.query.batch` and `graph.ingest.query.prefix` SHALL carry a classified code. A request that arrives
+before `Start` completes is answered as "graph-ingest refuses request work until Start completes" says, with no
+code. Giving a refusal a code SHALL NOT change its class.
+
+#### Scenario: A failed key listing
+
+- **WHEN** listing keys for a prefix query fails
+- **THEN** graph-ingest refuses it with class transient and code `internal`
+
 ## REMOVED Requirements
 
 ### Requirement: graph-ingest does no request work before Start completes

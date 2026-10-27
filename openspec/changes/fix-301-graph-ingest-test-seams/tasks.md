@@ -29,7 +29,8 @@ Working rules for every task:
 - [ ] 3.2 Integration tests:
   - the ack_wait config test read from the server;
   - the pause in the readiness, long-apply and process-killed tests;
-  - the not-started refusal test;
+  - the not-started refusal test, whose doc comment (`failed_start_callbacks_integration_test.go:9`) names the
+    requirement "graph-ingest refuses request work until Start completes";
   - the suite adapter wrapping `c.consumers`.
   These pass on the base. Gate: `go test -tags integration ./processor/graph-ingest/` and `task verify`.
 

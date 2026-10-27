@@ -71,7 +71,7 @@ inventory 4); the pin's own port description says the `stored` output is "Stored
 pattern" (`pin:…/config.go:93`); every `ContentStorable` is a `graph.Graphable` (`message/content_storable.go:47-48`
 embeds `Storable`; `message/storable.go:66-74`, `graph/graphable.go:54-60`: same two methods), so the pin's
 "ContentStorable not Graphable" skip (`pin:…/component.go:776-781`) is unreachable and goes. A drops `Store.Store`,
-`storeWithKeySource`, `DefaultKeyGenerator` and its test seam (S12, S13, N13) with the lane. Owner question 1.
+`storeWithKeySource`, `DefaultKeyGenerator` and its test seam (S12, S13, N13) with the lane. Owner ruling 1: A.
 
 Under A the lane decodes once with `message.NewDecoder(deps.PayloadRegistry)`; a message that does not decode, or whose
 payload is not `ContentStorable`, is refused as invalid input naming the payload type; a payload `StoreContent` refuses
@@ -89,7 +89,7 @@ invalid→Term, other→NAK 30 s); every non-Ack also logs at Error and calls `C
 exists, so a refused or failed write is logged at Error and counted, and the spec states the lane is at-most-once. The
 default input stays core NATS (`pin:…/config.go:78`; both consumers use default ports). Alternatives: refuse core-NATS
 inputs at construction (JetStream only), which changes every consumer's default config; or a default JetStream input,
-whose stream `config` derives from the subject (`config/streams.go:58-65`). Owner question 2. Adopting
+whose stream `config` derives from the subject (`config/streams.go:58-65`). Owner ruling 2: as recommended. Adopting
 `natsclient.SettleDeliveryWithRetry` (N5) is optional and not done: the table is tested and the delays differ.
 
 Delivery on a JetStream input is at-least-once. A delivery is acked only after the body is stored and its reference
@@ -136,7 +136,7 @@ and semteams maps the instance key to its bucket by name (`semteams:cmd/semteams
 in one process is refused at Start by `registerProvidedStores` (`service/component_manager.go:486`), a boot error, never
 a silent mismatch. **B:** a `storage_instance` config key defaulting to `"objectstore"`: small and additive, but no
 consumer runs two Components, so it is surface without a reader. **C:** pass the instance name to every factory: changes
-`component.Factory` and all factories. Owner question 3 (it closes ADR-063's open question; the port note records the
+`component.Factory` and all factories. Owner ruling 3: A (it closes ADR-063's open question; the port note records the
 answer).
 
 ## D8. Tests without back doors (S22; #195; same class as #301/#436)
@@ -183,11 +183,12 @@ resolution are unit tests over pure functions. The pin's `lifecycle_owner_test.g
 
 Filed by this design: none.
 
-## Owner questions
+## Owner rulings
 
-1. Should the Component store only `ContentStorable` bodies and refuse other messages (recommended, D3 A), or keep the
-   pin's whole-message store whose reference opens to JSON?
-2. On the default input, which keeps nothing, a refused message is logged, counted, then gone. Is that loud enough
-   (recommended, D4), or should inputs be the kind that keep messages and can mark a bad one as rejected?
-3. Keep one store name, `"objectstore"`, per process, a second Component refused at boot (recommended, D7 A), closing
-   ADR-063's multi-instance question?
+The owner answered the three design questions on 2026-10-27 (PR #437 comment 6454878443):
+
+1. Bodies only: the Component stores only `ContentStorable` bodies and refuses other messages (D3 A).
+2. Logged and counted is enough: on the default input, which keeps nothing, a refused message is logged, counted, then
+   gone (D4).
+3. One store name, `"objectstore"`, per process, a second Component refused at boot (D7 A); this closes ADR-063's
+   multi-instance question.

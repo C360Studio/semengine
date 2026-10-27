@@ -18,7 +18,7 @@ have no provider code (inventory 8).
   whose reference opens to that body (ADR-063). Other messages are refused, counted and logged (design D3; owner
   question 1).
 - A refusal is never silent: on a JetStream input it is terminated; on a core-NATS input it is dropped; on both it is
-  logged and counted in `Health().ErrorCount` (design D4; owner question 2).
+  logged and counted in `Health().ErrorCount` (design D4; owner ruling 2).
 - Ending the context given to `Start` stops nothing: both lanes keep storing (ADR-113; design D5). The pin lost every
   later write (inventory probe 2).
 - Configuration is `bucket_name` and `ports`, decoded strictly; `data_cache` and any other key is refused naming it.
@@ -27,7 +27,7 @@ have no provider code (inventory 8).
   `MetadataExtractor` and `DefaultConfig` are not carried, and `storage.KeyGenerator` and `storage.MetadataExtractor`
   leave `storage` (no reader; design D6).
 - The Component stamps and registers `StorageInstance = "objectstore"`, as at the pin; a second Component in one
-  process is refused at `Start` (design D7; owner question 3).
+  process is refused at `Start` (design D7; owner ruling 3).
 - Tests through `natsfixture` (#195), no test-only fields on `Component` (design D8), the lifecycle suite plus a
   behaviour check for the Start context (design D5).
 

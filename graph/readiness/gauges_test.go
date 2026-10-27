@@ -273,3 +273,71 @@ func counterValue(t *testing.T, reg *prometheus.Registry, name string) float64 {
 	t.Fatalf("series %q not found", name)
 	return 0
 }
+
+// TestRevisionGaugesExportTheRevisions holds the graph-readiness requirement "A
+// revision-lag producer exports its revisions": the set graph-index's follower builds
+// exposes exactly the five shared families plus indexed_revision and target_revision,
+// read from the live registry, and Set writes the envelope's floor and target to them.
+// The pin's names (pin:graph/readiness/gauges.go:62-73) with semengine as namespace.
+func TestRevisionGaugesExportTheRevisions(t *testing.T) {
+	registry := metric.NewMetricsRegistry()
+	g := NewRevisionGauges("graph_index")
+	if err := g.Register(registry); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	g.Set(graph.IndexStatusResponse{State: graph.IndexStateBuilding, IndexedRevision: 40, TargetRevision: 100, Lag: 60})
+
+	reg := registry.PrometheusRegistry()
+	families, err := reg.Gather()
+	if err != nil {
+		t.Fatalf("gather: %v", err)
+	}
+	var got []string
+	for _, f := range families {
+		if strings.HasPrefix(f.GetName(), "semengine_") {
+			got = append(got, f.GetName())
+		}
+	}
+	slices.Sort(got)
+	want := []string{
+		"semengine_graph_index_bootstrap_complete",
+		"semengine_graph_index_indexed_revision",
+		"semengine_graph_index_lag",
+		"semengine_graph_index_readiness",
+		"semengine_graph_index_readiness_state",
+		"semengine_graph_index_status_publish_failures_total",
+		"semengine_graph_index_target_revision",
+	}
+	if !slices.Equal(got, want) {
+		t.Fatalf("exposed families = %q, want exactly %q", got, want)
+	}
+	if v := gaugeValue(t, reg, "semengine_graph_index_indexed_revision"); v != 40 {
+		t.Errorf("indexed_revision = %v, want 40", v)
+	}
+	if v := gaugeValue(t, reg, "semengine_graph_index_target_revision"); v != 100 {
+		t.Errorf("target_revision = %v, want 100", v)
+	}
+}
+
+// TestRevisionGaugesWriteTheRegisteredCollector: as TestGaugesWriteTheRegisteredCollector,
+// for the two revision gauges: a second set under the same subsystem writes the
+// collectors the first registered.
+func TestRevisionGaugesWriteTheRegisteredCollector(t *testing.T) {
+	registry := metric.NewMetricsRegistry()
+	first := NewRevisionGauges("t")
+	second := NewRevisionGauges("t")
+	for _, g := range []*Gauges{first, second} {
+		if err := g.Register(registry); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+	}
+	second.Set(graph.IndexStatusResponse{State: graph.IndexStateReady, IndexedRevision: 9, TargetRevision: 9})
+
+	reg := registry.PrometheusRegistry()
+	if v := gaugeValue(t, reg, "semengine_t_indexed_revision"); v != 9 {
+		t.Errorf("indexed_revision = %v, want 9 from the second set's write", v)
+	}
+	if v := gaugeValue(t, reg, "semengine_t_target_revision"); v != 9 {
+		t.Errorf("target_revision = %v, want 9 from the second set's write", v)
+	}
+}

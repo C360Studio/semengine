@@ -3,8 +3,12 @@
 ## Status
 
 **Implemented as `component.Lifecycle` (2026-10-26)** by `setup-04a-04-graph-roots-processor-shell` (PR #409): the
-type in `component/lifecycle_type.go`, which graph-ingest now composes. The follower, the plug-in and the other
-adopters are later pull requests, and #109 stays open.
+type in `component/lifecycle_type.go`, which graph-ingest now composes. **The follower is implemented
+(2026-10-27)** by `setup-04a-04-graph-roots-graph-index` (draft PR #414) as `graph/follower`, with graph-index as its
+first plug-in; the other adopters are later pull requests, and #109 stays open. Decision 4 changes there in one
+respect: the plug-in does not return an outcome from delivery. It reports the outcomes later, through `Complete` (a
+revision applied), `Failed` (the count of writes still unresolved) and `Reset`, because graph-index's apply is
+asynchronous (accepted by the owner, PR #414 comment 6426254115).
 
 **Decision 3's 'controlled and abort Stop' superseded by ADR-113 (2026-10-18).** The context given to `Start` bounds
 only `Start`; `Stop(ctx)` is the only stop, and a `Stop` whose context ends first returns that error so a later `Stop`

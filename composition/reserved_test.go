@@ -114,8 +114,10 @@ func TestValidateDoesNotRefuseNeighbouringSubjects(t *testing.T) {
 }
 
 // enumerationTokens is the alphabet of the generated check (design "Generated checks"): every token
-// of a reserved subject plus z, a token no reserved subject has.
-var enumerationTokens = []string{"graph", "ingest", "query", "mutation", "entity", "batch", "prefix", "z"}
+// of graph-ingest's and the mutation family's reserved subjects, graph-index's tokens up to its first
+// verb, and z, a token no reserved subject has. graph-index's later verbs are left out because each
+// one widens the enumeration by a power of five; reservedInAlphabet says why the first is enough.
+var enumerationTokens = []string{"graph", "ingest", "query", "mutation", "entity", "batch", "prefix", "index", "outgoing", "z"}
 
 // TestReservedSubjectOverlapMatchesEnumeration checks every filter of one to four tokens over the
 // alphabet with `*` and a final `>` against an oracle that enumerates concrete subjects. A filter
@@ -123,11 +125,7 @@ var enumerationTokens = []string{"graph", "ingest", "query", "mutation", "entity
 // enough, since a filter of at most four tokens that overlaps graph.mutation.> has a witness of at
 // most four. Both SubjectsOverlap and the subject Analyze reports are compared with the oracle.
 func TestReservedSubjectOverlapMatchesEnumeration(t *testing.T) {
-	var reserved []string
-	for _, verb := range graph.QueryVerbs() {
-		reserved = append(reserved, verb.Subject)
-	}
-	reserved = append(reserved, graphmutation.SubjectFamily)
+	reserved := reservedInAlphabet(t)
 
 	concrete := concreteSubjects(5)
 	witnesses := make([][]string, len(reserved))
@@ -210,10 +208,74 @@ func TestReservedSubjectOverlapMatchesEnumeration(t *testing.T) {
 	captured, clearFilters := len(want), len(filters)-len(want)
 	t.Logf("filters %d: captured %d (of which %d capture several reserved subjects), clear %d; witnesses per reserved subject %v",
 		len(filters), captured, several, clearFilters, witnessCounts(witnesses))
-	if len(filters) != 8200 || captured == 0 || clearFilters == 0 || several == 0 {
-		t.Fatalf("filters %d (want 8200), captured %d, several %d, clear %d: every branch must run",
+	if len(filters) != 17568 || captured == 0 || clearFilters == 0 || several == 0 {
+		t.Fatalf("filters %d (want 17568), captured %d, several %d, clear %d: every branch must run",
 			len(filters), captured, several, clearFilters)
 	}
+}
+
+// reservedInAlphabet returns, in reserved order (query verbs in table order, then the mutation
+// family), the reserved subjects whose every token is in the alphabet or is a final `>`. The oracle
+// checks only these, and that is enough for the subject Analyze reports: Analyze names the first
+// reserved subject in that order a filter overlaps (reservedCaptureFindings). A left-out subject
+// differs from an earlier kept subject of the same responder only in its last token, which is not in
+// the alphabet; so a filter over the alphabet reaches it only through a `*` or `>` at or before that
+// position, and the same wildcard reaches the earlier kept sibling. Its first overlap is therefore
+// always a kept subject. Both premises are checked here; when one fails, widen the alphabet.
+func reservedInAlphabet(t *testing.T) []string {
+	t.Helper()
+	inAlphabet := map[string]bool{}
+	for _, token := range enumerationTokens {
+		inAlphabet[token] = true
+	}
+	type entry struct{ subject, responder string }
+	var all []entry
+	for _, verb := range graph.QueryVerbs() {
+		all = append(all, entry{verb.Subject, verb.Responder})
+	}
+	all = append(all, entry{graphmutation.SubjectFamily, "graph-mutation"})
+
+	var kept []entry
+	keptBy := map[string]bool{}
+	for _, candidate := range all {
+		tokens := strings.Split(candidate.subject, ".")
+		whole := true
+		for index, token := range tokens {
+			if !inAlphabet[token] && (token != ">" || index != len(tokens)-1) {
+				whole = false
+				break
+			}
+		}
+		if whole {
+			kept = append(kept, candidate)
+			keptBy[candidate.responder] = true
+			continue
+		}
+		sibling := false
+		for _, earlier := range kept {
+			earlierTokens := strings.Split(earlier.subject, ".")
+			if earlier.responder == candidate.responder && len(earlierTokens) == len(tokens) &&
+				!strings.ContainsAny(tokens[len(tokens)-1], "*>") &&
+				strings.Join(earlierTokens[:len(tokens)-1], ".") == strings.Join(tokens[:len(tokens)-1], ".") {
+				sibling = true
+				break
+			}
+		}
+		if !sibling {
+			t.Fatalf("no concrete subject over the alphabet matches reserved %q, and no earlier kept subject of %s differs from it only in its last token: widen the alphabet",
+				candidate.subject, candidate.responder)
+		}
+	}
+	for _, candidate := range all {
+		if !keptBy[candidate.responder] {
+			t.Fatalf("no reserved subject of %s is over the alphabet: widen the alphabet", candidate.responder)
+		}
+	}
+	subjects := make([]string, 0, len(kept))
+	for _, candidate := range kept {
+		subjects = append(subjects, candidate.subject)
+	}
+	return subjects
 }
 
 // enumerateFilters returns every filter of 1 to maxTokens tokens over the alphabet and `*`, with `>`

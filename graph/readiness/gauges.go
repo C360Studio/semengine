@@ -21,6 +21,12 @@ type Gauges struct {
 	bootstrapComplete prometheus.Gauge
 	state             *prometheus.GaugeVec
 	publishFailures   prometheus.Counter
+
+	// indexedRevision and targetRevision are set only by NewRevisionGauges. A
+	// backlog producer has no ENTITY_STATES revision, and a gauge reading 0 would
+	// assert one, so for it they stay nil and are neither registered nor set.
+	indexedRevision prometheus.Gauge
+	targetRevision  prometheus.Gauge
 }
 
 // metricNamespace is the shared Prometheus namespace, held as a constant so every
@@ -70,6 +76,27 @@ func NewGauges(subsystem string) *Gauges {
 	}
 }
 
+// NewRevisionGauges builds the gauge set for a revision-lag producer (graph-index's
+// follower): NewGauges' set plus indexed_revision and target_revision, the
+// envelope's floor and target in ENTITY_STATES revisions (ADR-066). A backlog
+// producer uses NewGauges, which exports neither.
+func NewRevisionGauges(subsystem string) *Gauges {
+	g := NewGauges(subsystem)
+	g.indexedRevision = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: subsystem,
+		Name:      "indexed_revision",
+		Help:      "Low-water-of-pending watermark: every delivered ENTITY_STATES revision at or below this has been applied (ADR-066)",
+	})
+	g.targetRevision = prometheus.NewGauge(prometheus.GaugeOpts{
+		Namespace: metricNamespace,
+		Subsystem: subsystem,
+		Name:      "target_revision",
+		Help:      "ENTITY_STATES stream LastSeq the producer must catch up to (ADR-066)",
+	})
+	return g
+}
+
 // Register registers every collector on registry through metric.RegisterOrGet and
 // keeps the collectors it returns: when another Gauges already registered a metric
 // under the same subsystem and name, this one writes that collector, so its writes are
@@ -79,6 +106,24 @@ func (g *Gauges) Register(registry *metric.MetricsRegistry) error {
 	if registry == nil {
 		return nil
 	}
+	if err := g.registerShared(registry); err != nil {
+		return err
+	}
+	if g.indexedRevision == nil {
+		return nil
+	}
+	var err error
+	if g.indexedRevision, err = metric.RegisterOrGet(registry, g.subsystem, "indexed_revision", g.indexedRevision); err != nil {
+		return err
+	}
+	if g.targetRevision, err = metric.RegisterOrGet(registry, g.subsystem, "target_revision", g.targetRevision); err != nil {
+		return err
+	}
+	return nil
+}
+
+// registerShared registers the collectors every producer's set has.
+func (g *Gauges) registerShared(registry *metric.MetricsRegistry) error {
 	var err error
 	if g.readiness, err = metric.RegisterOrGet(registry, g.subsystem, "readiness", g.readiness); err != nil {
 		return err
@@ -110,6 +155,10 @@ func (g *Gauges) Set(resp graph.IndexStatusResponse) {
 	g.readiness.Set(boolGauge(resp.Ready))
 	g.lag.Set(float64(resp.Lag))
 	g.bootstrapComplete.Set(boolGauge(resp.BootstrapComplete))
+	if g.indexedRevision != nil {
+		g.indexedRevision.Set(float64(resp.IndexedRevision))
+		g.targetRevision.Set(float64(resp.TargetRevision))
+	}
 
 	for _, s := range graph.IndexStates() {
 		g.state.WithLabelValues(string(s)).Set(boolGauge(s == resp.State))

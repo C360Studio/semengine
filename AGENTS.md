@@ -95,7 +95,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | --- | --- | --- |
 | `review` | Classified NATS RPC handlers use `RequestClassified` / `RequestWithRetryClassified`, propagating class, code, detail | `dev`, `rev` |
 | `verify+review` | Non-evictable buckets have no TTL or binding `MaxBytes`; stream bounds protect capacity, not entity lifecycle | `dev`, `rev` |
-| `verify+review` | `graph.ingest.query.*` and `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
+| `verify+review` | `graph.ingest.query.*`, `graph.index.query.*` and `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
 | `verify` | The `graph` root package imports no NATS client, directly or transitively | `graph-transport-boundary` spec |
 | `verify+review` | Predicates (3 parts), literal entity IDs (6 parts, <=256B), entity patterns/prefixes, and NATS KV keys/filters pass shared validators at entry; sort/dedup before limit; no partial readiness | `dev`, `rev` |
 | `verify+review` | Only `graph-ingest` writes domain entities to `ENTITY_STATES`; other code emits `graph.Graphable` or writes its own `graph/kvcatalog` bucket; single-valued predicates replace | `dev`, `rev`; `graph-entity-writes` spec |

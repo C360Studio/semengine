@@ -334,8 +334,10 @@ set, only `health`, `list` and `status/{name}` are served, and every other path 
 | `/components/validate` | the composition check's result: status, errors and warnings |
 | `/components/paths` | for each input component, every component reachable from it, with counts |
 
-`flowgraph`, `validate` and `paths` project the result kept when the manager was built and compute nothing, so they
-cannot disagree with the check that admitted the boot (ADR-100). `GetFlowPaths` is the same projection as a call.
+All three read the composition result kept when the manager was built, so they cannot disagree with the check that
+admitted the boot (ADR-100). `validate` serves that result as is. `flowgraph` serves its graph, as JSON or as
+`composition.Mermaid`. `paths` serves `composition.FlowPaths` of its graph, with counts of that answer (the number of
+inputs, the longest path, the total and the average). `GetFlowPaths` is the same answer as a call.
 `BuildComponentTypeCatalog(registry, logger)` returns what `/components/types` serves, for a product that serves the
 catalog elsewhere. `GetComponentStatus` and `ComponentStatus` are read inside this package only.
 

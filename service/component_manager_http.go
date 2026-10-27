@@ -620,9 +620,11 @@ func (cm *ComponentManager) writeJSON(w http.ResponseWriter, value any, what str
 	}
 }
 
-// handleFlowPaths projects reachability from the boot composition's input
-// components. Like the graph and validation handlers it serves the result
-// kept at construction; nothing is recomputed and no severity is derived.
+// handleFlowPaths serves composition.FlowPaths of the kept boot result's
+// graph, with counts of that answer. Like the validate handler (the kept result
+// as is) and the flowgraph handler (its graph, as JSON or composition.Mermaid),
+// it serves the result kept at construction and derives no graph, reachability
+// or severity of its own.
 func (cm *ComponentManager) handleFlowPaths(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)

@@ -1,7 +1,11 @@
 package service
 
 import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -84,7 +88,7 @@ func TestFlowPathsTraverseTheRetainedGraph(t *testing.T) {
 	}
 	require.Len(t, paths, len(want),
 		"paths = %#v; want one entry per origin: a declared input type, a network-listening port, and an "+
-			"outbound HTTP-client port. Each is a separate arm of isInputNode and each can be deleted "+
+			"outbound HTTP-client port. Each is a separate arm of composition.FlowPaths' origin rule and each can be deleted "+
 			"independently, so all three are asserted", paths)
 	for origin, expected := range want {
 		reachable, ok := paths[origin]
@@ -93,4 +97,76 @@ func TestFlowPathsTraverseTheRetainedGraph(t *testing.T) {
 			"%q must reach the whole downstream chain in depth-first order; a wrong or missing edge shows up here",
 			origin)
 	}
+}
+
+// TestFlowPathsRouteServesTheLibraryAnswer asks the /components/paths route itself and checks
+// the whole body against hand-written values (design D2, task 2.1). It was written and passed
+// before composition.FlowPaths existed, so it shows the route's answer is unchanged by the move.
+//
+// The two origins reach paths of different lengths, so the average is not a whole number:
+// "long" reaches long -> relay -> sink (3) and "short" reaches short -> sink (2). That gives two
+// origins, a longest path of 3, 5 reachable in total and an average of 5/2 = 2.5, which a float64
+// holds exactly, so it is compared exactly.
+func TestFlowPathsRouteServesTheLibraryAnswer(t *testing.T) {
+	origin := func(subject string) *portFactsDiscoverable {
+		return &portFactsDiscoverable{
+			inputs: []component.Port{{
+				Name: "tick", Direction: component.DirectionInput,
+				Config: component.TimerPort{Interval: "30s"},
+			}},
+			outputs: []component.Port{{
+				Name: "out", Direction: component.DirectionOutput,
+				Config: component.NATSPort{Subject: subject},
+			}},
+		}
+	}
+	relay := &portFactsDiscoverable{
+		inputs: []component.Port{{
+			Name: "in", Direction: component.DirectionInput,
+			Config: component.NATSPort{Subject: "paths.route.raw"},
+		}},
+		outputs: []component.Port{{
+			Name: "out", Direction: component.DirectionOutput,
+			Config: component.NATSPort{Subject: "paths.route.done"},
+		}},
+	}
+	sink := &portFactsDiscoverable{
+		inputs: []component.Port{{
+			Name: "in", Direction: component.DirectionInput,
+			Config: component.NATSPort{Subject: "paths.route.done"},
+		}},
+	}
+
+	mux := http.NewServeMux()
+	newProjectionComponentManager(t, component.NewRegistry(),
+		projectionComponent{name: "long", componentType: types.ComponentTypeInput, instance: origin("paths.route.raw")},
+		projectionComponent{name: "short", componentType: types.ComponentTypeInput, instance: origin("paths.route.done")},
+		projectionComponent{name: "relay", componentType: types.ComponentTypeProcessor, instance: relay},
+		projectionComponent{name: "sink", componentType: types.ComponentTypeOutput, instance: sink},
+	).RegisterHTTPHandlers("/components/", mux)
+
+	recorder := httptest.NewRecorder()
+	mux.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/components/paths", nil))
+	require.Equal(t, http.StatusOK, recorder.Code, "body: %s", recorder.Body.String())
+
+	var body struct {
+		Timestamp  string              `json:"timestamp"`
+		Paths      map[string][]string `json:"paths"`
+		Statistics map[string]float64  `json:"statistics"`
+	}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &body), "body: %s", recorder.Body.String())
+
+	require.Equal(t, map[string][]string{
+		"long":  {"long", "relay", "sink"},
+		"short": {"short", "sink"},
+	}, body.Paths)
+	require.Equal(t, map[string]float64{
+		"input_component_count": 2,
+		"max_path_length":       3,
+		"total_reachable":       5,
+		"avg_path_length":       2.5,
+	}, body.Statistics, "statistics must count the paths answer: origins, longest path, sum and sum/origins")
+
+	_, err := time.Parse(time.RFC3339, body.Timestamp)
+	require.NoError(t, err, "timestamp %q must parse as RFC 3339", body.Timestamp)
 }

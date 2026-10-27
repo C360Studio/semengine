@@ -127,6 +127,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md`; `dev`, `rev` |
 | `review` | Generated runs record seed, completed checks, and replayable failure; assertions are shown to run; histories check against a reference model | `docs/testing.md`; `dev`, `rev` |
 | `review` | Mutation checks report survivors/inconclusive runs as such, never as detections; fuzz seed replay and exploration report apart; PRs record uncovered cases | `docs/testing.md`; `dev` |
+| `verify+review` | Production code creates JetStream consumers only via natsclient's policy entry points, called only from allowlisted files (#422) | `harness-boundaries` spec |
 
 ### 4. Porting and architecture
 

@@ -46,6 +46,9 @@ readonly targets=(
   "service merged"
   # port-composition design, "Ledger, coverage, issues, order" (03B D10's list).
   "composition unit"
+  # setup-04a-04-graph-roots-objectstore-store design D9: the Store is a consumer-facing storage primitive; its
+  # unit and integration lanes test different code.
+  "storage/objectstore merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

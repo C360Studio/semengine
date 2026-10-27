@@ -36,10 +36,10 @@ passes on a clean tree at its commit (#171).
 
 ## 4. Ledger, records and docs
 
-- [ ] 4.1 Ledger rows of design D11 (`storage/objectstore` new, `storage` to `adapt`, `internal/cache` importer count,
+- [x] 4.1 Ledger rows of design D11 (`storage/objectstore` new, `storage` to `adapt`, `internal/cache` importer count,
   `docs/adr/063-…` new). Gate: `task ledger:check`.
-- [ ] 4.2 Carry ADR-063 into `docs/adr/` with its port note (design D11; closes #321). Gate: `task docs:check`.
-- [ ] 4.3 `storage/doc.go` and `storage/storage.go` examples, `Put` and `Delete` docs (#280 item 1, probe P4); the
+- [x] 4.2 Carry ADR-063 into `docs/adr/` with its port note (design D11; closes #321). Gate: `task docs:check`.
+- [x] 4.3 `storage/doc.go` and `storage/storage.go` examples, `Put` and `Delete` docs (#280 item 1, probe P4); the
   `Close` text in `storage/storeregistry/storeregistry.go:19-21`, `:74-75` and `storage/doc.go:86`,
   `:208`; package `doc.go`, `README.md`, `ExampleNewStoreWithConfig`; `docs/repository-map.md` row; the
   `ContentStorable` doc
@@ -48,7 +48,7 @@ passes on a clean tree at its commit (#171).
   bullet
   in the developer and reviewer contracts, with its row in `AGENTS.md` and `.agents/rules-index.md`, gate `review`
   (design D2, D11). Gate: `task docs:check`, the adapter guard and the rules-index guard in `task verify`.
-- [ ] 4.4 `storage/objectstore merged` in `scripts/cover-check.sh` (design D9). Gate: `task cover:check` after
+- [x] 4.4 `storage/objectstore merged` in `scripts/cover-check.sh` (design D9). Gate: `task cover:check` after
   `task test:integration`.
 
 ## 5. Evidence and review

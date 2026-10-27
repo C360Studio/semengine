@@ -1,0 +1,460 @@
+# ADR-063: Store-as-substrate & the `StorageInstance` resolver
+
+> **Ported from SemStreams.** This record is `docs/adr/063-store-substrate-and-resolver.md` at SemStreams commit
+> `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It is carried for `setup-04a-04-graph-roots-objectstore-store` (the
+> `storage/objectstore` Store port, draft PR #432), which retires issue #321. Its admission-ledger row is
+> `docs/adr/063-store-substrate-and-resolver.md` in `docs/admission-ledger.yaml`. The decision text below is
+> unchanged except for line wrapping, list markers and one code-fence language, which `task docs:check` requires.
+> Read it with these facts about this repository:
+>
+> - Issue and pull request numbers, file and line references, and `openspec/changes/...` paths in the text are
+>   SemStreams' or a sister repository's, not SemEngine's. ADR-047, ADR-048, ADR-055 and ADR-062 are not carried.
+> - Ported here: `storage` (the `Store` and `StreamableStore` interfaces), `storage/storeregistry` (the registry
+>   that resolves `StorageReference.StorageInstance`) and `storage/objectstore` (the Store). Not ported yet: the
+>   objectstore Component, graph-embedding and fusion, which the text names as the registry's users.
+> - Kept: the instance name stamped as `StorageInstance`, the registry, resolving per fetch and not caching a
+>   resolved handle, and the read contract that opening a reference returns the raw body. `StoreContent` now keeps
+>   that contract too: it stores only the `body` role's text as raw bytes, so the reference opens to exactly that
+>   text, and it refuses any other non-empty field or role, and any non-empty binary field, before writing. The
+>   SemStreams Store wrote a JSON envelope.
+> - Changed: the Store has no `Close`, and no data cache of its own (owner ruling, PR #432 comment 6446982969), so
+>   the text on the objectstore Component closing its store on `Stop` (pin lines 157-158) and on the registrant
+>   owning `Close` (pin line 256) describes nothing here. A store a registrant owns is closed by its registrant only
+>   when that store has a `Close`; `objectstore.Store` has none. The text's rule against caching a resolved handle
+>   is about the registry's borrowers and still applies.
+> - Open: multi-instance objectstore naming (the "Multi-instance objectstore naming" bullet of "Open
+>   questions": thread the registry key into the factory or stay single-instance). It belongs to the Component and
+>   is decided in `setup-04a-04-graph-roots-objectstore-component`. `objectstore.Config.InstanceName` defaults to
+>   the bucket name and is set by the owning code.
+
+## Status
+
+**Accepted — 2026-07-02. Graph-embedding resolution policy superseded by the owner-approved
+ruling #875 — 2026-08-11.** Scopes gh#415 (shared `{StorageInstance → storage.Store}`
+resolver — converge fusion + embedding content fetch). Follow-on to ADR-062 (deterministic
+graph fusion) increment-6 convergence; parent gh#376, tracker gh#411. Companion to the
+already-shipped loud-fix for the silent case (gh#414, #416).
+
+**Owner-approved #875 supersession (2026-08-11).** For graph-embedding,
+`StorageReference.StorageInstance` resolved through the live `StoreRegistry` is the sole
+body-store authority. A registry miss never selects an unnamed or merely wired store. It is
+recorded as content-unresolved, excludes only the offloaded body, and continues with inline
+identity text or the existing no-text skip; the miss alone does not create failed/degraded
+embedding state. Once the exact instance resolves, an `Open` or `Read` error remains a real
+content failure with existing failed/degraded accounting. Graph-embedding does not construct,
+own, or close a second content-store handle. This paragraph is binding wherever the
+historical decision context below describes an earlier graph-embedding state.
+
+**Review outcome (2026-07-02).** A pre-Accept adversarial review verified every factual
+claim against code and returned one BLOCKING + two HIGH findings, all resolved here:
+
+- **B1 (blocking) — reconfig vs. exclusive ports.** `cm.unregisterPorts` is called ONLY
+  from `RemoveComponent` (`component_manager.go:719`); the reconfig
+  (`restartComponentWithNewConfig`) and reconcile-stop (`stopAndRemoveComponent`) paths
+  delete the component + `registry.UnregisterInstance` but never clear `cm.resources`. So an
+  **exclusive** `store-provide` port would make a restarted owner fail its own
+  `checkPortConflicts` and silently fall back to old config. **Resolution:** `store-provide`
+  is **non-exclusive**; duplicate-ownership detection moves to registry-population time (we
+  own those hooks). The pre-existing `unregisterPorts` asymmetry (latent for `NetworkPort`
+  too) is filed as separate framework work (gh#417), not a dependency of this ADR.
+- **H1 — port token vs. registry key.** The registry keys on `store.InstanceName()` (what
+  refs carry); the `store-provide` token is declared by the component from its OWN internal
+  instance name (the same value), never the ComponentManager map-key. Token, registry key,
+  and ref value are one value by construction.
+- **H2 — behavior change.** The registry wiring was **behavior-changing by design**:
+  offloaded bodies whose exact owner registered became eligible to resolve and embed. This
+  did not authorize an alternate store when that exact owner was absent. See Consequences.
+
+**Phase 1 validated on `e2e:semantic` (2026-07-02).** `Scenario completed successfully`,
+`validation_errors:0`, `embedding_failed_total:0`. The registry path was exercised live:
+`content_resolved_total:189` (offloaded bodies fetched via the registry — previously excluded
+under `configs/semantic.json`, which wires no `store-read`), `content_resolve_error_total:0`,
+`content_unresolved_total:0`. The H2 inclusion is demonstrated, not just non-regressive.
+
+## Decision
+
+Treat a **Store as a data-plane substrate that lives *below* the flow layer**, and give
+the framework a single authoritative way to resolve the federation name a `StorageRef`
+carries — `StorageInstance` — to a live store handle. Three complementary layers:
+
+1. **Substrate** — `storage.Store` / `storage.StreamableStore` stay pure byte-storage
+   interfaces. A store is not a flow participant; it has no ports, no flowgraph
+   presence, no lifecycle stages. It is the moral equivalent of a DB connection that a
+   component holds and calls in-process.
+
+2. **Declaration (ports)** — add a **`store-provide:<instance>`** (non-exclusive) port so a
+   storage component declares *"I own store instance X"*, and evolve **`store-read`** so
+   a consumer declares read access — either to a specific instance (static edge) or to
+   the store federation (capability edge, for federated consumers that read whatever
+   instance a ref names). Ports remain **declarations**: flowgraph visibility, reconfig
+   triggers, and — new here — the **population source for the registry**. Duplicate-ownership
+   detection lives at registry-population time (not on the exclusive-port path, which is
+   reconfig-fragile — see B1).
+
+3. **Resolution (registry)** — a small concurrent-safe **`StorageInstance →
+   storage.StreamableStore`** registry, injected through `component.Dependencies`,
+   **populated by the ComponentManager from `store-provide` ports at component Start and
+   torn down at Stop**, and **resolved lazily per-fetch** by consumers (graph-embedding,
+   fusion). The registry is the live handle-lookup the data plane calls; it is *fed by*
+   the flow model's own declarations, so reconfig-correctness falls out of the manager's
+   existing lifecycle ownership.
+
+The registry **interface is the deployment seam**: in-process it holds local
+`objectstore.Store` handles (fast, streaming); a standalone/remote consumer populates the
+*same* interface with a NATS-backed remote store. We do not pick a single transport — we
+make the handle's backend pluggable behind `StorageInstance → StreamableStore` and keep
+the data plane in-process wherever it can be.
+
+`pkg/fusion` stays a leaf (imports only `message` + `storage`); its `StoreResolver`
+interface is unchanged and the populated registry satisfies it.
+
+## Context
+
+### The problem: `StorageInstance` is a name, not an address
+
+A `message.StorageReference` carries `{StorageInstance, Key, …}`. gh#400 canonicalized
+`StorageInstance` to the **producing component's instance name** (`objectstore.Store.
+InstanceName()`, `store.go:73`) — *deliberately decoupled from the bucket*. So a consumer
+holding `ref.StorageInstance` **cannot derive a handle on its own**: it doesn't know the
+bucket, the backend (ObjectStore today; a filestore/S3 tomorrow), or the connection. Only
+the owning component knows that, and it can change at runtime (reconfig swaps the
+instance; a future backend swap changes the physical binding entirely).
+
+That is what rules out every registry-free alternative:
+
+- *Each reader builds its own handle from the ref* → needs the bucket, which it can't get
+  from the instance name → circular; and the handle wouldn't track the owner's reconfig
+  (built once at the reader's Start).
+- *Reconstruct-on-demand* → same "name isn't an address" wall, and provably wrong the
+  moment the owner switches backend or bucket.
+
+So a central authority is **mandatory, not convenient**: it is the one place the owner
+publishes *"instance X = this live handle, right now,"* and readers resolve current truth
+instead of guessing or caching a stale derivation. **Reconfig is the forcing function.**
+
+### Original gap (gh#414 / gh#415; closed for graph-embedding by #875)
+
+At the time of the original ADR, two content-fetch paths were each half-built:
+
+- **fusion** (`pkg/fusion/hydrate.go`, ADR-062 #399) defines `StoreResolver`
+  (`Store(instance) (storage.Store, bool)`) + `MapStoreResolver` + `BodyResolver`, but
+  **nothing populates them in production** — `MapStoreResolver` appears only in hydrate.go
+  and tests. Dormant seam.
+- **graph-embedding** privately constructed one bucket handle and ignored the reference's
+  `StorageInstance`, so a ref naming another instance could not be fetched and its offloaded
+  body was excluded from embedding and search.
+
+gh#414 made the silent case **loud** (metric `graph_embedding_content_unresolved_total`
+and a one-shot warning, #416). The owner-approved #875 implementation closed the
+graph-embedding gap: it resolves only the exact live `StorageInstance` through
+`StoreRegistry`, with the unresolved and resolved-failure outcomes defined above.
+
+### Stores are already a below-the-flow substrate (grounded)
+
+This was not a new architectural stance — it made the existing substrate pattern explicit:
+
+- **`store-read` is a declaration, not an edge.** `StoreReadPort` (`port_store.go`)
+  carries only `{Bucket, Interface}`, `IsExclusive()==false`, `ResourceID
+  "store-read:BUCKET"`. It is a config marker with a resource id for conflict tracking. It
+  produces **no wired edge today** — precisely: `classifyInteractionPattern`
+  (`flowgraph/flowgraph.go`) has no case for it, so it falls through to `default:
+  PatternStream` with the junk connection id `"unknown_type_component.StoreReadPort"`, and
+  `connectStreamPorts` never matches it because no output port carries that id. So the
+  absence of an edge is a fallthrough side-effect, not a designed classification — which is
+  why increment 5 (static/federation edges) is a real flowgraph-classification change, not
+  free visibility (see Migration).
+- **Components can hold store handles and call them in-process.** `agentic-loop` was one
+  original example. Graph-embedding now borrows the exact owner's live handle through
+  `StoreRegistry`; it does not privately reconstruct a body store from a bucket declaration.
+- **This is how the whole data plane works** — not special to stores. graph-embedding gets
+  its KV access the same way (`natsClient.CreateKeyValueBucket`, `js.KeyValue`,
+  `bucket.WatchAll` — `component.go:474,822,841`). **Ports are declarations** (visibility,
+  conflict detection, stream derivation, reconfig triggers); **actual data access is an
+  in-process handle the component pulls from natsClient.** NATS is *encapsulated inside*
+  the handle.
+
+So a store registry introduces **no new NATS reach** — components already encapsulate NATS
+inside these handles. It changes only *where the handle comes from*: shared-from-owner vs
+privately-reconstructed, keyed by the federation identity instead of a static bucket name.
+
+### Reconfig, precisely
+
+Runtime config change is honored by `restartComponentWithNewConfig`
+(`component_manager.go:1256`): Stop old → cancel ctx → unregister → create-with-new-config
+→ start. A config change **replaces the instance**; on Stop, the objectstore Component
+`Close()`s its store (`Close` defined `store.go:371`, called from objectstore `component.go:291` Stop). That is
+exactly the
+point a registry must respect, and it dictates the registry's lifecycle contract (below).
+
+## The three layers
+
+### 1. Substrate — unchanged interfaces
+
+`storage.Store` (Put/Get/List/Delete) and `storage.StreamableStore` (adds `Open`) stay as
+they are (`storage/storage.go`). `objectstore.Store` implements both (`store.go:24-27`).
+No store gains ports or flowgraph presence. The registry keys **`StreamableStore`** (the
+superset — objectstore implements it), which reconciles the type mismatch: fusion's
+`StoreResolver.Store()` returns `storage.Store` and is satisfied by auto-upcast; embedding
+needs `Open` and gets it directly. One registry, both consumers.
+
+### 2. Declaration — the `store-provide` / `store-read` port pair
+
+**`store-provide:<instance>` (new, NON-exclusive).** A storage component declares the
+instances it owns. The token is derived by the component from **its own internal instance
+name** (the value it stamps into refs via `store.InstanceName()`) — never the
+ComponentManager map-key — so the port token, the registry key, and the ref's
+`StorageInstance` are the **same value by construction** (resolves H1). Two jobs:
+
+- **Flowgraph visibility** of ownership — statically true, cleanly declarable.
+- **Population source for the registry** — the ComponentManager, which already owns
+  Start/Stop/reconcile, reads a started component's provide-ports, obtains the live handle
+  via a narrow provider interface, and registers it. Register-on-Start / deregister-on-Stop
+  becomes a **structural property of the manager**, not something each store component
+  re-implements. This is the ports-are-declarations model applied to stores.
+
+**Why NOT exclusive (B1).** An earlier draft made `store-provide` exclusive to catch
+duplicate ownership at `checkPortConflicts`. Adversarial review found this unsafe: the
+manager calls `unregisterPorts` **only** from `RemoveComponent` (`component_manager.go:719`);
+the reconfig (`restartComponentWithNewConfig`) and reconcile-stop (`stopAndRemoveComponent`)
+paths delete the component + `registry.UnregisterInstance` but leave `cm.resources` stale.
+An exclusive `store-provide:X` would therefore make a *restarted* owner collide with its own
+lingering entry and fail reconfig — the exact silent-fallback this ADR exists to prevent.
+So **duplicate-ownership detection moves to registry-population time**: `Register(instance,
+handle)` errors (loud, at Start) if `instance` is already held by a different live
+component. This keys on the real `InstanceName()`, is owned by the hooks we add (so the
+reconfig swap is correct by construction — deregister-on-Stop then register-on-Start), and
+does not depend on the manager's `cm.resources` symmetry. The pre-existing `unregisterPorts`
+asymmetry (which also makes any exclusive port — today only `NetworkPort` — reconfig-fragile)
+is filed as **separate framework work (gh#417)**, not a prerequisite here.
+
+**`store-read` (evolve).** Consumer read declaration, two flavors:
+
+- **Specific instance** (static consumer, e.g. a fixed single content bucket) → a real
+  static edge; a strict upgrade over today's bucket-keyed `store-read`, now keyed by
+  instance so it lines up with what refs carry.
+- **Federation** (federated consumer — embedding, fusion — reads *whatever instance a ref
+  names*) → a **capability edge**: "reads from the store federation." The specific instance
+  is chosen by the producer at runtime, so this is the honest declaration.
+
+The resulting graph is a **bipartite federation**:
+
+```text
+[objectstore-A] ─provide─┐
+[filestore-B]   ─provide─┤→ (store federation / registry) →┌─read─ [graph-embedding]
+[objectstore-C] ─provide─┘                                 └─read─ [fusion gateway]
+```
+
+Every provider→federation and federation→consumer edge is graphed. The **only** thing that
+stays dynamic is the *exact* runtime pairing (embedding read instance-C for entity-42) —
+inherent to federation, and not a gap: you need "who can provide" and "who can consume,"
+which the ports give you; nobody needs the per-ref edge statically.
+
+### 3. Resolution — the registry contract
+
+A small type (proposed home: `storage/storeregistry`, keeping `storage` a leaf and
+`pkg/fusion` a leaf):
+
+```go
+// StoreRegistry maps a StorageReference.StorageInstance to the live store that
+// backs it. Concurrent-safe. Populated by the ComponentManager from store-provide
+// ports; resolved lazily per-fetch by consumers.
+type StoreRegistry interface {
+    // Streamable returns the streaming store for instance, and whether one is
+    // registered right now. Consumers MUST call per-fetch and MUST NOT cache the
+    // handle (see the lifecycle contract).
+    Streamable(instance string) (storage.StreamableStore, bool)
+}
+```
+
+The concrete impl also satisfies `fusion.StoreResolver` (`Store(instance) (storage.Store,
+bool)`) by upcast, so fusion consumes the same registry with no change to `pkg/fusion`.
+
+**Lifecycle contract (the two rules that keep it flow-consistent):**
+
+1. **Register on Start, deregister on Stop** — the entry is lifecycle-bound to the owning
+   component and owned by the manager. A reconfig (Stop→Start of a fresh instance) *swaps*
+   the entry automatically, via the same restart mechanism that already honors reconfig for
+   components.
+2. **Consumers resolve per-fetch (lazy), never cache the handle** — body fetch is already
+   per-entity at runtime, so this is natural. Each fetch gets the *current* handle; a
+   stale/closed handle is never held. A fetch racing owner shutdown observes either a
+   registry miss, which excludes only the body without failed/degraded accounting, or an
+   `Open`/`Read` error after resolution, which remains a real content failure.
+
+**Ownership.** The registrant (owner) owns `Close`; **borrowers must not Close**. This is a
+property of the borrowing contract. Graph-embedding constructs no separate body store and
+never closes the handle borrowed from `StoreRegistry`.
+
+**Injection.** A new nil-able `component.Dependencies.StoreRegistry` field (PayloadRegistry
+/ LifecycleManager precedent — a framework-owned leaf type, not a pluggable external
+surface). It is **constructed and owned by the `ComponentManager`** (`storeregistry.New()` in
+the constructor) and injected via the single `buildComponentDependencies`, so every binary
+that runs components through the manager gets a populated registry with no per-`main.go`
+wiring to forget — this deliberately sidesteps the half-migrated-`main` failure class (a
+`cmd/` that gets the wiring while another doesn't). A nil registry cannot resolve an
+offloaded body and follows the same observable unresolved/excluded identity-only or no-text
+behavior; it does not authorize another store. A standalone/remote consumer that does NOT
+use the ComponentManager constructs and populates its own registry instance.
+
+**In-process / remote seam.** In-process, the registry holds local `objectstore.Store`
+handles (direct method call, streaming). A standalone consumer (standalone fusion service,
+semsource ADR-0006) populates its *own* registry with a NATS-backed remote store that
+implements `StreamableStore` by RPC to the owner's store port. The framework ships the type
+and in-process population; remote-handle wiring is the cross-process consumer's job.
+
+### Read contract (raw body, not envelope)
+
+Orthogonal to resolution but recorded so producers and readers agree: **the store a ref
+points at holds the RAW body bytes at `Key`** (written via `Put` / the fusion `CONTENT`
+bucket, gh#395), *not* a `StoreContent` JSON envelope (whose `map[string]string` fields
+corrupt non-UTF-8 and would embed as JSON noise). Consumers read raw via `Get`/`Open`.
+Embedding already warns when a read starts with `{` (`worker.go:421`) — that stays as the
+guard. The resolver does not unwrap envelopes; the write-format contract is the producer's
+responsibility.
+
+**Observability — keep the two failure classes distinct (M1).** gh#414's
+`graph_embedding_content_unresolved_total` means *"no store registered for this instance"*.
+That miss excludes the offloaded body and continues through inline identity or no-text
+behavior; it is not failed/degraded solely because the name is unresolved. A registered
+store that errors mid-fetch (network blip, bucket deleted, closed-mid-fetch) is a
+**different class** — a real infrastructure/content failure. Keep the distinct observable —
+`graph_embedding_content_resolve_error_total` (instance resolved, fetch errored) — separate
+from `content_unresolved` (instance not registered). An operator must be able to tell a
+missing registration from a failing backend.
+
+## Consequences
+
+### Positive
+
+- **Federation actually works** — a ref naming any provided instance resolves; offloaded
+  bodies stop being silently excluded from embeddings/search (closes the gh#414 class at the
+  root, not just loudly).
+- **One resolver, both consumers** — fusion's dormant hydration activates and embedding's
+  instance-blind fetch is retired, via the same registry.
+- **Reconfig-correctness is structural** — owned by the manager's existing lifecycle, not
+  re-implemented per store component. *More* correct than today (today a `store-read` bucket
+  change is only honored if the consumer itself restarts).
+- **Ownership conflicts are loud** — registry-population-time detection turns duplicate
+  ownership into a startup error at `Register` instead of a silent registry clobber (and
+  without the reconfig-fragile exclusive-port path — B1).
+- **Flowgraph keeps its story** — store edges become a visible provider→federation→consumer
+  bipartite structure instead of invisible in-process reach.
+- **Leaves stay leaves** — `pkg/fusion` and `storage` unchanged as leaf packages; the
+  registry and manager wiring live where the coupling already is.
+- **One body-store authority** — graph-embedding resolves only the exact registered
+  `StorageInstance`; it does not build, own, or close another store handle.
+
+### Negative / cost
+
+- **Behavior-changing by design (H2)** — this is additive in wiring but NOT output-neutral.
+  Configs that wire no `store-read` today (e.g. `configs/semantic.json`) currently EXCLUDE
+  offloaded bodies from embeddings (loud since gh#414); once refs resolve through the
+  registry, those bodies WILL embed — shifting BM25/neural embedding and search output for
+  the semantic tier. That is the intended gh#414 root fix, not a regression, but golden /
+  search assertions may move and the `e2e:semantic` gate is mandatory before tag. Make the
+  newly-included content observable (the resolve metric above); this is the *inclusion*
+  mirror of `feedback_gate_silent_exclusion_flips_with_cost_ledger` — same discipline: the
+  output delta must be observable, not silent.
+- **The exact runtime store edge is not statically graphable** — inherent to federation
+  (producer chooses the instance). Mitigated to a capability edge by the ports, but the
+  per-ref pairing is dynamic by nature.
+- **Cross-component lifecycle coupling** — a borrowed handle dies when its owner stops. Lazy
+  per-fetch lookup observes the current registry: a miss loudly excludes only the body and
+  a resolved-store `Open`/`Read` error remains a real failure. The coupling is explicit.
+- **New surface** — a port type, a provider interface, a registry type, and manager wiring.
+  More than "component calls `registry.Register` in Start" — bought deliberately for
+  flowgraph visibility + manager-owned reconfig correctness + ownership-conflict detection.
+
+### Risks
+
+- **Ordering** — a reference may arrive before registration or outlive its owner. Lazy
+  lookup observes current membership; an exact miss is unresolved/excluded and never selects
+  another store. A later entity delivery may resolve after the owner registers.
+- **Handle staleness** — mitigated by the no-cache rule for BORROWED handles: the worker
+  resolves the registry per-fetch and never stores or closes the resolved handle. Enforce
+  with a test that a post-reconfig fetch resolves the new handle and never closes a borrowed
+  store.
+- **Instance-name drift** — the objectstore factory currently hardcodes
+  `instanceName := "objectstore"` (`component.go:135`) and does not receive the
+  ComponentManager map-key; the registry keys on `store.InstanceName()` (the value actually
+  stamped into refs), so it is robust to that drift. But `store-provide:<instance>` should
+  derive from the *store's* instance name, not the map-key, to stay aligned. (Worth a
+  follow-up to thread the map-key into the factory so multi-instance objectstore gets
+  distinct names — out of scope here.)
+
+## Migration path (increments)
+
+Additive in wiring but output-changing where refs newly resolve (H2); `e2e:semantic`
+(touches the embedding path) is **mandatory** before any tag, per the breaking-change
+discipline — the tier covers the seam and will surface embedding/search output shifts.
+
+1. **Registry type + Dependencies field** — `storage/storeregistry` + nil-able
+   `Dependencies.StoreRegistry`, built in both `cmd/` mains. No consumer yet.
+2. **`store-provide` port + manager population** — non-exclusive port type, narrow provider
+   interface (`ProvidedStores() map[string]storage.StreamableStore`) on storage components,
+   ComponentManager `syncStoreRegistry` helper wired into `startSingleComponent` (register)
+   and `stopAndRemoveComponent` / `restartComponentWithNewConfig` (deregister). objectstore
+   Component declares `store-provide:<instance>` (token from its own instance name) and
+   exposes its handle. Duplicate-ownership → loud error at `Register`.
+3. **graph-embedding consumption (#875 target, owner-approved 2026-08-11)** — inject a
+   narrow `StoreResolver` into the `Worker` and resolve
+   `resolver.Streamable(ref.StorageInstance)` **per-fetch** inside `fetchTextFromStorage`.
+   The exact registry-resolved handle is borrowed, never cached, and never closed by the
+   worker. Remove the separately constructed content store and its close path. A registry
+   miss increments content-unresolved, excludes only the body, and continues through inline
+   identity or no-text behavior without failed/degraded accounting solely for the miss. An
+   `Open`/`Read` error after exact resolution remains a real content failure. Add no alternate
+   resolution route.
+4. **fusion adapter-ready** — the registry satisfies `fusion.StoreResolver`; wiring can pass
+   it to `NewBodyResolver`. The **live** fusion cmd/ consumer (gateway/tool building
+   `Engine` + `BodyResolver`) stays semsource convergence #6 (gh#411) — mirrors the B2
+   adapter-without-live-consumer pattern (`feedback_dont_ground_on_no_producer_in_framework_binaries`).
+5. **`store-read` federation flavor (Phase 2 — DONE, advisory).** A new `PatternStore`
+   interaction pattern: `classifyInteractionPattern` + `extractConnectionID` classify
+   `StoreProvidePort` (connID `store:<instance>`) and `StoreReadPort` (connID
+   `store-federation`); a `connectStorePorts` pass renders the federation as fan-in edges
+   (every store-provide → every store-read — advisory "can read from", since the exact
+   instance is producer-chosen per-fetch); `findOrphanedPorts` skips `PatternStore` (a store
+   with no reader, or a federation store-read, is not an orphan — closes the L1 cosmetic
+   wart). graph-embedding declares a `store-federation` store-read for visibility. Purely
+   flowgraph/visibility — **no runtime effect** (the worker resolves via the injected
+   registry regardless). Fusion's live cmd/ consumer remains semsource convergence #6.
+
+## Open questions
+
+- **Provider interface shape** — the registry is a **standalone injectable type** (the noun);
+  **`ComponentManager` owns population** (the verb), hooked next to the existing
+  `registerPorts`/`unregisterPorts` calls in `startSingleComponent` /
+  `stopAndRemoveComponent` / `restartComponentWithNewConfig`. No separate "store manager" —
+  that would be a parallel lifecycle observer with no lifecycle of its own. Open detail:
+  `ProvidedStores() map[string]storage.StreamableStore` on the storage component, read by
+  ComponentManager after Start (leaning this, both register and deregister manager-owned for
+  reconfig symmetry), kept as a small unit-testable `syncStoreRegistry` helper.
+- ~~**Does `store-read` need to be *enforced***~~ — **RESOLVED (advisory), 2026-07-02.**
+  `store-read` is a federation-capability declaration for flowgraph visibility only; a
+  consumer resolves whatever instance a ref names at runtime (no allowlist). Enforcement was
+  rejected: a federated consumer's read-set is producer-chosen and not statically knowable, so
+  an allowlist would force a "read-any" wildcard (advisory with ceremony) and add a runtime
+  check for no isolation need (semstreams isn't store-layer multi-tenant). Implemented in
+  Phase 2 (increment 5).
+- **Multi-instance objectstore naming** — thread the map-key into the factory (retire the
+  hardcoded `"objectstore"`), or leave single-instance-only for now?
+- **Remote store impl** — does semstreams ship a `StreamableStore`-over-NATS reference impl,
+  or leave it entirely to the cross-process consumer? (Out of scope for gh#415; note the
+  seam.)
+
+## Related decisions
+
+- **ADR-062** (deterministic graph fusion) — parent; #399 defined the `StoreResolver` this
+  ADR populates; #400 canonicalized `StorageInstance`.
+- **ADR-047 / ADR-048** — substrate-convention precedent (Lifecycle harness, BoundedDispatcher):
+  framework provides the primitive + lifecycle; apps/consumers own work logic.
+- **ADR-055/056** — StorageRef lifting onto EntityState at the ingest seam (the producer of
+  the refs this resolver consumes).
+
+## References
+
+- gh#415 (this), gh#414 / #416 (loud fix), gh#411 (convergence tracker), gh#376 (parent ask).
+- `pkg/fusion/hydrate.go`, `graph/embedding/worker.go`, `processor/graph-embedding/component.go`,
+  `storage/objectstore/{store,component}.go`, `component/port_store.go`,
+  `service/component_manager.go`.

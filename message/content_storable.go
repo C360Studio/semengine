@@ -13,7 +13,16 @@ package message
 // via ContentFields. This avoids bloating triples with large text and enables
 // efficient embedding extraction without hardcoded field name coupling.
 //
-// Example implementation:
+// What the store keeps: objectstore.Store.StoreContent stores only the text of
+// the "body" role, as raw bytes, and the StorageReference it returns opens to
+// exactly that text. A payload with any other non-empty content (text under a
+// field another role names, an undeclared field, or a non-empty binary field of
+// a BinaryStorable) is refused with an invalid-input error before anything is
+// written. Text that is not the body, such as a title or an abstract, belongs in
+// the graph as triples, which the producer emits from Triples().
+//
+// Example implementation (a document whose only stored content is its body; the
+// title and description reach the graph as triples):
 //
 //	type Document struct {
 //	    Title       string
@@ -28,18 +37,12 @@ package message
 //
 //	func (d *Document) ContentFields() map[string]string {
 //	    return map[string]string{
-//	        "body":     "body",        // semantic role → field name
-//	        "abstract": "description",
-//	        "title":    "title",
+//	        "body": "body", // semantic role → field name
 //	    }
 //	}
 //
 //	func (d *Document) RawContent() map[string]string {
-//	    return map[string]string{
-//	        "title":       d.Title,
-//	        "description": d.Description,
-//	        "body":        d.Body,
-//	    }
+//	    return map[string]string{"body": d.Body}
 //	}
 type ContentStorable interface {
 	Storable // EntityID() + Triples() + StorageRef()
@@ -64,11 +67,12 @@ type ContentStorable interface {
 	// RawContent returns the content to store in ObjectStore.
 	//
 	// Field names in this map should match values in ContentFields().
-	// This is what gets serialized and stored; consumers retrieve it
-	// via StorageRef and use ContentFields to find specific content.
+	// objectstore.Store.StoreContent stores the body field's text as raw
+	// bytes and refuses any other non-empty field (see the type's doc), so a
+	// consumer that opens the StorageRef reads the body and nothing else.
 	//
 	// Example return value:
-	//   {"title": "Safety Manual", "content": "Full document text...", "description": "Brief summary"}
+	//   {"body": "Full document text..."}
 	RawContent() map[string]string
 }
 

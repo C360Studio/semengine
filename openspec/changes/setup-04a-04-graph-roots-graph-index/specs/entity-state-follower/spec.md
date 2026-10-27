@@ -16,7 +16,7 @@ status key, a nil `Deliver` and a nil `Failed`. The gauges' Prometheus subsystem
 
 ### Requirement: Run stops when its context ends and leaves nothing
 
-`Follower.Run` SHALL run on the caller's goroutine until its context ends, then return nil with no watcher, ticker or
+`Follower.Run` SHALL run on the caller's goroutine until its context ends, then return with no watcher, ticker or
 goroutine of its own left. It SHALL refuse a nil context. It SHALL publish the envelope once at once and then every
 `readiness.DefaultHeartbeat`, on a goroutine `Run` joins, so a blocked `Deliver` never delays a heartbeat.
 
@@ -24,6 +24,18 @@ goroutine of its own left. It SHALL refuse a nil context. It SHALL publish the e
 
 - **WHEN** `Run`'s context is cancelled
 - **THEN** `Run` returns nil and no goroutine it started is still running
+- **AND** the test that verifies this is `TestFollowerRunReturnsAndLeavesNothing`
+
+### Requirement: Run returns only after the watch's delivery closes
+
+After stopping the watch, `Run` SHALL wait until the watch's delivery closes, with no fixed timeout in place of that
+wait. It SHALL then return nil, or the watch's `Stop` error when that error says more than that the watch was already
+gone.
+
+#### Scenario: A backlogged watch at cancellation
+
+- **WHEN** `Run`'s context is cancelled while nats.go's watch delivery is blocked on a full updates buffer
+- **THEN** `Run` returns nil only after that delivery has ended
 - **AND** the test that verifies this is `TestFollowerRunReturnsAndLeavesNothing`
 
 ### Requirement: Every delivered revision is observed before it is delivered

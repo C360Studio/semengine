@@ -111,8 +111,10 @@ What a caller observes:
   `StartupAttempts` × `StartupInterval` and then returns a transient error naming the bucket; it opens the bucket
   readers, ensures `GRAPH_STATUS` through `kvcatalog.EnsureCatalogBucket`, and registers the gauges on the injected
   registry. A nil context, nil client, empty key, nil `Deliver` or nil `Failed` is refused.
-- `Run` runs on the caller's goroutine until its context ends, then returns nil, with no watcher and no ticker left
-  (`background-work` spec, the `Run(ctx)` shape `graph/readiness/watcher.go:195` uses). A nil context is refused.
+- `Run` runs on the caller's goroutine until its context ends, then returns with no watcher and no ticker left
+  (`background-work` spec, the `Run(ctx)` shape `graph/readiness/watcher.go:195` uses). It stops the watch and waits,
+  with no fixed timeout, until the watch's delivery closes, so returning is a join (#418). It returns nil, or the
+  watch's `Stop` error when that error says more than that the watch was already gone. A nil context is refused.
   `Run` publishes the envelope once at once, then every `readiness.DefaultHeartbeat`. The heartbeat runs on a
   goroutine of its own, which `Run` starts and joins before it returns, so a `Deliver` parked on a full pool lane never
   delays it. The reason: three missed heartbeats (15 s, `graph/readiness/watcher.go:119-123`, `:237`) make every

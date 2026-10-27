@@ -6,18 +6,18 @@ code of 3.1, so every commit passes `task verify` on a clean tree (#171).
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal, tasks and the `harness-boundaries` delta committed. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Proposal, tasks and the `harness-boundaries` delta committed. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Tests
 
-- [ ] 2.1 The allowlist guards and their sensitivity tests written in `internal/harness/contract`, reading files
+- [x] 2.1 The allowlist guards and their sensitivity tests written in `internal/harness/contract`, reading files
   through `repoFiles` and planting violations with `writeTree`. Gate: with the allowlist emptied, the guard fails
   naming `processor/graph-ingest/consume.go` and `natsclient/stream.go`; the planted-caller cases fail when the check
   returns nil; the output of both is in `notes/2.1.md`. Committed with 3.1.
 
 ## 3. Code
 
-- [ ] 3.1 `natsclient/consumer_policy_callsite_test.go` leaves natsclient; every test it held is in `contract`
+- [x] 3.1 `natsclient/consumer_policy_callsite_test.go` leaves natsclient; every test it held is in `contract`
   (`go test -list '.*'` of the two packages together names each test the file held, except
   `TestParseProductionGoFilesIgnoresClaudeWorktrees`, which has no walker to test). Gate: `task test:unit` passes
   from a checkout with a populated `.worktrees/` (the primary checkout) and from this worktree; `task verify` passes

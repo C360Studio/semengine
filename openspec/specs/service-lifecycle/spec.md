@@ -365,7 +365,7 @@ a test-side adapter.
 
 - **WHEN** a component manager composing a component that follows ADR-113 is started and its `Start` context is then
   cancelled
-- **THEN** the base service, the health publisher, the override reporter and the component's work are all still held,
+- **THEN** the base service, the health publisher and the component's work are all still held,
   and a following `Stop` returns nil
 - **AND** the tests that verify this are `TestComponentManagerPassesTheLifecycleSuite` and
   `TestComponentStartContextIsTheManagersStartContext`
@@ -404,8 +404,8 @@ launched component in reverse launch order; what that rollback could not stop SH
 ### Requirement: The component manager's Stop is the only stop and waits for a Start in progress
 
 `Stop(ctx)` SHALL be the only stop: it SHALL refuse a nil context, return an ended context's error and stop nothing, and
-otherwise stop each lifecycle component with `ctx` in reverse start order, then the health publisher, the override
-reporter and the base service, returning nil only when all are released. A `Stop` during `Start` SHALL wait for every
+otherwise stop each lifecycle component with `ctx` in reverse start order, then the health publisher and
+the base service, returning nil only when all are released. A `Stop` during `Start` SHALL wait for every
 `Start` to return, or return its own context's error first.
 
 #### Scenario: Stop during Start
@@ -516,27 +516,6 @@ publishing SHALL go on. A failed `Start` SHALL launch no publisher.
 - **WHEN** the manager's NATS client is not connected
 - **THEN** each failed publish increments the error count with `type="health_publish"`
 - **AND** the test that verifies this is `TestComponentHealthPublishFailureIsCounted`
-
-### Requirement: A lapsed stream migration override is reported while running
-
-The component manager SHALL register `semengine_streams_migration_override_expired{stream,owner}` through
-`metric.RegisterOrGet` at construction and use the collector it returns. It SHALL evaluate the live configuration's
-stream migration overrides at construction and every minute from `Start` to `Stop`, setting 0 for each declared bridge
-and 1, with a Warn line, for each lapsed one. Readiness SHALL not depend on it. `Stop` SHALL return only after the
-reporter returned.
-
-#### Scenario: An override lapses while running
-
-- **WHEN** a declared bridge's expiry passes while the manager runs
-- **THEN** the gauge for that stream reads 1 at the next evaluation, without a restart
-- **AND** the tests that verify this are `TestOverrideExpiry_CrossesTheDeadlineWithoutRestart` and
-  `TestComponentManagerStartRunsOverrideExpiryReporter`
-
-#### Scenario: Two managers on one registry
-
-- **WHEN** two component managers are built on one metrics registry
-- **THEN** the second's evaluation shows on the gathered gauge family
-- **AND** the test that verifies this is `TestOverrideGaugeUsesTheRegisteredCollector`
 
 ### Requirement: Rule-pack contracts are checked before any injection
 

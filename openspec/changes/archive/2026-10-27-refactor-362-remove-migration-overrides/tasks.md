@@ -80,5 +80,5 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
   - `docs/admission-ledger.yaml`: the `config`, `natsclient` and `service` row edits in design "Ledger", including
     the stale `:3021` #363 sentence.
   - Gate: `task docs:check` and `task ledger:check`.
-- [ ] 3.2 Sync the four spec deltas into `openspec/specs/` and archive, as the last content commit.
+- [x] 3.2 Sync the four spec deltas into `openspec/specs/` and archive, as the last content commit.
   - Gate: `task spec:check` and `task docs:check`.

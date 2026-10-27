@@ -25,11 +25,11 @@ argument, and every judgment SHALL be a finding.
   `TestValidateReportsInterfaceMismatch`, `TestValidateReportsStreamRequirement`,
   `TestValidateReportsConnectionPatternConflict`)
 
-### Requirement: Validation reads no host files and one clock
+### Requirement: Validation reads no host files and no clock
 
 `composition.Validate` SHALL judge the configuration document with `config.Config.ValidateDocument`, so its result does
-not depend on files on the host and it writes nothing to standard error. The one input it reads from outside its
-arguments is the current time, used to judge whether a stream migration override has expired.
+not depend on files on the host and it writes nothing to standard error. It reads nothing from outside its
+arguments.
 
 #### Scenario: Files on the host do not change the result
 

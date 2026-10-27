@@ -716,8 +716,7 @@ NOT fire on a report row disappearing, SHALL name unbounded resources, and SHALL
 #### Scenario: The example alert rules read only published names
 
 - **WHEN** the example rules file is parsed
-- **THEN** every `semengine_storage_*` name an alert reads is one the service publishes (the migration alert reads
-  `semengine_streams_migration_override_expired`, which the component manager publishes), no alert fires on a series
+- **THEN** every `semengine_storage_*` name an alert reads is one the service publishes, no alert fires on a series
   disappearing, unbounded storage is named, every alert has a summary, a description and a `for` window, and at least
   one description states that the report is report-only
 - **AND** the tests that verify this are `TestStorageAlertRules_ReferenceOnlyPublishedMetrics`,

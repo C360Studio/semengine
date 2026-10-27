@@ -72,6 +72,17 @@ Deleting an already-deleted key returns what nats.go returns (nil in the probe, 
 - **THEN** it returns nil
 - **AND** the test that verifies this is `TestDeleteMissingKeySucceeds`
 
+### Requirement: Operation histories match a key-value model
+
+Any sequence of `Put`, `Delete`, `Get` and `List` over one bucket, through one or two Stores, SHALL give the results a
+plain key-value map gives: the last put value, not found after a delete, and the sorted keys under a prefix.
+
+#### Scenario: A generated history
+
+- **WHEN** up to 30 generated operations over overlapping keys run on two Stores over one bucket
+- **THEN** every result equals the model's
+- **AND** the test that verifies this is `TestStoreHistoryMatchesModel`
+
 ### Requirement: List returns sorted keys and an empty list for none
 
 `Store.List` SHALL return the names of the objects whose name starts with the prefix, in lexicographic order, and
@@ -88,11 +99,12 @@ SHALL return an empty, non-nil slice and a nil error when the bucket is empty or
 - **WHEN** objects `c/2`, `a/1` and `b/9` are put in that order and `List` is called with an empty prefix
 - **THEN** it returns `a/1`, `b/9`, `c/2`
 
-### Requirement: StoreContent writes binaries, then the envelope, under unique keys
+### Requirement: StoreContent references the raw body
 
-`Store.StoreContent` SHALL refuse an invalid entity ID before writing. It SHALL write each binary field, then a JSON
-`StoredContent` envelope naming them, under keys that carry a per-call nonce, and SHALL return a reference with the
-Store's instance name, the envelope key, `application/json` and the envelope size.
+`Store.StoreContent` SHALL refuse an invalid entity ID, or a payload with binary fields, before writing. It SHALL write
+only the payload's `body` role text as raw bytes (empty when it names none) under a key with a per-call nonce, and
+SHALL return a reference with the Store's instance name, that key, `text/plain; charset=utf-8` and the body's size.
+Opening the reference SHALL return the body.
 
 #### Scenario: An invalid entity ID
 
@@ -100,11 +112,24 @@ Store's instance name, the envelope key, `application/json` and the envelope siz
 - **THEN** it returns an invalid-input error and the bucket holds no new object
 - **AND** the test that verifies this is `TestStoreContentRefusesInvalidEntityIDBeforeWriting`
 
-#### Scenario: Content with a binary field
+#### Scenario: The reference opens to the body
 
-- **WHEN** `StoreContent` stores a payload with one text field and one binary field
-- **THEN** `Get` of the returned key decodes to a `StoredContent` whose binary reference's key returns the bytes
-- **AND** the test that verifies this is `TestStoreContentWritesBinariesThenEnvelope`
+- **WHEN** `StoreContent` stores a payload with a title, an abstract and a body, and the returned reference is resolved
+  through a store registry and opened
+- **THEN** `Open` returns exactly the body bytes, and the reference's size is the body's length
+- **AND** the test that verifies this is `TestStoreContentReferenceOpensToBody`
+
+#### Scenario: A payload with a binary field
+
+- **WHEN** `StoreContent` is called with a payload that implements `message.BinaryStorable` with one binary field
+- **THEN** it returns an invalid-input error and the bucket holds no new object
+- **AND** the test that verifies this is `TestStoreContentRefusesBinaryFields`
+
+#### Scenario: A payload with no body
+
+- **WHEN** `StoreContent` stores a payload whose content fields name no `body` role
+- **THEN** it returns a reference whose object is empty
+- **AND** the test that verifies this is `TestStoreContentWithoutBodyStoresEmptyObject`
 
 #### Scenario: Many calls for one entity
 

@@ -15,11 +15,14 @@ package has no external-provider code, so the tier-0 ruling (#9 comment 63866036
 
 - Port the Store half of `storage/objectstore`: `Config` (`bucket_name`, instance name, logger), `NewStoreWithConfig`,
   `NewStoreWithConfigAndMetrics`, `Put`, `Get`, `Open`, `List`, `Delete`, `StoreContent`, `InstanceName`, the
-  `StoredContent` and `BinaryRef` envelope types, the no-lifecycle-retention boot guard, and its metrics.
+  no-lifecycle-retention boot guard, and its metrics.
 - Make the Store keep the `storage.Store` contract it implements, which the pin breaks: `List` returns sorted keys and
   an empty list on an empty bucket; `Delete` of a missing key succeeds; `Open` reports a missing object as
   `storage.ErrObjectNotFound`, as `Get` does; every exported call refuses a nil context.
-- `StoreContent` keys carry a per-call nonce, so two writes for one entity never replace each other.
+- `StoreContent` writes the payload's body as raw bytes and returns a reference that opens to it, as ADR-063's read
+  contract requires; the pin wrote and referenced a JSON envelope. It refuses binary fields (no implementer exists),
+  and its keys carry a per-call nonce.
+- Not carried with it: the envelope types `StoredContent` and `BinaryRef`, which nothing then writes or reads.
 - Metrics register through `metric.RegisterOrGet` under `semengine`; the two gauges nothing sets are not carried.
 - Not carried (no reader at the pin or in a consumer): `FetchContent`, `FetchBinary`, `GetMetadata`, `SetDecoder`,
   the `StoredContent` role helpers. By owner ruling (PR #432 comment 6446982969): the in-memory data cache

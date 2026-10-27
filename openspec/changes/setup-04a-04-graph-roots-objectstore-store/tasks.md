@@ -10,8 +10,8 @@ passes on a clean tree at its commit (#171).
 - [x] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 ObjectStore probe (inventory 11, P1-P10) on PR #432: program,
   command, versions and output. Gate: the comment read back. Posted as PR #432 comment 6445520357.
 - [x] 1.3 Owner ruling on design D6: drop the data cache. Ruled at PR #432 comment 6446982969.
-- [ ] 1.4 File G5 (orphan binaries after a partial `StoreContent`, design D13) as an issue, linked from PR #432
-  without a closing keyword. G8 and S27 are 5b's dispositions, not filed. Gate: the issue read back.
+- [x] 1.4 Issues to file: none (design D13). G5 no longer arises and G8 is resolved by `StoreContent`'s raw-body
+  reference (design D4); S27 is 5b's disposition.
 
 ## 2. Tests first
 
@@ -23,8 +23,9 @@ passes on a clean tree at its commit (#171).
 - [ ] 3.1 `config.go`, construction and the retention guard (design D3, D4, D5); `natsfixture` for the integration
   tests (#195). Gate: `go test -race -count=1 ./storage/objectstore`, `task test:integration --
   ./storage/objectstore`.
-- [ ] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, `StoreContent` and the envelope types (design D3, D4). Gate: as 3.1
-  plus `go test -count=5 -cpu 1 -shuffle=on ./storage/objectstore`.
+- [ ] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, and `StoreContent` writing and referencing the raw body (design D3,
+  D4). Gate: as 3.1 plus `go test -count=5 -cpu 1 -shuffle=on ./storage/objectstore`,
+  `TestStoreContentReferenceOpensToBody` and `TestStoreHistoryMatchesModel`.
 - [ ] 3.3 Metrics on the injected registry (design D7). Gate: as 3.1 and the metric-registry guard in `task lint`.
 - [ ] 3.4 No data cache, as ruled in 1.3 (design D6): no `internal/cache` import, no `Config.DataCache`, no
   `Store.Close`. Gate: as 3.1; `TestPublicSignatures` (the `harness-boundaries` guard) passes; `go list -deps

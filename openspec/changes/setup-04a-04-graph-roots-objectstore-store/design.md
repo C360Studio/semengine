@@ -9,8 +9,11 @@ Governing records: pin ADR-063 (carried here), ADR-068, ADR-062, ADR-073, ADR-09
 ADR-095 govern the Component in pull request 5b, not the Store. Probes: inventory 11 (P1-P10).
 
 Coined terms: the *Store* is `objectstore.Store`, the NATS ObjectStore backend of `storage.StreamableStore`; the
-*Component* is `objectstore.Component`, which pull request 5b ports; the *envelope* is the JSON `StoredContent` that
-`StoreContent` writes; the *retention guard* is the boot check that a content store's backing stream `OBJ_<bucket>`
+*Component* is `objectstore.Component`, which pull request 5b ports; the *envelope* is the pin's JSON `StoredContent`
+that
+`StoreContent` wrote (D4 replaces it with the raw body); the *body* is the text a `ContentStorable` names under the
+`body` role (`message.ContentRoleBody`, `message/content_storable.go:80`); the *retention guard* is the boot check that
+a content store's backing stream `OBJ_<bucket>`
 has no TTL and no binding `MaxBytes`.
 
 ## Options
@@ -67,19 +70,20 @@ func (s *Store) List(ctx context.Context, prefix string) ([]string, error)
 func (s *Store) Delete(ctx context.Context, key string) error
 func (s *Store) StoreContent(ctx context.Context, cs message.ContentStorable) (*message.StorageReference, error)
 func (s *Store) InstanceName() string
-type StoredContent struct { /* EntityID, Fields, BinaryRefs, ContentFields, StoredAt, as at the pin */ }
-type BinaryRef struct { /* ContentType, Size, Key */ }
 ```
 
 Contract lines: `storage.Store`/`StreamableStore` for the five operations (`storage/storage.go:51`, `:94`); the
-`object-store` spec and the package README for `StoreContent`, `StoredContent` and `BinaryRef` (framework API:
+`object-store` spec and the package README for `StoreContent` (framework API:
 `pin:examples/processors/document/component.go:720-750` calls `StoreContent`, inventory 4); the ledger row.
 
 Not carried (surface audit (a), no reader at the pin, in an admitted package or in a consumer; inventory 4):
 `FetchContent`, `extractContentFromBaseMessage`, `extractTextFields`, `SetDecoder` (S3), `FetchBinary`,
-`GetMetadata` (S4), the four `StoredContent` role helpers (S5). A reader of a `BinaryRef` calls `Get(ref.Key)`.
-`NewStoredContent` and `NewStoredContentWithBinary` become unexported (S6). Optional, taken because the code is
-rewritten anyway: the alias `MarshalJSON`/`UnmarshalJSON` (S7) and the dead fields `client`, `bucketName` (S14) go.
+`GetMetadata` (S4), the four `StoredContent` role helpers (S5). With D4's raw-body `StoreContent`, nothing writes or
+reads the envelope, so `StoredContent`, `BinaryRef`, `NewStoredContent`, `NewStoredContentWithBinary` (S6) and the alias
+`MarshalJSON`/`UnmarshalJSON` (S7) go with it, and so does the binary branch of `StoreContent`: no type implements
+`message.BinaryStorable` at the pin or in a consumer (`grep -rn 'BinaryFields()'`, non-test: only the interface and
+`pin:…/store.go:458`). Optional, taken because the code is rewritten anyway: the dead fields `client`, `bucketName`
+(S14) go.
 
 Deferred to 5b. The criterion: symbols whose only production reader at the pin is the Component's raw write lane
 (`pin:…/component.go:1154-1158`, `storeWithKeySource`) or its config resolution (`:169-196`): `Store.Store`,
@@ -112,10 +116,20 @@ Each line is observable and named in D9's tests.
 - **List** returns the matching names sorted, and an empty, non-nil slice when the bucket is empty or nothing
   matches (P2, P7). Basis: `storage/storage.go:77-78`. It reads every object's metadata, client-side (O(objects));
   the doc says so. The pin errored on an empty bucket and returned put order (S9).
-- **StoreContent** validates the entity ID first (invalid input, nothing written); writes each binary field, then
-  the envelope; returns a reference with the Store's instance name, the envelope key, `application/json` and the
-  envelope size. Content and binary keys keep the pin's `content/…/<entity>_…` and `binary/…/<entity>_<field>_…`
-  shape with a UUID nonce in place of the `UnixNano` suffix, so two calls never share a key. Optional (S11), taken
+- **StoreContent** obeys ADR-063's read contract: "the store a ref points at holds the RAW body bytes at `Key` …
+  *not* a `StoreContent` JSON envelope" (`pin:docs/adr/063-store-substrate-and-resolver.md:278-285`). It validates
+  the entity ID first (invalid input, nothing written). It refuses a payload that implements `message.BinaryStorable`
+  with any binary field (invalid input, nothing written): binary fields have no place in a raw-body reference, and
+  dropping them silently would be an undeclared drop. It then writes the body (`RawContent()[ContentFields()["body"]]`)
+  as raw UTF-8 bytes, an empty object when the payload names no body, and returns a reference with the Store's
+  instance name, that key, `text/plain; charset=utf-8` and the body's size. Opening the reference returns the body.
+  No envelope is written: the other text fields (title, abstract) and the role map had one reader, `FetchContent`,
+  which is not carried (D3), and the graph already holds them as triples. At the pin the reference pointed at the
+  envelope (`pin:…/store.go:521-526`), so the pin's document adapter
+  (`pin:examples/processors/document/component.go:720-724`)
+  handed graph-embedding JSON where it reads body text (`pin:graph/embedding/worker.go:1030-1036`, `:1070-1077`); this
+  is G8, resolved here. The content key keeps the pin's `content/…/<entity>_…` shape with a UUID nonce in place of the
+  `UnixNano` suffix, so two calls never share a key. Optional (S11), taken
   because it is cheap: the pin's `DefaultKeyGenerator` already uses the same nonce, and `google/uuid` is in `go.mod`.
   Its trigger, two calls for one entity within one clock step, depends on clock granularity, a condition the code
   does not choose, and no real-world trigger is measured (E2; #185). The pin records the residual
@@ -127,7 +141,7 @@ Each line is observable and named in D9's tests.
   library promise), and D9's `-race` test drives it again in the tree.
 
 What stays, not changed (optional, Bounded port scope): create-then-open on any create error (G6); `List` reading all
-metadata; partial `StoreContent` leaving orphan binaries on a later failure (G5), filed as an issue (D13).
+metadata. G5 (orphan binaries after a partial `StoreContent`) no longer arises: `StoreContent` writes one object.
 
 ## D5. Retention guard (ADR-068 as the pin applies it)
 
@@ -192,7 +206,8 @@ the context it is given and keeps neither the context nor any goroutine. ADR-113
 
 Unit (no Docker): `TestNewStoreRefusesNilContext`, `TestStoreMethodsRefuseNilContext` (table over the seven
 exported calls), `TestConfigDefaults` (bucket `MESSAGES`, instance defaults to bucket),
-`TestStoreContentRefusesInvalidEntityIDBeforeWriting`, `TestStoreContentKeysAreUniquePerCall` (10,000 keys for one
+`TestStoreContentRefusesInvalidEntityIDBeforeWriting`, `TestStoreContentRefusesBinaryFields`,
+`TestStoreContentKeysAreUniquePerCall` (10,000 keys for one
 entity and field, no repeat; independent of the clock), metrics: `TestStoreMetricsRegisterOnInjectedRegistry` (names
 under `semengine_objectstore_`, no `object_count`), `TestNilRegistryRecordsNothing`.
 
@@ -202,8 +217,12 @@ and `!errs.IsTransient(err)` for both), `TestDeleteMissingKeySucceeds` (never wr
 twice, a
 regression check),
 `TestListSortedAndEmpty` (empty bucket → empty slice, nil error; names put out of order come back sorted; prefix
-filter), `TestStoreContentWritesBinariesThenEnvelope` (reference fields; envelope decodes to `StoredContent` whose
-`BinaryRefs` keys `Get` back the bytes), `TestRetentionGuardStripsAndAsserts` (a bucket created with `MaxAge` and
+filter), `TestStoreContentReferenceOpensToBody` (the product path: a `ContentStorable` with a title, an abstract and a
+body is stored, the returned reference's `StorageInstance` resolves through a `storeregistry.Registry` holding the
+Store,
+`Open(ref.Key)` returns exactly the body bytes, not JSON, and `ContentType` and `Size` match; failing against the pin's
+shape), `TestStoreContentWithoutBodyStoresEmptyObject`, `TestStoreHistoryMatchesModel` (below),
+`TestRetentionGuardStripsAndAsserts` (a bucket created with `MaxAge` and
 `MaxBytes` is stripped and logged; the pin's `retention_integration_test.go` ported), `TestRetentionGuardFailsClosed`
 (the pin's `TestReconcileNoLifecycleRetention` fatal case, ported), `TestStoreConcurrentUseUnderRace`
 (8 goroutines Put/Get/List on one Store under `-race`), `TestFreshBucketHasNoLifecycleRetention`
@@ -214,6 +233,16 @@ test is shown failing against the pin's shape where the pin differs
 (S8, S9, the never-written half of S10, G1), recorded in `notes/2.1.md`. Ported pin tests rewritten without `t.Parallel`
 in integration files and
 through the fixture; dropped pin tests named with reasons in `notes/2.1.md`.
+
+Generated checks (`docs/testing.md:417-430`): the Store's promises are a history (replace, delete, delete twice, list
+by prefix, reads from a second Store on the bucket), so one is used. `TestStoreHistoryMatchesModel` (integration,
+`pgregory.net/rapid` v1.3.0, already in `go.mod`) draws up to 30 operations over four keys under two prefixes (`a/1`,
+`a/2`, `b/1`, `b/10`) and two values each: `Put`, `Delete`, `Get` and `List(prefix)`, each on one of two Stores over
+one bucket. A plain `map[string][]byte` is the model: `Put` sets, `Delete` removes, `Get` of an absent key must match
+`storage.ErrObjectNotFound`, `List` must equal the model's sorted matching keys. The key set makes prefix overlap
+(`b/1`, `b/10`), replace, delete-twice and delete-then-put reachable in every run. Bounded at 50 runs; the seed and the
+completed-run count are recorded in `notes/2.1.md`, and a failure prints its replayable sequence. The named examples
+stay for the boundaries they claim (empty bucket, never-written delete, not-found classification).
 
 Coverage: `storage/objectstore merged` joins `scripts/cover-check.sh` at 80% (the Store is a consumer-facing
 storage primitive, like `storage/storeregistry`).
@@ -228,7 +257,7 @@ statement in D4, D5 and the spec cites P1-P10; P3c and P8 are stated as observed
 
 - New ledger row `storage/objectstore`, `disposition: adapt`, contract "the Store half (this change); the Component
   arrives in setup-04a-04-graph-roots-objectstore-component", with each adaptation above numbered, `known_risks`
-  naming G5's issue, G8 and S27 as 5b's dispositions, and the deferred symbols.
+  naming S27 as 5b's disposition, `StoreContent`'s raw-body change (G8 resolved) and the deferred symbols.
 - `storage` row: `carry` → `adapt` (doc.go and storage.go edited for #280 item 1, and `Put`'s and `Delete`'s docs no
   longer claim versions, probe P4).
 - The docs that describe a Store `Close` (D6): `storage/storeregistry/storeregistry.go:19-21`, `:74-75`
@@ -240,17 +269,19 @@ statement in D4, D5 and the spec cites P1-P10; P3c and P8 are stated as observed
   kept (instance name as `StorageInstance`, the registry, the raw-body read contract); what changed (by the D6
   ruling, the Store has no `Close`, so `:157-158` and `:256` describe nothing here); what is open (multi-instance
   naming,
-  `:412-413`, decided in 5b); the conflict G8 named as 5b's to decide. Its own ledger row. Closes #321.
+  `:412-413`, decided in 5b); the read contract now kept by `StoreContent` too (G8 resolved, D4). Its own ledger row.
+  Closes #321.
 - ADR-068: not carried (graph-index made the same call); its one decision this package implements is already the
   tree's rule (`AGENTS.md` § 2, `natsclient/kv.go:179`); orphan collection is not implemented at the pin.
 - `doc.go` and `README.md` say only what ships (S1, S2): no versions, replace on `Put`, sorted client-side `List`,
-  no cache, the envelope format, a compiled example (`ExampleNewStoreWithConfig` in a test file).
+  no cache, `StoreContent` storing the raw body only, a compiled example (`ExampleNewStoreWithConfig` in a test file).
 - `docs/repository-map.md`: a `storage/objectstore` row.
 
 ## D12. Spec delta
 
 New capability `object-store` (`specs/object-store/spec.md`): construction, retention guard, `Put`, `Get`/`Open`
-not-found, `Delete`, `List`, `StoreContent`, nil context, metrics. Every requirement is under the validator's 500
+not-found, `Delete`, the history model, `List`, `StoreContent`'s raw-body reference, nil context, metrics. Every
+requirement is under the validator's 500
 characters and names its test.
 
 ## D13. Issues and merge order
@@ -265,21 +296,29 @@ characters and names its test.
 | #281 | stays: objectstore's refused `category:performance` tag is on `DataCache` (gone, D6) |
 | #36, #216 | stay: the Component's write consumer (5b) names both |
 
-Filed by this design (protocol File step, a defect in code this change brings into the repository; linked without a
-closing keyword): G5 (orphan binaries after a partial `StoreContent`), optional maintenance. Not filed: G8 (the
-Component's ContentStorable lane points a `StorageReference` at a JSON envelope, against ADR-063's read contract) and
-S27 (the constant instance name, which ADR-063 leaves open, `:349-354`, `:412-413`, and the pin calls an owner
-question, `component.go:140-147`). Their code enters with 5b, and 5b's design decides both from inventory 7.
+Filed by this design: none. G5 no longer arises and G8 is resolved here (D4); the Component's ContentStorable lane
+calls `StoreContent`, so in 5b it emits raw-body references with no change of its own. Not filed: S27 (the constant
+instance name, which ADR-063 leaves open, `:349-354`, `:412-413`, and the pin calls an owner question,
+`component.go:140-147`); its code enters with 5b, whose design decides it from inventory 7.
+
+Consumer check for D4 (pin and the SHAs in the inventory header): `StoreContent` callers are the pin's document adapter
+(`pin:examples/processors/document/component.go:720-750`) and the Component (5b); no consumer calls it. Readers of the
+envelope: `FetchContent` only (not carried); no consumer names `StoredContent`, `FetchContent`, `content_fields` or
+`binary_refs` (`grep -rn --include='*.go'`, non-test, four trees: empty). The one reader of what the reference points
+at, graph-embedding, expects the raw body. No reader breaks.
 
 Merge order: #431 touches only graph-ingest's OpenSpec change; either may merge first. 5b follows this change.
 
 ## D14. Decisions kept, changed, dropped
 
-- Kept: ADR-063's instance name as `StorageInstance` and its raw-body read contract; ADR-068's no-lifecycle rule on
+- Kept: ADR-063's instance name as `StorageInstance` and its raw-body read contract, now also for `StoreContent`;
+  ADR-068's no-lifecycle rule on
   content stores via the pin's guard; ADR-062's one-backend-of-`storage.Store` stance.
 - Changed: `storage.Store`'s documented `List` and never-written `Delete` behaviour is now implemented (the pin's code
   broke its own
-  interface doc); `Open` joins `Get` in reporting not-found; `StoreContent` keys carry a nonce.
+  interface doc); `Open` joins `Get` in reporting not-found; `StoreContent` keys carry a nonce; `StoreContent` writes
+  and references the
+  raw body, not the pin's envelope, and refuses binary fields (D4).
 - Dropped (owner ruling, PR #432 comment 6446982969): the data cache and `Close`, which changes ADR-063 `:157-158`,
   `:256` as noted in D11.
 

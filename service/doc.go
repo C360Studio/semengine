@@ -283,8 +283,10 @@
 // ?format=mermaid), validate and paths. A name that is empty, "." or ".." or
 // decodes to a path separator is 400, an unknown one 404. Until StartAll commits
 // the full route set only health, list and status/{name} are served. flowgraph,
-// validate and paths project the composition result kept at construction and
-// compute nothing. BuildComponentTypeCatalog returns what types serves, for a
+// validate and paths read the composition result kept at construction: validate
+// serves it as is, flowgraph serves its graph, and paths serves
+// composition.FlowPaths of that graph with counts of the answer.
+// BuildComponentTypeCatalog returns what types serves, for a
 // product that serves the catalog elsewhere. One declared difference: GET
 // /components/types/{id} for an unregistered type answers 404 with the body
 // {"error":"Component type <id> not found"} sent as text/plain, not JSON, as

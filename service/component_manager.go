@@ -51,9 +51,10 @@ type ComponentManager struct {
 	bootStreams       config.StreamConfigs // explicit `streams` of the boot configuration, for composition analysis
 
 	// bootFindings is the composition analysis of the admitted boot set, computed
-	// once by the constructor before the registry seals (ADR-100). The validate,
-	// flowgraph and paths projections serve it as is. Nothing writes it after
-	// construction, so it is read without a lock.
+	// once by the constructor before the registry seals (ADR-100). validate
+	// serves it as is, flowgraph serves its graph (as JSON or as
+	// composition.Mermaid), and paths serves composition.FlowPaths of its graph,
+	// counted. Nothing writes it after construction, so it is read without a lock.
 	bootFindings *composition.Result
 
 	// components is the admitted set in the fixed start order (providers by name,
@@ -592,14 +593,13 @@ type ComponentStatus struct {
 // Composition projections
 // =============================================================================
 
-// GetFlowPaths reports, for each input component of the boot composition, every
-// component reachable from it.
-//
-// It reads the graph the composition result keeps (ADR-100), and does not
-// rebuild one from the registry, so it cannot disagree with the result
-// `<components>/validate` and `<components>/flowgraph` serve: one interpreter
-// stands behind every answer about a composition. This derives no severity: it
-// is a projection, not a judgment.
+// GetFlowPaths returns composition.FlowPaths of the graph the boot
+// composition result keeps (ADR-100): for each origin, every component
+// reachable from it. It does not rebuild a graph from the registry, so it
+// cannot disagree with the result `<components>/validate` and
+// `<components>/flowgraph` serve: one interpreter stands behind every answer
+// about a composition. It derives no severity: it is a projection, not a
+// judgment.
 func (cm *ComponentManager) GetFlowPaths() (map[string][]string, error) {
 	result := cm.bootCompositionResult()
 	if result == nil {
@@ -607,58 +607,5 @@ func (cm *ComponentManager) GetFlowPaths() (map[string][]string, error) {
 			errors.New("composition result unavailable"),
 			"ComponentManager", "GetFlowPaths", "composition not initialized")
 	}
-
-	adjacency := make(map[string][]string, len(result.Graph.Nodes))
-	for _, edge := range result.Graph.Edges {
-		adjacency[edge.From] = append(adjacency[edge.From], edge.To)
-	}
-
-	paths := make(map[string][]string)
-	for _, node := range result.Graph.Nodes {
-		if !isInputNode(node) {
-			continue
-		}
-		paths[node.Instance] = reachableFrom(node.Instance, adjacency)
-	}
-	return paths, nil
-}
-
-// isInputNode reports whether a projected node originates data for the graph.
-// Both facts come off the projection itself: the declared component type, and
-// an input port whose interaction pattern reaches outside the composition —
-// PatternNetwork binds a local listener, PatternHTTPClient initiates an
-// outbound poll. Either makes the component a data source.
-func isInputNode(node composition.Node) bool {
-	if node.Type == string(types.ComponentTypeInput) {
-		return true
-	}
-	for _, port := range node.Inputs {
-		switch component.InteractionPattern(port.Pattern) {
-		case component.PatternNetwork, component.PatternHTTPClient:
-			return true
-		}
-	}
-	return false
-}
-
-// reachableFrom returns start followed by every node reachable from it, in
-// depth-first order. Edges arrive sorted from the projection, so the order is
-// stable across calls.
-func reachableFrom(start string, adjacency map[string][]string) []string {
-	visited := make(map[string]bool)
-	var order []string
-
-	var visit func(string)
-	visit = func(node string) {
-		if visited[node] {
-			return
-		}
-		visited[node] = true
-		order = append(order, node)
-		for _, next := range adjacency[node] {
-			visit(next)
-		}
-	}
-	visit(start)
-	return order
+	return composition.FlowPaths(result.Graph), nil
 }

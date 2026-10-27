@@ -4,9 +4,9 @@
 `composition` judges whether a configuration's components are wired correctly, without starting anything: `Validate`
 checks the configured components against a registry's factories and reports every problem as a finding from one
 closed list of fifteen types, and `Analyze` judges the graph those components form. `Catalog` lists the registered
-factories with their default ports, and `Mermaid` draws the graph as a diagram. A product runs it in CI and checks
-that no error finding is reported; once `service` is ported, the component manager runs the same judgment at boot
-(ADR-100). Ported from SemStreams by change `port-composition` (epic #9).
+factories with their default ports, `Mermaid` draws the graph as a diagram, and `FlowPaths` lists what each input
+of the graph reaches. A product runs it in CI and checks that no error finding is reported, and the component manager
+in `service` runs the same judgment at boot (ADR-100). Ported from SemStreams by change `port-composition` (epic #9).
 
 ## Requirements
 
@@ -275,3 +275,35 @@ SHALL be a `malformed_subject` here.
 
 Not covered by a test in this change: boot refusal on `malformed_subject` in particular. It follows from the error
 severity and the component manager's refusal on any error finding (`TestComponentManagerRefusesBootOnErrorFinding`).
+
+### Requirement: FlowPaths answers reachability from each origin
+
+`composition.FlowPaths(graph)` SHALL return a non-nil map with one key per origin: a node of type `input`, or a node
+with an input port of pattern `network` or `http-client`. Each value SHALL be the origin followed by every node
+reachable from it along the graph's edges, each node once, in depth-first order over the edges in the order the graph
+holds them. It SHALL store nothing and read nothing but its argument.
+
+#### Scenario: Each origin rule alone makes an origin
+
+- **WHEN** a graph holds a node of type `input`, a processor with a `network` input, a processor with an
+  `http-client` input, and a processor with only NATS inputs
+- **THEN** the first three are keys and the fourth is not
+- **AND** the test that verifies this is `TestFlowPathsKeysEachOrigin`
+
+#### Scenario: Depth-first in edge order
+
+- **WHEN** an origin's edges branch to two nodes and the first branch continues further
+- **THEN** its value lists the origin, the whole first branch, then the second branch
+- **AND** the test that verifies this is `TestFlowPathsWalksDepthFirstInEdgeOrder`
+
+#### Scenario: A cycle
+
+- **WHEN** an edge leads back to the origin
+- **THEN** the walk ends and each node appears once
+- **AND** the test that verifies this is `TestFlowPathsVisitsEachNodeOnce`
+
+#### Scenario: An empty graph
+
+- **WHEN** the graph has no nodes
+- **THEN** the answer is a non-nil, empty map
+- **AND** the test that verifies this is `TestFlowPathsOverAnEmptyGraph`

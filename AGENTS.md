@@ -42,13 +42,14 @@ task build        # build
 task vet          # go vet
 task lint         # pinned revive, plus the fixed-port guard for tests
 task vuln         # pinned govulncheck
-task test:unit    # unit tests once, under the race detector, at one CPU
-task test:repeat  # unit tests five times at one CPU, without the race detector, shuffled
+task test:unit    # unit tests once, under the race detector, at one CPU (not the tool packages)
+task test:repeat  # unit tests but the contract guards, five times at one CPU, without the race detector, shuffled
+task test:tools   # tests of scripts, Taskfile.yml and CI; verify runs them via test:tools:changed
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
 task mutate:check # -- -pkg -test -file -mutant -expect/-expect-text: run one test against one mutant outside the repo
 task merge:check  # -- <n>: fail on open flakes PR n leaves open, missing up-to-date rule, or missing review lines
 task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
-                  # ledger:check test:unit test:integration cover:check test:repeat; fails if tracked files changed
+                  # ledger:check test:unit test:tools:changed test:integration cover:check test:repeat; fails if tracked files changed
 ```
 
 Run `task verify` before every implementation push. CI has three jobs: `verify` runs the same commands;
@@ -111,9 +112,10 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `verify+review` | A test's port-0 pick is in the family that is bound (`tcp4` for Docker, `127.0.0.1:0` or the listener itself for a test server); an every-address pick says why with `// Every address: <reason>` on the line above; a release check dials the listener's own loopback (#390, #391) | `harness-boundaries` spec; `docs/testing.md`; `rev` |
 | `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |
 | `verify+review` | No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec |
-| `verify` | Unit tests also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |
+| `verify` | Unit tests (every package but the tool packages and `contract`) also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |
+| `verify+review` | Tool tests (`toolcheck`, `mutcheck`, `pindiff`) run only when a trigger path changes (`task test:tools:changed`), never in `test:repeat`; a test reading any other real-tree file stays in `contract`, which runs once every time | `merge-gate` spec; `internal/harness/toolcheck/doc.go` |
 | `verify+review` | One NATS image pin, a digest reference; no broad Docker cleanup; script/Compose Docker names start `semengine-` | `harness-boundaries` spec |
-| `verify+review` | Integration tests run under plain `go test -tags integration`; `task test:integration` only pins flags; nothing takes a lock or refuses a run (#205) | `integration-test-runner` spec; `docs/test-infrastructure.md` |
+| `verify+review` | Integration tests (only packages that have one) run under plain `go test -tags integration`; `task test:integration` only pins flags; nothing takes a lock or refuses a run (#205) | `integration-test-runner` spec; `docs/test-infrastructure.md` |
 | `verify+review` | natsfixture turns Ryuk off, labels its containers `org.c360studio.semengine.test`, sweeps labelled leftovers older than 30 min; never by name or liveness | `nats-fixture` spec; `docs/test-infrastructure.md` |
 | `review` | An integration test reaches its package's shared NATS server only through the reset | `nats-fixture` spec; `docs/test-infrastructure.md` |
 | `verify+review` | A test starts on a shared server with no stream, consumer, stored byte, or other connection, and closes every connection it opens before it ends | `nats-fixture` spec |
@@ -125,6 +127,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md`; `dev`, `rev` |
 | `review` | Generated runs record seed, completed checks, and replayable failure; assertions are shown to run; histories check against a reference model | `docs/testing.md`; `dev`, `rev` |
 | `review` | Mutation checks report survivors/inconclusive runs as such, never as detections; fuzz seed replay and exploration report apart; PRs record uncovered cases | `docs/testing.md`; `dev` |
+| `verify+review` | Production code creates JetStream consumers only via natsclient's policy entry points, called only from allowlisted files (#422) | `harness-boundaries` spec |
 
 ### 4. Porting and architecture
 

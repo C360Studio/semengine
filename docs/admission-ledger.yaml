@@ -209,12 +209,15 @@
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
   consumer_purpose: canonical go test flags for the integration run
   destination: >-
-    Taskfile.yml (test:integration keeps the pin's go test flags; openspec change test-infra-audit,
+    Taskfile.yml (test:integration keeps the pin's go test flags and runs only the packages that have an
+    integration-tagged test, listed by scripts/test-pkgs.sh; openspec change test-infra-audit,
     #205, removed the runner script that carried the pin's host lock, Docker preflight and image pull)
   contract: -race -failfast -tags=integration -count=1 -p 2
   dependencies_and_side_effects: go test only
   known_risks: -p 2 inherited unmeasured
-  proving_tests: TestUnitInvocationsPinned (the test:integration command line)
+  proving_tests: >-
+    TestUnitInvocationsPinned (internal/harness/toolcheck/mergegate_test.go; the test:integration command line
+    and its package list); TestTestPkgsLists (internal/harness/toolcheck/testpkgs_test.go)
   owner: setup-02 developer
   disposition: adapt
 
@@ -263,8 +266,8 @@
     documented false-negative shapes (tcp6 variants, multi-line, concatenation, non-net.Listen APIs,
     bind-then-close-then-bind); fixed dial literals not covered (T-B6 covers)
   proving_tests: >-
-    scripts/lint-test-ports_fixture_test.sh; TestLintTestPortsHonoursNoMarker and TestLintTestPortsPasses
-    (internal/harness/contract/addresses_test.go)
+    scripts/lint-test-ports_fixture_test.sh; TestLintTestPortsHonoursNoMarker (internal/harness/toolcheck/lintports_test.go) and
+    TestLintTestPortsPasses (internal/harness/contract/addresses_test.go)
   owner: setup-02 developer
   disposition: adapt
 
@@ -1223,11 +1226,13 @@
     doc.go:320, WithClientName → WithName; README.md :318 and doc.go:518, WithLogger(log.Default())
     → WithLogger(slog.Default()), with the log/slog import added; README.md :369-371, the Related
     Packages section removed (its links name service, component and config, which SemEngine does
-    not have). Census maps (owner ruling, #9 comment 5969522395, item 3): the
-    expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
-    measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
-    ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct
-    CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
+    not have). Census allowlists (owner ruling, #9 comment 5969522395, item 3; moved to
+    internal/harness/contract/consumerpolicy_test.go by #422, owner ruling of 2026-10-27): production
+    references to ConsumeInternalStreamWithConfig, ConsumeStreamWithConfig,
+    ConsumeStreamWithConfigContexts or GetConsumerConfig are allowed only in
+    processor/graph-ingest/consume.go, and direct CreateOrUpdateConsumer, CreateConsumer or
+    OrderedConsumer calls only in natsclient/stream.go; a port that adds a caller in another file adds
+    that file to the allowlist, and how often a listed file calls is not checked.
     Adapt items (Codex review of record, PR #48 comment 5996819933): a nil context is refused with an
     invalid-data error by every exported context-taking, error-returning call before any state, callback or NATS
     call (F32; commits bb23dc7, e17ecfd); RequestWithRetryClassified checks the context before every attempt, the
@@ -1278,6 +1283,11 @@
     functions made to return nil: all seven planted subtests fail; restored, they pass. The module
     path in the test's import strings (:200, :409, :415, :421, :427, :485, :541) is
     github.com/c360studio/semengine/natsclient, so the retirement guards match SemEngine's imports.
+    Since #422 every test of consumer_policy_callsite_test.go but
+    TestParseProductionGoFilesIgnoresClaudeWorktrees (its walker went) lives in
+    internal/harness/contract/consumerpolicy_test.go, reading files through git ls-files, with the two
+    censuses checking which files call rather than how often; the line numbers above are the natsclient
+    file's before the move.
     D8 repairs, pin → SemEngine. R1a, the 8 sleeps in client_test.go, each test or subtest run
     inside synctest.Test with the sleep replaced by <-time.After on the bubble's clock, and
     synctest.Wait before each "did not fire" assertion: :267 → :297 (TestWaitForConnection
@@ -2880,7 +2890,8 @@
     ComponentManager, NewComponentManager (registered by RegisterAll), ComponentsImplementing,
     ConfigureRulePackMutations, ProjectionBinder, BuildComponentTypeCatalog, the HTTPHandler methods
     RegisterHTTPHandlers and OpenAPISpec, and projection.PredicateReconciler; read inside the package and kept as
-    at the pin: GetComponentHealth, GetComponentStatus, ComponentStatus, GetFlowPaths, Manager.ProjectionBinders.
+    at the pin: GetComponentHealth, GetComponentStatus, ComponentStatus, GetFlowPaths (which returns composition.FlowPaths of the
+    kept graph, #363), Manager.ProjectionBinders.
     component.LifecycleComponent gains the read line: Health, DataFlow and DebugStatus may be called at any time and
     return without waiting for Start or Stop (tested for graph-ingest, review only outside this module). The
     composition root calls ConfigureRulePackMutations after ConfigureFromServices and before StartAll. PR 4: pin ADR-093
@@ -3236,7 +3247,8 @@
     config.DeriveStreamName), the filter and the first reserved subject captured; Analyze gives one malformed_subject
     error for each NATS, NATS-request or JetStream port subject, in either lane, and each explicit stream subject that
     fails flowgraph.ValidSubject, before its early returns, naming the lane and field or the stream and index (#369);
-    Analyze, Catalog and Mermaid otherwise as at the pin
+    FlowPaths answers, for each origin of a projection, every node reachable from it, moved from service's
+    GetFlowPaths with its answers unchanged (#363); Analyze, Catalog and Mermaid otherwise as at the pin
   dependencies_and_side_effects: >-
     component, config, graph, internal/flowgraph, internal/graphmutation, types (in-set); stdlib (cmp, encoding/json,
     errors, fmt, maps, slices, sort, strings); no goroutine, no I/O, no context
@@ -3258,7 +3270,9 @@
     TestValidateIsDeterministic and the pin's tests), clash_test.go (TestValidateExclusiveClashMatchesAdmission,
     TestValidateSelfClashIsPortDeclarationError), catalog_test.go (TestCatalogCarriesDefaultPortsOrRequiresConfig),
     mermaid_test.go (TestMermaidIsDeterministic), reserved_test.go (TestValidateRefusesStreamCapturingReservedSubject,
-    TestValidateDoesNotRefuseNeighbouringSubjects, TestReservedSubjectOverlapMatchesEnumeration)
+    TestValidateDoesNotRefuseNeighbouringSubjects, TestReservedSubjectOverlapMatchesEnumeration),
+    flowpaths_test.go (TestFlowPathsKeysEachOrigin, TestFlowPathsWalksDepthFirstInEdgeOrder,
+    TestFlowPathsVisitsEachNodeOnce, TestFlowPathsOverAnEmptyGraph)
   owner: port-composition developer
   disposition: repair-before-port
 

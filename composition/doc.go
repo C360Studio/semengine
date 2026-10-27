@@ -16,9 +16,12 @@
 //     (reserved_subject_capture), and reports every NATS, NATS-request or
 //     JetStream port subject, in either lane, and every explicit stream
 //     subject that fails the subject grammar (malformed_subject).
-//     The boot caller is service's component manager, not yet ported: it will
-//     run Analyze over what was admitted and refuse to boot on an
-//     error-severity finding (ADR-100 decision 3).
+//     Service's component manager runs Analyze over what was admitted at boot
+//     and refuses to boot on an error-severity finding (ADR-100 decision 3).
+//
+// FlowPaths and Mermaid read the projected graph: Mermaid draws it, and
+// FlowPaths answers, for each input node, every node reachable from it. The
+// component manager's flowgraph and paths routes serve them.
 //
 // Findings carry a closed vocabulary (the Type* constants), one severity table
 // (severityOf), non-nil arrays, and a deterministic order, so two runs over

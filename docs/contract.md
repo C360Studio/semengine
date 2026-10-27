@@ -76,7 +76,7 @@ What happens to messages in flight depends on how your input reaches the engine.
 
 | Input path | After a broker or process restart | Your part |
 | --- | --- | --- |
-| NATS stream in memory | accepted messages that were not yet applied are lost; stored entities survive | re-publish from your source (semsource does this) |
+| NATS stream in memory | accepted messages that were not yet applied are lost; stored entities survive; the ingest component then reports unhealthy and stays so until its process restarts | restart the process when `/readyz` fails (`/healthz` only says the listener answers), then re-publish from your source (semsource does this) |
 | NATS stream on disk | unacknowledged messages are delivered again; the final state is the same as if each was applied once | nothing |
 | request/reply (no stream) | you have the reply, or a *commit unknown* | handle *commit unknown* as above |
 

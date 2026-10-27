@@ -43,7 +43,7 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 
 ## 4. Docs
 
-- [ ] 4.1 Text (design D2): `docs/contract.md:79`, `processor/graph-ingest/README.md:188`, and the graph-ingest row of
+- [x] 4.1 Text (design D2): `docs/contract.md:79`, `processor/graph-ingest/README.md:188`, and the graph-ingest row of
   `docs/admission-ledger.yaml` (`known_risks`, `proving_tests`). Gate: `task docs:check` and `task ledger:check`.
 
 ## 5. Code review

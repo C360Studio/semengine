@@ -12,10 +12,10 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 ## 1. Design
 
 - [x] 1.1 Inventory (`inventory.md`) passes independent review (INVENTORY PASS; committed at `6d500e0`).
-- [ ] 1.2 Codex design review of `design.md` and the `graph-ingest-recovery` delta.
-  Hold: Codex design review on PR #431 (the owner starts Codex). Gate: `task spec:check` and `task docs:check`.
-- [ ] 1.3 Owner acceptance of the reviewed design (the ruling chose the option, not this design).
-  Hold: owner acceptance on #216 or PR #431.
+- [x] 1.2 Codex design review of `design.md` and the `graph-ingest-recovery` delta: DESIGN REVIEW PASS at `a62a8fe`
+  (PR #431 comment 6447526031). Gate: `task spec:check` and `task docs:check`.
+- [x] 1.3 Owner acceptance of the reviewed design (the ruling chose the option, not this design): accepted
+  2026-10-27, recorded on PR #431.
 
 ## 2. Tests
 

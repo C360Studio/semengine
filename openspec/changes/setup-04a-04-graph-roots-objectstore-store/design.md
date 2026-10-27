@@ -123,9 +123,11 @@ Each line is observable and named in D9's tests.
   refuse extras), it refuses as
   invalid input, before writing anything, a payload carrying any content other than the body: a non-empty
   `RawContent()` value under any field but the one the `body` role names (title, abstract or description, summary,
-  location, or a field no role names), or any non-empty binary field of a `message.BinaryStorable`. The error names
-  the refused fields. Nothing is stored, so nothing is silently lost. Otherwise it writes the body
-  (`RawContent()[ContentFields()["body"]]`) as raw UTF-8 bytes and returns a reference with the Store's instance name,
+  location, or a field no role names), a non-body role that names the body's own field (such as `abstract` → `text`
+  beside `body` → `text`, #433), or any non-empty binary field of a `message.BinaryStorable`. The error names the
+  refused fields, and each aliased role with its field. Nothing is stored, so nothing is silently lost. Otherwise it
+  writes the body (`RawContent()[ContentFields()["body"]]`) as raw UTF-8 bytes and returns a reference with the
+  Store's instance name,
   that key, `text/plain; charset=utf-8` and the body's size; opening the reference returns the body. A payload with no
   content at all (no body, no extras) stores an empty object and gets its reference: nothing is lost, and the reader
   sees an empty body, as graph-embedding already handles. No envelope is written. Non-body text belongs in the graph
@@ -194,7 +196,8 @@ ADR-063's "on Stop, the objectstore Component `Close()`s its store" (`:157-158`)
 Collectors register on the registry given to `NewStoreWithConfigAndMetrics` through `metric.RegisterOrGet`, namespace
 `semengine`, subsystem `objectstore` (S16; `metric-registry` spec). `NewStoreWithConfig` records nothing. Carried:
 operation counters (read, write, delete, list, by operation), latency histograms, and `operation_errors_total` (one
-count per call that returns an error; there are no retries inside the Store, so a count is an outcome). Not carried:
+count per call that returns an error, a refusal before any I/O included, #434; there are no retries inside the Store,
+so a count is an outcome). Not carried:
 `object_count` and `storage_bytes` (registered, never set, S15) and the cache hit and miss counters (D6).
 The bucket is a variable label `bucket` on each collector, registered once per process under one `RegisterOrGet`
 key, not the pin's constant `kv_bucket` label under a per-bucket key (`pin:…/metrics.go:47`, `:156-162`). A constant

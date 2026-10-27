@@ -144,8 +144,11 @@ func (m *storeMetrics) recordListLatency(start time.Time) {
 	}
 }
 
-func (m *storeMetrics) recordError(operation string) {
-	if m != nil {
+// recordError counts one error for operation when *err holds one. Each
+// operation defers it on its named error result, so every error the operation
+// returns counts once, a refusal before any I/O included.
+func (m *storeMetrics) recordError(operation string, err *error) {
+	if m != nil && *err != nil {
 		m.errors.WithLabelValues(m.bucket, operation).Inc()
 	}
 }

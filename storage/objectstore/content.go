@@ -25,10 +25,14 @@ const contentType = "text/plain; charset=utf-8"
 //
 // It refuses, as invalid input and before writing anything, an invalid entity
 // ID and any other content: a non-empty RawContent value under a field that is
-// not the body's, or a non-empty binary field of a message.BinaryStorable. The error
-// names the refused fields. Non-body text belongs in the graph as triples, which
+// not the body's or that a role other than "body" also names, or a non-empty
+// binary field of a message.BinaryStorable. The error names the refused fields
+// and roles. Non-body text belongs in the graph as triples, which
 // the producer emits. A payload with no content stores an empty object.
-func (s *Store) StoreContent(ctx context.Context, cs message.ContentStorable) (*message.StorageReference, error) {
+func (s *Store) StoreContent(
+	ctx context.Context, cs message.ContentStorable,
+) (_ *message.StorageReference, err error) {
+	defer s.metrics.recordError("store_content", &err)
 	if ctx == nil {
 		return nil, nilContext("StoreContent")
 	}
@@ -49,7 +53,6 @@ func (s *Store) StoreContent(ctx context.Context, cs message.ContentStorable) (*
 	key := contentKey(entityID)
 	data := []byte(body)
 	if _, err := s.objects.PutBytes(ctx, key, data); err != nil {
-		s.metrics.recordError("store_content")
 		return nil, errs.WrapTransient(err, "Store", "StoreContent", "store content")
 	}
 	s.metrics.recordWriteLatency("store_content", start)
@@ -63,17 +66,32 @@ func (s *Store) StoreContent(ctx context.Context, cs message.ContentStorable) (*
 }
 
 // bodyOnly returns the text cs's body role names, or an error naming every
-// other non-empty text field and every non-empty binary field cs carries.
+// other non-empty text field and every non-empty binary field cs carries. A
+// non-body role that names the body's own field makes that field non-body
+// content too, so it is refused, each such role named with its field.
 func bodyOnly(cs message.ContentStorable) (string, error) {
-	bodyField, hasBody := cs.ContentFields()[message.ContentRoleBody]
+	fields := cs.ContentFields()
+	bodyField, hasBody := fields[message.ContentRoleBody]
+	nonBodyRoles := map[string][]string{} // field -> the non-body roles naming it
+	for role, field := range fields {
+		if role != message.ContentRoleBody {
+			nonBodyRoles[field] = append(nonBodyRoles[field], role)
+		}
+	}
 	var refused []string
 	body := ""
 	for field, text := range cs.RawContent() {
+		roles := nonBodyRoles[field]
 		switch {
-		case hasBody && field == bodyField:
+		case text == "":
+		case hasBody && field == bodyField && len(roles) == 0:
 			body = text
-		case text != "":
+		case len(roles) == 0:
 			refused = append(refused, fmt.Sprintf("%q", field))
+		default:
+			for _, role := range roles {
+				refused = append(refused, fmt.Sprintf("role %q (field %q)", role, field))
+			}
 		}
 	}
 	if bs, ok := cs.(message.BinaryStorable); ok {

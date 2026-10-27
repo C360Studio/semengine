@@ -101,8 +101,8 @@ SHALL return an empty, non-nil slice and a nil error when the bucket is empty or
 
 ### Requirement: StoreContent references the raw body
 
-`Store.StoreContent` SHALL refuse, before writing, an invalid entity ID or any non-empty content other than the
-`body` role's text, binary fields included. Otherwise it SHALL write the body as raw bytes (empty when there is
+`Store.StoreContent` SHALL refuse, before writing, an invalid entity ID or any non-empty field or role other than
+the `body` role, binary fields included. Otherwise it SHALL write the body as raw bytes (empty when there is
 none) under a key with a per-call nonce, and SHALL return a reference with the Store's instance name, that key,
 `text/plain; charset=utf-8` and the body's size. Opening the reference SHALL return the body.
 
@@ -130,6 +130,12 @@ none) under a key with a per-call nonce, and SHALL return a reference with the S
 - **WHEN** `StoreContent` is called with a payload whose only content is a non-empty description
 - **THEN** it returns an invalid-input error naming `description`, and the bucket holds no new object
 - **AND** the test that verifies this is `TestStoreContentRefusesExtras`
+
+#### Scenario: A non-body role names the body's field
+
+- **WHEN** `StoreContent` is called with a payload whose `body` and `abstract` roles both name one non-empty field
+- **THEN** it returns an invalid-input error naming the `abstract` role and that field, and nothing is written
+- **AND** the test that verifies this is `TestStoreContentRefusesNonBodyRoleAliasedToBody`
 
 #### Scenario: A payload with a binary field
 

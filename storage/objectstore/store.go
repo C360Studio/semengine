@@ -96,14 +96,14 @@ func (s *Store) InstanceName() string {
 
 // Put stores data at key, replacing any object already there. NATS keeps no
 // earlier version.
-func (s *Store) Put(ctx context.Context, key string, data []byte) error {
+func (s *Store) Put(ctx context.Context, key string, data []byte) (err error) {
+	defer s.metrics.recordError("put", &err)
 	if ctx == nil {
 		return nilContext("Put")
 	}
 	start := time.Now()
 	s.metrics.recordWriteOp("put")
 	if _, err := s.objects.PutBytes(ctx, key, data); err != nil {
-		s.metrics.recordError("put")
 		return errs.WrapTransient(err, "Store", "Put", "put data")
 	}
 	s.metrics.recordWriteLatency("put", start)
@@ -112,7 +112,8 @@ func (s *Store) Put(ctx context.Context, key string, data []byte) error {
 
 // Get returns the bytes stored at key. A missing object returns an error
 // matching storage.ErrObjectNotFound, which is not transient.
-func (s *Store) Get(ctx context.Context, key string) ([]byte, error) {
+func (s *Store) Get(ctx context.Context, key string) (_ []byte, err error) {
+	defer s.metrics.recordError("get", &err)
 	if ctx == nil {
 		return nil, nilContext("Get")
 	}
@@ -120,7 +121,6 @@ func (s *Store) Get(ctx context.Context, key string) ([]byte, error) {
 	s.metrics.recordReadOp("get")
 	data, err := s.objects.GetBytes(ctx, key)
 	if err != nil {
-		s.metrics.recordError("get")
 		return nil, readError(err, "Get", key)
 	}
 	s.metrics.recordReadLatency("get", start)
@@ -130,7 +130,8 @@ func (s *Store) Get(ctx context.Context, key string) ([]byte, error) {
 // Open returns a reader that streams the object at key in chunks. The caller
 // closes it. A missing object returns an error matching
 // storage.ErrObjectNotFound, which is not transient.
-func (s *Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+func (s *Store) Open(ctx context.Context, key string) (_ io.ReadCloser, err error) {
+	defer s.metrics.recordError("open", &err)
 	if ctx == nil {
 		return nil, nilContext("Open")
 	}
@@ -138,7 +139,6 @@ func (s *Store) Open(ctx context.Context, key string) (io.ReadCloser, error) {
 	s.metrics.recordReadOp("open")
 	result, err := s.objects.Get(ctx, key)
 	if err != nil {
-		s.metrics.recordError("open")
 		return nil, readError(err, "Open", key)
 	}
 	s.metrics.recordReadLatency("open", start)
@@ -156,14 +156,14 @@ func readError(err error, method, key string) error {
 }
 
 // Delete removes the object at key. A key with no object returns nil.
-func (s *Store) Delete(ctx context.Context, key string) error {
+func (s *Store) Delete(ctx context.Context, key string) (err error) {
+	defer s.metrics.recordError("delete", &err)
 	if ctx == nil {
 		return nilContext("Delete")
 	}
 	start := time.Now()
 	s.metrics.recordDeleteOp()
 	if err := s.objects.Delete(ctx, key); err != nil && !errors.Is(err, jetstream.ErrObjectNotFound) {
-		s.metrics.recordError("delete")
 		return errs.WrapTransient(err, "Store", "Delete", "delete object")
 	}
 	s.metrics.recordDeleteLatency(start)
@@ -173,7 +173,8 @@ func (s *Store) Delete(ctx context.Context, key string) error {
 // List returns the names of the objects that start with prefix, sorted, and an
 // empty slice when none do. It reads every object's metadata from NATS and
 // filters here, so its cost grows with the number of objects in the bucket.
-func (s *Store) List(ctx context.Context, prefix string) ([]string, error) {
+func (s *Store) List(ctx context.Context, prefix string) (_ []string, err error) {
+	defer s.metrics.recordError("list", &err)
 	if ctx == nil {
 		return nil, nilContext("List")
 	}
@@ -181,7 +182,6 @@ func (s *Store) List(ctx context.Context, prefix string) ([]string, error) {
 	s.metrics.recordListOp()
 	entries, err := s.objects.List(ctx)
 	if err != nil && !errors.Is(err, jetstream.ErrNoObjectsFound) {
-		s.metrics.recordError("list")
 		return nil, errs.WrapTransient(err, "Store", "List", "list objects")
 	}
 	keys := []string{}

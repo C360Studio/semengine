@@ -116,6 +116,86 @@ func TestStoreContentRefusesInvalidEntityIDBeforeWriting(t *testing.T) {
 	}
 }
 
+// TestStoreContentRefusesNonBodyRoleAliasedToBody names the body's own field under a second,
+// non-body role: that role carries non-empty content, so the owner ruling (PR #432 comment
+// 6447702631) refuses it as it would a separate field (#433).
+func TestStoreContentRefusesNonBodyRoleAliasedToBody(t *testing.T) {
+	objects := &okObjects{}
+	s := &Store{objects: objects}
+	cs := &content{
+		entityID: validEntityID,
+		raw:      map[string]string{"text": "body bytes"},
+		fields:   map[string]string{message.ContentRoleBody: "text", message.ContentRoleAbstract: "text"},
+	}
+	ref, err := s.StoreContent(context.Background(), cs)
+	if !errs.IsInvalid(err) || ref != nil || objects.calls != 0 {
+		t.Fatalf("StoreContent = %+v, %v with %d writes; want nil, an invalid-input error and no write",
+			ref, err, objects.calls)
+	}
+	for _, name := range []string{`"text"`, `role "abstract"`} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error %q does not name %s", err, name)
+		}
+	}
+}
+
+// TestRefusalsCountAsOperationErrors drives each operation's refusals through the public call and
+// reads the gathered counter: every returned error counts once, refused input included (D7, #434).
+func TestRefusalsCountAsOperationErrors(t *testing.T) {
+	registry := metric.NewMetricsRegistry()
+	m, err := newStoreMetrics(registry, "CONTENT")
+	if err != nil {
+		t.Fatalf("newStoreMetrics: %v", err)
+	}
+	objects := &okObjects{}
+	s := &Store{objects: objects, metrics: m}
+	ctx := context.Background()
+	body := func(id string, raw map[string]string) *content {
+		return &content{entityID: id, raw: raw,
+			fields: map[string]string{message.ContentRoleBody: "body", message.ContentRoleAbstract: "description"}}
+	}
+	calls := []struct {
+		operation string
+		call      func() error
+	}{
+		{"put", func() error { return s.Put(nilCtx, "k", []byte("v")) }},
+		{"get", func() error { _, err := s.Get(nilCtx, "k"); return err }},
+		{"open", func() error { _, err := s.Open(nilCtx, "k"); return err }},
+		{"list", func() error { _, err := s.List(nilCtx, ""); return err }},
+		{"delete", func() error { return s.Delete(nilCtx, "k") }},
+		{"store_content", func() error {
+			_, err := s.StoreContent(nilCtx, body(validEntityID, map[string]string{"body": "b"}))
+			return err
+		}},
+		{"store_content", func() error { _, err := s.StoreContent(ctx, nil); return err }},
+		{"store_content", func() error {
+			_, err := s.StoreContent(ctx, body("a.b.c.d.e", map[string]string{"body": "b"}))
+			return err
+		}},
+		{"store_content", func() error {
+			_, err := s.StoreContent(ctx, body(validEntityID, map[string]string{"body": "b", "description": "extra"}))
+			return err
+		}},
+	}
+	want := map[string]float64{}
+	for _, c := range calls {
+		if err := c.call(); !errs.IsInvalid(err) {
+			t.Fatalf("%s refusal error = %v, want an invalid-input error", c.operation, err)
+		}
+		want[c.operation]++
+	}
+	if objects.calls != 0 {
+		t.Fatalf("refusals reached the bucket %d times, want none", objects.calls)
+	}
+	family := gather(t, registry)["semengine_objectstore_operation_errors_total"]
+	for operation, n := range want {
+		got := counterValue(family, map[string]string{"bucket": "CONTENT", "operation": operation})
+		if got != n {
+			t.Errorf("operation_errors_total{operation=%q} = %v after %v returned errors, want %v", operation, got, n, n)
+		}
+	}
+}
+
 // TestStoreContentKeysAreUniquePerCall asks for many keys for one entity as fast as it can; the
 // clock may return one reading for all of them, so uniqueness must not come from it.
 func TestStoreContentKeysAreUniquePerCall(t *testing.T) {
@@ -140,7 +220,8 @@ func TestStoreMetricsRegisterOnInjectedRegistry(t *testing.T) {
 		t.Fatalf("newStoreMetrics: %v", err)
 	}
 	m.recordWriteOp("put")
-	m.recordError("put")
+	failed := errors.New("failed")
+	m.recordError("put", &failed)
 
 	families := gather(t, registry)
 	write := families["semengine_objectstore_write_operations_total"]
@@ -173,7 +254,8 @@ func TestNilRegistryRecordsNothing(t *testing.T) {
 	m.recordWriteLatency("put", time.Now())
 	m.recordDeleteLatency(time.Now())
 	m.recordListLatency(time.Now())
-	m.recordError("get")
+	failed := errors.New("failed")
+	m.recordError("get", &failed)
 }
 
 // TestRetentionGuardFailsClosed is the pin's TestReconcileNoLifecycleRetention fatal case: a

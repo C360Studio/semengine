@@ -59,7 +59,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
   - Files: `natsclient/stream_bounds.go` (`:6`, `:112-114`) and `natsclient/stream_bounds_test.go` (`:102`, the line
     asserting the removed key, deleted; the subtest's name says it names the archival escape).
   - Gate: `go test -race ./natsclient/` and `task verify`.
-- [ ] 2.4 The example alert rule goes (design D5, `design.md:126-136`).
+- [x] 2.4 The example alert rule goes (design D5, `design.md:126-136`).
   - File: `configs/prometheus/rules/storage-pressure.yml`: delete `:298-319`, edit `:38-39`, add the header note.
   - The four `TestStorageAlertRules_*` tests pass unchanged.
   - Gate: `go test -race -run TestStorageAlertRules ./service/` and `task verify`.

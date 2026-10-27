@@ -100,16 +100,30 @@ func (b *logBuffer) String() string {
 	return b.buf.String()
 }
 
-// startIndex builds graph-index from raw and wires the write path in the order task 4.3's Start
-// will: the follower, the index buckets, the pool, then the follower's Run, the coalescer and the
-// repair loop. The cleanup stops them in Stop's order: the feed first, then the pool's Shutdown
-// while the pool's context is still live, so accepted work is written, then the pool's context.
+// startIndex builds graph-index from raw, ensures ENTITY_STATES and starts the component; the
+// test's cleanup stops it.
 func startIndex(t *testing.T, client *natsclient.Client, raw string) *harness {
+	t.Helper()
+	states := ensureEntityStates(t, client)
+	c, logs := newIndex(t, client, raw)
+	startComponent(t, c)
+	return &harness{c: c, f: c.follower.Load(), states: states, client: client, logs: logs}
+}
+
+// ensureEntityStates ensures ENTITY_STATES, as graph-ingest would, and returns its write handle.
+func ensureEntityStates(t *testing.T, client *natsclient.Client) jetstream.KeyValue {
 	t.Helper()
 	states, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEntityStates)
 	if err != nil {
 		t.Fatalf("ensure %s: %v", graph.BucketEntityStates, err)
 	}
+	return states
+}
+
+// newIndex builds an initialized, unstarted graph-index from raw through CreateGraphIndex, on a
+// registry of its own, logging to the returned buffer.
+func newIndex(t *testing.T, client *natsclient.Client, raw string) (*Component, *logBuffer) {
+	t.Helper()
 	logs := &logBuffer{}
 	built, err := CreateGraphIndex(json.RawMessage(raw), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
@@ -119,55 +133,30 @@ func startIndex(t *testing.T, client *natsclient.Client, raw string) *harness {
 		t.Fatalf("CreateGraphIndex: %v", err)
 	}
 	c := built.(*Component)
-	f, err := follower.Open(t.Context(), follower.Config{
-		Client:          client,
-		Key:             key,
-		MetricsRegistry: c.metricsRegistry,
-		Logger:          c.logger,
-		StartupAttempts: c.config.StartupAttempts,
-		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
-		Deliver:         c.deliver,
-		Failed:          c.failedTotal,
-	})
-	if err != nil {
-		t.Fatalf("follower.Open: %v", err)
+	if err := c.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
 	}
-	if err := c.openIndexBuckets(t.Context()); err != nil {
-		t.Fatalf("openIndexBuckets: %v", err)
+	return c, logs
+}
+
+// startComponent starts c under the test's context; the cleanup stops it under a bounded
+// context (a Stop after a Stop that returned nil does nothing).
+func startComponent(t *testing.T, c *Component) {
+	t.Helper()
+	if err := c.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
-	poolCtx, poolCancel := context.WithCancel(context.Background())
-	if err := c.startIndexPool(poolCtx, f); err != nil {
-		poolCancel()
-		t.Fatalf("startIndexPool: %v", err)
+	t.Cleanup(func() { stopComponent(t, c) })
+}
+
+// stopComponent stops c within waitBound and fails the test unless Stop returns nil.
+func stopComponent(t *testing.T, c *Component) {
+	t.Helper()
+	ctx, cancel := context.WithTimeout(context.Background(), waitBound)
+	defer cancel()
+	if err := c.Stop(ctx); err != nil {
+		t.Errorf("Stop: %v", err)
 	}
-	feedCtx, feedCancel := context.WithCancel(t.Context())
-	var feeds sync.WaitGroup
-	feeds.Go(func() {
-		if err := f.Run(feedCtx); err != nil {
-			t.Errorf("follower Run: %v", err)
-		}
-	})
-	if c.coalescer != nil {
-		feeds.Go(func() { c.coalescer.run(feedCtx) })
-	}
-	feeds.Go(func() { c.repairLoop(feedCtx) })
-	t.Cleanup(func() {
-		feedCancel()
-		joined := make(chan struct{})
-		go func() { feeds.Wait(); close(joined) }()
-		select {
-		case <-joined:
-		case <-time.After(waitBound):
-			t.Errorf("feeds did not return within %s", waitBound)
-		}
-		ctx, cancel := context.WithTimeout(context.Background(), waitBound)
-		defer cancel()
-		if err := c.pool.Shutdown(ctx); err != nil {
-			t.Errorf("pool Shutdown: %v", err)
-		}
-		poolCancel()
-	})
-	return &harness{c: c, f: f, states: states, client: client, logs: logs}
 }
 
 // stmt is one statement of a stored entity.

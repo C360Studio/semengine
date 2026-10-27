@@ -46,7 +46,7 @@ passes on a clean tree at its commit (#171).
   ./processor/graph-index`, the metric-registry guard in `task lint`.
 - [x] 4.2 Index write path on the keyed pool, coalescer, repair loop, owner reconciliation (design D7, D8). Gate:
   as 4.1 plus `task test:integration -- ./processor/graph-index`.
-- [ ] 4.3 Lifecycle on `component.Lifecycle` with the follower; Health and DataFlow (design D4). Gate: as 4.2 and
+- [x] 4.3 Lifecycle on `component.Lifecycle` with the follower; Health and DataFlow (design D4). Gate: as 4.2 and
   `TestGraphIndexLifecycleSuite`.
 - [ ] 4.4 Query handlers from the verb table, `QueryReady`, the reply envelope (design D5, D6). Gate: as 4.2 and
   `TestQueryDuringStartupReplayIsIndexNotReady`, `TestGraphIndexServesExactlyTheDeclaredVerbs`.

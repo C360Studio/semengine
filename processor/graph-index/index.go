@@ -83,7 +83,7 @@ func (c *Component) openIndexBuckets(ctx context.Context) error {
 // Shutdown has returned, so accepted work is written. The coalescer's run is the caller's
 // to start and join.
 func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower) error {
-	c.follower = f
+	c.follower.Store(f)
 	c.aliasPredicates = vocabulary.DiscoverAliasPredicates()
 	c.namePredicates = vocabulary.DiscoverLabelPredicates()
 	pool, err := dispatch.NewKeyedPool(poolCtx, dispatch.KeyedConfig[indexWork]{
@@ -99,7 +99,7 @@ func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower
 			// left pending would pin the watermark after the repair (design D7).
 			c.markEntityFailed(work.entityID)
 			if work.revision > 0 {
-				c.follower.Complete(work.entityID, work.revision)
+				c.follower.Load().Complete(work.entityID, work.revision)
 			}
 		},
 		MetricsRegistry: c.metricsRegistry,
@@ -168,7 +168,7 @@ func (c *Component) submit(ctx context.Context, work indexWork) {
 // submitted R1 cannot be undone by R1.
 func (c *Component) processWork(ctx context.Context, work indexWork) {
 	if c.reconcileEntity(ctx, work.entityID) && work.revision > 0 {
-		c.follower.Complete(work.entityID, work.revision)
+		c.follower.Load().Complete(work.entityID, work.revision)
 	}
 }
 
@@ -182,7 +182,7 @@ func (c *Component) failedTotal() int64 {
 // revision that led here may complete.
 func (c *Component) reconcileEntity(ctx context.Context, entityID string) bool {
 	if err := validateEntityLiteralKey(entityID); err != nil {
-		c.follower.Reset(graph.GraphStateReasonNoncanonicalEntityID)
+		c.follower.Load().Reset(graph.GraphStateReasonNoncanonicalEntityID)
 		c.markEntityFailed(entityID)
 		c.logger.Error("authoritative entity key is noncanonical; graph reset required",
 			slog.String("entity", entityID), slog.Any("error", err))
@@ -422,7 +422,7 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 		if errors.As(err, &stateErr) {
 			reason = stateErr.Reason
 		}
-		c.follower.Reset(reason)
+		c.follower.Load().Reset(reason)
 		if reason == graph.GraphStateReasonNoncanonicalEntityID {
 			c.markEntityFailed(entityID) // counts the reset (design D4)
 			return fmt.Errorf("%w: %w", errAuthoritativeIdentityMismatch, err)

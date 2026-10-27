@@ -1,0 +1,83 @@
+# object-store
+
+## ADDED Requirements
+
+### Requirement: The Component's configuration is strict
+
+The objectstore Component SHALL accept only `bucket_name` and `ports`, and SHALL refuse at construction any other
+key, `data_cache` included, and any output port other than `stored`, each with an error naming it.
+
+#### Scenario: A data_cache key
+
+- **WHEN** the Component is built from `{"data_cache": {"enabled": false}}`
+- **THEN** construction fails naming `data_cache`
+- **AND** the test that verifies this is `TestComponentConfigRefusesUnknownKey`
+
+#### Scenario: An events output
+
+- **WHEN** the configured outputs include a port named `events`
+- **THEN** construction fails naming `events`
+- **AND** the test that verifies this is `TestComponentRefusesOutputOtherThanStored`
+
+### Requirement: The Component stores ContentStorable bodies and emits their reference
+
+For each message on an input whose payload is a `message.ContentStorable`, the Component SHALL store it through
+`StoreContent` and, when a `stored` output is configured, SHALL publish a `StoredMessage` carrying the payload's entity,
+triples and that reference, which opens to the body.
+
+#### Scenario: A document on the write input
+
+- **WHEN** a `ContentStorable` with only a body is published on the `write` input
+- **THEN** a `StoredMessage` on `stored` carries a reference with `StorageInstance` `objectstore` that opens to the body
+- **AND** the test that verifies this is `TestWriteLaneStoresBodyAndEmitsReference`
+
+### Requirement: The Component refuses other messages loudly
+
+A message that does not decode, is not `ContentStorable`, or that `StoreContent` refuses SHALL store nothing, SHALL be
+logged at error level and counted in `Health().ErrorCount`, and SHALL be terminated on a JetStream input. A core-NATS
+input SHALL be at-most-once: such a message is dropped.
+
+#### Scenario: Each refusal on each lane
+
+- **WHEN** each refused kind is published on a core-NATS input and on a JetStream input
+- **THEN** nothing is stored, `ErrorCount` rises by one, and the JetStream delivery is terminated
+- **AND** the test that verifies this is `TestWriteLaneRefusals`
+
+#### Scenario: The reference cannot be published
+
+- **WHEN** the body is stored but publishing the `StoredMessage` on a JetStream `stored` output fails
+- **THEN** the JetStream input delivery is negatively acknowledged, not acknowledged
+- **AND** the test that verifies this is `TestStoredEmitFailureNaks`
+
+### Requirement: Ending the Start context stops nothing
+
+After `Start` returned, ending the context given to `Start` SHALL NOT stop either input lane: later messages on core-NATS
+and JetStream inputs SHALL still be stored. The Component SHALL pass the lifecycle suite.
+
+#### Scenario: Both lanes after the Start context ended
+
+- **WHEN** the Start context is cancelled and a document is then published on each input
+- **THEN** both bodies are stored
+- **AND** the tests that verify this are `TestStartContextEndKeepsBothLanesWriting` and `TestObjectStoreLifecycleSuite`
+
+### Requirement: One objectstore store per process
+
+The Component SHALL stamp and offer its Store as `StorageInstance` `objectstore` from `ProvidedStores`, and nil before
+`Start`; a second started Component in one process SHALL be refused at `Start` by the store registry.
+
+#### Scenario: Two Components
+
+- **WHEN** two objectstore Components are started by one component manager
+- **THEN** the second Start fails naming the instance `objectstore`
+- **AND** the tests that verify this are `TestProvidedStoresUnderObjectstore` and `TestSecondComponentRefusedAtStart`
+
+### Requirement: StoredMessage is a registered payload
+
+`RegisterPayloads` SHALL register `StoredMessage` as `storage.stored.v1`; a `StoredMessage` SHALL round-trip through
+`message.NewDecoder` and SHALL refuse validation with an invalid entity ID or no reference.
+
+#### Scenario: Round trip
+
+- **WHEN** a `StoredMessage` is wrapped in a `BaseMessage`, marshalled and decoded
+- **THEN** its entity ID, triples and reference are unchanged
+- **AND** the tests that verify this are `TestStoredMessageRoundTripsThroughDecoder` and `TestStoredMessageValidate`

@@ -131,13 +131,16 @@ func TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy(t *testing.T) {
 
 	_, err = js.CreateConsumer(ctx, bound.stream, config)
 	require.NoError(t, err)
-	// A fresh tick after the creation: the lookup now succeeds, and only the recorded
-	// lost binding keeps Health unhealthy.
-	health, err := awaitHealthAfterTick(ctx, t, c, func(h component.HealthStatus) bool {
-		return healthNamesRestart(h, bound.name)
-	})
-	require.NoError(t, err, "Health must stay unhealthy and say the process must be restarted once a consumer is created again: %+v", health)
-	require.Equal(t, "degraded", health.Status)
+	// Fresh ticks after the creation: the lookup now succeeds, and only the recorded lost
+	// binding keeps Health unhealthy. Each read follows its tick, and every one must be
+	// unhealthy: a wait that accepts the first match would pass a record a good lookup
+	// clears, whenever the status loop's own tick records it again just before a read.
+	for range 3 {
+		c.refreshReadinessStatus(ctx)
+		health := c.Health()
+		require.True(t, healthNamesRestart(health, bound.name), "Health must stay unhealthy and say the process must be restarted once a consumer is created again: %+v", health)
+		require.Equal(t, "degraded", health.Status)
+	}
 }
 
 // TestIntegration_HealthStaysStuckAfterConsumerRecreated is graph-ingest-recovery,
@@ -163,11 +166,15 @@ func TestIntegration_HealthStaysStuckAfterConsumerRecreated(t *testing.T) {
 
 	_, err = js.CreateConsumer(ctx, bound.stream, config)
 	require.NoError(t, err)
-	// A fresh tick after the creation, whose lookup succeeds.
-	health, err := awaitHealthAfterTick(ctx, t, c, func(h component.HealthStatus) bool {
-		return !h.Healthy && strings.Contains(h.LastError, bound.name)
-	})
-	require.NoError(t, err, "Health must stay unhealthy once a consumer is created again: %+v", health)
+	// Fresh ticks after the creation, whose lookups succeed. Each read follows its tick, and
+	// every one must be unhealthy: a wait that accepts the first match would pass a record a
+	// good lookup clears, whenever the status loop's own tick records it again just before a
+	// read.
+	for range 3 {
+		c.refreshReadinessStatus(ctx)
+		health := c.Health()
+		require.True(t, !health.Healthy && strings.Contains(health.LastError, bound.name), "Health must stay unhealthy once a consumer is created again: %+v", health)
+	}
 }
 
 // TestIntegration_HealthClearsAfterConnectionInterruption is graph-ingest-recovery, "The

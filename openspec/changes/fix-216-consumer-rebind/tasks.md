@@ -37,7 +37,7 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
   clears it, and feeds it to `Health()` and the envelope. No natsclient change.
   Gate: `go test -race ./processor/graph-ingest/`, `go test -tags integration ./processor/graph-ingest/`,
   `task cover:check` and `task verify`.
-- [ ] 3.2 Mutation rows M1, M3, M4, M5 and M6 (design, Tests) with `task mutate:check`, each reported as detected
+- [x] 3.2 Mutation rows M1, M3, M4, M5 and M6 (design, Tests) with `task mutate:check`, each reported as detected
   (naming the test) or as a survivor, in `notes/3.2.md`, which also states the unproven scenario (design,
   Tests); the PR body lists it and the survivors as uncovered.
 

@@ -60,7 +60,7 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
     boot, and the doc names `FlowPaths` beside `Mermaid`.
   - `docs/admission-ledger.yaml`: the three edits in design "Ledger".
   - Gate: `task docs:check`, `task ledger:check`.
-- [ ] 3.2 Sync the two spec deltas into `openspec/specs/`.
+- [x] 3.2 Sync the two spec deltas into `openspec/specs/`.
   - Correct the `composition-validation` Purpose (`openspec/specs/composition-validation/spec.md:8`): the component
     manager runs the judgment at boot; name `FlowPaths` beside `Mermaid`.
   - Archive as the last content commit.

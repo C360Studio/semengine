@@ -3,9 +3,9 @@
 //
 // The requirement itself is declared by the configuration path: an ordinary
 // stream states a finite MaxAge, a finite MaxBytes, and a discard policy, or it
-// is admitted by an archival declaration or an expiring migration override. This
-// file exists because a requirement enforced at only one of two doors is not a
-// requirement — a direct `Client.EnsureStream` caller would be the supported
+// is admitted by an archival declaration. This file exists because a
+// requirement enforced at only one of two doors is not a requirement — a
+// direct `Client.EnsureStream` caller would be the supported
 // route around it. The retired COMPONENT_CAPABILITIES stream was the historical
 // in-repository example: it was created here with MaxAge one hour, no MaxBytes
 // and no discard policy; the live server reported `max_bytes=-1 discard=old`,
@@ -109,8 +109,8 @@ var boundsAtSeamRemedy = strings.Join([]string{
 		"declaration). Set Discard explicitly too: it cannot be required here, because DiscardOld is the " +
 		"zero value of the field, but at a finite MaxBytes it is the difference between evicting the " +
 		"oldest messages and refusing the newest (producer-side 503 err_code=10077).",
-	"a stream whose contract is PERMANENCE, or one that predates this requirement, cannot be excepted " +
-		"at this seam: archival_streams and stream_migration_overrides are operator declarations read by " +
-		"the configuration path. Declare the stream in configuration and let the stream provisioner " +
-		"create it, rather than reaching for an unbounded EnsureStream call.",
+	"a stream whose contract is PERMANENCE cannot be excepted at this seam: archival_streams, the one " +
+		"exception, is an operator declaration read by the configuration path. Declare the stream in " +
+		"configuration and let the stream provisioner create it, rather than reaching for an unbounded " +
+		"EnsureStream call.",
 }, "\n")

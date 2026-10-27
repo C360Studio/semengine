@@ -93,13 +93,12 @@ func TestCheckStreamBounds(t *testing.T) {
 		}
 	})
 
-	// The remedy has to name the escapes even though this seam cannot grant them,
+	// The remedy has to name the escape even though this seam cannot grant it,
 	// or an author who needs one reaches for the nearest plausible bound instead.
-	t.Run("the remedy names both escapes and where they live", func(t *testing.T) {
+	t.Run("the remedy names the archival escape and where it lives", func(t *testing.T) {
 		err := CheckStreamBounds(jetstream.StreamConfig{Name: "LEDGER"}, "test")
 
 		assert.Contains(t, err.Error(), "archival_streams")
-		assert.Contains(t, err.Error(), "stream_migration_overrides")
 		assert.Contains(t, err.Error(), "Discard",
 			"the field this seam cannot require must still be asked for")
 	})

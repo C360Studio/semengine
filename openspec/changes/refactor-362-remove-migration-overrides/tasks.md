@@ -55,7 +55,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
   - Record `git grep -n "time.Now" -- config/stream_bounds.go config/config.go composition/` returning nothing.
   - Gate: `go test -race ./config/`, `go test -tags integration ./config/`, `task ledger:check`,
     `task cover:check` and `task verify`.
-- [ ] 2.3 The seam's remedy names one exception (design D1, `design.md:40-42`).
+- [x] 2.3 The seam's remedy names one exception (design D1, `design.md:40-42`).
   - Files: `natsclient/stream_bounds.go` (`:6`, `:112-114`) and `natsclient/stream_bounds_test.go` (`:102`, the line
     asserting the removed key, deleted; the subtest's name says it names the archival escape).
   - Gate: `go test -race ./natsclient/` and `task verify`.

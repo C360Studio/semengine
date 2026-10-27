@@ -1,5 +1,8 @@
 # Inventory: fix-301-graph-ingest-test-seams
 
+**Superseded in scope.** The owner rescoped #301 on 2026-10-27 (#301 comment 6453844541) after this inventory; `design.md`
+follows the rescope. The field and test lists below still describe the base.
+
 Architect inventory, revision 2, verbatim. Claude's reviewer returned INVENTORY PASS in round 2; its two MEDIUM findings
 and the NIT are carried into `design.md` (the P6 citation is `keyed_ingest.go:330`; the straddle unit test runs on a
 component whose `release` has run; the #192 ruling is comment 6127721456).

@@ -209,12 +209,15 @@
   source_sha: 5457b3458936f668b71d2fea061f67f8d7d01e67
   consumer_purpose: canonical go test flags for the integration run
   destination: >-
-    Taskfile.yml (test:integration keeps the pin's go test flags; openspec change test-infra-audit,
+    Taskfile.yml (test:integration keeps the pin's go test flags and runs only the packages that have an
+    integration-tagged test, listed by scripts/test-pkgs.sh; openspec change test-infra-audit,
     #205, removed the runner script that carried the pin's host lock, Docker preflight and image pull)
   contract: -race -failfast -tags=integration -count=1 -p 2
   dependencies_and_side_effects: go test only
   known_risks: -p 2 inherited unmeasured
-  proving_tests: TestUnitInvocationsPinned (the test:integration command line)
+  proving_tests: >-
+    TestUnitInvocationsPinned (internal/harness/toolcheck/mergegate_test.go; the test:integration command line
+    and its package list); TestTestPkgsLists (internal/harness/toolcheck/testpkgs_test.go)
   owner: setup-02 developer
   disposition: adapt
 
@@ -263,8 +266,8 @@
     documented false-negative shapes (tcp6 variants, multi-line, concatenation, non-net.Listen APIs,
     bind-then-close-then-bind); fixed dial literals not covered (T-B6 covers)
   proving_tests: >-
-    scripts/lint-test-ports_fixture_test.sh; TestLintTestPortsHonoursNoMarker and TestLintTestPortsPasses
-    (internal/harness/contract/addresses_test.go)
+    scripts/lint-test-ports_fixture_test.sh; TestLintTestPortsHonoursNoMarker (internal/harness/toolcheck/lintports_test.go) and
+    TestLintTestPortsPasses (internal/harness/contract/addresses_test.go)
   owner: setup-02 developer
   disposition: adapt
 

@@ -111,8 +111,8 @@ connection from an earlier test is still open. Look for the first failure.
 
 ## Running the tests
 
-- `task test:integration` runs every package, integration tests included, each package in a random order it prints
-  as `-test.shuffle <seed>`. Rerun one package's order with
+- `task test:integration` runs every package that has an `integration`-tagged test (`scripts/test-pkgs.sh integration`
+  prints the list), each package in a random order it prints as `-test.shuffle <seed>`. Rerun one package's order with
   `go test -tags integration -shuffle=<seed> ./<package>`.
 - `task test:integration -- ./natsclient` runs one package.
 - Plain `go test -tags integration ./natsclient` works too, with the same behaviour: natsfixture turns Ryuk off

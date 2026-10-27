@@ -2,6 +2,25 @@
 
 ## MODIFIED Requirements
 
+### Requirement: Failed-start check
+
+The failed-start check SHALL require that Start returns a non-nil error, that the owner then reports nothing
+unresolved, and that a following Stop returns nil and changes no call count. For an adapter that shows cleanup on the
+NATS server instead of counting calls ("Observe adapter contract"), the call count is empty, and the check SHALL
+instead require that the following Stop leaves nothing the server shows held. It judges a failed Start whose own
+cleanup succeeded; a failed Start whose own cleanup also fails is governed by "Failed start whose own cleanup fails"
+and is not judged by this check.
+
+#### Scenario: Failed start that holds a resource
+
+- **WHEN** the `mustFail` factory's owner returns an error from Start but keeps a goroutine or handle
+- **THEN** the failed-start check fails naming the unresolved item
+
+#### Scenario: mustFail factory whose Start succeeds
+
+- **WHEN** the `mustFail` factory's owner returns nil from Start
+- **THEN** the failed-start check fails stating that the factory did not fail
+
 ### Requirement: Observe adapter contract
 
 A service ported from the pin SHALL be run through the suite via a test-side adapter in its package, not by adding
@@ -25,5 +44,7 @@ Unresolved what the server still shows the service holding, read without a test-
 #### Scenario: Cleanup shown on the NATS server
 
 - **WHEN** graph-ingest's adapter observes it after a Stop that returned nil
-- **THEN** an input published to its input stream stays pending, a request on each of its request subjects finds no
-  responder, and the adapter lists nothing for either
+- **THEN** a request on each of its request subjects finds no responder, and the server shows no outstanding pull on
+  its durable consumer
+- **AND** an input published after that read is counted pending on that consumer with nothing ack-pending, and the
+  adapter lists nothing for either

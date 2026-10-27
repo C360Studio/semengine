@@ -11,27 +11,36 @@
 ## D1. Production builds the stream lane; tests build it the same way
 
 - `setupJetStreamConsumer` waits for the stream (`consume.go:89`).
-- It then calls `c.newStreamLane(submitCtx, port, created)`. This is an unexported constructor in `consume.go`. It
-  holds everything that `consume.go:65-145` computes today:
-  - port facts, subject, import lane and consumer config;
-  - the ack_wait and heartbeat check;
-  - the zero-creation-time refusal (`consume.go:92-94`);
-  - the pool and the submit context.
-- It passes `lane.deliver`, the body of today's closure (`consume.go:156-229`), to
-  `c.natsClient.ConsumeStreamWithConfig`.
+- It then calls `c.newStreamLane(ctx, port, created)`. This is an unexported constructor in `consume.go`. It returns
+  a `streamLane` holding what `consume.go:65-145` computes today:
+  - subject, import lane, consumer config, heartbeat and generation;
+  - the pool it submits to.
+- `streamLane` stores no `context.Context` (AGENTS.md § 1; `internal/harness/contract/context_test.go:22`). The
+  constructor uses `ctx`, Start's context, only during the call: the heartbeat check stays on Start's context, as at
+  `consume.go:140`.
+- The constructor refuses a bad port, a refused ack_wait and heartbeat pair, and a zero creation time
+  (`consume.go:92-94`).
+- Production hands natsclient `func(_ context.Context, msg jetstream.Msg) { lane.deliver(submitCtx, msg) }`. The
+  closure keeps `submitCtx` as it does today, and `deliver` is the body of today's closure (`consume.go:156-229`).
 - Production is the constructor's only non-test caller. Tests call the same constructor, so they cannot build a lane
-  that production would refuse.
+  that production would refuse, and they pass their own context to `deliver`.
 
 | Test | Behaviour it proves |
 |---|---|
-| T1 (replaces `bindEntityStream`) | A port's ack_wait and heartbeat_interval reach `lane`'s consumer config with the defaults; a refused pair fails the constructor |
+| T1 (replaces `bindEntityStream`) | A port's ack_wait and heartbeat_interval reach the lane's consumer config with the defaults; a refused pair fails the constructor |
 | T2 (replaces `TestStreamWithoutCreationTimeIsRefused`) | A zero creation time is refused |
 | T3 | `startStreamLane` (14 callers) builds through the constructor; its callers do not change |
 | T4 (ruling 1; replaces `:210` and `:327`) | See below |
 
-T4 builds a lane on a component with a built pool, then runs `c.release` (`component.go:562`), the cleanup the shell
-runs for a failed Start's rollback. It then calls `lane.deliver` with a valid Graphable input. The input's only
-disposition is Nak (`consume.go:225-229`), and nothing panics after the cleared handles (`component.go:619`).
+T4 drives a real rollback through the guard, as `lifecycle_owner_test.go:136-140` does: it calls
+`c.lifecycle.Start(ctx, failingStart, c.release)`.
+
+1. The failing start builds the pool and the lane, then returns an error.
+2. The guard runs `c.release` (`component.go:562`), the rollback the shell runs.
+3. The test then calls `lane.deliver` with the submit context the rollback ended and a valid Graphable input.
+
+The input's only disposition is Nak (`consume.go:225-229`), and nothing panics after the cleared handles
+(`component.go:619`).
 
 ## D2. The boot sweep is proved by calling it
 
@@ -44,8 +53,9 @@ passes straight through (`natsclient/kv.go:729`).
   watcher, and records no poison.
 - **T6** proves "a failed sweep fails Start and the rollback leaves nothing" with a real denial.
   - Setup: an embedded server denies one user publish on `$JS.API.CONSUMER.CREATE.KV_ENTITY_STATES.>`. The sweep's
-    ordered consumer is created there (kv.go:1355-1360, js.go:1954-1959, jsm.go:511-524). The precedent for the
-    embedded server is `config/manager_lifecycle_integration_test.go:368-376`, with an `// Own server:` line.
+    ordered consumer is created there (kv.go:1355-1360, js.go:1954-1959, jsm.go:511-524).
+  - The embedded server with its `// Own server:` line is the case `docs/test-infrastructure.md:93-96` sanctions,
+    with the precedent `config/manager_lifecycle_integration_test.go:368-376`.
   - Expected: Start fails, nothing is Unresolved, no query subject has a responder, Stop returns nil, and a second
     Start is refused.
   - Task 1.1 measures what the timeout costs.
@@ -67,11 +77,14 @@ test handler that enables Debug sees Debug records. The precedent is M7's `cance
   - Stop does not return while Start is held.
   - The cancelled Start fails.
   - The first durable consumer stays on the server (`:177-180`).
-  - The server shows no pull loop on it (task 1.5).
+  - The server shows no outstanding pull on it (task 1.5).
 - **T10 (replaces `:64`).** Start is held at "query handlers registered" or at "mutation handlers registered"
   (`mutation_runtime.go:33`). A real request is refused with `errs.ErrNotStarted` (`component.go:530-532`) and does no
-  work. The window where a handler runs and then its registration fails stays proved in natsclient
-  (`natsclient/subscribe_registration_test.go:320`, `:366`).
+  work.
+  - Ruling 1 does not name `:64` and needs no extension to cover it. graph-ingest's own guarantee is the refusal
+    before Start completes, which T10 proves with a real request.
+  - The window where a handler runs and then its registration fails is natsclient behaviour, proved by natsclient's T6
+    and T7 (`natsclient/subscribe_registration_test.go:392`, `:436`), the "T6 shape" `:64` names as its source.
 
 ## D4. Apply-path holds are cued at "Entity ingested"
 
@@ -81,9 +94,9 @@ test relies on them.
 
 - **T11 (`readiness_integration_test.go:175`, `:442`).** The first input is held there. Expected: no envelope reads
   caught-up, and bootstrap_complete is true.
-- **T12 (`long_apply_integration_test.go:101`, "Long apply").** The hold outlasts the 2 s ack_wait. The server's
-  consumer shows no redelivery past the wait. The InProgress count is dropped: it measured mechanism, not the
-  scenario.
+- **T12 (`long_apply_integration_test.go:101`, "Long apply").** The hold outlasts the 2 s ack_wait. The test's oracle
+  consumer (`:138-154`) says when the wait has passed; after that, graph-ingest's consumer shows the input delivered
+  once and not redelivered. The InProgress count is dropped: it measured mechanism, not the scenario.
 - **T13 (`settlement_integration_test.go:246`).** The child process blocks there for good and is killed. The input
   is redelivered and applied once.
 - **T14 (`:329`, "Durable record fails").**
@@ -96,21 +109,33 @@ test relies on them.
 ## D5. The suite adapter shows cleanup on the server (ruling 2)
 
 `newSuiteOwner` (`lifecycle_adapter_test.go:34`) drops its `consumeStream` wrap and its counted calls. Observe adds two
-server-derived entries:
+server-derived entries beside its in-process handle list:
 
-- "request responder", when a request on a graph-ingest subject finds one;
-- "input consumer pulling", when the server shows a pull loop (task 1.5).
+- **"request responder"**, when a request on a graph-ingest subject finds one.
+- **"input consumer pulling"**, when the server shows an outstanding pull on graph-ingest's durable consumer, read as
+  probe 1.5 names.
 
-graph-ingest's lifecycle tests then publish an input after Stop and assert it stays pending.
+After a Stop, graph-ingest's lifecycle tests make a second check that a published input stays pending:
+
+1. Read the consumer and see no outstanding pull. This rules out a delivery before the publish.
+2. Publish an input.
+3. Read the consumer again and see the input counted pending, with nothing ack-pending.
+
+If probe 1.5 shows that a running loop can read as having no pull outstanding, the check uses an oracle consumer
+instead, as `long_apply_integration_test.go:138-154` does. Neither form waits on wall clock (#392).
 
 Callers covered:
 
 - `lifecycle_integration_test.go:332`, `:406`, `:467`, `:553`, `:597`, `:854`;
-- `health_integration_test.go:198`;
-- `lifecycle_owner_test.go:132`.
+- `health_integration_test.go:198`.
 
-`lifecycletest.go:317` (no call after a failed Start's Stop) now compares empty maps for graph-ingest. The
-server-derived Unresolved entries are what prove that the rollback released everything.
+`lifecycle_owner_test.go:132` builds its owner on a client that never connects and plants its own consumer double
+(`:126-127`). It stops using the adapter and reads the component's in-process handles directly, through the same
+listing the adapter keeps. When not connected, Observe does not skip its server reads; it fails.
+
+The suite's "Failed-start check" (spec `:94-97`; `lifecycletest.go:317`) compares empty call maps for graph-ingest.
+The delta says what replaces the count for such an adapter: the server shows nothing held after the later Stop. That
+a later Stop drains nothing again stays proved in-process by `lifecycle_owner_test.go:154-172` and by `:217`.
 
 ## D6. The fields go
 
@@ -127,7 +152,7 @@ Every production branch a removed test reached keeps a test:
 |---|---|
 | Zero creation time | T2 |
 | The three sweep exits | T5 |
-| Nak after release | T4 |
+| Nak after the rollback | T4 |
 | Not-started refusal | T10 |
 
 Each code task gates on `task cover:check`, which holds `processor/graph-ingest merged` at 80%

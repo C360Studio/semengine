@@ -28,25 +28,28 @@ The owner ruled on 2026-10-27 (#301 comment 6453410228):
 
 ## What Changes
 
-- **Production builds a stream lane.** `setupJetStreamConsumer` builds an unexported `streamLane`, and its method is
-  the consume callback production hands to natsclient. Tests build the same lane through the same constructor.
+- **Production builds a stream lane.** `setupJetStreamConsumer` builds an unexported `streamLane`, which holds no
+  context. Its `deliver` method is what the consume callback production hands to natsclient calls, with the submit
+  context passed as an argument. Tests build the same lane through the same constructor.
 - **The tests move off the fields.** Each test now reaches its fault by a real server fault, a log-record cue, or a
   direct call on the boot sweep. The straddle pair is replaced per ruling 1.
 - **The four fields and their nil-checks are removed.**
-- **lifecycle-suite's "Observe adapter contract"** admits showing a cleanup on the server (ruling 2).
+- **lifecycle-suite changes in two requirements.**
+  - "Observe adapter contract" admits showing a cleanup on the server (ruling 2).
+  - "Failed-start check" says what such an adapter proves in place of the call count.
 - No natsclient change (#170, ADR-112). No new exported surface.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `lifecycle-suite`: modified "Observe adapter contract".
+- `lifecycle-suite`: modified "Observe adapter contract" and "Failed-start check".
 
 ## Impact
 
 - Code: `processor/graph-ingest/component.go`, `consume.go`, `poison_inventory.go`.
 - Tests: `config_fields_test.go`, `statement_metadata_test.go`, `guard_generation_test.go`,
-  `lifecycle_adapter_test.go`, `lifecycle_integration_test.go`, `failed_start_callbacks_integration_test.go`,
-  `long_apply_integration_test.go`, `readiness_integration_test.go`, `settlement_integration_test.go`, plus one new
-  unit file, `stream_lane_test.go`.
+  `lifecycle_adapter_test.go`, `lifecycle_owner_test.go`, `lifecycle_integration_test.go`,
+  `failed_start_callbacks_integration_test.go`, `long_apply_integration_test.go`, `readiness_integration_test.go`,
+  `settlement_integration_test.go`, plus one new unit file, `stream_lane_test.go`.
 - Retires #301 (`Closes #301`). #300, #270, #195 and #196 stay open; none touches these lines.

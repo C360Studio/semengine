@@ -36,7 +36,7 @@ Working rules for every task:
 
 ## 4. Code
 
-- [ ] 4.1 Unit tests and `inputLane` in one commit (D1, D2): `startStreamLane` builds an `inputLane`, the straddle test
+- [x] 4.1 Unit tests and `inputLane` in one commit (D1, D2): `startStreamLane` builds an `inputLane`, the straddle test
   is added, and `consume.go` gains `inputLane.deliver`, which `setupJetStreamConsumer` passes to natsclient. The tests
   cannot compile without the type, so their failure on the base is shown with `go test -overlay` (tests only) and
   recorded in `notes/4.1.md`. Gate: `go test -race ./processor/graph-ingest/` and `task verify`.

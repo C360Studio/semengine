@@ -215,7 +215,7 @@ func TestDecodeEntity_FencesPayloadPanics(t *testing.T) {
 	}
 }
 
-// TestStreamLane_FailingPayloadIsTerminated drives the consume closure Start wires
+// TestStreamLane_FailingPayloadIsTerminated drives the input lane Start builds
 // for the entity_stream port (scenario "Payload panics while giving its entity
 // ID", and every other failing payload the requirement names): the message is
 // terminated, not acknowledged or returned, the error count `Health()` reports
@@ -226,7 +226,7 @@ func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 		fenceModePanicID, fenceModeInvalid, fenceModePanicTriples, fenceModePanicValid, fenceModePanicDecode,
 	} {
 		t.Run(mode, func(t *testing.T) {
-			c, handler := startStreamLane(t, withFenceTestPayload(t, nil))
+			c, lane := startStreamLane(t, withFenceTestPayload(t, nil))
 			// startStreamLane gives the lane the merge-test decoder; this test's type is in
 			// the component's own registry.
 			c.decoder = message.NewDecoder(c.payloadRegistry)
@@ -234,7 +234,7 @@ func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 			c.logger = slog.New(slog.NewTextHandler(&logs, nil))
 			before := c.Health().ErrorCount
 
-			assert.Equal(t, "term", deliverStreamLane(t, handler, fenceWireJSON(t, mode), 1), "disposition")
+			assert.Equal(t, "term", deliverStreamLane(t, lane, fenceWireJSON(t, mode), 1), "disposition")
 			assert.Equal(t, before+1, c.Health().ErrorCount, "the poison count rises by one")
 			// The subject is the delivered message's (streamLaneMsg.Subject), not the
 			// port's filter.
@@ -248,7 +248,7 @@ func TestStreamLane_FailingPayloadIsTerminated(t *testing.T) {
 			require.NoError(t, err)
 			assert.Empty(t, keys, "the poison message stores no key at all")
 
-			assert.Equal(t, "ack", deliverStreamLane(t, handler, fenceWireJSON(t, fenceModeConforming), 2),
+			assert.Equal(t, "ack", deliverStreamLane(t, lane, fenceWireJSON(t, fenceModeConforming), 2),
 				"the next message's disposition")
 			_, _, stored = storedRevision(t, c, fenceEntityID)
 			assert.True(t, stored, "the next message on the stream is applied")

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/internal/dispatch"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
@@ -153,77 +154,17 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	if c.consumeStream != nil {
 		consumeStream = c.consumeStream
 	}
+	lane := &inputLane{
+		c:          c,
+		pool:       pool,
+		consumer:   cfg,
+		heartbeat:  heartbeat,
+		generation: generation,
+		subject:    subject,
+		importLane: importLane,
+	}
 	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
-		// Every delivery is one input message on DataFlow, a redelivery and a message
-		// refused below included.
-		c.lifecycle.CountInput(len(msg.Data()))
-		// SemStreams ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
-		// the redelivery guard, apply, and ack move into processIngest (run on a
-		// pool lane, not this consumer goroutine). Metadata carries the stream name
-		// + sequence the guard keys on; a message without it can't be keyed/guarded.
-		meta, metaErr := msg.Metadata()
-		if metaErr != nil {
-			c.logger.Warn("graph-ingest: message missing JetStream metadata; dropping",
-				slog.String("subject", subject), slog.Any("error", metaErr))
-			c.lifecycle.CountError()
-			if ackErr := msg.Ack(); ackErr != nil {
-				c.logger.Error("Failed to ack metadata-less message", slog.Any("error", ackErr))
-			}
-			return
-		}
-		// SemStreams gh#480 queue-wait (message age when we reach it). Host clock skew can make
-		// this marginally negative on a co-located deploy — harmless (skews _sum only).
-		if !meta.Timestamp.IsZero() {
-			c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
-		}
-		// Decode + extract ONCE (the submit's key is the already-parsed entity.ID; the
-		// lane reuses the parsed entity — no double parse). A decode/validate/extract
-		// failure, a fenced payload panic included, is a poison message: counted,
-		// logged and terminated, never returned for redelivery (design D8 Q13).
-		entity, derr := c.decodeEntity(msg.Subject(), msg.Data())
-		if derr != nil {
-			// A refused statement (design D15) is this message's own fault and can never be
-			// admitted: it is terminated, counted and logged as applyIngest does a
-			// structurally invalid candidate, in the contract-rejection counts, not as poison.
-			var refusal *statementRefusal
-			if errors.As(derr, &refusal) {
-				c.recordStructuralRejection("graphable", derr)
-				if termErr := msg.Term(); termErr != nil {
-					c.logger.Error("Failed to terminate structurally invalid ingest", slog.Any("error", termErr))
-				}
-				return
-			}
-			// The error names the payload type where the message has one.
-			c.logger.Warn("graph-ingest: poison message; terminating",
-				slog.String("subject", msg.Subject()), slog.Any("error", derr))
-			c.lifecycle.CountError()
-			if termErr := msg.Term(); termErr != nil {
-				c.logger.Error("Failed to terminate poison message", slog.Any("error", termErr))
-			}
-			return
-		}
-		// Submit on the dedicated submit ctx (NOT msgCtx — a block past AckWait would
-		// otherwise surface as an ignored error → message neither enqueued nor acked).
-		// A submit failure MUST Nak so the server redelivers (SemStreams ADR-072 B1), never
-		// silent-drop.
-		work := ingestWork{
-			entity:      entity,
-			msg:         msg,
-			consumer:    cfg,
-			heartbeat:   heartbeat,
-			entityID:    entity.ID,
-			stream:      meta.Stream,
-			seq:         meta.Sequence.Stream,
-			generation:  generation,
-			deliveredAt: meta.Timestamp,
-			subject:     subject,
-			importLane:  importLane,
-		}
-		if serr := pool.SubmitBlocking(submitCtx, work.entityID, work); serr != nil {
-			if nakErr := msg.Nak(); nakErr != nil {
-				c.logger.Error("Failed to Nak after submit failure", slog.Any("error", nakErr))
-			}
-		}
+		lane.deliver(submitCtx, msg)
 	})
 	if err != nil {
 		return fmt.Errorf("consumer setup failed for stream %s: %w", streamName, err)
@@ -284,4 +225,92 @@ func (c *Component) waitForStream(ctx context.Context, streamName string) (time.
 	}
 
 	return time.Time{}, fmt.Errorf("stream %s not available after %d retries", streamName, maxRetries)
+}
+
+// inputLane holds what one input port's consumer callback needs for each message it
+// delivers: the values setupJetStreamConsumer read once for the port, and the pool its
+// Start built. It holds no context; the submit context is passed to deliver.
+type inputLane struct {
+	c          *Component
+	pool       *dispatch.KeyedPool[ingestWork]
+	consumer   natsclient.StreamConsumerConfig
+	heartbeat  time.Duration
+	generation uint64
+	subject    string
+	importLane bool
+}
+
+// deliver handles one message the port's consumer delivers: it decodes it and submits it to
+// the lane's pool under submitCtx, or settles it here when it cannot be submitted.
+func (l *inputLane) deliver(submitCtx context.Context, msg jetstream.Msg) {
+	// Every delivery is one input message on DataFlow, a redelivery and a message
+	// refused below included.
+	l.c.lifecycle.CountInput(len(msg.Data()))
+	// SemStreams ADR-072: the consume closure decodes ONCE and submits to the keyed pool;
+	// the redelivery guard, apply, and ack move into processIngest (run on a
+	// pool lane, not this consumer goroutine). Metadata carries the stream name
+	// + sequence the guard keys on; a message without it can't be keyed/guarded.
+	meta, metaErr := msg.Metadata()
+	if metaErr != nil {
+		l.c.logger.Warn("graph-ingest: message missing JetStream metadata; dropping",
+			slog.String("subject", l.subject), slog.Any("error", metaErr))
+		l.c.lifecycle.CountError()
+		if ackErr := msg.Ack(); ackErr != nil {
+			l.c.logger.Error("Failed to ack metadata-less message", slog.Any("error", ackErr))
+		}
+		return
+	}
+	// SemStreams gh#480 queue-wait (message age when we reach it). Host clock skew can make
+	// this marginally negative on a co-located deploy — harmless (skews _sum only).
+	if !meta.Timestamp.IsZero() {
+		l.c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
+	}
+	// Decode + extract ONCE (the submit's key is the already-parsed entity.ID; the
+	// lane reuses the parsed entity — no double parse). A decode/validate/extract
+	// failure, a fenced payload panic included, is a poison message: counted,
+	// logged and terminated, never returned for redelivery (design D8 Q13).
+	entity, derr := l.c.decodeEntity(msg.Subject(), msg.Data())
+	if derr != nil {
+		// A refused statement (design D15) is this message's own fault and can never be
+		// admitted: it is terminated, counted and logged as applyIngest does a
+		// structurally invalid candidate, in the contract-rejection counts, not as poison.
+		var refusal *statementRefusal
+		if errors.As(derr, &refusal) {
+			l.c.recordStructuralRejection("graphable", derr)
+			if termErr := msg.Term(); termErr != nil {
+				l.c.logger.Error("Failed to terminate structurally invalid ingest", slog.Any("error", termErr))
+			}
+			return
+		}
+		// The error names the payload type where the message has one.
+		l.c.logger.Warn("graph-ingest: poison message; terminating",
+			slog.String("subject", msg.Subject()), slog.Any("error", derr))
+		l.c.lifecycle.CountError()
+		if termErr := msg.Term(); termErr != nil {
+			l.c.logger.Error("Failed to terminate poison message", slog.Any("error", termErr))
+		}
+		return
+	}
+	// Submit on the dedicated submit ctx (NOT msgCtx — a block past AckWait would
+	// otherwise surface as an ignored error → message neither enqueued nor acked).
+	// A submit failure MUST Nak so the server redelivers (SemStreams ADR-072 B1), never
+	// silent-drop.
+	work := ingestWork{
+		entity:      entity,
+		msg:         msg,
+		consumer:    l.consumer,
+		heartbeat:   l.heartbeat,
+		entityID:    entity.ID,
+		stream:      meta.Stream,
+		seq:         meta.Sequence.Stream,
+		generation:  l.generation,
+		deliveredAt: meta.Timestamp,
+		subject:     l.subject,
+		importLane:  l.importLane,
+	}
+	if serr := l.pool.SubmitBlocking(submitCtx, work.entityID, work); serr != nil {
+		if nakErr := msg.Nak(); nakErr != nil {
+			l.c.logger.Error("Failed to Nak after submit failure", slog.Any("error", nakErr))
+		}
+	}
 }

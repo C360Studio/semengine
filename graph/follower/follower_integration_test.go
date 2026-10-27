@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -255,30 +256,62 @@ func TestFollowerOpenRefusesAbsentBucket(t *testing.T) {
 }
 
 // TestFollowerRunReturnsAndLeavesNothing: Run refuses a nil context; after its context ends it
-// returns nil, no goroutine is left in a Follower method, and the watch's consumer is gone from
-// ENTITY_STATES's stream.
+// returns nil, no goroutine is left in a Follower method or in nats.go's watch delivery, and the
+// watch's consumer is gone from ENTITY_STATES's stream. Deliver parks on the first of more stored
+// entities than the watch's buffer holds, so the native delivery is blocked sending when Run's
+// context ends: nats.go v1.54.0's Stop only unsubscribes, and Run must drain it (#418).
 func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
-	put(t, kv, entityID(1), storedEntity(entityID(1)))
-	var f *Follower
-	f = open(t, client, completing(&f), noFailures)
-
-	if err := f.Run(nil); err == nil {
+	// nats.go v1.54.0's watch buffer holds 256 entries (jetstream/kv.go WatchFiltered).
+	for n := 1; n <= 600; n++ {
+		put(t, kv, entityID(n), storedEntity(entityID(n)))
+	}
+	if err := open(t, client, func(context.Context, Entry) {}, noFailures).Run(nil); err == nil {
 		t.Fatal("Run(nil) = nil; want a refusal")
 	}
 
 	status := statusWatch(t, client)
-	stop := start(t, f)
-	// The first envelope orders the check after the heartbeat goroutine started and published.
-	nextEnvelope(t, status, waitBound)
-	if err := stop(); err != nil {
-		t.Fatalf("Run returned %v; want nil", err)
-	}
-	// Run has returned, so every goroutine it started has been joined: none is in a Follower method.
-	buf := make([]byte, 1<<20)
-	if dump := string(buf[:runtime.Stack(buf, true)]); strings.Contains(dump, "follower.(*Follower)") {
-		t.Fatalf("a goroutine is still in a Follower method after Run returned:\n%s", dump)
+	// Once the context ends, Run's loop picks at random between it and a ready update. A read
+	// unblocks the delivery, which nats.go's own unsubscribe on that context then ends, so only
+	// the first pick leaves the delivery blocked at Stop. On code that does not drain, each cycle
+	// fails about half the time; ten cycles miss it about once in a thousand runs.
+	for cycle := range 10 {
+		entered := make(chan struct{}, 1)
+		f := open(t, client, func(ctx context.Context, _ Entry) {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-ctx.Done()
+		}, noFailures)
+		stop := start(t, f)
+		if cycle == 0 {
+			// The first envelope orders the check after the heartbeat goroutine started and published.
+			nextEnvelope(t, status, waitBound)
+		}
+		select {
+		case <-entered:
+		case <-time.After(waitBound):
+			t.Fatal("Deliver was not called")
+		}
+		// The stack dump showing the native delivery blocked on its full buffer orders Run's
+		// cancellation after the backlog, not elapsed time.
+		if err := awaitNativeDeliveryBlocked(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		if err := stop(); err != nil {
+			t.Fatalf("cycle %d: Run returned %v; want nil", cycle, err)
+		}
+		// Run has returned, so every goroutine it started has been joined: none is in a Follower method.
+		buf := make([]byte, 1<<20)
+		if dump := string(buf[:runtime.Stack(buf, true)]); strings.Contains(dump, "follower.(*Follower)") {
+			t.Fatalf("cycle %d: a goroutine is still in a Follower method after Run returned:\n%s", cycle, dump)
+		}
+		// Run drained the watch until nats.go closed it, which it does after its last delivery returns.
+		if stacks := nativeDeliveryStacks(); stacks != "" {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned:\n%s", cycle, stacks)
+		}
 	}
 	js, err := client.JetStream()
 	if err != nil {
@@ -298,6 +331,70 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 		return info.State.Consumers, nil
 	}, func(n int) bool { return n == 0 }); err != nil {
 		t.Fatalf("the watch's consumer is still on the stream: %v", err)
+	}
+}
+
+// nativeDeliveryStacks returns the stacks of goroutines inside nats.go's KV watch delivery callback,
+// or "" when there are none.
+func nativeDeliveryStacks() string {
+	buf := make([]byte, 1<<20)
+	var found []string
+	for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+		if strings.Contains(stack, "jetstream.(*kvs).WatchFiltered.func1") {
+			found = append(found, stack)
+		}
+	}
+	return strings.Join(found, "\n\n")
+}
+
+// awaitNativeDeliveryBlocked waits, up to waitBound, for nats.go's watch delivery to be blocked
+// sending into its full updates buffer.
+func awaitNativeDeliveryBlocked(ctx context.Context) error {
+	ctx, cancel := context.WithTimeout(ctx, waitBound)
+	defer cancel()
+	if _, err := probe.Await(ctx, func(context.Context) (bool, error) {
+		return strings.Contains(nativeDeliveryStacks(), "[chan send]"), nil
+	}, func(blocked bool) bool { return blocked }); err != nil {
+		return fmt.Errorf("the native watch delivery did not back up: %w", err)
+	}
+	return nil
+}
+
+// TestFollowerConcurrentQueryReady: while the initial build is incomplete, concurrent QueryReady
+// calls and the heartbeat each read the stream status, and each call refuses with index_not_ready.
+// Under -race this is the regression for #417: the reads share one status handle.
+func TestFollowerConcurrentQueryReady(t *testing.T) {
+	client := fixtureClient(t)
+	kv := entityStates(t, client)
+	put(t, kv, entityID(1), storedEntity(entityID(1)))
+	// Deliver never completes the entry, so the initial build stays incomplete.
+	delivered := make(chan struct{}, 1)
+	f := open(t, client, func(context.Context, Entry) { delivered <- struct{}{} }, noFailures)
+	stop := start(t, f)
+	select {
+	case <-delivered:
+	case <-time.After(waitBound):
+		t.Fatal("the stored entity was not delivered")
+	}
+	begin := make(chan struct{})
+	errsSeen := make(chan error, 8*20)
+	var calls sync.WaitGroup
+	for range 8 {
+		calls.Go(func() {
+			<-begin
+			for range 20 {
+				errsSeen <- f.QueryReady(t.Context())
+			}
+		})
+	}
+	close(begin)
+	calls.Wait()
+	close(errsSeen)
+	for err := range errsSeen {
+		requireCode(t, err, errs.ErrorTransient, graph.ErrorCodeIndexNotReady)
+	}
+	if err := stop(); err != nil {
+		t.Fatalf("Run returned %v; want nil", err)
 	}
 }
 

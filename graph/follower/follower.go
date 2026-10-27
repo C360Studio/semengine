@@ -29,6 +29,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/graph"
@@ -96,6 +97,11 @@ type Follower struct {
 	snapshotDone    atomic.Bool   // the watch's end-of-snapshot marker arrived
 	bootstrapTarget atomic.Uint64 // stored before snapshotDone is raised
 	bootstrapped    atomic.Bool   // the initial build is complete; never cleared
+
+	// statusMu serialises reads through status: nats.go v1.54.0's KV Status writes the handle's
+	// stream-info cache unsynchronised, and QueryReady callers and the heartbeat share the handle
+	// (#417, TestFollowerConcurrentQueryReady).
+	statusMu sync.Mutex
 
 	mu              sync.Mutex // guards the stuck detector's progress record
 	lastIndexedSeen uint64
@@ -175,9 +181,10 @@ func invalid(what string) error {
 }
 
 // Run follows ENTITY_STATES on the caller's goroutine until ctx ends, then returns nil with the
-// watch stopped and its heartbeat goroutine joined. It publishes the envelope once at once and
-// then every readiness.DefaultHeartbeat, on a goroutine of its own, so a Deliver that blocks does
-// not delay a heartbeat. A nil context is refused.
+// watch stopped, its delivery closed and its heartbeat goroutine joined; if the delivery does not
+// close within watchDrainTimeout of Stop, Run returns an error saying so. It publishes the
+// envelope once at once and then every readiness.DefaultHeartbeat, on a goroutine of its own, so a
+// Deliver that blocks does not delay a heartbeat. A nil context is refused.
 func (f *Follower) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"), "follower", "Run", "check the context")
@@ -186,26 +193,26 @@ func (f *Follower) Run(ctx context.Context) error {
 	heartbeat.Go(func() { f.heartbeat(ctx) })
 	defer heartbeat.Wait()
 
-	f.follow(ctx)
+	err := f.follow(ctx)
 	<-ctx.Done()
-	return nil
+	return err
 }
 
-// follow holds the watch until ctx ends or the feed is lost.
-func (f *Follower) follow(ctx context.Context) {
+// follow holds the watch until ctx ends or the feed is lost. Its error is a watch delivery that
+// did not close after Stop.
+func (f *Follower) follow(ctx context.Context) error {
 	watcher, err := f.reader.WatchAll(ctx)
 	if err != nil {
 		if ctx.Err() == nil {
 			f.loseFeed(fmt.Sprintf("the watch could not start: %v", err))
 		}
-		return
+		return nil
 	}
 	validating := true
 	for {
 		select {
 		case <-ctx.Done():
-			_ = watcher.Stop()
-			return
+			return stopWatch(ctx, watcher)
 		case entry, ok := <-watcher.Updates():
 			if !ok {
 				// The channel closes after Stop or when nats.go gives the watch up, as it does when
@@ -214,7 +221,7 @@ func (f *Follower) follow(ctx context.Context) {
 				if ctx.Err() == nil {
 					f.loseFeed("the watch closed")
 				}
-				return
+				return nil
 			}
 			if entry == nil {
 				if validating {
@@ -227,6 +234,38 @@ func (f *Follower) follow(ctx context.Context) {
 				continue
 			}
 			f.observe(ctx, entry, validating)
+		}
+	}
+}
+
+// watchDrainTimeout bounds the drain after Stop, as natsclient's filteredWatcherDrainTimeout does.
+const watchDrainTimeout = 5 * time.Second
+
+// stopWatch stops the watch and drains its updates until nats.go closes the channel. At nats.go
+// v1.54.0 Stop only unsubscribes: a delivery already blocked on the full updates buffer ends only
+// when the buffer is read, and the channel closes after it. This is natsclient KeysByFilter's
+// cleanup (TestIntegration_KVStoreFilteredNativeDeliveryClosure); here
+// TestFollowerRunReturnsAndLeavesNothing drives it with a backlogged watch.
+func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
+	stopErr := watcher.Stop()
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), watchDrainTimeout)
+	defer cancel()
+	for {
+		select {
+		case _, ok := <-watcher.Updates():
+			if !ok {
+				// The delivery has closed. Stop's error then says only that the watch was already gone:
+				// nats.go also unsubscribes when the watch's context ends (js.go, subscribe), which is
+				// Run's, and can delete the consumer before Stop does (seen as ErrConsumerNotFound in
+				// TestFollowerRunReturnsAndLeavesNothing).
+				if stopErr != nil && !errors.Is(stopErr, nats.ErrBadSubscription) &&
+					!errors.Is(stopErr, nats.ErrConnectionClosed) && !errors.Is(stopErr, nats.ErrConsumerNotFound) {
+					return fmt.Errorf("follower: stop the ENTITY_STATES watch: %w", stopErr)
+				}
+				return nil
+			}
+		case <-drainCtx.Done():
+			return errors.Join(errors.New("follower: the ENTITY_STATES watch delivery did not close after Stop"), stopErr)
 		}
 	}
 }
@@ -374,7 +413,9 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 		}
 	}
 	indexed, indexedAt := f.watermark.IndexedAt()
+	f.statusMu.Lock()
 	target, created, err := readStream(ctx, f.status)
+	f.statusMu.Unlock()
 	if err == nil && !created.Equal(f.created) {
 		// The bucket was deleted and created again: the watch, still open, reads nothing more
 		// (PR #414 comment 6426443564).

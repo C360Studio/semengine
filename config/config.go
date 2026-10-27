@@ -53,17 +53,8 @@ type Config struct {
 	Streams       StreamConfigs        `json:"streams,omitempty"`        // Explicit JetStream stream definitions
 	ModelRegistry *model.Registry      `json:"model_registry,omitempty"` // Unified model endpoint registry
 
-	// StreamMigrationOverrides admits named ordinary streams that predate the
-	// bounds contract, each for a declared period. Readiness reports every
-	// active override and FAILS once one expires; an override with no expiry is
-	// rejected at validation, so a bridge cannot become permanent.
-	StreamMigrationOverrides StreamMigrationOverrides `json:"stream_migration_overrides,omitempty"`
-
-	// ArchivalStreams declares ordinary streams whose contract is permanence.
-	// Structurally separate from StreamMigrationOverrides: an archive that could
-	// only be expressed as a renewed override would train operators to renew
-	// without reading, which is what makes genuinely time-limited overrides
-	// invisible.
+	// ArchivalStreams declares ordinary streams whose contract is permanence:
+	// the one exception to the finite-bounds requirement.
 	ArchivalStreams ArchivalStreams `json:"archival_streams,omitempty"`
 }
 
@@ -214,9 +205,8 @@ func (c *Config) Validate() error {
 
 // ValidateDocument checks the configuration document alone: it reads no file
 // and writes nothing, so offline review (composition.Validate) judges a
-// deployment's document the same way on any machine. The one input it reads
-// from outside the document is the current time, to judge whether a stream
-// migration override has expired. Component entries are visited in instance
+// deployment's document the same way on any machine. It reads nothing from
+// outside the document. Component entries are visited in instance
 // name order, so the first error for a document is the same on every call.
 // Like Validate, it lowercases platform.org in place.
 func (c *Config) ValidateDocument() error {

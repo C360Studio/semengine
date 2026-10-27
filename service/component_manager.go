@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/composition"
@@ -70,14 +69,6 @@ type ComponentManager struct {
 	// component.Dependencies.StoreRegistry.
 	storeRegistry *storeregistry.Registry
 
-	// overrideExpiry re-reports stream migration-override expiry against the LIVE
-	// configuration while the process runs. It is hosted here, not by an optional
-	// service, because the component manager is the one service no composition
-	// can disable (MandatoryServiceDisabledError): an operator who declares a
-	// bridge should not also have to declare the service that says it lapsed.
-	// The constructor always sets it.
-	overrideExpiry *streamOverrideExpiryReporter
-
 	// lifecycle admits one Start and makes Stop the only stop (ADR-113): a failed
 	// Start's rollback and every Stop run the one stop sequence through it.
 	lifecycle lifecycleguard.Guard
@@ -87,8 +78,8 @@ type ComponentManager struct {
 	// NOT READY.
 	stopBegun atomic.Bool
 
-	// The supervisor (the health publisher and the override-expiry reporter): its
-	// run context's cancel, and the channel closed once both loops returned.
+	// The supervisor (the health publisher): its run context's cancel, and the
+	// channel closed once the loop returned.
 	// Start's function in the lifecycle guard writes them and the stop sequence
 	// reads them; the guard orders the two, so neither needs a lock.
 	supervisorCancel context.CancelFunc
@@ -230,27 +221,6 @@ func NewComponentManager(rawConfig json.RawMessage, deps *Dependencies) (Service
 		bootStreams:       bootConfig.Streams,
 		storeRegistry:     storeregistry.New(),
 	}
-
-	// Stream migration-override expiry reporting (ADR-100). The reporter reads
-	// currentConfig on every evaluation rather than capturing bootConfig: an
-	// operator may extend or remove an override without restarting, and a
-	// reporter that kept warning about a renewed bridge would be worse than one
-	// that said nothing. It is report-only, never composition authority.
-	cm.overrideExpiry = newStreamOverrideExpiryReporter(
-		currentConfig.Get,
-		cm.logger.With("source", "component-manager.stream-overrides"),
-	)
-	if deps.MetricsRegistry != nil {
-		// Registered here, on the registry the /metrics endpoint scrapes: nothing
-		// in the framework calls the Service interface's RegisterMetrics.
-		if err := cm.overrideExpiry.register(deps.MetricsRegistry); err != nil {
-			return nil, fmt.Errorf("register stream override expiry metrics: %w", err)
-		}
-	}
-	// Evaluate once at composition so every declared bridge has a series before
-	// it matters. An alert on a series that first appears at the moment of
-	// failure cannot be tested in advance.
-	cm.overrideExpiry.evaluate(time.Now())
 
 	cm.SetHealthCheck(cm.healthCheck)
 

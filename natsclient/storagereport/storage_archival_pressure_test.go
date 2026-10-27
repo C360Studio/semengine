@@ -21,12 +21,11 @@ import (
 // The guarantee is written against the HOLE CLASS rather than the motivating
 // instance. Archival is a `config` classification and this package never sees it;
 // what it sees is a resource with no bound of its own. Every such resource —
-// archival, admitted by a migration override, or created by some other process
-// entirely — is covered, which is the only version of this that cannot be walked
-// around.
+// archival, or created by some other process entirely — is covered, which is the
+// only version of this that cannot be walked around.
 
 // archivalResource is a resource with NO BOUND OF ITS OWN: the shape an archival
-// declaration produces, and the shape a migration override admits.
+// declaration produces.
 func archivalResource(name string, used int64) StorageResource {
 	return StorageResource{
 		Name:        name,

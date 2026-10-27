@@ -235,7 +235,7 @@
 // one it was given, Stop included (ADR-113). A component makes its own run
 // context in Start and ends it in Stop; one that hangs its continuing work on
 // its Start context stops when the caller ends that context, before Stop
-// reaches it. The manager's health publisher and override-expiry reporter run
+// reaches it. The manager's health publisher runs
 // under a run context that Start creates and Stop ends.
 //
 // A failed Start returns every component failure joined, each naming its
@@ -270,12 +270,7 @@
 // health.component.<name> once as Start returns and then every 5 seconds. A
 // publish that fails is counted on
 // semengine_errors_total{service="component-manager",type="health_publish"} and
-// logged at Debug; the next component and round are still published. From Start
-// to Stop it also evaluates the live configuration's stream migration overrides
-// every minute and sets the gauge
-// semengine_streams_migration_override_expired{stream,owner} to 1 for a lapsed
-// bridge, 0 for an open one, with a Warn line per lapsed bridge. It only
-// reports; readiness is unaffected.
+// logged at Debug; the next component and round are still published.
 //
 // The routes, mounted under /components and answering GET only (405 otherwise),
 // are health, list, types, types/{id}, status/{name} (?debug=true adds a

@@ -153,89 +153,9 @@ func TestEnsureStreams_ArchivalStreamIsCreatedWithNoLimit(t *testing.T) {
 		`an archive's stream info must not read "discard: old"`)
 }
 
-// TestEnsureStreams_MigrationOverrideAdmitsAnExistingUnboundedStream proves the
-// bridge works against a real server, and that it stamps nothing the operator did
-// not declare: a stream being migrated TO bounds keeps behaving exactly as it did.
-//
-// The stream is created OUT OF BAND first, because that is the only situation an
-// override describes — see the refusal test below.
-func TestEnsureStreams_MigrationOverrideAdmitsAnExistingUnboundedStream(t *testing.T) {
-	sm, js, ctx := boundsTestManager(t)
-
-	// The legacy stream, as it exists on a deployment that predates the contract.
-	_, err := js.CreateStream(ctx, jetstream.StreamConfig{
-		Name:     "LEGACY",
-		Subjects: []string{"legacy.>"},
-		Storage:  jetstream.MemoryStorage,
-	})
-	require.NoError(t, err)
-
-	future := time.Now().AddDate(1, 0, 0).Format(time.DateOnly)
-	cfg := &Config{
-		Version:  "1.0.0",
-		Platform: PlatformConfig{Org: "acme", ID: "test"},
-		Streams: StreamConfigs{
-			"LEGACY": {Subjects: []string{"legacy.>"}, Storage: "memory"},
-		},
-		StreamMigrationOverrides: StreamMigrationOverrides{
-			"LEGACY": {Owner: "team-legacy", Expires: future, Reason: "sizing study in flight"},
-		},
-	}
-
-	require.NoError(t, sm.EnsureStreams(ctx, cfg))
-
-	live := liveStreamConfig(t, js, ctx, "LEGACY")
-	assert.Zero(t, live.MaxAge, "a bridge invents no bound")
-	assert.Equal(t, int64(-1), live.MaxBytes)
-
-	// And the same configuration fails once the bridge expires.
-	cfg.StreamMigrationOverrides["LEGACY"] = StreamMigrationOverride{
-		Owner: "team-legacy", Expires: time.Now().AddDate(0, 0, -2).Format(time.DateOnly),
-	}
-	require.ErrorIs(t, sm.EnsureStreams(ctx, cfg), ErrStreamMigrationOverrideExpired,
-		"an expired bridge must fail readiness, not quietly keep working")
-}
-
-// TestEnsureStreams_MigrationOverrideCannotCreateAStream is the other half, and it
-// closes what the previous version of the test above CODIFIED.
-//
-// An override is a time-limited bridge for a stream that already exists and
-// predates the bounds contract. Letting it CREATE one makes it precisely the
-// supported route around the requirement that section 5 exists to close: declare a
-// stream, name it in stream_migration_overrides, and the framework builds you a
-// brand-new unbounded stream on a fresh deployment — with a deadline attached to
-// something that never needed migrating.
-func TestEnsureStreams_MigrationOverrideCannotCreateAStream(t *testing.T) {
-	sm, js, ctx := boundsTestManager(t)
-
-	future := time.Now().AddDate(1, 0, 0).Format(time.DateOnly)
-	cfg := &Config{
-		Version:  "1.0.0",
-		Platform: PlatformConfig{Org: "acme", ID: "test"},
-		Streams: StreamConfigs{
-			"NEVER_EXISTED": {Subjects: []string{"neverexisted.>"}, Storage: "memory"},
-		},
-		StreamMigrationOverrides: StreamMigrationOverrides{
-			"NEVER_EXISTED": {Owner: "team-legacy", Expires: future, Reason: "there is nothing to bridge"},
-		},
-	}
-
-	err := sm.EnsureStreams(ctx, cfg)
-
-	require.ErrorIs(t, err, ErrStreamMigrationOverrideInvalid)
-	assert.Contains(t, err.Error(), "NEVER_EXISTED")
-	assert.Contains(t, err.Error(), "archival_streams",
-		"an operator reaching for an override on a fresh deployment wants the permanence classification")
-
-	_, getErr := js.Stream(ctx, "NEVER_EXISTED")
-	assert.ErrorIs(t, getErr, jetstream.ErrStreamNotFound,
-		"the refusal must not have created the stream it refused")
-}
-
-// TestEnsureStreams_ArchivalStreamIsStillCreated keeps the distinction sharp. An
-// archive declares permanence as its contract, names an owner and a reason, and has
-// no deadline because it is not migrating anywhere — so provisioning one is
-// legitimate where provisioning a bridged stream is not.
+// TestEnsureStreams_ArchivalStreamIsStillCreated proves an archival stream that
+// does not exist yet is provisioned: an archive declares permanence as its
+// contract and names an owner and a reason.
 func TestEnsureStreams_ArchivalStreamIsStillCreated(t *testing.T) {
 	sm, js, ctx := boundsTestManager(t)
 

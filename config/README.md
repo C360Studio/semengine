@@ -33,7 +33,7 @@ if err := cfg.Validate(); err != nil {
 
 Write every key exactly as this README shows it. A key that differs from a key `Config` declares only in letter case
 fails the load, naming the right spelling (#325): `"nats":{"URLs":[...]}` fails with an error ending
-`config key nats.URLs must be written nats.urls`. Names you choose (component, service, stream, override, archival
+`config key nats.URLs must be written nats.urls`. Names you choose (component, service, stream, archival
 and model registry names) are yours to spell, and a component's or service's `config` payload belongs to that
 component or service: loading does not check its keys.
 
@@ -307,8 +307,9 @@ streams, the `streams` section, and the JetStream output ports of the configured
 Every stream must be bounded. Each needs a finite `max_age` (a Go duration such as `168h`, or a number of days such as
 `7d`), a `max_bytes` above zero, and a `discard` policy: `old` drops the oldest messages when the stream is full, and
 `new` refuses new ones. No default fills these in. A stream that must keep everything is declared under
-`archival_streams` with an `owner` and a `reason`. An existing stream that cannot take bounds yet is declared under
-`stream_migration_overrides` with an `owner` and an `expires` date. `Validate` checks all of this without a server
+`archival_streams` with an `owner` and a `reason`; it is the only exception to the finite bounds. To watch an archival
+stream's size, turn on the storage observability service with `"storage-observability": {"enabled": true}` under
+`services` (see "Enabling it" in `service/README.md`). `Validate` checks all of this without a server
 (`ValidateStreamDeclarations`), and `EnsureStreams` checks it again before it creates anything, so a configuration
 with a missing bound creates no streams at all.
 

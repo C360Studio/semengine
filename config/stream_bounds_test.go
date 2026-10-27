@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"errors"
 	"log/slog"
-	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -195,6 +194,28 @@ func TestConfigValidate_OrdinaryStreamMustDeclareBounds(t *testing.T) {
 	}
 }
 
+// TestConfigValidate_MigrationOverrideKeyAdmitsNothing proves the removed
+// stream_migration_overrides key is inert: a document that still sets it loads,
+// and the stream it names is refused like any other stream without bounds.
+func TestConfigValidate_MigrationOverrideKeyAdmitsNothing(t *testing.T) {
+	document := `{
+		"platform": {"org": "acme", "id": "p1"},
+		"streams": {"LEGACY": {"subjects": ["legacy.>"]}},
+		"stream_migration_overrides": {
+			"LEGACY": {"owner": "ops", "expires": "2099-01-01", "reason": "sizing study"}
+		}
+	}`
+
+	cfg, err := NewLoader().LoadFromBytes([]byte(document))
+	require.NoError(t, err, "an old document that still sets the key must load")
+
+	err = cfg.Validate()
+	require.ErrorIs(t, err, ErrStreamBoundsUndeclared,
+		"the key must not admit a stream that lacks bounds")
+	assert.Contains(t, err.Error(), `"LEGACY"`, "diagnostic must name the stream")
+	assert.Contains(t, err.Error(), "max_age", "diagnostic must name a missing field")
+}
+
 // TestConfigValidate_FrameworkStreamsSatisfyTheirOwnRequirement is the control
 // that keeps the requirement honest: the five framework-guaranteed streams are
 // declarations too, and a config declaring nothing at all must still boot.
@@ -202,10 +223,9 @@ func TestConfigValidate_FrameworkStreamsSatisfyTheirOwnRequirement(t *testing.T)
 	require.NoError(t, guardTestConfig().Validate(),
 		"the framework's own streams must satisfy the contract they impose")
 
-	decls, report, err := planStreams(guardTestConfig(), time.Now(), nil)
+	decls, archival, err := planStreams(guardTestConfig(), nil)
 	require.NoError(t, err)
-	assert.Empty(t, report.MigrationOverrides, "no framework stream may need a migration bridge")
-	assert.Empty(t, report.Archival, "no framework stream may need an archival exception")
+	assert.Empty(t, archival, "no framework stream may need an archival exception")
 
 	names := make([]string, 0, len(decls))
 	for _, d := range decls {
@@ -263,7 +283,7 @@ func TestPlanStreams_ReportsEveryOffenderDeterministically(t *testing.T) {
 		return cfg
 	}
 
-	_, _, err := planStreams(build(), time.Now(), nil)
+	_, _, err := planStreams(build(), nil)
 	require.Error(t, err)
 	first := err.Error()
 
@@ -275,7 +295,7 @@ func TestPlanStreams_ReportsEveryOffenderDeterministically(t *testing.T) {
 	assert.Less(t, strings.Index(first, `"MIKE"`), strings.Index(first, `"ZULU"`))
 
 	for range 20 {
-		_, _, again := planStreams(build(), time.Now(), nil)
+		_, _, again := planStreams(build(), nil)
 		require.Error(t, again)
 		require.Equal(t, first, again.Error(),
 			"the diagnostic must not depend on map iteration order")
@@ -296,7 +316,7 @@ func TestBoundsDiagnostic_NamesComponentWhereTheSourceRecordsOne(t *testing.T) {
 		cfg := guardTestConfig()
 		cfg.Components["iot_sensor"] = portComponent(t, "", "sensor.processed.entity")
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		assert.Contains(t, err.Error(), `"SENSOR"`, "diagnostic must name the derived stream")
@@ -308,7 +328,7 @@ func TestBoundsDiagnostic_NamesComponentWhereTheSourceRecordsOne(t *testing.T) {
 		cfg := guardTestConfig()
 		cfg.Components["agentic-tools"] = portComponent(t, "AGENT", "tool.result.*")
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		assert.Contains(t, err.Error(), `component "agentic-tools" port "out"`)
@@ -323,7 +343,7 @@ func TestBoundsDiagnostic_NamesComponentWhereTheSourceRecordsOne(t *testing.T) {
 		cfg.Components["agentic-tools"] = namedPortComponent(t, "aaa-result", "AGENT", "tool.result.*")
 		cfg.Components["agentic-loop"] = namedPortComponent(t, "zzz-request", "AGENT", "agent.request.*")
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		msg := err.Error()
@@ -338,7 +358,7 @@ func TestBoundsDiagnostic_NamesComponentWhereTheSourceRecordsOne(t *testing.T) {
 		cfg := guardTestConfig()
 		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		assert.Contains(t, err.Error(), `config.streams["AGENT"]`)
@@ -352,7 +372,7 @@ func TestBoundsDiagnostic_NamesComponentWhereTheSourceRecordsOne(t *testing.T) {
 		// operator map is then the source, which is the honest answer.
 		cfg.Streams["LOGS"] = StreamConfig{Subjects: []string{"logs.>"}}
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		assert.Contains(t, err.Error(), `config.streams["LOGS"]`)
@@ -363,7 +383,7 @@ func TestBoundsDiagnostic_NamesComponentWhereTheSourceRecordsOne(t *testing.T) {
 		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
 		cfg.Components["agentic-loop"] = portComponent(t, "AGENT", "agent.request.*")
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		assert.Contains(t, err.Error(), `config.streams["AGENT"]`)
@@ -415,7 +435,7 @@ func TestDiscardDiagnostic_StatesWhatDiscardNewDoesAtTheCeiling(t *testing.T) {
 			Subjects: []string{"agent.>"}, MaxAge: "24h", MaxBytes: 1024,
 		}
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		msg := err.Error()
@@ -436,11 +456,11 @@ func TestDiscardDiagnostic_StatesWhatDiscardNewDoesAtTheCeiling(t *testing.T) {
 	// so it is the only case where "where do I write this?" is a real question,
 	// and the only case where an operator-map offender would mask the answer by
 	// happening to contain "config.streams" in its source string.
-	t.Run("the bounds diagnostic names both escapes and where to declare", func(t *testing.T) {
+	t.Run("the bounds diagnostic names the archival escape and where to declare", func(t *testing.T) {
 		cfg := guardTestConfig()
 		cfg.Components["iot_sensor"] = portComponent(t, "", "sensor.processed.entity")
 
-		_, _, err := planStreams(cfg, time.Now(), nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrStreamBoundsUndeclared)
 		msg := err.Error()
@@ -450,8 +470,8 @@ func TestDiscardDiagnostic_StatesWhatDiscardNewDoesAtTheCeiling(t *testing.T) {
 			"a port-derived stream has no declaration site, so the operator must be told to make one")
 		assert.Contains(t, msg, "archival_streams",
 			"a stream whose contract is permanence must be pointed at archival, not at a wrong bound")
-		assert.Contains(t, msg, "stream_migration_overrides",
-			"a stream that predates the contract must be pointed at the time-limited bridge")
+		assert.NotContains(t, msg, "stream_migration_overrides",
+			"the removed key must not be offered as an escape")
 	})
 
 	// slog.SetDefault is not touched here, but the handler is process-shared
@@ -483,191 +503,10 @@ func TestDiscardDiagnostic_StatesWhatDiscardNewDoesAtTheCeiling(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// 5.4 — the expiring migration override
-// ---------------------------------------------------------------------------
-
-func TestMigrationOverride(t *testing.T) {
-	// A fixed evaluation instant: an expiry test that drifts with wall clock is
-	// a test that passes until the day it doesn't.
-	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-
-	t.Run("an active override admits an unbounded stream and is reported", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team-agentic", Expires: "2026-09-30", Reason: "sizing study in flight"},
-		}
-
-		_, report, err := planStreams(cfg, now, nil)
-
-		require.NoError(t, err)
-		require.Len(t, report.MigrationOverrides, 1)
-		got := report.MigrationOverrides[0]
-		assert.Equal(t, "AGENT", got.Stream)
-		assert.Equal(t, "team-agentic", got.Owner)
-		assert.Equal(t, "sizing study in flight", got.Reason)
-		assert.Equal(t, time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), got.Expires,
-			`a date-only expiry is inclusive of that day`)
-		assert.Positive(t, got.Remaining)
-		assert.Empty(t, report.Archival, "an override is not an archival exception")
-	})
-
-	t.Run("an expired override fails readiness naming override, resource and owner", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team-agentic", Expires: "2026-07-01"},
-		}
-
-		_, _, err := planStreams(cfg, now, nil)
-
-		require.ErrorIs(t, err, ErrStreamMigrationOverrideExpired)
-		assert.Contains(t, err.Error(), `stream_migration_overrides["AGENT"]`)
-		assert.Contains(t, err.Error(), "AGENT")
-		assert.Contains(t, err.Error(), "team-agentic")
-	})
-
-	t.Run("expiry is inclusive of its final day and fails the instant after", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team", Expires: "2026-09-30"},
-		}
-
-		lastMoment := time.Date(2026, 9, 30, 23, 59, 59, 0, time.UTC)
-		_, _, err := planStreams(cfg, lastMoment, nil)
-		require.NoError(t, err, "the declared day must still be inside the bridge")
-
-		justAfter := time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC)
-		_, _, err = planStreams(cfg, justAfter, nil)
-		require.ErrorIs(t, err, ErrStreamMigrationOverrideExpired)
-	})
-
-	t.Run("an override with no expiry is rejected at validation", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team-agentic"},
-		}
-
-		_, _, err := planStreams(cfg, now, nil)
-
-		require.ErrorIs(t, err, ErrStreamMigrationOverrideInvalid,
-			"an open-ended bridge must be impossible to declare")
-		assert.Contains(t, err.Error(), "archival_streams",
-			"the operator must be pointed at the classification that IS permanent")
-	})
-
-	t.Run("an override with an unparseable expiry is rejected", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team", Expires: "whenever"},
-		}
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-
-		_, _, err := planStreams(cfg, now, nil)
-
-		require.ErrorIs(t, err, ErrStreamMigrationOverrideInvalid)
-	})
-
-	t.Run("an override with no owner is rejected", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Expires: "2026-09-30"},
-		}
-
-		_, _, err := planStreams(cfg, now, nil)
-
-		require.ErrorIs(t, err, ErrStreamMigrationOverrideInvalid)
-	})
-
-	t.Run("an RFC3339 expiry is accepted", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team", Expires: "2026-09-30T06:00:00Z"},
-		}
-
-		_, report, err := planStreams(cfg, now, nil)
-
-		require.NoError(t, err)
-		require.Len(t, report.MigrationOverrides, 1)
-		assert.Equal(t, time.Date(2026, 9, 30, 6, 0, 0, 0, time.UTC), report.MigrationOverrides[0].Expires)
-	})
-
-	t.Run("an expired override fails even when its stream no longer exists", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"GONE": {Owner: "team", Expires: "2026-07-01"},
-		}
-
-		_, _, err := planStreams(cfg, now, nil)
-
-		require.ErrorIs(t, err, ErrStreamMigrationOverrideExpired,
-			"a stale bridge that outlived its stream is still a bridge")
-	})
-
-	t.Run("an override admitting a port-derived stream stamps no invented bound", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Components["iot_sensor"] = portComponent(t, "", "sensor.processed.entity")
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"SENSOR": {Owner: "platform", Expires: "2026-09-30"},
-		}
-
-		decls, report, err := planStreams(cfg, now, nil)
-		require.NoError(t, err)
-		require.Len(t, report.MigrationOverrides, 1)
-
-		sensor := declarationNamed(t, decls, "SENSOR")
-		stamped, err := buildStreamConfig(sensor, nil)
-		require.NoError(t, err)
-		assert.Zero(t, stamped.MaxAge, "a bridged stream keeps behaving as it did; no bound is invented")
-		assert.Zero(t, stamped.MaxBytes)
-	})
-
-	t.Run("an override honors bounds the operator did declare", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["AGENT"] = StreamConfig{Subjects: []string{"agent.>"}, MaxAge: "12h"}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"AGENT": {Owner: "team", Expires: "2026-09-30"},
-		}
-
-		decls, _, err := planStreams(cfg, now, nil)
-		require.NoError(t, err)
-
-		stamped, err := buildStreamConfig(declarationNamed(t, decls, "AGENT"), nil)
-		require.NoError(t, err)
-		assert.Equal(t, 12*time.Hour, stamped.MaxAge, "a partial declaration is still the operator's")
-		assert.Zero(t, stamped.MaxBytes)
-	})
-
-	t.Run("readiness reports an active override at Warn, naming its expiry", func(t *testing.T) {
-		var buf bytes.Buffer
-		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
-
-		logStreamExceptions(logger, StreamExceptionReport{
-			MigrationOverrides: []StreamMigrationOverrideStatus{{
-				Stream: "AGENT", Owner: "team-agentic",
-				Expires: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Remaining: 48 * time.Hour,
-			}},
-		})
-
-		logged := buf.String()
-		assert.Contains(t, logged, "level=WARN", "a scheduled future boot failure must read as one")
-		assert.Contains(t, logged, "AGENT")
-		assert.Contains(t, logged, "team-agentic")
-		assert.Contains(t, logged, "2026-10-01")
-	})
-}
-
-// ---------------------------------------------------------------------------
 // 5.8 — the ARCHIVAL classification
 // ---------------------------------------------------------------------------
 
 func TestArchivalStream(t *testing.T) {
-	now := time.Date(2026, 7, 29, 12, 0, 0, 0, time.UTC)
-
 	t.Run("an archival stream satisfies readiness without finite bounds", func(t *testing.T) {
 		cfg := guardTestConfig()
 		cfg.Streams["CAMPAIGN_LEDGER"] = StreamConfig{Subjects: []string{"campaign.ledger.>"}}
@@ -678,15 +517,13 @@ func TestArchivalStream(t *testing.T) {
 			},
 		}
 
-		_, report, err := planStreams(cfg, now, nil)
+		_, archival, err := planStreams(cfg, nil)
 
 		require.NoError(t, err)
-		require.Len(t, report.Archival, 1)
-		assert.Equal(t, "CAMPAIGN_LEDGER", report.Archival[0].Stream)
-		assert.Equal(t, "semmachina", report.Archival[0].Owner)
-		assert.Contains(t, report.Archival[0].Reason, "permanent record")
-		assert.Empty(t, report.MigrationOverrides,
-			"an archival stream must never be reported as a time-limited exception")
+		require.Len(t, archival, 1)
+		assert.Equal(t, "CAMPAIGN_LEDGER", archival[0].Stream)
+		assert.Equal(t, "semmachina", archival[0].Owner)
+		assert.Contains(t, archival[0].Reason, "permanent record")
 	})
 
 	t.Run("an archival declaration with no owner is rejected", func(t *testing.T) {
@@ -694,7 +531,7 @@ func TestArchivalStream(t *testing.T) {
 		cfg.Streams["CAMPAIGN_LEDGER"] = StreamConfig{Subjects: []string{"campaign.ledger.>"}}
 		cfg.ArchivalStreams = ArchivalStreams{"CAMPAIGN_LEDGER": {Reason: "permanent"}}
 
-		_, _, err := planStreams(cfg, now, nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrArchivalStreamInvalid)
 		assert.Contains(t, err.Error(), "owner")
@@ -705,7 +542,7 @@ func TestArchivalStream(t *testing.T) {
 		cfg.Streams["CAMPAIGN_LEDGER"] = StreamConfig{Subjects: []string{"campaign.ledger.>"}}
 		cfg.ArchivalStreams = ArchivalStreams{"CAMPAIGN_LEDGER": {Owner: "semmachina"}}
 
-		_, _, err := planStreams(cfg, now, nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrArchivalStreamInvalid,
 			"without a stated reason, archival is just an unbounded stream with better vocabulary")
@@ -717,25 +554,9 @@ func TestArchivalStream(t *testing.T) {
 		cfg.Streams["CAMPAIGN_LEDGER"] = StreamConfig{Subjects: []string{"campaign.ledger.>"}}
 		cfg.ArchivalStreams = ArchivalStreams{"CAMPAIGN_LEDGER": {Owner: " ", Reason: "\t"}}
 
-		_, _, err := planStreams(cfg, now, nil)
+		_, _, err := planStreams(cfg, nil)
 
 		require.ErrorIs(t, err, ErrArchivalStreamInvalid)
-	})
-
-	t.Run("archival and an override on one stream is rejected", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.Streams["CAMPAIGN_LEDGER"] = StreamConfig{Subjects: []string{"campaign.ledger.>"}}
-		cfg.ArchivalStreams = ArchivalStreams{
-			"CAMPAIGN_LEDGER": {Owner: "semmachina", Reason: "permanent by contract"},
-		}
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"CAMPAIGN_LEDGER": {Owner: "semmachina", Expires: "2026-09-30"},
-		}
-
-		_, _, err := planStreams(cfg, now, nil)
-
-		require.ErrorIs(t, err, ErrArchivalStreamInvalid,
-			"permanence and a time-limited bridge must never share an instrument")
 	})
 
 	t.Run("an archival stream is stamped with no limit and refuses rather than evicts", func(t *testing.T) {
@@ -747,7 +568,7 @@ func TestArchivalStream(t *testing.T) {
 			"CAMPAIGN_LEDGER": {Owner: "semmachina", Reason: "permanent by contract"},
 		}
 
-		decls, _, err := planStreams(cfg, now, nil)
+		decls, _, err := planStreams(cfg, nil)
 		require.NoError(t, err)
 
 		stamped, err := buildStreamConfig(declarationNamed(t, decls, "CAMPAIGN_LEDGER"), nil)
@@ -758,49 +579,23 @@ func TestArchivalStream(t *testing.T) {
 			`nats stream info on an archive must not read "discard: old"`)
 	})
 
-	t.Run("readiness reports archival distinctly from an override", func(t *testing.T) {
+	t.Run("the boot log reports an archival stream at Info and names the size report", func(t *testing.T) {
 		var buf bytes.Buffer
 		logger := slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelInfo}))
 
-		logStreamExceptions(logger, StreamExceptionReport{
-			MigrationOverrides: []StreamMigrationOverrideStatus{{
-				Stream: "BRIDGED", Owner: "team",
-				Expires: time.Date(2026, 10, 1, 0, 0, 0, 0, time.UTC), Remaining: 48 * time.Hour,
-			}},
-			Archival: []ArchivalStreamStatus{{
-				Stream: "CAMPAIGN_LEDGER", Owner: "semmachina", Reason: "permanent by contract",
-			}},
-		})
+		logStreamExceptions(logger, []ArchivalStreamStatus{{
+			Stream: "CAMPAIGN_LEDGER", Owner: "semmachina", Reason: "permanent by contract",
+		}})
 
 		lines := strings.Split(strings.TrimSpace(buf.String()), "\n")
-		require.Len(t, lines, 2)
-		assert.Contains(t, lines[0], "BRIDGED")
-		assert.Contains(t, lines[0], "level=WARN")
-		assert.Contains(t, lines[0], "expires")
-		assert.Contains(t, lines[1], "CAMPAIGN_LEDGER")
-		assert.Contains(t, lines[1], "level=INFO")
-		assert.NotContains(t, lines[1], "expires",
+		require.Len(t, lines, 1)
+		assert.Contains(t, lines[0], "CAMPAIGN_LEDGER")
+		assert.Contains(t, lines[0], "level=INFO")
+		assert.NotContains(t, lines[0], "expires",
 			"a permanent exception must never render as a countdown")
+		assert.Contains(t, lines[0], "storage-observability",
+			"the hint must name the service that reports the stream's size")
 	})
-}
-
-// TestStreamExceptionReport_KindsAreStructurallyDistinct pins the structural
-// separation itself. A single list with a kind flag would let an operator
-// surface render "permanent" and "expires in March" through the same widget,
-// and blurring those two is what trains people to renew without reading.
-func TestStreamExceptionReport_KindsAreStructurallyDistinct(t *testing.T) {
-	var permanent ArchivalStreamStatus
-	var timeLimited StreamMigrationOverrideStatus
-
-	// The compiler is the assertion: the permanent type has no expiry to render
-	// and no remaining time to count down, so no surface can invent one.
-	assert.Equal(t, ArchivalStreamStatus{}, permanent)
-	assert.Zero(t, timeLimited.Remaining)
-	assert.NotEmpty(t, reflectFieldNames(timeLimited), "sanity: the override status has fields")
-	assert.NotContains(t, reflectFieldNames(permanent), "Expires")
-	assert.NotContains(t, reflectFieldNames(permanent), "Remaining")
-	assert.Contains(t, reflectFieldNames(timeLimited), "Expires")
-	assert.Contains(t, reflectFieldNames(timeLimited), "Remaining")
 }
 
 // ---------------------------------------------------------------------------
@@ -822,15 +617,7 @@ func TestStreamBoundsConfig_JSONRoundTrip(t *testing.T) {
 				"max_bytes": 104857600,
 				"discard": "new"
 			},
-			"LEGACY": {"subjects": ["legacy.>"]},
 			"LEDGER": {"subjects": ["ledger.>"]}
-		},
-		"stream_migration_overrides": {
-			"LEGACY": {
-				"owner": "team-legacy",
-				"expires": "2099-01-31",
-				"reason": "sizing study in flight"
-			}
 		},
 		"archival_streams": {
 			"LEDGER": {
@@ -846,18 +633,15 @@ func TestStreamBoundsConfig_JSONRoundTrip(t *testing.T) {
 	require.Equal(t, StreamDiscardNew, cfg.Streams["AGENT"].Discard,
 		"discard must survive the JSON round trip")
 	require.Equal(t, int64(104857600), cfg.Streams["AGENT"].MaxBytes)
-	require.Equal(t, "team-legacy", cfg.StreamMigrationOverrides["LEGACY"].Owner)
-	require.Equal(t, "2099-01-31", cfg.StreamMigrationOverrides["LEGACY"].Expires)
 	require.Equal(t, "semmachina", cfg.ArchivalStreams["LEDGER"].Owner)
 
 	// ... and reaches its consumer.
 	require.NoError(t, cfg.Validate())
-	report, err := ValidateStreamDeclarations(&cfg)
+	archival, err := ValidateStreamDeclarations(&cfg)
 	require.NoError(t, err)
-	require.Len(t, report.MigrationOverrides, 1)
-	require.Len(t, report.Archival, 1)
+	require.Len(t, archival, 1)
 
-	decls, _, err := planStreams(&cfg, time.Now(), nil)
+	decls, _, err := planStreams(&cfg, nil)
 	require.NoError(t, err)
 	stamped, err := buildStreamConfig(declarationNamed(t, decls, "AGENT"), nil)
 	require.NoError(t, err)
@@ -867,12 +651,11 @@ func TestStreamBoundsConfig_JSONRoundTrip(t *testing.T) {
 	// And survives a Clone, which is how SafeConfig hands the config around.
 	clone := cfg.Clone()
 	assert.Equal(t, StreamDiscardNew, clone.Streams["AGENT"].Discard)
-	assert.Equal(t, "team-legacy", clone.StreamMigrationOverrides["LEGACY"].Owner)
 	assert.Equal(t, "semmachina", clone.ArchivalStreams["LEDGER"].Owner)
 }
 
 // TestExceptionBlocks_RefuseBackingStreamNames keeps the section-1 prohibition
-// from being routed around by the new blocks: neither escape may name a KV or
+// from being routed around by the archival block: it may not name a KV or
 // ObjectStore backing stream, because doing so would tell an operator the
 // provisioner governs a resource it must never touch.
 func TestExceptionBlocks_RefuseBackingStreamNames(t *testing.T) {
@@ -887,18 +670,6 @@ func TestExceptionBlocks_RefuseBackingStreamNames(t *testing.T) {
 		require.ErrorIs(t, err, ErrBackingStreamNotProvisionable)
 		assert.Contains(t, err.Error(), kvBackingStream)
 	})
-
-	t.Run("a migration override cannot name a backing stream", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"OBJ_MESSAGES": {Owner: "x", Expires: "2099-01-01"},
-		}
-
-		err := cfg.Validate()
-
-		require.ErrorIs(t, err, ErrBackingStreamNotProvisionable)
-		assert.Contains(t, err.Error(), "OBJ_MESSAGES")
-	})
 }
 
 // TestPlanStreams_PrefixRefusalPrecedesBoundsCheck pins the ordering the section
@@ -910,7 +681,7 @@ func TestPlanStreams_PrefixRefusalPrecedesBoundsCheck(t *testing.T) {
 	cfg := guardTestConfig()
 	cfg.Streams[natsclient.KVStreamPrefix+"ENTITY_STATES"] = StreamConfig{Subjects: []string{"x.>"}}
 
-	_, _, err := planStreams(cfg, time.Now(), nil)
+	_, _, err := planStreams(cfg, nil)
 
 	require.ErrorIs(t, err, ErrBackingStreamNotProvisionable)
 	assert.False(t, errors.Is(err, ErrStreamBoundsUndeclared),
@@ -928,17 +699,6 @@ func declarationNamed(t *testing.T, decls []streamDeclaration, name string) stre
 	}
 	t.Fatalf("no declaration named %q in %d declarations", name, len(decls))
 	return streamDeclaration{}
-}
-
-// reflectFieldNames lets the structural-distinctness test assert on the SHAPE of
-// the two status types rather than on prose about them.
-func reflectFieldNames(v any) []string {
-	rt := reflect.TypeOf(v)
-	names := make([]string, 0, rt.NumField())
-	for i := range rt.NumField() {
-		names = append(names, rt.Field(i).Name)
-	}
-	return names
 }
 
 func contains(haystack []string, needle string) bool {
@@ -964,88 +724,4 @@ func TestStreamBoundsSentinel_IsOneIdentityAcrossBothSeams(t *testing.T) {
 	seamErr := natsclient.CheckStreamBounds(jetstream.StreamConfig{Name: "EVENTS"}, "test")
 	require.ErrorIs(t, seamErr, ErrStreamBoundsUndeclared,
 		"a programmatic refusal must satisfy a config-side errors.Is check")
-}
-
-// TestExpiredMigrationOverrides is the RUNTIME half of the bridge's deadline.
-//
-// Expiry was evaluated only at configuration validation and at provisioning, both
-// boot-time, so an instance that started before the deadline ran indefinitely past
-// it with nothing saying so. Enforcement stays at boot deliberately — the admitted
-// stream still works, and a fleet leaving the load balancer at midnight over a
-// hygiene failure is a worse outcome than the failure — but a running instance now
-// has something to report.
-func TestExpiredMigrationOverrides(t *testing.T) {
-	now := time.Date(2026, 10, 5, 12, 0, 0, 0, time.UTC)
-
-	t.Run("a bridge that ended while the instance was up is reported", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"LEGACY": {Owner: "team-legacy", Expires: "2026-09-30", Reason: "sizing study"},
-		}
-
-		got := ExpiredMigrationOverrides(cfg, now)
-
-		require.Len(t, got, 1)
-		assert.Equal(t, "LEGACY", got[0].Stream)
-		assert.Equal(t, "team-legacy", got[0].Owner)
-		assert.Equal(t, "sizing study", got[0].Reason)
-		assert.Negative(t, got[0].Remaining,
-			"a lapsed bridge has less than no time left; zero would read as expiring this instant")
-	})
-
-	// The property the whole function exists for: the same configuration, evaluated
-	// at two different moments by a process that never restarted.
-	t.Run("crossing the expiry without a restart changes the answer", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"LEGACY": {Owner: "team-legacy", Expires: "2026-09-30"},
-		}
-
-		before := time.Date(2026, 9, 30, 23, 59, 59, 0, time.UTC)
-		assert.Empty(t, ExpiredMigrationOverrides(cfg, before),
-			"the declared day is inclusive; the bridge is still open")
-
-		after := time.Date(2026, 10, 1, 0, 0, 1, 0, time.UTC)
-		assert.Len(t, ExpiredMigrationOverrides(cfg, after), 1,
-			"one second later the same config, same process, reports the lapse")
-	})
-
-	t.Run("an active bridge reports nothing", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"LEGACY": {Owner: "team-legacy", Expires: "2027-01-01"},
-		}
-
-		assert.Empty(t, ExpiredMigrationOverrides(cfg, now))
-	})
-
-	t.Run("a malformed override is not a runtime finding", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"NOEXPIRY":    {Owner: "team"},
-			"UNPARSEABLE": {Owner: "team", Expires: "next tuesday"},
-		}
-
-		assert.Empty(t, ExpiredMigrationOverrides(cfg, now),
-			"both are rejected at validation and can never reach a running instance")
-	})
-
-	t.Run("several lapsed bridges are reported in a stable order", func(t *testing.T) {
-		cfg := guardTestConfig()
-		cfg.StreamMigrationOverrides = StreamMigrationOverrides{
-			"ZULU":  {Owner: "team", Expires: "2026-09-01"},
-			"ALPHA": {Owner: "team", Expires: "2026-09-02"},
-		}
-
-		got := ExpiredMigrationOverrides(cfg, now)
-
-		require.Len(t, got, 2)
-		assert.Equal(t, "ALPHA", got[0].Stream, "sorted by stream, so a log line is diffable between ticks")
-		assert.Equal(t, "ZULU", got[1].Stream)
-	})
-
-	t.Run("no overrides at all", func(t *testing.T) {
-		assert.Empty(t, ExpiredMigrationOverrides(guardTestConfig(), now))
-		assert.Empty(t, ExpiredMigrationOverrides(nil, now))
-	})
 }

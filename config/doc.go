@@ -23,7 +23,7 @@
 //
 // Write every key exactly as the README shows it. A key that differs from a
 // declared key only in letter case fails the load, naming the right spelling
-// (#325). Names a deployment chooses (component, service, stream, override,
+// (#325). Names a deployment chooses (component, service, stream,
 // archival and model registry names) are not checked, and a component's or
 // service's config payload belongs to its owner, which decodes it.
 //
@@ -152,8 +152,7 @@
 // Config needs: the framework's own, those in its streams section, and those
 // its components' JetStream output ports imply. Every stream must declare a
 // finite max_age, a max_bytes above zero and a discard policy, unless it is
-// declared archival, or it already exists and has an unexpired migration
-// override. Config.Validate checks those declarations without a server
+// declared archival. Config.Validate checks those declarations without a server
 // (ValidateStreamDeclarations).
 //
 // The package README gives an example document and the rules in full.

@@ -83,46 +83,6 @@ func driftLabels(drifts []streamFieldDrift) []string {
 	return out
 }
 
-// governedBounds records which of the three retention fields a declaration
-// actually GOVERNS. Reconciling a field the declaration does not govern would
-// stamp a framework fallback over an operator's or the server's choice, which is
-// the same class of harm as ignoring drift — just pointed the other way.
-type governedBounds struct {
-	maxAge   bool
-	maxBytes bool
-	discard  bool
-}
-
-// boundsGovernedBy resolves governance from the declaration's exemption class.
-//
-//   - exemptNone: all three are REQUIRED, so all three are governed.
-//   - exemptArchival: permanence IS the declaration. An archival stream must
-//     carry no age limit, no byte limit, and the honest DiscardNew encoding, so
-//     an existing stream that still evicts is exactly the drift to repair — and
-//     the repair only ever REMOVES a limit, which destroys nothing.
-//   - exemptMigrationOverride: a bridge governs only what the operator actually
-//     wrote. resolveBounds falls back to DiscardOld for an undeclared policy, and
-//     that fallback is a framework default rather than a declaration; stamping it
-//     onto the legacy stream would have the bridge change the very behavior it
-//     exists to preserve.
-func boundsGovernedBy(decl streamDeclaration) governedBounds {
-	if decl.exemption == exemptMigrationOverride {
-		return governedBounds{
-			maxAge:   strings.TrimSpace(decl.cfg.MaxAge) != "",
-			maxBytes: decl.cfg.MaxBytes > 0,
-			discard:  declaresDiscard(decl.cfg),
-		}
-	}
-	return governedBounds{maxAge: true, maxBytes: true, discard: true}
-}
-
-// declaresDiscard reports whether the declaration names a discard policy the
-// framework recognizes. An unrecognized spelling is NOT a declaration: it falls
-// back at creation, and reconciling a fallback is restamping.
-func declaresDiscard(cfg StreamConfig) bool {
-	return cfg.Discard == StreamDiscardOld || cfg.Discard == StreamDiscardNew
-}
-
 // declaredStorage returns the storage tier the declaration names, and whether it
 // named one at all. An absent or unrecognized value is not a declaration: it
 // resolves to FileStorage at creation the way it always has, but it governs
@@ -214,8 +174,7 @@ func reconcileStreamConfig(
 		update.Subjects = declared.Subjects
 	}
 
-	gov := boundsGovernedBy(decl)
-	if gov.maxAge && observed.MaxAge != declared.MaxAge {
+	if observed.MaxAge != declared.MaxAge {
 		drifts = append(drifts, streamFieldDrift{
 			field: "max_age", observed: maxAgeLabel(observed.MaxAge), declared: maxAgeLabel(declared.MaxAge),
 			// A finite declaration below a wider observed window (or below an
@@ -226,8 +185,8 @@ func reconcileStreamConfig(
 	}
 	// NATS reports an absent byte limit as -1 while a declaration spells
 	// unlimited as 0. Comparing them raw would report drift on every boot of
-	// every archival and bridged stream, and re-stamp it forever.
-	if gov.maxBytes && unlimitedAsNegativeOne(observed.MaxBytes) != unlimitedAsNegativeOne(declared.MaxBytes) {
+	// every archival stream, and re-stamp it forever.
+	if unlimitedAsNegativeOne(observed.MaxBytes) != unlimitedAsNegativeOne(declared.MaxBytes) {
 		drifts = append(drifts, streamFieldDrift{
 			field:    "max_bytes",
 			observed: maxBytesLabel(observed.MaxBytes),
@@ -237,7 +196,7 @@ func reconcileStreamConfig(
 		})
 		update.MaxBytes = declared.MaxBytes
 	}
-	if gov.discard && observed.Discard != declared.Discard {
+	if observed.Discard != declared.Discard {
 		drifts = append(drifts, streamFieldDrift{
 			field: "discard", observed: discardLabel(observed.Discard), declared: discardLabel(declared.Discard),
 		})

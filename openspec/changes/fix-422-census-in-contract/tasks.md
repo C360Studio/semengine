@@ -25,7 +25,7 @@ code of 3.1, so every commit passes `task verify` on a clean tree (#171).
 
 ## 4. Docs and rules
 
-- [ ] 4.1 `AGENTS.md` and `.agents/rules-index.md`, one new row each in domain 3, row for row; `AGENTS.md` stays
+- [x] 4.1 `AGENTS.md` and `.agents/rules-index.md`, one new row each in domain 3, row for row; `AGENTS.md` stays
   under 24,000 bytes. The `natsclient` row of `docs/admission-ledger.yaml` describes the allowlist. Gate:
   `TestAgentSetupParity` in `task verify`, `task ledger:check`, `task docs:check`.
 

@@ -1226,11 +1226,13 @@
     doc.go:320, WithClientName → WithName; README.md :318 and doc.go:518, WithLogger(log.Default())
     → WithLogger(slog.Default()), with the log/slog import added; README.md :369-371, the Related
     Packages section removed (its links name service, component and config, which SemEngine does
-    not have). Census maps (owner ruling, #9 comment 5969522395, item 3): the
-    expected maps in consumer_policy_callsite_test.go hold SemEngine's production callers as
-    measured at task 3.7, so each later port that adds a caller of ConsumeInternalStreamWithConfig,
-    ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or GetConsumerConfig, or a direct
-    CreateOrUpdateConsumer, CreateConsumer or OrderedConsumer call, updates them in that port
+    not have). Census allowlists (owner ruling, #9 comment 5969522395, item 3; moved to
+    internal/harness/contract/consumerpolicy_test.go by #422, owner ruling of 2026-10-27): production
+    references to ConsumeInternalStreamWithConfig, ConsumeStreamWithConfig,
+    ConsumeStreamWithConfigContexts or GetConsumerConfig are allowed only in
+    processor/graph-ingest/consume.go, and direct CreateOrUpdateConsumer, CreateConsumer or
+    OrderedConsumer calls only in natsclient/stream.go; a port that adds a caller in another file adds
+    that file to the allowlist, and how often a listed file calls is not checked.
     Adapt items (Codex review of record, PR #48 comment 5996819933): a nil context is refused with an
     invalid-data error by every exported context-taking, error-returning call before any state, callback or NATS
     call (F32; commits bb23dc7, e17ecfd); RequestWithRetryClassified checks the context before every attempt, the
@@ -1281,6 +1283,11 @@
     functions made to return nil: all seven planted subtests fail; restored, they pass. The module
     path in the test's import strings (:200, :409, :415, :421, :427, :485, :541) is
     github.com/c360studio/semengine/natsclient, so the retirement guards match SemEngine's imports.
+    Since #422 every test of consumer_policy_callsite_test.go but
+    TestParseProductionGoFilesIgnoresClaudeWorktrees (its walker went) lives in
+    internal/harness/contract/consumerpolicy_test.go, reading files through git ls-files, with the two
+    censuses checking which files call rather than how often; the line numbers above are the natsclient
+    file's before the move.
     D8 repairs, pin → SemEngine. R1a, the 8 sleeps in client_test.go, each test or subtest run
     inside synctest.Test with the sleep replaced by <-time.After on the bubble's clock, and
     synctest.Wait before each "did not fire" assertion: :267 → :297 (TestWaitForConnection

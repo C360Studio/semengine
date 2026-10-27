@@ -5,8 +5,9 @@ passes on a clean tree at its commit (#171).
 
 ## 1. Design and measurement
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review. Gate:
-  `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review. Gate:
+  `task spec:check` and `task docs:check`. INVENTORY PASS by the early Claude review at `69a3f6b`; Codex DESIGN REVIEW
+  PASS at `f554bc4` (PR #432 comment 6447833003); owner acceptance 2026-10-27.
 - [x] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 ObjectStore probe (inventory 11, P1-P10) on PR #432: program,
   command, versions and output. Gate: the comment read back. Posted as PR #432 comment 6445520357.
 - [x] 1.3 Owner ruling on design D6: drop the data cache. Ruled at PR #432 comment 6446982969.

@@ -24,9 +24,11 @@ option O1). Retires #216 (`Closes #216`). Every `path:line` is at the base; prob
 
 ## D1. A loop that ends without Stop is stuck until the process restarts
 
-Observable behaviour. On each readiness tick, for each bound consumer, graph-ingest records a **lost input binding**
-when the consume loop it started for that consumer has ended before graph-ingest's own `Stop` began. A loop that ends
-after `Stop` began is not recorded. Once recorded it is never
+Observable behaviour. A readiness tick that observes, while the component is running and its `Stop` has not begun,
+that the consume loop it started for a bound consumer has ended records a **lost input binding** for that consumer.
+Once `Stop` has begun, ticks record and log no lost binding. The rule is stated by what a tick observes, not by when
+the loop ended: a loop that ends unexpectedly just before `Stop` begins and is not yet observed by a tick is not
+recorded, which is acceptable because the component is stopping. Once recorded it is never
 cleared: `Health()` reads `Healthy: false`, `Status: "degraded"`, and `LastError` names the stream and consumer and
 says the process must be restarted, on every call until the component stops. The readiness envelope for that tick and
 every later one is degraded, as for a failed observation (`readiness.go:132`; one compute for both channels,
@@ -60,7 +62,10 @@ Constraints the developer keeps:
 - The fact "`Stop` has begun" that the tick reads is published so that a tick running concurrently with `Stop` reads
   it without a data race, and it is not a field on the handle-bearing consumer binding (`component.go:215-217`), so
   the tick never reaches lifecycle state. `cleanup`'s order is not changed: Drain and closure come before Start-owned
-  work is cancelled (ADR-094 `:128-131`), so ticks still run while `Stop` drains.
+  work is cancelled (ADR-094 `:128-131`), so ticks still run while `Stop` drains. One false record is possible there
+  and must not happen: a tick that reads "`Stop` has not begun", then sees the loop that `Stop`'s drain just closed.
+  Reading the loop's closure first and the `Stop` fact second, with `Stop` publishing its fact before it issues any
+  drain, rules that one out. This reconstructs no history; it only prevents that interleaving.
 - No natsclient change and no new field on `Component` reachable only from tests (#170; #301).
 - Library facts this rests on: the loop ends after a terminal status and `Closed()` fires (probe d, f; `pull.go:740`,
   `:273-281`, `:306-317`); in case a it does not (probe a). `Closed()` can also fire early for a subscription that is
@@ -94,6 +99,7 @@ run after the step, not elapsed time.
 | T2 `TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy` | d, e | stream deleted and created again: unhealthy, `LastError` names the restart, the envelope from `computeBacklogStatus` is degraded; consumer created again: still unhealthy | fails at the last step |
 | T3 `TestIntegration_HealthStaysStuckAfterConsumerRecreated` (replaces `..._ConsumptionNotChecked`, `health_integration_test.go:80`) | f | consumer deleted: unhealthy; created again: still unhealthy | fails at the last step |
 | T4 `TestIntegration_FileStreamRestartStaysHealthy` (own server) | c | file stream; across `Restart`: healthy on a fresh tick, and a message published after the restart is applied | passes: pins kept behaviour |
+| T5 `TestIntegration_HealthClearsAfterConnectionInterruption` (relayed client, shared server) | transient | relay cut until the client reports Reconnecting: a tick reads unhealthy, `LastError` names the backlog observation; relay restored until Connected: a fresh tick reads healthy, and a message published after the restore is applied | passes: pins "The observation succeeds again" |
 
 T1 and T4 keep graph-ingest's client connected across `Restart`, which `Restart`'s doc says a caller does not do
 (`internal/harness/natsfixture/restart.go:24-29`: handles are dead, URL has stayed the same but Docker does not promise
@@ -106,11 +112,25 @@ after a restart applies it" is already proved with a new instance by
 `TestIntegration_HealthReadsLostConsumer` (`:57`) stays unchanged and must still pass. Examples suffice; the inputs
 do not interact beyond these cases (`docs/testing.md`).
 
+T5 uses the existing relay seam, `newRelayedComponent`, `cutUntilReconnecting` and `restoreUntilConnected`
+(`lifecycle_integration_test.go:830`, `:870`, `:882`): the broker, the file stream and the durable consumer stay, and
+only graph-ingest's connection is cut. By code reading, not yet measured (the developer measures it in task 2.1):
+
+- the consume loop survives the cut: on Reconnecting it only stops its heartbeat timer, and on Connected it pulls
+  again (`jetstream/pull.go:353-381`); no terminal status arrives because the server keeps the consumer, the same
+  shape as probe c, where the loop resumed after a server restart without `Closed()` firing;
+- the tick's lookup fails under a live context: `js.Stream` gives a context with no deadline nats.go's 5 s default
+  API timeout (`jetstream/jetstream.go:813`, `:1270-1275`, `:457`), so it fails while the caller's context is still
+  live and the fault is stored, not dropped as shutdown (`readiness.go:128-131`). The cut tick must therefore run
+  under a live context with no deadline shorter than that, not through `awaitHealthAfterTick`, whose 10 s bound
+  would end first and be read as shutdown. The 5 s value is not promised;
+- after the restore, the lookup succeeds and the tick clears the fault.
+
+If the measurement shows the loop closing under the cut, T5 is dropped and "The observation succeeds again" goes back
+to the unproven list with the measured line.
+
 Unproven, stated on the PR and in `notes/3.2.md`:
 
-- "The observation succeeds again" (modified health requirement) loses its only test, which T3 replaces. Every
-  in-test way to fail an observation (deleting the consumer or the stream) now also ends the loop, and a tick cannot
-  be ordered inside `Restart`, so no test fails an observation while the binding is intact.
 - "Stop ends the loop": `cleanup` drains and waits on `Closed()` (`component.go:574-587`) before it ends the run
   context and waits for the status loop (`:602-610`), so a tick can land after the drain, and no existing surface
   orders one there. No test is written for it.
@@ -121,15 +141,15 @@ Mutation rows (`task mutate:check`, integration tests by `-run`, recorded in `no
 | --- | --- |
 | M1 the ended-loop check removed | detected by T2, T3 |
 | M3 the record cleared by a good observation | detected by T2, T3 |
-| M4 the record made for a loop that ended after `Stop` began | survivor expected (no ordering, above); listed as uncovered |
+| M4 a lost binding recorded by a tick after `Stop` began | survivor expected (no ordering, above); listed as uncovered |
 | M6 a failed lookup not stored as the fault (`readiness.go:144-148`) | detected by T1 |
-| M5 every failed lookup recorded as lost | survivor expected, unless a tick happens to fail during T4's restart; listed as uncovered |
+| M5 every failed lookup recorded as lost | detected by T5 |
 
 ## Dispositions
 
 - #216: retired (`Closes #216`). The healthy-but-not-consuming case (e, f) is part of it and is not filed apart.
 - #15: stays. Its replay-protection work is wider; "a then b" stays the declared limitation (D1).
-- #301: stays. No test-only field is added; T1 to T4 use real streams.
+- #301: stays. No test-only field is added; T1 to T5 use real streams and the existing relay seam.
 - #83: stays. The early `Closed()` it tracks fires after a stop, a forced close, or nats.go closing the connection
   once finite reconnects run out (not promised); in each, unhealthy is the true reading (D1).
 

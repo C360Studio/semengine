@@ -19,24 +19,26 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 
 ## 2. Tests
 
-- [ ] 2.1 T1 to T4 (design, Tests) in `processor/graph-ingest`: T1 and T4 in their own files with
+- [ ] 2.1 T1 to T5 (design, Tests) in `processor/graph-ingest`: T1 and T4 in their own files with
   `// Own server: restarts the server mid-test.` above `natsfixture.New`, each asserting `f.URL()` is unchanged
-  across `Restart`; T2 and T3 beside the health tests in `health_integration_test.go`, T3 replacing
+  across `Restart`; T2, T3 and T5 beside the health tests in `health_integration_test.go`, T3 replacing
   `TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked`. Gate: on the base, T2 and T3 fail at
-  their last step (consumer created again, still unhealthy) and T1 and T4 pass; the output is in `notes/2.1.md`.
+  their last step (consumer created again, still unhealthy) and T1, T4 and T5 pass; T5's notes record whether the
+  consume loop survived the relay cut (`Closed()` not fired) and the cut tick's error, the measurement design Tests
+  rests on; the output is in `notes/2.1.md`.
   Committed with 3.1.
 
 ## 3. Code
 
 - [ ] 3.1 The lost input binding (design D1) in `processor/graph-ingest/readiness.go` and `consume.go`: each bound
   consumer's readiness record carries its loop's `Closed()` channel; the tick records a lost binding when the loop has
-  ended before `Stop` began (a fact published safely and kept off the consumer binding), never clears it, and feeds
-  it to `Health()` and the envelope. No natsclient change.
+  ended, observed while `Stop` has not begun (a fact published safely and kept off the consumer binding), never
+  clears it, and feeds it to `Health()` and the envelope. No natsclient change.
   Gate: `go test -race ./processor/graph-ingest/`, `go test -tags integration ./processor/graph-ingest/`,
   `task cover:check` and `task verify`.
 - [ ] 3.2 Mutation rows M1, M3, M4, M5 and M6 (design, Tests) with `task mutate:check`, each reported as detected
-  (naming the test) or as a survivor, in `notes/3.2.md`, which also states the two unproven scenarios (design,
-  Tests); the PR body lists them as uncovered.
+  (naming the test) or as a survivor, in `notes/3.2.md`, which also states the unproven scenario (design,
+  Tests); the PR body lists it and the survivors as uncovered.
 
 ## 4. Docs
 

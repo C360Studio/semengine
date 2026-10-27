@@ -44,8 +44,8 @@ is reported as `ErrorCount`.
 
 ### Requirement: A lost input binding is stuck until the process restarts
 
-graph-ingest SHALL record a lost input binding when a status tick finds that a consume loop it started has ended
-before its own `Stop` began. Once
+graph-ingest SHALL record a lost input binding when a status tick, run while the component is running and its
+`Stop` has not begun, observes that a consume loop it started has ended. Once
 recorded, `Health()` SHALL report `Healthy` false with a `LastError` that names the stream and consumer and says the
 process must be restarted, and the readiness envelope SHALL be degraded, on every later read until the component
 stops.
@@ -72,9 +72,10 @@ stops.
 ### Requirement: A process restart recovers a lost input binding
 
 graph-ingest SHALL NOT rebind, stop or delete the consumer of a lost input binding: a process restart is the
-recovery, and it reads the generation again. A loop that ends after `Stop` began SHALL NOT be recorded as a lost input binding.
+recovery, and it reads the generation again. Once `Stop` has begun, no tick SHALL record or log a lost input binding.
 
 #### Scenario: Stop ends the loop
 
-- **WHEN** graph-ingest's `Stop` drains its consumers
-- **THEN** no lost input binding is recorded or logged
+- **WHEN** graph-ingest's `Stop` has begun and drains its consumers, and a status tick runs after a drain closed a
+  loop
+- **THEN** that tick records and logs no lost input binding

@@ -135,11 +135,15 @@ func TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy(t *testing.T) {
 	// binding keeps Health unhealthy. Each read follows its tick, and every one must be
 	// unhealthy: a wait that accepts the first match would pass a record a good lookup
 	// clears, whenever the status loop's own tick records it again just before a read.
+	// The envelope is the one each tick computes, so the lost binding alone must keep it
+	// degraded and not ready.
 	for range 3 {
-		c.refreshReadinessStatus(ctx)
+		status := c.computeBacklogStatus(ctx)
 		health := c.Health()
 		require.True(t, healthNamesRestart(health, bound.name), "Health must stay unhealthy and say the process must be restarted once a consumer is created again: %+v", health)
 		require.Equal(t, "degraded", health.Status)
+		require.Equal(t, graph.IndexStateDegraded, status.State, "the readiness envelope must stay degraded once a consumer is created again: %+v", status)
+		require.False(t, status.Ready, "the readiness envelope must stay not ready once a consumer is created again: %+v", status)
 	}
 }
 
@@ -170,10 +174,14 @@ func TestIntegration_HealthStaysStuckAfterConsumerRecreated(t *testing.T) {
 	// every one must be unhealthy: a wait that accepts the first match would pass a record a
 	// good lookup clears, whenever the status loop's own tick records it again just before a
 	// read.
+	// The envelope is the one each tick computes, so the lost binding alone must keep it
+	// degraded and not ready.
 	for range 3 {
-		c.refreshReadinessStatus(ctx)
+		status := c.computeBacklogStatus(ctx)
 		health := c.Health()
 		require.True(t, !health.Healthy && strings.Contains(health.LastError, bound.name), "Health must stay unhealthy once a consumer is created again: %+v", health)
+		require.Equal(t, graph.IndexStateDegraded, status.State, "the readiness envelope must stay degraded once a consumer is created again: %+v", status)
+		require.False(t, status.Ready, "the readiness envelope must stay not ready once a consumer is created again: %+v", status)
 	}
 }
 

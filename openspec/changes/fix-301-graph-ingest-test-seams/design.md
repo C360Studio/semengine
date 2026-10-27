@@ -131,10 +131,13 @@ Callers covered:
 
 `lifecycle_owner_test.go:132` builds its owner on a client that never connects and plants its own consumer double
 (`:126-127`). It stops using the adapter and reads the component's in-process handles directly, through the same
-listing the adapter keeps. When not connected, Observe does not skip its server reads; it fails.
+listing the adapter keeps. When not connected, Observe does not skip its server reads: a failed read is listed under
+`Unresolved` by name, so the owner reads as still holding something and cannot pass silently.
 
 The suite's "Failed-start check" (spec `:94-97`; `lifecycletest.go:317`) compares empty call maps for graph-ingest.
-The delta says what replaces the count for such an adapter: the server shows nothing held after the later Stop. That
+The shared check reads `Unresolved` only before the later Stop (`lifecycletest.go:310`), so for this adapter it proves
+only that the later Stop returns nil; the delta says so. What the server holds after a Stop is proved by the
+component's own post-Stop check above (steps 1 to 3). That
 a later Stop drains nothing again stays proved in-process by `lifecycle_owner_test.go:154-172` and by `:217`.
 
 ## D6. The fields go

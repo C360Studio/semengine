@@ -45,7 +45,7 @@ proof.
   `startStreamLane` in `statement_metadata_test.go` builds through the constructor. On the base, these fail to compile
   (no constructor); record that. Hold: tasks 2.1 and 2.2.
 - [ ] 3.2 `newStreamLane` and `deliver` in `consume.go`, called by `setupJetStreamConsumer`. The lane holds no
-  context. The fields stay until 6.1. Gate: `go test -race ./processor/graph-ingest/`, `task cover:check` and
+  context. The fields stay until 6.2. Gate: `go test -race ./processor/graph-ingest/`, `task cover:check` and
   `task verify`.
 - [ ] 3.3 Codex review checkpoint of 3.1 and 3.2 at a named commit. Hold: Codex review of 3.1 and 3.2.
 

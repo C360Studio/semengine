@@ -73,7 +73,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
 
 ## 3. Docs, ledger and archive
 
-- [ ] 3.1 Docs and ledger (technical writer; design D5, D6 and Ledger, `design.md:126-168`):
+- [x] 3.1 Docs and ledger (technical writer; design D5, D6 and Ledger, `design.md:126-168`):
   - `config/README.md:36`, `:302-313` (the override sentence goes; the storage observability sentence), `config/doc.go:26`,
     `:155-156`.
   - `service/README.md:274`, `:313-317`, `:665`; `service/doc.go:238`, `:274-278`.

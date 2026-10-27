@@ -889,7 +889,8 @@
     ErrorCodeResponseTooLarge exports "response_too_large", the code SubscribeForRequests answers a
     reply too large to publish with (unexported before); graph-ingest's prefix query returns the same
     code when no page fits (TestIntegration_SubscribeForRequestsPublishesBeforeClassifyingResponseLimit,
-    TestQueryRefusalsCarryACode).
+    TestQueryRefusalsCarryACode). Changed surface, #362: the bounds-at-the-seam remedy text names archival_streams as
+    the one exception and no longer mentions stream_migration_overrides.
     Changed behavior, design D9 (task 3.7): newJetStreamMetrics registers
     all 12 collectors through metric.RegisterOrGet and keeps the collector each call returns
     (jetstream_metrics.go:128-161 at the pin, where 8 went through the removed Register* methods,
@@ -2742,8 +2743,8 @@
     semteams, semboids
   destination: config
   contract: >-
-    the config-loading spec; the pin's stream-provisioning spec requirements for declarations, bounds, exemptions,
-    backing-stream refusal and drift as at the pin (readiness clauses arrive with service); ADR-102 O-2/O-14 and
+    the config-loading spec; the pin's stream-provisioning spec requirements for declarations, bounds, the archival exemption,
+    backing-stream refusal and drift as at the pin, less stream_migration_overrides (#362; readiness clauses arrive with service); ADR-102 O-2/O-14 and
     decision 7 and ADR-104 as at the pin; the config-manager spec; ADR-113. Config.ValidateDocument runs every check
     Validate runs except the host checks (that the configured TLS files exist, and the insecure_skip_verify warning
     on standard error), so it reads no file and writes nothing; Validate is ValidateDocument then the host checks;
@@ -2776,7 +2777,9 @@
     write to one key no longer suppresses another key's event; a key family's values are not decoded as Manager
     configuration. Validation (port-composition): with both a document fault and a missing TLS file, Validate names
     the document fault first, where the pin named the file; with several invalid component entries it names the
-    first in instance-name order, where the pin's choice depended on map order. Retained: wildcard matching unlike NATS, runtime writes that do not decode are logged and
+    first in instance-name order, where the pin's choice depended on map order. Streams (#362): the pin's stream_migration_overrides requirement
+    (pin openspec/specs/stream-provisioning/spec.md:331-370) is dropped; validation returns a list of
+    ArchivalStreamStatus where the pin returned a report with exceptions, and takes no clock. Retained: wildcard matching unlike NATS, runtime writes that do not decode are logged and
     skipped, unprobed nats.go comments; the letter-case check lives in internal/keycase, shared with service
   proving_tests: config/*_test.go, config/*_integration_test.go
   owner: "setup-04a-03-boot-config-manager developer"
@@ -2933,7 +2936,7 @@
     server it claims (default :9090); WireGraphRuntime may rewrite the retention of inactive catalog buckets; the
     OpenAPI registry is process-global; the component manager builds, starts and stops every enabled component
     (each binds what it binds), fills and clears storage/storeregistry, publishes each component's health on
-    health.component.<name> every 5 s, and re-reads the configuration's stream overrides every minute; the message
+    health.component.<name> every 5 s, and nothing else on a timer; the message
     logger subscribes to its monitored subjects under one run context, retries a failed subscribe every 100 ms until
     it succeeds, keeps up to max_entries messages in memory, and runs one KV watcher per open watch stream, each
     ended and joined by Stop; the storage observability service uses natsclient/storagereport and runs two goroutines
@@ -2989,7 +2992,7 @@
     component-manager is mandatory and RegisterAll registers metrics and, since PR 3, component-manager. Not covered:
     ParameterSpec.Schema still writes "type": "" for a parameter that declares no schema, and no test here declares
     one. PR 3 of 7 (component_manager.go, component_manager_lifecycle.go, component_manager_http.go,
-    component_manager_config.go, rule_pack_bind.go, stream_override_expiry.go; it edits register.go,
+    component_manager_config.go, rule_pack_bind.go; it edits register.go,
     component/lifecycle.go). Dropped as unread: ComponentManager.Initialize
     (construction does that work, without the re-entry flag and the "not initialized" refusals), IsInitialized,
     IsStarted, GetHealthyComponents, GetUnhealthyComponents, DefaultComponentManagerConfig,
@@ -3013,8 +3016,7 @@
     the escaped path and decoded once with path semantics (so + stays +), an encoded separator is refused with 400,
     and a missing name (status/) answers 400 instead of reading as the name status (#365); the component manager's OpenAPI spec is registered by RegisterAll, not on import,
     so a composition that registers NewComponentManager by hand registers the spec itself; a failed component health
-    publish is counted on semengine_errors_total{service="component-manager",type="health_publish"}; the override
-    gauge is registered through metric.RegisterOrGet and the metric namespace reads semengine (#69);
+    publish is counted on semengine_errors_total{service="component-manager",type="health_publish"}; the metric namespace reads semengine (#69);
     ComponentsImplementing returns start order; ConfigureRulePackMutations reads the NATS client once; the
     projection.PredicateReconciler interface is restored for ProjectionBinder (owner, #9 comment 6296023694, Q2).
     Retained, declared: GET /components/types/{id} for an unregistered type answers 404 with a JSON-looking body
@@ -3023,8 +3025,7 @@
     reconciler, and no rule processor is in the tree until change 6; a cleanup that panics leaves the lifecycle guard
     stuck (#309), which now also covers a component whose Stop panics; the semengine_startup_units{owner,stage} gauge is a
     collector the service manager registers in StartAll, which reads the service outcomes and the component manager's
-    record counts each time Prometheus collects (#364); the override reporter is hosted by the component
-    manager (#362); flow-path reachability is computed in service, not composition (#363); semsource hands StartAll
+    record counts each time Prometheus collects (#364); the component manager runs only its health loop (#362); flow-path reachability is computed in composition, which service calls (#363); semsource hands StartAll
     a context the signal cannot end, so its boot cannot be cut short (#361). PR 4 of 7 (message_logger.go,
     message_logger_http.go, message_logger_kv_watch.go; it edits register.go, component/registry.go's Snapshots
     comment and internal/flowgraph). Dropped as unread: GetMessages, ConfigSchema, DefaultMessageLoggerConfig, the

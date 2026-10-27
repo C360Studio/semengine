@@ -271,7 +271,7 @@ context of its own for a component and never ends the one it was given, `Stop` i
 therefore makes its own run context in `Start` and ends it in `Stop`; a component that hangs its continuing work on its
 `Start` context stops when the caller ends that context, which for a program that passes its signal context is the
 start of shutdown, before `Stop` reaches the component. For the same reason ending the manager's `Start` context after
-`Start` returned stops nothing. The manager's health publisher and override-expiry reporter (below) run under a run
+`Start` returned stops nothing. The manager's health publisher (below) runs under a run
 context that `Start` creates and `Stop` ends.
 
 A failed `Start` returns every component failure joined, each naming its component, after one rollback: it stops every
@@ -310,11 +310,6 @@ failed state. It names each failed component in name order with its last error, 
   fails is counted on `semengine_errors_total{service="component-manager",type="health_publish"}` and logged at Debug
   with the subject. The next component and the next round are still published, because a missed report is replaced by
   the next one.
-- **Stream migration overrides.** A `stream_migration_overrides` entry admits an existing unbounded stream as a named,
-  time-limited bridge. The manager evaluates the live configuration when it is built and then every minute from
-  `Start` to `Stop`, and sets the gauge `semengine_streams_migration_override_expired{stream,owner}` to 0 for each
-  declared bridge and to 1 for a lapsed one, with a Warn line per lapsed bridge. It only reports: readiness is
-  unaffected, and the refusal comes at the next boot.
 
 ### The routes
 
@@ -662,7 +657,7 @@ A value that was not measured has no series; it is never zero, because zero mean
 is deleted when its value goes away, when a resource leaves the report, and, for the per-tier series, when the account
 row is dropped. The count and state families are always emitted in full.
 
-Example Prometheus alert rules are at `configs/prometheus/rules/storage-pressure.yml`: 13 alerts, each reading only
+Example Prometheus alert rules are at `configs/prometheus/rules/storage-pressure.yml`: 12 alerts, each reading only
 published names, none firing because a report row disappeared, with unbounded and unreadable resources kept visible.
 Copy the file and tune it; the engine does not load it. `service/storage_observability_http_test.go` checks it against
 the metric names.

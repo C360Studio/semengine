@@ -20,7 +20,8 @@ package has no external-provider code, so the tier-0 ruling (#9 comment 63866036
   an empty list on an empty bucket; `Delete` of a missing key succeeds; `Open` reports a missing object as
   `storage.ErrObjectNotFound`, as `Get` does; every exported call refuses a nil context.
 - `StoreContent` writes the payload's body as raw bytes and returns a reference that opens to it, as ADR-063's read
-  contract requires; the pin wrote and referenced a JSON envelope. It refuses binary fields (no implementer exists),
+  contract requires; the pin wrote and referenced a JSON envelope. By owner ruling (PR #432 comment 6447702631) it
+  refuses any non-body content, binary fields included,
   and its keys carry a per-call nonce.
 - Not carried with it: the envelope types `StoredContent` and `BinaryRef`, which nothing then writes or reads.
 - Metrics register through `metric.RegisterOrGet` under `semengine`; the two gauges nothing sets are not carried.

@@ -80,9 +80,10 @@ Not carried (surface audit (a), no reader at the pin, in an admitted package or 
 `FetchContent`, `extractContentFromBaseMessage`, `extractTextFields`, `SetDecoder` (S3), `FetchBinary`,
 `GetMetadata` (S4), the four `StoredContent` role helpers (S5). With D4's raw-body `StoreContent`, nothing writes or
 reads the envelope, so `StoredContent`, `BinaryRef`, `NewStoredContent`, `NewStoredContentWithBinary` (S6) and the alias
-`MarshalJSON`/`UnmarshalJSON` (S7) go with it, and so does the binary branch of `StoreContent`: no type implements
-`message.BinaryStorable` at the pin or in a consumer (`grep -rn 'BinaryFields()'`, non-test: only the interface and
-`pin:…/store.go:458`). Optional, taken because the code is rewritten anyway: the dead fields `client`, `bucketName`
+`MarshalJSON`/`UnmarshalJSON` (S7) go with it, and so does the binary branch of `StoreContent`, replaced by D4's
+refusal: no type implements `message.BinaryStorable` at the pin or in a consumer (`grep -rn 'BinaryFields()'`,
+non-test: only the interface and `pin:…/store.go:458`). Optional, taken because the code is rewritten anyway: the dead
+fields `client`, `bucketName`
 (S14) go.
 
 Deferred to 5b. The criterion: symbols whose only production reader at the pin is the Component's raw write lane
@@ -118,16 +119,22 @@ Each line is observable and named in D9's tests.
   the doc says so. The pin errored on an empty bucket and returned put order (S9).
 - **StoreContent** obeys ADR-063's read contract: "the store a ref points at holds the RAW body bytes at `Key` …
   *not* a `StoreContent` JSON envelope" (`pin:docs/adr/063-store-substrate-and-resolver.md:278-285`). It validates
-  the entity ID first (invalid input, nothing written). It refuses a payload that implements `message.BinaryStorable`
-  with any binary field (invalid input, nothing written): binary fields have no place in a raw-body reference, and
-  dropping them silently would be an undeclared drop. It then writes the body (`RawContent()[ContentFields()["body"]]`)
-  as raw UTF-8 bytes, an empty object when the payload names no body, and returns a reference with the Store's
-  instance name, that key, `text/plain; charset=utf-8` and the body's size. Opening the reference returns the body.
-  No envelope is written: the other text fields (title, abstract) and the role map had one reader, `FetchContent`,
-  which is not carried (D3), and the graph already holds them as triples. At the pin the reference pointed at the
+  the entity ID first (invalid input, nothing written). Then, by owner ruling, PR #432 comment 6447702631 (option C,
+  refuse extras), it refuses as
+  invalid input, before writing anything, a payload carrying any content other than the body: a non-empty
+  `RawContent()` value under any field but the one the `body` role names (title, abstract or description, summary,
+  location, or a field no role names), or any binary field of a `message.BinaryStorable`. The error names the
+  refused fields. Nothing is stored, so nothing is silently lost. Otherwise it writes the body
+  (`RawContent()[ContentFields()["body"]]`) as raw UTF-8 bytes and returns a reference with the Store's instance name,
+  that key, `text/plain; charset=utf-8` and the body's size; opening the reference returns the body. A payload with no
+  content at all (no body, no extras) stores an empty object and gets its reference: nothing is lost, and the reader
+  sees an empty body, as graph-embedding already handles. No envelope is written. Non-body text belongs in the graph
+  as triples, which the producer emits; the store does not hold it. (The pin's four example payloads keep their
+  description and summary out of their triples, `pin:examples/processors/document/payload_document.go:144`, so under
+  this rule their producer must emit them as triples or be refused.) At the pin the reference pointed at the
   envelope (`pin:…/store.go:521-526`), so the pin's document adapter
-  (`pin:examples/processors/document/component.go:720-724`)
-  handed graph-embedding JSON where it reads body text (`pin:graph/embedding/worker.go:1030-1036`, `:1070-1077`); this
+  (`pin:examples/processors/document/component.go:720-724`) handed graph-embedding JSON where it reads body text
+  (`pin:graph/embedding/worker.go:1030-1036`, `:1070-1077`); this
   is G8, resolved here. The content key keeps the pin's `content/…/<entity>_…` shape with a UUID nonce in place of the
   `UnixNano` suffix, so two calls never share a key. Optional (S11), taken
   because it is cheap: the pin's `DefaultKeyGenerator` already uses the same nonce, and `google/uuid` is in `go.mod`.
@@ -206,7 +213,7 @@ the context it is given and keeps neither the context nor any goroutine. ADR-113
 
 Unit (no Docker): `TestNewStoreRefusesNilContext`, `TestStoreMethodsRefuseNilContext` (table over the seven
 exported calls), `TestConfigDefaults` (bucket `MESSAGES`, instance defaults to bucket),
-`TestStoreContentRefusesInvalidEntityIDBeforeWriting`, `TestStoreContentRefusesBinaryFields`,
+`TestStoreContentRefusesInvalidEntityIDBeforeWriting`,
 `TestStoreContentKeysAreUniquePerCall` (10,000 keys for one
 entity and field, no repeat; independent of the clock), metrics: `TestStoreMetricsRegisterOnInjectedRegistry` (names
 under `semengine_objectstore_`, no `object_count`), `TestNilRegistryRecordsNothing`.
@@ -217,11 +224,15 @@ and `!errs.IsTransient(err)` for both), `TestDeleteMissingKeySucceeds` (never wr
 twice, a
 regression check),
 `TestListSortedAndEmpty` (empty bucket → empty slice, nil error; names put out of order come back sorted; prefix
-filter), `TestStoreContentReferenceOpensToBody` (the product path: a `ContentStorable` with a title, an abstract and a
-body is stored, the returned reference's `StorageInstance` resolves through a `storeregistry.Registry` holding the
+filter), `TestStoreContentRefusesExtras` (table, each case checked for an invalid-input error naming the field and
+for an unchanged `List("")`, so nothing is written: body plus description; description without body; title only;
+an undeclared `summary` field; one binary field of a `BinaryStorable`, the former
+`TestStoreContentRefusesBinaryFields`),
+`TestStoreContentReferenceOpensToBody` (the product path: a `ContentStorable` with only a body is stored, the returned
+reference's `StorageInstance` resolves through a `storeregistry.Registry` holding the
 Store,
 `Open(ref.Key)` returns exactly the body bytes, not JSON, and `ContentType` and `Size` match; failing against the pin's
-shape), `TestStoreContentWithoutBodyStoresEmptyObject`, `TestStoreHistoryMatchesModel` (below),
+shape), `TestStoreContentWithNoContentStoresEmptyObject`, `TestStoreHistoryMatchesModel` (below),
 `TestRetentionGuardStripsAndAsserts` (a bucket created with `MaxAge` and
 `MaxBytes` is stripped and logged; the pin's `retention_integration_test.go` ported), `TestRetentionGuardFailsClosed`
 (the pin's `TestReconcileNoLifecycleRetention` fatal case, ported), `TestStoreConcurrentUseUnderRace`
@@ -296,7 +307,10 @@ characters and names its test.
 | #281 | stays: objectstore's refused `category:performance` tag is on `DataCache` (gone, D6) |
 | #36, #216 | stay: the Component's write consumer (5b) names both |
 
-Filed by this design: none. G5 no longer arises and G8 is resolved here (D4); the Component's ContentStorable lane
+The Component (5b) calls `StoreContent` on its ContentStorable lane, so it refuses a message carrying non-body content
+loudly: an invalid-input error, which its settlement terminates rather than retries, with an error log naming the
+fields; 5b's design adds the count. Filed by this design: none. G5 no longer arises and G8 is resolved here (D4); the
+Component's ContentStorable lane
 calls `StoreContent`, so in 5b it emits raw-body references with no change of its own. Not filed: S27 (the constant
 instance name, which ADR-063 leaves open, `:349-354`, `:412-413`, and the pin calls an owner question,
 `component.go:140-147`); its code enters with 5b, whose design decides it from inventory 7.
@@ -318,7 +332,8 @@ Merge order: #431 touches only graph-ingest's OpenSpec change; either may merge 
   broke its own
   interface doc); `Open` joins `Get` in reporting not-found; `StoreContent` keys carry a nonce; `StoreContent` writes
   and references the
-  raw body, not the pin's envelope, and refuses binary fields (D4).
+  raw body, not the pin's envelope, and refuses any non-body content, binary fields included ({R}; D4). The
+  `ContentStorable` doc (`message/content_storable.go:64-72`) changes to match (task 4.3).
 - Dropped (owner ruling, PR #432 comment 6446982969): the data cache and `Close`, which changes ADR-063 `:157-158`,
   `:256` as noted in D11.
 
@@ -327,4 +342,9 @@ Merge order: #431 touches only graph-ingest's OpenSpec change; either may merge 
 - The data cache is dropped (D6; owner ruling, PR #432 comment 6446982969): no `internal/cache`, no `Config.DataCache`,
   no `Store.Close`, and the
   Component in 5b does not reinstate it.
+- `StoreContent` refuses extras (owner ruling, PR #432 comment 6447702631, option C): it stores one raw object, the
+  `body` role's text, and refuses
+  any non-empty non-body field or role, binary fields included, before writing; the `ContentStorable` doc says
+  non-body text belongs in the graph as triples, emitted by the producer; the Component (5b) refuses such messages
+  loudly (D4, D13).
 - The split is ruled (#9 comment 6386556850, item 1). ADR-113 and ADR-108 are settled and only applied (D8).

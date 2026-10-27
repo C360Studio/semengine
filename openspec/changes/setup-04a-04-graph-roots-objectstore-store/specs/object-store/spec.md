@@ -101,10 +101,10 @@ SHALL return an empty, non-nil slice and a nil error when the bucket is empty or
 
 ### Requirement: StoreContent references the raw body
 
-`Store.StoreContent` SHALL refuse an invalid entity ID, or a payload with binary fields, before writing. It SHALL write
-only the payload's `body` role text as raw bytes (empty when it names none) under a key with a per-call nonce, and
-SHALL return a reference with the Store's instance name, that key, `text/plain; charset=utf-8` and the body's size.
-Opening the reference SHALL return the body.
+`Store.StoreContent` SHALL refuse, before writing, an invalid entity ID or any non-empty content other than the
+`body` role's text, binary fields included. Otherwise it SHALL write the body as raw bytes (empty when there is
+none) under a key with a per-call nonce, and SHALL return a reference with the Store's instance name, that key,
+`text/plain; charset=utf-8` and the body's size. Opening the reference SHALL return the body.
 
 #### Scenario: An invalid entity ID
 
@@ -114,22 +114,34 @@ Opening the reference SHALL return the body.
 
 #### Scenario: The reference opens to the body
 
-- **WHEN** `StoreContent` stores a payload with a title, an abstract and a body, and the returned reference is resolved
-  through a store registry and opened
+- **WHEN** `StoreContent` stores a payload with only a body, and the returned reference is resolved through a store
+  registry and opened
 - **THEN** `Open` returns exactly the body bytes, and the reference's size is the body's length
 - **AND** the test that verifies this is `TestStoreContentReferenceOpensToBody`
+
+#### Scenario: A body with a description
+
+- **WHEN** `StoreContent` is called with a payload whose content is a body and a non-empty description
+- **THEN** it returns an invalid-input error naming `description`, and the bucket holds no new object
+- **AND** the test that verifies this is `TestStoreContentRefusesExtras`
+
+#### Scenario: A description without a body
+
+- **WHEN** `StoreContent` is called with a payload whose only content is a non-empty description
+- **THEN** it returns an invalid-input error naming `description`, and the bucket holds no new object
+- **AND** the test that verifies this is `TestStoreContentRefusesExtras`
 
 #### Scenario: A payload with a binary field
 
 - **WHEN** `StoreContent` is called with a payload that implements `message.BinaryStorable` with one binary field
 - **THEN** it returns an invalid-input error and the bucket holds no new object
-- **AND** the test that verifies this is `TestStoreContentRefusesBinaryFields`
+- **AND** the test that verifies this is `TestStoreContentRefusesExtras`
 
-#### Scenario: A payload with no body
+#### Scenario: A payload with no content
 
-- **WHEN** `StoreContent` stores a payload whose content fields name no `body` role
+- **WHEN** `StoreContent` stores a payload with no body and no other content
 - **THEN** it returns a reference whose object is empty
-- **AND** the test that verifies this is `TestStoreContentWithoutBodyStoresEmptyObject`
+- **AND** the test that verifies this is `TestStoreContentWithNoContentStoresEmptyObject`
 
 #### Scenario: Many calls for one entity
 

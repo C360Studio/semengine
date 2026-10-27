@@ -16,16 +16,18 @@ passes on a clean tree at its commit (#171).
 ## 2. Tests first
 
 - [ ] 2.1 The unit and integration tests of design D9, each shown failing against the pin's shape where the pin differs
-  (S8, S9, the never-written half of S10, G1), with the pin tests ported or dropped named in `notes/2.1.md`. Gate: in 3.x.
+  (S8, S9, the never-written half of S10, G1), with the pin tests ported or dropped named in `notes/2.1.md`. Gate: in
+  3.x.
 
 ## 3. The Store
 
 - [ ] 3.1 `config.go`, construction and the retention guard (design D3, D4, D5); `natsfixture` for the integration
   tests (#195). Gate: `go test -race -count=1 ./storage/objectstore`, `task test:integration --
   ./storage/objectstore`.
-- [ ] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, and `StoreContent` writing and referencing the raw body (design D3,
-  D4). Gate: as 3.1 plus `go test -count=5 -cpu 1 -shuffle=on ./storage/objectstore`,
-  `TestStoreContentReferenceOpensToBody` and `TestStoreHistoryMatchesModel`.
+- [ ] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, and `StoreContent` writing and referencing the raw body and refusing
+  any other content (design D3, D4; owner ruling, PR #432 comment 6447702631). Gate: as 3.1 plus `go test -count=5
+  -cpu 1 -shuffle=on ./storage/objectstore`, `TestStoreContentReferenceOpensToBody`, `TestStoreContentRefusesExtras`
+  and `TestStoreHistoryMatchesModel`.
 - [ ] 3.3 Metrics on the injected registry (design D7). Gate: as 3.1 and the metric-registry guard in `task lint`.
 - [ ] 3.4 No data cache, as ruled in 1.3 (design D6): no `internal/cache` import, no `Config.DataCache`, no
   `Store.Close`. Gate: as 3.1; `TestPublicSignatures` (the `harness-boundaries` guard) passes; `go list -deps
@@ -38,7 +40,11 @@ passes on a clean tree at its commit (#171).
 - [ ] 4.2 Carry ADR-063 into `docs/adr/` with its port note (design D11; closes #321). Gate: `task docs:check`.
 - [ ] 4.3 `storage/doc.go` and `storage/storage.go` examples, `Put` and `Delete` docs (#280 item 1, probe P4); the
   `Close` text in `storage/storeregistry/storeregistry.go:19-21`, `:74-75` and `storage/doc.go:86`,
-  `:208`; package `doc.go`, `README.md`, `ExampleNewStoreWithConfig`; `docs/repository-map.md` row; the storage bullet
+  `:208`; package `doc.go`, `README.md`, `ExampleNewStoreWithConfig`; `docs/repository-map.md` row; the
+  `ContentStorable` doc
+  (`message/content_storable.go`): the store keeps only the `body` role's text as raw bytes, a payload with any other
+  non-empty content is refused, and non-body text belongs in the graph as triples, emitted by the producer; the storage
+  bullet
   in the developer and reviewer contracts, with its row in `AGENTS.md` and `.agents/rules-index.md`, gate `review`
   (design D2, D11). Gate: `task docs:check`, the adapter guard and the rules-index guard in `task verify`.
 - [ ] 4.4 `storage/objectstore merged` in `scripts/cover-check.sh` (design D9). Gate: `task cover:check` after

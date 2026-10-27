@@ -47,7 +47,6 @@ func (c *Component) reconcileOwnedRows(
 	c.metrics.kvOperations.WithLabelValues("list", indexName).Inc()
 	c.metrics.recordReconcileOperation(indexName, "list", err)
 	if err != nil {
-		c.lifecycle.CountError()
 		return errs.WrapTransient(err, "Component", "reconcileOwnedRows",
 			fmt.Sprintf("list %s rows with %q", indexName, ownerFilter))
 	}
@@ -77,7 +76,6 @@ func (c *Component) reconcileOwnedRows(
 		c.metrics.kvOperations.WithLabelValues("delete", indexName).Inc()
 		c.metrics.recordReconcileOperation(indexName, "delete", delErr)
 		if delErr != nil {
-			c.lifecycle.CountError()
 			failures = append(failures, fmt.Errorf("delete %s key %q: %w", indexName, key, delErr))
 			c.logger.Debug("failed to retract stale index row",
 				slog.String("index", indexName), slog.String("key", key), slog.Any("error", delErr))
@@ -91,7 +89,6 @@ func (c *Component) reconcileOwnedRows(
 		c.metrics.kvOperations.WithLabelValues("put", indexName).Inc()
 		c.metrics.recordReconcileOperation(indexName, "put", putErr)
 		if putErr != nil {
-			c.lifecycle.CountError()
 			failures = append(failures, fmt.Errorf("put %s key %q: %w", indexName, key, putErr))
 			c.logger.Debug("failed to write desired index row",
 				slog.String("index", indexName), slog.String("key", key), slog.Any("error", putErr))

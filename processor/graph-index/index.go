@@ -237,11 +237,15 @@ func retryIndexWrites(ctx context.Context, writeAll func() error) error {
 }
 
 // markEntityFailed records that entityID's required index writes did not all succeed.
-// failedCount moves only on the first mark, so it is the set's size.
+// failedCount moves only on the first mark, so it is the set's size. ErrorCount moves with
+// it, once per entity entering the set (design D4): retries within one apply, and repair
+// passes that fail again, count nothing more. A reset that holds its entity here, a
+// noncanonical key or value, is counted by this mark and not again.
 func (c *Component) markEntityFailed(entityID string) {
 	if _, loaded := c.failedEntities.LoadOrStore(entityID, struct{}{}); !loaded {
 		c.failedCount.Add(1)
 		c.metrics.writeFailures.Inc()
+		c.lifecycle.CountError()
 	}
 }
 
@@ -313,6 +317,9 @@ func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID strin
 		if c.isAliasPredicate(triple.Predicate) {
 			if alias, ok := triple.Object.(string); ok && alias != "" {
 				if err := natsclient.ValidateKVLiteralKey(alias); err != nil {
+					// Declared skip, as at the pin: no alias key can hold this value, and the
+					// entity's other rows do not depend on it, so the rest is still written.
+					c.metrics.aliasesSkipped.Inc()
 					c.logger.Warn("alias index: KV-unsafe alias skipped",
 						slog.String("entity_id", entityID), slog.String("predicate", triple.Predicate),
 						slog.Any("error", err))
@@ -417,9 +424,10 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 		}
 		c.follower.Reset(reason)
 		if reason == graph.GraphStateReasonNoncanonicalEntityID {
-			c.markEntityFailed(entityID)
+			c.markEntityFailed(entityID) // counts the reset (design D4)
 			return fmt.Errorf("%w: %w", errAuthoritativeIdentityMismatch, err)
 		}
+		c.lifecycle.CountError() // the reset; the entity is not held, so no mark counts it
 		return fmt.Errorf("ENTITY_STATES %q is incompatible; graph reset and canonical reingest required: %w",
 			entityID, err)
 	}
@@ -495,13 +503,11 @@ func (c *Component) writeOutgoingIndex(ctx context.Context, entityID string, ent
 	}
 	data, err := json.Marshal(entries)
 	if err != nil {
-		c.lifecycle.CountError()
 		return errs.Wrap(err, "Component", "writeOutgoingIndex", "entry serialization")
 	}
 	_, putErr := c.outgoingBucket.Put(ctx, entityID, data)
 	c.metrics.kvOperations.WithLabelValues("put", "outgoing").Inc()
 	if putErr != nil {
-		c.lifecycle.CountError()
 		return errs.Wrap(putErr, "Component", "writeOutgoingIndex", "KV store")
 	}
 	return nil
@@ -518,7 +524,6 @@ func (c *Component) updateAliasIndex(ctx context.Context, alias, entityID string
 	_, err := c.aliasBucket.Put(ctx, alias, []byte(entityID))
 	c.metrics.kvOperations.WithLabelValues("put", "alias").Inc()
 	if err != nil {
-		c.lifecycle.CountError()
 		return errs.Wrap(err, "Component", "updateAliasIndex", "KV store")
 	}
 	c.metrics.indexUpdates.WithLabelValues("alias").Inc()
@@ -562,7 +567,6 @@ func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) erro
 		c.metrics.kvOperations.WithLabelValues("list", set.name).Inc()
 		c.metrics.recordReconcileOperation(set.name, "list", listErr)
 		if listErr != nil {
-			c.lifecycle.CountError()
 			preflightFailures++
 			c.logger.Warn("failed to list owned index rows for delete",
 				slog.String("index", set.name), slog.String("entity_id", entityID), slog.Any("error", listErr))
@@ -588,7 +592,6 @@ func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) erro
 	outgoingErr := c.outgoingBucket.Delete(ctx, entityID)
 	c.metrics.kvOperations.WithLabelValues("delete", "outgoing").Inc()
 	if outgoingErr != nil && !natsclient.IsKVNotFoundError(outgoingErr) {
-		c.lifecycle.CountError()
 		failures++
 		c.logger.Warn("failed to delete from outgoing index",
 			slog.String("entity_id", entityID), slog.Any("error", outgoingErr))
@@ -602,7 +605,6 @@ func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) erro
 			c.metrics.kvOperations.WithLabelValues("delete", set.name).Inc()
 			c.metrics.recordReconcileOperation(set.name, "delete", delErr)
 			if delErr != nil {
-				c.lifecycle.CountError()
 				failures++
 				c.logger.Warn("failed to delete owned index row",
 					slog.String("index", set.name), slog.String("key", key), slog.Any("error", delErr))

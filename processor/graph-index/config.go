@@ -40,6 +40,22 @@ func (c *Config) Validate() error {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "at least one output port required")
 	}
 
+	// graph-index reads one fixed source: the follower watches every key of ENTITY_STATES,
+	// latest values only. An input declaring another kind, bucket, key filter or history
+	// would advertise a feed nothing reads, so it is refused (#424).
+	for _, definition := range c.Ports.Inputs {
+		input, err := definition.Resolve(component.DirectionInput)
+		if err != nil {
+			return errs.WrapInvalid(err, "Config", "Validate", "resolve input port")
+		}
+		watch, ok := input.Config.(component.KVWatchPort)
+		if !ok || watch.Bucket != graph.BucketEntityStates || len(watch.Keys) > 0 || watch.History {
+			return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
+				fmt.Sprintf("input port %q must be a kv-watch of every %s key with no history, the one source graph-index reads",
+					input.Name, graph.BucketEntityStates))
+		}
+	}
+
 	// The four graph-index-owned buckets are all required and the only outputs permitted.
 	// An output outside the set is refused whether it is off the catalog (a typo that
 	// would otherwise become a stray bucket) or a catalog bucket another component owns

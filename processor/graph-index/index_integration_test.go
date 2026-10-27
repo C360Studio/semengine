@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"slices"
 	"strings"
@@ -78,6 +79,25 @@ type harness struct {
 	f      *follower.Follower
 	states jetstream.KeyValue
 	client *natsclient.Client
+	logs   *logBuffer // everything the component logs
+}
+
+// logBuffer is the component's log output, safe to write from the lanes while a test reads it.
+type logBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *logBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *logBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // startIndex builds graph-index from raw and wires the write path in the order task 4.3's Start
@@ -90,8 +110,10 @@ func startIndex(t *testing.T, client *natsclient.Client, raw string) *harness {
 	if err != nil {
 		t.Fatalf("ensure %s: %v", graph.BucketEntityStates, err)
 	}
+	logs := &logBuffer{}
 	built, err := CreateGraphIndex(json.RawMessage(raw), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
+		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
 	})
 	if err != nil {
 		t.Fatalf("CreateGraphIndex: %v", err)
@@ -145,7 +167,7 @@ func startIndex(t *testing.T, client *natsclient.Client, raw string) *harness {
 		}
 		poolCancel()
 	})
-	return &harness{c: c, f: f, states: states, client: client}
+	return &harness{c: c, f: f, states: states, client: client, logs: logs}
 }
 
 // stmt is one statement of a stored entity.
@@ -432,5 +454,90 @@ func TestNoncanonicalValueLatchesResetAndHoldsItsRevision(t *testing.T) {
 	want := "graph state reset required: " + string(graph.GraphStateReasonNoncanonicalEntityID)
 	if stuck := h.f.Stuck(); !slices.Contains(stuck, want) {
 		t.Errorf("Stuck() = %q, want %q", stuck, want)
+	}
+}
+
+// TestErrorCountCountsOutcomesNotOperations: ErrorCount counts each entity whose required writes
+// ultimately failed and each reset, once each (design D4, #425). Failed KV operations, retries
+// included, are the reconciliation metrics' to count, not ErrorCount's.
+func TestErrorCountCountsOutcomesNotOperations(t *testing.T) {
+	t.Run("one entity whose writes fail on every attempt", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		js, err := h.client.JetStream()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := js.DeleteKeyValue(t.Context(), graph.BucketIncomingIndex); err != nil {
+			t.Fatalf("delete %s: %v", graph.BucketIncomingIndex, err)
+		}
+		src := entityID(1)
+		rev := h.put(t, src, entityValue(t, src, stmt{linkTo, entityID(2)}))
+		// The lane completes the revision after its last attempt has failed and the entity is marked.
+		h.awaitIndexed(t, rev)
+		if got := h.c.Health().ErrorCount; got != 1 {
+			t.Fatalf("ErrorCount = %d after one entity's writes failed on all %d attempts, want 1",
+				got, indexWriteMaxAttempts)
+		}
+	})
+	t.Run("one reset that holds the entity", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`) // one lane: work applies in submit order
+		good := entityID(2)
+		h.put(t, entityID(1), entityValue(t, entityID(3), stmt{armed, true}))
+		h.put(t, good, entityValue(t, good))
+		// The noncanonical revision never completes; good's row, applied on the same lane after it,
+		// is the event that orders the read below after the reset.
+		await(t, "the later entity indexed",
+			func(context.Context) ([]string, error) { return h.keys(t, graph.BucketOutgoingIndex), nil },
+			func(keys []string) bool { return slices.Contains(keys, good) })
+		if got := h.c.Health().ErrorCount; got != 1 {
+			t.Fatalf("ErrorCount = %d after one noncanonical value latched reset, want 1", got)
+		}
+	})
+	t.Run("one reset that completes", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		rev := h.put(t, entityID(1), []byte("not an entity state"))
+		h.awaitIndexed(t, rev)
+		if got := h.c.Health().ErrorCount; got != 1 {
+			t.Fatalf("ErrorCount = %d after one unreadable value latched reset, want 1", got)
+		}
+	})
+}
+
+// TestUnsafeAliasSkipIsLoggedAndCounted: an alias that is not a valid NATS KV key is skipped, as
+// at the pin, and the skip is declared: a warning names the entity and predicate, and
+// aliases_skipped_total counts it, while the entity's other rows, its safe alias among them, are
+// written (#426; the alias index otherwise keeps the pin's behaviour, #415).
+func TestUnsafeAliasSkipIsLoggedAndCounted(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	src, target := entityID(1), entityID(2)
+	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{alias, "two words"}, stmt{alias, "alpha-1"}))
+	// The lane logs and counts the skip while it plans, before it completes the revision.
+	h.awaitIndexed(t, rev)
+
+	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1"))
+	assertKeys(t, h, graph.BucketOutgoingIndex, sorted(src))
+	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+src, alias+"."+src))
+	if n := h.c.failedTotal(); n != 0 {
+		t.Errorf("failed entities = %d, want 0: a skipped alias is not a failed write", n)
+	}
+	logs := h.logs.String()
+	if !strings.Contains(logs, "KV-unsafe alias skipped") || !strings.Contains(logs, "entity_id="+src) ||
+		!strings.Contains(logs, "predicate="+alias) {
+		t.Errorf("no warning naming the skipped alias's entity and predicate; logs:\n%s", logs)
+	}
+	families, err := h.c.metricsRegistry.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	var skipped float64
+	for _, family := range families {
+		if family.GetName() == "semengine_graph_index_aliases_skipped_total" {
+			for _, m := range family.GetMetric() {
+				skipped += m.GetCounter().GetValue()
+			}
+		}
+	}
+	if skipped != 1 {
+		t.Errorf("semengine_graph_index_aliases_skipped_total = %v, want 1", skipped)
 	}
 }

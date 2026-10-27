@@ -216,7 +216,10 @@ Declared behaviour changes, each from a binding record:
 - `DataFlow` counts inputs: one per delivered `ENTITY_STATES` entry, update or delete, with `Entry.Bytes`, counted in
   `Deliver` before the coalescer, so entries the coalescer folds together are each counted. The apply still reads the
   key's current authoritative state, not the delivered value. `ErrorCount` counts each entity whose required writes
-  ultimately failed and each reset. The pin counted index writes
+  ultimately failed and each reset, once each: an entity counts when it enters the failed set (a reset that holds its
+  entity, a noncanonical key or value, counts there and not again), a reset that holds no entity counts where it
+  latches, and retries and repeat repair failures add nothing; failed KV operations are
+  `reconcile_operations_total`'s and `kv_operations_total`'s to count (#425). The pin counted index writes
   as messages at eight sites with three meanings (S7); `Messages` now means what the shell's spec says ("input
   messages counted"), as graph-ingest's #307 ruling 1 did.
 
@@ -315,7 +318,10 @@ Ports follow ruling K (#91 comment 6062681355), which the owner applied to graph
 configuration with no `ports` key takes `DefaultConfig()`'s ports, and a `ports` block that is present is used as
 written. An empty `inputs` or `outputs` list is then no inputs or no outputs, which `Validate` refuses; the pin filled
 that side from the defaults (`pin:processor/graph-index/component.go:132-175`). No consumer config sets an empty list
-for graph-index (`notes/4.1.md`).
+for graph-index (`notes/4.1.md`). A present input is also checked against the one source graph-index reads, the
+follower's watch of every `ENTITY_STATES` key with no history: an input of another kind, on another bucket, with a
+`keys` filter or with `history` is refused at construction and declaration, naming the port, since nothing would read
+it (#424). The source stays fixed; no configuration chooses it.
 
 `batch_size` is refused as unknown (the strict-config rule is a verify gate, and nothing reads the field). That breaks
 two consumer configs at boot, each naming the key: semconnect's `deploy/semstreams.json:65` and
@@ -331,6 +337,7 @@ collectors it returns; no `sync.Once`, no global-registry fallback, namespace `s
 (G7). A nil registry registers nothing (as `readiness.Gauges`). The readiness gauges are the follower's:
 `readiness.NewRevisionGauges("graph_index")` (proposed name) adds `indexed_revision` and `target_revision` to the
 shared set. Metric names keep the pin's apart from the namespace (`semstreams_` → `semengine_`, as every port did).
+One collector is new: `aliases_skipped_total`, which counts the aliases D12's skip leaves out (#426).
 
 ## D11. Proving tests
 
@@ -411,6 +418,10 @@ alone until #415 lands. #415 is filed `status:blocked` and linked from this PR w
 conditions: it asks the architect for the alias key layout ADR-077 left open, as a decision record; and the fix lands
 as its own pull request before PR 9 (`processor/graph-query`), not inside it. The `graph-index` spec's replacement
 requirement names alias as the exception, with #415.
+
+An alias value that is not a valid NATS KV key (`"two words"`) is skipped, as at the pin, and the entity's other rows
+are still written. The skip is declared: a warning names the entity and predicate, and `aliases_skipped_total` counts
+it (no label: the skip has one reason). `TestUnsafeAliasSkipIsLoggedAndCounted` observes both (#426).
 
 ## D13. #108: measure, record, decide later
 

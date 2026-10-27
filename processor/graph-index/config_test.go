@@ -280,3 +280,43 @@ func TestConfigPresentPortsUsedAsWritten(t *testing.T) {
 		})
 	}
 }
+
+// TestConfigRefusesInputsTheFollowerDoesNotRead: graph-index reads one source, a watch of
+// every key of ENTITY_STATES with no history (the follower's WatchAll). An input port that
+// declares anything else is refused by construction and by port declaration, naming the
+// port, so a composition never advertises a feed graph-index does not read (#424). A
+// watch of ENTITY_STATES under another port name is still used as written (ruling K).
+func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
+	renamed := []component.PortDefinition{
+		{Name: "states", Config: component.KVWatchPort{Bucket: graph.BucketEntityStates}},
+	}
+	raw := defaultConfigWith(t, "ports", map[string]any{"inputs": renamed, "outputs": indexOutputs()})
+	if _, err := createFromJSON(t, raw); err != nil {
+		t.Fatalf("CreateGraphIndex(%s) refused a watch of %s: %v", raw, graph.BucketEntityStates, err)
+	}
+
+	cases := map[string]component.Portable{
+		"another bucket": component.KVWatchPort{Bucket: "OTHER_STATES"},
+		"a key filter":   component.KVWatchPort{Bucket: graph.BucketEntityStates, Keys: []string{"c360.*.>"}},
+		"history":        component.KVWatchPort{Bucket: graph.BucketEntityStates, History: true},
+		"a KV read":      component.KVReadPort{Bucket: graph.BucketEntityStates},
+		"a NATS subject": component.NATSPort{Subject: "graph.ingest.events"},
+	}
+	for name, portConfig := range cases {
+		t.Run(name, func(t *testing.T) {
+			inputs := []component.PortDefinition{{Name: "unread_feed", Config: portConfig}}
+			raw := defaultConfigWith(t, "ports", map[string]any{"inputs": inputs, "outputs": indexOutputs()})
+			if c, err := createFromJSON(t, raw); err == nil {
+				t.Fatalf("CreateGraphIndex(%s) built advertising %+v, though the follower reads only a full watch of %s",
+					raw, c.InputPorts(), graph.BucketEntityStates)
+			} else if !errs.IsInvalid(err) || !strings.Contains(err.Error(), `"unread_feed"`) {
+				t.Fatalf("CreateGraphIndex(%s) = %v, want an invalid-configuration error naming the port", raw, err)
+			}
+			if ports, err := DeclarePorts(json.RawMessage(raw), ""); err == nil {
+				t.Fatalf("DeclarePorts(%s) declared %+v, want the input refused", raw, ports.Inputs)
+			} else if !errs.IsInvalid(err) || !strings.Contains(err.Error(), `"unread_feed"`) {
+				t.Fatalf("DeclarePorts(%s) = %v, want an invalid-configuration error naming the port", raw, err)
+			}
+		})
+	}
+}

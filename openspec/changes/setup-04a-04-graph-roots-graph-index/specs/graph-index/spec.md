@@ -35,6 +35,19 @@ written, never merged with the defaults (ruling K, #91 comment 6062681355, appli
 - **WHEN** graph-index is constructed with `"workers": 0`
 - **THEN** construction succeeds and the index runs one lane
 
+### Requirement: Inputs name the one source graph-index reads
+
+Every input port of graph-index SHALL be a KV watch of every `ENTITY_STATES` key with no history, the one source it
+reads. Construction and port declaration SHALL refuse any other input with an invalid-configuration error naming the
+port (#424).
+
+#### Scenario: An input graph-index does not read
+
+- **WHEN** graph-index is constructed, or its ports declared, with an input that watches another bucket, filters keys,
+  asks for history, or is not a KV watch
+- **THEN** both fail with an invalid-configuration error naming the input port
+- **AND** the test that verifies this is `TestConfigRefusesInputsTheFollowerDoesNotRead`
+
 ### Requirement: Startup-replay queries get a retryable refusal
 
 Each of graph-index's eight verbs SHALL answer class transient, code `index_not_ready`, while its initial build is not

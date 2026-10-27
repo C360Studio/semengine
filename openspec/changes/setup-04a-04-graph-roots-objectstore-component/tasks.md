@@ -13,13 +13,16 @@ passes on a clean tree at its commit (#171).
 
 - [ ] 2.1 Unit tests (no Docker): `TestComponentConfigRefusesUnknownKey` (`data_cache`, a misspelt key; error names it),
   `TestComponentRefusesOutputOtherThanStored`, `TestDeclarePortsMatchesComponentPorts`, `TestRegisterRegistersObjectstore`,
-  `TestClassifyWriteDisposition`, `TestStoredMessageRoundTripsThroughDecoder`, `TestStoredMessageValidate`. Each shown
+  `TestClassifyWriteDisposition`, `TestStoredMessageRoundTripsThroughDecoder`, `TestStoredMessageValidate`,
+  `TestComponentRefusesInputWithoutStoredOutput`. Each shown
   failing first; pin tests dropped or rewritten named in `notes/2.1.md`.
 - [ ] 2.2 Integration tests (`natsfixture`, shared server via the reset): `TestObjectStoreLifecycleSuite` (core and
   JetStream inputs), `TestStartContextEndKeepsBothLanesWriting` (fails against the pin's shape),
   `TestFailedStartReleasesBoundInputs`, `TestProvidedStoresUnderObjectstore`, `TestSecondComponentRefusedAtStart`, `TestLostJetStreamInputReportsUnhealthy`
   (its durable consumer deleted while running: Health unhealthy naming the input and the restart; #216's ruling),
-  `TestComponentRefusesInputWithoutStoredOutput` (unit),
+  `TestMemoryInputLostAtBrokerRestartStaysUnhealthy` (own server, restarted keeping its URL as graph-ingest's T1
+  does: memory stream lost and created again, loop still running; unhealthy naming the consumer, before and after a
+  publish),
   `TestWriteLaneStoresBodyAndEmitsReference` (reference opens to the body), `TestWriteLaneRefusals` (table: not
   decodable, not `ContentStorable`, non-body content, invalid entity ID × core and JetStream; Term or drop, Error log,
   `ErrorCount` +1, nothing stored), `TestStoredEmitFailureNaksThenRedeliveryStores`. Recorded in `notes/2.2.md`.
@@ -29,7 +32,8 @@ passes on a clean tree at its commit (#171).
 - [ ] 3.1 `stored_message.go` and `RegisterPayloads` without the map builder; doc names the composition root (#33).
   Gate: `go test -race -count=1 ./storage/objectstore`.
 - [ ] 3.2 Config, ports, `Register`, `DeclarePorts` (design D6, D7). Gate: as 3.1 and the 2.1 tests.
-- [ ] 3.3 Lifecycle on `component.Lifecycle`, input binding, no run context (design D2, D5); allowlist entry (D9).
+- [ ] 3.3 Lifecycle on `component.Lifecycle`, input binding, the run context and the lost-input tick
+  (design D2, D5); allowlist entry (D9).
   Gate: as 3.1, `task test:integration -- ./storage/objectstore`, `task lint`, the contract tests.
 - [ ] 3.4 Write lane, emit and refusals (design D3, D4). Gate: as 3.3 plus `go test -count=5 -cpu 1 -shuffle=on
   ./storage/objectstore`.

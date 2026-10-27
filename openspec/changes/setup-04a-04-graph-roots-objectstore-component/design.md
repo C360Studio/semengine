@@ -21,19 +21,35 @@ core NATS through `natsclient.Client.Subscribe`, JetStream through `ConsumeStrea
 `cleanup` drains every bound handle under Stop's context and tolerates handles never acquired. The Store has no `Close`
 (ruling 6446982969), so cleanup closes nothing else.
 
-The Component creates no run context and keeps no cancel. Premise: it has no continuing work of its own; its handlers
-run under contexts natsclient owns, not the setup context (`natsclient/stream.go:431-438`: "ctx is used for the setup
-only and is not retained"; `natsclient/client.go:1047-1053`, `clientOwnedHandlerContext`). That removes G7 (the pin's
-`runCtx` from `context.WithCancel(ctx)`, `pin:…/component.go:450`, which stopped both lanes; inventory probe 2) without
-a new root. `Health` passes one stuck state to the shell: **input binding lost**, for a JetStream input whose consumer
-stopped delivering while the Component runs and before `Stop` (its consume loop ended, or its durable consumer is gone).
-It names the input and says a process restart is the recovery, and it stays until the process restarts. This applies the
-owner's ruling on #216 (comment 6443457897: "restart is the recovery"; the Component goes unhealthy, `/readyz` fails,
-the supervisor restarts), which the accepted Store design routed here (archived `…objectstore-store/design.md:311`);
-graph-ingest's shape is the precedent (`processor/graph-ingest/readiness.go:73-110`,
-`TestIntegration_HealthReadsLostConsumer` at `health_integration_test.go:59`). How the loss is observed (the handle's
-`Closed()`, a periodic consumer lookup as graph-ingest's tick does) is the developer's; `Health` itself never waits on
-NATS. Core-NATS subscriptions have no consumer to lose and are not observed. `DataFlow` counts each delivery
+Handlers run under contexts natsclient owns, not the setup context (`natsclient/stream.go:431-438`: "ctx is used for
+the setup only and is not retained"; `natsclient/client.go:1047-1053`, `clientOwnedHandlerContext`). That alone
+removes G7 (the pin's `runCtx` from `context.WithCancel(ctx)`, `pin:…/component.go:450`, which stopped both lanes;
+inventory probe 2).
+
+**Lost input (#216's ruling; mirrors graph-ingest).** The owner ruled that a restart is the recovery: the component
+goes unhealthy, `/readyz` fails, the supervisor restarts (#216 comment 6443457897); the accepted Store design routed
+the ruling here (archived `…objectstore-store/design.md:311`). A deleted consumer ends the consume loop (`Closed()`
+fires), but a broker restart that loses a memory-backed stream does not: nats.go re-pulls forever (archived
+`fix-216-consumer-rebind/inventory.md:34`, `:99`, `:124`). graph-ingest catches both with its status tick
+(`processor/graph-ingest/readiness.go:150-163`, every `readiness.DefaultHeartbeat`, 5 s,
+`graph/readiness/watcher.go:71`), which for each bound JetStream consumer (a) records the binding lost, for good, when
+its `Closed()` fired while the shell runs (`readiness.go:52-90`, read loop-end first, running second), and (b) looks the
+consumer up by name, a failed lookup being a stuck state until a lookup succeeds (`:200-226`, `:289-301`). The
+Component mirrors exactly those two observations and `Health`'s use of them (`processor/graph-ingest/component.go:398-401`:
+`lifecycle.Health(…, fault, c.lostBindingFault())`). It does not mirror the readiness envelope the same tick publishes:
+the Component is no index producer and nothing reads a readiness key from it (ADR-109). The stuck text names the input
+and, for a lost binding, says a process restart is the recovery. Core-NATS subscriptions have no consumer to lose and
+are not observed; a Component with no JetStream input runs no tick.
+
+The tick is continuing work, so the Component has a run context, as graph-ingest does (`component.go:448`:
+`context.WithCancel(context.WithoutCancel(ctx))`): `start` creates it, keeps only its cancel, and starts the tick under
+it as the last step; `cleanup` drains the inputs, then cancels and waits for the tick under Stop's context
+(`component.go:600-610` is the order). This is ADR-113's one permitted root (`docs/adr/113-start-context-bounds-start.md:62-64`);
+the `background-work` rule's join is `Stop`'s. Proof: the suite's `Observe` lists the tick until it has returned, so
+`requireNothingRetained` after `Stop` proves the join, and `TestStartContextEndKeepsBothLanesWriting` proves the tick
+and lanes outlive the Start context. `Health` reads stored observations and never waits on NATS.
+
+`DataFlow` counts each delivery
 (`CountInput`) and each refusal or failure (`CountError`), replacing S24's zeros and S29's unread counters. Not carried:
 `IsStarted`, `messagesReceived`, `messagesStored`, `enabled`, `startStoreError` (the shell returns the Store's fatal
 error as given, `errs.IsFatal` holds).

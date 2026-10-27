@@ -71,14 +71,22 @@ and JetStream inputs SHALL still be stored. The Component SHALL pass the lifecyc
 
 ### Requirement: A lost JetStream input makes the Component unhealthy
 
-When a JetStream input stops delivering while the Component runs and before `Stop`, `Health` SHALL report unhealthy
-with a stuck state naming the input and saying a process restart is the recovery, until the process restarts.
+While the Component runs, a JetStream input whose consume loop ended before `Stop` SHALL make `Health` unhealthy,
+naming the input and the restart, until the process restarts; an input whose consumer cannot be found SHALL make it
+unhealthy, naming the consumer, until a later check finds it.
 
 #### Scenario: The input's consumer is deleted
 
 - **WHEN** the durable consumer of a running Component's JetStream input is deleted
 - **THEN** `Health` becomes unhealthy naming that input and the restart
 - **AND** the test that verifies this is `TestLostJetStreamInputReportsUnhealthy`
+
+#### Scenario: A memory input stream lost at a broker restart
+
+- **WHEN** a running Component's memory-backed input stream is lost at a broker restart and created again, so the
+  consume loop keeps running but its consumer cannot be found
+- **THEN** `Health` is unhealthy naming that consumer, before and after a message is published to the stream
+- **AND** the test that verifies this is `TestMemoryInputLostAtBrokerRestartStaysUnhealthy`
 
 ### Requirement: One objectstore store per process
 

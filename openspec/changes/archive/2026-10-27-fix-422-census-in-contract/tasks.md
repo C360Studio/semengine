@@ -32,8 +32,11 @@ code of 3.1, so every commit passes `task verify` on a clean tree (#171).
 
 ## 5. Code review
 
-- [ ] 5.1 Codex code review of record on the PR; `implemented-by:` and `reviewed-by:` in the PR body.
+- [x] 5.1 Codex code review of record on PR #427: APPROVE at `1c3472cb28735a757ed88d6a0bd461dcd7d9aef6` with no
+  actionable findings (PR comment of 2026-10-27T11:19:30Z). The PR body carries `implemented-by: claude (opus)` and
+  `reviewed-by: codex`.
 
 ## 6. Archive
 
-- [ ] 6.1 Spec sync and archive as the last content commit. Gate: `task spec:check`.
+- [x] 6.1 Spec sync and archive as the last content commit (`openspec archive`, the `harness-boundaries` requirement
+  added). Gate: `task spec:check` and `task docs:check`.

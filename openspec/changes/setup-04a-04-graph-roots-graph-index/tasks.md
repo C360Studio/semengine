@@ -42,7 +42,7 @@ passes on a clean tree at its commit (#171).
 
 ## 4. graph-index
 
-- [ ] 4.1 Configuration, factory, registration, metrics (design D9, D10). Gate: `go test -race -count=1
+- [x] 4.1 Configuration, factory, registration, metrics (design D9, D10). Gate: `go test -race -count=1
   ./processor/graph-index`, the metric-registry guard in `task lint`.
 - [ ] 4.2 Index write path on the keyed pool, coalescer, repair loop, owner reconciliation (design D7, D8). Gate:
   as 4.1 plus `task test:integration -- ./processor/graph-index`.

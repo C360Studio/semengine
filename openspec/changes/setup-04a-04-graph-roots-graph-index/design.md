@@ -380,6 +380,10 @@ test either rewritten against a real server or dropped with its reason in a task
   write waits until `DataFlow().Messages` has risen by one, so each write is a delivery, not a revision `History: 1`
   may supersede. It then asserts `Messages` rose by three and `Bytes` by the sum of the three lengths, and the index
   holds the last value's statements.
+- `TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt` (integration, M1): waits for the published
+  envelope to read `BootstrapComplete`, makes one entity's write fail, asserts `QueryReady` refuses, repairs it and
+  asserts `QueryReady` answers. Before the latch `compute` refuses an unresolved write too, so only a test run after
+  the latch shows `QueryReady`'s own failed-writes check.
 - `TestHealthIgnoresErrorCountAndTracksStuckStates`: a failed write lowers `Healthy` and its repair raises it; a
   nonzero `ErrorCount` alone reads healthy (ADR-109 D2 asks each port for both).
 - `TestSecondStartIsRefused`, `TestStartContextEndStopsNothing` (also in the suite), `TestUnknownConfigKeyIsRefused`,
@@ -395,10 +399,10 @@ test either rewritten against a real server or dropped with its reason in a task
   value, list, stats, compound) and name. Alias: D12.
 
 Generated checks: the pin's `reconciliation_prop_test.go` with its reference model (`reconciliation_model_test.go`)
-ports, recording seed and completed checks. Mutation rows (`task mutate:check`, unit tests only, `notes/6.1.md`): M1
-`QueryReady` skips the failed check; M2 the latch uses the live target; M3 the validating phase skipped; M4 the lost
-feed not marked; M5 `Healthy` reads `ErrorCount`; M6 completion skipped on a failed write (watermark pins). Each names
-the test expected to fail.
+ports, recording seed and completed checks. Mutation rows (`task mutate:check`, run on the integration tests above,
+`notes/6.1.md`): M1 `QueryReady` skips the failed check; M2 the latch uses the live target; M3 the validating
+phase skipped; M4 the lost feed not marked; M5 `Healthy` reads `ErrorCount`; M6 completion skipped on a failed
+write (watermark pins). Each names the test expected to fail.
 
 Uncovered case, recorded as such in `notes/6.1.md`: `indexed_revision` is read before the handler's first bucket read
 (D6). Showing that the order matters needs a write to land between the two reads, a timing only a test hook could

@@ -62,7 +62,7 @@ passes on a clean tree at its commit (#171).
 
 ## 6. Evidence and review
 
-- [ ] 6.1 `task mutate:check` for M1-M6 (design D11) and coverage of `processor/graph-index` and `graph/follower`, in
+- [x] 6.1 `task mutate:check` for M1-M6 (design D11) and coverage of `processor/graph-index` and `graph/follower`, in
   `notes/6.1.md`; `task verify` passes on a clean tree at the last commit before the archive commit.
 - [ ] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body.
 - [ ] 6.3 Comments on #107, #109, #110, #103, #106, #68, #195, #196 and #16 (the widened capture check, design

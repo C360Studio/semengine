@@ -421,6 +421,49 @@ func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	}
 }
 
+// TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt is the failed-write test above
+// run after the bootstrap latch has set. Before the latch, QueryReady refuses an unresolved write
+// through compute as well; once latched, the failed-writes check in QueryReady is the only refusal
+// (design D11, M1). The latch is awaited as a remote reader sees it: the published envelope
+// reading BootstrapComplete, which is written after the follower set the latch.
+func TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	await(t, "an envelope reporting bootstrap complete",
+		func(ctx context.Context) (graph.IndexStatusResponse, error) { return publishedEnvelope(ctx, h.client) },
+		func(s graph.IndexStatusResponse) bool { return s.BootstrapComplete })
+	if err := h.f.QueryReady(t.Context()); err != nil {
+		t.Fatalf("QueryReady after the latch, before any write: %v", err)
+	}
+
+	js, err := h.client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := js.DeleteKeyValue(t.Context(), graph.BucketIncomingIndex); err != nil {
+		t.Fatalf("delete %s: %v", graph.BucketIncomingIndex, err)
+	}
+	src, target := entityID(1), entityID(2)
+	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}))
+	h.awaitIndexed(t, rev) // the lane marks the entity failed before it completes the revision
+	if n := h.c.failedTotal(); n != 1 {
+		t.Fatalf("failed entities = %d, want 1", n)
+	}
+	if err := h.f.QueryReady(t.Context()); err == nil {
+		t.Errorf("QueryReady = nil after the latch while a required write is unresolved")
+	}
+
+	if _, err := kvcatalog.EnsureCatalogBucket(t.Context(), h.client, graph.BucketIncomingIndex); err != nil {
+		t.Fatalf("recreate %s: %v", graph.BucketIncomingIndex, err)
+	}
+	h.c.repairFailedEntities(t.Context())
+	await(t, "repair resolves the write",
+		func(context.Context) (int64, error) { return h.c.failedTotal(), nil },
+		func(n int64) bool { return n == 0 })
+	if err := h.f.QueryReady(t.Context()); err != nil {
+		t.Errorf("QueryReady after repair: %v", err)
+	}
+}
+
 // TestNoncanonicalValueLatchesResetAndHoldsItsRevision writes, after the replay, a value naming
 // another entity than its key. The lane latches reset, counts the entity unresolved, and does not
 // complete the revision, so the watermark never reports it applied.

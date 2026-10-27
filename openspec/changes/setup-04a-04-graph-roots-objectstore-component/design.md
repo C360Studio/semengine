@@ -40,6 +40,9 @@ Component mirrors exactly those two observations and `Health`'s use of them (`pr
 the Component is no index producer and nothing reads a readiness key from it (ADR-109). The stuck text names the input
 and, for a lost binding, says a process restart is the recovery. Core-NATS subscriptions have no consumer to lose and
 are not observed; a Component with no JetStream input runs no tick.
+Clearing the stuck state after a later lookup succeeds is stated, not tested, as in graph-ingest
+(`processor/graph-ingest/health_integration_test.go:55-58` asserts unhealthy only): a mutant that never clears fails
+closed into the ruled restart, and one that always clears fails the memory-loss test.
 
 The tick is continuing work, so the Component has a run context, as graph-ingest does (`component.go:448`:
 `context.WithCancel(context.WithoutCancel(ctx))`): `start` creates it, keeps only its cancel, and starts the tick under

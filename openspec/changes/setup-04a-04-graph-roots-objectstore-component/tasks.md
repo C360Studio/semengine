@@ -25,7 +25,8 @@ passes on a clean tree at its commit (#171).
   publish),
   `TestWriteLaneStoresBodyAndEmitsReference` (reference opens to the body), `TestWriteLaneRefusals` (table: not
   decodable, not `ContentStorable`, non-body content, invalid entity ID × core and JetStream; Term or drop, Error log,
-  `ErrorCount` +1, nothing stored), `TestStoredEmitFailureNaksThenRedeliveryStores`. Recorded in `notes/2.2.md`.
+  `ErrorCount` +1, nothing stored), `TestStoredEmitFailureNaksThenRedeliveryStores`. Uncovered: clearing the stuck state after a successful lookup
+  (design D2). Recorded in `notes/2.2.md`.
 
 ## 3. The Component
 

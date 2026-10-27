@@ -65,7 +65,7 @@ notes, and they are committed with the code of 4.1 and 4.2, so every commit pass
 
 ## 6. Measure
 
-- [ ] 6.1 Run `task verify` once at the base (d61fcad) and twice at the last code commit on the same machine. One
+- [x] 6.1 Run `task verify` once at the base (d61fcad) and twice at the last code commit on the same machine. One
   after-run has a scripts change, so the tool tests run; the other has a docs-only change, so they are skipped. Record
   the step timings and the load average of each run, and post them on PR #419 with commands and SHAs. Read the comment
   back. Gate: the comment.

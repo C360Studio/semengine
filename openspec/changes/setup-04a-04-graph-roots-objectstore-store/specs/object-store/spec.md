@@ -7,7 +7,7 @@
 `objectstore.NewStoreWithConfig` SHALL create the configured ObjectStore bucket or open it when it exists, then SHALL
 strip a TTL or binding `MaxBytes` from its backing stream `OBJ_<bucket>` with a logged warning, and SHALL fail with a
 fatal error wrapping `natsclient.ErrGraphBucketRetention` when either remains. It SHALL refuse a nil context or nil
-client before any I/O.
+client before any I/O. The Store SHALL keep no in-memory copy of objects and SHALL have no `Close`.
 
 #### Scenario: A fresh bucket
 
@@ -32,6 +32,12 @@ client before any I/O.
 - **WHEN** `NewStoreWithConfig` is called with a nil context
 - **THEN** it returns an invalid-input error and creates nothing
 - **AND** the test that verifies this is `TestNewStoreRefusesNilContext`
+
+#### Scenario: No cached copy
+
+- **WHEN** one Store gets a key, a second Store on the same bucket deletes it, and the first Store gets it again
+- **THEN** the second `Get` returns an error that matches `storage.ErrObjectNotFound`
+- **AND** the test that verifies this is `TestGetReadsNATSEveryTime`
 
 ### Requirement: Put replaces the object at its key
 

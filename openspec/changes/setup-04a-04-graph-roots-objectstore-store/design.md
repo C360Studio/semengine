@@ -89,7 +89,7 @@ reads that are part of the Store itself (`NewStoreWithConfigAndMetrics`, `Instan
 their reader arriving in 5b. `Config.Validate` (`pin:…/config.go:61-67`) returns nil and has no caller at the pin: not
 carried.
 
-Owner question 1 (D6): `Config.DataCache` and `Close`.
+Not carried, by owner ruling (D6): `Config.DataCache` and `Close`.
 
 ## D4. Behaviour the Store guarantees (and where the pin differs)
 
@@ -140,7 +140,7 @@ bucket is read once. This matches the KV guard the tree already runs for `Retent
 Consolidating `retention.go` with `natsclient.ReconcileNoLifecycleRetention` (S18) is optional and not done: it
 would change `natsclient`'s exported function to take a prefix.
 
-## D6. The data cache and `internal/cache` (owner question 1)
+## D6. The data cache and `internal/cache` (ruled: dropped)
 
 At the pin `Config.DataCache cache.Config` (`pin:…/config.go:38`) is public; in this tree that type is
 `internal/cache.Config`, and a public field may not name an `internal/` type (`harness-boundaries`; `AGENTS.md` § 1).
@@ -158,22 +158,15 @@ Facts:
 - A cached object outliving a delete (G3) has no current trigger: no consumer calls `Delete`, and semsource's keys
   are sha256 content addresses (`semsource:processor/ast-source/bodystore.go:25`, `:112`).
 
-- **Option 1 (recommended): drop the cache.** No `DataCache`, no cache metrics, no `Close` (the Store then owns no
-  resource; `jetstream` handles need no close). `internal/cache` stays internal and loses one importer. Each `Get`
-  reads NATS, one round trip; no one has measured that the cache helps (E1). Memory no longer grows with recent
-  writes. 5b's Component refuses a `data_cache` key as unknown; no consumer config carries one. Removing admitted
-  surface by name needs the owner's ruling (architect contract, Surface audit).
-- **Option 2: keep an LRU cache behind the Component only.** Public `Config` has no cache field; the Component (5b)
-  keeps an unexported `data_cache` config, limited to the LRU strategy (no goroutine, so G2 does not arise), passed
-  to an unexported constructor; the Store keeps `Close`. Pin read latency for repeated `Get` kept; the memory held by
-  recent writes stays, and S19 is fixed in 5b.
-- **Option 3: move `internal/cache` back to `pkg/cache`.** Reverses the floor's design D5; a whole cache package
-  becomes public API for one field. Not recommended.
-- **Option 4: a public objectstore mirror type** (`CacheConfig`) mapped to `internal/cache.Config`: a second
-  spelling of one config. Not recommended.
+**Ruled (owner ruling, PR #432 comment 6446982969): drop the cache.** The Store carries no `internal/cache` import, no
+`Config.DataCache`, no cache
+metrics and no `Close` (it then owns no resource; `jetstream` handles need no close), and the Component (5b) does not
+reinstate it. `internal/cache` stays internal and loses one importer. Each `Get` reads NATS, one round trip; memory no
+longer grows with recent writes. 5b's Component refuses a `data_cache` key as unknown; no consumer config carries one.
+Moving `internal/cache` back to `pkg/cache`, or adding a public mirror type of its config, were not taken.
 
-Under Option 1, ADR-063's "on Stop, the objectstore Component `Close()`s its store" (`:157-158`) and "the registrant
-owns `Close`" (`:256`) no longer describe anything: the port note says so (D11).
+ADR-063's "on Stop, the objectstore Component `Close()`s its store" (`:157-158`) and "the registrant owns `Close`"
+(`:256`) no longer describe anything: the port note says so (D11).
 
 ## D7. Metrics
 
@@ -181,7 +174,7 @@ Collectors register on the registry given to `NewStoreWithConfigAndMetrics` thro
 `semengine`, subsystem `objectstore` (S16; `metric-registry` spec). `NewStoreWithConfig` records nothing. Carried:
 operation counters (read, write, delete, list, by operation), latency histograms, and `operation_errors_total` (one
 count per call that returns an error; there are no retries inside the Store, so a count is an outcome). Not carried:
-`object_count` and `storage_bytes` (registered, never set, S15) and, under Option 1, the cache hit and miss counters.
+`object_count` and `storage_bytes` (registered, never set, S15) and the cache hit and miss counters (D6).
 The bucket is a variable label `bucket` on each collector, registered once per process under one `RegisterOrGet`
 key, not the pin's constant `kv_bucket` label under a per-bucket key (`pin:…/metrics.go:47`, `:156-162`). A constant
 label would make a second bucket's candidate differ in descriptor and fail construction (`metric/registry.go:44-47`).
@@ -190,7 +183,8 @@ consumer reads them (inventory 4). Two Stores on one bucket, or on two buckets, 
 
 ## D8. Context and lifecycle (ADR-113, ADR-108)
 
-Settled; applied, not reopened. Under Option 1 the Store is not a lifecycle owner: its constructor does its work under
+Settled; applied, not reopened. With no cache (D6) the Store is not a lifecycle owner: its constructor does its work
+under
 the context it is given and keeps neither the context nor any goroutine. ADR-113's run-context rule and
 `component.Lifecycle` (ADR-108) bind the Component in 5b, where the inventory's G7, S22, S23 and S24 are fixed.
 
@@ -214,7 +208,8 @@ filter), `TestStoreContentWritesBinariesThenEnvelope` (reference fields; envelop
 (the pin's `TestReconcileNoLifecycleRetention` fatal case, ported), `TestStoreConcurrentUseUnderRace`
 (8 goroutines Put/Get/List on one Store under `-race`), `TestFreshBucketHasNoLifecycleRetention`
 (`OBJ_<bucket>` `MaxAge` 0, `MaxBytes` ≤ 0),
-`TestTwoStoresOnOneBucketShareCollectors`, `TestTwoBucketsOnOneRegistryBothConstruct` (the variable label, D7). Each
+`TestGetReadsNATSEveryTime` (no cached copy, D6), `TestTwoStoresOnOneBucketShareCollectors`,
+`TestTwoBucketsOnOneRegistryBothConstruct` (the variable label, D7). Each
 test is shown failing against the pin's shape where the pin differs
 (S8, S9, the never-written half of S10, G1), recorded in `notes/2.1.md`. Ported pin tests rewritten without `t.Parallel`
 in integration files and
@@ -236,14 +231,15 @@ statement in D4, D5 and the spec cites P1-P10; P3c and P8 are stated as observed
   naming G5's issue, G8 and S27 as 5b's dispositions, and the deferred symbols.
 - `storage` row: `carry` → `adapt` (doc.go and storage.go edited for #280 item 1, and `Put`'s and `Delete`'s docs no
   longer claim versions, probe P4).
-- Under Option 1, the docs that describe a Store `Close`: `storage/storeregistry/storeregistry.go:19-21`, `:74-75`
+- The docs that describe a Store `Close` (D6): `storage/storeregistry/storeregistry.go:19-21`, `:74-75`
   (the owner closes the store on Stop) and `storage/doc.go:86`, `:208` (`defer store.Close()`); the
   `storage/storeregistry` row becomes `adapt` for the comment edit.
-- `internal/cache` row: importer count updated under Option 1.
+- `internal/cache` row: importer count updated (objectstore no longer imports it, D6).
 - `docs/adr/063-store-substrate-and-resolver.md` with a port note (the ADR-074 note's shape): pin path and SHA; carried
   with this change; what is ported (`storage`, `storage/storeregistry`, the Store; the Component in 5b); decisions
-  kept (instance name as `StorageInstance`, the registry, the raw-body read contract); what changed (under Option 1,
-  the Store has no `Close`, so `:157-158` and `:256` describe nothing here); what is open (multi-instance naming,
+  kept (instance name as `StorageInstance`, the registry, the raw-body read contract); what changed (by the D6
+  ruling, the Store has no `Close`, so `:157-158` and `:256` describe nothing here); what is open (multi-instance
+  naming,
   `:412-413`, decided in 5b); the conflict G8 named as 5b's to decide. Its own ledger row. Closes #321.
 - ADR-068: not carried (graph-index made the same call); its one decision this package implements is already the
   tree's rule (`AGENTS.md` § 2, `natsclient/kv.go:179`); orphan collection is not implemented at the pin.
@@ -266,7 +262,7 @@ characters and names its test.
 | #195 | advanced: this change's integration tests use the fixture; the Component's two sites are 5b's |
 | #33 | stays: the last site is `stored_message.go:90`, which 5b carries; 5b closes it |
 | #196 | stays: the Component row adopts through `component.Lifecycle` in 5b |
-| #281 | stays: objectstore's refused `category:performance` tag is on `DataCache` (gone under Option 1; else 5b's) |
+| #281 | stays: objectstore's refused `category:performance` tag is on `DataCache` (gone, D6) |
 | #36, #216 | stay: the Component's write consumer (5b) names both |
 
 Filed by this design (protocol File step, a defect in code this change brings into the repository; linked without a
@@ -284,13 +280,12 @@ Merge order: #431 touches only graph-ingest's OpenSpec change; either may merge 
 - Changed: `storage.Store`'s documented `List` and never-written `Delete` behaviour is now implemented (the pin's code
   broke its own
   interface doc); `Open` joins `Get` in reporting not-found; `StoreContent` keys carry a nonce.
-- Dropped (owner question 1): the data cache and `Close`, which changes ADR-063 `:157-158`, `:256` as noted in D11.
+- Dropped (owner ruling, PR #432 comment 6446982969): the data cache and `Close`, which changes ADR-063 `:157-158`,
+  `:256` as noted in D11.
 
 ## Rulings
 
-Owner question 1 (D6), in plain words: the Component keeps the last 1,000 objects written in memory, whatever their
-size, so a repeat `Get` skips a trip to NATS. Nobody configures it, graph-embedding's reads never use it, and only
-fusion's `Get` can. Drop it (recommended: less memory, less code, no public setting tied to an internal package), or
-keep a size-capped LRU cache inside the Component only, if repeat reads of the same object are fast enough to
-matter? The split itself is ruled (#9 comment 6386556850, item 1); ADR-113 and ADR-108 are settled and only applied
-(D8).
+- The data cache is dropped (D6; owner ruling, PR #432 comment 6446982969): no `internal/cache`, no `Config.DataCache`,
+  no `Store.Close`, and the
+  Component in 5b does not reinstate it.
+- The split is ruled (#9 comment 6386556850, item 1). ADR-113 and ADR-108 are settled and only applied (D8).

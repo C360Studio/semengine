@@ -9,8 +9,7 @@ passes on a clean tree at its commit (#171).
   `task spec:check` and `task docs:check`.
 - [x] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 ObjectStore probe (inventory 11, P1-P10) on PR #432: program,
   command, versions and output. Gate: the comment read back. Posted as PR #432 comment 6445520357.
-- [ ] 1.3 Owner ruling on question 1 (design D6: drop the data cache, or keep it behind the Component only).
-  Hold: owner ruling on question 1.
+- [x] 1.3 Owner ruling on design D6: drop the data cache. Ruled at PR #432 comment 6446982969.
 - [ ] 1.4 File G5 (orphan binaries after a partial `StoreContent`, design D13) as an issue, linked from PR #432
   without a closing keyword. G8 and S27 are 5b's dispositions, not filed. Gate: the issue read back.
 
@@ -27,16 +26,17 @@ passes on a clean tree at its commit (#171).
 - [ ] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, `StoreContent` and the envelope types (design D3, D4). Gate: as 3.1
   plus `go test -count=5 -cpu 1 -shuffle=on ./storage/objectstore`.
 - [ ] 3.3 Metrics on the injected registry (design D7). Gate: as 3.1 and the metric-registry guard in `task lint`.
-- [ ] 3.4 The data cache as ruled in 1.3 (design D6). Gate: as 3.1; `TestPublicSignatures` (the
-  `harness-boundaries` guard) passes.
+- [ ] 3.4 No data cache, as ruled in 1.3 (design D6): no `internal/cache` import, no `Config.DataCache`, no
+  `Store.Close`. Gate: as 3.1; `TestPublicSignatures` (the `harness-boundaries` guard) passes; `go list -deps
+  ./storage/objectstore` names no `internal/cache`.
 
 ## 4. Ledger, records and docs
 
 - [ ] 4.1 Ledger rows of design D11 (`storage/objectstore` new, `storage` to `adapt`, `internal/cache` importer count,
   `docs/adr/063-…` new). Gate: `task ledger:check`.
 - [ ] 4.2 Carry ADR-063 into `docs/adr/` with its port note (design D11; closes #321). Gate: `task docs:check`.
-- [ ] 4.3 `storage/doc.go` and `storage/storage.go` examples, `Put` and `Delete` docs (#280 item 1, probe P4); under
-  Option 1 the `Close` text in `storage/storeregistry/storeregistry.go:19-21`, `:74-75` and `storage/doc.go:86`,
+- [ ] 4.3 `storage/doc.go` and `storage/storage.go` examples, `Put` and `Delete` docs (#280 item 1, probe P4); the
+  `Close` text in `storage/storeregistry/storeregistry.go:19-21`, `:74-75` and `storage/doc.go:86`,
   `:208`; package `doc.go`, `README.md`, `ExampleNewStoreWithConfig`; `docs/repository-map.md` row; the storage bullet
   in the developer and reviewer contracts, with its row in `AGENTS.md` and `.agents/rules-index.md`, gate `review`
   (design D2, D11). Gate: `task docs:check`, the adapter guard and the rules-index guard in `task verify`.

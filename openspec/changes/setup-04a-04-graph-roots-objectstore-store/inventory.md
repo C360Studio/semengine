@@ -182,7 +182,7 @@ Per Store symbol (pin-wide readers, in-package production readers, consumer read
 | `StoreContent`, `StoredContent`, `BinaryRef` | Component (in-package), examples/document | keep (framework API) |
 | `InstanceName()` | Component `ProvidedStores` (`pin:…/component.go:131`) | keep |
 | `Config.Logger` | Component (`pin:…/component.go:488`) | keep |
-| `Config.DataCache`, `Close` | Component default (`pin:…/config.go:102-108`); Component Stop (`:662`) | owner question (D6) |
+| `Config.DataCache`, `Close` | Component default (`pin:…/config.go:102-108`); Component Stop (`:662`) | dropped by owner ruling (PR #432 comment 6446982969) (D6) |
 | `FetchContent`, `extractContentFromBaseMessage`, `extractTextFields`, `SetDecoder` | none outside the package; `SetDecoder` only from the Component (`:499`), for FetchContent | not carried |
 | `FetchBinary`, `GetMetadata` | none | not carried |
 | `GetFieldByRole`, `HasRole`, `GetBinaryRefByRole`, `HasBinaryContent` | none | not carried |
@@ -354,7 +354,7 @@ Surfaces reached from outside: `objectstore.Config`, `NewStoreWithConfig`, `NewS
 ## Intent check
 
 This change moves no boundary in `AGENTS.md` § What this is for: no capability is admitted, deferred or excluded.
-The cache removal (owner question) drops a performance knob of an admitted package, not a capability.
+The cache removal (owner ruling, PR #432 comment 6446982969) drops a performance knob of an admitted package, not a capability.
 
 ## Open evidence questions
 

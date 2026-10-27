@@ -22,8 +22,8 @@ package has no external-provider code, so the tier-0 ruling (#9 comment 63866036
 - `StoreContent` keys carry a per-call nonce, so two writes for one entity never replace each other.
 - Metrics register through `metric.RegisterOrGet` under `semengine`; the two gauges nothing sets are not carried.
 - Not carried (no reader at the pin or in a consumer): `FetchContent`, `FetchBinary`, `GetMetadata`, `SetDecoder`,
-  the `StoredContent` role helpers. Owner question: the in-memory data cache (`Config.DataCache`, which would expose
-  `internal/cache`) is recommended for removal; `Close` goes with it.
+  the `StoredContent` role helpers. By owner ruling (PR #432 comment 6446982969): the in-memory data cache
+  (`Config.DataCache`, which would expose `internal/cache`) and `Close` are not carried.
 - Deferred to pull request 5b with the Component: `Store.Store`, `DefaultKeyGenerator`, `Config.Ports`,
   `KeyGenerator`, `MetadataExtractor`, `DefaultConfig`, `StoredMessage`, `Register`, `RegisterPayloads`.
 - Carry SemStreams ADR-063 (store substrate and resolver) into `docs/adr/` with a port note; fix `storage/doc.go` and

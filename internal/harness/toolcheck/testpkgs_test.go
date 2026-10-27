@@ -54,7 +54,8 @@ func runIn(t *testing.T, root string, env []string, script string, args ...strin
 const integrationLine = "//go:build integration\n\n"
 
 // TestTestPkgsLists (merge-gate › "Tool tests and repository guards are separate packages";
-// integration-test-runner › "Only packages with integration tests"): scripts/test-pkgs.sh prints
+// "Varied and repeated unit runs"; integration-test-runner › "Only packages with integration
+// tests"): scripts/test-pkgs.sh prints
 // each list on one line in a planted git module. The expected lists are written out by hand.
 func TestTestPkgsLists(t *testing.T) {
 	root := copyScript(t, "test-pkgs.sh")
@@ -72,7 +73,7 @@ func TestTestPkgsLists(t *testing.T) {
 		"d/testdata/d_test.go": integrationLine + "package d\n",
 		// An ignored tagged file.
 		"ignored/i_test.go": integrationLine + "package i\n",
-		// The repository guards stay unit; the three tool packages do not.
+		// The repository guards stay unit but are not repeated; the three tool packages are neither.
 		"internal/harness/contract/c_test.go": "package contract\n",
 		"internal/harness/toolcheck/doc.go":   "package toolcheck\n",
 		"internal/harness/mutcheck/m.go":      "package mutcheck\n",
@@ -91,6 +92,8 @@ func TestTestPkgsLists(t *testing.T) {
 	for _, tc := range []struct{ list, want string }{
 		{"integration", "./b ./e\n"},
 		{"unit", "./a ./d ./e ./internal/harness/contract\n"},
+		// The repository guards run once, in the unit run, never in the repeat run (owner, PR #419).
+		{"repeat", "./a ./d ./e\n"},
 		{"tools", "./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/toolcheck\n"},
 	} {
 		out, status := runIn(t, root, env, "test-pkgs.sh", tc.list)
@@ -118,6 +121,15 @@ func TestTestPkgsLists(t *testing.T) {
 	})
 	if out, status := runIn(t, toolsOnly, env, "test-pkgs.sh", "unit"); status == 0 {
 		t.Errorf("test-pkgs.sh unit with only a tool package: exit 0, want non-zero\n%s", out)
+	}
+	// A module whose only unit package is the repository guards has an empty repeat list.
+	guardsOnly := copyScript(t, "test-pkgs.sh")
+	plant(t, guardsOnly, map[string]string{
+		"go.mod":                              "module example.com/m\n\ngo 1.22\n",
+		"internal/harness/contract/c_test.go": "package contract\n",
+	})
+	if out, status := runIn(t, guardsOnly, env, "test-pkgs.sh", "repeat"); status == 0 {
+		t.Errorf("test-pkgs.sh repeat with only the repository guards: exit 0, want non-zero\n%s", out)
 	}
 	if out, status := runIn(t, empty, env, "test-pkgs.sh", "nonsense"); status == 0 {
 		t.Errorf("test-pkgs.sh nonsense: exit 0, want non-zero\n%s", out)

@@ -31,9 +31,11 @@ reviews the code.
   `requireViolation`, `runLintTestPorts` and the rest). That repeats about 100 lines of test code, and a shared helper
   package would be surface for test code alone. Every other file stays: the tree guards, `agentsetup_test.go`,
   `ledger_test.go`, `docker_test.go` and `imagepin_test.go` (inventory §2).
-- **`scripts/test-pkgs.sh unit|integration|tools`** prints one package list on one line, separated by spaces.
+- **`scripts/test-pkgs.sh unit|repeat|integration|tools`** prints one package list on one line, separated by spaces.
   `tools` prints the three tool packages, and the script is the only place they are named. `unit` prints
-  `go list ./...` without them. `integration` reads the build lines directly:
+  `go list ./...` without them. `repeat` prints the `unit` list without `internal/harness/contract`, named once beside
+  the tool list: the repository guards read the tree, not timing, so they run once per verify, in `test:unit`, and
+  never five times (owner, PR #419 comment 6429349207). `integration` reads the build lines directly:
   `git grep --untracked -l '^[[:space:]]*//go:build integration[[:space:]]*$' -- '*_test.go'
   ':(exclude,glob)**/testdata/**'` (the glob form also excludes a top-level `testdata/`), then each file's directory
   as `./<dir>`, sorted and unique. It matches the line the testtext guard accepts after trimming it
@@ -50,8 +52,8 @@ reviews the code.
   wrapper sits in front of `go test` and no environment variable is set (integration-test-runner,
   "The task takes no lock and sets nothing up"). `scripts/gopkgs.sh` leaves the three test lines. A new
   `test:tools:changed` runs `scripts/tools-changed.sh`. The pinning test holds each task's `PKGS` line
-  (`unit` for `test:unit` and `test:repeat`, `integration` for `test:integration`, `tools` for `test:tools`), as well
-  as the command lines and `test:tools:changed`'s one command.
+  (`unit` for `test:unit`, `repeat` for `test:repeat`, `integration` for `test:integration`, `tools` for
+  `test:tools`), as well as the command lines and `test:tools:changed`'s one command.
   Probe at the pinned Task 3.51.1, a scratch Taskfile in `/tmp`. A `sh:` variable whose command exits 3 failed the
   task (`task: Command "echo partial; exit 3" failed: exit status 3`, exit 1) and ran none of its commands. A
   variable printing `a b c` reached the command as three words. `-- ./x` replaced the default. Task 2.1 repeats the
@@ -77,6 +79,7 @@ reviews the code.
   test task's `vars` as well as its `cmds`. Its new sensitivity cases:
   - `test:unit` reads the `tools` list;
   - `test:repeat` has no `PKGS` and defaults to `./...`;
+  - `test:repeat` reads the `unit` list;
   - `test:integration` reads the `unit` list;
   - `test:tools` reads the `unit` list;
   - `test:tools:changed` runs something else;
@@ -88,9 +91,11 @@ reviews the code.
   `TestTestPkgsLists` works on planted git modules only. A directory whose only Go file is an `integration`-tagged
   test is listed. An untracked tagged file is listed. A `testdata` directory and a package with only untagged tests
   are not. A tree with no tagged file makes the script exit non-zero. The `unit` list leaves out the three tool
-  packages and keeps a planted `internal/harness/contract`. The test does not compare against the real tree's list:
-  that list and any oracle for it read the same build lines, and an exact check in a gated package would fail first
-  on the next scripts pull request rather than on the product pull request that changed the tree.
+  packages and keeps a planted `internal/harness/contract`; the `repeat` list leaves out both, and a tree whose only
+  unit package is `internal/harness/contract` has an empty `repeat` list, so the script exits non-zero. The test
+  does not compare against the real tree's list: that list and any oracle for it read the same build lines, and an
+  exact check in a gated package would fail first on the next scripts pull request rather than on the product pull
+  request that changed the tree.
 
   `TestToolsChanged` runs `scripts/tools-changed.sh` in planted git repositories, with a stand-in `task` on `PATH`
   that records whether it ran. Its local cases remove `GITHUB_ACTIONS`, `GITHUB_EVENT_NAME` and `GITHUB_BASE_REF` from

@@ -89,10 +89,10 @@ tasks:
       - go test -race -count=1 -cpu 1 {{.PKGS}}
 
   test:repeat:
-    desc: Run unit tests five times at one CPU without the race detector, shuffled; -- <pkgs> to focus
+    desc: Run unit tests (every unit package but the repository guards in internal/harness/contract) five times at one CPU without the race detector, shuffled; -- <pkgs> to focus
     vars:
       PKGS:
-        sh: scripts/test-pkgs.sh unit
+        sh: scripts/test-pkgs.sh repeat
     cmds:
       # The count, the CPU setting and the absence of -race are pinned by the merge-gate spec
       # (toolcheck's TestUnitInvocationsPinned); one CPU without -race is the setting that found #40.

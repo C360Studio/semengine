@@ -39,7 +39,7 @@ being protected.
 | Level | Command | What it can show |
 |---|---|---|
 | Unit | `task test:unit` | One function or in-process behavior. Runs every package except the three tool packages (below) with `-race`; no Docker, no network. |
-| Unit, repeated | `task test:repeat` | A test that depends on run order, on state left by another test, or on timing. Runs the unit tests five times at one CPU in shuffled order, without `-race`. |
+| Unit, repeated | `task test:repeat` | A test that depends on run order, on state left by another test, or on timing. Runs the unit tests five times at one CPU in shuffled order, without `-race`, except the repository guards in `internal/harness/contract`, which read files rather than timing and run once, in `task test:unit`. |
 | Integration | `task test:integration` | Behavior that depends on a real NATS server: JetStream delivery, key-value buckets, consumers. |
 | Tool tests | `task test:tools`, or `task test:tools:changed` | The repository's own tools: the tests of the scripts, `Taskfile.yml` and the CI workflow (`internal/harness/toolcheck/`), `mutate:check` (`internal/harness/mutcheck/`) and the ledger program (`internal/harness/pindiff/`). `task verify` runs them through `test:tools:changed`, which skips them when no file they read has changed; `task test:repeat` never runs them. |
 | Structural guards | `task test:unit`, `task verify` | Repository-wide rules, checked by tests in `internal/harness/contract/`. They run on every change. |

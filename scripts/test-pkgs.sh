@@ -6,28 +6,35 @@
 #
 #   tools        the tool packages; this script is the only place they are named.
 #   unit         every package go list ./... names, except the tool packages.
+#   repeat       the unit list, except the repository guards (internal/harness/contract).
 #   integration  the directory of every tracked or untracked, unignored _test.go file
 #                outside testdata with a line that, trimmed, is //go:build integration.
 #                go list cannot find these: without the tag it leaves out a directory
 #                whose only Go files are integration tests, and still exits 0.
 #
 # An empty list or a failing command exits non-zero, so the task fails before go test.
-# Usage: test-pkgs.sh unit|integration|tools
+# Usage: test-pkgs.sh unit|repeat|integration|tools
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 readonly tools=(./internal/harness/mutcheck ./internal/harness/pindiff ./internal/harness/toolcheck)
+# The repository guards read the tree, not timing, so one run per verify is enough (owner, PR #419).
+readonly guards=./internal/harness/contract
 
 case "${1:-}" in
   tools)
     pkgs=$(printf '%s\n' "${tools[@]}")
     ;;
-  unit)
+  unit | repeat)
+    skip=("${tools[@]}")
+    if [ "$1" = repeat ]; then
+      skip+=("$guards")
+    fi
     module=$(go list -m)
     all=$(go list ./...)
     pkgs=$(while IFS= read -r p; do
       dir=".${p#"$module"}"
-      if [[ " ${tools[*]} " != *" $dir "* ]]; then
+      if [[ " ${skip[*]} " != *" $dir "* ]]; then
         echo "$dir"
       fi
     done <<<"$all")
@@ -47,7 +54,7 @@ case "${1:-}" in
     done <<<"$files")
     ;;
   *)
-    echo "usage: test-pkgs.sh unit|integration|tools" >&2
+    echo "usage: test-pkgs.sh unit|repeat|integration|tools" >&2
     exit 2
     ;;
 esac

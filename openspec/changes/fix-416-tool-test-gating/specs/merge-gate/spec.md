@@ -4,11 +4,11 @@
 
 ### Requirement: Varied and repeated unit runs
 
-`task test:unit` SHALL run `go test -race -count=1 -cpu 1` over the unit packages. `task test:repeat` SHALL run
-`go test -count=5 -cpu 1 -shuffle=on` over the packages given after `--`, or else the unit packages. The unit packages
-are every package `go list ./...` names except the tool packages. A pinning test SHALL fail when either command line,
-or the step list of `scripts/verify.sh`, differs from this requirement or from "Verify runs both unit steps, the repeat
-step last".
+`task test:unit` SHALL run `go test -race -count=1 -cpu 1` over the unit packages: every package `go list ./...`
+names but the tool packages. `task test:repeat` SHALL run `go test -count=5 -cpu 1 -shuffle=on` over the packages
+after `--`, else the repeat packages: the unit packages but `internal/harness/contract`. A pinning test SHALL fail
+when a command line or the `scripts/verify.sh` step list differs from this or from "Verify runs both unit steps, the
+repeat step last".
 
 #### Scenario: Count lowered
 
@@ -27,15 +27,15 @@ step last".
 
 #### Scenario: Repeat over every package
 
-- **WHEN** the `test:repeat` command in `Taskfile.yml` defaults to `./...` instead of the unit packages
+- **WHEN** the `test:repeat` command in `Taskfile.yml` defaults to `./...` instead of the repeat packages
 - **THEN** the pinning test fails naming the task and the required command
 
 ### Requirement: Verify runs both unit steps, the repeat step last
 
 `scripts/verify.sh` SHALL run `task test:unit`, `task test:tools:changed` and `task test:repeat`, with `test:repeat`
-last. Every test without a build tag in a unit package then runs once under the race detector at one CPU and five
-times without it at one CPU in shuffled order. In a package with an `integration`-tagged file it also runs once under
-the race detector on every CPU.
+last. Every test without a build tag in a unit package then runs once under the race detector at one CPU, and in a
+repeat package also five times without it at one CPU in shuffled order. In a package with an `integration`-tagged
+file it also runs once under the race detector on every CPU.
 
 #### Scenario: Step removed from verify
 
@@ -78,14 +78,19 @@ under a trigger path, and in `internal/harness/contract`, a unit package, when i
 
 ### Requirement: Each test task reads its own package list
 
-`test:unit` and `test:repeat` SHALL set `PKGS` from `scripts/test-pkgs.sh unit` and `test:tools` from
-`scripts/test-pkgs.sh tools`, with no other `vars`. `test:tools:changed` SHALL run exactly `scripts/tools-changed.sh`.
+`test:unit` SHALL set `PKGS` from `scripts/test-pkgs.sh unit`, `test:repeat` from `scripts/test-pkgs.sh repeat` and
+`test:tools` from `scripts/test-pkgs.sh tools`, with no other `vars`. `test:tools:changed` SHALL run exactly `scripts/tools-changed.sh`.
 `TestUnitInvocationsPinned` SHALL fail, naming the task, when its `vars` or its command differ from this.
 
 #### Scenario: The unit run reads the tool list
 
 - **WHEN** `test:unit` sets `PKGS` from `scripts/test-pkgs.sh tools`
 - **THEN** the pinning test fails naming `test:unit` and the required line
+
+#### Scenario: The repeat run reads the unit list
+
+- **WHEN** `test:repeat` sets `PKGS` from `scripts/test-pkgs.sh unit`
+- **THEN** the pinning test fails naming `test:repeat` and the required line
 
 #### Scenario: The repeat run loses its list
 

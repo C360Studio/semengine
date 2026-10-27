@@ -21,7 +21,8 @@ import (
 // the test tasks task verify runs, held to the exact lines of the specs. Each test task reads its
 // package list into PKGS from scripts/test-pkgs.sh and runs plain go test over it. test:unit runs
 // once under the race detector at one CPU; test:repeat runs five times without it at one CPU in
-// shuffled order, over the unit packages or the packages given after --; test:tools runs the tool
+// shuffled order, over the repeat packages (the unit packages but the repository guards) or the
+// packages given after --; test:tools runs the tool
 // packages as test:unit runs the unit ones; test:tools:changed runs only scripts/tools-changed.sh.
 // Neither line is read from the file under test: these constants are the spec.
 const (
@@ -46,7 +47,7 @@ var pinnedTestTasks = []struct {
 	cmds             []string
 }{
 	{"test:unit", "merge-gate", "unit", []string{requiredUnitCmd}},
-	{"test:repeat", "merge-gate", "unit", []string{requiredRepeatCmd}},
+	{"test:repeat", "merge-gate", "repeat", []string{requiredRepeatCmd}},
 	{"test:integration", "integration-test-runner", "integration", requiredIntegrationCmds},
 	{"test:tools", "merge-gate", "tools", []string{requiredToolsCmd}},
 	{"test:tools:changed", "merge-gate", "", []string{requiredToolsChangedCmd}},
@@ -114,11 +115,11 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 		taskfile, verify []byte
 		wants            []string
 	}{
-		{"count lowered", taskfile(map[string]string{"test:repeat": pkgs("unit") + cmds(strings.Replace(requiredRepeatCmd, "-count=5", "-count=1", 1))}), goodVerify,
+		{"count lowered", taskfile(map[string]string{"test:repeat": pkgs("repeat") + cmds(strings.Replace(requiredRepeatCmd, "-count=5", "-count=1", 1))}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
 		{"cpu setting dropped", taskfile(map[string]string{"test:unit": pkgs("unit") + cmds(strings.Replace(requiredUnitCmd, " -cpu 1", "", 1))}), goodVerify,
 			[]string{"test:unit", requiredUnitCmd}},
-		{"race added to repeat", taskfile(map[string]string{"test:repeat": pkgs("unit") + cmds(strings.Replace(requiredRepeatCmd, "go test", "go test -race", 1))}), goodVerify,
+		{"race added to repeat", taskfile(map[string]string{"test:repeat": pkgs("repeat") + cmds(strings.Replace(requiredRepeatCmd, "go test", "go test -race", 1))}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
 		{"repeat task missing", taskfile(map[string]string{"test:repeat": ""}), goodVerify,
 			[]string{"test:repeat", "no such task"}},
@@ -139,6 +140,8 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 		// "Each test task reads its own package list" and "Only packages with integration tests".
 		{"unit reads the tool list", taskfile(map[string]string{"test:unit": pkgs("tools") + cmds(requiredUnitCmd)}), goodVerify,
 			[]string{"test:unit", "scripts/test-pkgs.sh unit"}},
+		{"test:repeat reads the unit list", taskfile(map[string]string{"test:repeat": pkgs("unit") + cmds(requiredRepeatCmd)}), goodVerify,
+			[]string{"test:repeat", "scripts/test-pkgs.sh repeat"}},
 		{"repeat has no PKGS and defaults to every package", taskfile(map[string]string{"test:repeat": cmds(`go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}`)}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
 		{"integration reads the unit list", taskfile(map[string]string{"test:integration": pkgs("unit") + cmds(requiredIntegrationCmds...)}), goodVerify,

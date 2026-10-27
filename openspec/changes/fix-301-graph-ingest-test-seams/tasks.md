@@ -10,7 +10,7 @@ Working rules for every task:
 
 ## 1. Probe
 
-- [ ] 1.1 The pause (design D2): a `deps.Logger` handler blocking on "Entity ingested" holds one input unacknowledged
+- [x] 1.1 The pause (design D2): a `deps.Logger` handler blocking on "Entity ingested" holds one input unacknowledged
   past a 2 s ack_wait, as an oracle consumer measures it. graph-ingest's consumer shows no redelivery while the input
   is held, and the entity is stored while its guard record is not. Run it as a throwaway test, never committed, with
   source and output posted as a PR comment. If it fails, change the mechanism or stop for review; the proof is never
@@ -19,7 +19,7 @@ Working rules for every task:
 ## 2. Design review
 
 - [ ] 2.1 Codex design review of `design.md` and the `graph-transport-boundary` delta, with the 1.1 result. Gate:
-  `task spec:check` and `task docs:check`.
+  `task spec:check` and `task docs:check`. Hold: Codex design review.
 - [ ] 2.2 Owner acceptance, recorded on PR #436.
 
 ## 3. Tests

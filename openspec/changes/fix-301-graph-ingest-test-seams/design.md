@@ -31,6 +31,8 @@
     and the input is not redelivered;
   - process killed between apply and ack: the child pauses for good and is killed, and the input is redelivered and
     applied once (`settlement_integration_test.go:246`).
+  - Probe 1.1 (`notes/1.1.md`): the pause holds an input past ack_wait with no redelivery. A Stop while the pause
+    is held waits for the held work, so each test releases the pause before Stop.
 - **Not-started refusal** (rewrites `failed_start_callbacks_integration_test.go:64`). The same handler pauses on
   "query handlers registered" (`query.go:58`) or "mutation handlers registered" (`mutation_runtime.go:33`). A real
   request then gets `errs.ErrNotStarted` (`component.go:530-532`) and does no work. The test then

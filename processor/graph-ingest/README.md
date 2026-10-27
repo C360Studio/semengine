@@ -191,7 +191,7 @@ A third stuck state does not clear. If a status tick, run while the component is
 sees that a consume loop (the goroutine that pulls messages for one consumer) has ended, graph-ingest records the
 binding as lost. `Healthy` is then false with `LastError` reading `input binding lost for consumer
 <stream>/<consumer>: its consume loop ended; restart the process to consume again`, the readiness envelope is
-degraded, and graph-ingest logs an Error once per consumer. This is what a memory stream deleted and created again
+degraded, and graph-ingest logs an Error once per consumer. This is what a stream deleted and created again
 while the broker stays up leaves behind. Creating the consumer again under the same name does not clear it:
 graph-ingest never rebinds, stops or deletes that consumer, and the process restart is the recovery. Restart on
 `/readyz` failing, not `/healthz`, which stays 200 while the listener serves; after the restart, publish again from the

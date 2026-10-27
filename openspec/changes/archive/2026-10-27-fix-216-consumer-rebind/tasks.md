@@ -48,11 +48,11 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 
 ## 5. Code review
 
-- [ ] 5.1 Codex code review of record at a named commit with a local `task verify`; the PR body carries
-  `implemented-by: claude (opus)` and `reviewed-by: codex`. Hold: Codex code review on PR #431 (the owner starts
-  Codex). Gate: Codex's comment.
+- [x] 5.1 Codex code review of record at a named commit with a local `task verify`; the PR body carries
+  `implemented-by: claude (opus)` and `reviewed-by: codex`: APPROVE at `780d9d2` (PR #431 comment 6450891839).
+  Gate: Codex's comment.
 
 ## 6. Archive
 
-- [ ] 6.1 Sync the `graph-ingest-recovery` delta into `openspec/specs/graph-ingest-recovery/spec.md` and archive, as
+- [x] 6.1 Sync the `graph-ingest-recovery` delta into `openspec/specs/graph-ingest-recovery/spec.md` and archive, as
   the last content commit. Gate: `task spec:check` and `task docs:check`.

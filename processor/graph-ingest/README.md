@@ -196,9 +196,10 @@ while the broker stays up leaves behind. Creating the consumer again under the s
 graph-ingest never rebinds, stops or deletes that consumer, and the process restart is the recovery. Restart on
 `/readyz` failing, not `/healthz`, which stays 200 while the listener serves; after the restart, publish again from the
 source. After a broker restart with a memory stream, whether the consume loop ends is nats.go behaviour that was
-measured once and is not promised: in the probe (`openspec/changes/fix-216-consumer-rebind/inventory.md` section 1.2,
-case a) the loop stayed open and pulled a consumer that no longer existed, so the unhealthy reading there comes from
-the failed backlog lookup, not from an ended loop. A file stream resumes without action in the same probe (case c).
+measured once and is not promised: in the probe
+(`openspec/changes/archive/2026-10-27-fix-216-consumer-rebind/inventory.md` section 1.2, case a) the loop stayed
+open and pulled a consumer that no longer existed, so the unhealthy reading there comes from the failed backlog
+lookup, not from an ended loop. A file stream resumes without action in the same probe (case c).
 
 `ErrorCount` counts processing errors since start and never lowers `Healthy`.
 

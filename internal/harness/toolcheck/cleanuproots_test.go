@@ -1,4 +1,4 @@
-package contract
+package toolcheck
 
 import (
 	"os/exec"

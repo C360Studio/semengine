@@ -63,13 +63,13 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
   - File: `configs/prometheus/rules/storage-pressure.yml`: delete `:298-319`, edit `:38-39`, add the header note.
   - The four `TestStorageAlertRules_*` tests pass unchanged.
   - Gate: `go test -race -run TestStorageAlertRules ./service/` and `task verify`.
-- [ ] 2.5 Sensitivity and code review (`notes/2.5.md`): report each mutant as detected (naming the test) or as a
+- [x] 2.5 Sensitivity and code review (`notes/2.5.md`): report each mutant as detected (naming the test) or as a
   survivor, with `task mutate:check`, unit tests only.
   - `supervise` closes `done` before `publishHealthLoop` returns (`TestComponentManagerPassesTheLifecycleSuite` or
     `TestComponentHealthPublishFailureIsCounted`).
   - `planStreams` returns a nil archival list (the archival tests, `stream_bounds_test.go:668-785`).
   - The archival hint drops the service name (the log subtest of 2.2).
-  - Hold: Codex code review on PR #421, citing the commit and a local `task verify`.
+  - Codex code review on PR #421: APPROVE at `4685e0f`; its MEDIUM (a direct Stop-waits test) is added.
 
 ## 3. Docs, ledger and archive
 

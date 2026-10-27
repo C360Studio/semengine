@@ -60,6 +60,66 @@ func TestComponentHealthPublishFailureIsCounted(t *testing.T) {
 	})
 }
 
+// TestComponentManagerStopWaitsForInProgressHealthCallback: a Stop that begins while the health
+// publisher is inside a component's Health() does not return until that call returns, and then
+// returns nil (design D4; Codex review on PR #421). The component's Health() signals its entry and
+// waits on a channel the test owns. The client is unconnected (newUnconnectedClient), so no
+// nats.go connection runs in the bubble (#156).
+//
+// spec: service-lifecycle / Component health is published and its drops counted
+func TestComponentManagerStopWaitsForInProgressHealthCallback(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		held := &blockingHealthComponent{entered: make(chan struct{}), release: make(chan struct{})}
+		cm := composeComponentManager(t, discardLogger, metric.NewMetricsRegistry(),
+			testComponent{name: "health-held", instance: held})
+
+		stopCtx := stopContext(t)
+		stopReturned := make(chan struct{})
+		var stopErr error
+		stopLaunched := false
+		// Release the callback first, so a failed assertion ends in a Stop, not a bubble deadlock.
+		t.Cleanup(func() {
+			held.releaseOnce.Do(func() { close(held.release) })
+			if stopLaunched {
+				<-stopReturned
+			}
+			require.NoError(t, cm.Stop(stopCtx))
+		})
+
+		require.NoError(t, cm.Start(t.Context()))
+		<-held.entered
+
+		stopLaunched = true
+		go func() {
+			stopErr = cm.Stop(stopCtx)
+			close(stopReturned)
+		}()
+		synctest.Wait()
+		require.False(t, isClosed(stopReturned),
+			"Stop returned while the health publisher was still inside a component's Health()")
+
+		held.releaseOnce.Do(func() { close(held.release) })
+		<-stopReturned
+		require.NoError(t, stopErr, "Stop after the health callback returned")
+	})
+}
+
+// blockingHealthComponent is a component whose Health() closes entered on its first call and
+// returns only once release is closed.
+type blockingHealthComponent struct {
+	mockDiscoverableComponent
+	entered     chan struct{}
+	enteredOnce sync.Once
+	release     chan struct{}
+	releaseOnce sync.Once
+}
+
+func (b *blockingHealthComponent) Health() component.HealthStatus {
+	b.enteredOnce.Do(func() { close(b.entered) })
+	<-b.release
+	return component.HealthStatus{Healthy: true}
+}
+
 // TestComponentManagerFailedStartLaunchesNoPublisher: a Start that fails, here because a
 // component's Start fails, leaves no supervisor behind: no health was published, and the done
 // channel is nil or closed (design D4). The pin failed Start on a struct-literal manager it had not

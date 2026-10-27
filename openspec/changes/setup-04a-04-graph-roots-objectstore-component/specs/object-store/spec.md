@@ -5,13 +5,20 @@
 ### Requirement: The Component's configuration is strict
 
 The objectstore Component SHALL accept only `bucket_name` and `ports`, and SHALL refuse at construction any other
-key, `data_cache` included, and any output port other than `stored`, each with an error naming it.
+key, `data_cache` included, any output port other than `stored`, and an input with no `stored` output, each with an
+error naming it.
 
 #### Scenario: A data_cache key
 
 - **WHEN** the Component is built from `{"data_cache": {"enabled": false}}`
 - **THEN** construction fails naming `data_cache`
 - **AND** the test that verifies this is `TestComponentConfigRefusesUnknownKey`
+
+#### Scenario: An input with no stored output
+
+- **WHEN** the configuration declares a `write` input and no outputs
+- **THEN** construction fails naming the missing `stored` output
+- **AND** the test that verifies this is `TestComponentRefusesInputWithoutStoredOutput`
 
 #### Scenario: An events output
 
@@ -35,7 +42,8 @@ triples and that reference, which opens to the body.
 
 A message that does not decode, is not `ContentStorable`, or that `StoreContent` refuses SHALL store nothing, SHALL be
 logged at error level and counted in `Health().ErrorCount`, and SHALL be terminated on a JetStream input. A core-NATS
-input SHALL be at-most-once: such a message is dropped.
+input SHALL be at-most-once: such a message is dropped. A JetStream input SHALL be at-least-once. A redelivery after a
+failed reference publish leaves one extra, unreferenced object; a delivery past `MaxDeliver` is not reported (#36).
 
 #### Scenario: Each refusal on each lane
 
@@ -45,9 +53,10 @@ input SHALL be at-most-once: such a message is dropped.
 
 #### Scenario: The reference cannot be published
 
-- **WHEN** the body is stored but publishing the `StoredMessage` on a JetStream `stored` output fails
-- **THEN** the JetStream input delivery is negatively acknowledged, not acknowledged
-- **AND** the test that verifies this is `TestStoredEmitFailureNaks`
+- **WHEN** the body is stored but publishing the `StoredMessage` fails, and the redelivery succeeds
+- **THEN** the first delivery is negatively acknowledged and the second acknowledged, leaving two stored objects of
+  which one is referenced
+- **AND** the test that verifies this is `TestStoredEmitFailureNaksThenRedeliveryStores`
 
 ### Requirement: Ending the Start context stops nothing
 
@@ -59,6 +68,17 @@ and JetStream inputs SHALL still be stored. The Component SHALL pass the lifecyc
 - **WHEN** the Start context is cancelled and a document is then published on each input
 - **THEN** both bodies are stored
 - **AND** the tests that verify this are `TestStartContextEndKeepsBothLanesWriting` and `TestObjectStoreLifecycleSuite`
+
+### Requirement: A lost JetStream input makes the Component unhealthy
+
+When a JetStream input stops delivering while the Component runs and before `Stop`, `Health` SHALL report unhealthy
+with a stuck state naming the input and saying a process restart is the recovery, until the process restarts.
+
+#### Scenario: The input's consumer is deleted
+
+- **WHEN** the durable consumer of a running Component's JetStream input is deleted
+- **THEN** `Health` becomes unhealthy naming that input and the restart
+- **AND** the test that verifies this is `TestLostJetStreamInputReportsUnhealthy`
 
 ### Requirement: One objectstore store per process
 

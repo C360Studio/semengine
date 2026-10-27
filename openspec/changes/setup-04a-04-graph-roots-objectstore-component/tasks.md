@@ -17,10 +17,12 @@ passes on a clean tree at its commit (#171).
   failing first; pin tests dropped or rewritten named in `notes/2.1.md`.
 - [ ] 2.2 Integration tests (`natsfixture`, shared server via the reset): `TestObjectStoreLifecycleSuite` (core and
   JetStream inputs), `TestStartContextEndKeepsBothLanesWriting` (fails against the pin's shape),
-  `TestFailedStartReleasesBoundInputs`, `TestProvidedStoresUnderObjectstore`, `TestSecondComponentRefusedAtStart`,
+  `TestFailedStartReleasesBoundInputs`, `TestProvidedStoresUnderObjectstore`, `TestSecondComponentRefusedAtStart`, `TestLostJetStreamInputReportsUnhealthy`
+  (its durable consumer deleted while running: Health unhealthy naming the input and the restart; #216's ruling),
+  `TestComponentRefusesInputWithoutStoredOutput` (unit),
   `TestWriteLaneStoresBodyAndEmitsReference` (reference opens to the body), `TestWriteLaneRefusals` (table: not
   decodable, not `ContentStorable`, non-body content, invalid entity ID × core and JetStream; Term or drop, Error log,
-  `ErrorCount` +1, nothing stored), `TestStoredEmitFailureNaks`. Recorded in `notes/2.2.md`.
+  `ErrorCount` +1, nothing stored), `TestStoredEmitFailureNaksThenRedeliveryStores`. Recorded in `notes/2.2.md`.
 
 ## 3. The Component
 

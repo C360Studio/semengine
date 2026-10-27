@@ -29,7 +29,7 @@ have no provider code (inventory 8).
 - The Component stamps and registers `StorageInstance = "objectstore"`, as at the pin; a second Component in one
   process is refused at `Start` (design D7; owner question 3).
 - Tests through `natsfixture` (#195), no test-only fields on `Component` (design D8), the lifecycle suite plus a
-  behaviour check for the Start context (design D9).
+  behaviour check for the Start context (design D5).
 
 ## Capabilities
 

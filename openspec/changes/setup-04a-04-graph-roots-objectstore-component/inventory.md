@@ -31,7 +31,7 @@ shape sweep (S19-S32, G7, G8) covered the Component's files; this inventory re-r
 | 5b adopts `component.Lifecycle` for #196 | the binding basis is wider than #196: tree ADR-108 names `storage/objectstore/component.go:49` among change 4's shell adopters (`docs/adr/108-processor-shell.md:172`); `pin:…/component.go:49` — `lifecycleUsed  bool` |
 | 5b moves the Component's two test-client sites to the fixture for #195 | holds: `pin:…/component_instance_integration_test.go:35`, `:67` — `tc := natsclient.NewTestClient(t, natsclient.WithJetStream(), natsclient.WithKV())` |
 | Owner rulings on PR #432 bind 5b: data cache dropped, `Close` not carried, non-body content refused | holds (comments 6446982969, 6447702631 read in full). 6446982969: "the Component (PR 5b) does not reinstate it"; 6447702631: "The Component (PR 5b) refuses such messages loudly". No other owner-ruling comment on #432 (all 18 comments read; the rest are reviews, answers, the probe and the acceptance 6448182297) |
-| Archived design D13: "#36, #216 stay: the Component's write consumer (5b) names both" | **false for #216**: closed 2026-10-27 by PR #431 (`8927d82`, graph-ingest only). #36 is open but does not name objectstore (searched; section 3) |
+| Archived design D13: "#36, #216 stay: the Component's write consumer (5b) names both" | **#216 closed, its ruling binds**: closed 2026-10-27 by PR #431 (`8927d82`), which built the fix in graph-ingest; the owner's ruling it applies is general: "restart is the recovery" — a component whose input consumption ended goes unhealthy, `/readyz` fails, the supervisor restarts (#216 comment 6443457897; `processor/graph-ingest/readiness.go:73-110`). The Component's JetStream write consumer is the same class, so the ruling applies to it. #36 is open but does not name objectstore (searched; section 3) |
 | Archived design header: "ADR-108, ADR-113 and ADR-095 govern the Component"; Store inventory section 6 calls them pin records | ADR-108 and ADR-113 are **SemEngine's own** records, not the pin's (`ls pin/docs/adr`: 85 files ending at 107); ADR-095 is a pin record already in `docs/adr/` |
 | Tier-0 only; nothing with an external provider | holds: non-test imports of the three files are stdlib, `component`, `graph`, `internal/lifecyclecleanup`, `message`, `metric`, `natsclient`, `pkg/errs`, `storage`, `payloadregistry`, `pkg/types`, `nats.go`, `nats.go/jetstream` (`pin:…/component.go:5-29`, `stored_message.go:3-12`, `register.go:3`) |
 
@@ -389,5 +389,6 @@ content refused (PR #432 comment 6447702631).
 - E1. Not measured: whether redelivery of the NAKed JetStream deliveries stops after MaxDeliver 3 and the message
   parks (the pin's comment says so, `pin:…/component.go:1053-1057`); probe 2 waited 5 s, one run.
 - E2. Whether any deployment publishes to `storage.objectstore.write` outside the four consumers is out of scope.
-- E3. The pin's developer and reviewer contract sections that govern this Component (payload registry, component
+- E3. (Answered in the design, D9: the governing sections are already in the tree.) The pin's developer and
+  reviewer contract sections that govern this Component (payload registry, component
   wiring) were not read in this pass; the design reads them (Extraction slices, "Guidance returns with the package").

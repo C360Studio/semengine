@@ -388,7 +388,6 @@ func TestLoad_AcceptsNamesOutsideTheLetterCaseRule(t *testing.T) {
 				"capabilities":{"Timeout":{"preferred":["Model"]}},
 				"endpoints":{"Model":{"provider":"openai","model":"m","max_tokens":1,"options":{"Temperature":1}}},
 				"defaults":{"model":"Model"}},
-			"stream_migration_overrides":{"Owner":{"owner":"ops","expires":"2099-01-01T00:00:00Z"}},
 			"archival_streams":{"Reason":{"owner":"ops","reason":"audit"}}}`,
 	}
 	for _, path := range loadPaths {
@@ -405,7 +404,6 @@ func TestLoad_AcceptsNamesOutsideTheLetterCaseRule(t *testing.T) {
 					assert.Equal(t, map[string]any{"Temperature": float64(1)},
 						cfg.ModelRegistry.Endpoints["Model"].Options)
 					assert.Contains(t, cfg.ModelRegistry.Capabilities, "Timeout")
-					assert.Contains(t, cfg.StreamMigrationOverrides, "Owner")
 					assert.Contains(t, cfg.ArchivalStreams, "Reason")
 					return
 				}

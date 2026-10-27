@@ -21,9 +21,8 @@ import (
 // once every Start in it returned; a failure in the first phase starts nothing
 // of the second. Each component's Start gets ctx itself, which the manager
 // never ends. Start then starts the base service and the supervisor (the
-// component health publisher and the override-expiry reporter), which run
-// under a run context of their own until Stop: ending ctx after Start returned
-// stops nothing.
+// component health publisher), which runs under a run context of its own until
+// Stop: ending ctx after Start returned stops nothing.
 //
 // A failed Start returns every component failure joined, each naming its
 // component, after rolling back once: every component it launched, the failing
@@ -209,19 +208,12 @@ func componentStopError(name string, err error) error {
 		fmt.Errorf("component %q: %w", name, err))
 }
 
-// supervise runs the manager's two loops, the override-expiry reporter and the
-// component health publisher, until ctx ends, and closes done only once both
-// returned: a Stop that observed done has observed their completion.
+// supervise runs the component health publisher until ctx ends, and closes
+// done only once it returned: a Stop that observed done has observed its
+// completion.
 func (cm *ComponentManager) supervise(ctx context.Context, done chan<- struct{}) {
 	defer close(done)
-
-	var loops sync.WaitGroup
-	loops.Go(func() { cm.overrideExpiry.run(ctx) })
 	cm.publishHealthLoop(ctx)
-	// Dropping this join is silent: the real reporter returns on cancellation
-	// at once, so only a loop the test holds open can prove it
-	// (TestSuperviseHoldsDoneUntilTheOverrideExpiryLoopReturns).
-	loops.Wait()
 }
 
 // publishHealthLoop publishes every component's health at once, so the HEALTH

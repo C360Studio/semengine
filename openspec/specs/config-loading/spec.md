@@ -122,8 +122,8 @@ SHALL name the key's dotted path as written and as declared.
 
 ### Requirement: Names a deployment chooses are not checked for letter case
 
-`LoadFile` and `LoadFromBytes` SHALL NOT check map keys a deployment chooses (component, service, stream, override,
-archival and model registry names) or the contents of a component's or service's `config` payload for letter case.
+`LoadFile` and `LoadFromBytes` SHALL NOT check map keys a deployment chooses (component, service, stream, archival
+and model registry names) or the contents of a component's or service's `config` payload for letter case.
 
 #### Scenario: Names a deployment chooses are not checked
 

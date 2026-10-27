@@ -90,8 +90,8 @@ func (c *suiteComponent) working() bool {
 
 // componentManagerOwner adapts the component manager to the lifecycle suite (lifecycle-suite,
 // "Observe adapter contract"; design D2). A started manager holds its base service, its
-// supervisor (the health publisher and the override-expiry reporter, which return before the
-// supervisor's done channel closes, design D4) and its components' work. Observe lists
+// supervisor (the health publisher, which returns before the supervisor's done channel closes,
+// design D4) and its components' work. Observe lists
 // "base-status=<status>" while the base service is not stopped, "supervisor" while
 // cm.supervisorDone is open, and "component-work:<name>" while that component's work runs; it
 // reads the base service's status through its accessor and adds nothing to the ComponentManager

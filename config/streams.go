@@ -20,10 +20,9 @@ import (
 // MaxAge, MaxBytes, and Discard are REQUIRED for an ordinary stream and are
 // never supplied by a framework default. A bound the operator never chose is
 // indistinguishable in the operator surface from one they did, which is the
-// condition the bounds contract exists to end. The two ways out are both
-// explicit declarations of their own: `archival_streams` for a stream whose
-// contract is permanence, and `stream_migration_overrides` for a time-limited
-// bridge. See ValidateStreamDeclarations.
+// condition the bounds contract exists to end. The one way out is an explicit
+// declaration of its own: `archival_streams` for a stream whose contract is
+// permanence. See ValidateStreamDeclarations.
 type StreamConfig struct {
 	Subjects  []string `json:"subjects"`            // Subjects captured by this stream
 	Storage   string   `json:"storage,omitempty"`   // "file" or "memory" (default: file)
@@ -321,18 +320,18 @@ func checkOrdinaryStream(name, source string) error {
 //
 // Every resolved ordinary stream must carry an explicitly declared finite
 // MaxAge, a finite MaxBytes, and a discard policy, unless an archival
-// declaration or an active migration override admits it. That check runs BEFORE
+// declaration admits it. That check runs BEFORE
 // any stream is created, so a configuration missing a bound fails closed with a
 // complete diagnostic rather than provisioning half its streams and then
 // stopping — a partially-provisioned account is harder to reason about than one
 // that never started.
 func (sm *StreamsManager) EnsureStreams(ctx context.Context, cfg *Config) error {
-	decls, exceptions, err := planStreams(cfg, time.Now(), sm.logger)
+	decls, archival, err := planStreams(cfg, sm.logger)
 	if err != nil {
 		return errs.WrapFatal(err, "StreamsManager", "EnsureStreams", "resolve stream declarations")
 	}
 
-	logStreamExceptions(sm.logger, exceptions)
+	logStreamExceptions(sm.logger, archival)
 
 	for _, decl := range decls {
 		if err := sm.createStream(ctx, decl); err != nil {
@@ -342,8 +341,7 @@ func (sm *StreamsManager) EnsureStreams(ctx context.Context, cfg *Config) error 
 
 	sm.logger.Info("Ensured JetStream streams",
 		"count", len(decls),
-		"migration_overrides", len(exceptions.MigrationOverrides),
-		"archival", len(exceptions.Archival))
+		"archival", len(archival))
 	return nil
 }
 
@@ -465,13 +463,6 @@ func resolveBounds(decl streamDeclaration, logger *slog.Logger) (time.Duration, 
 		// honest encoding of the contract — `nats stream info` on an archive
 		// should not read "discard: old". It is inert while no limit exists.
 		return 0, 0, jetstream.DiscardNew, nil
-	case exemptMigrationOverride:
-		// A bridge keeps the stream behaving as it did before this contract:
-		// whatever the operator declared is honored, the rest stays unlimited,
-		// and the discard policy falls back to the pre-contract DiscardOld.
-		// Nothing here is silent — readiness names the override, its owner, and
-		// its expiry every boot.
-		return maxAge, maxBytes, discardPolicy(cfg.Discard, jetstream.DiscardOld), nil
 	case exemptNone:
 	}
 
@@ -599,27 +590,7 @@ func (sm *StreamsManager) createStream(ctx context.Context, decl streamDeclarati
 		return nil
 	}
 
-	// Stream doesn't exist. A MIGRATION OVERRIDE cannot create one.
-	//
-	// The override admits an EXISTING unbounded stream that predates the bounds
-	// contract — a bridge, with an owner and a deadline, for something already
-	// running. It is not a way to provision a NEW unbounded stream, and letting it
-	// create one makes it exactly the supported route around the requirement that
-	// the whole of section 5 exists to close: declare the stream, name it in
-	// stream_migration_overrides, and the framework builds you an unbounded stream
-	// on a fresh deployment.
-	//
-	// An ARCHIVAL stream is different and is still created here: permanence is its
-	// declared contract, it names an owner and a reason, and it has no deadline
-	// because it is not migrating anywhere.
-	if decl.exemption == exemptMigrationOverride {
-		return errs.WrapFatal(
-			fmt.Errorf("%w: stream %q (declared by %s) does not exist, and a migration override cannot "+
-				"create one\n\n%s",
-				ErrStreamMigrationOverrideInvalid, name, decl.source, missingOverriddenStreamRemedy),
-			"StreamsManager", "createStream", fmt.Sprintf("provision stream %q", name))
-	}
-
+	// Stream doesn't exist.
 	_, err = js.CreateStream(ctx, streamCfg)
 	if err != nil {
 		return fmt.Errorf("create stream: %w", err)

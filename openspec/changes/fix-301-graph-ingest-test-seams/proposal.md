@@ -24,15 +24,16 @@ Ruling 1 of comment 6453410228 stands: the straddle pair becomes a unit test.
   line.
 - **Deleted tests.** Seven tests are deleted (design D3). The production branches they reached stay.
 - **Fields removed.** The four fields go.
-- **Spec.** `graph-transport-boundary`'s two "during a failed Start" scenarios are reworded to the case the
-    kept test proves: the request arrives after registration, and Start then fails.
+- **Spec.** `graph-transport-boundary`'s not-started requirement is re-added as "graph-ingest refuses request work
+  until Start completes": a request before Start completes is refused, and served once Start completes.
 - **No other change.** No natsclient change (#170, ADR-112), no new exported surface, and no lifecycle-suite change.
 
 ## Capabilities
 
 ### Modified Capabilities
 
-- `graph-transport-boundary`: modified "graph-ingest does no request work before Start completes".
+- `graph-transport-boundary`: removed "graph-ingest does no request work before Start completes", added "graph-ingest
+  refuses request work until Start completes".
 
 ## Impact
 

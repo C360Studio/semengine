@@ -50,7 +50,7 @@ passes on a clean tree at its commit (#171).
   `TestGraphIndexLifecycleSuite`.
 - [x] 4.4 Query handlers from the verb table, `QueryReady`, the reply envelope (design D5, D6). Gate: as 4.2 and
   `TestQueryDuringStartupReplayIsIndexNotReady`, `TestGraphIndexServesExactlyTheDeclaredVerbs`.
-- [ ] 4.5 The alias index as ruled (comment 6426254115, item 3): no fix here; #415 linked from the PR without a
+- [x] 4.5 The alias index as ruled (comment 6426254115, item 3): no fix here; #415 linked from the PR without a
   closing keyword, and the alias read's exception in the spec names it (design D12). Gate: the link read back.
 
 ## 5. Ledger, records and docs
@@ -66,10 +66,11 @@ passes on a clean tree at its commit (#171).
   `notes/6.1.md`; `task verify` passes on a clean tree at the last commit before the archive commit.
 - [x] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body. Codex APPROVE at `c1c8656` (PR #414 comment
   6444349487); its one MEDIUM (stale design and ledger claims) is fixed in the commit that ticks this task.
-- [ ] 6.3 Comments on #107, #109, #110, #103, #106, #68, #195, #196 and #16 (the widened capture check, design
-  D17), each "implemented in PR #414 at `<SHA>`, pending merge", read back.
+- [x] 6.3 Comments on #107, #109, #110, #103, #106, #68, #195, #196 and #16 (the widened capture check, design
+  D17), each "implemented in PR #414 at `<SHA>`, pending merge", read back. Posted at `85f45c8`, with detail
+  comments on #195 and #196.
 
 ## 7. Close
 
-- [ ] 7.1 Archive (`openspec archive setup-04a-04-graph-roots-graph-index`) as the last content commit, syncing the
+- [x] 7.1 Archive (`openspec archive setup-04a-04-graph-roots-graph-index`) as the last content commit, syncing the
   four capabilities into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

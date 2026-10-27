@@ -26,13 +26,14 @@ an allowlist rule. Light process: proposal, tasks, one spec delta; no design doc
   `TestParseProductionGoFilesIgnoresClaudeWorktrees` goes with it: an ignored path cannot reach a `git ls-files`
   listing, and `repoFiles` already drops a deleted tracked file. Production Go files are the listed `.go` files
   that are not `_test.go`, parsed with `go/parser` as before.
-- **A rule, not a count.** The two censuses compare the production files that call the policy-applying entry
-  points (`ConsumeInternalStreamWithConfig`, `ConsumeStreamWithConfig`, `ConsumeStreamWithConfigContexts`,
-  `GetConsumerConfig`) or create consumers directly (`CreateOrUpdateConsumer`, `CreateConsumer`, `OrderedConsumer`)
-  against an allowlist of files, today `processor/graph-ingest/consume.go` and `natsclient/stream.go`. A call in
-  any other production file fails the guard naming the file and the call. The number of calls inside a listed file
-  is not checked, so a listed file may change without editing the test. Adding a caller is a deliberate edit to the
-  allowlist, reviewed as such.
+- **A rule, not a count.** Each census checks which production files reference its names, a call or a method
+  value, against its own allowlist: the policy-applying entry points (`ConsumeInternalStreamWithConfig`,
+  `ConsumeStreamWithConfig`, `ConsumeStreamWithConfigContexts`, `GetConsumerConfig`) only in
+  `processor/graph-ingest/consume.go`, and direct consumer creation (`CreateOrUpdateConsumer`, `CreateConsumer`,
+  `OrderedConsumer`) only in `natsclient/stream.go`. A reference in any other file fails the guard naming the file
+  and the method, and so does a file that reads `GetConsumerConfig` and consumes through
+  `ConsumeInternalStreamWithConfig`. The number of calls inside a listed file is not checked, so a listed file may
+  change without editing the test. Adding a caller is a deliberate edit to the allowlist, reviewed as such.
 - **Sensitivity tests stay.** The planted-caller tests plant a file outside the allowlist in a temporary tree
   built with the contract package's `writeTree`, and require the guard to name it. The retirement guards' planted
   cases move unchanged.

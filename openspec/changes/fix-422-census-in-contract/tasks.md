@@ -19,9 +19,10 @@ code of 3.1, so every commit passes `task verify` on a clean tree (#171).
 
 - [x] 3.1 `natsclient/consumer_policy_callsite_test.go` leaves natsclient; every test it held is in `contract`
   (`go test -list '.*'` of the two packages together names each test the file held, except
-  `TestParseProductionGoFilesIgnoresClaudeWorktrees`, which has no walker to test). Gate: `task test:unit` passes
-  from a checkout with a populated `.worktrees/` (the primary checkout) and from this worktree; `task verify` passes
-  on a clean tree.
+  `TestParseProductionGoFilesIgnoresClaudeWorktrees`, which has no walker to test). Gate: in this worktree, with a
+  git-ignored copy of `natsclient/stream.go` planted at `.worktrees/probe/natsclient/stream.go`,
+  `go test -race -count=1 -cpu 1 ./internal/harness/contract/` passes (command in `notes/3.1.md`); `task verify`
+  passes on a clean tree.
 
 ## 4. Docs and rules
 

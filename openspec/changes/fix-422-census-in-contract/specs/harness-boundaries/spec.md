@@ -4,21 +4,28 @@
 
 ### Requirement: Consumer creation goes through the policy-applying entry points
 
-A guard in `internal/harness/contract` SHALL fail, naming the file and the call, when a production Go file outside
-its allowlist calls a natsclient policy-applying entry point (`ConsumeInternalStreamWithConfig`,
-`ConsumeStreamWithConfig`, `ConsumeStreamWithConfigContexts`, `GetConsumerConfig`) or creates a JetStream consumer
-directly (`CreateOrUpdateConsumer`, `CreateConsumer`, `OrderedConsumer`). The allowlist is
-`processor/graph-ingest/consume.go` and `natsclient/stream.go`.
+The `internal/harness/contract` guard SHALL fail, naming file and method, when a production file references (call or
+method value) a policy entry point (`ConsumeInternalStreamWithConfig`, `ConsumeStreamWithConfig`,
+`ConsumeStreamWithConfigContexts`, `GetConsumerConfig`) outside `processor/graph-ingest/consume.go`, a direct creation
+(`CreateOrUpdateConsumer`, `CreateConsumer`, `OrderedConsumer`) outside `natsclient/stream.go`, or both
+`GetConsumerConfig` and `ConsumeInternalStreamWithConfig`.
 
 #### Scenario: A caller outside the allowlist
 
-- **WHEN** a production file outside the allowlist calls `GetConsumerConfig` or `CreateOrUpdateConsumer`
-- **THEN** the guard fails naming that file and the call
+- **WHEN** a production file outside both allowlists references `GetConsumerConfig` or `CreateOrUpdateConsumer`,
+  `processor/graph-ingest/consume.go` creates a consumer directly, or `natsclient/stream.go` references an entry
+  point
+- **THEN** the guard fails naming that file and the method
 
 #### Scenario: A listed file changes its call count
 
 - **WHEN** `processor/graph-ingest/consume.go` gains a second call to a policy-applying entry point
 - **THEN** the guard passes, because it checks which files call, not how often
+
+#### Scenario: A port-backed file on the internal path
+
+- **WHEN** a production file reads `GetConsumerConfig` and consumes through `ConsumeInternalStreamWithConfig`
+- **THEN** the guard fails naming that file, even when the file is on the allowlist
 
 #### Scenario: An ignored worktree holds a copy of the tree
 

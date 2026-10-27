@@ -175,6 +175,16 @@ func TestConsumerPolicyProductionCallsiteCensusRejectsPlantedCaller(t *testing.T
 		requireViolation(t, consumerPolicyCallsiteViolations(productionGoFiles(t, root, files)),
 			"processor/graph-ingest/consume.go", "port-backed", consumerPolicyRule)
 	})
+
+	// The lists stay apart: the direct-creation file is not on the entry-point list.
+	t.Run("entry point in the direct-creation file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{
+			"natsclient/stream.go": "package natsclient\n" +
+				"func f(c *Client) { _, _ = c.ConsumeStreamWithConfig(nil, nil, StreamConsumerConfig{}, nil) }\n",
+		})
+		requireViolation(t, consumerPolicyCallsiteViolations(productionGoFiles(t, root, files)),
+			"natsclient/stream.go:2: ConsumeStreamWithConfig", consumerPolicyRule)
+	})
 }
 
 // consumerPolicyCallsiteViolations reports each reference to a policy entry point (a call or a
@@ -249,6 +259,16 @@ func TestConsumerPolicyDirectCreationCallCensusRejectsPlantedCaller(t *testing.T
 			t.Logf("planted caller rejected: %s", strings.Join(violations, "\n"))
 		})
 	}
+
+	// The lists stay apart: the entry-point file is not on the direct-creation list.
+	t.Run("direct creation in the entry-point file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{
+			"processor/graph-ingest/consume.go": "package graphingest\nimport \"github.com/nats-io/nats.go/jetstream\"\n" +
+				"func f(s jetstream.Stream) { _, _ = s.CreateOrUpdateConsumer(nil, jetstream.ConsumerConfig{}) }\n",
+		})
+		requireViolation(t, directConsumerCreationViolations(productionGoFiles(t, root, files)),
+			"processor/graph-ingest/consume.go:3: CreateOrUpdateConsumer", consumerPolicyRule)
+	})
 }
 
 // directConsumerCreationViolations reports each reference to a direct consumer creation (a call

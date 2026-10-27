@@ -6,11 +6,10 @@
 
 The failed-start check SHALL require that Start returns a non-nil error, that the owner then reports nothing
 unresolved, and that a following Stop returns nil and changes no call count. For an adapter that shows cleanup on the
-NATS server instead of counting calls ("Observe adapter contract"), the call count is empty, so this check proves no
-more than that the following Stop returns nil; what the server shows held after that Stop is proved by the owner's own
-post-Stop check, not by this one. It judges a failed Start whose own
-cleanup succeeded; a failed Start whose own cleanup also fails is governed by "Failed start whose own cleanup fails"
-and is not judged by this check.
+NATS server instead of counting calls ("Observe adapter contract"), the call count is empty, so for the following Stop
+this check proves no more than that it returns nil; what the server shows held after that Stop is proved by the
+owner's own post-Stop check, not by this one. It judges a failed Start whose own cleanup succeeded; a failed Start
+whose own cleanup also fails is governed by "Failed start whose own cleanup fails" and is not judged by this check.
 
 #### Scenario: Failed start that holds a resource
 

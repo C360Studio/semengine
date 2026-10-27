@@ -21,7 +21,7 @@ Working rules for every task:
 - [x] 2.1 Codex design review of `design.md` and the `graph-transport-boundary` delta, with the 1.1 result. Gate:
   `task spec:check` and `task docs:check`. Codex: DESIGN REVIEW PASS at `5e4fb2f` (PR #436 comment 6455095656); its
   one MEDIUM, the task order, is fixed in tasks 3 and 4 below.
-- [ ] 2.2 Owner acceptance, recorded on PR #436.
+- [x] 2.2 Owner acceptance, recorded on PR #436 (2026-10-27).
 
 ## 3. Tests that pass on the base
 

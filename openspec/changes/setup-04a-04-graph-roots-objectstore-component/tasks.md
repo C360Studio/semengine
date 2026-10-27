@@ -5,9 +5,9 @@ passes on a clean tree at its commit (#171).
 
 ## 1. Design and rulings
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance. Gate: `task spec:check` and `task docs:check`.
-- [ ] 1.2 Owner rulings on design questions 1-3, recorded on PR #437 and folded into the design.
+- [x] 1.2 Owner rulings on design questions 1-3, recorded on PR #437 and folded into the design.
 
 ## 2. Tests first
 

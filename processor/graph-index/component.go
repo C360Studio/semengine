@@ -1,4 +1,3 @@
-// Package graphindex provides the graph-index component for maintaining graph relationship indexes.
 package graphindex
 
 import (

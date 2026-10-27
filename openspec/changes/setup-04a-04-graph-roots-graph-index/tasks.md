@@ -55,9 +55,9 @@ passes on a clean tree at its commit (#171).
 
 ## 5. Ledger, records and docs
 
-- [ ] 5.1 Ledger rows and edits of design D14; ADR-074, ADR-077, ADR-078 in `docs/adr/` with port notes and rows.
+- [x] 5.1 Ledger rows and edits of design D14; ADR-074, ADR-077, ADR-078 in `docs/adr/` with port notes and rows.
   Gate: `task ledger:check`.
-- [ ] 5.2 Docs and records of design D16 (README, doc comments, repository map, contract lines, `query-pattern` skill,
+- [x] 5.2 Docs and records of design D16 (README, doc comments, repository map, contract lines, `query-pattern` skill,
   ADR-108 note). Gate: `task docs:check`, the adapter guard in `task verify`.
 
 ## 6. Evidence and review

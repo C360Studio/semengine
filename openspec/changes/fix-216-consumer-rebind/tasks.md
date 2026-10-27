@@ -30,11 +30,11 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 
 - [ ] 3.1 The lost input binding (design D1) in `processor/graph-ingest/readiness.go` and `consume.go`: each bound
   consumer's readiness record carries its loop's `Closed()` channel; the tick records a lost binding when the loop has
-  ended and `Stop` had not issued its drain, never clears it, and feeds it to `Health()` and the envelope. No
-  natsclient change.
+  ended before `Stop` began (a fact published safely and kept off the consumer binding), never clears it, and feeds
+  it to `Health()` and the envelope. No natsclient change.
   Gate: `go test -race ./processor/graph-ingest/`, `go test -tags integration ./processor/graph-ingest/`,
   `task cover:check` and `task verify`.
-- [ ] 3.2 Mutation rows M1, M3, M4 and M5 (design, Tests) with `task mutate:check`, each reported as detected
+- [ ] 3.2 Mutation rows M1, M3, M4, M5 and M6 (design, Tests) with `task mutate:check`, each reported as detected
   (naming the test) or as a survivor, in `notes/3.2.md`, which also states the two unproven scenarios (design,
   Tests); the PR body lists them as uncovered.
 

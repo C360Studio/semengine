@@ -25,8 +25,8 @@ option O1). Retires #216 (`Closes #216`). Every `path:line` is at the base; prob
 ## D1. A loop that ends without Stop is stuck until the process restarts
 
 Observable behaviour. On each readiness tick, for each bound consumer, graph-ingest records a **lost input binding**
-when the consume loop it started for that consumer has ended and graph-ingest's own `Stop` had not issued that loop's
-drain (the fact `Stop` keeps per consumer as `drainIssued`, `component.go:576-578`). Once recorded it is never
+when the consume loop it started for that consumer has ended before graph-ingest's own `Stop` began. A loop that ends
+after `Stop` began is not recorded. Once recorded it is never
 cleared: `Health()` reads `Healthy: false`, `Status: "degraded"`, and `LastError` names the stream and consumer and
 says the process must be restarted, on every call until the component stops. The readiness envelope for that tick and
 every later one is degraded, as for a failed observation (`readiness.go:132`; one compute for both channels,
@@ -57,6 +57,10 @@ Constraints the developer keeps:
   `docs/adr/094-...md:128-131`); no `ConsumeContext.Stop` is added.
 - No new goroutine: the check runs inside the existing tick, under the run context `Start` creates (ADR-113
   `docs/adr/113-...md:62-64`). No error text is inspected.
+- The fact "`Stop` has begun" that the tick reads is published so that a tick running concurrently with `Stop` reads
+  it without a data race, and it is not a field on the handle-bearing consumer binding (`component.go:215-217`), so
+  the tick never reaches lifecycle state. `cleanup`'s order is not changed: Drain and closure come before Start-owned
+  work is cancelled (ADR-094 `:128-131`), so ticks still run while `Stop` drains.
 - No natsclient change and no new field on `Component` reachable only from tests (#170; #301).
 - Library facts this rests on: the loop ends after a terminal status and `Closed()` fires (probe d, f; `pull.go:740`,
   `:273-281`, `:306-317`); in case a it does not (probe a). `Closed()` can also fire early for a subscription that is
@@ -117,7 +121,8 @@ Mutation rows (`task mutate:check`, integration tests by `-run`, recorded in `no
 | --- | --- |
 | M1 the ended-loop check removed | detected by T2, T3 |
 | M3 the record cleared by a good observation | detected by T2, T3 |
-| M4 the record made when `Stop` issued the drain | survivor expected (no ordering, above); listed as uncovered |
+| M4 the record made for a loop that ended after `Stop` began | survivor expected (no ordering, above); listed as uncovered |
+| M6 a failed lookup not stored as the fault (`readiness.go:144-148`) | detected by T1 |
 | M5 every failed lookup recorded as lost | survivor expected, unless a tick happens to fail during T4's restart; listed as uncovered |
 
 ## Dispositions

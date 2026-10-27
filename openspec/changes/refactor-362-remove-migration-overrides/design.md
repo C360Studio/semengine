@@ -26,8 +26,8 @@ The owner chose the shape; these are the choices the rulings settled, and the tw
   ruled out (6440188996, item 1). The refusal it would add buys nothing the bounds refusal does not already report.
 - **Keep `StreamExceptionReport{Archival}`**: ruled out (item 2); the list is the whole answer.
 - Left to the design: `streamExemption` keeps its two remaining values, `exemptNone` and `exemptArchival`
-  (`stream_bounds.go:174-183`), because `resolveBounds` (`config/streams.go:462-467`) and drift
-  (`config/stream_drift.go:99-102`) switch on it; a bool would change those readers for no behaviour.
+  (`stream_bounds.go:174-183`), because `resolveBounds` (`config/streams.go:462-467`) switches on it; a bool would
+  change that reader for no behaviour. Drift stops reading it (D1, Codex design review on PR #421).
   `validateExceptionDeclarations` keeps its name. Both are the smaller diff.
 
 ## D1. The key goes, and an old key admits nothing
@@ -47,6 +47,13 @@ Removed (inventory § 1 site list): `StreamMigrationOverride`, `StreamMigrationO
 override loop (`:543-577`), the Warn loop in `logStreamExceptions` (`:624-632`), the boot line's `migration_overrides`
 field (`streams.go:345`), the `resolveBounds` case (`streams.go:468-473`), the refusal to create an overridden stream
 (`streams.go:602-621`) and the drift branch (`stream_drift.go:103-115`).
+
+With that branch gone, every stream governs all three retention fields, so the drift helpers that chose which fields
+to reconcile have nothing left to choose (Codex design review on PR #421, MEDIUM): `governedBounds`,
+`boundsGovernedBy` and `declaresDiscard` (`stream_drift.go:86-124`) are deleted, and `reconcileStreamConfig`
+compares age, bytes and discard directly (`:217-245`, the three `gov.` guards go). Behaviour is unchanged for
+ordinary and archival streams; the drift tests that pin it, `TestCreateStream_ArchivalDriftRepairsToUnlimited`
+among them, stay and must pass unchanged.
 
 Proving tests:
 
@@ -154,7 +161,8 @@ override reporter" (`:368`, `:407`).
 - `known_risks` of `config/stream_bounds.go`, changed from the pin: the override types, sentinels, loop and
   `ExpiredMigrationOverrides` removed; `StreamExceptionReport` replaced by a list of `ArchivalStreamStatus`; the `now`
   parameter dropped, so validation reads no clock; the archival boot hint names the storage-observability service.
-- `known_risks` of `config/stream_drift.go`, changed from the pin: the override branch of `boundsGovernedBy` removed.
+- `known_risks` of `config/stream_drift.go`, changed from the pin: the override branch removed, and with it
+  `governedBounds`, `boundsGovernedBy` and `declaresDiscard`; drift compares all three fields directly.
 - `config` (`:2735`): `contract` (`:2745`) drops "exemptions" for "the archival exemption"; `known_risks` records the
   dropped pin requirement (pin `openspec/specs/stream-provisioning/spec.md:331-370`), the list return and the clock.
 - `natsclient` (`:846`): the remedy edit joins its changed-from-pin list (`:1794`).

@@ -12,13 +12,13 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
 
 ## 1. Design
 
-- [ ] 1.1 Inventory and design pass review and are accepted by the owner.
-  Hold: Codex design review of `design.md` on PR #421, then the owner's acceptance on PR #421.
+- [x] 1.1 Inventory and design pass review and are accepted by the owner. Codex design review PASS on PR #421
+  (MEDIUM folded into D1); owner accepted 2026-10-27 (Enjoy).
   Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Code
 
-- [ ] 2.1 The component manager runs one loop (design D4, `design.md:91-117`).
+- [ ] 2.1 The component manager runs one loop (design D4, `design.md:98-124`).
   - Files: delete `service/stream_override_expiry.go`; edit `service/component_manager.go`,
     `service/component_manager_lifecycle.go`.
   - Tests first, in `service/component_manager_supervisor_test.go` and `service/stream_override_expiry_test.go`: move
@@ -31,8 +31,8 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
     `component_manager.go:90-91`, `component_manager_lifecycle.go:24`, `component_manager_suite_test.go:93` and the
     header of `component_manager_supervisor_test.go:15-18`.
   - Gate: `go test -race ./service/` and `task verify`.
-- [ ] 2.2 The key goes, and validation returns the archival list (design D1, D2, D3 and D6, `design.md:33-89`,
-  `:133-141`; Ledger, first three bullets). One compile unit: removing the override types breaks every reader of
+- [ ] 2.2 The key goes, and validation returns the archival list (design D1, D2, D3 and D6, `design.md:33-96`,
+  `:140-148`; Ledger, first three bullets). One compile unit: removing the override types breaks every reader of
   `StreamExceptionReport`, so the report type leaves in the same task.
   - Files: `config/config.go`, `config/stream_bounds.go`, `config/streams.go`, `config/stream_drift.go`, their tests
     (`stream_bounds_test.go`, `stream_bounds_integration_test.go`, `stream_drift_test.go`,
@@ -42,6 +42,8 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
   - Then remove the surface and tests D1 lists, drop the `now` parameter (D3), and edit `boundsRemedy`'s second line
     and the override comments at `config.go:56-66`, `:217-219`, `stream_bounds.go:51`, `:61`, `:439`, `:503-506`,
     `streams.go:25-26`, `:324` and `stream_drift.go:229`.
+  - Delete `governedBounds`, `boundsGovernedBy` and `declaresDiscard` and compare the three fields directly in
+    `reconcileStreamConfig` (design D1, last paragraph); the existing drift tests pass unchanged.
   - Delete `StreamExceptionReport` and `TestStreamExceptionReport_KindsAreStructurallyDistinct`; return the list
     from `planStreams` and `ValidateStreamDeclarations`; move the assertions at `stream_bounds_test.go:207`, `:688`
     and the archival tests to the list; name the service in the archival hint; correct the readiness comments D6
@@ -57,7 +59,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
   - Files: `natsclient/stream_bounds.go` (`:6`, `:112-114`) and `natsclient/stream_bounds_test.go` (`:102`, the line
     asserting the removed key, deleted; the subtest's name says it names the archival escape).
   - Gate: `go test -race ./natsclient/` and `task verify`.
-- [ ] 2.4 The example alert rule goes (design D5, `design.md:119-129`).
+- [ ] 2.4 The example alert rule goes (design D5, `design.md:126-136`).
   - File: `configs/prometheus/rules/storage-pressure.yml`: delete `:298-319`, edit `:38-39`, add the header note.
   - The four `TestStorageAlertRules_*` tests pass unchanged.
   - Gate: `go test -race -run TestStorageAlertRules ./service/` and `task verify`.
@@ -71,7 +73,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
 
 ## 3. Docs, ledger and archive
 
-- [ ] 3.1 Docs and ledger (technical writer; design D5, D6 and Ledger, `design.md:119-161`):
+- [ ] 3.1 Docs and ledger (technical writer; design D5, D6 and Ledger, `design.md:126-168`):
   - `config/README.md:36`, `:302-313` (the override sentence goes; the storage observability sentence), `config/doc.go:26`,
     `:155-156`.
   - `service/README.md:274`, `:313-317`, `:665`; `service/doc.go:238`, `:274-278`.

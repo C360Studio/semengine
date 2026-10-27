@@ -2,20 +2,20 @@ package service
 
 import (
 	"log/slog"
+	"strings"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/require"
 
-	"github.com/c360studio/semengine/config"
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/metric"
 )
 
-// The supervisor's tests new in this port (design D4, D7): the health publisher counts the publish
-// it could not make, and the override-expiry reporter writes to the gauge metric.RegisterOrGet
-// returned, not to its own candidate. The reporter's carried tests are in
-// stream_override_expiry_test.go, whose composeComponentManagerWithOverride these use.
+// The supervisor's tests new in this port (design D4): the health publisher counts the publish it
+// could not make, and a failed Start launches no publisher.
 
 // healthPublishErrors is the error count's labels for a health publish the component manager
 // could not make.
@@ -33,7 +33,7 @@ func TestComponentHealthPublishFailureIsCounted(t *testing.T) {
 		logs := &syncBuffer{}
 		logger := slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		metrics := metric.NewMetricsRegistry()
-		cm := composeComponentManagerWithOverride(t, nil, logger, metrics,
+		cm := composeComponentManager(t, logger, metrics,
 			testComponent{name: "publish-a", instance: &mockDiscoverableComponent{}},
 			testComponent{name: "publish-b", instance: &mockDiscoverableComponent{}})
 
@@ -60,27 +60,69 @@ func TestComponentHealthPublishFailureIsCounted(t *testing.T) {
 	})
 }
 
-// TestOverrideGaugeUsesTheRegisteredCollector: two component managers built on one metrics
-// registry share one override gauge, so the second manager's evaluation at construction shows on
-// the gathered family (design D4). A manager that wrote to its own candidate collector, not to the
-// one metric.RegisterOrGet returned, would leave the second manager's series out of the family.
+// TestComponentManagerFailedStartLaunchesNoPublisher: a Start that fails, here because a
+// component's Start fails, leaves no supervisor behind: no health was published, and the done
+// channel is nil or closed (design D4). The pin failed Start on a struct-literal manager it had not
+// initialized; the bubble would also fail the test if any goroutine the Start launched were left
+// running.
 //
-// spec: service-lifecycle / A lapsed stream migration override is reported while running
-func TestOverrideGaugeUsesTheRegisteredCollector(t *testing.T) {
-	metrics := metric.NewMetricsRegistry()
+// spec: service-lifecycle / Component health is published and its drops counted
+func TestComponentManagerFailedStartLaunchesNoPublisher(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		metrics := metric.NewMetricsRegistry()
+		failing := &suiteComponent{name: "supervisor-fails", startErr: errSuiteComponentStart}
+		cm := composeComponentManager(t, discardLogger, metrics,
+			testComponent{name: failing.name, instance: failing})
 
-	composeComponentManagerWithOverride(t, config.StreamMigrationOverrides{
-		"FIRST": {Owner: "team-first", Expires: "2020-01-01", Reason: "sizing study"},
-	}, discardLogger, metrics)
-	require.Equal(t, 1.0,
-		requireGauge(t, metrics, overrideExpiryMetric, map[string]string{"stream": "FIRST", "owner": "team-first"}),
-		"the first manager's evaluation is not on the registered gauge")
+		require.ErrorContains(t, cm.Start(t.Context()), `component "supervisor-fails"`)
+		synctest.Wait()
 
-	composeComponentManagerWithOverride(t, config.StreamMigrationOverrides{
-		"SECOND": {Owner: "team-second", Expires: "2020-01-01", Reason: "sizing study"},
-	}, discardLogger, metrics)
-	value, ok := gaugeValue(t, metrics, overrideExpiryMetric, map[string]string{"stream": "SECOND", "owner": "team-second"})
-	require.True(t, ok, "the second manager's evaluation is not on the gathered gauge family: "+
-		"it wrote to its own candidate, not to the collector RegisterOrGet returned")
-	require.Equal(t, 1.0, value)
+		done := cm.supervisorDone
+		require.True(t, done == nil || isClosed(done), "a failed Start left a supervisor to join")
+		published, _ := gaugeValue(t, metrics, "semengine_errors_total", healthPublishErrors)
+		require.Zero(t, published, "a failed Start launched the health publisher anyway")
+	})
+}
+
+// composeComponentManager builds a component manager through NewComponentManager, the
+// production composition path, over a configuration that enables components, logging to logger
+// and registering its metrics on metrics. Called inside a synctest bubble it builds everything in
+// the bubble.
+func composeComponentManager(
+	t *testing.T, logger *slog.Logger, metrics *metric.MetricsRegistry, components ...testComponent,
+) *ComponentManager {
+	t.Helper()
+	registry := component.NewRegistry()
+	names := make([]string, 0, len(components))
+	for _, c := range components {
+		admitTestRegistryComponent(t, registry, c.name, c.instance)
+		names = append(names, c.name)
+	}
+	deps := testComponentDependencies(t, registry, names...)
+	deps.Logger = logger
+	deps.MetricsRegistry = metrics
+
+	built, err := NewComponentManager(nil, deps)
+	require.NoError(t, err)
+	cm, ok := built.(*ComponentManager)
+	require.True(t, ok, "NewComponentManager returned %T, want *ComponentManager", built)
+	return cm
+}
+
+// syncBuffer is a log sink the manager's goroutines write while the test reads.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf strings.Builder
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }

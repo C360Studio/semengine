@@ -18,7 +18,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
 
 ## 2. Code
 
-- [ ] 2.1 The component manager runs one loop (design D4, `design.md:98-124`).
+- [x] 2.1 The component manager runs one loop (design D4, `design.md:98-124`).
   - Files: delete `service/stream_override_expiry.go`; edit `service/component_manager.go`,
     `service/component_manager_lifecycle.go`.
   - Tests first, in `service/component_manager_supervisor_test.go` and `service/stream_override_expiry_test.go`: move

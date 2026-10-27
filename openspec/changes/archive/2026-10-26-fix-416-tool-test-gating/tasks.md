@@ -72,11 +72,11 @@ notes, and they are committed with the code of 4.1 and 4.2, so every commit pass
 
 ## 7. Code review
 
-- [ ] 7.1 Codex code review of record at a named commit with a local `task verify`; the PR body carries
-  `implemented-by: claude (opus)` and `reviewed-by: codex`.
-  Hold: Codex's review of record on PR #419, approving at a named commit with a local `task verify`.
+- [x] 7.1 Codex code review of record: CHANGES REQUESTED at `63b1086` (one P2: `test:repeat` still ran `contract`),
+  fixed in `c5f55cb`, then APPROVE at `c5f55cb` with Codex's own local `task verify` rc 0 (PR #419 comment of
+  2026-10-27T01:22:58Z). The PR body carries `implemented-by: claude (opus)` and `reviewed-by: codex`.
 
 ## 8. Archive
 
-- [ ] 8.1 Sync the `merge-gate` and `integration-test-runner` deltas into `openspec/specs/` and archive as the last
+- [x] 8.1 Sync the `merge-gate` and `integration-test-runner` deltas into `openspec/specs/` and archive as the last
   content commit. Gate: `task spec:check` and `task docs:check` on the archive commit.

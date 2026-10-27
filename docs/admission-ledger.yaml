@@ -813,7 +813,9 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     generic caches (simple, LRU, TTL, hybrid) and CoalescingSet; admitted whole because six
-    admitted packages import it at the pin (design D1); moved to internal/cache (design D5)
+    admitted packages import it at the pin (design D1); moved to internal/cache (design D5). In this tree three
+    non-test files import it (component/schema_tags.go, processor/graph-ingest/component.go and query.go);
+    storage/objectstore does not, its data cache having been dropped (setup-04a-04-graph-roots-objectstore-store, D6)
   destination: internal/cache
   contract: >-
     Cache[V] (simple, LRU, TTL, hybrid) and CoalescingSet as at the pin, with these adaptations:
@@ -1996,15 +1998,18 @@
     the Store interface storage/storeregistry builds on; consumers import it (20, design D1)
   destination: storage
   contract: >-
-    as at the pin; doc.go and storage.go match it (task ledger:check). Its sub-package storeregistry has its
-    own row
+    the interfaces as at the pin. doc.go and storage.go differ from it in comments only (setup-04a-04-graph-roots-objectstore-store,
+    #280 item 1): the examples call the Store that exists and no longer show Close or the Component's key generator,
+    and the Put and Delete docs say that NATS ObjectStore replaces and keeps no version (probe P4, PR #432
+    comment 6445520357) where the pin's text promised versions. Its sub-packages storeregistry and objectstore have
+    their own rows
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
-  known_risks: no context roots; no test files at the pin
+  known_risks: no context roots; no test files at the pin; no code differs from the pin
   proving_tests: >-
-    none in the package (the pin has none); storage/storeregistry/storeregistry_test.go exercises the
-    interface
-  owner: setup-04a-02-ingest-kernel developer
-  disposition: carry
+    none in the package (the pin has none); storage/storeregistry/storeregistry_test.go and
+    storage/objectstore's integration tests exercise the interfaces
+  owner: setup-04a-02-ingest-kernel developer; comments edited by setup-04a-04-graph-roots-objectstore-store technical writer
+  disposition: adapt
 
 - source_path: graph
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -2190,7 +2195,8 @@
   dependencies_and_side_effects: storage (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
     Registry.Instances removed as dead surface; compile-time fusion.StoreResolver assertion deferred
-    until pkg/fusion is ported in change 5 (design D2)
+    until pkg/fusion is ported in change 5 (design D2); the Registry and Deregister comments no longer say the
+    owner calls Close on Stop, since objectstore.Store has none (setup-04a-04-graph-roots-objectstore-store, D6)
   proving_tests: >-
     storage/storeregistry/storeregistry_test.go (TestDistinctInstancesResolveTheirOwnStores and pin
     tests)
@@ -3527,4 +3533,69 @@
     SemStreams' and have not been rerun here
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-index technical writer
+  disposition: adapt
+
+# Change setup-04a-04-graph-roots-objectstore-store (PR #432, epic #9): storage/objectstore, the Store half of the
+# objectstore component; the Component arrives in setup-04a-04-graph-roots-objectstore-component.
+
+- source_path: storage/objectstore
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the NATS ObjectStore backend of storage.StreamableStore: stores large content and returns the StorageReference that
+    storage/storeregistry resolves; the pin's document adapter calls StoreContent and graph-embedding reads what its
+    reference opens to (design D1, D13)
+  destination: storage/objectstore
+  contract: >-
+    the Store half (this change); the Component arrives in setup-04a-04-graph-roots-objectstore-component. Put, Get,
+    Open, List, Delete, StoreContent and InstanceName as at the pin, with these adaptations (spec object-store; design
+    D3-D7): (1) Put replaces the object at its key and the docs say so, where the pin's doc promised versions (S1,
+    probe P4); (2) Get and Open of a missing object match storage.ErrObjectNotFound and are not transient, where the
+    pin's Open returned a transient error (S8); (3) Delete of a never-written key returns nil, where the pin returned
+    NATS' not-found error (S10); (4) List returns the matching names sorted and an empty slice for an empty bucket,
+    where the pin errored on an empty bucket and returned put order (S9); (5) StoreContent stores only the body role's
+    text as raw bytes and its reference opens to exactly that text, where the pin wrote a JSON envelope and pointed
+    the reference at it (G8, ADR-063), and it refuses before writing an invalid entity ID, any non-empty text field
+    that is not the body's, any role other than body that names the body's field, and any non-empty binary field
+    (owner ruling, PR #432 comment 6447702631); (6) the content key's suffix is a UUID, not UnixNano (S11); (7) every
+    exported call and both constructors refuse a nil context, and the constructors refuse a nil client and a client
+    with no JetStream, each as invalid input (G1); (8) the retention guard strips a TTL or a binding size limit from an
+    existing bucket's backing stream, logs a warning, and fails with natsclient.ErrGraphBucketRetention if it cannot
+    (ADR-068, as at the pin); (9) metrics register through metric.RegisterOrGet on the injected registry in the
+    semengine_objectstore_ namespace with a bucket label, and operation_errors_total counts refusals made before any
+    I/O (D7, #434)
+  dependencies_and_side_effects: >-
+    message, metric, natsclient, pkg/errs, pkg/types, storage (in-set); nats.go jetstream; google/uuid;
+    pgregory.net/rapid in tests only. One NATS ObjectStore bucket, created if missing; no goroutine, no context kept
+  known_risks: >-
+    owner ruling PR #432 comment 6446982969 drops the data cache (Config.DataCache) and Close, so no internal/cache
+    import and ADR-063's Close text describes nothing here. Deferred to the Component (5b): Store.Store and the raw
+    write lane, DefaultKeyGenerator, Config.Ports, KeyGenerator and MetadataExtractor, and multi-instance naming
+    (S27), which ADR-063 leaves open. Not carried (no reader at the pin): FetchContent, FetchBinary, GetMetadata,
+    StoredContent and its helpers, SetDecoder, Config.Validate. A payload carrying non-body content is refused, not
+    stored (G8, owner ruling); its producer emits that text as triples. List reads every object's metadata, so its
+    cost grows with the bucket
+  proving_tests: >-
+    storage/objectstore/store_test.go (TestNewStoreRefusesNilContext, TestStoreMethodsRefuseNilContext,
+    TestRetentionGuardFailsClosed, TestStoreContentKeysAreUniquePerCall, TestRefusalsCountAsOperationErrors);
+    store_integration_test.go (TestPutReplacesObjectAtKey, TestGetAndOpenReportMissingAsNotFound,
+    TestDeleteMissingKeySucceeds, TestListSortedAndEmpty, TestStoreContentRefusesExtras,
+    TestStoreContentReferenceOpensToBody, TestStoreHistoryMatchesModel, TestRetentionGuardStripsAndAsserts,
+    TestStoreConcurrentUseUnderRace); notes/2.1.md records each shown failing against the pin's shape
+  owner: setup-04a-04-graph-roots-objectstore-store developer
+  disposition: adapt
+
+- source_path: docs/adr/063-store-substrate-and-resolver.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for the StorageInstance resolver and the raw-body read contract, which storage,
+    storage/storeregistry and storage/objectstore implement; carried with the Store port (closes #321)
+  destination: docs/adr/063-store-substrate-and-resolver.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's decision text; a port note added under the title naming what is ported, that the Store has
+    no Close and no data cache, that StoreContent keeps the raw-body contract and refuses other content, and that
+    multi-instance naming is left to the Component
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-objectstore-store technical writer
   disposition: adapt

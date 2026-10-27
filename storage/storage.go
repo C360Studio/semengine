@@ -36,8 +36,8 @@ var ErrObjectNotFound = errors.New("object not found")
 //
 // Example Usage:
 //
-//	// Create a NATS ObjectStore backend
-//	store, err := objectstore.NewStoreWithConfig(ctx, natsClient, config)
+//	// Create a NATS ObjectStore backend; the Store has nothing to close
+//	store, err := objectstore.NewStoreWithConfig(ctx, natsClient, objectstore.Config{BucketName: "MESSAGES"})
 //
 //	// Store video file
 //	videoData := []byte{...}
@@ -51,8 +51,10 @@ var ErrObjectNotFound = errors.New("object not found")
 type Store interface {
 	// Put stores binary data at the specified key.
 	// If the key already exists, behavior is implementation-specific:
-	//   - Immutable stores (NATS ObjectStore) may append a version/timestamp
-	//   - Mutable stores (S3, SQL) will overwrite the existing value
+	//   - NATS ObjectStore (objectstore.Store) replaces the object and keeps no
+	//     earlier version. Observed with nats.go v1.54.0 and nats-server v2.15.1
+	//     (probe P4, PR #432 comment 6445520357); the library does not promise it.
+	//   - Mutable stores (S3, SQL) overwrite the existing value
 	//
 	// The data parameter accepts any binary format:
 	//   - JSON-encoded messages
@@ -81,8 +83,8 @@ type Store interface {
 	// Delete removes the data at the specified key.
 	// Returns nil if the key doesn't exist (idempotent operation).
 	//
-	// For immutable stores that maintain versions, this may only mark
-	// the latest version as deleted rather than removing historical versions.
+	// objectstore.Store removes the object; it keeps no earlier versions to
+	// remove (see Put).
 	Delete(ctx context.Context, key string) error
 }
 

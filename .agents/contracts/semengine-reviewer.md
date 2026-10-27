@@ -288,7 +288,8 @@ is in `natsclient/doc.go`, "The unified RPC error contract".
 ### Storage and retention review
 
 Carried with `natsclient` from SemStreams' reviewer contract at the pin (§ Storage, retention, and cutover review,
-its first two bullets; the rest govern graph state, the `storage` package and cutover, not yet ported).
+its first two bullets; the third, on large content, came with `storage/objectstore`; the rest govern graph state and
+cutover, not yet ported).
 
 - A bucket's `Class` stays descriptive and its `Retention` enforced; neither stands in for the other. An ordinary
   stream's `MaxAge`, `MaxBytes` and discard policy are capacity protection, not entity removal. Flag a stream created
@@ -298,6 +299,9 @@ its first two bullets; the rest govern graph state, the `storage` package and cu
   path that bypasses `CheckNoLifecycleRetention` or `AssertNoLifecycleRetention` for such a bucket, is `BLOCKING`. A
   ceiling on that state is acceptable only as a `DiscardNew` limit with typed rejection, through a new
   `RetentionKind`.
+- A graph, query or reply contract that names a bucket, stream or object key instead of a `message.StorageReference`
+  is `BLOCKING`. A content store given a TTL or size bound is `BLOCKING`. A `StoreContent` path that writes anything
+  but the `body` role's text as raw bytes, or accepts other non-empty content instead of refusing it, is `BLOCKING`.
 
 ### Payload registry
 

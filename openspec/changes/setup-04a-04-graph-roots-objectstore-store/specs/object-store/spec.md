@@ -57,13 +57,13 @@ and is not classified transient.
 
 ### Requirement: Delete of a missing key succeeds
 
-`Store.Delete` SHALL return nil for a key that was never written or is already deleted, and SHALL classify any other
-failure as transient.
+`Store.Delete` SHALL return nil for a key that was never written, and SHALL classify any other failure as transient.
+Deleting an already-deleted key returns what nats.go returns (nil in the probe, not promised).
 
 #### Scenario: Deleting a missing key
 
-- **WHEN** `Delete` is called on a key that was never written, and twice on a key that was
-- **THEN** every call returns nil
+- **WHEN** `Delete` is called on a key that was never written
+- **THEN** it returns nil
 - **AND** the test that verifies this is `TestDeleteMissingKeySucceeds`
 
 ### Requirement: List returns sorted keys and an empty list for none
@@ -121,7 +121,7 @@ I/O.
 
 `NewStoreWithConfigAndMetrics` SHALL register the Store's collectors through `metric.RegisterOrGet` on the registry it
 is given, under the `semengine_objectstore_` prefix, with a `bucket` label. `NewStoreWithConfig` SHALL register
-nothing. Two Stores on one bucket SHALL share collectors.
+nothing. Stores on any buckets SHALL share collectors.
 
 #### Scenario: A store with a registry
 
@@ -134,3 +134,9 @@ nothing. Two Stores on one bucket SHALL share collectors.
 - **WHEN** two Stores are constructed on one bucket with one registry
 - **THEN** both constructions succeed and their counts land on one collector
 - **AND** the test that verifies this is `TestTwoStoresOnOneBucketShareCollectors`
+
+#### Scenario: Two buckets on one registry
+
+- **WHEN** Stores on two different buckets are constructed with one registry
+- **THEN** both constructions succeed and each bucket's counts carry its own `bucket` label value
+- **AND** the test that verifies this is `TestTwoBucketsOnOneRegistryBothConstruct`

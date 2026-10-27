@@ -7,17 +7,17 @@ passes on a clean tree at its commit (#171).
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review. Gate:
   `task spec:check` and `task docs:check`.
-- [ ] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 ObjectStore probe (inventory 11, P1-P10) on PR #432: program,
-  command, versions and output. Gate: the comment read back.
+- [x] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 ObjectStore probe (inventory 11, P1-P10) on PR #432: program,
+  command, versions and output. Gate: the comment read back. Posted as PR #432 comment 6445520357.
 - [ ] 1.3 Owner ruling on question 1 (design D6: drop the data cache, or keep it behind the Component only).
   Hold: owner ruling on question 1.
-- [ ] 1.4 File the issues of design D13 (G5 orphan binaries; G8 envelope against ADR-063's read contract; S27 constant
-  instance name), linked from PR #432 without a closing keyword. Gate: each issue read back.
+- [ ] 1.4 File G5 (orphan binaries after a partial `StoreContent`, design D13) as an issue, linked from PR #432
+  without a closing keyword. G8 and S27 are 5b's dispositions, not filed. Gate: the issue read back.
 
 ## 2. Tests first
 
 - [ ] 2.1 The unit and integration tests of design D9, each shown failing against the pin's shape where the pin differs
-  (S8-S11, G1), with the pin tests ported or dropped named in `notes/2.1.md`. Gate: in 3.x.
+  (S8, S9, the never-written half of S10, G1), with the pin tests ported or dropped named in `notes/2.1.md`. Gate: in 3.x.
 
 ## 3. The Store
 
@@ -35,9 +35,11 @@ passes on a clean tree at its commit (#171).
 - [ ] 4.1 Ledger rows of design D11 (`storage/objectstore` new, `storage` to `adapt`, `internal/cache` importer count,
   `docs/adr/063-…` new). Gate: `task ledger:check`.
 - [ ] 4.2 Carry ADR-063 into `docs/adr/` with its port note (design D11; closes #321). Gate: `task docs:check`.
-- [ ] 4.3 `storage/doc.go` and `storage/storage.go` examples and `Put` doc (#280 item 1); package `doc.go`, `README.md`,
-  `ExampleNewStoreWithConfig`; `docs/repository-map.md` row; the storage bullet in the developer and reviewer contracts
-  (design D2, D11). Gate: `task docs:check`, the adapter guard in `task verify`.
+- [ ] 4.3 `storage/doc.go` and `storage/storage.go` examples, `Put` and `Delete` docs (#280 item 1, probe P4); under
+  Option 1 the `Close` text in `storage/storeregistry/storeregistry.go:19-21`, `:74-75` and `storage/doc.go:86`,
+  `:208`; package `doc.go`, `README.md`, `ExampleNewStoreWithConfig`; `docs/repository-map.md` row; the storage bullet
+  in the developer and reviewer contracts, with its row in `AGENTS.md` and `.agents/rules-index.md`, gate `review`
+  (design D2, D11). Gate: `task docs:check`, the adapter guard and the rules-index guard in `task verify`.
 - [ ] 4.4 `storage/objectstore merged` in `scripts/cover-check.sh` (design D9). Gate: `task cover:check` after
   `task test:integration`.
 

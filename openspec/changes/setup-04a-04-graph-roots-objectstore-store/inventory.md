@@ -10,7 +10,8 @@ rule 4): semsource `e4febc0d2e23bf33811edc20b9a4159cf5275dc4`, semconnect `d0d06
 semteams `8e215f59ae2d5de9bebdc9ceb89fe96f6828d810`, semboids `8c03cc53836ced93a5df7064473c63ff144e64f1`; written
 `<repo>:<path>:<line>`.
 
-Status: round 1. No `INVENTORY PASS`; the design was drafted in the same pass at the caller's direction, as on the
+Status: round 2. `INVENTORY PASS` (early Claude reviewer); design findings folded in. the design was drafted in the same
+pass at the caller's direction, as on the
 four earlier change 4 pull requests.
 
 Kind of change: a port, split by the owner's ruling (#9 comment 6386556850, item 1: "objectstore (3,342) splits into
@@ -116,8 +117,8 @@ Queries, each `gh issue list --state open --search <q> --limit 200`: `objectstor
 | #36 | `internal/maxdelivery` | the pin's write-consumer comment names "the MaxDeliver parking follow-up" (`pin:…/component.go:1053-1057`) (5b) |
 | #216 | graph-ingest consumer of a recreated stream | same class as the Component's write consumer (5b) |
 
-Names the word, not the package: #9, #106, #109, #300, #134, #105, #406, #11, #141, #198, #20, #15, #350, #103, #161, #10,
-issues #26, #24, #7, #110, #114, #31, #35, #96, #107, #155, #32, #94, #95, #16, #415, #428.
+Names the word, not the package: #9, #106, #109, #300, #134, #105, #406, #11, #141, #198, #20, #15, #350, #103,
+issues #161, #10, #26, #24, #7, #110, #114, #31, #35, #96, #107, #155, #32, #94, #95, #16, #415, #428.
 
 ### Specs and records
 
@@ -148,7 +149,8 @@ At the pin, outside the package (`grep -rln '"github.com/c360studio/semstreams/s
 `componentregistry/register.go:129` (`objectstore.Register`, 5b), `payloadbuiltins/register.go:47`
 (`objectstore.RegisterPayloads`, 5b), `examples/processors/document/component.go:118`, `:720-750`, `:765`
 (`*objectstore.Store`, `StoreContent`; a consumer adapter, so `StoreContent` is framework API). Test-only:
-`graph/embedding/worker_storeresolver_integration_test.go:26`, `processor/graph-embedding/offloaded_identity_integration_test.go:45`
+`graph/embedding/worker_storeresolver_integration_test.go:26`,
+`processor/graph-embedding/offloaded_identity_integration_test.go:45`
 (`objectstore.Config`, `NewStoreWithConfig`).
 
 Consumers at symbol level:
@@ -185,7 +187,8 @@ Per Store symbol (pin-wide readers, in-package production readers, consumer read
 | `FetchBinary`, `GetMetadata` | none | not carried |
 | `GetFieldByRole`, `HasRole`, `GetBinaryRefByRole`, `HasBinaryContent` | none | not carried |
 | `NewStoredContent`, `NewStoredContentWithBinary` | `StoreContent` only | unexported |
-| `Store.Store`, `storeWithKeySource`, `DefaultKeyGenerator`, `Config.KeyGenerator`, `Config.MetadataExtractor`, `Config.Ports`, `DefaultConfig` | the Component's raw write lane only | 5b |
+| `Store.Store`, `storeWithKeySource`, `DefaultKeyGenerator`, `Config.KeyGenerator`, `Config.MetadataExtractor`, `Config.Ports`, `DefaultConfig` | the Component's raw write lane and config resolution only | 5b |
+| `Config.Validate` (`config.go:61-67`, returns nil) | none at the pin | not carried |
 
 New surface the pin lacks: none.
 
@@ -203,7 +206,8 @@ established, so no adoption sweep.
 
 Fetched from the pin copy (`docs/adr`, 85 files); `grep -l -i -E` over them for `objectstore`, `object store`,
 `StoreContent`, `StorageReference`, `ContentStorable`, `StoredMessage`, `storeregistry`, `StoreProvider`,
-`BinaryStorable` and `content store` (one alternation) returned 19; each hit read for what it decides about this package.
+`BinaryStorable` and `content store` (one alternation) returned 19; each hit read for what it decides about this
+package.
 
 | ADR | Decides for objectstore | In `docs/adr/` |
 | --- | --- | --- |
@@ -269,9 +273,9 @@ Defects and gates found in the same read (not shapes):
 | # | `pin:path:line` — text | What |
 | --- | --- | --- |
 | G1 | `store.go:84` — `func NewStoreWithConfig(ctx context.Context, client *natsclient.Client, cfg Config) (*Store, error) {` (and every method) | no nil-context refusal at exported boundaries (context rules, `dev`) |
-| G2 | `store.go:154-156` — `cache.NewFromConfig[[]byte](ctx, cfg.DataCache,` | a TTL or hybrid cache roots its cleanup goroutine in the constructor's context (`internal/cache/config.go:126-130`): continuing work under a call's context, outside a `Start` (ADR-113) |
-| G3 | `store.go:362-372` — cache delete, then store delete | a `Get` between the two re-caches the object, which then outlives its delete; a cached object also masks a delete made by another process (`storage.ErrObjectNotFound`, #600's reclaim) |
-| G4 | `config.go:102-108` — `Strategy: cache.StrategyLRU, MaxSize: 1000` | the cache bounds entries, not bytes: 1,000 binaries of several MB each are held in memory (`FetchBinary` caches them, `store.go:727-729`) |
+| G2 | `store.go:154-156` — `cache.NewFromConfig[[]byte](ctx, cfg.DataCache,` | a TTL or hybrid cache roots its cleanup goroutine in the constructor's context (`internal/cache/config.go:126-130`): continuing work under a call's context, outside a `Start` (ADR-113). The default LRU starts none (`:123-124`; `NewLRU` takes no context), and no consumer selects TTL or hybrid |
+| G3 | `store.go:362-372` — cache delete, then store delete | a `Get` between the two re-caches the object, which then outlives its delete; a cached object also masks a delete made by another process (`storage.ErrObjectNotFound`, #600's reclaim). No current trigger: no consumer calls `Delete`, and semsource's keys are sha256 content addresses (`semsource:processor/ast-source/bodystore.go:25`) |
+| G4 | `config.go:102-108` — `Strategy: cache.StrategyLRU, MaxSize: 1000` | the cache bounds entries, not bytes, and stores every write (`store.go:204-206`, `:290-292`, `:512-514`), while `Open`, the registry read path, bypasses it (`:342-349`): a Component holds up to 1,000 recently written objects of any size, read back only by `Get` |
 | G5 | `store.go:457-474` | binaries are written one by one; a later failure leaves the earlier ones with no envelope pointing at them (orphans, never deleted) |
 | G6 | `store.go:129-136` — `store, err := js.CreateObjectStore(ctx, storeConfig)` … `store, err = js.ObjectStore(ctx, bucketName)` | any create error falls back to open; probe P1: the same config re-creates without error, a different one returns `ErrBucketExists` |
 | G7 | `component.go:450` — `runCtx, cancel := context.WithCancel(ctx)` (5b) | run context is Start's child (ADR-113) |
@@ -312,13 +316,14 @@ estimated: about 1,000.
 ## 11. Library behaviour the port relies on (#170, ADR-112)
 
 Probe at nats.go v1.54.0 / nats-server v2.15.1 (`go.mod:16-17`), embedded server, JetStream file store, one run, under
-`-race`; program `/tmp/os-probe/probe_test.go` (local only; posted on PR #432 by task 1.2).
+`-race`; program, command and output on PR #432, comment 6445520357.
 
 | # | Statement | Result |
 | --- | --- | --- |
 | P1 | `CreateObjectStore` on an existing bucket | same config: nil; different description: `ErrBucketExists` |
 | P2 | `List` on an empty bucket | `ErrNoObjectsFound`, zero entries; also after every object is deleted |
-| P3 | missing name | `Delete`, `GetBytes`, `GetInfo`, `Get` return `ErrObjectNotFound`; deleting an already-deleted name returns nil |
+| P3 | missing name | `Delete`, `GetBytes`, `GetInfo`, `Get` return `ErrObjectNotFound` for a never-written name |
+| P3c | deleting an already-deleted name | nil, observed; nats.go publishes a fresh delete marker and purges (`jetstream/object.go:956-977`), a write that can fail; not promised |
 | P4 | a second `Put` on one name | replaces it: `GetBytes` returns the second value; stream messages 4 → 2 (old chunks purged) |
 | P6 | backing stream `OBJ_<bucket>` of `ObjectStoreConfig{Bucket, Description}` | `MaxAge=0s MaxBytes=-1 MaxMsgs=-1`, file storage |
 | P7 | `List` order | put order, not sorted (`[k c/2 a/1 b/9 a/0]`); deleted names are not listed |
@@ -353,7 +358,7 @@ The cache removal (owner question) drops a performance knob of an admitted packa
 
 ## Open evidence questions
 
-- E1. Does any production deployment rely on the Component's default LRU cache for read latency? Not measured; no
-  consumer configures it (section 4).
+- E1. Does any deployment rely on the Component's default LRU cache for `Get` latency (fusion's body resolver is its
+  only reader; graph-embedding's `Open` bypasses it)? Not measured; no consumer configures it (section 4).
 - E2. Does `UnixNano` repeat between two calls on the CI runner or a consumer host? Not measured; the nonce (D4)
   removes the dependence on it.

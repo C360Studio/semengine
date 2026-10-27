@@ -43,9 +43,9 @@ func TestBootstrapScope_ObservationFailureCapturesNothing(t *testing.T) {
 // same consumer run to run.
 func TestBoundConsumers_DedupedAndDeterministic(t *testing.T) {
 	c := createTestComponent(t)
-	c.registerBoundConsumer("SENSOR", "graph-ingest-sensor-all")
-	c.registerBoundConsumer("EVENTS", "graph-ingest-events-all")
-	c.registerBoundConsumer("SENSOR", "graph-ingest-sensor-all") // rebind
+	c.registerBoundConsumer("SENSOR", "graph-ingest-sensor-all", nil)
+	c.registerBoundConsumer("EVENTS", "graph-ingest-events-all", nil)
+	c.registerBoundConsumer("SENSOR", "graph-ingest-sensor-all", nil) // rebind
 
 	got := c.boundConsumerSnapshot()
 	if len(got) != 2 {

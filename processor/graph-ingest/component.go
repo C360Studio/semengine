@@ -383,8 +383,9 @@ func (c *Component) OutputPorts() []component.Port {
 }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over graph-ingest's
-// stuck states, not a count of past errors (ADR-109 Decision 2): a poisoned entity, or
-// a backlog the latest status tick could not read. ErrorCount is reported and never
+// stuck states, not a count of past errors (ADR-109 Decision 2): a poisoned entity, a
+// backlog the latest status tick could not read, or a lost input binding, which only a
+// process restart clears (#216, observeLostBinding). ErrorCount is reported and never
 // lowers Healthy. A non-empty poison inventory degrades Health per-entity: status is
 // "degraded", NOT "reset_required" (that stays a per-read error code, design D6), and
 // the message carries count + a bounded ID/reason sample. Full enumeration rides
@@ -397,7 +398,7 @@ func (c *Component) Health() component.HealthStatus {
 	if f := c.backlogObservationFault.Load(); f != nil {
 		fault = *f
 	}
-	return c.lifecycle.Health(poison, fault)
+	return c.lifecycle.Health(poison, fault, c.lostBindingFault())
 }
 
 // DataFlow reports input messages: each delivery on a stream input, redeliveries

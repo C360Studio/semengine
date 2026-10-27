@@ -90,7 +90,7 @@ func startStreamLane(t *testing.T, opts ...testComponentOption) (*Component, fun
 		if cfg.StreamName == "ENTITY" {
 			handler = h
 		}
-		return nil, nil
+		return &graphIngestLifecycleConsumeContext{closed: make(chan struct{}), drainSeen: make(chan struct{})}, nil
 	}
 	if err := c.setupSubscriptions(t.Context(), t.Context()); err != nil {
 		t.Fatalf("setupSubscriptions: %v", err)

@@ -187,6 +187,20 @@ every consumer it bound. While either of the last two fails, `Healthy` is false,
 without a restart: a repair or a valid write clears the poison record, and the next tick that reads every backlog
 clears the other. A lost durable consumer reads unhealthy this way; graph-ingest does not bind a new one (#216).
 
+A third stuck state does not clear. If a status tick, run while the component is running and before `Stop` begins,
+sees that a consume loop (the goroutine that pulls messages for one consumer) has ended, graph-ingest records the
+binding as lost. `Healthy` is then false with `LastError` reading `input binding lost for consumer
+<stream>/<consumer>: its consume loop ended; restart the process to consume again`, the readiness envelope is
+degraded, and graph-ingest logs an Error once per consumer. This is what a stream deleted and created again
+while the broker stays up leaves behind. Creating the consumer again under the same name does not clear it:
+graph-ingest never rebinds, stops or deletes that consumer, and the process restart is the recovery. Restart on
+`/readyz` failing, not `/healthz`, which stays 200 while the listener serves; after the restart, publish again from the
+source. After a broker restart with a memory stream, whether the consume loop ends is nats.go behaviour that was
+measured once and is not promised: in the probe
+(`openspec/changes/archive/2026-10-27-fix-216-consumer-rebind/inventory.md` section 1.2, case a) the loop stayed
+open and pulled a consumer that no longer existed, so the unhealthy reading there comes from the failed backlog
+lookup, not from an ended loop. A file stream resumes without action in the same probe (case c).
+
 `ErrorCount` counts processing errors since start and never lowers `Healthy`.
 
 `DataFlow()` counts input messages since start: each delivery on a stream input, including a redelivery and a message

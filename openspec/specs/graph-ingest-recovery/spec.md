@@ -20,9 +20,12 @@ an input as applied that it did not commit.
 
 #### Scenario: Memory transport lost at broker restart
 
-- **WHEN** a message accepted on a memory-backed input stream has not been applied, and the broker restarts
-- **THEN** the entity state committed before the restart is still readable, the lost message is not reported as
-  applied, and publishing it again from the source applies it
+- **WHEN** a message accepted on a memory-backed input stream has not been applied, the broker restarts, and the
+  producer creates the stream again while graph-ingest keeps running
+- **THEN** the entity state committed before the restart is still readable and the lost message is not reported as
+  applied
+- **AND** while no consumer is created again under graph-ingest's durable name, graph-ingest's `Health()` reads
+  unhealthy until its process is restarted; once it is, publishing the message again from the source applies it
 
 ### Requirement: Recovery on a file stream is redelivery
 
@@ -219,9 +222,11 @@ publishes again after that `Start` SHALL be applied. After a restore, recovery i
 
 ### Requirement: graph-ingest's health reads its stuck states
 
-graph-ingest's `Health()` SHALL report `Healthy` false while it holds a poisoned entity record or while its latest
-status tick could not read the backlog of a bound consumer, and true again once neither holds, without a restart. A
-count of past errors SHALL NOT lower `Healthy`; it is reported as `ErrorCount`.
+graph-ingest's `Health()` SHALL report `Healthy` false while it holds a poisoned entity record, while its latest
+status tick could not read the backlog of a bound consumer, or once it has recorded a lost input binding (the
+requirement "A lost input binding is stuck until the process restarts"). The first two SHALL clear without a restart
+once they no longer hold; a lost input binding SHALL NOT clear. A count of past errors SHALL NOT lower `Healthy`; it
+is reported as `ErrorCount`.
 
 #### Scenario: The durable consumer is lost
 
@@ -230,9 +235,8 @@ count of past errors SHALL NOT lower `Healthy`; it is reported as `ErrorCount`.
 
 #### Scenario: The observation succeeds again
 
-- **WHEN** a status tick's backlog observation fails and a later tick's succeeds
-- **THEN** `Healthy` is false after the first and true after the second; this says nothing about whether graph-ingest
-  is consuming (a deleted consumer is not rebound, #216)
+- **WHEN** a status tick's backlog observation fails while no input binding is lost, and a later tick's succeeds
+- **THEN** `Healthy` is false after the first and true after the second
 
 #### Scenario: A processing error
 
@@ -273,3 +277,41 @@ after it is closed.
 - **WHEN** `Get`, `Set` and `Delete` are called on each `internal/cache` implementation after `Close`
 - **THEN** each works as before `Close`
 - **AND** the test that verifies this is `TestCacheUsableAfterClose`
+
+### Requirement: A lost input binding is stuck until the process restarts
+
+graph-ingest SHALL record a lost input binding when a status tick, run while the component is running and its
+`Stop` has not begun, observes that a consume loop it started has ended. Once
+recorded, `Health()` SHALL report `Healthy` false with a `LastError` that names the stream and consumer and says the
+process must be restarted, and the readiness envelope SHALL be degraded, on every later read until the component
+stops.
+
+#### Scenario: Stream deleted and created again while the broker stays up
+
+- **WHEN** graph-ingest's input stream is deleted and created again while the broker stays up
+- **THEN** after the next status tick `Healthy` is false, `LastError` names the consumer and the restart, and the
+  readiness envelope is degraded
+- **AND** when a consumer is then created again under graph-ingest's durable name, a later tick still reads `Healthy`
+  false
+
+#### Scenario: Consumer created again after it was deleted
+
+- **WHEN** graph-ingest's durable consumer is deleted while graph-ingest runs, and a consumer with the same stream,
+  name and configuration is then created
+- **THEN** a tick after the creation still reads `Healthy` false
+
+#### Scenario: File stream across a broker restart
+
+- **WHEN** graph-ingest runs on a file-backed input stream and the broker restarts
+- **THEN** a tick after the restart reads `Healthy` true, and a message published after the restart is applied
+
+### Requirement: A process restart recovers a lost input binding
+
+graph-ingest SHALL NOT rebind, stop or delete the consumer of a lost input binding: a process restart is the
+recovery, and it reads the generation again. Once `Stop` has begun, no tick SHALL record or log a lost input binding.
+
+#### Scenario: Stop ends the loop
+
+- **WHEN** graph-ingest's `Stop` has begun and drains its consumers, and a status tick runs after a drain closed a
+  loop
+- **THEN** that tick records and logs no lost input binding

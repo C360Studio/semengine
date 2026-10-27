@@ -240,7 +240,7 @@ func TestStreamWithoutCreationTimeIsRefused(t *testing.T) {
 		func(context.Context, jetstream.Msg),
 	) (jetstream.ConsumeContext, error) {
 		bound++
-		return nil, nil
+		return &graphIngestLifecycleConsumeContext{closed: make(chan struct{}), drainSeen: make(chan struct{})}, nil
 	}
 	err := c.setupSubscriptions(t.Context(), t.Context())
 	if err == nil || !strings.Contains(err.Error(), "no creation time") {

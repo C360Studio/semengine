@@ -2399,7 +2399,13 @@
     ENTITY_STATES keeps History 1 (#99); one instance per metrics registry: a second shares the gauge
     collectors and which write stands is not promised, and no known configuration runs two; a stream
     recreated between the pre-bind generation read and bind is a declared limitation
-    (#214). Removed: lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic
+    (#214); a consume loop that ends while running (stream or consumer deleted in place) latches
+    Health() unhealthy until the process restarts and nothing rebinds the consumer, so a message
+    published after that and before the restart is not consumed (#216); a memory stream after a broker
+    restart is unhealthy through the failed backlog lookup while nobody creates the consumer again, and
+    is not latched (its loop does not end; a consumer created again during the disconnect is the
+    declared limitation, #91).
+    Removed: lastSyncedRFC3339, MergeEntity, TEST_DISPUTE.md, and agentic
     indexing_profile_registry_test.go; README updated to match
   proving_tests: >-
     processor/graph-ingest/lifecycle_owner_test.go
@@ -2417,7 +2423,15 @@
     (TestIntegration_DataFlowCountsInputMessages, proving the graph-ingest-recovery requirement
     "graph-ingest's data flow counts input messages"), entity_cache_stop_test.go
     (TestEntityCacheUseDuringStop, proving the graph-ingest-recovery requirement "The entity cache
-    stays usable through Stop", #306)
+    stays usable through Stop", #306), memory_restart_health_integration_test.go
+    (TestIntegration_MemoryStreamLostAtBrokerRestartStaysUnhealthy, proving the graph-ingest-recovery
+    scenario "Memory transport lost at broker restart", #216), health_integration_test.go
+    (TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy and
+    TestIntegration_HealthStaysStuckAfterConsumerRecreated, with file_restart_health_integration_test.go
+    TestIntegration_FileStreamRestartStaysHealthy, proving the graph-ingest-recovery requirement "A lost
+    input binding is stuck until the process restarts"; TestIntegration_HealthClearsAfterConnectionInterruption,
+    proving the scenario "The observation succeeds again"; the scenario "Stop ends the loop" of "A process
+    restart recovers a lost input binding" has no proving test, #216)
   owner: setup-04a-02-ingest-kernel developer
   disposition: repair-before-port
 

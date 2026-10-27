@@ -88,7 +88,7 @@ func TestFlowPathsTraverseTheRetainedGraph(t *testing.T) {
 	}
 	require.Len(t, paths, len(want),
 		"paths = %#v; want one entry per origin: a declared input type, a network-listening port, and an "+
-			"outbound HTTP-client port. Each is a separate arm of isInputNode and each can be deleted "+
+			"outbound HTTP-client port. Each is a separate arm of composition.FlowPaths' origin rule and each can be deleted "+
 			"independently, so all three are asserted", paths)
 	for origin, expected := range want {
 		reachable, ok := paths[origin]

@@ -2883,7 +2883,8 @@
     ComponentManager, NewComponentManager (registered by RegisterAll), ComponentsImplementing,
     ConfigureRulePackMutations, ProjectionBinder, BuildComponentTypeCatalog, the HTTPHandler methods
     RegisterHTTPHandlers and OpenAPISpec, and projection.PredicateReconciler; read inside the package and kept as
-    at the pin: GetComponentHealth, GetComponentStatus, ComponentStatus, GetFlowPaths, Manager.ProjectionBinders.
+    at the pin: GetComponentHealth, GetComponentStatus, ComponentStatus, GetFlowPaths (which returns composition.FlowPaths of the
+    kept graph, #363), Manager.ProjectionBinders.
     component.LifecycleComponent gains the read line: Health, DataFlow and DebugStatus may be called at any time and
     return without waiting for Start or Stop (tested for graph-ingest, review only outside this module). The
     composition root calls ConfigureRulePackMutations after ConfigureFromServices and before StartAll. PR 4: pin ADR-093
@@ -3239,7 +3240,8 @@
     config.DeriveStreamName), the filter and the first reserved subject captured; Analyze gives one malformed_subject
     error for each NATS, NATS-request or JetStream port subject, in either lane, and each explicit stream subject that
     fails flowgraph.ValidSubject, before its early returns, naming the lane and field or the stream and index (#369);
-    Analyze, Catalog and Mermaid otherwise as at the pin
+    FlowPaths answers, for each origin of a projection, every node reachable from it, moved from service's
+    GetFlowPaths with its answers unchanged (#363); Analyze, Catalog and Mermaid otherwise as at the pin
   dependencies_and_side_effects: >-
     component, config, graph, internal/flowgraph, internal/graphmutation, types (in-set); stdlib (cmp, encoding/json,
     errors, fmt, maps, slices, sort, strings); no goroutine, no I/O, no context
@@ -3261,7 +3263,9 @@
     TestValidateIsDeterministic and the pin's tests), clash_test.go (TestValidateExclusiveClashMatchesAdmission,
     TestValidateSelfClashIsPortDeclarationError), catalog_test.go (TestCatalogCarriesDefaultPortsOrRequiresConfig),
     mermaid_test.go (TestMermaidIsDeterministic), reserved_test.go (TestValidateRefusesStreamCapturingReservedSubject,
-    TestValidateDoesNotRefuseNeighbouringSubjects, TestReservedSubjectOverlapMatchesEnumeration)
+    TestValidateDoesNotRefuseNeighbouringSubjects, TestReservedSubjectOverlapMatchesEnumeration),
+    flowpaths_test.go (TestFlowPathsKeysEachOrigin, TestFlowPathsWalksDepthFirstInEdgeOrder,
+    TestFlowPathsVisitsEachNodeOnce, TestFlowPathsOverAnEmptyGraph)
   owner: port-composition developer
   disposition: repair-before-port
 

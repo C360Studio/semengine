@@ -52,7 +52,7 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
 
 ## 3. Docs, ledger and archive
 
-- [ ] 3.1 Docs and ledger (technical writer):
+- [x] 3.1 Docs and ledger (technical writer):
   - `service/README.md:337-338`: `validate` serves the kept result as is; `flowgraph` serves its graph (JSON or
     `composition.Mermaid`); `paths` serves `composition.FlowPaths` of its graph, with counts of that answer;
     `GetFlowPaths` is the same answer as a call.

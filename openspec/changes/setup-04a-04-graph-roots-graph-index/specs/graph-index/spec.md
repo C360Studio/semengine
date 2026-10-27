@@ -7,12 +7,28 @@
 graph-index's factory SHALL refuse an unknown configuration key, naming it. The keys SHALL be `ports`, `workers`
 (0 means the default, 1; otherwise 1 to 16), `coalesce_ms`, `startup_attempts` and `startup_interval_ms`; each SHALL
 change behaviour.
+A configuration with no `ports` key SHALL take the default ports; a `ports` block that is present SHALL be used as
+written, never merged with the defaults (ruling K, #91 comment 6062681355, applied to graph-index by PR #414 comment
+6431777824).
 
 #### Scenario: A configuration carrying batch_size
 
 - **WHEN** graph-index is constructed from a configuration with the key `batch_size`
 - **THEN** construction fails with an error naming `batch_size`
 - **AND** the test that verifies this is `TestUnknownConfigKeyIsRefused`
+
+#### Scenario: No ports key
+
+- **WHEN** graph-index is constructed from a configuration with no `ports` key
+- **THEN** construction succeeds with the `entity_watch` input and the four index outputs
+- **AND** the test that verifies this is `TestConfigWithoutPortsTakesDefaultPorts`
+
+#### Scenario: A ports block with an empty inputs list
+
+- **WHEN** graph-index is constructed from a `ports` block whose `inputs` list is empty
+- **THEN** construction fails with an invalid-configuration error naming the missing input port, and the default input
+  is not filled in
+- **AND** the test that verifies this is `TestConfigPresentPortsUsedAsWritten`
 
 #### Scenario: workers 0
 

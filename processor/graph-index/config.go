@@ -93,9 +93,7 @@ func (c *Config) Validate() error {
 	return nil
 }
 
-// ApplyDefaults sets default values for configuration. A configuration with no ports
-// takes DefaultConfig's; a ports block whose inputs or outputs are empty takes the
-// default list for that side (the pin's behaviour, kept).
+// ApplyDefaults sets default values for configuration. Validate only checks.
 func (c *Config) ApplyDefaults() {
 	if c.Workers == 0 {
 		c.Workers = 1
@@ -106,16 +104,11 @@ func (c *Config) ApplyDefaults() {
 	if c.StartupInterval == 0 {
 		c.StartupInterval = 500 // 500ms
 	}
-	defaults := DefaultConfig().Ports
+	// A configuration with no ports takes DefaultConfig's; a ports block that is
+	// present is used as written, never merged with the defaults (ruling K, #91 comment
+	// 6062681355; PR #414 comment 6431777824).
 	if c.Ports == nil {
-		c.Ports = defaults
-		return
-	}
-	if len(c.Ports.Inputs) == 0 {
-		c.Ports.Inputs = defaults.Inputs
-	}
-	if len(c.Ports.Outputs) == 0 {
-		c.Ports.Outputs = defaults.Outputs
+		c.Ports = DefaultConfig().Ports
 	}
 }
 

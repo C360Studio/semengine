@@ -311,6 +311,12 @@ coalescing), `startup_attempts` (default 30), `startup_interval_ms` (default 500
 ignored. `workers: 0` must keep working: semsource sends it to mean "use the default"
 (`semsource:cmd/semsource/run.go:805-807` at `e4febc0d`), as the pin turns 0 into 1 (`pin:…/component.go:133-135`).
 
+Ports follow ruling K (#91 comment 6062681355), which the owner applied to graph-index (PR #414 comment 6431777824): a
+configuration with no `ports` key takes `DefaultConfig()`'s ports, and a `ports` block that is present is used as
+written. An empty `inputs` or `outputs` list is then no inputs or no outputs, which `Validate` refuses; the pin filled
+that side from the defaults (`pin:processor/graph-index/component.go:132-175`). No consumer config sets an empty list
+for graph-index (`notes/4.1.md`).
+
 `batch_size` is refused as unknown (the strict-config rule is a verify gate, and nothing reads the field). That breaks
 two consumer configs at boot, each naming the key: semconnect's `deploy/semstreams.json:65` and
 `conformance/compose.semstreams.config.json:65` (both `"batch_size": 50` under `graph-index`, at `d0d06e00`); and

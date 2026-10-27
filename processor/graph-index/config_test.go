@@ -225,18 +225,58 @@ func TestDefaultConfigIsValid(t *testing.T) {
 	}
 }
 
-// TestConfigEmptyPortListsTakeTheDefaults: a ports block with no inputs or no outputs
-// takes the default list for that side; a list that is present is kept (pin
-// ApplyDefaults, component_test.go:832).
-func TestConfigEmptyPortListsTakeTheDefaults(t *testing.T) {
-	c, err := createFromJSON(t, `{"ports": {"inputs": [], "outputs": []}}`)
-	if err != nil {
-		t.Fatalf("CreateGraphIndex with empty port lists: %v", err)
+// TestConfigWithoutPortsTakesDefaultPorts: a configuration with no ports key builds with
+// DefaultConfig's ports (ruling K, #91 comment 6062681355, applied to graph-index by PR
+// #414 comment 6431777824).
+func TestConfigWithoutPortsTakesDefaultPorts(t *testing.T) {
+	for _, raw := range []string{`{}`, `{"workers": 2}`, `{"ports": null}`} {
+		t.Run(raw, func(t *testing.T) {
+			c, err := createFromJSON(t, raw)
+			if err != nil {
+				t.Fatalf("CreateGraphIndex(%s): %v, want the default ports", raw, err)
+			}
+			if len(c.InputPorts()) != 1 || c.InputPorts()[0].Name != "entity_watch" {
+				t.Fatalf("CreateGraphIndex(%s) inputs = %+v, want the default entity_watch", raw, c.InputPorts())
+			}
+			want := []string{"outgoing_index", "incoming_index", "alias_index", "predicate_index"}
+			got := make([]string, 0, len(c.OutputPorts()))
+			for _, port := range c.OutputPorts() {
+				got = append(got, port.Name)
+			}
+			if strings.Join(got, ",") != strings.Join(want, ",") {
+				t.Fatalf("CreateGraphIndex(%s) outputs = %v, want %v", raw, got, want)
+			}
+		})
 	}
-	if len(c.InputPorts()) != 1 || c.InputPorts()[0].Name != "entity_watch" {
-		t.Fatalf("inputs = %+v, want the default entity_watch", c.InputPorts())
+}
+
+// TestConfigPresentPortsUsedAsWritten: a ports block that is present is the whole set,
+// never merged with the defaults, so an empty inputs or outputs list is no inputs or no
+// outputs and construction refuses it (ruling K, PR #414 comment 6431777824; the pin
+// filled an empty side from the defaults).
+func TestConfigPresentPortsUsedAsWritten(t *testing.T) {
+	entityWatch := []component.PortDefinition{
+		{Name: "entity_watch", Config: component.KVWatchPort{Bucket: graph.BucketEntityStates}},
 	}
-	if len(c.OutputPorts()) != 4 {
-		t.Fatalf("outputs = %+v, want the four default index outputs", c.OutputPorts())
+	// The empty list is spelled out as [] in the JSON, as a consumer would write it.
+	cases := map[string]struct {
+		ports map[string]any
+		want  string
+	}{
+		"empty inputs":  {map[string]any{"inputs": []any{}, "outputs": indexOutputs()}, "at least one input port required"},
+		"empty outputs": {map[string]any{"inputs": entityWatch, "outputs": []any{}}, "at least one output port required"},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			raw := defaultConfigWith(t, "ports", tc.ports)
+			c, err := createFromJSON(t, raw)
+			if err == nil {
+				t.Fatalf("CreateGraphIndex(%s) built with inputs %+v and outputs %+v, want only the configured ports, refused: %s",
+					raw, c.InputPorts(), c.OutputPorts(), tc.want)
+			}
+			if !errs.IsInvalid(err) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("CreateGraphIndex(%s) = %v, want an invalid-configuration error naming %q", raw, err, tc.want)
+			}
+		})
 	}
 }

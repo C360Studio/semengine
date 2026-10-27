@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -32,8 +33,8 @@ import (
 // The helpers the settlement process-kill test starts (design D8, "The settlement process-kill test"), and what the
 // test passes each in its environment.
 const (
-	// settlementHeld runs graph-ingest with every applied-sequence write held: the first run.
-	settlementHeld = "graph-ingest-guard-write-held"
+	// settlementHeld runs graph-ingest with every input held after its entity write: the first run.
+	settlementHeld = "graph-ingest-held-after-apply"
 	// settlementPlain runs graph-ingest unchanged: the second run.
 	settlementPlain = "graph-ingest"
 	// helperNATSURL is the fixture broker's URL; helperReady is the file the helper creates once Start returned.
@@ -67,20 +68,18 @@ func TestHelperProcess(t *testing.T) {
 }
 
 // runSettlementHelper starts graph-ingest on the broker named in the environment, creates the ready file, and parks
-// until a signal ends the process; it never stops graph-ingest. With holdGuardWrite, the applied-sequence bucket is a
-// heldWriteBucket, so an input it applies is never acknowledged. A failure fails TestHelperProcess, and the child
-// exits.
-func runSettlementHelper(t *testing.T, holdGuardWrite bool) {
+// until a signal ends the process; it never stops graph-ingest. With holdApplied, graph-ingest's logger handler pauses
+// on "Entity ingested" and is never released (fix-301 design D2, "The pause"), so an input it applies is never given
+// its applied-sequence record or acknowledged. A failure fails TestHelperProcess, and the child exits.
+func runSettlementHelper(t *testing.T, holdApplied bool) {
 	ctx := t.Context()
 	client, _, err := openFixtureClient(ctx, os.Getenv(helperNATSURL))
 	require.NoError(t, err)
-	var wrap func(jetstream.KeyValue) jetstream.KeyValue
-	if holdGuardWrite {
-		wrap = func(bucket jetstream.KeyValue) jetstream.KeyValue {
-			return &heldWriteBucket{KeyValue: bucket, held: make(chan struct{})}
-		}
+	var handler slog.Handler
+	if holdApplied {
+		handler = newPauseOnRecord("Entity ingested") // nothing releases it
 	}
-	startSettlementIngest(ctx, t, client, wrap)
+	startSettlementIngest(ctx, t, client, nil, handler)
 	ready := os.Getenv(helperReady)
 	require.NoError(t, os.WriteFile(ready+".tmp", nil, 0o600))
 	require.NoError(t, os.Rename(ready+".tmp", ready))
@@ -89,29 +88,21 @@ func runSettlementHelper(t *testing.T, holdGuardWrite bool) {
 	<-terminated
 }
 
-// heldWriteBucket is the first run's applied-sequence bucket: Put never returns, so graph-ingest applies an input and
-// then waits on its record, unacknowledged, until the test kills the process. Every other method is the bucket's.
-type heldWriteBucket struct {
-	jetstream.KeyValue
-	held chan struct{} // nothing closes it
-}
-
-func (b *heldWriteBucket) Put(context.Context, string, []byte) (uint64, error) {
-	<-b.held
-	return 0, errors.New("heldWriteBucket: a held write was released")
-}
-
 // startSettlementIngest starts graph-ingest with its default configuration on client under the c360.test authority,
-// as startIngestOn does. With wrap set, the applied-sequence bucket Start acquired is replaced by wrap(bucket) through
+// as startIngestOn does. With handler set, it is the handler of graph-ingest's logger. With wrap set, the applied-sequence bucket Start acquired is replaced by wrap(bucket) through
 // the consumeStream seam: on Start's goroutine, after the bucket is acquired and before the one stream input's consumer
 // binds. No input reaches a lane before the replacement, and the delivery that hands inputs to the lanes starts after
 // it, so the lanes read the field without a race.
 func startSettlementIngest(ctx context.Context, t *testing.T, client *natsclient.Client,
-	wrap func(jetstream.KeyValue) jetstream.KeyValue) *graphIngestTestOwner {
+	wrap func(jetstream.KeyValue) jetstream.KeyValue, handler slog.Handler) *graphIngestTestOwner {
 	t.Helper()
 	cfgJSON, err := json.Marshal(DefaultConfig())
 	require.NoError(t, err)
-	created, err := CreateGraphIngest(cfgJSON, testDependencies(t, client, withAuthority("c360", "test")))
+	deps := testDependencies(t, client, withAuthority("c360", "test"))
+	if handler != nil {
+		deps.Logger = slog.New(handler)
+	}
+	created, err := CreateGraphIngest(cfgJSON, deps)
 	require.NoError(t, err)
 	c := created.(*Component)
 	owner := newGraphIngestTestOwner(c)
@@ -239,8 +230,9 @@ func requirePublishedStatementOnce(t *testing.T, entity graph.EntityState) {
 
 // TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck holds graph-ingest-recovery, "Recovery on a file stream
 // is redelivery", scenario "Process killed between apply and acknowledgement" (design D8, "The settlement process-kill
-// test"; task 4.4, Q18). graph-ingest runs in a helper process on a file-backed stream. In the first run its
-// applied-sequence write is held, so the input it applies stays unacknowledged; the test kills that process and starts
+// test"; task 4.4, Q18). graph-ingest runs in a helper process on a file-backed stream. In the first run its logger
+// handler pauses for good on "Entity ingested", after the entity write and before the applied-sequence record, so the
+// input it applies stays unacknowledged (fix-301 design D2, "The pause"); the test kills that process and starts
 // a second on the same stream and buckets, which is delivered the input again and acknowledges it. The graph is then
 // as one application left it.
 func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
@@ -273,10 +265,10 @@ func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 	delivery, err := ingestConsumer(ctx, js)
 	require.NoError(t, err)
 	require.GreaterOrEqual(t, delivery.DeliveredStream, seq, "the input must have been delivered")
-	require.Less(t, delivery.AckFloor, seq, "the input must not be acknowledged while its record is held")
+	require.Less(t, delivery.AckFloor, seq, "the input must not be acknowledged while its application is held")
 	require.Equal(t, 1, delivery.AckPending, "the input must be pending acknowledgement")
 	_, err = guardRecords.Get(ctx, guardKey)
-	require.ErrorIs(t, err, jetstream.ErrKeyNotFound, "the held write must not have reached the bucket")
+	require.ErrorIs(t, err, jetstream.ErrKeyNotFound, "the held application must not have written its record")
 	applied := graphState(ctx, t, entities)
 	requirePublishedStatementOnce(t, applied[entityID])
 
@@ -345,7 +337,7 @@ func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
 		}
 		guard.FailBefore(natsfixture.KVPut, errGuardWriteRefused)
 		return guard
-	})
+	}, nil)
 	defer owner.finish(ctx, t)
 	require.NotNil(t, guard, "Start must have bound the stream input through the seam")
 	var releaseOnce sync.Once

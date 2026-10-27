@@ -6,7 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"sync"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -185,54 +185,32 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 		publishEntity(ctx, t, client, "c360.test.readiness.backlog.drone."+string(rune('a'+i%26))+itoa(i))
 	}
 
+	// Hold every applied message after its entity write, before its applied-sequence record and acknowledgement,
+	// until the not-ready window has been observed (checkpoint 3 M3): graph-ingest's logger handler pauses on
+	// "Entity ingested" (fix-301 design D2, "The pause"). A held message is not acked, so the consumer counts it as
+	// outstanding and no envelope can read caught-up, however the goroutines are scheduled; the backlog's size alone
+	// gave no such ordering. The deferred release runs before owner.finish, so a failed assertion cannot hold Stop.
+	pause := newPauseOnRecord("Entity ingested")
 	cfg := DefaultConfig()
 	configJSON, err := json.Marshal(cfg)
 	require.NoError(t, err)
-	comp, err := CreateGraphIngest(configJSON, testDependencies(t, client, withAuthority("c360", "test")))
+	deps := testDependencies(t, client, withAuthority("c360", "test"))
+	deps.Logger = slog.New(pause)
+	comp, err := CreateGraphIngest(configJSON, deps)
 	require.NoError(t, err)
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
+	defer pause.Release()
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
-
-	// Hold the first delivered message behind a test barrier until the not-ready
-	// window has been observed (checkpoint 3 M3). A held message is not acked, so the
-	// consumer counts it as outstanding and no envelope can read caught-up, however
-	// the goroutines are scheduled; the backlog's size alone gave no such ordering.
-	// The barrier wraps the real handler through the consumeStream acquisition seam
-	// (consume.go), which lifecycle_integration_test.go also wraps. The deferred
-	// release runs before owner.finish, so a failed assertion cannot hold Stop.
-	held := make(chan struct{})
-	release := make(chan struct{})
-	var holdOnce, releaseOnce sync.Once
-	releaseHeld := func() { releaseOnce.Do(func() { close(release) }) }
-	defer releaseHeld()
-	c.consumeStream = func(
-		ctx context.Context,
-		port natsclient.PortConsumerContext,
-		cfg natsclient.StreamConsumerConfig,
-		handler func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, func(msgCtx context.Context, msg jetstream.Msg) {
-			holdOnce.Do(func() {
-				close(held)
-				<-release
-			})
-			handler(msgCtx, msg)
-		})
-	}
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
 	// FIRST assert the not-ready window this test is named for. Without it the test
 	// only proved eventual readiness plus a non-zero scope — the SemStreams gh#732 case — while
 	// its name promised SemStreams gh#712's "nonempty and healthy read as settled". An envelope
 	// reporting caught-up while a message is held is the defect this must catch.
-	select {
-	case <-held:
-	case <-ctx.Done():
-		t.Fatalf("no message reached the test barrier: %v", ctx.Err())
-	}
+	pause.awaitEntered(ctx, t, 30*time.Second)
 
 	// probe.Await stops at the first published envelope that is either not ready with work
 	// outstanding, or ready; while the message is held, ready is the defect. A key not
@@ -246,7 +224,7 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 	require.True(t, sawNotReady,
 		"producer never reported outstanding work while a message of a %d-message backlog was held (last read %+v; wait: %v)",
 		backlog, last, waitErr)
-	releaseHeld()
+	pause.Release()
 
 	// ...and it must eventually catch up.
 	_, err = awaitEnvelopeAfterTick(ctx, t, c, client, 60*time.Second, func(status graph.IndexStatusResponse) bool {
@@ -436,9 +414,10 @@ func TestIntegration_ReadinessEnvelope_AbsentKeyIsNotAFailure(t *testing.T) {
 
 // TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog is design D2 (ADR-109
 // Decision 3; #183): bootstrap_complete is true once Start returns, whatever the backlog.
-// A message of a backlog the consumer bound onto is held behind the consumeStream barrier,
-// so every envelope while it is held has work outstanding; that envelope must still say
-// bootstrap_complete, with ready false and lag above zero.
+// A message of a backlog the consumer bound onto is held after its entity write by a pause
+// on "Entity ingested" (fix-301 design D2), so every envelope while it is held has work
+// outstanding; that envelope must still say bootstrap_complete, with ready false and lag
+// above zero.
 func TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -449,46 +428,25 @@ func TestIntegration_ReadinessEnvelope_BootstrapCompleteWithBacklog(t *testing.T
 		publishEntity(ctx, t, client, "c360.test.readiness.complete.drone.d"+itoa(i))
 	}
 
+	// The pause is TestIntegration_ReadinessEnvelope_BacklogIsNotReady's: a held message is not acked, so the
+	// consumer counts it outstanding. The deferred release runs before owner.finish, so a failed assertion cannot
+	// hold Stop.
+	pause := newPauseOnRecord("Entity ingested")
 	cfg := DefaultConfig()
 	configJSON, err := json.Marshal(cfg)
 	require.NoError(t, err)
-	comp, err := CreateGraphIngest(configJSON, testDependencies(t, client, withAuthority("c360", "test")))
+	deps := testDependencies(t, client, withAuthority("c360", "test"))
+	deps.Logger = slog.New(pause)
+	comp, err := CreateGraphIngest(configJSON, deps)
 	require.NoError(t, err)
 	c := comp.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.finish(ctx, t)
+	defer pause.Release()
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
-
-	// The barrier is TestIntegration_ReadinessEnvelope_BacklogIsNotReady's: a held message is
-	// not acked, so the consumer counts it outstanding. The deferred release runs before
-	// owner.finish, so a failed assertion cannot hold Stop.
-	held := make(chan struct{})
-	release := make(chan struct{})
-	var holdOnce, releaseOnce sync.Once
-	releaseHeld := func() { releaseOnce.Do(func() { close(release) }) }
-	defer releaseHeld()
-	c.consumeStream = func(
-		ctx context.Context,
-		port natsclient.PortConsumerContext,
-		cfg natsclient.StreamConsumerConfig,
-		handler func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, func(msgCtx context.Context, msg jetstream.Msg) {
-			holdOnce.Do(func() {
-				close(held)
-				<-release
-			})
-			handler(msgCtx, msg)
-		})
-	}
 	require.NoError(t, c.Start(owner.startContext(ctx)))
-
-	select {
-	case <-held:
-	case <-ctx.Done():
-		t.Fatalf("no message reached the test barrier: %v", ctx.Err())
-	}
+	pause.awaitEntered(ctx, t, 30*time.Second)
 
 	// Publish now, then read the key until an envelope with work outstanding is there; while
 	// the message is held, every envelope published has some.

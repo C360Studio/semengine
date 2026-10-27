@@ -35,7 +35,9 @@
     is held waits for the held work, so each test releases the pause before Stop.
 - **Not-started refusal** (rewrites `failed_start_callbacks_integration_test.go:64`). The same handler pauses on
   "query handlers registered" (`query.go:58`) or "mutation handlers registered" (`mutation_runtime.go:33`). A real
-  request then gets `errs.ErrNotStarted` (`component.go:530-532`) and does no work. The test then
+  request is refused by the handler with `errs.ErrNotStarted` (`component.go:530-532`) and does no work; the
+  requester sees a transient error with no code whose message carries it (natsclient rebuilds the error from its class,
+  code and message, `natsclient/errors.go:388`). The test then
   releases the pause; Start completes and the same request is served. The spec requirement is re-added under a new
   name with these two scenarios (OpenSpec refuses a modified requirement that drops a scenario).
 - **Straddle (ruling 1).** The test calls `c.lifecycle.Start(ctx, failingStart, c.release)`, as

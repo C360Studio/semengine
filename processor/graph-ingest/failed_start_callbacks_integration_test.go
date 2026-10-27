@@ -4,15 +4,19 @@ package graphingest
 
 // Checkpoint 3 B2 (PR #93): natsclient can run a callback during an acquisition that then
 // fails and returns no handle, so a failed Start's rollback has nothing to drain or join for
-// it. These tests run such a callback inside a real Start on a fixture broker and check that
-// it does no work on what the rollback clears: a request handler refuses before Start
-// completes (graph-transport-boundary, "graph-ingest does no request work before Start
-// completes"), and a stream callback that runs after the rollback Naks its message
-// (graph-ingest-recovery, "Settlement order", "A delivery after a failed consumer setup").
+// it. A request handler refuses before Start completes (graph-transport-boundary,
+// "graph-ingest refuses request work until Start completes"); a real request reaches it
+// while a real Start is held, then is served once Start completes. The tests below it run a
+// stream callback inside a real Start on a fixture broker and check that one that runs after
+// the rollback Naks its message (graph-ingest-recovery, "Settlement order", "A delivery
+// after a failed consumer setup").
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -56,26 +60,33 @@ func (m *heldMetadataMsg) Metadata() (*jetstream.MsgMetadata, error) {
 	return m.streamLaneMsg.Metadata()
 }
 
-// TestFailedRegistrationRunsNoRequestWork: one request registration runs its handler on
-// goroutine G during the registration and then fails with a transient DeadlineExceeded,
-// returning no subscription (natsclient's T6 shape, subscribe_registration_test.go). G must
-// refuse with a transient error matching errs.ErrNotStarted and do no work; Start fails with
-// the registration's error, the rollback leaves nothing held, and a later Stop returns nil.
-func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
+// TestRequestBeforeStartCompletesIsRefused holds graph-transport-boundary, "graph-ingest
+// refuses request work until Start completes", scenarios "A query before Start completes"
+// and "A mutation before Start completes" (fix-301 design D2, "Not-started refusal").
+// graph-ingest's logger handler pauses Start's goroutine on the record its query or
+// mutation setup logs once those subscriptions are registered, before Start completes. A
+// real request on the paused component's subject is refused with a transient error with no
+// code whose message is errs.ErrNotStarted's (the sentinel does not cross the wire; the
+// requester sees the class, code and message), and does no work. The pause is then
+// released, Start completes, and the same request is served.
+func TestRequestBeforeStartCompletesIsRefused(t *testing.T) {
 	cases := []struct {
 		name string
-		// subject picks the registration that fails.
+		// record is the Info record logged once the case's subscriptions are registered.
+		record  string
 		subject func(t *testing.T, c *Component) string
 		request func(t *testing.T) []byte
-		// seed runs on the failing registration, before G starts.
+		// seed runs while Start is held, before the refused request.
 		seed func(t *testing.T, c *Component)
-		// check runs after Start has returned and G has returned.
-		check func(t *testing.T, c *Component)
+		// refused runs after the refused request; served after the served one.
+		refused func(t *testing.T, c *Component)
+		served  func(t *testing.T, c *Component, reply []byte)
 	}{
 		{
 			// The entity is seeded so a batch query that ran would succeed: only the
 			// not-started refusal returns the error the test asserts.
-			name: "query",
+			name:   "query",
+			record: "query handlers registered",
 			subject: func(t *testing.T, _ *Component) string {
 				for _, verb := range graph.QueryVerbs() {
 					if verb.Name == "batch" {
@@ -97,9 +108,22 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 					}),
 				})
 			},
+			refused: func(*testing.T, *Component) {},
+			served: func(t *testing.T, _ *Component, reply []byte) {
+				var response struct {
+					Entities []graph.EntityState `json:"entities"`
+				}
+				if err := json.Unmarshal(reply, &response); err != nil {
+					t.Fatalf("decode the batch reply %s: %v", reply, err)
+				}
+				if len(response.Entities) != 1 || response.Entities[0].ID != failedStartEntityID {
+					t.Errorf("batch reply after Start = %s, want the seeded %s", reply, failedStartEntityID)
+				}
+			},
 		},
 		{
-			name: "mutation",
+			name:   "mutation",
+			record: "mutation handlers registered",
 			subject: func(t *testing.T, c *Component) string {
 				routes, err := c.canonicalMutationRoutes()
 				if err != nil {
@@ -120,7 +144,7 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 				})
 			},
 			seed: func(*testing.T, *Component) {},
-			check: func(t *testing.T, c *Component) {
+			refused: func(t *testing.T, c *Component) {
 				// A fresh component's metric vectors hold no series until a request is metered.
 				if n := testutil.CollectAndCount(c.mutationOutcomes); n != 0 {
 					t.Errorf("mutation outcome series = %d, want 0: the refusal was metered", n)
@@ -132,71 +156,80 @@ func TestFailedRegistrationRunsNoRequestWork(t *testing.T) {
 					t.Errorf("ENTITY_STATES holds %s: the mutation ran before Start completed", failedStartEntityID)
 				}
 			},
+			served: func(t *testing.T, c *Component, _ []byte) {
+				if _, _, ok := storedRevision(t, c, failedStartEntityID); !ok {
+					t.Errorf("ENTITY_STATES does not hold %s after the mutation was served", failedStartEntityID)
+				}
+			},
 		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 			defer cancel()
-			comp := createTestComponentForLifecycle(t)
+			client := newFixtureClient(t, entityStream)
+			pause := newPauseOnRecord(tc.record)
+			deps := testDependencies(t, client)
+			deps.Logger = slog.New(pause)
+			configJSON, err := json.Marshal(DefaultConfig())
+			if err != nil {
+				t.Fatalf("marshal config: %v", err)
+			}
+			created, err := CreateGraphIngest(configJSON, deps)
+			if err != nil {
+				t.Fatalf("CreateGraphIngest: %v", err)
+			}
+			comp := created.(*Component)
 			if err := comp.Initialize(); err != nil {
 				t.Fatalf("Initialize: %v", err)
 			}
-			failing := tc.subject(t, comp)
+			subject := tc.subject(t, comp)
+			request := tc.request(t)
 
-			registrationErr := errs.WrapTransient(context.DeadlineExceeded,
-				"test", "SubscribeForRequests", "registration round trip")
-			gReturned := make(chan struct{})
-			var gErr error
-			var gPanic any
-			comp.subscribeRequests = func(
-				subCtx context.Context,
-				subject string,
-				handler func(context.Context, []byte) ([]byte, error),
-			) (*natsclient.Subscription, error) {
-				if subject != failing {
-					return comp.natsClient.SubscribeForRequests(subCtx, subject, handler)
-				}
-				tc.seed(t, comp)
-				request := tc.request(t)
-				go func() {
-					defer close(gReturned)
-					defer func() { gPanic = recover() }()
-					_, gErr = handler(subCtx, request)
-				}()
-				select {
-				case <-gReturned:
-				case <-ctx.Done():
-				}
-				return nil, registrationErr
-			}
+			owner := newGraphIngestTestOwner(comp)
+			defer owner.finish(ctx, t)
+			startCtx := owner.startContext(ctx)
+			var startErr error
+			startReturned := make(chan struct{})
+			go func() {
+				defer close(startReturned)
+				startErr = comp.Start(startCtx)
+			}()
+			// Before owner.finish: Stop must not run beside a held Start.
+			defer func() {
+				pause.Release()
+				<-startReturned
+			}()
 
-			startErr := comp.Start(ctx)
-			if !errors.Is(startErr, registrationErr) {
-				t.Fatalf("Start error = %v, want it to wrap the registration's error", startErr)
-			}
-			if held := (&suiteOwner{c: comp}).Observe().Unresolved; len(held) != 0 {
-				t.Errorf("held after the failed Start = %v, want nothing", held)
-			}
-
-			awaitClosed(ctx, t, gReturned, "the handler returning")
-			if gPanic != nil {
-				t.Fatalf("the handler panicked: %v", gPanic)
-			}
-			if !errors.Is(gErr, errs.ErrNotStarted) {
-				t.Errorf("handler error = %v, want it to match errs.ErrNotStarted", gErr)
+			// Start's goroutine is held on the record: the subscriptions are live and
+			// Start has not completed. What Start wrote before the record (the entity
+			// bucket the seed and the checks use) is ordered before this wait.
+			pause.awaitEntered(ctx, t, 30*time.Second)
+			tc.seed(t, comp)
+			reply, err := client.RequestClassified(ctx, subject, request, wireRequestTimeout)
+			if err == nil {
+				t.Fatalf("request before Start completed = %s, want a refusal", reply)
 			}
 			var classified *errs.ClassifiedError
-			if !errors.As(gErr, &classified) || classified.Class != errs.ErrorTransient {
-				t.Errorf("handler error = %T %v, want a transient classified error", gErr, gErr)
+			if !errors.As(err, &classified) || classified.Class != errs.ErrorTransient || classified.Code != "" {
+				t.Errorf("refusal = %T %v, want a transient classified error with no code", err, err)
 			}
-			if tc.check != nil {
-				tc.check(t, comp)
+			if !strings.Contains(err.Error(), errs.ErrNotStarted.Error()) {
+				t.Errorf("refusal = %v, want it to carry %q", err, errs.ErrNotStarted)
 			}
+			// The reply above was sent after the handler returned, so its work, if any, is done.
+			tc.refused(t, comp)
 
-			if err := comp.Stop(ctx); err != nil {
-				t.Fatalf("Stop after the failed Start: %v", err)
+			pause.Release()
+			<-startReturned // orders the read of startErr after Start's write
+			if startErr != nil {
+				t.Fatalf("Start after the pause was released: %v", startErr)
 			}
+			reply, err = client.RequestClassified(ctx, subject, request, wireRequestTimeout)
+			if err != nil {
+				t.Fatalf("the same request after Start completed: %v", err)
+			}
+			tc.served(t, comp, reply)
 		})
 	}
 }

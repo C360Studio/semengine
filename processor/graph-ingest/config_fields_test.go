@@ -4,11 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
-	"strings"
 	"testing"
 	"time"
-
-	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
@@ -204,97 +201,4 @@ func withEntityStreamTiming(t *testing.T, config Config, ackWait, interval strin
 	port.AckWait, port.HeartbeatInterval = ackWait, interval
 	config.Ports.Inputs[0].Config = port
 	return config
-}
-
-// bindEntityStream runs c's consumer setup as Start does, with the wait for the stream and
-// the consumer's creation stood in for. It returns the configuration the entity_stream
-// consumer was created with, whether it was created, and setup's error.
-func bindEntityStream(t *testing.T, c *Component) (natsclient.StreamConsumerConfig, bool, error) {
-	t.Helper()
-	c.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Unix(1, 0), nil }
-	var bound natsclient.StreamConsumerConfig
-	created := false
-	c.consumeStream = func(
-		_ context.Context,
-		_ natsclient.PortConsumerContext,
-		cfg natsclient.StreamConsumerConfig,
-		_ func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		bound, created = cfg, true
-		return &graphIngestLifecycleConsumeContext{closed: make(chan struct{}), drainSeen: make(chan struct{})}, nil
-	}
-	err := c.setupSubscriptions(t.Context(), t.Context())
-	return bound, created, err
-}
-
-// TestConfigAckWaitAndHeartbeatInterval: the entity_stream port's ack_wait reaches its
-// consumer and its heartbeat_interval is read, each with graph-ingest's default when the
-// port declares none: 30 s, and a quarter of the wait in effect. A heartbeat_interval
-// above half the wait fails setup before the consumer is created (design D8, "Long
-// apply"). Ignored, the consumer is created with no wait, so natsclient's own fallback
-// applies, and no pair is refused. Until an application signals progress, the interval
-// reaches nothing setup hands on, so it is read from ingestDeliveryTiming, the function
-// setup calls, on the component's own port.
-func TestConfigAckWaitAndHeartbeatInterval(t *testing.T) {
-	accepted := []struct {
-		name                      string
-		ackWait, interval         string
-		wantAckWait, wantInterval time.Duration
-	}{
-		{name: "nothing declared", wantAckWait: 30 * time.Second, wantInterval: 7500 * time.Millisecond},
-		{name: "ack_wait alone", ackWait: "2s", wantAckWait: 2 * time.Second, wantInterval: 500 * time.Millisecond},
-		{name: "both declared", ackWait: "2s", interval: "1s", wantAckWait: 2 * time.Second, wantInterval: time.Second},
-	}
-	for _, tc := range accepted {
-		t.Run(tc.name, func(t *testing.T) {
-			c := newConfiguredGraphIngest(t, withEntityStreamTiming(t, DefaultConfig(), tc.ackWait, tc.interval))
-			bound, created, err := bindEntityStream(t, c)
-			if err != nil || !created {
-				t.Fatalf("consumer setup: created %v, error %v; want the consumer created", created, err)
-			}
-			if bound.AckWait != tc.wantAckWait {
-				t.Errorf("the consumer's ack wait = %s, want %s", bound.AckWait, tc.wantAckWait)
-			}
-			declared, err := component.GetConsumerConfig(c.InputPorts()[0])
-			if err != nil {
-				t.Fatalf("GetConsumerConfig(%s): %v", c.InputPorts()[0].Name, err)
-			}
-			if _, interval := ingestDeliveryTiming(declared); interval != tc.wantInterval {
-				t.Errorf("the heartbeat interval = %s, want %s", interval, tc.wantInterval)
-			}
-		})
-	}
-
-	t.Run("interval above half the wait", func(t *testing.T) {
-		c := newConfiguredGraphIngest(t, withEntityStreamTiming(t, DefaultConfig(), "2s", "1500ms"))
-		_, created, err := bindEntityStream(t, c)
-		if err == nil || !strings.Contains(err.Error(), "heartbeat interval 1.5s exceeds") {
-			t.Errorf("consumer setup error = %v, want the 1.5s interval refused", err)
-		}
-		if created {
-			t.Error("the consumer was created for a refused pair")
-		}
-	})
-
-	// The port's own validation refuses a negative wait when graph-ingest is built, before
-	// Start reads it. The port will not encode one, so the JSON is edited as an operator
-	// would write it.
-	t.Run("negative wait", func(t *testing.T) {
-		raw, err := json.Marshal(withEntityStreamTiming(t, DefaultConfig(), "2s", ""))
-		if err != nil {
-			t.Fatalf("marshal config: %v", err)
-		}
-		if strings.Count(string(raw), `"ack_wait":"2s"`) != 1 {
-			t.Fatalf("the encoded config does not declare ack_wait 2s once: %s", raw)
-		}
-		raw = []byte(strings.Replace(string(raw), `"ack_wait":"2s"`, `"ack_wait":"-2s"`, 1))
-		natsClient, err := natsclient.NewClient("")
-		if err != nil {
-			t.Fatalf("natsclient.NewClient: %v", err)
-		}
-		_, err = CreateGraphIngest(raw, testDependencies(t, natsClient))
-		if err == nil || !strings.Contains(err.Error(), `"ack_wait"`) {
-			t.Errorf("CreateGraphIngest error = %v, want the negative ack_wait refused", err)
-		}
-	})
 }

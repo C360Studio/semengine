@@ -25,7 +25,7 @@ Working rules for every task:
 
 ## 3. Tests that pass on the base
 
-- [ ] 3.1 Integration tests:
+- [x] 3.1 Integration tests (`notes/3.1.md`):
   - the ack_wait config test read from the server;
   - the pause in the readiness, long-apply and process-killed tests;
   - the not-started refusal test, whose doc comment (`failed_start_callbacks_integration_test.go:9`) names the
@@ -41,8 +41,8 @@ Working rules for every task:
   cannot compile without the type, so their failure on the base is shown with `go test -overlay` (tests only) and
   recorded in `notes/4.1.md`. Gate: `go test -race ./processor/graph-ingest/` and `task verify`.
 - [ ] 4.2 Delete the D3 tests and the straddle pair. Remove the four fields and their nil-checks. Run M1 and M2 with
-  `task mutate:check` and record the results in `notes/4.2.md`. Gate: the D4 grep prints nothing; `task cover:check`
-  and `task verify`.
+  `task mutate:check` (`GOFLAGS=-tags=integration` for the integration-tagged not-started test) and record the results
+  in `notes/4.2.md`. Gate: the D4 grep prints nothing; `task cover:check` and `task verify`.
 - [ ] 4.3 Codex code review of record at a named commit with a local `task verify`. The PR body carries
   `implemented-by: claude (opus)` and `reviewed-by: codex`. Hold: Codex code review.
 

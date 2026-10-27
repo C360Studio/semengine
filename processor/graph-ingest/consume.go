@@ -232,8 +232,9 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 
 	// Record the consumer for the readiness tick ONLY after the bind committed, so
 	// the backlog sum never asks about a consumer that failed to bind (which would
-	// degrade the envelope on a consumer that does not exist).
-	c.registerBoundConsumer(streamName, consumerName)
+	// degrade the envelope on a consumer that does not exist). The record takes only the
+	// loop's Closed channel, so the tick can see the loop end; the handle stays above.
+	c.registerBoundConsumer(streamName, consumerName, handle.Closed())
 
 	// Capture this port's contribution to BootstrapScope NOW, while the backlog is
 	// still whole. See recordBindBacklog: reading it at the first status tick lets a

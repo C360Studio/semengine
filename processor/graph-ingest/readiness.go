@@ -27,11 +27,18 @@ const statusMetricsInterval = readiness.DefaultHeartbeat
 type boundConsumer struct {
 	stream string
 	name   string
+	// closed is the Closed channel of the consume loop bound to this consumer. It is
+	// receive-only, so the tick can see the loop end while the handle, and the authority
+	// to drain it, stays with Stop (ADR-095).
+	closed <-chan struct{}
+	// lost is set once a tick has recorded this binding lost, and never cleared: a
+	// consume loop that has ended does not start again, so only a restart repairs it.
+	lost bool
 }
 
 // registerBoundConsumer records a consumer after ConsumeStreamWithConfig has
 // committed it, so the readiness tick never asks about a consumer whose bind failed.
-func (c *Component) registerBoundConsumer(stream, name string) {
+func (c *Component) registerBoundConsumer(stream, name string, closed <-chan struct{}) {
 	c.boundConsumersMu.Lock()
 	defer c.boundConsumersMu.Unlock()
 	for _, existing := range c.boundConsumers {
@@ -39,7 +46,77 @@ func (c *Component) registerBoundConsumer(stream, name string) {
 			return
 		}
 	}
-	c.boundConsumers = append(c.boundConsumers, boundConsumer{stream: stream, name: name})
+	c.boundConsumers = append(c.boundConsumers, boundConsumer{stream: stream, name: name, closed: closed})
+}
+
+// observeLostBinding reports whether bc's binding is lost, recording it the first time a
+// tick sees its consume loop ended while the shell is running (#216, design D1).
+//
+// The loop's end is read first and the shell's running state second. The shell stops
+// running before release issues any Drain (component.Lifecycle.Start), so a tick that sees
+// a loop Stop's drain closed then reads "not running" and records nothing. Read the other
+// way round, a tick could read "running", then see the loop Stop had just drained, and
+// record a clean shutdown as a lost binding.
+func (c *Component) observeLostBinding(bc boundConsumer) bool {
+	if bc.lost {
+		return true
+	}
+	select {
+	case <-bc.closed:
+	default:
+		return false
+	}
+	if !c.running() {
+		return false
+	}
+	if c.recordLostBinding(bc.stream, bc.name) {
+		c.logger.Error("graph-ingest: input binding lost; its consume loop ended and is not bound again "+
+			"until the process restarts",
+			slog.String("stream", bc.stream),
+			slog.String("consumer", bc.name))
+	}
+	return true
+}
+
+// recordLostBinding marks the stream/name record lost and reports whether this call did,
+// so the Error line is logged once.
+func (c *Component) recordLostBinding(stream, name string) bool {
+	c.boundConsumersMu.Lock()
+	defer c.boundConsumersMu.Unlock()
+	for index := range c.boundConsumers {
+		bc := &c.boundConsumers[index]
+		if bc.stream == stream && bc.name == name {
+			if bc.lost {
+				return false
+			}
+			bc.lost = true
+			return true
+		}
+	}
+	return false
+}
+
+// lostBindingFault is Health's stuck state for the lost bindings, or "" when none is lost.
+func (c *Component) lostBindingFault() string {
+	var lost []string
+	for _, bc := range c.boundConsumerSnapshot() {
+		if bc.lost {
+			lost = append(lost, bc.stream+"/"+bc.name)
+		}
+	}
+	if len(lost) == 0 {
+		return ""
+	}
+	return "input binding lost for consumer " + strings.Join(lost, ", ") +
+		": its consume loop ended; restart the process to consume again"
+}
+
+// running reports whether the shell is running: from a successful start until release
+// begins, for a Stop or a failed start's rollback. Lifecycle.Health with no stuck state
+// reads "stopped" exactly when it is not, so the tick reads the shell's own state and
+// keeps no copy of it.
+func (c *Component) running() bool {
+	return c.lifecycle.Health().Status != "stopped"
 }
 
 // boundConsumerSnapshot copies the bound set for iteration off the lock, in a
@@ -121,6 +198,14 @@ func (c *Component) computeBacklogStatus(ctx context.Context) graph.IndexStatusR
 	var outstanding uint64
 	observationFailed := false
 	var failed []string
+
+	// A lost binding degrades this envelope and every later one, as a failed observation
+	// does. Its backlog is still read below, so a failed lookup is still named.
+	for _, bc := range consumers {
+		if c.observeLostBinding(bc) {
+			observationFailed = true
+		}
+	}
 
 	for _, bc := range consumers {
 		work, err := c.observeOutstandingWork(ctx, bc.stream, bc.name)

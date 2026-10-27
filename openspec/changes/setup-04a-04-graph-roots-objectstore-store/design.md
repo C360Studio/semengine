@@ -123,8 +123,8 @@ Each line is observable and named in D9's tests.
   refuse extras), it refuses as
   invalid input, before writing anything, a payload carrying any content other than the body: a non-empty
   `RawContent()` value under any field but the one the `body` role names (title, abstract or description, summary,
-  location, or a field no role names), or any binary field of a `message.BinaryStorable`. The error names the
-  refused fields. Nothing is stored, so nothing is silently lost. Otherwise it writes the body
+  location, or a field no role names), or any non-empty binary field of a `message.BinaryStorable`. The error names
+  the refused fields. Nothing is stored, so nothing is silently lost. Otherwise it writes the body
   (`RawContent()[ContentFields()["body"]]`) as raw UTF-8 bytes and returns a reference with the Store's instance name,
   that key, `text/plain; charset=utf-8` and the body's size; opening the reference returns the body. A payload with no
   content at all (no body, no extras) stores an empty object and gets its reference: nothing is lost, and the reader
@@ -226,8 +226,8 @@ regression check),
 `TestListSortedAndEmpty` (empty bucket → empty slice, nil error; names put out of order come back sorted; prefix
 filter), `TestStoreContentRefusesExtras` (table, each case checked for an invalid-input error naming the field and
 for an unchanged `List("")`, so nothing is written: body plus description; description without body; title only;
-an undeclared `summary` field; one binary field of a `BinaryStorable`, the former
-`TestStoreContentRefusesBinaryFields`),
+an undeclared `summary` field; one non-empty binary field of a `BinaryStorable`, the former
+`TestStoreContentRefusesBinaryFields`; and one accepted case: a body with an empty binary field is stored),
 `TestStoreContentReferenceOpensToBody` (the product path: a `ContentStorable` with only a body is stored, the returned
 reference's `StorageInstance` resolves through a `storeregistry.Registry` holding the
 Store,

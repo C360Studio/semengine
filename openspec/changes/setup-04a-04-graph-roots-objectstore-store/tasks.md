@@ -16,21 +16,21 @@ passes on a clean tree at its commit (#171).
 
 ## 2. Tests first
 
-- [ ] 2.1 The unit and integration tests of design D9, each shown failing against the pin's shape where the pin differs
+- [x] 2.1 The unit and integration tests of design D9, each shown failing against the pin's shape where the pin differs
   (S8, S9, the never-written half of S10, G1), with the pin tests ported or dropped named in `notes/2.1.md`. Gate: in
   3.x.
 
 ## 3. The Store
 
-- [ ] 3.1 `config.go`, construction and the retention guard (design D3, D4, D5); `natsfixture` for the integration
+- [x] 3.1 `config.go`, construction and the retention guard (design D3, D4, D5); `natsfixture` for the integration
   tests (#195). Gate: `go test -race -count=1 ./storage/objectstore`, `task test:integration --
   ./storage/objectstore`.
-- [ ] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, and `StoreContent` writing and referencing the raw body and refusing
+- [x] 3.2 `Put`, `Get`, `Open`, `List`, `Delete`, and `StoreContent` writing and referencing the raw body and refusing
   any other content (design D3, D4; owner ruling, PR #432 comment 6447702631). Gate: as 3.1 plus `go test -count=5
   -cpu 1 -shuffle=on ./storage/objectstore`, `TestStoreContentReferenceOpensToBody`, `TestStoreContentRefusesExtras`
   and `TestStoreHistoryMatchesModel`.
-- [ ] 3.3 Metrics on the injected registry (design D7). Gate: as 3.1 and the metric-registry guard in `task lint`.
-- [ ] 3.4 No data cache, as ruled in 1.3 (design D6): no `internal/cache` import, no `Config.DataCache`, no
+- [x] 3.3 Metrics on the injected registry (design D7). Gate: as 3.1 and the metric-registry guard in `task lint`.
+- [x] 3.4 No data cache, as ruled in 1.3 (design D6): no `internal/cache` import, no `Config.DataCache`, no
   `Store.Close`. Gate: as 3.1; `TestPublicSignatures` (the `harness-boundaries` guard) passes; `go list -deps
   ./storage/objectstore` names no `internal/cache`.
 

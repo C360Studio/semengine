@@ -133,8 +133,15 @@ none) under a key with a per-call nonce, and SHALL return a reference with the S
 
 #### Scenario: A payload with a binary field
 
-- **WHEN** `StoreContent` is called with a payload that implements `message.BinaryStorable` with one binary field
+- **WHEN** `StoreContent` is called with a payload that implements `message.BinaryStorable` with one non-empty binary
+  field
 - **THEN** it returns an invalid-input error and the bucket holds no new object
+- **AND** the test that verifies this is `TestStoreContentRefusesExtras`
+
+#### Scenario: A body with an empty binary field
+
+- **WHEN** `StoreContent` is called with a body and a binary field whose data is empty
+- **THEN** it stores the body and returns its reference
 - **AND** the test that verifies this is `TestStoreContentRefusesExtras`
 
 #### Scenario: A payload with no content

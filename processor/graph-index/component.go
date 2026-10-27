@@ -8,9 +8,15 @@ import (
 	"io"
 	"log/slog"
 	"slices"
+	"sync"
+	"sync/atomic"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/graph/follower"
+	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
+	"github.com/c360studio/semengine/internal/dispatch"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -27,14 +33,43 @@ type Component struct {
 	inputs  []component.Port
 	outputs []component.Port
 
-	natsClient *natsclient.Client
-	logger     *slog.Logger
+	natsClient      *natsclient.Client
+	logger          *slog.Logger
+	metricsRegistry *metric.MetricsRegistry
 
 	// lifecycle is the lifecycle state, Health and DataFlow (component.Lifecycle,
 	// ADR-108, design D4).
 	lifecycle component.Lifecycle
 
 	metrics *indexMetrics
+
+	// The index write path (index.go). The buckets and the ENTITY_STATES reader are set by
+	// openIndexBuckets; follower, pool and coalescer by startIndexPool (nil coalescer when
+	// coalesce_ms is 0).
+	outgoingBucket  *natsclient.KVStore
+	incomingBucket  *natsclient.KVStore
+	aliasBucket     *natsclient.KVStore
+	predicateBucket *natsclient.KVStore
+	nameBucket      *natsclient.KVStore
+	entities        kvcatalog.CatalogReader
+	follower        *follower.Follower
+	pool            *dispatch.KeyedPool[indexWork]
+	coalescer       *revisionCoalescer
+
+	// Label and alias predicates, read from the vocabulary when the pool starts.
+	aliasPredicates map[string]int
+	namePredicates  map[string]int
+
+	// failedEntities holds the entities whose required index writes did not all succeed
+	// after retry; failedCount is its size, the follower's Failed. While it is above zero
+	// the index withholds readiness. An entity leaves the set when it later indexes or
+	// deletes cleanly.
+	failedEntities sync.Map
+	failedCount    atomic.Int64
+
+	// lastProjections maps an entity ID to the projection last indexed for it, for the
+	// reindex_events_total metric (#108's instrument): one string per entity.
+	lastProjections sync.Map
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-index: the ports
@@ -106,12 +141,13 @@ func CreateGraphIndex(rawConfig json.RawMessage, deps component.Dependencies) (c
 		return nil, errs.Wrap(err, "CreateGraphIndex", "factory", "register metrics")
 	}
 	return &Component{
-		config:     config,
-		inputs:     inputs,
-		outputs:    outputs,
-		natsClient: deps.NATSClient,
-		logger:     deps.GetLoggerWithComponent(key),
-		metrics:    metrics,
+		config:          config,
+		inputs:          inputs,
+		outputs:         outputs,
+		natsClient:      deps.NATSClient,
+		logger:          deps.GetLoggerWithComponent(key),
+		metricsRegistry: deps.MetricsRegistry,
+		metrics:         metrics,
 	}, nil
 }
 

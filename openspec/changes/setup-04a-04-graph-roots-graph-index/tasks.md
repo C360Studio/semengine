@@ -15,8 +15,8 @@ passes on a clean tree at its commit (#171).
 - [x] 1.4 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review on the
   ruled text. Gate: `task spec:check` and `task docs:check`. Claude reviewer INVENTORY PASS and DESIGN PASS at
   `ebd77d9` (PR #414 comment recording it); Codex accepted the corrections at `58814ca` (comment 6426969384).
-- [ ] 1.5 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.5.md`. Gate: the note.
-- [ ] 1.6 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
+- [x] 1.5 Pin probe re-run with `-v` to record the shuffle seed; result in `notes/1.5.md`. Gate: the note.
+- [x] 1.6 #108's number: the pin's `owner_filter_load_integration_test.go` load shape at the pin, then on the port,
   recording entities, KV writes and the `index_not_ready` window, posted on #108 and in `notes/1.6.md` (design D13).
   Gate: the comment read back.
 

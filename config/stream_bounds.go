@@ -48,9 +48,8 @@ const discardPolicyGuidance = `discard must be "old" or "new": "old" evicts the 
 	`every publish — including a replacement of an existing message — until something is deleted`
 
 // Bounds-contract sentinels. Classifiable so a boot path, an operator tool, or a
-// test can tell an undeclared bound from an expired bridge from a malformed
-// archival declaration, all of which fail readiness for different reasons and
-// have different fixes.
+// test can tell an undeclared bound from a malformed archival declaration, which
+// fail validation for different reasons and have different fixes.
 var (
 	// errFixedFrameworkStreamCollision is intentionally private: it classifies
 	// an invalid configuration without creating a new adopter-facing API.
@@ -58,7 +57,7 @@ var (
 
 	// ErrStreamBoundsUndeclared is returned when an ordinary stream carries no
 	// explicitly declared finite MaxAge, finite MaxBytes, or discard policy and
-	// is not admitted by an archival declaration or an active migration override.
+	// is not admitted by an archival declaration.
 	//
 	// It is natsclient's value rather than a second one of the same name. The same
 	// requirement is enforced at two seams — this declarative path and
@@ -66,56 +65,19 @@ var (
 	// declared" should not have to know which door refused it.
 	ErrStreamBoundsUndeclared = natsclient.ErrStreamBoundsUndeclared
 
-	// ErrStreamMigrationOverrideInvalid is returned when a migration override is
-	// not a valid time-limited bridge — no owner, or no expiry. An open-ended
-	// override is rejected at validation so a bridge cannot become permanent.
-	ErrStreamMigrationOverrideInvalid = errors.New("stream migration override is not a valid time-limited bridge")
-
-	// ErrStreamMigrationOverrideExpired is returned when an override's expiry has
-	// passed. Readiness fails rather than degrading quietly: the bridge was
-	// declared with an end date and the end date is the whole point.
-	ErrStreamMigrationOverrideExpired = errors.New("stream migration override has expired")
-
 	// ErrArchivalStreamInvalid is returned when an archival declaration omits its
 	// owner or its reason, so archival cannot become a silent way to opt out of
 	// bounds.
 	ErrArchivalStreamInvalid = errors.New("archival stream declaration is incomplete")
 )
 
-// StreamMigrationOverride admits ONE existing ordinary stream that predates the
-// bounds contract, as a named, time-limited exception. It is a migration bridge
-// and nothing else: a stream whose contract is permanence is ARCHIVAL and must
-// use that classification, so the two never share an instrument.
-//
-// Owner and Expires are both required. An override with no expiry is rejected at
-// validation, because an override's value comes from being rare and alarming and
-// an open-ended one is neither.
-type StreamMigrationOverride struct {
-	// Owner is the team, component, or person accountable for completing the
-	// migration. Required — an exception nobody owns never ends.
-	Owner string `json:"owner"`
-
-	// Expires is the date the bridge ends, as "2006-01-02" or a full RFC3339
-	// timestamp. A date-only value is INCLUSIVE of that day: "2026-09-30" expires
-	// at the end of 2026-09-30 UTC, which is how an operator reads it. Required.
-	Expires string `json:"expires"`
-
-	// Reason is optional prose for the next reader. Unlike ArchivalStream.Reason
-	// it is not required, because an override's justification is its expiry.
-	Reason string `json:"reason,omitempty"`
-}
-
-// StreamMigrationOverrides maps ordinary stream name to its migration override.
-type StreamMigrationOverrides map[string]StreamMigrationOverride
-
 // ArchivalStream declares ONE ordinary stream whose contract is permanence:
 // nothing may ever be evicted from it. It is exempt from the finite-bounds
-// requirement by declaration, and readiness reports it as a named PERMANENT
-// exception structurally distinct from a time-limited migration override.
+// requirement by declaration, and validation reports it as a named PERMANENT
+// exception.
 //
-// Both fields are required. An archive expressible only as a renewed override
-// would train an operator to renew without reading, which is exactly what makes
-// the genuinely time-limited overrides invisible.
+// Both fields are required, so archival cannot become an unowned, unexplained
+// way to opt out of bounds.
 type ArchivalStream struct {
 	// Owner is the team or component accountable for this stream's growth.
 	// Required — an archival stream's only remaining lever is capacity, and
@@ -130,43 +92,12 @@ type ArchivalStream struct {
 // ArchivalStreams maps ordinary stream name to its archival declaration.
 type ArchivalStreams map[string]ArchivalStream
 
-// StreamMigrationOverrideStatus is one active, time-limited exception as
-// readiness reports it.
-type StreamMigrationOverrideStatus struct {
-	Stream    string        // the admitted ordinary stream
-	Owner     string        // who is accountable for finishing the migration
-	Reason    string        // optional prose, empty when not declared
-	Expires   time.Time     // when readiness starts failing
-	Remaining time.Duration // time left, at the moment readiness was evaluated
-}
-
-// ArchivalStreamStatus is one permanent exception as readiness reports it.
-//
-// This is a DIFFERENT TYPE from StreamMigrationOverrideStatus rather than the
-// same struct with a flag, and the difference is load-bearing: it has no expiry
-// field and no remaining-time field, so no surface can render a permanent
-// exception as though it were counting down, and no operator can renew it.
+// ArchivalStreamStatus is one permanent exception as validation reports it. It
+// has no expiry: archival is permanent by contract.
 type ArchivalStreamStatus struct {
 	Stream string // the permanently unbounded ordinary stream
 	Owner  string // who is accountable for its growth
 	Reason string // why permanence is the contract
-}
-
-// StreamExceptionReport is readiness's account of every ordinary stream admitted
-// WITHOUT finite bounds, split by the kind of exception that admitted it.
-//
-// The split is structural, not cosmetic. A single list with a kind flag would
-// let an operator surface render "permanent" and "expires in March" through the
-// same widget, and the whole reason archival exists as its own classification is
-// that blurring those two is what trains people to renew bridges without reading
-// them.
-type StreamExceptionReport struct {
-	// MigrationOverrides are time-limited bridges. Every entry here is a
-	// scheduled future readiness failure. Sorted by stream name.
-	MigrationOverrides []StreamMigrationOverrideStatus
-
-	// Archival are permanent, declared exceptions. Sorted by stream name.
-	Archival []ArchivalStreamStatus
 }
 
 // streamExemption records WHY a stream is admitted without finite bounds, or
@@ -176,8 +107,6 @@ type streamExemption uint8
 const (
 	// exemptNone: the stream must declare finite bounds and a discard policy.
 	exemptNone streamExemption = iota
-	// exemptMigrationOverride: admitted by an active, time-limited override.
-	exemptMigrationOverride
 	// exemptArchival: permanent by declaration.
 	exemptArchival
 )
@@ -434,18 +363,16 @@ func logAt(logger *slog.Logger, level slog.Level, msg string, args ...any) {
 
 // planStreams resolves every ordinary stream this configuration would provision
 // and enforces the bounds contract on it, returning the declarations to create
-// and readiness's account of every stream admitted without finite bounds.
-//
-// now is a parameter so override expiry is testable without wall-clock games.
-func planStreams(cfg *Config, now time.Time, logger *slog.Logger) ([]streamDeclaration, StreamExceptionReport, error) {
+// and validation's list of the archival streams, sorted by stream name.
+func planStreams(cfg *Config, logger *slog.Logger) ([]streamDeclaration, []ArchivalStreamStatus, error) {
 	decls, err := resolveStreamDeclarations(cfg, logger)
 	if err != nil {
-		return nil, StreamExceptionReport{}, err
+		return nil, nil, err
 	}
 
-	report, exemptions, err := validateExceptionDeclarations(cfg, now)
+	archival, exemptions, err := validateExceptionDeclarations(cfg)
 	if err != nil {
-		return nil, StreamExceptionReport{}, err
+		return nil, nil, err
 	}
 
 	var undeclared []string
@@ -457,24 +384,22 @@ func planStreams(cfg *Config, now time.Time, logger *slog.Logger) ([]streamDecla
 		}
 	}
 	if len(undeclared) > 0 {
-		return nil, StreamExceptionReport{}, fmt.Errorf("%w:\n%s\n\n%s",
+		return nil, nil, fmt.Errorf("%w:\n%s\n\n%s",
 			ErrStreamBoundsUndeclared, strings.Join(undeclared, "\n"), boundsRemedy)
 	}
 
-	return decls, report, nil
+	return decls, archival, nil
 }
 
 // boundsRemedy tells the operator exactly what to write and what each choice
-// costs. It names both escapes, because an operator who cannot see them will
+// costs. It names the one escape, because an operator who cannot see it will
 // reach for the nearest plausible bound instead and pick a wrong one.
 var boundsRemedy = strings.Join([]string{
 	`declare each missing field in config.streams["<STREAM>"]: ` +
 		`max_age (a positive duration, e.g. "24h" or "7d"), ` +
 		`max_bytes (a positive byte count — 0 and -1 mean unlimited to NATS and are NOT a declaration), and ` +
 		discardPolicyGuidance + ".",
-	`a stream whose contract is permanence belongs in archival_streams (owner + reason), not in a bound; ` +
-		`a stream that predates this requirement can be bridged by a stream_migration_overrides entry ` +
-		`naming its owner and an expiry.`,
+	`a stream whose contract is permanence belongs in archival_streams (owner + reason), not in a bound.`,
 }, "\n")
 
 // missingBounds returns the declaration fields this stream still owes, in a
@@ -496,22 +421,19 @@ func missingBounds(decl streamDeclaration) []string {
 	return missing
 }
 
-// validateExceptionDeclarations validates the two exception blocks and builds
-// readiness's report of them.
+// validateExceptionDeclarations validates the archival block and builds
+// validation's list of it.
 //
 // Shape validation runs for EVERY entry, including one naming a stream this
-// configuration does not provision: a stale bridge that outlived its stream is
-// still a bridge, and letting it sit unvalidated is how "temporary" becomes
-// permanent. Expiry is likewise enforced regardless of whether the stream still
-// exists — when an override expires, the fix is to delete it.
-func validateExceptionDeclarations(cfg *Config, now time.Time) (StreamExceptionReport, map[string]streamExemption, error) {
+// configuration does not provision.
+func validateExceptionDeclarations(cfg *Config) ([]ArchivalStreamStatus, map[string]streamExemption, error) {
 	exemptions := make(map[string]streamExemption)
-	var report StreamExceptionReport
+	var archival []ArchivalStreamStatus
 
 	for _, name := range slices.Sorted(maps.Keys(cfg.ArchivalStreams)) {
 		source := fmt.Sprintf("archival_streams[%q]", name)
 		if err := checkOrdinaryStream(name, source); err != nil {
-			return StreamExceptionReport{}, nil, fmt.Errorf("validate stream declaration %q: %w", name, err)
+			return nil, nil, fmt.Errorf("validate stream declaration %q: %w", name, err)
 		}
 		a := cfg.ArchivalStreams[name]
 		var missing []string
@@ -522,178 +444,43 @@ func validateExceptionDeclarations(cfg *Config, now time.Time) (StreamExceptionR
 			missing = append(missing, "reason")
 		}
 		if len(missing) > 0 {
-			return StreamExceptionReport{}, nil, fmt.Errorf(
+			return nil, nil, fmt.Errorf(
 				"%w: %s is missing %s — an archival declaration states WHO owns the stream and WHY permanence "+
 					"is its contract, so archival cannot become a silent way to opt out of bounds",
 				ErrArchivalStreamInvalid, source, strings.Join(missing, " and "))
 		}
-		if _, ok := cfg.StreamMigrationOverrides[name]; ok {
-			return StreamExceptionReport{}, nil, fmt.Errorf(
-				"%w: stream %q is declared BOTH archival and migration-overridden — permanence and a "+
-					"time-limited bridge are different contracts and must never share an instrument; "+
-					"keep the archival declaration and delete the override",
-				ErrArchivalStreamInvalid, name)
-		}
 		exemptions[name] = exemptArchival
-		report.Archival = append(report.Archival, ArchivalStreamStatus{
+		archival = append(archival, ArchivalStreamStatus{
 			Stream: name, Owner: a.Owner, Reason: a.Reason,
 		})
 	}
 
-	for _, name := range slices.Sorted(maps.Keys(cfg.StreamMigrationOverrides)) {
-		source := fmt.Sprintf("stream_migration_overrides[%q]", name)
-		if err := checkOrdinaryStream(name, source); err != nil {
-			return StreamExceptionReport{}, nil, fmt.Errorf("validate stream declaration %q: %w", name, err)
-		}
-		o := cfg.StreamMigrationOverrides[name]
-		if strings.TrimSpace(o.Owner) == "" {
-			return StreamExceptionReport{}, nil, fmt.Errorf(
-				"%w: %s declares no owner — an exception nobody owns never ends",
-				ErrStreamMigrationOverrideInvalid, source)
-		}
-		expires, err := parseOverrideExpiry(o.Expires)
-		if err != nil {
-			return StreamExceptionReport{}, nil, fmt.Errorf(
-				"%w: %s: %w — an override is a migration bridge, and a bridge with no end date is just "+
-					"an unbounded stream with paperwork; if this stream's contract is permanence, declare it "+
-					"in archival_streams instead",
-				ErrStreamMigrationOverrideInvalid, source, err)
-		}
-		if !now.Before(expires) {
-			return StreamExceptionReport{}, nil, fmt.Errorf(
-				"%w: %s expired at %s (owner %q, stream %q) — declare finite bounds for the stream, or, if its "+
-					"contract turned out to be permanence, move it to archival_streams",
-				ErrStreamMigrationOverrideExpired, source, expires.Format(time.RFC3339), o.Owner, name)
-		}
-		exemptions[name] = exemptMigrationOverride
-		report.MigrationOverrides = append(report.MigrationOverrides, StreamMigrationOverrideStatus{
-			Stream:    name,
-			Owner:     o.Owner,
-			Reason:    o.Reason,
-			Expires:   expires,
-			Remaining: expires.Sub(now),
-		})
-	}
-
-	return report, exemptions, nil
-}
-
-// parseOverrideExpiry accepts a date ("2006-01-02") or a full RFC3339 timestamp.
-//
-// A date-only value is INCLUSIVE of that day — "2026-09-30" expires at the end
-// of 2026-09-30 UTC — because that is how an operator writing a deadline reads
-// it, and an off-by-one-day expiry on a bridge is a needless 3am surprise.
-func parseOverrideExpiry(s string) (time.Time, error) {
-	trimmed := strings.TrimSpace(s)
-	if trimmed == "" {
-		return time.Time{}, errors.New(`no expiry declared (use "2006-01-02" or an RFC3339 timestamp)`)
-	}
-	if day, err := time.ParseInLocation(time.DateOnly, trimmed, time.UTC); err == nil {
-		return day.AddDate(0, 0, 1), nil
-	}
-	ts, err := time.Parse(time.RFC3339, trimmed)
-	if err != nil {
-		return time.Time{}, fmt.Errorf(
-			`expiry %q is not a date ("2006-01-02") or an RFC3339 timestamp`, trimmed)
-	}
-	return ts, nil
+	return archival, exemptions, nil
 }
 
 // ValidateStreamDeclarations resolves every ordinary stream this configuration
-// would provision and enforces the bounds contract on it, returning readiness's
-// account of every stream admitted without finite bounds.
+// would provision and enforces the bounds contract on it, returning one entry per
+// archival_streams entry, sorted by stream name, nil when there is none.
 //
 // It is pure and I/O-free, which is what lets Config.Validate run it: without
 // that, `semstreams --validate` would print "✓ Configuration is valid" for a
 // configuration that hard-fails at boot.
-func ValidateStreamDeclarations(cfg *Config) (StreamExceptionReport, error) {
-	_, report, err := planStreams(cfg, time.Now(), nil)
-	return report, err
+func ValidateStreamDeclarations(cfg *Config) ([]ArchivalStreamStatus, error) {
+	_, archival, err := planStreams(cfg, nil)
+	return archival, err
 }
 
-// logStreamExceptions reports readiness's exceptions at boot.
-//
-// The two kinds are logged at different levels ON PURPOSE. An override is a
-// scheduled future boot failure and should read as one; an archival stream is a
-// declared, approved contract. Logging them identically is the first step toward
-// an operator treating a countdown like a permanent fixture.
-func logStreamExceptions(logger *slog.Logger, report StreamExceptionReport) {
+// logStreamExceptions logs one Info line per archival stream at boot.
+func logStreamExceptions(logger *slog.Logger, archival []ArchivalStreamStatus) {
 	if logger == nil {
 		return
 	}
-	for _, o := range report.MigrationOverrides {
-		logger.Warn("Ordinary stream admitted WITHOUT finite bounds by a time-limited migration override",
-			"stream", o.Stream,
-			"owner", o.Owner,
-			"expires", o.Expires.Format(time.RFC3339),
-			"expires_in", o.Remaining.Round(time.Hour).String(),
-			"reason", o.Reason,
-			"hint", "readiness FAILS once this expiry passes; declare finite bounds before then")
-	}
-	for _, a := range report.Archival {
+	for _, a := range archival {
 		logger.Info("Ordinary stream is permanently unbounded by archival declaration",
 			"stream", a.Stream,
 			"owner", a.Owner,
 			"reason", a.Reason,
-			"hint", "permanent by contract, not a countdown; its only ceiling is the account tier limit")
+			"hint", "permanent by contract, not a countdown; its only ceiling is the account tier limit; "+
+				"the storage-observability service reports the stream's size")
 	}
-}
-
-// missingOverriddenStreamRemedy is returned when a migration override names a
-// stream that does not exist. It states the distinction the override rests on,
-// because an operator who reaches for one on a fresh deployment has almost
-// certainly mistaken it for a way to declare "unbounded".
-var missingOverriddenStreamRemedy = strings.Join([]string{
-	`a stream_migration_overrides entry is a time-limited BRIDGE for a stream that already exists and ` +
-		`predates the bounds requirement. There is nothing to bridge here.`,
-	`If this stream should be permanently unbounded, declare it in archival_streams (owner + reason) — ` +
-		`that is the classification for permanence. If it should be bounded, declare max_age, max_bytes ` +
-		`and discard on it. If you expected it to exist already, the override is masking that it is gone.`,
-}, "\n")
-
-// ExpiredMigrationOverrides returns every migration override whose expiry has
-// passed as of now, so a RUNNING instance can report a bridge that ended while it
-// was up.
-//
-// It exists because expiry is otherwise evaluated only at configuration validation
-// and at provisioning — both boot-time. An instance that started before the
-// deadline would otherwise run indefinitely past it with nothing saying so, and the
-// whole value of a bridge is that it ends.
-//
-// Enforcement stays at boot. This function REPORTS, and that split is deliberate:
-// the stream a lapsed override admits is still working, and taking a healthy fleet
-// out of service simultaneously because a calendar date passed would be a
-// self-inflicted outage over a hygiene failure. The refusal lands at the next boot,
-// which is when an operator can act on it anyway.
-//
-// A malformed override (no expiry, unparseable date) is NOT returned here: it is
-// rejected at validation and never reaches a running instance.
-func ExpiredMigrationOverrides(cfg *Config, now time.Time) []StreamMigrationOverrideStatus {
-	if cfg == nil || len(cfg.StreamMigrationOverrides) == 0 {
-		return nil
-	}
-
-	var expired []StreamMigrationOverrideStatus
-	for _, name := range slices.Sorted(maps.Keys(cfg.StreamMigrationOverrides)) {
-		override := cfg.StreamMigrationOverrides[name]
-		expires, err := parseOverrideExpiry(override.Expires)
-		if err != nil {
-			continue
-		}
-		if now.Before(expires) {
-			continue
-		}
-		expired = append(expired, StreamMigrationOverrideStatus{
-			Stream:  name,
-			Owner:   override.Owner,
-			Reason:  override.Reason,
-			Expires: expires,
-			// Negative: the bridge ended this long ago. The field is "time left", and
-			// a lapsed bridge has less than none — rendering it as zero would make an
-			// override that expired an hour ago indistinguishable from one expiring
-			// this instant.
-			Remaining: expires.Sub(now),
-		})
-	}
-	return expired
 }

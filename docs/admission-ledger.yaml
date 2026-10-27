@@ -2783,24 +2783,29 @@
   disposition: adapt
 - source_path: config/stream_bounds.go
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
-  consumer_purpose: stream bounds, exemptions and the declaration plan, held byte-equal to the pin
+  consumer_purpose: stream bounds, exemptions and the declaration plan
   destination: config/stream_bounds.go
-  contract: as at the pin (task ledger:check)
+  contract: as at the pin, less stream_migration_overrides (#362)
   dependencies_and_side_effects: see the config row
-  known_risks: none beyond the config row
+  known_risks: >-
+    Changed from the pin: the override types, sentinels, loop and ExpiredMigrationOverrides removed;
+    StreamExceptionReport replaced by a list of ArchivalStreamStatus; the now parameter dropped, so validation
+    reads no clock; the archival boot hint names the storage-observability service
   proving_tests: config/stream_bounds_test.go, config/stream_bounds_integration_test.go
   owner: "setup-04a-03-boot-config developer"
-  disposition: carry
+  disposition: adapt
 - source_path: config/stream_drift.go
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
-  consumer_purpose: drift detection and in-place repair of ordinary streams, held byte-equal to the pin
+  consumer_purpose: drift detection and in-place repair of ordinary streams
   destination: config/stream_drift.go
-  contract: as at the pin (task ledger:check)
+  contract: as at the pin, less stream_migration_overrides (#362)
   dependencies_and_side_effects: see the config row
-  known_risks: none beyond the config row
+  known_risks: >-
+    Changed from the pin: the override branch removed, and with it governedBounds, boundsGovernedBy and
+    declaresDiscard; drift compares all three fields directly
   proving_tests: config/stream_drift_test.go, config/stream_drift_integration_test.go
   owner: "setup-04a-03-boot-config developer"
-  disposition: carry
+  disposition: adapt
 
 # Change port-rulepack (PR #337, epic #9): pkg/rulepack ported as adapt ahead of its importers,
 # service and processor/rule (owner, 2026-10-20: Decision B, Q1 and Q2 yes).

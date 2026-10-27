@@ -31,7 +31,7 @@ Removal of `stream_migration_overrides` (#362; #423 closes with it). Owner rulin
     `component_manager.go:90-91`, `component_manager_lifecycle.go:24`, `component_manager_suite_test.go:93` and the
     header of `component_manager_supervisor_test.go:15-18`.
   - Gate: `go test -race ./service/` and `task verify`.
-- [ ] 2.2 The key goes, and validation returns the archival list (design D1, D2, D3 and D6, `design.md:33-96`,
+- [x] 2.2 The key goes, and validation returns the archival list (design D1, D2, D3 and D6, `design.md:33-96`,
   `:140-148`; Ledger, first three bullets). One compile unit: removing the override types breaks every reader of
   `StreamExceptionReport`, so the report type leaves in the same task.
   - Files: `config/config.go`, `config/stream_bounds.go`, `config/streams.go`, `config/stream_drift.go`, their tests

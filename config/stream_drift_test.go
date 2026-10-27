@@ -165,8 +165,8 @@ func TestReconcileStreamConfig_NoDriftWhenLiveMatchesDeclaration(t *testing.T) {
 
 // TestReconcileStreamConfig_UnlimitedSpellingsAreNotDrift is the perpetual-drift
 // guard: NATS reports an absent byte limit as -1 while a declaration spells
-// unlimited as 0, so a raw comparison would re-stamp every archival and bridged
-// stream on every boot forever.
+// unlimited as 0, so a raw comparison would re-stamp every archival stream on
+// every boot forever.
 func TestReconcileStreamConfig_UnlimitedSpellingsAreNotDrift(t *testing.T) {
 	observed := observedStream()
 	observed.MaxAge = 0
@@ -200,85 +200,6 @@ func TestReconcileStreamConfig_ClampsPreservedDuplicateWindowUnderRepairedMaxAge
 	assert.Equal(t, time.Minute, update.MaxAge)
 	assert.Equal(t, time.Minute, update.Duplicates,
 		"a preserved window above the repaired max_age must clamp, not be sent and rejected")
-}
-
-// ---------------------------------------------------------------------------
-// Governance — reconciling a field the declaration does not govern is restamping
-// ---------------------------------------------------------------------------
-
-// TestBoundsGovernedBy covers the three exemption classes. The migration-override
-// row is the load-bearing one: resolveBounds falls back to DiscardOld for a
-// policy the operator never wrote, and stamping that fallback onto a legacy
-// stream would have the bridge change the behavior it exists to preserve.
-func TestBoundsGovernedBy(t *testing.T) {
-	tests := []struct {
-		name string
-		decl streamDeclaration
-		want governedBounds
-	}{
-		{
-			name: "an ordinary stream governs all three because it must declare all three",
-			decl: streamDeclaration{cfg: StreamConfig{MaxAge: "24h", MaxBytes: 1024, Discard: StreamDiscardOld}},
-			want: governedBounds{maxAge: true, maxBytes: true, discard: true},
-		},
-		{
-			name: "archival governs all three: permanence IS the declaration",
-			decl: streamDeclaration{exemption: exemptArchival},
-			want: governedBounds{maxAge: true, maxBytes: true, discard: true},
-		},
-		{
-			name: "a bridge that declares nothing governs nothing",
-			decl: streamDeclaration{exemption: exemptMigrationOverride},
-			want: governedBounds{},
-		},
-		{
-			name: "a bridge governs exactly what it wrote",
-			decl: streamDeclaration{
-				exemption: exemptMigrationOverride,
-				cfg:       StreamConfig{MaxBytes: 1024},
-			},
-			want: governedBounds{maxBytes: true},
-		},
-		{
-			name: "an unrecognized discard spelling is not a declaration",
-			decl: streamDeclaration{
-				exemption: exemptMigrationOverride,
-				cfg:       StreamConfig{Discard: "oldest"},
-			},
-			want: governedBounds{},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.want, boundsGovernedBy(tt.decl))
-		})
-	}
-}
-
-// TestReconcileStreamConfig_BridgeLeavesUndeclaredBoundsAlone is the behavior
-// TestBoundsGovernedBy's override rows exist to protect, through the reconciler
-// itself: a legacy stream under a bridge keeps every bound its operator did not
-// re-declare.
-func TestReconcileStreamConfig_BridgeLeavesUndeclaredBoundsAlone(t *testing.T) {
-	observed := observedStream()
-	observed.MaxAge = 168 * time.Hour
-	observed.MaxBytes = 5 * 1024 * 1024
-	observed.Discard = jetstream.DiscardNew
-
-	decl := streamDeclaration{
-		name:      "OBSERVED",
-		source:    `stream_migration_overrides["OBSERVED"]`,
-		cfg:       StreamConfig{Subjects: []string{"observed.>"}, Storage: "memory"},
-		exemption: exemptMigrationOverride,
-	}
-
-	update, drifts := reconcileStreamConfig(decl, observed, declaredFor(t, decl), nil)
-
-	assert.Empty(t, drifts, "a bridge declares no bounds, so it drifts from none: %v", driftLabels(drifts))
-	assert.Equal(t, 168*time.Hour, update.MaxAge)
-	assert.Equal(t, int64(5*1024*1024), update.MaxBytes)
-	assert.Equal(t, jetstream.DiscardNew, update.Discard)
 }
 
 // ---------------------------------------------------------------------------

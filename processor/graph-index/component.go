@@ -66,6 +66,10 @@ type Component struct {
 	poolCancel context.CancelFunc
 	feeds      chan struct{}
 
+	// subscriptions are the query request subscriptions, one per verb the table in graph
+	// declares for graph-index (query.go), made last in start and drained first in cleanup.
+	subscriptions []*natsclient.Subscription
+
 	// Label and alias predicates, read from the vocabulary when the pool starts.
 	aliasPredicates map[string]int
 	namePredicates  map[string]int
@@ -227,8 +231,8 @@ func (c *Component) Start(ctx context.Context) error {
 }
 
 // start acquires what Start owns, in the order the write path needs (notes/4.2.md): the
-// follower, the index buckets, the pool, then the goroutines Stop joins. Nothing it acquires
-// before the run context needs releasing.
+// follower, the index buckets, the pool, the goroutines Stop joins, then the query
+// subscriptions. Nothing it acquires before the run context needs releasing.
 func (c *Component) start(ctx context.Context) error {
 	f, err := follower.Open(ctx, follower.Config{
 		Client:          c.natsClient,
@@ -278,7 +282,9 @@ func (c *Component) start(ctx context.Context) error {
 		wg.Wait()
 		close(feeds)
 	}()
-	return nil
+	// Last, so a request is served only once everything a handler reads is set; a failed
+	// subscription is the last step that can fail, and its rollback drains those made.
+	return c.subscribeQueries(ctx)
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does
@@ -289,12 +295,19 @@ func (c *Component) Stop(ctx context.Context) error {
 }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating
-// a partial start. The order is graph-ingest's (design D4): end the feeds' context and join
-// them, so nothing new is submitted; drain the pool with Shutdown while the run context is
-// still live, so work it accepted is written; then end the run context. A ctx that ends
+// a partial start. It drains the query subscriptions first, so no handler is running. Then
+// the order is graph-ingest's (design D4): end the feeds' context and join them, so nothing
+// new is submitted; drain the pool with Shutdown while the run context is still live, so work
+// it accepted is written; then end the run context. A ctx that ends
 // first returns its error with the handles kept, and the next Stop resumes; the handles are
 // cleared only once everything is released.
 func (c *Component) cleanup(ctx context.Context) error {
+	// Stop serving queries first: Drain returns once every running handler has returned.
+	for _, sub := range c.subscriptions {
+		if err := sub.Drain(ctx); err != nil {
+			return err
+		}
+	}
 	if c.runCancel != nil {
 		c.runCancel()
 	}
@@ -316,6 +329,6 @@ func (c *Component) cleanup(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.runCancel, c.poolCancel, c.feeds, c.pool, c.coalescer = nil, nil, nil, nil, nil
+	c.runCancel, c.poolCancel, c.feeds, c.pool, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil
 	return nil
 }

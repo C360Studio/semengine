@@ -51,6 +51,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if c.feeds != nil {
 		held = append(held, "feeds")
 	}
+	if len(c.subscriptions) > 0 {
+		held = append(held, "query subscriptions")
+	}
 	return lifecycletest.Observation{Unresolved: held}
 }
 
@@ -110,7 +113,7 @@ func TestGraphIndexLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "pool cancel", "pool lanes", "coalescer", "feeds"}
+		want := []string{"run cancel", "pool cancel", "pool lanes", "coalescer", "feeds", "query subscriptions"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}

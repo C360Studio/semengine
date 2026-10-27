@@ -28,7 +28,7 @@ passes on a clean tree at its commit (#171).
   `TestFollowerSnapshotEndSetsBootstrapTarget`, `TestFollowerLatchesResetOnUnreadableSnapshotValue`,
   `TestFollowerDeclaresLostFeed`), the lost-feed test shown failing against the pin's loop shape first (`notes/2.2.md`).
   Gate: in 3.2.
-- [ ] 2.3 graph-index tests of design D11 (with `TestLatchBootstrap_ContinuousWrite`, `notes/3.2.md`), the ported pin
+- [x] 2.3 graph-index tests of design D11 (with `TestLatchBootstrap_ContinuousWrite`, `notes/3.2.md`), the ported pin
   tests rewritten without sleeps, skips, `t.Parallel` in integration files, the six writer back doors and
   `subscribeForRequests`; each dropped pin test named with its reason in `notes/2.3.md`. Gate: in 4.x.
 
@@ -48,7 +48,7 @@ passes on a clean tree at its commit (#171).
   as 4.1 plus `task test:integration -- ./processor/graph-index`.
 - [x] 4.3 Lifecycle on `component.Lifecycle` with the follower; Health and DataFlow (design D4). Gate: as 4.2 and
   `TestGraphIndexLifecycleSuite`.
-- [ ] 4.4 Query handlers from the verb table, `QueryReady`, the reply envelope (design D5, D6). Gate: as 4.2 and
+- [x] 4.4 Query handlers from the verb table, `QueryReady`, the reply envelope (design D5, D6). Gate: as 4.2 and
   `TestQueryDuringStartupReplayIsIndexNotReady`, `TestGraphIndexServesExactlyTheDeclaredVerbs`.
 - [ ] 4.5 The alias index as ruled (comment 6426254115, item 3): no fix here; #415 linked from the PR without a
   closing keyword, and the alias read's exception in the spec names it (design D12). Gate: the link read back.

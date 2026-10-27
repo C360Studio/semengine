@@ -2044,14 +2044,20 @@
     graph/kvcatalog (simplify-04a-17-graph-kvcatalog D1-D5): KVCatalog is framework API for
     products (graph/README.md) and returns a copy of the catalog table, built once
     (TestKVCatalogReturnsACopy); the catalog's refusals name component kvcatalog;
-    EnsureCatalogRetentionClean refuses a nil context as invalid; IsKVTombstone moved to natsclient
+    EnsureCatalogRetentionClean refuses a nil context as invalid; IsKVTombstone moved to natsclient;
+    and, in setup-04a-04-graph-roots-graph-index (PR #414): (15) QueryResponse[T] and NewQueryResponse
+    (query_response.go) are the success reply of graph-index's verbs, JSON data, indexed_revision,
+    producer and timestamp, and NewQueryResponse refuses an empty producer (design D6, ruling P);
+    (16) QueryVerbs adds graph-index's eight verbs on graph.index.query.* (outgoing, incoming, alias,
+    predicate, predicateList, predicateStats, predicateCompound, byName) with Responder
+    ResponderGraphIndex (graph/query_verbs.go; design D6, #106)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
   known_risks: >-
-    no context roots. Deferred to change 4: QueryResponse/NewQueryResponse/MinRevisionField aliases
-    (ruled P, design D18) and the generation marker beside indexed_revision so a revision from a
-    recreated bucket is detectable (#103 stays open for change 4; ADR-109). pkg/fusion (change 5)
+    no context roots. Still deferred: MinRevisionField, with the graph.query.* request types graph-query
+    brings (PR 9; ruled P, design D18), and the generation marker beside indexed_revision so a revision
+    from a recreated bucket is detectable (#103 stays open; ADR-109). pkg/fusion (change 5)
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
@@ -2060,7 +2066,8 @@
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
     graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
     graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
-    internal/harness/contract/graphtransport_test.go
+    graph/query_response_test.go (TestQueryResponseCarriesIndexedRevisionAndProducer,
+    TestNewQueryResponseRefusesEmptyProducer), internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2087,18 +2094,27 @@
     bucket or an empty key; EnsureBucket removed, producers call kvcatalog.EnsureCatalogBucket; (9)
     NewGauges takes the Prometheus subsystem; ProducerNames, MetricNames and the BucketGraphStatus
     alias removed (simplify-04a-15-graph-readiness D1-D5); (10) Publish and WaitForFirst return an
-    error for a nil ctx, Publish before any write (readiness-nil-context, #297)
+    error for a nil ctx, Publish before any write (readiness-nil-context, #297); and, in
+    setup-04a-04-graph-roots-graph-index (PR #414): (11) ComputeIndexStatus(IndexStatusInputs) projects a
+    watermark floor, a target revision, a stuck verdict, the floor's commit time and a failed count into
+    the envelope (ready, lag, state building, ready or degraded, staleness), as the pin's
+    graph.ComputeIndexStatus does, without the legacy fields; (12) NewRevisionGauges(subsystem) is
+    NewGauges plus the indexed_revision and target_revision gauges (a constructor in place of the pin's
+    WithRevisionGauges option)
   dependencies_and_side_effects: >-
     graph, metric, natsclient (in-set); nats.go/jetstream,
     prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
   known_risks: >-
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
-    ADR-109 so Health() derives from nothing in the envelope). ComputeIndexStatus and
-    WithRevisionGauges deferred to change 4 with graph-index (ruled P, design D16). Reading.Raw
+    ADR-109 so Health() derives from nothing in the envelope). The pin's GaugeOption
+    and WithRevisionGauges are not ported (one option, one caller; design D10). Reading.Raw
     stays for fusion's port (#110, ADR-109)
   proving_tests: >-
     graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
-    backlog_status_test.go; the envelope's JSON in graph/index_status_test.go
+    backlog_status_test.go; the envelope's JSON in graph/index_status_test.go;
+    graph/readiness/index_status_test.go (TestComputeIndexStatus_Staleness,
+    TestComputeIndexStatus_PreExistingFieldsUnchanged, TestComputeIndexStatus_FailedCountDegrades),
+    gauges_test.go (TestRevisionGaugesExportTheRevisions, TestRevisionGaugesWriteTheRegisteredCollector)
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -2138,8 +2154,9 @@
 - source_path: pkg/dispatch
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    the keyed worker pool graph-ingest runs its ingest lanes on; moved to internal/dispatch because
-    no consumer or public signature names it (design D1)
+    the keyed worker pool graph-ingest and graph-index run their lanes on; moved to internal/dispatch
+    because no consumer or public signature names it (design D1; graph-index adopts it in
+    setup-04a-04-graph-roots-graph-index, design D7)
   destination: internal/dispatch
   contract: >-
     KeyedPool per-key ordering and lanes as at the pin, except: Stop(ctx) becomes Shutdown(ctx), the
@@ -3333,7 +3350,8 @@
     ascending and the watermark does not check it: a lower revision observed after catch-up lowers the floor and
     pairs it with a newer commit time, as at the pin; the covered commit time may be older than the newest covered
     revision's, never newer; "gh#590" in the package comment is SemStreams' issue; no class:port-refactor issue
-    exists for the package; no importer until graph-index; a known gap in the proving tests, tracked as #408:
+    exists for the package; importers: graph/follower holds the watermark in setup-04a-04-graph-roots-graph-index and graph-embedding
+    is not ported yet; a known gap in the proving tests, tracked as #408:
     TestWatermark_ConcurrentReadersAndWriters can pass without the reader observing writer progress
   proving_tests: >-
     internal/revlag/watermark_test.go (the pin's 13 tests, TestWatermark_ObservedIsHighestDelivered,
@@ -3341,4 +3359,158 @@
     TestWatermark_ConcurrentReadersAndWriters, TestWatermark_RetentionTracksInFlight, TestPropWatermarkHistory
     against internal/revlag/pinref_test.go, the pin's code)
   owner: setup-04a-04-graph-roots-revlag developer
+  disposition: adapt
+
+# Change setup-04a-04-graph-roots-graph-index (PR #414, epic #9): processor/graph-index ported as adapt, with the new
+# graph/follower and the pin ADRs that govern its index layouts (owner ruling, PR #414 comment 6426254115: one pull
+# request, with a waiver by count for about 4,660 pin lines).
+
+- source_path: processor/graph-index
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the graph's relationship indexes: watches ENTITY_STATES through graph/follower, maintains OUTGOING_INDEX,
+    INCOMING_INDEX, ALIAS_INDEX, PREDICATE_INDEX and NAME_INDEX, and answers the eight graph.index.query.* verbs;
+    semsource, semconnect and semteams name it in their configurations (design D1)
+  destination: processor/graph-index
+  contract: >-
+    index layouts, owner reconciliation (ADR-077, ADR-078), the revision coalescer and the query handlers as at the
+    pin, with these adaptations (specs graph-index, entity-state-follower, graph-readiness,
+    graph-transport-boundary, lifecycle-suite; design D3-D10, D12): (1) the ENTITY_STATES watch, snapshot replay,
+    reset latch, lost-feed state, watermark and readiness envelope move to graph/follower, and graph-index plugs in
+    through Deliver, Failed, Complete and Reset (D3); (2) lifecycle through component.Lifecycle: a second Start is
+    refused with errs.ErrAlreadyStarted, the run context is not a child of Start's context, Stop drains accepted pool
+    work and writes it before the run context ends, and Health's Healthy ignores the error count (D4; ADR-108,
+    ADR-109 D2, ADR-113); (3) DataFlow counts one input per delivered ENTITY_STATES entry, not one per write (D4);
+    (4) every one of the eight verbs refuses with transient index_not_ready during startup replay and while the
+    feed is lost, and with fatal graph_state_reset_required after a reset (D5; ADR-109 D1; owner ruling item 2);
+    (5) every reply is a graph.QueryResponse naming producer graph-index and indexed_revision, the follower's floor
+    read before the handler's first bucket read; the alias reply carries the same revision and promises nothing
+    about which aliases resolve (D6; #103); (6) query subjects are bound from graph.QueryVerbs and Start fails on a
+    declared verb with no handler (D6); (7) the keyed pool is internal/dispatch.KeyedPool, keyed_dispatcher.go does
+    not port (D7); (8) strict configuration: an unknown key is refused naming it, batch_size is refused, workers 0
+    means one lane and 1 to 16 are accepted, a configuration with no ports takes the default ports and a ports block
+    that is present is used as written (ruling K), and an input other than a kv-watch of every ENTITY_STATES key
+    with no history is refused (D9; #424); (9) metrics register through metric.RegisterOrGet on the injected
+    registry under the semengine namespace, graph_index subsystem, and aliases_skipped_total and
+    query_rows_skipped_total are new (D10; #68, #426, #430); (10) the alias index keeps the pin's behaviour, a
+    dropped or changed alias and a deleted entity's alias keep resolving, until #415 (D12; owner ruling item 3)
+  dependencies_and_side_effects: >-
+    component, graph, graph/follower, graph/kvcatalog, graph/readiness, internal/dispatch, metric, natsclient,
+    pkg/errs, pkg/types, vocabulary (in-set); nats.go/jetstream, prometheus/client_golang; KV reads and writes on the
+    five index buckets and reads on ENTITY_STATES, eight request subscriptions, one keyed lane pool, a coalescer and a
+    repair loop started in Start and released by Stop
+  known_risks: >-
+    G8 (#415): the alias read is the one declared exception to [A] -> [B] -> [] replacement; ENTITY_STATES keeps
+    History 1, so a revision overwritten before the follower reads it is never indexed; lastProjections keeps one
+    string per entity in memory for reindex_events_total (#108's instrument); the index is rebuilt on every start,
+    so queries are refused with index_not_ready for the replay's length (#108 stays open; the one load comparison is
+    in openspec notes/1.6.md); kept optional pin shapes: S4 (the owned-bucket set spelled in five places), S6 (fixed 5 s
+    handler deadlines, 10 s for predicateList) and S8 (two narrow reader interfaces); S5's map intermediate became
+    []graph.OutgoingEntry. Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
+    at boot until the line is deleted; semteams' published schema lists it. Removed (design D8): the dead exported and
+    test-only writers, subscribeForRequests (#186), batch_size, reindexTotal and reindexUnchanged, the raceEnabled
+    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree
+  proving_tests: >-
+    processor/graph-index/config_test.go (TestUnknownConfigKeyIsRefused, TestConfigWorkersZeroMeansOneLane,
+    TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
+    TestConfigRefusesInputsTheFollowerDoesNotRead), factory_test.go, metrics_test.go, lifecycle_test.go,
+    query_test.go, revision_coalescer_test.go, index_integration_test.go (TestIndexReplacementThroughEveryIndex,
+    TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestNoncanonicalValueLatchesResetAndHoldsItsRevision,
+    TestUnsafeAliasSkipIsLoggedAndCounted), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
+    TestStopWritesAcceptedWork, TestSecondStartIsRefused, TestStartContextEndStopsNothing,
+    TestHealthIgnoresErrorCountAndTracksStuckStates, TestLatchBootstrap_ContinuousWrite), query_integration_test.go
+    (TestGraphIndexServesExactlyTheDeclaredVerbs, TestQueryDuringStartupReplayIsIndexNotReady,
+    TestQueryResponseCarriesIndexedRevisionAndProducer, TestQueriesAreRefusedWhileTheFeedIsLost,
+    TestQueryReadsImplementReplacement, TestMaximumLengthIDsAndPredicatesThroughPublicReads,
+    TestMalformedIndexRowsAreSkippedLoggedAndCounted); the pin tests dropped, each with its reason, are listed in
+    openspec/changes/setup-04a-04-graph-roots-graph-index/notes/2.3.md
+  owner: setup-04a-04-graph-roots-graph-index developer
+  disposition: adapt
+
+- source_path: processor/graph-index/component.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the one follower of ENTITY_STATES that a projection owner plugs into: the pin's graph-index watch loop
+    (watchEntityStates, statusMetricsLoop) and watermark.go's envelope computation, written once for the owners
+    ADR-108 names (graph-index first; the other adopters later). Enters as its own row because the code is new in
+    the tree and its source file is graph-index's, with a destination other than the graph-index row's
+    (docs/provenance.md rule 4)
+  destination: graph/follower
+  contract: >-
+    specs entity-state-follower and graph-readiness; design D3: Open waits a bounded number of attempts for
+    ENTITY_STATES and returns a transient error naming the bucket, opens the readers, ensures GRAPH_STATUS and
+    registers the gauges on the injected registry; Run follows one WatchAll on the caller's goroutine, observes each
+    revision in the watermark before calling Deliver, decodes each snapshot value with graph.UnmarshalEntityState
+    (a refusal latches reset and the entry is still delivered), fixes the bootstrap target at the snapshot's end
+    marker, publishes the envelope at once and then every readiness.DefaultHeartbeat from a goroutine it joins, and
+    returns with no watcher left; Complete, Failed and Reset are the plug-in's three outcomes (ADR-108 D4 as
+    changed: Deliver returns nothing because graph-index's apply is asynchronous); the lost-feed state is set when
+    WatchAll fails, when Updates() closes under a live Run context, or when the backing stream's creation time
+    differs from the one Open read, and holds until the process restarts (owner ruling item 2); QueryReady answers
+    nil or a classified refusal (reset: fatal graph_state_reset_required; lost feed, unresolved writes, incomplete
+    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0); the stuck-watermark
+    detector reads degraded in the envelope only
+  dependencies_and_side_effects: >-
+    graph, graph/kvcatalog, graph/readiness, internal/resource, internal/revlag, metric, natsclient, pkg/errs
+    (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
+    and one heartbeat goroutine, all ended and joined by Run's return
+  known_risks: >-
+    a restored stream can keep the creation time Open read, so a delete and restore inside one stall of the watch is
+    not declared (not probed; stated in graph/follower's package comment); how long a KV watch stalls after a
+    reconnect (about 20 s) and when a deleted bucket closes it (about 18 s) are nats.go v1.54.0 timings from two
+    probes, PR #414 comments 6425769680 (restart) and 6426443564 (delete and recreate), not promised; ENTITY_STATES
+    keeps History 1, so an overwritten revision is never delivered, which the watermark tolerates because it floors
+    over observed revisions; graph-ingest reads the stream creation time in its own unexported method and the
+    follower reads it from the bucket status it already reads, one shared reader is left to #216's design
+  proving_tests: >-
+    graph/follower/follower_test.go (TestOpenRefusesMissingInputs), follower_integration_test.go
+    (TestFollowerOpenRefusesAbsentBucket, TestFollowerRunReturnsAndLeavesNothing, TestFollowerConcurrentQueryReady,
+    TestFollowerPublishesOnEveryHeartbeat, TestFollowerSnapshotEndSetsBootstrapTarget,
+    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed)
+  owner: setup-04a-04-graph-roots-graph-index developer
+  disposition: adapt
+
+- source_path: docs/adr/074-canonical-predicate-contract.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for the canonical predicate contract and the sticky graph_state_reset_required state,
+    which graph/follower and processor/graph-index implement (lines 69-71); carried with the graph-index port
+  destination: docs/adr/074-canonical-predicate-contract.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's decision text; a port note added under the title naming which of its records and code are
+    ported and where the sticky reset lives
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-graph-index technical writer
+  disposition: adapt
+
+- source_path: docs/adr/077-bounded-owner-discovery-and-incoming-ownership.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for graph-index's bounded owner discovery, fixed token positions and source-owned
+    INCOMING keys, which processor/graph-index implements; carried with the graph-index port
+  destination: docs/adr/077-bounded-owner-discovery-and-incoming-ownership.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    the status paragraph is rewrapped for markdownlint's line length, the words unchanged; a port note added under
+    the title says the evidence runs and the runbook it cites are SemStreams' and not ported
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-graph-index technical writer
+  disposition: adapt
+
+- source_path: docs/adr/078-raw-canonical-predicate-membership-keys.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for the raw predicate3.entity6 PREDICATE_INDEX layout and the retirement of
+    PREDICATE_CATALOG, which processor/graph-index implements; carried with the graph-index port
+  destination: docs/adr/078-raw-canonical-predicate-membership-keys.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's decision text; a port note added under the title says its server and SDK pins are
+    SemStreams' and have not been rerun here
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-graph-index technical writer
   disposition: adapt

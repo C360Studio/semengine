@@ -6,11 +6,79 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
+// IndexStatusInputs are the observations ComputeIndexStatus projects into the
+// readiness envelope of a revision-lag producer (graph-index's follower). It is a
+// struct rather than positional arguments because two inputs are time.Time
+// (IndexedAt, Now), and adjacent same-typed parameters swap silently.
+type IndexStatusInputs struct {
+	// Indexed is the watermark's floor: every delivered ENTITY_STATES revision at
+	// or below it has been applied.
+	Indexed uint64
+	// Target is the ENTITY_STATES stream LastSeq the producer must reach, read at
+	// compute time.
+	Target uint64
+	// Stuck is the producer's own stuck-watermark verdict; it projects to degraded
+	// when not ready.
+	Stuck bool
+	// IndexedAt is the KV commit time of the newest revision Indexed covers. ZERO
+	// means "not computable": the projection then leaves StalenessMs at 0 rather
+	// than reporting a fresh-looking view.
+	IndexedAt time.Time
+	// Now is the compute instant; the zero value means time.Now().
+	Now time.Time
+	// FailedCount is the number of entries the producer currently holds in a failed
+	// state. Above zero it projects to degraded before the ready branch: a producer
+	// caught up over failures is covered (Ready stays accurate) but not healthy
+	// (ADR-085).
+	FailedCount uint64
+}
+
+// ComputeIndexStatus builds the readiness envelope of a revision-lag producer
+// (ADR-066, with ADR-083's age-of-view staleness) from its watermark floor, the
+// target revision, its stuck verdict, the floor's commit time and its failed count.
+//
+//   - Ready = Target > 0 && Indexed >= Target.
+//   - Lag = Target - Indexed, never below zero.
+//   - State = degraded when FailedCount > 0, else ready when Ready, else degraded
+//     when Stuck, else building.
+//   - StalenessMs = 0 when Ready or IndexedAt is unknown, else now-IndexedAt with
+//     a 1ms floor.
+//
+// The staleness subtraction is the one place a NATS server commit time meets the
+// local clock; under skew it is off by the skew, which ADR-083 D3 accepts.
+func ComputeIndexStatus(in IndexStatusInputs) graph.IndexStatusResponse {
+	ready := in.Target > 0 && in.Indexed >= in.Target
+	var lag uint64
+	if in.Target > in.Indexed {
+		lag = in.Target - in.Indexed
+	}
+	state := graph.IndexStateBuilding
+	switch {
+	case in.FailedCount > 0:
+		// First and unconditional: failed entries make the index known-incomplete
+		// whatever its coverage. Ready below stays coverage-accurate.
+		state = graph.IndexStateDegraded
+	case ready:
+		state = graph.IndexStateReady
+	case in.Stuck:
+		state = graph.IndexStateDegraded
+	}
+	return graph.IndexStatusResponse{
+		Ready:           ready,
+		State:           state,
+		IndexedRevision: in.Indexed,
+		TargetRevision:  in.Target,
+		Lag:             lag,
+		StalenessMs:     stalenessMs(ready, in.IndexedAt, in.Now),
+		FailedCount:     in.FailedCount,
+	}
+}
+
 // BacklogStatusInputs are the observations ComputeBacklogStatus projects into the
-// readiness envelope. It is SEPARATE from the inputs of graph-index's revision-lag
-// projection on purpose: the two producer shapes have disjoint inputs (a revision
-// watermark vs. a message backlog), and merging them would make mutually-exclusive
-// fields co-resident, an invalid state made representable.
+// readiness envelope. It is SEPARATE from IndexStatusInputs on purpose: the two
+// producer shapes have disjoint inputs (a revision watermark vs. a message backlog),
+// and merging them would make mutually-exclusive fields co-resident, an invalid
+// state made representable.
 type BacklogStatusInputs struct {
 	// Outstanding is total un-applied work across every bound consumer, IN MESSAGES —
 	// the sum of NumPending (server-side, undelivered) and NumAckPending

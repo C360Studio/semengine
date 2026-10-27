@@ -153,9 +153,10 @@ Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams
   complete observation (`processor/graph-ingest/readiness.go`).
 - Prove the longest supported key or filter and its exact match set against a real NATS server (`natsfixture`), as
   `natsclient/kv_key_contract_integration_test.go` does. Arithmetic and representative data are not proof.
-- For the indexes graph-index brings in change 4 (none is written in this tree yet): a token's position in an index
-  key belongs to a named owner; prove the owner and the exact forward and owner filters before relying on it. Every
-  index a query can see implements replacement, including `[A] -> [B] -> []`, tested through every public read of it.
+- For graph-index's indexes (`processor/graph-index`; ADR-077, ADR-078): a token's position in an index key belongs
+  to a named owner; prove the owner and the exact forward and owner filters before relying on it. Every index a query
+  can see implements replacement, including `[A] -> [B] -> []`, tested through every public read of it
+  (`TestQueryReadsImplementReplacement`). The alias read is the one declared exception, until issue #415 is fixed.
 
 ## Exported-surface contracts
 

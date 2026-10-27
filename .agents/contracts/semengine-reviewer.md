@@ -223,9 +223,10 @@ Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams
   owner requires.
 - The longest supported key or filter and its exact match set are proven against a real NATS server; unit
   arithmetic or representative data is not enough.
-- For a change to an index (graph-index arrives in change 4): each fixed token position matches its semantic owner,
-  each forward and owner filter has its longest-key and exact-match proof, `[A] -> []` is checked where a query can
-  see it, and `[A] -> [B] -> []` across every read surface the change affects.
+- For a change to an index (graph-index's are in `processor/graph-index`): each fixed token position matches its
+  semantic owner, each forward and owner filter has its longest-key and exact-match proof, `[A] -> []` is checked
+  where a query can see it, and `[A] -> [B] -> []` across every read surface the change affects. The alias read is
+  the one declared exception, until issue #415 is fixed.
 
 ## High-signal runtime review
 

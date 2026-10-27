@@ -33,10 +33,13 @@ transport"; `TestGraphImportsNoTransport`).
   authority read, and `IndexStatusResponse`, the readiness envelope a producer writes to `GRAPH_STATUS`. Its state
   field is an `IndexState`, one of the four `IndexState*` constants that `IndexStates()` lists. The computation that
   fills the envelope is in `graph/readiness`.
-- **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped.
-- **The verb table.** `QueryVerbs` declares the request/reply verbs graph-ingest answers (`entity`, `batch` and
-  `prefix` on `graph.ingest.query.*`), each with its subject and responder; `QueryVerbs`' doc comment names each
-  verb's request and reply types.
+- **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
+  are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
+  and the answering component in `producer`; `NewQueryResponse` refuses an empty producer.
+- **The verb table.** `QueryVerbs` declares the request/reply verbs, each with its subject and responder:
+  graph-ingest's `entity`, `batch` and `prefix` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
+  `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
+  `graph.index.query.*`; `QueryVerbs`' doc comment names each verb's request and reply types.
 
 ### Entity Identification
 

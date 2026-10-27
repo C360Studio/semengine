@@ -6,14 +6,12 @@ import (
 	"cmp"
 	"context"
 	"encoding/json"
-	"errors"
 	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -22,7 +20,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/internal/harness/prochost"
@@ -57,9 +54,6 @@ const (
 	settlementObject    = "applied once"
 )
 
-// errGuardWriteRefused is the durable-record failure test's fault on the applied-sequence write.
-var errGuardWriteRefused = errors.New("injected: applied-sequence write refused")
-
 // TestHelperProcess runs a settlement helper in a child the test started with prochost.Start; in a normal run each
 // Helper call returns at once.
 func TestHelperProcess(t *testing.T) {
@@ -79,7 +73,7 @@ func runSettlementHelper(t *testing.T, holdApplied bool) {
 	if holdApplied {
 		handler = newPauseOnRecord("Entity ingested") // nothing releases it
 	}
-	startSettlementIngest(ctx, t, client, nil, handler)
+	startSettlementIngest(ctx, t, client, handler)
 	ready := os.Getenv(helperReady)
 	require.NoError(t, os.WriteFile(ready+".tmp", nil, 0o600))
 	require.NoError(t, os.Rename(ready+".tmp", ready))
@@ -89,12 +83,9 @@ func runSettlementHelper(t *testing.T, holdApplied bool) {
 }
 
 // startSettlementIngest starts graph-ingest with its default configuration on client under the c360.test authority,
-// as startIngestOn does. With handler set, it is the handler of graph-ingest's logger. With wrap set, the applied-sequence bucket Start acquired is replaced by wrap(bucket) through
-// the consumeStream seam: on Start's goroutine, after the bucket is acquired and before the one stream input's consumer
-// binds. No input reaches a lane before the replacement, and the delivery that hands inputs to the lanes starts after
-// it, so the lanes read the field without a race.
+// as startIngestOn does. With handler set, it is the handler of graph-ingest's logger.
 func startSettlementIngest(ctx context.Context, t *testing.T, client *natsclient.Client,
-	wrap func(jetstream.KeyValue) jetstream.KeyValue, handler slog.Handler) *graphIngestTestOwner {
+	handler slog.Handler) *graphIngestTestOwner {
 	t.Helper()
 	cfgJSON, err := json.Marshal(DefaultConfig())
 	require.NoError(t, err)
@@ -109,18 +100,6 @@ func startSettlementIngest(ctx context.Context, t *testing.T, client *natsclient
 	defer owner.provisionalFinish(ctx, t)
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
-	if wrap != nil {
-		c.consumeStream = func(ctx context.Context, port natsclient.PortConsumerContext,
-			cfg natsclient.StreamConsumerConfig, handler func(context.Context, jetstream.Msg),
-		) (jetstream.ConsumeContext, error) {
-			bucket, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketGraphIngestAppliedSeq)
-			if err != nil {
-				return nil, err
-			}
-			c.ingestGuardBucket = c.natsClient.NewKVStore(wrap(bucket))
-			return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, handler)
-		}
-	}
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 	owner.transfer()
 	return owner
@@ -285,95 +264,6 @@ func TestIntegration_Settlement_ProcessKilledBetweenApplyAndAck(t *testing.T) {
 		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, js) },
 		func(d ingestDelivery) bool { return d.AckFloor >= seq && d.AckPending == 0 })
 	require.GreaterOrEqual(t, delivery.Deliveries, uint64(2), "the input must have been delivered again")
-	_, err = guardRecords.Get(ctx, guardKey)
-	require.NoError(t, err, "the acknowledgement must follow the input's applied-sequence record")
-	require.Equal(t, applied, graphState(ctx, t, entities),
-		"the graph after the redelivery must equal the graph after one application")
-}
-
-// refusedGuardWrite is the durable-record failure test's applied-sequence bucket: a FaultKV whose Put fault refuses
-// one write. The refused write clears the fault, reports itself on refused, and returns only once the test closes
-// release, so the test inspects the broker while the input is applied and its record refused. One refusal, not a
-// fault held until the test clears it: graph-ingest's consumer delivers an input at most three times (MaxDeliver,
-// component.GetConsumerConfig's default) and a negative acknowledgement asks for the next delivery at once, so a fault
-// cleared from outside would race the delivery limit.
-type refusedGuardWrite struct {
-	*natsfixture.FaultKV
-	refused chan struct{}
-	release chan struct{}
-}
-
-func (b *refusedGuardWrite) Put(ctx context.Context, key string, value []byte) (uint64, error) {
-	revision, err := b.FaultKV.Put(ctx, key, value)
-	if errors.Is(err, errGuardWriteRefused) {
-		b.FailBefore(natsfixture.KVPut, nil)
-		close(b.refused)
-		<-b.release
-	}
-	return revision, err
-}
-
-// TestIntegration_Settlement_FailedGuardWriteIsRedelivered holds graph-ingest-recovery, "Settlement order", scenario
-// "Durable record fails" (design D8, row "Settlement (Q18)"), on the fixture broker: the entity write succeeds, the
-// write of its applied-sequence record fails (FaultKV.FailBefore), and the input is not acknowledged and is delivered
-// again. The redelivery's record is written, the redelivery is acknowledged, and the graph is as one application left
-// it.
-func TestIntegration_Settlement_FailedGuardWriteIsRedelivered(t *testing.T) {
-	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
-	defer cancelOperation()
-	const (
-		entityID = "c360.test.wire.settlement.entity.002"
-		guardKey = "c360.test.wire.settlement.entity.002/ENTITY" // entity ID, "/", stream name
-	)
-
-	client := newFixtureClient(t, entityStream)
-	js, err := client.JetStream()
-	require.NoError(t, err)
-
-	var guard *refusedGuardWrite
-	owner := startSettlementIngest(ctx, t, client, func(bucket jetstream.KeyValue) jetstream.KeyValue {
-		guard = &refusedGuardWrite{
-			FaultKV: natsfixture.NewFaultKV(bucket), refused: make(chan struct{}), release: make(chan struct{}),
-		}
-		guard.FailBefore(natsfixture.KVPut, errGuardWriteRefused)
-		return guard
-	}, nil)
-	defer owner.finish(ctx, t)
-	require.NotNil(t, guard, "Start must have bound the stream input through the seam")
-	var releaseOnce sync.Once
-	releaseRefused := func() { releaseOnce.Do(func() { close(guard.release) }) }
-	defer releaseRefused() // before owner.finish: Stop must not wait on a held write
-	entities, err := js.KeyValue(ctx, graph.BucketEntityStates)
-	require.NoError(t, err)
-	guardRecords, err := js.KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
-	require.NoError(t, err)
-	seq := publishTriples(ctx, t, client, entityID, message.Triple{
-		Subject: entityID, Predicate: settlementPredicate, Object: settlementObject, Timestamp: fixtureTime, Confidence: 1.0,
-	})
-
-	refusalCtx, cancelRefusal := context.WithTimeout(ctx, settlementApplyBound)
-	defer cancelRefusal()
-	select {
-	case <-guard.refused:
-	case <-refusalCtx.Done():
-		t.Fatalf("graph-ingest made no applied-sequence write within %s", settlementApplyBound)
-	}
-	_, err = entities.Get(ctx, entityID)
-	require.NoError(t, err, "the entity write must precede the applied-sequence write")
-	delivery, err := ingestConsumer(ctx, js)
-	require.NoError(t, err)
-	require.Equal(t, uint64(1), delivery.Deliveries, "the input must have been delivered once")
-	require.Less(t, delivery.AckFloor, seq, "the input must not be acknowledged while its record is refused")
-	require.Equal(t, 1, delivery.AckPending, "the input must be pending acknowledgement")
-	applied := graphState(ctx, t, entities)
-	requirePublishedStatementOnce(t, applied[entityID])
-
-	releaseRefused()
-	delivery = awaitSettlement(ctx, t, nil, "the redelivery's acknowledgement", settlementApplyBound,
-		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, js) },
-		func(d ingestDelivery) bool { return d.AckFloor >= seq && d.AckPending == 0 })
-	require.Equal(t, uint64(2), delivery.Deliveries, "the input must have been delivered again, once")
-	require.Equal(t, 1, guard.Calls()[natsfixture.KVPut], "only the redelivery's record write must reach the bucket")
 	_, err = guardRecords.Get(ctx, guardKey)
 	require.NoError(t, err, "the acknowledgement must follow the input's applied-sequence record")
 	require.Equal(t, applied, graphState(ctx, t, entities),

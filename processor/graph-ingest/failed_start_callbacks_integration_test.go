@@ -6,10 +6,8 @@ package graphingest
 // fails and returns no handle, so a failed Start's rollback has nothing to drain or join for
 // it. A request handler refuses before Start completes (graph-transport-boundary,
 // "graph-ingest refuses request work until Start completes"); a real request reaches it
-// while a real Start is held, then is served once Start completes. The tests below it run a
-// stream callback inside a real Start on a fixture broker and check that one that runs after
-// the rollback Naks its message (graph-ingest-recovery, "Settlement order", "A delivery
-// after a failed consumer setup").
+// while a real Start is held, then is served once Start completes. A stream input that
+// reaches its lane after the rollback is Nak'd (TestInputLaneNaksAfterFailedStartRollback).
 
 import (
 	"context"
@@ -17,48 +15,19 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/message"
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
-	"github.com/nats-io/nats.go/jetstream"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // failedStartEntityID is under the fixture deployment's authority (testDeploymentOrg,
 // testDeploymentPlatform), so every lane accepts it.
 const failedStartEntityID = "c360.platform.robotics.gcs.drone.b2"
-
-// awaitClosed waits for ch to close, failing the test when ctx ends first.
-func awaitClosed(ctx context.Context, t *testing.T, ch <-chan struct{}, what string) {
-	t.Helper()
-	select {
-	case <-ch:
-	case <-ctx.Done():
-		t.Fatalf("%s: %v", what, ctx.Err())
-	}
-}
-
-// heldMetadataMsg is a streamLaneMsg whose Metadata blocks until release is closed. entered
-// closes when the first call is made.
-type heldMetadataMsg struct {
-	*streamLaneMsg
-	enterOnce sync.Once
-	entered   chan struct{}
-	release   chan struct{}
-}
-
-func (m *heldMetadataMsg) Metadata() (*jetstream.MsgMetadata, error) {
-	m.enterOnce.Do(func() { close(m.entered) })
-	<-m.release
-	return m.streamLaneMsg.Metadata()
-}
 
 // TestRequestBeforeStartCompletesIsRefused holds graph-transport-boundary, "graph-ingest
 // refuses request work until Start completes", scenarios "A query before Start completes"
@@ -231,195 +200,5 @@ func TestRequestBeforeStartCompletesIsRefused(t *testing.T) {
 			}
 			tc.served(t, comp, reply)
 		})
-	}
-}
-
-// TestFailedConsumerSetupCallbackNaksAfterRollback: the entity consumer's setup runs its
-// callback on goroutine G with a valid Graphable message whose Metadata blocks, then fails
-// with a transient DeadlineExceeded and no handle (natsclient's commitConsumer, context-ended
-// branch). The failed consumer is not recorded, so the rollback cannot drain it. Once Start
-// has returned, the hold is released: G must Nak the message, never ack or terminate it, and
-// must not panic.
-func TestFailedConsumerSetupCallbackNaksAfterRollback(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
-	comp := createTestComponentForLifecycle(t)
-	registerMergeTestPayload(t, comp)
-	if err := comp.Initialize(); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-
-	// A message that decodes and is accepted, so the callback reaches its submit. One that
-	// does not is acked or terminated before it, and would show nothing.
-	payload := &mergeTestGraphable{entityID: failedStartEntityID, triples: []message.Triple{
-		{Subject: failedStartEntityID, Predicate: "test.state.value", Object: "streamed", Confidence: 1},
-	}}
-	msg := &heldMetadataMsg{
-		streamLaneMsg: newStreamLaneMsg(streamLaneData(t, payload, "b2-producer"), 1),
-		entered:       make(chan struct{}),
-		release:       make(chan struct{}),
-	}
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(msg.release) }) }
-	defer release()
-
-	setupErr := errs.WrapTransient(context.DeadlineExceeded, "test", "ConsumeStreamWithConfig", "commit consumer")
-	gReturned := make(chan struct{})
-	var gPanic any
-	var calls int
-	comp.consumeStream = func(
-		_ context.Context,
-		_ natsclient.PortConsumerContext,
-		_ natsclient.StreamConsumerConfig,
-		handler func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		calls++
-		if calls > 1 {
-			t.Error("Start bound another consumer after the first one failed")
-			return nil, setupErr
-		}
-		go func() {
-			defer close(gReturned)
-			defer func() { gPanic = recover() }()
-			// natsclient's handler context is the client's (stream.go:446): the rollback does not end it.
-			handler(t.Context(), msg)
-		}()
-		select {
-		case <-msg.entered:
-		case <-ctx.Done():
-		}
-		return nil, setupErr
-	}
-
-	startErr := comp.Start(ctx)
-	if !errors.Is(startErr, setupErr) {
-		t.Fatalf("Start error = %v, want it to wrap the consumer setup's error", startErr)
-	}
-
-	release()
-	awaitClosed(ctx, t, gReturned, "the callback returning")
-	if gPanic != nil {
-		t.Fatalf("the callback panicked after the rollback: %v", gPanic)
-	}
-	select {
-	case disposition := <-msg.settled:
-		if disposition != "nak" {
-			t.Fatalf("disposition = %s, want nak", disposition)
-		}
-	default:
-		t.Fatal("the callback returned without settling the message")
-	}
-	select {
-	case extra := <-msg.settled:
-		t.Fatalf("a second disposition after the nak: %s", extra)
-	default:
-	}
-}
-
-// drainedConsumeContext is a consumer handle whose Drain is counted and closes Closed, as a
-// drained consumer with nothing in flight does.
-type drainedConsumeContext struct {
-	drains atomic.Int32
-	once   sync.Once
-	closed chan struct{}
-}
-
-func newDrainedConsumeContext() *drainedConsumeContext {
-	return &drainedConsumeContext{closed: make(chan struct{})}
-}
-
-func (h *drainedConsumeContext) Stop()                   { h.once.Do(func() { close(h.closed) }) }
-func (h *drainedConsumeContext) Closed() <-chan struct{} { return h.closed }
-func (h *drainedConsumeContext) Drain() {
-	h.drains.Add(1)
-	h.once.Do(func() { close(h.closed) })
-}
-
-// onlyDisposition returns msg's one disposition, or "none" when it has none yet. A second
-// disposition fails the test.
-func onlyDisposition(t *testing.T, msg *streamLaneMsg) string {
-	t.Helper()
-	select {
-	case disposition := <-msg.settled:
-		select {
-		case extra := <-msg.settled:
-			t.Errorf("a second disposition after %s: %s", disposition, extra)
-		default:
-		}
-		return disposition
-	default:
-		return "none"
-	}
-}
-
-// TestFailedStartDrainsAndNaksHeldInput: the entity consumer binds while its callback is running on
-// an input, and a later registration fails Start. The callback runs on goroutine G with a context
-// the rollback does not end, as natsclient's is, and is held in Metadata until the rollback has
-// drained the consumer. Released, G accepts the input and reaches the pool Start captured, which
-// refuses it, and G negatively acknowledges the input (checkpoint 3 B2).
-func TestFailedStartDrainsAndNaksHeldInput(t *testing.T) {
-	payload := &mergeTestGraphable{entityID: failedStartEntityID, triples: []message.Triple{
-		{Subject: failedStartEntityID, Predicate: "test.state.value", Object: "streamed", Confidence: 1},
-	}}
-
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
-	comp := createTestComponentForLifecycle(t)
-	registerMergeTestPayload(t, comp)
-	if err := comp.Initialize(); err != nil {
-		t.Fatalf("Initialize: %v", err)
-	}
-	msg := &heldMetadataMsg{
-		streamLaneMsg: newStreamLaneMsg(streamLaneData(t, payload, "r3-producer"), 1),
-		entered:       make(chan struct{}),
-		release:       make(chan struct{}),
-	}
-	var releaseOnce sync.Once
-	release := func() { releaseOnce.Do(func() { close(msg.release) }) }
-	defer release()
-	comp.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Unix(1, 0), nil }
-	handle := newDrainedConsumeContext()
-	gReturned := make(chan struct{})
-	var gPanic any
-	comp.consumeStream = func(
-		_ context.Context,
-		_ natsclient.PortConsumerContext,
-		_ natsclient.StreamConsumerConfig,
-		handler func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		go func() {
-			defer close(gReturned)
-			defer func() { gPanic = recover() }()
-			handler(t.Context(), msg)
-		}()
-		select {
-		case <-msg.entered:
-		case <-ctx.Done():
-		}
-		return handle, nil
-	}
-	registrationErr := errs.WrapTransient(context.DeadlineExceeded,
-		"test", "SubscribeForRequests", "registration round trip")
-	comp.subscribeRequests = func(
-		context.Context, string, func(context.Context, []byte) ([]byte, error),
-	) (*natsclient.Subscription, error) {
-		return nil, registrationErr
-	}
-
-	startErr := comp.Start(ctx)
-	if !errors.Is(startErr, registrationErr) {
-		t.Fatalf("Start error = %v, want it to wrap the registration's error", startErr)
-	}
-	if n := handle.drains.Load(); n != 1 {
-		t.Errorf("the rollback drained the consumer %d times, want 1", n)
-	}
-
-	release()
-	awaitClosed(ctx, t, gReturned, "the callback returning")
-	if gPanic != nil {
-		t.Fatalf("the callback panicked after the rollback: %v", gPanic)
-	}
-	if got := onlyDisposition(t, msg.streamLaneMsg); got != "nak" {
-		t.Errorf("disposition = %s, want nak", got)
 	}
 }

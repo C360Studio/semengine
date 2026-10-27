@@ -40,7 +40,7 @@ Working rules for every task:
   is added, and `consume.go` gains `inputLane.deliver`, which `setupJetStreamConsumer` passes to natsclient. The tests
   cannot compile without the type, so their failure on the base is shown with `go test -overlay` (tests only) and
   recorded in `notes/4.1.md`. Gate: `go test -race ./processor/graph-ingest/` and `task verify`.
-- [ ] 4.2 Delete the D3 tests and the straddle pair. Remove the four fields and their nil-checks. Run M1 and M2 with
+- [x] 4.2 Delete the D3 tests and the straddle pair. Remove the four fields and their nil-checks. Run M1 and M2 with
   `task mutate:check` (`GOFLAGS=-tags=integration` for the integration-tagged not-started test) and record the results
   in `notes/4.2.md`. Gate: the D4 grep prints nothing; `task cover:check` and `task verify`.
 - [ ] 4.3 Codex code review of record at a named commit with a local `task verify`. The PR body carries

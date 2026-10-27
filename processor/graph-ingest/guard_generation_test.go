@@ -9,7 +9,6 @@ package graphingest
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"strings"
 	"testing"
@@ -18,8 +17,6 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
-	"github.com/c360studio/semengine/natsclient"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 const (
@@ -213,41 +210,6 @@ func TestNoGuardBucketLogsAndCountsFirstSeenInputs(t *testing.T) {
 	}
 	if got := strings.Count(logs.String(), noBucketLogged); got != 2 {
 		t.Errorf("degrade logged %d times after a redelivery the cache judged, want 2", got)
-	}
-}
-
-// TestStreamWithoutCreationTimeIsRefused: the generation is the stream's creation time on the
-// server. A stream that reports none would make every generation look the same, so graph-ingest
-// refuses to bind a consumer to it and setup fails.
-func TestStreamWithoutCreationTimeIsRefused(t *testing.T) {
-	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
-	if err := c.buildIngestPool(t.Context()); err != nil {
-		t.Fatalf("buildIngestPool: %v", err)
-	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		if err := c.ingestPool.Shutdown(ctx); err != nil {
-			t.Errorf("ingest pool Shutdown: %v", err)
-		}
-	})
-	c.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Time{}, nil }
-	bound := 0
-	c.consumeStream = func(
-		context.Context,
-		natsclient.PortConsumerContext,
-		natsclient.StreamConsumerConfig,
-		func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		bound++
-		return &graphIngestLifecycleConsumeContext{closed: make(chan struct{}), drainSeen: make(chan struct{})}, nil
-	}
-	err := c.setupSubscriptions(t.Context(), t.Context())
-	if err == nil || !strings.Contains(err.Error(), "no creation time") {
-		t.Errorf("setupSubscriptions error = %v, want a refusal naming the missing creation time", err)
-	}
-	if bound != 0 {
-		t.Errorf("%d consumers were bound to a stream with no creation time, want 0", bound)
 	}
 }
 

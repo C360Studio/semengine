@@ -77,17 +77,12 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	// message can never claim it (ADR-102 d5).
 	importLane := stream.Import()
 
-	// Wait for stream to be available
-	waitForStream := c.waitForStream
-	if c.waitForStreamInput != nil {
-		waitForStream = c.waitForStreamInput
-	}
 	// The stream's generation is its creation time on the server, from the stream info the wait
 	// reads (design D8, #15), never from configuration. It is read once, here, before the consumer
 	// is bound, and every input this consumer delivers carries it. A stream deleted and created again
 	// between this read and the bind is a declared limitation (graph-ingest-recovery, "Replay
 	// protection uses the generation read before the bind").
-	created, err := waitForStream(ctx, streamName)
+	created, err := c.waitForStream(ctx, streamName)
 	if err != nil {
 		return fmt.Errorf("stream %s not available: %w", streamName, err)
 	}
@@ -150,10 +145,6 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	// and its callback can run after the rollback cleared c.ingestPool (checkpoint 3 B2).
 	// By then this pool has shut down, so the submit is refused and the message is Nak'd.
 	pool := c.ingestPool
-	consumeStream := c.natsClient.ConsumeStreamWithConfig
-	if c.consumeStream != nil {
-		consumeStream = c.consumeStream
-	}
 	lane := &inputLane{
 		c:          c,
 		pool:       pool,
@@ -163,7 +154,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		subject:    subject,
 		importLane: importLane,
 	}
-	handle, err := consumeStream(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
+	handle, err := c.natsClient.ConsumeStreamWithConfig(ctx, natsclient.PortConsumerContext{Component: c.name, Port: port.Name}, cfg, func(_ context.Context, msg jetstream.Msg) {
 		lane.deliver(submitCtx, msg)
 	})
 	if err != nil {

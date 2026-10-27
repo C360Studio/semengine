@@ -37,7 +37,7 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
     `paths` `composition.FlowPaths` of its graph, counted.
   - Every test named in D1 and D2 passes unchanged.
   - Gate: `go test -race ./service/ ./composition/` and `task verify`.
-- [ ] 2.4 Sensitivity (`notes/2.4.md`): report each mutant as detected (naming the test) or as a survivor.
+- [x] 2.4 Sensitivity (`notes/2.4.md`): report each mutant as detected (naming the test) or as a survivor.
   - Remove each of the three origin arms in turn (`TestFlowPathsKeysEachOrigin`, `TestFlowPathsTraverseTheRetainedGraph`).
   - Change the origin rule's final `return false` to `return true` (`TestFlowPathsKeysEachOrigin`, its negative case).
   - Append a node after its children instead of before (`TestFlowPathsWalksDepthFirstInEdgeOrder`).
@@ -47,7 +47,8 @@ Port-refactor #363. Behaviour is preserved, so the oracle is that the named test
   - `GetFlowPaths` returns an empty map (`TestFlowPathsTraverseTheRetainedGraph`).
   - The handler reports `max_path_length` as the average (`TestFlowPathsRouteServesTheLibraryAnswer`).
   - Use `task mutate:check`, with unit tests only.
-  - Hold: Codex code review (APPROVE on the head after 2.4, citing that commit and a local `task verify`).
+  - Codex code review: APPROVE on `6911630` (PR #413 comment 6427763046), and again on `4b90bba` after merging
+    `origin/main` (byte-identical patch); local `task verify` rc 0 on both.
 
 ## 3. Docs, ledger and archive
 

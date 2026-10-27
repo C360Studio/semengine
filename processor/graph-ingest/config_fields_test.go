@@ -221,7 +221,7 @@ func bindEntityStream(t *testing.T, c *Component) (natsclient.StreamConsumerConf
 		_ func(context.Context, jetstream.Msg),
 	) (jetstream.ConsumeContext, error) {
 		bound, created = cfg, true
-		return nil, nil
+		return &graphIngestLifecycleConsumeContext{closed: make(chan struct{}), drainSeen: make(chan struct{})}, nil
 	}
 	err := c.setupSubscriptions(t.Context(), t.Context())
 	return bound, created, err

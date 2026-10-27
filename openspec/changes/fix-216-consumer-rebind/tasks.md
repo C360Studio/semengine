@@ -19,7 +19,7 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 
 ## 2. Tests
 
-- [ ] 2.1 T1 to T5 (design, Tests) in `processor/graph-ingest`: T1 and T4 in their own files with
+- [x] 2.1 T1 to T5 (design, Tests) in `processor/graph-ingest`: T1 and T4 in their own files with
   `// Own server: restarts the server mid-test.` above `natsfixture.New`, each asserting `f.URL()` is unchanged
   across `Restart`; T2, T3 and T5 beside the health tests in `health_integration_test.go`, T3 replacing
   `TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked`. Gate: on the base, T2 and T3 fail at
@@ -31,7 +31,7 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 
 ## 3. Code
 
-- [ ] 3.1 The lost input binding (design D1) in `processor/graph-ingest/readiness.go` and `consume.go`: each bound
+- [x] 3.1 The lost input binding (design D1) in `processor/graph-ingest/readiness.go` and `consume.go`: each bound
   consumer's readiness record carries its loop's `Closed()` channel; the tick records a lost binding when the loop has
   ended, observed while `Stop` has not begun (a fact published safely and kept off the consumer binding), never
   clears it, and feeds it to `Health()` and the envelope. No natsclient change.

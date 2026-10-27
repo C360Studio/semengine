@@ -22,66 +22,61 @@ option O1). Retires #216 (`Closes #216`). Every `path:line` is at the base; prob
   (not promised) with the old generation. c, file stream: nothing is lost; the stream keeps its creation time
   (probe c; `guard_generation_integration_test.go:157`).
 
-## D1. A lost input binding is stuck until the process restarts
+## D1. A loop that ends without Stop is stuck until the process restarts
 
 Observable behaviour. On each readiness tick, for each bound consumer, graph-ingest records a **lost input binding**
-when either holds:
+when the consume loop it started for that consumer has ended and graph-ingest's own `Stop` had not issued that loop's
+drain (the fact `Stop` keeps per consumer as `drainIssued`, `component.go:576-578`). Once recorded it is never
+cleared: `Health()` reads `Healthy: false`, `Status: "degraded"`, and `LastError` names the stream and consumer and
+says the process must be restarted, on every call until the component stops. The readiness envelope for that tick and
+every later one is degraded, as for a failed observation (`readiness.go:132`; one compute for both channels,
+`:93-101`). The moment it is recorded, graph-ingest logs one Error line naming the stream and consumer. A failed
+lookup keeps today's behaviour: stuck for that tick only, clear on the next good one. Nothing is rebound, stopped,
+drained or deleted; the old loop stays as it is until `Stop` drains it (`component.go:574-587`).
 
-1. the consume loop it started for that consumer has ended, and graph-ingest's own `Stop` did not end it (d, e, f);
-2. the tick reads the input stream and its creation time is not the generation read at bind (a after the producer
-   creates the stream again, a then b, d, e).
+How each case ends:
 
-Once recorded it is never cleared: `Health()` reads `Healthy: false`, `Status: "degraded"`, and `LastError` names the
-stream and consumer and says the process must be restarted, on every call until the component stops. The moment it is
-recorded, graph-ingest logs one Error line naming the stream, the consumer and which signal fired. The readiness
-envelope for that tick and every later one is degraded, as for a failed observation (`readiness.go:132`, one compute
-for both channels, `:93-101`). A lookup that fails for any other reason keeps today's behaviour: stuck for that tick
-only, clear on the next good one. Nothing is rebound, stopped, drained or deleted; the old loop stays as it is until
-`Stop` drains it as today (`component.go:574-587`).
+- a, memory stream lost at a broker restart: the loop does not end (probe a: `closed=false` after 77 s), so nothing is
+  recorded. The existing lookup fails, first "stream not found", then "consumer not found" once the producer creates
+  the stream again, so `Health()` is false until the process restarts, for as long as nobody creates the consumer
+  again. If someone does ("a then b"), the old loop resumes with the old generation and `Health()` reads healthy: that
+  is the declared limitation "Stream and consumer created again while disconnected" (`spec.md:180-185`, owner ruling
+  #91 comment 6113959050), unchanged.
+- d, stream deleted in place: the loop ends (probe d) and is recorded; e, a consumer created again afterwards, and f,
+  only the consumer deleted and created again: the loop has ended (probe e, f), so the record holds and `Health()`
+  stays false. These are what change.
 
-Why both signals. Signal 1 alone misses case a, where the loop never ends (probe a: `closed=false` after 77 s).
-Signal 2 alone misses f, where the stream is untouched. Today's lookup catches a and d only until someone creates the
-consumer again; the latch keeps them unhealthy afterwards. Every case a, d, e and f then ends unhealthy until the
-process restarts. Case a before the producer creates the stream again is unhealthy through today's failed lookup
-(stream not found), and latched from the first tick after the stream exists.
-
-Why a latch and no clearing. A consume loop that has ended does not restart (probe e and f), and a loop that resumes
-on a recreated stream stamps the old generation (`keyed_ingest.go:88`; inventory § 2.4). Clearing would report a
-binding healthy that the ruling says only a restart repairs. A restart reads the generation again.
+Why a latch. A consume loop that has ended does not start again (probe e, f), so clearing the state would report a
+binding healthy that only a restart repairs (the ruling). A restart reads the generation again.
 
 Constraints the developer keeps:
 
-- The tick reads the loop's end through the handle's `Closed()` channel, read without blocking. What the readiness
-  records hold is that receive-only channel and the bind-time generation, never the handle: observation stays
-  read-only and separate from lifecycle authority (ADR-095 `:66`; `readiness.go:200-203`). Stop keeps the exact
-  handle and drains it (ADR-094 `docs/adr/094-...md:128-131`); no `ConsumeContext.Stop` is added.
-- No new goroutine: the work runs inside the existing tick, under the run context `Start` creates (ADR-113
-  `docs/adr/113-...md:62-64`).
-- The stream's creation time comes from the same read the tick already makes (`readiness.go:209-212`) and is compared
-  with the generation as `consume.go:96` stores it. No error text is inspected.
+- The tick reads the loop's end through the handle's `Closed()` channel, without blocking. What the readiness records
+  hold is that receive-only channel, never the handle: observation stays read-only and separate from lifecycle
+  authority (ADR-095 `:66`; `readiness.go:200-203`). `Stop` keeps the exact handle and drains it (ADR-094
+  `docs/adr/094-...md:128-131`); no `ConsumeContext.Stop` is added.
+- No new goroutine: the check runs inside the existing tick, under the run context `Start` creates (ADR-113
+  `docs/adr/113-...md:62-64`). No error text is inspected.
 - No natsclient change and no new field on `Component` reachable only from tests (#170; #301).
 - Library facts this rests on: the loop ends after a terminal status and `Closed()` fires (probe d, f; `pull.go:740`,
-  `:273-281`, `:306-317`); in a, `Closed()` does not fire (probe a); a recreated stream has a new creation time
-  (probe a, b) and a file stream keeps it across a restart (probe c). `Closed()` can fire early after a stop or a
-  forced close (#83); either happens only while the client or component is stopping, when an unhealthy reading is
-  true. Timings (tick cadence, nats.go's 30 s re-pull) are not promised.
+  `:273-281`, `:306-317`); in case a it does not (probe a). `Closed()` can also fire early for a subscription that is
+  no longer valid (#83): after a stop, a forced close, or when nats.go closes the connection by itself once a finite
+  `WithMaxReconnects` (`natsclient/options.go:15`) runs out. In each, unhealthy is the true reading; when nats.go does
+  this is not promised. Timings (tick cadence, nats.go's 30 s re-pull) are not promised.
 
-Not changed, and stated: inputs a resumed old loop delivers before the tick records the loss carry the old generation
-and can be acknowledged without being applied. That is the declared limitation "Stream and consumer created again while
-disconnected" (`openspec/specs/graph-ingest-recovery/spec.md:180-185`, owner ruling #91 comment 6113959050); this
-change makes it visible, not closed. A stream recreated between the generation read and the bind
-(`spec.md:165-173`) is also recorded by signal 2 on the first tick; the spec does not promise that.
+The window case, a stream recreated between the generation read and the bind (`spec.md:165-173`), is not touched: its
+consumer is the new stream's and its loop does not end.
 
 ## D2. Text
 
 - `openspec/specs/graph-ingest-recovery/spec.md:21-25`: the memory-restart scenario says graph-ingest reads unhealthy
-  until its process is restarted, and publishing again after the restart applies the message (spec delta).
+  until its process is restarted (while nobody creates its consumer again), and publishing again after the restart
+  applies the message (spec delta).
 - `docs/contract.md:79`: the memory row's "Your part" becomes: restart the process when `/readyz` fails (`/healthz`
   only says the listener answers, `service/doc.go:177`), then re-publish from your source.
-- `processor/graph-ingest/README.md:188`: a lost binding reads unhealthy until restart; nothing binds a new one.
-- `docs/admission-ledger.yaml`, graph-ingest row (`:2381-2386`): one `known_risks` clause (a lost binding latches
-  `Health()` until restart; resumed-loop inputs are the declared limitation) and the new test file in
-  `proving_tests`.
+- `processor/graph-ingest/README.md:188`: a loop that ends reads unhealthy until restart; nothing binds a new one.
+- `docs/admission-ledger.yaml`, graph-ingest row (`:2381-2386`): one `known_risks` clause (an ended loop latches
+  `Health()` until restart; "a then b" stays the declared limitation) and the new test files in `proving_tests`.
 
 ## Tests
 
@@ -91,31 +86,47 @@ run after the step, not elapsed time.
 
 | Test | Case | Asserts | On the base |
 | --- | --- | --- | --- |
-| T1 `TestIntegration_LostBindingAtBrokerRestartStaysUnhealthy` (own server: restarts it; `require.Equal` on `f.URL()` before and after, `natsfixture/restart.go:25-29`) | a, a then b | memory stream; graph-ingest stays running across `Restart`; stream created again: unhealthy, `LastError` names the consumer and "restart"; consumer then created again under its name: still unhealthy | fails at the last step (the lookup succeeds, healthy) |
-| T2 `TestIntegration_LostBindingStreamRecreatedInPlaceStaysUnhealthy` | d, e | stream deleted and created again: unhealthy; consumer created again: still unhealthy; the envelope from `computeBacklogStatus` is degraded | fails at the last step |
+| T1 `TestIntegration_MemoryStreamLostAtBrokerRestartStaysUnhealthy` (own server: restarts it) | a | memory stream; graph-ingest stays running across `Restart`; the stream is created again: unhealthy, `LastError` names the backlog observation, on a fresh tick and on one after a message is published | passes: pins today's lookup path for the corrected scenario |
+| T2 `TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy` | d, e | stream deleted and created again: unhealthy, `LastError` names the restart, the envelope from `computeBacklogStatus` is degraded; consumer created again: still unhealthy | fails at the last step |
 | T3 `TestIntegration_HealthStaysStuckAfterConsumerRecreated` (replaces `..._ConsumptionNotChecked`, `health_integration_test.go:80`) | f | consumer deleted: unhealthy; created again: still unhealthy | fails at the last step |
-| T4 `TestIntegration_FileStreamRestartStaysHealthy` (own server) | c | file stream; across `Restart`: healthy on a fresh tick and a message published after the restart is applied | passes (pins kept behaviour) |
-| T5 `TestIntegration_StopRecordsNoLostBinding` | Stop | after `Stop`, no lost-binding log line was written | passes |
+| T4 `TestIntegration_FileStreamRestartStaysHealthy` (own server) | c | file stream; across `Restart`: healthy on a fresh tick, and a message published after the restart is applied | passes: pins kept behaviour |
+
+T1 and T4 keep graph-ingest's client connected across `Restart`, which `Restart`'s doc says a caller does not do
+(`internal/harness/natsfixture/restart.go:24-29`: handles are dead, URL has stayed the same but Docker does not promise
+it). The departure is the point of both tests: graph-ingest's own client reconnects as a production client does, and
+`Restart` drains only the fixture's connection. Each asserts `f.URL()` is unchanged across `Restart` with
+`require.Equal`, so a remapped port fails the test loudly instead of passing it for the wrong reason. "Publishing again
+after a restart applies it" is already proved with a new instance by
+`TestIntegration_IngestGuard_StreamRecreatedWithLowerSequences` (`guard_generation_integration_test.go:71`).
 
 `TestIntegration_HealthReadsLostConsumer` (`:57`) stays unchanged and must still pass. Examples suffice; the inputs
-do not interact beyond the five cases (`docs/testing.md`).
+do not interact beyond these cases (`docs/testing.md`).
+
+Unproven, stated on the PR and in `notes/3.2.md`:
+
+- "The observation succeeds again" (modified health requirement) loses its only test, which T3 replaces. Every
+  in-test way to fail an observation (deleting the consumer or the stream) now also ends the loop, and a tick cannot
+  be ordered inside `Restart`, so no test fails an observation while the binding is intact.
+- "Stop ends the loop": `cleanup` drains and waits on `Closed()` (`component.go:574-587`) before it ends the run
+  context and waits for the status loop (`:602-610`), so a tick can land after the drain, and no existing surface
+  orders one there. No test is written for it.
 
 Mutation rows (`task mutate:check`, integration tests by `-run`, recorded in `notes/3.2.md`):
 
-| Mutant | Expected detection |
+| Mutant | Expected |
 | --- | --- |
-| M1 signal 1 removed | T3 |
-| M2 signal 2 removed | T1 |
-| M3 the latch cleared by a good observation | T1, T2, T3 |
-| M4 the latch recorded when `Stop` ends the loop | T5 |
-| M5 every failed lookup latched | T4, only if a tick fails during the restart; otherwise reported as a survivor and listed as uncovered on the PR |
+| M1 the ended-loop check removed | detected by T2, T3 |
+| M3 the record cleared by a good observation | detected by T2, T3 |
+| M4 the record made when `Stop` issued the drain | survivor expected (no ordering, above); listed as uncovered |
+| M5 every failed lookup recorded as lost | survivor expected, unless a tick happens to fail during T4's restart; listed as uncovered |
 
 ## Dispositions
 
 - #216: retired (`Closes #216`). The healthy-but-not-consuming case (e, f) is part of it and is not filed apart.
-- #15: stays. Its replay-protection work is wider; this change keeps the resumed-loop case declared (D1).
-- #301: stays. No test-only field is added; T1 to T5 use real streams.
-- #83: stays. The early `Closed()` it tracks only occurs while stopping (D1).
+- #15: stays. Its replay-protection work is wider; "a then b" stays the declared limitation (D1).
+- #301: stays. No test-only field is added; T1 to T4 use real streams.
+- #83: stays. The early `Closed()` it tracks fires after a stop, a forced close, or nats.go closing the connection
+  once finite reconnects run out (not promised); in each, unhealthy is the true reading (D1).
 
 ## Merge order
 

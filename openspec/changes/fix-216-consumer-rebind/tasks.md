@@ -12,26 +12,31 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
 ## 1. Design
 
 - [x] 1.1 Inventory (`inventory.md`) passes independent review (INVENTORY PASS; committed at `6d500e0`).
-- [ ] 1.2 Codex design review of `design.md` and the `graph-ingest-recovery` delta, then owner acceptance.
+- [ ] 1.2 Codex design review of `design.md` and the `graph-ingest-recovery` delta.
   Hold: Codex design review on PR #431 (the owner starts Codex). Gate: `task spec:check` and `task docs:check`.
+- [ ] 1.3 Owner acceptance of the reviewed design (the ruling chose the option, not this design).
+  Hold: owner acceptance on #216 or PR #431.
 
 ## 2. Tests
 
-- [ ] 2.1 T1 to T5 (design, Tests) in `processor/graph-ingest`: T1 and T4 in their own files with
-  `// Own server: restarts the server mid-test.` above `natsfixture.New`; T2, T3 and T5 beside the health tests in
-  `health_integration_test.go`, T3 replacing `TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked`.
-  Gate: on the base, T1, T2 and T3 fail at their last step and T4 and T5 pass; the output is in `notes/2.1.md`.
+- [ ] 2.1 T1 to T4 (design, Tests) in `processor/graph-ingest`: T1 and T4 in their own files with
+  `// Own server: restarts the server mid-test.` above `natsfixture.New`, each asserting `f.URL()` is unchanged
+  across `Restart`; T2 and T3 beside the health tests in `health_integration_test.go`, T3 replacing
+  `TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked`. Gate: on the base, T2 and T3 fail at
+  their last step (consumer created again, still unhealthy) and T1 and T4 pass; the output is in `notes/2.1.md`.
   Committed with 3.1.
 
 ## 3. Code
 
 - [ ] 3.1 The lost input binding (design D1) in `processor/graph-ingest/readiness.go` and `consume.go`: each bound
-  consumer's readiness record carries its loop's `Closed()` channel and its bind-time generation; the tick records a
-  lost binding on either signal, never clears it, and feeds it to `Health()` and the envelope. No natsclient change.
+  consumer's readiness record carries its loop's `Closed()` channel; the tick records a lost binding when the loop has
+  ended and `Stop` had not issued its drain, never clears it, and feeds it to `Health()` and the envelope. No
+  natsclient change.
   Gate: `go test -race ./processor/graph-ingest/`, `go test -tags integration ./processor/graph-ingest/`,
   `task cover:check` and `task verify`.
-- [ ] 3.2 Mutation rows M1 to M5 (design, Tests) with `task mutate:check`, each reported as detected (naming the
-  test) or as a survivor, in `notes/3.2.md`.
+- [ ] 3.2 Mutation rows M1, M3, M4 and M5 (design, Tests) with `task mutate:check`, each reported as detected
+  (naming the test) or as a survivor, in `notes/3.2.md`, which also states the two unproven scenarios (design,
+  Tests); the PR body lists them as uncovered.
 
 ## 4. Docs
 

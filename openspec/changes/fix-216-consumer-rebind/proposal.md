@@ -17,9 +17,10 @@ generation again, so re-ingestion after a restart keeps working (#15's behaviour
 ## What Changes
 
 - **A lost input binding is stuck until restart.** graph-ingest's `Health()` reads unhealthy, and stays unhealthy
-  until the process is restarted, once a consume loop it started has ended without its own `Stop`, or once a bound
-  input stream on the server is not the one it bound (its creation time differs from the generation read at bind).
-  The readiness envelope reports the same tick as degraded. Nothing is rebound, stopped or deleted.
+  until the process is restarted, once a consume loop it started has ended without its own `Stop`. The readiness
+  envelope reports the same tick as degraded. A memory stream lost at a broker restart already reads unhealthy through
+  today's consumer lookup; a stream and consumer both created again around the restart stays the declared
+  limitation. Nothing is rebound, stopped or deleted.
 - **Text corrected.** The `graph-ingest-recovery` scenario "Memory transport lost at broker restart" and
   `docs/contract.md:79` say a process restart is the recovery and that operators restart on `/readyz`, not
   `/healthz`; `processor/graph-ingest/README.md:188` and the graph-ingest ledger row follow.

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"regexp"
 	"slices"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/inference"
+	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/payloadfixture"
@@ -491,4 +493,89 @@ func startGraphIngest(t *testing.T, client *natsclient.Client) {
 			t.Errorf("stop graph-ingest: %v", err)
 		}
 	})
+}
+
+// TestMalformedIndexRowsAreSkippedLoggedAndCounted: a stored index row that is not its index's
+// layout is left out of every query that lists it, and the skip is declared: a warning names the
+// index, and query_rows_skipped_total counts it by index, while the query still answers the
+// well-formed rows (#430; the read-side counterpart of aliases_skipped_total, #426). No graph-index
+// writer stores such a row, so the test writes each one into its bucket directly.
+func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	src, target, stranger := entityID(1), entityID(2), entityID(3)
+	title := vocabulary.DCTermsTitle
+	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{title, "Alpha"}))
+	h.awaitIndexed(t, rev)
+
+	// Spelled from the layouts (target.source6.hex(predicate), predicate3.entity6,
+	// sha256(folded name).entity6.hex(predicate)), not built by the package.
+	for bucket, rows := range map[string]map[string]string{
+		graph.BucketIncomingIndex: {target + ".not-a-row": "{}"},
+		// Nine tokens, so the exact predicate filter lists it, but "_bad" is no entity ID segment.
+		graph.BucketPredicateIndex: {linkTo + ".acme.ops.test.system.widget._bad": "{}"},
+		graph.BucketNameIndex: {
+			nameHash("Alpha") + ".not-a-row":                        "{}",
+			nameHash("Alpha") + "." + stranger + "." + hexOf(title): "not json",
+		},
+	} {
+		kv, err := kvcatalog.EnsureCatalogBucket(t.Context(), h.client, bucket)
+		if err != nil {
+			t.Fatalf("open %s: %v", bucket, err)
+		}
+		for k, v := range rows {
+			if _, err := kv.Put(t.Context(), k, []byte(v)); err != nil {
+				t.Fatalf("put %s/%s: %v", bucket, k, err)
+			}
+		}
+	}
+
+	// Each handler logs and counts its skips before it replies, so every reply below orders the
+	// log and counter reads after them.
+	in := answer[graph.IncomingRelationshipsData](t, h.client, "incoming", map[string]string{"entity_id": target}, rev)
+	if want := []graph.IncomingEntry{{FromEntityID: src, Predicate: linkTo}}; !slices.Equal(in.Relationships, want) {
+		t.Errorf("incoming = %v, want %v", in.Relationships, want)
+	}
+	linked := answer[graph.PredicateData](t, h.client, "predicate", map[string]string{"predicate": linkTo}, rev)
+	if !slices.Equal(linked.Entities, []string{src}) {
+		t.Errorf("predicate %s = %v, want [%s]", linkTo, linked.Entities, src)
+	}
+	list := answer[graph.PredicateListData](t, h.client, "predicateList", map[string]string{}, rev)
+	if want := []graph.PredicateSummary{{Predicate: title, EntityCount: 1}, {Predicate: linkTo, EntityCount: 1}}; !slices.Equal(list.Predicates, want) {
+		t.Errorf("predicateList = %v, want %v", list.Predicates, want)
+	}
+	names := answer[graph.NameData](t, h.client, "byName", map[string]string{"name": "Alpha"}, rev)
+	if len(names.Matches) != 1 || names.Matches[0].EntityID != src {
+		t.Errorf("byName Alpha = %+v, want %s only", names.Matches, src)
+	}
+
+	logs := h.logs.String()
+	for _, index := range []string{"incoming", "predicate", "name"} {
+		warned := regexp.MustCompile(`level=WARN msg="index query: malformed row skipped" .*index_type=` + index + ` `)
+		if !warned.MatchString(logs) {
+			t.Errorf("no warning naming the %s index's skipped row; logs:\n%s", index, logs)
+		}
+	}
+	// incoming: one key; predicate: the bad key, listed by the predicate query and again by
+	// predicateList; name: the bad key and the bad value.
+	want := map[string]float64{"incoming": 1, "predicate": 2, "name": 2}
+	got := map[string]float64{}
+	families, err := h.c.metricsRegistry.PrometheusRegistry().Gather()
+	if err != nil {
+		t.Fatalf("Gather: %v", err)
+	}
+	for _, family := range families {
+		if family.GetName() != "semengine_graph_index_query_rows_skipped_total" {
+			continue
+		}
+		for _, m := range family.GetMetric() {
+			for _, label := range m.GetLabel() {
+				if label.GetName() == "index_type" {
+					got[label.GetValue()] += m.GetCounter().GetValue()
+				}
+			}
+		}
+	}
+	if !maps.Equal(got, want) {
+		t.Errorf("semengine_graph_index_query_rows_skipped_total by index_type = %v, want %v", got, want)
+	}
 }

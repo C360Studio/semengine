@@ -174,7 +174,7 @@ func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byt
 	for _, key := range keys {
 		entry, ok := incomingEntryFromKey(key, prefix)
 		if !ok {
-			c.logger.Debug("incoming query: skipping malformed key", slog.String("key", key))
+			c.skipMalformedRow("incoming", key, "key is not target.source.hex(predicate)")
 			continue
 		}
 		entries = append(entries, entry)
@@ -312,6 +312,7 @@ func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]
 	for _, key := range keys {
 		stored, entityID, ok := predicateMembershipFromKey(key)
 		if !ok || stored != predicate {
+			c.skipMalformedRow("predicate", key, "key is not predicate.entity")
 			continue
 		}
 		entities = append(entities, entityID)
@@ -404,7 +405,10 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 	if err != nil {
 		return nil, internalError(err)
 	}
-	predicates := predicateSummaries(keys)
+	predicates, malformed := predicateSummaries(keys)
+	for _, key := range malformed {
+		c.skipMalformedRow("predicate", key, "key is not predicate.entity")
+	}
 	return reply(revision, graph.PredicateListData{Predicates: predicates, Total: len(predicates)})
 }
 
@@ -543,12 +547,14 @@ func predicateMembershipFromKey(key string) (predicate, entityID string, ok bool
 }
 
 // predicateSummaries counts the distinct entities of each predicate in keys, in lexical
-// order of predicate.
-func predicateSummaries(keys []string) []graph.PredicateSummary {
+// order of predicate, and returns the keys that are not predicate3.entity6 apart, for the
+// caller to declare.
+func predicateSummaries(keys []string) (summaries []graph.PredicateSummary, malformed []string) {
 	entities := make(map[string]map[string]struct{})
 	for _, key := range keys {
 		predicate, entityID, ok := predicateMembershipFromKey(key)
 		if !ok {
+			malformed = append(malformed, key)
 			continue
 		}
 		if entities[predicate] == nil {
@@ -556,12 +562,12 @@ func predicateSummaries(keys []string) []graph.PredicateSummary {
 		}
 		entities[predicate][entityID] = struct{}{}
 	}
-	summaries := make([]graph.PredicateSummary, 0, len(entities))
+	summaries = make([]graph.PredicateSummary, 0, len(entities))
 	for predicate, members := range entities {
 		summaries = append(summaries, graph.PredicateSummary{Predicate: predicate, EntityCount: len(members)})
 	}
 	slices.SortFunc(summaries, func(a, b graph.PredicateSummary) int { return strings.Compare(a.Predicate, b.Predicate) })
-	return summaries
+	return summaries, malformed
 }
 
 func invalidPredicateQuery(err error) error {
@@ -608,7 +614,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 	for _, key := range keys {
 		entityID, predicate, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
 		if !ok {
-			c.logger.Debug("name query: skipping malformed key", slog.String("key", key))
+			c.skipMalformedRow("name", key, "key is not hash.entity.hex(predicate)")
 			continue
 		}
 		entry, err := c.nameBucket.Get(ctx, key)
@@ -620,7 +626,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 		}
 		var v nameCompositeValue
 		if err := json.Unmarshal(entry.Value, &v); err != nil {
-			c.logger.Debug("name query: skipping malformed value", slog.String("key", key), slog.Any("error", err))
+			c.skipMalformedRow("name", key, "value is not JSON: "+err.Error())
 			continue
 		}
 		items = append(items, graph.NameIndexItem{EntityID: entityID, Name: v.Name, Predicate: predicate, Priority: v.Priority})
@@ -643,10 +649,7 @@ func nameRankCompare(a, b nameRank) int {
 		}
 		return 1
 	}
-	if a.priority != b.priority {
-		return a.priority - b.priority
-	}
-	return strings.Compare(a.match.EntityID, b.match.EntityID)
+	return cmp.Or(cmp.Compare(a.priority, b.priority), strings.Compare(a.match.EntityID, b.match.EntityID))
 }
 
 // rankNameMatches keeps each entity's best-ranked item, orders them by nameRankCompare and
@@ -677,6 +680,18 @@ func rankNameMatches(items []graph.NameIndexItem, query string, limit int) []gra
 		matches = matches[:limit]
 	}
 	return matches
+}
+
+// skipMalformedRow declares a stored index row a query leaves out of its answer because it is
+// not the index's layout. No graph-index writer stores such a row, so one means the bucket was
+// written by something else; the query still answers from the well-formed rows, which are
+// unaffected, rather than fail on a row it cannot read. A row deleted after the listing is not
+// malformed and is not declared. The key goes to the log only: the metric's one label is the
+// index, a bounded set.
+func (c *Component) skipMalformedRow(indexType, key, reason string) {
+	c.metrics.queryRowsSkipped.WithLabelValues(indexType).Inc()
+	c.logger.Warn("index query: malformed row skipped",
+		slog.String("index_type", indexType), slog.String("key", key), slog.String("reason", reason))
 }
 
 // validateKVPrefix refuses a key prefix whose listing filter, prefix + ">", is not a valid

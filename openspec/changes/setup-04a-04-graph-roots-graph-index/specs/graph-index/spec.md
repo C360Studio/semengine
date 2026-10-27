@@ -113,6 +113,21 @@ read is the one exception until #415 lands (owner ruling, PR #414 comment 642625
 - **WHEN** an entity's statements go from A to B to none
 - **THEN** each read listed answers A, then B, then nothing for that entity
 
+### Requirement: Malformed index rows are skipped and declared
+
+A query that lists a stored incoming, predicate or name index row that is not its index's layout SHALL leave that row
+out, answer from the well-formed rows, log a warning naming the index, and count the row in
+`semengine_graph_index_query_rows_skipped_total` under that index's `index_type` label. A row deleted after the
+listing SHALL NOT be counted.
+
+#### Scenario: Malformed rows in three index buckets
+
+- **WHEN** a malformed key is stored in `INCOMING_INDEX`, `PREDICATE_INDEX` and `NAME_INDEX`, and a name row holds a
+  value that is not JSON
+- **THEN** incoming, predicate, predicateList and byName answer only the well-formed rows, a warning names each index,
+  and the counter reads incoming 1, predicate 2 (listed by predicate and by predicateList) and name 2
+- **AND** the test that verifies this is `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
+
 ### Requirement: Queries are refused while the feed is lost
 
 While graph-index's follower reports its `ENTITY_STATES` feed lost, each of the eight verbs SHALL answer class

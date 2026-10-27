@@ -337,7 +337,12 @@ collectors it returns; no `sync.Once`, no global-registry fallback, namespace `s
 (G7). A nil registry registers nothing (as `readiness.Gauges`). The readiness gauges are the follower's:
 `readiness.NewRevisionGauges("graph_index")` (proposed name) adds `indexed_revision` and `target_revision` to the
 shared set. Metric names keep the pin's apart from the namespace (`semstreams_` → `semengine_`, as every port did).
-One collector is new: `aliases_skipped_total`, which counts the aliases D12's skip leaves out (#426).
+Two collectors are new: `aliases_skipped_total`, which counts the aliases D12's skip leaves out (#426), and
+`query_rows_skipped_total`, labelled `index_type` (`incoming`, `predicate` or `name`), which counts the stored index
+rows a query leaves out because they are not their index's layout (#430). No graph-index writer stores such a row; the
+query still answers from the well-formed rows, and each skip also logs a warning naming the index, the key and the
+reason. A row deleted after the listing is not malformed and is not counted. `TestMalformedIndexRowsAreSkippedLoggedAndCounted`
+observes the warning, the counter and the answer.
 
 ## D11. Proving tests
 
@@ -381,6 +386,9 @@ test either rewritten against a real server or dropped with its reason in a task
   one test per kept config key.
 - `TestQueryResponseCarriesIndexedRevisionAndProducer` and the empty-producer refusal (D18's names), in `graph`.
 - `TestGraphIndexServesExactlyTheDeclaredVerbs` (integration), as graph-ingest's.
+- `TestMalformedIndexRowsAreSkippedLoggedAndCounted` (integration, #430): malformed rows written straight into the
+  incoming, predicate and name buckets are left out of each query's answer, logged, and counted by index (D10).
+- `TestRankNameMatchesExtremePriorities` (unit, #429): `math.MinInt` ranks before `math.MaxInt`, in either input order.
 - `TestComputeIndexStatus*` (ported from `pin:graph/index_status_test.go`), in `graph/readiness`.
 - Replacement through every read (developer contract `:158`): the pin's `replacement_reconcile_integration_test.go`
   and `predicate_layout_smoke_integration_test.go`, ported; `[A] -> [B] -> []` on outgoing, incoming, predicate (exact,

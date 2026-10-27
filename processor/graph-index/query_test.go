@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"math"
 	"slices"
 	"testing"
 
@@ -91,6 +92,22 @@ func TestRankNameMatches(t *testing.T) {
 	}
 }
 
+// TestRankNameMatchesExtremePriorities: priorities are plain ints with no narrower range
+// (vocabulary.WithAlias), so the lowest and highest still rank lowest first, whichever order
+// they arrive in (#429: a subtracting comparator overflows here and reverses them).
+func TestRankNameMatchesExtremePriorities(t *testing.T) {
+	high, low := "acme.ops.test.system.widget.002", "acme.ops.test.system.widget.001"
+	for _, items := range [][]graph.NameIndexItem{
+		{{EntityID: high, Name: "same", Priority: math.MinInt}, {EntityID: low, Name: "same", Priority: math.MaxInt}},
+		{{EntityID: low, Name: "same", Priority: math.MaxInt}, {EntityID: high, Name: "same", Priority: math.MinInt}},
+	} {
+		got := rankNameMatches(items, "same", 0)
+		if len(got) != 2 || got[0].EntityID != high || got[1].EntityID != low {
+			t.Errorf("ranking %+v = %+v, want the MinInt entity %s before the MaxInt entity %s", items, got, high, low)
+		}
+	}
+}
+
 // TestReverseReadsSkipMalformedRows: a stored INCOMING_INDEX or NAME_INDEX tail that is not
 // entity6.hex(predicate) with a canonical predicate, and a PREDICATE_INDEX key that is not
 // predicate3.entity6, is never read as a row (the pin's
@@ -122,7 +139,7 @@ func TestReverseReadsSkipMalformedRows(t *testing.T) {
 		t.Error("a key under another target's prefix was read as an incoming row")
 	}
 
-	summaries := predicateSummaries([]string{
+	summaries, malformed := predicateSummaries([]string{
 		"test.link.to." + source,
 		"test.link.to." + source, // a listing may repeat a key
 		"test.link.to.acme.ops.test.system.widget.002",
@@ -133,5 +150,9 @@ func TestReverseReadsSkipMalformedRows(t *testing.T) {
 	want := []graph.PredicateSummary{{Predicate: "test.link.to", EntityCount: 2}, {Predicate: "test.state.armed", EntityCount: 1}}
 	if !slices.Equal(summaries, want) {
 		t.Errorf("predicate summaries = %+v, want %+v", summaries, want)
+	}
+	wantMalformed := []string{"test.link.to.far." + source, "test.link.to.acme.ops.test.system.widget"}
+	if !slices.Equal(malformed, wantMalformed) {
+		t.Errorf("malformed keys = %q, want %q", malformed, wantMalformed)
 	}
 }

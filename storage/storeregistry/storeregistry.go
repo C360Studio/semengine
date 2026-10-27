@@ -17,8 +17,9 @@
 //     stale/closed store is never held.
 //
 // Ownership: the registrant (the storage component that owns the store's
-// lifecycle) owns Close. Borrowers (graph-embedding, fusion) MUST NOT Close a
-// resolved store.
+// lifecycle) owns the store. A store that has a Close, as some future backend may,
+// is closed by its registrant; objectstore.Store has none. Borrowers
+// (graph-embedding, fusion) MUST NOT close a resolved store.
 //
 // The Registry keys on storage.StreamableStore (the superset — objectstore.Store
 // implements it) and also exposes Store(), so it satisfies fusion's
@@ -71,8 +72,8 @@ func (r *Registry) Register(instance string, s storage.StreamableStore) error {
 }
 
 // Deregister removes instance from the registry. Idempotent: deregistering an
-// absent instance is a no-op. Deregister does NOT Close the store — the owning
-// component Closes it on its own Stop.
+// absent instance is a no-op. Deregister does not close the store; if the store
+// has a Close, the owning component calls it on its own Stop.
 func (r *Registry) Deregister(instance string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

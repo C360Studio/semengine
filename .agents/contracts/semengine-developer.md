@@ -268,8 +268,8 @@ class and code (`natsclient/doc.go`, "The unified RPC error contract").
 ### Storage and retention
 
 Carried with `natsclient` from SemStreams' developer contract at the pin (§ Storage and retention contracts, its
-first two bullets, which `natsclient` enforces; the rest govern graph state and the `storage` package, not yet
-ported).
+first two bullets, which `natsclient` enforces); the third, on large content, came with `storage/objectstore`. The
+rest govern graph state, not yet ported.
 
 - Keep a bucket's class, its retention and capacity protection apart. A `BucketSpec` declares a `Class`
   (`ClassAuthoritative`, `ClassDerived`, `ClassOperational`, `ClassDiagnostic`), which is descriptive, and a
@@ -284,6 +284,11 @@ ported).
   foreign retention instead of stripping it. A finite ceiling on such state may only be a `DiscardNew` limit that
   refuses writes honestly; `natsclient` has no retention kind for one yet, so adding it means a new `RetentionKind`
   with its reconcile arm (`kvspec.go`).
+- Large content goes through the backend-neutral `storage.Store` and is addressed by a `message.StorageReference`;
+  no graph, query or reply contract names a bucket or stream. NATS ObjectStore (`storage/objectstore`) is one
+  backend, and its content store has no age or size bound, because a live entity can point at any object
+  (ADR-068). `StoreContent` stores only the `body` role's text as raw bytes and refuses any other non-empty content
+  before writing; non-body text belongs in the graph as triples the producer emits.
 
 ### Payload registry
 

@@ -5,7 +5,7 @@
 // The storage package defines the core Store interface and related abstractions
 // for persisting binary data with hierarchical key-value semantics. It provides
 // a clean, implementation-agnostic API that supports multiple storage backends:
-//   - NATS JetStream ObjectStore (immutable, versioned)
+//   - NATS JetStream ObjectStore (storage/objectstore; Put replaces, no versions kept)
 //   - AWS S3 or MinIO (mutable, object storage) - future
 //   - PostgreSQL (mutable, relational) - future
 //
@@ -59,7 +59,9 @@
 // No Forced Immutability:
 //
 // The Store interface allows implementations to choose mutability semantics:
-//   - Immutable stores (NATS ObjectStore): Put() may append version/timestamp
+//   - NATS ObjectStore (objectstore.Store): Put() replaces the object at the key and
+//     keeps no earlier version (observed with nats.go v1.54.0, probe P4 on PR #432
+//     comment 6445520357; the library does not promise it)
 //   - Mutable stores (S3, SQL): Put() overwrites existing values
 //
 // This flexibility enables diverse backends while documenting behavior per
@@ -79,11 +81,11 @@
 // Basic Store Usage:
 //
 //	// Create NATS ObjectStore backend
-//	store, err := objectstore.NewStoreWithConfig(ctx, natsClient, config)
+//	// The Store holds no copy and no goroutine, so there is nothing to close.
+//	store, err := objectstore.NewStoreWithConfig(ctx, natsClient, objectstore.Config{BucketName: "MESSAGES"})
 //	if err != nil {
 //	    log.Fatal(err)
 //	}
-//	defer store.Close()
 //
 //	// Store JSON message
 //	msgJSON := []byte(`{"sensor": "temp-123", "value": 22.5}`)
@@ -96,7 +98,7 @@
 //	// List all sensor events
 //	keys, err := store.List(ctx, "events/sensors/")
 //
-//	// Delete old data
+//	// Delete old data (a key with no object returns nil)
 //	err = store.Delete(ctx, key)
 //
 // Implementing Custom KeyGenerator:
@@ -111,9 +113,8 @@
 //	    return fmt.Sprintf("%s/%s", g.prefix, timestamp)
 //	}
 //
-//	// Use with objectstore Component
-//	component := objectstore.NewComponent(config, deps)
-//	component.SetKeyGenerator(&TimestampKeyGenerator{prefix: "events"})
+//	// The objectstore Component that takes a KeyGenerator is not in this repository
+//	// yet; objectstore.Store.StoreContent builds its own keys.
 //
 // Implementing Custom MetadataExtractor:
 //
@@ -136,9 +137,9 @@
 //
 // NATS ObjectStore (storage/objectstore):
 //   - Put: O(1) - direct write to JetStream
-//   - Get: O(1) - direct read with optional caching
-//   - List: O(n) - fetches all objects, filters client-side
-//   - Delete: O(1) - marks latest version as deleted
+//   - Get: O(1) - direct read, no cache
+//   - List: O(n) - reads every object's metadata, filters and sorts client-side
+//   - Delete: O(1) - removes the object
 //
 // Future S3/MinIO Backend:
 //   - Put: O(1) - direct S3 upload
@@ -159,27 +160,19 @@
 //   - List operations: O(num_matching_keys) for key list
 //   - Put operations: O(message_size) during write
 //
-// Caching (when enabled) adds:
-//   - O(cache_size * avg_message_size) persistent memory
-//
 // # Thread Safety
 //
 // All Store implementations MUST be safe for concurrent use from multiple
 // goroutines. This is a contract requirement of the Store interface.
 //
 // Example implementations demonstrate thread safety:
-//   - objectstore.Store: NATS ObjectStore is thread-safe, cache is thread-safe
+//   - objectstore.Store: checked under the race detector (TestStoreConcurrentUseUnderRace)
 //
 // # Integration with Components
 //
-// The storage/objectstore package provides a Component wrapper that:
-//   - Exposes Store operations via NATS ports (Request/Response pattern)
-//   - Publishes storage events to NATS for observability
-//   - Integrates with component discovery and lifecycle
-//   - Supports configurable key generation and metadata extraction
-//
-// This enables storage to participate in NATS-based flows without requiring
-// direct Go API access.
+// The storage/objectstore package has the Store only. A Component wrapper that
+// would expose Store operations on NATS ports and take a KeyGenerator and a
+// MetadataExtractor is not in this repository yet.
 //
 // # Error Handling
 //
@@ -203,9 +196,8 @@
 //
 //	func TestStore_PutGet(t *testing.T) {
 //	    natsClient := getSharedNATSClient(t) // Real NATS
-//	    store, err := objectstore.NewStore(ctx, natsClient, "test-bucket")
+//	    store, err := objectstore.NewStoreWithConfig(ctx, natsClient, objectstore.Config{BucketName: "TEST"})
 //	    require.NoError(t, err)
-//	    defer store.Close()
 //
 //	    // Test actual storage operations
 //	    data := []byte("test data")

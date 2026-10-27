@@ -3404,9 +3404,9 @@
     History 1, so a revision overwritten before the follower reads it is never indexed; lastProjections keeps one
     string per entity in memory for reindex_events_total (#108's instrument); the index is rebuilt on every start,
     so queries are refused with index_not_ready for the replay's length (#108 stays open; the one load comparison is
-    in openspec notes/1.6.md); kept optional pin shapes: S4 (the owned-bucket set spelled in five places), S5 (a
-    map[string]interface{} intermediate), S6 (fixed 5 s handler deadlines, 10 s for predicateList) and S8 (two narrow
-    reader interfaces). Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
+    in openspec notes/1.6.md); kept optional pin shapes: S4 (the owned-bucket set spelled in five places), S6 (fixed 5 s
+    handler deadlines, 10 s for predicateList) and S8 (two narrow reader interfaces); S5's map intermediate became
+    []graph.OutgoingEntry. Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
     at boot until the line is deleted; semteams' published schema lists it. Removed (design D8): the dead exported and
     test-only writers, subscribeForRequests (#186), batch_size, reindexTotal and reindexUnchanged, the raceEnabled
     files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree

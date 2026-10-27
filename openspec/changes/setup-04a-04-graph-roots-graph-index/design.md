@@ -303,8 +303,9 @@ Tests that seeded indexes through S9 seed `ENTITY_STATES` and let the follower d
 the code under test.
 
 Kept, optional (Bounded port scope; none ties to a binding requirement): S4 (the owned-bucket set spelled five times;
-cost: a sixth bucket edits five places), S5 (`map[string]interface{}` intermediate), S6 (fixed 5 s handler deadlines
-inside natsclient's own; cost: two deadlines, the shorter wins), S8 (two narrow reader interfaces).
+cost: a sixth bucket edits five places), S6 (fixed 5 s handler deadlines inside natsclient's own; cost: two deadlines,
+the shorter wins), S8 (two narrow reader interfaces). S5 (the `map[string]interface{}` intermediate) did not stay: the
+outgoing plan is `[]graph.OutgoingEntry`, with the stored JSON unchanged (`notes/4.2.md`).
 
 ## D9. Configuration
 
@@ -398,8 +399,11 @@ test either rewritten against a real server or dropped with its reason in a task
   and `predicate_layout_smoke_integration_test.go`, ported; `[A] -> [B] -> []` on outgoing, incoming, predicate (exact,
   value, list, stats, compound) and name. Alias: D12.
 
-Generated checks: the pin's `reconciliation_prop_test.go` with its reference model (`reconciliation_model_test.go`)
-ports, recording seed and completed checks. Mutation rows (`task mutate:check`, run on the integration tests above,
+Generated checks: none. The pin's `reconciliation_prop_test.go` and its reference model (`reconciliation_model_test.go`)
+did not port: they need fakes in the component's private fields, and the watermark now lives in the follower; named
+examples of each replacement step stand in for them (`notes/2.3.md`, `notes/4.2.md`).
+
+Mutation rows (`task mutate:check`, run on the integration tests above,
 `notes/6.1.md`): M1 `QueryReady` skips the failed check; M2 the latch uses the live target; M3 the validating
 phase skipped; M4 the lost feed not marked; M5 `Healthy` reads `ErrorCount`; M6 completion skipped on a failed
 write (watermark pins). Each names the test expected to fail.

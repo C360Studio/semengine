@@ -64,7 +64,8 @@ passes on a clean tree at its commit (#171).
 
 - [x] 6.1 `task mutate:check` for M1-M6 (design D11) and coverage of `processor/graph-index` and `graph/follower`, in
   `notes/6.1.md`; `task verify` passes on a clean tree at the last commit before the archive commit.
-- [ ] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body.
+- [x] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body. Codex APPROVE at `c1c8656` (PR #414 comment
+  6444349487); its one MEDIUM (stale design and ledger claims) is fixed in the commit that ticks this task.
 - [ ] 6.3 Comments on #107, #109, #110, #103, #106, #68, #195, #196 and #16 (the widened capture check, design
   D17), each "implemented in PR #414 at `<SHA>`, pending merge", read back.
 

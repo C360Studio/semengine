@@ -53,13 +53,13 @@ passes on a clean tree at its commit (#171).
 
 ## 5. Evidence and review
 
-- [ ] 5.1 Coverage and the failing-first evidence in `notes/2.1.md`; `task verify` passes on a clean tree at the last
+- [x] 5.1 Coverage and the failing-first evidence in `notes/2.1.md`; `task verify` passes on a clean tree at the last
   commit before the archive commit.
-- [ ] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body.
-- [ ] 5.3 Comments on #280 (item 1 done), #195, #33, #196 and #281 (what moves to 5b), each "implemented in PR #432 at
+- [x] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body.
+- [x] 5.3 Comments on #280 (item 1 done), #195, #33, #196 and #281 (what moves to 5b), each "implemented in PR #432 at
   `<SHA>`, pending merge" where it applies, read back.
 
 ## 6. Close
 
-- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-objectstore-store`) as the last content commit, syncing
+- [x] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-objectstore-store`) as the last content commit, syncing
   `object-store` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

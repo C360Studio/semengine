@@ -25,7 +25,8 @@ comment 6443457897, "Yes, restart is the recovery (small fix)".
   `TestIntegration_HealthClearsWhenObservationSucceeds_ConsumptionNotChecked`. Gate: on the base, T2 and T3 fail at
   their last step (consumer created again, still unhealthy) and T1, T4 and T5 pass; T5's notes record whether the
   consume loop survived the relay cut (`Closed()` not fired) and the cut tick's error, the measurement design Tests
-  rests on; the output is in `notes/2.1.md`.
+  rests on; the output is in `notes/2.1.md`. If the loop closed under the cut, T5 changes mechanism or the developer
+  stops for review before 3.1 (design, Tests); the recovery proof is never waived.
   Committed with 3.1.
 
 ## 3. Code

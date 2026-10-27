@@ -122,12 +122,15 @@ only graph-ingest's connection is cut. By code reading, not yet measured (the de
 - the tick's lookup fails under a live context: `js.Stream` gives a context with no deadline nats.go's 5 s default
   API timeout (`jetstream/jetstream.go:813`, `:1270-1275`, `:457`), so it fails while the caller's context is still
   live and the fault is stored, not dropped as shutdown (`readiness.go:128-131`). The cut tick must therefore run
-  under a live context with no deadline shorter than that, not through `awaitHealthAfterTick`, whose 10 s bound
-  would end first and be read as shutdown. The 5 s value is not promised;
+  under a context without a deadline, not through `awaitHealthAfterTick`, whose 10 s bound would end first and be
+  read as shutdown (a supplied deadline is kept, and its expiry takes the shutdown path at `readiness.go:128-131`).
+  The 5 s value is not promised;
 - after the restore, the lookup succeeds and the tick clears the fault.
 
-If the measurement shows the loop closing under the cut, T5 is dropped and "The observation succeeds again" goes back
-to the unproven list with the measured line.
+Proving "The observation succeeds again" stays required. If the measurement shows the loop closing under the cut,
+T5's mechanism changes to another one that holds the consumer and fails the lookup under a live context, or the
+developer stops and the measured limitation goes back to review before task 3.1. The scenario is never moved to the
+unproven list without that review.
 
 Unproven, stated on the PR and in `notes/3.2.md`:
 

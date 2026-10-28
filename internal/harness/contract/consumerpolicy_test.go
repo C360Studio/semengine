@@ -34,11 +34,12 @@ var directConsumerCreations = map[string]bool{
 }
 
 // policyEntryPointAllowlist names the production files that may reach a policy entry point:
-// graph-ingest's JetStream input ports, its one port consumer and its one GetConsumerConfig reader.
-// A new caller is a deliberate edit here, reviewed as such; how often a listed file calls is not
-// checked (#422).
+// graph-ingest's JetStream input ports, its one port consumer and its one GetConsumerConfig reader,
+// and the objectstore Component's JetStream inputs, bound the same way. A new caller is a
+// deliberate edit here, reviewed as such; how often a listed file calls is not checked (#422).
 var policyEntryPointAllowlist = map[string]bool{
 	"processor/graph-ingest/consume.go": true,
+	"storage/objectstore/component.go":  true,
 }
 
 // directConsumerCreationAllowlist names the production files that may create a consumer

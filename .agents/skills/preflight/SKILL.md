@@ -1,5 +1,5 @@
 ---
-name: semengine-preflight
+name: preflight
 description: >-
   Select and run the existing SemEngine verification gates for a concrete diff and record their evidence.
   Use before implementation pushes or when assessing local readiness.
@@ -10,14 +10,14 @@ description: >-
 The [shared protocol](../../protocol.md) owns claims and landing. Read it first. This skill selects existing checks and
 records evidence; it grants no merge, tag or cleanup authority.
 
-## Establish the diff and its owner
+## 1. Establish the diff and its owner
 
 Work in the claim's worktree. Verify its branch, HEAD, dirty/untracked files, upstream and PR target before
 choosing checks. Compare the committed diff against the actual PR base, including a non-default target in a
 stack; also inspect the staged and unstaged work. Do not assume the discovery checkout's local `main` is current.
 Before every commit or push, verify the branch still matches the claimed PR head.
 
-## Select the existing gates
+## 2. Select the existing gates
 
 One Task entrypoint serves local work and CI. `task --list` shows what exists; inspect the `Taskfile.yml` and the
 workflows under `.github/` when exact coverage matters. A task name or old successful log does not prove parity
@@ -28,6 +28,7 @@ with current CI.
 | `task fmt` | Formats Go sources; the only task here that changes files |
 | `task fmt:check` | Fails if any Go source needs formatting; writes nothing |
 | `task doctor` | Reports tool versions and Docker reachability against their pins; starts no workloads |
+| `task ateam:doctor` | `ateam doctor --check` with the session variables unset: agent-setup files, skills and adapters, hooks, MCP, review policy, `AGENTS.md` size and rule-row parity; warnings do not fail it |
 | `task spec:check` | Validates all OpenSpec changes and specs strictly, and fails on a `Hold:` written outside every task |
 | `task spec:queue` | Shows each in-flight OpenSpec change with its holds and blocking conditions |
 | `task docs:check` | Lints Markdown with `markdownlint-cli2` |
@@ -45,7 +46,7 @@ with current CI.
 | `task test:repeat` | Unit tests (not the tool packages, not the repository guards in `internal/harness/contract`) five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
 | `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
 | `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head, or while PR `n` is a code pull request, not a draft, whose `implemented-by:` and `reviewed-by:` lines do not name the implementing and reviewing agents; reads GitHub |
-| `task verify` | The checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:tools:changed` after `test:unit` and `test:repeat` last; prints each step's time; fails on tracked-file change |
+| `task verify` | `ateam:doctor` first, then the checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:tools:changed` after `test:unit` and `test:repeat` last; prints each step's time; fails on tracked-file change |
 
 CI has three jobs: `verify` runs `task verify`; `merge-check` runs `scripts/merge-check.sh` for the pull request (on a
 push to `main`, only its up-to-date half); `required` fails if `verify` or `merge-check` failed, is missing, or was
@@ -57,6 +58,8 @@ Select by what the diff changes:
 
 - **Documentation or skill instructions only:** `task fmt:check`, `task docs:check`, and `git diff --check`; add
   `task spec:check` when `openspec/` changed.
+- **Agent setup (`AGENTS.md`, `CLAUDE.md`, `.agents/`, `.claude/`, `.codex/`, `.gemini/`):** `task ateam:doctor` and
+  `task test:unit` (`TestAgentSetupParity`).
 - **An OpenSpec change:** `task spec:check`, then read `task spec:queue` in this worktree.
 - **Go behavior:** `task test:unit` (plus `task test:tools` when `scripts/`,
   `internal/harness/`, `.github/` or `Taskfile.yml` changed), `task vet`, `task lint`, `task build`; focused tests first
@@ -74,7 +77,7 @@ Select by what the diff changes:
 
 Do not hand-run a narrower command in place of a gate CI runs: the task owns flags and pins.
 
-## Protect shared test infrastructure
+## 3. Protect shared test infrastructure
 
 Serialize heavy work on a shared host. Docker inspection is diagnostic:
 container age, a timeout signature, or a name pattern does not establish that a resource is abandoned or that a
@@ -82,7 +85,7 @@ failure is infrastructure-only. Preserve other sessions' resources. Cleanup is l
 abandoned run this session is authorized to clean up; host-wide pruning and stopping an unknown port holder are not
 preflight steps.
 
-## Report evidence and remaining gates
+## 4. Record Evidence and remaining gates
 
 Record the tested HEAD (or dirty snapshot), exact command, exit status, assertions/tests actually exercised,
 and log/artifact location. A log under a path git ignores (such as `coverage/`) is on this host only: say so,

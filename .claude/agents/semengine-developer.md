@@ -3,6 +3,7 @@ name: semengine-developer
 description: Implement nontrivial SemEngine Go work through the canonical project-specific contract.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 model: opus
+effort: medium
 ---
 
 # SemEngine developer adapter

@@ -26,6 +26,14 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   in the unticked task it stops, on any of its lines, as `Hold:` followed by what it waits for (an issue or PR number,
   or the owner's ruling). The queue reads every line of an unticked task and prints each hold from `Hold:` on. A hold
   in a heading or a paragraph outside every task does not show, and `task spec:check` fails on it.
+- **Session checkpoint:** `ateam state handoff` (the [handoff](skills/handoff/SKILL.md) skill) writes
+  `.ateam/state.json`, which git ignores, and posts the five-field checkpoint (`Goal`, `Addresses`, `Constraints`,
+  `Done when`, `Checks to run`) to the open PR; [pickup](skills/pickup/SKILL.md) reconciles it against live state.
+  Hand off at 450K tokens of context: `.claude/settings.json` sets auto-compaction at 500K, which a session never
+  reaches. Ride past 450K only when staying on the same plan in the same context is worth more than a clean pickup,
+  and say so in the checkpoint. The checkpoint records every pending paid run, background job or automation with its
+  identifier and owner, and whether it keeps running, so the next session neither duplicates nor silently cancels one
+  in flight. An unpushed commit makes a checkpoint local; it does not erase a draft-PR claim.
 - **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
   on PR #1.
 
@@ -100,8 +108,10 @@ on optional maintenance.
 - **Take work:** an unclaimed issue, then a dedicated worktree on an agent-prefixed branch (`claude/<topic>`,
   `codex/<topic>`, `gemini/<topic>`; the prefix names who claimed it), then push, then a draft PR with `Closes #n` or
   `Addresses #n`, then work. One claimed PR owns one worktree. When multiple agents share a host, the primary checkout
-  is discovery-only and no agent commits from it. Immediately before every commit and push, verify that the worktree's
-  current branch is the draft PR head; a mismatch stops the operation. The prefix says who claimed the work, never
+  is discovery-only and no agent commits from it; its `task spec:queue` does not list unmerged changes elsewhere. The
+  previous writer stops or releases ownership before a pickup edits; never seize an active worktree. Immediately
+  before every commit and push, verify that the worktree's current branch is the draft PR head; a mismatch stops the
+  operation. The prefix says who claimed the work, never
   whether that agent's worktree is idle.
 - **Bootstrap exception:** while the repository has no base protocol, SETUP 01 (epic #5, claim PR #12, branch
   `setup-01-foundation`, unprefixed) is claimed under the plan's bounded exception. The exception ends when that PR
@@ -151,7 +161,9 @@ on optional maintenance.
   branch no longer has. The squash merge keeps `main` linear either way.
   The developer's notes for an implementation review, the choices a task made that its design does not spell out, are
   a file per task, `openspec/changes/<id>/notes/<task>.md`, with a one-line pull request comment that links it
-  (developer contract § Handoff); they archive with the change.
+  (developer contract § Handoff); they archive with the change. Evidence cited in a PR or task opens on another
+  machine: output pasted into the PR, or a CI run. A path git ignores (such as `coverage/` or `.ateam/`) exists only
+  on the host that wrote it: name it as local only, and never make it a task's only proof.
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by an agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
   records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are any
@@ -226,7 +238,8 @@ on optional maintenance.
   fix reopens its issue. A property-based test that fails on one run and passes on the next is a known flake too: the
   issue records the seed, and the fix keeps the failing input as a named test (`docs/testing.md`, "Running and
   replaying a Rapid test").
-- **Close:** the squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
+- **Close:** at a session boundary, before context compaction, run `ateam state handoff` ("Session checkpoint"
+  above). The squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
   authorization. The declaration must predate the review rounds that cover it. A PR that only `Addresses` an epic
   closes nothing. A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on
   the issue itself; an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a
@@ -241,7 +254,7 @@ the rules on `main` require an up-to-date head, and fails a code pull request th
 `implemented-by:` and `reviewed-by:` lines name the agents as "Cross-agent review" says. It reads GitHub, so it is
 not part of `task verify`. `required` fails if `verify` or `merge-check` failed, is missing, or was skipped or
 cancelled; it is the check the ruleset on `main` requires. Gate selection and evidence recording are in
-[semengine-preflight](skills/semengine-preflight/SKILL.md).
+[preflight](skills/preflight/SKILL.md).
 
 There is no program baton document. Agents mutate only this repository: SemStreams and other sister repositories are
 read-only inventory.

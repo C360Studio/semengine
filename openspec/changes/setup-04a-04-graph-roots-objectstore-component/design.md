@@ -208,16 +208,25 @@ not its promise. Records the method joins: `transport-client` spec (`:146`, `:20
 **Contract.** `func (c *Client) WaitConsumerHandlers(ctx context.Context, handle jetstream.ConsumeContext) error`:
 
 - It waits; it does not stop delivery. Ending delivery stays the caller's (`Drain`/`Stop` on its own handle) or
-  `Close`'s. It returns nil once the consumer's delivery has ended and every handler invocation of that consumer has
-  returned; from then on no handler of it starts, and a later delivery is refused, logged and counted as today.
+  `Close`'s. It returns nil once the consumer's delivery has ended, every handler invocation of that consumer has
+  returned, **and the consumer's durable claim is released**: it waits on `consumerOwnership.released`
+  (`owned_delivery.go:112`; its deferred close, `:135`, runs after `release`, `:164`), not on `ownedDelivery.done`.
+  `done` closes before `release` frees the claim and forgets the policy and metrics (`natsclient/stream.go:678-684`), so
+  a nil on `done` could let a caller that starts the same durable next meet its own claim. From then on no handler of it
+  starts, and a later delivery is refused, logged and counted as today.
 - A nil `ctx` is refused as invalid input (spec `:235`). If `ctx` ends first it returns an error matching `ctx.Err()`
   and changes nothing; a later call waits again.
 - A `handle` this client did not return from one of the three entry points (nil, another client's, a value nats.go
   never made) is refused at once as invalid input, never waited on and never a panic. A failed setup returns no handle,
   so it has nothing to wait on.
 - A handle stays known to its client for the client's life, so a call after its handlers finished, or after `Close`
-  returned nil (which joins them, spec `:533`), returns nil at once. The cost is one small record per consumer a
-  client ever starts; components start their consumers once per process (ADR-095).
+  returned nil (which joins them, spec `:533`), returns nil at once. Dropping the record at release would make a
+  finished handle look foreign. This differs from the client's stated rule for durable claims, which are kept
+  "without retaining lifecycle handles" (`natsclient/client.go:73-74`): the record holds a handle only as a lookup key
+  for its finished ownership, with no lifecycle authority (nothing stops, drains or closes through it). Its cost is one
+  small record per consumer a client ever starts. That matters only for a caller that creates consumers per request or
+  rebinds in a loop; there is no such production caller: components start their consumers once per `Start`, and an
+  instance starts once (ADR-095), and #216's ruling made restart, not rebinding, the recovery.
 - It never closes, drains or reconnects the client and never wraps or replaces the handle. No other `natsclient`
   change.
 
@@ -233,19 +242,25 @@ context for each; a context that ends first keeps the input for a later `Stop` (
 `TestHandlerJoinWaitsForRunningHandlersAndRefusesLaterOnes` is dropped with the type, its behaviour now proven in
 `natsclient`.
 
-**Proving tests (natsclient, failing first: the method does not exist):** `TestWaitConsumerHandlersWaitsForRunningHandler`
-(a handler held mid-invocation; the handle stopped; the wait does not return until the handler is released, then nil),
-`TestWaitConsumerHandlersAfterConnectionLoss` (broker gone for good while a handler runs: `Closed()` has fired and the
-wait still blocks until the handler returns), `TestWaitConsumerHandlersContextEndsFirst` (error matches `ctx.Err()`; a
-second call with a fresh context returns nil after release), `TestWaitConsumerHandlersRefusesUnknownHandle` (nil, a
-foreign client's handle, a fake non-comparable value: invalid input, no wait, no panic),
-`TestWaitConsumerHandlersAfterClose` (nil at once), and `TestWaitConsumerHandlersRefusesNilContext`; the late-delivery
-refusal stays proven by the existing `:146` scenario's test.
+**Proving tests (natsclient, failing first: the method does not exist):**
+`TestWaitConsumerHandlersWaitsForRunningHandler` (a handler held mid-invocation; the handle stopped; the wait does not
+return until the handler is released, then nil, and a consumer with the same durable then starts on the same client: the
+claim is released), `TestWaitConsumerHandlersAfterConnectionLoss` (broker gone for good while a handler runs: `Closed()`
+has fired and the wait still blocks until the handler returns), `TestWaitConsumerHandlersContextEndsFirst` (handle not
+stopped, a handler held; the wait's short context ends: error matches `ctx.Err()`; then the handler is released, one
+more message is published and the handler must receive it, which proves the wait stopped nothing; then the handle is
+stopped and a call with a fresh context returns nil), `TestWaitConsumerHandlersRefusesUnknownHandle` (nil, a foreign
+client's handle, a fake non-comparable value: invalid input, no wait, no panic), `TestWaitConsumerHandlersAfterClose`
+(nil at once), and `TestWaitConsumerHandlersRefusesNilContext`; the late-delivery refusal stays proven by the existing
+`:146` scenario's test. Shown able to fail: each runs red against a stub that returns nil at once, by an assertion and
+not only a compile error (the blocking, ctx-error, invalid-input and claim assertions), except `…AfterClose`, shown red
+against a stub that forgets a handle at release; and `…ContextEndsFirst` also runs red against a version that stops the
+handle before waiting (the extra message is not received). Recorded in `notes/4.1.md`.
 
 **Adopters (reusable primitive).** The objectstore Component (this change); graph-ingest's `Stop` (#441, after this
 merges: `processor/graph-ingest` waits on `Closed()` today, the same gap). Recorded on #441; no other caller drains a
 consumer and waits for its handlers (`git grep -n 'Closed()' -- '*.go' ':!*_test.go' ':!natsclient'`, to be re-run in
-task 7.1).
+task 4.1).
 
 ## D10. Issues
 
@@ -257,7 +272,9 @@ task 7.1).
 | #280 | untouched (item 3 is `pkg/lifecycle`) |
 | #281 | untouched (defect in `component/schema_tags.go`) |
 | #216 | closed; its ruling applied: input binding lost is a stuck state (D2), task 2.2 |
-| #443 | retired, `Closes #443`: D11, tasks 7.1-7.3 |
+| #443 | retired, `Closes #443`: D11, tasks 4.1-4.3 |
+| #438 | retired, `Closes #438`: fixed at `8af0674` (`ack_wait` forwarded, `consumer_name` refused) |
+| #439 | retired, `Closes #439`: fixed at `8af0674` (Stop joins running handlers after connection loss); D11 moves the join into `natsclient` |
 | #441 | stays: graph-ingest adopts D11's method after this merges |
 | #36 | stays: a delivery parked after `MaxDeliver` is declared in the spec, not reported (D4); making it visible is #36's re-homed observer, a later change |
 

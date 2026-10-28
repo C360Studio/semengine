@@ -1,9 +1,9 @@
 # SemEngine
 
 Guidance for coding agents. Codex and Antigravity (Gemini) load this file as `AGENTS.md`; `CLAUDE.md` imports it, so
-there is one copy (kept well under 24,000 bytes so rule loaders with a 24 KB per-file cap never truncate it). It
+there is one copy (under 24,000 bytes, so a loader's 24 KB per-file cap never truncates it). It
 carries the facts an agent cannot derive from the tree and names where each rule lives. Per-platform command names and
-model routing: `.agents/README.md`. Full test-by-test enforcement audit matrix: `.agents/rules-index.md`.
+model routing: `.agents/README.md`.
 
 ## What this is for
 
@@ -31,6 +31,7 @@ describe planned code as present.
 
 ```bash
 task doctor       # tool versions and Docker reachability; starts no workloads
+task ateam:doctor # ateam doctor --check: agent setup, skills, hooks, AGENTS.md size, rule-row parity
 task fmt          # format Go sources (the only command that writes)
 task fmt:check    # fail on formatting drift
 task spec:check   # strict OpenSpec validation; fails on a Hold: outside every task
@@ -48,19 +49,19 @@ task test:tools   # tests of scripts, Taskfile.yml and CI; verify runs them via 
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
 task mutate:check # -- -pkg -test -file -mutant -expect/-expect-text: run one test against one mutant outside the repo
 task merge:check  # -- <n>: fail on open flakes PR n leaves open, missing up-to-date rule, or missing review lines
-task verify       # spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
+task verify       # ateam:doctor spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
                   # ledger:check test:unit test:tools:changed test:integration cover:check test:repeat; fails if tracked files changed
 ```
 
 Run `task verify` before every implementation push. CI has three jobs: `verify` runs the same commands;
 `merge-check` runs `scripts/merge-check.sh` (`task merge:check`: known flakes, up-to-date rule, cross-agent review
 lines); `required` fails if either failed, is missing, or was skipped/cancelled. Gate selection per diff:
-`.agents/skills/semengine-preflight/SKILL.md`.
+`.agents/skills/preflight/SKILL.md`. Session checkpoints: ateam's `pickup` and `handoff` skills.
 
 ## Rules and what enforces them
 
-Domain-grouped working reference. `.agents/rules-index.md` carries the full 3-column enforcement audit matrix (exact
-contract sections, spec requirements, test names, and review-only coverage gaps). Short names in "Where": `arch`,
+Domain-grouped working reference. `.agents/rules-index.md` is the full test-by-test enforcement matrix (contract
+sections, spec requirements, test names, review-only gaps). Short names in "Where": `arch`,
 `dev`, `rev`, `writer` -> `.agents/contracts/semengine-<role>.md`; `protocol` -> `.agents/protocol.md`; `<name> spec` ->
 `openspec/specs/<name>/spec.md`. In "Gate": `review` means review only (no command fails when broken); `verify` means
 enforced by `task verify` (`verify+review` when structural guards cover the core rule and edge cases remain review-only).
@@ -123,7 +124,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `verify+review` | No `t.Parallel` in an integration-tagged Go file | `harness-boundaries` spec |
 | `verify+review` | A test that starts its own NATS server says why, with `// Own server: <reason>` on the line above `natsfixture.New` | `harness-boundaries` spec; `docs/test-infrastructure.md` |
 | `review` | Harness code exists only for a failure on today's tree that testcontainers/`go test`/`t.Cleanup`/Task does not handle, names that failure + issue in its doc comment, and is removed once retired | `docs/test-infrastructure.md` |
-| `verify` | Critical packages hold their coverage floor | `.agents/skills/semengine-preflight/SKILL.md` |
+| `verify` | Critical packages hold their coverage floor | `.agents/skills/preflight/SKILL.md` |
 | `verify+review` | Tests use an independent oracle and are shown able to fail (structural guards carry paired sensitivity tests) | `docs/testing.md`; `dev`, `rev` |
 | `review` | Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md`; `dev`, `rev` |
 | `review` | Generated runs record seed, completed checks, and replayable failure; assertions are shown to run; histories check against a reference model | `docs/testing.md`; `dev`, `rev` |
@@ -166,11 +167,11 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | A new rule names what enforces it and adds its row to `AGENTS.md` and `.agents/rules-index.md` | `rev` |
 | `review` | Before claiming work, mutating state, or spawning role subagents on an underspecified prompt, check any named issue/PR/file first, then confirm Deliverable, Scope/non-goals, Definition of Done/verification, and Stop boundary; when ambiguous, propose a 3–4 bullet Definition of Done and ask 1–3 targeted questions (#224) | `protocol`; `.agents/README.md` |
 | `review` | Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` |
-| `verify+review` | Architect, developer, and reviewer run on the frontier model tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`); architect and developer default to `medium` effort (escalating to `high` for cross-cutting concurrency/boundary work or failed-review rounds), reviewer runs at `high` effort, and technical-writer uses `sonnet` / `flash` and `low`/`medium` effort (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
-| `verify+review` | `AGENTS.md` stays under 24,000 bytes, matches `.agents/rules-index.md` in numbered rule domains and row counts (`verify`) with 1-to-1 rule correspondence (`review`), and all agent/skill adapters match their canonical contracts (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
+| `verify+review` | Architect, developer, and reviewer run on the frontier tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`) at `medium`, `medium`, `high` effort (architect and developer escalate to `high` for cross-cutting concurrency/boundary work or failed reviews); technical-writer runs `sonnet` / `flash` at `low`/`medium`; adapters pin model and effort (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
+| `verify+review` | `AGENTS.md` stays under 24,000 bytes and matches `.agents/rules-index.md` in rule domains and row counts (`verify`), row for row (`review`); agent/skill adapters match their contracts (#224, #225) | `task ateam:doctor`; `.agents/README.md`; `harness-boundaries` spec |
 | `merge:check+review` | Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*` or `.agents/contracts/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` naming `claude`, `codex`, or `gemini`); docs-only/archive commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
 | `review` | Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` |
-| `review` | Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `.agents/skills/semengine-handoff`, `semengine-preflight` |
+| `review` | Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `protocol`; `.agents/skills/preflight` |
 | `review` | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
 | `review` | Developer notes on task choices not spelled out in the design go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev`, `rev`; `protocol` |
 

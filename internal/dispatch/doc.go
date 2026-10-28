@@ -54,6 +54,14 @@
 // with an error. A pool nobody shuts down keeps its lanes until the
 // process ends.
 //
+// Wait() returns once every lane has exited, and takes no context.
+// Lanes exit only after Shutdown has begun and every accepted item has
+// been processed, so a Wait called before Shutdown blocks until then,
+// and a Wait called after the lanes exited returns at once. It is the
+// join after a Shutdown whose context had already ended: Shutdown
+// begins the drain and returns ctx.Err(), and Wait waits for it. Wait
+// has no bound: if nobody calls Shutdown it blocks forever.
+//
 // A producer parked in SubmitBlocking on a full lane holds Shutdown up
 // until the lane takes its item. On shutdown, cancel the context passed
 // to SubmitBlocking first, then call Shutdown.

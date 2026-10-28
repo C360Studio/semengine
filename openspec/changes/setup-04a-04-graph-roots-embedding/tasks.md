@@ -42,7 +42,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   and #454); behaviour unchanged (design D1, D4). Gate: the follower's tests,
   `TestStopWatchGivesUpOnADeliveryThatNeverCloses` (kept in the follower) and `TestFollowerRunReturnsAndLeavesNothing`
   pass unchanged in what they assert, a kvwatch test of the bound passes; `task verify`.
-- [ ] 3.0b `(*KeyedPool).Wait()` in `internal/dispatch` (design D1, D4), test first:
+- [x] 3.0b `(*KeyedPool).Wait()` in `internal/dispatch` (design D1, D4), test first:
   `TestKeyedPoolWaitJoinsAfterShutdown` (a `Wait` begun before `Shutdown` returns only after `Shutdown(ctx)` with an
   ended `ctx` was called and every accepted item was processed; `Wait` after the join returns at once), in
   `synctest`. Gate: `go test -race -count=1 ./internal/dispatch`; graph-index's and graph-ingest's tests unchanged.

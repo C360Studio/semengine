@@ -308,6 +308,17 @@ func (p *KeyedPool[W]) Shutdown(ctx context.Context) error {
 	}
 }
 
+// Wait returns once every lane has exited. Lanes exit only after
+// Shutdown has begun and every accepted item has been processed, so a
+// Wait called before Shutdown blocks until a later Shutdown drains the
+// pool, and a Wait called after the lanes exited returns at once. It
+// takes no context and has no bound: like sync.WaitGroup.Wait, it
+// blocks forever if nobody calls Shutdown. It is the join for a caller
+// whose Shutdown(ctx) returned ctx.Err() because ctx had already ended.
+func (p *KeyedPool[W]) Wait() {
+	<-p.stopDone
+}
+
 // drain runs once, started by the first Shutdown: it waits for the
 // submits accepted before Shutdown to land, closes every lane channel
 // so each lane exits after its last item, and closes stopDone once

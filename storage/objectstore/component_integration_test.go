@@ -310,7 +310,7 @@ func TestLostJetStreamInputReportsUnhealthy(t *testing.T) {
 		t.Fatalf("Health after Start = %+v, want healthy", health)
 	}
 	// nats.go ends a consume loop on the deletion notice the server sends to a waiting pull
-	// request (jetstream/pull.go:740 at v1.54, read, not otherwise measured); a deletion that
+	// request (jetstream/pull.go:740 at v1.54, read; observed once, not promised); a deletion that
 	// lands before the loop's first pull reaches the server leaves the loop pulling, and only the
 	// lookup reads the loss. The test waits for that pull, so the scenario is a running input
 	// losing its consumer.

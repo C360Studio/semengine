@@ -30,7 +30,8 @@ inventory probe 2).
 goes unhealthy, `/readyz` fails, the supervisor restarts (#216 comment 6443457897); the accepted Store design routed
 the ruling here (archived `…objectstore-store/design.md:311`). A deleted consumer ends the consume loop (`Closed()`
 fires) when the server's deletion notice answers a pull waiting at the server (nats.go v1.54
-`jetstream/pull.go:740`, read; measured in `notes/2.2.md` item 9: deleted before the first pull, the loop kept running
+`jetstream/pull.go:740`, read; observed once, not promised, `notes/2.2.md` item 9: deleted before the first pull, the loop
+kept running
 30 s later, and the lookup alone reports the loss), but a broker restart that loses a memory-backed stream does not:
 nats.go re-pulls forever (archived
 `fix-216-consumer-rebind/inventory.md:34`, `:99`, `:124`). graph-ingest catches both with its status tick

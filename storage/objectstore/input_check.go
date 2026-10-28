@@ -46,8 +46,8 @@ func (c *Component) watchInputs(ctx context.Context, inputs []watchedInput) {
 // checkInputs observes each JetStream input twice, as graph-ingest's status tick does (#216's
 // ruling): (a) its consume loop ended while the Component runs, recorded for good, and (b) its
 // consumer looked up by name, a failed lookup being a stuck state until a later lookup succeeds.
-// A deleted consumer ends the loop; a broker restart that loses a memory stream does not, and
-// only the lookup sees it. The result replaces inputFault, which Health reads. A check cut short
+// A consumer deleted while a pull waits at the server ends the loop; one deleted before the first
+// pull, or a broker restart that loses a memory stream, does not, and only the lookup sees it. The result replaces inputFault, which Health reads. A check cut short
 // because ctx ended records nothing: that is shutdown, not a fault.
 //
 // The loop's end is read first and the shell's running state second. The shell stops running

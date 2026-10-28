@@ -79,10 +79,10 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 5. Evidence and review
 
-- [ ] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
-  comment.
+- [x] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
+  comment. Passed at `c273595` (pinned ateam v0.3.3); notes linked from the code-stop comments on PR #458.
 - [ ] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body retires #35 and #107 (design D10).
-- [ ] 5.3 Comments on #141 and #195 ("implemented in PR #458 at `<SHA>`, pending merge"), read back.
+- [x] 5.3 Comments on #141 and #195 ("implemented in PR #458 at `<SHA>`, pending merge"), read back.
 
 ## 6. Close
 

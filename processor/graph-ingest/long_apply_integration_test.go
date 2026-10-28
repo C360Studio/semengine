@@ -5,8 +5,7 @@ package graphingest
 import (
 	"context"
 	"encoding/json"
-	"sync"
-	"sync/atomic"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/graph"
-	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 )
@@ -23,67 +21,22 @@ import (
 // The port declares no heartbeat_interval, so graph-ingest's is a quarter of it.
 const longApplyAckWait = 2 * time.Second
 
-// heldApplyBucket is the long-apply test's applied-sequence bucket: the process-kill test's held write, which also
-// reports its arrival and ends. Put closes entered on the first write, then waits until the test closes release, when
-// it makes the write, or until its context ends. Every other method is the bucket's.
-type heldApplyBucket struct {
-	jetstream.KeyValue
-	enterOnce sync.Once
-	entered   chan struct{}
-	release   chan struct{}
-}
-
-func (b *heldApplyBucket) Put(ctx context.Context, key string, value []byte) (uint64, error) {
-	b.enterOnce.Do(func() { close(b.entered) })
-	select {
-	case <-b.release:
-		return b.KeyValue.Put(ctx, key, value)
-	case <-ctx.Done():
-		return 0, ctx.Err()
-	}
-}
-
-// progressCountingMsg is a delivery to graph-ingest that counts the in-progress signals sent for it.
-type progressCountingMsg struct {
-	jetstream.Msg
-	inProgress *atomic.Int64
-}
-
-func (m progressCountingMsg) InProgress() error {
-	m.inProgress.Add(1)
-	return m.Msg.InProgress()
-}
-
 // startLongApplyIngest starts graph-ingest on client under the c360.test authority with the entity_stream port
-// declaring ack_wait 2s and no heartbeat_interval. Through the consumeStream seam, as startSettlementIngest does, the
-// applied-sequence bucket is replaced by held, and each delivery is handed on as a progressCountingMsg counting into
-// inProgress. The replaced store has no operation timeout: the held write outlasts the five seconds KVStore gives a
-// write by default, and on release it must make the write on graph-ingest's own context.
-func startLongApplyIngest(ctx context.Context, t *testing.T, client *natsclient.Client, held *heldApplyBucket,
-	inProgress *atomic.Int64) *graphIngestTestOwner {
+// declaring ack_wait 2s and no heartbeat_interval, and pause as its logger's handler.
+func startLongApplyIngest(ctx context.Context, t *testing.T, client *natsclient.Client,
+	pause *pauseOnRecord) *graphIngestTestOwner {
 	t.Helper()
 	cfgJSON, err := json.Marshal(withEntityStreamTiming(t, DefaultConfig(), longApplyAckWait.String(), ""))
 	require.NoError(t, err)
-	created, err := CreateGraphIngest(cfgJSON, testDependencies(t, client, withAuthority("c360", "test")))
+	deps := testDependencies(t, client, withAuthority("c360", "test"))
+	deps.Logger = slog.New(pause)
+	created, err := CreateGraphIngest(cfgJSON, deps)
 	require.NoError(t, err)
 	c := created.(*Component)
 	owner := newGraphIngestTestOwner(c)
 	defer owner.provisionalFinish(ctx, t)
 	require.NoError(t, c.Initialize())
 	registerMergeTestPayload(t, c)
-	c.consumeStream = func(ctx context.Context, port natsclient.PortConsumerContext,
-		cfg natsclient.StreamConsumerConfig, handler func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		bucket, err := kvcatalog.EnsureCatalogBucket(ctx, c.natsClient, graph.BucketGraphIngestAppliedSeq)
-		if err != nil {
-			return nil, err
-		}
-		held.KeyValue = bucket
-		c.ingestGuardBucket = c.natsClient.NewKVStore(held, func(o *natsclient.KVOptions) { o.Timeout = 0 })
-		return c.natsClient.ConsumeStreamWithConfig(ctx, port, cfg, func(ctx context.Context, msg jetstream.Msg) {
-			handler(ctx, progressCountingMsg{Msg: msg, inProgress: inProgress})
-		})
-	}
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 	owner.transfer()
 	return owner
@@ -92,11 +45,12 @@ func startLongApplyIngest(ctx context.Context, t *testing.T, client *natsclient.
 // TestIntegration_Settlement_LongApplyIsNotRedelivered holds graph-ingest-recovery, "Settlement order", scenario
 // "Long apply" (design D8, "Long apply"; task 4.4 part 2): an input whose application starts at once and outlasts the
 // consumer's acknowledgement wait is not delivered again while it is applied. graph-ingest's consumer has a 2-second
-// wait; the application is held at its applied-sequence write. The oracle that says the wait has passed is a consumer
-// of the test's own on the same stream and subject, with the same wait, created once the write has begun: by the time
-// it has delivered the input three times, at least two of its waits have passed since graph-ingest's delivery, and
-// both consumers' timers run on one server. graph-ingest's consumer must then show one delivery, none redelivered,
-// one acknowledgement pending, and in-progress signals sent. Once released, the input is acknowledged after one
+// wait; the application is held after its entity write and before its applied-sequence record, by graph-ingest's
+// logger handler pausing on "Entity ingested" (fix-301 design D2, "The pause"). The oracle that says the wait has
+// passed is a consumer of the test's own on the same stream and subject, with the same wait, created once the
+// application is held: by the time it has delivered the input three times, at least two of its waits have passed
+// since graph-ingest's delivery, and both consumers' timers run on one server. graph-ingest's consumer must then show
+// one delivery, none redelivered, and one acknowledgement pending. Once released, the input is acknowledged after one
 // delivery and the graph is as one application left it.
 func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
@@ -111,29 +65,20 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	js, err := client.JetStream()
 	require.NoError(t, err)
 
-	held := &heldApplyBucket{entered: make(chan struct{}), release: make(chan struct{})}
-	var inProgress atomic.Int64
-	owner := startLongApplyIngest(ctx, t, client, held, &inProgress)
+	pause := newPauseOnRecord("Entity ingested")
+	owner := startLongApplyIngest(ctx, t, client, pause)
 	defer owner.finish(ctx, t)
-	var releaseOnce sync.Once
-	releaseHeld := func() { releaseOnce.Do(func() { close(held.release) }) }
-	defer releaseHeld() // before owner.finish: Stop must not wait on a held write
+	defer pause.Release() // before owner.finish: Stop must not wait on a held application
 	entities, err := js.KeyValue(ctx, graph.BucketEntityStates)
 	require.NoError(t, err)
 	guardRecords, err := js.KeyValue(ctx, graph.BucketGraphIngestAppliedSeq)
 	require.NoError(t, err)
 
-	// (1) One input, and its application held at the applied-sequence write.
+	// (1) One input, and its application held after its entity write.
 	seq := publishTriples(ctx, t, client, entityID, message.Triple{
 		Subject: entityID, Predicate: settlementPredicate, Object: settlementObject, Timestamp: fixtureTime, Confidence: 1.0,
 	})
-	enteredCtx, cancelEntered := context.WithTimeout(ctx, settlementApplyBound)
-	defer cancelEntered()
-	select {
-	case <-held.entered:
-	case <-enteredCtx.Done():
-		t.Fatalf("graph-ingest made no applied-sequence write within %s", settlementApplyBound)
-	}
+	pause.awaitEntered(ctx, t, settlementApplyBound)
 
 	// (2) and (3) The oracle, created only now, delivers the input three times, never acknowledged.
 	oracleConsumer, err := js.CreateOrUpdateConsumer(ctx, entityStream.name, jetstream.ConsumerConfig{
@@ -153,23 +98,21 @@ func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 		oracleDeliveries = append(oracleDeliveries, meta.NumDelivered)
 	}
 
-	// (4) graph-ingest's delivery: one, not redelivered, pending, and kept in progress.
+	// (4) graph-ingest's delivery: one, not redelivered, pending. The entity write precedes the held record
+	// (pause.entered, awaited at (1)), and the applied-sequence record follows the release.
 	delivery, err := ingestConsumer(ctx, js)
 	require.NoError(t, err)
-	signals := inProgress.Load()
-	t.Logf("graph-ingest's consumer: %+v; in-progress signals: %d; the oracle's delivery counts: %v",
-		delivery, signals, oracleDeliveries)
+	t.Logf("graph-ingest's consumer: %+v; the oracle's delivery counts: %v", delivery, oracleDeliveries)
 	require.Equal(t, 0, delivery.Redelivered, "the input must not be delivered again while it is applied")
 	require.Equal(t, uint64(1), delivery.Deliveries, "the input must have been delivered once")
 	require.Equal(t, 1, delivery.AckPending, "the input must be pending acknowledgement")
-	require.GreaterOrEqual(t, signals, int64(1), "the application must have signalled that it is in progress")
 	_, err = guardRecords.Get(ctx, guardKey)
-	require.ErrorIs(t, err, jetstream.ErrKeyNotFound, "the held write must not have reached the bucket")
+	require.ErrorIs(t, err, jetstream.ErrKeyNotFound, "the held application must not have written its record")
 	applied := graphState(ctx, t, entities)
 	requirePublishedStatementOnce(t, applied[entityID])
 
 	// (5) Released, the input is acknowledged after its one delivery.
-	releaseHeld()
+	pause.Release()
 	delivery = awaitSettlement(ctx, t, nil, "the input's acknowledgement", settlementApplyBound,
 		func(ctx context.Context) (ingestDelivery, error) { return ingestConsumer(ctx, js) },
 		func(d ingestDelivery) bool { return d.AckFloor >= seq && d.AckPending == 0 })

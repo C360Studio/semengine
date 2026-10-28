@@ -304,11 +304,7 @@ func (c *Component) DebugStatus() any {
 // end-of-snapshot marker means the full resident state was seen. Raising the
 // bucket's history depth invalidates this marker math.
 func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclient.KVStore) error {
-	watch := bucket.Watch
-	if c.watchEntityStates != nil {
-		watch = c.watchEntityStates
-	}
-	watcher, err := watch(ctx, ">")
+	watcher, err := bucket.Watch(ctx, ">")
 	if err != nil {
 		return errs.WrapTransient(err, "Component", "startEntityStateGuard", "open ENTITY_STATES snapshot watcher")
 	}

@@ -4,7 +4,7 @@ package graphingest
 // 6066791396): the indexing profile, explicit or the floor, hierarchy statements and a hierarchy
 // container's statements carry the latest Timestamp among the write's own statements, on every
 // lane, reserved sources included, and never the clock. Each case drives a lane's production
-// entry: the consume closure Start wires for the entity_stream port, the extract-then-ingest
+// entry: the input lane Start builds for the entity_stream port, the extract-then-ingest
 // path behind it, the canonical create handler and the in-process create.
 
 import (
@@ -16,7 +16,6 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/vocabulary"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // Times far from the wall clock, so a statement stamped from the clock cannot equal one. The
@@ -89,30 +88,30 @@ func assertBirthDerivations(t *testing.T, c *Component, id string, at time.Time,
 }
 
 // startHierarchyStreamLane is startStreamLane with hierarchy inference on.
-func startHierarchyStreamLane(t *testing.T) (*Component, func(context.Context, jetstream.Msg)) {
+func startHierarchyStreamLane(t *testing.T) (*Component, *inputLane) {
 	t.Helper()
-	c, handler := startStreamLane(t)
+	c, lane := startStreamLane(t)
 	c.config.EnableHierarchy = true
 	buildHierarchyInference(t, c)
-	return c, handler
+	return c, lane
 }
 
 func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 	t.Run("stream birth takes the envelope's creation time", func(t *testing.T) {
-		c, handler := startHierarchyStreamLane(t)
+		c, lane := startHierarchyStreamLane(t)
 		const id = "c360.test.robotics.mav1.drone.001"
 		payload := &mergeTestGraphable{entityID: id, triples: []message.Triple{
 			{Subject: id, Predicate: "robotics.status.armed", Object: true, Confidence: 1},
 		}}
 		data := streamLaneData(t, payload, "derive-producer", message.WithTime(derivedEnvelopeTime))
-		if got := deliverStreamLane(t, handler, data, 1); got != "ack" {
+		if got := deliverStreamLane(t, lane, data, 1); got != "ack" {
 			t.Fatalf("disposition = %s, want ack", got)
 		}
 		assertBirthDerivations(t, c, id, derivedEnvelopeTime, "robotics.status.armed")
 	})
 
 	t.Run("stream birth takes a later statement time", func(t *testing.T) {
-		c, handler := startHierarchyStreamLane(t)
+		c, lane := startHierarchyStreamLane(t)
 		const id = "c360.test.robotics.mav1.drone.002"
 		// The later statement is not the last, so neither the first nor the last statement's
 		// time is the latest.
@@ -122,7 +121,7 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 			{Subject: id, Predicate: "robotics.status.battery", Object: 87, Timestamp: derivedEarlierTime, Confidence: 1},
 		}}
 		data := streamLaneData(t, payload, "derive-producer", message.WithTime(derivedEnvelopeTime))
-		if got := deliverStreamLane(t, handler, data, 1); got != "ack" {
+		if got := deliverStreamLane(t, lane, data, 1); got != "ack" {
 			t.Fatalf("disposition = %s, want ack", got)
 		}
 		assertBirthDerivations(t, c, id, derivedLaterTime,
@@ -158,7 +157,7 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 	// A stream arrival for an existing entity with no profile stamps one. It takes the arrival's
 	// time, not the stored statements': the stored one is later than the arrival's.
 	t.Run("stream merge into an unprofiled entity takes the arrival's time", func(t *testing.T) {
-		c, handler := startStreamLane(t)
+		c, lane := startStreamLane(t)
 		const id = "c360.test.robotics.mav1.drone.004"
 		seed := graph.EntityState{
 			ID:          id,
@@ -179,7 +178,7 @@ func TestDerivedStatementsCarryTriggeringTime(t *testing.T) {
 			{Subject: id, Predicate: "robotics.status.armed", Object: true, Confidence: 1},
 		}}
 		data := streamLaneData(t, payload, "derive-producer", message.WithTime(derivedEnvelopeTime))
-		if got := deliverStreamLane(t, handler, data, 1); got != "ack" {
+		if got := deliverStreamLane(t, lane, data, 1); got != "ack" {
 			t.Fatalf("disposition = %s, want ack", got)
 		}
 		if profile, _ := assertDerivedStatements(t, storedEntity(t, c, id), derivedEnvelopeTime,

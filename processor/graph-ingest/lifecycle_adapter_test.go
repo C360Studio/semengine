@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
-	"github.com/c360studio/semengine/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
 
@@ -21,10 +20,12 @@ import (
 // call on it either changes its state or returns before reading it. The suite's checks
 // observe it through Start and Stop, as design D13 states it.
 //
-// Calls counts the consumers the Component binds and the Drain and Stop calls it makes on
-// them, through the consumeStream acquisition seam, which wraps each handle the Client
-// returns. Request subscriptions, the pool's Shutdown and the cache's Close have no seam
-// and are not counted; their handles are listed under Unresolved until a cleanup succeeds.
+// Calls counts the consumers a started Component holds and the Drain and Stop calls it
+// makes on them: after a Start that returned nil, Start wraps each handle in c.consumers,
+// which only release reads (fix-301 design D2, "Suite adapter"). A failed Start's binds
+// and its rollback's drains are not counted. Request subscriptions, the pool's Shutdown
+// and the cache's Close are not counted; their handles are listed under Unresolved until
+// a cleanup succeeds.
 type suiteOwner struct {
 	c     *Component
 	mu    sync.Mutex
@@ -32,21 +33,7 @@ type suiteOwner struct {
 }
 
 func newSuiteOwner(c *Component) *suiteOwner {
-	o := &suiteOwner{c: c, calls: map[string]int{}}
-	c.consumeStream = func(
-		ctx context.Context,
-		owner natsclient.PortConsumerContext,
-		cfg natsclient.StreamConsumerConfig,
-		handler func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		handle, err := c.natsClient.ConsumeStreamWithConfig(ctx, owner, cfg, handler)
-		if err != nil {
-			return nil, err
-		}
-		o.count("consumer bind")
-		return &countedConsumeContext{ConsumeContext: handle, count: o.count}, nil
-	}
-	return o
+	return &suiteOwner{c: c, calls: map[string]int{}}
 }
 
 func (o *suiteOwner) count(op string) {
@@ -55,8 +42,21 @@ func (o *suiteOwner) count(op string) {
 	o.calls[op]++
 }
 
-func (o *suiteOwner) Start(ctx context.Context) error { return o.c.Start(ctx) }
-func (o *suiteOwner) Stop(ctx context.Context) error  { return o.c.Stop(ctx) }
+// Start starts the Component and, when Start returned nil, wraps each consumer handle it
+// holds. Start has returned, so nothing else reads or writes c.consumers until Stop.
+func (o *suiteOwner) Start(ctx context.Context) error {
+	if err := o.c.Start(ctx); err != nil {
+		return err
+	}
+	for index := range o.c.consumers {
+		binding := &o.c.consumers[index]
+		binding.handle = &countedConsumeContext{ConsumeContext: binding.handle, count: o.count}
+		o.count("consumer bind")
+	}
+	return nil
+}
+
+func (o *suiteOwner) Stop(ctx context.Context) error { return o.c.Stop(ctx) }
 
 func (o *suiteOwner) Observe() lifecycletest.Observation {
 	o.mu.Lock()

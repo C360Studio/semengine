@@ -64,24 +64,6 @@ type Component struct {
 	payloadRegistry *payloadregistry.Registry
 	natsClient      *natsclient.Client
 	logger          *slog.Logger
-	// Test-only acquisition seams. Production falls through to the exact Client
-	// methods; no exported or adopter-facing lifecycle surface is introduced.
-	waitForStreamInput func(context.Context, string) (time.Time, error)
-	consumeStream      func(
-		context.Context,
-		natsclient.PortConsumerContext,
-		natsclient.StreamConsumerConfig,
-		func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error)
-	// watchEntityStates stands in for the entity bucket's Watch in the boot sweep.
-	watchEntityStates func(context.Context, string) (jetstream.KeyWatcher, error)
-	// subscribeRequests stands in for the Client's SubscribeForRequests at the query and
-	// mutation registrations (subscribeForRequests).
-	subscribeRequests func(
-		context.Context,
-		string,
-		func(context.Context, []byte) ([]byte, error),
-	) (*natsclient.Subscription, error)
 
 	// Domain resources
 	entityBucket *natsclient.KVStore            // authoritative KV operations, snapshot watch, and CAS support
@@ -522,11 +504,7 @@ func (c *Component) subscribeForRequests(
 	subject string,
 	handler func(context.Context, []byte) ([]byte, error),
 ) (*natsclient.Subscription, error) {
-	subscribe := c.natsClient.SubscribeForRequests
-	if c.subscribeRequests != nil {
-		subscribe = c.subscribeRequests
-	}
-	return subscribe(ctx, subject, func(ctx context.Context, data []byte) ([]byte, error) {
+	return c.natsClient.SubscribeForRequests(ctx, subject, func(ctx context.Context, data []byte) ([]byte, error) {
 		if !c.startCompleted.Load() {
 			return nil, errs.WrapTransient(errs.ErrNotStarted, "Component", "request", "serve "+subject)
 		}

@@ -30,7 +30,7 @@ path. When it was not, the delivery goroutine has already exited, so giving up l
 Fix shape, as #455 did and as `natsclient`'s `keysByFilter` keeps (`natsclient/kv.go:603-605`, kept on #420 by the
 owner's choice on 2026-10-28): drain under `context.WithTimeout(context.WithoutCancel(ctx), budget)` with a named 5 s
 budget. That is the shape the developer and reviewer contracts admit for terminal cleanup after an owner's cancellation
-(`.agents/contracts/semengine-reviewer.md:251-255`); it does not stand in for a join (`openspec/specs/background-work/
+(`.agents/contracts/semengine-reviewer.md:253-257`); it does not stand in for a join (`openspec/specs/background-work/
 spec.md`, "No fixed shutdown timeout"), for the reason above.
 
 When the bound runs out the sweep fails, classified transient, so `Start` fails rather than run on with a watch whose

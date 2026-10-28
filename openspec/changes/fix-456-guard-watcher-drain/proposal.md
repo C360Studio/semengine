@@ -52,9 +52,10 @@ Light process, as on #454: proposal, tasks and spec delta; no design document; C
   path, and in place of recording the sweep's poison on the marker path.
 - A unit test, `TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses` in
   `processor/graph-ingest/query_contract_guard_test.go`, runs the sweep under `testing/synctest` on a scripted watcher
-  that delivers the end-of-snapshot marker and whose channel never closes: the sweep returns a transient error naming
-  the open delivery after exactly the named budget of the bubble's clock, records no poison, and has stopped the watch.
-  It cannot pass on the base commit, where the sweep never returns (synctest reports the deadlock).
+  whose channel never closes, in two cases: after the end-of-snapshot marker, and with `Start`'s context cancelled
+  mid-sweep. In each the sweep returns a transient error naming the open delivery (and, when cancelled, wrapping
+  `context.Canceled`) after exactly the named budget of the bubble's clock, records no poison, and has stopped the
+  watch. It cannot pass on the base commit, where the sweep never returns (synctest reports the deadlock).
 - `TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification` is unchanged; it still proves the drain
   reads post-marker entries to the close.
 

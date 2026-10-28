@@ -4,14 +4,15 @@ Light process, as on #454: proposal, tasks and spec delta; no design document; C
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal, tasks and spec delta committed; Claude inventory review of the proposal. Gate: `task spec:check`
+- [x] 1.1 Proposal, tasks and spec delta committed; Claude inventory review of the proposal. Gate: `task spec:check`
   and `task docs:check`.
 
 ## 2. Code
 
-- [ ] 2.1 `TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses` in
+- [x] 2.1 `TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses` in
   `processor/graph-ingest/query_contract_guard_test.go`, failing on the base commit: under `testing/synctest`, the
-  sweep on a scripted watcher that delivers the end-of-snapshot marker and never closes its channel does not return.
+  sweep on a scripted watcher that never closes its channel does not return, after the end-of-snapshot marker or with
+  a cancelled context.
   Gate: the test fails on base (`go test -overlay` if it cannot compile there).
 - [ ] 2.2 `stopEntityStateGuardWatcher` drains under `context.WithTimeout(context.WithoutCancel(ctx), budget)` with a
   named 5 s budget and returns an error saying the delivery did not close after `Stop`; `startEntityStateGuard`

@@ -30,7 +30,10 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   `.ateam/state.json`, which git ignores, and posts the five-field checkpoint (`Goal`, `Addresses`, `Constraints`,
   `Done when`, `Checks to run`) to the open PR; [pickup](skills/pickup/SKILL.md) reconciles it against live state.
   Hand off at 450K tokens of context: `.claude/settings.json` sets auto-compaction at 500K, which a session never
-  reaches. An unpushed commit makes a checkpoint local; it does not erase a draft-PR claim.
+  reaches. Ride past 450K only when staying on the same plan in the same context is worth more than a clean pickup,
+  and say so in the checkpoint. The checkpoint records every pending paid run, background job or automation with its
+  identifier and owner, and whether it keeps running, so the next session neither duplicates nor silently cancels one
+  in flight. An unpushed commit makes a checkpoint local; it does not erase a draft-PR claim.
 - **Why:** an ADR, or the owner's ruling comment on the issue. Owner rulings of 2026-09-30 on the plan are recorded
   on PR #1.
 

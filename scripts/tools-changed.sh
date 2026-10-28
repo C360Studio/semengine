@@ -18,7 +18,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 readonly triggers=(scripts/ internal/harness/ .github/ Taskfile.yml go.mod go.sum
-  docs/admission-ledger.yaml service/base.go service/service_manager.go service/component_manager.go)
+  docs/admission-ledger.yaml service/base.go service/service_manager.go service/component_manager.go
+  .agents/ .claude/ .codex/ .gemini/ .mcp.json)
 
 run_tools() {
   echo "tool tests run: $1"

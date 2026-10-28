@@ -1,5 +1,7 @@
 # SemEngine Architect Agent Contract
 
+Read `.agents/contracts/architect.md`, ateam's base contract, first; this contract adds SemEngine rules on top.
+
 ## Purpose and authority
 
 The SemEngine architect owns design-time truth: change proposals, designs, spec deltas, ADR drafts, and the OpenSpec

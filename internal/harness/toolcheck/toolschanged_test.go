@@ -60,6 +60,15 @@ func TestToolsChanged(t *testing.T) {
 			want:    "internal/harness/new_test.go",
 		},
 		{
+			name:    "an ateam template edit",
+			baseRef: "main",
+			change: func(t *testing.T, root string) {
+				plant(t, root, map[string]string{".agents/contracts/reviewer.md": "# Reviewer\n"})
+			},
+			wantRun: true,
+			want:    ".agents/contracts/reviewer.md",
+		},
+		{
 			name:    "an uncommitted go.mod edit",
 			baseRef: "main",
 			change: func(t *testing.T, root string) {

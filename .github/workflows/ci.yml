@@ -52,6 +52,13 @@ jobs:
         with:
           version: ${{ steps.task-version.outputs.version }}
 
+      # The ateam pin; scripts/doctor.sh reads it from this line. ateam may need a newer Go
+      # than go.mod, so the toolchain is fetched as needed.
+      - name: Install ateam
+        env:
+          GOTOOLCHAIN: auto
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.3
+
       - run: task doctor
 
       # verify includes test:integration, which needs the runner's Docker daemon.

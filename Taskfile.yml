@@ -16,6 +16,13 @@ tasks:
     cmds:
       - scripts/doctor.sh
 
+  # The four session variables are unset so the check never takes ateam's writer lease
+  # (harness-boundaries spec, "ateam doctor gates verify").
+  ateam:doctor:
+    desc: Check ateam agent setup (files, skills and adapters, hooks, MCP, review policy, AGENTS.md size and rule-row parity) without changing the worktree
+    cmds:
+      - env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID ateam doctor --check
+
   fmt:
     desc: Format Go sources (changes files)
     cmds:

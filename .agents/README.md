@@ -131,10 +131,12 @@ admitted. A private memory reference cannot be required to interpret a shared ru
 
 ## Read-only parity smoke
 
-`task ateam:doctor` (`ateam doctor --check`, the first step of `task verify`) checks the files ateam owns, the
-canonical skills and every skill adapter's link, `CLAUDE.md`, the `AGENTS.md` size, and rule-row parity with
-`.agents/rules-index.md`. `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`
-(`internal/harness/contract/agentsetup_test.go`, `task test:unit`) check what doctor does not: each role adapter's
+`task ateam:doctor` (`ateam doctor --check`, the first step of `task verify`) checks the required files, the
+canonical skills' section markers and their adapters' links, hooks, MCP, `CLAUDE.md`, the `AGENTS.md` size, and
+rule-row parity with `.agents/rules-index.md`. `TestAteamTemplatesUnchanged` (`internal/harness/toolcheck`,
+`task test:tools:changed`) checks that every file `ateam init` writes, but the ones SemEngine writes itself, is
+byte-identical to the pinned release. `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`
+(`internal/harness/contract/agentsetup_test.go`, `task test:unit`) check what neither does: each role adapter's
 contract pointer, tools, sandbox mode, size and model and effort pins against the table above, and the adopter
 skills' Claude adapter size. After changing a contract, adapter, or routing rule, also walk the fixtures below; a
 structurally valid adapter does not prove its instructions make the right decisions.

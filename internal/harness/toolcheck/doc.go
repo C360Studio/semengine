@@ -3,12 +3,14 @@
 // change that touches none of the files they read need not run them (#416).
 //
 // The trigger paths are scripts/, internal/harness/, .github/, Taskfile.yml, go.mod, go.sum,
-// docs/admission-ledger.yaml, service/base.go, service/service_manager.go and
-// service/component_manager.go. A test belongs here when every file of the real tree it reads is
+// docs/admission-ledger.yaml, service/base.go, service/service_manager.go,
+// service/component_manager.go, .agents/, .claude/, .codex/, .gemini/ and .mcp.json. A test belongs here when every file of the real tree it reads is
 // under a trigger path; anything else it needs is planted in a temporary tree. A test that reads
 // any other file of the real tree stays in contract. Only review enforces this rule, so each test
 // file's reads are listed here for the reviewer to check:
 //
+//   - ateamtemplates_test.go: .github/workflows/ci.yml and the files ateam init writes under
+//     .agents/, .claude/, .codex/, .gemini/ and .mcp.json.
 //   - cleanuproots_test.go: scripts/cleanup-roots-check.sh.
 //   - cover_test.go: scripts/cover-check.sh and scripts/tree-state.sh.
 //   - ledgercheck_test.go: Taskfile.yml.

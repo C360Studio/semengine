@@ -24,20 +24,50 @@ pinned once as `v0.3.3` in `.github/workflows/ci.yml` and compared by `scripts/d
 
 ### Requirement: ateam template files are the pin's
 
-The canonical skills, their adapters, the base contracts and the hook, MCP and plugin files SHALL be byte-identical
-to what `ateam init` writes at the pinned release, except `preflight`, which is SemEngine's text with the `## 1.`
-and `Record Evidence` markers. A SemEngine rule on top of a base contract lives in the matching `semengine-*`
-contract, which opens by telling the agent to read the base contract first.
+Every file `ateam init` writes into an empty directory at the pinned release SHALL be byte-identical in this
+repository, except the files SemEngine writes itself (listed with reasons in `semengineOwned`). The tool test
+`TestAteamTemplatesUnchanged` (`internal/harness/toolcheck`) SHALL check it, failing and never skipping when `ateam`
+is missing or is not the pinned release.
 
-#### Scenario: A base contract is edited locally
+#### Scenario: A line is added to a base contract
 
-- **WHEN** a line is added to `.agents/contracts/reviewer.md`
-- **THEN** `ateam doctor --check` reports the contract as drifted and `task verify` fails
+- **WHEN** a line is added to `.agents/contracts/reviewer.md`, or `.agents/contracts/architect.md` is deleted
+- **THEN** `TestAteamTemplatesUnchanged` fails naming the file and `task verify` fails; `ateam doctor --check` at
+  v0.3.3 does not report either
+
+#### Scenario: An ateam paragraph is edited
+
+- **WHEN** a word inside an ateam paragraph of `.agents/contracts/reviewer.md` changes
+- **THEN** `ateam doctor --check` (which checks only that `developer.md` and `reviewer.md` still hold each ateam
+  paragraph, and that canonical skills carry their section markers) and `TestAteamTemplatesUnchanged` both fail
+
+#### Scenario: A file SemEngine writes itself
+
+- **WHEN** `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `.agents/README.md`, `.agents/protocol.md`,
+  `.agents/rules-index.md`, either `preflight` file, or the `openspec/` scaffold differs from ateam's template
+- **THEN** `TestAteamTemplatesUnchanged` does not report it
+
+#### Scenario: ateam is not installed
+
+- **WHEN** `ateam` is not on `PATH`
+- **THEN** `TestAteamTemplatesUnchanged` fails naming the pinned install line
+
+### Requirement: SemEngine contracts sit on the base contracts
+
+A SemEngine rule on top of a base contract SHALL live in the matching `semengine-*` contract, whose first paragraph
+names the base contract to read first: `developer.md` for the developer and the technical writer, `reviewer.md` for
+the reviewer, `architect.md` for the architect. `TestAgentSetupParity` SHALL check the first paragraph.
 
 #### Scenario: A SemEngine rule is added
 
 - **WHEN** a rule applies only to SemEngine's reviewer
 - **THEN** it is written in `.agents/contracts/semengine-reviewer.md`, not in `reviewer.md`
+
+#### Scenario: The base-contract pointer is removed
+
+- **WHEN** the first paragraph of `.agents/contracts/semengine-reviewer.md` no longer names
+  `.agents/contracts/reviewer.md`
+- **THEN** the contract test fails naming the file
 
 ## MODIFIED Requirements
 
@@ -69,7 +99,7 @@ requirements that follow.
 Step 1. All four SemEngine contracts (`.agents/contracts/semengine-{architect,developer,reviewer,technical-writer}.md`)
 and all eight role adapters (`.claude/agents/semengine-*.md`, `.codex/agents/semengine-*.toml`) SHALL exist. The
 files ateam owns (`AGENTS.md`, `CLAUDE.md`, `.agents/README.md`, `.agents/protocol.md`, `.agents/rules-index.md`,
-`openspec/config.yaml`, the base contracts) are checked by `ateam doctor --check`.
+`openspec/config.yaml`) are checked by `ateam doctor --check`; the base contracts by `TestAteamTemplatesUnchanged`.
 
 #### Scenario: Missing file
 

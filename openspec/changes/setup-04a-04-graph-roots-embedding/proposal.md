@@ -17,13 +17,17 @@ Tier 0 only (#9 comment 6386603659): the provider file `http_embedder.go` stays 
 - `http_embedder.go` and its two test files are not carried: a `defer-exclude` ledger row naming #32, which keeps the
   tier-1 → tier-0 fallback test for Slice 04C (owner ruling, PR #458 comment 6473224284, item 1).
 - The Worker's `Start`/`Stop` become `Run(ctx)`, and the vector cache moves from `Storage.StartVectorCache` to a
-  `VectorCache` type with its own `Run(ctx)`, so each stops when its context ends and returns only after every
-  goroutine it started has exited (`background-work` spec; ADR-113 for the component that runs them).
+  `VectorCache` type with its own `Run(ctx)`, so each stops when its context ends or its watch is lost and returns
+  only after every goroutine it started, and nats.go's delivery for its watch, has ended (`background-work` spec;
+  ADR-113 for the component that runs them). Both stop the watch through the follower's bounded drain, moved
+  unchanged into `internal/kvwatch` so there is one spelling (#454's bound included).
 - `Storage` writes through `natsclient.KVStore.UpdateWithRetryRead` instead of its three hand-written retry loops and
   its unconditional dedup overwrite (ADR-110 Decision 2 and 7).
 - Dead surface is not carried: `ContentHash`, `SavePending`, `SavePendingWithStorageRef`, `Record.ContentFields`,
   `DedupRecord.EntityIDs`, `WorkerMetrics.SetPending`, the unused vector helpers, and `ErrCASExhausted` (replaced by
   `natsclient.ErrKVMaxRetriesExceeded`).
+- The follower test's helpers that see nats.go's watch delivery move into `internal/harness/natsfixture`, shared by
+  both packages' tests. One adoption issue lists the other code that stops a KV watch.
 - Docs say only what ships: no HTTP embedder, the BM25 `B` default, one text-length default for both lanes.
 
 ## Capabilities
@@ -36,6 +40,7 @@ Tier 0 only (#9 comment 6386603659): the provider file `http_embedder.go` stays 
   package at 3,302 (#9 comment 6386556850, ruling 1); one pull request.
 - New import edge `graph/embedding` → `natsclient` (ADR-110). `golang.org/x/sync` becomes a direct dependency.
   `go-openai` and `model` are not imported.
+- `graph/follower` calls `internal/kvwatch` instead of its own copy; its behaviour and spec are unchanged.
 - No new subject, bucket, stream or config key; both buckets are already in `graph/kvcatalog`. New exported surface
   beyond the pin's: `Worker.Run`, `VectorCache` with `NewVectorCache`, `Run` and `FindSimilar` (design D4, D5), each
   replacing a pin method that `processor/graph-embedding` calls today.

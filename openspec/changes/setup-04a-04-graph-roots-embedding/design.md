@@ -1,6 +1,7 @@
 # Design: setup-04a-04-graph-roots-embedding
 
-Base `f92753b` (main after #455; the inventory was taken at `08e5d9d`, and #455 touched only `graph/follower`).
+Base: main including #455 (`f92753b`); the branch merges it at `6b146a8`. The inventory was taken at `08e5d9d`; #455
+touched only `graph/follower`, whose drain D4 now reuses.
 Inventory: `inventory.md` (round 2, `INVENTORY PASS`). Change 4, PR 6 of 9 (#9 comment 6386856657, item 5). Tier 0
 only (#9 comment 6386603659). Draft PR #458. Owner rulings for this change: PR #458 comment 6473224284 (#35 retired
 here; #107 retired on the D6 finding, or the Worker adopts the keyed pool). Governing records: ADR-066, ADR-063,
@@ -8,8 +9,10 @@ ADR-084, ADR-085 (binding, ported), ADR-110 and ADR-113 (SemEngine's), ADR-071 (
 inventory 7 (P1-P14), posted on PR #458 comment 6472856197.
 
 Coined terms: *hop 1* is `processor/graph-embedding` writing a pending record per entity revision; *hop 2* is the
-Worker turning a pending record into a generated or failed one; the *revision guard* is the rule that a write for an
-older source revision never replaces a newer one (`pin:graph/embedding/storage.go:396`, `:455`, `:465`, `:313`); a
+Worker turning a pending record into a generated or failed one; the *revision guard* is the rule that a hop-2 save for
+an older source revision never replaces a newer record (`pin:graph/embedding/storage.go:396`, `:455`, `:465`); hop 1's
+pending write refuses only to replace a generated record at the same or a newer revision (`:313`), so an older pending
+record may replace a newer pending one, as at the pin; a
 *terminal outcome* is a record leaving pending (generated, failed, deleted, skipped).
 
 ## Options
@@ -26,6 +29,11 @@ older source revision never replaces a newer one (`pin:graph/embedding/storage.g
 `graph/embedding/`: `doc.go`, `README.md`, `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go`, `storage.go`,
 `vector_cache.go` (new file, the cache split out of `storage.go`, D5), `worker.go`, `derived_reasons.go`, tests. Not
 carried: `http_embedder.go`, `http_embedder_test.go`, `http_embedder_dimensions_test.go`.
+
+Outside the package (D4, D11): `internal/kvwatch` (new) receives `graph/follower`'s `stopWatch`, `watchDrainBudget`
+and `errWatchDeliveryOpen` unchanged in behaviour, and `graph/follower` calls it; `internal/harness/natsfixture`
+receives the follower test's `nativeDeliveryStacks` and `awaitNativeDeliveryBlocked`, and the follower's tests call
+them. One spelling of each.
 
 ## D2. Surface
 
@@ -78,7 +86,9 @@ callback decides from the bytes and revision it read (ADR-110 Decision 2; Decisi
   absent key; `DeleteEmbedding` of an absent key returns nil (P5). `ListGeneratedEntityIDs` returns every key, pending
   and failed included, as at the pin (its doc is corrected; the caller filters by status). **Cost:** it now lists
   through `KVStore.Keys`, bounded by the KVStore's `Timeout` option (default 5 s), where the pin streamed under the
-  caller's context; whoever builds the KVStore sets the bound for its bucket size.
+  caller's context; whoever builds the KVStore sets the bound for its bucket size. The same `Timeout` option bounds
+  every read and every `UpdateWithRetryRead` call, retries included (`natsclient/kv.go:353`), as for every KVStore
+  user in the tree. Declared here, not a question.
 
 ## D4. The Worker runs until its context ends (`background-work`, ADR-113)
 
@@ -88,15 +98,20 @@ ends it in `Stop`; this package derives nothing from a Start context). The found
 `Worker.Stop()` (`setup-04a-foundation` D6/D7) is met by this shape, as `graph/readiness.Watcher.Run` met its row.
 
 - `Run(ctx)` refuses a nil context with an invalid-input error before starting anything.
-- It opens one watch on `EMBEDDING_INDEX` under `ctx` and processes entries on `workers` goroutines (default 5, floored
-  at 1), as at the pin. A watch that cannot open returns its error, with nothing left running.
-- When `ctx` ends, `Run` stops the watch and returns `ctx.Err()` only after every goroutine it started has exited; an
-  entry in progress finishes first (callbacks run under `ctx`). A stop error that only says the watch was already gone
-  (`nats.ErrBadSubscription`, `nats.ErrConnectionClosed`, `nats.ErrConsumerNotFound`, as `graph/follower` treats them
-  at `follower.go` `stopWatch`) is not reported. **Changed:** no error-text fallback (S7). `Run` does not wait for the
-  watch's update channel to close, so #454's open-forever delivery cannot hold it.
-- If the update channel closes while `ctx` is still live, `Run` returns an error saying the watch was lost.
-  **Changed:** at the pin the goroutines returned silently and the Worker consumed nothing while healthy.
+- It opens one watch on `EMBEDDING_INDEX` under a context it derives from `ctx` and processes entries on `workers`
+  goroutines (default 5, floored at 1), as at the pin. A watch that cannot open returns its error, nothing left running.
+- It ends when `ctx` ends or when the watch's update channel closes while `ctx` is live (the lost watch). On either
+  path it cancels the derived context, so nats.go's own unsubscribe goroutine for the watch (`js.go:2063-2068`) ends
+  too, waits for its goroutines (an entry in progress finishes; callbacks run under `ctx`), and then stops the watch
+  through `kvwatch.Stop`, the follower's drain moved unchanged (D1): it reads the update channel until nats.go closes
+  it, which ends a delivery blocked on a full buffer (the backlog at v1.54.0 that `graph/follower`'s
+  `TestFollowerRunReturnsAndLeavesNothing` drives), for at most 5 s after `ctx` ended, the bound #454 needs.
+- It returns `ctx.Err()` when `ctx` ended, an error saying the watch was lost on the other path (**changed:** at the
+  pin the goroutines returned silently and the Worker consumed nothing while healthy), and joined with either the
+  drain's error when the delivery did not close. A stop error that says only that the watch was already gone is not
+  reported (`kvwatch.Stop`'s rule, the follower's). **Changed:** no error-text fallback (S7).
+- So when `Run` returns, no goroutine it started and no nats.go delivery for its watch is still running, except in the
+  #454 window where nats.go left no goroutine to join and `Run` says so.
 - A second `Run` on the same Worker while one is running is refused with an error; after `Run` returns, `Run` may be
   called again and starts a new watch, whose snapshot re-processes failed records once, as a pin restart did.
 - The `stopping` field goes (S18).
@@ -104,12 +119,13 @@ ends it in `Stop`; this package derives nothing from a Start context). The found
 ## D5. The vector cache is its own background work
 
 `VectorCache` holds the in-memory copy of generated vectors that `Storage` held at the pin. `Run(ctx)` refuses nil,
-watches `EMBEDDING_INDEX` through the Storage's index KVStore, and returns `ctx.Err()` after its goroutine-free loop
-ends (it runs on the caller's goroutine; nothing to join). `FindSimilar` returns `(nil, false)` before the watch's
-snapshot has been applied, after a record failed to decode, after the watch was lost, and after `Run` returned; the
-caller then reads KV, as at the pin. Results are sorted by `ScoredEntityLess` before the limit; `keep` filters before
-scoring (ADR-071). **Changed, optional and cheap:** a limit of 0 or less returns an empty result instead of
-panicking on a negative slice bound (S21). A lost watch makes `Run` return an error, as in D4.
+refuses a second `Run` while one is running (as the Worker's, D4), watches `EMBEDDING_INDEX` through the Storage's
+index KVStore on the caller's goroutine, and ends exactly as D4's `Run` does: on `ctx` ending or a lost watch, it
+cancels its derived context and stops the watch through `kvwatch.Stop`, returning `ctx.Err()` or a lost-watch error.
+`FindSimilar` returns `(nil, false)` before the watch's snapshot has been applied, after a record failed to decode,
+after the watch was lost, and after `Run` returned; the caller then reads KV, as at the pin. Results are sorted by
+`ScoredEntityLess` before the limit; `keep` filters before scoring (ADR-071). **Changed, optional and cheap:** a limit
+of 0 or less returns an empty result instead of panicking on a negative slice bound (S21).
 
 ## D6. Ordering per entity: the #107 finding
 
@@ -119,22 +135,27 @@ keyed pool (`internal/dispatch.KeyedPool` in this tree, `internal/dispatch/keyed
 
 - **What can happen.** The Worker's goroutines share one watch channel (P14), so two revisions N < M of one entity
   can be in flight at once and finish in either order.
-- **The stored record.** Every hop-2 write for an entity goes through the revision guard under compare-and-set (D3):
-  a write for N after M's lands is refused (`ErrSupersededRevision`); a write for N over M's pending record is refused
-  the same way; a failure never replaces a generated vector at the same revision. A deleted key refuses both
-  (`ErrRecordGone`). So the record ends at M's outcome in every interleaving. Pin evidence:
-  `TestSaveGenerated_NewerRevisionWinsOutOfOrderCompletion`, `TestSaveFailed_DoesNotClobberNewerSuccess`.
-- **The callbacks.** A refused save fires no `onGenerated` (`pin:…/worker.go:791-805`), so no older vector reaches a
-  cache. `onTerminal` may fire for N after M; both its readers are order-tolerant: the watermark drains in-flight
+- **The stored record.** Every hop-2 save goes through the revision guard under compare-and-set (D3): a save for N
+  after M's record (pending or terminal) is stored is refused with `ErrSupersededRevision`; a failure never replaces
+  a generated vector at the same revision; a deleted key refuses both (`ErrRecordGone`). The highest revision's save
+  is never refused by a lower one, and once stored no lower save replaces it. So the record ends at M's outcome in
+  every completion order. Pin evidence: `TestSaveGenerated_NewerRevisionWinsOutOfOrderCompletion`,
+  `TestSaveFailed_DoesNotClobberNewerSuccess`.
+- **The callbacks.** A refused save fires no `onGenerated` (`pin:…/worker.go:791-805`); that is the only promise.
+  Callbacks for one entity are otherwise unordered: N's save can land, then M's save and callback, then N's delayed
+  callback. `GeneratedCallback` carries no revision (`pin:…/worker.go:70`), and its one consumer counts and logs
+  (`pin:processor/graph-embedding/component.go:1022-1027`); its doc says callbacks are unordered per entity.
+  `onTerminal` carries the revision, and both its readers tolerate any order: the watermark drains in-flight
   revisions at or below the completed one (`revision-watermark` spec, "Completion is key-scoped and drains lower
-  revisions"), and the component's failed map refuses an older revision (`pin:processor/graph-embedding/component.go:1131`,
-  carried in change 5).
+  revisions"), and the component's failed map refuses an older revision (`pin:…/component.go:1131`, change 5).
 - **What a keyed pool would add.** Fewer wasted embeddings of revisions already superseded; no correctness property.
   Content dedup and the in-process collapse of identical text (singleflight) already bound that waste.
 
-So the Worker keeps its plain goroutines and this pull request retires #107 on this finding. The standing proofs are
-D9's `TestRevisionGuardHistoryMatchesModel` and `TestWorkerConcurrentRevisionsEndAtNewest`; if either cannot be made
-to pass, the finding fails and the Worker adopts `KeyedPool` keyed by entity ID, per the ruling.
+So the Worker keeps its plain goroutines and this pull request retires #107 on this finding. The proofs (D9):
+`TestRevisionGuardHistoryMatchesModel` (sequential, every rule), `TestConcurrentSavesEndAtHighestRevision` (the
+order-independent property under real concurrency) and `TestWorkerSupersededRevisionIsDropped` (the out-of-order
+completion, forced), each shown to detect the guard's removal by `task mutate:check`. If any cannot be made to pass or
+does not detect the mutant, the finding fails and the Worker adopts `KeyedPool` keyed by entity ID, per the ruling.
 
 ## D7. Smaller corrections
 
@@ -149,13 +170,18 @@ to pass, the finding fails and the Worker adopts `KeyedPool` keyed by entity ID,
 - **Docs.** `doc.go`, `README.md` and comments drop the HTTP embedder, the dead `graph/indexmanager` link and the
   SemStreams rolling-upgrade notes (S16, S17; owner 2026-10-11, #91 comment 6109293267: no SemStreams state is
   migrated); `BM25Config.B`'s doc says 0 means the default 0.75 (S15).
+- **Callback order.** `GeneratedCallback`'s doc says callbacks for one entity are unordered and that a refused save
+  fires none (D6).
 - **Kept, optional:** `classifyEmbedErr`'s substring classes (S9), for a product's own `Embedder`.
 
 ## D8. ADRs, ledger, docs
 
 - Ledger: new row `graph/embedding`, `adapt`, naming D2-D7 and the dropped surface; new row
   `graph/embedding/http_embedder.go`, `defer-exclude`, destination none, `known_risks` naming #32 and the 04C fallback
-  test (owner ruling item 1; #9 comment 6386603659).
+  test (owner ruling item 1; #9 comment 6386603659). The `graph/embedding` row's `known_risks` also says that
+  `processor/graph-embedding`'s port (change 5) must state its reaction when `Worker.Run` or `VectorCache.Run` returns
+  a lost-watch error while its run context is live (report it through `Health`, or restart the work), so the error
+  is never dropped.
 - ADR-066 (`:18`) and ADR-063 (`:13-15`) port notes: `graph/embedding` is ported. ADR-071 is not carried: its one
   decision here is the `keep` filter, specified by this change's spec; the rest is `pkg/fusion`'s (change 5). ADR-081
   and ADR-073's erasure fan-out are not implemented at the pin (inventory 6).
@@ -165,22 +191,42 @@ to pass, the finding fails and the Worker adopts `KeyedPool` keyed by entity ID,
 ## D9. Proving tests
 
 Unit (fakes of `jetstream.KeyValue` behind `natsclient.NewClient("").NewKVStore`): the pin's BM25, dedup, truncation,
-identity and failure-reason tests, without HTTP and without `time.Sleep` (S25);
-`TestWorkerRunRefusesNilContext`, `TestWorkerRunLeavesNothingBehind` and `TestVectorCacheRunLeavesNothingBehind`
-(started, used and stopped in `synctest.Test`), `TestWorkerRunReportsLostWatch`, `TestVectorCacheRunReportsLostWatch`, `TestWorkerSecondRunRefused`,
-`TestVectorCacheNotAuthoritative` (before snapshot, after decode error, after `Run`), `TestFindSimilarOrderAndLimit`,
-`TestFailureWithCanceledTextIsAFailure`, `TestBothLanesEmbedIdenticalBytes`, `TestTerminalCallbackOncePerOutcome`,
-`TestPanickingEntryStaysPending` (the pin's `TestWorkerPanicCostsOneEntryNotTheGoroutine`), `TestCASExhaustionIsNotTerminal`.
+identity and failure-reason tests, without HTTP and without `time.Sleep` (S25); `TestWorkerRunRefusesNilContext`,
+`TestWorkerSecondRunRefused`, `TestVectorCacheSecondRunRefused`, `TestVectorCacheNotAuthoritative` (before snapshot,
+after decode error, after `Run`), `TestFindSimilarOrderAndLimit`, `TestFailureWithCanceledTextIsAFailure`,
+`TestBothLanesEmbedIdenticalBytes`, `TestTerminalCallbackOncePerOutcome`, `TestPanickingEntryStaysPending` (the pin's
+`TestWorkerPanicCostsOneEntryNotTheGoroutine`), `TestCASExhaustionIsNotTerminal`. The `synctest` tests the
+`background-work` spec asks for (`TestWorkerRunLeavesNothingBehind`, `TestVectorCacheRunLeavesNothingBehind`) run on
+these fakes, where no nats.go goroutine exists; the nats.go side is the integration tests below.
 
-Integration (`natsfixture`, shared server via the reset; #195): `TestRevisionGuardHistoryMatchesModel` (generated
-check, `pgregory.net/rapid`: up to 30 operations of `SavePendingGuarded`, `SaveGenerated`, `SaveFailed`,
-`DeleteEmbedding` over two entities and revisions 1-4, from two goroutines; a map of entity → (status, revision) is
-the model; bounded at 50 runs, seed and run count in `notes/2.2.md`), `TestSaveDedupKeepsSameSpaceReplacesOther`,
-`TestWorkerConcurrentRevisionsEndAtNewest` (5 workers, revisions 1-20 of one entity written back to back; the record
-ends generated at 20 and `onGenerated` never saw an older revision after a newer one landed),
-`TestWorkerResolvesLiveRegistryStatePerFetch` (ported). Contract: `TestEmbeddingImportsNoProviderModule`
-(`go list -deps ./graph/embedding` names neither `go-openai` nor `model`; #35's proving test). Each changed behaviour
-is shown failing against the pin's shape in `notes/2.x.md`.
+Integration (`natsfixture`, shared server via the reset; #195):
+
+- `TestWorkerRunLeavesNoWatchDelivery` and `TestVectorCacheRunLeavesNoWatchDelivery`: 600 records (above the 256-entry
+  watch buffer), a callback or entry that blocks until the context ends, `natsfixture.AwaitNativeDeliveryBlocked`
+  before cancelling, ten cycles; after `Run` returns no goroutine is in a Worker or VectorCache method and
+  `natsfixture.NativeDeliveryStacks` is empty (the follower's test shape).
+- `TestWorkerRunReportsLostWatch` and `TestVectorCacheRunReportsLostWatch`: the bucket is deleted under a live `Run`;
+  `Run` returns a lost-watch error, and afterwards no delivery or unsubscribe goroutine for the watch remains.
+- `TestRevisionGuardHistoryMatchesModel`: a sequential generated history (`pgregory.net/rapid`) of up to 30 calls of
+  `SavePendingGuarded`, `SaveGenerated`, `SaveFailed` and `DeleteEmbedding` over two entities and revisions 1-4. The
+  model maps entity → (status, revision) or absent and encodes D3 exactly: pending is refused only over generated at
+  the same or a newer revision (an older pending replaces a newer pending); generated and failed are `ErrRecordGone`
+  on absent and `ErrSupersededRevision` below the stored revision; failed is also refused over generated at an equal
+  revision. Each call's result and the stored record are checked against the model. Bounded at 50 runs; the seed and
+  completed-run count go in `notes/2.2.md`, and a failure prints its replayable sequence.
+- `TestConcurrentSavesEndAtHighestRevision`: on a pending record, 20 goroutines each make one `SaveGenerated` or
+  `SaveFailed` call for a distinct revision 1-20, released together; the record ends at revision 20's status. The
+  property holds in every order, so no oracle of the schedule is needed. Repeated 20 times.
+- `TestWorkerSupersededRevisionIsDropped`: pending N is written; the fake embedder holds N's text until the test has
+  seen M's generated record in the bucket; pending M is written and processed; then N is released. The record ends
+  generated at M with M's vector, `onGenerated` fired for M only, and N's terminal outcome is `OutcomeDeleted`.
+- `TestSaveDedupKeepsSameSpaceReplacesOther`; `TestWorkerResolvesLiveRegistryStatePerFetch` (ported).
+- Mutation (`task mutate:check`, recorded in `notes/2.2.md`): with `SaveGenerated`'s revision comparison removed, the
+  history test and `TestWorkerSupersededRevisionIsDropped` must fail; with `SaveFailed`'s removed, the history test
+  and `TestConcurrentSavesEndAtHighestRevision` must fail. A survivor is reported as one, and fails D6's finding.
+
+Contract: `TestEmbeddingImportsNoProviderModule` (`go list -deps ./graph/embedding` names neither `go-openai` nor
+`model`; #35's proving test). Each changed behaviour is shown failing against the pin's shape in `notes/2.x.md`.
 
 ## D10. Issues and merge order
 
@@ -192,6 +238,17 @@ is shown failing against the pin's shape in `notes/2.x.md`.
 | #195 | advanced: this package's one site; stays open |
 | #32, #96, #109, #155, #10, #11 | stay (inventory 3) |
 
-Filed by this design: none; every defect found is corrected here (D3-D7). Merge order: #455 merged. #452 (draft)
+Filed by this design: one adoption issue for `internal/kvwatch` (D11). Every defect found in this package is
+corrected here (D3-D7). Merge order: #455 merged. #452 (draft)
 shares no file but changes the gate (`task verify`, CI, merge gate) and the contracts; whichever merges second merges
 `origin/main` and re-runs `task verify` under the gate then on main. Nothing waits on the other.
+
+## D11. Adoption sweep for `internal/kvwatch`
+
+Moving the follower's drain into `internal/kvwatch` makes it a primitive two packages share, so the establishing
+side's sweep is owed (architect contract, "The adoption sweep"). Sites in the tree that stop a KV watch, at `6b146a8`,
+for one tracking issue, none a migration obligation of this change: `natsclient/kv.go:699` (`keysByFilter`, its own
+5 s drain: a second spelling, kept by the owner on #420); `graph/readiness/watcher.go:279`; `config/manager.go:601`;
+`service/message_logger_kv_watch.go:174`; `processor/graph-ingest/poison_inventory.go:326`, `:353`;
+`pkg/lifecycle/manager_query.go:224`; `natsclient/storagereport/storage_report_consumer.go:220`. Each either drains
+until close or can leave a backlogged delivery running after it returns; the issue asks which, per site.

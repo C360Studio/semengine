@@ -66,10 +66,10 @@ passes on a clean tree at its commit (#171).
 
 ## 6. Evidence and review
 
-- [ ] 6.1 Coverage (`task cover:check` at 80%) and failing-first evidence in the notes; `task verify` on a clean tree.
-- [ ] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body.
-- [ ] 6.3 Comments on #195 and #196 (advanced), read back.
+- [x] 6.1 Coverage (`task cover:check` at 80%) and failing-first evidence in the notes; `task verify` on a clean tree.
+- [x] 6.2 Cross-agent review stop; `reviewed-by:` in the PR body.
+- [x] 6.3 Comments on #195 and #196 (advanced), read back.
 
 ## 7. Close
 
-- [ ] 7.1 Archive as the last content commit, syncing `object-store`. Gate: `task spec:check`, `task docs:check`.
+- [x] 7.1 Archive as the last content commit, syncing `object-store`. Gate: `task spec:check`, `task docs:check`.

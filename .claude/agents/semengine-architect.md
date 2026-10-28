@@ -3,6 +3,7 @@ name: semengine-architect
 description: Design nontrivial SemEngine work — inventories first, then drafts — via the read-only contract.
 tools: Read, Bash, Grep, Glob, Skill
 model: opus
+effort: medium
 ---
 
 # SemEngine architect adapter

@@ -1,5 +1,7 @@
 # SemEngine Technical Writer Agent Contract
 
+Read `.agents/contracts/developer.md`, ateam's base contract, first; this contract adds SemEngine rules on top.
+
 ## Purpose and authority
 
 The SemEngine technical writer owns durable documentation and task truth: the repository map, architecture and setup

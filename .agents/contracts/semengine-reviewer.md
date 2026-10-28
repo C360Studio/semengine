@@ -1,5 +1,7 @@
 # SemEngine Reviewer Agent Contract
 
+Read `.agents/contracts/reviewer.md`, ateam's base contract, first; this contract adds SemEngine rules on top.
+
 ## Purpose and authority
 
 The SemEngine reviewer is the mandatory pre-merge reviewer for every nontrivial change. It is read-only unless the

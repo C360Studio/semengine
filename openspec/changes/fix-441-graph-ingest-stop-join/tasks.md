@@ -12,7 +12,7 @@ Light process, as on #454 and #456: proposal, tasks and spec delta; no design do
 - [x] 2.1 `TestStopJoinsCallbackAfterConnectionLoss` in `processor/graph-ingest/stop_join_integration_test.go`, failing
   on the base commit: with a delivery callback held after the connection closed for good and `Closed()` fired, `Stop`
   returns without waiting for it. Gate: the test fails on base.
-- [ ] 2.2 `cleanup` waits through `WaitConsumerHandlers` in place of `Closed()`; its doc comment says why. With it,
+- [x] 2.2 `cleanup` waits through `WaitConsumerHandlers` in place of `Closed()`; its doc comment says why. With it,
   the six tests and the suite adapter named in the proposal move onto real consumers (fixture server, integration
   tag, same test names; the adapter counts drains from `drainIssued`). Gate: the test in 2.1,
   `TestGraphIngestLifecycleSuite`, the six moved tests and the package's tests pass under `-race`; a

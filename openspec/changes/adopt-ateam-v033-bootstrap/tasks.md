@@ -7,34 +7,45 @@
 
 ## 2. Bootstrap files
 
-- [ ] 2.1 `ateam init` (v0.3.3) output committed unchanged, including the `.gitignore` entries. Gate: `git diff` shows
+- [x] 2.1 `ateam init` (v0.3.3) output committed unchanged, including the `.gitignore` entries. Gate: `git diff` shows
   the 28 written files and nothing else changed by the command.
-- [ ] 2.2 `preflight`: `.agents/skills/semengine-preflight` renamed to `.agents/skills/preflight` with its content
+  Done in f28724f: `ateam init` wrote 28 files and appended the two `.gitignore` lines; `git status` showed nothing else.
+- [x] 2.2 `preflight`: `.agents/skills/semengine-preflight` renamed to `.agents/skills/preflight` with its content
   kept and `## 1.` and `Record Evidence` section markers; the Claude adapter points at the new path; the Gemini
   command exists. Gate: `ateam doctor --check` lists no `preflight` violation and no alias.
-- [ ] 2.3 `pickup` and `handoff`: ateam's text; `semengine-pickup` and `semengine-handoff` removed; their
+  Done in 85361eb (notes/2.2.md): `ateam doctor --check` at 51207ef reports `"violations": null` and
+  `"skill_aliases": []`.
+- [x] 2.3 `pickup` and `handoff`: ateam's text; `semengine-pickup` and `semengine-handoff` removed; their
   SemEngine-specific sentences (primary checkout is discovery-only, write ownership before editing, evidence must
   open on another machine, git-ignored paths are local only, the handoff threshold) are in `.agents/protocol.md`,
   which also names `ateam state handoff` as the session checkpoint home and in the Close step. Gate:
   `ateam doctor --check` lists no protocol violation.
-- [ ] 2.4 `.agents/review-policy.json` with SemTeams' tiers (including the resolved Anthropic IDs and
+  Done in 5b49229 (notes/2.3.md): `ateam doctor --check` at 51207ef reports no protocol violation.
+- [x] 2.4 `.agents/review-policy.json` with SemTeams' tiers (including the resolved Anthropic IDs and
   `claude:fable`), effort bands and `cross_provider: true`. Gate: `ateam doctor --check` passes the review setup.
+  Done in a5a7cea: `ateam doctor --check` at 51207ef passes (`"passed": true`).
 
 ## 3. Contracts, adapters, gates
 
-- [ ] 3.1 Each `semengine-*` contract opens with the sentence pointing at ateam's base contract (`developer.md` for
+- [x] 3.1 Each `semengine-*` contract opens with the sentence pointing at ateam's base contract (`developer.md` for
   developer and technical writer, `reviewer.md` for reviewer, `architect.md` for architect) and keeps no copy of the
   record grammar; `.claude/agents/*.md` carry `effort:` (`medium` architect and developer, `high` reviewer, `medium`
   technical writer). Gate: `TestAgentSetupParity`.
-- [ ] 3.2 `Taskfile.yml`: `ateam:doctor` task (session env vars unset) and `scripts/verify.sh` runs it first;
+  Done in 3165744 (notes/3.1.md): `TestAgentSetupParity` passes in `task test:unit` at 51207ef.
+- [x] 3.2 `Taskfile.yml`: `ateam:doctor` task (session env vars unset) and `scripts/verify.sh` runs it first;
   `.github/workflows/ci.yml` installs `ateam@v0.3.3` in the verify job; `scripts/doctor.sh` checks the same pin.
   Gate: `task verify` locally, which now fails on any doctor violation.
-- [ ] 3.3 `TestAgentSetupParity` and its sensitivity test keep the role-adapter checks (contract pointer, tools,
+  Done in d741d59 (notes/3.2.md): `task verify` at 51207ef on a clean tree ran `ateam:doctor` first and
+  exited 0.
+- [x] 3.3 `TestAgentSetupParity` and its sensitivity test keep the role-adapter checks (contract pointer, tools,
   sandbox, size, model and effort pins) and the adopter-skill adapter size and checkbox check; the `CLAUDE.md`,
   `AGENTS.md` size, rule-row count and skill-adapter existence checks are deleted with their sensitivity cases.
   `.agents/README.md`: the parity smoke is one line naming `task ateam:doctor` and the test. Gate: `task test:unit`.
-- [ ] 3.4 `AGENTS.md`, `.agents/rules-index.md` (same row counts), `docs/testing.md` and the skills name the new
+  Done in 91b6822 (notes/3.3.md): `task test:unit` at 51207ef passes, including
+  `TestAgentSetupParitySensitivity`.
+- [x] 3.4 `AGENTS.md`, `.agents/rules-index.md` (same row counts), `docs/testing.md` and the skills name the new
   files and `task ateam:doctor`; `AGENTS.md` stays under 24,000 bytes. Gate: `task verify` on a clean tree.
+  Done in 51207ef (notes/3.4.md): `AGENTS.md` is 23,968 bytes; `task verify` at 51207ef on a clean tree exited 0.
 
 ## 4. Review and archive
 

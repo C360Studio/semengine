@@ -364,30 +364,34 @@ func TestRevisionGuardHistoryMatchesModel(t *testing.T) {
 		})
 	}
 
-	rapid.Check(t, func(rt *rapid.T) {
-		h, drop := newHistory(t, client, dedup)
-		defer func() {
-			if err := drop(); err != nil {
-				rt.Errorf("delete bucket: %v", err)
+	// The random histories run in their own subtest, so a failed witness above does not hand rapid
+	// an already-failed *testing.T (rapid panics on one).
+	t.Run("random", func(t *testing.T) {
+		rapid.Check(t, func(rt *rapid.T) {
+			h, drop := newHistory(t, client, dedup)
+			defer func() {
+				if err := drop(); err != nil {
+					rt.Errorf("delete bucket: %v", err)
+				}
+			}()
+			steps := rapid.IntRange(1, 30).Draw(rt, "steps")
+			for step := range steps {
+				o := historyOp{entity: rapid.IntRange(0, len(historyEntities)-1).Draw(rt, "entity")}
+				// Weighted so records live long enough to meet each other: pending 3, generated 2,
+				// failed 2, delete 1, fenced removal 2.
+				o.op = []int{opPending, opPending, opPending, opGenerated, opGenerated, opFailed, opFailed,
+					opDelete, opFenced, opFenced}[rapid.IntRange(0, 9).Draw(rt, "op")]
+				switch o.op {
+				case opPending, opGenerated, opFailed:
+					o.revision = drawRevision(rt, &h.model[o.entity])
+				case opFenced:
+					o.current = rapid.Bool().Draw(rt, "current")
+				}
+				if _, err := h.apply(o); err != nil {
+					rt.Fatalf("step %d %+v: %v", step, o, err)
+				}
 			}
-		}()
-		steps := rapid.IntRange(1, 30).Draw(rt, "steps")
-		for step := range steps {
-			o := historyOp{entity: rapid.IntRange(0, len(historyEntities)-1).Draw(rt, "entity")}
-			// Weighted so records live long enough to meet each other: pending 3, generated 2,
-			// failed 2, delete 1, fenced removal 2.
-			o.op = []int{opPending, opPending, opPending, opGenerated, opGenerated, opFailed, opFailed,
-				opDelete, opFenced, opFenced}[rapid.IntRange(0, 9).Draw(rt, "op")]
-			switch o.op {
-			case opPending, opGenerated, opFailed:
-				o.revision = drawRevision(rt, &h.model[o.entity])
-			case opFenced:
-				o.current = rapid.Bool().Draw(rt, "current")
-			}
-			if _, err := h.apply(o); err != nil {
-				rt.Fatalf("step %d %+v: %v", step, o, err)
-			}
-		}
+		})
 	})
 }
 

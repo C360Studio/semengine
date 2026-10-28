@@ -63,7 +63,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   the fenced no-text outcome, `NewWorker` without the bucket, `WorkerMetrics` edits, shutdown classified by the
   error, one text-length default, the callback-order docs (design D3, D4, D6, D7). Gate: as 3.2
   plus `go test -count=5 -cpu 1 -shuffle=on ./graph/embedding`; `go mod tidy` leaves `golang.org/x/sync` direct.
-- [ ] 3.5 The mutation checks of design D9 (`task mutate:check`: the revision comparison removed from `SaveGenerated`,
+- [x] 3.5 The mutation checks of design D9 (`task mutate:check`: the revision comparison removed from `SaveGenerated`,
   then from `SaveFailed`; the no-text removal made unconditional), recorded in `notes/2.2.md` with survivors reported
   as survivors. A survivor is a gap in the named tests, fixed before 5.1. Gate: each named test fails on its mutant.
 

@@ -52,10 +52,11 @@ var (
 )
 
 // adopterSkills lists the skill directories under .agents/skills/ that are not ateam's.
-func adopterSkills(root string) []string {
+func adopterSkills(t *testing.T, root string) []string {
+	t.Helper()
 	entries, err := os.ReadDir(filepath.Join(root, ".agents", "skills"))
 	if err != nil {
-		return nil
+		t.Fatalf("list adopter skills: %v", err)
 	}
 	var out []string
 	for _, e := range entries {
@@ -67,7 +68,7 @@ func adopterSkills(root string) []string {
 }
 
 func TestAgentSetupParity(t *testing.T) {
-	requireNoViolations(t, "agent setup parity", agentSetupViolations(repoRoot(t)))
+	requireNoViolations(t, "agent setup parity", agentSetupViolations(t, repoRoot(t)))
 }
 
 func TestAgentSetupParitySensitivity(t *testing.T) {
@@ -85,7 +86,7 @@ func TestAgentSetupParitySensitivity(t *testing.T) {
 		return m
 	}
 	root, _ := writeTree(t, base)
-	requireNoViolations(t, "clean fixture", agentSetupViolations(root))
+	requireNoViolations(t, "clean fixture", agentSetupViolations(t, root))
 
 	for _, tc := range []struct {
 		name  string
@@ -156,7 +157,7 @@ func TestAgentSetupParitySensitivity(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			dir, _ := writeTree(t, tc.files)
-			requireViolation(t, agentSetupViolations(dir), tc.wants...)
+			requireViolation(t, agentSetupViolations(t, dir), tc.wants...)
 		})
 	}
 }
@@ -171,7 +172,7 @@ func copyAgentSetupFixture(t *testing.T, root string) map[string]string {
 			".codex/agents/"+r.name+".toml",
 		)
 	}
-	for _, s := range adopterSkills(root) {
+	for _, s := range adopterSkills(t, root) {
 		rels = append(rels, ".agents/skills/"+s+"/SKILL.md", ".claude/skills/"+s+"/SKILL.md")
 	}
 	files := make(map[string]string, len(rels))
@@ -185,7 +186,8 @@ func copyAgentSetupFixture(t *testing.T, root string) map[string]string {
 	return files
 }
 
-func agentSetupViolations(root string) []string {
+func agentSetupViolations(t *testing.T, root string) []string {
+	t.Helper()
 	var out []string
 	out = append(out, checkRequiredAgentFiles(root)...)
 	for _, role := range agentRoleSpecs {
@@ -193,7 +195,7 @@ func agentSetupViolations(root string) []string {
 		out = append(out, checkClaudeRoleAdapter(root, role)...)
 		out = append(out, checkCodexRoleAdapter(root, role)...)
 	}
-	out = append(out, checkAdopterSkillAdapters(root)...)
+	out = append(out, checkAdopterSkillAdapters(t, root)...)
 	return out
 }
 
@@ -354,9 +356,10 @@ func checkAdapterCommon(rel, roleName, text string) []string {
 	return out
 }
 
-func checkAdopterSkillAdapters(root string) []string {
+func checkAdopterSkillAdapters(t *testing.T, root string) []string {
+	t.Helper()
 	var out []string
-	for _, s := range adopterSkills(root) {
+	for _, s := range adopterSkills(t, root) {
 		rel := ".claude/skills/" + s + "/SKILL.md"
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {

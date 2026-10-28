@@ -152,7 +152,9 @@ when every file of the real tree it reads is one of: `scripts/`, `internal/harne
 `service/component_manager.go`, `.agents/`, `.claude/`, `.codex/`, `.gemini/` or `.mcp.json`; anything else it
 needs, it plants in a temporary tree. A test that reads any other file stays in `contract`. `task test:tools` runs
 the tool packages; `task test:tools:changed`, a step of `task verify`, runs them only when one of those paths changed
-against the base and says so when it skips them. Nothing but review checks which package a test belongs in.
+against the base and says so when it skips them. An edit under `.agents/`, `.claude/`, `.codex/`, `.gemini/` or
+`.mcp.json` runs them too (about two minutes), because `TestAteamTemplatesUnchanged` checks the files `ateam init`
+writes there. Nothing but review checks which package a test belongs in.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;

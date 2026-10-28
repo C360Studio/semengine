@@ -14,7 +14,7 @@ Light process, as on #454: proposal, tasks and spec delta; no design document; C
   sweep on a scripted watcher that never closes its channel does not return, after the end-of-snapshot marker or with
   a cancelled context.
   Gate: the test fails on base (`go test -overlay` if it cannot compile there).
-- [ ] 2.2 `stopEntityStateGuardWatcher` drains under `context.WithTimeout(context.WithoutCancel(ctx), budget)` with a
+- [x] 2.2 `stopEntityStateGuardWatcher` drains under `context.WithTimeout(context.WithoutCancel(ctx), budget)` with a
   named 5 s budget and returns an error saying the delivery did not close after `Stop`; `startEntityStateGuard`
   returns it classified transient; the doc comment names the bound. Gate: the test in 2.1 and the existing
   `TestEntityStateGuard*` tests pass; `task verify` passes on a clean tree.

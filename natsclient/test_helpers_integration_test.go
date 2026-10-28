@@ -77,33 +77,32 @@ func newFixtureClient(t *testing.T) *fixtureClient {
 	return newFixtureClientAt(t, shared.Reset(t))
 }
 
-// newFixtureClientAt connects a test Client to url and registers Close on t.Cleanup.
+// newFixtureClientAt connects a test Client to url through natsfixture.Open, which bounds the
+// open and registers Close on t.Cleanup.
 func newFixtureClientAt(t *testing.T, url string) *fixtureClient {
 	t.Helper()
+	return &fixtureClient{Client: natsfixture.Open(t, url, openFixtureClient), URL: url}
+}
+
+// openFixtureClient opens a Client the way the pin's NewTestClient built it: no reconnects, no
+// health monitor. It is the open function this package gives natsfixture.Open; a failed connect
+// closes the client before returning.
+func openFixtureClient(ctx context.Context, url string) (*Client, func(context.Context) error, error) {
 	client, err := NewClient(url,
 		WithTimeout(fixtureClientTimeout),
 		WithMaxReconnects(0),
 		WithHealthInterval(0),
 	)
 	if err != nil {
-		t.Fatalf("NewClient: %v", err)
+		return nil, nil, err
 	}
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), closeBudget)
-		defer cancel()
-		if err := client.Close(ctx); err != nil {
-			t.Errorf("Close: %v", err)
-		}
-	})
-	ctx, cancel := context.WithTimeout(t.Context(), fixtureClientTimeout)
-	defer cancel()
 	if err := client.Connect(ctx); err != nil {
-		t.Fatalf("Connect: %v", err)
+		return nil, nil, errors.Join(err, client.Close(ctx))
 	}
 	if err := client.WaitForConnection(ctx); err != nil {
-		t.Fatalf("WaitForConnection: %v", err)
+		return nil, nil, errors.Join(err, client.Close(ctx))
 	}
-	return &fixtureClient{Client: client, URL: url}
+	return client, client.Close, nil
 }
 
 // stream creates a stream on the broker, with the bounds the pin's testStreamConfig declared

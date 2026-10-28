@@ -39,9 +39,28 @@ Light process, as on #454 and #456: proposal, tasks and spec delta; no design do
   must then fail with that context's error and keep the inputs; once released, a later `Stop` returns nil and holds
   nothing. On the base commit the first `Stop` returns without waiting for the held callback.
 
+- `WaitConsumerHandlers` refuses a handle its client did not return (`natsclient/owned_delivery.go:238-246`), so the
+  tests that hand `cleanup` a fake or wrapped handle move onto real consumers (inventory review on PR #462, HIGH):
+  - The six unit tests that put the fake `graphIngestLifecycleConsumeContext` into `c.consumers`
+    (`TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder`,
+    `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop`,
+    `TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay`, `TestEntityCacheUseDuringStop`,
+    `TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop`, `TestGraphIngestTestOwnerWaitsForObservedClosure`)
+    bind real consumers on the package's fixture server and become integration tests, keeping their names, so the
+    specs that name them (`lifecycle-suite`, `service-lifecycle`, `graph-ingest-recovery`) stay true. "Consumer still
+    open" becomes a callback held by `pauseOnRecord`; closing it becomes `Release`. They leave `test:repeat`, which
+    runs unit tests only, and still run under `-race`.
+  - The lifecycle-suite adapter (`processor/graph-ingest/lifecycle_adapter_test.go`) stops wrapping handles in
+    `countedConsumeContext`. It keeps the bound slice at `Start` and counts "consumer drain" from each binding's
+    `drainIssued`, as objectstore's adapter reads it (`storage/objectstore/lifecycle_integration_test.go:85`). The
+    "consumer stop" count goes: no production code calls `Stop` on a consumer handle.
+  - No natsclient hook to register fake handles and no wait seam on the Component: either is a back door (#186).
+
 ## Not covered
 
-- graph-ingest's core-NATS query subscriptions: their `Drain(ctx)` already waits for their handlers.
+- graph-ingest's core-NATS query subscriptions: their `Drain(ctx)` already waits for their handlers
+  (`natsclient/client.go:979-1003`).
+- A mutant that calls a consumer's `Stop` in place of `Drain` would survive the tests; that stays review-only.
 
 ## Capabilities
 

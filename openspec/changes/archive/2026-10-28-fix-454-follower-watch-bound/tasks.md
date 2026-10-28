@@ -19,11 +19,11 @@ Light process, owner 2026-10-28: proposal, tasks and spec delta; no design docum
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record on the PR. The PR body carries `implemented-by: claude (opus)` and
-  `reviewed-by: codex`.
-  Hold: Codex code review, started by the owner.
+- [x] 3.1 Codex code review of record: APPROVE at `c1c0015c3655bbbe2b4b7a8403f659cdf312834f`, relayed by the owner
+  on 2026-10-28 (Codex's review was not posted on PR #455; the owner's relay is recorded as a PR comment). The PR body
+  carries `implemented-by: claude (opus)` and `reviewed-by: codex`.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive`, syncing the modified requirement into
+- [x] 4.1 Archive as the last content commit (`openspec archive`, syncing the modified requirement into
   `openspec/specs/entity-state-follower/spec.md`). Gate: `task spec:check` and `task docs:check`.

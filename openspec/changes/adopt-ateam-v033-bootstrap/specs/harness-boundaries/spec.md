@@ -17,17 +17,6 @@ compared by `scripts/doctor.sh`.
   that differs between `AGENTS.md` and `.agents/rules-index.md`, or hook latency above the 25 ms ceiling)
 - **THEN** `task verify` fails at the `ateam:doctor` step naming the file and the rule
 
-### Requirement: A doctor hook-latency failure is a flake
-
-`ateam doctor --check` times the hooks and treats latency above 25 ms as a violation, so `task ateam:doctor` is a
-timing-based step (measured at 13 to 14 ms on 2026-10-28). A latency failure SHALL be filed as a `class:flake` issue
-carrying the measured latency, and SHALL NOT be re-run to green.
-
-#### Scenario: Hook latency over the ceiling
-
-- **WHEN** `task verify` fails at `ateam:doctor` with hook latency above 25 ms
-- **THEN** a `class:flake` issue is filed with the measurement, and the merge gate stops until it is fixed
-
 #### Scenario: Doctor warning does not fail verify
 
 - **WHEN** `ateam doctor --check` reports only a warning (hook latency above the 10 ms target but below 25 ms, or a

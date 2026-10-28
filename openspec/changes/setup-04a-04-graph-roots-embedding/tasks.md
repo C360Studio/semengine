@@ -16,16 +16,20 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 2. Tests first
 
-- [ ] 2.1 Port the pin's unit tests for `bm25_embedder.go`, `dedup.go`, `vector.go` and the truncation and identity
-  helpers, without the two HTTP test files and without `time.Sleep`; add `TestEmbeddingImportsNoProviderModule` in
-  `internal/harness/contract` (design D9). Pin tests dropped or rewritten are named in `notes/2.1.md`. Gate: in 3.1.
-- [ ] 2.2 Storage tests of design D9: `TestRevisionGuardHistoryMatchesModel` (sequential),
+- [x] 2.1 Port the pin's unit tests for `bm25_embedder.go`, `dedup.go` and `vector.go` (the truncation and identity
+  helper tests live in the pin's `worker.go` and move to 2.3; storage-bound dedup and reason tests move to 2.2;
+  `notes/2.1.md`), without the two HTTP test files and without `time.Sleep`; add
+  `TestEmbeddingImportsNoProviderModule` in `internal/harness/contract` (design D9). Pin tests dropped or rewritten
+  are named in `notes/2.1.md`. Gate: in 3.1.
+- [ ] 2.2 Storage tests of design D9 (with the pin's storage-bound dedup and `derived_reasons` tests deferred from 2.1,
+  `TestSaveDedup_RecordsVectorSpace` rewritten without `EntityIDs`): `TestRevisionGuardHistoryMatchesModel` (sequential),
   `TestSaveDedupKeepsSameSpaceReplacesOther` (integration,
   `natsfixture`, #195), the pin's storage unit tests on fakes behind `NewKVStore`, each changed behaviour shown
   failing against the pin's shape; seed and run count in
   `notes/2.2.md`. Gate: in 3.2.
-- [ ] 2.3 Worker and cache tests of design D9: the unit `Run` tests (synctest on fakes, nil, second `Run` for both
-  types), the integration `Run` tests (`TestWorkerRunLeavesNoWatchDelivery`, `TestVectorCacheRunLeavesNoWatchDelivery`,
+- [ ] 2.3 Worker and cache tests of design D9 (with the pin's truncation and identity tests deferred from 2.1): the
+  unit `Run` tests (synctest on fakes, nil, second `Run` for both types), the integration `Run` tests
+  (`TestWorkerRunLeavesNoWatchDelivery`, `TestVectorCacheRunLeavesNoWatchDelivery`,
   both lost-watch tests), `TestVectorCacheNotAuthoritative`, `TestFindSimilarOrderAndLimit`,
   `TestTerminalCallbackOncePerOutcome`, `TestPanickingEntryStaysPending`, `TestCASExhaustionIsNotTerminal`,
   `TestFailureWithCanceledTextIsAFailure`, `TestBothLanesEmbedIdenticalBytes`, `TestKeyedCallbacksFollowRevisionOrder`,
@@ -47,9 +51,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   ended `ctx` was called and every accepted item was processed; `Wait` after the join returns at once), in
   `synctest`. Gate: `go test -race -count=1 ./internal/dispatch`; graph-index's and graph-ingest's tests unchanged.
 
-- [ ] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
-  (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` leaves
-  `golang.org/x/sync` direct and adds no `go-openai`.
+- [x] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
+  (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` adds no `go-openai`
+  (`golang.org/x/sync` becomes direct with `worker.go`, 3.4).
 - [ ] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the fenced
   no-text removal through `DeleteAtRevision`, the dead surface not carried (design D2, D3; ADR-110). Gate: as 3.1
   plus `task test:integration -- ./graph/embedding`.
@@ -57,7 +61,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 3.4 `worker.go`: `Run(ctx)` on `internal/dispatch.KeyedPool` keyed by entity ID in place of `Start`/`Stop`,
   the fenced no-text outcome, `NewWorker` without the bucket, `WorkerMetrics` edits, shutdown classified by the
   error, one text-length default, the callback-order docs (design D3, D4, D6, D7). Gate: as 3.2
-  plus `go test -count=5 -cpu 1 -shuffle=on ./graph/embedding`.
+  plus `go test -count=5 -cpu 1 -shuffle=on ./graph/embedding`; `go mod tidy` leaves `golang.org/x/sync` direct.
 - [ ] 3.5 The mutation checks of design D9 (`task mutate:check`: the revision comparison removed from `SaveGenerated`,
   then from `SaveFailed`; the no-text removal made unconditional), recorded in `notes/2.2.md` with survivors reported
   as survivors. A survivor is a gap in the named tests, fixed before 5.1. Gate: each named test fails on its mutant.

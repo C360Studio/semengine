@@ -33,8 +33,9 @@ import (
 	"github.com/c360studio/semengine/storage/storeregistry"
 )
 
-// shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
-var shared natsfixture.Shared
+// shared is the package's NATS server, declared in package objectstore (SharedServer) so the
+// Component's tests can use it too. It starts at the first reset; TestMain removes it after the tests.
+var shared = &objectstore.SharedServer
 
 func TestMain(m *testing.M) { os.Exit(run(m)) }
 

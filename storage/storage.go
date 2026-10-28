@@ -100,34 +100,3 @@ type StreamableStore interface {
 	// The caller MUST close the reader when done.
 	Open(ctx context.Context, key string) (io.ReadCloser, error)
 }
-
-// KeyGenerator generates storage keys for messages.
-// This interface allows for pluggable key generation strategies,
-// enabling SemStreams and other layers to provide custom key formats
-// while keeping the core storage implementation generic.
-//
-// Example implementations:
-//   - TimeBasedKeyGenerator: Uses timestamp-based keys
-//   - EntityBasedKeyGenerator: Uses entity IDs from Identifiable payloads
-//   - CompositeKeyGenerator: Combines multiple strategies
-type KeyGenerator interface {
-	// GenerateKey creates a storage key for the given message.
-	// The msg parameter can be any type - the generator should handle
-	// type assertions gracefully and provide sensible defaults.
-	GenerateKey(msg any) string
-}
-
-// MetadataExtractor extracts metadata from messages for storage.
-// This interface enables pluggable metadata extraction strategies,
-// allowing SemStreams to add semantic metadata while keeping the
-// core storage implementation generic.
-//
-// Metadata is stored as HTTP-style headers (map[string][]string)
-// to support NATS JetStream ObjectStore and other header-based systems.
-type MetadataExtractor interface {
-	// ExtractMetadata returns metadata headers for the given message.
-	// Returns nil if the message has no extractable metadata.
-	// The msg parameter can be any type - the extractor should handle
-	// type assertions gracefully.
-	ExtractMetadata(msg any) map[string][]string
-}

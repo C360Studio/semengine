@@ -2,7 +2,8 @@
 
 > **Ported from SemStreams.** This record is `docs/adr/063-store-substrate-and-resolver.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It is carried for `setup-04a-04-graph-roots-objectstore-store` (the
-> `storage/objectstore` Store port, draft PR #432), which retires issue #321. Its admission-ledger row is
+> `storage/objectstore` Store port, draft PR #432), which retires issue #321; the Component followed in
+> `setup-04a-04-graph-roots-objectstore-component` (draft PR #437). Its admission-ledger row is
 > `docs/adr/063-store-substrate-and-resolver.md` in `docs/admission-ledger.yaml`. The decision text below is
 > unchanged except for line wrapping, list markers and one code-fence language, which `task docs:check` requires.
 > Read it with these facts about this repository:
@@ -10,8 +11,9 @@
 > - Issue and pull request numbers, file and line references, and `openspec/changes/...` paths in the text are
 >   SemStreams' or a sister repository's, not SemEngine's. ADR-047, ADR-048, ADR-055 and ADR-062 are not carried.
 > - Ported here: `storage` (the `Store` and `StreamableStore` interfaces), `storage/storeregistry` (the registry
->   that resolves `StorageReference.StorageInstance`) and `storage/objectstore` (the Store). Not ported yet: the
->   objectstore Component, graph-embedding and fusion, which the text names as the registry's users.
+>   that resolves `StorageReference.StorageInstance`) and `storage/objectstore` (the Store). Also ported: the objectstore
+>   Component (`storage/objectstore`). Not ported yet: graph-embedding and fusion, which the text names as the
+>   registry's users.
 > - Kept: the instance name stamped as `StorageInstance`, the registry, resolving per fetch and not caching a
 >   resolved handle, and the read contract that opening a reference returns the raw body. `StoreContent` now keeps
 >   that contract too: it stores only the `body` role's text as raw bytes, so the reference opens to exactly that
@@ -22,10 +24,19 @@
 >   owning `Close` (pin line 256) describes nothing here. A store a registrant owns is closed by its registrant only
 >   when that store has a `Close`; `objectstore.Store` has none. The text's rule against caching a resolved handle
 >   is about the registry's borrowers and still applies.
-> - Open: multi-instance objectstore naming (the "Multi-instance objectstore naming" bullet of "Open
->   questions": thread the registry key into the factory or stay single-instance). It belongs to the Component and
->   is decided in `setup-04a-04-graph-roots-objectstore-component`. `objectstore.Config.InstanceName` defaults to
->   the bucket name and is set by the owning code.
+> - Decided: multi-instance objectstore naming (the "Multi-instance objectstore naming" bullet of "Open
+>   questions") is answered by stay single-instance (owner ruling 3, PR #437 comment 6454878443, change
+>   `setup-04a-04-graph-roots-objectstore-component`). The objectstore Component names its store `"objectstore"`,
+>   stamps that name into every reference and offers the store under it. The factory is not given an instance name,
+>   so there is no key to thread into it. One process runs one such Component: a second one is refused at boot, when
+>   the component manager registers the stores each component provides (`TestSecondComponentRefusedAtStart`). A
+>   deployment that wants a second bucket needs a second process. `objectstore.Config.InstanceName` still defaults
+>   to the bucket name for code that builds a Store without the Component.
+> - Changed (ruling 1, same PR): the Component stores only the body of a `message.ContentStorable` payload, through
+>   `StoreContent`, and publishes a `StoredMessage` carrying the reference; any other message is refused. The
+>   SemStreams Component also stored the raw wire bytes of any message under a generated key; that lane is not
+>   ported, because its reference opened to a JSON message and not to a body, against this record's raw-body read
+>   contract.
 
 ## Status
 

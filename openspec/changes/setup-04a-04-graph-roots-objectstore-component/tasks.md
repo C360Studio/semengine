@@ -34,7 +34,7 @@ passes on a clean tree at its commit (#171).
 - [x] 3.1 `stored_message.go` and `RegisterPayloads` without the map builder; doc names the composition root (#33).
   Gate: `go test -race -count=1 ./storage/objectstore`.
 - [x] 3.2 Config, ports, `Register`, `DeclarePorts` (design D6, D7). Gate: as 3.1 and the 2.1 tests.
-- [ ] 3.3 Lifecycle on `component.Lifecycle`, input binding, the run context and the lost-input tick
+- [x] 3.3 Lifecycle on `component.Lifecycle`, input binding, the run context and the lost-input tick
   (design D2, D5); allowlist entry (D9).
   Gate: as 3.1, `task test:integration -- ./storage/objectstore`, `task lint`, the contract tests.
 - [ ] 3.4 Write lane, emit and refusals (design D3, D4). Gate: as 3.3 plus `go test -count=5 -cpu 1 -shuffle=on

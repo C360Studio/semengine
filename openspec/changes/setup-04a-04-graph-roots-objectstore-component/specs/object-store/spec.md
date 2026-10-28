@@ -77,7 +77,7 @@ unhealthy, naming the consumer, until a later check finds it.
 
 #### Scenario: The input's consumer is deleted
 
-- **WHEN** the durable consumer of a running Component's JetStream input is deleted
+- **WHEN** the durable consumer of a running Component's JetStream input is deleted while a pull waits at the server
 - **THEN** `Health` becomes unhealthy naming that input and the restart
 - **AND** the test that verifies this is `TestLostJetStreamInputReportsUnhealthy`
 

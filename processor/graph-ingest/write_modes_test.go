@@ -2,7 +2,7 @@ package graphingest
 
 // The write modes through graph-ingest's lanes (design D15, #100 and #98; task 4.8;
 // graph-entity-writes, "One rule per write mode" and "Timestamp orders a replace"). Each test
-// writes through the lanes' production entries: the stream lane's consume closure, the canonical
+// writes through the lanes' production entries: the stream lane's inputLane.deliver, the canonical
 // mutation handlers, and the in-process create. The expected statements are written
 // out in each test, never computed by the rule under test.
 
@@ -21,7 +21,6 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // writeModesPredicate is the predicate P of the graph-entity-writes scenarios.
@@ -61,17 +60,17 @@ func assertHeld(t *testing.T, c *Component, entityID, predicate string, want ...
 	}
 }
 
-// writeModesLane is the stream lane's consume closure and the stream sequence it last used.
+// writeModesLane is the stream lane's input lane and the stream sequence it last used.
 type writeModesLane struct {
-	t       *testing.T
-	c       *Component
-	handler func(context.Context, jetstream.Msg)
-	seq     uint64
+	t    *testing.T
+	c    *Component
+	lane *inputLane
+	seq  uint64
 }
 
 func newWriteModesLane(t *testing.T, opts ...testComponentOption) *writeModesLane {
-	c, handler := startStreamLane(t, opts...)
-	return &writeModesLane{t: t, c: c, handler: handler}
+	c, lane := startStreamLane(t, opts...)
+	return &writeModesLane{t: t, c: c, lane: lane}
 }
 
 // send delivers one message from envelope source carrying triples, and requires it acknowledged.
@@ -79,7 +78,7 @@ func (l *writeModesLane) send(entityID, source string, triples ...message.Triple
 	l.t.Helper()
 	l.seq++
 	data := streamLaneData(l.t, &mergeTestGraphable{entityID: entityID, triples: triples}, source, message.WithTime(wmTime(0)))
-	if got := deliverStreamLane(l.t, l.handler, data, l.seq); got != "ack" {
+	if got := deliverStreamLane(l.t, l.lane, data, l.seq); got != "ack" {
 		l.t.Fatalf("message %d disposition = %s, want ack", l.seq, got)
 	}
 }

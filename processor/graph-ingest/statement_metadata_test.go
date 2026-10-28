@@ -4,7 +4,7 @@ package graphingest
 // statement without a Source or Timestamp takes the message envelope's, a message whose
 // envelope cannot supply a needed value is refused as poison, a message carrying a reserved
 // source is refused as poison, and so is a message carrying no statement. Each test drives the
-// consume closure Start wires for the entity_stream port, with a real keyed ingest pool behind
+// input lane Start builds for the entity_stream port, with a real keyed ingest pool behind
 // it.
 
 import (
@@ -60,10 +60,10 @@ func (*streamLaneMsg) InProgress() error                  { return nil }
 func (m *streamLaneMsg) Term() error                      { m.settled <- "term"; return nil }
 func (m *streamLaneMsg) TermWithReason(string) error      { m.settled <- "term"; return nil }
 
-// startStreamLane wires the component's JetStream inputs as Start does (setupSubscriptions,
-// over a real keyed ingest pool and the mock entity bucket) and returns the consume closure
-// the entity_stream consumer would call for each message.
-func startStreamLane(t *testing.T, opts ...testComponentOption) (*Component, func(context.Context, jetstream.Msg)) {
+// startStreamLane builds the input lane Start builds for the entity_stream port
+// (setupJetStreamConsumer), over a real keyed ingest pool and the mock entity bucket, and
+// returns it. Each test hands it messages through deliver, as the port's consumer does.
+func startStreamLane(t *testing.T, opts ...testComponentOption) (*Component, *inputLane) {
 	t.Helper()
 	c, _ := createTestComponentWithMockKVBucket(t, append([]testComponentOption{withAuthority("c360", "test")}, opts...)...)
 	registerMergeTestPayload(t, c)
@@ -77,28 +77,16 @@ func startStreamLane(t *testing.T, opts ...testComponentOption) (*Component, fun
 			t.Errorf("ingest pool Shutdown: %v", err)
 		}
 	})
-
-	var handler func(context.Context, jetstream.Msg)
-	// The stream's creation time on the server: any time that is not zero.
-	c.waitForStreamInput = func(context.Context, string) (time.Time, error) { return time.Unix(1, 0), nil }
-	c.consumeStream = func(
-		_ context.Context,
-		_ natsclient.PortConsumerContext,
-		cfg natsclient.StreamConsumerConfig,
-		h func(context.Context, jetstream.Msg),
-	) (jetstream.ConsumeContext, error) {
-		if cfg.StreamName == "ENTITY" {
-			handler = h
-		}
-		return &graphIngestLifecycleConsumeContext{closed: make(chan struct{}), drainSeen: make(chan struct{})}, nil
+	return c, &inputLane{
+		c:         c,
+		pool:      c.ingestPool,
+		consumer:  testConsumer,
+		heartbeat: testHeartbeat,
+		// The stream's creation time on the server: any time that is not zero.
+		generation: uint64(time.Unix(1, 0).UnixNano()),
+		// The default entity_stream port's subject (DefaultConfig).
+		subject: "entity.>",
 	}
-	if err := c.setupSubscriptions(t.Context(), t.Context()); err != nil {
-		t.Fatalf("setupSubscriptions: %v", err)
-	}
-	if handler == nil {
-		t.Fatal("setupSubscriptions bound no consumer on the ENTITY stream")
-	}
-	return c, handler
 }
 
 // streamLaneData encodes a Graphable payload in an envelope from source, as a producer
@@ -112,11 +100,11 @@ func streamLaneData(t *testing.T, payload *mergeTestGraphable, source string, op
 	return data
 }
 
-// deliverStreamLane hands one message to the consume closure and returns its disposition.
-func deliverStreamLane(t *testing.T, handler func(context.Context, jetstream.Msg), data []byte, seq uint64) string {
+// deliverStreamLane hands one message to the input lane and returns its disposition.
+func deliverStreamLane(t *testing.T, lane *inputLane, data []byte, seq uint64) string {
 	t.Helper()
 	msg := newStreamLaneMsg(data, seq)
-	handler(t.Context(), msg)
+	lane.deliver(t.Context(), msg)
 	select {
 	case disposition := <-msg.settled:
 		return disposition
@@ -175,7 +163,7 @@ func assertInvalidRequest(t *testing.T, err error, names ...string) {
 }
 
 func TestGraphableLaneStampsFromEnvelope(t *testing.T) {
-	c, handler := startStreamLane(t)
+	c, lane := startStreamLane(t)
 	const entityID = "c360.test.stamp.lane.entity.001"
 	// The wire carries the envelope's creation time in milliseconds.
 	created := time.UnixMilli(1_790_000_000_000)
@@ -187,7 +175,7 @@ func TestGraphableLaneStampsFromEnvelope(t *testing.T) {
 		{Subject: entityID, Predicate: "stamp.state.own", Object: "d", Source: "relay-origin", Timestamp: own, Confidence: 1},
 	}}
 
-	if got := deliverStreamLane(t, handler, streamLaneData(t, payload, "stamp-producer", message.WithTime(created)), 1); got != "ack" {
+	if got := deliverStreamLane(t, lane, streamLaneData(t, payload, "stamp-producer", message.WithTime(created)), 1); got != "ack" {
 		t.Fatalf("disposition = %s, want ack", got)
 	}
 
@@ -248,7 +236,7 @@ func TestGraphableLaneRefusesWithoutEnvelopeMetadata(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, handler := startStreamLane(t)
+			c, lane := startStreamLane(t)
 			const entityID = "c360.test.stamp.refuse.entity.001"
 			data := streamLaneData(t, &mergeTestGraphable{entityID: entityID, triples: tt.triples(entityID)}, tt.source, tt.opts...)
 
@@ -257,7 +245,7 @@ func TestGraphableLaneRefusesWithoutEnvelopeMetadata(t *testing.T) {
 			counter := c.predicateContractRejections.WithLabelValues("graphable", tt.reason)
 			before := testutil.ToFloat64(counter)
 
-			if got := deliverStreamLane(t, handler, data, 1); got != "term" {
+			if got := deliverStreamLane(t, lane, data, 1); got != "term" {
 				t.Errorf("disposition = %s, want term", got)
 			}
 			if got := testutil.ToFloat64(counter); got != before+1 {
@@ -281,12 +269,12 @@ func TestGraphableLaneRefusesWithoutEnvelopeMetadata(t *testing.T) {
 	// A statement that carries its own value needs nothing from the envelope: with every
 	// statement sourced, an envelope without a source is admitted.
 	t.Run("statements carry their own", func(t *testing.T) {
-		c, handler := startStreamLane(t)
+		c, lane := startStreamLane(t)
 		const entityID = "c360.test.stamp.admit.entity.001"
 		payload := &mergeTestGraphable{entityID: entityID, triples: []message.Triple{
 			{Subject: entityID, Predicate: "stamp.state.first", Object: "a", Source: "own-source", Timestamp: at, Confidence: 1},
 		}}
-		if got := deliverStreamLane(t, handler, streamLaneData(t, payload, ""), 1); got != "ack" {
+		if got := deliverStreamLane(t, lane, streamLaneData(t, payload, ""), 1); got != "ack" {
 			t.Fatalf("disposition = %s, want ack", got)
 		}
 		got := storedStatement(t, storedEntity(t, c, entityID), "stamp.state.first")
@@ -318,7 +306,7 @@ func TestStreamLaneRefusesReservedSource(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			c, handler := startStreamLane(t)
+			c, lane := startStreamLane(t)
 			const entityID = "c360.test.stamp.reserved.entity.001"
 			created := time.UnixMilli(1_790_000_000_000)
 
@@ -326,7 +314,7 @@ func TestStreamLaneRefusesReservedSource(t *testing.T) {
 			seed := &mergeTestGraphable{entityID: entityID, triples: []message.Triple{
 				{Subject: entityID, Predicate: "stamp.state.kept", Object: "before", Confidence: 1},
 			}}
-			if got := deliverStreamLane(t, handler, streamLaneData(t, seed, "stamp-producer", message.WithTime(created)), 1); got != "ack" {
+			if got := deliverStreamLane(t, lane, streamLaneData(t, seed, "stamp-producer", message.WithTime(created)), 1); got != "ack" {
 				t.Fatalf("seed disposition = %s, want ack", got)
 			}
 			beforeValue, beforeRevision, ok := storedRevision(t, c, entityID)
@@ -345,7 +333,7 @@ func TestStreamLaneRefusesReservedSource(t *testing.T) {
 
 			counter := c.predicateContractRejections.WithLabelValues("graphable", "reserved_source")
 			before := testutil.ToFloat64(counter)
-			if got := deliverStreamLane(t, handler, data, 2); got != "term" {
+			if got := deliverStreamLane(t, lane, data, 2); got != "term" {
 				t.Errorf("disposition = %s, want term", got)
 			}
 			if got := testutil.ToFloat64(counter); got != before+1 {
@@ -370,7 +358,7 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 	created := time.UnixMilli(1_790_000_000_000)
 
 	t.Run("a new entity", func(t *testing.T) {
-		c, handler := startStreamLane(t)
+		c, lane := startStreamLane(t)
 		const entityID = "c360.test.stamp.empty.entity.001"
 		data := streamLaneData(t, &mergeTestGraphable{entityID: entityID}, "stamp-producer", message.WithTime(created))
 
@@ -379,7 +367,7 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 		counter := c.predicateContractRejections.WithLabelValues("graphable", "no_statement")
 		before := testutil.ToFloat64(counter)
 
-		if got := deliverStreamLane(t, handler, data, 1); got != "term" {
+		if got := deliverStreamLane(t, lane, data, 1); got != "term" {
 			t.Errorf("disposition = %s, want term", got)
 		}
 		if got := testutil.ToFloat64(counter); got != before+1 {
@@ -402,7 +390,7 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 	// An arrival with no statement for an existing entity would otherwise replace its message
 	// type: the entity is stored under another type than the arrival's.
 	t.Run("an existing entity's message type", func(t *testing.T) {
-		c, handler := startStreamLane(t)
+		c, lane := startStreamLane(t)
 		const entityID = "c360.test.stamp.empty.entity.002"
 		seed := graph.EntityState{
 			ID:          entityID,
@@ -424,7 +412,7 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 		counter := c.predicateContractRejections.WithLabelValues("graphable", "no_statement")
 		before := testutil.ToFloat64(counter)
 		data := streamLaneData(t, &mergeTestGraphable{entityID: entityID}, "stamp-producer", message.WithTime(created.Add(time.Second)))
-		if got := deliverStreamLane(t, handler, data, 2); got != "term" {
+		if got := deliverStreamLane(t, lane, data, 2); got != "term" {
 			t.Errorf("disposition = %s, want term", got)
 		}
 		if got := testutil.ToFloat64(counter); got != before+1 {
@@ -437,7 +425,7 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 	})
 
 	// The Storable payload does not travel the wire (its codec is a stub), so this case reads
-	// the extract step the consume closure runs after decoding: its refusal is the one the
+	// the extract step deliver runs after decoding: its refusal is the one the
 	// closure terminates and counts above.
 	t.Run("only a storage reference", func(t *testing.T) {
 		const entityID = "c360.test.stamp.empty.entity.003"
@@ -446,7 +434,7 @@ func TestStreamLaneRefusesEmptyArrival(t *testing.T) {
 		assertInvalidRequest(t, err, "no statement")
 		var refusal *statementRefusal
 		if !errors.As(err, &refusal) {
-			t.Errorf("refusal %v is not a statement refusal, so the consume closure would not terminate it", err)
+			t.Errorf("refusal %v is not a statement refusal, so deliver would not terminate it", err)
 		}
 	})
 }

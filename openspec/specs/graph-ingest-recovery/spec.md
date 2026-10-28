@@ -328,3 +328,32 @@ the port and `consumer_name`, so that construction and port declaration both fai
 - **THEN** `DeclarePorts`, `CreateGraphIngest` and `Config.Validate` each fail, classified invalid, naming the port and
   `consumer_name`
 - **AND** the test that verifies this is `TestConfigRefusesDeclaredConsumerName`
+
+### Requirement: The boot sweep waits at most 5 s for its watch to close
+
+After stopping its `ENTITY_STATES` snapshot watch, graph-ingest's boot sweep SHALL wait until the watch's delivery
+closes for at most 5 s. When the 5 s run out, the sweep SHALL fail, classified transient, with an error saying the
+delivery did not close after `Stop`, so `Start` fails (#456).
+
+#### Scenario: The snapshot watch's delivery never closes
+
+- **WHEN** the sweep stops its watch and the update channel stays open, as at nats.go v1.54.0 when the watch's
+  context ends, or its connection closes, after nats.go subscribes and before it installs the handler that closes the
+  channel (no goroutine is then left to join; on every other path the wait ends when nats.go's delivery ends)
+- **THEN** the sweep returns, after 5 s of its clock, a transient error saying the delivery did not close after
+  `Stop`, and records no poison
+- **AND** the test that verifies this is `TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses`
+
+### Requirement: Stop returns only after every input callback has returned
+
+graph-ingest's `Stop` SHALL return nil only after every JetStream input's delivery has ended and every consume
+callback has returned, through `natsclient`'s `WaitConsumerHandlers`, never on the consume loop's `Closed()` alone. A
+`Stop` whose context ends first SHALL return that context's error and keep its inputs for a later `Stop` (#441).
+
+#### Scenario: A callback held after the connection closed for good
+
+- **WHEN** a consume callback is held, the client's connection closes for good and the consume loop's `Closed()` has
+  fired, and `Stop` runs under a context that ends before the callback is released
+- **THEN** `Stop` returns that context's error and keeps its inputs, and a `Stop` after the callback returns
+  returns nil and holds nothing
+- **AND** the test that verifies this is `TestStopJoinsCallbackAfterConnectionLoss`

@@ -17,6 +17,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
@@ -361,6 +362,84 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 	health := c.Health()
 	if !health.Healthy {
 		t.Fatalf("Health degraded by the stopped watcher: %+v", health)
+	}
+}
+
+// openGuardWatcher is a snapshot watcher whose update channel never closes, Stop included: the
+// state nats.go v1.54.0 leaves a watch in when its context ends, or its connection closes, between
+// Subscribe and the install of the handler that closes the channel (#456).
+type openGuardWatcher struct {
+	updates chan jetstream.KeyValueEntry
+	stopped chan struct{}
+}
+
+func (w *openGuardWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
+func (w *openGuardWatcher) Stop() error                             { close(w.stopped); return nil }
+
+// TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses: once the sweep has stopped its watch, it
+// waits for the delivery to close for at most the named budget, 5 s by the graph-ingest-recovery
+// spec ("The snapshot watch's delivery never closes"), then fails transient and records no poison,
+// both after the end-of-snapshot marker and when Start's context ends mid-sweep. The bubble's clock
+// advances only when every goroutine in it is blocked, so time.Since reads exactly how long the
+// sweep waited; with no bound the bubble deadlocks and the test fails.
+func TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses(t *testing.T) {
+	if guardWatchDrainBudget != 5*time.Second {
+		t.Fatalf("guardWatchDrainBudget = %v; the spec names 5s", guardWatchDrainBudget)
+	}
+	cases := []struct {
+		name   string
+		marker bool
+		cancel bool
+	}{
+		{name: "after the end-of-snapshot marker", marker: true},
+		{name: "context cancelled during the sweep", cancel: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				// The watcher's channels are made inside the bubble, so a read of them counts
+				// as durably blocked and the bubble's clock can advance.
+				watcher := &openGuardWatcher{updates: make(chan jetstream.KeyValueEntry, 2), stopped: make(chan struct{})}
+				watcher.updates <- &mockKVEntry{key: guardTestPoisonID, revision: 1, data: guardTestPoisonBytes(guardTestPoisonID)}
+				if tc.marker {
+					watcher.updates <- nil
+				}
+				bucket := newMockKVBucket()
+				bucket.watchAllFactory = func() (jetstream.KeyWatcher, error) { return watcher, nil }
+				c := newIngestGuardTestComponent(t, bucket)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				if tc.cancel {
+					cancel()
+				}
+
+				start := time.Now()
+				err := c.startEntityStateGuard(ctx, c.entityBucket)
+				elapsed := time.Since(start)
+
+				var classified *errs.ClassifiedError
+				if !errors.As(err, &classified) || classified.Class != errs.ErrorTransient {
+					t.Fatalf("sweep error = %T %v, want a transient classified error", err, err)
+				}
+				if !errors.Is(err, errGuardWatchDeliveryOpen) {
+					t.Fatalf("sweep error = %v, want it to wrap errGuardWatchDeliveryOpen", err)
+				}
+				if tc.cancel && !errors.Is(err, context.Canceled) {
+					t.Fatalf("sweep error = %v, want it to wrap context.Canceled", err)
+				}
+				if elapsed != guardWatchDrainBudget {
+					t.Errorf("sweep returned after %v; want %v", elapsed, guardWatchDrainBudget)
+				}
+				select {
+				case <-watcher.stopped:
+				default:
+					t.Fatal("the sweep's watcher was not stopped")
+				}
+				if c.entityPoisonSize.Load() != 0 {
+					t.Fatal("a sweep whose watch did not close must not record poison")
+				}
+			})
+		})
 	}
 }
 

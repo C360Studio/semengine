@@ -28,6 +28,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
@@ -317,8 +318,11 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 	for {
 		select {
 		case <-ctx.Done():
-			c.stopEntityStateGuardWatcher(watcher, updates)
-			return errs.WrapTransient(ctx.Err(), "Component", "startEntityStateGuard", "ENTITY_STATES snapshot sweep")
+			cause := ctx.Err()
+			if err := c.stopEntityStateGuardWatcher(ctx, watcher, updates); err != nil {
+				cause = errors.Join(cause, err)
+			}
+			return errs.WrapTransient(cause, "Component", "startEntityStateGuard", "ENTITY_STATES snapshot sweep")
 		case entry, ok := <-updates:
 			if !ok {
 				// The channel closed before the end-of-snapshot marker, so the
@@ -333,7 +337,9 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 			if entry == nil {
 				// End-of-snapshot marker: the full resident snapshot was seen.
 				// Stop deliberately, then record the surviving sweep entries.
-				c.stopEntityStateGuardWatcher(watcher, updates)
+				if err := c.stopEntityStateGuardWatcher(ctx, watcher, updates); err != nil {
+					return errs.WrapTransient(err, "Component", "startEntityStateGuard", "stop ENTITY_STATES snapshot watcher")
+				}
 				c.recordBootSweepPoison(ctx, sweep)
 				return nil
 			}
@@ -349,17 +355,48 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 // channel would wedge the connection's async-callback dispatcher (via
 // SetClosedHandler). The post-Stop closure here is deliberate and is not a sweep
 // failure.
-func (c *Component) stopEntityStateGuardWatcher(watcher jetstream.KeyWatcher, updates <-chan jetstream.KeyValueEntry) {
+//
+// The drain waits at most guardWatchDrainBudget, then returns
+// errGuardWatchDeliveryOpen. On every path where nats.go installed its closed
+// handler the wait ends when its delivery ends. The bound is for the one path
+// with nothing to join: WatchAll subscribes before it installs the handler that
+// closes the channel (jetstream/kv.go:1356-1368), and nats.go reads that handler
+// once, when its delivery goroutine exits (nats.go:3830-3834). A watch whose
+// context ends, or whose connection closes, in between leaves the channel open
+// for good with no delivery goroutine running (#456).
+// TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses drives the bound on a
+// scripted watcher; the window itself has not been reproduced against nats.go.
+func (c *Component) stopEntityStateGuardWatcher(ctx context.Context, watcher jetstream.KeyWatcher, updates <-chan jetstream.KeyValueEntry) error {
 	_ = watcher.Stop()
+	// Terminal cleanup, possibly after Start's context has ended, so it runs
+	// detached and bounded.
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), guardWatchDrainBudget)
+	defer cancel()
 	discarded := 0
-	for range updates {
-		discarded++ // deliberate drain-to-close; entries are discarded unvalidated
+	for open := true; open; {
+		select {
+		case _, open = <-updates:
+			if open {
+				discarded++ // deliberate drain-to-close; entries are discarded unvalidated
+			}
+		case <-drainCtx.Done():
+			return errGuardWatchDeliveryOpen
+		}
 	}
 	if discarded > 0 {
 		c.logger.Debug("snapshot sweep watcher drained to close",
 			slog.Int("discarded_entries", discarded))
 	}
+	return nil
 }
+
+// guardWatchDrainBudget bounds stopEntityStateGuardWatcher's wait for the
+// snapshot watch's delivery to close after Stop.
+const guardWatchDrainBudget = 5 * time.Second
+
+// errGuardWatchDeliveryOpen says the snapshot watch's update channel was still
+// open when guardWatchDrainBudget ran out.
+var errGuardWatchDeliveryOpen = errors.New("graph-ingest: the ENTITY_STATES snapshot watch's delivery did not close after Stop")
 
 // sweepEntityStateGuardEntry folds one pre-marker snapshot delivery into the
 // sweep map, last-revision-wins per key: a valid or tombstoned delivery erases

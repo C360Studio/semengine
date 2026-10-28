@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -131,23 +129,3 @@ func assertGuardUnused(tb testing.TB, c *Component) {
 		tb.Fatalf("following Start of the guard: %v", err)
 	}
 }
-
-// graphIngestLifecycleConsumeContext stands in for a JetStream consume context. At the
-// pin it is in lifecycle_owner_test.go:15-31; test_owner_test.go reads it too.
-type graphIngestLifecycleConsumeContext struct {
-	closed    chan struct{}
-	drainSeen chan struct{}
-	drainOnce sync.Once
-	drains    atomic.Int32
-}
-
-func (*graphIngestLifecycleConsumeContext) Stop() { panic("unexpected force Stop") }
-
-func (c *graphIngestLifecycleConsumeContext) Drain() {
-	c.drainOnce.Do(func() {
-		c.drains.Add(1)
-		close(c.drainSeen)
-	})
-}
-
-func (c *graphIngestLifecycleConsumeContext) Closed() <-chan struct{} { return c.closed }

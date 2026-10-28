@@ -3,7 +3,6 @@ package graphingest
 import (
 	"context"
 	"errors"
-	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -94,61 +93,5 @@ func TestGraphIngestTestOwnerCanceledOperationKeepsFreshTerminalAuthority(t *tes
 	}
 	if got := drain.called.Load(); got != 1 {
 		t.Fatalf("concrete Stop attempts = %d, want 1", got)
-	}
-}
-
-func TestGraphIngestTestOwnerWaitsForObservedClosure(t *testing.T) {
-	operationCtx, cancelOperation := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancelOperation()
-	consumer := &graphIngestLifecycleConsumeContext{
-		closed: make(chan struct{}), drainSeen: make(chan struct{}),
-	}
-	component := createTestComponent(t)
-	component.consumers = []graphIngestConsumerBinding{{handle: consumer}}
-	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
-	owner := newGraphIngestTestOwner(component)
-	startCtx := owner.startContext(operationCtx)
-	stopDone := make(chan struct{})
-	var stopErr error
-	go func() {
-		stopErr = owner.stop(operationCtx)
-		close(stopDone)
-	}()
-	var releaseOnce sync.Once
-	releaseClosed := func() { releaseOnce.Do(func() { close(consumer.closed) }) }
-	t.Cleanup(func() {
-		releaseClosed()
-		joinCtx, cancelJoin := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancelJoin()
-		select {
-		case <-stopDone:
-		case <-joinCtx.Done():
-			t.Errorf("incomplete cleanup: concrete Stop did not join after native Closed release: %v", joinCtx.Err())
-		}
-	})
-	select {
-	case <-consumer.drainSeen:
-	case <-operationCtx.Done():
-		t.Fatalf("native drain was not entered: %v", operationCtx.Err())
-	}
-	select {
-	case <-stopDone:
-		t.Fatalf("Stop returned before owned Closed observation: %v", stopErr)
-	default:
-	}
-	if err := startCtx.Err(); err != nil {
-		t.Fatalf("Start authority ended while native close was pending: %v", err)
-	}
-	releaseClosed()
-	select {
-	case <-stopDone:
-		if stopErr != nil {
-			t.Fatalf("Stop after observed Closed: %v", stopErr)
-		}
-	case <-operationCtx.Done():
-		t.Fatalf("Stop did not return after owned closure: %v", operationCtx.Err())
-	}
-	if !errors.Is(startCtx.Err(), context.Canceled) {
-		t.Fatalf("Start authority after joined Stop = %v, want canceled", startCtx.Err())
 	}
 }

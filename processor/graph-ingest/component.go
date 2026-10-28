@@ -172,7 +172,7 @@ type Component struct {
 	// Keyed-concurrent entity ingest (SemStreams ADR-072, SemStreams gh#480). The pool partitions
 	// ingest by entity ID so same-entity updates stay ordered while different
 	// entities ingest in parallel. Built in Start BEFORE subscriptions (M3);
-	// drained in Stop after every native consumer reports Closed. The pool and
+	// drained in Stop after every consume callback has returned. The pool and
 	// submission contexts are children of the run context Start creates; only their cancel
 	// functions are retained so no production struct stores context authority.
 	ingestPool         *dispatch.KeyedPool[ingestWork]
@@ -547,7 +547,10 @@ func (c *Component) release(ctx context.Context) error {
 }
 
 // cleanup preserves effect -> durable guard -> settlement by keeping callback,
-// submission, pool, KV, and cache authority live until exact native closure.
+// submission, pool, KV, and cache authority live until every consume callback
+// has returned. It waits through natsclient's WaitConsumerHandlers, not the
+// consume loop's Closed(), which can close while a callback still runs once the
+// connection is lost for good (TestStopJoinsCallbackAfterConnectionLoss, #441).
 func (c *Component) cleanup(ctx context.Context) error {
 	var cleanupErr error
 	for index := range c.consumers {
@@ -557,12 +560,8 @@ func (c *Component) cleanup(ctx context.Context) error {
 			binding.drainIssued = true
 		}
 	}
-	for index := range c.consumers {
-		select {
-		case <-c.consumers[index].handle.Closed():
-		case <-ctx.Done():
-			cleanupErr = errors.Join(cleanupErr, ctx.Err())
-		}
+	for _, binding := range c.consumers {
+		cleanupErr = errors.Join(cleanupErr, c.natsClient.WaitConsumerHandlers(ctx, binding.handle))
 	}
 	if c.ingestSubmitCancel != nil {
 		c.ingestSubmitCancel()

@@ -184,9 +184,9 @@ func invalid(what string) error {
 // stopped, its delivery closed and its heartbeat goroutine joined. It returns nil, or the watch's
 // Stop error when that error says more than that the watch was already gone. It waits for the
 // delivery to close for at most watchDrainBudget (see stopWatch) and then returns
-// errWatchDeliveryOpen. It publishes the
-// envelope once at once and then every readiness.DefaultHeartbeat, on a goroutine of its own, so a
-// Deliver that blocks does not delay a heartbeat. A nil context is refused.
+// errWatchDeliveryOpen. It publishes the envelope once at once and then every
+// readiness.DefaultHeartbeat, on a goroutine of its own, so a Deliver that blocks does not delay a
+// heartbeat. A nil context is refused.
 func (f *Follower) Run(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"), "follower", "Run", "check the context")

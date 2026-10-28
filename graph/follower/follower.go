@@ -29,12 +29,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/internal/resource"
 	"github.com/c360studio/semengine/internal/revlag"
 	"github.com/c360studio/semengine/metric"
@@ -240,45 +240,17 @@ func (f *Follower) follow(ctx context.Context) error {
 }
 
 // watchDrainBudget bounds stopWatch's wait for the watch's delivery to close after Stop.
-const watchDrainBudget = 5 * time.Second
+const watchDrainBudget = kvwatch.DrainBudget
 
 // errWatchDeliveryOpen says the watch's update channel was still open when watchDrainBudget ran out.
-var errWatchDeliveryOpen = errors.New("follower: the ENTITY_STATES watch's delivery did not close after Stop")
+var errWatchDeliveryOpen = kvwatch.ErrDeliveryOpen
 
-// stopWatch stops the watch and drains its updates until nats.go closes the channel, for at most
-// watchDrainBudget after ctx, Run's, has ended. At nats.go v1.54.0 Stop only unsubscribes: a
-// delivery already blocked on the full updates buffer ends only when the buffer is read, and the
-// channel closes after it, so on that path returning is a join (TestFollowerRunReturnsAndLeavesNothing
-// drives it with a backlogged watch). The bound is for the one path with nothing to join: WatchAll
-// subscribes before it installs the handler that closes the channel (jetstream/kv.go:1356-1368), and
-// nats.go reads that handler once, when its delivery goroutine exits (nats.go:3830-3834). A watch
-// whose context ends, or whose connection closes, in between leaves the channel open for good with
-// no delivery goroutine running (#454). TestStopWatchGivesUpOnADeliveryThatNeverCloses drives the
-// bound on a scripted watcher; the window itself has not been reproduced against nats.go.
+// stopWatch stops the ENTITY_STATES watch and drains its delivery until it closes, for at most
+// watchDrainBudget after ctx, Run's, has ended (kvwatch.Stop, which says why the drain and the
+// bound are needed, #418 and #454).
 func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
-	stopErr := watcher.Stop()
-	// Terminal cleanup after Run's context has ended, so it runs detached and bounded.
-	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), watchDrainBudget)
-	defer cancel()
-	updates := watcher.Updates()
-	for open := true; open; {
-		select {
-		case _, open = <-updates:
-		case <-drainCtx.Done():
-			// The delivery never closed, so a Stop error cannot be read as "already gone".
-			if stopErr != nil {
-				return errors.Join(errWatchDeliveryOpen, fmt.Errorf("follower: stop the ENTITY_STATES watch: %w", stopErr))
-			}
-			return errWatchDeliveryOpen
-		}
-	}
-	// The delivery has closed. Stop's error then says only that the watch was already gone: nats.go
-	// also unsubscribes when the watch's context ends (js.go, subscribe), which is Run's, and can
-	// delete the consumer before Stop does (seen as ErrConsumerNotFound in
-	// TestFollowerRunReturnsAndLeavesNothing).
-	if stopErr != nil && !errors.Is(stopErr, nats.ErrBadSubscription) &&
-		!errors.Is(stopErr, nats.ErrConnectionClosed) && !errors.Is(stopErr, nats.ErrConsumerNotFound) {
-		return fmt.Errorf("follower: stop the ENTITY_STATES watch: %w", stopErr)
+	if err := kvwatch.Stop(ctx, watcher); err != nil {
+		return fmt.Errorf("follower: stop the ENTITY_STATES watch: %w", err)
 	}
 	return nil
 }

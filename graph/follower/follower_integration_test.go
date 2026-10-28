@@ -297,7 +297,7 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 		}
 		// The stack dump showing the native delivery blocked on its full buffer orders Run's
 		// cancellation after the backlog, not elapsed time.
-		if err := awaitNativeDeliveryBlocked(t.Context()); err != nil {
+		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), waitBound); err != nil {
 			t.Fatal(err)
 		}
 		if err := stop(); err != nil {
@@ -309,7 +309,7 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 			t.Fatalf("cycle %d: a goroutine is still in a Follower method after Run returned:\n%s", cycle, dump)
 		}
 		// Run drained the watch until nats.go closed it, which it does after its last delivery returns.
-		if stacks := nativeDeliveryStacks(); stacks != "" {
+		if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
 			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned:\n%s", cycle, stacks)
 		}
 	}
@@ -332,32 +332,6 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 	}, func(n int) bool { return n == 0 }); err != nil {
 		t.Fatalf("the watch's consumer is still on the stream: %v", err)
 	}
-}
-
-// nativeDeliveryStacks returns the stacks of goroutines inside nats.go's KV watch delivery callback,
-// or "" when there are none.
-func nativeDeliveryStacks() string {
-	buf := make([]byte, 1<<20)
-	var found []string
-	for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
-		if strings.Contains(stack, "jetstream.(*kvs).WatchFiltered.func1") {
-			found = append(found, stack)
-		}
-	}
-	return strings.Join(found, "\n\n")
-}
-
-// awaitNativeDeliveryBlocked waits, up to waitBound, for nats.go's watch delivery to be blocked
-// sending into its full updates buffer.
-func awaitNativeDeliveryBlocked(ctx context.Context) error {
-	ctx, cancel := context.WithTimeout(ctx, waitBound)
-	defer cancel()
-	if _, err := probe.Await(ctx, func(context.Context) (bool, error) {
-		return strings.Contains(nativeDeliveryStacks(), "[chan send]"), nil
-	}, func(blocked bool) bool { return blocked }); err != nil {
-		return fmt.Errorf("the native watch delivery did not back up: %w", err)
-	}
-	return nil
 }
 
 // TestFollowerConcurrentQueryReady: while the initial build is incomplete, concurrent QueryReady

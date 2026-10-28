@@ -36,7 +36,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 3. The package
 
-- [ ] 3.0 Move the body of `graph/follower`'s `stopWatch`, its budget and its error into `internal/kvwatch` with
+- [x] 3.0 Move the body of `graph/follower`'s `stopWatch`, its budget and its error into `internal/kvwatch` with
   bucket-free text (the follower keeps `stopWatch` as a wrapper naming ENTITY_STATES), and the follower test's
   `nativeDeliveryStacks` and `awaitNativeDeliveryBlocked` into `internal/harness/natsfixture` (doc naming the backlog
   and #454); behaviour unchanged (design D1, D4). Gate: the follower's tests,

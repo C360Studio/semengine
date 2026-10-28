@@ -36,13 +36,14 @@ A second `Run` on the same Worker while one runs SHALL be refused.
 ### Requirement: A lost watch is reported
 
 When the watch's update channel closes while the context is still live, `Worker.Run` and `VectorCache.Run` SHALL
-end the watch's context, SHALL return a non-nil error that is not the context's error, and SHALL leave no goroutine
-running for the watch, nats.go's included.
+end the watch's context, SHALL return a non-nil error that is not the context's error, and SHALL return only after
+the watch's delivery has ended. nats.go's unsubscribe goroutine for the watch is released by that context, not joined.
 
 #### Scenario: The update channel closes
 
 - **WHEN** the `EMBEDDING_INDEX` bucket is deleted while the Worker's `Run` has a live context
-- **THEN** `Run` returns an error saying the watch was lost
+- **THEN** `Run` returns an error saying the watch was lost, no delivery for the watch is running, and the
+  unsubscribe goroutine exits afterwards
 - **AND** the test that verifies this is `TestWorkerRunReportsLostWatch`
 
 #### Scenario: The cache's update channel closes

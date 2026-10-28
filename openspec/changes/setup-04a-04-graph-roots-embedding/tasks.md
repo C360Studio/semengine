@@ -33,11 +33,12 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 3. The package
 
-- [ ] 3.0 Move `graph/follower`'s `stopWatch`, `watchDrainBudget` and `errWatchDeliveryOpen` into `internal/kvwatch`
-  and the follower test's `nativeDeliveryStacks` and `awaitNativeDeliveryBlocked` into `internal/harness/natsfixture`
-  (doc naming the backlog and #454), with the follower calling both; behaviour unchanged (design D1, D4). Gate: the
-  follower's tests, `TestStopWatchGivesUpOnADeliveryThatNeverCloses` (moved) and
-  `TestFollowerRunReturnsAndLeavesNothing` pass unchanged in what they assert; `task verify`.
+- [ ] 3.0 Move the body of `graph/follower`'s `stopWatch`, its budget and its error into `internal/kvwatch` with
+  bucket-free text (the follower keeps `stopWatch` as a wrapper naming ENTITY_STATES), and the follower test's
+  `nativeDeliveryStacks` and `awaitNativeDeliveryBlocked` into `internal/harness/natsfixture` (doc naming the backlog
+  and #454); behaviour unchanged (design D1, D4). Gate: the follower's tests,
+  `TestStopWatchGivesUpOnADeliveryThatNeverCloses` (kept in the follower) and `TestFollowerRunReturnsAndLeavesNothing`
+  pass unchanged in what they assert, a kvwatch test of the bound passes; `task verify`.
 
 - [ ] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
   (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` leaves

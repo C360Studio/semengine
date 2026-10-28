@@ -30,10 +30,15 @@ record may replace a newer pending one, as at the pin; a
 `vector_cache.go` (new file, the cache split out of `storage.go`, D5), `worker.go`, `derived_reasons.go`, tests. Not
 carried: `http_embedder.go`, `http_embedder_test.go`, `http_embedder_dimensions_test.go`.
 
-Outside the package (D4, D11): `internal/kvwatch` (new) receives `graph/follower`'s `stopWatch`, `watchDrainBudget`
-and `errWatchDeliveryOpen` unchanged in behaviour, and `graph/follower` calls it; `internal/harness/natsfixture`
+Outside the package (D4, D11): `internal/kvwatch` (new) receives the body of `graph/follower`'s `stopWatch`, its
+5 s budget and its delivery-open error, with bucket-free text (`kvwatch.Stop`, `kvwatch.ErrDeliveryOpen`); each caller
+wraps the error with its own bucket. `graph/follower` keeps `stopWatch` as that wrapper ("follower: … ENTITY_STATES
+watch", as today) and keeps `TestStopWatchGivesUpOnADeliveryThatNeverCloses` under that name, matching through
+`errors.Is` (`follower_test.go:81`), so the `entity-state-follower` spec needs no delta. `internal/harness/natsfixture`
 receives the follower test's `nativeDeliveryStacks` and `awaitNativeDeliveryBlocked`, and the follower's tests call
-them. One spelling of each.
+them. One spelling of each. The drain does not go into `natsclient`: that would add mechanism to a public package
+against the owner's #170 ruling; `natsclient`'s own copy in `keysByFilter` (`natsclient/kv.go:699`, kept on #420) is
+the second spelling D11's issue covers.
 
 ## D2. Surface
 
@@ -206,7 +211,10 @@ Integration (`natsfixture`, shared server via the reset; #195):
   before cancelling, ten cycles; after `Run` returns no goroutine is in a Worker or VectorCache method and
   `natsfixture.NativeDeliveryStacks` is empty (the follower's test shape).
 - `TestWorkerRunReportsLostWatch` and `TestVectorCacheRunReportsLostWatch`: the bucket is deleted under a live `Run`;
-  `Run` returns a lost-watch error, and afterwards no delivery or unsubscribe goroutine for the watch remains.
+  `Run` returns a lost-watch error, and `natsfixture.NativeDeliveryStacks` is then empty (the delivery has ended).
+  nats.go's unsubscribe goroutine (`js.go:2063-2068`) is released by the cancelled watch context, not joined, so the
+  test waits for its stack, matched by its own pattern, to disappear with `probe.Await` (#392: wait on the event,
+  never assert at once).
 - `TestRevisionGuardHistoryMatchesModel`: a sequential generated history (`pgregory.net/rapid`) of up to 30 calls of
   `SavePendingGuarded`, `SaveGenerated`, `SaveFailed` and `DeleteEmbedding` over two entities and revisions 1-4. The
   model maps entity → (status, revision) or absent and encodes D3 exactly: pending is refused only over generated at
@@ -217,7 +225,9 @@ Integration (`natsfixture`, shared server via the reset; #195):
 - `TestConcurrentSavesEndAtHighestRevision`: on a pending record, 20 goroutines each make one `SaveGenerated` or
   `SaveFailed` call for a distinct revision 1-20, released together; the record ends at revision 20's status. The
   property holds in every order, so no oracle of the schedule is needed. Repeated 20 times.
-- `TestWorkerSupersededRevisionIsDropped`: pending N is written; the fake embedder holds N's text until the test has
+- `TestWorkerSupersededRevisionIsDropped` (at least 2 workers; N's and M's texts differ, so the in-process
+  singleflight cannot fold M's call onto N's held one and deadlock): pending N is written; the fake embedder holds N's
+  text until the test has
   seen M's generated record in the bucket; pending M is written and processed; then N is released. The record ends
   generated at M with M's vector, `onGenerated` fired for M only, and N's terminal outcome is `OutcomeDeleted`.
 - `TestSaveDedupKeepsSameSpaceReplacesOther`; `TestWorkerResolvesLiveRegistryStatePerFetch` (ported).
@@ -248,7 +258,8 @@ shares no file but changes the gate (`task verify`, CI, merge gate) and the cont
 Moving the follower's drain into `internal/kvwatch` makes it a primitive two packages share, so the establishing
 side's sweep is owed (architect contract, "The adoption sweep"). Sites in the tree that stop a KV watch, at `6b146a8`,
 for one tracking issue, none a migration obligation of this change: `natsclient/kv.go:699` (`keysByFilter`, its own
-5 s drain: a second spelling, kept by the owner on #420); `graph/readiness/watcher.go:279`; `config/manager.go:601`;
+5 s drain: a second spelling, kept by the owner on #420; not merged into `natsclient` here, which would add mechanism to
+a public package against #170, D1); `graph/readiness/watcher.go:279`; `config/manager.go:601`;
 `service/message_logger_kv_watch.go:174`; `processor/graph-ingest/poison_inventory.go:326`, `:353`;
 `pkg/lifecycle/manager_query.go:224`; `natsclient/storagereport/storage_report_consumer.go:220`. Each either drains
 until close or can leave a backlogged delivery running after it returns; the issue asks which, per site.

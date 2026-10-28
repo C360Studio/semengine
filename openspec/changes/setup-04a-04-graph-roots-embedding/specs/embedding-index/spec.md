@@ -90,7 +90,7 @@ entities for a limit of 0 or less.
 - **THEN** the second call returns an error and the first keeps running
 - **AND** the test that verifies this is `TestVectorCacheSecondRunRefused`
 
-### Requirement: An older source revision never replaces a newer outcome
+### Requirement: A save older than the stored record is refused
 
 `Storage` SHALL write every read-modify-write through `natsclient.KVStore.UpdateWithRetryRead`. `SaveGenerated` and
 `SaveFailed` SHALL return `ErrRecordGone` for an absent key and `ErrSupersededRevision` when the stored record has a

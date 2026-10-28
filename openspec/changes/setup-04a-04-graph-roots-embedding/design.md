@@ -184,14 +184,16 @@ path), keyed by entity ID, and the work handed to it includes the terminal callb
   (`keyed-dispatch` spec, "Same-key work runs in submit order on one lane"). Nothing here depends on the watch's
   delivery order for one key: if the watch ever delivered M before N, N's save would be refused by the revision guard
   and report `OutcomeDeleted` or `OutcomeSkipped`, as below. Delivery order is not promised here.
-- So a terminal callback for an older revision never follows one for a newer revision of the same entity with a
-  failure: whenever an older revision is processed after a newer one (a repair re-drive by hop 1, D3, or any delivery
-  order), the older save is
-  refused by the revision guard and its callback reports `OutcomeDeleted` or `OutcomeSkipped`, never `OutcomeFailed`
-  (`markFailed` returns `OutcomeFailed` only for a stored failure, `pin:…/worker.go:1174-1178`).
+- So processing and callbacks for one entity follow the order of the watch entries the Worker accepted, and each
+  hop-2 save is checked against the source revision stored when the save runs: a save older than a stored generated
+  record is refused, and its callback reports `OutcomeDeleted` or `OutcomeSkipped`, never `OutcomeFailed`
+  (`markFailed` returns `OutcomeFailed` only for a stored failure, `pin:…/worker.go:1174-1178`). This is not a promise
+  that stored source revisions only move forward: D3 keeps the pin's choice that an older pending write replaces a
+  newer pending or failed record, so the sequential history Pending(M), Failed(M), Pending(N), Failed(N) with N < M
+  ends at N's failure. Only a generated record blocks an older write.
 - The revision guard (D3) stays: hop 1 writes pending records while the Worker runs, so a hop-2 save still races a
-  newer pending write, and the guard keeps the stored record at the newest revision. The keyed pool does not replace
-  it, and it does not cover hop 1.
+  newer write, and the guard refuses a save older than the generated record stored when it runs. The keyed pool does
+  not replace it, and it does not cover hop 1.
 - Not designed here: the failed map in `processor/graph-embedding` (change 5). Its port must still refuse to put back
   a failure older than the entity's latest terminal outcome; the `graph/embedding` ledger row's `known_risks` says so
   (D8).

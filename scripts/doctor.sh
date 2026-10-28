@@ -37,12 +37,12 @@ else bad node "not found"; fi
 
 if command -v npm >/dev/null; then ok npm "$(npm --version)"; else bad npm "not found"; fi
 
-# ateam: .github/workflows/ci.yml's one go install line is the pin; task ateam:doctor runs it.
+# ateam: every go install line in .github/workflows/ci.yml names the one pinned version; task ateam:doctor runs it.
 semver='v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
-pins=$(grep -Eo "ateam/cmd/ateam@$semver" .github/workflows/ci.yml | sed 's/.*@//' || true)
+pins=$(grep -Eo "ateam/cmd/ateam@$semver" .github/workflows/ci.yml | sed 's/.*@//' | sort -u || true)
 npins=$(printf '%s' "$pins" | grep -c . || true)
 if [ "$npins" -ne 1 ]; then
-  bad ateam ".github/workflows/ci.yml has $npins ateam install lines, want exactly 1"
+  bad ateam ".github/workflows/ci.yml ateam install lines name $npins versions ($(echo $pins)), want one"
 elif command -v ateam >/dev/null; then
   have=$(ateam version 2>&1 | grep -Eo "$semver" | head -n1 || true)
   if [ "$have" = "$pins" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != ci.yml $pins"; fi

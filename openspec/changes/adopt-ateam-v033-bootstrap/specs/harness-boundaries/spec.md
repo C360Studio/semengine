@@ -7,7 +7,8 @@
 `scripts/verify.sh` SHALL run `task ateam:doctor` as its first step, and `task ateam:doctor` SHALL run
 `ateam doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`,
 `CODEX_SESSION_ID`, `GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is
-pinned once as `v0.3.3` in `.github/workflows/ci.yml` and compared by `scripts/doctor.sh`.
+pinned to one version, `v0.3.3`, in `.github/workflows/ci.yml` (every ateam install line there names it) and
+compared by `scripts/doctor.sh`.
 
 #### Scenario: Doctor violation fails verify
 

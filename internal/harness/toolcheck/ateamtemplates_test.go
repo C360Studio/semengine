@@ -38,7 +38,7 @@ var semengineOwned = map[string]string{
 	"openspec/specs/.gitkeep":           "openspec/specs/ holds SemEngine's specs",
 }
 
-// ateamPin is the release .github/workflows/ci.yml installs, the one place it is spelled.
+// ateamPin matches an ateam install line in .github/workflows/ci.yml; every one names the same release.
 var ateamPin = regexp.MustCompile(`ateam/cmd/ateam@(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)`)
 
 func TestAteamTemplatesUnchanged(t *testing.T) {
@@ -93,11 +93,16 @@ func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	if err != nil {
 		t.Fatal(err)
 	}
-	pins := ateamPin.FindAllSubmatch(ci, -1)
-	if len(pins) != 1 {
-		t.Fatalf(".github/workflows/ci.yml: %d ateam install lines, want exactly 1", len(pins))
+	var versions []string
+	for _, m := range ateamPin.FindAllSubmatch(ci, -1) {
+		if v := string(m[1]); !slices.Contains(versions, v) {
+			versions = append(versions, v)
+		}
 	}
-	pin := string(pins[0][1])
+	if len(versions) != 1 {
+		t.Fatalf(".github/workflows/ci.yml: ateam install lines name versions %v, want one version", versions)
+	}
+	pin := versions[0]
 	install := "GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@" + pin
 	if _, err := exec.LookPath("ateam"); err != nil {
 		t.Fatalf("ateam is not on PATH; install the pinned release: %s", install)

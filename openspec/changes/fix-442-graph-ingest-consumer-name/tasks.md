@@ -8,7 +8,7 @@ Light process, owner 2026-10-28: proposal, tasks and spec delta; no design docum
 
 ## 2. Code
 
-- [ ] 2.1 `TestConfigRefusesDeclaredConsumerName` in `processor/graph-ingest/config_strict_test.go`, failing on the
+- [x] 2.1 `TestConfigRefusesDeclaredConsumerName` in `processor/graph-ingest/config_strict_test.go`, failing on the
   base commit: a JetStream input declaring `consumer_name` is accepted by `DeclarePorts`, `CreateGraphIngest` and
   `Validate`. Gate: `go test -run TestConfigRefusesDeclaredConsumerName ./processor/graph-ingest/` fails on base.
 - [ ] 2.2 `Config.Validate` refuses a JetStream input declaring `consumer_name`, naming the port and the key. Gate:

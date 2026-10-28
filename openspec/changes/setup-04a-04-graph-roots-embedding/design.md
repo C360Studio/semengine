@@ -268,7 +268,7 @@ Integration (`natsfixture`, shared server via the reset; #195):
   so `SaveFailed(N)` is stored; N's terminal callback blocks until the test has written pending M and seen it in the
   bucket; then it is released. The terminal callbacks arrive as Failed(N) then Generated(M), never the reverse, and
   M's processing does not start before N's callback returns. Shown failing against the pin's shared-channel shape
-  in `notes/2.3.md`.
+  in `notes/3.4.md`.
 - `TestWorkerSaveRefusedWhenNewerPendingArrives` (the guard against hop 1): the fake embedder holds N's text until the
   test has written pending M and seen it in the bucket; then N is released. N's save is refused, `onGenerated` does
   not fire for it and its outcome is `OutcomeDeleted`; M is then processed and the record ends generated at M.

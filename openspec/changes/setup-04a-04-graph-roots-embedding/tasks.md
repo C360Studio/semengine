@@ -28,7 +28,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   `natsfixture`, #195), the pin's storage unit tests on fakes behind `NewKVStore`, each changed behaviour shown
   failing against the pin's shape; seed and run count in
   `notes/2.2.md`. Gate: in 3.2.
-- [ ] 2.3 Worker and cache tests of design D9 (with the pin's truncation and identity tests deferred from 2.1): the
+- [x] 2.3 Worker and cache tests of design D9 (with the pin's truncation and identity tests deferred from 2.1): the
   unit `Run` tests (synctest on fakes, nil, second `Run` for both types), the integration `Run` tests
   (`TestWorkerRunLeavesNoWatchDelivery`, `TestVectorCacheRunLeavesNoWatchDelivery`,
   both lost-watch tests), `TestVectorCacheNotAuthoritative`, `TestFindSimilarOrderAndLimit`,
@@ -37,7 +37,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   `TestWorkerSaveRefusedWhenNewerPendingArrives`, `TestNoTextDeleteKeepsNewerPending`,
   `TestNoTextDeleteKeepsNewerGenerated`, `TestNoTextDeleteFailureIsNotTerminal`
   (forced interleavings), and the ported `TestWorkerResolvesLiveRegistryStatePerFetch` on `natsfixture`. Evidence in
-  `notes/2.3.md`. Gate: in 3.3 and 3.4.
+  `notes/3.3.md` (cache) and `notes/3.4.md` (Worker). Gate: in 3.3 and 3.4.
 
 ## 3. The package
 
@@ -59,7 +59,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   no-text removal through `DeleteAtRevision`, the dead surface not carried (design D2, D3; ADR-110). Gate: as 3.1
   plus `task test:integration -- ./graph/embedding`.
 - [x] 3.3 `vector_cache.go`: `VectorCache` with `Run` and `FindSimilar` (design D5). Gate: as 3.2.
-- [ ] 3.4 `worker.go`: `Run(ctx)` on `internal/dispatch.KeyedPool` keyed by entity ID in place of `Start`/`Stop`,
+- [x] 3.4 `worker.go`: `Run(ctx)` on `internal/dispatch.KeyedPool` keyed by entity ID in place of `Start`/`Stop`,
   the fenced no-text outcome, `NewWorker` without the bucket, `WorkerMetrics` edits, shutdown classified by the
   error, one text-length default, the callback-order docs (design D3, D4, D6, D7). Gate: as 3.2
   plus `go test -count=5 -cpu 1 -shuffle=on ./graph/embedding`; `go mod tidy` leaves `golang.org/x/sync` direct.

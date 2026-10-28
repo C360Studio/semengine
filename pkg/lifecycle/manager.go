@@ -322,10 +322,6 @@ func (m *Manager) Create(ctx context.Context, initial Participant) error {
 	return err
 }
 
-type createOutcome struct {
-	Entity *graph.EntityState
-}
-
 // createWithSource is Create with the transition attribution supplied by the
 // caller that knows the provenance. A birth initiated through the operator API
 // must not record itself as framework-authored.
@@ -333,13 +329,13 @@ type createOutcome struct {
 // Unexported deliberately: CreateFromOperator is its only non-framework caller,
 // and a new exported symbol needs a named caller at birth. Export it when a
 // second provenance actually exists.
-func (m *Manager) createWithSource(ctx context.Context, initial Participant, source TransitionSource) (createOutcome, error) {
+func (m *Manager) createWithSource(ctx context.Context, initial Participant, source TransitionSource) (*graph.EntityState, error) {
 	if initial == nil {
-		return createOutcome{}, errors.New("lifecycle: Create requires non-nil Participant")
+		return nil, errors.New("lifecycle: Create requires non-nil Participant")
 	}
 	reg, err := m.lookupByWorkflow(initial.Workflow())
 	if err != nil {
-		return createOutcome{}, err
+		return nil, err
 	}
 	return m.createWithRegistration(ctx, reg, initial, source)
 }
@@ -358,13 +354,13 @@ func (m *Manager) createWithSource(ctx context.Context, initial Participant, sou
 // So the registration is threaded, not re-derived. Create re-derives it from the
 // Participant (its only honest source); CreateFromOperator passes the one the
 // route selected.
-func (m *Manager) createWithRegistration(ctx context.Context, reg *registration, initial Participant, source TransitionSource) (createOutcome, error) {
+func (m *Manager) createWithRegistration(ctx context.Context, reg *registration, initial Participant, source TransitionSource) (*graph.EntityState, error) {
 	if initial == nil {
-		return createOutcome{}, errors.New("lifecycle: Create requires non-nil Participant")
+		return nil, errors.New("lifecycle: Create requires non-nil Participant")
 	}
 	entityID := initial.EntityID()
 	if entityID == "" {
-		return createOutcome{}, errors.New("lifecycle: Create requires non-empty EntityID")
+		return nil, errors.New("lifecycle: Create requires non-empty EntityID")
 	}
 	// An entity ID outside the workflow's declared pattern would COMMIT and then
 	// be undiscoverable: List and Watch filter by this pattern, and Despawn
@@ -376,13 +372,13 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 	// A malformed ID is refused here too, so it stays a stable 400 and never
 	// reaches graph-ingest.
 	if err := checkWorkflowEntityID(reg, entityID); err != nil {
-		return createOutcome{}, err
+		return nil, err
 	}
 	// Validate the initial Phase is declared in the transitions
 	// table — typo at Create time is friendlier than typo discovered
 	// at first Transition attempt.
 	if _, declared := reg.workflow.Transitions[initial.Phase()]; !declared {
-		return createOutcome{}, fmt.Errorf("%w: initial phase %q not declared in transitions table for workflow %q",
+		return nil, fmt.Errorf("%w: initial phase %q not declared in transitions table for workflow %q",
 			ErrInvalidTransition, initial.Phase(), reg.workflow.Name)
 	}
 
@@ -413,18 +409,18 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 		if err != nil {
 			if errors.Is(err, ErrAlreadyExists) {
 				// err already carries ErrAlreadyExists and the graph's refusal; add the context.
-				return createOutcome{}, fmt.Errorf("lifecycle: create workflow=%q entity_id=%q: %w",
+				return nil, fmt.Errorf("lifecycle: create workflow=%q entity_id=%q: %w",
 					reg.workflow.Name, entityID, err)
 			}
-			return createOutcome{}, err
+			return nil, err
 		}
-		return createOutcome{Entity: resp.Entity.Clone()}, nil
+		return resp.Entity.Clone(), nil
 	case err != nil:
-		return createOutcome{}, err
+		return nil, err
 	}
 	// Entity exists — must not already have phase triple.
 	if hasTriple(state.Triples, entityID, reg.workflow.PhasePredicate) {
-		return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q",
+		return nil, fmt.Errorf("%w: workflow=%q entity_id=%q",
 			ErrAlreadyExists, reg.workflow.Name, entityID)
 	}
 	delta := buildInitialTriples(reg, entityID, initial, now, source)
@@ -443,23 +439,23 @@ func (m *Manager) createWithRegistration(ctx context.Context, reg *registration,
 			// so its own error goes back with its chain and class.
 			latest, _, reErr := m.getEntity(ctx, entityID)
 			if reErr != nil {
-				return createOutcome{}, fmt.Errorf("lifecycle: create workflow=%q entity_id=%q: reread after revision mismatch: %w",
+				return nil, fmt.Errorf("lifecycle: create workflow=%q entity_id=%q: reread after revision mismatch: %w",
 					reg.workflow.Name, entityID, reErr)
 			}
 			if hasTriple(latest.Triples, entityID, reg.workflow.PhasePredicate) {
-				return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q (concurrent attach)",
+				return nil, fmt.Errorf("%w: workflow=%q entity_id=%q (concurrent attach)",
 					ErrAlreadyExists, reg.workflow.Name, entityID)
 			}
 			// No phase triple: the entity moved for an unrelated reason. Report
 			// the contention as retryable rather than as a duplicate birth. The
 			// mismatch stays text: wrapping it would give a retry signal its
 			// invalid class.
-			return createOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q: entity changed during lifecycle attach (last: %v)",
+			return nil, fmt.Errorf("%w: workflow=%q entity_id=%q: entity changed during lifecycle attach (last: %v)",
 				ErrUpdateRetriesExhausted, reg.workflow.Name, entityID, err)
 		}
-		return createOutcome{}, err
+		return nil, err
 	}
-	return createOutcome{Entity: reconcileResp.Entity.Clone()}, nil
+	return reconcileResp.Entity.Clone(), nil
 }
 
 // buildInitialTriples constructs Manager.Create's phase, bounded birth record,
@@ -534,10 +530,6 @@ func (m *Manager) TransitionWith(ctx context.Context, workflow, entityID, newPha
 	return err
 }
 
-type transitionOutcome struct {
-	committedRevision uint64
-}
-
 // transitionWithOutcome is the internal transition primitive. Its committed
 // revision lets a compound operation fence its next mutation to the exact
 // transition it caused without re-reading authority.
@@ -547,16 +539,16 @@ func (m *Manager) transitionWithOutcome(
 	source TransitionSource,
 	note string,
 	mutator func(Participant) error,
-) (transitionOutcome, error) {
+) (uint64, error) {
 	reg, err := m.lookupByWorkflow(workflow)
 	if err != nil {
-		return transitionOutcome{}, err
+		return 0, err
 	}
 	if !isTransitionSource(source) {
-		return transitionOutcome{}, fmt.Errorf("%w: unknown transition source %q", ErrInvalidTransition, source)
+		return 0, fmt.Errorf("%w: unknown transition source %q", ErrInvalidTransition, source)
 	}
 	if _, declared := reg.workflow.Transitions[newPhase]; !declared {
-		return transitionOutcome{}, fmt.Errorf("%w: target phase %q not declared in transitions table for workflow %q",
+		return 0, fmt.Errorf("%w: target phase %q not declared in transitions table for workflow %q",
 			ErrInvalidTransition, newPhase, reg.workflow.Name)
 	}
 
@@ -564,27 +556,27 @@ func (m *Manager) transitionWithOutcome(
 	for retry := 0; retry < updateRetries; retry++ {
 		state, currentRev, err := m.getEntity(ctx, entityID)
 		if err != nil {
-			return transitionOutcome{}, err
+			return 0, err
 		}
 		currentPhase := extractTripleScalar(state.Triples, entityID, reg.workflow.PhasePredicate)
 		if currentPhase == "" {
-			return transitionOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q (no %s triple)",
+			return 0, fmt.Errorf("%w: workflow=%q entity_id=%q (no %s triple)",
 				ErrEntityNotLifecycleManaged, reg.workflow.Name, entityID, reg.workflow.PhasePredicate)
 		}
 		if reg.workflow.Transitions.IsTerminal(currentPhase) {
-			return transitionOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q from=%q",
+			return 0, fmt.Errorf("%w: workflow=%q entity_id=%q from=%q",
 				ErrTerminalPhase, reg.workflow.Name, entityID, currentPhase)
 		}
 		if !reg.workflow.Transitions.IsValidTransition(currentPhase, newPhase) {
-			return transitionOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q from=%q to=%q (not a declared edge)",
+			return 0, fmt.Errorf("%w: workflow=%q entity_id=%q from=%q to=%q (not a declared edge)",
 				ErrInvalidTransition, reg.workflow.Name, entityID, currentPhase, newPhase)
 		}
 		records, err := decodeTransitionRecords(entityID, state.Triples)
 		if err != nil {
-			return transitionOutcome{}, err
+			return 0, err
 		}
 		if err := validateTransitionRecordChain(records, currentPhase); err != nil {
-			return transitionOutcome{}, err
+			return 0, err
 		}
 
 		// Build the delta: phase + audit + (optional) mutator-changed
@@ -593,7 +585,7 @@ func (m *Manager) transitionWithOutcome(
 		records = appendTransitionRecord(records,
 			newTransitionRecord(currentPhase, newPhase, now, source, note))
 		if err := validateTransitionRecordChain(records, newPhase); err != nil {
-			return transitionOutcome{}, err
+			return 0, err
 		}
 		delta := []message.Triple{
 			triple(entityID, reg.workflow.PhasePredicate, newPhase),
@@ -616,10 +608,10 @@ func (m *Manager) transitionWithOutcome(
 		if mutator != nil {
 			projected := reflect.New(reg.meta.GoType).Interface().(Participant)
 			if err := projectTriples(reg.meta, entityID, state.Triples, projected); err != nil {
-				return transitionOutcome{}, fmt.Errorf("lifecycle: project entity %q for mutator: %w", entityID, err)
+				return 0, fmt.Errorf("lifecycle: project entity %q for mutator: %w", entityID, err)
 			}
 			if err := mutator(projected); err != nil {
-				return transitionOutcome{}, fmt.Errorf("lifecycle: TransitionWith mutator rejected change for %q: %w", entityID, err)
+				return 0, fmt.Errorf("lifecycle: TransitionWith mutator rejected change for %q: %w", entityID, err)
 			}
 			// Diff the mutated projection against the original
 			// triples — any field whose projected value changed
@@ -649,15 +641,15 @@ func (m *Manager) transitionWithOutcome(
 				slog.String("source", string(source)),
 				slog.String("note", note),
 			)
-			return transitionOutcome{committedRevision: response.KVRevision}, nil
+			return response.KVRevision, nil
 		}
 		if errors.Is(err, errs.ErrRevisionMismatch) {
 			lastErr = err
 			continue
 		}
-		return transitionOutcome{}, err
+		return 0, err
 	}
-	return transitionOutcome{}, fmt.Errorf("%w: workflow=%q entity_id=%q after %d retries (last: %v)",
+	return 0, fmt.Errorf("%w: workflow=%q entity_id=%q after %d retries (last: %v)",
 		ErrUpdateRetriesExhausted, reg.workflow.Name, entityID, updateRetries, lastErr)
 }
 
@@ -939,11 +931,11 @@ func (m *Manager) DespawnWith(ctx context.Context, workflow, entityID string, so
 		if err != nil {
 			return err
 		}
-		outcome, err := m.transitionWithOutcome(ctx, workflow, entityID, terminal, source, note, nil)
+		committed, err := m.transitionWithOutcome(ctx, workflow, entityID, terminal, source, note, nil)
 		if err != nil {
 			return err
 		}
-		revision = outcome.committedRevision
+		revision = committed
 	}
 	if _, err := m.emitter.delete(ctx, &graph.DeleteEntityRequest{
 		EntityID: entityID, ExpectedRevision: revision,
@@ -1039,16 +1031,16 @@ func (m *Manager) CreateFromOperator(ctx context.Context, workflow string, initi
 			ErrInvalidInitialState, workflow)
 	}
 
-	outcome, err := m.createWithRegistration(ctx, reg, target, TransitionSourceOperator)
+	created, err := m.createWithRegistration(ctx, reg, target, TransitionSourceOperator)
 	if err != nil {
 		return CreateResult{}, err
 	}
-	if outcome.Entity == nil {
+	if created == nil {
 		return CreateResult{}, fmt.Errorf("%w: create response has no entity", ErrEmitFailed)
 	}
 
 	instance := reflect.New(reg.meta.GoType).Interface().(Participant)
-	if err := projectTriples(reg.meta, target.EntityID(), outcome.Entity.Triples, instance); err != nil {
+	if err := projectTriples(reg.meta, target.EntityID(), created.Triples, instance); err != nil {
 		return CreateResult{}, fmt.Errorf("%w: committed create response could not be projected: %w", ErrEmitFailed, err)
 	}
 	return CreateResult{Instance: instance}, nil

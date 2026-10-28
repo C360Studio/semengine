@@ -10,9 +10,9 @@ drive `Create`, `CreateFromOperator`, `TransitionWith` and `DespawnWith`, are th
 
 ## 2. Code
 
-- [ ] 2.1 `createOutcome` and `transitionOutcome` deleted from `pkg/lifecycle/manager.go`; `createWithSource`,
+- [x] 2.1 `createOutcome` and `transitionOutcome` deleted from `pkg/lifecycle/manager.go`; `createWithSource`,
   `createWithRegistration` and `transitionWithOutcome` return their plain values, and their two readers read them.
-  Gate: `git grep -n 'createOutcome\|transitionOutcome'` prints nothing; `go test -race -count=1
+  Gate: `git grep -n 'createOutcome\|transitionOutcome' -- '*.go'` prints nothing; `go test -race -count=1
   -tags integration ./pkg/lifecycle/` passes; `task verify` passes on a clean tree.
 
 ## 3. Code review

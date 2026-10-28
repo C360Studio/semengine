@@ -21,8 +21,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   `notes/2.1.md`), without the two HTTP test files and without `time.Sleep`; add
   `TestEmbeddingImportsNoProviderModule` in `internal/harness/contract` (design D9). Pin tests dropped or rewritten
   are named in `notes/2.1.md`. Gate: in 3.1.
-- [ ] 2.2 Storage tests of design D9 (with the pin's storage-bound dedup and `derived_reasons` tests deferred from 2.1,
-  `TestSaveDedup_RecordsVectorSpace` rewritten without `EntityIDs`): `TestRevisionGuardHistoryMatchesModel` (sequential),
+- [x] 2.2 Storage tests of design D9 (with the pin's storage-bound dedup and `derived_reasons` tests deferred from 2.1,
+  `TestSaveDedup_RecordsVectorSpace` rewritten without `EntityIDs`): `TestRevisionGuardHistoryMatchesModel` (sequential,
+  integration, as D9 lists it),
   `TestSaveDedupKeepsSameSpaceReplacesOther` (integration,
   `natsfixture`, #195), the pin's storage unit tests on fakes behind `NewKVStore`, each changed behaviour shown
   failing against the pin's shape; seed and run count in
@@ -54,7 +55,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [x] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
   (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` adds no `go-openai`
   (`golang.org/x/sync` becomes direct with `worker.go`, 3.4).
-- [ ] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the fenced
+- [x] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the fenced
   no-text removal through `DeleteAtRevision`, the dead surface not carried (design D2, D3; ADR-110). Gate: as 3.1
   plus `task test:integration -- ./graph/embedding`.
 - [ ] 3.3 `vector_cache.go`: `VectorCache` with `Run` and `FindSimilar` (design D5). Gate: as 3.2.

@@ -2,8 +2,9 @@
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal, tasks and spec delta committed; draft PR opened with `Closes #448` and `Addresses #446`. Gate:
+- [x] 1.1 Proposal, tasks and spec delta committed; draft PR opened with `Closes #448` and `Addresses #446`. Gate:
   `task spec:check` and `task docs:check`.
+  Done in 25281f2; draft PR #452 carries both lines; `task spec:check` and `task docs:check` pass on it.
 
 ## 2. Bootstrap files
 

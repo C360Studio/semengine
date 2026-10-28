@@ -8,10 +8,10 @@ duplicates (semteams #363, #375); this change goes to that end state directly fo
 `ateam init` writes, `ateam doctor --check` as the one oracle for agent-setup parity, and the removal of the local
 checks that duplicate it.
 
-Measured on 2026-10-28 on a scratch copy of `main` (12543dc): `ateam init` at v0.3.3 wrote 28 files and collided with
-none; `ateam doctor --check` then reported two violations, the protocol's missing `ateam state handoff` marker and
-the `preflight` alias target's missing `## 1.` and `Record Evidence` markers. Everything else here is removal or a
-pointer.
+Measured on 2026-10-28 on a scratch copy of `main` at 12543dc, and re-done in review on the PR base 2d6640a with the
+same result: `ateam init` at v0.3.3 wrote 28 files and collided with none; `ateam doctor --check` then reported two
+violations, the protocol's missing `ateam state handoff` marker and the `preflight` alias target's missing `## 1.`
+and `Record Evidence` markers. Everything else here is removal or a pointer.
 
 Owner rulings on #447 (2026-10-28): `task mutate:check` keeps `internal/harness/mutcheck`; port designs keep their
 depth and the 120-line `spec-check` warning is accepted. The pickup and handoff replacement (item 7) follows the

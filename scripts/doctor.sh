@@ -37,12 +37,16 @@ else bad node "not found"; fi
 
 if command -v npm >/dev/null; then ok npm "$(npm --version)"; else bad npm "not found"; fi
 
-# ateam: .github/workflows/ci.yml's go install line is the pin; task ateam:doctor runs it.
-want=$(grep -Eo 'ateam/cmd/ateam@v[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/ci.yml | head -n1 | sed 's/.*@//')
-if command -v ateam >/dev/null; then
-  have=$(ateam version 2>&1 | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
-  if [ -n "$want" ] && [ "$have" = "$want" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != ci.yml ${want:-unpinned}"; fi
-else bad ateam "not found (GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@${want:-<pin>})"; fi
+# ateam: .github/workflows/ci.yml's one go install line is the pin; task ateam:doctor runs it.
+semver='v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
+pins=$(grep -Eo "ateam/cmd/ateam@$semver" .github/workflows/ci.yml | sed 's/.*@//' || true)
+npins=$(printf '%s' "$pins" | grep -c . || true)
+if [ "$npins" -ne 1 ]; then
+  bad ateam ".github/workflows/ci.yml has $npins ateam install lines, want exactly 1"
+elif command -v ateam >/dev/null; then
+  have=$(ateam version 2>&1 | grep -Eo "$semver" | head -n1 || true)
+  if [ "$have" = "$pins" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != ci.yml $pins"; fi
+else bad ateam "not found (GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@$pins)"; fi
 
 # python3: no pin; scripts/openspec-queue.sh parses JSON and timestamps with it. task spec:check runs that
 # script with --check, so task verify needs python3 too.

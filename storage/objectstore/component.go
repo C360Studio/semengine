@@ -17,6 +17,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -70,13 +71,22 @@ func defaultPorts() *component.PortConfig {
 // Component stores the bodies of the messages on its inputs in a NATS ObjectStore bucket and
 // publishes a StoredMessage carrying each body's reference on its stored output (ADR-063).
 //
-// The write lane comes with task 3.4; until then each input counts and settles a delivery
-// without storing it.
+// Only a message.ContentStorable payload's body is stored, through the Store's StoreContent;
+// every other message is refused (design D3, owner ruling 1). A refusal or a failed write is
+// logged at error level and counted in Health's ErrorCount. A core-NATS input is at-most-once: such
+// a message is then gone. A JetStream input is at-least-once: a refusal is terminated, a failure
+// NAKed for redelivery, and a delivery is acked only after its body is stored and its reference
+// published (design D4, owner ruling 2).
 type Component struct {
 	config   componentConfig
 	inputs   []component.Port
 	outputs  []component.Port
 	bindings []inputBinding
+
+	// decoder decodes each input message; nil when the Component has no input.
+	decoder *message.Decoder
+	// stored is where each stored body's reference is published; zero when there is no input.
+	stored storedTarget
 
 	natsClient      *natsclient.Client
 	metricsRegistry *metric.MetricsRegistry
@@ -100,6 +110,13 @@ type Component struct {
 	// inputFault is Health's stuck state for the JetStream inputs, written by each input check
 	// that runs to its end (checkInputs); nil when that check found every input bound.
 	inputFault atomic.Pointer[string]
+}
+
+// storedTarget is the stored output port's one subject, and whether it is a JetStream stream's,
+// so the reference is published to the stream and its publish acknowledged.
+type storedTarget struct {
+	subject   string
+	jetStream bool
 }
 
 // coreSubscription is a bound core-NATS input: natsclient's Subscription.
@@ -156,7 +173,7 @@ func newComponent(rawConfig json.RawMessage, deps component.Dependencies) (compo
 	if err != nil {
 		return nil, errs.WrapInvalid(err, "objectstore", "newComponent", "plan input bindings")
 	}
-	return &Component{
+	c := &Component{
 		config:          config,
 		inputs:          inputs,
 		outputs:         outputs,
@@ -164,7 +181,24 @@ func newComponent(rawConfig json.RawMessage, deps component.Dependencies) (compo
 		natsClient:      deps.NATSClient,
 		metricsRegistry: deps.MetricsRegistry,
 		logger:          deps.GetLogger(),
-	}, nil
+	}
+	if len(inputs) == 0 {
+		return c, nil
+	}
+	// An input decodes every message through the registry: without one, every message would be
+	// refused, so the configuration is refused instead.
+	if deps.PayloadRegistry == nil {
+		return nil, errs.WrapInvalid(errors.New("inputs need the payload registry, which decodes each message"),
+			"objectstore", "newComponent", "payload registry required")
+	}
+	c.decoder = message.NewDecoder(deps.PayloadRegistry)
+	// resolvePorts made stored the first output whenever there is an input.
+	facts, err := outputs[0].Facts()
+	if err != nil {
+		return nil, errs.WrapInvalid(err, "objectstore", "newComponent", "project stored output facts")
+	}
+	c.stored = storedTarget{subject: facts.NATSSubjects()[0], jetStream: facts.Kind() == component.PortKindJetStream}
+	return c, nil
 }
 
 // resolveConfig decodes rawConfig strictly, applies the defaults and resolves the ports. It is the
@@ -336,7 +370,9 @@ func (c *Component) start(ctx context.Context) error {
 	var watched []watchedInput
 	for _, binding := range c.bindings {
 		if binding.kind == component.PortKindNATS {
-			subscription, err := c.natsClient.Subscribe(ctx, binding.subject, c.handleCore)
+			subscription, err := c.natsClient.Subscribe(ctx, binding.subject, func(ctx context.Context, msg *nats.Msg) {
+				c.handleCore(ctx, store, msg)
+			})
 			if err != nil {
 				return errs.WrapTransient(err, "objectstore", "Start",
 					fmt.Sprintf("subscribe input %s to %s", binding.port.Name, binding.subject))
@@ -344,7 +380,7 @@ func (c *Component) start(ctx context.Context) error {
 			c.subscriptions = append(c.subscriptions, subscription)
 			continue
 		}
-		handle, err := c.bindJetStream(ctx, binding)
+		handle, err := c.bindJetStream(ctx, binding, store)
 		if err != nil {
 			return errs.Wrap(err, "objectstore", "Start", "bind input "+binding.port.Name)
 		}
@@ -376,7 +412,7 @@ func (c *Component) start(ctx context.Context) error {
 // bindJetStream waits for binding's stream and binds its durable consumer. The consumer takes
 // the port's consumer settings and delivers from the start of the stream unless the port says
 // otherwise, so a body published before the Component started is still stored.
-func (c *Component) bindJetStream(ctx context.Context, binding inputBinding) (jetstream.ConsumeContext, error) {
+func (c *Component) bindJetStream(ctx context.Context, binding inputBinding, store *Store) (jetstream.ConsumeContext, error) {
 	if err := c.waitForStream(ctx, binding.stream); err != nil {
 		return nil, fmt.Errorf("stream %s not available: %w", binding.stream, err)
 	}
@@ -403,7 +439,9 @@ func (c *Component) bindJetStream(ctx context.Context, binding inputBinding) (je
 			MaxAckPending: declared.MaxAckPending,
 			AutoCreate:    false,
 		},
-		c.handleJetStream)
+		func(ctx context.Context, msg jetstream.Msg) {
+			c.handleJetStream(ctx, store, msg)
+		})
 	if err != nil {
 		return nil, errs.WrapTransient(err, "objectstore", "bindJetStream", "consume stream "+binding.stream)
 	}
@@ -435,21 +473,6 @@ func (c *Component) waitForStream(ctx context.Context, streamName string) error 
 	}
 	return errs.WrapTransient(errs.ErrStorageUnavailable, "objectstore", "waitForStream",
 		fmt.Sprintf("stream %s not available after %d retries", streamName, maxRetries))
-}
-
-// handleCore receives a core-NATS input message. Task 3.4 brings the write lane; until then the
-// message is counted and dropped.
-func (c *Component) handleCore(_ context.Context, msg *nats.Msg) {
-	c.lifecycle.CountInput(len(msg.Data))
-}
-
-// handleJetStream receives a JetStream input delivery. Task 3.4 brings the write lane and its
-// settlement; until then the delivery is counted and acknowledged.
-func (c *Component) handleJetStream(_ context.Context, msg jetstream.Msg) {
-	c.lifecycle.CountInput(len(msg.Data()))
-	if err := msg.Ack(); err != nil {
-		c.logger.Error("objectstore: ack failed", slog.String("subject", msg.Subject()), slog.Any("error", err))
-	}
 }
 
 // Stop stops the Component through the shell, which runs release: Stop before Start releases

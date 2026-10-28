@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/payloadregistry"
 	"github.com/c360studio/semengine/types"
 )
 
@@ -14,7 +15,7 @@ import (
 // listing withholds factories), from raw. Construction opens no connection.
 func buildFromJSON(t *testing.T, raw string) (*Component, error) {
 	t.Helper()
-	built, err := newComponent(json.RawMessage(raw), component.Dependencies{})
+	built, err := newComponent(json.RawMessage(raw), component.Dependencies{PayloadRegistry: payloadregistry.New()})
 	if err != nil {
 		return nil, err
 	}

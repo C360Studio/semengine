@@ -75,9 +75,14 @@ func openTestClient(ctx context.Context, url string, opt natsclient.ClientOption
 // newStartable builds an initialized Component from raw on client through the factory, or
 // returns the construction error.
 func newStartable(client *natsclient.Client, raw string) (*Component, error) {
+	reg, err := testRegistry()
+	if err != nil {
+		return nil, err
+	}
 	built, err := newComponent(json.RawMessage(raw), component.Dependencies{
-		NATSClient: client,
-		Logger:     slog.New(slog.NewTextHandler(io.Discard, nil)),
+		NATSClient:      client,
+		PayloadRegistry: reg,
+		Logger:          slog.New(slog.NewTextHandler(io.Discard, nil)),
 	})
 	if err != nil {
 		return nil, err

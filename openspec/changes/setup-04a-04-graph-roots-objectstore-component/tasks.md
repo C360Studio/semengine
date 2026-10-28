@@ -11,13 +11,13 @@ passes on a clean tree at its commit (#171).
 
 ## 2. Tests first
 
-- [ ] 2.1 Unit tests (no Docker): `TestComponentConfigRefusesUnknownKey` (`data_cache`, a misspelt key; error names it),
+- [x] 2.1 Unit tests (no Docker): `TestComponentConfigRefusesUnknownKey` (`data_cache`, a misspelt key; error names it),
   `TestComponentRefusesOutputOtherThanStored`, `TestDeclarePortsMatchesComponentPorts`, `TestRegisterRegistersObjectstore`,
   `TestClassifyWriteDisposition`, `TestStoredMessageRoundTripsThroughDecoder`, `TestStoredMessageValidate`,
   `TestComponentRefusesInputWithoutStoredOutput`, `TestFailedCleanupRetainsInputsForLaterStop` (design D8: `Start`
   returns the start and cleanup errors, `Observe` still lists the unreleased inputs, a later `Stop` with a fresh finite
   context returns nil and leaves nothing). Each shown failing first; pin tests dropped or rewritten named in `notes/2.1.md`.
-- [ ] 2.2 Integration tests (`natsfixture`, shared server via the reset): `TestObjectStoreLifecycleSuite` (core and
+- [x] 2.2 Integration tests (`natsfixture`, shared server via the reset): `TestObjectStoreLifecycleSuite` (core and
   JetStream inputs), `TestStartContextEndKeepsBothLanesWriting` (fails against the pin's shape),
   `TestFailedStartReleasesBoundInputs`, `TestProvidedStoresUnderObjectstore`, `TestSecondComponentRefusedAtStart`, `TestLostJetStreamInputReportsUnhealthy`
   (its durable consumer deleted while running: Health unhealthy naming the input and the restart; #216's ruling),
@@ -37,7 +37,7 @@ passes on a clean tree at its commit (#171).
 - [x] 3.3 Lifecycle on `component.Lifecycle`, input binding, the run context and the lost-input tick
   (design D2, D5); allowlist entry (D9).
   Gate: as 3.1, `task test:integration -- ./storage/objectstore`, `task lint`, the contract tests.
-- [ ] 3.4 Write lane, emit and refusals (design D3, D4). Gate: as 3.3 plus `go test -count=5 -cpu 1 -shuffle=on
+- [x] 3.4 Write lane, emit and refusals (design D3, D4). Gate: as 3.3 plus `go test -count=5 -cpu 1 -shuffle=on
   ./storage/objectstore`.
 
 ## 4. Records and docs

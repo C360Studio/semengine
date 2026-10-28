@@ -17,11 +17,11 @@ drive `Create`, `CreateFromOperator`, `TransitionWith` and `DespawnWith`, are th
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record on the PR, and `reviewed-by: codex` in the PR body beside
-  `implemented-by: claude (opus)`.
-  Hold: Codex review, started by the owner.
+- [x] 3.1 Codex code review of record on PR #440: no actionable findings at
+  `5124bd7b7e2307d6094b59134a6c2677e866879e` (PR comment 6467722237, 2026-10-28T11:24:15Z). The PR body carries
+  `implemented-by: claude (opus)` and `reviewed-by: codex`.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive`, no spec to sync). Gate: `task spec:check` and
+- [x] 4.1 Archive as the last content commit (`openspec archive`, no spec to sync). Gate: `task spec:check` and
   `task docs:check`.

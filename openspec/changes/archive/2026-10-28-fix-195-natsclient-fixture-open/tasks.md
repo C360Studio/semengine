@@ -18,11 +18,11 @@ of which opens its client through `newFixtureClient` or `newFixtureClientAt`, ar
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record on the PR. The PR body carries `implemented-by: claude (opus)` and
-  `reviewed-by: codex`.
-  Hold: Codex reviews the code; the owner starts Codex.
+- [x] 3.1 Codex code review of record on PR #444: no actionable findings at
+  `97dcadeb93f9cedabdb1e60c7363b6edafb63c9f` (PR comment 6470117893, 2026-10-28T13:22:15Z). The PR body carries
+  `implemented-by: claude (opus)` and `reviewed-by: codex`.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive --skip-specs`, no spec to sync). Gate:
+- [x] 4.1 Archive as the last content commit (`openspec archive --skip-specs`, no spec to sync). Gate:
   `task spec:check` and `task docs:check`.

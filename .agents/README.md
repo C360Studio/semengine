@@ -137,9 +137,10 @@ rule-row parity with `.agents/rules-index.md`. `TestAteamTemplatesUnchanged` (`i
 `task test:tools:changed`) checks that every file `ateam init` writes, but the ones SemEngine writes itself, is
 byte-identical to the pinned release. `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`
 (`internal/harness/contract/agentsetup_test.go`, `task test:unit`) check what neither does: each role adapter's
-contract pointer, tools, sandbox mode, size and model and effort pins against the table above, and the adopter
-skills' Claude adapter size. After changing a contract, adapter, or routing rule, also walk the fixtures below; a
-structurally valid adapter does not prove its instructions make the right decisions.
+contract pointer, tools, sandbox mode, size and model and effort pins against the table above, and, for every skill
+under `skills/` that is not one of ateam's six, that its Claude adapter exists, links to it, says to read it fully,
+and stays within 25 lines with no checkbox. After changing a contract, adapter, or routing rule, also walk the
+fixtures below; a structurally valid adapter does not prove its instructions make the right decisions.
 
 Use these semantic fixtures when reading the routing text:
 

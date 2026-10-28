@@ -15,8 +15,9 @@ import (
 
 // harness-boundaries › "Agent setup and rule-index parity": the part of agent-setup parity that
 // `ateam doctor --check` (task ateam:doctor) does not check, held by a unit test and its sensitivity
-// test: the SemEngine role adapters and the adopter skills' Claude adapter size. Doctor owns CLAUDE.md,
-// the AGENTS.md size, rule-row parity, and skill adapter existence and links. Expected roles, tool
+// test: the SemEngine contracts' base-contract pointer, the role adapters, and the adopter skills'
+// Claude adapters (existence, link, size). Doctor owns CLAUDE.md, the AGENTS.md size, rule-row parity,
+// and ateam's six canonical skills and their adapters. Expected roles, tool
 // lists, sandbox modes, model/effort pins, and caps are constants here rather than read from
 // .agents/README.md.
 const (
@@ -42,10 +43,27 @@ var (
 	}
 	readOnlyClaudeTools = []string{"Read", "Bash", "Grep", "Glob", "Skill"}
 	writeClaudeTools    = []string{"Read", "Edit", "Write", "Bash", "Grep", "Glob", "Skill"}
-	// adopterSkills are SemEngine's own skills; doctor checks only that their adapters' links
-	// resolve, so their adapter size and checkbox rule stays here.
-	adopterSkills = []string{"entity-or-bucket", "kv-or-stream", "new-payload", "query-pattern", "semengine-status"}
+	// ateamCanonicalSkills are the six skills ateam init writes and doctor checks in full. Every
+	// other directory under .agents/skills/ is an adopter skill, which doctor reports only when an
+	// adapter's link dangles: a missing adapter, one pointing at another skill, or one that does not
+	// say to read the skill fully passes it, so this test checks them.
+	ateamCanonicalSkills = []string{"design", "handoff", "pickup", "ponytail", "preflight", "review-pr"}
 )
+
+// adopterSkills lists the skill directories under .agents/skills/ that are not ateam's.
+func adopterSkills(root string) []string {
+	entries, err := os.ReadDir(filepath.Join(root, ".agents", "skills"))
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, e := range entries {
+		if e.IsDir() && !slices.Contains(ateamCanonicalSkills, e.Name()) {
+			out = append(out, e.Name())
+		}
+	}
+	return out
+}
 
 func TestAgentSetupParity(t *testing.T) {
 	requireNoViolations(t, "agent setup parity", agentSetupViolations(repoRoot(t)))
@@ -107,6 +125,15 @@ func TestAgentSetupParitySensitivity(t *testing.T) {
 		{"claude model mismatch", edit(".claude/agents/semengine-technical-writer.md", func(s string) string {
 			return strings.Replace(s, "model: sonnet", "model: opus", 1)
 		}), []string{".claude/agents/semengine-technical-writer.md", "model", "sonnet"}},
+		{"adopter skill adapter points to another skill", edit(".claude/skills/query-pattern/SKILL.md", func(s string) string {
+			return strings.ReplaceAll(s, "skills/query-pattern/SKILL.md", "skills/kv-or-stream/SKILL.md")
+		}), []string{".claude/skills/query-pattern/SKILL.md", "../../../.agents/skills/query-pattern/SKILL.md"}},
+		{"adopter skill adapter does not say fully", edit(".claude/skills/new-payload/SKILL.md", func(s string) string {
+			return strings.ReplaceAll(s, "fully", "")
+		}), []string{".claude/skills/new-payload/SKILL.md", "read it fully"}},
+		{"new adopter skill missing claude adapter", edit(".agents/skills/new-review-skill/SKILL.md", func(string) string {
+			return "# New Skill\n"
+		}), []string{".claude/skills/new-review-skill/SKILL.md", "missing Claude skill adapter"}},
 		{"claude effort mismatch", edit(".claude/agents/semengine-reviewer.md", func(s string) string {
 			return strings.Replace(s, "effort: high", "effort: medium", 1)
 		}), []string{".claude/agents/semengine-reviewer.md", "effort", "high"}},
@@ -137,8 +164,8 @@ func copyAgentSetupFixture(t *testing.T, root string) map[string]string {
 			".codex/agents/"+r.name+".toml",
 		)
 	}
-	for _, s := range adopterSkills {
-		rels = append(rels, ".claude/skills/"+s+"/SKILL.md")
+	for _, s := range adopterSkills(root) {
+		rels = append(rels, ".agents/skills/"+s+"/SKILL.md", ".claude/skills/"+s+"/SKILL.md")
 	}
 	files := make(map[string]string, len(rels))
 	for _, rel := range rels {
@@ -296,7 +323,7 @@ func checkAdapterCommon(rel, roleName, text string) []string {
 
 func checkAdopterSkillAdapters(root string) []string {
 	var out []string
-	for _, s := range adopterSkills {
+	for _, s := range adopterSkills(root) {
 		rel := ".claude/skills/" + s + "/SKILL.md"
 		data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 		if err != nil {
@@ -304,6 +331,10 @@ func checkAdopterSkillAdapters(root string) []string {
 			continue
 		}
 		text := string(data)
+		wantLink := "../../../.agents/skills/" + s + "/SKILL.md"
+		if !strings.Contains(text, wantLink) || !strings.Contains(text, "fully") {
+			out = append(out, fmt.Sprintf("%s: must link to %s and instruct to read it fully", rel, wantLink))
+		}
 		lines := strings.Count(strings.TrimRight(text, "\n"), "\n") + 1
 		if lines > maxSkillLines {
 			out = append(out, fmt.Sprintf("%s: %d lines exceeds max %d lines", rel, lines, maxSkillLines))

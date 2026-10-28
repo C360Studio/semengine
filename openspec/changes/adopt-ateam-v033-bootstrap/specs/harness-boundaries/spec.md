@@ -74,11 +74,11 @@ the reviewer, `architect.md` for the architect. `TestAgentSetupParity` SHALL che
 ### Requirement: Agent setup and rule-index parity
 
 Agent-setup parity SHALL be checked by two oracles that do not overlap: `ateam doctor --check` (run by
-`task ateam:doctor` inside `task verify`) for the files ateam owns, the hook and MCP registrations, the canonical
-skills and their adapters, the adopter skills' links, `CLAUDE.md`, the `AGENTS.md` size and its rule-row parity with
+`task ateam:doctor` inside `task verify`) for the required files, the hook and MCP registrations, ateam's six
+canonical skills and their adapters, `CLAUDE.md`, the `AGENTS.md` size and its rule-row parity with
 `.agents/rules-index.md`; and the contract test `TestAgentSetupParity` with `TestAgentSetupParitySensitivity`
-(`task test:unit`) for the SemEngine role adapters and the adopter skills' adapter size, in the steps stated in the
-requirements that follow.
+(`task test:unit`) for the SemEngine contracts' base-contract pointer, the role adapters and the adopter skills'
+Claude adapters, in the steps stated in the requirements that follow.
 
 #### Scenario: Repository agent setup passes
 
@@ -90,8 +90,8 @@ requirements that follow.
 - **WHEN** a fixture tree omits a `semengine-*` contract or role adapter, points an adapter at the wrong contract,
   grants `Edit` or `LSP` to a read-only Claude adapter, omits `sandbox_mode = "read-only"` on a read-only Codex
   adapter or sets `sandbox_mode` on a write Codex adapter, adds a checkbox or exceeds 20 lines in a role adapter,
-  exceeds 25 lines or adds a checkbox in an adopter skill's Claude adapter, or changes a pinned `model`, `effort` or
-  `model_reasoning_effort`
+  omits an adopter skill's Claude adapter, points it at another skill, drops `fully` from it, exceeds 25 lines or adds a
+  checkbox in it, or changes a pinned `model`, `effort` or `model_reasoning_effort`
 - **THEN** the check fails naming the file and the violated rule
 
 ### Requirement: Agent setup step 1: required files exist
@@ -121,16 +121,29 @@ same numbered rule-domain headings and the same number of rule rows in each doma
 
 ### Requirement: Agent setup step 7: skill adapters
 
-Step 7. Every canonical skill under `.agents/skills/<skill>/SKILL.md` SHALL have its matching Claude adapter under
-`.claude/skills/<skill>/SKILL.md` that links to `../../../.agents/skills/<skill>/SKILL.md` and says to read it `fully`;
-`ateam doctor --check` checks existence and links for every skill and the required section markers for the
-canonical six. The contract test checks that each adopter skill's Claude adapter (`entity-or-bucket`, `kv-or-stream`,
-`new-payload`, `query-pattern`, `semengine-status`) has at most 25 lines and contains no task-list checkbox.
+Step 7. Every skill under `.agents/skills/<skill>/SKILL.md` SHALL have its matching Claude adapter under
+`.claude/skills/<skill>/SKILL.md` that links to `../../../.agents/skills/<skill>/SKILL.md` and says to read it `fully`.
+`ateam doctor --check` checks this, and the required section markers, for ateam's six canonical skills (`design`,
+`handoff`, `pickup`, `ponytail`, `preflight`, `review-pr`); for any other skill it reports only a link that does not
+resolve. The contract test checks every other directory under `.agents/skills/` (the adopter skills, found by listing
+the directory): its Claude adapter exists, links to its own skill, says `fully`, has at most 25 lines and contains no
+task-list checkbox.
 
 #### Scenario: Broken skill adapter link
 
 - **WHEN** a Claude skill adapter's link does not resolve
 - **THEN** `ateam doctor --check` reports it and `task verify` fails
+
+#### Scenario: New adopter skill without an adapter
+
+- **WHEN** a fixture adds `.agents/skills/new-review-skill/SKILL.md` with no Claude adapter
+- **THEN** the contract test fails naming `.claude/skills/new-review-skill/SKILL.md`
+
+#### Scenario: Adopter skill adapter points at another skill
+
+- **WHEN** `.claude/skills/query-pattern/SKILL.md` links to `../../../.agents/skills/kv-or-stream/SKILL.md`
+- **THEN** the contract test fails naming the file and its own skill's path; `ateam doctor --check` lists it only as
+  an alias
 
 #### Scenario: Adopter skill adapter with a copied checklist
 

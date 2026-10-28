@@ -24,12 +24,15 @@ import (
 // shuffled order, over the repeat packages (the unit packages but the repository guards) or the
 // packages given after --; test:tools runs the tool
 // packages as test:unit runs the unit ones; test:tools:changed runs only scripts/tools-changed.sh.
+// harness-boundaries › "ateam doctor gates verify": ateam:doctor runs ateam doctor --check with the
+// four session variables unset and is verify's first step.
 // Neither line is read from the file under test: these constants are the spec.
 const (
 	requiredUnitCmd         = "go test -race -count=1 -cpu 1 {{.PKGS}}"
 	requiredRepeatCmd       = "go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default .PKGS}}"
 	requiredToolsCmd        = "go test -race -count=1 -cpu 1 {{.PKGS}}"
 	requiredToolsChangedCmd = "scripts/tools-changed.sh"
+	requiredAteamDoctorCmd  = "env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID ateam doctor --check"
 )
 
 // The fingerprint cover:check compares is written only after go test passed, because Task runs a
@@ -40,7 +43,7 @@ var requiredIntegrationCmds = []string{
 	"scripts/tree-state.sh > coverage/integration.tree",
 }
 
-// pinnedTestTasks is each test task with the spec that pins it, the list its PKGS reads ("" for
+// pinnedTestTasks is each test task, and ateam:doctor, with the spec that pins it, the list its PKGS reads ("" for
 // no vars at all) and its exact commands.
 var pinnedTestTasks = []struct {
 	task, spec, list string
@@ -51,6 +54,7 @@ var pinnedTestTasks = []struct {
 	{"test:integration", "integration-test-runner", "integration", requiredIntegrationCmds},
 	{"test:tools", "merge-gate", "tools", []string{requiredToolsCmd}},
 	{"test:tools:changed", "merge-gate", "", []string{requiredToolsChangedCmd}},
+	{"ateam:doctor", "harness-boundaries", "", []string{requiredAteamDoctorCmd}},
 }
 
 func TestUnitInvocationsPinned(t *testing.T) {
@@ -101,7 +105,7 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 		return []byte(s)
 	}
 	verify := func(steps string) []byte {
-		return []byte("#!/usr/bin/env bash\nsteps=(spec:check build\n  " + steps + ")\n")
+		return []byte("#!/usr/bin/env bash\nsteps=(ateam:doctor spec:check build\n  " + steps + ")\n")
 	}
 	goodTaskfile, goodVerify := taskfile(nil), verify("test:unit test:tools:changed test:integration cover:check test:repeat")
 	requireNoViolations(t, "clean fixture", unitInvocationViolations(goodTaskfile, goodVerify))
@@ -154,6 +158,12 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 			[]string{"scripts/verify.sh", "test:tools:changed", "missing"}},
 		{"tool step before the unit step", goodTaskfile, verify("test:tools:changed test:unit test:integration cover:check test:repeat"),
 			[]string{"scripts/verify.sh", "test:tools:changed must follow test:unit"}},
+		{"doctor keeps a session variable", taskfile(map[string]string{"ateam:doctor": cmds(strings.Replace(requiredAteamDoctorCmd, "-u CLAUDE_SESSION_ID ", "", 1))}), goodVerify,
+			[]string{"ateam:doctor", "harness-boundaries", requiredAteamDoctorCmd}},
+		{"doctor task missing", taskfile(map[string]string{"ateam:doctor": ""}), goodVerify,
+			[]string{"ateam:doctor", "no such task"}},
+		{"doctor step not first", goodTaskfile, []byte("#!/usr/bin/env bash\nsteps=(spec:check ateam:doctor build test:unit test:tools:changed test:repeat)\n"),
+			[]string{"scripts/verify.sh", "ateam:doctor must be the first step"}},
 		{"tools command drift", taskfile(map[string]string{"test:tools": pkgs("tools") + cmds(strings.Replace(requiredToolsCmd, " -race", "", 1))}), goodVerify,
 			[]string{"test:tools", requiredToolsCmd}},
 	} {
@@ -204,6 +214,9 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 		return append(violations, "scripts/verify.sh: no steps=(...) list")
 	}
 	steps := strings.Fields(string(m[1]))
+	if len(steps) == 0 || steps[0] != "ateam:doctor" {
+		violations = append(violations, fmt.Sprintf("scripts/verify.sh: ateam:doctor must be the first step; the steps are %v", steps))
+	}
 	for _, step := range []string{"test:unit", "test:tools:changed", "test:repeat"} {
 		if !slices.Contains(steps, step) {
 			violations = append(violations, fmt.Sprintf("scripts/verify.sh: step %s is missing from %v", step, steps))

@@ -3,6 +3,7 @@ name: semengine-technical-writer
 description: Update SemEngine durable docs and task truth through the canonical project contract.
 tools: Read, Edit, Write, Bash, Grep, Glob, Skill
 model: sonnet
+effort: medium
 ---
 
 # SemEngine technical writer adapter

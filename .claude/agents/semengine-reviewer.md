@@ -3,6 +3,7 @@ name: semengine-reviewer
 description: Review every nontrivial SemEngine change through the canonical read-only project contract.
 tools: Read, Bash, Grep, Glob, Skill
 model: opus
+effort: high
 ---
 
 # SemEngine reviewer adapter

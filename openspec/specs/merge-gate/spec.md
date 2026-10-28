@@ -666,15 +666,21 @@ under a trigger path, and in `internal/harness/contract`, a unit package, when i
 
 ### Requirement: Tool tests run when their files change
 
-`task test:tools:changed` SHALL run `task test:tools` when a changed file is under `scripts/`, `internal/harness/` or
-`.github/`, or is `Taskfile.yml`, `go.mod`, `go.sum`, `docs/admission-ledger.yaml`, `service/base.go`,
-`service/service_manager.go` or `service/component_manager.go`. Otherwise it SHALL exit zero after printing that the
-tool tests were skipped and that no changed file matched.
+`task test:tools:changed` SHALL run `task test:tools` when a changed file is under `scripts/`, `internal/harness/`,
+`.github/`, `.agents/`, `.claude/`, `.codex/` or `.gemini/`, or is `Taskfile.yml`, `go.mod`, `go.sum`,
+`docs/admission-ledger.yaml`, `service/base.go`, `service/service_manager.go`, `service/component_manager.go` or
+`.mcp.json`. Otherwise it SHALL exit zero after printing that the tool tests were skipped and that no changed file
+matched.
 
 #### Scenario: A script changed
 
 - **WHEN** the changed files include `scripts/merge-check.sh`
 - **THEN** `task test:tools` runs
+
+#### Scenario: An ateam template changed
+
+- **WHEN** the changed files include `.agents/contracts/reviewer.md`
+- **THEN** `task test:tools` runs, so `TestAteamTemplatesUnchanged` checks it
 
 #### Scenario: Only product code and docs changed
 

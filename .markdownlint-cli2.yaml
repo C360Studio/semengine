@@ -2,8 +2,24 @@
 # Enjoy's git-ignored local session logs (.enjoy-logs/, never committed; #269).
 # openspec/specs/** is rewritten by `openspec archive` with its own formatting (no blank lines around
 # headings); its content is validated by `task spec:check`. Human-written openspec/changes/** stays linted.
+# The ateam template files are byte-identical to what `ateam init` writes at the pinned release, in
+# ateam's formatting; TestAteamTemplatesUnchanged (internal/harness/toolcheck) checks that (harness-boundaries
+# spec, "ateam template files are the pin's"). preflight is SemEngine's text and stays linted.
 ignores:
   - node_modules/**
   - "**/node_modules/**"
   - openspec/specs/**
   - "**/.enjoy-logs/**"
+  - .agents/contracts/architect.md
+  - .agents/contracts/developer.md
+  - .agents/contracts/reviewer.md
+  - .agents/skills/design/SKILL.md
+  - .agents/skills/handoff/SKILL.md
+  - .agents/skills/pickup/SKILL.md
+  - .agents/skills/ponytail/SKILL.md
+  - .agents/skills/review-pr/SKILL.md
+  - .claude/skills/design/SKILL.md
+  - .claude/skills/handoff/SKILL.md
+  - .claude/skills/pickup/SKILL.md
+  - .claude/skills/ponytail/SKILL.md
+  - .claude/skills/review-pr/SKILL.md

@@ -148,11 +148,13 @@ state that changes from one run to the next.
 The tests that run those scripts, and that pin `Taskfile.yml` and the CI workflow, are not in `contract`. They are in
 `internal/harness/toolcheck/`, one of three tool packages with `mutcheck` and `pindiff`. A test belongs in `toolcheck`
 when every file of the real tree it reads is one of: `scripts/`, `internal/harness/`, `.github/`, `Taskfile.yml`,
-`go.mod`, `go.sum`, `docs/admission-ledger.yaml`, `service/base.go`, `service/service_manager.go` or
-`service/component_manager.go`; anything else it needs, it plants in a temporary tree. A test that reads any other
-file stays in `contract`. `task test:tools` runs the tool packages; `task test:tools:changed`, a step of `task verify`,
-runs them only when one of those paths changed against the base and says so when it skips them. Nothing but review
-checks which package a test belongs in.
+`go.mod`, `go.sum`, `docs/admission-ledger.yaml`, `service/base.go`, `service/service_manager.go`,
+`service/component_manager.go`, `.agents/`, `.claude/`, `.codex/`, `.gemini/` or `.mcp.json`; anything else it
+needs, it plants in a temporary tree. A test that reads any other file stays in `contract`. `task test:tools` runs
+the tool packages; `task test:tools:changed`, a step of `task verify`, runs them only when one of those paths changed
+against the base and says so when it skips them. An edit under `.agents/`, `.claude/`, `.codex/`, `.gemini/` or
+`.mcp.json` runs them too (about two minutes), because `TestAteamTemplatesUnchanged` checks the files `ateam init`
+writes there. Nothing but review checks which package a test belongs in.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;

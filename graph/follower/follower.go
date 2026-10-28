@@ -182,7 +182,9 @@ func invalid(what string) error {
 
 // Run follows ENTITY_STATES on the caller's goroutine until ctx ends, then returns with the watch
 // stopped, its delivery closed and its heartbeat goroutine joined. It returns nil, or the watch's
-// Stop error when that error says more than that the watch was already gone. It publishes the
+// Stop error when that error says more than that the watch was already gone. It waits for the
+// delivery to close for at most watchDrainBudget (see stopWatch) and then returns
+// errWatchDeliveryOpen. It publishes the
 // envelope once at once and then every readiness.DefaultHeartbeat, on a goroutine of its own, so a
 // Deliver that blocks does not delay a heartbeat. A nil context is refused.
 func (f *Follower) Run(ctx context.Context) error {
@@ -211,7 +213,7 @@ func (f *Follower) follow(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return stopWatch(watcher)
+			return stopWatch(ctx, watcher)
 		case entry, ok := <-watcher.Updates():
 			if !ok {
 				// The channel closes after Stop or when nats.go gives the watch up, as it does when
@@ -237,16 +239,38 @@ func (f *Follower) follow(ctx context.Context) error {
 	}
 }
 
-// stopWatch stops the watch and drains its updates until nats.go closes the channel, so that
-// returning is a join (background-work spec, "No fixed shutdown timeout"). At nats.go v1.54.0 Stop
-// only unsubscribes: a delivery already blocked on the full updates buffer ends only when the buffer
-// is read, and the channel closes after it. TestFollowerRunReturnsAndLeavesNothing drives this with
-// a backlogged watch.
-func stopWatch(watcher jetstream.KeyWatcher) error {
+// watchDrainBudget bounds stopWatch's wait for the watch's delivery to close after Stop.
+const watchDrainBudget = 5 * time.Second
+
+// errWatchDeliveryOpen says the watch's update channel was still open when watchDrainBudget ran out.
+var errWatchDeliveryOpen = errors.New("follower: the ENTITY_STATES watch's delivery did not close after Stop")
+
+// stopWatch stops the watch and drains its updates until nats.go closes the channel, for at most
+// watchDrainBudget after ctx, Run's, has ended. At nats.go v1.54.0 Stop only unsubscribes: a
+// delivery already blocked on the full updates buffer ends only when the buffer is read, and the
+// channel closes after it, so on that path returning is a join (TestFollowerRunReturnsAndLeavesNothing
+// drives it with a backlogged watch). The bound is for the one path with nothing to join: WatchAll
+// subscribes before it installs the handler that closes the channel (jetstream/kv.go:1356-1368), and
+// nats.go reads that handler once, when its delivery goroutine exits (nats.go:3830-3834). A watch
+// whose context ends, or whose connection closes, in between leaves the channel open for good with
+// no delivery goroutine running (#454). TestStopWatchGivesUpOnADeliveryThatNeverCloses drives the
+// bound on a scripted watcher; the window itself has not been reproduced against nats.go.
+func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 	stopErr := watcher.Stop()
+	// Terminal cleanup after Run's context has ended, so it runs detached and bounded.
+	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), watchDrainBudget)
+	defer cancel()
 	updates := watcher.Updates()
 	for open := true; open; {
-		_, open = <-updates
+		select {
+		case _, open = <-updates:
+		case <-drainCtx.Done():
+			// The delivery never closed, so a Stop error cannot be read as "already gone".
+			if stopErr != nil {
+				return errors.Join(errWatchDeliveryOpen, fmt.Errorf("follower: stop the ENTITY_STATES watch: %w", stopErr))
+			}
+			return errWatchDeliveryOpen
+		}
 	}
 	// The delivery has closed. Stop's error then says only that the watch was already gone: nats.go
 	// also unsubscribes when the watch's context ends (js.go, subscribe), which is Run's, and can

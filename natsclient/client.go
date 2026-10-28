@@ -75,6 +75,15 @@ type Client struct {
 	internalClaimsMu sync.Mutex
 	internalClaims   map[internalConsumerIdentity]*internalConsumerClaim
 
+	// consumerReleases maps each consumer handle the client returned to the
+	// channel its ownership closes once the consumer's handlers have returned
+	// and its claim is released (WaitConsumerHandlers). The handle is only a
+	// lookup key: nothing stops, drains or closes through it. Entries stay for
+	// the client's life, so a finished handle is never mistaken for a foreign
+	// one (design D11 of setup-04a-04-graph-roots-objectstore-component).
+	consumerReleasesMu sync.Mutex
+	consumerReleases   map[jetstream.ConsumeContext]<-chan struct{}
+
 	// Connection options
 	maxReconnects int
 	reconnectWait time.Duration

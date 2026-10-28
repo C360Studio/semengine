@@ -195,6 +195,13 @@ Each line below names its backing. Anything not backed is not promised.
   includes one on a connection that `SetConnection` replaced. The replaced connection stays the caller's, and `Close`
   does not cut its socket (tests `client_close_final_test.go:1399`, `:1442`).~~ Struck 2026-10-12 (#184; see Status):
   the sentence before rests on tests `client_close_final_test.go:227` and `:654`.
+- **A caller can wait for one consumer's handlers without closing the client.** `WaitConsumerHandlers(ctx, handle)`
+  returns nil once delivery on a consumer the client returned has ended, every handler invocation of it has returned
+  and its durable claim is released; it stops nothing, and returns an error matching `ctx.Err()` if `ctx` ends first.
+  A consumer's `Closed()` is not that wait: it can close while a handler still runs
+  (`TestWaitConsumerHandlersAfterConnectionLoss`, the probe at nats.go v1.54.0). Added 2026-10-28 (owner ruling on
+  #443; design D11 of setup-04a-04-graph-roots-objectstore-component; tests in
+  `wait_consumer_handlers_integration_test.go`).
 - **Once `Close` begins, new work is refused** (test `client_close_final_test.go:960`). A `Subscribe` that `Close`
   overtakes returns `nats.ErrConnectionClosed` (T2; `TestSubscribeEndedByCloseIsConnectionClosed`,
   `client_close_held_test.go`).

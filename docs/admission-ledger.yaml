@@ -1118,6 +1118,15 @@
     takes a retry.Config and runs retry.Do, so MaxAttempts counts the first attempt, a count below one makes one
     attempt, a config retry.Do refuses is returned before anything is sent, and the error class of that refusal is not
     promised.
+    Changed surface, setup-04a-04-graph-roots-objectstore-component design D11 (owner ruling, PR #437 comment
+    6467701324, on #443; one-package exception, #159): Client.WaitConsumerHandlers(ctx, handle) waits, bounded by ctx,
+    until delivery on a consumer whose handle this client returned (ConsumeStreamWithConfig,
+    ConsumeStreamWithConfigContexts, ConsumeInternalStreamWithConfig) has ended, every handler invocation of it has
+    returned and its durable claim is released (the ownership's released channel, owned_delivery.go). It stops
+    nothing; a ctx that ends first returns an error matching ctx.Err(); a nil ctx and a handle the client did not
+    return (nil, another client's, not comparable) are refused at once as invalid; a handle stays known for the
+    client's life, so after its handlers finished or after Close returned nil it returns nil at once. The client keeps
+    one map entry per consumer it returns, the handle as a lookup key only. Consumer: storage/objectstore's cleanup.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -1799,6 +1808,11 @@
     detected: the update's write error retryable again (the update row), the create's (the create row), a conflict
     ending the call (TestUpdateWithRetryRead_ConflictPassesTheNewerRevision), the ErrNoStreamResponse clause dropped
     (the no-stream-response row).
+    Design D11 of setup-04a-04-graph-roots-objectstore-component (wait_consumer_handlers_integration_test.go):
+    TestWaitConsumerHandlersWaitsForRunningHandler, TestWaitConsumerHandlersAfterConnectionLoss,
+    TestWaitConsumerHandlersContextEndsFirst, TestWaitConsumerHandlersRefusesUnknownHandle,
+    TestWaitConsumerHandlersAfterClose and TestWaitConsumerHandlersRefusesNilContext; each red against a mutant
+    recorded in that change's notes/4.1.md.
   owner: setup-04a-01-floor developer
   disposition: adapt
 
@@ -2001,14 +2015,20 @@
     the interfaces as at the pin. doc.go and storage.go differ from it in comments only (setup-04a-04-graph-roots-objectstore-store,
     #280 item 1): the examples call the Store that exists and no longer show Close or the Component's key generator,
     and the Put and Delete docs say that NATS ObjectStore replaces and keeps no version (probe P4, PR #432
-    comment 6445520357) where the pin's text promised versions. Its sub-packages storeregistry and objectstore have
-    their own rows
+    comment 6445520357) where the pin's text promised versions. setup-04a-04-graph-roots-objectstore-component
+    removes the KeyGenerator and MetadataExtractor interfaces and their doc.go examples (design D6, task 5.1): no
+    reader at the pin or in a consumer, and the Component no longer has a raw write lane that could call them. Its
+    sub-packages storeregistry and objectstore have their own rows
   dependencies_and_side_effects: stdlib only; no goroutine, no I/O
-  known_risks: no context roots; no test files at the pin; no code differs from the pin
+  known_risks: >-
+    no context roots; no test files at the pin; the pin's KeyGenerator and MetadataExtractor interfaces are not
+    carried (nothing implements or calls them)
   proving_tests: >-
     none in the package (the pin has none); storage/storeregistry/storeregistry_test.go and
     storage/objectstore's integration tests exercise the interfaces
-  owner: setup-04a-02-ingest-kernel developer; comments edited by setup-04a-04-graph-roots-objectstore-store technical writer
+  owner: >-
+    setup-04a-02-ingest-kernel developer; comments edited by setup-04a-04-graph-roots-objectstore-store and
+    setup-04a-04-graph-roots-objectstore-component technical writer
   disposition: adapt
 
 - source_path: graph
@@ -3543,12 +3563,13 @@
   consumer_purpose: >-
     the NATS ObjectStore backend of storage.StreamableStore: stores large content and returns the StorageReference that
     storage/storeregistry resolves; the pin's document adapter calls StoreContent and graph-embedding reads what its
-    reference opens to (design D1, D13)
+    reference opens to (design D1, D13); the Component wraps the Store with NATS ports so a message's body is stored
+    and its reference published (semsource and semconnect run it with default ports)
   destination: storage/objectstore
   contract: >-
-    the Store half (this change); the Component arrives in setup-04a-04-graph-roots-objectstore-component. Put, Get,
-    Open, List, Delete, StoreContent and InstanceName as at the pin, with these adaptations (spec object-store; design
-    D3-D7): (1) Put replaces the object at its key and the docs say so, where the pin's doc promised versions (S1,
+    the Store (setup-04a-04-graph-roots-objectstore-store) and the Component (setup-04a-04-graph-roots-objectstore-component).
+    Store: Put, Get, Open, List, Delete, StoreContent and InstanceName as at the pin, with these adaptations (spec
+    object-store; design D3-D7): (1) Put replaces the object at its key and the docs say so, where the pin's doc promised versions (S1,
     probe P4); (2) Get and Open of a missing object match storage.ErrObjectNotFound and are not transient, where the
     pin's Open returned a transient error (S8); (3) Delete of a never-written key returns nil, where the pin returned
     NATS' not-found error (S10); (4) List returns the matching names sorted and an empty slice for an empty bucket,
@@ -3562,26 +3583,70 @@
     existing bucket's backing stream, logs a warning, and fails with natsclient.ErrGraphBucketRetention if it cannot
     (ADR-068, as at the pin); (9) metrics register through metric.RegisterOrGet on the injected registry in the
     semengine_objectstore_ namespace with a bucket label, and operation_errors_total counts refusals made before any
-    I/O (D7, #434)
+    I/O (D7, #434).
+    Component (design D2-D7, D11; owner rulings on PR #437 comment 6454878443): (10) it stores only a
+    message.ContentStorable payload's body, through StoreContent, and publishes a StoredMessage carrying the
+    reference on its stored output; every other message is refused (ruling 1), where the pin also stored raw wire
+    bytes under a generated key (Store.Store, DefaultKeyGenerator); (11) the default input is core NATS and
+    at-most-once: a refused or failed write is logged at Error, counted in ErrorCount and gone (ruling 2); a
+    JetStream input is at-least-once: Ack after the body is stored and its reference published, Term on a refusal,
+    NAK with a delay on a failure, each non-Ack logged at Error and counted; (12) the store is named "objectstore",
+    one per process, and a second Component is refused at boot by the store registry (ruling 3; the ADR-063 port
+    note records it); (13) configuration keys are bucket_name and ports only, an unknown key such as the pin's
+    data_cache is refused naming it, an output other than stored is refused, an input with no stored output is
+    refused, and a JetStream input that declares consumer_name is refused (the consumer is named from the instance
+    and subject; the pin dropped the declared name silently) (#438); a JetStream input's declared ack_wait reaches
+    the durable consumer (#438); (14) the Component runs on component.Lifecycle: the input handlers outlive Start's
+    context (the pin's stopped both lanes when it ended, G7), Stop waits for every handler through
+    natsclient.WaitConsumerHandlers (#439, D11), and a failed Start whose cleanup also fails keeps its inputs for a
+    later Stop; (15) a JetStream input whose consume loop ended while running, or whose durable consumer cannot be
+    found by name, makes Health report the Component not healthy until a process restart (#216's ruling,
+    mirroring graph-ingest); (16) the pin's events port and Event, the api input, Config.Ports, IsStarted and
+    buildStoredMessage are not carried (no reader)
   dependencies_and_side_effects: >-
-    message, metric, natsclient, pkg/errs, pkg/types, storage (in-set); nats.go jetstream; google/uuid;
-    pgregory.net/rapid in tests only. One NATS ObjectStore bucket, created if missing; no goroutine, no context kept
+    component, graph, graph/readiness (the check interval only), message, metric, natsclient, payloadregistry,
+    pkg/errs, pkg/types, types, storage (in-set); nats.go and nats.go/jetstream; google/uuid; pgregory.net/rapid in tests only. One NATS
+    ObjectStore bucket, created if missing. The Component starts one goroutine, the input check, only when a
+    JetStream input is configured; Stop ends it. Its handlers run under contexts natsclient owns
   known_risks: >-
     owner ruling PR #432 comment 6446982969 drops the data cache (Config.DataCache) and Close, so no internal/cache
-    import and ADR-063's Close text describes nothing here. Deferred to the Component (5b): Store.Store and the raw
-    write lane, DefaultKeyGenerator, Config.Ports, KeyGenerator and MetadataExtractor, and multi-instance naming
-    (S27), which ADR-063 leaves open. Not carried (no reader at the pin): FetchContent, FetchBinary, GetMetadata,
-    StoredContent and its helpers, SetDecoder, Config.Validate. A payload carrying non-body content is refused, not
-    stored (G8, owner ruling); its producer emits that text as triples. List reads every object's metadata, so its
-    cost grows with the bucket
+    import and ADR-063's Close text describes nothing here. Not carried: Store.Store and the raw write lane,
+    DefaultKeyGenerator, Config.Ports, the events port, KeyGenerator and MetadataExtractor (removed from storage),
+    FetchContent, FetchBinary, GetMetadata, StoredContent and its helpers, SetDecoder, Config.Validate. A payload
+    carrying non-body content is refused, not stored (G8, owner ruling); its producer emits that text as triples.
+    List reads every object's metadata, so its cost grows with the bucket. Component: the default core-NATS input
+    keeps nothing, so a refused message is gone after the log line; a JetStream redelivery after a failed reference
+    publish stores the body again under a new key (StoreContent's key carries a per-call nonce), leaving one
+    unreferenced object; a delivery NAKed MaxDeliver times is not delivered again and the Component reports
+    nothing about it (#36 owns making it visible; that the server stops at MaxDeliver is the pin's statement, not
+    measured here); a lost JetStream input is detected by a tick every readiness.DefaultHeartbeat (5 s) and cleared
+    only by a restart; whether a deleted consumer ends the consume loop is observed once and not promised
+    (notes/2.2.md item 9); clearing a lookup-based unhealthy state after a later lookup succeeds is stated, not
+    tested
   proving_tests: >-
     storage/objectstore/store_test.go (TestNewStoreRefusesNilContext, TestStoreMethodsRefuseNilContext,
     TestRetentionGuardFailsClosed, TestStoreContentKeysAreUniquePerCall, TestRefusalsCountAsOperationErrors);
     store_integration_test.go (TestPutReplacesObjectAtKey, TestGetAndOpenReportMissingAsNotFound,
     TestDeleteMissingKeySucceeds, TestListSortedAndEmpty, TestStoreContentRefusesExtras,
     TestStoreContentReferenceOpensToBody, TestStoreHistoryMatchesModel, TestRetentionGuardStripsAndAsserts,
-    TestStoreConcurrentUseUnderRace); notes/2.1.md records each shown failing against the pin's shape
-  owner: setup-04a-04-graph-roots-objectstore-store developer
+    TestStoreConcurrentUseUnderRace); notes/2.1.md records each shown failing against the pin's shape. Component:
+    component_test.go (TestComponentConfigRefusesUnknownKey, TestComponentRefusesOutputOtherThanStored,
+    TestComponentRefusesInputWithoutStoredOutput, TestComponentRefusesUnsupportedInputs,
+    TestComponentRefusesInputWithoutPayloadRegistry, TestDeclarePortsMatchesComponentPorts,
+    TestRegisterRegistersObjectstore), binding_test.go (TestInputBindingPlan*), write_test.go
+    (TestClassifyWriteDisposition), stored_message_test.go (TestStoredMessageRoundTripsThroughDecoder,
+    TestStoredMessageValidate); component_integration_test.go (TestObjectStoreLifecycleSuite,
+    TestFailedStartReleasesBoundInputs, TestProvidedStoresUnderObjectstore, TestSecondComponentRefusedAtStart,
+    TestLostJetStreamInputReportsUnhealthy, TestMemoryInputLostAtBrokerRestartStaysUnhealthy);
+    lifecycle_integration_test.go (TestFailedCleanupRetainsInputsForLaterStop; lifecycle_test.go is the suite's
+    Observe adapter); write_integration_test.go
+    (TestWriteLaneStoresBodyAndEmitsReference, TestStartContextEndKeepsBothLanesWriting, TestWriteLaneRefusals,
+    TestStoredEmitFailureNaksThenRedeliveryStores); stop_join_integration_test.go
+    (TestStopJoinsHandlerAfterConnectionLoss, TestJetStreamInputAckWaitReachesConsumer); notes/2.1.md, 2.2.md,
+    4.1.md and 4.3.md record each shown failing first
+  owner: >-
+    setup-04a-04-graph-roots-objectstore-store developer; Component by setup-04a-04-graph-roots-objectstore-component
+    developer and technical writer
   disposition: adapt
 
 - source_path: docs/adr/063-store-substrate-and-resolver.md
@@ -3594,8 +3659,13 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     no edits to the pin's decision text; a port note added under the title naming what is ported, that the Store has
-    no Close and no data cache, that StoreContent keeps the raw-body contract and refuses other content, and that
-    multi-instance naming is left to the Component
-  proving_tests: n/a (task docs:check lints it)
-  owner: setup-04a-04-graph-roots-objectstore-store technical writer
+    no Close and no data cache, that StoreContent keeps the raw-body contract and refuses other content, and (added by
+    setup-04a-04-graph-roots-objectstore-component) that the Component stores bodies only and the store is named
+    "objectstore", one per process, which closes the multi-instance naming question
+  proving_tests: >-
+    n/a (task docs:check lints it); the one-name rule is proved by TestSecondComponentRefusedAtStart and
+    TestProvidedStoresUnderObjectstore in storage/objectstore
+  owner: >-
+    setup-04a-04-graph-roots-objectstore-store technical writer; note by
+    setup-04a-04-graph-roots-objectstore-component technical writer
   disposition: adapt

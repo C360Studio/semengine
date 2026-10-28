@@ -112,3 +112,57 @@ func TestConfigRefusesOutputsGraphIngestDoesNotWrite(t *testing.T) {
 		t.Fatalf("DeclarePorts refused the default kv-write output on ENTITY_STATES: %v", err)
 	}
 }
+
+// TestConfigRefusesDeclaredConsumerName: graph-ingest names each JetStream input's durable
+// consumer from its subject (consume.go), so a declared consumer_name would be dropped without a
+// word. Configuration validation refuses it as invalid, naming the port and the key, on every
+// path that validates (#442; graph-ingest-recovery, "A declared consumer name is refused").
+func TestConfigRefusesDeclaredConsumerName(t *testing.T) {
+	config := DefaultConfig()
+	inputs := append([]component.PortDefinition(nil), config.Ports.Inputs...)
+	declared := false
+	for index, definition := range inputs {
+		if js, ok := definition.Config.(component.JetStreamPort); ok {
+			js.ConsumerName = "mine"
+			inputs[index].Config = js
+			declared = true
+		}
+	}
+	if !declared {
+		t.Fatal("the default configuration has no JetStream input to declare consumer_name on")
+	}
+	ports := *config.Ports
+	ports.Inputs = inputs
+	config.Ports = &ports
+	raw, err := json.Marshal(config)
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+
+	assertRefused := func(path string, err error) {
+		t.Helper()
+		if err == nil {
+			t.Fatalf("%s accepted a JetStream input declaring consumer_name", path)
+		}
+		var classified *errs.ClassifiedError
+		if !errors.As(err, &classified) || classified.Class != errs.ErrorInvalid {
+			t.Fatalf("%s error is not classified invalid: %v", path, err)
+		}
+		if !strings.Contains(err.Error(), `"entity_stream"`) || !strings.Contains(err.Error(), "consumer_name") {
+			t.Fatalf("%s error does not name the port and consumer_name: %v", path, err)
+		}
+	}
+	_, err = DeclarePorts(raw, "graph-ingest")
+	assertRefused("DeclarePorts", err)
+	_, err = newUnstartedGraphIngest(t, nil, raw)
+	assertRefused("CreateGraphIngest", err)
+	assertRefused("Validate", config.Validate())
+
+	valid, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal default config: %v", err)
+	}
+	if _, err := newUnstartedGraphIngest(t, nil, valid); err != nil {
+		t.Fatalf("CreateGraphIngest with the default config: %v", err)
+	}
+}

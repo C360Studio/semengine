@@ -131,8 +131,13 @@
 //
 // # Integration with Components
 //
-// The storage/objectstore package has the Store only. A Component wrapper that
-// would expose Store operations on NATS ports is not in this repository yet.
+// The storage/objectstore package has the Store and a Component that wraps it. The
+// Component subscribes to NATS inputs, stores the body of each message.ContentStorable
+// it receives through the Store, and publishes a StoredMessage carrying the body's
+// reference on its "stored" output. It offers the Store to the component manager
+// under the instance name "objectstore", which is how a reader resolves a reference
+// (storage/storeregistry). Its configuration, delivery guarantees and health
+// reporting are described in storage/objectstore's package documentation.
 //
 // # Error Handling
 //
@@ -171,7 +176,7 @@
 //
 // # See Also
 //
-//   - storage/objectstore: NATS ObjectStore implementation
+//   - storage/objectstore: NATS ObjectStore implementation and its Component
 //   - component: Component interface and lifecycle
 //   - message: Message types for semantic storage
 package storage

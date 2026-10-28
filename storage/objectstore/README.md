@@ -5,8 +5,8 @@ named by a string key). It implements `storage.StreamableStore`: `Put`, `Get`, `
 also has `StoreContent`, which stores a payload's body text and returns a `message.StorageReference` that other
 code resolves back to this Store.
 
-This package has the Store only. The component that would wrap it with NATS ports and a registry
-entry is not in this repository yet.
+The package also has `Component`, which wraps the Store with NATS ports so that other components can hand it
+messages whose body should be stored. See "The Component" below.
 
 ## Use
 
@@ -59,11 +59,79 @@ content: text under a field that is not the body's, text under a field that a no
 non-empty binary field of a `message.BinaryStorable`. The error names each refused field. Put non-body text in the
 graph as triples, which the producer emits. A payload with no content stores an empty object.
 
+## The Component
+
+`objectstore.Register(registry)` adds the factory under the name `objectstore`. A running Component subscribes to its
+input ports; for each message it decodes the payload through the payload registry, and when the payload is a
+`message.ContentStorable` it stores the body with `StoreContent` and publishes a `StoredMessage` (payload type
+`storage.stored.v1`; `RegisterPayloads` registers it) on the `stored` output. The `StoredMessage` carries the entity ID,
+its triples and the reference, so a reader opens the body through the store registry. Any other message is refused:
+the Component stores bodies only.
+
+### Configuration
+
+Two keys, both optional. Any other key is refused when the Component is built, naming it.
+
+- `bucket_name`: the NATS ObjectStore bucket, default `MESSAGES`.
+- `ports`: `inputs` and `outputs`. With no `ports`, the Component has the input `write` (core NATS, subject
+  `storage.objectstore.write`) and the output `stored` (core NATS, subject `storage.objectstore.stored`).
+
+```json
+{
+  "bucket_name": "MESSAGES",
+  "ports": {
+    "inputs": [
+      {"name": "write", "config": {"kind": "jetstream", "stream_name": "STORAGE", "subjects": ["storage.objectstore.write"]}}
+    ],
+    "outputs": [
+      {"name": "stored", "config": {"kind": "nats", "subject": "storage.objectstore.stored"}}
+    ]
+  }
+}
+```
+
+- An input is core NATS or JetStream, one subject each. A Component with an input must have the `stored` output, and
+  `stored` is the only output name allowed, because a body stored with no reference published reaches nobody. A
+  Component with no inputs only offers its Store and needs no output.
+- A JetStream input's stream must already exist. Start waits for it and fails if it does not appear; it does not
+  create it. The durable consumer is created with a name derived from the subject, so an input that declares
+  `consumer_name` is refused. The other consumer settings, `ack_wait` included, reach the consumer
+  (`TestJetStreamInputAckWaitReachesConsumer`), and delivery starts at the beginning of the stream unless the port
+  says otherwise.
+- The Component registers its Store under the name `objectstore` through `ProvidedStores`, and every reference it
+  publishes carries that name. A process runs one such Component; starting a second one fails the boot
+  (`TestSecondComponentRefusedAtStart`).
+
+### What happens to a message
+
+| Input | Stored and published | Refused or failed |
+| --- | --- | --- |
+| core NATS (the default) | the message is done | logged at error level, counted in `ErrorCount`, then gone |
+| JetStream | acknowledged after the body is stored and its reference published | refused (not decodable, not a `ContentStorable`, or content the Store refuses): terminated, not redelivered; a failed store or publish: NAK, redelivered after 30 seconds (5 seconds if the handler's context ended); each is logged at error level and counted |
+
+The core NATS input is at-most-once: NATS keeps nothing to redeliver, so a refused message is lost after the log line.
+The JetStream input is at-least-once. If publishing the reference fails after the body was stored, the redelivery
+stores the body again under a new key, so one object can be left that no reference names. A delivery that reaches the
+consumer's `MaxDeliver` limit is not delivered again, and the Component reports nothing about it.
+
+### Health, Stop and the Start context
+
+- If a JetStream input's consume loop ends while the Component runs, or its durable consumer cannot be found by name,
+  `Health` reports the Component not healthy and names the input (`TestLostJetStreamInputReportsUnhealthy`,
+  `TestMemoryInputLostAtBrokerRestartStaysUnhealthy`). A check runs every five seconds. The Component does not bind the
+  input again; restarting the process is the recovery. Whether the server deleting a consumer ends the consume loop is
+  not promised (observed once with nats.go v1.54.0); the lookup by name is what catches the other cases.
+- `Stop` drains every input and waits for its running handlers to return (`TestStopJoinsHandlerAfterConnectionLoss`). If
+  `Stop`'s context ends first, the inputs stay held and a later `Stop` finishes the job
+  (`TestFailedCleanupRetainsInputsForLaterStop`).
+- The input handlers keep running after the context given to `Start` ends; only `Stop` ends them
+  (`TestStartContextEndKeepsBothLanesWriting`).
+
 ## Not here
 
 These are not in this package: the in-memory data cache and `Close` of the SemStreams original (dropped by the
-owner, [PR #432 comment][cache-ruling]),
-the component, its ports, and a way to name several Store instances in one process (left to the
-component's change; ADR-063 leaves it open).
+owner, [PR #432 comment][cache-ruling]), the SemStreams Component's raw lane (storing the wire bytes of any message
+under a generated key), its `events` output and its `api` input, and a way to name several Store instances in one
+process (ADR-063 left it open; the answer is one name, `objectstore`, per process).
 
 [cache-ruling]: https://github.com/C360Studio/semengine/pull/432#issuecomment-6446982969

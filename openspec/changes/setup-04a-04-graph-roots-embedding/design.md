@@ -182,8 +182,9 @@ path), keyed by entity ID, and the work handed to it includes the terminal callb
 - One entity's entries are processed one at a time, in the order the watch delivered them, from reading the record
   through the store write to the terminal and generated callbacks; different entities run in parallel across lanes
   (`keyed-dispatch` spec, "Same-key work runs in submit order on one lane"). Nothing here depends on the watch's
-  delivery order for one key: if the watch ever delivered M before N, N's save would be refused by the revision guard
-  and report `OutcomeDeleted` or `OutcomeSkipped`, as below. Delivery order is not promised here.
+  delivery order for one key: if the watch ever delivered M before N, N's save is checked against the record stored
+  when it runs, and is refused (reporting `OutcomeDeleted` or `OutcomeSkipped`) only when that record is generated at
+  a newer revision, as below. Delivery order is not promised here.
 - So processing and callbacks for one entity follow the order of the watch entries the Worker accepted, and each
   hop-2 save is checked against the source revision stored when the save runs: a save older than a stored generated
   record is refused, and its callback reports `OutcomeDeleted` or `OutcomeSkipped`, never `OutcomeFailed`

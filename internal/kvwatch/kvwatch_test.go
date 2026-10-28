@@ -37,3 +37,22 @@ func TestStopGivesUpOnADeliveryThatNeverCloses(t *testing.T) {
 		}
 	})
 }
+
+// stopCounter is a jetstream.KeyWatcher that counts Stop calls.
+type stopCounter struct{ stops int }
+
+func (w *stopCounter) Updates() <-chan jetstream.KeyValueEntry { return nil }
+func (w *stopCounter) Stop() error                             { w.stops++; return nil }
+
+// TestStopRefusesNilContext: a nil context is refused with an error before the watcher is touched
+// (#463); without the check Stop calls the watcher's Stop and then panics in context.WithoutCancel.
+func TestStopRefusesNilContext(t *testing.T) {
+	w := &stopCounter{}
+	err := Stop(nil, w)
+	if err == nil {
+		t.Fatal("Stop(nil, w) returned nil; want an error")
+	}
+	if w.stops != 0 {
+		t.Fatalf("watcher Stop called %d times; want 0", w.stops)
+	}
+}

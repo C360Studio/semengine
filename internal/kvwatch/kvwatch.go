@@ -32,8 +32,11 @@ var ErrDeliveryOpen = errors.New("kvwatch: the watch's delivery did not close af
 //
 // Stop returns nil, or the watch's Stop error when it says more than that the watch was already
 // gone. When the budget runs out it returns ErrDeliveryOpen, joined with the watch's Stop error if
-// there was one.
+// there was one. A nil context is refused before the watcher is touched.
 func Stop(ctx context.Context, watcher jetstream.KeyWatcher) error {
+	if ctx == nil {
+		return errors.New("kvwatch: Stop needs a non-nil context")
+	}
 	stopErr := watcher.Stop()
 	// Terminal cleanup after the caller's context has ended, so it runs detached and bounded.
 	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), DrainBudget)

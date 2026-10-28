@@ -1,6 +1,9 @@
+//go:build integration
+
 package graphingest
 
 import (
+	"context"
 	"encoding/json"
 	"sync"
 	"testing"
@@ -16,9 +19,10 @@ import (
 // reads the bucket and repopulates the cache; CreateEntity invalidates its key. Those are
 // the three cache uses D7 lists.
 //
-// The readers start once Stop is under way (it has drained the consumer and waits for
-// it to report closed, so the cache is neither closed nor cleared yet), and the test then
-// lets Stop finish while they run. Nothing orders a reader's use of the cache handle
+// The readers start once Stop is under way (its release has begun, and its cleanup waits
+// for a consume callback the test holds, so the cache is neither closed nor cleared yet),
+// and the test then lets Stop finish while they run. The input is a real consumer
+// (bindHeldInput, lifecycle_owner_test.go); the entity bucket is the mock. Nothing orders a reader's use of the cache handle
 // against Stop's clear, on purpose: a channel between them would be a happens-before
 // edge, and the race detector reports only accesses no such edge orders. Every
 // interleaving of an unsynchronized read and the clear is a race, so at the base this
@@ -27,7 +31,10 @@ import (
 //
 // spec: graph-ingest-recovery / The entity cache stays usable through Stop
 func TestEntityCacheUseDuringStop(t *testing.T) {
-	c := createTestComponentWithMockKV(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	c, pause := newFixtureInputComponent(t)
+	c.entityBucket = c.natsClient.NewKVStore(newMockKVBucket())
 
 	// The cache initStorage builds, with its expiry sweep; Stop's cleanup closes it.
 	entityCache, err := cache.NewFromConfig[graph.EntityState](t.Context(), cache.Config{
@@ -64,16 +71,13 @@ func TestEntityCacheUseDuringStop(t *testing.T) {
 		t.Fatalf("warm the cache: %v", err)
 	}
 
-	consumer := &graphIngestLifecycleConsumeContext{
-		closed: make(chan struct{}), drainSeen: make(chan struct{}),
-	}
-	c.consumers = []graphIngestConsumerBinding{{handle: consumer}}
+	bindHeldInput(ctx, ctx, t, c, pause)
 	startGuardAcquiringNothing(t, c)
 
 	stopResult := make(chan error, 1)
-	go func() { stopResult <- c.Stop(t.Context()) }()
-	// Stop has drained the consumer and waits on its Closed; the cache is still open and set.
-	<-consumer.drainSeen
+	go func() { stopResult <- c.Stop(ctx) }()
+	// Stop's release has begun and waits for the held callback; the cache is still open and set.
+	awaitReleaseBegun(ctx, t, c)
 
 	request, err := json.Marshal(graph.EntityBatchRequest{IDs: []string{cachedID, missedID}})
 	if err != nil {
@@ -96,7 +100,7 @@ func TestEntityCacheUseDuringStop(t *testing.T) {
 	readers.Go(func() {
 		createErr = c.CreateEntity(t.Context(), newTestEntity(createdID))
 	})
-	close(consumer.closed) // Stop now closes and clears the cache while the readers run.
+	pause.Release() // Stop now closes and clears the cache while the readers run.
 
 	readers.Wait() // orders the reads of batch, batchErr and createErr below
 	if err := <-stopResult; err != nil {

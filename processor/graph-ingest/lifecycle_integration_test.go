@@ -158,8 +158,8 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 		if len(stopped.Unresolved) != 0 {
 			t.Errorf("held after a nil Stop = %v, want nothing", stopped.Unresolved)
 		}
-		if stopped.Calls["consumer drain"] != binds || stopped.Calls["consumer stop"] != 0 {
-			t.Errorf("calls after Stop = %v, want one drain per bound consumer and no force stop", stopped.Calls)
+		if stopped.Calls["consumer drain"] != binds {
+			t.Errorf("calls after Stop = %v, want one drain per bound consumer", stopped.Calls)
 		}
 	})
 }

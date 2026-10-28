@@ -2,11 +2,8 @@ package graphingest
 
 import (
 	"context"
-	"maps"
-	"sync"
 
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
-	"github.com/nats-io/nats.go/jetstream"
 )
 
 // suiteOwner adapts Component to the lifecycle suite (lifecycle-suite, "Observe adapter
@@ -20,48 +17,48 @@ import (
 // call on it either changes its state or returns before reading it. The suite's checks
 // observe it through Start and Stop, as design D13 states it.
 //
-// Calls counts the consumers a started Component holds and the Drain and Stop calls it
-// makes on them: after a Start that returned nil, Start wraps each handle in c.consumers,
-// which only release reads (fix-301 design D2, "Suite adapter"). A failed Start's binds
-// and its rollback's drains are not counted. Request subscriptions, the pool's Shutdown
-// and the cache's Close are not counted; their handles are listed under Unresolved until
-// a cleanup succeeds.
+// Calls counts the consumers a started Component holds ("consumer bind") and the Drain
+// calls cleanup has issued on them ("consumer drain", each binding's drainIssued): after a
+// Start that returned nil, suiteOwner.Start keeps the Component's bindings, which cleanup marks in
+// place
+// (storage/objectstore reads drainIssued the same way). The handles are not wrapped:
+// cleanup waits for them through natsclient's WaitConsumerHandlers, which refuses a handle
+// its client did not return (#441). A failed Start's binds and its rollback's drains are
+// not counted. No production code calls Stop on a consumer handle, so none is counted.
+// Request subscriptions, the pool's Shutdown and the cache's Close are not counted; their
+// handles are listed under Unresolved until a cleanup succeeds.
 type suiteOwner struct {
 	c     *Component
-	mu    sync.Mutex
-	calls map[string]int
+	bound []graphIngestConsumerBinding
 }
 
 func newSuiteOwner(c *Component) *suiteOwner {
-	return &suiteOwner{c: c, calls: map[string]int{}}
+	return &suiteOwner{c: c}
 }
 
-func (o *suiteOwner) count(op string) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	o.calls[op]++
-}
-
-// Start starts the Component and, when Start returned nil, wraps each consumer handle it
-// holds. Start has returned, so nothing else reads or writes c.consumers until Stop.
+// Start starts the Component and, when Start returned nil, keeps the consumer bindings it
+// holds. Start has returned, so nothing else writes c.consumers until Stop, which marks
+// these bindings in place and clears c.consumers only once its cleanup succeeded.
 func (o *suiteOwner) Start(ctx context.Context) error {
 	if err := o.c.Start(ctx); err != nil {
 		return err
 	}
-	for index := range o.c.consumers {
-		binding := &o.c.consumers[index]
-		binding.handle = &countedConsumeContext{ConsumeContext: binding.handle, count: o.count}
-		o.count("consumer bind")
-	}
+	o.bound = o.c.consumers
 	return nil
 }
 
 func (o *suiteOwner) Stop(ctx context.Context) error { return o.c.Stop(ctx) }
 
 func (o *suiteOwner) Observe() lifecycletest.Observation {
-	o.mu.Lock()
-	calls := maps.Clone(o.calls)
-	o.mu.Unlock()
+	calls := map[string]int{}
+	if len(o.bound) > 0 {
+		calls["consumer bind"] = len(o.bound)
+	}
+	for _, binding := range o.bound {
+		if binding.drainIssued {
+			calls["consumer drain"]++
+		}
+	}
 
 	// The suite observes after a Start or Stop has returned to it, so these reads need no
 	// lock; only a call that overran its bound is observed while it still runs, and that
@@ -112,20 +109,4 @@ func isClosed(done <-chan struct{}) bool {
 	default:
 		return false
 	}
-}
-
-// countedConsumeContext counts the cleanup calls the Component makes on one consumer.
-type countedConsumeContext struct {
-	jetstream.ConsumeContext
-	count func(string)
-}
-
-func (h *countedConsumeContext) Drain() {
-	h.count("consumer drain")
-	h.ConsumeContext.Drain()
-}
-
-func (h *countedConsumeContext) Stop() {
-	h.count("consumer stop")
-	h.ConsumeContext.Stop()
 }

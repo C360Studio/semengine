@@ -1,16 +1,105 @@
+//go:build integration
+
 package graphingest
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"slices"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/internal/dispatch"
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/pkg/errs"
 )
+
+// The tests in this file, and the Stop tests in discoverable_reads_test.go,
+// entity_cache_stop_test.go and test_owner_integration_test.go, put a running component's
+// handles in place by hand, except its JetStream input: cleanup waits for that through
+// natsclient's WaitConsumerHandlers, which refuses a handle its client did not return
+// (#441), so the input is a real consumer on the package's fixture server, bound as Start
+// binds it. A consume callback held on the poison warning stands for a consumer still open.
+
+// newFixtureInputComponent builds graph-ingest with its default configuration on a client
+// of its own on the package's fixture server, with a logger that holds the goroutine
+// logging the poison warning until the returned pause is released. Every other record is
+// dropped.
+func newFixtureInputComponent(t *testing.T) (*Component, *pauseOnRecord) {
+	t.Helper()
+	client := newFixtureClient(t, entityStream)
+	pause := newPauseOnRecord("graph-ingest: poison message; terminating")
+	// Registered after the client's own cleanup, so it runs first: closing the client
+	// joins a callback still held.
+	t.Cleanup(pause.Release)
+	deps := testDependencies(t, client)
+	deps.Logger = slog.New(pause)
+	configJSON, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
+	created, err := CreateGraphIngest(configJSON, deps)
+	if err != nil {
+		t.Fatalf("CreateGraphIngest: %v", err)
+	}
+	return created.(*Component), pause
+}
+
+// bindHeldInput binds c's input as Start does (setupSubscriptions, submitting to
+// c.ingestPool under submitCtx), publishes one message the callback cannot decode, and
+// returns the input's handle once that callback is held on the poison warning. Only
+// pause.Release lets it return; a poison message is never submitted.
+func bindHeldInput(ctx, submitCtx context.Context, t *testing.T, c *Component, pause *pauseOnRecord) jetstream.ConsumeContext {
+	t.Helper()
+	if err := c.setupSubscriptions(ctx, submitCtx); err != nil {
+		t.Fatalf("bind the input: %v", err)
+	}
+	if len(c.consumers) != 1 {
+		t.Fatalf("bound %d inputs, want 1", len(c.consumers))
+	}
+	if err := c.natsClient.PublishToStream(ctx, "entity.poison", []byte("not a message")); err != nil {
+		t.Fatalf("publish the poison message: %v", err)
+	}
+	pause.awaitEntered(ctx, t, 30*time.Second)
+	return c.consumers[0].handle
+}
+
+// handlersReturned reports, without waiting, whether delivery on handle has ended and
+// every callback of it has returned: WaitConsumerHandlers under a context that has already
+// ended returns nil only then.
+func handlersReturned(t *testing.T, c *Component, handle jetstream.ConsumeContext) bool {
+	ended, end := context.WithCancel(t.Context())
+	end()
+	return c.natsClient.WaitConsumerHandlers(ended, handle) == nil
+}
+
+// awaitReleaseBegun waits until c's Health reports "stopped": the shell clears running
+// as it begins release, so a Stop running on another goroutine has begun its cleanup.
+// Each Health read must return within readBound; one that does not fails the test.
+func awaitReleaseBegun(ctx context.Context, t *testing.T, c *Component) {
+	t.Helper()
+	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	const blocked = "blocked"
+	status, err := probe.Await(waitCtx, func(context.Context) (string, error) {
+		health, ok := readWithin(t, "Health while Stop begins", c.Health)
+		if !ok {
+			return blocked, nil
+		}
+		return health.Status, nil
+	}, func(status string) bool { return status == "stopped" || status == blocked })
+	if err != nil {
+		t.Fatalf("Stop never began its release: %v", err)
+	}
+	if status == blocked {
+		t.FailNow()
+	}
+}
 
 type graphIngestLifecycleCoreSubscription struct {
 	drainSeen chan struct{}
@@ -22,11 +111,15 @@ func (s *graphIngestLifecycleCoreSubscription) Drain(context.Context) error {
 	return nil
 }
 
+// TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder: Stop keeps submission,
+// pool and readiness authority until every consume callback has returned, and drains the
+// core subscriptions only after the keyed pool completed the work it admitted. The input's
+// callback is held; each cancel cleanup calls checks, when it runs, that the callback has
+// returned (handlersReturned).
 func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
-	consumer := &graphIngestLifecycleConsumeContext{
-		closed: make(chan struct{}), drainSeen: make(chan struct{}),
-	}
-	coreSub := &graphIngestLifecycleCoreSubscription{drainSeen: make(chan struct{})}
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	owner, pause := newFixtureInputComponent(t)
 	processEntered := make(chan struct{})
 	releaseProcess := make(chan struct{})
 	processDone := make(chan struct{})
@@ -54,35 +147,38 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 
 	runCtx, runCancel := context.WithCancel(t.Context())
 	submitCtx, submitCancel := context.WithCancel(runCtx)
-	owner := createTestComponent(t)
 	owner.cancel = runCancel
 	owner.ingestPool = pool
-	owner.ingestPoolCancel = poolCancel
-	owner.ingestSubmitCancel = submitCancel
-	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
+	handle := bindHeldInput(ctx, submitCtx, t, owner, pause)
+	owner.ingestSubmitCancel = func() {
+		if !handlersReturned(t, owner, handle) {
+			t.Error("submission authority canceled while a consume callback still runs")
+		}
+		if got := owner.boundConsumerSnapshot(); len(got) != 1 {
+			t.Errorf("readiness observation removed before the consume callbacks returned: %v", got)
+		}
+		submitCancel()
+	}
+	owner.ingestPoolCancel = func() {
+		if !handlersReturned(t, owner, handle) {
+			t.Error("pool authority canceled while a consume callback still runs")
+		}
+		poolCancel()
+	}
+	coreSub := &graphIngestLifecycleCoreSubscription{drainSeen: make(chan struct{})}
 	owner.subscriptions = []graphIngestCoreSubscription{coreSub}
-	owner.boundConsumers = []boundConsumer{{stream: "ENTITY", name: "graph-ingest-entity"}}
 	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)
 
 	stopResult := make(chan error, 1)
-	go func() { stopResult <- owner.Stop(t.Context()) }()
-	<-consumer.drainSeen
-	if err := submitCtx.Err(); err != nil {
-		t.Fatalf("submission authority canceled before native Closed: %v", err)
-	}
-	if err := poolCtx.Err(); err != nil {
-		t.Fatalf("pool authority canceled before native Closed: %v", err)
-	}
-	if got := owner.boundConsumerSnapshot(); len(got) != 1 {
-		t.Fatalf("readiness observation removed before native Closed: %v", got)
-	}
+	go func() { stopResult <- owner.Stop(ctx) }()
+	awaitReleaseBegun(ctx, t, owner)
 	select {
 	case <-coreSub.drainSeen:
-		t.Fatal("core subscription drained before JetStream Closed and keyed settlement")
+		t.Fatal("core subscription drained while a consume callback still runs")
 	default:
 	}
 
-	close(consumer.closed)
+	pause.Release()
 	<-submitCtx.Done()
 	select {
 	case <-coreSub.drainSeen:
@@ -95,8 +191,8 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 	if err := <-stopResult; err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
-	if consumer.drains.Load() != 1 {
-		t.Fatalf("native Drain calls = %d, want 1", consumer.drains.Load())
+	if !handlersReturned(t, owner, handle) {
+		t.Fatal("Stop returned nil before the input's delivery ended")
 	}
 	if !errors.Is(runCtx.Err(), context.Canceled) {
 		t.Fatalf("runtime context after Stop = %v, want canceled", runCtx.Err())
@@ -113,30 +209,36 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 // could not release on record, and a later Stop that can complete the cleanup returns nil
 // and leaves nothing. What is held is read through the suite's adapter, suiteOwner.
 //
-// The guard is reached through its Start (design D22): a start function that fails, and a
-// rollback that is the component's own release under a context that has already ended,
-// as a rollback budget that expires before the consumer reports Closed would leave it.
-// The guard runs the one cleanup Start was given, so that cleanup fails on its first
-// call, the rollback, and runs release with the later Stop's context after that.
+// The guard is reached through its Start (design D22): a start function that binds the
+// input and fails, and a rollback that is the component's own release under a context
+// that has already ended, as a rollback budget that expires before the input's callbacks
+// return would leave it. The guard runs the one cleanup Start was given, so that cleanup
+// fails on its first call, the rollback, and runs release with the later Stop's context
+// after that. As storage/objectstore's TestFailedCleanupRetainsInputsForLaterStop does,
+// the input is a real consumer bound as Start binds it.
 func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T) {
-	consumer := &graphIngestLifecycleConsumeContext{
-		closed: make(chan struct{}), drainSeen: make(chan struct{}),
-	}
-	runCtx, runCancel := context.WithCancel(t.Context())
-	component := createTestComponent(t)            // its NATS client is never connected
-	if err := component.Initialize(); err != nil { // so Start reaches the guard (design D13)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	component, _ := newFixtureInputComponent(t)
+	if err := component.Initialize(); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
-	component.cancel = runCancel
-	component.consumers = []graphIngestConsumerBinding{{handle: consumer}}
+	runCtx, runCancel := context.WithCancel(t.Context())
 	owner := newSuiteOwner(component)
 
 	errStart := errors.New("start fails after acquiring")
 	expired, expire := context.WithCancel(t.Context())
 	expire()
 	rolledBack := false // the guard runs the cleanup one call at a time
-	err := component.lifecycle.Start(t.Context(),
-		func(context.Context) error { return errStart },
+	err := component.lifecycle.Start(ctx,
+		func(ctx context.Context) error {
+			component.cancel = runCancel
+			// Nothing is published to the input, so its callback never runs and needs no pool.
+			if err := component.setupSubscriptions(ctx, runCtx); err != nil {
+				return err
+			}
+			return errStart
+		},
 		func(ctx context.Context) error {
 			if !rolledBack { // the rollback: release under the ended context fails
 				rolledBack = true
@@ -147,12 +249,12 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 	if !errors.Is(err, errStart) || !errors.Is(err, context.Canceled) {
 		t.Fatalf("failed Start whose cleanup fails = %v, want the start failure and context.Canceled", err)
 	}
-	<-consumer.drainSeen
-	if got, want := owner.Observe().Unresolved, []string{"runtime cancel", "consumers"}; !slices.Equal(got, want) {
+	want := []string{"runtime cancel", "consumers", "readiness bound consumers"}
+	if got := owner.Observe().Unresolved; !slices.Equal(got, want) {
 		t.Fatalf("held after the failed cleanup = %v, want %v", got, want)
 	}
-	if consumer.drains.Load() != 1 {
-		t.Fatalf("native Drain calls after the failed cleanup = %d, want 1", consumer.drains.Load())
+	if !component.consumers[0].drainIssued {
+		t.Fatal("the failed cleanup issued no Drain on the input")
 	}
 	if !errors.Is(runCtx.Err(), context.Canceled) {
 		t.Fatalf("failed cleanup runtime context = %v, want canceled", runCtx.Err())
@@ -161,42 +263,42 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 		t.Fatalf("Start while cleanup pending error = %v, want ErrAlreadyStarted", err)
 	}
 
-	close(consumer.closed)
-	if err := owner.Stop(t.Context()); err != nil {
+	stopCtx, stopCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer stopCancel()
+	if err := owner.Stop(stopCtx); err != nil {
 		t.Fatalf("later Stop: %v", err)
 	}
 	if got := owner.Observe().Unresolved; len(got) != 0 {
 		t.Fatalf("held after the later Stop = %v, want nothing", got)
 	}
-	if consumer.drains.Load() != 1 {
-		t.Fatalf("native Drain replayed: calls=%d", consumer.drains.Load())
-	}
-	if err := owner.Stop(t.Context()); err != nil {
+	if err := owner.Stop(stopCtx); err != nil {
 		t.Fatalf("repeated terminal Stop: %v", err)
 	}
 }
 
 // TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay is the pin's
 // TestLifecycleOwnerRunningDeadlineIsTerminalWithoutReplay, inverted (design D22): a
-// running owner whose Stop fails during the drain keeps its handles, and the next Stop
-// runs cleanup again and returns its result. At the pin the failed Stop cleared the
-// handles and the next Stop returned nil with the consumer still open; under design
-// D13 only a cleanup that succeeded clears them. The drain is still issued once.
+// running owner whose Stop context ends while it waits for the input's callback keeps its
+// handles, and the next Stop runs cleanup again and returns its result. At the pin the
+// failed Stop cleared the handles and the next Stop returned nil with the consumer still
+// open; under design D13 only a cleanup that succeeded clears them. The failed Stop
+// records its Drain (drainIssued), so the next one does not issue it again; a second
+// Drain on a real handle changes nothing this test can see (notes/2.2.md of
+// fix-441-graph-ingest-stop-join).
 func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
-	consumer := &graphIngestLifecycleConsumeContext{
-		closed: make(chan struct{}), drainSeen: make(chan struct{}),
-	}
-	owner := createTestComponent(t)            // its NATS client is never connected
-	if err := owner.Initialize(); err != nil { // so Start reaches the guard (design D13)
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	owner, pause := newFixtureInputComponent(t)
+	if err := owner.Initialize(); err != nil {
 		t.Fatalf("Initialize: %v", err)
 	}
 	owner.cancel = func() {}
-	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
+	bindHeldInput(ctx, ctx, t, owner, pause)
 	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)
-	stopCtx, expire := context.WithCancel(t.Context())
+	stopCtx, expire := context.WithCancel(ctx)
 	stopResult := make(chan error, 1)
 	go func() { stopResult <- owner.Stop(stopCtx) }()
-	<-consumer.drainSeen
+	awaitReleaseBegun(ctx, t, owner)
 	expire()
 	if err := <-stopResult; !errors.Is(err, context.Canceled) {
 		t.Fatalf("deadline Stop error = %v, want context.Canceled", err)
@@ -205,73 +307,21 @@ func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
 		t.Fatalf("deadline Stop dropped the handle it failed to close: consumers=%d", len(owner.consumers))
 	}
 
-	// The next Stop runs cleanup again; with the consumer closed it succeeds and
+	// The next Stop runs cleanup again; with the callback returned it succeeds and
 	// clears the handles.
-	close(consumer.closed)
-	if err := owner.Stop(t.Context()); err != nil {
-		t.Fatalf("next Stop after the consumer closed: %v", err)
+	pause.Release()
+	nextCtx, nextCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer nextCancel()
+	if err := owner.Stop(nextCtx); err != nil {
+		t.Fatalf("next Stop after the callback returned: %v", err)
 	}
 	if len(owner.consumers) != 0 {
 		t.Fatalf("next Stop did not run cleanup: consumers=%d", len(owner.consumers))
 	}
-	if consumer.drains.Load() != 1 {
-		t.Fatalf("native Drain replayed: calls=%d", consumer.drains.Load())
-	}
-	if err := owner.Stop(t.Context()); err != nil {
+	if err := owner.Stop(nextCtx); err != nil {
 		t.Fatalf("repeated Stop after a completed one: %v", err)
 	}
 	if err := owner.Start(t.Context()); !errors.Is(err, errs.ErrAlreadyStarted) {
 		t.Fatalf("restart after Stop error = %v, want ErrAlreadyStarted", err)
-	}
-}
-
-// TestLifecycleOwnerStopBeforeStartIsTerminal reads, at the pin, lifecycleUsed after the
-// refused Start and after the refused Stop(nil). The guard keeps its state to itself
-// (design D22), so each read is a probe, assertGuardUnused, which uses the guard up: each
-// probe runs on a fresh component that repeats the steps before it. The components passed
-// Initialize, so Start reaches the guard (design D13).
-func TestLifecycleOwnerStopBeforeStartIsTerminal(t *testing.T) {
-	newOwner := func() *Component {
-		owner := createTestComponent(t)
-		if err := owner.Initialize(); err != nil {
-			t.Fatalf("Initialize: %v", err)
-		}
-		return owner
-	}
-	canceled, cancel := context.WithCancel(t.Context())
-	cancel()
-	startCanceled := func(owner *Component) {
-		t.Helper()
-		if err := owner.Start(canceled); err == nil {
-			t.Fatal("pre-canceled Start succeeded")
-		}
-	}
-	stopNil := func(owner *Component) {
-		t.Helper()
-		if err := owner.Stop(nil); err == nil {
-			t.Fatal("Stop(nil) succeeded")
-		}
-	}
-
-	owner := newOwner()
-	startCanceled(owner)
-	assertGuardUnused(t, owner) // the pre-canceled Start consumed no lifecycle authority
-
-	owner = newOwner()
-	startCanceled(owner)
-	stopNil(owner)
-	assertGuardUnused(t, owner) // Stop(nil) consumed no lifecycle authority
-
-	owner = newOwner()
-	startCanceled(owner)
-	stopNil(owner)
-	if err := owner.Stop(t.Context()); err != nil {
-		t.Fatalf("Stop before Start: %v", err)
-	}
-	if err := owner.Start(t.Context()); !errors.Is(err, errs.ErrAlreadyStarted) {
-		t.Fatalf("Start after terminal Stop error = %v, want ErrAlreadyStarted", err)
-	}
-	if err := owner.Stop(t.Context()); err != nil {
-		t.Fatalf("repeated completed Stop: %v", err)
 	}
 }

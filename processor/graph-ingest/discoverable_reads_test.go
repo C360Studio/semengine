@@ -1,3 +1,5 @@
+//go:build integration
+
 package graphingest
 
 import (
@@ -9,25 +11,24 @@ import (
 // TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop proves graph-ingest's side of
 // component.LifecycleComponent's read line (design D2, "No wait for readers"): Health and
 // DataFlow return while the component's own Stop is still running, and again after it
-// returned, each reporting a stopped component. Stop is held open by the consumer fixture
-// of TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder: the shell clears running
-// as release begins, the cleanup drains the consumer, and then waits for its Closed, which
-// the test holds. On today's tree the test passes; it is shown able to fail by mutation
-// row M7 of design D10 (the shell holding its lock across start and cleanup), under which
-// Health does not return within readBound.
+// returned, each reporting a stopped component. Stop is held open by a consume callback
+// held on the poison warning (bindHeldInput, lifecycle_owner_test.go): the shell clears
+// running as release begins, and the cleanup then waits for that callback, which the test
+// holds. On today's tree the test passes; it is shown able to fail by mutation row M7 of
+// design D10 (the shell holding its lock across start and cleanup), under which Health
+// does not return within readBound.
 func TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop(t *testing.T) {
-	consumer := &graphIngestLifecycleConsumeContext{
-		closed: make(chan struct{}), drainSeen: make(chan struct{}),
-	}
+	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancel()
+	owner, pause := newFixtureInputComponent(t)
 	runCtx, runCancel := context.WithCancel(t.Context())
-	owner := createTestComponent(t)
 	// Sixty messages: while running, DataFlow reports a rate above zero, so the zero rate
 	// after release began is a change.
 	for range 60 {
 		owner.lifecycle.CountInput(0)
 	}
 	owner.cancel = runCancel
-	owner.consumers = []graphIngestConsumerBinding{{handle: consumer}}
+	bindHeldInput(ctx, ctx, t, owner, pause)
 	startGuardAcquiringNothing(t, owner)
 
 	if health := owner.Health(); !health.Healthy || health.Status != "running" {
@@ -39,17 +40,17 @@ func TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop(t *testing.T) {
 	}
 
 	stopResult := make(chan error, 1)
-	go func() { stopResult <- owner.Stop(t.Context()) }()
-	<-consumer.drainSeen // release has cleared running; cleanup now waits for Closed
+	go func() { stopResult <- owner.Stop(ctx) }()
+	awaitReleaseBegun(ctx, t, owner) // release has cleared running; cleanup waits for the held callback
 
 	assertStoppedReads(t, owner, "during Stop")
 	select {
 	case err := <-stopResult:
-		t.Fatalf("Stop returned %v before the consumer reported Closed; the reads did not run during Stop", err)
+		t.Fatalf("Stop returned %v while a consume callback is held; the reads did not run during Stop", err)
 	default:
 	}
 
-	close(consumer.closed)
+	pause.Release()
 	if err := <-stopResult; err != nil {
 		t.Fatalf("Stop: %v", err)
 	}

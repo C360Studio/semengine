@@ -11,10 +11,21 @@ pinned once as `v0.3.3` in `.github/workflows/ci.yml` and compared by `scripts/d
 
 #### Scenario: Doctor violation fails verify
 
-- **WHEN** `ateam doctor --check` reports a violation (a missing skill adapter, a drifted base contract, a protocol
-  marker missing, `AGENTS.md` at 24,000 bytes or more, a rule-row count that differs between `AGENTS.md` and
-  `.agents/rules-index.md`)
+- **WHEN** `ateam doctor --check` reports a violation (a missing skill adapter, an ateam paragraph edited in
+  `developer.md` or `reviewer.md`, a protocol marker missing, `AGENTS.md` at 24,000 bytes or more, a rule-row count
+  that differs between `AGENTS.md` and `.agents/rules-index.md`, or hook latency above the 25 ms ceiling)
 - **THEN** `task verify` fails at the `ateam:doctor` step naming the file and the rule
+
+### Requirement: A doctor hook-latency failure is a flake
+
+`ateam doctor --check` times the hooks and treats latency above 25 ms as a violation, so `task ateam:doctor` is a
+timing-based step (measured at 13 to 14 ms on 2026-10-28). A latency failure SHALL be filed as a `class:flake` issue
+carrying the measured latency, and SHALL NOT be re-run to green.
+
+#### Scenario: Hook latency over the ceiling
+
+- **WHEN** `task verify` fails at `ateam:doctor` with hook latency above 25 ms
+- **THEN** a `class:flake` issue is filed with the measurement, and the merge gate stops until it is fixed
 
 #### Scenario: Doctor warning does not fail verify
 

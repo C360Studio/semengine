@@ -11,7 +11,7 @@ of which opens its client through `newFixtureClient` or `newFixtureClientAt`, ar
 
 ## 2. Code
 
-- [ ] 2.1 `newFixtureClientAt` opens its `Client` through `natsfixture.Open` with a package-local
+- [x] 2.1 `newFixtureClientAt` opens its `Client` through `natsfixture.Open` with a package-local
   `openFixtureClient`. Gate: `git grep -n 'client.Connect(ctx)' natsclient/test_helpers_integration_test.go` prints
   only the line inside `openFixtureClient`; `go test -race -count=1 -tags integration ./natsclient/` passes;
   `task verify` passes on a clean tree.

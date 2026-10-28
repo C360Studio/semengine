@@ -70,28 +70,6 @@ When `Start` returns, the server SHALL route each of those subjects to it from a
 - **WHEN** a responder's `Start` has returned and another connection sends a request on each listed subject
 - **THEN** every request reaches a responder; none gets "no responders"
 
-### Requirement: graph-ingest does no request work before Start completes
-
-graph-ingest's query and mutation handlers SHALL do no work until `Start` has completed. Until then a request SHALL
-get a transient error matching `errs.ErrNotStarted` from the handler, and SHALL read no entity, change no state and
-record no mutation outcome or rejection; the requester receives the refusal as a transient error with no code. This
-holds for a handler the transport runs during a registration that then fails, which a failed `Start`'s rollback has no
-subscription to drain.
-
-#### Scenario: A query during a failed Start
-
-- **WHEN** a batch query for a stored entity reaches graph-ingest's handler during a request registration that then
-  fails, and `Start` fails with that registration's error
-- **THEN** the handler returns a transient error matching `errs.ErrNotStarted` without reading the entity, the
-  rollback leaves nothing held, and a following `Stop` returns nil
-
-#### Scenario: A mutation during a failed Start
-
-- **WHEN** a create mutation reaches graph-ingest's handler during a request registration that then fails, and
-  `Start` fails with that registration's error
-- **THEN** the handler returns a transient error matching `errs.ErrNotStarted`, the entity is not stored, no mutation
-  outcome or rejection is recorded, the rollback leaves nothing held, and a following `Stop` returns nil
-
 ### Requirement: The graph root imports no transport
 
 The `graph` package SHALL import no NATS client package, directly or through its dependencies. A contract test run by
@@ -237,7 +215,7 @@ detail logs that detail, and an authority refusal logs no entity identity.
 
 Once `Start` has completed, every refusal graph-ingest's query handlers return on `graph.ingest.query.entity`,
 `graph.ingest.query.batch` and `graph.ingest.query.prefix` SHALL carry a classified code. A request that arrives
-before `Start` completes is answered as "graph-ingest does no request work before Start completes" says, with no
+before `Start` completes is answered as "graph-ingest refuses request work until Start completes" says, with no
 code. Giving a refusal a code SHALL NOT change its class.
 
 #### Scenario: A failed key listing
@@ -402,3 +380,24 @@ or whose entity was deleted, to the old entity. The reply's revision promises no
 
 - **WHEN** an entity drops alias A at revision R and graph-index has indexed through R
 - **THEN** an `alias` request for A may still answer the old entity, with `indexed_revision` at least R
+
+### Requirement: graph-ingest refuses request work until Start completes
+
+graph-ingest's query and mutation handlers SHALL do no work until `Start` has completed. Until then a request SHALL
+get a transient error matching `errs.ErrNotStarted` from the handler, and SHALL read no entity, change no state and
+record no mutation outcome or rejection; the requester receives the refusal as a transient error with no code.
+
+#### Scenario: A query before Start completes
+
+- **WHEN** a batch query for a stored entity reaches graph-ingest's handler after its query subscriptions are
+  registered and before `Start` has completed
+- **THEN** the handler returns a transient error matching `errs.ErrNotStarted` without reading the entity
+- **AND** once `Start` has completed, the same query is answered
+
+#### Scenario: A mutation before Start completes
+
+- **WHEN** a create mutation reaches graph-ingest's handler after its mutation subscriptions are registered and
+  before `Start` has completed
+- **THEN** the handler returns a transient error matching `errs.ErrNotStarted`, the entity is not stored, and no
+  mutation outcome or rejection is recorded
+- **AND** once `Start` has completed, the same mutation stores the entity

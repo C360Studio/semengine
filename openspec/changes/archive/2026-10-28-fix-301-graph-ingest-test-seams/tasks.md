@@ -43,10 +43,10 @@ Working rules for every task:
 - [x] 4.2 Delete the D3 tests and the straddle pair. Remove the four fields and their nil-checks. Run M1 and M2 with
   `task mutate:check` (`GOFLAGS=-tags=integration` for the integration-tagged not-started test) and record the results
   in `notes/4.2.md`. Gate: the D4 grep prints nothing; `task cover:check` and `task verify`.
-- [ ] 4.3 Codex code review of record at a named commit with a local `task verify`. The PR body carries
+- [x] 4.3 Codex code review of record (APPROVE at `c406734`, PR #436, 2026-10-27) at a named commit with a local `task verify`. The PR body carries
   `implemented-by: claude (opus)` and `reviewed-by: codex`. Hold: Codex code review.
 
 ## 5. Archive
 
-- [ ] 5.1 Sync the `graph-transport-boundary` delta and archive, as the last content commit. Gate:
+- [x] 5.1 Sync the `graph-transport-boundary` delta and archive, as the last content commit. Gate:
   `task spec:check` and `task docs:check`.

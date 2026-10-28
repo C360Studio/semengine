@@ -34,6 +34,18 @@ func (c *Config) Validate() error {
 	if len(c.Ports.Outputs) == 0 {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "at least one output port required")
 	}
+	// graph-ingest names each JetStream input's durable consumer from its subject
+	// (consume.go), so a declared consumer_name would be dropped; it is refused (#442).
+	for _, definition := range c.Ports.Inputs {
+		port, err := definition.Resolve(component.DirectionInput)
+		if err != nil {
+			return errs.WrapInvalid(err, "Config", "Validate", "resolve input port")
+		}
+		if js, ok := port.Config.(component.JetStreamPort); ok && js.ConsumerName != "" {
+			return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", fmt.Sprintf(
+				"check input port %q (consumer_name is not supported: graph-ingest names the consumer from the subject)", definition.Name))
+		}
+	}
 	// graph-ingest writes entity state to ENTITY_STATES only (initStorage opens it by
 	// its fixed name) and publishes nowhere else, so any other output would be
 	// declared and reported while nothing is written there (checkpoint 3 H2).

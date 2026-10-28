@@ -138,3 +138,33 @@ func TestFailedCleanupRetainsInputsForLaterStop(t *testing.T) {
 		t.Fatalf("repeated Stop: %v", err)
 	}
 }
+
+// TestHandlerJoinWaitsForRunningHandlersAndRefusesLaterOnes: the channel close returns stays open
+// while a handler enter admitted is running and closes when it exits; once close has been called
+// enter refuses; with nothing running, close's channel is closed at once, and a second close
+// returns the same channel (#439). The handler goroutine's refusal of a late delivery is this
+// refusal; no real server hands one over on demand.
+func TestHandlerJoinWaitsForRunningHandlersAndRefusesLaterOnes(t *testing.T) {
+	join := newHandlerJoin()
+	if !join.enter() {
+		t.Fatal("enter refused before close")
+	}
+	idle := join.close()
+	if isClosed(idle) {
+		t.Fatal("close's channel closed while a handler runs")
+	}
+	if join.enter() {
+		t.Fatal("enter admitted a handler after close")
+	}
+	join.exit()
+	if !isClosed(idle) {
+		t.Fatal("close's channel still open after the running handler exited")
+	}
+	if again := join.close(); again != idle {
+		t.Fatal("a second close returned another channel")
+	}
+
+	if !isClosed(newHandlerJoin().close()) {
+		t.Fatal("close with no handler running must return a closed channel")
+	}
+}

@@ -5,8 +5,14 @@
 ### Requirement: The Component's configuration is strict
 
 The objectstore Component SHALL accept only `bucket_name` and `ports`, and SHALL refuse at construction any other
-key, `data_cache` included, any output port other than `stored`, and an input with no `stored` output, each with an
-error naming it.
+key, `data_cache` included, any output port other than `stored`, an input with no `stored` output, and a JetStream
+input declaring `consumer_name`, each with an error naming it.
+
+#### Scenario: A JetStream input declaring consumer_name
+
+- **WHEN** the Component is built with a JetStream input that declares `consumer_name`
+- **THEN** construction fails naming the port and `consumer_name`
+- **AND** the test that verifies this is `TestComponentRefusesUnsupportedInputs`
 
 #### Scenario: A data_cache key
 

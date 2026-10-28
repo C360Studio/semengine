@@ -126,8 +126,9 @@ func TestComponentRefusesInputWithoutStoredOutput(t *testing.T) {
 }
 
 // TestComponentRefusesUnsupportedInputs: an input named api (the pin's removed request lane), a
-// request-reply input, two ports of one name and a port on two subjects are refused at
-// construction, each naming the port (pin TestNewComponentRejectsRemovedRequestAPIInputs).
+// request-reply input, two ports of one name, a port on two subjects and a JetStream input that
+// declares consumer_name are refused at construction, each naming the port (pin
+// TestNewComponentRejectsRemovedRequestAPIInputs).
 func TestComponentRefusesUnsupportedInputs(t *testing.T) {
 	for _, tc := range []struct{ name, inputs, want string }{
 		{"api name", `{"name": "api", "config": {"kind": "nats", "subject": "storage.objectstore.write"}}`, `"api"`},
@@ -135,6 +136,9 @@ func TestComponentRefusesUnsupportedInputs(t *testing.T) {
 		{"duplicate name", writeInput + `, {"name": "write", "config": {"kind": "nats", "subject": "storage.other"}}`, `"write"`},
 		{"two subjects", `{"name": "store_in", "config": {"kind": "jetstream", "stream_name": "MAPPED", ` +
 			`"subjects": ["mapped.a", "mapped.b"]}}`, `"store_in"`},
+		// The binding plan names the durable consumer; a declared name would be dropped (#438).
+		{"consumer name", `{"name": "store_in", "config": {"kind": "jetstream", "stream_name": "MAPPED", ` +
+			`"subjects": ["mapped.messages"], "consumer_name": "mine"}}`, `"store_in" declares consumer_name`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			raw := `{"ports": {"inputs": [` + tc.inputs + `], "outputs": [` + storedOutput + `]}}`

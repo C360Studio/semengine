@@ -2,12 +2,15 @@ package embedding
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"hash/fnv"
 	"math"
 	"strings"
 	"sync"
 	"unicode"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // stopwords contains common English words to filter from queries and documents.
@@ -137,7 +140,16 @@ func (b *BM25Embedder) Generate(ctx context.Context, texts []string) ([][]float3
 // GenerateQuery passes false. The vector math itself is identical — a document
 // is always scored against the statistics as they stood BEFORE it was observed,
 // which is exactly the read-only query case.
+//
+// A nil ctx is refused with an invalid-input error before any work.
 func (b *BM25Embedder) embed(ctx context.Context, texts []string, learn bool) ([][]float32, error) {
+	if ctx == nil {
+		method := "GenerateQuery"
+		if learn {
+			method = "Generate"
+		}
+		return nil, errs.WrapInvalid(errors.New("nil context"), "BM25Embedder", method, "missing context")
+	}
 	// Check for cancellation before expensive operation
 	select {
 	case <-ctx.Done():

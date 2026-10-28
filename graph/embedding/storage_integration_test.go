@@ -93,26 +93,219 @@ type modelRecord struct {
 	kv      uint64 // the KV revision last observed for the key (kept after removal)
 }
 
-// observe reads the key's stored record and KV revision straight from the bucket.
-func observe(t *rapid.T, ctx context.Context, kv jetstream.KeyValue, key string) (present bool, rec Record, revision uint64) {
-	entry, err := kv.Get(ctx, key)
-	if errors.Is(err, jetstream.ErrKeyNotFound) {
-		return false, Record{}, 0
-	}
-	if err != nil {
-		t.Fatalf("read %s: %v", key, err)
-	}
-	if err := json.Unmarshal(entry.Value(), &rec); err != nil {
-		t.Fatalf("decode %s: %v", key, err)
-	}
-	return true, rec, entry.Revision()
+// The calls a history makes.
+const (
+	opPending = iota
+	opGenerated
+	opFailed
+	opDelete
+	opFenced
+)
+
+// historyOp is one call: op on entity (an index into historyEntities) at source revision
+// (the saves) or, for the fenced removal, at the key's current KV revision or a stale one.
+type historyOp struct {
+	op       int
+	entity   int
+	revision uint64
+	current  bool
 }
 
-// TestRevisionGuardHistoryMatchesModel (design D3, D9): a generated sequential history of
-// up to 30 calls of SavePendingGuarded, SaveGenerated, SaveFailed, DeleteEmbedding and the
-// fenced no-text removal over two entities and source revisions 1-4, on a real bucket.
-// After every call, its result and each entity's stored status, source revision and KV
-// revision are checked against a reference model written from D3:
+var historyEntities = []string{"acme.ops.robotics.gcs.drone.h0", "acme.ops.robotics.gcs.drone.h1"}
+
+// The outcomes the model distinguishes, one per rule of design D3 and each side of its
+// boundaries. Each has a witness history in TestRevisionGuardHistoryMatchesModel.
+const (
+	outPendingSaved              = "pending saved"
+	outPendingOverNewer          = "pending saved over a newer record"
+	outPendingOverOlderGenerated = "pending saved over an older generated record"
+	outPendingRefused            = "pending refused over a newer generated record"
+	outPendingRefusedEqual       = "pending refused over generated at equal revision"
+	outGeneratedSaved            = "generated saved"
+	outGeneratedGone             = "generated refused: record gone"
+	outGeneratedSuperseded       = "generated refused: superseded"
+	outFailedSaved               = "failed saved"
+	outFailedGone                = "failed refused: record gone"
+	outFailedSuperseded          = "failed refused: superseded"
+	outFailedRefusedEqual        = "failed refused over generated at equal revision"
+	outDeleted                   = "deleted"
+	outFencedRemoved             = "fenced removal at the current revision removes"
+	outFencedStalePresent        = "fenced removal at a stale revision keeps the record"
+	outFencedAbsentCurrent       = "fenced removal of a removed key at its last revision"
+	outFencedNeverStored         = "fenced removal of a key never stored"
+)
+
+// history runs calls against one fresh EMBEDDING_INDEX bucket and the reference model.
+type history struct {
+	ctx   context.Context
+	s     *Storage
+	index jetstream.KeyValue
+	model []modelRecord
+}
+
+var historyBuckets int
+
+// newHistory creates a fresh index bucket (deleted on cleanup) for one history.
+func newHistory(t *testing.T, client *natsclient.Client, dedup *natsclient.KVStore) (*history, func() error) {
+	t.Helper()
+	historyBuckets++
+	name := fmt.Sprintf("EMB_HIST_IDX_%d", historyBuckets)
+	index := createBucket(t, client, name)
+	h := &history{
+		ctx:   t.Context(),
+		s:     NewStorage(client.NewKVStore(index), dedup),
+		index: index,
+		model: make([]modelRecord, len(historyEntities)),
+	}
+	return h, func() error { return client.DeleteKeyValueBucket(t.Context(), name) }
+}
+
+// apply makes one call, checks its result and the stored record against the model, and
+// returns the outcome it reached, or an error naming the first disagreement.
+func (h *history) apply(o historyOp) (string, error) {
+	e, m := historyEntities[o.entity], &h.model[o.entity]
+	r := o.revision
+	wrote := false
+	var outcome string
+	switch o.op {
+	case opPending:
+		saved, err := h.s.SavePendingGuarded(h.ctx, &Record{EntityID: e, SourceText: "t", SourceRevision: r})
+		if err != nil {
+			return "", fmt.Errorf("SavePendingGuarded(%s, %d): %w", e, r, err)
+		}
+		want := !(m.present && m.status == StatusGenerated && m.source >= r)
+		if saved != want {
+			return "", fmt.Errorf("SavePendingGuarded(%s, %d) saved = %v, model says %v (stored %+v)", e, r, saved, want, *m)
+		}
+		switch {
+		case want && m.present && m.status == StatusGenerated:
+			outcome = outPendingOverOlderGenerated
+		case want && m.present && m.source > r:
+			outcome = outPendingOverNewer
+		case want:
+			outcome = outPendingSaved
+		case m.source == r:
+			outcome = outPendingRefusedEqual
+		default:
+			outcome = outPendingRefused
+		}
+		if want {
+			m.present, m.status, m.source, wrote = true, StatusPending, r, true
+		}
+	case opGenerated, opFailed:
+		var err error
+		status := StatusGenerated
+		if o.op == opGenerated {
+			err = h.s.SaveGenerated(h.ctx, e, []float32{float32(r)}, "m", 1, "h", r)
+		} else {
+			status = StatusFailed
+			err = h.s.SaveFailed(h.ctx, e, "boom", failReasonInternal, r)
+		}
+		var want error
+		switch {
+		case !m.present:
+			want = ErrRecordGone
+			outcome = map[Status]string{StatusGenerated: outGeneratedGone, StatusFailed: outFailedGone}[status]
+		case m.source > r:
+			want = ErrSupersededRevision
+			outcome = map[Status]string{StatusGenerated: outGeneratedSuperseded, StatusFailed: outFailedSuperseded}[status]
+		case status == StatusFailed && m.status == StatusGenerated && m.source == r:
+			want = ErrSupersededRevision
+			outcome = outFailedRefusedEqual
+		default:
+			outcome = map[Status]string{StatusGenerated: outGeneratedSaved, StatusFailed: outFailedSaved}[status]
+		}
+		if (want == nil && err != nil) || (want != nil && !errors.Is(err, want)) {
+			return "", fmt.Errorf("save %s(%s, %d) = %v, model says %v (stored %+v)", status, e, r, err, want, *m)
+		}
+		if want == nil {
+			m.status, m.source, wrote = status, r, true
+		}
+	case opDelete:
+		if err := h.s.DeleteEmbedding(h.ctx, e); err != nil {
+			return "", fmt.Errorf("DeleteEmbedding(%s): %w", e, err)
+		}
+		m.present, outcome = false, outDeleted
+	case opFenced:
+		// A stale revision: one past the current one while the key is present (never equal
+		// to it); while it is absent, the revision of its last stored record (the delete
+		// marker after it is newer), or for a key never stored one no write reaches. A guess
+		// at a delete marker's own revision is not a stale read: the Worker's revision comes
+		// from a stored record.
+		revision := m.kv + 1
+		switch {
+		case m.present && o.current:
+			revision, outcome = m.kv, outFencedRemoved
+		case m.present:
+			outcome = outFencedStalePresent
+		case m.kv > 0:
+			revision, outcome = m.kv, outFencedAbsentCurrent
+		default:
+			revision, outcome = 1<<40, outFencedNeverStored
+		}
+		removed, err := h.s.deleteAtRevision(h.ctx, e, revision)
+		if err != nil {
+			return "", fmt.Errorf("deleteAtRevision(%s, %d): %w", e, revision, err)
+		}
+		want := m.present && o.current
+		if removed != want {
+			return "", fmt.Errorf("deleteAtRevision(%s, %d) removed = %v, model says %v (stored %+v)", e, revision, removed, want, *m)
+		}
+		if want {
+			m.present = false
+		}
+	}
+	return outcome, h.check(o.entity, wrote)
+}
+
+// check compares the entity's stored record and KV revision, read straight from the
+// bucket, with the model.
+func (h *history) check(entity int, wrote bool) error {
+	e, m := historyEntities[entity], &h.model[entity]
+	entry, err := h.index.Get(h.ctx, e)
+	if errors.Is(err, jetstream.ErrKeyNotFound) {
+		if m.present {
+			return fmt.Errorf("%s is absent, model says present (%+v)", e, *m)
+		}
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read %s: %w", e, err)
+	}
+	if !m.present {
+		return fmt.Errorf("%s is present, model says absent", e)
+	}
+	var rec Record
+	if err := json.Unmarshal(entry.Value(), &rec); err != nil {
+		return fmt.Errorf("decode %s: %w", e, err)
+	}
+	if rec.Status != m.status || rec.SourceRevision != m.source {
+		return fmt.Errorf("%s stored (%s, %d), model says (%s, %d)", e, rec.Status, rec.SourceRevision, m.status, m.source)
+	}
+	revision := entry.Revision()
+	if wrote && revision <= m.kv {
+		return fmt.Errorf("%s written but its KV revision %d did not move past %d", e, revision, m.kv)
+	}
+	if !wrote && revision != m.kv {
+		return fmt.Errorf("%s not written but its KV revision moved from %d to %d", e, m.kv, revision)
+	}
+	m.kv = revision
+	return nil
+}
+
+func pending(e int, r uint64) historyOp   { return historyOp{op: opPending, entity: e, revision: r} }
+func generated(e int, r uint64) historyOp { return historyOp{op: opGenerated, entity: e, revision: r} }
+func failed(e int, r uint64) historyOp    { return historyOp{op: opFailed, entity: e, revision: r} }
+func deleted(e int) historyOp             { return historyOp{op: opDelete, entity: e} }
+func fenced(e int, current bool) historyOp {
+	return historyOp{op: opFenced, entity: e, current: current}
+}
+
+// TestRevisionGuardHistoryMatchesModel (design D3, D9): sequential histories of
+// SavePendingGuarded, SaveGenerated, SaveFailed, DeleteEmbedding and the fenced no-text
+// removal over two entities and source revisions 1-4, on a real bucket. After every call,
+// its result and the entity's stored status, source revision and KV revision are checked
+// against a reference model written from D3:
 //
 //   - pending is refused only over a generated record at the same or a newer source
 //     revision (an older pending record replaces a newer pending or failed one);
@@ -122,169 +315,84 @@ func observe(t *rapid.T, ctx context.Context, kv jetstream.KeyValue, key string)
 //   - the fenced removal removes only at the KV revision it is given, and otherwise
 //     removes nothing and reports no error;
 //   - a refused call leaves the key's KV revision where it was; a write moves it forward.
+//
+// Coverage of every rule comes from the witnesses: one fixed history per outcome, whose
+// last call must reach it. The generated histories (Rapid, up to 30 calls) then explore
+// orderings against the same model and assert no coverage of their own, so no seed can
+// fail for lack of reach (#466; -rapid.seed=203 did, at 50 checks).
 func TestRevisionGuardHistoryMatchesModel(t *testing.T) {
 	client := fixtureClient(t)
-	ctx := t.Context()
-	entities := []string{"acme.ops.robotics.gcs.drone.h0", "acme.ops.robotics.gcs.drone.h1"}
-	runs := 0
-	// reached counts each outcome the model distinguishes, so the test can show every
-	// branch of D3's rules was exercised and not only generated.
-	reached := map[string]int{}
+	dedup := client.NewKVStore(createBucket(t, client, "EMB_HIST_DEDUP"))
+
+	witnesses := []struct {
+		want string
+		ops  []historyOp
+	}{
+		{outPendingSaved, []historyOp{pending(0, 1)}},
+		{outPendingOverNewer, []historyOp{pending(0, 3), pending(0, 1)}},
+		{outPendingOverOlderGenerated, []historyOp{pending(0, 1), generated(0, 1), pending(0, 2)}},
+		{outPendingRefused, []historyOp{pending(0, 2), generated(0, 2), pending(0, 1)}},
+		{outPendingRefusedEqual, []historyOp{pending(0, 2), generated(0, 2), pending(0, 2)}},
+		{outGeneratedSaved, []historyOp{pending(0, 1), generated(0, 1)}},
+		{outGeneratedGone, []historyOp{generated(0, 1)}},
+		{outGeneratedSuperseded, []historyOp{pending(0, 3), generated(0, 1)}},
+		{outFailedSaved, []historyOp{pending(0, 1), failed(0, 1)}},
+		{outFailedGone, []historyOp{pending(1, 1), failed(0, 1)}},
+		{outFailedSuperseded, []historyOp{pending(0, 3), failed(0, 1)}},
+		{outFailedRefusedEqual, []historyOp{pending(0, 1), generated(0, 1), failed(0, 1)}},
+		{outDeleted, []historyOp{pending(0, 1), deleted(0)}},
+		{outFencedRemoved, []historyOp{pending(0, 1), fenced(0, true)}},
+		{outFencedStalePresent, []historyOp{pending(0, 1), pending(0, 2), fenced(0, false)}},
+		{outFencedAbsentCurrent, []historyOp{pending(0, 1), deleted(0), fenced(0, true)}},
+		{outFencedNeverStored, []historyOp{deleted(0), fenced(0, true)}},
+	}
+	for _, w := range witnesses {
+		t.Run("witness/"+w.want, func(t *testing.T) {
+			h, drop := newHistory(t, client, dedup)
+			for i, o := range w.ops {
+				outcome, err := h.apply(o)
+				if err != nil {
+					t.Fatalf("call %d %+v: %v", i, o, err)
+				}
+				if i == len(w.ops)-1 && outcome != w.want {
+					t.Fatalf("the witness's last call reached %q, want %q", outcome, w.want)
+				}
+			}
+			if err := drop(); err != nil {
+				t.Fatalf("delete bucket: %v", err)
+			}
+		})
+	}
 
 	rapid.Check(t, func(rt *rapid.T) {
-		runs++
-		n := runs
-		indexName, dedupName := fmt.Sprintf("EMB_HIST_IDX_%d", n), fmt.Sprintf("EMB_HIST_DEDUP_%d", n)
-		index := createBucket(t, client, indexName)
-		dedup := createBucket(t, client, dedupName)
+		h, drop := newHistory(t, client, dedup)
 		defer func() {
-			for _, name := range []string{indexName, dedupName} {
-				if err := client.DeleteKeyValueBucket(ctx, name); err != nil {
-					rt.Errorf("delete bucket %s: %v", name, err)
-				}
+			if err := drop(); err != nil {
+				rt.Errorf("delete bucket: %v", err)
 			}
 		}()
-		s := NewStorage(client.NewKVStore(index), client.NewKVStore(dedup))
-		model := map[string]*modelRecord{entities[0]: {}, entities[1]: {}}
-
 		steps := rapid.IntRange(1, 30).Draw(rt, "steps")
 		for step := range steps {
-			e := rapid.SampledFrom(entities).Draw(rt, "entity")
-			m := model[e]
-			wrote := false
-			// Weighted so a history keeps records long enough to reach the equal-revision and
-			// newer-record rules: pending 3, generated 2, failed 2, delete 1, fenced removal 2.
-			op := []int{0, 0, 0, 1, 1, 2, 2, 3, 4, 4}[rapid.IntRange(0, 9).Draw(rt, "op")]
-			switch op {
-			case 0:
-				r := drawRevision(rt, m)
-				saved, err := s.SavePendingGuarded(ctx, &Record{EntityID: e, SourceText: "t", SourceRevision: r})
-				if err != nil {
-					rt.Fatalf("step %d: SavePendingGuarded(%s, %d): %v", step, e, r, err)
-				}
-				want := !(m.present && m.status == StatusGenerated && m.source >= r)
-				if saved != want {
-					rt.Fatalf("step %d: SavePendingGuarded(%s, %d) saved = %v, model says %v (stored %+v)", step, e, r, saved, want, *m)
-				}
-				if want {
-					if m.present && m.source > r {
-						reached["pending saved over a newer record"]++
-					}
-					if m.present && m.status == StatusGenerated {
-						reached["pending saved over an older generated record"]++
-					}
-					m.present, m.status, m.source, wrote = true, StatusPending, r, true
-					reached["pending saved"]++
-				} else {
-					reached["pending refused over generated"]++
-					if m.source == r {
-						reached["pending refused over generated at equal revision"]++
-					}
-				}
-			case 1, 2:
-				r := drawRevision(rt, m)
-				var err error
-				status := StatusGenerated
-				if op == 1 {
-					err = s.SaveGenerated(ctx, e, []float32{float32(r)}, "m", 1, "h", r)
-				} else {
-					status = StatusFailed
-					err = s.SaveFailed(ctx, e, "boom", failReasonInternal, r)
-				}
-				var want error
-				switch {
-				case !m.present:
-					want = ErrRecordGone
-				case m.source > r:
-					want = ErrSupersededRevision
-				case status == StatusFailed && m.status == StatusGenerated && m.source == r:
-					want = ErrSupersededRevision
-					reached["failed refused over generated at equal revision"]++
-				}
-				if (want == nil && err != nil) || (want != nil && !errors.Is(err, want)) {
-					rt.Fatalf("step %d: save %s(%s, %d) = %v, model says %v (stored %+v)", step, status, e, r, err, want, *m)
-				}
-				if want == nil {
-					reached[string(status)+" saved"]++
-					m.status, m.source, wrote = status, r, true
-				} else {
-					reached[fmt.Sprintf("%s refused: %v", status, want)]++
-				}
-			case 3:
-				if err := s.DeleteEmbedding(ctx, e); err != nil {
-					rt.Fatalf("step %d: DeleteEmbedding(%s): %v", step, e, err)
-				}
-				m.present = false
-				reached["deleted"]++
-			case 4:
-				current := rapid.Bool().Draw(rt, "current")
-				// A stale revision: one past the current one while the key is present (never
-				// equal to it); while it is absent, the revision of its last stored record
-				// (the delete marker after it is newer), or for a key never stored one no
-				// write in this run reaches. A guess at a delete marker's own revision is
-				// not a stale read: the Worker's revision comes from a stored record.
-				revision := m.kv + 1
-				switch {
-				case m.present && current:
-					revision = m.kv
-				case !m.present && m.kv > 0:
-					revision = m.kv
-				case !m.present:
-					revision = 1 << 40
-				}
-				removed, err := s.deleteAtRevision(ctx, e, revision)
-				if err != nil {
-					rt.Fatalf("step %d: deleteAtRevision(%s, %d): %v", step, e, revision, err)
-				}
-				want := m.present && current
-				if removed != want {
-					rt.Fatalf("step %d: deleteAtRevision(%s, %d) removed = %v, model says %v (stored %+v)", step, e, revision, removed, want, *m)
-				}
-				if want {
-					m.present = false
-				}
-				reached[fmt.Sprintf("fenced removal present=%v current=%v", m.present || want, current)]++
+			o := historyOp{entity: rapid.IntRange(0, len(historyEntities)-1).Draw(rt, "entity")}
+			// Weighted so records live long enough to meet each other: pending 3, generated 2,
+			// failed 2, delete 1, fenced removal 2.
+			o.op = []int{opPending, opPending, opPending, opGenerated, opGenerated, opFailed, opFailed,
+				opDelete, opFenced, opFenced}[rapid.IntRange(0, 9).Draw(rt, "op")]
+			switch o.op {
+			case opPending, opGenerated, opFailed:
+				o.revision = drawRevision(rt, &h.model[o.entity])
+			case opFenced:
+				o.current = rapid.Bool().Draw(rt, "current")
 			}
-
-			present, rec, revision := observe(rt, ctx, index, e)
-			if present != m.present {
-				rt.Fatalf("step %d: %s present = %v, model says %v", step, e, present, m.present)
+			if _, err := h.apply(o); err != nil {
+				rt.Fatalf("step %d %+v: %v", step, o, err)
 			}
-			if !present {
-				continue
-			}
-			if rec.Status != m.status || rec.SourceRevision != m.source {
-				rt.Fatalf("step %d: %s stored (%s, %d), model says (%s, %d)", step, e, rec.Status, rec.SourceRevision, m.status, m.source)
-			}
-			if wrote && revision <= m.kv {
-				rt.Fatalf("step %d: %s written but its KV revision %d did not move past %d", step, e, revision, m.kv)
-			}
-			if !wrote && revision != m.kv {
-				rt.Fatalf("step %d: %s not written but its KV revision moved from %d to %d", step, e, m.kv, revision)
-			}
-			m.kv = revision
 		}
 	})
-
-	t.Logf("outcomes reached: %v", reached)
-	for _, outcome := range []string{
-		"pending saved", "pending saved over a newer record", "pending refused over generated",
-		"pending saved over an older generated record", "pending refused over generated at equal revision",
-		"generated saved", "generated refused: " + ErrRecordGone.Error(), "generated refused: " + ErrSupersededRevision.Error(),
-		"failed saved", "failed refused: " + ErrRecordGone.Error(), "failed refused: " + ErrSupersededRevision.Error(),
-		"failed refused over generated at equal revision",
-		"deleted",
-		"fenced removal present=true current=true", "fenced removal present=true current=false",
-		"fenced removal present=false current=true", "fenced removal present=false current=false",
-	} {
-		if reached[outcome] == 0 {
-			t.Errorf("no generated history reached %q; the generator does not exercise that rule", outcome)
-		}
-	}
 }
 
-// drawRevision draws a source revision in 1-4, or, by construction, the stored record's own
-// revision: the equal-revision boundary D3's pending and failed rules turn on.
+// drawRevision draws a source revision in 1-4, or the stored record's own revision: the
+// equal-revision boundary D3's pending and failed rules turn on.
 func drawRevision(t *rapid.T, m *modelRecord) uint64 {
 	if m.present && rapid.Bool().Draw(t, "same revision") {
 		return m.source

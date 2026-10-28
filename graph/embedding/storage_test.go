@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // savePending writes a pending record through the one pending write the package
@@ -800,4 +802,123 @@ func sourceRevOf(r *Record) uint64 {
 		return 0
 	}
 	return r.SourceRevision
+}
+
+// countingKV is a memKV that counts every bucket call Storage can make.
+type countingKV struct {
+	*memKV
+	mu    sync.Mutex
+	count int
+}
+
+func (k *countingKV) called() {
+	k.mu.Lock()
+	k.count++
+	k.mu.Unlock()
+}
+
+func (k *countingKV) calls() int {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	return k.count
+}
+
+func (k *countingKV) Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error) {
+	k.called()
+	return k.memKV.Get(ctx, key)
+}
+
+func (k *countingKV) Put(ctx context.Context, key string, value []byte) (uint64, error) {
+	k.called()
+	return k.memKV.Put(ctx, key, value)
+}
+
+func (k *countingKV) Create(ctx context.Context, key string, value []byte, opts ...jetstream.KVCreateOpt) (uint64, error) {
+	k.called()
+	return k.memKV.Create(ctx, key, value, opts...)
+}
+
+func (k *countingKV) Update(ctx context.Context, key string, value []byte, revision uint64) (uint64, error) {
+	k.called()
+	return k.memKV.Update(ctx, key, value, revision)
+}
+
+func (k *countingKV) Delete(ctx context.Context, key string, opts ...jetstream.KVDeleteOpt) error {
+	k.called()
+	return k.memKV.Delete(ctx, key, opts...)
+}
+
+// TestStorageRefusesInvalidIdentityBeforeAnyBucketCall (#467): every entity-ID entry point
+// refuses an ID that is not a literal six-part entity ID, and every dedup-key entry point
+// a key that is not a literal KV key, with an invalid-input error and no bucket call. A
+// valid input reaches the bucket, so the count can tell the two apart.
+func TestStorageRefusesInvalidIdentityBeforeAnyBucketCall(t *testing.T) {
+	t.Parallel()
+	const valid = "acme.ops.robotics.gcs.drone.001"
+	// Six well-formed tokens, 257 bytes in all: one past types.MaxEntityIDBytes.
+	oversized := "acme.ops.robotics.gcs.drone." + strings.Repeat("a", 257-len("acme.ops.robotics.gcs.drone."))
+	badIDs := []string{"", "not-an-entity", "acme.ops.robotics.gcs.drone", "acme.ops.robotics.gcs.drone.001.x",
+		"acme.ops..gcs.drone.001", "acme.ops.robotics.gcs.drone.0*1", "acme.ops.robotics.gcs.drone._01", oversized}
+	badKeys := []string{"", "a.*", "a.>", "a..b", "a b", "." + "x", strings.Repeat("k", natsclient.MaxKVLiteralKeyBytes+1)}
+
+	entityCalls := map[string]func(ctx context.Context, s *Storage, id string) error{
+		"SavePendingGuarded": func(ctx context.Context, s *Storage, id string) error {
+			_, err := s.SavePendingGuarded(ctx, &Record{EntityID: id, SourceText: "body", SourceRevision: 1})
+			return err
+		},
+		"SaveGenerated": func(ctx context.Context, s *Storage, id string) error {
+			return s.SaveGenerated(ctx, id, []float32{1}, "m", 1, "h", 1)
+		},
+		"SaveFailed": func(ctx context.Context, s *Storage, id string) error {
+			return s.SaveFailed(ctx, id, "boom", failReasonInternal, 1)
+		},
+		"GetEmbedding": func(ctx context.Context, s *Storage, id string) error {
+			_, err := s.GetEmbedding(ctx, id)
+			return err
+		},
+		"DeleteEmbedding": func(ctx context.Context, s *Storage, id string) error {
+			return s.DeleteEmbedding(ctx, id)
+		},
+		"deleteAtRevision": func(ctx context.Context, s *Storage, id string) error {
+			_, err := s.deleteAtRevision(ctx, id, 1)
+			return err
+		},
+	}
+	keyCalls := map[string]func(ctx context.Context, s *Storage, key string) error{
+		"GetByContentHash": func(ctx context.Context, s *Storage, key string) error {
+			_, err := s.GetByContentHash(ctx, key)
+			return err
+		},
+		"SaveDedup": func(ctx context.Context, s *Storage, key string) error {
+			return s.SaveDedup(ctx, key, []float32{1}, "m", 1)
+		},
+	}
+
+	check := func(t *testing.T, name, input string, wantRefused bool, call func(ctx context.Context, s *Storage) error) {
+		t.Helper()
+		index, dedup := &countingKV{memKV: newMemKV()}, &countingKV{memKV: newMemKV()}
+		err := call(t.Context(), newTestStorage(t, index, dedup))
+		calls := index.calls() + dedup.calls()
+		if wantRefused && (!errs.IsInvalid(err) || calls != 0) {
+			t.Fatalf("%s(%q) = %v after %d bucket calls; want an invalid-input error before any bucket call", name, input, err, calls)
+		}
+		if !wantRefused && calls == 0 {
+			t.Fatalf("%s(%q) made no bucket call; a valid input must reach the bucket (err %v)", name, input, err)
+		}
+	}
+	for name, call := range entityCalls {
+		for _, id := range badIDs {
+			check(t, name, id, true, func(ctx context.Context, s *Storage) error { return call(ctx, s, id) })
+		}
+		check(t, name, valid, false, func(ctx context.Context, s *Storage) error { return call(ctx, s, valid) })
+	}
+	for name, call := range keyCalls {
+		for _, key := range badKeys {
+			check(t, name, key, true, func(ctx context.Context, s *Storage) error { return call(ctx, s, key) })
+		}
+		check(t, name, "dedup-key", false, func(ctx context.Context, s *Storage) error { return call(ctx, s, "dedup-key") })
+	}
+	if _, err := newTestStorage(t, newMemKV(), newMemKV()).SavePendingGuarded(t.Context(), nil); !errs.IsInvalid(err) {
+		t.Fatalf("SavePendingGuarded(nil) = %v, want an invalid-input error", err)
+	}
 }

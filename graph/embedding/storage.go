@@ -12,6 +12,7 @@ import (
 	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/types"
 )
 
 // ErrRecordGone reports that the EMBEDDING_INDEX record a save was meant to
@@ -139,6 +140,11 @@ func ScoredEntityLess(a, b ScoredEntity) bool {
 // (ADR-110). The retry budget and the per-call timeout are the KVStore's, set by
 // whoever builds it; when the retries run out a save returns an error matching
 // natsclient.ErrKVMaxRetriesExceeded and has written nothing.
+//
+// Every method that takes an entity ID refuses one that is not a literal six-part ID
+// (types.ValidateEntityID), and every method that takes a dedup key refuses one that is
+// not a literal KV key (natsclient.ValidateKVLiteralKey), with an invalid-input error
+// before any bucket call.
 type Storage struct {
 	index *natsclient.KVStore // EMBEDDING_INDEX
 	dedup *natsclient.KVStore // EMBEDDING_DEDUP
@@ -148,6 +154,26 @@ type Storage struct {
 // EMBEDDING_DEDUP buckets.
 func NewStorage(index, dedup *natsclient.KVStore) *Storage {
 	return &Storage{index: index, dedup: dedup}
+}
+
+// validateEntityID refuses an entity ID that is not one literal six-part ID
+// (types.ValidateEntityID) before any bucket call. That grammar (at most 256 bytes, six
+// non-empty tokens of letters, digits, '_' and '-') lies inside natsclient's literal KV
+// key grammar, so a valid entity ID is a valid key and needs no second check.
+func validateEntityID(entityID, method string) error {
+	if err := types.ValidateEntityID(entityID); err != nil {
+		return errs.WrapInvalid(err, "Storage", method, "validate entity id")
+	}
+	return nil
+}
+
+// validateDedupKey refuses a dedup key that is not a literal NATS KV key before any
+// bucket call.
+func validateDedupKey(key, method string) error {
+	if err := natsclient.ValidateKVLiteralKey(key); err != nil {
+		return errs.WrapInvalid(err, "Storage", method, "validate dedup key")
+	}
+	return nil
 }
 
 // decodeRecord decodes a stored index record, or returns nil for an absent key.
@@ -194,8 +220,11 @@ func saveError(err error, method, action string) error {
 // The decision and the write are one compare-and-set (UpdateWithRetryRead), so a
 // concurrent hop-2 commit cannot bypass the guard.
 func (s *Storage) SavePendingGuarded(ctx context.Context, record *Record) (saved bool, err error) {
-	if record == nil || record.EntityID == "" {
-		return false, errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "SavePendingGuarded", "entity_id is empty")
+	if record == nil {
+		return false, errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "SavePendingGuarded", "record is nil")
+	}
+	if err := validateEntityID(record.EntityID, "SavePendingGuarded"); err != nil {
+		return false, err
 	}
 	record.Status = StatusPending
 	data, err := json.Marshal(record)
@@ -242,8 +271,8 @@ func (s *Storage) SaveGenerated(
 	contentHash string,
 	sourceRevision uint64,
 ) error {
-	if entityID == "" {
-		return errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "SaveGenerated", "entity_id is empty")
+	if err := validateEntityID(entityID, "SaveGenerated"); err != nil {
+		return err
 	}
 
 	_, err := s.index.UpdateWithRetryRead(ctx, entityID, func(current []byte, _ uint64) ([]byte, error) {
@@ -289,8 +318,8 @@ func (s *Storage) SaveGenerated(
 // stored record carries a newer source revision, or is generated at the same one: a
 // generated outcome wins over a failure at an equal revision. Neither writes.
 func (s *Storage) SaveFailed(ctx context.Context, entityID, errorMsg, reason string, sourceRevision uint64) error {
-	if entityID == "" {
-		return errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "SaveFailed", "entity_id is empty")
+	if err := validateEntityID(entityID, "SaveFailed"); err != nil {
+		return err
 	}
 
 	_, err := s.index.UpdateWithRetryRead(ctx, entityID, func(current []byte, _ uint64) ([]byte, error) {
@@ -327,6 +356,9 @@ func (s *Storage) SaveFailed(ctx context.Context, entityID, errorMsg, reason str
 // removed; false with a nil error when the key moved or is gone, so newer work owns
 // the entity and nothing was removed; false with the error otherwise.
 func (s *Storage) deleteAtRevision(ctx context.Context, entityID string, kvRevision uint64) (removed bool, err error) {
+	if err := validateEntityID(entityID, "deleteAtRevision"); err != nil {
+		return false, err
+	}
 	err = s.index.DeleteAtRevision(ctx, entityID, kvRevision)
 	switch {
 	case err == nil:
@@ -340,8 +372,8 @@ func (s *Storage) deleteAtRevision(ctx context.Context, entityID string, kvRevis
 
 // GetEmbedding retrieves an embedding by entity ID, or nil when there is none.
 func (s *Storage) GetEmbedding(ctx context.Context, entityID string) (*Record, error) {
-	if entityID == "" {
-		return nil, errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "GetEmbedding", "entity_id is empty")
+	if err := validateEntityID(entityID, "GetEmbedding"); err != nil {
+		return nil, err
 	}
 	entry, err := s.index.Get(ctx, entityID)
 	if err != nil {
@@ -355,8 +387,8 @@ func (s *Storage) GetEmbedding(ctx context.Context, entityID string) (*Record, e
 
 // GetByContentHash retrieves a dedup record by its key, or nil when there is none.
 func (s *Storage) GetByContentHash(ctx context.Context, contentHash string) (*DedupRecord, error) {
-	if contentHash == "" {
-		return nil, errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "GetByContentHash", "content_hash is empty")
+	if err := validateDedupKey(contentHash, "GetByContentHash"); err != nil {
+		return nil, err
 	}
 	entry, err := s.dedup.Get(ctx, contentHash)
 	if err != nil {
@@ -385,8 +417,8 @@ func (s *Storage) GetByContentHash(ctx context.Context, contentHash string) (*De
 // record from another or unknown space must not merely be stamped with the current
 // identity, which would serve its old vector under the new model's name.
 func (s *Storage) SaveDedup(ctx context.Context, contentHash string, vector []float32, model string, dimensions int) error {
-	if contentHash == "" {
-		return errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "SaveDedup", "content_hash is empty")
+	if err := validateDedupKey(contentHash, "SaveDedup"); err != nil {
+		return err
 	}
 	data, err := json.Marshal(&DedupRecord{
 		Vector:         vector,
@@ -416,8 +448,8 @@ func (s *Storage) SaveDedup(ctx context.Context, contentHash string, vector []fl
 // DeleteEmbedding removes an embedding record. Removing an absent record is not an
 // error.
 func (s *Storage) DeleteEmbedding(ctx context.Context, entityID string) error {
-	if entityID == "" {
-		return errs.WrapInvalid(errs.ErrMissingConfig, "Storage", "DeleteEmbedding", "entity_id is empty")
+	if err := validateEntityID(entityID, "DeleteEmbedding"); err != nil {
+		return err
 	}
 	if err := s.index.Delete(ctx, entityID); err != nil && !errors.Is(err, natsclient.ErrKVKeyNotFound) {
 		return errs.WrapTransient(err, "Storage", "DeleteEmbedding", "delete embedding")

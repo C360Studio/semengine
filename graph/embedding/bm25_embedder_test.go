@@ -3,6 +3,8 @@ package embedding
 import (
 	"math"
 	"testing"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 func TestBM25Embedder_Generate(t *testing.T) {
@@ -614,5 +616,35 @@ func TestBM25Embedder_GenerateStillLearns(t *testing.T) {
 	embedder.mu.RUnlock()
 	if df != 2 {
 		t.Errorf("termDocCount[forklift] = %d, want 2", df)
+	}
+}
+
+// TestBM25RefusesNilContext (#468): Generate and GenerateQuery refuse a nil context with an
+// invalid-input error before any work, for empty and non-empty input alike; the corpus
+// statistics are untouched.
+func TestBM25RefusesNilContext(t *testing.T) {
+	t.Parallel()
+	methods := map[string]func(e *BM25Embedder, texts []string) ([][]float32, error){
+		"Generate": func(e *BM25Embedder, texts []string) ([][]float32, error) {
+			return e.Generate(nil, texts)
+		},
+		"GenerateQuery": func(e *BM25Embedder, texts []string) ([][]float32, error) {
+			return e.GenerateQuery(nil, texts)
+		},
+	}
+	for name, call := range methods {
+		for _, texts := range [][]string{nil, {}, {"robot arm calibration"}} {
+			embedder := NewBM25Embedder(BM25Config{})
+			vectors, err := call(embedder, texts)
+			if !errs.IsInvalid(err) || vectors != nil {
+				t.Fatalf("%s(nil ctx, %q) = (%v, %v), want no vectors and an invalid-input error", name, texts, vectors, err)
+			}
+			embedder.mu.RLock()
+			docs := embedder.docCount
+			embedder.mu.RUnlock()
+			if docs != 0 {
+				t.Fatalf("%s(nil ctx, %q) folded %d documents into the corpus; want none", name, texts, docs)
+			}
+		}
 	}
 }

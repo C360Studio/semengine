@@ -22,7 +22,9 @@ Tier 0 only (#9 comment 6386603659): the provider file `http_embedder.go` stays 
   ADR-113 for the component that runs them). Both stop the watch through the follower's bounded drain, moved
   unchanged into `internal/kvwatch` so there is one spelling (#454's bound included).
 - The Worker runs on `internal/dispatch.KeyedPool`, keyed by entity ID, so one entity's entries, their store writes
-  and their callbacks run one at a time in the order the watch delivered them (#107).
+  and their callbacks run one at a time in the order the watch delivered them (#107). `internal/dispatch` gains
+  `(*KeyedPool).Wait()`, a context-free join after `Shutdown` has begun, which the Worker's `Run` needs once its
+  context has ended; its one caller is the Worker.
 - A record whose text is empty is removed only if its key is still at the revision the Worker read, through the
   existing `natsclient.KVStore.DeleteAtRevision`; at the pin an older revision could delete a newer revision's record.
 - `Storage` writes through `natsclient.KVStore.UpdateWithRetryRead` instead of its three hand-written retry loops and
@@ -37,6 +39,7 @@ Tier 0 only (#9 comment 6386603659): the provider file `http_embedder.go` stays 
 ## Capabilities
 
 - New `embedding-index`.
+- Modified `keyed-dispatch`: one added requirement for `KeyedPool.Wait`.
 
 ## Impact
 

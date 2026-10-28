@@ -12,10 +12,6 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [x] 1.3 Owner rulings on #35 and #107. Ruled at PR #458 comment 6473224284.
 - [ ] 1.4 File the `internal/kvwatch` adoption issue listing design D11's sites, linked from the PR without a closing
   keyword. Gate: the issue read back.
-- [ ] 1.5 Run and post on PR #458 the two probes design D3 and D6 rest on, at nats.go v1.54.0 / nats-server v2.15.1:
-  P15, one key put 200 times is delivered by a watch in ascending revision order; P16, `Delete` with `LastRevision`
-  refuses a key that has moved or been deleted and removes one still at that revision. Gate: the comment read back,
-  and inventory 7 gains the two rows.
 
 ## 2. Tests first
 
@@ -45,6 +41,10 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   and #454); behaviour unchanged (design D1, D4). Gate: the follower's tests,
   `TestStopWatchGivesUpOnADeliveryThatNeverCloses` (kept in the follower) and `TestFollowerRunReturnsAndLeavesNothing`
   pass unchanged in what they assert, a kvwatch test of the bound passes; `task verify`.
+- [ ] 3.0b `(*KeyedPool).Wait()` in `internal/dispatch` (design D1, D4), test first:
+  `TestKeyedPoolWaitJoinsAfterShutdown` (a `Wait` begun before `Shutdown` returns only after `Shutdown(ctx)` with an
+  ended `ctx` was called and every accepted item was processed; `Wait` after the join returns at once), in
+  `synctest`. Gate: `go test -race -count=1 ./internal/dispatch`; graph-index's and graph-ingest's tests unchanged.
 
 - [ ] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
   (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` leaves

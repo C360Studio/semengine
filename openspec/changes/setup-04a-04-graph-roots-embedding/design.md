@@ -42,6 +42,12 @@ them. One spelling of each. The drain does not go into `natsclient`: that would 
 against the owner's #170 ruling; `natsclient`'s own copy in `keysByFilter` (`natsclient/kv.go:699`, kept on #420) is
 the second spelling D11's issue covers.
 
+`internal/dispatch` gains `(*KeyedPool).Wait()`: it returns once every lane has exited, which happens only after
+`Shutdown` has begun, so a `Wait` called earlier blocks until then; it takes no context and adds no bound. It is the
+join the Worker's `Run` needs after `Shutdown(ctx)` with an ended `ctx` (D4), the part the pin's `wg.Wait` played. One
+caller (the Worker); graph-index and graph-ingest keep calling `Shutdown` under their `Stop`'s live context, unchanged.
+Its requirement is a delta to the `keyed-dispatch` spec.
+
 ## D2. Surface
 
 Ports as at the pin: `Embedder`; `BM25Embedder`, `BM25Config`, `NewBM25Embedder`; `EmbedderIdentity`, `DedupKey`,
@@ -100,7 +106,8 @@ callback decides from the bytes and revision it read (ADR-110 Decision 2; Decisi
   revision with an empty offloaded body could delete a newer revision's pending record or generated vector (Codex
   review, PR #458 comment 6474241300, finding 1; reachable through hop 1's storage-reference path,
   `pin:processor/graph-embedding/component.go:1827`, `:2025`). The keyed pool (D6) does not prevent this alone: hop 1
-  writes M while N runs. `DeleteAtRevision`'s refusal of a moved key is measured by probe P16 (task 1.5).
+  writes M while N runs. `DeleteAtRevision` refuses a stale revision and removes a current one
+  (`natsclient/kv_integration_test.go:205-219`); the moved-key and deleted-key cases are this change's no-text tests.
 - Reads keep their pin results through the KVStore: `GetEmbedding` and `GetByContentHash` return `(nil, nil)` for an
   absent key; `DeleteEmbedding` of an absent key returns nil (P5). `ListGeneratedEntityIDs` returns every key, pending
   and failed included, as at the pin (its doc is corrected; the caller filters by status). **Cost:** it now lists
@@ -128,11 +135,13 @@ ends it in `Stop`; this package derives nothing from a Start context). The found
   order, as observable behaviour:
   1. It stops reading and cancels the derived context: a read waiting on a full lane returns, and nats.go's own
      unsubscribe goroutine for the watch (`js.go:2063-2068`) is released (not joined).
-  2. It shuts the pool down and waits until every lane has exited. Items already accepted are processed first, under
-     `ctx`; after a cancel each ends quickly through the shutdown path (D7), as at the pin. This wait has no bound of
-     its own, as the pin's `wg.Wait` had none and the `background-work` spec's `Run` requires the join: a caller
-     callback that blocks holds `Run`, and the composing component bounds its own wait for `Run` in its `Stop(ctx)`
-     (ADR-113). The developer's note records how the pool's `Shutdown` is given a context that outlives the join.
+  2. It calls `pool.Shutdown(ctx)` only to begin the drain (with `ctx` ended it starts the drain and returns
+     `ctx.Err()` at once, `internal/dispatch/keyed_pool.go:284-310`; its return is not the join), then joins the lanes
+     with `pool.Wait()`, a context-free wait added to `internal/dispatch` that returns once every lane has exited
+     (D1). Items already accepted are processed first, under `ctx`; after a cancel each ends quickly through the
+     shutdown path (D7), as at the pin. The join has no bound of its own, as the pin's `wg.Wait` had none and the
+     `background-work` spec's `Run` requires it: a caller callback that blocks holds `Run`, and the composing component
+     bounds its own wait for `Run` in its `Stop(ctx)` (ADR-113). No detached context is created.
   3. It stops the watch through `kvwatch.Stop` (D1), which reads the update channel until nats.go closes it, ending
      a delivery blocked on a full buffer (the backlog at v1.54.0 that `graph/follower`'s
      `TestFollowerRunReturnsAndLeavesNothing` drives), for at most 5 s after `ctx` ended, the bound #454 needs.
@@ -172,11 +181,12 @@ path), keyed by entity ID, and the work handed to it includes the terminal callb
 
 - One entity's entries are processed one at a time, in the order the watch delivered them, from reading the record
   through the store write to the terminal and generated callbacks; different entities run in parallel across lanes
-  (`keyed-dispatch` spec, "Same-key work runs in submit order on one lane"). That a KV watch delivers one key's
-  updates in stream order is measured by probe P15 (task 1.5) at nats.go v1.54.0; until it is posted, it is not
-  promised.
-- So a terminal callback for an older revision never follows one for a newer revision of the same entity, except
-  when hop 1 itself writes an older revision after a newer one (a repair re-drive, D3); then the older save is
+  (`keyed-dispatch` spec, "Same-key work runs in submit order on one lane"). Nothing here depends on the watch's
+  delivery order for one key: if the watch ever delivered M before N, N's save would be refused by the revision guard
+  and report `OutcomeDeleted` or `OutcomeSkipped`, as below. Delivery order is not promised here.
+- So a terminal callback for an older revision never follows one for a newer revision of the same entity with a
+  failure: whenever an older revision is processed after a newer one (a repair re-drive by hop 1, D3, or any delivery
+  order), the older save is
   refused by the revision guard and its callback reports `OutcomeDeleted` or `OutcomeSkipped`, never `OutcomeFailed`
   (`markFailed` returns `OutcomeFailed` only for a stored failure, `pin:…/worker.go:1174-1178`).
 - The revision guard (D3) stays: hop 1 writes pending records while the Worker runs, so a hop-2 save still races a

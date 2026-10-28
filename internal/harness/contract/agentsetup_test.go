@@ -27,6 +27,7 @@ const (
 
 type agentRoleSpec struct {
 	name         string
+	baseContract string // ateam's base contract the SemEngine contract opens by naming
 	readOnly     bool
 	claudeModel  string
 	claudeEffort string
@@ -36,10 +37,10 @@ type agentRoleSpec struct {
 
 var (
 	agentRoleSpecs = []agentRoleSpec{
-		{name: "semengine-architect", readOnly: true, claudeModel: "opus", claudeEffort: "medium", codexModel: "gpt-6-astra", codexEffort: "medium"},
-		{name: "semengine-developer", readOnly: false, claudeModel: "opus", claudeEffort: "medium", codexModel: "gpt-6-sol", codexEffort: "medium"},
-		{name: "semengine-reviewer", readOnly: true, claudeModel: "opus", claudeEffort: "high", codexModel: "gpt-6-astra", codexEffort: "high"},
-		{name: "semengine-technical-writer", readOnly: false, claudeModel: "sonnet", claudeEffort: "medium", codexModel: "gpt-6-sol", codexEffort: "medium"},
+		{name: "semengine-architect", baseContract: "architect.md", readOnly: true, claudeModel: "opus", claudeEffort: "medium", codexModel: "gpt-6-astra", codexEffort: "medium"},
+		{name: "semengine-developer", baseContract: "developer.md", readOnly: false, claudeModel: "opus", claudeEffort: "medium", codexModel: "gpt-6-sol", codexEffort: "medium"},
+		{name: "semengine-reviewer", baseContract: "reviewer.md", readOnly: true, claudeModel: "opus", claudeEffort: "high", codexModel: "gpt-6-astra", codexEffort: "high"},
+		{name: "semengine-technical-writer", baseContract: "developer.md", readOnly: false, claudeModel: "sonnet", claudeEffort: "medium", codexModel: "gpt-6-sol", codexEffort: "medium"},
 	}
 	readOnlyClaudeTools = []string{"Read", "Bash", "Grep", "Glob", "Skill"}
 	writeClaudeTools    = []string{"Read", "Edit", "Write", "Bash", "Grep", "Glob", "Skill"}
@@ -93,6 +94,12 @@ func TestAgentSetupParitySensitivity(t *testing.T) {
 	}{
 		{"missing canonical contract", edit(".agents/contracts/semengine-architect.md", nil),
 			[]string{".agents/contracts/semengine-architect.md", "missing"}},
+		{"contract drops its base-contract pointer", edit(".agents/contracts/semengine-reviewer.md", func(s string) string {
+			return strings.Replace(s, "Read `.agents/contracts/reviewer.md`, ateam's base contract, first; this contract adds SemEngine rules on top.\n\n", "", 1)
+		}), []string{".agents/contracts/semengine-reviewer.md", "`.agents/contracts/reviewer.md`"}},
+		{"technical writer points at the reviewer base", edit(".agents/contracts/semengine-technical-writer.md", func(s string) string {
+			return strings.Replace(s, "`.agents/contracts/developer.md`", "`.agents/contracts/reviewer.md`", 1)
+		}), []string{".agents/contracts/semengine-technical-writer.md", "`.agents/contracts/developer.md`"}},
 		{"missing codex adapter", edit(".codex/agents/semengine-reviewer.toml", nil),
 			[]string{".codex/agents/semengine-reviewer.toml", "missing"}},
 		{"wrong contract path in claude adapter", edit(".claude/agents/semengine-reviewer.md", func(s string) string {
@@ -182,6 +189,7 @@ func agentSetupViolations(root string) []string {
 	var out []string
 	out = append(out, checkRequiredAgentFiles(root)...)
 	for _, role := range agentRoleSpecs {
+		out = append(out, checkContractBasePointer(root, role)...)
 		out = append(out, checkClaudeRoleAdapter(root, role)...)
 		out = append(out, checkCodexRoleAdapter(root, role)...)
 	}
@@ -206,6 +214,31 @@ func checkRequiredAgentFiles(root string) []string {
 		}
 	}
 	return out
+}
+
+// checkContractBasePointer: the first paragraph after a SemEngine contract's title names the ateam
+// base contract to read first (harness-boundaries › "SemEngine contracts sit on the base contracts").
+func checkContractBasePointer(root string, role agentRoleSpec) []string {
+	rel := ".agents/contracts/" + role.name + ".md"
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return nil
+	}
+	var para []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "# ") || (strings.TrimSpace(line) == "" && len(para) == 0) {
+			continue
+		}
+		if strings.TrimSpace(line) == "" {
+			break
+		}
+		para = append(para, line)
+	}
+	want := "`.agents/contracts/" + role.baseContract + "`"
+	if !strings.Contains(strings.Join(para, " "), want) {
+		return []string{fmt.Sprintf("%s: first paragraph must name the base contract %s to read first", rel, want)}
+	}
+	return nil
 }
 
 var contractPathPattern = regexp.MustCompile(`\.agents/contracts/[A-Za-z0-9_.-]+\.md`)

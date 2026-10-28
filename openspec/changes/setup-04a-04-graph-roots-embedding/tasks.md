@@ -5,13 +5,14 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 1. Design and measurement
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
-  acceptance. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
+  acceptance. Gate: `task spec:check` and `task docs:check`. Codex approved the design at `9454aae` (PR #458 comment
+  6474881373; its MEDIUM wording fix is in `4c5a1e4`); owner accepted 2026-10-28.
 - [x] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 KV probe (inventory 7, P1-P14) on PR #458. Posted as PR #458
   comment 6472856197.
 - [x] 1.3 Owner rulings on #35 and #107. Ruled at PR #458 comment 6473224284.
-- [ ] 1.4 File the `internal/kvwatch` adoption issue listing design D11's sites, linked from the PR without a closing
-  keyword. Gate: the issue read back.
+- [x] 1.4 File the `internal/kvwatch` adoption issue listing design D11's sites, linked from the PR without a closing
+  keyword. Gate: the issue read back. Filed as #461.
 
 ## 2. Tests first
 

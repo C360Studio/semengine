@@ -5,7 +5,7 @@ named by a string key). It implements `storage.StreamableStore`: `Put`, `Get`, `
 also has `StoreContent`, which stores a payload's body text and returns a `message.StorageReference` that other
 code resolves back to this Store.
 
-This package has the Store only. The component that would wrap it with NATS ports, key generators and a registry
+This package has the Store only. The component that would wrap it with NATS ports and a registry
 entry is not in this repository yet.
 
 ## Use
@@ -63,7 +63,7 @@ graph as triples, which the producer emits. A payload with no content stores an 
 
 These are not in this package: the in-memory data cache and `Close` of the SemStreams original (dropped by the
 owner, [PR #432 comment][cache-ruling]),
-the component, its ports and key generator, and a way to name several Store instances in one process (left to the
+the component, its ports, and a way to name several Store instances in one process (left to the
 component's change; ADR-063 leaves it open).
 
 [cache-ruling]: https://github.com/C360Studio/semengine/pull/432#issuecomment-6446982969

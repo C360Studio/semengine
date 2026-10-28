@@ -58,7 +58,7 @@ passes on a clean tree at its commit (#171).
 
 ## 5. Records and docs
 
-- [ ] 5.1 Remove `storage.KeyGenerator`, `storage.MetadataExtractor` and their `storage/doc.go` examples (D6). Gate:
+- [x] 5.1 Remove `storage.KeyGenerator`, `storage.MetadataExtractor` and their `storage/doc.go` examples (D6). Gate:
   `task build`, `task docs:check`.
 - [ ] 5.2 Ledger rows (`storage/objectstore`, `storage`; `proving_tests` names
   `TestFailedCleanupRetainsInputsForLaterStop`), ADR-063 port note (D7), package `doc.go` and `README.md`

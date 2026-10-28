@@ -21,15 +21,6 @@
 // This simplicity enables a wide range of use cases: JSON messages, video files,
 // images, or any binary data can be stored with the same interface.
 //
-// Pluggable Abstractions:
-//
-// The package defines two pluggable interfaces to enable framework composition:
-//   - KeyGenerator: Generates storage keys from messages
-//   - MetadataExtractor: Extracts metadata headers from messages
-//
-// These abstractions allow semantic layers (like SemStreams) to provide custom
-// key generation and metadata extraction strategies without modifying core storage.
-//
 // # Architecture Decisions
 //
 // Simple Key-Value Model:
@@ -101,36 +92,6 @@
 //	// Delete old data (a key with no object returns nil)
 //	err = store.Delete(ctx, key)
 //
-// Implementing Custom KeyGenerator:
-//
-//	type TimestampKeyGenerator struct {
-//	    prefix string
-//	}
-//
-//	func (g *TimestampKeyGenerator) GenerateKey(msg any) string {
-//	    // Extract timestamp from message (handle type assertion)
-//	    timestamp := time.Now().Format(time.RFC3339)
-//	    return fmt.Sprintf("%s/%s", g.prefix, timestamp)
-//	}
-//
-//	// The objectstore Component that takes a KeyGenerator is not in this repository
-//	// yet; objectstore.Store.StoreContent builds its own keys.
-//
-// Implementing Custom MetadataExtractor:
-//
-//	type EntityMetadataExtractor struct{}
-//
-//	func (e *EntityMetadataExtractor) ExtractMetadata(msg any) map[string][]string {
-//	    // Extract entity ID from message
-//	    if entity, ok := msg.(Identifiable); ok {
-//	        return map[string][]string{
-//	            "entity-id":   {entity.GetID()},
-//	            "entity-type": {entity.GetType()},
-//	        }
-//	    }
-//	    return nil
-//	}
-//
 // # Performance Characteristics
 //
 // The performance of Store operations depends entirely on the backend implementation:
@@ -171,8 +132,7 @@
 // # Integration with Components
 //
 // The storage/objectstore package has the Store only. A Component wrapper that
-// would expose Store operations on NATS ports and take a KeyGenerator and a
-// MetadataExtractor is not in this repository yet.
+// would expose Store operations on NATS ports is not in this repository yet.
 //
 // # Error Handling
 //

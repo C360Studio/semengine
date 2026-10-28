@@ -38,10 +38,10 @@ reviewer runs on a weaker model tier than the developer.
 
 | Role | Claude | Codex | Gemini (Antigravity) | Target effort |
 | --- | --- | --- | --- | --- |
-| Architect | `opus` | `gpt-6-astra`, `medium` | `inherit` or `pro` (`enable_write_tools = false`) | `medium` default; escalate to `high` for cross-cutting concurrency/boundary designs |
-| Developer | `opus` | `gpt-6-sol`, `medium` | `inherit` or `pro` (`enable_write_tools = true`) | `medium` default for bounded work; escalate to `high` for complex/failed-review rounds |
-| Reviewer | `opus` | `gpt-6-astra`, `high` | `inherit` or `pro` (`enable_write_tools = false`) | `high` (single-pass audit of record against review-only rules) |
-| Technical writer | `sonnet` | `gpt-6-sol`, `medium` | `flash` or `inherit` (`enable_write_tools = true`) | `low` or `medium` (mechanical doc and task-truth sync) |
+| Architect | `opus`, `medium` | `gpt-6-astra`, `medium` | `inherit` or `pro` (`enable_write_tools = false`) | `medium` default; escalate to `high` for cross-cutting concurrency/boundary designs |
+| Developer | `opus`, `medium` | `gpt-6-sol`, `medium` | `inherit` or `pro` (`enable_write_tools = true`) | `medium` default for bounded work; escalate to `high` for complex/failed-review rounds |
+| Reviewer | `opus`, `high` | `gpt-6-astra`, `high` | `inherit` or `pro` (`enable_write_tools = false`) | `high` (single-pass audit of record against review-only rules) |
+| Technical writer | `sonnet`, `medium` | `gpt-6-sol`, `medium` | `flash` or `inherit` (`enable_write_tools = true`) | `low` or `medium` (mechanical doc and task-truth sync) |
 
 - **Model tier:** `semengine-architect`, `semengine-developer`, and `semengine-reviewer` run on the frontier model
   (`opus` on Claude, `gpt-6-astra` / `gpt-6-sol` on Codex, `inherit` / `pro` on Gemini). `semengine-technical-writer`
@@ -107,12 +107,10 @@ domain-grouped rule summary in `AGENTS.md`.
 Canonical skills live in `skills/`. Read the relevant `SKILL.md` fully; the platform adapters add discovery
 metadata and argument handling, not another rule set. Repository protocol and role contracts remain authoritative.
 
-- [semengine-preflight](skills/semengine-preflight/SKILL.md): scope existing verification gates and record their
-  evidence. Claude command `/preflight`.
-- [semengine-handoff](skills/semengine-handoff/SKILL.md): publish shared state and preserve unfinished work. Claude
-  command `/semengine-handoff`.
-- [semengine-pickup](skills/semengine-pickup/SKILL.md): reconcile current state and verify worktree ownership. Claude
-  command `/semengine-pickup`.
+- ateam's six canonical skills, written by `ateam init` at v0.3.3: [pickup](skills/pickup/SKILL.md),
+  [handoff](skills/handoff/SKILL.md), [preflight](skills/preflight/SKILL.md), [ponytail](skills/ponytail/SKILL.md),
+  [review-pr](skills/review-pr/SKILL.md) and [design](skills/design/SKILL.md). Claude commands `/<name>`. `preflight`
+  keeps SemEngine's gate table and evidence rules; the other five are ateam's text, unedited.
 - [semengine-status](skills/semengine-status/SKILL.md): report Slice 04A package port status, audit milestone/issue
   hygiene, and sync the GitHub Project tracker. Claude command `/semengine-status`.
 
@@ -128,34 +126,18 @@ Engine-capability skills, carried from SemStreams with the packages they govern 
 
 Codex can invoke the canonical names with `$`, or read their paths directly. Antigravity (Gemini) automatically
 discovers `.agents/skills/<name>/SKILL.md` from the workspace root. Claude uses the command names above; its adapters
-live in `.claude/skills/<command-name>/SKILL.md`. The `preflight` adapter deliberately maps to the canonical
-`semengine-preflight` name. Add an engine-capability skill only when its capability is admitted. A private memory
-reference cannot be required to interpret a shared rule.
+live in `.claude/skills/<command-name>/SKILL.md`. Add an engine-capability skill only when its capability is
+admitted. A private memory reference cannot be required to interpret a shared rule.
 
 ## Read-only parity smoke
 
-Steps 1–8 are enforced automatically by `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`
-(`internal/harness/contract/agentsetup_test.go`, run by `task test:unit`). Run Step 9 after changing a contract,
-adapter, or repository routing rule.
-
-1. Confirm all four canonical contracts and all eight agent adapters exist, and that `.agents/protocol.md` and
-   `.agents/rules-index.md` exist.
-2. Confirm each adapter names-and-links only its matching `.agents/contracts/...` path and says to read it fully first.
-3. Confirm the Claude reviewer and architect tool lists contain `Read`, `Bash`, `Grep`, `Glob`, `Skill`, and that
-   write adapters add `Edit` and `Write`, with no `Task`, `LSP`, or other delegation tool (`gopls` is reached through
-   `Bash`; an unresolved tool name makes Claude Code refuse to launch the agent).
-4. Confirm the Codex reviewer and architect set `sandbox_mode = "read-only"`; the developer and the technical writer
-   have no sandbox override and inherit the parent workspace permissions.
-5. Confirm `CLAUDE.md` only imports `AGENTS.md` and carries no rules of its own, that `AGENTS.md` stays strictly under
-   24,000 bytes (`wc -c AGENTS.md`) so rule loaders with a 24 KB per-file cap do not truncate it, and that every rule
-   row in `AGENTS.md` has its corresponding audit row in `.agents/rules-index.md` (`TestAgentSetupParity` checks
-   numbered domain headings and per-domain row counts; semantic correspondence of individual rows is review only).
-6. Confirm role adapters stay within 20 lines and contain no copied checklist (`- [ ]` or `- [x]`).
-7. For every skill in the shared-skills list, confirm the canonical file and Claude adapter exist, the adapter points
-   to that canonical file and says to read it fully, and it contains no copied checklist.
-8. Confirm the Claude and Codex model and effort settings match the table above.
-9. Validate changed skill frontmatter and relative links. A structurally valid adapter does not prove its
-   instructions make the right decisions; walk the applicable scenarios below without private memory.
+`task ateam:doctor` (`ateam doctor --check`, the first step of `task verify`) checks the files ateam owns, the
+canonical skills and every skill adapter's link, `CLAUDE.md`, the `AGENTS.md` size, and rule-row parity with
+`.agents/rules-index.md`. `TestAgentSetupParity` and `TestAgentSetupParitySensitivity`
+(`internal/harness/contract/agentsetup_test.go`, `task test:unit`) check what doctor does not: each role adapter's
+contract pointer, tools, sandbox mode, size and model and effort pins against the table above, and the adopter
+skills' Claude adapter size. After changing a contract, adapter, or routing rule, also walk the fixtures below; a
+structurally valid adapter does not prove its instructions make the right decisions.
 
 Use these semantic fixtures when reading the routing text:
 

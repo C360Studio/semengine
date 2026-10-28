@@ -5,13 +5,14 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 
-# Order is the contract: cheapest first. test:integration needs a reachable Docker
+# Order is the contract: cheapest first, ateam:doctor first of all (harness-boundaries spec,
+# "ateam doctor gates verify"). test:integration needs a reachable Docker
 # daemon; cover:check reads the profile it just wrote.
 # test:tools:changed runs the tool tests only when their files changed, after test:unit.
 # test:repeat is the most expensive step and runs last (merge-gate spec, pinned by
 # toolcheck's TestUnitInvocationsPinned).
-steps=(spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln ledger:check test:unit
-  test:tools:changed test:integration cover:check test:repeat)
+steps=(ateam:doctor spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln ledger:check
+  test:unit test:tools:changed test:integration cover:check test:repeat)
 
 # Tracked-file state before the run. Comparing before/after (not just "is dirty")
 # keeps verify usable on a working tree with edits in progress; on a clean

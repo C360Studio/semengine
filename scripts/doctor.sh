@@ -37,6 +37,13 @@ else bad node "not found"; fi
 
 if command -v npm >/dev/null; then ok npm "$(npm --version)"; else bad npm "not found"; fi
 
+# ateam: .github/workflows/ci.yml's go install line is the pin; task ateam:doctor runs it.
+want=$(grep -Eo 'ateam/cmd/ateam@v[0-9]+\.[0-9]+\.[0-9]+' .github/workflows/ci.yml | head -n1 | sed 's/.*@//')
+if command -v ateam >/dev/null; then
+  have=$(ateam version 2>&1 | grep -Eo 'v[0-9]+\.[0-9]+\.[0-9]+' | head -n1 || true)
+  if [ -n "$want" ] && [ "$have" = "$want" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != ci.yml ${want:-unpinned}"; fi
+else bad ateam "not found (GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@${want:-<pin>})"; fi
+
 # python3: no pin; scripts/openspec-queue.sh parses JSON and timestamps with it. task spec:check runs that
 # script with --check, so task verify needs python3 too.
 if command -v python3 >/dev/null; then ok python3 "$(python3 --version 2>&1 | sed 's/^Python //')"

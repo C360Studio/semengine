@@ -38,19 +38,28 @@
   Gate: `task verify` locally, which now fails on any doctor violation.
   Done in d741d59 (notes/3.2.md): `task verify` at 51207ef on a clean tree ran `ateam:doctor` first and
   exited 0.
-- [x] 3.3 `TestAgentSetupParity` and its sensitivity test keep the role-adapter checks (contract pointer, tools,
-  sandbox, size, model and effort pins) and the adopter-skill adapter size and checkbox check; the `CLAUDE.md`,
-  `AGENTS.md` size, rule-row count and skill-adapter existence checks are deleted with their sensitivity cases.
-  `.agents/README.md`: the parity smoke is one line naming `task ateam:doctor` and the test. Gate: `task test:unit`.
-  Done in 91b6822 (notes/3.3.md): `task test:unit` at 51207ef passes, including
-  `TestAgentSetupParitySensitivity`.
+- [x] 3.3 `TestAgentSetupParity` and its sensitivity test keep the role-adapter checks (contract pointer, base-contract
+  pointer, tools, sandbox, size, model and effort pins) and, for every adopter skill (each skill under
+  `.agents/skills/` that is not one of ateam's six), that its Claude adapter exists, links to it, says to read it
+  fully, and stays within 25 lines with no checkbox; the `CLAUDE.md`, `AGENTS.md` size and rule-row count checks are
+  deleted with their sensitivity cases, since `ateam doctor --check` owns them and ateam's six canonical skills.
+  `.agents/README.md`: the parity smoke is one paragraph naming the three oracles. Gate: `task test:unit`.
+  Done in 91b6822, amended in e362556 and 6e4720f after review round 1 (notes/3.3.md): `task test:unit` at d035dfd
+  passes, including `TestAgentSetupParitySensitivity`. Codex review MEDIUM 2 (PR comment 6473373835) asked for this
+  wording; the retained empty-skill check it also asked for is #460.
 - [x] 3.4 `AGENTS.md`, `.agents/rules-index.md` (same row counts), `docs/testing.md` and the skills name the new
   files and `task ateam:doctor`; `AGENTS.md` stays under 24,000 bytes. Gate: `task verify` on a clean tree.
   Done in 51207ef (notes/3.4.md): `AGENTS.md` is 23,968 bytes; `task verify` at 51207ef on a clean tree exited 0.
 
 ## 4. Review and archive
 
-- [ ] 4.1 Cross-agent review record on the PR (`reviewed-by:` with `Reviewed at <sha>`); `implemented-by:` and
+- [x] 4.1 Cross-agent review record on the PR (`reviewed-by:` with `Reviewed at <sha>`); `implemented-by:` and
   `reviewed-by:` in the PR body.
-- [ ] 4.2 Archive as the last content commit, syncing the `harness-boundaries` delta. Gate: `task spec:check` and
-  `task docs:check`.
+  Done: Codex record on PR #452, comment 6473373835 (2026-10-28T15:36:57Z): `reviewed-by: codex (gpt-6-astra, high)`,
+  `Reviewed at d035dfd694d55fbab418147fe292ad0e8c62f7e1`, `Verdict: APPROVE`, two nonblocking MEDIUMs (one applied
+  in task 3.3's wording, one filed as #460). The PR body carries `implemented-by: claude (opus, medium)` and
+  `reviewed-by: codex (gpt-6-astra, high)`.
+- [x] 4.2 Archive as the last content commit, syncing the `harness-boundaries` and `merge-gate` deltas. Gate:
+  `task spec:check` and `task docs:check`.
+  Done in the archive commit: `openspec archive adopt-ateam-v033-bootstrap`; `task spec:check` and `task docs:check`
+  pass on it.

@@ -82,12 +82,11 @@ the reviewer, `architect.md` for the architect. `TestAgentSetupParity` SHALL che
 
 ### Requirement: Agent setup and rule-index parity
 
-Agent-setup parity SHALL be checked by two oracles that do not overlap: `ateam doctor --check` (run by
-`task ateam:doctor` inside `task verify`) for the required files, the hook and MCP registrations, ateam's six
-canonical skills and their adapters, `CLAUDE.md`, the `AGENTS.md` size and its rule-row parity with
-`.agents/rules-index.md`; and the contract test `TestAgentSetupParity` with `TestAgentSetupParitySensitivity`
-(`task test:unit`) for the SemEngine contracts' base-contract pointer, the role adapters and the adopter skills'
-Claude adapters, in the steps stated in the requirements that follow.
+Agent-setup parity SHALL be checked by two oracles that do not overlap. `ateam doctor --check` (`task ateam:doctor`,
+in `task verify`) owns the required files, hook and MCP registrations, ateam's six canonical skills and their
+adapters, `CLAUDE.md`, and the `AGENTS.md` size and rule-row parity. `TestAgentSetupParity` and its sensitivity
+test (`task test:unit`) own the SemEngine contracts' base-contract pointer, the role adapters and the adopter
+skills' Claude adapters, per the steps below.
 
 #### Scenario: Repository agent setup passes
 
@@ -130,13 +129,11 @@ same numbered rule-domain headings and the same number of rule rows in each doma
 
 ### Requirement: Agent setup step 7: skill adapters
 
-Step 7. Every skill under `.agents/skills/<skill>/SKILL.md` SHALL have its matching Claude adapter under
+Step 7. Every skill under `.agents/skills/<skill>/SKILL.md` SHALL have a Claude adapter at
 `.claude/skills/<skill>/SKILL.md` that links to `../../../.agents/skills/<skill>/SKILL.md` and says to read it `fully`.
-`ateam doctor --check` checks this, and the required section markers, for ateam's six canonical skills (`design`,
-`handoff`, `pickup`, `ponytail`, `preflight`, `review-pr`); for any other skill it reports only a link that does not
-resolve. The contract test checks every other directory under `.agents/skills/` (the adopter skills, found by listing
-the directory): its Claude adapter exists, links to its own skill, says `fully`, has at most 25 lines and contains no
-task-list checkbox.
+`ateam doctor --check` owns this and the section markers for ateam's six skills; the contract test owns
+every other directory under `.agents/skills/` (the adopter skills, found by listing): adapter exists, links to its
+own skill, says `fully`, at most 25 lines, no checkbox.
 
 #### Scenario: Broken skill adapter link
 

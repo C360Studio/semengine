@@ -58,7 +58,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [x] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the fenced
   no-text removal through `DeleteAtRevision`, the dead surface not carried (design D2, D3; ADR-110). Gate: as 3.1
   plus `task test:integration -- ./graph/embedding`.
-- [ ] 3.3 `vector_cache.go`: `VectorCache` with `Run` and `FindSimilar` (design D5). Gate: as 3.2.
+- [x] 3.3 `vector_cache.go`: `VectorCache` with `Run` and `FindSimilar` (design D5). Gate: as 3.2.
 - [ ] 3.4 `worker.go`: `Run(ctx)` on `internal/dispatch.KeyedPool` keyed by entity ID in place of `Start`/`Stop`,
   the fenced no-text outcome, `NewWorker` without the bucket, `WorkerMetrics` edits, shutdown classified by the
   error, one text-length default, the callback-order docs (design D3, D4, D6, D7). Gate: as 3.2

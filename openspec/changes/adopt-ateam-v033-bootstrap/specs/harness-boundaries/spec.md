@@ -37,7 +37,8 @@ carrying the measured latency, and SHALL NOT be re-run to green.
 ### Requirement: ateam template files are the pin's
 
 Every file `ateam init` writes into an empty directory at the pinned release SHALL be byte-identical in this
-repository, except the files SemEngine writes itself (listed with reasons in `semengineOwned`). The tool test
+repository, except the files SemEngine writes itself and the five client configurations an adopter may edit (both
+listed with reasons in `semengineOwned`). The tool test
 `TestAteamTemplatesUnchanged` (`internal/harness/toolcheck`) SHALL check it, failing and never skipping when `ateam`
 is missing or is not the pinned release.
 
@@ -58,6 +59,13 @@ is missing or is not the pinned release.
 - **WHEN** `AGENTS.md`, `CLAUDE.md`, `.gitignore`, `.agents/README.md`, `.agents/protocol.md`,
   `.agents/rules-index.md`, either `preflight` file, or the `openspec/` scaffold differs from ateam's template
 - **THEN** `TestAteamTemplatesUnchanged` does not report it
+
+#### Scenario: A client configuration gains a server
+
+- **WHEN** an MCP server is added to `.mcp.json`, or a permission to `.claude/settings.json`, `.codex/config.toml`,
+  `.codex/hooks.json` or `.gemini/settings.json`
+- **THEN** `TestAteamTemplatesUnchanged` does not report it; `ateam doctor --check` still checks the file's ateam hook
+  and MCP registrations
 
 #### Scenario: ateam is not installed
 

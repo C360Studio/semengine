@@ -23,7 +23,10 @@ import (
 // Init runs into an empty directory, not a copy of the tree: it never overwrites an existing
 // file, so a copy of the repository gets nothing written to compare.
 
-// semengineOwned are the paths init writes that SemEngine keeps its own text in, with the reason.
+// semengineOwned are the paths init writes that SemEngine keeps its own text in, with the reason. The
+// five client configurations are ateam's to register into but the adopter's to edit: init never
+// replaces them, since they "may contain permissions, secrets, or other servers" (ateam mcp.go,
+// isClientConfig), and doctor checks the hook and MCP registrations inside them.
 var semengineOwned = map[string]string{
 	".gitignore":                        "the repository's own ignore list, with init's two lines appended",
 	"AGENTS.md":                         "SemEngine's rules",
@@ -36,6 +39,11 @@ var semengineOwned = map[string]string{
 	"openspec/config.yaml":              "SemEngine's OpenSpec configuration",
 	"openspec/changes/.gitkeep":         "openspec/changes/ holds SemEngine's changes",
 	"openspec/specs/.gitkeep":           "openspec/specs/ holds SemEngine's specs",
+	".claude/settings.json":             "client configuration; doctor checks its hooks",
+	".codex/config.toml":                "client configuration; doctor checks its MCP registration",
+	".codex/hooks.json":                 "client configuration; doctor checks its hooks",
+	".gemini/settings.json":             "client configuration; doctor checks its hooks and MCP registration",
+	".mcp.json":                         "client configuration; doctor checks its MCP registration",
 }
 
 // ateamPin matches an ateam install line in .github/workflows/ci.yml; every one names the same release.

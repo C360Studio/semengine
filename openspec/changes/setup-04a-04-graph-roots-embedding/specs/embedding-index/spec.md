@@ -104,12 +104,6 @@ newer source revision, writing nothing; `SaveFailed` SHALL not replace a generat
   pending record replacing a newer pending one
 - **AND** the test that verifies this is `TestRevisionGuardHistoryMatchesModel`
 
-#### Scenario: Concurrent saves for one entity
-
-- **WHEN** twenty goroutines each save a generated or failed outcome for a distinct revision of one pending record
-- **THEN** the record ends at the highest revision's outcome
-- **AND** the test that verifies this is `TestConcurrentSavesEndAtHighestRevision`
-
 #### Scenario: Retries exhausted
 
 - **WHEN** a save's compare-and-set retries are exhausted
@@ -117,18 +111,54 @@ newer source revision, writing nothing; `SaveFailed` SHALL not replace a generat
   outcome is reported
 - **AND** the test that verifies this is `TestCASExhaustionIsNotTerminal`
 
-### Requirement: A superseded revision's vector is dropped
+### Requirement: One entity's work runs in order through its callbacks
 
-When a Worker's save for a source revision is refused because a newer revision's record is stored, the Worker SHALL
-store nothing, SHALL NOT call the generated callback for that save, and SHALL report the outcome as deleted. Generated
-callbacks for one entity are otherwise unordered.
+The Worker SHALL process one entity's watch entries one at a time, in the order the watch delivered them, and SHALL
+finish each entry's store write and its terminal and generated callbacks before it starts the entity's next entry.
+Different entities MAY run in parallel.
 
-#### Scenario: The older revision finishes last
+#### Scenario: A failure followed by a success
 
-- **WHEN** revision N's embedding is held until revision M's generated record (M > N) is stored, then released
-- **THEN** the record stays generated at M with M's vector, the generated callback fired for M only, and N's
-  terminal outcome is deleted
-- **AND** the test that verifies this is `TestWorkerSupersededRevisionIsDropped`
+- **WHEN** revision N's failure is stored and its terminal callback is held until pending M is in the bucket
+- **THEN** the terminal callbacks arrive as Failed(N) then Generated(M), and M's processing starts only after N's
+  callback returns
+- **AND** the test that verifies this is `TestKeyedCallbacksFollowRevisionOrder`
+
+### Requirement: A save refused for a newer pending record is dropped
+
+When a Worker's save for a source revision is refused because hop 1 stored a newer revision's pending record, the
+Worker SHALL store nothing, SHALL NOT call the generated callback for that save, and SHALL report the outcome as
+deleted; the newer record SHALL then be processed.
+
+#### Scenario: Hop 1 writes M while N is embedding
+
+- **WHEN** revision N's embedding is held until pending M (M > N) is in the bucket, then released
+- **THEN** N's outcome is deleted with no generated callback, and the record ends generated at M
+- **AND** the test that verifies this is `TestWorkerSaveRefusedWhenNewerPendingArrives`
+
+### Requirement: Removing a record with no text is fenced
+
+When a record's resolved text is empty, the Worker SHALL remove the record only if its key is still at the KV
+revision the Worker read; when the key has moved or is gone it SHALL remove nothing and report the outcome as
+deleted; when the removal fails otherwise it SHALL report no terminal outcome and leave the record pending.
+
+#### Scenario: A newer pending record arrived
+
+- **WHEN** N's empty body fetch is held until pending M is in the bucket, then released
+- **THEN** nothing is removed, N's outcome is deleted, and the record is still pending at M
+- **AND** the test that verifies this is `TestNoTextDeleteKeepsNewerPending`
+
+#### Scenario: A newer generated record arrived
+
+- **WHEN** N's empty body fetch is held until M's generated record is in the bucket, then released
+- **THEN** nothing is removed, N's outcome is deleted, and the record is still generated at M with M's vector
+- **AND** the test that verifies this is `TestNoTextDeleteKeepsNewerGenerated`
+
+#### Scenario: The removal fails
+
+- **WHEN** the fenced removal fails with an error that is neither a moved key nor a missing one
+- **THEN** no terminal callback fires and the record stays pending
+- **AND** the test that verifies this is `TestNoTextDeleteFailureIsNotTerminal`
 
 ### Requirement: The dedup record keeps its vector space
 

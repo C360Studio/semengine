@@ -12,6 +12,10 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [x] 1.3 Owner rulings on #35 and #107. Ruled at PR #458 comment 6473224284.
 - [ ] 1.4 File the `internal/kvwatch` adoption issue listing design D11's sites, linked from the PR without a closing
   keyword. Gate: the issue read back.
+- [ ] 1.5 Run and post on PR #458 the two probes design D3 and D6 rest on, at nats.go v1.54.0 / nats-server v2.15.1:
+  P15, one key put 200 times is delivered by a watch in ascending revision order; P16, `Delete` with `LastRevision`
+  refuses a key that has moved or been deleted and removes one still at that revision. Gate: the comment read back,
+  and inventory 7 gains the two rows.
 
 ## 2. Tests first
 
@@ -19,7 +23,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   helpers, without the two HTTP test files and without `time.Sleep`; add `TestEmbeddingImportsNoProviderModule` in
   `internal/harness/contract` (design D9). Pin tests dropped or rewritten are named in `notes/2.1.md`. Gate: in 3.1.
 - [ ] 2.2 Storage tests of design D9: `TestRevisionGuardHistoryMatchesModel` (sequential),
-  `TestConcurrentSavesEndAtHighestRevision` and `TestSaveDedupKeepsSameSpaceReplacesOther` (integration,
+  `TestSaveDedupKeepsSameSpaceReplacesOther` (integration,
   `natsfixture`, #195), the pin's storage unit tests on fakes behind `NewKVStore`, each changed behaviour shown
   failing against the pin's shape; seed and run count in
   `notes/2.2.md`. Gate: in 3.2.
@@ -27,8 +31,10 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   types), the integration `Run` tests (`TestWorkerRunLeavesNoWatchDelivery`, `TestVectorCacheRunLeavesNoWatchDelivery`,
   both lost-watch tests), `TestVectorCacheNotAuthoritative`, `TestFindSimilarOrderAndLimit`,
   `TestTerminalCallbackOncePerOutcome`, `TestPanickingEntryStaysPending`, `TestCASExhaustionIsNotTerminal`,
-  `TestFailureWithCanceledTextIsAFailure`, `TestBothLanesEmbedIdenticalBytes`, `TestWorkerSupersededRevisionIsDropped`
-  (forced interleaving), and the ported `TestWorkerResolvesLiveRegistryStatePerFetch` on `natsfixture`. Evidence in
+  `TestFailureWithCanceledTextIsAFailure`, `TestBothLanesEmbedIdenticalBytes`, `TestKeyedCallbacksFollowRevisionOrder`,
+  `TestWorkerSaveRefusedWhenNewerPendingArrives`, `TestNoTextDeleteKeepsNewerPending`,
+  `TestNoTextDeleteKeepsNewerGenerated`, `TestNoTextDeleteFailureIsNotTerminal`
+  (forced interleavings), and the ported `TestWorkerResolvesLiveRegistryStatePerFetch` on `natsfixture`. Evidence in
   `notes/2.3.md`. Gate: in 3.3 and 3.4.
 
 ## 3. The package
@@ -43,16 +49,17 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
   (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` leaves
   `golang.org/x/sync` direct and adds no `go-openai`.
-- [ ] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the dead
-  surface not carried (design D2, D3; ADR-110). Gate: as 3.1 plus `task test:integration -- ./graph/embedding`.
+- [ ] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the fenced
+  no-text removal through `DeleteAtRevision`, the dead surface not carried (design D2, D3; ADR-110). Gate: as 3.1
+  plus `task test:integration -- ./graph/embedding`.
 - [ ] 3.3 `vector_cache.go`: `VectorCache` with `Run` and `FindSimilar` (design D5). Gate: as 3.2.
-- [ ] 3.4 `worker.go`: `Run(ctx)` in place of `Start`/`Stop`, `NewWorker` without the bucket, `WorkerMetrics` edits,
-  shutdown classified by the error, one text-length default, unordered-callback doc (design D4, D6, D7). Gate: as 3.2
+- [ ] 3.4 `worker.go`: `Run(ctx)` on `internal/dispatch.KeyedPool` keyed by entity ID in place of `Start`/`Stop`,
+  the fenced no-text outcome, `NewWorker` without the bucket, `WorkerMetrics` edits, shutdown classified by the
+  error, one text-length default, the callback-order docs (design D3, D4, D6, D7). Gate: as 3.2
   plus `go test -count=5 -cpu 1 -shuffle=on ./graph/embedding`.
-- [ ] 3.5 The mutation checks of design D9 (`task mutate:check`, the revision comparison removed from `SaveGenerated`,
-  then from `SaveFailed`), recorded in `notes/2.2.md` with survivors reported as survivors. If a D6 proof cannot pass
-  or a mutant survives, stop: the finding fails, the design is amended, and the Worker adopts
-  `internal/dispatch.KeyedPool` per the owner's ruling. Gate: each named test fails on its mutant.
+- [ ] 3.5 The mutation checks of design D9 (`task mutate:check`: the revision comparison removed from `SaveGenerated`,
+  then from `SaveFailed`; the no-text removal made unconditional), recorded in `notes/2.2.md` with survivors reported
+  as survivors. A survivor is a gap in the named tests, fixed before 5.1. Gate: each named test fails on its mutant.
 
 ## 4. Ledger, records and docs
 

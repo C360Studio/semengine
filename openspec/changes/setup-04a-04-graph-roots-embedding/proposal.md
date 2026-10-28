@@ -21,6 +21,10 @@ Tier 0 only (#9 comment 6386603659): the provider file `http_embedder.go` stays 
   only after every goroutine it started, and nats.go's delivery for its watch, has ended (`background-work` spec;
   ADR-113 for the component that runs them). Both stop the watch through the follower's bounded drain, moved
   unchanged into `internal/kvwatch` so there is one spelling (#454's bound included).
+- The Worker runs on `internal/dispatch.KeyedPool`, keyed by entity ID, so one entity's entries, their store writes
+  and their callbacks run one at a time in the order the watch delivered them (#107).
+- A record whose text is empty is removed only if its key is still at the revision the Worker read, through the
+  existing `natsclient.KVStore.DeleteAtRevision`; at the pin an older revision could delete a newer revision's record.
 - `Storage` writes through `natsclient.KVStore.UpdateWithRetryRead` instead of its three hand-written retry loops and
   its unconditional dedup overwrite (ADR-110 Decision 2 and 7).
 - Dead surface is not carried: `ContentHash`, `SavePending`, `SavePendingWithStorageRef`, `Record.ContentFields`,
@@ -46,6 +50,8 @@ Tier 0 only (#9 comment 6386603659): the provider file `http_embedder.go` stays 
   replacing a pin method that `processor/graph-embedding` calls today.
 - Consumers: none imports the package (inventory 4). `processor/graph-embedding` (change 5) and `graph/query` (next
   pull request) are edited when they port.
-- Retires #35 (owner ruling, PR #458 comment 6473224284, item 1) and #107 on the finding in design D6 (same ruling,
-  item 2). Advances #141 (this package's sites) and #195 (this package's site); both stay open for other packages.
+- Retires #35 (owner ruling, PR #458 comment 6473224284, item 1) and #107 by doing its work: the Worker adopts the
+  keyed pool, the ruling's fallback (same ruling, item 2), after Codex's review showed the storage guard alone does
+  not order the terminal callbacks (PR #458 comment 6474241300). Advances #141 (this package's sites) and #195 (this
+  package's site); both stay open for other packages.
   Stays open: #32, #96, #109, #155, #10, #11.

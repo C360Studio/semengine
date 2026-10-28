@@ -1,0 +1,62 @@
+# Tasks: setup-04a-04-graph-roots-embedding
+
+Each task names its outcome and the gate that proves it. Tests come first. Each step ends only when `task verify`
+passes on a clean tree at its commit (#171). One task is one developer's unit.
+
+## 1. Design and measurement
+
+- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
+  acceptance. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.2 Post the nats.go v1.54.0 / nats-server v2.15.1 KV probe (inventory 7, P1-P14) on PR #458. Posted as PR #458
+  comment 6472856197.
+- [x] 1.3 Owner rulings on #35 and #107. Ruled at PR #458 comment 6473224284.
+- [x] 1.4 Issues to file: none (design D10).
+
+## 2. Tests first
+
+- [ ] 2.1 Port the pin's unit tests for `bm25_embedder.go`, `dedup.go`, `vector.go` and the truncation and identity
+  helpers, without the two HTTP test files and without `time.Sleep`; add `TestEmbeddingImportsNoProviderModule` in
+  `internal/harness/contract` (design D9). Pin tests dropped or rewritten are named in `notes/2.1.md`. Gate: in 3.1.
+- [ ] 2.2 Storage tests of design D9: `TestRevisionGuardHistoryMatchesModel` and `TestSaveDedupKeepsSameSpaceReplacesOther`
+  (integration, `natsfixture`, #195), the pin's storage unit tests on fakes behind `NewKVStore`, each changed
+  behaviour shown failing against the pin's shape; seed and run count in `notes/2.2.md`. Gate: in 3.2.
+- [ ] 2.3 Worker and cache tests of design D9: the `Run` tests (synctest, nil, second `Run`, lost watch),
+  `TestVectorCacheNotAuthoritative`, `TestFindSimilarOrderAndLimit`, `TestTerminalCallbackOncePerOutcome`,
+  `TestPanickingEntryStaysPending`, `TestCASExhaustionIsNotTerminal`, `TestFailureWithCanceledTextIsAFailure`,
+  `TestBothLanesEmbedIdenticalBytes`, `TestWorkerConcurrentRevisionsEndAtNewest`, and the ported
+  `TestWorkerResolvesLiveRegistryStatePerFetch` on `natsfixture`. Evidence in `notes/2.3.md`. Gate: in 3.3 and 3.4.
+
+## 3. The package
+
+- [ ] 3.1 `embedder.go`, `bm25_embedder.go`, `dedup.go`, `vector.go` (dead helpers not carried), `derived_reasons.go`
+  (design D1, D2, D7 docs). Gate: `go test -race -count=1 ./graph/embedding`; `go mod tidy` leaves
+  `golang.org/x/sync` direct and adds no `go-openai`.
+- [ ] 3.2 `storage.go` on two `*natsclient.KVStore`, every read-modify-write through `UpdateWithRetryRead`, the dead
+  surface not carried (design D2, D3; ADR-110). Gate: as 3.1 plus `task test:integration -- ./graph/embedding`.
+- [ ] 3.3 `vector_cache.go`: `VectorCache` with `Run` and `FindSimilar` (design D5). Gate: as 3.2.
+- [ ] 3.4 `worker.go`: `Run(ctx)` in place of `Start`/`Stop`, `NewWorker` without the bucket, `WorkerMetrics` edits,
+  shutdown classified by the error, one text-length default (design D4, D6, D7). If `TestRevisionGuardHistoryMatchesModel`
+  or `TestWorkerConcurrentRevisionsEndAtNewest` cannot pass, stop: the Worker adopts `internal/dispatch.KeyedPool`
+  per the owner's ruling, and the design is amended first. Gate: as 3.2 plus
+  `go test -count=5 -cpu 1 -shuffle=on ./graph/embedding`.
+
+## 4. Ledger, records and docs
+
+- [ ] 4.1 Ledger rows of design D8: `graph/embedding` (`adapt`) and `graph/embedding/http_embedder.go`
+  (`defer-exclude`, naming #32). Gate: `task ledger:check`.
+- [ ] 4.2 Package `doc.go` and `README.md` (design D7), the ADR-066 and ADR-063 port notes, the `docs/repository-map.md`
+  row (design D8). Gate: `task docs:check`.
+- [ ] 4.3 `graph/embedding merged` in `scripts/cover-check.sh` (design D8). Gate: `task cover:check` after
+  `task test:integration`.
+
+## 5. Evidence and review
+
+- [ ] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
+  comment.
+- [ ] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body retires #35 and #107 (design D10).
+- [ ] 5.3 Comments on #141 and #195 ("implemented in PR #458 at `<SHA>`, pending merge"), read back.
+
+## 6. Close
+
+- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-embedding`) as the last content commit, syncing
+  `embedding-index` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

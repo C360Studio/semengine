@@ -245,6 +245,18 @@ after decode error, after `Run`), `TestFindSimilarOrderAndLimit`, `TestFailureWi
 tests the `background-work` spec asks for (`TestWorkerRunLeavesNothingBehind`, `TestVectorCacheRunLeavesNothingBehind`)
 run on these fakes, where no nats.go goroutine exists; the nats.go side is the integration tests below.
 
+Two more unit tests also run on the fakes, as `testing/synctest` tests (notes/3.4.md): neither needs a real server,
+because a fake store and embedder give the test the ordering it waits on.
+
+- `TestKeyedCallbacksFollowRevisionOrder` (the #107 regression for Codex's finding 2): pending N's body fetch fails,
+  so `SaveFailed(N)` is stored; N's terminal callback blocks until the test has written pending M and seen it in the
+  bucket; then it is released. The terminal callbacks arrive as Failed(N) then Generated(M), never the reverse, and
+  M's processing does not start before N's callback returns. Shown failing against the pin's shared-channel shape
+  in `notes/3.4.md`.
+- `TestWorkerSaveRefusedWhenNewerPendingArrives` (the guard against hop 1): the fake embedder holds N's text until the
+  test has written pending M and seen it in the bucket; then N is released. N's save is refused, `onGenerated` does
+  not fire for it and its outcome is `OutcomeDeleted`; M is then processed and the record ends generated at M.
+
 Integration (`natsfixture`, shared server via the reset; #195):
 
 - `TestWorkerRunLeavesNoWatchDelivery` and `TestVectorCacheRunLeavesNoWatchDelivery`: 600 records (above the 256-entry
@@ -264,14 +276,6 @@ Integration (`natsfixture`, shared server via the reset; #195):
   failed is also refused over generated at an equal revision; the fenced delete removes only at the KV revision it is
   given. Each call's result and the stored record are checked against the model. Bounded at 50 runs; the seed and
   completed-run count go in `notes/2.2.md`, and a failure prints its replayable sequence.
-- `TestKeyedCallbacksFollowRevisionOrder` (the #107 regression for Codex's finding 2): pending N's body fetch fails,
-  so `SaveFailed(N)` is stored; N's terminal callback blocks until the test has written pending M and seen it in the
-  bucket; then it is released. The terminal callbacks arrive as Failed(N) then Generated(M), never the reverse, and
-  M's processing does not start before N's callback returns. Shown failing against the pin's shared-channel shape
-  in `notes/3.4.md`.
-- `TestWorkerSaveRefusedWhenNewerPendingArrives` (the guard against hop 1): the fake embedder holds N's text until the
-  test has written pending M and seen it in the bucket; then N is released. N's save is refused, `onGenerated` does
-  not fire for it and its outcome is `OutcomeDeleted`; M is then processed and the record ends generated at M.
 - `TestNoTextDeleteKeepsNewerPending` and `TestNoTextDeleteKeepsNewerGenerated` (Codex's finding 1): N carries a
   storage reference whose body is empty, and the fake store holds N's fetch until the test has written pending M
   (first test) or written M's generated record directly through `Storage`, as another process's Worker would (second

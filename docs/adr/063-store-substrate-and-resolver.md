@@ -12,8 +12,9 @@
 >   SemStreams' or a sister repository's, not SemEngine's. ADR-047, ADR-048, ADR-055 and ADR-062 are not carried.
 > - Ported here: `storage` (the `Store` and `StreamableStore` interfaces), `storage/storeregistry` (the registry
 >   that resolves `StorageReference.StorageInstance`) and `storage/objectstore` (the Store). Also ported: the objectstore
->   Component (`storage/objectstore`). Not ported yet: graph-embedding and fusion, which the text names as the
->   registry's users.
+>   Component (`storage/objectstore`). Also ported: `graph/embedding`, whose Worker reads a stored reference's body
+>   through the registry (change `setup-04a-04-graph-roots-embedding`, draft PR #458). Not ported yet: the
+>   graph-embedding component and fusion, which the text names as the registry's other users.
 > - Kept: the instance name stamped as `StorageInstance`, the registry, resolving per fetch and not caching a
 >   resolved handle, and the read contract that opening a reference returns the raw body. `StoreContent` now keeps
 >   that contract too: it stores only the `body` role's text as raw bytes, so the reference opens to exactly that

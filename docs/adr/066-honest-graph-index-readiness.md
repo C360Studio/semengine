@@ -15,8 +15,10 @@
 > - Of the code named here, `natsclient` is ported, with `BucketLastSeq` and `CreateKeyValueBucket`; `graph` and
 >   `processor/graph-ingest` are ported (change 2, PR #93; `graph.ComputeIndexStatus` returns with graph-index); and
 >   `pkg/revlag` is ported as `internal/revlag` (its admission-ledger row is `pkg/revlag`). File paths and line numbers
->   in the text are those at that commit. `processor/graph-index`, `processor/graph-embedding`, `graph/embedding`,
->   `pkg/worker`, `pkg/fusion` and the `configs/` files are not yet ported. The `semsource` code and decisions named
+>   in the text are those at that commit. `graph/embedding` is ported (change `setup-04a-04-graph-roots-embedding`, draft
+>   PR #458): its Worker is the text's hop 2, and it runs as `Run(ctx)` on a per-entity keyed pool in place of the
+>   pin's `Start` and `Stop`. `processor/graph-index`, `processor/graph-embedding`, `pkg/worker`, `pkg/fusion` and the
+>   `configs/` files are not yet ported. The `semsource` code and decisions named
 >   here are that repository's.
 
 ## Status

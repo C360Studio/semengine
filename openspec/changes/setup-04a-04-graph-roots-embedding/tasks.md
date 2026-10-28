@@ -69,12 +69,12 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 4. Ledger, records and docs
 
-- [ ] 4.1 Ledger rows of design D8: `graph/embedding` (`adapt`, its `known_risks` naming change 5's required reaction
+- [x] 4.1 Ledger rows of design D8: `graph/embedding` (`adapt`, its `known_risks` naming change 5's required reaction
   to a lost-watch error) and `graph/embedding/http_embedder.go` (`defer-exclude`, naming #32). Gate:
   `task ledger:check`.
-- [ ] 4.2 Package `doc.go` and `README.md` (design D7), the ADR-066 and ADR-063 port notes, the `docs/repository-map.md`
+- [x] 4.2 Package `doc.go` and `README.md` (design D7), the ADR-066 and ADR-063 port notes, the `docs/repository-map.md`
   rows for `graph/embedding` and `internal/kvwatch` (design D1, D8). Gate: `task docs:check`.
-- [ ] 4.3 `graph/embedding merged` in `scripts/cover-check.sh` (design D8). Gate: `task cover:check` after
+- [x] 4.3 `graph/embedding merged` in `scripts/cover-check.sh` (design D8). Gate: `task cover:check` after
   `task test:integration`.
 
 ## 5. Evidence and review

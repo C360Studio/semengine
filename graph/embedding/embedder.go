@@ -1,4 +1,3 @@
-// Package embedding provides embedding generation and caching for semantic search.
 package embedding
 
 import "context"

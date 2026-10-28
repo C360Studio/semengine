@@ -49,6 +49,9 @@ readonly targets=(
   # setup-04a-04-graph-roots-objectstore-store design D9: the Store is a consumer-facing storage primitive; its
   # unit and integration lanes test different code.
   "storage/objectstore merged"
+  # setup-04a-04-graph-roots-embedding design D8: graph/embedding is on the 03B critical list; its unit lane
+  # (fakes, synctest) and integration lane (real NATS) test different code.
+  "graph/embedding merged"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

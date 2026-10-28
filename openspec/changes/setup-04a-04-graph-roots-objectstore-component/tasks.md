@@ -14,7 +14,8 @@ passes on a clean tree at its commit (#171).
 - [x] 2.1 Unit tests (no Docker): `TestComponentConfigRefusesUnknownKey` (`data_cache`, a misspelt key; error names it),
   `TestComponentRefusesOutputOtherThanStored`, `TestDeclarePortsMatchesComponentPorts`, `TestRegisterRegistersObjectstore`,
   `TestClassifyWriteDisposition`, `TestStoredMessageRoundTripsThroughDecoder`, `TestStoredMessageValidate`,
-  `TestComponentRefusesInputWithoutStoredOutput`, `TestFailedCleanupRetainsInputsForLaterStop` (design D8: `Start`
+  `TestComponentRefusesInputWithoutStoredOutput`, `TestFailedCleanupRetainsInputsForLaterStop` (integration since D11,
+  `notes/4.3.md`; design D8: `Start`
   returns the start and cleanup errors, `Observe` still lists the unreleased inputs, a later `Stop` with a fresh finite
   context returns nil and leaves nothing). Each shown failing first; pin tests dropped or rewritten named in `notes/2.1.md`.
 - [x] 2.2 Integration tests (`natsfixture`, shared server via the reset): `TestObjectStoreLifecycleSuite` (core and
@@ -42,16 +43,16 @@ passes on a clean tree at its commit (#171).
 
 ## 4. Waiting for one consumer's handlers (design D11; owner ruling on #443)
 
-- [ ] 4.1 Tests first in `natsclient`, each failing first (the method does not exist):
+- [x] 4.1 Tests first in `natsclient`, each failing first (the method does not exist):
   `TestWaitConsumerHandlersWaitsForRunningHandler`, `TestWaitConsumerHandlersAfterConnectionLoss`,
   `TestWaitConsumerHandlersContextEndsFirst`, `TestWaitConsumerHandlersRefusesUnknownHandle`,
   `TestWaitConsumerHandlersAfterClose`, `TestWaitConsumerHandlersRefusesNilContext`; re-run the adopter search of D11
   and record it on #441. Gate: each test red against a stub that returns nil at once, by an assertion failure, not
   only a compile error (`…AfterClose` against a stub that forgets a handle at release; `…ContextEndsFirst` also against
   a version that stops the handle first), recorded in `notes/4.1.md`.
-- [ ] 4.2 `Client.WaitConsumerHandlers` in `natsclient` (D11 contract; no other natsclient change). Gate:
+- [x] 4.2 `Client.WaitConsumerHandlers` in `natsclient` (D11 contract; no other natsclient change). Gate:
   `go test -race -count=1 ./natsclient`, `task test:integration -- ./natsclient`, the 4.1 tests pass.
-- [ ] 4.3 The Component's `cleanup` calls it; `handlerJoin`, its field and its refusal path go;
+- [x] 4.3 The Component's `cleanup` calls it; `handlerJoin`, its field and its refusal path go;
   `TestHandlerJoinWaitsForRunningHandlersAndRefusesLaterOnes` dropped; `TestStopJoinsHandlerAfterConnectionLoss`
   unchanged and passing. ADR-112 § 4 and the `natsclient` ledger row name the method. Gate: `task verify`.
 

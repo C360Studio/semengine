@@ -10,7 +10,6 @@ import (
 	"log/slog"
 	"reflect"
 	"slices"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -106,7 +105,6 @@ type Component struct {
 	cancel        context.CancelFunc
 	subscriptions []coreSubscription
 	consumers     []consumerBinding
-	handlers      *handlerJoin
 	checkDone     chan struct{}
 
 	// inputFault is Health's stuck state for the JetStream inputs, written by each input check
@@ -131,62 +129,6 @@ type coreSubscription interface {
 type consumerBinding struct {
 	handle      jetstream.ConsumeContext
 	drainIssued bool
-}
-
-// handlerJoin counts the JetStream input handlers of one Start that are running, so cleanup can
-// wait for them. A consume loop's Closed() is not that wait: once the connection is lost for good
-// it can close while a handler still runs (natsclient/stream.go:421-427, #83, #439), and a nil
-// Client.Close, natsclient's proof, is not the Component's to obtain: the client is injected and
-// shared. Core-NATS inputs need no count: Subscription.Drain returns nil only after the running
-// handler has returned, a lost connection included (nats.go v1.54 waitForMsgs calls the
-// subscription's closed handler after the callback returns).
-//
-// Once close has been called no handler starts; cleanup calls it only after every consume loop
-// has reported its end, so a graceful drain still runs the deliveries it hands over.
-type handlerJoin struct {
-	mu      sync.Mutex
-	running int
-	closing bool
-	idle    chan struct{} // closed once closing is recorded and no handler runs
-}
-
-func newHandlerJoin() *handlerJoin {
-	return &handlerJoin{idle: make(chan struct{})}
-}
-
-// enter records a handler starting, or reports false once close has been called.
-func (j *handlerJoin) enter() bool {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if j.closing {
-		return false
-	}
-	j.running++
-	return true
-}
-
-// exit records a handler that enter admitted returning.
-func (j *handlerJoin) exit() {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	j.running--
-	if j.closing && j.running == 0 {
-		close(j.idle)
-	}
-}
-
-// close records that no handler may start and returns a channel closed once none runs. A later
-// call returns the same channel.
-func (j *handlerJoin) close() <-chan struct{} {
-	j.mu.Lock()
-	defer j.mu.Unlock()
-	if !j.closing {
-		j.closing = true
-		if j.running == 0 {
-			close(j.idle)
-		}
-	}
-	return j.idle
 }
 
 var (
@@ -420,7 +362,6 @@ func (c *Component) start(ctx context.Context) error {
 	// The run context: Start's values without its cancellation, ended only by release.
 	runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
 	c.cancel = cancel
-	c.handlers = newHandlerJoin()
 
 	store, err := NewStoreWithConfigAndMetrics(ctx, c.natsClient, Config{
 		BucketName:   c.config.BucketName,
@@ -446,7 +387,7 @@ func (c *Component) start(ctx context.Context) error {
 			c.subscriptions = append(c.subscriptions, subscription)
 			continue
 		}
-		handle, err := c.bindJetStream(ctx, binding, store, c.handlers)
+		handle, err := c.bindJetStream(ctx, binding, store)
 		if err != nil {
 			return errs.Wrap(err, "objectstore", "Start", "bind input "+binding.port.Name)
 		}
@@ -478,9 +419,9 @@ func (c *Component) start(ctx context.Context) error {
 // bindJetStream waits for binding's stream and binds its durable consumer. The consumer takes
 // the port's consumer settings, ack_wait included, and delivers from the start of the stream
 // unless the port says otherwise, so a body published before the Component started is still
-// stored. Each delivery's handler runs inside handlers, which cleanup waits for.
+// stored.
 func (c *Component) bindJetStream(
-	ctx context.Context, binding inputBinding, store *Store, handlers *handlerJoin,
+	ctx context.Context, binding inputBinding, store *Store,
 ) (jetstream.ConsumeContext, error) {
 	if err := c.waitForStream(ctx, binding.stream); err != nil {
 		return nil, fmt.Errorf("stream %s not available: %w", binding.stream, err)
@@ -510,16 +451,6 @@ func (c *Component) bindJetStream(
 			AutoCreate:    false,
 		},
 		func(ctx context.Context, msg jetstream.Msg) {
-			if !handlers.enter() {
-				// Delivered after cleanup saw every consume loop end: a delivery the native
-				// library handed over as the connection was lost. Left unsettled, the server
-				// redelivers it after ack_wait (lost under ack_policy none, as core NATS is).
-				c.logger.Error("objectstore: delivery arrived after the input stopped; left unsettled for redelivery",
-					slog.String("subject", msg.Subject()))
-				c.lifecycle.CountError()
-				return
-			}
-			defer handlers.exit()
 			c.handleJetStream(ctx, store, msg)
 		})
 	if err != nil {
@@ -574,9 +505,12 @@ func (c *Component) release(ctx context.Context) error {
 }
 
 // cleanup drains every bound input under ctx, then ends the run context and waits for the input
-// check. A JetStream consumer's Drain is issued once; a later cleanup waits on the same drain. Once
-// every consume loop has reported its end, cleanup also waits for their handlers (handlerJoin):
-// the loop's end alone does not prove them returned. The Store has nothing to close.
+// check. A JetStream consumer's Drain is issued once; a later cleanup waits on the same drain,
+// through natsclient's WaitConsumerHandlers, which returns nil once the consumer's handlers have
+// all returned: the consume loop's Closed() alone does not prove that, since it can close while a
+// handler still runs once the connection is lost for good (TestStopJoinsHandlerAfterConnectionLoss,
+// #439). The client is injected and shared, so its Close is not the Component's to call. The Store
+// has nothing to close.
 func (c *Component) cleanup(ctx context.Context) error {
 	var cleanupErr error
 	for index := range c.consumers {
@@ -589,21 +523,8 @@ func (c *Component) cleanup(ctx context.Context) error {
 	for _, subscription := range c.subscriptions {
 		cleanupErr = errors.Join(cleanupErr, subscription.Drain(ctx))
 	}
-	loopsEnded := true
 	for _, binding := range c.consumers {
-		select {
-		case <-binding.handle.Closed():
-		case <-ctx.Done():
-			loopsEnded = false
-			cleanupErr = errors.Join(cleanupErr, ctx.Err())
-		}
-	}
-	if loopsEnded && c.handlers != nil {
-		select {
-		case <-c.handlers.close():
-		case <-ctx.Done():
-			cleanupErr = errors.Join(cleanupErr, ctx.Err())
-		}
+		cleanupErr = errors.Join(cleanupErr, c.natsClient.WaitConsumerHandlers(ctx, binding.handle))
 	}
 	if c.cancel != nil {
 		c.cancel()
@@ -624,7 +545,6 @@ func (c *Component) clearLifecycleHandles() {
 	c.cancel = nil
 	c.subscriptions = nil
 	c.consumers = nil
-	c.handlers = nil
 	c.store.Store(nil)
 	c.inputFault.Store(nil)
 }

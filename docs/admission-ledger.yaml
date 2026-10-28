@@ -1118,6 +1118,15 @@
     takes a retry.Config and runs retry.Do, so MaxAttempts counts the first attempt, a count below one makes one
     attempt, a config retry.Do refuses is returned before anything is sent, and the error class of that refusal is not
     promised.
+    Changed surface, setup-04a-04-graph-roots-objectstore-component design D11 (owner ruling, PR #437 comment
+    6467701324, on #443; one-package exception, #159): Client.WaitConsumerHandlers(ctx, handle) waits, bounded by ctx,
+    until delivery on a consumer whose handle this client returned (ConsumeStreamWithConfig,
+    ConsumeStreamWithConfigContexts, ConsumeInternalStreamWithConfig) has ended, every handler invocation of it has
+    returned and its durable claim is released (the ownership's released channel, owned_delivery.go). It stops
+    nothing; a ctx that ends first returns an error matching ctx.Err(); a nil ctx and a handle the client did not
+    return (nil, another client's, not comparable) are refused at once as invalid; a handle stays known for the
+    client's life, so after its handlers finished or after Close returned nil it returns nil at once. The client keeps
+    one map entry per consumer it returns, the handle as a lookup key only. Consumer: storage/objectstore's cleanup.
   dependencies_and_side_effects: >-
     metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
@@ -1799,6 +1808,11 @@
     detected: the update's write error retryable again (the update row), the create's (the create row), a conflict
     ending the call (TestUpdateWithRetryRead_ConflictPassesTheNewerRevision), the ErrNoStreamResponse clause dropped
     (the no-stream-response row).
+    Design D11 of setup-04a-04-graph-roots-objectstore-component (wait_consumer_handlers_integration_test.go):
+    TestWaitConsumerHandlersWaitsForRunningHandler, TestWaitConsumerHandlersAfterConnectionLoss,
+    TestWaitConsumerHandlersContextEndsFirst, TestWaitConsumerHandlersRefusesUnknownHandle,
+    TestWaitConsumerHandlersAfterClose and TestWaitConsumerHandlersRefusesNilContext; each red against a mutant
+    recorded in that change's notes/4.1.md.
   owner: setup-04a-01-floor developer
   disposition: adapt
 

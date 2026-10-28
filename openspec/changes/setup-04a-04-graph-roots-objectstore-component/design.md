@@ -160,7 +160,9 @@ context error before the native close and allows a later join (`natsclient/clien
 `TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop` does (`processor/graph-ingest/lifecycle_owner_test.go:121`):
 the test calls `lifecycle.Start` with a start function that fails after binding and a rollback that releases under an
 already-ended context. It asserts that `Start` returns both errors, that `Observe` still lists the inputs, and that a
-later `Stop` with a fresh finite context returns nil and leaves nothing. It needs no production hook.
+later `Stop` with a fresh finite context returns nil and leaves nothing. It needs no production hook. Since D11 the
+test binds a real JetStream consumer on the package's shared server (`lifecycle_integration_test.go`), because the client
+waits only on handles it returned (`notes/4.3.md`).
 
 ## D9. Gates and records
 

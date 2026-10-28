@@ -2,7 +2,9 @@ package natsclient
 
 import (
 	"context"
+	"errors"
 	"log/slog"
+	"reflect"
 	"sync"
 
 	"github.com/nats-io/nats.go"
@@ -183,6 +185,7 @@ func (c *Client) commitConsumer(
 ) (jetstream.ConsumeContext, error) {
 	o.handle <- h
 	if !c.isClosing() {
+		c.recordConsumerRelease(h, o.released)
 		return h, nil
 	}
 	h.Stop()
@@ -192,6 +195,66 @@ func (c *Client) commitConsumer(
 	case <-ctx.Done():
 		return nil, errs.WrapTransient(ctx.Err(), "Client", operation,
 			"setup context ended while the refused consumer's handlers run")
+	}
+}
+
+// recordConsumerRelease records h, a handle about to be returned to the caller, with released,
+// for WaitConsumerHandlers. nats.go v1.54.0 returns a pointer (*pullSubscription,
+// jetstream/pull.go:228, :425); a handle that is not comparable cannot be a lookup key and is not
+// recorded, so WaitConsumerHandlers refuses it as unknown.
+func (c *Client) recordConsumerRelease(h jetstream.ConsumeContext, released <-chan struct{}) {
+	if !reflect.ValueOf(h).Comparable() {
+		return
+	}
+	c.consumerReleasesMu.Lock()
+	defer c.consumerReleasesMu.Unlock()
+	if c.consumerReleases == nil {
+		c.consumerReleases = make(map[jetstream.ConsumeContext]<-chan struct{})
+	}
+	c.consumerReleases[h] = released
+}
+
+// WaitConsumerHandlers waits until delivery on the consumer whose handle this client returned
+// from ConsumeStreamWithConfig, ConsumeStreamWithConfigContexts or
+// ConsumeInternalStreamWithConfig has ended, every handler invocation of it has returned and its
+// durable claim is released, so a consumer with the same durable can start on this client. From
+// then on no handler of it starts; a later delivery is refused, logged and counted.
+//
+// It waits and stops nothing: ending delivery stays the caller's (Drain or Stop on its handle) or
+// Close's. The handle's Closed() is not this wait: it can close while a handler still runs
+// (jetstream/pull.go:822-837 at nats.go v1.54.0). How long delivery takes to end after a Drain is
+// not promised.
+//
+// If ctx ends first it returns an error matching ctx.Err() and changes nothing; a later call
+// waits again. A handle stays known for the client's life, so a call after its handlers finished,
+// or after Close returned nil, returns nil at once. A nil ctx, and a handle this client did not
+// return (nil, another client's, a value nats.go never made), are refused at once as invalid
+// input. It never closes, drains or reconnects the client.
+func (c *Client) WaitConsumerHandlers(ctx context.Context, handle jetstream.ConsumeContext) error {
+	if ctx == nil {
+		return errs.WrapInvalid(errors.New("nil context"), "Client", "WaitConsumerHandlers", "missing context")
+	}
+	var released <-chan struct{}
+	if reflect.ValueOf(handle).Comparable() {
+		c.consumerReleasesMu.Lock()
+		released = c.consumerReleases[handle]
+		c.consumerReleasesMu.Unlock()
+	}
+	if released == nil {
+		return errs.WrapInvalid(errors.New("consumer handle not returned by this client"),
+			"Client", "WaitConsumerHandlers", "look up consumer")
+	}
+	select {
+	case <-released:
+		return nil
+	default:
+	}
+	select {
+	case <-released:
+		return nil
+	case <-ctx.Done():
+		return errs.WrapTransient(ctx.Err(), "Client", "WaitConsumerHandlers",
+			"context ended before the consumer's handlers returned")
 	}
 }
 

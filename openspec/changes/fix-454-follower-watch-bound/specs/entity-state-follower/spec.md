@@ -8,9 +8,9 @@ After stopping the watch, `Run` SHALL wait until the watch's delivery closes, fo
 nil, or the watch's `Stop` error when that error says more than that the watch was already gone. When the 5 s run
 out, it SHALL return an error saying the watch's delivery did not close after `Stop`. The bound exists because at
 nats.go v1.54.0 a watch whose context ends, or whose connection closes, after nats.go subscribes and before it installs
-the handler that closes the update channel never closes that channel. The wait runs after `Run`'s context has ended,
-so it is terminal finalization with no caller context (background-work, "No fixed shutdown timeout"). Changed: the
-wait had no bound and could block `Run` for good (#454).
+the handler that closes the update channel never closes that channel; on that path no goroutine is left to join, and
+on every other path the wait ends when nats.go's delivery ends. Changed: the wait had no bound and could block `Run`
+for good (#454).
 
 #### Scenario: A backlogged watch at cancellation
 
@@ -21,5 +21,5 @@ wait had no bound and could block `Run` for good (#454).
 #### Scenario: The watch's delivery never closes
 
 - **WHEN** the watch is stopped and its update channel stays open
-- **THEN** the wait returns, after 5 s and not before, an error saying the delivery did not close after `Stop`
+- **THEN** the wait returns, after 5 s of its clock, an error saying the delivery did not close after `Stop`
 - **AND** the test that verifies this is `TestStopWatchGivesUpOnADeliveryThatNeverCloses`

@@ -28,9 +28,11 @@ handler is installed, the wait ends as soon as nats.go's delivery has ended; the
 `natsclient`'s `keysByFilter` keeps a 5 s bound for this same case (`natsclient/kv.go:603-605`), and the owner chose
 on 2026-10-28 to keep it there and close #420. The follower gets the same bound, named for this case.
 
-The bound is allowed by `openspec/specs/background-work/spec.md`, "No fixed shutdown timeout": the wait runs after
-`Run`'s context has ended, so it is terminal finalization with no caller context, which that requirement lets run
-under a budget. It uses a timer in the select, not a new context.
+The bound is the shape the developer and reviewer contracts admit for terminal cleanup after an owner's
+cancellation (`.agents/contracts/semengine-reviewer.md:251-255`): `context.WithTimeout(context.WithoutCancel(ctx),
+budget)`, as `natsclient/kv.go:700` does and `docs/admission-ledger.yaml:1155-1156` records. It does not stand in for a
+join (`openspec/specs/background-work/spec.md`, "No fixed shutdown timeout"): on the path where nats.go installed its
+handler, the wait ends when nats.go's delivery ends, and on the path where it did not, no goroutine is left to join.
 
 Callers: `processor/graph-index/component.go:272` is the only caller of `Run`; it logs a non-nil error as "ENTITY_STATES
 watch did not stop cleanly" and goes on, so an expired bound is reported and `Stop` returns.
@@ -41,14 +43,24 @@ Light process, owner 2026-10-28: proposal, tasks and spec delta; no design docum
 
 ## What Changes
 
-- `stopWatch` waits for `Updates()` to close for at most 5 s (a named constant), then returns an error saying the
-  watch's delivery did not close after `Stop`. A `Stop` error is still tolerated, as today, when it says only that the
-  watch was already gone. Its doc comment names the nats.go window.
+- `stopWatch` takes `Run`'s context and drains `Updates()` under `context.WithTimeout(context.WithoutCancel(ctx),
+  budget)`, with a named 5 s budget. When the budget runs out it returns an error saying the watch's delivery did not
+  close after `Stop`. A `Stop` error is still tolerated, as today, when it says only that the watch was already gone.
+- The doc comments of `stopWatch` (`follower.go:240-244`, which calls returning "a join") and `Run`
+  (`follower.go:183-186`, "its delivery closed") name the bound and the nats.go window.
 - A unit test, `TestStopWatchGivesUpOnADeliveryThatNeverCloses` in `graph/follower/follower_test.go`, runs
-  `stopWatch` under `testing/synctest` on a scripted watcher whose channel never closes: it has not returned before
-  5 s of the bubble's clock and returns the error after. It cannot pass on the base commit, where `stopWatch` never
+  `stopWatch` under `testing/synctest`, with a cancelled context, on a scripted watcher whose channel never closes: it
+  returns the error after exactly the named budget of the bubble's clock (`time.Since` on the bubble's clock, no
+  `time.Sleep`). It cannot pass on the base commit, where `stopWatch` never
   returns (synctest reports the deadlock).
 - `TestFollowerRunReturnsAndLeavesNothing` is unchanged; it still proves the backlogged-delivery join on a real server.
+
+## Not covered
+
+- graph-ingest's guard watcher (`processor/graph-ingest/poison_inventory.go:352-362`) drains with no bound in the same
+  window; filed as #456 (one package per PR).
+- A connection close in the window while `Run`'s context is live leaves `follow` waiting with the feed never declared
+  lost; filed as #457. This change only bounds the wait after the context ends.
 
 ## Capabilities
 

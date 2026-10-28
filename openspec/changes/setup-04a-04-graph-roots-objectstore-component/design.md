@@ -210,7 +210,7 @@ not its promise. Records the method joins: `transport-client` spec (`:146`, `:20
 - It waits; it does not stop delivery. Ending delivery stays the caller's (`Drain`/`Stop` on its own handle) or
   `Close`'s. It returns nil once the consumer's delivery has ended, every handler invocation of that consumer has
   returned, **and the consumer's durable claim is released**: it waits on `consumerOwnership.released`
-  (`owned_delivery.go:112`; its deferred close, `:135`, runs after `release`, `:164`), not on `ownedDelivery.done`.
+  (`owned_delivery.go:112`; its deferred close, `:135`, runs after `release`, `:163`), not on `ownedDelivery.done`.
   `done` closes before `release` frees the claim and forgets the policy and metrics (`natsclient/stream.go:678-684`), so
   a nil on `done` could let a caller that starts the same durable next meet its own claim. From then on no handler of it
   starts, and a later delivery is refused, logged and counted as today.

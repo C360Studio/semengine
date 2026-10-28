@@ -20,8 +20,9 @@ import (
 // developer.md and reviewer.md still hold each ateam paragraph and that skills carry their section
 // markers, so an added line, a deleted architect.md or an edited skill passes it.
 //
-// Init runs into an empty directory, not a copy of the tree: it never overwrites an existing
-// file, so a copy of the repository gets nothing written to compare.
+// Init runs into an empty directory holding only the repository's review policy, not a copy of the
+// tree: it never overwrites an existing file, so a copy of the repository gets nothing written to
+// compare.
 
 // semengineOwned are the paths init writes that SemEngine keeps its own text in, with the reason. The
 // five client configurations are ateam's to register into but the adopter's to edit: init never
@@ -123,7 +124,19 @@ func ateamTemplates(t *testing.T, root string) map[string][]byte {
 		t.Fatalf("ateam version reports %q, want the ci.yml pin %s; install it: %s", strings.TrimSpace(string(out)), pin, install)
 	}
 
+	// init reads the review policy (review_record: aip writes a different reviewer.md and
+	// review-pr skill, ateam reviewrecord.go), so the empty directory gets the repository's.
 	dir := t.TempDir()
+	policy, err := os.ReadFile(filepath.Join(root, ".agents", "review-policy.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, ".agents"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".agents", "review-policy.json"), policy, 0o644); err != nil {
+		t.Fatal(err)
+	}
 	if out, err := exec.CommandContext(t.Context(), "ateam", "init", "-dir", dir).CombinedOutput(); err != nil {
 		t.Fatalf("ateam init: %v\n%s", err, out)
 	}

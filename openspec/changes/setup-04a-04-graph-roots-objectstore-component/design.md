@@ -183,6 +183,70 @@ later `Stop` with a fresh finite context returns nil and leaves nothing. It need
   `UnmarshalJSON` (`pin:…/stored_message.go:163-197`) stay instead of the alias form the payload rule names: its
   fields are unexported, and an alias needs exported fields, which would make a received `StoredMessage` mutable.
 
+## D11. Waiting for one consumer's handlers (`natsclient`; owner ruling on #443)
+
+Owner ruling, 2026-10-28 (PR #437 comment 6467701324, verbatim on #443): add a small exported `natsclient` method
+that waits, bounded by the caller's context, until one consumer's handler invocations have all returned; it exposes the
+completion `natsclient` already owns, keeps the exact native handle (#9 comment 5980296112), never closes the shared
+client, and replaces the Component's `handlerJoin`. One-package exception for this method only (#159).
+
+**Inventory.** Each consumer the client starts is tracked by a `consumerOwnership`
+(`natsclient/owned_delivery.go:109-113`): `ownConsumer` (`:124-168`) admits a client-owned goroutine before native
+`Consume`, which waits for the handle's `Closed()` or Close beginning, records the end (`ownedDelivery.end`, `:74-84`),
+waits for `ownedDelivery.done` (closed once the end is recorded and no invocation runs, `:30-32`, `:87-89`), then
+releases the claim and closes `released`; a delivery after the end is refused, logged and counted (`:41-48`, `:98-104`;
+`transport-client` spec "A delivery after the recorded end is refused, and counted", `:146`). `commitConsumer`
+(`:181-199`) returns the native handle unchanged. All three consumer entry points reach it:
+`ConsumeStreamWithConfig` and `ConsumeStreamWithConfigContexts` through `consumePortStreamWithConfigContexts`
+(`natsclient/stream.go:678`, `:713`), `ConsumeInternalStreamWithConfig` directly (`:567`, `:599`). Nothing keeps an
+ownership after setup returns: no table maps a handle to it (`git grep -n -e 'ownConsumer(' -e 'commitConsumer('
+-- natsclient`: those three sites only), so it cannot be looked up by handle today. At nats.go v1.54.0 the handle is
+a `*pullSubscription` (`jetstream/pull.go:228`, returned at `:425`), a pointer; that is the library's current shape,
+not its promise. Records the method joins: `transport-client` spec (`:146`, `:205`, `:235`, `:533`); ADR-112 § 4
+"Ownership" (`docs/adr/112-natsclient-contract.md:192-197`: "`Close` stops it and joins its handlers").
+
+**Contract.** `func (c *Client) WaitConsumerHandlers(ctx context.Context, handle jetstream.ConsumeContext) error`:
+
+- It waits; it does not stop delivery. Ending delivery stays the caller's (`Drain`/`Stop` on its own handle) or
+  `Close`'s. It returns nil once the consumer's delivery has ended and every handler invocation of that consumer has
+  returned; from then on no handler of it starts, and a later delivery is refused, logged and counted as today.
+- A nil `ctx` is refused as invalid input (spec `:235`). If `ctx` ends first it returns an error matching `ctx.Err()`
+  and changes nothing; a later call waits again.
+- A `handle` this client did not return from one of the three entry points (nil, another client's, a value nats.go
+  never made) is refused at once as invalid input, never waited on and never a panic. A failed setup returns no handle,
+  so it has nothing to wait on.
+- A handle stays known to its client for the client's life, so a call after its handlers finished, or after `Close`
+  returned nil (which joins them, spec `:533`), returns nil at once. The cost is one small record per consumer a
+  client ever starts; components start their consumers once per process (ADR-095).
+- It never closes, drains or reconnects the client and never wraps or replaces the handle. No other `natsclient`
+  change.
+
+Its promise rests on the client's own count, not on nats.go: `Closed()` can close while a handler still runs
+(`owned_delivery.go:14-18`, citing `jetstream/pull.go:822-837`, and the Component's
+`TestStopJoinsHandlerAfterConnectionLoss`, the probe at this version). How long delivery takes to end after a
+`Drain` is not promised (#170).
+
+**The Component.** `cleanup` drains each JetStream input, then calls `WaitConsumerHandlers(ctx, handle)` under Stop's
+context for each; a context that ends first keeps the input for a later `Stop` (lifecycle-suite, retained handles).
+`handlerJoin`, its field and the Component's own late-delivery refusal go (`storage/objectstore/component.go:136-196`,
+`:109`, `:423`, `:513-522`, `:603`). `TestStopJoinsHandlerAfterConnectionLoss` stays unchanged and must still pass;
+`TestHandlerJoinWaitsForRunningHandlersAndRefusesLaterOnes` is dropped with the type, its behaviour now proven in
+`natsclient`.
+
+**Proving tests (natsclient, failing first: the method does not exist):** `TestWaitConsumerHandlersWaitsForRunningHandler`
+(a handler held mid-invocation; the handle stopped; the wait does not return until the handler is released, then nil),
+`TestWaitConsumerHandlersAfterConnectionLoss` (broker gone for good while a handler runs: `Closed()` has fired and the
+wait still blocks until the handler returns), `TestWaitConsumerHandlersContextEndsFirst` (error matches `ctx.Err()`; a
+second call with a fresh context returns nil after release), `TestWaitConsumerHandlersRefusesUnknownHandle` (nil, a
+foreign client's handle, a fake non-comparable value: invalid input, no wait, no panic),
+`TestWaitConsumerHandlersAfterClose` (nil at once), and `TestWaitConsumerHandlersRefusesNilContext`; the late-delivery
+refusal stays proven by the existing `:146` scenario's test.
+
+**Adopters (reusable primitive).** The objectstore Component (this change); graph-ingest's `Stop` (#441, after this
+merges: `processor/graph-ingest` waits on `Closed()` today, the same gap). Recorded on #441; no other caller drains a
+consumer and waits for its handlers (`git grep -n 'Closed()' -- '*.go' ':!*_test.go' ':!natsclient'`, to be re-run in
+task 7.1).
+
 ## D10. Issues
 
 | Issue | Disposition |
@@ -193,6 +257,8 @@ later `Stop` with a fresh finite context returns nil and leaves nothing. It need
 | #280 | untouched (item 3 is `pkg/lifecycle`) |
 | #281 | untouched (defect in `component/schema_tags.go`) |
 | #216 | closed; its ruling applied: input binding lost is a stuck state (D2), task 2.2 |
+| #443 | retired, `Closes #443`: D11, tasks 7.1-7.3 |
+| #441 | stays: graph-ingest adopts D11's method after this merges |
 | #36 | stays: a delivery parked after `MaxDeliver` is declared in the spec, not reported (D4); making it visible is #36's re-homed observer, a later change |
 
 Filed by this design: none.

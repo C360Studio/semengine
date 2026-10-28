@@ -40,7 +40,11 @@ have no provider code (inventory 8).
 - `storage/objectstore`: `component.go`, `register.go`, `stored_message.go` and tests; `storage/storage.go` and
   `storage/doc.go` (two interfaces and their examples removed); `internal/harness/contract/consumerpolicy_test.go`
   (allowlist gains the Component's file, #422); ledger rows `storage/objectstore`, `storage`; ADR-063 port note.
+- `natsclient`: one exported method, `Client.WaitConsumerHandlers`, by owner ruling (PR #437 comment 6467701324;
+  one-package exception for this method only, #159); `transport-client` spec and ADR-112 § 4 gain its contract;
+  ledger row `natsclient` (design D11).
 - Consumers: semteams and semsource register the Component with `{"bucket_name": …}` and default ports; that config
   still builds. A config carrying `data_cache` or an `events` output now fails at boot naming it; none does
   (inventory 4). No consumer publishes to `storage.objectstore.write` today.
-- Retires #33. Advances #195 and #196 (multi-package trackers). Leaves #280 (item 3) and #281 (in `component`) open.
+- Retires #33 and #443. Advances #195 and #196 (multi-package trackers). Leaves #280 (item 3) and #281 (in
+  `component`) open; #441 adopts the new method afterwards.

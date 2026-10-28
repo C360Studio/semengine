@@ -40,6 +40,19 @@ passes on a clean tree at its commit (#171).
 - [x] 3.4 Write lane, emit and refusals (design D3, D4). Gate: as 3.3 plus `go test -count=5 -cpu 1 -shuffle=on
   ./storage/objectstore`.
 
+## 7. Waiting for one consumer's handlers (design D11; owner ruling on #443)
+
+- [ ] 7.1 Tests first in `natsclient`, each failing first (the method does not exist):
+  `TestWaitConsumerHandlersWaitsForRunningHandler`, `TestWaitConsumerHandlersAfterConnectionLoss`,
+  `TestWaitConsumerHandlersContextEndsFirst`, `TestWaitConsumerHandlersRefusesUnknownHandle`,
+  `TestWaitConsumerHandlersAfterClose`, `TestWaitConsumerHandlersRefusesNilContext`; re-run the adopter search of D11
+  and record it on #441. Gate: the tests fail for the missing method, recorded in `notes/7.1.md`.
+- [ ] 7.2 `Client.WaitConsumerHandlers` in `natsclient` (D11 contract; no other natsclient change). Gate:
+  `go test -race -count=1 ./natsclient`, `task test:integration -- ./natsclient`, the 7.1 tests pass.
+- [ ] 7.3 The Component's `cleanup` calls it; `handlerJoin`, its field and its refusal path go;
+  `TestHandlerJoinWaitsForRunningHandlersAndRefusesLaterOnes` dropped; `TestStopJoinsHandlerAfterConnectionLoss`
+  unchanged and passing. ADR-112 § 4 and the `natsclient` ledger row name the method. Gate: `task verify`.
+
 ## 4. Records and docs
 
 - [ ] 4.1 Remove `storage.KeyGenerator`, `storage.MetadataExtractor` and their `storage/doc.go` examples (D6). Gate:

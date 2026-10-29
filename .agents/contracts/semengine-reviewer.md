@@ -517,7 +517,8 @@ Group findings by severity. Every actionable finding must contain:
 
 Use `BLOCKING` for silent corruption, data loss, invalid readiness, contract break, or unsafe migration. Use `HIGH` for
 a likely functional defect or known project discipline failure, `MEDIUM` for a non-blocking correction, and `NIT` for
-style only. End with `APPROVE` when there are no blocking/high findings, otherwise `CHANGES REQUESTED` and the exact
+style only. The verdict and the record comment that carries it are ateam's ([`reviewer.md`](reviewer.md) § Record):
+`Verdict: APPROVE` when there are no blocking/high findings, otherwise `Verdict: REQUEST CHANGES` and the exact
 blocking list. State explicitly when evidence was unavailable rather than guessing.
 
 **Severity needs a real-world trigger** (owner ruling of 2026-10-12, issue #185). Some failures happen only under a

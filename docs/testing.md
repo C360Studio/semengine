@@ -142,8 +142,8 @@ test helpers, no struct holding a `context.Context`, one pinned NATS image, no f
 broad Docker cleanup, and a well-formed admission ledger (`docs/admission-ledger.yaml`, the list of packages ported
 from SemStreams). Four more guards are shell scripts: `task cleanup-roots:check` and `task cover:check`, which
 `task verify` runs as their own steps; the fixed-port guard `scripts/lint-test-ports.sh`, which `task lint` runs; and
-`scripts/merge-check.sh`, which CI's `merge-check` job runs and `task verify` does not, because it reads GitHub
-state that changes from one run to the next.
+`scripts/merge-check.sh`, which runs `ateam review gate` and which the `merge-check.yml` workflow runs and
+`task verify` does not, because it reads GitHub state that changes from one run to the next.
 
 The tests that run those scripts, and that pin `Taskfile.yml` and the CI workflow, are not in `contract`. They are in
 `internal/harness/toolcheck/`, one of three tool packages with `mutcheck` and `pindiff`. A test belongs in `toolcheck`
@@ -155,6 +155,13 @@ the tool packages; `task test:tools:changed`, a step of `task verify`, runs them
 against the base and says so when it skips them. An edit under `.agents/`, `.claude/`, `.codex/`, `.gemini/` or
 `.mcp.json` runs them too (about two minutes), because `TestAteamTemplatesUnchanged` checks the files `ateam init`
 writes there. Nothing but review checks which package a test belongs in.
+
+`TestAteamTemplatesUnchanged`, `task ateam:doctor`, `task doctor` and `task merge:check` run the `ateam` on your
+`PATH`; the test and `task doctor` fail unless it is the release pinned in `.github/workflows/ci.yml` and
+`merge-check.yml`.
+If your `ateam` is a development build (its `ateam version` names a commit after a tag), install the pin with
+`GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@<pin>` and run those gates, `task verify`
+included, with `PATH="$(go env GOPATH)/bin:$PATH"`, so `ateam version` reports the pin.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;
@@ -383,8 +390,9 @@ The repository's own checks follow the same pattern, built into the tests:
   `TestCoverCheckSensitivity`. The fixed-port script has its own fixture test,
   `scripts/lint-test-ports_fixture_test.sh`, and `TestLintTestPortsHonoursNoMarker` and
   `TestLintTestPortsSkipsIgnoredFiles` run it on a planted tree (`TestLintTestPortsPasses`, which runs it over the
-  real tree, stays in `contract`). `TestMergeCheckKnownFlake` and `TestMergeCheckReview` run the merge check against
-  canned GitHub answers. `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`, `TestSpecQueueCheck`,
+  real tree, stays in `contract`). `TestMergeCheckWrapper` runs the merge-check wrapper
+  against a stand-in `ateam` and checks it passes the arguments and exit status through; the gate's own rules are
+  tested in ateam at the pinned release. `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`, `TestSpecQueueCheck`,
   `TestSpecCheckWiring` and `TestSpecQueueArguments` run the OpenSpec queue script, `scripts/openspec-queue.sh`,
   against a stand-in `openspec` command and planted `tasks.md` files, each run under a deadline so a script that does
   not end fails the test.

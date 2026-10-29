@@ -48,14 +48,14 @@ task test:repeat  # unit tests but the contract guards, five times at one CPU, w
 task test:tools   # tests of scripts, Taskfile.yml and CI; verify runs them via test:tools:changed
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
 task mutate:check # -- -pkg -test -file -mutant -expect/-expect-text: run one test against one mutant outside the repo
-task merge:check  # -- <n>: fail on open flakes PR n leaves open, missing up-to-date rule, or missing review lines
+task merge:check  # -- <n>: ateam review gate: up-to-date rule, review lines and record, flakes PR n leaves open
 task verify       # ateam:doctor spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
                   # ledger:check test:unit test:tools:changed test:integration cover:check test:repeat; fails if tracked files changed
 ```
 
-Run `task verify` before every implementation push. CI has three jobs: `verify` runs the same commands;
-`merge-check` runs `scripts/merge-check.sh` (`task merge:check`: known flakes, up-to-date rule, cross-agent review
-lines); `required` fails if either failed, is missing, or was skipped/cancelled. Gate selection per diff:
+Run `task verify` before every implementation push. CI: in `ci.yml`, `verify` runs the same commands and `Required`
+fails unless it succeeded; `merge-check.yml` runs `scripts/merge-check.sh` (`task merge:check`) on the base commit as
+`Merge check`. Gate selection per diff:
 `.agents/skills/preflight/SKILL.md`. Session checkpoints: ateam's `pickup` and `handoff` skills.
 
 ## Rules and what enforces them
@@ -160,7 +160,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `spec:check+review` | OpenSpec changes and specs are well formed and truthful against code | "Where state lives" below |
 | `spec:check+review` | Every OpenSpec task can be ticked in or before the archive commit; a hold is written as `Hold:` inside the unticked task it stops | `protocol`; `spec-queue` spec; `rev` |
 | `verify+review` | Steps end when `task verify` passes locally on a clean tree; pushes batch at review/end; CI is checked once before merge; reviewer `PASS` cites commit + local `task verify`, never CI (#171) | `dev`, `rev`; `protocol` |
-| `CI required` | A merge needs CI green | `protocol` |
+| `CI required` | A merge needs `Required` and `Merge check` green | `protocol` |
 | `merge:check` | No merge while a known flake (`class:flake` issue) is open, unless the PR closes every open one | `protocol`; `merge-gate` spec |
 | `review` | Any defect found in repo code (carried, ported, or written here) not fixed in the change is filed as an issue (`status:blocked`, linked without closing keyword while on a PR branch), never routed as a residual or left in comments (#212, #193) | `protocol`; `rev` |
 | `review` | A finding needing an unchosen condition (library timing/ordering, OS/network state, mid-op fault injection, or test-only call sequence) is `BLOCKING`/`HIGH` only with a named real-world trigger; else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
@@ -169,7 +169,7 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | `review` | Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` |
 | `verify+review` | Architect, developer, and reviewer run on the frontier tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`) at `medium`, `medium`, `high` effort (architect and developer escalate to `high` for cross-cutting concurrency/boundary work or failed reviews); technical-writer runs `sonnet` / `flash` at `low`/`medium`; adapters pin model and effort (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
 | `verify+review` | `AGENTS.md` stays under 24,000 bytes and matches `.agents/rules-index.md` in rule domains and row counts (`verify`), row for row (`review`); agent/skill adapters match their contracts (#224, #225) | `task ateam:doctor`; `.agents/README.md`; `harness-boundaries` spec |
-| `merge:check+review` | Code PRs (any non-`.md`/non-`openspec/` file, or `.claude/agents/*` or `.agents/contracts/*`) require review by an agent that wrote no commits (`implemented-by:` and `reviewed-by:` naming `claude`, `codex`, or `gemini`); docs-only/archive commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
+| `merge:check+review` | Code PRs (a file not `.md` or `openspec/` `.yml`/`.yaml`/`.json`, or under `.claude/agents/`, `.agents/contracts/`) need an approving record at the head by a not-weaker agent that wrote no commits (`implemented-by:`/`reviewed-by:` `<agent> (<model>, <effort>)`); docs-only commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
 | `review` | Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` |
 | `review` | Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `protocol`; `.agents/skills/preflight` |
 | `review` | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
@@ -201,12 +201,11 @@ never become a pointer:
 - **Claim:** a draft PR opened before the work, in its own worktree on an agent-prefixed branch
   (`git worktree add ../semengine-wt/claude/<topic> -b claude/<topic> origin/main`; Codex uses `codex/`, Gemini uses
   `gemini/`, and Enjoy desktop sessions use `move_to_worktree` under `.worktrees/<branch>`). No draft PR, no claim.
-- **Merge:** CI green on a head up to date with `main`; no known flake open (an open `class:flake` issue) unless the PR
-  closes every open one; `task merge:check -- <n>` immediately before merging (`GITHUB_ACTIONS` unset);
-  `implemented-by:` in the PR body (`claude`, `codex`, or `gemini` beside the model/persona); archive/spec sync as the
-  last content commit; squash merge. A code PR (any changed file not Markdown or under `openspec/`, or a file under
-  `.claude/agents/` or `.agents/contracts/`) also needs another agent's review and `reviewed-by:` in the PR body,
-  without which `merge-check` fails once non-draft; a documents-only PR does not.
+- **Merge:** `Required` and `Merge check` green on a head up to date with `main`; no known flake open (an open
+  `class:flake` issue) unless the PR closes every open one; `task merge:check -- <n>` immediately before merging
+  (`GITHUB_ACTIONS` unset); `implemented-by: <agent> (<model>, <effort>)` in the PR body; archive/spec sync as the last
+  content commit; squash merge. A code PR (any file the gate does not call a document) also needs another agent's
+  approving review record at its head and `reviewed-by:` in the PR body, or `Merge check` fails once non-draft.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind
   it takes the owner's word on the issue.
 

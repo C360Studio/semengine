@@ -1,0 +1,118 @@
+package embedding
+
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"encoding/hex"
+	"strconv"
+)
+
+// dedupKeySchema domain-separates DedupKey from every other SHA-256 in the
+// system and lets a future key-layout change invalidate old keys wholesale by
+// bumping the version, rather than silently colliding with them.
+const dedupKeySchema = "semstreams/embedding/dedup/v1"
+
+// inProcessKeySchema domain-separates the process-local singleflight key (see
+// InProcessDedupKey) from the durable DedupKey, so the two hashings can never
+// collide even over identical field tuples.
+const inProcessKeySchema = "semstreams/embedding/singleflight/v1"
+
+// EmbedderIdentity captures everything a stored vector depends on BESIDES the
+// input text. Two embedders that disagree on any of these fields produce
+// vectors in different, incomparable vector spaces.
+//
+// It exists because EMBEDDING_DEDUP is durable, untimed, and never cleared: an
+// operator who switches embedder_type from bm25 to another embedder against the
+// same NATS state would otherwise get every already-embedded entity's OLD vector back, stamped
+// with the NEW model's name. When both spaces happen to share a dimension count
+// (384 is the default for both BM25 here and TEI's all-MiniLM-L6-v2), cosine
+// similarity returns a plausible-looking score across unrelated spaces and no
+// health signal fires. Folding identity into the key makes that impossible:
+// stale keys simply never match again and age out.
+type EmbedderIdentity struct {
+	// Type is the configured embedder kind ("bm25", or a product embedder's name).
+	Type string
+	// Model is the embedder's model identifier.
+	Model string
+	// Dimensions is the vector width the embedder produces.
+	Dimensions int
+	// MaxTextLen is the source-text truncation cap applied before generation.
+	// It belongs in the key because the cap is derived from the embedder type
+	// (4000 for bm25, 8000 otherwise): flipping type changes the TEXT that gets
+	// embedded, not only the model that embeds it.
+	MaxTextLen int
+}
+
+// DedupKey derives the EMBEDDING_DEDUP key for text under a given embedder
+// identity, or "" when the identity is not yet resolved.
+//
+// Every field is length-prefixed before hashing so that no two distinct field
+// tuples can serialize to the same byte stream (without prefixes, {"ab","c"}
+// and {"a","bc"} would collide).
+//
+// An identity with a non-positive Dimensions has not learned its vector width
+// yet (a remote embedder resolves it from its first response) and gets NO key.
+// "" is the package's established "dedup disabled for this record" signal, which
+// both hops already honour: it is stored as the pending record's ContentHash and
+// getOrGenerateEmbedding generates unconditionally for it. The alternative of
+// keying on a placeholder width is what split EMBEDDING_DEDUP into two disjoint
+// keyspaces per embedder; omitting Dimensions from the key instead would be worse
+// still, since keys would then collide across models of different width — exactly
+// what folding identity into the key was meant to prevent. The cost is redundant
+// embeds during the brief unresolved window, once per process.
+func DedupKey(id EmbedderIdentity, text string) string {
+	if id.Dimensions <= 0 {
+		return ""
+	}
+
+	h := sha256.New()
+	writeField := func(s string) {
+		var lenBuf [8]byte
+		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(s)))
+		_, _ = h.Write(lenBuf[:])
+		_, _ = h.Write([]byte(s))
+	}
+
+	writeField(dedupKeySchema)
+	writeField(id.Type)
+	writeField(id.Model)
+	writeField(strconv.Itoa(id.Dimensions))
+	writeField(strconv.Itoa(id.MaxTextLen))
+	writeField(text)
+
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// InProcessDedupKey derives a STABLE process-local key for collapsing concurrent
+// byte-identical embedder calls (#630), EXCLUDING the learned Dimensions.
+//
+// Unlike DedupKey it ALWAYS returns a key — even before the embedder has resolved
+// its vector width (a remote embedder reports Dimensions()==0 until its first response).
+// That is deliberate: at cold start DedupKey withholds a key, so a burst of K
+// workers holding identical content would otherwise each issue its own paid
+// Generate call. Keying the in-process singleflight on this width-independent value
+// collapses them to one call, while the DURABLE dedup cache stays correctly
+// withheld (a vector must not be stored under a wrong-dimensions key).
+//
+// Excluding Dimensions is safe here precisely because this key never leaves the
+// process: the embedder — and therefore the width it will eventually resolve — is
+// the SAME instance across every worker goroutine, so two workers with identical
+// content are guaranteed to be producing vectors in the same space regardless of
+// whether the width is known yet.
+func InProcessDedupKey(id EmbedderIdentity, text string) string {
+	h := sha256.New()
+	writeField := func(s string) {
+		var lenBuf [8]byte
+		binary.BigEndian.PutUint64(lenBuf[:], uint64(len(s)))
+		_, _ = h.Write(lenBuf[:])
+		_, _ = h.Write([]byte(s))
+	}
+
+	writeField(inProcessKeySchema)
+	writeField(id.Type)
+	writeField(id.Model)
+	writeField(strconv.Itoa(id.MaxTextLen))
+	writeField(text)
+
+	return hex.EncodeToString(h.Sum(nil))
+}

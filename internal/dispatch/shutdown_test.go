@@ -238,3 +238,55 @@ func TestShutdownAfterJoinReturnsNilUnderEndedContext(t *testing.T) {
 		}
 	})
 }
+
+// TestKeyedPoolWaitJoinsAfterShutdown: a Wait begun before Shutdown returns only after
+// Shutdown(ctx) with an ended ctx was called and every accepted item was processed; a Wait
+// after the join returns at once.
+func TestKeyedPoolWaitJoinsAfterShutdown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		entered := make(chan struct{})
+		release := make(chan struct{})
+		var processed []string // written by the lane; read only after Wait returned
+		p, err := NewKeyedPool(context.Background(), KeyedConfig[string]{
+			Lanes: 1, QueueDepth: 1,
+			Process: func(_ context.Context, _ int, work string) {
+				if work == "held" {
+					close(entered)
+					<-release
+				}
+				processed = append(processed, work)
+			},
+		})
+		require.NoError(t, err)
+		require.NoError(t, p.SubmitBlocking(context.Background(), "key", "held"))
+		<-entered
+		require.NoError(t, p.SubmitBlocking(context.Background(), "key", "queued"))
+
+		waited := make(chan struct{})
+		go func() {
+			p.Wait()
+			close(waited)
+		}()
+		synctest.Wait() // the Wait goroutine is blocked or has returned
+		select {
+		case <-waited:
+			t.Fatal("Wait returned before Shutdown began")
+		default:
+		}
+
+		ended, cancel := context.WithCancel(context.Background())
+		cancel()
+		require.ErrorIs(t, p.Shutdown(ended), context.Canceled, "Shutdown returns ctx.Err() while Process blocks")
+		synctest.Wait() // the drain and the Wait goroutine are blocked on the held item
+		select {
+		case <-waited:
+			t.Fatal("Wait returned while an accepted item was still held")
+		default:
+		}
+
+		close(release)
+		<-waited
+		require.Equal(t, []string{"held", "queued"}, processed, "Wait returned after every accepted item was processed")
+		p.Wait() // after the join it returns at once; a block here is a bubble deadlock
+	})
+}

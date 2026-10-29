@@ -3669,3 +3669,90 @@
     setup-04a-04-graph-roots-objectstore-store technical writer; note by
     setup-04a-04-graph-roots-objectstore-component technical writer
   disposition: adapt
+
+# Change setup-04a-04-graph-roots-embedding (PR #458, epic #9): graph/embedding, the two-hop embedding pipeline's storage,
+# BM25 embedder, vector cache and Worker; the processor that drives them arrives in change 5 (processor/graph-embedding).
+
+- source_path: graph/embedding
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the tier-0 embedding pipeline: the BM25 embedder (no external provider), Storage over EMBEDDING_INDEX and
+    EMBEDDING_DEDUP, the VectorCache that answers similarity search from memory, and the Worker that turns pending
+    records into generated or failed ones (hop 2). processor/graph-embedding (change 5) and pkg/fusion call it; graph/query
+    (item 6) cannot build without it
+  destination: graph/embedding
+  contract: >-
+    Surface as at the pin (design D2) with these adaptations (spec embedding-index; design D3-D7): (1) Storage holds
+    two *natsclient.KVStore and writes every read-modify-write through UpdateWithRetryRead, so the decision is made from
+    the bytes and revision it read (ADR-110); the pin's own compare-and-set loops, its budget of 3 and ErrCASExhausted
+    go, and retry exhaustion matches natsclient.ErrKVMaxRetriesExceeded; (2) the revision guard is kept: a save for an
+    older source revision never replaces a stored generated record, and SaveFailed is also refused over a generated
+    record at the same revision; (3) a record whose text resolves empty is removed only if the key is still at the KV
+    revision the Worker read (natsclient.KVStore.DeleteAtRevision, one attempt, no retry), where the pin deleted
+    unconditionally and reported success even when the delete failed; a removal that finds the key moved is
+    OutcomeDeleted, and any other removal error leaves the record pending with no terminal callback; (4) SaveDedup keeps
+    a stored record from the same vector space and no longer rewrites it with an entity ID; (5) Worker.Run(ctx)
+    replaces Start and Stop, refuses a nil context and a second concurrent Run, and returns ctx.Err() or a lost-watch
+    error; (6) the Worker hands each watch entry to internal/dispatch.KeyedPool under the entity ID, so one entity's
+    entries are processed one at a time in delivery order, through the store write and both callbacks, while different
+    entities run in parallel; callbacks for different entities are unordered; (7) VectorCache replaces StartVectorCache
+    with its own Run(ctx), and FindSimilar answers false before the snapshot, after a decode error, after a lost
+    watch and after Run returned, sorts by ScoredEntityLess before the limit, and returns an empty result for a limit
+    of 0 or less; (8) both Run methods stop their watch through internal/kvwatch.Stop; (9) a failure counts as
+    shutdown only when its error matches context.Canceled and the Worker's context has ended, not by message text; (10)
+    a text cap of 0 means 8,000 runes on both lanes; (11) WorkerMetrics gains IncContentUnresolved and loses
+    SetPending. Not carried: http_embedder.go (own row), ContentHash, SavePending, SavePendingWithStorageRef,
+    Record.ContentFields, DedupRecord.EntityIDs, euclideanDistance, dotProduct, magnitude, normalize
+  dependencies_and_side_effects: >-
+    internal/dispatch, internal/kvwatch, natsclient, pkg/errs, pkg/types, storage (in-set); nats.go/jetstream;
+    golang.org/x/sync/singleflight; no Prometheus, no provider module (TestEmbeddingImportsNoProviderModule). Worker.Run and
+    VectorCache.Run each read one EMBEDDING_INDEX watch on the caller's goroutine; the Worker also runs one keyed pool
+    of lanes (default 5), joined before Run returns. Writes EMBEDDING_INDEX and EMBEDDING_DEDUP; creates neither bucket
+  known_risks: >-
+    change 5 (processor/graph-embedding) must state its reaction when Worker.Run or VectorCache.Run returns a lost-watch
+    error while its own run context is live: report it through Health, or restart the work, so the error is never
+    dropped. Change 5's failed map must also never put back a failure older than the entity's latest terminal outcome:
+    the revision guard orders what is stored, not what the callbacks report, and the keyed pool orders the Worker's
+    callbacks only (design D6, Codex finding 2 on PR #458 comment 6474241300). An older pending write may replace a
+    newer pending or failed record, as at the pin; only a generated record blocks an older write. A callback that
+    blocks holds Run, which has no bound of its own. The nats.go behaviours behind the Run shutdown order are probed
+    at v1.54.0 (PR #458 comment 6472856197) and not promised. BM25 is a lexical embedder, not a correct lexical
+    index. ListGeneratedEntityIDs is bounded by the index KVStore's Timeout, where the pin streamed under the caller's
+    context. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays open), #195 (advanced;
+    stays open); #35 retired (http_embedder.go excluded)
+  proving_tests: >-
+    graph/embedding: storage_test.go, storage_integration_test.go (TestRevisionGuardHistoryMatchesModel,
+    TestSaveDedupKeepsSameSpaceReplacesOther); worker_test.go (TestWorkerRunRefusesNilContext,
+    TestWorkerSecondRunRefused, TestWorkerRunLeavesNothingBehind, TestFailureWithCanceledTextIsAFailure,
+    TestBothLanesEmbedIdenticalBytes, TestTerminalCallbackOncePerOutcome, TestCASExhaustionIsNotTerminal,
+    TestNoTextDeleteFailureIsNotTerminal, TestKeyedCallbacksFollowRevisionOrder,
+    TestWorkerSaveRefusedWhenNewerPendingArrives); worker_resilience_test.go (TestPanickingEntryStaysPending);
+    worker_integration_test.go (TestWorkerRunLeavesNoWatchDelivery, TestWorkerRunReportsLostWatch,
+    TestNoTextDeleteKeepsNewerPending, TestNoTextDeleteKeepsNewerGenerated); vector_cache_test.go
+    (TestVectorCacheSecondRunRefused, TestVectorCacheNotAuthoritative, TestFindSimilarOrderAndLimit,
+    TestVectorCacheRunLeavesNothingBehind); vector_cache_integration_test.go (TestVectorCacheRunLeavesNoWatchDelivery,
+    TestVectorCacheRunReportsLostWatch); worker_storeresolver_integration_test.go
+    (TestWorkerResolvesLiveRegistryStatePerFetch); bm25_embedder_test.go; internal/harness/contract
+    (TestEmbeddingImportsNoProviderModule); notes/2.1.md, 2.2.md, 3.3.md and 3.4.md of the change record each changed
+    behaviour shown failing against the pin's shape
+  owner: setup-04a-04-graph-roots-embedding developer; docs by setup-04a-04-graph-roots-embedding technical writer
+  disposition: adapt
+
+- source_path: graph/embedding/http_embedder.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's HTTP embedder, which calls an external embedding provider (a tier-1 capability). No tier-0 consumer needs
+    it, and tier 0 needs no external provider
+  destination: none
+  contract: >-
+    not ported; graph/embedding carries no HTTP embedder, no HTTP* types and no provider import
+    (TestEmbeddingImportsNoProviderModule holds that). A product supplies its own Embedder
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    issue #32 owns the 04C tier-1 embedding provider and its fallback test; issue #35 (the file's port refactor) is
+    retired by excluding it, owner ruling item 1 on PR #458 comment 6473224284. The pin's http_embedder_test.go and
+    http_embedder_dimensions_test.go are excluded with it
+  proving_tests: >-
+    internal/harness/contract (TestEmbeddingImportsNoProviderModule); the 04C fallback test is #32's
+  owner: setup-04a-04-graph-roots-embedding developer
+  disposition: defer-exclude

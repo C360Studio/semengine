@@ -60,8 +60,8 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
   (`merge:check` row), `docs/testing.md` (PATH note for a development `ateam` build) updated; `AGENTS.md` under
   24,000 bytes. Gate: `task verify` on a clean tree.
   Done in 8524f60; `AGENTS.md` is 23,890 bytes; `task verify` on 8524f60, clean tree, ateam v0.3.4 first on PATH:
-  `verify: ok`, exit 0, `ateam doctor --check` violations null. Dropped protocol sentences: `notes/4.1.md`; stale
-  texts outside the named files: #470.
+  `verify: ok`, exit 0, `ateam doctor --check` violations null. Dropped protocol sentences: `notes/4.1.md`;
+  `docs/repository-map.md` fixed in review round 1; the `merge-gate` Purpose paragraph goes with task 5.3 (#470).
 
 ## 5. Review, ruleset, archive
 
@@ -72,5 +72,6 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
   pushed.
 - [ ] 5.2 Cross-agent review record on the PR in ateam's grammar; `implemented-by:` and `reviewed-by:` with
   `(model, effort)` in the PR body.
-- [ ] 5.3 Archive as the last content commit, syncing the `merge-gate` and `harness-boundaries` deltas. Gate:
-  `task spec:check` and `task docs:check`.
+- [ ] 5.3 Archive as the last content commit, syncing the `merge-gate` and `harness-boundaries` deltas; the archive
+  commit also rewrites the `merge-gate` spec's Purpose paragraph, which still says a code pull request fails
+  `merge-check` without the two agent lines (#470). Gate: `task spec:check` and `task docs:check`.

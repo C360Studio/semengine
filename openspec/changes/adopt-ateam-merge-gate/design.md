@@ -58,8 +58,10 @@ reviewing agent posts one record comment with `reviewed-by: <agent> (<model>, <e
 `Verdict:`; a later code commit needs a new record, a clean merge of `main` or a docs-only commit carries it over.
 
 **D5. Draft handling.** The gate does not fail a draft and the workflow skips drafts, so `#437`-style drafts post
-their record when they go ready. No transition period: open PRs at merge time (Dependabot's #464, #465) are bot PRs,
-exempt from the review lines.
+their record when they go ready. No transition period: the rule applies to every pull request not yet merged. Open
+PRs at merge time include Dependabot's #464 and #465; the gate skips only `implemented-by:` for a bot author
+(`gate.go` v0.3.4, lines 406-417), so each still needs a `reviewed-by:` line with its model and an approving record in
+ateam's grammar (lines 284 and 428-440) before it merges.
 
 ## Risks / Trade-offs
 

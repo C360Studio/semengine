@@ -166,24 +166,24 @@ on optional maintenance.
   on the host that wrote it: name it as local only, and never make it a task's only proof.
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by an agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
-  records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are any
-  agent's reviewer's (the bullet "A record covers the commit it names" below). The owner ruled on 2026-10-02 (issue #64)
-  that Codex's `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer
-  for what Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. A
-  pull request is documents only when every file it changes ends in `.md`, or is a `.yml`, `.yaml` or `.json` file
-  under `openspec/`, and none is a role adapter under `.claude/agents/` or a canonical role contract under
-  `.agents/contracts/`: the classifier of `ateam review gate`, which the merge check runs. Any other changed file
-  makes it a code pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; a CI
-  workflow; `docs/admission-ledger.yaml`; `.agents/review-policy.json`; `.claude/agents/*`; `.codex/agents/*`;
-  `.agents/contracts/*`. If multiple agents wrote commits, the owner names the reviewer on the issue. A pull request
-  no agent wrote (a dependency bot's) is reviewed by any agent's reviewer, and the record names which; the gate
-  provides for this only when GitHub reports the author as a bot. A code change the owner would write by hand is
-  given to an agent session to make: the commits are then that agent's, `implemented-by:` names it truthfully, and
-  another agent reviews. The ruleset on `main` lets nobody merge past a failed `Merge check`, and editing the ruleset
-  is a waiver this rule does not give. For a code pull request this replaces the owner-run round; the owner need not
-  ask. A documents-only pull request keeps SemEngine's own reviewer. The implementing session may run its own reviewer
-  as it works; those reviews find defects early and are not the gate. An agent does not start another platform's
-  agent, so the pull request carries both halves:
+  records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are any agent's
+  reviewer's (the bullet "A record covers the commit it names" below). The owner ruled on 2026-10-02 (issue #64) that
+  Codex's `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer for
+  what Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. A pull
+  request is documents only when every file it changes ends in `.md`, or is a `.yml`, `.yaml` or `.json` file under
+  `openspec/`, and none is a role adapter under `.claude/agents/` or a canonical role contract under
+  `.agents/contracts/`: the classifier of `ateam review gate`, which the merge check runs. Any other changed file makes
+  it a code pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; a CI workflow;
+  `docs/admission-ledger.yaml`; `.agents/review-policy.json`; `.claude/agents/*`; `.codex/agents/*`;
+  `.agents/contracts/*`. If multiple agents wrote commits, the owner names the reviewer on the issue. A pull request no
+  agent wrote (a dependency bot's) is reviewed by any agent's reviewer, and the record names which; the gate provides
+  for this only when GitHub reports the author as a bot. A code change the owner would write by hand is given to an
+  agent session to make: the commits are then that agent's, `implemented-by:` names it truthfully, and another agent
+  reviews. The ruleset on `main` lets nobody merge past a failed `Merge check`, and editing the ruleset is a waiver this
+  rule does not give. For a code pull request this replaces the owner-run round; the owner need not ask. A
+  documents-only pull request keeps SemEngine's own reviewer. The rule applies to every pull request not yet merged, one
+  already open included. The implementing session may run its own reviewer as it works; those reviews find defects early
+  and are not the gate. An agent does not start another platform's agent, so the pull request carries both halves:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review (the lane), the commit
     SHA to read, the diff range, the implementer's `task verify` result on that commit (run on a clean tree), and the
     issue or ruling the change answers. It does not say what the reviewer should conclude.

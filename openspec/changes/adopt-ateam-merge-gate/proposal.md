@@ -12,7 +12,7 @@ pin there and re-syncs the three template files v0.3.4 changed.
 
 Owner ruling on this epic: match ateam unless there is a very good reason not to, and record the divergence.
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-10-29), in session, recorded on #449.
 
 ## What Changes
 

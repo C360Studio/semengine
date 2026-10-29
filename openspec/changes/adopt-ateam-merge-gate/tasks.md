@@ -5,9 +5,10 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
 
 ## 1. Proposal and design
 
-- [ ] 1.1 Proposal, design, tasks and spec deltas committed; draft PR opened with `Closes #449` and `Addresses #446`.
-  Hold: OPEN-Q proposal awaits owner approval (D1 and the ruleset edit it needs). Gate: `task spec:check` and
-  `task docs:check`.
+- [x] 1.1 Proposal, design, tasks and spec deltas committed; draft PR opened with `Closes #449` and `Addresses #446`.
+  Gate: `task spec:check` and `task docs:check`.
+  Done in 54d760c; draft PR #469. Owner approved the proposal and design D1 in session on 2026-10-29 (`Approved-by:`
+  filled, recorded on #449).
 
 ## 2. Pin and templates
 

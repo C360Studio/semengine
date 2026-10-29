@@ -5,8 +5,9 @@
 - `scripts/merge-check.sh:1-270`: three rules (ruleset strict with `Required`; non-draft code PR needs
   `implemented-by:`/`reviewed-by:` naming different agents; no open `class:flake` unless closed by the PR), exit 2 on
   an unavailable read. `ateam/internal/review/gate.go:20-40` at v0.3.4 states the same three, plus the record and
-  strength checks; `gate.go:600-605` carries the same documents-only classifier (`.md`, or `.yml`/`.yaml`/`.json`
-  under `openspec/`, never `.claude/agents/` or `.agents/contracts/`).
+  strength checks; `gate.go:600-605` carries a tighter documents-only classifier (`.md`, or `.yml`/`.yaml`/`.json`
+  under `openspec/`, never `.claude/agents/` or `.agents/contracts/`) where the script took every path under
+  `openspec/`.
 - `.github/workflows/ci.yml` `merge-check` job: checks out the PR head, runs the script, `required` needs it.
   `ateam/.github/workflows/merge-check.yml` at v0.3.4: own workflow, `edited` trigger, `cancel-in-progress: false`,
   draft skipped, base-commit checkout, binary built from base, `ATEAM_REQUIRED_CHECKS: Required,Merge check`.
@@ -25,7 +26,8 @@
 
 Goals: the gate is ateam's at the v0.3.4 pin; the gate judges from the base commit; the record grammar has one home.
 Non-goals: enabling ateam's dormant `routes` / `ateam review check` path; the spec queue (PR C, #450); the protocol
-rulings (PR D, #451); any change to what counts as a code PR.
+rulings (PR D, #451). Accepted change: what counts as a code PR tightens to ateam's classifier, so a file under
+`openspec/` that is not Markdown, YAML or JSON (a script, say) now makes a code PR (`notes/4.1.md`).
 
 ## Decisions
 

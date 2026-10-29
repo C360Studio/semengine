@@ -32,16 +32,17 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
   the merged PR passes locally with the v0.3.4 binary.
   Done in 99b8517; `task merge:check -- 452` with ateam v0.3.4 printed `merge-check: ok` and exited 0 (review record
   by codex at d035dfd, strength pass, no open `class:flake` issue).
-- [ ] 3.2 `.github/workflows/merge-check.yml` as design D1/D2: `pull_request` types `opened`, `synchronize`, `reopened`,
+- [x] 3.2 `.github/workflows/merge-check.yml` as design D1/D2: `pull_request` types `opened`, `synchronize`, `reopened`,
   `ready_for_review`, `edited`; concurrency per PR, `cancel-in-progress: false`; job skipped on a draft; checkout at
   `github.event.pull_request.base.sha` with `persist-credentials: false`; setup-go from `go.mod`; `go install` at the
   pin; env `ATEAM_REQUIRED_CHECKS: Required,Merge check`, the three read permissions, 5-minute limit. `ci.yml` loses
-  the `merge-check` job; `required` needs `verify` alone. Gate: the PR's own `Merge check` run reads the forge and
-  reports (rule 1 red until the ruleset edit, by design).
-  Workflow written in f6b9852; `TestCIWorkflowPinned` holds it. The gate is not observed: the job is skipped while the
-  PR is a draft, and once ready its run checks out `main`, whose `scripts/merge-check.sh` is still the old script, so
-  no run of `ateam review gate` or rule-1 failure can appear on this PR (`notes/3.2.md`). Left unticked for the gate to
-  be restated.
+  the `merge-check` job; `required` needs `verify` alone. Gate: `TestCIWorkflowPinned` passes; the PR's checks show
+  workflow `Merge check` ran from the PR's own `merge-check.yml` and was skipped on the draft, with no check named
+  `Merge check`; `ATEAM_REQUIRED_CHECKS='Required,Merge check' scripts/merge-check.sh 469` with ateam v0.3.4 prints
+  `no rule in force on main requires Merge check` and exits 1. (Gate corrected in review round 1: `notes/3.2.md`.)
+  Done in f6b9852. `TestCIWorkflowPinned` passes in `task verify` on 8524f60; at 92c1447 `gh pr checks 469` lists
+  the `merge-check.yml` job as `skipping` (run 40929694074) and no check named `Merge check`; the local command printed
+  `no rule in force on main requires Merge check` and exited 1.
 - [x] 3.3 `internal/harness/toolcheck/mergecheck_test.go` deleted; one smoke test shows the wrapper execs `$ATEAM`
   with the arguments and passes exit codes 0, 1, 2 through; `TestCIWorkflowPinned` and its sensitivity test cover
   `ci.yml` (`required` needs `verify`, no write permission, 15-minute verify limit, activity types) and
@@ -64,8 +65,11 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
 
 ## 5. Review, ruleset, archive
 
-- [ ] 5.1 Owner adds `Merge check` to the `main` ruleset's required checks; the PR's `Merge check` run turns green on
-  rule 1. Hold: OPEN-Q owner action on GitHub after 3.2 is pushed.
+- [ ] 5.1 Owner adds `Merge check` to the `main` ruleset's required checks. Gate:
+  `gh api repos/{owner}/{repo}/rules/branches/main` lists `Required` and `Merge check` with
+  `strict_required_status_checks_policy` true, or `ATEAM_REQUIRED_CHECKS='Required,Merge check'
+  scripts/merge-check.sh 469` with ateam v0.3.4 passes rule 1. Hold: OPEN-Q owner action on GitHub after 3.2 is
+  pushed.
 - [ ] 5.2 Cross-agent review record on the PR in ateam's grammar; `implemented-by:` and `reviewed-by:` with
   `(model, effort)` in the PR body.
 - [ ] 5.3 Archive as the last content commit, syncing the `merge-gate` and `harness-boundaries` deltas. Gate:

@@ -63,8 +63,10 @@ exempt from the review lines.
 
 ## Risks / Trade-offs
 
-- The ruleset edit is outside the repository. Until `Merge check` is required, the gate's rule 1 fails on every PR,
-  including this one; sequencing is in the Migration Plan.
+- The ruleset edit is outside the repository. Until `Merge check` is required, the gate's rule 1 fails on every PR
+  judged by `ateam review gate`, which is every PR after this one merges. This PR is judged by `main`'s old script
+  (the workflow checks out the base commit), which checks `Required` alone, so its own runs cannot show rule 1;
+  sequencing is in the Migration Plan.
 - Local `task verify` on a host whose `ateam` on PATH is a development build fails `TestAteamTemplatesUnchanged`
   (version mismatch). Mitigation: install the pin with `go install` and put `$(go env GOPATH)/bin` first on PATH
   for the run; stated in `docs/testing.md`.
@@ -74,9 +76,10 @@ exempt from the review lines.
 ## Migration Plan
 
 1. Land this PR's commits; its own `merge-check.yml` runs from the PR (pull_request events use the PR's workflow
-   file) and reports `Merge check` on the head.
-2. Owner adds `Merge check` to the `main` ruleset's required checks (strict stays on). The next `Merge check` run on
-   this PR passes rule 1.
+   file): skipped on the draft, and once ready it runs `main`'s old `scripts/merge-check.sh` from the base commit.
+2. Owner adds `Merge check` to the `main` ruleset's required checks (strict stays on). The ruleset read
+   (`gh api repos/{owner}/{repo}/rules/branches/main`) lists both checks, and the v0.3.4 gate run locally with
+   `ATEAM_REQUIRED_CHECKS='Required,Merge check'` passes rule 1.
 3. Codex record, archive, ready, merge. From then on `Required` and `Merge check` are both required on every PR.
 
 ## Open Questions

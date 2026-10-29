@@ -12,37 +12,55 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
 
 ## 2. Pin and templates
 
-- [ ] 2.1 The ateam pin is `v0.3.4` in `.github/workflows/ci.yml` (verify job); `scripts/doctor.sh` and
+- [x] 2.1 The ateam pin is `v0.3.4` in `.github/workflows/ci.yml` (verify job); `scripts/doctor.sh` and
   `TestAteamTemplatesUnchanged` read every install line across `ci.yml` and `merge-check.yml` and require one version.
   Gate: `scripts/doctor.sh` with the v0.3.4 binary on PATH; the test.
-- [ ] 2.2 The three template files v0.3.4 changed (`.agents/contracts/developer.md`, `.agents/contracts/reviewer.md`,
+  Done in 886c9b9 (pin) and f6b9852 (both readers); `scripts/doctor.sh` prints `ok ateam v0.3.4` with
+  `$(go env GOPATH)/bin` first on PATH, and fails naming `v0.3.3 v0.3.4` on a copy whose `merge-check.yml` names
+  v0.3.3; `TestAteamTemplatesUnchanged` and the "pins differ" plants of `TestCIWorkflowPinnedSensitivity` pass in
+  `task verify` on 8524f60. Notes: `notes/2.1.md`.
+- [x] 2.2 The three template files v0.3.4 changed (`.agents/contracts/developer.md`, `.agents/contracts/reviewer.md`,
   `.agents/skills/review-pr/SKILL.md`) are byte-identical to `ateam init` at v0.3.4; the harness-boundaries doctor
   requirement names the 100 ms ceiling. Gate: `go test ./internal/harness/toolcheck -run TestAteamTemplatesUnchanged`.
+  Done in 886c9b9 (the three files copied from `ateam init` v0.3.4 into an empty directory holding the review policy;
+  the delta already names 100 ms); the test passes with ateam v0.3.4, and in `task verify` on 8524f60.
 
 ## 3. Gate and workflow
 
-- [ ] 3.1 `scripts/merge-check.sh` is the wrapper `exec "${ATEAM:-ateam}" review gate "$@"` with a header comment
+- [x] 3.1 `scripts/merge-check.sh` is the wrapper `exec "${ATEAM:-ateam}" review gate "$@"` with a header comment
   naming the gate's three rules and the pin; `task merge:check` desc updated. Gate: `task merge:check -- 452` against
   the merged PR passes locally with the v0.3.4 binary.
+  Done in 99b8517; `task merge:check -- 452` with ateam v0.3.4 printed `merge-check: ok` and exited 0 (review record
+  by codex at d035dfd, strength pass, no open `class:flake` issue).
 - [ ] 3.2 `.github/workflows/merge-check.yml` as design D1/D2: `pull_request` types `opened`, `synchronize`, `reopened`,
   `ready_for_review`, `edited`; concurrency per PR, `cancel-in-progress: false`; job skipped on a draft; checkout at
   `github.event.pull_request.base.sha` with `persist-credentials: false`; setup-go from `go.mod`; `go install` at the
   pin; env `ATEAM_REQUIRED_CHECKS: Required,Merge check`, the three read permissions, 5-minute limit. `ci.yml` loses
   the `merge-check` job; `required` needs `verify` alone. Gate: the PR's own `Merge check` run reads the forge and
   reports (rule 1 red until the ruleset edit, by design).
-- [ ] 3.3 `internal/harness/toolcheck/mergecheck_test.go` deleted; one smoke test shows the wrapper execs `$ATEAM`
+  Workflow written in f6b9852; `TestCIWorkflowPinned` holds it. The gate is not observed: the job is skipped while the
+  PR is a draft, and once ready its run checks out `main`, whose `scripts/merge-check.sh` is still the old script, so
+  no run of `ateam review gate` or rule-1 failure can appear on this PR (`notes/3.2.md`). Left unticked for the gate to
+  be restated.
+- [x] 3.3 `internal/harness/toolcheck/mergecheck_test.go` deleted; one smoke test shows the wrapper execs `$ATEAM`
   with the arguments and passes exit codes 0, 1, 2 through; `TestCIWorkflowPinned` and its sensitivity test cover
   `ci.yml` (`required` needs `verify`, no write permission, 15-minute verify limit, activity types) and
   `merge-check.yml` (activity types including `edited`, draft condition, base-sha checkout, pin, env, permissions,
   limit, concurrency). Gate: `task test:tools`.
+  Done in 99b8517 (`mergecheck_test.go` deleted, `TestMergeCheckWrapper` in `mergewrapper_test.go`) and f6b9852
+  (`TestCIWorkflowPinned` over both files); `task test:tools` passed, and again as `test:tools:changed` in
+  `task verify` on 8524f60. Notes: `notes/3.3.md`.
 
 ## 4. Record grammar and docs
 
-- [ ] 4.1 `.agents/contracts/semengine-reviewer.md` § verdict points at ateam's `reviewer.md` § Record; the protocol's
+- [x] 4.1 `.agents/contracts/semengine-reviewer.md` § verdict points at ateam's `reviewer.md` § Record; the protocol's
   "Cross-agent review" item is rewritten to the gate (design D4); `AGENTS.md` (Commands block, § 5 merge rows,
   § Working here Merge gate), `.agents/rules-index.md` (same row counts), `.agents/skills/preflight/SKILL.md`
   (`merge:check` row), `docs/testing.md` (PATH note for a development `ateam` build) updated; `AGENTS.md` under
   24,000 bytes. Gate: `task verify` on a clean tree.
+  Done in 8524f60; `AGENTS.md` is 23,890 bytes; `task verify` on 8524f60, clean tree, ateam v0.3.4 first on PATH:
+  `verify: ok`, exit 0, `ateam doctor --check` violations null. Dropped protocol sentences: `notes/4.1.md`; stale
+  texts outside the named files: #470.
 
 ## 5. Review, ruleset, archive
 

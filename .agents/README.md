@@ -107,7 +107,7 @@ domain-grouped rule summary in `AGENTS.md`.
 Canonical skills live in `skills/`. Read the relevant `SKILL.md` fully; the platform adapters add discovery
 metadata and argument handling, not another rule set. Repository protocol and role contracts remain authoritative.
 
-- ateam's six canonical skills, written by `ateam init` at v0.3.3: [pickup](skills/pickup/SKILL.md),
+- ateam's six canonical skills, written by `ateam init` at the pin (v0.3.4): [pickup](skills/pickup/SKILL.md),
   [handoff](skills/handoff/SKILL.md), [preflight](skills/preflight/SKILL.md), [ponytail](skills/ponytail/SKILL.md),
   [review-pr](skills/review-pr/SKILL.md) and [design](skills/design/SKILL.md). Claude commands `/<name>`. `preflight`
   keeps SemEngine's gate table and evidence rules; the other five are ateam's text, unedited.

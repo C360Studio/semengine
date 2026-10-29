@@ -150,15 +150,15 @@ on optional maintenance.
 - **Land:** implementation review (another agent's for a code pull request: "Cross-agent review" below), then, for a
   documents-only change, the owner-run cross-agent round where the owner asks for it, then fixes and re-review, then
   archive as the final content commit, then a narrow reviewer check of the archive/spec sync (any agent's reviewer),
-  then undraft, then CI green on a head that is up to date with `main` and with **no known flake open** ("Known flakes"
-  below), then `task merge:check -- <n>` immediately before merging, in a shell where `GITHUB_ACTIONS` is not set, then
-  squash merge. A green run while a known flake is open is not a fix: a re-run or a new push only rolls the dice again.
-  Fix the flake; there is no other way past it. A correction after archive re-enters reconciliation and final review; no
-  later content commit bypasses the archive/spec-sync check. State `implemented-by:` in the PR body, naming the
-  implementing agent with the word `claude`, `codex`, or `gemini` beside the model or persona (`implemented-by: claude
-  (opus semengine-developer)`). Bring a pushed branch up to date by merging `origin/main` into it; do not rebase or
-  force-push it. A review record names the commit it read, and a rebase leaves that record pointing at a commit the
-  branch no longer has. The squash merge keeps `main` linear either way.
+  then undraft, then `Required` and `Merge check` green on a head that is up to date with `main` and with **no known
+  flake open** ("Known flakes" below), then `task merge:check -- <n>` immediately before merging, in a shell where
+  `GITHUB_ACTIONS` is not set, then squash merge. A green run while a known flake is open is not a fix: a re-run or a
+  new push only rolls the dice again. Fix the flake; there is no other way past it. A correction after archive re-enters
+  reconciliation and final review; no later content commit bypasses the archive/spec-sync check. State `implemented-by:`
+  in the PR body, naming the implementing agent with the word `claude`, `codex`, or `gemini` and its model and effort as
+  `.agents/review-policy.json` lists them (`implemented-by: claude (opus, medium)`). Bring a pushed branch up to date by
+  merging `origin/main` into it; do not rebase or force-push it. A review record names the commit it read, and a rebase
+  leaves that record pointing at a commit the branch no longer has. The squash merge keeps `main` linear either way.
   The developer's notes for an implementation review, the choices a task made that its design does not spell out, are
   a file per task, `openspec/changes/<id>/notes/<task>.md`, with a one-line pull request comment that links it
   (developer contract § Handoff); they archive with the change. Evidence cited in a PR or task opens on another
@@ -166,95 +166,93 @@ on optional maintenance.
   on the host that wrote it: name it as local only, and never make it a task's only proof.
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by an agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
-  records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are any
-  agent's reviewer's (the bullet "A record covers the commit it names" below). The owner ruled on 2026-10-02 (issue #64)
-  that Codex's `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer
-  for what Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. What
-  "documents only" means is this repository's reading of that ruling, not the owner's words: every file the pull request
-  changes is a Markdown file or is under `openspec/`, and none is a role adapter under `.claude/agents/` or a canonical
-  role contract under `.agents/contracts/`. Any other changed file makes it a code
-  pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; the CI workflow;
-  `docs/admission-ledger.yaml`; `.claude/agents/*`; `.codex/agents/*`; `.agents/contracts/*`. If multiple agents wrote
-  commits, the owner names the reviewer on the issue. A pull request
-  no agent wrote (a dependency bot's) is reviewed by any agent's reviewer, and the record names which. The check
-  below provides for this only when GitHub reports the author as a bot. A code change the owner would write by hand is
-  given to an agent session to make: the commits are then that agent's, `implemented-by:` names it truthfully, and
-  another agent reviews. A code pull request by a user with no `implemented-by:` line naming an agent fails the check
-  once it is not a draft; the ruleset on `main` lets nobody merge past the failed check, and editing the ruleset is a
-  waiver this rule does not give. For a code pull request this replaces the owner-run round; the owner need not ask. A
+  records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are any agent's
+  reviewer's (the bullet "A record covers the commit it names" below). The owner ruled on 2026-10-02 (issue #64) that
+  Codex's `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer for
+  what Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. A pull
+  request is documents only when every file it changes ends in `.md`, or is a `.yml`, `.yaml` or `.json` file under
+  `openspec/`, and none is a role adapter under `.claude/agents/` or a canonical role contract under
+  `.agents/contracts/`: the classifier of `ateam review gate`, which the merge check runs. Any other changed file makes
+  it a code pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; a CI workflow;
+  `docs/admission-ledger.yaml`; `.agents/review-policy.json`; `.claude/agents/*`; `.codex/agents/*`;
+  `.agents/contracts/*`. If multiple agents wrote commits, the owner names the reviewer on the issue. A pull request no
+  agent wrote (a dependency bot's) is reviewed by any agent's reviewer, and the record names which; the gate provides
+  for this only when GitHub reports the author as a bot. A code change the owner would write by hand is given to an
+  agent session to make: the commits are then that agent's, `implemented-by:` names it truthfully, and another agent
+  reviews. The ruleset on `main` lets nobody merge past a failed `Merge check`, and editing the ruleset is a waiver this
+  rule does not give. For a code pull request this replaces the owner-run round; the owner need not ask. A
   documents-only pull request keeps SemEngine's own reviewer. The rule applies to every pull request not yet merged, one
-  already open included. The implementing session may run its own reviewer as it works; those reviews, past or future,
-  find defects early and are not the gate. An agent does not start another platform's agent, so the pull request carries
-  both halves:
-  - The implementer asks with a PR comment headed `Review request`. It names the kind of review, the commit to read,
-    the diff range, the implementer's `task verify` result on that commit (run on a clean tree), and the issue or
-    ruling the change answers. It does not say what the reviewer should conclude.
-  - The reviewing session answers with a PR comment headed `Review record`: its reviewer's report as written, in the
-    reviewer contract's format, not a summary. It names the commit read, what was run, and what could not be run.
+  already open included. The implementing session may run its own reviewer as it works; those reviews find defects early
+  and are not the gate. An agent does not start another platform's agent, so the pull request carries both halves:
+  - The implementer asks with a PR comment headed `Review request`. It names the kind of review (the lane), the commit
+    SHA to read, the diff range, the implementer's `task verify` result on that commit (run on a clean tree), and the
+    issue or ruling the change answers. It does not say what the reviewer should conclude.
+  - The reviewing session posts one PR comment, the review record, in ateam's grammar
+    ([`contracts/reviewer.md`](contracts/reviewer.md) § Record; [review-pr](skills/review-pr/SKILL.md)):
+
+    ```text
+    reviewed-by: <agent> (<model>, <effort>)
+    Reviewed at <commit-sha>
+    Verdict: APPROVE | REQUEST CHANGES
+    <findings in the semengine-reviewer format, checks run, what could not be run>
+    ```
+
+    `Reviewed at` names one commit of the pull request; the model is named as `.agents/review-policy.json` lists it.
   - Evidence comes from the tree and the reviewer's own runs, not from the implementer's account. For anything
     `task verify` runs, the evidence is the reviewer's run on the named commit; without one, the implementer's result
     is recorded as reported by the implementer, never as passed. The implementer does not wait on or watch a CI run
     before asking, and the record does not rest on one: the CI run before merge is the check (owner ruling of
     2026-10-10, issue #171). A check the reviewer could not run and CI does not run is recorded as not run.
-  - A record covers the commit it names. A later content commit, one that changes the pull request's own diff against
-    `main`, needs a re-review, and the archive commit needs the archive check. Cross-agent review covers code:
-    a later commit that changes code (any file that is not Markdown or under `openspec/`, or a file under
-    `.claude/agents/` or `.agents/contracts/`) goes back to the reviewing agent for re-review. A later commit that
-    changes documents only, and the check of the archive/spec sync, are reviewed by any agent's reviewer; the record
-    names which (owner ruling of 2026-10-03, #66 comment 5968737070: cross-agent review is for code, not for process). A
-    merge of `origin/main` is not a content commit when `main` changed no file the pull request changes: the record
-    carries over, and CI on the merged head is the check. When `main` changed a file the pull request also changes, that
-    file needs a re-review.
+  - A record covers the commit it names. A later commit that changes code (any file the classifier above does not
+    call a document) needs a new record from the reviewing agent. A later commit that changes documents only, and a
+    merge of `origin/main` that touches no file the pull request changes, carry the record over; the documents-only
+    re-review and the check of the archive/spec sync are any agent's reviewer's, and the record names which (owner
+    ruling of 2026-10-03, #66 comment 5968737070: cross-agent review is for code, not for process). When `main`
+    changed a file the pull request also changes, the merge needs a new record.
   - The reviewer does not write on the branch. Findings go back to the implementer, who keeps write ownership. If
     the agents disagree on a finding, it goes to the owner on the issue, labelled `status:needs-decision`.
-  - The implementer writes one `reviewed-by:` line in the PR body, beside `implemented-by:`, once the reviewing
-    agent's newest review record approves; it names that agent with the word `claude`, `codex`, or `gemini`, beside the
-    model or persona taken from the record.
-  - The check: `scripts/merge-check.sh`, run by CI's `merge-check` job and by `task merge:check -- <n>`, reads the
-    pull request's description and its list of changed files. On a code pull request the description must have
-    exactly one line starting `implemented-by:` that names at least one agent (not read when GitHub reports the
-    author as a bot) and exactly one line starting `reviewed-by:` that names exactly one agent: one that
-    `implemented-by:` does not name when `implemented-by:` names a single agent, or any of the three when it names more
-    than one or the author is a bot. A line starts in the first column; an agent name is `claude`, `codex`, or `gemini`
-    in any letter case, not part of a longer word such as `codex2` or `gemini2`; nothing else in either line is read. On
-    a draft the findings are printed and fail nothing; on a pull request that is not a draft they fail `merge-check`,
-    and `Required` with it. Marking a draft ready starts the CI run that applies the check; editing the description or
-    adding a comment starts no run, so after the edit run the failed `merge-check` job again.
-  - What stays review only: whether the lines are true (the owner and the agents use one GitHub login, so the script
-    cannot tell who wrote a commit, a description or a comment); that a review record exists, the commit it read,
-    and the re-review after a later content commit (once written, the line satisfies the check through every later
-    push); the record's verdict, scope and content; that the owner named the reviewer when multiple agents wrote
-    commits; a pull request that changes the script, the workflow or their tests, which runs its own copies; and the
-    moment after marking ready before the new run registers, when a draft's green `Required` may still be the newest
-    result, which the Land steps of waiting for CI and `task merge:check -- <n>` cover.
+  - The PR body carries `implemented-by: <agent> (<model>, <effort>)`, written by the implementer, and, after an
+    approving record, `reviewed-by: <agent> (<model>, <effort>)`, added by the reviewer (review-pr § 5). That
+    description edit reruns `Merge check` on the `edited` event; no manual rerun is needed.
+  - The check: `scripts/merge-check.sh` runs `ateam review gate` at the release pinned in the workflows, from
+    `.github/workflows/merge-check.yml` (on the base commit, so a pull request cannot loosen the gate judging it) and
+    from `task merge:check -- <n>`. On a code pull request that is not a draft it fails unless the description has
+    both lines, the reviewer is another agent and not weaker than every implementer (model tier, then effort band, in
+    `.agents/review-policy.json`), and the latest record approves a commit no later code commit follows. A draft
+    carries no `Merge check` run.
+  - What stays review only: whether the lines and the record are true (the owner and the agents use one GitHub login,
+    so the gate cannot tell who wrote a commit, a description or a comment); the record's scope and content; that the
+    owner named the reviewer when multiple agents wrote commits; and a pull request that changes `ci.yml` or
+    `merge-check.yml`, which runs its own copy.
 - **Known flakes:** a known flake is an open issue labelled `class:flake`. The label is for a failure that a pull
-  request in this repository can end: a test or check that passes and fails on the same tree. A network fetch that
-  did not answer is not one. Record it as a comment on the pull request it hit, with the run's link, and re-run when
-  the remote answers; the second failure of the same fetch gets an ordinary issue, without the label. A red you
-  cannot explain by your diff is filed before the next push. While a known flake is open, CI's `merge-check` job,
-  and `Required` with it, fails on every pull request except one whose description closes every open flake
-  (`Closes #n` for each). No comment or label on a pull request exempts it. A pull request that closes a flake shows
-  the reproduction: the command, and how often it failed before the fix and after. A flake that comes back after its
-  fix reopens its issue. A property-based test that fails on one run and passes on the next is a known flake too: the
-  issue records the seed, and the fix keeps the failing input as a named test (`docs/testing.md`, "Running and
-  replaying a Rapid test").
+  request in this repository can end: a test or check that passes and fails on the same tree. A network fetch that did
+  not answer is not one. Record it as a comment on the pull request it hit, with the run's link, and re-run when the
+  remote answers; the second failure of the same fetch gets an ordinary issue, without the label. A red you cannot
+  explain by your diff is filed before the next push. While a known flake is open, `Merge check` fails on every pull
+  request except one whose description closes every open flake (`Closes #n` for each). No comment or label on a pull
+  request exempts it. A pull request that closes a flake shows the reproduction: the command, and how often it failed
+  before the fix and after. A flake that comes back after its fix reopens its issue. A property-based test that fails on
+  one run and passes on the next is a known flake too: the issue records the seed, and the fix keeps the failing input
+  as a named test (`docs/testing.md`, "Running and replaying a Rapid test").
 - **Close:** at a session boundary, before context compaction, run `ateam state handoff` ("Session checkpoint"
   above). The squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
   authorization. The declaration must predate the review rounds that cover it. A PR that only `Addresses` an epic
   closes nothing. A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on
   the issue itself; an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a
   close, and a bare "approved" closes nothing. A `class:flake` issue is closed, or its label removed or renamed, only
-  by a merged fix or on the owner's word: any of the three lifts the `merge-check` stop for every pull request.
+  by a merged fix or on the owner's word: any of the three lifts the `Merge check` stop for every pull request.
 
 ## Verification
 
-CI has three jobs. `verify` runs `task verify`, the same commands as a local run. `merge-check` runs
-`scripts/merge-check.sh`: it fails while a known flake is open that the pull request does not close, fails unless
-the rules on `main` require an up-to-date head, and fails a code pull request that is not a draft unless its
-`implemented-by:` and `reviewed-by:` lines name the agents as "Cross-agent review" says. It reads GitHub, so it is
-not part of `task verify`. `required` fails if `verify` or `merge-check` failed, is missing, or was skipped or
-cancelled; it is the check the ruleset on `main` requires. Gate selection and evidence recording are in
-[preflight](skills/preflight/SKILL.md).
+Two workflows report the checks the ruleset on `main` requires. In `ci.yml`, `verify` runs `task verify`, the same
+commands as a local run, and `required` (`Required`) fails if `verify` failed, is missing, or was skipped or cancelled.
+`merge-check.yml` (`Merge check`) runs `scripts/merge-check.sh`, which is `ateam review gate`: it fails unless the rules
+on `main` require `Required` and `Merge check` with an up-to-date head, fails a code pull request that is not a draft
+unless its attestation lines and review record satisfy "Cross-agent review", and fails while a known flake is open that
+the pull request does not close. It reads GitHub, so it is not part of `task verify`. Run locally,
+`task merge:check -- <n>` checks that the rules on `main` require `Required` alone unless `ATEAM_REQUIRED_CHECKS` is set
+(`ATEAM_REQUIRED_CHECKS='Required,Merge check'` checks both, as the workflow does). Gate selection and evidence
+recording are in [preflight](skills/preflight/SKILL.md).
 
 There is no program baton document. Agents mutate only this repository: SemStreams and other sister repositories are
 read-only inventory.

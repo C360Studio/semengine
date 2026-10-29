@@ -47,8 +47,40 @@ var semengineOwned = map[string]string{
 	".mcp.json":                         "client configuration; doctor checks its MCP registration",
 }
 
-// ateamPin matches an ateam install line in .github/workflows/ci.yml; every one names the same release.
+// ateamPin matches an ateam install line in .github/workflows/ci.yml and merge-check.yml; every one
+// names the same release.
 var ateamPin = regexp.MustCompile(`ateam/cmd/ateam@(v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)`)
+
+// ateamPins returns the one release every ateam install line in the workflow files names (keyed by
+// file name), or a violation naming each file's versions when they are not one, or when a file has
+// no install line (harness-boundaries › "ateam doctor gates verify"; merge-gate › "A contract test
+// guards both workflows").
+func ateamPins(files map[string][]byte) (string, []string) {
+	var all, per, violations []string
+	for _, name := range slices.Sorted(maps.Keys(files)) {
+		var versions []string
+		for _, m := range ateamPin.FindAllSubmatch(files[name], -1) {
+			v := string(m[1])
+			if !slices.Contains(versions, v) {
+				versions = append(versions, v)
+			}
+			if !slices.Contains(all, v) {
+				all = append(all, v)
+			}
+		}
+		if len(versions) == 0 {
+			violations = append(violations, fmt.Sprintf(".github/workflows/%s: no ateam install line; every workflow that runs ateam installs the pinned release", name))
+		}
+		per = append(per, fmt.Sprintf("%s %v", name, versions))
+	}
+	if len(all) > 1 {
+		violations = append(violations, fmt.Sprintf(".github/workflows: ateam install lines name versions %s; want one version", strings.Join(per, ", ")))
+	}
+	if len(violations) > 0 {
+		return "", violations
+	}
+	return all[0], nil
+}
 
 func TestAteamTemplatesUnchanged(t *testing.T) {
 	root := repoRoot(t)
@@ -98,20 +130,16 @@ func TestAteamTemplatesUnchangedSensitivity(t *testing.T) {
 // or is not the pinned release.
 func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	t.Helper()
-	ci, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "ci.yml"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	var versions []string
-	for _, m := range ateamPin.FindAllSubmatch(ci, -1) {
-		if v := string(m[1]); !slices.Contains(versions, v) {
-			versions = append(versions, v)
+	workflows := map[string][]byte{}
+	for _, name := range []string{"ci.yml", "merge-check.yml"} {
+		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
+		if err != nil {
+			t.Fatal(err)
 		}
+		workflows[name] = data
 	}
-	if len(versions) != 1 {
-		t.Fatalf(".github/workflows/ci.yml: ateam install lines name versions %v, want one version", versions)
-	}
-	pin := versions[0]
+	pin, violations := ateamPins(workflows)
+	requireNoViolations(t, "ateam pin", violations)
 	install := "GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@" + pin
 	if _, err := exec.LookPath("ateam"); err != nil {
 		t.Fatalf("ateam is not on PATH; install the pinned release: %s", install)
@@ -121,7 +149,7 @@ func ateamTemplates(t *testing.T, root string) map[string][]byte {
 		t.Fatalf("ateam version: %v\n%s", err, out)
 	}
 	if !slices.Contains(strings.Fields(string(out)), pin) {
-		t.Fatalf("ateam version reports %q, want the ci.yml pin %s; install it: %s", strings.TrimSpace(string(out)), pin, install)
+		t.Fatalf("ateam version reports %q, want the workflows' pin %s; install it and put $(go env GOPATH)/bin first on PATH: %s", strings.TrimSpace(string(out)), pin, install)
 	}
 
 	// init reads the review policy (review_record: aip writes a different reviewer.md and

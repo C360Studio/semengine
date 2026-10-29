@@ -45,14 +45,14 @@ with current CI.
 | `task cover:check` | Fails below 80% coverage on each target in `scripts/cover-check.sh` (16 today: the harness's `natsfixture`, `lifecycletest`, `probe`, and each ported package on the SETUP 03B critical list, `setup-03b-contract-boundary` `design.md` D10); a package on that list joins when it is ported |
 | `task test:repeat` | Unit tests (not the tool packages, not the repository guards in `internal/harness/contract`) five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
 | `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
-| `task merge:check -- <n>` | Fails while an open `class:flake` issue is not closed by PR `n`, or while the rules on `main` do not require an up-to-date head, or while PR `n` is a code pull request, not a draft, whose `implemented-by:` and `reviewed-by:` lines do not name the implementing and reviewing agents; reads GitHub |
+| `task merge:check -- <n>` | `ateam review gate` at the pin (put `$(go env GOPATH)/bin` first on `PATH`; `docs/testing.md`): fails while the rules on `main` do not require an up-to-date head, while PR `n` is a code pull request, not a draft, without `implemented-by:` and `reviewed-by:` lines naming a not-weaker other agent and an approving review record at its head, or while an open `class:flake` issue is not closed by PR `n`; reads GitHub |
 | `task verify` | `ateam:doctor` first, then the checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:tools:changed` after `test:unit` and `test:repeat` last; prints each step's time; fails on tracked-file change |
 
-CI has three jobs: `verify` runs `task verify`; `merge-check` runs `scripts/merge-check.sh` for the pull request (on a
-push to `main`, only its up-to-date half); `required` fails if `verify` or `merge-check` failed, is missing, or was
-skipped or cancelled. `task verify` needs a reachable Docker daemon for `test:integration`; a daemon that is not
-reachable is a failing gate, never a skipped one. A consumer lane joins `task verify` when its workload exists; until
-then no task for it exists, and a missing lane is not a passing one.
+CI has two workflows: in `ci.yml`, `verify` runs `task verify` and `required` fails if `verify` failed, is missing, or
+was skipped or cancelled; `merge-check.yml` runs `scripts/merge-check.sh` for a pull request that is not a draft, from
+the base commit, on every push, ready and description edit. `task verify` needs a reachable Docker daemon for
+`test:integration`; a daemon that is not reachable is a failing gate, never a skipped one. A consumer lane joins
+`task verify` when its workload exists; until then no task for it exists, and a missing lane is not a passing one.
 
 Select by what the diff changes:
 
@@ -73,7 +73,7 @@ Select by what the diff changes:
 - **Dependencies or `go.mod`:** `task tidy:check` and `task vuln` in addition to the Go gates.
 - **Before any implementation push:** `task verify`.
 - **Immediately before merging:** `task merge:check -- <n>`, in a shell where `GITHUB_ACTIONS` is not set. It sees a
-  flake filed, a closing line removed, or a `reviewed-by:` line added, since the pull request's last CI run.
+  flake filed, a closing line removed, or a review record posted, since the pull request's last `Merge check` run.
 
 Do not hand-run a narrower command in place of a gate CI runs: the task owns flags and pins.
 
@@ -96,7 +96,7 @@ failure status when filtering output; do not infer success from a quiet log.
 Resolve failures from evidence; a successful re-run is not a fix for a flake. A red that your diff does not explain
 is filed as an issue before the next push, labelled `class:flake` when it is a test or check that passes and fails
 on the same tree. A network fetch that did not answer is not a flake: follow the protocol's "Known flakes" item. An
-open flake is fixed; nothing else gets a pull request past it, and `merge-check` fails every pull request that does
+open flake is fixed; nothing else gets a pull request past it, and `Merge check` fails every pull request that does
 not close it. Long or paid runs need the role contract's active progress
 checks and bounded stopping behavior.
 

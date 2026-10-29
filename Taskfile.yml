@@ -131,7 +131,7 @@ tasks:
       - scripts/tools-changed.sh
 
   merge:check:
-    desc: Fail while a class:flake issue is open that PR <n> does not close, main's rules lack the up-to-date setting, or PR <n> is a code PR, not a draft, without implemented-by and reviewed-by lines naming the agents; -- <n>. Reads GitHub, so not in verify
+    desc: Run ateam review gate on PR <n> (-- <n>), the pinned release first on PATH; fails while main's rules lack Required with the up-to-date setting, a code PR that is not a draft lacks its attestation lines or an approving review record at its head, or a class:flake issue it does not close is open. Reads GitHub, so not in verify
     cmds:
       - scripts/merge-check.sh {{.CLI_ARGS}}
 

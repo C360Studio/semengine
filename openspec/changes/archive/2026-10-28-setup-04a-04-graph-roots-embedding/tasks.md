@@ -81,10 +81,11 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 - [x] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
   comment. Passed at `c273595` (pinned ateam v0.3.3); notes linked from the code-stop comments on PR #458.
-- [ ] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body retires #35 and #107 (design D10).
+- [x] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body retires #35 and #107 (design D10). Codex
+  approved the whole pre-archive PR at `7286654` (PR #458); its two documentation corrections are in `ef96555`.
 - [x] 5.3 Comments on #141 and #195 ("implemented in PR #458 at `<SHA>`, pending merge"), read back.
 
 ## 6. Close
 
-- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-embedding`) as the last content commit, syncing
+- [x] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-embedding`) as the last content commit, syncing
   `embedding-index` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

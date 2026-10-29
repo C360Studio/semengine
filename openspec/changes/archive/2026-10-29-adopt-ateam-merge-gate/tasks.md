@@ -65,15 +65,15 @@ Track: `design` (adds spec requirements; touches `merge-gate` and `harness-bound
 
 ## 5. Review, ruleset, archive
 
-- [ ] 5.1 Owner adds `Merge check` to the `main` ruleset's required checks. Gate:
+- [x] 5.1 Owner adds `Merge check` to the `main` ruleset's required checks. Gate:
   `gh api repos/{owner}/{repo}/rules/branches/main` lists `Required` and `Merge check` with
   `strict_required_status_checks_policy` true, or `ATEAM_REQUIRED_CHECKS='Required,Merge check'
-  scripts/merge-check.sh 469` with ateam v0.3.4 passes rule 1. Hold: OPEN-Q owner action on GitHub after 3.2 is
-  pushed.
+  scripts/merge-check.sh 469` with ateam v0.3.4 passes rule 1. Done 2026-10-29 on the owner's approval (ruleset
+  `main-required-checks`, 24272345, edited through the API); the gate query lists both checks, strict on.
 - [x] 5.2 Cross-agent review record on the PR in ateam's grammar; `implemented-by:` and `reviewed-by:` with
   `(model, effort)` in the PR body. Record: PR #469 comment 6507637104, `Reviewed at 3f0c800`, `Verdict: APPROVE`,
   `reviewed-by: codex (gpt-6-astra, high)`; its two nonblocking findings: the design wording fixed here, the
   `merge-check.yml` header comment filed as #471 (a workflow edit after the record would void it).
-- [ ] 5.3 Archive as the last content commit, syncing the `merge-gate` and `harness-boundaries` deltas; the archive
+- [x] 5.3 Archive as the last content commit, syncing the `merge-gate` and `harness-boundaries` deltas; the archive
   commit also rewrites the `merge-gate` spec's Purpose paragraph, which still says a code pull request fails
   `merge-check` without the two agent lines (#470). Gate: `task spec:check` and `task docs:check`.

@@ -222,8 +222,8 @@ on optional maintenance.
     carries no `Merge check` run.
   - What stays review only: whether the lines and the record are true (the owner and the agents use one GitHub login,
     so the gate cannot tell who wrote a commit, a description or a comment); the record's scope and content; that the
-    owner named the reviewer when multiple agents wrote commits; and a pull request that changes `merge-check.yml`,
-    which runs its own copy of that workflow.
+    owner named the reviewer when multiple agents wrote commits; and a pull request that changes `ci.yml` or
+    `merge-check.yml`, which runs its own copy.
 - **Known flakes:** a known flake is an open issue labelled `class:flake`. The label is for a failure that a pull
   request in this repository can end: a test or check that passes and fails on the same tree. A network fetch that did
   not answer is not one. Record it as a comment on the pull request it hit, with the run's link, and re-run when the

@@ -249,7 +249,9 @@ commands as a local run, and `required` (`Required`) fails if `verify` failed, i
 `merge-check.yml` (`Merge check`) runs `scripts/merge-check.sh`, which is `ateam review gate`: it fails unless the rules
 on `main` require `Required` and `Merge check` with an up-to-date head, fails a code pull request that is not a draft
 unless its attestation lines and review record satisfy "Cross-agent review", and fails while a known flake is open that
-the pull request does not close. It reads GitHub, so it is not part of `task verify`. Gate selection and evidence
+the pull request does not close. It reads GitHub, so it is not part of `task verify`. Run locally,
+`task merge:check -- <n>` checks that the rules on `main` require `Required` alone unless `ATEAM_REQUIRED_CHECKS` is set
+(`ATEAM_REQUIRED_CHECKS='Required,Merge check'` checks both, as the workflow does). Gate selection and evidence
 recording are in [preflight](skills/preflight/SKILL.md).
 
 There is no program baton document. Agents mutate only this repository: SemStreams and other sister repositories are

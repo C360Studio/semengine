@@ -7,8 +7,9 @@ name: Merge check
 # - It reads the pull request's state (the review record, the reviewed-by:
 #   line, open class:flake issues), so it runs on edited too: the reviewer's
 #   description edit reaches it without rerunning Verify.
-# - One run per pull request at a time, queued, never cancelled: a cancelled
-#   Merge check would sit beside a passing one at the same head.
+# - One run per pull request at a time, queued: a newer event replaces a
+#   pending run, and a running one finishes rather than being cancelled, so
+#   no cancelled Merge check sits beside a passing one at the same head.
 # - It judges from the base commit: the script, the review policy it reads and
 #   the ateam pin come from main, never from the tree under review, so a pull
 #   request cannot loosen the gate judging it. The pull request itself is read

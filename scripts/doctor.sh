@@ -37,15 +37,23 @@ else bad node "not found"; fi
 
 if command -v npm >/dev/null; then ok npm "$(npm --version)"; else bad npm "not found"; fi
 
-# ateam: every go install line in .github/workflows/ci.yml names the one pinned version; task ateam:doctor runs it.
+# ateam: every go install line in ci.yml and merge-check.yml names the one pinned version, and each
+# file has one; task ateam:doctor runs it.
 semver='v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
-pins=$(grep -Eo "ateam/cmd/ateam@$semver" .github/workflows/ci.yml | sed 's/.*@//' | sort -u || true)
+workflows=(.github/workflows/ci.yml .github/workflows/merge-check.yml)
+missing=""
+for f in "${workflows[@]}"; do
+  grep -Eq "ateam/cmd/ateam@$semver" "$f" 2>/dev/null || missing="$missing $f"
+done
+pins=$(cat "${workflows[@]}" 2>/dev/null | grep -Eo "ateam/cmd/ateam@$semver" | sed 's/.*@//' | sort -u || true)
 npins=$(printf '%s' "$pins" | grep -c . || true)
-if [ "$npins" -ne 1 ]; then
-  bad ateam ".github/workflows/ci.yml ateam install lines name $npins versions ($(echo $pins)), want one"
+if [ -n "$missing" ]; then
+  bad ateam "no ateam install line in$missing"
+elif [ "$npins" -ne 1 ]; then
+  bad ateam "ci.yml and merge-check.yml ateam install lines name $npins versions ($(echo $pins)), want one"
 elif command -v ateam >/dev/null; then
   have=$(ateam version 2>&1 | grep -Eo "$semver" | head -n1 || true)
-  if [ "$have" = "$pins" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != ci.yml $pins"; fi
+  if [ "$have" = "$pins" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != workflow pin $pins (put \$(go env GOPATH)/bin first on PATH)"; fi
 else bad ateam "not found (GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@$pins)"; fi
 
 # python3: no pin; scripts/openspec-queue.sh parses JSON and timestamps with it. task spec:check runs that

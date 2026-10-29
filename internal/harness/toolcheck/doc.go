@@ -9,14 +9,16 @@
 // any other file of the real tree stays in contract. Only review enforces this rule, so each test
 // file's reads are listed here for the reviewer to check:
 //
-//   - ateamtemplates_test.go: .github/workflows/ci.yml, .agents/review-policy.json and the files
-//     ateam init writes under .agents/, .claude/, .codex/ and .gemini/.
+//   - ateamtemplates_test.go: .github/workflows/ci.yml and merge-check.yml,
+//     .agents/review-policy.json and the files ateam init writes under .agents/, .claude/, .codex/
+//     and .gemini/.
 //   - cleanuproots_test.go: scripts/cleanup-roots-check.sh.
 //   - cover_test.go: scripts/cover-check.sh and scripts/tree-state.sh.
 //   - ledgercheck_test.go: Taskfile.yml.
 //   - lintports_test.go: scripts/lint-test-ports.sh.
-//   - mergecheck_test.go: scripts/merge-check.sh.
-//   - mergegate_test.go: Taskfile.yml, scripts/verify.sh and .github/workflows/ci.yml.
+//   - mergegate_test.go: Taskfile.yml, scripts/verify.sh, .github/workflows/ci.yml and
+//     merge-check.yml.
+//   - mergewrapper_test.go: scripts/merge-check.sh.
 //   - portstatus_test.go: scripts/port-status.sh, docs/admission-ledger.yaml,
 //     service/base.go, service/service_manager.go and service/component_manager.go.
 //   - specqueue_test.go: scripts/openspec-queue.sh and Taskfile.yml.

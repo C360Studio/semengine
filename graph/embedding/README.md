@@ -52,13 +52,21 @@ Saves are ordered by source revision:
 
 ## Running the Worker and the cache
 
+Each `Run` blocks until `ctx` ends or its watch is lost, so a caller that wants both runs each on
+its own goroutine and waits for both to return:
+
 ```go
 worker := embedding.NewWorker(storage, embedder, logger).WithWorkers(5)
-err := worker.Run(ctx) // blocks until ctx ends or the watch is lost
-
 cache := embedding.NewVectorCache(storage)
-err = cache.Run(ctx)
+
+errc := make(chan error, 2)
+go func() { errc <- worker.Run(ctx) }()
+go func() { errc <- cache.Run(ctx) }()
+err := errors.Join(<-errc, <-errc) // both have returned
 ```
+
+A lost watch ends only the `Run` that lost it; the other keeps running until `ctx` ends, so a caller
+that stops on the first error cancels `ctx` before waiting for the second.
 
 `Run` returns `ctx.Err()` when `ctx` ended, and an error saying the watch was lost otherwise. The
 caller owns `ctx` and ends it to stop. `Run` refuses a nil context and a second `Run` while one

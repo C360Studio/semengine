@@ -19,8 +19,9 @@
 // read-modify-write is a compare-and-set through natsclient.KVStore.UpdateWithRetryRead: the
 // decision is made from the bytes and revision it read, and a lost race is retried. Saves are
 // ordered by source revision (the ENTITY_STATES revision a record was made from): a save for an
-// older revision never replaces a generated record for a newer one, and returns
-// ErrSupersededRevision or ErrRecordGone without writing. Neither is a failure.
+// older revision never replaces a generated record for a newer one. SaveGenerated and SaveFailed
+// refuse such a save with ErrSupersededRevision (or ErrRecordGone for an absent record) and write
+// nothing; SavePendingGuarded reports it as not saved, with a nil error. None of these is a failure.
 //
 // When a record's text resolves to nothing, the Worker removes the record only if its key is
 // still at the KV revision the Worker read; if newer work has moved the key, nothing is removed

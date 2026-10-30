@@ -12,6 +12,8 @@ is one stage of the chain: 0 keyword, 1 example classifier, 3 LLM (no code produ
 
 ## Owner questions
 
+Answered by the owner on 2026-10-30 (#9 comment 6522523604): 1 drop, 2 accept, 3 leave untyped here, 4 fix here.
+
 1. Drop `UpgradeVectors`, the swap from BM25 to neural example vectors? Nothing calls it at the pin or in any starter
    consumer; SemStreams ADR-043 (Proposed, semteams' prompt-injection work) planned to. Recommended: drop; tier 1
    (#32) brings a neural path back if wanted.

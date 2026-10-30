@@ -77,11 +77,11 @@ contract line (inventory 4): `AppliedRevision` (second spelling of `Applied`), `
 
 Required: D2, D3, the docs drift S10, the tests of D6. Retained, optional: S1 the tombstone switch (`natsclient`
 would pull its dependencies into a leaf package products import); S3 the package's own sentinels; S5 the watch loop
-(#461 tracks the stop half). **Optional removals, recommended (proposal question 2):** S4 the ghost-key loop
+(#461 tracks the stop half). **Removed (owner accepted 2026-10-30, proposal question 2):** S4 the ghost-key loop
 (`view.go:713-722`), which can remove nothing because a view runs once from an empty copy, and S6 the test-only tick
-channel (`view.go:106-110`, `:766-771`), which `synctest` makes unnecessary. If S4 goes, `TestFreshReplacementReconcilesGhostKeys`
-goes with it (it cannot fail, inventory probe) and the pin spec's re-bootstrap scenario rests on `TestRunOnce`,
-checked by a mutant that allows a second `Run`. Delivered pointer values stay shared (ADR-081 D4), a named doc cost.
+channel (`view.go:106-110`, `:766-771`), which `synctest` makes unnecessary. `TestFreshReplacementReconcilesGhostKeys`
+goes with S4 (it cannot fail, inventory probe); the pin spec's re-bootstrap scenario rests on `TestRunOnce`, checked
+by a mutant that allows a second `Run`. Delivered pointer values stay shared (ADR-081 D4), a named doc cost.
 
 ## D5. ADRs
 

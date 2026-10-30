@@ -1,6 +1,6 @@
 # Proposal: setup-04a-04-graph-roots-graphview
 
-Approved-by:
+Approved-by: owner, 2026-10-30 in Enjoy: question 1 yes (`Run(ctx)`), question 2 remove both, question 3 yes
 
 ## Why
 

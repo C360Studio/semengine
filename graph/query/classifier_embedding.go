@@ -38,7 +38,7 @@ type EmbeddingClassifier struct {
 // map; values under other names are shared with the caller.
 //
 // It returns an error, and no classifier, when ctx is nil or has ended, when any example cannot
-// be embedded, or when a known option does not decode or is impossible: a strategy that is not a
+// be embedded, or when a known option is null, does not decode, or is impossible: a strategy that is not a
 // SearchStrategy value, a time range with a zero start or end or ending before it starts, geo
 // bounds with North or South outside [-90, 90] or South above North, or a negative limit. The
 // error names the domain, the example and the option. A classifier that could never match is

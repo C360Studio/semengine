@@ -25,7 +25,13 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   final CI run, the merge): such a task strands the change, and those steps are recorded on the PR. A hold is written
   in the unticked task it stops, on any of its lines, as `Hold:` followed by what it waits for (an issue or PR number,
   or the owner's ruling). The queue reads every line of an unticked task and prints each hold from `Hold:` on. A hold
-  in a heading or a paragraph outside every task does not show, and `task spec:check` fails on it.
+  in a heading or a paragraph outside every task does not show, and `task spec:check` fails on it. Proposal approval
+  (owner ruling of 2026-10-28 on #447, items 1 to 3): `proposal.md` stays on one page (60 lines or fewer;
+  `task spec:check` warns past it) and carries `Approved-by:`, empty until the owner fills
+  `<name> (<YYYY-MM-DD>)`; the line may link the issue comment where the owner ruled. The first task holds
+  `Hold: OPEN-Q proposal awaits owner approval` until the owner approves, and the hold comes off in the same edit that
+  fills `Approved-by:`. The one hold covers proposal and design. A `design.md` past 120 lines draws a warning, which is
+  accepted for port designs: they keep the shape sweep, pin probes and ADR listing their rules require.
 - **Session checkpoint:** `ateam state handoff` (the [handoff](skills/handoff/SKILL.md) skill) writes
   `.ateam/state.json`, which git ignores, and posts the five-field checkpoint (`Goal`, `Addresses`, `Constraints`,
   `Done when`, `Checks to run`) to the open PR; [pickup](skills/pickup/SKILL.md) reconciles it against live state.
@@ -104,7 +110,10 @@ on optional maintenance.
   and `task` gates), and (4) **Stop boundary** (pause after inventory/design for an owner decision vs run through to a
   ready PR). When a prompt leaves any of the four ambiguous, stop first, propose a concise 3–4 bullet recommended
   Definition of Done the owner can approve or adjust in one reply, and ask at most 1–3 targeted questions; once set,
-  run autonomously to that stop boundary without pausing on routine steps.
+  run autonomously to that stop boundary without pausing on routine steps. Then declare the change's track: `quick`
+  (proposal and tasks) or `design` (plus `design.md`, drafted through the [design](skills/design/SKILL.md) skill).
+  `design` is required when the change adds a spec Requirement or touches more than one capability under
+  `openspec/specs/`.
 - **Take work:** an unclaimed issue, then a dedicated worktree on an agent-prefixed branch (`claude/<topic>`,
   `codex/<topic>`, `gemini/<topic>`; the prefix names who claimed it), then push, then a draft PR with `Closes #n` or
   `Addresses #n`, then work. One claimed PR owns one worktree. When multiple agents share a host, the primary checkout
@@ -119,9 +128,11 @@ on optional maintenance.
 - **Worktree hygiene:** for standalone CLI sessions, the claim's worktree lives at a durable sibling path
   (`git worktree add ../semengine-wt/<branch> -b <branch> origin/main`), never under `/private/tmp`, which a reboot
   purges; Enjoy desktop sessions use `move_to_worktree`, which creates `.worktrees/<branch>` (ignored in `.gitignore`
-  alongside `.enjoy-logs/`). Run `git worktree remove` when the PR
-  merges. Heavy local gates run one agent at a time on a shared host: worktrees fix the git collision, not the CPU one.
-  CI is the arbiter; a local red under contention is not a finding.
+  alongside `.enjoy-logs/`). Close hygiene (owner ruling of 2026-10-28 on #447, item 6): after the squash merge the
+  claiming agent removes its worktree and deletes the remote branch. `ateam state prune` removes every clean, merged
+  worktree of its own and their local branches; GitHub deletes the remote branch on merge. Never remove another
+  agent's worktree, or one that is dirty or unpushed. Heavy local gates run one agent at a time on a shared host:
+  worktrees fix the git collision, not the CPU one. CI is the arbiter; a local red under contention is not a finding.
 - **File:** a defect in code in this repository that the change does not fix is always filed as an issue, whether
   the code was carried or ported (brought over from the SemStreams pin, unchanged or adapted) or written here, such as
   the test harness or a script (two owner rulings of 2026-10-13 on #212, comments 6156218594 and 6156601031: the
@@ -164,6 +175,11 @@ on optional maintenance.
   (developer contract § Handoff); they archive with the change. Evidence cited in a PR or task opens on another
   machine: output pasted into the PR, or a CI run. A path git ignores (such as `coverage/` or `.ateam/`) exists only
   on the host that wrote it: name it as local only, and never make it a task's only proof.
+- **Report:** a conclusion or a handoff ends with one or two lines on what was skipped or not checked and what risk
+  remains (the Ponytail footer; the session-start hook injects the ladder, [ponytail](skills/ponytail/SKILL.md)). A
+  deliberate limit in code is marked `// shortcut: <the limit>, <when to upgrade>`, which `ateam state debt` lists.
+  Both apply the rule that every skip, drop or degrade is declared (`AGENTS.md` § 1, last row; owner ruling of
+  2026-10-28 on #447, item 8).
 - **Cross-agent review:** on a code pull request the implementation review, and the re-review of a fix that changes
   code, are done by an agent that wrote none of the commits under review, as the pull request's `implemented-by:` line
   records; the re-review of a fix that changes documents only, and the check of the archive/spec sync, are any agent's
@@ -234,13 +250,14 @@ on optional maintenance.
   before the fix and after. A flake that comes back after its fix reopens its issue. A property-based test that fails on
   one run and passes on the next is a known flake too: the issue records the seed, and the fix keeps the failing input
   as a named test (`docs/testing.md`, "Running and replaying a Rapid test").
-- **Close:** at a session boundary, before context compaction, run `ateam state handoff` ("Session checkpoint"
-  above). The squash merge of a PR that declared `Closes #n` at review time closes that issue; the merge is the
-  authorization. The declaration must predate the review rounds that cover it. A PR that only `Addresses` an epic
-  closes nothing. A close with no merged PR behind it (duplicate, stale, fixed elsewhere) takes the owner's word on
-  the issue itself; an approval of adjacent work (a PR, a review round, a design, a waiver) never widens into a
-  close, and a bare "approved" closes nothing. A `class:flake` issue is closed, or its label removed or renamed, only
-  by a merged fix or on the owner's word: any of the three lifts the `Merge check` stop for every pull request.
+- **Close:** at a session boundary, before context compaction, run `ateam state handoff` ("Session checkpoint" above).
+  After the merge, remove the claim's worktree ("Worktree hygiene" above). The squash merge of a PR that declared
+  `Closes #n` at review time closes that issue; the merge is the authorization. The declaration must predate the review
+  rounds that cover it. A PR that only `Addresses` an epic closes nothing. A close with no merged PR behind it
+  (duplicate, stale, fixed elsewhere) takes the owner's word on the issue itself; an approval of adjacent work (a PR, a
+  review round, a design, a waiver) never widens into a close, and a bare "approved" closes nothing. A `class:flake`
+  issue is closed, or its label removed or renamed, only by a merged fix or on the owner's word: any of the three lifts
+  the `Merge check` stop for every pull request.
 
 ## Verification
 
@@ -253,6 +270,11 @@ the pull request does not close. It reads GitHub, so it is not part of `task ver
 `task merge:check -- <n>` checks that the rules on `main` require `Required` alone unless `ATEAM_REQUIRED_CHECKS` is set
 (`ATEAM_REQUIRED_CHECKS='Required,Merge check'` checks both, as the workflow does). Gate selection and evidence
 recording are in [preflight](skills/preflight/SKILL.md).
+
+ateam's default test-to-spec attribution, a `// spec: openspec/specs/<cap>/spec.md#Requirement: ...` line on every Go
+`Test`, `Fuzz` and `Example` checked by `ateam test-spec`, is deferred until
+[C360Studio/ateam#237](https://github.com/C360Studio/ateam/issues/237) ships a brownfield mode (owner ruling of
+2026-10-28 on #447, item 5); no test here carries the marker yet.
 
 There is no program baton document. Agents mutate only this repository: SemStreams and other sister repositories are
 read-only inventory.

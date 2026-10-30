@@ -31,8 +31,10 @@ import (
 //     a change from before the attach (G1, the delta half) or a stale delivery (G2).
 //   - state: at every tick, each attached subscriber's state (its snapshot, or the model at the
 //     attach for a delta-only subscriber, plus every delta since) equals the model, revisions
-//     included (G1, G6: a poison arrives as poison, never as a value). Every live history ends
-//     with a tick, and opens with an attach of each kind, so it runs at least twice a history.
+//     included (G1, G6: a poison arrives as poison, never as a value). It runs for each
+//     subscriber still attached at a tick, so a history whose generated steps unsubscribe both
+//     opening subscribers before any tick makes none; the run's aggregate "state" count shows
+//     it running.
 //   - closed: after Unsubscribe, the subscription's Deltas closes with a nil Err.
 //
 // Each history runs in its own synctest bubble (Rapid calls t.Deadline, which a bubble refuses,

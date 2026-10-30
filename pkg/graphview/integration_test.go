@@ -16,7 +16,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -93,22 +92,27 @@ func putIT(t *testing.T, kv jetstream.KeyValue, key, value string) {
 var errRunHung = errors.New("run did not return within the wait bound")
 
 // startRun runs view.Run on its own goroutine under a context whose cancel it returns, with a
-// function that waits, up to waitBound, for Run to return and returns its error (every call
-// returns the same result). A cleanup cancels the context and waits, so no test leaves a Run
-// behind when it fails early.
+// function that waits, up to waitBound, for Run to return and returns its error, or errRunHung
+// when the bound runs out. Only Run's own result is kept: a wait that ran out does not stop a
+// later wait from seeing Run return. A cleanup cancels the context and waits afresh, so no test
+// leaves a Run behind when it fails early; t.Context has ended by then too (testing.T.Context).
 func startRun[T any](t *testing.T, view *View[T]) (wait func() error, stop context.CancelFunc) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- view.Run(ctx) }()
-	wait = sync.OnceValue(func() error {
+	done := make(chan struct{})
+	var runErr error // written before done closes, read only after
+	go func() {
+		runErr = view.Run(ctx)
+		close(done)
+	}()
+	wait = func() error {
 		select {
-		case err := <-done:
-			return err
+		case <-done:
+			return runErr
 		case <-time.After(waitBound):
 			return errRunHung
 		}
-	})
+	}
 	t.Cleanup(func() {
 		cancel()
 		if errors.Is(wait(), errRunHung) {
@@ -256,7 +260,9 @@ func TestRunLeavesNoWatchDelivery(t *testing.T) {
 		putIT(t, kv, fmt.Sprintf("k%03d", n), fmt.Sprintf(`{"name":"n%d"}`, n))
 	}
 	for cycle := range 10 {
-		ctx, cancel := context.WithCancel(t.Context())
+		// held ends at the cycle's stop, or when t.Context ends before the cleanups run, so the
+		// hook never keeps Run from the join startRun's cleanup makes.
+		held, release := context.WithCancel(t.Context())
 		entered := make(chan struct{}, 1)
 		view, err := New[*itRecord](kv, decodeITRecord, WithHooks(Hooks{
 			OnApply: func(string, uint64) {
@@ -264,32 +270,25 @@ func TestRunLeavesNoWatchDelivery(t *testing.T) {
 				case entered <- struct{}{}:
 				default:
 				}
-				<-ctx.Done()
+				<-held.Done()
 			},
 		}))
 		require.NoError(t, err)
-		done := make(chan error, 1)
-		go func() { done <- view.Run(ctx) }()
+		wait, stop := startRun(t, view)
 		select {
 		case <-entered:
 		case <-time.After(waitBound):
-			cancel()
 			t.Fatal("OnApply was not called")
 		}
 		// The stack dump showing the native delivery blocked on its full buffer orders the
 		// cancellation after the backlog, not elapsed time.
 		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), waitBound); err != nil {
-			cancel()
 			t.Fatal(err)
 		}
-		cancel()
-		select {
-		case err := <-done:
-			if !errors.Is(err, context.Canceled) {
-				t.Fatalf("cycle %d: Run returned %v; want context.Canceled", cycle, err)
-			}
-		case <-time.After(waitBound):
-			t.Fatalf("cycle %d: Run did not return after its context ended", cycle)
+		stop()
+		release()
+		if err := wait(); !errors.Is(err, context.Canceled) {
+			t.Fatalf("cycle %d: Run returned %v; want context.Canceled", cycle, err)
 		}
 		// Run has returned, so every goroutine it started has been joined.
 		for _, frame := range []string{"graphview.(*View[", "graphview.(*Subscription["} {

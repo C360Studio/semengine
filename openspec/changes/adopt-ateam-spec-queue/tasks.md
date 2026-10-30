@@ -15,7 +15,8 @@ are adopted. A hold is written as `Hold:` inside the unticked task it stops.
 - [x] 2.1 `Taskfile.yml`: `spec:queue` runs `ateam state spec-queue`; `spec:check` runs
   `npx --no-install openspec validate --all --strict --no-interactive` then `ateam state spec-check` (design D1).
   Gate: `task spec:check` prints `holds: ok (1 tasks.md read)` and exits 0; `task spec:queue` lists this change
-  with its `OPEN-Q` line; where `npx` reaches no `openspec` at all, `task spec:check` exits non-zero on the first line.
+  with its `OPEN-Q` line; where `npx` reaches no `openspec` at all, `task spec:check` exits non-zero on the first
+  line.
   Done in 6778e4e: `holds: ok (1 tasks.md read)`, exit 0; the queue prints `1/7 ok` (the hold went in 67e990c), and
   on b070579's `tasks.md` `OPEN-Q   L10    Hold: OPEN-Q proposal awaits owner approval.`; the first line stops only
   with no openspec reachable anywhere (`exit status 1`, see `notes/2.1.md`).

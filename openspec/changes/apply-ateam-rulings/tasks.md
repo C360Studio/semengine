@@ -28,15 +28,18 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
 
 ## 3. Protocol, rule rows, contract
 
-- [ ] 3.1 `.agents/protocol.md`: the track at Clarify; proposal approval and the design length warning in "Target
+- [x] 3.1 `.agents/protocol.md`: the track at Clarify; proposal approval and the design length warning in "Target
   state, task truth, holds"; Close hygiene in "Worktree hygiene" and "Close"; the Ponytail footer and `// shortcut:`
   marker; the test-to-spec deferral line in Verification. Gate: `task docs:check`; `task ateam:doctor` (protocol
   markers intact).
+  Done in d635254; `task docs:check` exit 0, `task ateam:doctor` `"passed": true`, `"violations": null`. Notes:
+  `notes/3.1.md`.
 - [ ] 3.2 `AGENTS.md` § 5 and `.agents/rules-index.md` § 5: the three longest § 5 rows shortened in both files, then
   three rows added to both (approval and track; Close hygiene; footer and marker), each naming its canonical home and
   what enforces it. Gate: `wc -c AGENTS.md` under 24,000; `task ateam:doctor` (row parity).
-- [ ] 3.3 `.agents/contracts/semengine-architect.md` § Required workflow: the track declaration and the approval gate
+- [x] 3.3 `.agents/contracts/semengine-architect.md` § Required workflow: the track declaration and the approval gate
   on the proposal and design. Gate: `task docs:check`.
+  Done in 70e3901 (steps 1 and 6; no step reordered); `task docs:check` exit 0.
 
 ## 4. Review and archive
 

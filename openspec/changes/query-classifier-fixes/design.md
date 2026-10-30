@@ -125,3 +125,4 @@ first, this PR merges `origin/main` and re-runs `task verify`.
    Answered 2026-10-30: host zone (#479 comment 6525906611).
 2. A question with an impossible number is refused with an invalid-input error the caller sees (D6 A, recommended),
    or runs without that filter, logged and counted (D6 D)? A changes the chain's signature and what PR 9 returns.
+   Answered 2026-10-30: refused, D6 A (#479 comment 6527967116).

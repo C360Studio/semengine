@@ -7,7 +7,8 @@ commit (#171). One task is one developer's unit.
 ## 1. Design
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
-  acceptance and the answer to design question 2 (question 1 answered: host zone, #479 comment 6525906611). Gate: `task
+  acceptance and the answers to design questions 1 (host zone, #479 comment 6525906611) and 2 (refused, #479 comment
+  6527967116). Gate: `task
   spec:check`, `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
 

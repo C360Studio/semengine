@@ -66,17 +66,22 @@ var (
 	maxPattern = regexp.MustCompile(`(?i)\b(maximum|max)\b`)
 	// A numeric extremum: an extremum word, one field word, then a value noun, as in
 	// "the lowest pressure reading". Group 1 is the extremum word, group 2 the field.
-	extremumPattern = regexp.MustCompile(`(?i)\b(smallest|lowest|largest|highest|greatest)\s+(\w+)\s+(?:values?|readings?|measurements?|levels?)\b`)
+	extremumPattern = regexp.MustCompile(`(?i)\b(smallest|lowest|largest|highest|greatest)\s+(` + fieldWord + `)\s+(?:values?|readings?|measurements?|levels?)\b`)
 	// Words that make an extremum phrase pick an entity rather than a number, when they come
 	// before it in its clause: "which pump has the highest pressure reading".
 	entityChoicePattern = regexp.MustCompile(`(?i)\b(which|who|with)\b`)
 )
 
-// clauseBreakPattern matches what ends a clause: one of ; , . : ? ! or the word "but".
-var clauseBreakPattern = regexp.MustCompile(`(?i)[;,.:?!]|\bbut\b`)
+// clauseBreakPattern matches what ends a clause: one of ; , . : ? ! followed by a space or the end
+// of the question, or the word "but". A mark inside a number ("2.5", "1,000") ends nothing.
+var clauseBreakPattern = regexp.MustCompile(`(?i)[;,.:?!](?:\s|$)|\bbut\b`)
+
+// fieldWord is one word of a caller's field name: letters and digits of any script, '_' and
+// inner hyphens ("température", "flow-rate"), so a caller's own spelling is kept whole.
+const fieldWord = `[\p{L}\p{N}_]+(?:-[\p{L}\p{N}_]+)*`
 
 // nextWordPattern reads the word that follows, after at least one space.
-var nextWordPattern = regexp.MustCompile(`^\s+(\w+)`)
+var nextWordPattern = regexp.MustCompile(`^\s+(` + fieldWord + `)`)
 
 // Ranking patterns — "top N", "bottom N", "most", "least".
 var (

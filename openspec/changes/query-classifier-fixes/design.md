@@ -61,7 +61,8 @@ product that composes one, as the pin's graph-gateway does (`:333`), sees scores
 
 **D4. Typed and checked tier-1 hints (#478).** Options: (A, recommended) `NewEmbeddingClassifier` decodes each
 example's options by unmarshalling them into `SearchOptions`, then sets each known name present with a plain
-`switch` of 17 cases (`strategy` as `string(...)`); `TestEveryHintNameIsTyped` walks the JSON tags by reflection, in
+`switch` of 15 cases, one per JSON name (`strategy` as `string(...)`); `TestEveryHintNameIsTyped` walks the JSON
+tags by reflection, in
 the test only, so a field added without a `case` fails (inventory T1). Each known name present becomes the type
 tiers 0 and 3 give it (`*TimeRange`, `*SpatialBounds`, `[]string`, `int`, `bool`, `string`); unknown names pass
 through unchanged (caller-owned). Construction refuses, naming domain, example and option, a value that does not

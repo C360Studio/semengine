@@ -188,6 +188,10 @@ func TestTierOneHintsAreTyped(t *testing.T) {
 		{"negative limit", "limit", `{"limit": -1}`},
 		{"fractional limit", "limit", `{"limit": 2.5}`},
 		{"types as a string", "types", `{"types": "sensor"}`},
+		{"null limit", "limit", `{"limit": null}`},
+		{"null types", "types", `{"types": null}`},
+		{"null strategy", "strategy", `{"strategy": null}`},
+		{"null use_embeddings", "use_embeddings", `{"use_embeddings": null}`},
 	}
 	for _, tt := range refusals {
 		t.Run("refuses "+tt.name, func(t *testing.T) {

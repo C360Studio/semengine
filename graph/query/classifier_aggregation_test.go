@@ -53,6 +53,10 @@ func TestAggregationFieldBinding(t *testing.T) {
 		{"caller field after of", "Give the maximum of flow_rate", agg(AggregationMax, "flow_rate")},
 		{"caller field after of the", "Compute the sum of the kilowatt_hours", agg(AggregationSum, "kilowatt_hours")},
 		{"min of a caller field", "minimum of turbidity", agg(AggregationMin, "turbidity")},
+		// A caller's field is kept whole: any script, inner hyphens.
+		{"non-ASCII field", "average température of sensors", agg(AggregationAvg, "température")},
+		{"hyphenated field", "average flow-rate", agg(AggregationAvg, "flow-rate")},
+		{"non-ASCII extremum field", "Give the lowest température reading", agg(AggregationMin, "température")},
 		// Nothing follows "of": the operation stands and no field is invented.
 		{"nothing after of", "What is the average of?", agg(AggregationAvg, "")},
 	})
@@ -87,6 +91,12 @@ func TestOrdinaryAggregationPhrases(t *testing.T) {
 		{"entity ranking", "Which sensor has the highest temperature reading", nil},
 		{"who before largest", "Who logged the largest pressure value", nil},
 		{"bare highest", "Give the highest temperature", nil},
+		// "of" is a skipped word, never the extremum's field.
+		{"extremum of a value noun", "Give the lowest of readings", nil},
+		// A mark inside a number ends no clause, so "which" or "with" still stops the extremum.
+		{"which before a decimal", "Which pump above 2.5 bar has the highest pressure reading", nil},
+		{"which before a thousands comma", "Which pump above 1,000 kPa has the highest pressure reading", nil},
+		{"with before a decimal", "Show the sensor with a 0.5 offset and the lowest battery level", nil},
 
 		// Entity ranking stays ranking, not a numeric extremum.
 		{"top N", "top 5 sensors by temperature", map[string]any{"ranking_intent": true, "limit": 5}},

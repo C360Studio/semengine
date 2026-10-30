@@ -39,8 +39,10 @@ result := chain.ClassifyQuery(ctx, "sensors in zone A last 3 hours")
 
 `NewEmbeddingClassifier` returns an error, and no classifier, for a nil or ended context or when an
 example cannot be embedded. The examples are fixed once it returns, and it uses BM25 vectors only.
-Both `NewEmbeddingClassifier` and `NewLLMClassifier` keep the domains' examples and their `Options`
-maps; do not edit them after the call.
+`NewEmbeddingClassifier` keeps its own copy of each example and its `Options` map, with known hint
+names decoded into new values; a value under a name that is not a `SearchOptions` JSON name is still
+the caller's own and shared, so do not edit it after the call. `NewLLMClassifier` keeps the domains'
+examples and their `Options` maps; do not edit them after the call.
 
 ## Hint names and value types
 
@@ -66,8 +68,10 @@ Tier 0 never produces `path_predicates`, `strategy`, `query`, `predicates`, `typ
 ## Copies
 
 A result's `Options` map is the caller's own, and so are the `Example` that `FindBestMatch`
-returns, its `Options` map and its `Vector`. Editing them changes no later result. Values nested
-inside an `Options` entry (a slice or a map) are shared with the classifier and are not copied.
+returns, its `Options` map and its `Vector`. Editing them changes no later result. The values
+inside a tier-1 `Options` map are not copied: a pointer (`*TimeRange`, `*SpatialBounds`), a slice
+(`[]string`, or `[]any` under a caller's own name) or a map is shared with the classifier and with
+every other result from the same example, so do not edit what it points to.
 
 ## Limits
 

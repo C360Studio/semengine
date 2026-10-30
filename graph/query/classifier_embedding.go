@@ -220,6 +220,11 @@ func typedOption(name string, value any) (any, error) {
 	default:
 		return value, nil
 	}
+	// JSON null under a known name would decode to the field's zero value ("limit": null gives 0):
+	// refused under every known name, as one rule.
+	if value == nil {
+		return nil, errors.New("null value")
+	}
 	if err != nil {
 		return nil, err
 	}

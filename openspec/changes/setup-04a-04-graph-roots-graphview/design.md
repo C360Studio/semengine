@@ -41,13 +41,12 @@ Required: `background-work`, the foundation adapt row, ADR-113 (pin `view.go:217
   per subscription, started by the attach and joined by `Run` (foundation handle rule, `:95-98`).
 - **Ending `ctx` is a stop (changed from the pin spec's "Watcher loss fails closed", `:147-150`, and `view.go:200-202`).**
   Ending the watch context closes `Updates()` (P11), so a close is a loss only while `ctx` is live. On `ctx` ending:
-  reads and attaches return `ErrViewStopped`; each subscription's `Err` is `ErrViewStopped`, or its own context's
-  error when that ended first, set before its `Deltas` closes; `OnWatcherLost` does not fire; the watch stops through
-  `kvwatch.Stop`; `Run` returns `ctx.Err()`. semboids at the pin counts every shutdown as a loss (inventory 12).
+  reads and attaches return `ErrViewStopped`; each still-attached subscription's `Err` is `ErrViewStopped` (one
+  that detached first keeps its own reason), set before its `Deltas` closes; `OnWatcherLost` does not fire; the
+  watch stops through `kvwatch.Stop`; `Run` returns `ctx.Err()`. semboids at the pin counts every shutdown as a loss.
 - **On a loss**: reads and attaches return the error wrapping `ErrNotReady`, `ErrWatcherLost` and the cause, from
-  then on; each subscription's `Err` wraps `ErrWatcherLost` (or is its own context's error when that ended first),
-  set before its `Deltas` closes; then `OnWatcherLost(cause)` fires once; the watch stops through `kvwatch.Stop`;
-  `Run` returns an error wrapping `ErrWatcherLost`. The pin's `TestWatcherLossFailsClosed` order is kept.
+  then on; each still-attached subscription's `Err` wraps `ErrWatcherLost` before its `Deltas` closes; then
+  `OnWatcherLost(cause)` fires once; `kvwatch.Stop`; `Run` returns it wrapped (pin `TestWatcherLossFailsClosed` order).
 - `Run` returns only after every subscription goroutine and every hook call made by an attach or detach in progress
   has returned (pin `TestStopJoinsSubscriberCallback`), and after the watch's delivery closed or
   `kvwatch.DrainBudget` ran out after `ctx` ended (error joined with `kvwatch.ErrDeliveryOpen`). A blocking hook or
@@ -110,7 +109,8 @@ over 256 entries, G1), `TestRunReportsLostWatch`; coexistence with raw watches i
 view fails a test of it). Mutation checks (`task mutate:check`): a close counted as a loss regardless of `ctx`
 (`TestRunContextEndIsAStop`); `kvwatch.Stop` replaced by `watcher.Stop` (`TestRunLeavesNoWatchDelivery`); the
 attach-sequence filter (`view.go:840`) removed (the history test); a second `Run` allowed (`TestRunOnce`); decode
-moved per subscriber (`TestDecodeOncePerWrite`). Survivors are reported as survivors.
+moved per subscriber (`TestDecodeOncePerWrite`); `terminate` without its once-only guard
+(`TestDetachedReasonSurvivesStop`). Survivors are reported as survivors.
 
 ## D7. Issues and merge order
 

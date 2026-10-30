@@ -38,9 +38,9 @@ SHALL never re-bootstrap, so a replacement view holds no key its own replay did 
 ### Requirement: Ending the context is a stop, not a loss
 
 When `Run`'s context ends, the view SHALL refuse reads and attaches with `ErrViewStopped`, SHALL set each
-subscription's `Err` to `ErrViewStopped` before
-closing its `Deltas`, SHALL NOT call `OnWatcherLost`, and `Run` SHALL return `ctx.Err()`, even when the watch's
-update channel has closed by the time `Run` reads it.
+still-attached subscription's `Err` to `ErrViewStopped` before closing its `Deltas`, SHALL NOT call
+`OnWatcherLost`, and `Run` SHALL return `ctx.Err()`, even when the watch's update channel has closed by the time `Run`
+reads it.
 
 #### Scenario: Context end and channel close both ready
 
@@ -56,18 +56,19 @@ When a subscription detaches itself before the view stops or loses its watch, it
 detached (nil after `Unsubscribe`, its context's error after the context ended), not `ErrViewStopped` or
 `ErrWatcherLost`.
 
-#### Scenario: A subscription context ends with the view's
+#### Scenario: A detached subscription outlives the stop and the loss
 
-- **WHEN** a subscription's context is derived from `Run`'s context and that context is cancelled
-- **THEN** the subscription's `Err` is either `ErrViewStopped` or `context.Canceled`, and its `Deltas` is closed
-- **AND** the test that verifies this is `TestSubscriberContextCancelDetaches`
+- **WHEN** one subscription's own context is cancelled and another calls `Unsubscribe`, the test waits for both
+  `Deltas` to close, then ends `Run`'s context (and, as a second case on a fresh view, closes the update channel)
+- **THEN** the first subscription's `Err` is still `context.Canceled` and the second's is still nil
+- **AND** the test that verifies this is `TestDetachedReasonSurvivesStop`
 
 ### Requirement: A lost watch fails closed
 
 When the watch's update channel closes while `Run`'s context is live, the view SHALL refuse reads and attaches with an
-error matching `ErrNotReady` and `ErrWatcherLost`, SHALL set every subscription's `Err` to an error matching
-`ErrWatcherLost` before closing its `Deltas`, SHALL call `OnWatcherLost` once after that, and `Run` SHALL return an
-error matching `ErrWatcherLost`. How soon a deleted bucket closes the channel is not promised.
+error matching `ErrNotReady` and `ErrWatcherLost`, SHALL set each still-attached subscription's `Err` to an error
+matching `ErrWatcherLost` before closing its `Deltas`, SHALL call `OnWatcherLost` once after that, and `Run` SHALL
+return an error matching `ErrWatcherLost`. How soon a deleted bucket closes the channel is not promised.
 
 #### Scenario: The update channel closes
 

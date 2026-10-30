@@ -1,0 +1,780 @@
+package graphview
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semengine/internal/kvwatch"
+)
+
+// defaultTickInterval is the fan-out coalescing window used when no
+// WithTickInterval option is given.
+const defaultTickInterval = 250 * time.Millisecond
+
+// EntryMeta carries the authoritative KV entry metadata into the validating
+// decode: the server write timestamp (entry.Created()), so decoded records
+// that embed their own write time need not reach back into the delta lane
+// for it.
+type EntryMeta struct {
+	// Created is the KV server timestamp of the write (entry.Created()).
+	Created time.Time
+}
+
+// DecodeFunc decodes and validates one stored KV value; meta carries the
+// entry's server write time. keep=false means the
+// key is not part of the view (non-record keys, present-but-not-ready
+// records) and maps it to absence; a non-nil err poisons the key (G6) — the
+// value is never delivered as an upsert while other keys keep flowing.
+// Decode runs exactly once per delivered write, on Run's goroutine,
+// regardless of subscriber count.
+type DecodeFunc[T any] func(key string, value []byte, meta EntryMeta) (decoded T, keep bool, err error)
+
+// WatcherSource is the narrow method set the view needs from a KV bucket.
+// jetstream.KeyValue satisfies it; unit tests inject a deterministic fake.
+type WatcherSource interface {
+	WatchAll(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
+}
+
+// Compile-time proof that a real bucket handle is a WatcherSource.
+var _ WatcherSource = (jetstream.KeyValue)(nil)
+
+// DeltaOp, Delta, Entry, KeyedEntry, and Snapshot live in delta.go.
+
+// Hooks receives view-internal signals. All callbacks are optional, are
+// invoked outside the projection mutex, and MUST be fast and non-blocking —
+// they run on Run's goroutine, or on the goroutine of an attach or detach,
+// and a blocking callback holds Run. This is the observability seam for
+// metrics (ADR-081 build task 2.5).
+type Hooks struct {
+	// OnApply fires after every delivered entry has been applied (including
+	// skips and tombstones), with the entry's key and KV revision.
+	OnApply func(key string, revision uint64)
+	// OnCaughtUp fires when the view transitions to caught-up (initial
+	// bootstrap of this instance).
+	OnCaughtUp func()
+	// OnWatcherLost fires once per watcher loss with the cause.
+	OnWatcherLost func(err error)
+	// OnPoison fires per poisoned write with the key and *PoisonError.
+	OnPoison func(key string, err error)
+	// OnSubscribers fires with the new subscriber count after every attach
+	// and every effective detach (Unsubscribe, subscription-context cancel,
+	// and the batch detaches at a stop and a watcher loss, which report zero).
+	// Counts are delivered outside the projection mutex, so under concurrent
+	// attach/detach, or across a stop, two callbacks may arrive out of order:
+	// the last value is not promised to be the current count. A consumer that
+	// needs zero once the view has ended sets it when Run returns.
+	OnSubscribers func(n int)
+	// OnFanOut fires after every tick window that enqueued at least one
+	// changed key to at least one subscriber, with the number of pending
+	// deltas that were overwritten before delivery across all subscribers in
+	// the window (the at-most-once coalescing drop on undrained buffers —
+	// the slow-subscriber staleness signal) and the largest per-subscriber
+	// pending-buffer size after enqueue.
+	OnFanOut func(overwritten, maxPending int)
+}
+
+type options struct {
+	tickInterval time.Duration
+	hooks        Hooks
+}
+
+// Option configures a View at construction.
+type Option func(*options)
+
+// WithTickInterval sets the fan-out coalescing window (default 250 ms).
+// Non-positive values fall back to the default.
+func WithTickInterval(d time.Duration) Option {
+	return func(o *options) { o.tickInterval = d }
+}
+
+// WithHooks installs observability hooks.
+func WithHooks(h Hooks) Option {
+	return func(o *options) { o.hooks = h }
+}
+
+type viewState uint8
+
+const (
+	stateNew viewState = iota
+	stateBootstrap
+	stateLive
+	stateFailed
+	stateStopped
+)
+
+type entryState[T any] struct {
+	value    T
+	revision uint64
+}
+
+// pendingOp is a coalesced per-key operation awaiting the next tick. seq is
+// the view apply-sequence of the op, used to filter changes already covered
+// by a subscriber's snapshot (op.seq <= attachSeq).
+type pendingOp[T any] struct {
+	delta Delta[T]
+	seq   uint64
+}
+
+// View maintains one authoritative in-memory projection of a KV bucket from
+// a single WatchAll and fans coalesced deltas out to local subscribers. It
+// is explicitly constructed and owned — inject it into consumers; there is
+// no process-global registry. Its owner calls Run once, on a goroutine of its
+// own. All methods are safe for concurrent use.
+type View[T any] struct {
+	source       WatcherSource
+	decode       DecodeFunc[T]
+	tickInterval time.Duration
+	hooks        Hooks
+
+	// wg counts the subscription delivery goroutines and the hook calls an
+	// attach or detach makes; Run waits for it before returning.
+	wg sync.WaitGroup
+
+	// mu is THE projection mutex: apply, attach (snapshot+register), tick
+	// fan-out, and point reads all serialize on it (see package doc).
+	mu         sync.Mutex
+	state      viewState
+	cause      error
+	entries    map[string]entryState[T]
+	poisoned   map[string]*PoisonError
+	pending    map[string]pendingOp[T]
+	seq        uint64
+	appliedRev uint64
+	// appliedAt is appliedRev's server write time (entry.Created()). The two
+	// advance together — same places, same condition — so the pair Applied
+	// returns always names ONE write. Neither has any reset of its own: both
+	// survive bootstrap gating, fail-closed, and a stop identically
+	// (see Applied).
+	appliedAt time.Time
+	readyCh   chan struct{}
+	subs      map[uint64]*Subscription[T]
+	nextSubID uint64
+}
+
+// New constructs a View over source with the injected validating decode.
+// The view does not touch the bucket until Run.
+func New[T any](source WatcherSource, decode DecodeFunc[T], opts ...Option) (*View[T], error) {
+	if source == nil {
+		return nil, errors.New("graphview: nil watcher source")
+	}
+	if decode == nil {
+		return nil, errors.New("graphview: nil decode func")
+	}
+	o := options{tickInterval: defaultTickInterval}
+	for _, opt := range opts {
+		opt(&o)
+	}
+	if o.tickInterval <= 0 {
+		o.tickInterval = defaultTickInterval
+	}
+	return &View[T]{
+		source:       source,
+		decode:       decode,
+		tickInterval: o.tickInterval,
+		hooks:        o.hooks,
+		entries:      make(map[string]entryState[T]),
+		poisoned:     make(map[string]*PoisonError),
+		pending:      make(map[string]pendingOp[T]),
+		readyCh:      make(chan struct{}),
+		subs:         make(map[uint64]*Subscription[T]),
+	}, nil
+}
+
+// Run holds the view's one WatchAll on the caller's goroutine until ctx ends
+// or the watch is lost (the background-work spec's Run; the component that
+// runs it owns ctx, ADR-113). A view runs once: Run refuses a nil context
+// before touching the source, returns ErrAlreadyStarted while another Run
+// runs, and ErrViewStopped once a Run has returned, for any reason. A
+// replacement is a new view.
+//
+// Run watches under a context it derives from ctx, and reads the watch and
+// the tick window itself. Ending ctx is a stop: reads and attaches return
+// ErrViewStopped, every attached subscription closes with ErrViewStopped,
+// OnWatcherLost does not fire, and Run returns ctx.Err(). Ending the watch's
+// context closes its update channel too (probe P11, PR #458 comment
+// 6472856197), so a closed channel is a loss only while ctx is live. On a
+// loss, reads and attaches return an error matching ErrNotReady and
+// ErrWatcherLost, every attached subscription closes with an error matching
+// ErrWatcherLost, OnWatcherLost fires once after that, and Run returns an
+// error matching ErrWatcherLost. A WatchAll that fails returns
+// ctx.Err() when ctx has ended, else its error, with the view failed and
+// OnWatcherLost not called.
+//
+// Run returns only after every subscription goroutine and every hook call an
+// attach or detach made has returned, and after the watch has been stopped
+// through kvwatch.Stop, which reads the update channel until nats.go closes
+// it, for at most kvwatch.DrainBudget; when that budget runs out the error
+// is joined with kvwatch.ErrDeliveryOpen. A blocking hook or decode holds
+// Run; the composing component bounds its own wait.
+func (v *View[T]) Run(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("graphview: nil run context")
+	}
+	v.mu.Lock()
+	switch v.state {
+	case stateNew:
+	case stateBootstrap, stateLive:
+		v.mu.Unlock()
+		return ErrAlreadyStarted
+	default:
+		v.mu.Unlock()
+		return ErrViewStopped
+	}
+	v.state = stateBootstrap
+	v.mu.Unlock()
+
+	watchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	watcher, err := v.source.WatchAll(watchCtx)
+	if err != nil {
+		if ctx.Err() != nil {
+			v.stop()
+			return ctx.Err()
+		}
+		v.failOpen(err)
+		return fmt.Errorf("graphview: open WatchAll: %w", err)
+	}
+
+	var runErr error
+	if lost := v.follow(ctx, watcher); lost != nil {
+		runErr = v.failClosed(lost)
+	} else {
+		v.stop()
+		runErr = ctx.Err()
+	}
+	cancel()
+	if err := kvwatch.Stop(ctx, watcher); err != nil {
+		runErr = errors.Join(runErr, fmt.Errorf("graphview: stop the watch: %w", err))
+	}
+	v.wg.Wait()
+	return runErr
+}
+
+// follow applies the watch's entries and fans out each tick window until ctx
+// ends, returning nil, or the update channel closes while ctx is live,
+// returning the loss.
+func (v *View[T]) follow(ctx context.Context, watcher jetstream.KeyWatcher) error {
+	ticker := time.NewTicker(v.tickInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return nil
+		case <-ticker.C:
+			v.fanOut()
+		case entry, ok := <-watcher.Updates():
+			if !ok {
+				// Ending the watch's context closes the channel too: that is a stop.
+				if ctx.Err() != nil {
+					return nil
+				}
+				return errors.New("graphview: watcher updates channel closed")
+			}
+			if entry == nil {
+				v.markCaughtUp()
+				continue
+			}
+			v.processEntry(entry)
+		}
+	}
+}
+
+// stop marks the view stopped and gives every subscription an explicit
+// terminal close (Err reports ErrViewStopped — never a silent hang); all
+// further operations return ErrViewStopped.
+func (v *View[T]) stop() {
+	v.mu.Lock()
+	v.state = stateStopped
+	v.cause = ErrViewStopped
+	subs := make([]*Subscription[T], 0, len(v.subs))
+	for _, s := range v.subs {
+		subs = append(subs, s)
+	}
+	v.subs = make(map[uint64]*Subscription[T])
+	v.pending = make(map[string]pendingOp[T])
+	v.rotateReadyLocked()
+	v.mu.Unlock()
+
+	for _, s := range subs {
+		s.terminate(ErrViewStopped)
+	}
+	if len(subs) > 0 && v.hooks.OnSubscribers != nil {
+		v.hooks.OnSubscribers(0)
+	}
+}
+
+// failOpen marks the view failed when its WatchAll could not open. No
+// subscription can have attached during bootstrap, and OnWatcherLost does not
+// fire: the watch was never held.
+func (v *View[T]) failOpen(err error) {
+	v.mu.Lock()
+	v.state = stateFailed
+	v.cause = err
+	v.rotateReadyLocked()
+	v.mu.Unlock()
+}
+
+// WaitCaughtUp blocks until the view is caught up (nil), the view fails
+// (wrapped ErrWatcherLost), the view stops (ErrViewStopped), or ctx is done.
+func (v *View[T]) WaitCaughtUp(ctx context.Context) error {
+	if ctx == nil {
+		return errors.New("graphview: nil wait context")
+	}
+	for {
+		v.mu.Lock()
+		switch v.state {
+		case stateLive:
+			v.mu.Unlock()
+			return nil
+		case stateFailed:
+			err := v.failedErrLocked()
+			v.mu.Unlock()
+			return err
+		case stateStopped:
+			v.mu.Unlock()
+			return ErrViewStopped
+		default:
+		}
+		ready := v.readyCh
+		v.mu.Unlock()
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("graphview: wait caught up: %w", ctx.Err())
+		case <-ready:
+		}
+	}
+}
+
+// Applied returns the applied-revision watermark together with the KV SERVER
+// WRITE TIME (entry.Created()) of the newest revision the view has applied —
+// the "this view reflects the bucket as of T" pair. The time mirrors
+// readiness.IndexStatusInputs.IndexedAt
+// (graph/readiness), the write time graph-index projects into the ADR-083
+// staleness_ms field.
+//
+// Both values are read in ONE critical section, so the revision and the
+// timestamp always name the same write; reading them through two accessors
+// could observe a torn pair.
+//
+// REPORTING ONLY — no graphview API gates on the timestamp, and none may grow
+// one. This package's gates stay exactly the two it has: ErrNotReady until the
+// initial replay completes (still building) and fail-closed on watcher loss
+// (broken). Age is neither, so a healthy view that is merely behind serves
+// and the CONSUMER stamps currency on its own output, the way community
+// detection reports staleness_at_detection_ms alongside its answer.
+//
+// It is a FLOOR on currency, not an oracle. Only a DELIVERED write can age
+// it, so a feed that stalls entirely upstream leaves the pair frozen and
+// looks arbitrarily current by this measure alone. Detecting a total stall is
+// the watcher-loss path's job, not this value's;
+// graph.IndexStatusResponse.StalenessMs carries the same caveat for the same
+// reason.
+//
+// appliedAt is the ZERO time until something has been applied, and stays zero
+// rather than being fabricated as time.Now(). A caller computing an age MUST
+// check IsZero and treat it as "currency not computable" — the contract
+// readiness.IndexStatusInputs.IndexedAt uses, where the projection deliberately
+// declines to make an uncomputable view look fresh. It is zero for the same
+// reason when the newest applied write carried no server timestamp (real KV
+// entries always do; fakes and synthetic replays need not).
+//
+// Subtracting it from a local time.Now() crosses a NATS server clock against
+// a local one and is off by the skew between them. Accepted, the same trade
+// as ADR-083 D3: the alternative — measuring currency in revisions — is wrong
+// by multiples under a coalescing change alone.
+func (v *View[T]) Applied() (revision uint64, appliedAt time.Time) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	return v.appliedRev, v.appliedAt
+}
+
+// Get is the coherent point read: it serves the projection under the same
+// mutex applies run under, so it can never return a value older than one the
+// view already applied. It honors readiness (ErrNotReady before caught-up,
+// wrapped ErrWatcherLost after a loss, ErrViewStopped after a stop) and poison
+// (a poisoned key returns its *PoisonError, never a stale value).
+func (v *View[T]) Get(key string) (T, uint64, error) {
+	var zero T
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err := v.usableLocked(); err != nil {
+		return zero, 0, err
+	}
+	if p, ok := v.poisoned[key]; ok {
+		return zero, p.Revision, p
+	}
+	e, ok := v.entries[key]
+	if !ok {
+		return zero, 0, ErrKeyNotFound
+	}
+	return e.value, e.revision, nil
+}
+
+// List returns projection entries whose key has the given prefix (empty
+// prefix matches all), sorted by key, truncated to limit when limit > 0. The
+// complete match set is sorted before the limit is applied (deterministic
+// bounded reads). Poisoned keys are excluded — they have no servable value.
+// It honors the same readiness gate as Get.
+func (v *View[T]) List(prefix string, limit int) ([]KeyedEntry[T], error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err := v.usableLocked(); err != nil {
+		return nil, err
+	}
+	out := make([]KeyedEntry[T], 0, len(v.entries))
+	for k, e := range v.entries {
+		if prefix != "" && !strings.HasPrefix(k, prefix) {
+			continue
+		}
+		out = append(out, KeyedEntry[T]{Key: k, Value: e.value, Revision: e.revision})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// SnapshotAndSubscribe atomically captures a snapshot and registers the
+// subscription at one view sequence S under the projection mutex (G1): the
+// snapshot holds every change applied at <= S, the subscription delivers
+// exactly the changes > S. Capture holds the lock (bounded copy); delivery
+// to the caller happens after unlock. ctx bounds the subscription: its
+// cancellation detaches like Unsubscribe. Fails with ErrNotReady until the
+// view is caught up.
+func (v *View[T]) SnapshotAndSubscribe(ctx context.Context) (Snapshot[T], *Subscription[T], error) {
+	if ctx == nil {
+		return Snapshot[T]{}, nil, errors.New("graphview: nil subscription context")
+	}
+	v.mu.Lock()
+	if err := v.usableLocked(); err != nil {
+		v.mu.Unlock()
+		return Snapshot[T]{}, nil, err
+	}
+	snap := Snapshot[T]{
+		Entries:   make(map[string]Entry[T], len(v.entries)),
+		Poisoned:  make(map[string]*PoisonError, len(v.poisoned)),
+		Revision:  v.appliedRev,
+		AppliedAt: v.appliedAt,
+	}
+	for k, e := range v.entries {
+		snap.Entries[k] = Entry[T]{Value: e.value, Revision: e.revision}
+	}
+	for k, p := range v.poisoned {
+		snap.Poisoned[k] = p
+	}
+	s := v.attachLocked()
+	n := len(v.subs)
+	v.mu.Unlock()
+	go s.run(ctx)
+	if v.hooks.OnSubscribers != nil {
+		v.hooks.OnSubscribers(n)
+		v.wg.Done()
+	}
+	return snap, s, nil
+}
+
+// Subscribe is the delta-only attach for trigger-shaped consumers: no
+// snapshot, no second projection copy — the subscription delivers the
+// changes after the attach sequence. Same readiness gate as
+// SnapshotAndSubscribe.
+func (v *View[T]) Subscribe(ctx context.Context) (*Subscription[T], error) {
+	if ctx == nil {
+		return nil, errors.New("graphview: nil subscription context")
+	}
+	v.mu.Lock()
+	if err := v.usableLocked(); err != nil {
+		v.mu.Unlock()
+		return nil, err
+	}
+	s := v.attachLocked()
+	n := len(v.subs)
+	v.mu.Unlock()
+	go s.run(ctx)
+	if v.hooks.OnSubscribers != nil {
+		v.hooks.OnSubscribers(n)
+		v.wg.Done()
+	}
+	return s, nil
+}
+
+// attachLocked registers a subscription at the current apply sequence.
+// Caller holds v.mu.
+func (v *View[T]) attachLocked() *Subscription[T] {
+	id := v.nextSubID
+	v.nextSubID++
+	s := &Subscription[T]{
+		view:      v,
+		id:        id,
+		attachSeq: v.seq,
+		pending:   make(map[string]Delta[T]),
+		notify:    make(chan struct{}, 1),
+		deltas:    make(chan []Delta[T], 1),
+		done:      make(chan struct{}),
+	}
+	v.subs[id] = s
+	v.wg.Add(1)
+	if v.hooks.OnSubscribers != nil {
+		v.wg.Add(1)
+	}
+	return s
+}
+
+func (v *View[T]) removeSub(id uint64) {
+	v.mu.Lock()
+	before := len(v.subs)
+	delete(v.subs, id)
+	n := len(v.subs)
+	if before != n && v.hooks.OnSubscribers != nil {
+		v.wg.Add(1)
+	}
+	v.mu.Unlock()
+	if before != n && v.hooks.OnSubscribers != nil {
+		v.hooks.OnSubscribers(n)
+		v.wg.Done()
+	}
+}
+
+// usableLocked returns the readiness error for the current state, nil when
+// live. Caller holds v.mu.
+func (v *View[T]) usableLocked() error {
+	switch v.state {
+	case stateLive:
+		return nil
+	case stateStopped:
+		return ErrViewStopped
+	case stateFailed:
+		return v.failedErrLocked()
+	default:
+		return ErrNotReady
+	}
+}
+
+// failedErrLocked wraps the fail-closed state so callers can match both
+// not-ready semantics (errors.Is ErrNotReady) and the loss itself
+// (errors.Is ErrWatcherLost). Caller holds v.mu.
+func (v *View[T]) failedErrLocked() error {
+	return fmt.Errorf("%w: %w: %w", ErrNotReady, ErrWatcherLost, v.cause)
+}
+
+// rotateReadyLocked wakes every WaitCaughtUp waiter on a state transition.
+// Caller holds v.mu.
+func (v *View[T]) rotateReadyLocked() {
+	close(v.readyCh)
+	v.readyCh = make(chan struct{})
+}
+
+// processEntry decodes (once) and applies one delivered entry. Runs only on
+// Run's goroutine; decode happens outside the projection mutex.
+func (v *View[T]) processEntry(entry jetstream.KeyValueEntry) {
+	key, rev, created := entry.Key(), entry.Revision(), entry.Created()
+	switch entry.Operation() {
+	case jetstream.KeyValueDelete, jetstream.KeyValuePurge:
+		v.apply(Delta[T]{Op: DeltaDelete, Key: key, Revision: rev, Created: created}, nil)
+	default:
+		val, keep, err := v.decode(key, entry.Value(), EntryMeta{Created: created})
+		switch {
+		case err != nil:
+			p := &PoisonError{Key: key, Revision: rev, Err: err}
+			v.apply(Delta[T]{Op: DeltaPoison, Key: key, Revision: rev, Created: created, Err: p}, p)
+		case !keep:
+			v.applySkip(key, rev, created)
+		default:
+			v.apply(Delta[T]{Op: DeltaUpsert, Key: key, Value: val, Revision: rev, Created: created}, nil)
+		}
+	}
+	if v.hooks.OnApply != nil {
+		v.hooks.OnApply(key, rev)
+	}
+}
+
+// apply commits one operation to the projection and, when live, to the
+// pending coalescing set (LWW per key — watch order is revision-ascending,
+// so overwriting is last-writer-wins).
+func (v *View[T]) apply(d Delta[T], p *PoisonError) {
+	v.mu.Lock()
+	v.seq++
+	if d.Revision > v.appliedRev {
+		v.appliedRev = d.Revision
+		v.appliedAt = d.Created
+	}
+	switch d.Op {
+	case DeltaUpsert:
+		v.entries[d.Key] = entryState[T]{value: d.Value, revision: d.Revision}
+		delete(v.poisoned, d.Key)
+	case DeltaDelete:
+		delete(v.entries, d.Key)
+		delete(v.poisoned, d.Key)
+	case DeltaPoison:
+		// The failed value is not servable and the prior value is older than
+		// an applied revision — serving either would violate coherence. The
+		// key holds a sticky poison record until a newer canonical write
+		// replaces it (per-entity heal) or a delete removes it.
+		delete(v.entries, d.Key)
+		v.poisoned[d.Key] = p
+	}
+	if v.state == stateLive {
+		v.pending[d.Key] = pendingOp[T]{delta: d, seq: v.seq}
+	}
+	v.mu.Unlock()
+	if d.Op == DeltaPoison && v.hooks.OnPoison != nil {
+		v.hooks.OnPoison(d.Key, p)
+	}
+}
+
+// applySkip handles keep=false decodes: the key is not part of the view, so
+// it maps to absence. A previously-kept key converges subscribers via a
+// tombstone at this revision; otherwise only the watermark advances.
+func (v *View[T]) applySkip(key string, rev uint64, created time.Time) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	v.seq++
+	if rev > v.appliedRev {
+		v.appliedRev = rev
+		v.appliedAt = created
+	}
+	_, hadEntry := v.entries[key]
+	_, hadPoison := v.poisoned[key]
+	if !hadEntry && !hadPoison {
+		return
+	}
+	delete(v.entries, key)
+	delete(v.poisoned, key)
+	if v.state == stateLive {
+		v.pending[key] = pendingOp[T]{delta: Delta[T]{Op: DeltaDelete, Key: key, Revision: rev, Created: created}, seq: v.seq}
+	}
+}
+
+// markCaughtUp transitions bootstrap -> live at the end-of-replay marker. A
+// view runs once from an empty projection, so every key it holds came from
+// this replay (G5: a replacement holds no key its own replay did not deliver).
+func (v *View[T]) markCaughtUp() {
+	v.mu.Lock()
+	if v.state != stateBootstrap {
+		v.mu.Unlock()
+		return
+	}
+	v.state = stateLive
+	v.rotateReadyLocked()
+	v.mu.Unlock()
+	if v.hooks.OnCaughtUp != nil {
+		v.hooks.OnCaughtUp()
+	}
+}
+
+// failClosed marks the view failed and terminates every subscription with an
+// explicit staleness signal (G5): the frozen projection is never silently
+// served as live, and new attaches observe not-ready semantics. It returns
+// the error Run reports.
+func (v *View[T]) failClosed(cause error) error {
+	v.mu.Lock()
+	v.state = stateFailed
+	v.cause = cause
+	v.pending = make(map[string]pendingOp[T])
+	subs := make([]*Subscription[T], 0, len(v.subs))
+	for _, s := range v.subs {
+		subs = append(subs, s)
+	}
+	v.subs = make(map[uint64]*Subscription[T])
+	v.rotateReadyLocked()
+	v.mu.Unlock()
+
+	term := fmt.Errorf("%w: %w", ErrWatcherLost, cause)
+	for _, s := range subs {
+		s.terminate(term)
+	}
+	if len(subs) > 0 && v.hooks.OnSubscribers != nil {
+		v.hooks.OnSubscribers(0)
+	}
+	if v.hooks.OnWatcherLost != nil {
+		v.hooks.OnWatcherLost(cause)
+	}
+	return term
+}
+
+// fanOut detaches the coalesced window and enqueues it to every subscriber.
+//
+// COHERENCE (G1, the tick seam — load-bearing): batch detach, subscriber-set
+// iteration, and per-subscriber enqueue are ONE critical section under the
+// projection mutex. A detached batch never exists outside the lock, so no
+// apply can supersede a captured value and no attach can interleave between
+// capture and enqueue — the SemStreams PR #583 stale-delivery interleaving
+// (batch holds K@R5, view applies K@R6, subscriber attaches snapshotting R6,
+// batch then delivers R5) is structurally unrepresentable rather than
+// revision-guarded at each enqueue site. The work under the lock is bounded map writes; the
+// channel sends happen on per-subscriber goroutines outside the lock.
+func (v *View[T]) fanOut() {
+	v.mu.Lock()
+	if v.state != stateLive {
+		v.mu.Unlock()
+		return
+	}
+	changed := len(v.pending)
+	nsubs := len(v.subs)
+	overwritten, maxPending := 0, 0
+	if changed > 0 {
+		ops := v.pending
+		v.pending = make(map[string]pendingOp[T])
+		// With no subscribers the detached ops are dropped: any future
+		// subscriber attaches at a sequence >= every op.seq here, so the
+		// attachSeq filter would suppress them anyway (its snapshot already
+		// covers them).
+		for _, s := range v.subs {
+			ow, pending := v.enqueueLocked(s, ops)
+			overwritten += ow
+			if pending > maxPending {
+				maxPending = pending
+			}
+		}
+	}
+	v.mu.Unlock()
+	if changed > 0 && nsubs > 0 && v.hooks.OnFanOut != nil {
+		v.hooks.OnFanOut(overwritten, maxPending)
+	}
+}
+
+// enqueueLocked merges the detached window into one subscriber's pending
+// buffer (LWW per key, bounded by live changed-key cardinality — no
+// count-based eviction; values shared, not copied). It reports the number of
+// undrained pending deltas it overwrote (the at-most-once coalescing drop)
+// and the buffer size after enqueue, for the OnFanOut observability hook.
+// Caller holds v.mu; lock order is always v.mu -> s.mu.
+func (v *View[T]) enqueueLocked(s *Subscription[T], ops map[string]pendingOp[T]) (overwritten, pending int) {
+	s.mu.Lock()
+	if s.pending == nil { // terminated concurrently
+		s.mu.Unlock()
+		return 0, 0
+	}
+	added := false
+	for k, op := range ops {
+		if op.seq <= s.attachSeq {
+			// Already covered by this subscriber's snapshot (G1: no change
+			// at sequence <= S is also delivered as a delta).
+			continue
+		}
+		if _, exists := s.pending[k]; exists {
+			overwritten++
+		}
+		// Blind overwrite is LWW: all enqueues happen under v.mu in apply
+		// order, so op carries a revision >= any previously buffered op for
+		// this key.
+		s.pending[k] = op.delta
+		added = true
+	}
+	pending = len(s.pending)
+	s.mu.Unlock()
+	if added {
+		select {
+		case s.notify <- struct{}{}:
+		default:
+		}
+	}
+	return overwritten, pending
+}

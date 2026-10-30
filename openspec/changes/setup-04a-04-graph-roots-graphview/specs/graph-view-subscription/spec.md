@@ -38,7 +38,7 @@ SHALL never re-bootstrap, so a replacement view holds no key its own replay did 
 ### Requirement: Ending the context is a stop, not a loss
 
 When `Run`'s context ends, the view SHALL refuse reads and attaches with `ErrViewStopped`, SHALL set each
-subscription's `Err` to `ErrViewStopped`, or to the subscription context's error when that ended first, before
+subscription's `Err` to `ErrViewStopped` before
 closing its `Deltas`, SHALL NOT call `OnWatcherLost`, and `Run` SHALL return `ctx.Err()`, even when the watch's
 update channel has closed by the time `Run` reads it.
 
@@ -49,6 +49,18 @@ update channel has closed by the time `Run` reads it.
 - **THEN** on every view `OnWatcherLost` is never called, a subscription attached with a live context reports
   `ErrViewStopped`, and `Run` returns `context.Canceled`
 - **AND** the test that verifies this is `TestRunContextEndIsAStop`
+
+### Requirement: A subscription that detached first keeps its own reason
+
+When a subscription detaches itself before the view stops or loses its watch, its `Err` SHALL stay the reason it
+detached (nil after `Unsubscribe`, its context's error after the context ended), not `ErrViewStopped` or
+`ErrWatcherLost`.
+
+#### Scenario: A subscription context ends with the view's
+
+- **WHEN** a subscription's context is derived from `Run`'s context and that context is cancelled
+- **THEN** the subscription's `Err` is either `ErrViewStopped` or `context.Canceled`, and its `Deltas` is closed
+- **AND** the test that verifies this is `TestSubscriberContextCancelDetaches`
 
 ### Requirement: A lost watch fails closed
 
@@ -130,7 +142,7 @@ A view SHALL open only its own watch and SHALL place no constraint on another wa
 
 - **WHEN** a view runs over a bucket and another `WatchAll` on the same bucket receives writes
 - **THEN** the independent watch receives every revision, as it would with no view
-- **AND** the test that verifies this is `TestIndependentWatchUnaffected`
+- **AND** this is review-only: no wrong change inside the view makes a test of it fail, so none is kept
 
 ### Requirement: Reads and attaches wait for the initial replay
 

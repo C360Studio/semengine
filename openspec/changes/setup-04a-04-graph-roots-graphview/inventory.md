@@ -185,7 +185,7 @@ spec (`specs/graph-view-subscription/spec.md`):
 | Per-subscriber at-most-once backpressure (`:188`) | carried | `TestSlowSubscriberBackpressure` |
 | Coherent point reads (`:208`) | carried | `TestGetAndListSurface`, `TestRacingAttachNeverObservesPreAppliedState` |
 | View lifecycle and ownership (`:221`) | carried as the `Run` requirements plus "Detach releases its state" | `TestUnsubscribeReleasesState`, `TestSubscriberContextCancelDetaches`, `TestRunLeavesNothingBehind` |
-| Coexistence with raw WatchAll (`:237`) | carried | new integration `TestIndependentWatchUnaffected` |
+| Coexistence with raw WatchAll (`:237`) | carried | review-only: no wrong change in the view fails a test of it |
 | The view reports its currency (`:248`) | carried | `TestAppliedPairIsNeverTorn`, `TestAppliedIsZeroBeforeFirstApply`, `TestSnapshotCarriesAppliedAt` |
 
 None dropped. The trusted-decode clause is the only text not carried, and nothing here can call that API.

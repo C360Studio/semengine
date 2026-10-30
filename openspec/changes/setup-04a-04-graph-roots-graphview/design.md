@@ -52,10 +52,9 @@ Required: `background-work`, the foundation adapt row, ADR-113 (pin `view.go:217
   has returned (pin `TestStopJoinsSubscriberCallback`), and after the watch's delivery closed or
   `kvwatch.DrainBudget` ran out after `ctx` ended (error joined with `kvwatch.ErrDeliveryOpen`). A blocking hook or
   decode holds `Run`; the composing component bounds its wait (ADR-113).
-- `OnSubscribers` stays an eventually-correct gauge while the view runs (pin doc, `view.go:73-75`). Its last value
-  after `Run` returns is **not promised**: an attach's `OnSubscribers(1)` computed before the stop may land after the
-  stop's `OnSubscribers(0)`. A consumer that needs zero sets it when `Run` returns. Fixing it would add ordering
-  mechanism to a gauge.
+- `OnSubscribers` is **not promised** to hold the current count: attach and detach call it after unlocking (pin
+  `view.go:487-494`, `:513-518`), so under concurrent attach or detach, or across the stop, the value can be stale
+  until the next change. A consumer that needs zero sets it when `Run` returns; a fix would add ordering mechanism.
 - After `Unsubscribe` or the subscription's context ends, `Deltas` closes; a batch already taken may still be
   delivered first (`subscription.go:87-94`). `Unsubscribe` does not wait for the goroutine; `Run` does.
 
@@ -100,17 +99,18 @@ Each spec scenario names its test. Unit tests run in `synctest` on the pin's fak
 `TestRunContextEndIsAStop` builds the both-ready case directly: an `OnApply` hook holds `Run`, the test cancels
 `ctx`, the fake closes `Updates()`, the hook returns, so `Run`'s next read finds both ready; repeated 200 times in
 the test on fresh views, each must report a stop. A lost watch is driven from the fake; on a real server
-`TestRunReportsLostWatch` deletes the bucket and waits for the close, about 20 s at v1.54.0 (G6, not promised).
+`TestRunReportsLostWatch` deletes the bucket and waits for `Run` to return, about 20 s at v1.54.0 (G6, not
+promised), failing after 60 s; it adds about 20 s to the integration lane.
 
 Generated: `TestViewHistoryMatchesModel`, seeded, recording seed and run count: random puts, deletes, purges,
 skips, poisons, attaches of both kinds, unsubscribes and ticks against a model (last operation per key); every
 subscriber's snapshot plus deltas equals the model at every tick and no key's revision falls (ADR-081 G1, G2, G4,
 G6). Integration on `natsfixture.Open` (#195): the pin's real-bucket test, `TestRunLeavesNoWatchDelivery` (backlog
-over 256 entries, G1), `TestRunReportsLostWatch`, `TestIndependentWatchUnaffected`. Mutation checks
-(`task mutate:check`): a close counted as a loss regardless of `ctx` (`TestRunContextEndIsAStop`); `kvwatch.Stop`
-replaced by `watcher.Stop` (`TestRunLeavesNoWatchDelivery`); the attach-sequence filter (`view.go:840`) removed (the
-history test); a second `Run` allowed (`TestRunOnce`); decode moved per subscriber (`TestDecodeOncePerWrite`).
-Survivors are reported as survivors.
+over 256 entries, G1), `TestRunReportsLostWatch`; coexistence with raw watches is review-only (no wrong change in the
+view fails a test of it). Mutation checks (`task mutate:check`): a close counted as a loss regardless of `ctx`
+(`TestRunContextEndIsAStop`); `kvwatch.Stop` replaced by `watcher.Stop` (`TestRunLeavesNoWatchDelivery`); the
+attach-sequence filter (`view.go:840`) removed (the history test); a second `Run` allowed (`TestRunOnce`); decode
+moved per subscriber (`TestDecodeOncePerWrite`). Survivors are reported as survivors.
 
 ## D7. Issues and merge order
 

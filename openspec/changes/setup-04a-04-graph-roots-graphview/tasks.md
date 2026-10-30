@@ -30,7 +30,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 2.3 `TestViewHistoryMatchesModel` (design D6): seed, run count and completed checks in `notes/2.3.md`. Gate:
   in 3.2.
 - [ ] 2.4 Integration tests of design D6 on `natsfixture.Open`: the pin's real-bucket test,
-  `TestRunLeavesNoWatchDelivery`, `TestRunReportsLostWatch`, `TestIndependentWatchUnaffected`. Gate: in 3.2.
+  `TestRunLeavesNoWatchDelivery`, `TestRunReportsLostWatch`. Gate: in 3.2.
 
 ## 3. The package
 

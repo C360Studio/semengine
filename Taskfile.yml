@@ -141,15 +141,15 @@ tasks:
       - scripts/cover-check.sh
 
   spec:check:
-    desc: Validate all OpenSpec changes and specs strictly, and fail on a hold written outside every task
+    desc: Validate all OpenSpec changes and specs strictly (fails when the pinned openspec CLI is missing), then run ateam state spec-check, which fails on a hold written outside every task and warns on a proposal over 60 lines or a design over 120
     cmds:
       - npx --no-install openspec validate --all --strict --no-interactive
-      - scripts/openspec-queue.sh --check
+      - ateam state spec-check
 
   spec:queue:
-    desc: Show each in-flight OpenSpec change with its holds and blocking conditions
+    desc: Show each in-flight OpenSpec change with its ticked/total count, holds and labelled open tasks (ateam state spec-queue)
     cmds:
-      - scripts/openspec-queue.sh
+      - ateam state spec-queue
 
   status:
     desc: Print the Slice 04A 65-package port scoreboard, open PR claims, flakes, and milestone/issue hygiene (-- --offline, --check, or --sync-project); reads GitHub unless --offline

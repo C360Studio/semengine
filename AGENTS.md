@@ -1,9 +1,8 @@
 # SemEngine
 
 Guidance for coding agents. Codex and Antigravity (Gemini) load this file as `AGENTS.md`; `CLAUDE.md` imports it, so
-there is one copy (under 24,000 bytes, so a loader's 24 KB per-file cap never truncates it). It
-carries the facts an agent cannot derive from the tree and names where each rule lives. Per-platform command names and
-model routing: `.agents/README.md`.
+there is one copy (under 24,000 bytes). It carries the facts an agent cannot derive from the tree and names where each
+rule lives. Per-platform command names and model routing: `.agents/README.md`.
 
 ## What this is for
 
@@ -36,7 +35,7 @@ task fmt          # format Go sources (the only command that writes)
 task fmt:check    # fail on formatting drift
 task spec:check   # strict OpenSpec validation; fails on a Hold: outside every task
 task spec:queue   # in-flight OpenSpec changes and their holds
-task status       # Slice 04A 65-pkg port scoreboard, open PRs/flakes, issue/milestone hygiene (-- --offline|--check|--sync-project)
+task status       # port scoreboard, open PRs/flakes, issue/milestone hygiene (-- --offline|--check|--sync-project)
 task docs:check   # markdownlint
 task tidy:check   # go.mod / go.sum tidy
 task build        # build
@@ -47,16 +46,14 @@ task test:unit    # unit tests once, under the race detector, at one CPU (not th
 task test:repeat  # unit tests but the contract guards, five times at one CPU, without the race detector, shuffled
 task test:tools   # tests of scripts, Taskfile.yml and CI; verify runs them via test:tools:changed
 task ledger:diff  # -- <source_path>...: print how ledger entries differ from the SemStreams pin; fetches it
-task mutate:check # -- -pkg -test -file -mutant -expect/-expect-text: run one test against one mutant outside the repo
+task mutate:check # run one test against one mutant outside the repo (flags: task --list)
 task merge:check  # -- <n>: ateam review gate: up-to-date rule, review lines and record, flakes PR n leaves open
-task verify       # ateam:doctor spec:check docs:check fmt:check tidy:check cleanup-roots:check build vet lint vuln
-                  # ledger:check test:unit test:tools:changed test:integration cover:check test:repeat; fails if tracked files changed
+task verify       # ateam:doctor through test:repeat, cheapest first (steps: scripts/verify.sh); fails if tracked files changed
 ```
 
 Run `task verify` before every implementation push. CI: in `ci.yml`, `verify` runs the same commands and `Required`
 fails unless it succeeded; `merge-check.yml` runs `scripts/merge-check.sh` (`task merge:check`) on the base commit as
-`Merge check`. Gate selection per diff:
-`.agents/skills/preflight/SKILL.md`. Session checkpoints: ateam's `pickup` and `handoff` skills.
+`Merge check`. Gate selection per diff: `preflight` skill. Session checkpoints: ateam's `pickup` and `handoff` skills.
 
 ## Rules and what enforces them
 
@@ -158,22 +155,25 @@ A new repo-wide or agent-conduct rule updates both this file and `.agents/rules-
 | Gate | Rule | Where |
 | --- | --- | --- |
 | `spec:check+review` | OpenSpec changes and specs are well formed and truthful against code | "Where state lives" below |
-| `spec:check+review` | Every OpenSpec task can be ticked in or before the archive commit; a hold is written as `Hold:` inside the unticked task it stops | `protocol`; `spec-queue` spec; `rev` |
-| `verify+review` | Steps end when `task verify` passes locally on a clean tree; pushes batch at review/end; CI is checked once before merge; reviewer `PASS` cites commit + local `task verify`, never CI (#171) | `dev`, `rev`; `protocol` |
+| `spec:check+review` | Every OpenSpec task can be ticked by the archive commit; a hold is `Hold:` inside the unticked task it stops | `protocol`; `spec-queue` spec; `rev` |
+| `spec:check+review` | Clarify declares the track (`quick` or `design`); `proposal.md` stays one page with `Approved-by:` the owner fills, and its first task holds `OPEN-Q` until then | `protocol`; `arch` |
+| `review` | After the squash merge the claimer removes its worktree and remote branch (`ateam state prune`); never another agent's, dirty, or unpushed | `protocol` |
+| `review` | Conclusions/handoffs end with the skipped/residual-risk footer; a deliberate limit is marked `// shortcut: <limit>, <when to upgrade>` | `protocol`; ponytail skill |
+| `verify+review` | A step ends at a local clean-tree `task verify` pass; pushes batch at review/end; CI checked once before merge; reviewer `PASS` cites commit + local `task verify`, never CI (#171) | `dev`, `rev`; `protocol` |
 | `CI required` | A merge needs `Required` and `Merge check` green | `protocol` |
-| `merge:check` | No merge while a known flake (`class:flake` issue) is open, unless the PR closes every open one | `protocol`; `merge-gate` spec |
-| `review` | Any defect found in repo code (carried, ported, or written here) not fixed in the change is filed as an issue (`status:blocked`, linked without closing keyword while on a PR branch), never routed as a residual or left in comments (#212, #193) | `protocol`; `rev` |
-| `review` | A finding needing an unchosen condition (library timing/ordering, OS/network state, mid-op fault injection, or test-only call sequence) is `BLOCKING`/`HIGH` only with a named real-world trigger; else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
+| `merge:check` | No merge while a known flake (`class:flake` issue) is open, unless the PR closes all of them | `protocol`; `merge-gate` spec |
+| `review` | A defect in repo code (carried, ported, or written here) the change does not fix is filed as an issue (`status:blocked`, linked with no closing keyword while on a PR branch), never a residual or a comment (#212, #193) | `protocol`; `rev` |
+| `review` | A finding needing an unchosen condition (library timing/ordering, OS/network state, mid-op fault injection, test-only call sequence) is `BLOCKING`/`HIGH` only with a named real-world trigger; else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
 | `review` | A new rule names what enforces it and adds its row to `AGENTS.md` and `.agents/rules-index.md` | `rev` |
-| `review` | Before claiming work, mutating state, or spawning role subagents on an underspecified prompt, check any named issue/PR/file first, then confirm Deliverable, Scope/non-goals, Definition of Done/verification, and Stop boundary; when ambiguous, propose a 3–4 bullet Definition of Done and ask 1–3 targeted questions (#224) | `protocol`; `.agents/README.md` |
-| `review` | Role-agent briefs carry the owner's intent and the artifact itself, not a paraphrase; resume for continuity, start fresh for mechanics | `.agents/README.md` |
-| `verify+review` | Architect, developer, and reviewer run on the frontier tier (`opus` / `gpt-6-astra` or `gpt-6-sol` / `pro`) at `medium`, `medium`, `high` effort (architect and developer escalate to `high` for cross-cutting concurrency/boundary work or failed reviews); technical-writer runs `sonnet` / `flash` at `low`/`medium`; adapters pin model and effort (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
-| `verify+review` | `AGENTS.md` stays under 24,000 bytes and matches `.agents/rules-index.md` in rule domains and row counts (`verify`), row for row (`review`); agent/skill adapters match their contracts (#224, #225) | `task ateam:doctor`; `.agents/README.md`; `harness-boundaries` spec |
-| `merge:check+review` | Code PRs (a file not `.md` or `openspec/` `.yml`/`.yaml`/`.json`, or under `.claude/agents/`, `.agents/contracts/`) need an approving record at the head by a not-weaker agent that wrote no commits (`implemented-by:`/`reviewed-by:` `<agent> (<model>, <effort>)`); docs-only commits take any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
-| `review` | Pushed claim branches update by merging `origin/main`, never by rebase or force-push | `protocol` |
-| `review` | Evidence cited in a PR or task can be opened on another machine; git-ignored paths are named as local only | `protocol`; `.agents/skills/preflight` |
-| `review` | Docs are written for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
-| `review` | Developer notes on task choices not spelled out in the design go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev`, `rev`; `protocol` |
+| `review` | Before claiming, mutating state, or spawning role subagents on a vague prompt, read named issues/PRs/files, confirm Deliverable, Scope/non-goals, Definition of Done/verification, Stop boundary; if unclear, propose a 3–4 bullet Definition of Done, ask 1–3 targeted questions (#224) | `protocol`; `.agents/README.md` |
+| `review` | Role-agent briefs carry the owner's intent and the artifact, not a paraphrase; resume for continuity, fresh for mechanics | `.agents/README.md` |
+| `verify+review` | Architect/developer/reviewer: frontier tier (`opus`/`gpt-6-astra` or `gpt-6-sol`/`pro`), effort `medium`/`medium`/`high`, the first two `high` for cross-cutting concurrency/boundary work or failed reviews; writer: `sonnet`/`flash`, `low`/`medium`; adapters pin model, effort (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
+| `verify+review` | `AGENTS.md` < 24,000 bytes, matching `.agents/rules-index.md` in domains and row counts (`verify`) and row for row (`review`); agent/skill adapters match their contracts (#224, #225) | `task ateam:doctor`; `.agents/README.md`; `harness-boundaries` spec |
+| `merge:check+review` | Code PRs (a file not `.md` or `openspec/` `.yml`/`.yaml`/`.json`, or in `.claude/agents/`, `.agents/contracts/`) need an approving head record by a not-weaker non-committing agent (`implemented-by:`/`reviewed-by:` `<agent> (<model>, <effort>)`); docs-only commits: any agent's reviewer (#64, #66, #225) | `protocol`; `rev`; `merge-gate` spec |
+| `review` | Pushed claim branches update by merging `origin/main`, never rebase or force-push | `protocol` |
+| `review` | Evidence in a PR or task opens on another machine; git-ignored paths named local only | `protocol`; `.agents/skills/preflight` |
+| `review` | Docs are for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
+| `review` | Developer notes on task choices the design leaves open go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev`, `rev`; `protocol` |
 
 ## Where state lives
 

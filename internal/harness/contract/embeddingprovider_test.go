@@ -23,6 +23,21 @@ func TestEmbeddingImportsNoProviderModule(t *testing.T) {
 		embeddingProviderViolations(t, root, "./graph/embedding"))
 }
 
+// queryProviderRule is the requirement every graph/query violation names.
+const queryProviderRule = "(query-classification › Tier 0 classification imports no provider code)"
+
+// TestQueryImportsNoProviderModule holds the rule that graph/query builds at tier 0: without the
+// pin's LLM client adapter it reaches neither the OpenAI SDK nor the module's model package,
+// directly or through a package it imports. It reuses the embedding guard's listing and reader;
+// TestEmbeddingImportsNoProviderModuleSensitivity shows that reader can fail.
+//
+// Requirement: query-classification/Tier 0 classification imports no provider code
+func TestQueryImportsNoProviderModule(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "graph/query provider imports",
+		providerViolations(t, root, "./graph/query", queryProviderRule))
+}
+
 // Requirement: embedding-index/Tier 0 imports no provider code
 func TestEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 	const mod = "go.mod"
@@ -59,8 +74,16 @@ func TestEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 	}
 }
 
-// embeddingProviderViolations lists every provider package go list -deps reports for pkg in root.
+// embeddingProviderViolations lists every provider package go list -deps reports for pkg in root,
+// naming the embedding requirement.
 func embeddingProviderViolations(t *testing.T, root, pkg string) []string {
+	t.Helper()
+	return providerViolations(t, root, pkg, embeddingProviderRule)
+}
+
+// providerViolations lists every provider package go list -deps reports for pkg in root; each
+// violation names pkg and rule.
+func providerViolations(t *testing.T, root, pkg, rule string) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg)
 	cmd.Dir = root
@@ -68,21 +91,26 @@ func embeddingProviderViolations(t *testing.T, root, pkg string) []string {
 	if err != nil {
 		t.Fatalf("go list -deps %s: %v", pkg, err)
 	}
-	return providerPaths(modulePath(t, root), strings.Fields(string(out)))
+	return providerPathsFor(modulePath(t, root), pkg, rule, strings.Fields(string(out)))
 }
 
-// providerPaths reads go list -deps output and names each provider path in it: the module's
-// model package or anything under it, or the OpenAI SDK or anything under it.
+// providerPaths is providerPathsFor graph/embedding and its requirement.
 func providerPaths(module string, deps []string) []string {
+	return providerPathsFor(module, "./graph/embedding", embeddingProviderRule, deps)
+}
+
+// providerPathsFor reads go list -deps output for pkg and names each provider path in it: the
+// module's model package or anything under it, or the OpenAI SDK or anything under it. Each
+// violation names pkg and rule.
+func providerPathsFor(module, pkg, rule string, deps []string) []string {
 	if len(deps) == 0 {
-		return []string{"go list -deps listed no package; a check that saw nothing is not a pass " +
-			embeddingProviderRule}
+		return []string{"go list -deps listed no package; a check that saw nothing is not a pass " + rule}
 	}
 	var violations []string
 	for _, dep := range deps {
 		if dep == module+"/model" || strings.HasPrefix(dep, module+"/model/") ||
 			dep == openAIModule || strings.HasPrefix(dep, openAIModule+"/") {
-			violations = append(violations, "graph/embedding reaches "+dep+" "+embeddingProviderRule)
+			violations = append(violations, strings.TrimPrefix(pkg, "./")+" reaches "+dep+" "+rule)
 		}
 	}
 	return violations

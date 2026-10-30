@@ -12,11 +12,10 @@ quoted or undecided.
 
 ## Context
 
-On main every named case reproduces (Q1), query traffic moves later scores (Q2), and big or out-of-range numbers give
-inverted ranges and impossible boxes (Q3). The owner set the scope (#94 comment 6036107878; #95 comment 6036108178; #96
-comment 6036129531; #9 comment 6522523604 answer 3; #479 comment 6525285377): tier-0 bugs in the tier-0 stage,
-each with its own failing test, named cases as plain table tests, semselect cited only. Fields and domain vocabulary
-stay caller-owned; `total number of` stays count; a numeric extremum is not entity ranking.
+On main every named case reproduces (Q1), query traffic moves scores (Q2), and big numbers give inverted ranges and
+impossible boxes (Q3). Owner scope (#94 c6036107878, #95 c6036108178, #96 c6036129531, #9 c6522523604 answer 3, #479
+c6525285377): tier-0 bugs, one failing test each, named cases as table tests, semselect cited only; fields and domain
+vocabulary caller-owned; `total number of` stays count; a numeric extremum is not entity ranking.
 
 ## Goals / Non-Goals
 
@@ -80,12 +79,17 @@ instants and zones (exact values, week and month edges, a DST day). Zone: the zo
 Rejected: a `Now func()` field (`model/breaker.go:37` is a default with a test override; back-door rule) and a
 context value (rule from #91).
 
-**D6. Bounded numbers (#479 item 2).** A number that cannot give a true range gives no hint for its phrase, declared
-in the doc. This widens the search: with no `geo_bounds` or `time_range`, the pin falls back to plain graphrag
-(`graphrag.go:658-670`), where today the impossible box or inverted range finds nothing. Clamping was rejected as a
-silent change of what was asked. `last N hours/days`: N ≥ 1 and N × unit within `time.Duration`. `within R of
-lat,lon`: lat in [-90, 90], lon in [-180, 180], radius finite. Geometry: North and South are clamped to ±90; a box
-reaching a pole spans West -180 to East 180; a box crossing the antimeridian keeps East > 180 or West < -180, declared.
+**D6. Out-of-range numbers are refused (#479 item 2).** Bounds: `last N hours/days` needs N ≥ 1 and N × unit
+within `time.Duration`; `within R of lat,lon` needs lat in [-90, 90], lon in [-180, 180], R finite. Geometry, not a
+refusal: North/South clamp to ±90; a box reaching a pole spans West -180 to East 180; one crossing the antimeridian
+keeps East > 180 or West < -180, declared. Past a bound: (A, recommended) `ClassifierChain.ClassifyQuery` returns
+`(*ClassificationResult, error)`, here no result and an `errs.WrapInvalid` error naming the phrase and bound; PR 9
+returns it as it returns one for an empty query (pin `graphrag.go:736`). Fail closed, plain Go, found at compile
+time; other outcomes keep a nil error (an ended context still gives `nil`). ADR-045 binds only `Classifier`, so
+`KeywordClassifier.ClassifyQuery` just omits the hint, documented. Cost: the chain's signature and its pin callers.
+(B) A refusal field on the result: a caller that forgets it widens silently. (C) Keep the impossible value: garbage
+nobody observes. (D) Widen, log and count: no logger or registry here, and the pin falls to graphrag
+(`graphrag.go:658-675`), answering a question nobody asked. Owner question 2.
 
 ## Proving tests
 
@@ -94,11 +98,11 @@ reaching a pole spans West -180 to East 180; a box crossing the antimeridian kee
 | `TestAggregationFieldBinding` | R17, R21, optional `of`/`the`, caller fields: exact type and field through `ClassifierChain.ClassifyQuery` | R17, R21 |
 | `TestOrdinaryAggregationPhrases` | R14, R23-R27 through the chain; descriptive mentions activate nothing ("Show sensors with a number of faults", "Which pump has the highest pressure reading", "Show the sensor with the lowest battery level") | R14, R23-R27 |
 | `TestKeywordExclusions` | R28-R31 give no hint; negation then affirmative; quoted name in a valid request; R32 | R28-R31 |
-| `TestChainKeepsExclusions` | the pin's iot example "Count devices in error state" (intent `aggregation`, `operation: count`) and a `similarity` example with a counting fake LLM: "Do not count devices in error state" and "Not devices similar to TEMP-001" give the default result and no LLM call; control: each question without its negation reaches tier 1 at or above the threshold | yes |
+| `TestChainKeepsExclusions` | examples "Count devices in error state" (intent `aggregation`, `operation: count`) and "Find devices similar to TEMP-001" (intent `similarity`), a counting fake LLM: (1) `FindBestMatch` on "Do not count devices in error state" and "Not devices similar to TEMP-001" returns the unwanted example at or above the threshold; (2) the chain gives both the default result, no LLM call; (3) controls "Count devices in error state" and "Devices similar to TEMP-001" give tier 0 count and `use_embeddings` | (2) |
 | `TestQueryEmbeddingIsReadOnly` | equal scores with and without intervening traffic; construction still learns | Q2 |
 | `TestTierOneHintsAreTyped`, `TestEveryHintNameIsTyped` | every `SearchOptions` JSON name decodes to its tier-0/3 type; unknown names pass; each refusal of D4 | yes |
 | `TestTimeRangesFromOneInstant` | exact ranges for fixed instants and zones | n/a (new seam) |
-| `TestOutOfRangeNumbersGiveNoHint` | Q3 cases; pole clamp | Q3 |
+| `TestOutOfRangeNumbersAreRefused` | Q3 cases: chain gives no result and an error `errs.IsInvalid` holds, naming the phrase; `KeywordClassifier` gives no such hint; pole clamp answers normally | Q3 |
 
 Examples suffice except clause splitting: `FuzzKeywordClassify` checks the spec's two laws (no panic; triggers only
 inside quotes give no operation hint). Seed and run count in notes.
@@ -106,7 +110,6 @@ inside quotes give no operation hint). Seed and run count in notes.
 ## Risks / Trade-offs
 
 - Negation and alternatives are word rules: "not only count but average" reads count as negated. Declared in README.
-- D2 trades tier 1/3 fallback for exclusion-only questions for a binding exclusion.
 - D4 refuses example files with a wrong-typed known name; pin test `TestFindBestMatch_PreservesOptions`
   (`"time_range": "week"`) is rewritten (notes).
 
@@ -120,3 +123,5 @@ first, this PR merges `origin/main` and re-runs `task verify`.
 
 1. "Today" keeps the host zone, declared (recommended, as the pin), or is always UTC?
    Answered 2026-10-30: host zone (#479 comment 6525906611).
+2. A question with an impossible number is refused with an invalid-input error the caller sees (D6 A, recommended),
+   or runs without that filter, logged and counted (D6 D)? A changes the chain's signature and what PR 9 returns.

@@ -7,7 +7,8 @@ commit (#171). One task is one developer's unit.
 ## 1. Design
 
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
-  acceptance and answers to design questions 1-3. Gate: `task spec:check`, `task docs:check`.
+  acceptance and the answer to design question 2 (question 1 answered: host zone, #479 comment 6525906611). Gate: `task
+  spec:check`, `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Read-only query embedding (#96, design D3)
@@ -34,10 +35,10 @@ commit (#171). One task is one developer's unit.
 
 ## 5. Exclusions (#95, design D2; after 4)
 
-- [ ] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (examples in the caller's
-  words, intent `aggregation` with `operation: count` and intent `similarity`, plus a counting fake LLM client: the
-  default result, the client never called; control: each question without its negation reaches tier 1), failing on main
-  (premise `classifier_chain.go:69-102`).
+- [ ] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (design § Proving
+  tests: `FindBestMatch` shows the unwanted example is eligible; the full chain gives the default result and never
+  calls the fake LLM; affirmative controls give tier 0), the chain part failing on main (premise
+  `classifier_chain.go:69-102`).
 - [ ] 5.2 `FuzzKeywordClassify` with the two laws of D2's spec requirement; seed, run count and any failure in
   notes. Gate: `task mutate:check` on one exclusion rule, survivors reported as survivors.
 - [ ] 5.3 Keyword exclusions and the chain rule; doc comments state D2's table. Gate: as 2.2.
@@ -45,9 +46,11 @@ commit (#171). One task is one developer's unit.
 ## 6. Clock and bounds (#479 items 1-2, design D5-D6)
 
 - [ ] 6.1 `TestTimeRangesFromOneInstant` (fixed instants and zones, week and month edges, a DST day) and
-  `TestOutOfRangeNumbersGiveNoHint` (inventory Q3 cases, pole clamp), the second failing on main (premise
-  `classifier.go:223-357`). The temporal tests that assert `NotNil` only gain exact values.
-- [ ] 6.2 One `now` per question; bounds as D6. Gate: as 2.2 and `go test -count=5 -cpu 1 -shuffle=on ./graph/query`.
+  `TestOutOfRangeNumbersAreRefused` (inventory Q3 cases: no result and an invalid-input error naming the phrase;
+  pole clamp answers), the second failing on main (premise `classifier.go:223-357`). The temporal tests that assert
+  `NotNil` only gain exact values.
+- [ ] 6.2 One `now` per question; bounds and refusal as D6; existing chain callers in the tests take the error.
+  Gate: as 2.2 and `go test -count=5 -cpu 1 -shuffle=on ./graph/query`.
 
 ## 7. Records and docs
 

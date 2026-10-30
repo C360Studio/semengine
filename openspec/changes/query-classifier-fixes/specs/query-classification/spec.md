@@ -9,7 +9,8 @@ classifier finds any; otherwise the example classifier's match at or above its t
 when one is composed; otherwise the LLM tier's result (tier 3) when one is composed and succeeds; otherwise, while the
 context is live, the default result: tier 0, no hints, confidence 1.0. A failure of the LLM tier under a live context
 SHALL yield the default result. When the keyword tier found no hint and excluded an operation, the chain SHALL
-return the default result without asking tier 1 or tier 3.
+return the default result without asking tier 1 or tier 3. Every outcome here SHALL come with a nil error; only an
+out-of-range number gives an error.
 
 #### Scenario: A keyword hint stops the ladder
 
@@ -36,8 +37,10 @@ return the default result without asking tier 1 or tier 3.
 - **WHEN** an example classifier holds the examples "Count devices in error state" (intent `aggregation`, options
   `operation: count`) and "Find devices similar to TEMP-001" (intent `similarity`), a fake LLM client counts its
   calls, and the queries are "Do not count devices in error state" and "Not devices similar to TEMP-001"
-- **THEN** each result is the default result and the LLM client was never called
-- **AND** the same questions without their negation each reach tier 1 at or above the threshold
+- **THEN** `FindBestMatch` alone returns the unwanted example for each at or above the threshold
+- **AND** the chain returns the default result for each and the LLM client was never called
+- **AND** "Count devices in error state" and "Devices similar to TEMP-001" give tier 0 with `aggregation_type`
+  `count` and `use_embeddings` true
 - **AND** the test that verifies this is `TestChainKeepsExclusions`
 
 ## ADDED Requirements
@@ -173,16 +176,17 @@ that instant's zone.
 - **THEN** each range equals the expected start and end exactly
 - **AND** the test that verifies this is `TestTimeRangesFromOneInstant`
 
-### Requirement: Out-of-range numbers give no hint
+### Requirement: Out-of-range numbers are refused
 
-The keyword tier SHALL give no `time_range` hint for `last N hours` or `last N days` when N is below 1 or the span
-does not fit a `time.Duration`, and no `geo_bounds` hint when the latitude is outside [-90, 90], the longitude
-outside [-180, 180] or the radius not finite. A box SHALL have North at most 90 and South at least -90; a box that
-reaches a pole SHALL span West -180 to East 180.
+`ClassifierChain.ClassifyQuery` SHALL return no result and an invalid-input error naming the phrase when `last N
+hours` or `last N days` has N below 1 or a span that does not fit a `time.Duration`, or `within R of lat,lon` has a
+latitude outside [-90, 90], a longitude outside [-180, 180] or a radius not finite; `KeywordClassifier.ClassifyQuery`
+SHALL give no hint for that phrase. A box SHALL have North at most 90 and South at least -90; a box that reaches a
+pole SHALL span West -180 to East 180.
 
 #### Scenario: Overflow and bad coordinates
 
 - **WHEN** the queries are "events in the last 3000000 hours", "within 5km of 95,10" and "within 5km of 10,500"
-- **THEN** none has the hint its phrase would give
-- **AND** "within 5km of 89.9999,10" gives North 90 and West -180, East 180
-- **AND** the test that verifies this is `TestOutOfRangeNumbersGiveNoHint`
+- **THEN** the chain returns no result and an error for which `errs.IsInvalid` is true, naming the phrase
+- **AND** "within 5km of 89.9999,10" gives a result with North 90 and West -180, East 180, and no error
+- **AND** the test that verifies this is `TestOutOfRangeNumbersAreRefused`

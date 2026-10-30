@@ -24,8 +24,8 @@ Approved-by:
   an unknown strategy, an inverted time range or an impossible box refuses `NewEmbeddingClassifier`; unknown
   names pass through.
 - #479 items 1-2: every range in a question comes from one instant, testable with fixed instants and zones; a
-  `last N` that overflows and an out-of-range latitude or longitude give no hint
-  (declared: the search widens); boxes are clamped at the poles.
+  `last N` that overflows and an out-of-range latitude or longitude are refused: the chain returns an
+  invalid-input error (its signature gains `error`; owner question 2); boxes are clamped at the poles.
 - README and ledger row say what ships; the README's tier-1 type column and "Limits" lines go.
 
 ## Capabilities
@@ -41,4 +41,5 @@ Approved-by:
   the pin's own assertions.
 - Size: about 300 production lines and 900 test lines; one pull request.
 - Issues: closes #94, #95, #96, #478; #479 stays open for item 3 (change 4 PR 9).
-- Owner question: design "Open Questions" 1 (host zone or UTC).
+- Owner questions: design "Open Questions" 1, answered (host zone, #479 comment 6525906611), and 2 (refuse
+  impossible numbers).

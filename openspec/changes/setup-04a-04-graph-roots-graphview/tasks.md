@@ -32,18 +32,18 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   unit gates green, each test's wrong change in `notes/2.2.md`.
 - [x] 2.3 `TestViewHistoryMatchesModel` (design D6): seed, run count and completed checks in `notes/2.3.md`. Gate:
   in 3.2. Done: unit gates green; three wrong changes detected, recorded in `notes/2.3.md`.
-- [ ] 2.4 Integration tests of design D6 on `natsfixture.Open`: the pin's real-bucket test,
-  `TestRunLeavesNoWatchDelivery`, `TestRunReportsLostWatch`. Gate: in 3.2.
+- [x] 2.4 Integration tests of design D6 on `natsfixture.Open`: the pin's real-bucket test,
+  `TestRunLeavesNoWatchDelivery`, `TestRunReportsLostWatch`. Gate: in 3.2. Done: `notes/2.4.md`.
 
 ## 3. The package
 
 - [x] 3.1 `doc.go`, `errors.go`, `delta.go` with the dropped fields gone and the docs of design D4 (S10). Gate:
   `go build ./pkg/graphview`.
-- [ ] 3.2 `view.go` and `subscription.go`: `Run(ctx)` in place of `Start`/`Stop` (design D2), `kvwatch.Stop`, the
+- [x] 3.2 `view.go` and `subscription.go`: `Run(ctx)` in place of `Start`/`Stop` (design D2), `kvwatch.Stop`, the
   dropped surface (design D3), and the optional removals the owner accepted at 1.1 (design D4). Gate:
   `go test -race -count=1 ./pkg/graphview`, `go test -count=5 -cpu 1 -shuffle=on ./pkg/graphview`,
-  `task test:integration -- ./pkg/graphview`. Unit gates green at `7aa3a21`; ticks with 2.4, which adds the
-  integration tests.
+  `task test:integration -- ./pkg/graphview`. All three gates green with 2.4 (integration
+  22.5 s, coverage 93.4%).
 - [ ] 3.3 The mutation checks of design D6 (`task mutate:check`), recorded in `notes/3.3.md`, survivors reported as
   survivors; a survivor is a gap fixed before 5.1. Gate: each named test fails on its mutant.
 

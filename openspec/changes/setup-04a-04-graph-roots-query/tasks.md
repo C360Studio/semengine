@@ -40,12 +40,12 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 4. Ledger, records and docs
 
-- [ ] 4.1 Ledger rows: `graph/query` (`adapt`; contract design D2-D5; dependencies `graph/embedding` and `pkg/errs`,
+- [x] 4.1 Ledger rows: `graph/query` (`adapt`; contract design D2-D5; dependencies `graph/embedding` and `pkg/errs`,
   nats.go through `graph/embedding`; no goroutine, no provider; known risks: `Generate` learns from queries until
   #96's follow-up, hint types by tier (S13), host clock and unbounded numbers (S14, S15)) and
   `graph/query/classifier_llm_adapter.go` (`defer-exclude`, naming #32; its test, the live test and
   `DefaultClassificationTimeout` go with it). Gate: `task ledger:check`.
-- [ ] 4.2 Docs (design D6): package doc (what it classifies, tiers 0, 1, 3, no store); the chain doc states design
+- [x] 4.2 Docs (design D6): package doc (what it classifies, tiers 0, 1, 3, no store); the chain doc states design
   D4, including the LLM failure; `EmbeddingClassifier`: BM25 only, examples fixed; `LLMClassifier`: an unknown
   strategy and an unparsable time range are dropped (S8c); `README.md`: the framework API, hint names with each
   value's type per tier (P4), nested `Options` values not copied, and that hints PR 9 does not read still stop the

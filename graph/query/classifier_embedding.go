@@ -31,6 +31,8 @@ type EmbeddingClassifier struct {
 // NewEmbeddingClassifier embeds every example of domains under ctx and returns a classifier
 // whose matches need a similarity of at least threshold. Nil domains are skipped.
 //
+// It keeps the domains' examples and their Options maps; do not edit them after the call.
+//
 // It returns an error, and no classifier, when ctx is nil or has ended or when any example
 // cannot be embedded; a classifier that could never match is never returned.
 func NewEmbeddingClassifier(ctx context.Context, domains []*DomainExamples, threshold float64) (*EmbeddingClassifier, error) {

@@ -60,6 +60,8 @@ type LLMClassifier struct {
 //
 // domains may be nil or empty; when provided, a few representative examples are
 // included in the prompt as few-shot context to improve classification accuracy.
+//
+// It keeps the domains' examples and their Options maps; do not edit them after the call.
 func NewLLMClassifier(client LLMClient, domains []*DomainExamples) *LLMClassifier {
 	return &LLMClassifier{
 		client:  client,
@@ -69,6 +71,9 @@ func NewLLMClassifier(client LLMClient, domains []*DomainExamples) *LLMClassifie
 
 // ClassifyQuery classifies a natural language query using an LLM and returns a
 // ClassificationResult at Tier 3.
+//
+// A strategy that is not one of the SearchStrategy values and a time range that does not parse
+// as RFC 3339 are dropped from the result without an error; the rest of the response is kept.
 //
 // Returns an error if:
 //   - ctx is nil (an invalid-input error, before the client is called)

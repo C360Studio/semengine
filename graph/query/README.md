@@ -44,24 +44,24 @@ maps; do not edit them after the call.
 
 ## Hint names and value types
 
-A value's Go type depends on the tier that produced it.
+A hint's Go type is the same whichever tier produced it. Tier 1 decodes each example option that
+is a `SearchOptions` JSON name into the type below when `NewEmbeddingClassifier` runs, and refuses
+the example when it does not decode; other names come back as `encoding/json` decoded them.
 
-| Hint | Tier 0 | Tier 1 | Tier 3 |
-| --- | --- | --- | --- |
-| `time_range` | `*TimeRange` | `map[string]any` | `*TimeRange` |
-| `geo_bounds` | `*SpatialBounds` | `map[string]any` | not produced |
-| `use_embeddings` | `bool` | `bool` | `bool` |
-| `path_intent`, `ranking_intent` | `bool` | `bool` | not produced |
-| `path_start_node`, `aggregation_type`, `aggregation_field` | `string` | `string` | not produced |
-| `path_predicates` | not produced | `[]any` | not produced |
-| `limit` | `int` | `float64` | `int` |
-| `strategy`, `query` | not produced | `string` | `string` |
-| `predicates`, `types`, `key_terms` | not produced | `[]any` | `[]string` |
+| Hint | Tiers 0 and 1 | Tier 3 |
+| --- | --- | --- |
+| `time_range` | `*TimeRange` | `*TimeRange` |
+| `geo_bounds` | `*SpatialBounds` | not produced |
+| `use_embeddings` | `bool` | `bool` |
+| `path_intent`, `ranking_intent` | `bool` | not produced |
+| `path_start_node`, `aggregation_type`, `aggregation_field` | `string` | not produced |
+| `path_predicates` | `[]string` | not produced |
+| `limit` | `int` | `int` |
+| `strategy`, `query` | `string` | `string` |
+| `predicates`, `types`, `key_terms` | `[]string` | `[]string` |
 
-Tier 1 returns whatever hints the matching example file lists, so a name is present only if the
-example has it. Its values are what `encoding/json` decodes from that file: a JSON array is `[]any`, an
-object is `map[string]any` and a number is `float64`. A reader that asserts `[]string` or `int` on
-a tier 1 value does not match. This package does not convert them; the table shows what ships.
+Tier 0 never produces `path_predicates`, `strategy`, `query`, `predicates`, `types` or
+`key_terms`; tier 1 returns only the hints the matching example lists.
 
 ## Copies
 
@@ -71,8 +71,8 @@ inside an `Options` entry (a slice or a map) are shared with the classifier and 
 
 ## Limits
 
-- Each query is embedded with `Generate`, which adds it to the BM25 embedder's word statistics, so
-  later scores depend on the queries seen so far. Issue #96 tracks the read-only alternative.
+- Each query is embedded with the read-only `GenerateQuery`, so its score does not depend on the
+  queries classified before it; the word statistics come only from the examples, in load order.
 - The LLM tier drops a strategy that is not one of the `SearchStrategy` values and a time range
   that does not parse as RFC 3339, and keeps the rest of the response.
 - The keyword tier reads the host clock for "today", "last week" and the like, and does not bound

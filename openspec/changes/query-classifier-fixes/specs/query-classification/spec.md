@@ -37,6 +37,7 @@ return the default result without asking tier 1 or tier 3.
   `operation: count`) and "Find devices similar to TEMP-001" (intent `similarity`), a fake LLM client counts its
   calls, and the queries are "Do not count devices in error state" and "Not devices similar to TEMP-001"
 - **THEN** each result is the default result and the LLM client was never called
+- **AND** the same questions without their negation each reach tier 1 at or above the threshold
 - **AND** the test that verifies this is `TestChainKeepsExclusions`
 
 ## ADDED Requirements

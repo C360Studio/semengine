@@ -4,10 +4,11 @@ Base: `a5f1d0e` on `d80acfd`. Inventory: `inventory.md` (`INVENTORY PASS`, round
 `design` (adds requirements to `query-classification`). Draft PR #480. Records: ADR-045 keeps `Classifier`'s
 signature; ADR-074 (no predicate added); ADR-113 (no lifecycle here). Probes Q1-Q3 (inventory).
 
-Terms: a *hint* is one entry of `ClassificationResult.Options`. An *operation* is one of seven: count, avg, sum,
-min, max, similarity, ranking; each is its own operation (count and avg are two). A *trigger* is the word that
-requests one; a *clause* is text between `;`, `,`, `.`, `:`, `?`, `!` or the word `but`. An operation is *excluded*
-when its trigger is negated, quoted or undecided.
+Terms: a *hint* is one entry of `ClassificationResult.Options`. An *operation* is one of seven: count, avg, sum, min,
+max, similarity, ranking; each is its own operation (count and avg are two). A *trigger* is a match of one of the
+keyword tier's existing or D1 patterns, nothing else, so no question main sent to tier 1 loses its answer; a *clause* is
+text between `;`, `,`, `.`, `:`, `?`, `!` or the word `but`. An operation is *excluded* when its trigger is negated,
+quoted or undecided.
 
 ## Context
 
@@ -60,8 +61,9 @@ signature and omits excluded operations; the exclusion reaches the chain through
 product that composes one, as the pin's graph-gateway does (`:333`), sees scores stop drifting with traffic.
 
 **D4. Typed and checked tier-1 hints (#478).** Options: (A, recommended) `NewEmbeddingClassifier` decodes each
-example's options through `SearchOptions` itself: the known names and their types are its fields' JSON tags (read by
-reflection, no hand-written table, so no fifth spelling, inventory T1). Each known name present becomes the type
+example's options by unmarshalling them into `SearchOptions`, then sets each known name present with a plain
+`switch` of 17 cases (`strategy` as `string(...)`); `TestEveryHintNameIsTyped` walks the JSON tags by reflection, in
+the test only, so a field added without a `case` fails (inventory T1). Each known name present becomes the type
 tiers 0 and 3 give it (`*TimeRange`, `*SpatialBounds`, `[]string`, `int`, `bool`, `string`); unknown names pass
 through unchanged (caller-owned). Construction refuses, naming domain, example and option, a value that does not
 decode, a `strategy` outside the eight values (pin `graphrag.go:651` maps it to graphrag), a `time_range` with a zero
@@ -92,7 +94,7 @@ reaching a pole spans West -180 to East 180; a box crossing the antimeridian kee
 | `TestAggregationFieldBinding` | R17, R21, optional `of`/`the`, caller fields: exact type and field through `ClassifierChain.ClassifyQuery` | R17, R21 |
 | `TestOrdinaryAggregationPhrases` | R14, R23-R27 through the chain; descriptive mentions activate nothing ("Show sensors with a number of faults", "Which pump has the highest pressure reading", "Show the sensor with the lowest battery level") | R14, R23-R27 |
 | `TestKeywordExclusions` | R28-R31 give no hint; negation then affirmative; quoted name in a valid request; R32 | R28-R31 |
-| `TestChainKeepsExclusions` | the pin's iot example worded in the caller's terms ("Count devices in error state", intent `aggregation`, `operation: count`) and a `similarity` example composed with a counting fake LLM: R28, R29 and "Not devices similar to TEMP-001" give the default result, the LLM is never called | yes |
+| `TestChainKeepsExclusions` | the pin's iot example "Count devices in error state" (intent `aggregation`, `operation: count`) and a `similarity` example with a counting fake LLM: "Do not count devices in error state" and "Not devices similar to TEMP-001" give the default result and no LLM call; control: each question without its negation reaches tier 1 at or above the threshold | yes |
 | `TestQueryEmbeddingIsReadOnly` | equal scores with and without intervening traffic; construction still learns | Q2 |
 | `TestTierOneHintsAreTyped`, `TestEveryHintNameIsTyped` | every `SearchOptions` JSON name decodes to its tier-0/3 type; unknown names pass; each refusal of D4 | yes |
 | `TestTimeRangesFromOneInstant` | exact ranges for fixed instants and zones | n/a (new seam) |

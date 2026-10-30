@@ -19,10 +19,10 @@ commit (#171). One task is one developer's unit.
 
 ## 3. Typed tier-1 hints (#478, design D4)
 
-- [ ] 3.1 `TestTierOneHintsAreTyped` and `TestEveryHintNameIsTyped` (reflection over `SearchOptions` JSON tags; unknown
-  names unchanged; each refusal of design D4, naming domain, example, hint), failing on main (premise
-  `classifier_chain.go:89`, `examples.go:43`). Rewrite `TestFindBestMatch_PreservesOptions` (`"time_range": "week"`),
-  recorded in notes.
+- [ ] 3.1 `TestTierOneHintsAreTyped` and `TestEveryHintNameIsTyped` (the test walks the `SearchOptions` JSON tags by
+  reflection, so a field without a `case` fails; unknown names unchanged; each refusal of design D4, naming domain,
+  example, hint), failing on main (premise `classifier_chain.go:89`, `examples.go:43`). Rewrite
+  `TestFindBestMatch_PreservesOptions` (`"time_range": "week"`), recorded in notes.
 - [ ] 3.2 `NewEmbeddingClassifier` decodes and copies; README hint table loses its tier-1 column. Gate: as 2.2.
 
 ## 4. Field binding and ordinary phrases (#94, design D1)
@@ -36,7 +36,8 @@ commit (#171). One task is one developer's unit.
 
 - [ ] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (examples in the caller's
   words, intent `aggregation` with `operation: count` and intent `similarity`, plus a counting fake LLM client: the
-  default result, the client never called), failing on main (premise `classifier_chain.go:69-102`).
+  default result, the client never called; control: each question without its negation reaches tier 1), failing on main
+  (premise `classifier_chain.go:69-102`).
 - [ ] 5.2 `FuzzKeywordClassify` with the two laws of D2's spec requirement; seed, run count and any failure in
   notes. Gate: `task mutate:check` on one exclusion rule, survivors reported as survivors.
 - [ ] 5.3 Keyword exclusions and the chain rule; doc comments state D2's table. Gate: as 2.2.

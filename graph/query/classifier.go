@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -50,11 +51,12 @@ var (
 	pathPattern       = regexp.MustCompile(`(?i)\b(connect|relat|path|link|between)\w*`)
 )
 
-// Aggregation patterns — ordered from most-specific to least-specific so that
-// "total number of" and "how many" are matched before the bare "total" check.
+// Aggregation patterns: the triggers of the count, avg, sum, min and max operations.
+// The words are grammar, never domain words; the field after a trigger is the caller's.
+// Precedence is count > avg > min > max > sum (extractAggregation).
 var (
-	// count: "how many", "count", "total number of"
-	countPattern = regexp.MustCompile(`(?i)\b(how\s+many|total\s+number\s+of|count)\b`)
+	// count: "how many", "count", "total number of", "the number of" (not "a number of").
+	countPattern = regexp.MustCompile(`(?i)\b(how\s+many|total\s+number\s+of|the\s+number\s+of|count)\b`)
 	// average
 	avgPattern = regexp.MustCompile(`(?i)\b(average|avg|mean)\b`)
 	// sum: "sum" alone, or "total" when NOT followed by "number" (handled by order of checks)
@@ -62,7 +64,19 @@ var (
 	// min / max
 	minPattern = regexp.MustCompile(`(?i)\b(minimum|min)\b`)
 	maxPattern = regexp.MustCompile(`(?i)\b(maximum|max)\b`)
+	// A numeric extremum: an extremum word, one field word, then a value noun, as in
+	// "the lowest pressure reading". Group 1 is the extremum word, group 2 the field.
+	extremumPattern = regexp.MustCompile(`(?i)\b(smallest|lowest|largest|highest|greatest)\s+(\w+)\s+(?:values?|readings?|measurements?|levels?)\b`)
+	// Words that make an extremum phrase pick an entity rather than a number, when they come
+	// before it in its clause: "which pump has the highest pressure reading".
+	entityChoicePattern = regexp.MustCompile(`(?i)\b(which|who|with)\b`)
 )
+
+// clauseBreakPattern matches what ends a clause: one of ; , . : ? ! or the word "but".
+var clauseBreakPattern = regexp.MustCompile(`(?i)[;,.:?!]|\bbut\b`)
+
+// nextWordPattern reads the word that follows, after at least one space.
+var nextWordPattern = regexp.MustCompile(`^\s+(\w+)`)
 
 // Ranking patterns — "top N", "bottom N", "most", "least".
 var (
@@ -71,10 +85,6 @@ var (
 	mostPattern    = regexp.MustCompile(`(?i)\bmost\b`)
 	leastPattern   = regexp.MustCompile(`(?i)\bleast\b`)
 )
-
-// aggregationFieldPattern captures a noun following "of" in aggregation queries,
-// e.g. "average temperature of sensors" → "temperature".
-var aggregationFieldPattern = regexp.MustCompile(`(?i)\b(?:average|avg|mean|sum|total|min|max|minimum|maximum)\s+(\w+)\b`)
 
 // Entity extraction pattern - matches patterns like "sensor-001", "pump-42", "device-abc"
 var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
@@ -365,44 +375,93 @@ func (k *KeywordClassifier) extractSpatialBounds(query string) *SpatialBounds {
 }
 
 // extractAggregation detects aggregation intent and returns (aggregationType, aggregationField).
-// Patterns are checked in specificity order: count > avg > sum > min > max.
+// Patterns are checked in precedence order: count > avg > min > max > sum.
 // "total number of" binds to count before "total" alone can bind to sum.
-// aggregationField is extracted from adjacent noun context when available.
+// The field is the first word after the trigger that selected the type, skipping an optional
+// "of" and "the" ("mean of pressure" gives "pressure"); count takes no field.
 func (k *KeywordClassifier) extractAggregation(query string) (string, string) {
-	// count — "how many", "total number of", "count"
+	// count — "how many", "total number of", "the number of", "count"
 	if countPattern.MatchString(query) {
 		return AggregationCount, ""
 	}
 
 	// average / mean
-	if avgPattern.MatchString(query) {
-		return AggregationAvg, k.extractAggregationField(query)
+	if loc := avgPattern.FindStringIndex(query); loc != nil {
+		return AggregationAvg, fieldAfter(query[loc[1]:])
 	}
 
+	// A numeric extremum ("the lowest pressure reading") is min or max like the words below.
+	extremumWord, extremumField := numericExtremum(query)
+
 	// min / max (check before sum so "minimum" / "maximum" are not partially matched)
-	if minPattern.MatchString(query) {
-		return AggregationMin, k.extractAggregationField(query)
+	if loc := minPattern.FindStringIndex(query); loc != nil {
+		return AggregationMin, fieldAfter(query[loc[1]:])
 	}
-	if maxPattern.MatchString(query) {
-		return AggregationMax, k.extractAggregationField(query)
+	if extremumWord == "smallest" || extremumWord == "lowest" {
+		return AggregationMin, extremumField
+	}
+	if loc := maxPattern.FindStringIndex(query); loc != nil {
+		return AggregationMax, fieldAfter(query[loc[1]:])
+	}
+	if extremumWord != "" {
+		return AggregationMax, extremumField
 	}
 
 	// sum / total (bare "total" without "number of")
-	if sumPattern.MatchString(query) {
-		return AggregationSum, k.extractAggregationField(query)
+	if loc := sumPattern.FindStringIndex(query); loc != nil {
+		return AggregationSum, fieldAfter(query[loc[1]:])
 	}
 
 	return "", ""
 }
 
-// extractAggregationField attempts to extract the field/attribute being aggregated.
-// Looks for a noun following the aggregation verb, e.g. "average temperature" → "temperature".
-func (k *KeywordClassifier) extractAggregationField(query string) string {
-	matches := aggregationFieldPattern.FindStringSubmatch(query)
-	if len(matches) > 1 {
-		return matches[1]
+// fieldAfter returns the first word of rest, skipping an optional "of" and then an optional
+// "the". It returns "" when no word follows: the field is never one of the skipped words.
+func fieldAfter(rest string) string {
+	word, rest := nextWord(rest)
+	if strings.EqualFold(word, "of") {
+		word, rest = nextWord(rest)
 	}
-	return ""
+	if strings.EqualFold(word, "the") {
+		word, _ = nextWord(rest)
+	}
+	return word
+}
+
+// nextWord splits the word that follows s (after at least one space) from what comes after it.
+func nextWord(s string) (word, rest string) {
+	m := nextWordPattern.FindStringSubmatchIndex(s)
+	if m == nil {
+		return "", s
+	}
+	return s[m[2]:m[3]], s[m[1]:]
+}
+
+// numericExtremum returns the lower-cased extremum word and the field of the first numeric
+// extremum phrase in query whose clause has no "which", "who" or "with" before it, or two empty
+// strings. A field word of "of" or "the" is no field, so the phrase is not an extremum.
+func numericExtremum(query string) (word, field string) {
+	for _, m := range extremumPattern.FindAllStringSubmatchIndex(query, -1) {
+		field := query[m[4]:m[5]]
+		if strings.EqualFold(field, "of") || strings.EqualFold(field, "the") {
+			continue
+		}
+		if entityChoicePattern.MatchString(clauseBefore(query, m[0])) {
+			continue
+		}
+		return strings.ToLower(query[m[2]:m[3]]), field
+	}
+	return "", ""
+}
+
+// clauseBefore returns the text of the clause holding byte offset pos, from the clause's start
+// up to pos. A clause ends at ; , . : ? ! or the word "but".
+func clauseBefore(query string, pos int) string {
+	start := 0
+	for _, loc := range clauseBreakPattern.FindAllStringIndex(query[:pos], -1) {
+		start = loc[1]
+	}
+	return query[start:pos]
 }
 
 // extractRanking detects ranking intent ("top N", "bottom N", "most", "least") and

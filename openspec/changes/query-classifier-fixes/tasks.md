@@ -12,25 +12,25 @@ commit (#171). One task is one developer's unit.
 
 ## 2. Read-only query embedding (#96, design D3)
 
-- [ ] 2.1 `TestQueryEmbeddingIsReadOnly` (scores and vectors before thresholding, with and without intervening
+- [x] 2.1 `TestQueryEmbeddingIsReadOnly` (scores and vectors before thresholding, with and without intervening
   queries; construction still learns), failing on main (premise `classifier_embedding.go:104`; inventory Q2).
-- [ ] 2.2 `FindBestMatch` uses `GenerateQuery`; doc and README "Limits" line updated. Gate:
+- [x] 2.2 `FindBestMatch` uses `GenerateQuery`; doc and README "Limits" line updated. Gate:
   `go test -race -count=1 ./graph/query`.
 
 ## 3. Typed tier-1 hints (#478, design D4)
 
-- [ ] 3.1 `TestTierOneHintsAreTyped` and `TestEveryHintNameIsTyped` (the test walks the `SearchOptions` JSON tags by
+- [x] 3.1 `TestTierOneHintsAreTyped` and `TestEveryHintNameIsTyped` (the test walks the `SearchOptions` JSON tags by
   reflection, so a field without a `case` fails; unknown names unchanged; each refusal of design D4, naming domain,
   example, hint), failing on main (premise `classifier_chain.go:89`, `examples.go:43`). Rewrite
   `TestFindBestMatch_PreservesOptions` (`"time_range": "week"`), recorded in notes.
-- [ ] 3.2 `NewEmbeddingClassifier` decodes and copies; README hint table loses its tier-1 column. Gate: as 2.2.
+- [x] 3.2 `NewEmbeddingClassifier` decodes and copies; README hint table loses its tier-1 column. Gate: as 2.2.
 
 ## 4. Field binding and ordinary phrases (#94, design D1)
 
-- [ ] 4.1 `TestAggregationFieldBinding` and `TestOrdinaryAggregationPhrases` through `ClassifierChain.ClassifyQuery`
+- [x] 4.1 `TestAggregationFieldBinding` and `TestOrdinaryAggregationPhrases` through `ClassifierChain.ClassifyQuery`
   (R14, R17, R21, R23, R24, R26, R27, exact type and field; the descriptive mentions of design § Proving tests
   activate nothing), failing on main (premise `classifier.go:57-77`; inventory Q1).
-- [ ] 4.2 Patterns and field binding. Existing `TestKeywordClassifier_*` pass unchanged. Gate: as 2.2.
+- [x] 4.2 Patterns and field binding. Existing `TestKeywordClassifier_*` pass unchanged. Gate: as 2.2.
 
 ## 5. Exclusions (#95, design D2; after 4)
 

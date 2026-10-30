@@ -173,6 +173,26 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 		assert.ErrorContains(t, err, `"within 5km of 95,10"`)
 	})
 
+	// Every "last N" and "within" phrase is checked, not only the one that
+	// supplies the hint: a later impossible phrase still refuses the question.
+	// The keyword tier keeps the hint of the valid phrase that supplies it.
+	t.Run("a later impossible phrase", func(t *testing.T) {
+		for _, tt := range []struct{ query, phrase, bound, hint string }{
+			{"events from yesterday and the last 0 hours", "last 0 hours", "at least 1", "time_range"},
+			{"sensors within 5km of 10,10 and within 5km of 95,10", "within 5km of 95,10", "latitude", "geo_bounds"},
+		} {
+			got, err := chain.ClassifyQuery(t.Context(), tt.query)
+			assert.Nil(t, got, "%q: no result", tt.query)
+			assert.True(t, errs.IsInvalid(err), "%q: invalid input: %v", tt.query, err)
+			assert.ErrorContains(t, err, `"`+tt.phrase+`"`)
+			assert.ErrorContains(t, err, tt.bound)
+
+			opts, _, kerr := k.classify(tt.query, time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC))
+			assert.Error(t, kerr, "%q", tt.query)
+			assert.Contains(t, searchOptionsToMap(opts), tt.hint, "%q: the valid phrase keeps its hint", tt.query)
+		}
+	})
+
 	t.Run("other hints of a refused question stay with the keyword tier", func(t *testing.T) {
 		opts := k.ClassifyQuery(t.Context(), "how many sensors within 5km of 95,10")
 		assert.Equal(t, AggregationCount, opts.AggregationType)

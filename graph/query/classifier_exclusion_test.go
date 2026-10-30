@@ -65,8 +65,9 @@ func TestKeywordExclusions(t *testing.T) {
 // TestKeywordExclusionKeepsOtherHints: an excluded operation beside a
 // temporal hint leaves the temporal hint at tier 0.
 func TestKeywordExclusionKeepsOtherHints(t *testing.T) {
-	got := NewClassifierChain(NewKeywordClassifier(), nil).ClassifyQuery(t.Context(),
+	got, err := NewClassifierChain(NewKeywordClassifier(), nil).ClassifyQuery(t.Context(),
 		"Do not count sensors from yesterday")
+	require.NoError(t, err)
 	require.NotNil(t, got)
 	assert.Equal(t, 0, got.Tier)
 	assert.Contains(t, got.Options, "time_range")
@@ -127,7 +128,8 @@ func TestChainKeepsExclusions(t *testing.T) {
 			}}
 			chain := NewClassifierChain(NewKeywordClassifier(), examples, NewLLMClassifier(client, exclusionDomains()))
 
-			got := chain.ClassifyQuery(t.Context(), q.query)
+			got, err := chain.ClassifyQuery(t.Context(), q.query)
+			require.NoError(t, err)
 
 			assert.Equal(t, defaultResult(), got, "%q", q.query)
 			assert.Zero(t, client.calls.Load(), "%q: the LLM client was never called", q.query)
@@ -143,7 +145,8 @@ func TestChainKeepsExclusions(t *testing.T) {
 			"Count devices in error state": agg(AggregationCount, ""),
 			"Devices similar to TEMP-001":  {"use_embeddings": true},
 		} {
-			got := chain.ClassifyQuery(t.Context(), query)
+			got, err := chain.ClassifyQuery(t.Context(), query)
+			require.NoError(t, err)
 			require.NotNil(t, got, "%q", query)
 			assert.Equal(t, 0, got.Tier, "%q", query)
 			assert.Equal(t, want, got.Options, "%q", query)

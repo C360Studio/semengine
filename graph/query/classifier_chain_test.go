@@ -70,19 +70,18 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 		query          string
 		expectTier     int
 		expectIntent   string
-		validateResult func(t *testing.T, result *ClassificationResult)
+		validateResult func(t *testing.T, result *ClassificationResult, before, after time.Time)
 	}{
 		{
 			name:         "yesterday temporal keyword",
 			query:        "events from yesterday",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, before, after time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
-				// Should have TimeRange set
-				assert.NotNil(t, result.Options["time_range"])
+				assertCalendarDay(t, result.Options["time_range"], before, after, -1)
 			},
 		},
 		{
@@ -90,11 +89,11 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			query:        "show data from today",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, before, after time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
-				assert.NotNil(t, result.Options["time_range"])
+				assertCalendarDay(t, result.Options["time_range"], before, after, 0)
 			},
 		},
 		{
@@ -102,11 +101,11 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			query:        "deliveries from last week",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, before, after time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
-				assert.NotNil(t, result.Options["time_range"])
+				assertSpanEndingNow(t, result.Options["time_range"], before, after, 7*24*time.Hour)
 			},
 		},
 		{
@@ -114,7 +113,7 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			query:        "find items similar to ABC-123",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, _, _ time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
@@ -129,7 +128,7 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			query:        "devices connected to sensor-001",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, _, _ time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
@@ -145,7 +144,7 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			query:        "show items in zone-A",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, _, _ time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
@@ -161,7 +160,7 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			query:        "devices within 5km of 40.7128,-74.0060",
 			expectTier:   0,
 			expectIntent: "",
-			validateResult: func(t *testing.T, result *ClassificationResult) {
+			validateResult: func(t *testing.T, result *ClassificationResult, _, _ time.Time) {
 				require.NotNil(t, result)
 				assert.Equal(t, 0, result.Tier)
 				assert.Equal(t, 1.0, result.Confidence)
@@ -178,9 +177,12 @@ func TestClassifierChain_T0_KeywordMatch(t *testing.T) {
 			chain := NewClassifierChain(keyword, embedding)
 
 			ctx := t.Context()
-			result := chain.ClassifyQuery(ctx, tt.query)
+			before := time.Now()
+			result, err := chain.ClassifyQuery(ctx, tt.query)
+			after := time.Now()
+			require.NoError(t, err)
 
-			tt.validateResult(t, result)
+			tt.validateResult(t, result, before, after)
 		})
 	}
 }
@@ -235,7 +237,8 @@ func TestClassifierChain_T1T2_EmbeddingMatch(t *testing.T) {
 			chain := NewClassifierChain(keyword, embedding)
 
 			ctx := t.Context()
-			result := chain.ClassifyQuery(ctx, tt.query)
+			result, err := chain.ClassifyQuery(ctx, tt.query)
+			require.NoError(t, err)
 
 			tt.validateResult(t, result)
 		})
@@ -276,7 +279,8 @@ func TestClassifierChain_NoEmbedding_KeywordOnly(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			result := chain.ClassifyQuery(ctx, tt.query)
+			result, err := chain.ClassifyQuery(ctx, tt.query)
+			require.NoError(t, err)
 			tt.validateResult(t, result)
 		})
 	}
@@ -333,7 +337,8 @@ func TestClassifierChain_DefaultResult(t *testing.T) {
 			chain := NewClassifierChain(keyword, embedding)
 
 			ctx := t.Context()
-			result := chain.ClassifyQuery(ctx, tt.query)
+			result, err := chain.ClassifyQuery(ctx, tt.query)
+			require.NoError(t, err)
 
 			tt.validateResult(t, result)
 		})
@@ -353,14 +358,18 @@ func TestClassifierChain_ContextCancellation(t *testing.T) {
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 
-		assert.Nil(t, chain.ClassifyQuery(ctx, "test query"))
+		result, err := chain.ClassifyQuery(ctx, "test query")
+		require.NoError(t, err)
+		assert.Nil(t, result)
 	})
 
 	t.Run("context deadline already passed", func(t *testing.T) {
 		ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 		defer cancel()
 
-		assert.Nil(t, chain.ClassifyQuery(ctx, "test query"))
+		result, err := chain.ClassifyQuery(ctx, "test query")
+		require.NoError(t, err)
+		assert.Nil(t, result)
 	})
 }
 
@@ -370,7 +379,8 @@ func TestClassifierChain_NilChain(t *testing.T) {
 	ctx := t.Context()
 
 	// Should not panic on nil chain
-	result := chain.ClassifyQuery(ctx, "test query")
+	result, err := chain.ClassifyQuery(ctx, "test query")
+	require.NoError(t, err)
 
 	// Should return nil for nil chain
 	assert.Nil(t, result)
@@ -389,14 +399,17 @@ func TestClassifierChain_TierPriority(t *testing.T) {
 
 	// Query that has BOTH keyword AND might match embedding example
 	// "yesterday" is a keyword, and the query might be in examples
-	result := chain.ClassifyQuery(ctx, "show deliveries from yesterday")
+	before := time.Now()
+	result, err := chain.ClassifyQuery(ctx, "show deliveries from yesterday")
+	after := time.Now()
+	require.NoError(t, err)
 
 	require.NotNil(t, result)
 	// Should use T0 (keyword) and NOT check embedding
 	assert.Equal(t, 0, result.Tier)
 	assert.Equal(t, 1.0, result.Confidence)
 	// Should have temporal filter from keyword
-	assert.NotNil(t, result.Options["time_range"])
+	assertCalendarDay(t, result.Options["time_range"], before, after, -1)
 }
 
 // TestClassifierChain_ResultStructure tests ClassificationResult structure
@@ -439,7 +452,8 @@ func TestClassifierChain_ResultStructure(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx := t.Context()
-			result := chain.ClassifyQuery(ctx, tt.query)
+			result, err := chain.ClassifyQuery(ctx, tt.query)
+			require.NoError(t, err)
 			tt.validateResult(t, result)
 		})
 	}
@@ -454,7 +468,8 @@ func TestClassifierChain_OptionsPopulation(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("keyword options", func(t *testing.T) {
-		result := chain.ClassifyQuery(ctx, "find similar items")
+		result, err := chain.ClassifyQuery(ctx, "find similar items")
+		require.NoError(t, err)
 
 		require.NotNil(t, result)
 		assert.Equal(t, 0, result.Tier)
@@ -465,7 +480,8 @@ func TestClassifierChain_OptionsPopulation(t *testing.T) {
 	})
 
 	t.Run("embedding example options", func(t *testing.T) {
-		result := chain.ClassifyQuery(ctx, "Where is shipment ABC-123?")
+		result, err := chain.ClassifyQuery(ctx, "Where is shipment ABC-123?")
+		require.NoError(t, err)
 
 		require.NotNil(t, result)
 		if result.Tier > 0 {
@@ -502,8 +518,10 @@ func TestClassifierChain_ConcurrentAccess(t *testing.T) {
 		go func() {
 			for j := 0; j < numIterations; j++ {
 				query := queries[j%len(queries)]
-				result := chain.ClassifyQuery(ctx, query)
-				// Should not panic and should return valid result
+				result, err := chain.ClassifyQuery(ctx, query)
+				// Should not panic and should return valid result. assert, not
+				// require: FailNow must not run off the test goroutine.
+				assert.NoError(t, err)
 				assert.NotNil(t, result)
 			}
 			doneCh <- true
@@ -549,7 +567,8 @@ func TestClassifierChain_UnicodeQueries(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Should not panic on unicode
-			result := chain.ClassifyQuery(ctx, tt.query)
+			result, err := chain.ClassifyQuery(ctx, tt.query)
+			require.NoError(t, err)
 			assert.NotNil(t, result)
 		})
 	}

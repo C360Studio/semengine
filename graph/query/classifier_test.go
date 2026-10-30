@@ -2,6 +2,7 @@ package query
 
 import (
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -194,11 +195,13 @@ func TestKeywordClassifier_AggregationWithTemporal(t *testing.T) {
 	k := NewKeywordClassifier()
 	ctx := t.Context()
 
+	before := time.Now()
 	opts := k.ClassifyQuery(ctx, "How many sensors were active yesterday?")
+	after := time.Now()
 	require.NotNil(t, opts)
 
 	assert.Equal(t, AggregationCount, opts.AggregationType, "should detect count aggregation")
-	assert.NotNil(t, opts.TimeRange, "should also detect temporal 'yesterday'")
+	assertCalendarDay(t, opts.TimeRange, before, after, -1)
 }
 
 // TestKeywordClassifier_AggregationWithSpatial verifies that aggregation and spatial
@@ -221,16 +224,20 @@ func TestKeywordClassifier_ExistingPatternsUnaffected(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("temporal — yesterday", func(t *testing.T) {
+		before := time.Now()
 		opts := k.ClassifyQuery(ctx, "events from yesterday")
+		after := time.Now()
 		require.NotNil(t, opts)
-		assert.NotNil(t, opts.TimeRange)
+		assertCalendarDay(t, opts.TimeRange, before, after, -1)
 		assert.Empty(t, opts.AggregationType)
 	})
 
 	t.Run("temporal — last N days", func(t *testing.T) {
+		before := time.Now()
 		opts := k.ClassifyQuery(ctx, "data from last 7 days")
+		after := time.Now()
 		require.NotNil(t, opts)
-		assert.NotNil(t, opts.TimeRange)
+		assertSpanEndingNow(t, opts.TimeRange, before, after, 7*24*time.Hour)
 		assert.Empty(t, opts.AggregationType)
 	})
 

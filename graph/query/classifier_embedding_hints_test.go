@@ -125,7 +125,8 @@ func TestTierOneHintsAreTyped(t *testing.T) {
 		c, err := NewEmbeddingClassifier(t.Context(), []*DomainExamples{d}, 0.3)
 		require.NoError(t, err)
 
-		got := NewClassifierChain(nil, c).ClassifyQuery(t.Context(), question)
+		got, err := NewClassifierChain(nil, c).ClassifyQuery(t.Context(), question)
+		require.NoError(t, err)
 
 		require.NotNil(t, got)
 		require.Equal(t, 1, got.Tier)

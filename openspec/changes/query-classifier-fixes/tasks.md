@@ -44,11 +44,11 @@ commit (#171). One task is one developer's unit.
 
 ## 6. Clock and bounds (#479 items 1-2, design D5-D6)
 
-- [ ] 6.1 `TestTimeRangesFromOneInstant` (fixed instants and zones, week and month edges, a DST day) and
+- [x] 6.1 `TestTimeRangesFromOneInstant` (fixed instants and zones, week and month edges, a DST day) and
   `TestOutOfRangeNumbersAreRefused` (inventory Q3 cases: no result and an invalid-input error naming the phrase;
   pole clamp answers), the second failing on main (premise `classifier.go:223-357`). The temporal tests that assert
   `NotNil` only gain exact values.
-- [ ] 6.2 One `now` per question; bounds and refusal as D6; existing chain callers in the tests take the error.
+- [x] 6.2 One `now` per question; bounds and refusal as D6; existing chain callers in the tests take the error.
   Gate: as 2.2 and `go test -count=5 -cpu 1 -shuffle=on ./graph/query`.
 
 ## 7. Records and docs

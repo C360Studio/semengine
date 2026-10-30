@@ -2,6 +2,8 @@ package query
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"math"
 	"regexp"
 	"strconv"
@@ -105,27 +107,43 @@ var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 // different operations joined by "or" in one clause. A clause is the text between ; , . : ? !
 // (each followed by a space or the end of the question) or the word "but". These are word rules:
 // "not only count but average" reads count as negated.
+//
+// Time ranges come from one reading of the clock per question, in that instant's zone (the
+// server's time.Local): "today" is the server's calendar day. A phrase whose number is out of
+// range gives no hint and other hints stand: "last N hours" or "last N days" with N below 1 or
+// a span past a time.Duration (about 292 years), and "within R of lat,lon" with lat outside
+// [-90, 90], lon outside [-180, 180] or R not finite. ClassifierChain.ClassifyQuery refuses such
+// a question instead. A box is clamped to the poles, spans every longitude when it reaches one,
+// and is not wrapped across the antimeridian (East can exceed 180, West fall below -180).
 func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *SearchOptions {
-	opts, _ := k.classify(query)
+	opts, _, _ := k.classify(query, time.Now())
 	return opts
 }
 
-// classify is ClassifyQuery, also reporting whether it excluded an operation, so the chain can
-// keep the exclusion from later tiers.
-func (k *KeywordClassifier) classify(query string) (*SearchOptions, bool) {
+// classify is ClassifyQuery at the instant now: every time range comes from now, in now's zone
+// (design D5). It also reports whether it excluded an operation, so the chain can keep the
+// exclusion from later tiers, and returns an error naming each phrase whose number is out of
+// range (design D6), so the chain can refuse the question.
+func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOptions, bool, error) {
 	opts := &SearchOptions{
 		Query: query,
 	}
 
 	// Empty query returns empty options
 	if query == "" {
-		return opts, false
+		return opts, false, nil
 	}
 
 	excluded := excludedOperations(query)
 
+	// A phrase whose number is out of range gives no hint and is reported (design D6).
+	var outOfRange []error
+
 	// Extract temporal information (first match wins)
-	if timeRange := k.extractTemporal(query); timeRange != nil {
+	timeRange, err := k.extractTemporal(query, now)
+	if err != nil {
+		outOfRange = append(outOfRange, err)
+	} else if timeRange != nil {
 		opts.TimeRange = timeRange
 	}
 
@@ -164,7 +182,10 @@ func (k *KeywordClassifier) classify(query string) (*SearchOptions, bool) {
 	}
 
 	// Detect true spatial intent - "within Xkm of lat,lon"
-	if bounds := k.extractSpatialBounds(query); bounds != nil {
+	bounds, err := k.extractSpatialBounds(query)
+	if err != nil {
+		outOfRange = append(outOfRange, err)
+	} else if bounds != nil {
 		opts.GeoBounds = bounds
 	}
 
@@ -187,72 +208,77 @@ func (k *KeywordClassifier) classify(query string) (*SearchOptions, bool) {
 		}
 	}
 
-	return opts, len(excluded) > 0
+	return opts, len(excluded) > 0, errors.Join(outOfRange...)
 }
 
-// extractTemporal attempts to extract temporal range from query text.
-// Returns first match found, prioritizing specific patterns over general ones.
-func (k *KeywordClassifier) extractTemporal(query string) *TimeRange {
+// extractTemporal attempts to extract temporal range from query text, computed from now in
+// now's zone. Returns first match found, prioritizing specific patterns over general ones.
+// A "last N hours" or "last N days" phrase past its bound (lastSpan) gives no range and an
+// error naming the phrase; no later pattern is tried.
+func (k *KeywordClassifier) extractTemporal(query string, now time.Time) (*TimeRange, error) {
 	// Try yesterday
 	if yesterdayPattern.MatchString(query) {
-		return k.getYesterdayRange()
+		return k.getYesterdayRange(now), nil
 	}
 
 	// Try today
 	if todayPattern.MatchString(query) {
-		return k.getTodayRange()
+		return k.getTodayRange(now), nil
 	}
 
 	// Try "last N hours"
 	if matches := lastNHoursPattern.FindStringSubmatch(query); matches != nil {
-		if hours, err := strconv.Atoi(matches[1]); err == nil {
-			return k.getLastNHoursRange(hours)
+		span, err := lastSpan(matches[0], matches[1], time.Hour, "hours")
+		if err != nil {
+			return nil, err
 		}
+		return &TimeRange{Start: now.Add(-span), End: now}, nil
 	}
 
 	// Try "last N days"
 	if matches := lastNDaysPattern.FindStringSubmatch(query); matches != nil {
-		if days, err := strconv.Atoi(matches[1]); err == nil {
-			return k.getLastNDaysRange(days)
+		span, err := lastSpan(matches[0], matches[1], 24*time.Hour, "days")
+		if err != nil {
+			return nil, err
 		}
+		return &TimeRange{Start: now.Add(-span), End: now}, nil
 	}
 
 	// Try "last week"
 	if lastWeekPattern.MatchString(query) {
-		return k.getLastNDaysRange(7)
+		return k.getLastNDaysRange(now, 7), nil
 	}
 
 	// Try "last month"
 	if lastMonthPattern.MatchString(query) {
-		return k.getLastNDaysRange(30)
+		return k.getLastNDaysRange(now, 30), nil
 	}
 
 	// Try "last year"
 	if lastYearPattern.MatchString(query) {
-		return k.getLastNDaysRange(365)
+		return k.getLastNDaysRange(now, 365), nil
 	}
 
 	// Try "this week"
 	if thisWeekPattern.MatchString(query) {
-		return k.getThisWeekRange()
+		return k.getThisWeekRange(now), nil
 	}
 
 	// Try "this month"
 	if thisMonthPattern.MatchString(query) {
-		return k.getThisMonthRange()
+		return k.getThisMonthRange(now), nil
 	}
 
 	// Try "this year"
 	if thisYearPattern.MatchString(query) {
-		return k.getThisYearRange()
+		return k.getThisYearRange(now), nil
 	}
 
-	return nil
+	return nil, nil
 }
 
 // getYesterdayRange returns TimeRange for yesterday (00:00:00 to 23:59:59).
-func (k *KeywordClassifier) getYesterdayRange() *TimeRange {
-	now := time.Now()
+func (k *KeywordClassifier) getYesterdayRange(now time.Time) *TimeRange {
 	yesterdayStart := time.Date(now.Year(), now.Month(), now.Day()-1, 0, 0, 0, 0, now.Location())
 	yesterdayEnd := time.Date(now.Year(), now.Month(), now.Day()-1, 23, 59, 59, 999999999, now.Location())
 	return &TimeRange{
@@ -262,8 +288,7 @@ func (k *KeywordClassifier) getYesterdayRange() *TimeRange {
 }
 
 // getTodayRange returns TimeRange for today (00:00:00 to 23:59:59).
-func (k *KeywordClassifier) getTodayRange() *TimeRange {
-	now := time.Now()
+func (k *KeywordClassifier) getTodayRange(now time.Time) *TimeRange {
 	todayStart := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
 	todayEnd := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 999999999, now.Location())
 	return &TimeRange{
@@ -272,19 +297,25 @@ func (k *KeywordClassifier) getTodayRange() *TimeRange {
 	}
 }
 
-// getLastNHoursRange returns TimeRange from N hours ago to now.
-func (k *KeywordClassifier) getLastNHoursRange(hours int) *TimeRange {
-	now := time.Now()
-	start := now.Add(-time.Duration(hours) * time.Hour)
-	return &TimeRange{
-		Start: start,
-		End:   now,
+// lastSpan reads the N of a "last N <unit>" phrase as a span (#479 item 2, design D6). N must
+// be at least 1, and N units must fit a time.Duration (about 292 years); past either bound it
+// returns an error naming the phrase and the bound.
+func lastSpan(phrase, digits string, unit time.Duration, unitName string) (time.Duration, error) {
+	limit := int64(time.Duration(math.MaxInt64) / unit)
+	n, err := strconv.ParseInt(digits, 10, 64)
+	// The patterns admit only ASCII digits, so a parse error is a number past int64.
+	if err != nil || n > limit {
+		return 0, fmt.Errorf("%q: the span must fit a time.Duration, at most %d %s", phrase, limit, unitName)
 	}
+	if n < 1 {
+		return 0, fmt.Errorf("%q: the number must be at least 1", phrase)
+	}
+	return time.Duration(n) * unit, nil
 }
 
-// getLastNDaysRange returns TimeRange from N days ago to now.
-func (k *KeywordClassifier) getLastNDaysRange(days int) *TimeRange {
-	now := time.Now()
+// getLastNDaysRange returns TimeRange from N days ago to now, for the fixed spans of "last
+// week", "last month" and "last year".
+func (k *KeywordClassifier) getLastNDaysRange(now time.Time, days int) *TimeRange {
 	start := now.Add(-time.Duration(days) * 24 * time.Hour)
 	return &TimeRange{
 		Start: start,
@@ -293,8 +324,7 @@ func (k *KeywordClassifier) getLastNDaysRange(days int) *TimeRange {
 }
 
 // getThisWeekRange returns TimeRange for current week (Sunday to Saturday).
-func (k *KeywordClassifier) getThisWeekRange() *TimeRange {
-	now := time.Now()
+func (k *KeywordClassifier) getThisWeekRange(now time.Time) *TimeRange {
 	// Find the start of the week (Sunday)
 	weekday := int(now.Weekday())
 	weekStart := time.Date(now.Year(), now.Month(), now.Day()-weekday, 0, 0, 0, 0, now.Location())
@@ -307,13 +337,12 @@ func (k *KeywordClassifier) getThisWeekRange() *TimeRange {
 }
 
 // getThisMonthRange returns TimeRange for current month.
-func (k *KeywordClassifier) getThisMonthRange() *TimeRange {
-	now := time.Now()
+func (k *KeywordClassifier) getThisMonthRange(now time.Time) *TimeRange {
 	// First day of month
 	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
 	// Last day of month
 	nextMonth := monthStart.AddDate(0, 1, 0)
-	monthEnd := nextMonth.Add(-time.Second)
+	monthEnd := nextMonth.Add(-time.Nanosecond)
 	return &TimeRange{
 		Start: monthStart,
 		End:   monthEnd,
@@ -321,8 +350,7 @@ func (k *KeywordClassifier) getThisMonthRange() *TimeRange {
 }
 
 // getThisYearRange returns TimeRange for current year.
-func (k *KeywordClassifier) getThisYearRange() *TimeRange {
-	now := time.Now()
+func (k *KeywordClassifier) getThisYearRange(now time.Time) *TimeRange {
 	// First day of year
 	yearStart := time.Date(now.Year(), time.January, 1, 0, 0, 0, 0, now.Location())
 	// Last day of year
@@ -347,53 +375,66 @@ func (k *KeywordClassifier) extractEntityID(query string) string {
 // extractSpatialBounds attempts to extract spatial bounds from query text.
 // Handles patterns like "within 5km of 40.7128,-74.0060".
 // Converts radius-based queries to bounding boxes.
-func (k *KeywordClassifier) extractSpatialBounds(query string) *SpatialBounds {
+//
+// A phrase with a latitude outside [-90, 90], a longitude outside [-180, 180] or a radius that is
+// not a finite number gives no box and an error naming the phrase and the bound (#479 item 2,
+// design D6). A radius of zero gives no box and no error, as at the pin. The rest is geometry:
+// North and South are clamped to 90 and -90, a box that reaches a pole spans every longitude
+// (West -180, East 180), and a box crossing the antimeridian is not wrapped, so its East can
+// exceed 180 or its West fall below -180.
+func (k *KeywordClassifier) extractSpatialBounds(query string) (*SpatialBounds, error) {
 	matches := withinPattern.FindStringSubmatch(query)
 	if len(matches) < 5 {
-		return nil
+		return nil, nil
 	}
+	phrase := matches[0]
 
-	// Parse radius value
-	radiusStr := matches[1]
-	radius, err := strconv.ParseFloat(radiusStr, 64)
-	if err != nil || radius <= 0 {
-		return nil
+	// The pattern admits only decimal digits, so a parse error is a number past float64
+	// (ParseFloat returns it as an infinity).
+	radius, err := strconv.ParseFloat(matches[1], 64)
+	if err != nil {
+		return nil, fmt.Errorf("%q: the radius must be a finite number", phrase)
 	}
 
 	// Parse unit and convert to kilometers
-	unit := matches[2]
-	switch unit {
+	switch matches[2] {
 	case "m":
 		radius = radius / 1000.0 // meters to km
 	case "miles", "mile":
 		radius = radius * 1.60934 // miles to km
 	}
 	// "km" needs no conversion
-
-	// Parse coordinates
-	latStr := matches[3]
-	lonStr := matches[4]
-	lat, err := strconv.ParseFloat(latStr, 64)
-	if err != nil {
-		return nil
+	if math.IsInf(radius, 0) {
+		return nil, fmt.Errorf("%q: the radius must be a finite number", phrase)
 	}
-	lon, err := strconv.ParseFloat(lonStr, 64)
-	if err != nil {
-		return nil
+
+	lat, err := strconv.ParseFloat(matches[3], 64)
+	if err != nil || lat < -90 || lat > 90 {
+		return nil, fmt.Errorf("%q: the latitude must be in [-90, 90]", phrase)
+	}
+	lon, err := strconv.ParseFloat(matches[4], 64)
+	if err != nil || lon < -180 || lon > 180 {
+		return nil, fmt.Errorf("%q: the longitude must be in [-180, 180]", phrase)
+	}
+	if radius <= 0 {
+		return nil, nil
 	}
 
 	// Convert radius to approximate degrees (rough approximation)
 	// 1 degree latitude ≈ 111 km
 	// 1 degree longitude ≈ 111 km * cos(latitude)
 	latDelta := radius / 111.0
-	lonDelta := radius / (111.0 * cosDegrees(lat))
-
-	return &SpatialBounds{
-		North: lat + latDelta,
-		South: lat - latDelta,
-		East:  lon + lonDelta,
-		West:  lon - lonDelta,
+	bounds := &SpatialBounds{North: lat + latDelta, South: lat - latDelta}
+	if bounds.North >= 90 || bounds.South <= -90 {
+		bounds.North = min(bounds.North, 90)
+		bounds.South = max(bounds.South, -90)
+		bounds.East, bounds.West = 180, -180
+		return bounds, nil
 	}
+	lonDelta := radius / (111.0 * cosDegrees(lat))
+	bounds.East = lon + lonDelta
+	bounds.West = lon - lonDelta
+	return bounds, nil
 }
 
 // extractAggregation detects aggregation intent and returns (aggregationType, aggregationField).

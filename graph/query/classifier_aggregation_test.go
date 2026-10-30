@@ -29,7 +29,8 @@ func runAggregationCases(t *testing.T, cases []aggregationCase) {
 	chain := NewClassifierChain(NewKeywordClassifier(), nil)
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := chain.ClassifyQuery(t.Context(), tc.query)
+			got, err := chain.ClassifyQuery(t.Context(), tc.query)
+			require.NoError(t, err)
 			require.NotNil(t, got)
 			if len(tc.want) == 0 {
 				assert.Equal(t, defaultResult(), got, "%q activates nothing", tc.query)

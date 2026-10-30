@@ -38,7 +38,8 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
   the proposal now states), then three rows added to both (approval and track; Close hygiene; footer and marker),
   each naming its canonical home and what enforces it. Gate: `wc -c AGENTS.md` under 24,000; `task ateam:doctor` (row
   parity).
-  Done in f6fea74, with cuts outside § 5 on the coordinator's decision (`notes/3.2.md`): `wc -c AGENTS.md` 23948;
+  Done in f6fea74, with cuts outside § 5 on the coordinator's decision (`notes/3.2.md`): `wc -c AGENTS.md` 23948
+  (23,980 after the review fixes in 295635a);
   `task ateam:doctor` `"passed": true`, `"violations": null`; § 5 has 20 rows in both files.
 - [x] 3.3 `.agents/contracts/semengine-architect.md` § Required workflow: the track declaration and the approval gate
   on the proposal and design. Gate: `task docs:check`.
@@ -46,7 +47,12 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
 
 ## 4. Review and archive
 
-- [ ] 4.1 In-house review, then the cross-agent record on the PR in ateam's grammar (a `.agents/contracts/` file
+- [x] 4.1 In-house review, then the cross-agent record on the PR in ateam's grammar (a `.agents/contracts/` file
   makes this a code pull request); `implemented-by:` and `reviewed-by:` with `(model, effort)` in the PR body.
-- [ ] 4.2 Archive as the last content commit. Gate: `task spec:check` and `task docs:check`; `task verify` once on
+  Done: in-house `semengine-reviewer` APPROVE at ef2e386 (three MEDIUM and four LOW wording findings, fixed in
+  295635a); Codex record PR #473 comment 6520647481, `Reviewed at 295635a`, `Verdict: APPROVE`,
+  `reviewed-by: codex (gpt-6-astra, high)`, no actionable findings.
+- [x] 4.2 Archive as the last content commit. Gate: `task spec:check` and `task docs:check`; `task verify` once on
   the final head.
+  Done in the archive commit (no spec sync: `skip_specs: true`); both gates green; `task verify` passed at 295635a in
+  both reviews, and the archive commit moves files only.

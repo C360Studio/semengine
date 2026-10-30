@@ -11,7 +11,7 @@ merged pull requests (`ateam state prune --dry-run`, 2026-10-30), not the eight 
 
 Owner ruling on this epic: match ateam unless there is a very good reason not to, and record the divergence.
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-10-30), in session, recorded on #451.
 
 ## What Changes
 

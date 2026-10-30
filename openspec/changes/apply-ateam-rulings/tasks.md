@@ -5,9 +5,10 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and tasks committed; draft PR opened with `Closes #451`, `Closes #447` and `Addresses #446`.
+- [x] 1.1 Proposal and tasks committed; draft PR opened with `Closes #451`, `Closes #447` and `Addresses #446`.
   Gate: `task spec:check` and `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval.
+  Done in c875b06; draft PR #473. Owner approved the proposal in session on 2026-10-30, choosing also to drop the two
+  closed-PR worktrees (`Approved-by:` filled, recorded on #451).
 
 ## 2. Worktrees (ruled on #447 item 6; no approval needed)
 
@@ -15,12 +16,15 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
   `git worktree remove` the three clean detached checkouts (`claude-fix-456-guard-watcher-drain`,
   `claude-natsclient-fixture-open-195`, `claude-review-pr-472`). Kept: `claude/adr-063-store-substrate` (#435
   closed, 1 unpushed commit), `claude/fix-420-keysbyfilter-drain-join` (#453 closed, 1 unpushed commit),
-  `codex/review-pr-414` (another agent's). Gate: `ateam state prune --dry-run` prints no `would remove`;
+  `codex/review-pr-414` (another agent's), the first two pending the owner's word. Gate: `ateam state prune --dry-run`
+  prints no `would remove`;
   `ateam state pickup` lists no `merged via`; the output is pasted on the PR.
   Done 2026-10-30: prune removed 16 worktrees and their local branches (each `merged via #n; no remote branch`);
   the three detached checkouts removed by `git worktree remove`; the dry-run after prints no `would remove`;
   `ateam state pickup` prints no `merged via`; four worktrees remain (main, this claim, the two kept closed ones
-  and codex's). Output on PR #473.
+  and codex's). Output on PR #473. On the owner's approval choice of 2026-10-30 the two closed-PR worktrees
+  (`claude/adr-063-store-substrate` at 8f92c7a9, `claude/fix-420-keysbyfilter-drain-join` at a10b3a48) and their
+  branches were dropped too; `codex/review-pr-414` alone remains beside main and this claim.
 
 ## 3. Protocol, rule rows, contract
 

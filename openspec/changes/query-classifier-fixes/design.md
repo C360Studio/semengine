@@ -119,3 +119,4 @@ first, this PR merges `origin/main` and re-runs `task verify`.
 ## Open Questions (owner)
 
 1. "Today" keeps the host zone, declared (recommended, as the pin), or is always UTC?
+   Answered 2026-10-30: host zone (#479 comment 6525906611).

@@ -58,11 +58,14 @@ func TestKeywordExclusions(t *testing.T) {
 		{"min or max", "the minimum or maximum pressure", nil},
 		{"or the before the second", "count sensors or the average pressure", nil},
 		{"or an before the second", "count sensors or an average pressure", nil},
+		{"or a before the second", "Maybe average pressure or a count of sensors; I have not decided", nil},
+		{"or an, count first", "Maybe count sensors or an average pressure; I have not decided", nil},
 		// "or" joining nouns or other words leaves the operations decided.
 		{"or joins nouns", "How many sensors or pumps have an average temperature above 30?", agg(AggregationCount, "")},
 		{"or joins adjectives", "Is the maximum pressure higher or lower than the average?",
 			agg(AggregationAvg, "")},
 		{"or joins verbs", "Count sensors that failed or are likely to", agg(AggregationCount, "")},
+		{"or a joins nouns", "Count sensors with a pump or a valve", agg(AggregationCount, "")},
 		// "likely" is not the similarity word "like".
 		{"likely is no similarity", "Show sensors likely to fail", nil},
 

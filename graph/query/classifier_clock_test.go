@@ -1,6 +1,7 @@
 package query
 
 import (
+	"context"
 	"testing"
 	"time"
 	_ "time/tzdata" // the zones below load the same on every machine
@@ -111,8 +112,7 @@ func TestTimeRangesFromOneInstant(t *testing.T) {
 	k := NewKeywordClassifier()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			opts, _, err := k.classify(tt.query, tt.now)
-			require.NoError(t, err)
+			opts, _ := k.classify(tt.query, tt.now)
 			require.NotNil(t, opts.TimeRange)
 			assert.True(t, tt.wantStart.Equal(opts.TimeRange.Start), "start: want %s, got %s", tt.wantStart, opts.TimeRange.Start)
 			assert.True(t, tt.wantEnd.Equal(opts.TimeRange.End), "end: want %s, got %s", tt.wantEnd, opts.TimeRange.End)
@@ -140,6 +140,10 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 		{"events in the last 0 hours", "last 0 hours", "at least 1"},
 		{"events in the last 0 days", "last 0 days", "at least 1"},
 		{"events in the last 99999999999999999999 hours", "last 99999999999999999999 hours", "at most 2562047 hours"},
+		// A negative N is below 1, however large.
+		{"events in the last -1 hours", "last -1 hours", "at least 1"},
+		{"events in the last -3 days", "last -3 days", "at least 1"},
+		{"events in the last -99999999999999999999 hours", "last -99999999999999999999 hours", "at least 1"},
 		{"sensors within 5km of -90.5,10", "within 5km of -90.5,10", "latitude"},
 		{"sensors within 5km of 10,-180.01", "within 5km of 10,-180.01", "longitude"},
 		// A zero radius gives no box, but a bad coordinate is still refused.
@@ -179,6 +183,8 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 	t.Run("a later impossible phrase", func(t *testing.T) {
 		for _, tt := range []struct{ query, phrase, bound, hint string }{
 			{"events from yesterday and the last 0 hours", "last 0 hours", "at least 1", "time_range"},
+			{"events from yesterday and the last -2 hours", "last -2 hours", "at least 1", "time_range"},
+			{"events in the last 3 hours and the last -1 days", "last -1 days", "at least 1", "time_range"},
 			{"sensors within 5km of 10,10 and within 5km of 95,10", "within 5km of 95,10", "latitude", "geo_bounds"},
 		} {
 			got, err := chain.ClassifyQuery(t.Context(), tt.query)
@@ -187,8 +193,8 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 			assert.ErrorContains(t, err, `"`+tt.phrase+`"`)
 			assert.ErrorContains(t, err, tt.bound)
 
-			opts, _, kerr := k.classify(tt.query, time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC))
-			assert.Error(t, kerr, "%q", tt.query)
+			assert.Error(t, numbersOutOfRange(tt.query), "%q", tt.query)
+			opts, _ := k.classify(tt.query, time.Date(2026, 10, 30, 12, 0, 0, 0, time.UTC))
 			assert.Contains(t, searchOptionsToMap(opts), tt.hint, "%q: the valid phrase keeps its hint", tt.query)
 		}
 	})
@@ -208,8 +214,8 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 			"events in the last 2562047 hours": 2562047 * time.Hour,
 			"events in the last 106751 days":   106751 * 24 * time.Hour,
 		} {
-			opts, _, err := k.classify(query, now)
-			require.NoError(t, err, "%q", query)
+			require.NoError(t, numbersOutOfRange(query), "%q", query)
+			opts, _ := k.classify(query, now)
 			require.NotNil(t, opts.TimeRange, "%q", query)
 			assert.True(t, now.Add(-span).Equal(opts.TimeRange.Start), "%q", query)
 			assert.True(t, now.Equal(opts.TimeRange.End), "%q", query)
@@ -243,6 +249,82 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 			assert.InDelta(t, tt.want.West, box.West, 1e-9, "west")
 		})
 	}
+}
+
+// TestOutOfRangeRefusedWithoutKeywordTier: the refusal does not depend on the
+// keyword tier being composed (#479 item 2). With no keyword classifier, and
+// with later tiers that would answer, the chain gives no result, an
+// invalid-input error naming the phrase, and asks no later tier.
+func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
+	questions := []struct{ query, phrase, bound string }{
+		{"events in the last 3000000 hours", "last 3000000 hours", "at most 2562047 hours"},
+		{"sensors within 5km of 95,10", "within 5km of 95,10", "latitude"},
+		{"events in the last -1 hours", "last -1 hours", "at least 1"},
+	}
+	// Each question gets an example tier holding the pin's iot examples and
+	// the question word for word, so that tier would answer it (checked below).
+	const threshold = 0.7
+	domainsFor := func(query string) []*DomainExamples {
+		domains := exclusionDomains()
+		domains[0].Examples = append(domains[0].Examples, Example{Query: query, Intent: "temporal_filter",
+			Options: map[string]any{"status_filter": "active"}})
+		return domains
+	}
+
+	assertRefused := func(t *testing.T, chain *ClassifierChain, q struct{ query, phrase, bound string }) {
+		t.Helper()
+		got, err := chain.ClassifyQuery(t.Context(), q.query)
+		assert.Nil(t, got, "%q: no result", q.query)
+		assert.Error(t, err, "%q", q.query)
+		assert.True(t, errs.IsInvalid(err), "%q: invalid input: %v", q.query, err)
+		assert.ErrorContains(t, err, `"`+q.phrase+`"`)
+		assert.ErrorContains(t, err, q.bound)
+	}
+
+	t.Run("no tier composed", func(t *testing.T) {
+		chain := NewClassifierChain(nil, nil)
+		for _, q := range questions {
+			assertRefused(t, chain, q)
+		}
+	})
+
+	t.Run("an example tier that would answer", func(t *testing.T) {
+		for _, q := range questions {
+			examplesTier, err := NewEmbeddingClassifier(t.Context(), domainsFor(q.query), threshold)
+			require.NoError(t, err)
+			match, score := examplesTier.FindBestMatch(t.Context(), q.query)
+			require.NotNil(t, match, "%q: score %v", q.query, score)
+			require.Equal(t, q.query, match.Query, "the example tier alone answers %q", q.query)
+			require.GreaterOrEqual(t, score, threshold, "%q", q.query)
+
+			assertRefused(t, NewClassifierChain(nil, examplesTier), q)
+		}
+	})
+
+	t.Run("an LLM tier that would answer", func(t *testing.T) {
+		client := &countingLLMClient{respond: func(context.Context) (string, error) {
+			return `{"strategy":"semantic"}`, nil
+		}}
+		chain := NewClassifierChain(nil, nil, NewLLMClassifier(client, nil))
+		for _, q := range questions {
+			assertRefused(t, chain, q)
+		}
+		assert.Zero(t, client.calls.Load(), "the LLM client was never called")
+	})
+
+	// The refusal is the only change: a question in range still reaches the
+	// later tiers when the keyword tier is not composed.
+	t.Run("in range control", func(t *testing.T) {
+		client := &countingLLMClient{respond: func(context.Context) (string, error) {
+			return `{"strategy":"semantic"}`, nil
+		}}
+		chain := NewClassifierChain(nil, nil, NewLLMClassifier(client, nil))
+		got, err := chain.ClassifyQuery(t.Context(), "events in the last 3 hours")
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		assert.Equal(t, 3, got.Tier)
+		assert.Equal(t, int64(1), client.calls.Load())
+	})
 }
 
 func zeros(n int) string {

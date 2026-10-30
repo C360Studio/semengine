@@ -70,9 +70,10 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // A question with an out-of-range number is refused (#479 item 2): no result and an invalid-input
 // error (errs.IsInvalid) naming the phrase and the bound it broke. The bounds: "last N hours" and
 // "last N days" need N of at least 1 and N hours or days within a time.Duration (about 292
-// years); "within R of lat,lon" needs lat in [-90, 90], lon in [-180, 180] and R finite. No
-// later tier is asked: answering without the phrase's filter would answer a wider question than
-// the one asked. Every other outcome comes with a nil error.
+// years), so a negative N is refused; "within R of lat,lon" needs lat in [-90, 90], lon in
+// [-180, 180] and R finite. The refusal holds whichever tiers are composed, the keyword tier
+// included or not, and no tier is asked: answering without the phrase's filter would answer a
+// wider question than the one asked. Every other outcome comes with a nil error.
 //
 // The keyword tier reads the clock once per question; "today", "yesterday", "this week" and the
 // other calendar ranges are in that instant's zone, the server's time.Local.
@@ -91,12 +92,14 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) (*Cla
 		return nil, nil
 	}
 
+	// A question with an out-of-range number is refused whichever tiers are composed (#479 item 2).
+	if err := numbersOutOfRange(query); err != nil {
+		return nil, errs.WrapInvalid(err, "ClassifierChain", "ClassifyQuery", "read the question's numbers")
+	}
+
 	// T0: Try keyword classifier first (if available)
 	if c.keyword != nil {
-		opts, excluded, err := c.keyword.classify(query, time.Now())
-		if err != nil {
-			return nil, errs.WrapInvalid(err, "ClassifierChain", "ClassifyQuery", "read the question's numbers")
-		}
+		opts, excluded := c.keyword.classify(query, time.Now())
 		if hasExplicitIntent(opts) {
 			return &ClassificationResult{
 				Tier:       0,

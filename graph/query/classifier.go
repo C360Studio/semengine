@@ -26,12 +26,13 @@ func NewKeywordClassifier() *KeywordClassifier {
 	return &KeywordClassifier{}
 }
 
-// Temporal patterns
+// Temporal patterns. The N of "last N hours" and "last N days" is read signed, so a negative N
+// reaches lastSpan's lower bound and is refused.
 var (
 	yesterdayPattern  = regexp.MustCompile(`(?i)(?:^|[^-])\byesterday\b`)
 	todayPattern      = regexp.MustCompile(`(?i)\btoday\b`)
-	lastNHoursPattern = regexp.MustCompile(`(?i)\blast\s+(\d+)\s+hours?\b`)
-	lastNDaysPattern  = regexp.MustCompile(`(?i)\blast\s+(\d+)\s+days?\b`)
+	lastNHoursPattern = regexp.MustCompile(`(?i)\blast\s+(-?\d+)\s+hours?\b`)
+	lastNDaysPattern  = regexp.MustCompile(`(?i)\blast\s+(-?\d+)\s+days?\b`)
 	lastWeekPattern   = regexp.MustCompile(`(?i)\blast\s+week\b`)
 	lastMonthPattern  = regexp.MustCompile(`(?i)\blast\s+month\b`)
 	lastYearPattern   = regexp.MustCompile(`(?i)\blast\s+year\b`)
@@ -110,42 +111,34 @@ var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 //
 // Time ranges come from one reading of the clock per question, in that instant's zone (the
 // server's time.Local): "today" is the server's calendar day. A phrase whose number is out of
-// range gives no hint and other hints stand: "last N hours" or "last N days" with N below 1 or
-// a span past a time.Duration (about 292 years), and "within R of lat,lon" with lat outside
-// [-90, 90], lon outside [-180, 180] or R not finite. ClassifierChain.ClassifyQuery refuses such
-// a question instead. A box is clamped to the poles, spans every longitude when it reaches one,
+// range gives no hint and other hints stand: "last N hours" or "last N days" with N below 1
+// (negative N included) or a span past a time.Duration (about 292 years), and "within R of
+// lat,lon" with lat outside [-90, 90], lon outside [-180, 180] or R not finite.
+// ClassifierChain.ClassifyQuery refuses such a question instead. A box is clamped to the poles, spans every longitude when it reaches one,
 // and is not wrapped across the antimeridian (East can exceed 180, West fall below -180).
 func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *SearchOptions {
-	opts, _, _ := k.classify(query, time.Now())
+	opts, _ := k.classify(query, time.Now())
 	return opts
 }
 
 // classify is ClassifyQuery at the instant now: every time range comes from now, in now's zone
 // (design D5). It also reports whether it excluded an operation, so the chain can keep the
-// exclusion from later tiers, and returns an error naming each phrase whose number is out of
-// range (design D6), so the chain can refuse the question.
-func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOptions, bool, error) {
+// exclusion from later tiers. A phrase whose number is out of range gives no hint; the chain
+// refuses such a question through numbersOutOfRange before it asks any tier (design D6).
+func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOptions, bool) {
 	opts := &SearchOptions{
 		Query: query,
 	}
 
 	// Empty query returns empty options
 	if query == "" {
-		return opts, false, nil
+		return opts, false
 	}
 
 	excluded := excludedOperations(query)
 
-	// A phrase whose number is out of range gives no hint and is reported (design D6); a valid
-	// phrase that supplies a hint keeps it.
-	var outOfRange []error
-
 	// Extract temporal information (first match wins)
-	timeRange, err := k.extractTemporal(query, now)
-	if err != nil {
-		outOfRange = append(outOfRange, err)
-	}
-	if timeRange != nil {
+	if timeRange := k.extractTemporal(query, now); timeRange != nil {
 		opts.TimeRange = timeRange
 	}
 
@@ -184,11 +177,7 @@ func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOption
 	}
 
 	// Detect true spatial intent - "within Xkm of lat,lon"
-	bounds, err := k.extractSpatialBounds(query)
-	if err != nil {
-		outOfRange = append(outOfRange, err)
-	}
-	if bounds != nil {
+	if bounds := k.extractSpatialBounds(query); bounds != nil {
 		opts.GeoBounds = bounds
 	}
 
@@ -211,15 +200,14 @@ func (k *KeywordClassifier) classify(query string, now time.Time) (*SearchOption
 		}
 	}
 
-	return opts, len(excluded) > 0, errors.Join(outOfRange...)
+	return opts, len(excluded) > 0
 }
 
-// extractTemporal attempts to extract temporal range from query text, computed from now in
-// now's zone. Returns first match found, prioritizing specific patterns over general ones.
-// Every "last N hours" and "last N days" phrase in the question is checked (lastSpan), not only
-// the one that would supply the range: the error names each phrase past its bound. When the
-// phrase that supplies the range is one of them, there is no range and no later pattern is tried.
-func (k *KeywordClassifier) extractTemporal(query string, now time.Time) (*TimeRange, error) {
+// numbersOutOfRange returns an error naming each phrase of query whose number is out of range
+// (#479 item 2, design D6), or nil. Every "last N hours", "last N days" and "within R of
+// lat,lon" phrase is checked, not only the one that would supply a hint. It reads no tier's
+// state, so the chain refuses such a question whichever tiers are composed.
+func numbersOutOfRange(query string) error {
 	var outOfRange []error
 	for _, p := range []struct {
 		pattern  *regexp.Regexp
@@ -232,12 +220,24 @@ func (k *KeywordClassifier) extractTemporal(query string, now time.Time) (*TimeR
 			}
 		}
 	}
+	for _, m := range withinPattern.FindAllStringSubmatch(query, -1) {
+		if _, err := withinBounds(m); err != nil {
+			outOfRange = append(outOfRange, err)
+		}
+	}
+	return errors.Join(outOfRange...)
+}
+
+// extractTemporal attempts to extract temporal range from query text, computed from now in
+// now's zone. Returns first match found, prioritizing specific patterns over general ones.
+// When the phrase that supplies the range is out of range there is no range and no later
+// pattern is tried; numbersOutOfRange names it.
+func (k *KeywordClassifier) extractTemporal(query string, now time.Time) *TimeRange {
 	timeRange, err := k.firstTimeRange(query, now)
 	if err != nil {
-		// The loop above has already named this phrase.
-		timeRange = nil
+		return nil
 	}
-	return timeRange, errors.Join(outOfRange...)
+	return timeRange
 }
 
 // firstTimeRange is extractTemporal's first match. A "last N" phrase past its bound gives no
@@ -329,13 +329,14 @@ func (k *KeywordClassifier) getTodayRange(now time.Time) *TimeRange {
 // returns an error naming the phrase and the bound.
 func lastSpan(phrase, digits string, unit time.Duration, unitName string) (time.Duration, error) {
 	limit := int64(time.Duration(math.MaxInt64) / unit)
+	// The patterns admit only an optional '-' and ASCII digits, so a parse error is a number
+	// past int64; ParseInt then returns math.MinInt64 or math.MaxInt64 by its sign.
 	n, err := strconv.ParseInt(digits, 10, 64)
-	// The patterns admit only ASCII digits, so a parse error is a number past int64.
-	if err != nil || n > limit {
-		return 0, fmt.Errorf("%q: the span must fit a time.Duration, at most %d %s", phrase, limit, unitName)
-	}
 	if n < 1 {
 		return 0, fmt.Errorf("%q: the number must be at least 1", phrase)
+	}
+	if err != nil || n > limit {
+		return 0, fmt.Errorf("%q: the span must fit a time.Duration, at most %d %s", phrase, limit, unitName)
 	}
 	return time.Duration(n) * unit, nil
 }
@@ -410,21 +411,18 @@ func (k *KeywordClassifier) extractEntityID(query string) string {
 // (West -180, East 180), and a box crossing the antimeridian is not wrapped, so its East can
 // exceed 180 or its West fall below -180.
 //
-// Every "within" phrase in the question is checked; the first one supplies the box, as at the pin,
-// and the error names each phrase past a bound.
-func (k *KeywordClassifier) extractSpatialBounds(query string) (*SpatialBounds, error) {
-	var first *SpatialBounds
-	var outOfRange []error
-	for i, m := range withinPattern.FindAllStringSubmatch(query, -1) {
-		bounds, err := withinBounds(m)
-		if err != nil {
-			outOfRange = append(outOfRange, err)
-		}
-		if i == 0 {
-			first = bounds
-		}
+// The first "within" phrase supplies the box, as at the pin; numbersOutOfRange names every phrase
+// past a bound.
+func (k *KeywordClassifier) extractSpatialBounds(query string) *SpatialBounds {
+	m := withinPattern.FindStringSubmatch(query)
+	if m == nil {
+		return nil
 	}
-	return first, errors.Join(outOfRange...)
+	bounds, err := withinBounds(m)
+	if err != nil {
+		return nil
+	}
+	return bounds
 }
 
 // withinBounds is the box of one "within R of lat,lon" match, or an error naming the phrase and
@@ -650,9 +648,9 @@ var (
 	// negationPattern matches a word that negates a trigger after it in its clause. "do not" is
 	// matched by its "not"; "don't" with a straight or a typographic apostrophe.
 	negationPattern = regexp.MustCompile(`(?i)\b(?:not|no|never|don['’]t|without)\b`)
-	// orPattern matches the word that joins two alternatives, and the "the" or "an" that may
-	// come between it and the second alternative's trigger.
-	orPattern = regexp.MustCompile(`(?i)\bor\s+(?:(?:the|an)\s+)?`)
+	// orPattern matches the word that joins two alternatives, and the "the", "an" or "a" that
+	// may come between it and the second alternative's trigger.
+	orPattern = regexp.MustCompile(`(?i)\bor\s+(?:(?:the|an|a)\s+)?`)
 )
 
 // operationTriggers returns the [start, end) of every trigger of each of the seven operations

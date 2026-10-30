@@ -34,9 +34,11 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
   markers intact).
   Done in d635254; `task docs:check` exit 0, `task ateam:doctor` `"passed": true`, `"violations": null`. Notes:
   `notes/3.1.md`.
-- [ ] 3.2 `AGENTS.md` § 5 and `.agents/rules-index.md` § 5: the three longest § 5 rows shortened in both files, then
+- [x] 3.2 `AGENTS.md` § 5 and `.agents/rules-index.md` § 5: the three longest § 5 rows shortened in both files, then
   three rows added to both (approval and track; Close hygiene; footer and marker), each naming its canonical home and
   what enforces it. Gate: `wc -c AGENTS.md` under 24,000; `task ateam:doctor` (row parity).
+  Done in f6fea74, with cuts outside § 5 on the coordinator's decision (`notes/3.2.md`): `wc -c AGENTS.md` 23948;
+  `task ateam:doctor` `"passed": true`, `"violations": null`; § 5 has 20 rows in both files.
 - [x] 3.3 `.agents/contracts/semengine-architect.md` § Required workflow: the track declaration and the approval gate
   on the proposal and design. Gate: `task docs:check`.
   Done in 70e3901 (steps 1 and 6; no step reordered); `task docs:check` exit 0.

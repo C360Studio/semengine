@@ -31,7 +31,15 @@ SHALL yield the default result.
 
 - **WHEN** no earlier tier produces a hint and the LLM client returns an error while the context is live
 - **THEN** the result is the default result
-- **AND** the test that verifies this is `TestChainEndedContextReturnsNil`
+- **AND** the test that verifies this is `TestChainLLMFailureGivesDefault`
+
+#### Scenario: A product composes an example classifier
+
+- **WHEN** a product loads two example files with `LoadDomainExamples`, builds an `EmbeddingClassifier`, composes it
+  into a chain beside a `KeywordClassifier` held as a `Classifier`, and asks a question no keyword pattern matches
+  but an example does
+- **THEN** the result is tier 1 with that example's options and its score
+- **AND** the test that verifies this is `TestEmbeddingClassifierAsAProduct`
 
 ### Requirement: An ended context yields no classification
 
@@ -51,6 +59,12 @@ score of 0 for a nil or ended context.
 - **WHEN** `ClassifyQuery` is called with an ended context
 - **THEN** it returns `nil`
 - **AND** the test that verifies this is `TestChainEndedContextReturnsNil`
+
+#### Scenario: The example classifier with a nil or ended context
+
+- **WHEN** `FindBestMatch` is called with a nil context, and again with an ended one
+- **THEN** each call returns no match and a score of 0
+- **AND** the test that verifies this is `TestFindBestMatchEndedContext`
 
 #### Scenario: Ended during the LLM tier
 

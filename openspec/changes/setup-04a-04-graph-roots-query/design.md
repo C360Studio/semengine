@@ -19,6 +19,10 @@ is one stage of the chain: 0 keyword, 1 example classifier, 3 LLM (no code produ
    (D3). No starter consumer calls it; `processor/graph-query` builds no example classifier.
 3. Leave hint values untyped in this PR (Option D)? Recommended: yes; the follow-up with #94 and #95 redesigns each
    tier's outcome and fixes the types there (issue filed, D9).
+4. Let this PR stop the keyword tier adding the made-up predicate `located_in` to zone and area questions (D5)? It
+   changes what the tier returns, and the owner's 2026-10-07 word (#94 comment 6036107878) put parser changes in a
+   follow-up "so the diff from the pin is the fix alone". Recommended: yes, here: every such question's path search
+   comes back empty today in the tier `processor/graph-query` composes. If no, D5 moves to the follow-up issue.
 
 ## Options
 
@@ -27,8 +31,8 @@ is one stage of the chain: 0 keyword, 1 example classifier, 3 LLM (no code produ
   ruling sends to this PR (#96) and the context rules forbid; keeps the silent build failure (S8) that #96's context
   makes reachable, and the routine empty path search of S10.
 - **C. Also do the classifier follow-up now** (#96's `GenerateQuery`, #94, #95). The owner's 2026-10-07 dispositions
-  put them in one follow-up "so the diff from the pin is the fix alone"; #96's drift note (6386548133) keeps
-  `GenerateQuery` there, and the order ruling scopes item 6 to "context threading". Not taken, though D3 edits that line.
+  (#94 comment 6036107878, #96 comment 6036129531) put them in one follow-up "so the diff from the pin is the fix
+  alone", and the order ruling scopes item 6 to "context threading". Not taken, though D3 edits that line.
 - **D. Typed hints now** (`ClassificationResult` carries `*SearchOptions`; example files decoded at load, unknown
   keys refused). Closes S13 but changes the result every consumer reads, while #95's follow-up already redesigns tier
   outcomes. Owner question 3.
@@ -38,9 +42,8 @@ is one stage of the chain: 0 keyword, 1 example classifier, 3 LLM (no code produ
 
 `graph/query/`: `doc.go` (new; the package doc leaves `classifier.go:1` with true text), `README.md` (new; the
 framework-API contract line, D2), `classifier.go`, `classifier_chain.go`, `classifier_embedding.go`,
-`classifier_llm.go`, `examples.go`, `search_options.go`, tests. Not carried: `classifier_llm_adapter.go` and its test
-(ruling); `classifier_llm_live_test.go` (`live_llm` tag, `t.Skip`, live Ollama: #32's); `slice_f1_surface_contract_test.go`
-(guards a client SemEngine never had and reads packages this tree does not carry).
+`classifier_llm.go`, `examples.go`, `search_options.go`, tests. Not carried (reasons: inventory § 7 and P3): the
+adapter and its test, `classifier_llm_live_test.go`, `slice_f1_surface_contract_test.go`.
 
 ## D2. Surface
 
@@ -89,7 +92,7 @@ file and invalid JSON. Every returned `Example` and result `Options` map is a co
 (S9; integrity gate; the pin's own consumer copies defensively). Nested values inside `Options` are not copied; the
 README says so.
 
-## D5. The keyword tier stops adding `located_in` (S10)
+## D5. The keyword tier stops adding `located_in` (S10; owner question 4)
 
 A zone or area phrase keeps its path intent and start node but adds no predicate filter. Basis: SemEngine owns no
 consumer's domain semantics (`AGENTS.md`, "What this is for"); ADR-074's predicates have three parts; and the trigger
@@ -99,45 +102,19 @@ parser and PR 9 work: filed (D9) and named to PR 9.
 
 ## D6. Docs and retained findings
 
-Docs (surface audit (c)): package doc (what it classifies, its tiers, no store); `Tier` 0, 1, 3; the chain doc states
-D4, including the LLM failure; `EmbeddingClassifier`: BM25 only, examples fixed; `LLMClassifier`: an unknown strategy
-and an unparsable time range are dropped (S8c); README: hint names with each value's type per tier (P4), and that
-hints PR 9 does not read still stop the ladder at tier 0. Retained as optional (Bounded port scope; no binding
+Docs follow surface audit (c); their contents are task 4.2. Retained as optional (Bounded port scope; no binding
 requirement names them and no routine trigger reaches them): S3, S4's `resolveStrategy` (PR 9's), S8b and S8c beyond
 the doc sentence, S12, S13, S14, S15. S13, S14 and S15 are filed (D9).
 
 ## D7. Ledger, records
 
-- `graph/query` (`adapt`): contract D2-D5; dependencies `graph/embedding` (in-set; nats.go through it); no goroutine,
-  no provider (`TestQueryImportsNoProviderModule`); known risks: `Generate` learns from queries until #96's follow-up;
-  hints lose types on the example tier (S13); host-clock ranges and unbounded numbers (S14, S15); proving tests D8.
-- `graph/query/classifier_llm_adapter.go` (`defer-exclude`): known risks name #32; its test, the live test and
-  `DefaultClassificationTimeout` go with it.
-- ADR-084 and ADR-085 port notes: "`graph/query`" becomes "`graph/query`'s client (retired before the pin)";
-  `docs/repository-map.md` row. No `cover-check` line (not on the 03B D10 list).
+Rows, port notes and the repository map are tasks 4.1 and 4.2. No `cover-check` line (not on the 03B D10 list).
 
 ## D8. Proving tests
 
-Unit, no `time.Sleep` (two of the pin's four go with `UpgradeVectors`; two become an already-ended context). Ported:
-the keyword, chain, example, LLM-parse and loader tests, less dropped surface (`TestUpgradeVectors*`,
-`TestKeywordClassifier_InferStrategy_Aggregation`, `TestLoadAllDomainExamples_*`, `TestCosineSimilarity`). New, each
-changed behaviour shown failing against the pin's shape in `notes/`:
-
-- `TestChainKeywordHintStopsTheLadder`: tier 0, and a counting fake `LLMClient` is never called.
-- `TestChainEndedContextReturnsNil`: nil and ended contexts give `nil`; a fake `LLMClient` that ends the context and
-  returns `ctx.Err()` gives `nil`; one returning a plain error under a live context gives the default result.
-- `TestLLMClassifierRefusesNilContext`; `TestNewEmbeddingClassifierRefusesEndedContext` (nil, ended);
-  `TestFindBestMatchEndedContext` (nil, ended: `(nil, 0)`).
-- `TestResultEditsDoNotReachClassifier`: edit a result's `Options` and the returned `Example`; the same query returns
-  the original hints and score.
-- `TestZoneQueryAddsNoPredicate`: "sensors in zone A" and "zone-cold-storage" give path intent, the start node, and no
-  `path_predicates` hint.
-- `TestEmbeddingClassifierAsAProduct`: two files through `LoadDomainExamples`, a classifier, a chain, a tier-1 result;
-  `Classifier` held as an interface value.
-- `TestQueryImportsNoProviderModule` (`internal/harness/contract`): the embedding guard's helper on `./graph/query`
-  with its own requirement name.
-
-Examples suffice: the inputs interact only as D4's table, which the tests enumerate.
+Each scenario in `specs/query-classification/spec.md` names its test; the ported and dropped pin tests are tasks 2.1
+and 2.2, each changed behaviour shown failing against the pin's shape in `notes/`. Examples suffice: the inputs
+interact only as D4's table, which the tests enumerate.
 
 ## D9. Issues and merge order
 

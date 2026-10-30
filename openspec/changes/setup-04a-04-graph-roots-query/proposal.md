@@ -27,7 +27,7 @@ Approved-by:
 - An ended or nil context yields no classification (`nil`), as the pin's doc says, never the confident default the
   pin's code returned after a late cancel nor the pin's panic on nil.
 - The keyword tier stops adding the predicate `located_in` to zone and area questions: no entity can carry it, so
-  `processor/graph-query`'s path search came back empty for every such question.
+  `processor/graph-query`'s path search came back empty for every such question (owner question 4).
 - A caller that edits a result no longer edits the classifier's stored examples.
 - Dead surface is not carried: `UpgradeVectors`, `InferStrategy`, `HasIndexFilters`, `SetDefaults`,
   `DefaultMaxCommunities`, `LoadAllDomainExamples`, the `Embedder` interface, and the fields
@@ -41,11 +41,12 @@ Approved-by:
 ## Impact
 
 - New `graph/query`: 1,429 pin lines (1,551 less the adapter); one pull request, under the ~3,000-line bound.
-- One import edge, `graph/query` → `graph/embedding`. No `graph/llm`, `model` or `go-openai`
+- Two import edges: `graph/query` → `graph/embedding`, and → `pkg/errs` for the invalid-input error, as
+  `graph/embedding` spells it. No `graph/llm`, `model` or `go-openai`
   (`TestQueryImportsNoProviderModule`). No subject, bucket, stream, config key or goroutine.
 - Changed exported surface: `NewEmbeddingClassifier(ctx, domains, threshold) (*EmbeddingClassifier, error)`. No
   starter consumer imports the package; `processor/graph-query` (PR 9) does not build an example classifier.
 - Not on the coverage-floor list (SETUP 03B D10), so no `cover-check` target.
 - Issues: retires none. Advances #96 (its context half; the `GenerateQuery` repair stays there). #94, #95 stay for
   the classifier follow-up; #32 stays as the adapter's home; #105 stays with PR 9. Files two issues (design D9).
-- Owner questions: design "Owner questions" 1-3.
+- Owner questions: design "Owner questions" 1-4.

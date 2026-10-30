@@ -8,21 +8,25 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance. Gate: `task spec:check` and `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Owner answers on the design's three questions (`UpgradeVectors` dropped; `NewEmbeddingClassifier`'s new
-  signature; hint types left to the classifier follow-up), recorded on PR #475.
+- [ ] 1.2 Owner answers on the design's four questions (`UpgradeVectors` dropped; `NewEmbeddingClassifier`'s new
+  signature; hint types left to the classifier follow-up; `located_in` dropped here), recorded on PR #475.
 - [ ] 1.3 File the two issues of design D9 (S13; the keyword tier's inputs), linked from PR #475 without a closing
   keyword. Gate: each issue
   read back.
 
 ## 2. Tests first
 
-- [ ] 2.1 Port the pin's keyword, chain, example, LLM-parse and loader tests less those of dropped surface (design D8),
-  with no `time.Sleep`; record each dropped or rewritten test in `notes/2.1.md`. Gate: in 3.1.
-- [ ] 2.2 The new tests of design D8 (`TestChainEndedContextReturnsNil`, `TestChainKeywordHintStopsTheLadder`,
+- [ ] 2.1 Port the pin's keyword, chain, example, LLM-parse and loader tests less those of dropped surface
+  (`TestUpgradeVectors*`, `TestKeywordClassifier_InferStrategy_Aggregation`, `TestLoadAllDomainExamples_*`,
+  `TestCosineSimilarity`), with no `time.Sleep` (two of the pin's four go with `UpgradeVectors`, two become an
+  already-ended context); record each dropped or rewritten test in `notes/2.1.md`. Gate: in 3.1.
+- [ ] 2.2 The new tests of design D8 (`TestChainEndedContextReturnsNil`, `TestChainLLMFailureGivesDefault`,
+  `TestChainKeywordHintStopsTheLadder`,
   `TestLLMClassifierRefusesNilContext`, `TestNewEmbeddingClassifierRefusesEndedContext`,
   `TestFindBestMatchEndedContext`, `TestResultEditsDoNotReachClassifier`, `TestZoneQueryAddsNoPredicate`,
   `TestEmbeddingClassifierAsAProduct`), each changed behaviour shown failing
-  against the pin's shape in `notes/2.2.md`; `TestQueryImportsNoProviderModule` in `internal/harness/contract`.
+  against the pin's shape in `notes/2.2.md`; `TestQueryImportsNoProviderModule` in `internal/harness/contract`
+  (the embedding guard's helper on `./graph/query`, its own requirement name).
   Gate: in 3.1.
 
 ## 3. The package
@@ -34,10 +38,17 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 4. Ledger, records and docs
 
-- [ ] 4.1 Ledger rows of design D7: `graph/query` (`adapt`) and `graph/query/classifier_llm_adapter.go`
-  (`defer-exclude`, naming #32). Gate: `task ledger:check`.
-- [ ] 4.2 `doc.go` and `README.md` (design D6), the ADR-084 and ADR-085 port-note edits, the `docs/repository-map.md`
-  row (design D6, D7). Gate: `task docs:check`.
+- [ ] 4.1 Ledger rows: `graph/query` (`adapt`; contract design D2-D5; dependencies `graph/embedding` and `pkg/errs`,
+  nats.go through `graph/embedding`; no goroutine, no provider; known risks: `Generate` learns from queries until
+  #96's follow-up, hint types by tier (S13), host clock and unbounded numbers (S14, S15)) and
+  `graph/query/classifier_llm_adapter.go` (`defer-exclude`, naming #32; its test, the live test and
+  `DefaultClassificationTimeout` go with it). Gate: `task ledger:check`.
+- [ ] 4.2 Docs (design D6): package doc (what it classifies, tiers 0, 1, 3, no store); the chain doc states design
+  D4, including the LLM failure; `EmbeddingClassifier`: BM25 only, examples fixed; `LLMClassifier`: an unknown
+  strategy and an unparsable time range are dropped (S8c); `README.md`: the framework API, hint names with each
+  value's type per tier (P4), nested `Options` values not copied, and that hints PR 9 does not read still stop the
+  ladder at tier 0. ADR-084 and ADR-085 port notes: "`graph/query`" becomes "`graph/query`'s client (retired before
+  the pin)". A `docs/repository-map.md` row. Gate: `task docs:check`.
 
 ## 5. Evidence and review
 

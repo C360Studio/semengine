@@ -56,6 +56,15 @@ func TestKeywordExclusions(t *testing.T) {
 		{"same operation twice", "count sensors or count pumps", agg(AggregationCount, "")},
 		{"two operations in another clause", "Count sensors; average or total pressure", agg(AggregationCount, "")},
 		{"min or max", "the minimum or maximum pressure", nil},
+		{"or the before the second", "count sensors or the average pressure", nil},
+		{"or an before the second", "count sensors or an average pressure", nil},
+		// "or" joining nouns or other words leaves the operations decided.
+		{"or joins nouns", "How many sensors or pumps have an average temperature above 30?", agg(AggregationCount, "")},
+		{"or joins adjectives", "Is the maximum pressure higher or lower than the average?",
+			agg(AggregationAvg, "")},
+		{"or joins verbs", "Count sensors that failed or are likely to", agg(AggregationCount, "")},
+		// "likely" is not the similarity word "like".
+		{"likely is no similarity", "Show sensors likely to fail", nil},
 
 		// R32: a partial path intent is kept and no node is invented.
 		{"R32 partial path intent", "Show connections from that device", map[string]any{"path_intent": true}},
@@ -179,6 +188,7 @@ func FuzzKeywordClassify(f *testing.F) {
 		"“top 5” \"count\" “unclosed",
 		"within 5km of 37.7,-122.4 last 3 hours",
 		"2.5, 1,000? no; never: without!",
+		"\xe2”\x80\x9d count sensors",
 	} {
 		f.Add(seed)
 	}
@@ -186,7 +196,8 @@ func FuzzKeywordClassify(f *testing.F) {
 		classifier := NewKeywordClassifier()
 		require.NotNil(t, classifier.ClassifyQuery(t.Context(), s))
 
-		inner := quoteMarks.Replace(s)
+		// Invalid bytes go first, so the replacer cannot join split bytes into a new mark.
+		inner := quoteMarks.Replace(strings.ToValidUTF8(s, ""))
 		for _, q := range []string{
 			`Find documents containing "` + inner + `"`,
 			"Find documents containing “" + inner + "”",

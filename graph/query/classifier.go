@@ -49,7 +49,7 @@ var (
 
 // Intent patterns
 var (
-	similarityPattern = regexp.MustCompile(`(?i)\b(similar|like|resembl|compar)\w*`)
+	similarityPattern = regexp.MustCompile(`(?i)\b(similar\w*|like\b|resembl\w*|compar\w*)`)
 	pathPattern       = regexp.MustCompile(`(?i)\b(connect|relat|path|link|between)\w*`)
 )
 
@@ -607,8 +607,9 @@ var (
 	// negationPattern matches a word that negates a trigger after it in its clause. "do not" is
 	// matched by its "not"; "don't" with a straight or a typographic apostrophe.
 	negationPattern = regexp.MustCompile(`(?i)\b(?:not|no|never|don['’]t|without)\b`)
-	// orPattern matches the word that joins two alternatives.
-	orPattern = regexp.MustCompile(`(?i)\bor\b`)
+	// orPattern matches the word that joins two alternatives, and the "the" or "an" that may
+	// come between it and the second alternative's trigger.
+	orPattern = regexp.MustCompile(`(?i)\bor\s+(?:(?:the|an)\s+)?`)
 )
 
 // operationTriggers returns the [start, end) of every trigger of each of the seven operations
@@ -651,18 +652,17 @@ func excludedOperations(query string) map[string]bool {
 		}
 	}
 
-	// Two different operations joined by "or" in one clause: each is undecided.
+	// Two different operations joined by "or" in one clause: each is undecided. The second
+	// operation's trigger starts right after the "or" ("count devices or average pressure"), so
+	// an "or" joining other words ("sensors or pumps") decides nothing.
 	for _, or := range orPattern.FindAllStringIndex(query, -1) {
 		clause := clauseStart(query, or[0])
 		before, after := map[string]bool{}, map[string]bool{}
 		for op, locs := range triggers {
 			for _, loc := range locs {
-				if clauseStart(query, loc[0]) != clause {
-					continue
-				}
-				if loc[1] <= or[0] {
+				if loc[1] <= or[0] && clauseStart(query, loc[0]) == clause {
 					before[op] = true
-				} else if loc[0] >= or[1] {
+				} else if loc[0] == or[1] {
 					after[op] = true
 				}
 			}

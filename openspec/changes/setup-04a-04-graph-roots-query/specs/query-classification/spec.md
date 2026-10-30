@@ -40,6 +40,12 @@ it starts, and when the context has ended by the time a tier after the keyword t
 never return the default result for an ended context. `EmbeddingClassifier.FindBestMatch` SHALL return no match and a
 score of 0 for a nil or ended context.
 
+#### Scenario: A nil context
+
+- **WHEN** `ClassifyQuery` is called on the chain with a nil context
+- **THEN** the chain returns `nil`
+- **AND** the test that verifies this is `TestChainEndedContextReturnsNil`
+
 #### Scenario: Ended at entry
 
 - **WHEN** `ClassifyQuery` is called with an ended context
@@ -51,6 +57,16 @@ score of 0 for a nil or ended context.
 - **WHEN** the LLM client ends the context and returns its error
 - **THEN** `ClassifyQuery` returns `nil`, not the default result
 - **AND** the test that verifies this is `TestChainEndedContextReturnsNil`
+
+### Requirement: The LLM classifier refuses a nil context
+
+`LLMClassifier.ClassifyQuery` SHALL refuse a nil context with an invalid-input error before calling its client.
+
+#### Scenario: A nil context reaches the LLM classifier
+
+- **WHEN** `LLMClassifier.ClassifyQuery` is called with a nil context
+- **THEN** it returns an invalid-input error without calling its client
+- **AND** the test that verifies this is `TestLLMClassifierRefusesNilContext`
 
 ### Requirement: The example classifier builds under the caller's context
 
@@ -75,3 +91,14 @@ copy: changing its top-level entries, its `Options` map or its `Vector` SHALL ch
   `Vector`, then classifies the same query again
 - **THEN** the second result has the original hints and the original score
 - **AND** the test that verifies this is `TestResultEditsDoNotReachClassifier`
+
+### Requirement: The keyword tier adds no domain predicate
+
+`KeywordClassifier.ClassifyQuery` SHALL NOT add a `path_predicates` hint for a zone or area phrase; it SHALL keep the
+phrase's path intent and start node.
+
+#### Scenario: A zone question
+
+- **WHEN** the query is "sensors in zone A"
+- **THEN** the hints carry `path_intent` and `path_start_node` `zone-A`, and no `path_predicates`
+- **AND** the test that verifies this is `TestZoneQueryAddsNoPredicate`

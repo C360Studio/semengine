@@ -24,11 +24,13 @@ Approved-by:
   caller's context. `NewEmbeddingClassifier` takes a context and returns an error, where the pin built a classifier
   that silently never matched when its vectors failed. The pin's `Embedder` interface and its adapter go: their only
   other user was `UpgradeVectors`, which nothing calls.
-- An ended context yields no classification (`nil`), as the pin's doc says, never the confident default the pin's
-  code returned after a late cancel.
+- An ended or nil context yields no classification (`nil`), as the pin's doc says, never the confident default the
+  pin's code returned after a late cancel nor the pin's panic on nil.
+- The keyword tier stops adding the predicate `located_in` to zone and area questions: no entity can carry it, so
+  `processor/graph-query`'s path search came back empty for every such question.
 - A caller that edits a result no longer edits the classifier's stored examples.
 - Dead surface is not carried: `UpgradeVectors`, `InferStrategy`, `HasIndexFilters`, `SetDefaults`,
-  `DefaultMaxCommunities`, `LoadAllDomainExamples`, the `Classifier` and `Embedder` interfaces, and the fields
+  `DefaultMaxCommunities`, `LoadAllDomainExamples`, the `Embedder` interface, and the fields
   `RequireAllFilters`, `Level`, `MaxCommunities`. The private cosine copy gives way to `embedding.CosineSimilarity`.
 - Docs say only what ships: no KV client, tiers 0, 1 and 3, no neural upgrade.
 
@@ -46,3 +48,4 @@ Approved-by:
 - Not on the coverage-floor list (SETUP 03B D10), so no `cover-check` target.
 - Issues: retires none. Advances #96 (its context half; the `GenerateQuery` repair stays there). #94, #95 stay for
   the classifier follow-up; #32 stays as the adapter's home; #105 stays with PR 9. Files two issues (design D9).
+- Owner questions: design "Owner questions" 1-3.

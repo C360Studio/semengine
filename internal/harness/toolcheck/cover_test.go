@@ -41,7 +41,8 @@ func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
 // changes add (simplify-04a-13 design D2: natsclient/storagereport; setup-04a-03-boot-config-manager
 // design D5: config; setup-04a-03-boot-service-base design D7: service; port-composition: composition;
 // setup-04a-04-graph-roots-objectstore-store design D9: storage/objectstore;
-// setup-04a-04-graph-roots-embedding design D8: graph/embedding),
+// setup-04a-04-graph-roots-embedding design D8: graph/embedding;
+// setup-04a-04-graph-roots-graphview task 4.3: pkg/graphview),
 // each with the profile scripts/cover-check.sh measures it from.
 var d11Targets = []struct{ dir, kind string }{
 	{"processor/graph-ingest", "merged"},
@@ -60,6 +61,7 @@ var d11Targets = []struct{ dir, kind string }{
 	{"composition", "unit"},
 	{"storage/objectstore", "merged"},
 	{"graph/embedding", "merged"},
+	{"pkg/graphview", "unit"},
 }
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced

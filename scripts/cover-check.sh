@@ -52,6 +52,9 @@ readonly targets=(
   # setup-04a-04-graph-roots-embedding design D8: graph/embedding is on the 03B critical list; its unit lane
   # (fakes, synctest) and integration lane (real NATS) test different code.
   "graph/embedding merged"
+  # setup-04a-04-graph-roots-graphview task 4.3: pkg/graphview is on the 03B critical list (03B design D10); its
+  # unit lane runs the fake source in synctest and alone holds the floor.
+  "pkg/graphview unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

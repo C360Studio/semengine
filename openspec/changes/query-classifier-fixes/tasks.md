@@ -20,22 +20,23 @@ commit (#171). One task is one developer's unit.
 ## 3. Typed tier-1 hints (#478, design D4)
 
 - [ ] 3.1 `TestTierOneHintsAreTyped` and `TestEveryHintNameIsTyped` (reflection over `SearchOptions` JSON tags; unknown
-  names unchanged; bad value refuses construction naming domain, example, hint), failing on main (premise
+  names unchanged; each refusal of design D4, naming domain, example, hint), failing on main (premise
   `classifier_chain.go:89`, `examples.go:43`). Rewrite `TestFindBestMatch_PreservesOptions` (`"time_range": "week"`),
   recorded in notes.
 - [ ] 3.2 `NewEmbeddingClassifier` decodes and copies; README hint table loses its tier-1 column. Gate: as 2.2.
 
 ## 4. Field binding and ordinary phrases (#94, design D1)
 
-- [ ] 4.1 `TestAggregationFieldBinding` and `TestOrdinaryAggregationPhrases` (R14, R17, R21, R23, R24, R26, R27, the
-  controls of D1), failing on main (premise `classifier.go:57-77`; inventory Q1).
+- [ ] 4.1 `TestAggregationFieldBinding` and `TestOrdinaryAggregationPhrases` through `ClassifierChain.ClassifyQuery`
+  (R14, R17, R21, R23, R24, R26, R27, exact type and field; the descriptive mentions of design § Proving tests
+  activate nothing), failing on main (premise `classifier.go:57-77`; inventory Q1).
 - [ ] 4.2 Patterns and field binding. Existing `TestKeywordClassifier_*` pass unchanged. Gate: as 2.2.
 
-## 5. Exclusions (#95, design D2; after 3 and 4)
+## 5. Exclusions (#95, design D2; after 4)
 
-- [ ] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (fake LLM client and an
-  example classifier that would restore each excluded operation; a non-conflicting fallback still answers), failing
-  on main (premise `classifier_chain.go:69-102`).
+- [ ] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (examples in the caller's
+  words, intent `aggregation` with `operation: count` and intent `similarity`, plus a counting fake LLM client: the
+  default result, the client never called), failing on main (premise `classifier_chain.go:69-102`).
 - [ ] 5.2 `FuzzKeywordClassify` with the two laws of D2's spec requirement; seed, run count and any failure in
   notes. Gate: `task mutate:check` on one exclusion rule, survivors reported as survivors.
 - [ ] 5.3 Keyword exclusions and the chain rule; doc comments state D2's table. Gate: as 2.2.
@@ -58,7 +59,8 @@ commit (#171). One task is one developer's unit.
   PR comment.
 - [ ] 8.2 Cross-agent review; `reviewed-by:` in the PR body; body says `Closes #94`, `Closes #95`, `Closes #96`,
   `Closes #478`, and names #479 without a closing keyword.
-- [ ] 8.3 Comment on #479 that items 1 and 2 landed at `<SHA>` and item 3 stays with change 4 PR 9; read back.
+- [ ] 8.3 Comment on #479 that PR #480 at head `<SHA>` (the reviewed head) carries items 1 and 2, and that
+  item 3 stays with change 4 PR 9. Read back.
 
 ## 9. Close
 

@@ -8,10 +8,8 @@
 classifier finds any; otherwise the example classifier's match at or above its threshold (tier 1, the match's score)
 when one is composed; otherwise the LLM tier's result (tier 3) when one is composed and succeeds; otherwise, while the
 context is live, the default result: tier 0, no hints, confidence 1.0. A failure of the LLM tier under a live context
-SHALL yield the default result. When the keyword tier found no hint and excluded an operation, a tier 1 or tier 3
-answer that requests that operation SHALL NOT be used, and the chain SHALL go on to the next tier or the default
-result. An answer requests aggregation when it has an `aggregation_type` hint or `strategy` `aggregation`, similarity
-when `use_embeddings` is true or `strategy` is `semantic`, and ranking when `ranking_intent` is true.
+SHALL yield the default result. When the keyword tier found no hint and excluded an operation, the chain SHALL
+return the default result without asking tier 1 or tier 3.
 
 #### Scenario: A keyword hint stops the ladder
 
@@ -35,17 +33,10 @@ when `use_embeddings` is true or `strategy` is `semantic`, and ranking when `ran
 
 #### Scenario: A later tier cannot restore an excluded operation
 
-- **WHEN** the query is "Do not count sensors; list their names", an example classifier holds an example whose
-  options carry `aggregation_type` `count` and match that query, and a fake LLM client answers `strategy`
-  `aggregation`
-- **THEN** the result is the default result
-- **AND** the test that verifies this is `TestChainKeepsExclusions`
-
-#### Scenario: A fallback that requests no excluded operation still answers
-
-- **WHEN** the query is "Do not count sensors; list their names" and the only later answer is an example whose
-  options carry `strategy` `pathrag`
-- **THEN** the result is tier 1 with that example's options
+- **WHEN** an example classifier holds the examples "Count devices in error state" (intent `aggregation`, options
+  `operation: count`) and "Find devices similar to TEMP-001" (intent `similarity`), a fake LLM client counts its
+  calls, and the queries are "Do not count devices in error state" and "Not devices similar to TEMP-001"
+- **THEN** each result is the default result and the LLM client was never called
 - **AND** the test that verifies this is `TestChainKeepsExclusions`
 
 ## ADDED Requirements
@@ -84,10 +75,11 @@ that word as the field, unless `which`, `who` or `with` comes before the phrase 
 
 ### Requirement: Negated, quoted and undecided operations give no hint
 
-The keyword tier SHALL give no hint for an aggregation, similarity or ranking whose trigger follows a negating
-word (`not`, `no`, `never`, `don't`, `do not`, `without`) in the same clause, lies inside a balanced pair of double
-quotes, or is one of two different operations joined by `or` in one clause; other hints SHALL stand. A clause is
-text between `;`, `,`, `.`, `:`, `?`, `!` or the word `but`.
+An operation is one of count, avg, sum, min, max, similarity and ranking, each its own. The keyword tier SHALL give
+no hint for an operation whose trigger follows a negating word (`not`, `no`, `never`, `don't`, `do not`, `without`)
+in the same clause, lies inside a balanced pair of straight (`"`) or curly (`“ ”`) double quotes, or is one of two
+different operations joined by `or` in one clause; other hints SHALL stand. A clause is text between `;`, `,`, `.`,
+`:`, `?`, `!` or the word `but`.
 
 #### Scenario: Excluded operations
 
@@ -111,8 +103,8 @@ text between `;`, `,`, `.`, `:`, `?`, `!` or the word `but`.
 
 ### Requirement: The keyword tier accepts any text
 
-For any query the keyword tier SHALL return without panicking, and a query whose only triggers lie inside double
-quotes SHALL yield no operation hint.
+For any query the keyword tier SHALL return without panicking, and a query whose only triggers lie inside straight or
+curly double quotes SHALL yield no operation hint.
 
 #### Scenario: Arbitrary text
 
@@ -153,6 +145,20 @@ copies of the examples' options.
 - **WHEN** each `SearchOptions` JSON name is given a valid value in an example
 - **THEN** each decodes to its declared type, and a wrong-typed value refuses construction
 - **AND** the test that verifies this is `TestEveryHintNameIsTyped`
+
+### Requirement: The example classifier refuses impossible hints
+
+`NewEmbeddingClassifier` SHALL return an error naming the domain, the example and the option, and no classifier,
+when an example's `strategy` is not one of the eight `SearchStrategy` values, its `time_range` has a zero start or
+end or ends before it starts, its `geo_bounds` has North or South outside [-90, 90] or South above North, or its
+`limit` is negative.
+
+#### Scenario: Impossible example hints
+
+- **WHEN** examples carry, one at a time, `strategy` `fastest`, a `time_range` ending before it starts, a
+  `geo_bounds` with North 95, and `limit` -1
+- **THEN** each construction returns an error naming that option, and no classifier
+- **AND** the test that verifies this is `TestTierOneHintsAreTyped`
 
 ### Requirement: A question's time ranges come from one instant
 

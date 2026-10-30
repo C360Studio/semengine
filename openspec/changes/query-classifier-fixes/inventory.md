@@ -8,7 +8,8 @@ base: `a5f1d0e` (the claim commit on `claude/query-classifier-fixes`, on `origin
 (`git hash-object` = `gh api …contents/processor/graph-query/graphrag.go?ref=8b99efe9 --jq .sha` =
 `0ddc205c05fbef2f25fd7c34dff6e1e3d7c5afe2`).
 
-Status: round 1, inventory. Kind of change: repairs to one carried package, `graph/query`, by the owner's sequencing
+Status: round 2; `INVENTORY PASS` in round 1, its MEDIUM (the caller-worded tier-1 path, § 2, § 8) folded in.
+Kind of change: repairs to one carried package, `graph/query`, by the owner's sequencing
 (#94 comment 6036107878; #95 comment 6036108178; #96 comment 6036129531; #478 body, ruling #9 comment 6522523604
 answer 3; #479 comment 6525285377: items 1 and 2 only).
 
@@ -76,10 +77,15 @@ cr.Options["path_predicates"].([]string); ok {`; `:530` `query` `.(string)`; `:5
 `timeRange, _ := cr.Options["time_range"].(*query.TimeRange)`; `:1265` — `bounds, _ :=
 cr.Options["geo_bounds"].(*query.SpatialBounds)`. Comma-ok assertions, no type switch. `limit` is not read.
 Other pin readers (consumer adapters, not ported): `gateway/graph-gateway/component.go:1482` ranges the map into a
-JSON payload; `processor/research-graph-classify/handler.go:117-119` copies it; `processor/agentic-governance/
+JSON payload; `processor/research-graph-classify/handler.go:117-119` copies it; the gateway also composes tier 1 from
+its own example files (`:532` — `classifier := query.NewEmbeddingClassifier(domains, defaultThreshold)`, `:333` —
+`classifier := query.NewClassifierChain(keywordClassifier, embeddingClassifier)`) and forwards `Intent` as
+`classification_intent` (`:1475-1478`); `processor/agentic-governance/
 injection_classifier.go:163` reads `Example.Options` by its own keys (`id`, `source`). Pin example files
 (`configs/domains/{iot,logistics,robotics}.json`) use caller keys (`entity_pattern`, `status_filter`, `operation`,
-…) and one known name, `strategy`, always a string (`"pathrag"`).
+…) and one known name, `strategy`, always a string (`"pathrag"`). They state an operation in the caller's own words:
+`configs/domains/iot.json:71-72` — `"query": "Count devices in error state",` / `"intent": "aggregation",` with
+`"options": {"operation": "count", …}` (`:68` likewise), so no framework hint name says "count".
 
 ## 3. Adjacent claims
 
@@ -121,9 +127,10 @@ API returns (`FindBestMatch`, `ClassifyQuery`): contract line `README.md` hint t
 instance, ported components refusing unknown config keys at construction (`AGENTS.md` rule, `component-registration`
 spec) and `LoadDomainExamples`' refusal of invalid JSON (`examples.go:43`). (b) A ladder where an earlier stage's
 finding constrains later stages: no instance in the tree (`git grep -n -i 'exclu' -- graph/ pkg/`: no ladder).
-(c) A clock. The one instance in the tree is a test hook: `model/breaker.go:35-37` — `// Now is the time source.
-Tests inject a clock; production leaves` / `// this nil and time.Now is used.` / `Now func() time.Time` (set only by
-`model/breaker_test.go:82`, `:118`, `:155`). No production function takes `now time.Time` (`git grep -n -E '\bnow
+(c) A clock. The one instance in the tree is a config field with a production default: `model/breaker.go:35-37`
+— `// Now is the time source. Tests inject a clock; production leaves` / `// this nil and time.Now is used.` /
+`Now func() time.Time`, defaulted at `:56-57` — `if c.Now == nil {` / `c.Now = time.Now`, and set otherwise only by
+`model/breaker_test.go:82`, `:118`, `:155`. No production function takes `now time.Time` (`git grep -n -E '\bnow
 time\.Time' -- '*.go' ':!*_test.go'`: none).
 
 ## 6. Decision records
@@ -152,7 +159,8 @@ Reached from outside by PR 9 and by products composing the chain or an `Embeddin
 
 1. Must know today: (a) a tier-1 value's type depends on JSON (README table); (b) scores drift with query traffic;
    (c) "today" follows the host zone; (d) a negated or quoted operation still becomes a hint; (e) huge or
-   out-of-range numbers yield inverted ranges or impossible boxes. Five items.
+   out-of-range numbers yield inverted ranges or impossible boxes; (f) tier 1 answers in the caller's own words
+   (`intent: aggregation`, `operation: count`), which no framework hint name reveals. Six items.
 2. If they do nothing: PR 9 ignores tier-1 `time_range`, `geo_bounds`, `types`, `path_predicates` silently; a search
    for "documents containing \"average temperature\"" runs an aggregation; an impossible range finds nothing.
 3. Where they find out: README for (a)-(c); nowhere for (d), (e).

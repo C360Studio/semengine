@@ -16,18 +16,21 @@ Approved-by:
 - #94: the aggregation field skips an optional `of`/`the` (R17, R21); `the number of` selects count (R14); a
   numeric extremum (`lowest pressure reading`) selects min/max with its field (R23-R27), while entity ranking
   (`which sensor has the highest temperature`) does not. `total number of` stays count. No domain words.
-- #95: an operation whose trigger is negated, quoted or one of two undecided alternatives gives no hint, and no
-  later tier can restore it (R28-R31); a clear affirmative clause still counts, and R32 keeps its path intent.
+- #95: an operation whose trigger is negated, quoted or one of two undecided alternatives gives no hint; when
+  that leaves no hint the chain answers the default result and asks no later tier, so none can restore it in
+  any words (R28-R31). A clear affirmative clause still counts, and R32 keeps its path intent.
 - #96: the example classifier embeds a query with the read-only `GenerateQuery`, so traffic no longer moves scores.
-- #478: tier-1 hints with a known name carry the same Go types as tiers 0 and 3; a value that does not decode
-  refuses `NewEmbeddingClassifier`; unknown names pass through.
+- #478: tier-1 hints with a known name carry the same Go types as tiers 0 and 3; a value that does not decode,
+  an unknown strategy, an inverted time range or an impossible box refuses `NewEmbeddingClassifier`; unknown
+  names pass through.
 - #479 items 1-2: every range in a question comes from one instant, testable with fixed instants and zones; a
-  `last N` that overflows and an out-of-range latitude or longitude give no hint; boxes are clamped at the poles.
+  `last N` that overflows and an out-of-range latitude or longitude give no hint
+  (declared: the search widens); boxes are clamped at the poles.
 - README and ledger row say what ships; the README's tier-1 type column and "Limits" lines go.
 
 ## Capabilities
 
-- Modified `query-classification` (one requirement modified, eight added).
+- Modified `query-classification` (one requirement modified, nine added).
 
 ## Impact
 
@@ -38,4 +41,4 @@ Approved-by:
   the pin's own assertions.
 - Size: about 300 production lines and 900 test lines; one pull request.
 - Issues: closes #94, #95, #96, #478; #479 stays open for item 3 (change 4 PR 9).
-- Owner questions: design "Open Questions" 1-3.
+- Owner question: design "Open Questions" 1 (host zone or UTC).

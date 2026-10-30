@@ -27,15 +27,18 @@ Approved-by: Coby Leuschke (2026-10-30), in session, recorded on #451.
   ateam #237 ships a brownfield mode (item 5).
 - `AGENTS.md` § 5 and `.agents/rules-index.md` § 5: three rows, one per adopted rule (approval and track; Close
   hygiene; footer and marker), added to both so the counts stay equal. `AGENTS.md` is at 23,890 of 24,000 bytes, so
-  the three longest existing rows in § 5 are shortened first, in both files, without losing a clause.
+  room is made first without losing a clause: the three new `AGENTS.md` rows are pointers (the detail is in the
+  protocol and the `rules-index` rows), existing § 5 rows are tightened in wording, and three Commands-block comments
+  and one header parenthesis are shortened (done this way after measuring; `notes/3.2.md`).
 - `.agents/contracts/semengine-architect.md` § Required workflow: the track is declared before the inventory, a
   `design`-track change drafts `design.md` through the design skill, and the design is not approved until the owner
   fills `Approved-by:` and removes the hold; inventory-first stays on top.
 - Worktrees: `ateam state prune` removes this agent's clean, merged worktrees and their local branches (sixteen), and
   `git worktree remove` the three clean detached checkouts whose heads are on `main` or reviewed a merged pull
-  request. Kept, under the ruling's own words: the two closed-without-merge worktrees (#435, #453), whose one
-  commit each is on no remote, and `codex/review-pr-414`, another agent's. The remote branches of the merged ones
-  are already gone (GitHub deletes them on merge).
+  request. Kept under the ruling's own words: `codex/review-pr-414`, another agent's. The two closed-without-merge
+  worktrees (#435, #453), whose one commit each was on no remote, were kept at first and then dropped on the owner's
+  approval choice of 2026-10-30. The remote branches of the merged ones are already gone (GitHub deletes them on
+  merge).
 
 Divergence recorded: none. The `.agents/contracts/` edit makes this a code pull request under the gate's classifier,
 so it carries a cross-agent record like any other.

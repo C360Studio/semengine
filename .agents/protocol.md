@@ -29,9 +29,9 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   (owner ruling of 2026-10-28 on #447, items 1 to 3): `proposal.md` stays on one page (60 lines or fewer;
   `task spec:check` warns past it) and carries `Approved-by:`, empty until the owner fills
   `<name> (<YYYY-MM-DD>)`; the line may link the issue comment where the owner ruled. The first task holds
-  `Hold: OPEN-Q proposal awaits owner approval` until the owner approves, and the hold comes off in the same edit that
-  fills `Approved-by:`. The one hold covers proposal and design. A `design.md` past 120 lines draws a warning, which is
-  accepted for port designs: they keep the shape sweep, pin probes and ADR listing their rules require.
+  `Hold: OPEN-Q proposal awaits owner approval` until the owner approves; the owner removes the hold in the same edit
+  that fills `Approved-by:`. The one hold covers proposal and design. A `design.md` past 120 lines draws a warning,
+  which is accepted (port designs, for example, keep the shape sweep, pin probes and ADR listing their rules require).
 - **Session checkpoint:** `ateam state handoff` (the [handoff](skills/handoff/SKILL.md) skill) writes
   `.ateam/state.json`, which git ignores, and posts the five-field checkpoint (`Goal`, `Addresses`, `Constraints`,
   `Done when`, `Checks to run`) to the open PR; [pickup](skills/pickup/SKILL.md) reconciles it against live state.

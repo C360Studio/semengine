@@ -5,16 +5,17 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 1. Design and measurement
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance, including the proposal's three questions. Gate: `task spec:check` and `task docs:check`.
-  Owner accepted 2026-10-30 (proposal `Approved-by:`). Hold: Codex design review not yet run
+  Owner accepted 2026-10-30 (proposal `Approved-by:`). Codex approved the design at `4526573` (PR #476 comment
+  6522948775; its BLOCKING `Hooks.OnTick` finding, comment 6522851399, is fixed in `4526573`).
 - [x] 1.2 Post the nats.go KV watch probes (inventory 7: G1-G5 `/tmp/gv-probe`, G6 `/tmp/gv-probe-g6`) on PR #476
   with source, command, versions and output; re-run them at the new version if #464 has merged first. Gate: the
   comment read back. Posted as PR #476 comment 6522730160 (nats.go v1.54.0; #464 still open).
-- [ ] 1.3 Comment on #461 that `pkg/graphview` is a new `kvwatch.Stop` caller (design D7), no closing keyword. Gate:
-  the comment read back.
-- [ ] 1.4 File the adoption issue listing design D7's sites, linked from the PR without a closing keyword. Gate: the
-  issue read back.
+- [x] 1.3 Comment on #461 that `pkg/graphview` is a new `kvwatch.Stop` caller (design D7), no closing keyword. Gate:
+  the comment read back. Posted as #461 comment 6522988165.
+- [x] 1.4 File the adoption issue listing design D7's sites, linked from the PR without a closing keyword. Gate: the
+  issue read back. Filed as #477, linked in PR #476 comment 6522999612.
 
 ## 2. Tests first
 

@@ -11,12 +11,16 @@ approval is adopted. A hold is written as `Hold:` inside the unticked task it st
 
 ## 2. Worktrees (ruled on #447 item 6; no approval needed)
 
-- [ ] 2.1 `ateam state prune` removes this agent's clean, merged worktrees and their local branches;
+- [x] 2.1 `ateam state prune` removes this agent's clean, merged worktrees and their local branches;
   `git worktree remove` the three clean detached checkouts (`claude-fix-456-guard-watcher-drain`,
   `claude-natsclient-fixture-open-195`, `claude-review-pr-472`). Kept: `claude/adr-063-store-substrate` (#435
   closed, 1 unpushed commit), `claude/fix-420-keysbyfilter-drain-join` (#453 closed, 1 unpushed commit),
   `codex/review-pr-414` (another agent's). Gate: `ateam state prune --dry-run` prints no `would remove`;
   `ateam state pickup` lists no `merged via`; the output is pasted on the PR.
+  Done 2026-10-30: prune removed 16 worktrees and their local branches (each `merged via #n; no remote branch`);
+  the three detached checkouts removed by `git worktree remove`; the dry-run after prints no `would remove`;
+  `ateam state pickup` prints no `merged via`; four worktrees remain (main, this claim, the two kept closed ones
+  and codex's). Output on PR #473.
 
 ## 3. Protocol, rule rows, contract
 

@@ -10,8 +10,8 @@
 > - Issue numbers in the text below (`#592`, `gh#474`, `gh#597`) are SemStreams' or a sister repository's, not
 >   SemEngine's; the OpenSpec change it names, `fusion-consistency-simplification`, and that change's `design.md` are
 >   SemStreams'.
-> - Of the records named here, ADR-066, ADR-083 and ADR-085 are ported with this one. ADR-081 and ADR-082 are not yet
->   ported.
+> - Of the records named here, ADR-066, ADR-083 and ADR-085 are ported with this one. ADR-081 is ported with
+>   `pkg/graphview`. ADR-082 is not yet ported.
 > - None of the code named here is ported: `pkg/fusion` and its `fusionnats` client,
 >   `graph/query`'s client (retired before the pin), `graph` (`graph/mutation_responses.go`), `processor/graph-index`
 >   and `processor/graph-ingest`. File paths and line numbers in the text are those at that commit.

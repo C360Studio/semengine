@@ -50,15 +50,15 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 4. Ledger, records and docs
 
-- [ ] 4.1 Ledger rows: `pkg/graphview` (`adapt`: `Run`, the stop/loss split, `kvwatch.Stop`, dropped surface; the
+- [x] 4.1 Ledger rows: `pkg/graphview` (`adapt`: `Run`, the stop/loss split, `kvwatch.Stop`, dropped surface; the
   contract field names the kept symbols' contract lines) and `docs/adr/081-graph-view-subscription.md`. Gate:
   `task ledger:check`.
-- [ ] 4.2 `pkg/graphview/README.md`; ADR-081 ported with its port note (design D5); the ADR-085 port note; the
+- [x] 4.2 `pkg/graphview/README.md`; ADR-081 ported with its port note (design D5); the ADR-085 port note; the
   `docs/repository-map.md` row and the `docs/adr/` row; the `kv-or-stream` skill line (design D1). Gate:
   `task docs:check`.
-- [ ] 4.3 `pkg/graphview unit` in `scripts/cover-check.sh` and `d11Targets` in
+- [x] 4.3 `pkg/graphview unit` in `scripts/cover-check.sh` and `d11Targets` in
   `internal/harness/toolcheck/cover_test.go`; the measured figure on the PR. Gate: `task cover:check` after
-  `task test:integration`, and `task test:tools`.
+  `task test:integration`, and `task test:tools`. Measured 93.4% (unit profile), floor 80%.
 
 ## 5. Evidence and review
 

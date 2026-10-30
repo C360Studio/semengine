@@ -3831,3 +3831,85 @@
     internal/harness/contract (TestQueryImportsNoProviderModule)
   owner: setup-04a-04-graph-roots-query developer
   disposition: defer-exclude
+
+# Change setup-04a-04-graph-roots-graphview (PR #476, epic #9): pkg/graphview, the shared read-side view over one KV
+# watch (change 4, PR 8 of 9), with ADR-081.
+
+- source_path: pkg/graphview
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the view layer of change observation (SETUP 03B design D14, tier 0): one in-memory copy of a KV bucket built
+    from one WatchAll, decoded once per write and served to many local readers as an atomic snapshot followed by
+    coalesced deltas. semboids drives it at 8c03cc53 (internal/api/graphstream*.go); processor/graph-query's
+    COMMUNITY_SUMMARIES serving view reads Get at the pin (summary_view.go:137, :296)
+  destination: pkg/graphview
+  contract: >-
+    Surface as at the pin (design D3) with these adaptations (spec graph-view-subscription; design D2-D4): (1) Run(ctx)
+    replaces Start and Stop: it refuses a nil context before touching the source, returns ErrAlreadyStarted while
+    another Run runs and ErrViewStopped once a Run has returned, for any reason (the pin returned ErrAlreadyStarted for
+    a failed view); a replacement is a new view; (2) the stop/loss split: ending Run's context is a stop, where the pin
+    reported every shutdown as a watcher loss: reads and attaches return ErrViewStopped, each still-attached
+    subscription's Err is ErrViewStopped before its Deltas closes, OnWatcherLost does not fire and Run returns
+    ctx.Err(); a closed update channel is a loss only while that context is live, and a loss fails closed as at the
+    pin (reads wrap ErrNotReady and ErrWatcherLost with the cause, each subscription's Err wraps ErrWatcherLost, then
+    OnWatcherLost fires once, and Run returns it wrapped); a failed WatchAll open returns ctx.Err() when ctx has ended,
+    else the open error, with no OnWatcherLost; (3) Run reads the watch and the tick on the caller's goroutine, stops
+    the watch through internal/kvwatch.Stop, and returns only after every subscription goroutine and every hook call
+    made by an attach or detach has returned and the watch's delivery has closed, or kvwatch.DrainBudget ran out
+    (error joined with kvwatch.ErrDeliveryOpen); (4) removed (owner accepted 2026-10-30, proposal question 2): the
+    ghost-key loop (pin view.go:713-722, S4) and the test-only tick channel (pin view.go:106-110, :766-771, S6).
+    Kept with no reader, each on a contract line and proved by a product-shaped test in package graphview_test:
+    Subscribe (ADR-081 Decision 3, delta-only attach), List and KeyedEntry (ADR-081 Decision 6, Get and bounded list),
+    Applied and Snapshot.Revision/AppliedAt (ADR-085 Decision 5, the applied-revision and write-time pair, which gates
+    nothing), and the four unread sentinels as the typed errors the methods return; pkg/graphview/README.md is the
+    package's product contract line. Not carried (unread, no contract line, inventory 4): AppliedRevision, CaughtUp,
+    View.Poisoned, Snapshot.Sequence, EntryMeta.Revision; Hooks.OnTick (a test back door, #186);
+    DefaultTickInterval is unexported (defaultTickInterval, 250 ms)
+  dependencies_and_side_effects: >-
+    internal/kvwatch (in-set; no exported signature names it); nats.go/jetstream; standard library only otherwise. No
+    natsclient, no message, no metric. Opens one WatchAll on the injected WatcherSource (jetstream.KeyValue and
+    graph/kvcatalog.CatalogReader satisfy it); creates no bucket, stream or consumer. Starts one delivery goroutine per
+    subscription, joined by Run; calls the caller's decode and Hooks on Run's goroutine and on attach and detach
+  known_risks: >-
+    A hook or decode that never returns holds Run, which has no bound of its own; the composing component bounds its
+    wait (ADR-113). OnSubscribers is not promised to hold the current count (attach and detach call it after
+    unlocking). Delivered pointer values are shared between readers (ADR-081 Decision 4). How nats.go times a watch's
+    shutdown or its close is probed at v1.54.0 and not promised (PR #476 comment 6522730160, G1-G6, PR #458 comment
+    6472856197, P11); the bucket-deleted close took about 20 s there. Retained findings, optional under Bounded port
+    scope (design D4): S1 the tombstone switch beside natsclient.IsKVTombstone, S3 the package's own ErrKeyNotFound and
+    ErrAlreadyStarted, S5 the watch loop each KV follower writes (#461 tracks the stop half; this package is a new
+    kvwatch.Stop caller, #461 comment 6522988165). Adoption sites are issue #477. Port refactors: #195 advanced (the
+    pin's NewTestClient site is natsfixture.Open here), stays open
+  proving_tests: >-
+    pkg/graphview: view_test.go (TestRunRefusesNilContext, TestRunOnce, TestContextBoundariesRejectNil,
+    TestGetAndListSurface, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go (TestRunLeavesNothingBehind,
+    TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite, TestDetachedReasonSurvivesStop,
+    TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach, TestWatcherLossFailsClosed,
+    TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition, TestRunJoinsSubscriberCallback);
+    history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6); product_test.go
+    (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
+    coherence_test.go, delta_test.go, hooks_test.go, meta_test.go (the pin's tests, ported onto Run in synctest);
+    integration_test.go (TestIntegration_GraphViewOverRealBucket, TestRunLeavesNoWatchDelivery,
+    TestRunReportsLostWatch, on natsfixture.Open); notes/2.1.md, 2.2.md, 2.3.md, 2.4.md and 3.3.md of the change
+    record each changed behaviour shown failing against the pin's shape and the mutation checks
+  owner: setup-04a-04-graph-roots-graphview developer; docs by setup-04a-04-graph-roots-graphview technical writer
+  disposition: adapt
+
+- source_path: docs/adr/081-graph-view-subscription.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for the shared read-side fan-out primitive (one view per bucket, decode once, atomic
+    snapshot and subscribe, at-most-once slow subscribers, honest degradation), which pkg/graphview implements;
+    carried with the graphview port
+  destination: docs/adr/081-graph-view-subscription.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    one edit to the pin's decision text: "#579/#571" becomes "issues #579 and #571" in one sentence, so no line starts
+    with `#`, which markdownlint reads as a heading; a port note added under the title says its issue numbers,
+    file references and sweep-table sites are SemStreams', that every decision is kept, that the pin spec requirement
+    "Watcher loss fails closed" changes (ending Run's context is a stop) and that Hooks.OnTick and the unread names
+    are dropped
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-graphview technical writer
+  disposition: adapt

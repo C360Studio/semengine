@@ -94,17 +94,21 @@ SHALL create a context root.
 - **THEN** it returns a nil classifier and a non-nil error
 - **AND** the test that verifies this is `TestNewEmbeddingClassifierRefusesEndedContext`
 
-### Requirement: A result shares no state with the classifier
+### Requirement: A result's top-level map, Example and vector are copies
 
-Every `Example` that `FindBestMatch` returns and every `ClassificationResult.Options` map the chain returns SHALL be a
-copy: changing its top-level entries, its `Options` map or its `Vector` SHALL change no later result.
+Every `Example` that `FindBestMatch` returns, its `Options` map and its `Vector`, and every
+`ClassificationResult.Options` map the chain returns SHALL be copies: changing a field of the returned `Example`, a
+top-level entry of either map, or an element of the `Vector` SHALL change no later result. Values nested inside an
+`Options` entry are shared, not copied.
 
 #### Scenario: A caller edits a result
 
-- **WHEN** a caller deletes and adds keys in a tier-1 result's `Options` and overwrites the returned `Example`'s
-  `Vector`, then classifies the same query again
-- **THEN** the second result has the original hints and the original score
-- **AND** the test that verifies this is `TestResultEditsDoNotReachClassifier`
+- **WHEN** two classifiers are built from identical examples and receive the same sequence of queries, and after
+  each tier-1 result of the first the caller deletes and adds top-level keys in its `Options`, and overwrites the
+  returned `Example`'s fields and `Vector` elements, while the second's results are left untouched
+- **THEN** every later result of the first equals the second's at the same step: hints, intent, vector and score
+- **AND** the test that verifies this is `TestResultEditsDoNotReachClassifier`; with each copy removed in turn
+  (`task mutate:check`), it fails
 
 ### Requirement: The keyword tier adds no domain predicate
 

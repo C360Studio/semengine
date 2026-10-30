@@ -23,7 +23,10 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 2.2 The new tests of design D8 (`TestChainEndedContextReturnsNil`, `TestChainLLMFailureGivesDefault`,
   `TestChainKeywordHintStopsTheLadder`,
   `TestLLMClassifierRefusesNilContext`, `TestNewEmbeddingClassifierRefusesEndedContext`,
-  `TestFindBestMatchEndedContext`, `TestResultEditsDoNotReachClassifier`, `TestZoneQueryAddsNoPredicate`,
+  `TestFindBestMatchEndedContext`, `TestResultEditsDoNotReachClassifier` (an edited classifier
+  against an untouched control with the same examples and query history, both on `Generate`, so the corpus drift #96
+  keeps is the same on both; shown to fail by `task mutate:check` with each copy removed in turn, the `Example`, its
+  map, its vector, the chain's map, recorded with survivors as survivors), `TestZoneQueryAddsNoPredicate`,
   `TestEmbeddingClassifierAsAProduct`), each changed behaviour shown failing
   against the pin's shape in `notes/2.2.md`; `TestQueryImportsNoProviderModule` in `internal/harness/contract`
   (the embedding guard's helper on `./graph/query`, its own requirement name).

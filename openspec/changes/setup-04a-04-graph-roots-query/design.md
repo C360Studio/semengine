@@ -90,9 +90,9 @@ exported context boundary that can return an error).
 `FindBestMatch` returns `(nil, 0)` for a nil classifier, a blank query, a nil or ended context (pin: a nil context
 panics) and, after D3, any embedding error, which only an ended context causes (S8d); `(nil, best)` below the
 threshold; ties go to the first example in load order. `LoadDomainExamples` refuses an empty path, a missing or empty
-file and invalid JSON. Every returned `Example` and result `Options` map is a copy: editing it changes no later result
-(S9; integrity gate; the pin's own consumer copies defensively). Nested values inside `Options` are not copied; the
-README says so.
+file and invalid JSON. A returned `Example`, its `Options` map and `Vector`, and a result's `Options` map are copies:
+editing their fields, top-level entries or vector elements changes no later result (S9; integrity gate; the pin's own
+consumer copies defensively). Values nested inside an `Options` entry are shared; the README says so.
 
 ## D5. The keyword tier stops adding `located_in` (S10; owner question 4)
 

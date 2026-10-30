@@ -28,7 +28,8 @@ Approved-by:
   pin's code returned after a late cancel nor the pin's panic on nil.
 - The keyword tier stops adding the predicate `located_in` to zone and area questions: no entity can carry it, so
   `processor/graph-query`'s path search came back empty for every such question (owner question 4).
-- A caller that edits a result no longer edits the classifier's stored examples.
+- A returned example, its options map and vector, and a result's options map are copies, so editing them no longer
+  edits the classifier's stored examples; values nested inside an option stay shared.
 - Dead surface is not carried: `UpgradeVectors`, `InferStrategy`, `HasIndexFilters`, `SetDefaults`,
   `DefaultMaxCommunities`, `LoadAllDomainExamples`, the `Embedder` interface, and the fields
   `RequireAllFilters`, `Level`, `MaxCommunities`. The private cosine copy gives way to `embedding.CosineSimilarity`.

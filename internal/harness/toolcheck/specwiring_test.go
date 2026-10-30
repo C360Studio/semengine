@@ -11,10 +11,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// lines joins a fixture's lines into a file, each ended by a newline, so a case's line numbers can
-// be counted by eye.
-func lines(ls ...string) string { return strings.Join(ls, "\n") + "\n" }
-
 // spec-queue › "spec:check runs validate then ateam state spec-check": spec:check runs openspec
 // validate, then ateam's check; spec:queue runs ateam's queue alone; nothing in either can skip a
 // command or discard its exit status. The command lines are the spec's, written here, not read from

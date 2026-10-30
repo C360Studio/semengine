@@ -29,9 +29,10 @@ Approved-by: Coby Leuschke (2026-10-29), in session, recorded on #450.
 
 Divergence kept: `task spec:check` keeps its own `openspec validate` line before `ateam state spec-check`. At the
 pin the ateam check runs the same validation itself when it finds `node_modules/.bin/openspec` or `openspec` on
-`PATH`, but prints `strict validation skipped` and exits 0 when it finds neither (`openspec.go:467-485`); the Task
-line fails closed, since `npx --no-install` exits non-zero when the pinned CLI is missing. The validation runs twice,
-under a second each (0.8 s measured on 2026-10-29).
+`PATH`, but prints `strict validation skipped` and exits 0 when it finds neither (`openspec.go:467-485`). The Task
+line stops where no `openspec` is reachable at all, as on a CI runner before `npm ci` (`npx` also searches parent
+`node_modules`, npm's global prefix and its cache, so on a developer machine it may run another version; measured in
+`notes/2.1.md`). The validation runs twice, under a second each (0.8 s measured on 2026-10-29).
 
 ## Capabilities
 

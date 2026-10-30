@@ -15,14 +15,14 @@ are adopted. A hold is written as `Hold:` inside the unticked task it stops.
 - [x] 2.1 `Taskfile.yml`: `spec:queue` runs `ateam state spec-queue`; `spec:check` runs
   `npx --no-install openspec validate --all --strict --no-interactive` then `ateam state spec-check` (design D1).
   Gate: `task spec:check` prints `holds: ok (1 tasks.md read)` and exits 0; `task spec:queue` lists this change
-  with its `OPEN-Q` line; with `node_modules` renamed aside, `task spec:check` exits non-zero on the first line.
+  with its `OPEN-Q` line; where `npx` reaches no `openspec` at all, `task spec:check` exits non-zero on the first line.
   Done in 6778e4e: `holds: ok (1 tasks.md read)`, exit 0; the queue prints `1/7 ok` (the hold went in 67e990c), and
   on b070579's `tasks.md` `OPEN-Q   L10    Hold: OPEN-Q proposal awaits owner approval.`; the first line stops only
   with no openspec reachable anywhere (`exit status 1`, see `notes/2.1.md`).
-- [x] 2.2 `scripts/openspec-queue.sh` and `internal/harness/toolcheck/specqueue_test.go` deleted; `lines` moved to
-  the new test file; `scripts/doctor.sh` python3 comment names `scripts/port-status.sh` (design D2). Gate:
+- [x] 2.2 `scripts/openspec-queue.sh` and `internal/harness/toolcheck/specqueue_test.go` deleted (its `lines` helper
+  had no other caller and goes with it); `scripts/doctor.sh` python3 comment names `scripts/port-status.sh` (design D2). Gate:
   `task test:tools` passes; `scripts/doctor.sh` prints the python3 row; `git grep openspec-queue` outside
-  `openspec/changes/archive` finds nothing.
+  `openspec/` finds only the planted wrong command in the 2.3 test.
   Done in 6778e4e: `task test:tools` `ok` for mutcheck, pindiff, toolcheck; doctor `ok    python3       3.14.5`;
   `git grep` finds only this change's files, the `spec-queue` spec (rewritten in 4.2) and the 2.3 fixture.
 - [x] 2.3 `TestSpecTaskWiring` in `internal/harness/toolcheck/specwiring_test.go` (design D3) with its sensitivity

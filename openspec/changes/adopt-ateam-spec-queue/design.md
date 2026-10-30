@@ -23,8 +23,8 @@
 
 ## Goals / Non-Goals
 
-Goals: the queue and the hold check are ateam's at the v0.3.4 pin; `task spec:check` fails closed when the pinned
-CLI is missing; the Task wiring is guarded by a test shown able to fail.
+Goals: the queue and the hold check are ateam's at the v0.3.4 pin; `task spec:check` stops when no `openspec` is
+reachable instead of passing with validation skipped; the Task wiring is guarded by a test shown able to fail.
 Non-goals: `ateam test-spec` (deferred until ateam #237, #447 ruling); the hook and MCP surfaces, already ateam's
 since PR A; any change to the `tasks.md` grammar.
 
@@ -33,13 +33,14 @@ since PR A; any change to the `tasks.md` grammar.
 - **D1 `spec:check` keeps the validate line.** Option A: `ateam state spec-check` alone; one command, but a
   missing CLI degrades to a warning and exit 0 (`openspec.go:467-485`), so a tree with no `node_modules` passes
   strict validation it never ran. Option B (chosen): the validate line first, as #450 says, then the ateam check;
-  the CLI's absence is exit non-zero. Cost: validation twice, 0.8 s each. The divergence is recorded in the proposal.
+  with no `openspec` reachable `npx` exits 1 and the check never runs (`notes/2.1.md` measures where `npx` looks).
+Cost: validation twice, 0.8 s each. The divergence is recorded in the proposal.
 - **D2 the python3 row stays.** `task status` runs `scripts/port-status.sh`, five python3 calls; the doctor row's
   comment names it. Removing the row (#450's wording) would leave `task status` failing with no doctor line.
 - **D3 one wiring test, `TestSpecTaskWiring`.** The retired `specCheckWiringViolations` shape, extended to the
   `spec:queue` entry: each task a mapping with only `desc`, `summary` and `cmds`, each command a plain string,
   the commands exactly those the spec names, in order. Sensitivity cases: a line removed, the two swapped,
-  `ignore_error` on the task. `lines` moves into the new file so the three other tests keep compiling.
+  `ignore_error` on the task.
 - **D4 the spec keeps three requirements.** What the queue prints and when the check fails are stated as the
   pin's behaviour with scenarios a reader can run on this tree; the 23 script requirements go with Reason and
   Migration lines, as the `merge-gate` spec did in PR B.

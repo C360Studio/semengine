@@ -141,9 +141,15 @@ type harness struct {
 // watch. The bubble's end cancels t.Context, which ends Run.
 func newHarness(t *testing.T) *harness {
 	t.Helper()
+	return newHarnessDecoding(t, decodeTest)
+}
+
+// newHarnessDecoding is newHarness with the given decode function.
+func newHarnessDecoding(t *testing.T, decode DecodeFunc[string]) *harness {
+	t.Helper()
 	h := &harness{t: t, w: newFakeWatcher(), rec: &recorder{}}
 	h.src = &fakeSource{queue: []*fakeWatcher{h.w}}
-	view, err := New[string](h.src, decodeTest, WithHooks(h.rec.hooks()), WithTickInterval(testTick))
+	view, err := New[string](h.src, decode, WithHooks(h.rec.hooks()), WithTickInterval(testTick))
 	require.NoError(t, err)
 	h.view = view
 	ctx, cancel := context.WithCancel(t.Context())

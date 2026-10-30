@@ -17,12 +17,32 @@ func TestNewValidatesArguments(t *testing.T) {
 	require.Error(t, err)
 }
 
-// TestRunRejectsNilContext: Run is an exported error-returning boundary, so a
-// nil context is reported instead of panicking in context.WithCancel.
-func TestRunRejectsNilContext(t *testing.T) {
-	view, err := New[string](&fakeSource{}, decodeTest)
-	require.NoError(t, err)
-	require.Error(t, view.Run(nil))
+// TestRunRefusesNilContext (spec "A nil context, a second Run"): Run refuses a
+// nil context before touching its source, and the refusal starts nothing: the
+// view is still new, so its first real Run runs.
+func TestRunRefusesNilContext(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newFakeWatcher()
+		src := &fakeSource{queue: []*fakeWatcher{w}}
+		view, err := New[string](src, decodeTest)
+		require.NoError(t, err)
+		require.Error(t, view.Run(nil))
+		require.Zero(t, src.opened, "a refused Run must not touch the source")
+
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- view.Run(ctx) }()
+		synctest.Wait() // Run has opened its watch and waits for an entry, or has returned
+		select {
+		case err := <-done:
+			t.Fatalf("Run after a refused nil context returned %v; the refusal must start nothing", err)
+		default:
+		}
+		w.updates <- nil
+		require.NoError(t, view.WaitCaughtUp(t.Context()))
+		cancel()
+		require.ErrorIs(t, <-done, context.Canceled)
+	})
 }
 
 // TestContextBoundariesRejectNil: subscription and wait contexts are
@@ -45,25 +65,52 @@ func TestContextBoundariesRejectNil(t *testing.T) {
 	})
 }
 
-// TestRunLifecycleGuards: a second Run on a running view is refused with
-// ErrAlreadyStarted and leaves the first running; once Run has returned, Run,
-// reads and WaitCaughtUp all return ErrViewStopped. A replacement is a new view.
-func TestRunLifecycleGuards(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		h := newHarness(t)
-		h.endReplay()
-		require.ErrorIs(t, h.view.Run(t.Context()), ErrAlreadyStarted)
-		h.put("k", "v", 1)
-		val, _, err := h.view.Get("k")
-		require.NoError(t, err, "the first Run keeps running after the refused second")
-		require.Equal(t, "v", val)
+// TestRunOnce (spec "A nil context, a second Run"): a view runs once. A second
+// Run on a running view returns ErrAlreadyStarted and the first keeps running;
+// once Run has returned, on a stop, a lost watch or a watch that could not
+// open, Run returns ErrViewStopped and opens nothing, so a view never
+// re-bootstraps (the pin returned ErrAlreadyStarted for a failed view). A
+// replacement is a new view.
+func TestRunOnce(t *testing.T) {
+	t.Run("running, then stopped", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t)
+			h.endReplay()
+			require.ErrorIs(t, h.view.Run(t.Context()), ErrAlreadyStarted)
+			h.put("k", "v", 1)
+			val, _, err := h.view.Get("k")
+			require.NoError(t, err, "the first Run keeps running after the refused second")
+			require.Equal(t, "v", val)
 
-		require.ErrorIs(t, h.stop(), context.Canceled)
-		require.ErrorIs(t, h.view.Run(t.Context()), ErrViewStopped)
-		_, _, err = h.view.Get("k")
-		require.ErrorIs(t, err, ErrViewStopped)
-		require.ErrorIs(t, h.view.WaitCaughtUp(t.Context()), ErrViewStopped)
-		require.Equal(t, 1, h.src.opened, "neither refused Run opened a watch")
+			require.ErrorIs(t, h.stop(), context.Canceled)
+			require.ErrorIs(t, h.view.Run(t.Context()), ErrViewStopped)
+			_, _, err = h.view.Get("k")
+			require.ErrorIs(t, err, ErrViewStopped)
+			require.ErrorIs(t, h.view.WaitCaughtUp(t.Context()), ErrViewStopped)
+			require.Equal(t, 1, h.src.opened, "neither refused Run opened a watch")
+		})
+	})
+	t.Run("after a lost watch", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t)
+			h.endReplay()
+			h.w.lose()
+			require.ErrorIs(t, h.runResult(), ErrWatcherLost)
+			require.ErrorIs(t, h.view.Run(t.Context()), ErrViewStopped)
+			require.ErrorIs(t, h.view.WaitCaughtUp(t.Context()), ErrWatcherLost,
+				"the refused Run leaves the view failed")
+			require.Equal(t, 1, h.src.opened, "the refused Run opened no watch")
+		})
+	})
+	t.Run("after a watch that could not open", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			src := &fakeSource{} // no watcher queued: WatchAll fails
+			view, err := New[string](src, decodeTest)
+			require.NoError(t, err)
+			require.Error(t, view.Run(t.Context()))
+			require.ErrorIs(t, view.Run(t.Context()), ErrViewStopped)
+			require.Equal(t, 1, src.opened, "the refused Run opened no watch")
+		})
 	})
 }
 

@@ -167,6 +167,11 @@ func TestRunLostWatchFailsClosed(t *testing.T) {
 			require.ErrorIs(t, seen[0].errors[i], ErrWatcherLost, "subscription %d", i)
 		}
 		_, _, err = view.Get("k")
+		require.ErrorIs(t, err, ErrNotReady)
 		require.ErrorIs(t, err, ErrWatcherLost)
+		_, err = view.Subscribe(t.Context())
+		require.ErrorIs(t, err, ErrNotReady, "an attach after the loss is refused")
+		require.ErrorIs(t, err, ErrWatcherLost)
+		require.Equal(t, int32(1), w.stops.Load(), "the lost watch is stopped once")
 	})
 }

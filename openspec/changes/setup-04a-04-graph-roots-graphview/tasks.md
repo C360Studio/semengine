@@ -25,10 +25,11 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   writes; the pin harness's `OnTick` waits (`harness_test.go:128`, `hooks_test.go:44`) become `synctest.Wait` after
   the tick. Tests of dropped surface are rewritten on kept surface or dropped, each named in `notes/2.1.md`. Gate:
   in 3.2. Done at `7aa3a21`: unit gates of 3.2 green, `task verify` ok.
-- [ ] 2.2 The new unit tests of design D6 (`TestRunRefusesNilContext`, `TestRunOnce`, `TestRunLeavesNothingBehind`,
+- [x] 2.2 The new unit tests of design D6 (`TestRunRefusesNilContext`, `TestRunOnce`, `TestRunLeavesNothingBehind`,
   `TestRunContextEndIsAStop` with its constructed both-ready loop, `TestRunLostWatchFailsClosed`, `TestRunOpenFailure`,
   `TestDecodeOncePerWrite`) and the product-shaped tests of
-  each kept symbol with no reader (design D3), each shown failing against the pin's shape. Gate: in 3.2.
+  each kept symbol with no reader (design D3), each shown failing against the pin's shape. Gate: in 3.2. Done:
+  unit gates green, each test's wrong change in `notes/2.2.md`.
 - [ ] 2.3 `TestViewHistoryMatchesModel` (design D6): seed, run count and completed checks in `notes/2.3.md`. Gate:
   in 3.2.
 - [ ] 2.4 Integration tests of design D6 on `natsfixture.Open`: the pin's real-bucket test,

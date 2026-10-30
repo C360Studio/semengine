@@ -1,6 +1,7 @@
 package query
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -180,9 +181,13 @@ func typedOptions(options map[string]any) (map[string]any, error) {
 // TestEveryHintNameIsTyped fails when a SearchOptions field has no case here.
 func typedOption(name string, value any) (any, error) {
 	var o SearchOptions
-	raw, err := json.Marshal(map[string]any{name: value})
+	encoded, err := json.Marshal(value)
 	if err == nil {
-		err = json.Unmarshal(raw, &o)
+		var raw []byte
+		raw, err = json.Marshal(map[string]json.RawMessage{name: encoded})
+		if err == nil {
+			err = json.Unmarshal(raw, &o)
+		}
 	}
 
 	var typed any
@@ -220,13 +225,14 @@ func typedOption(name string, value any) (any, error) {
 	default:
 		return value, nil
 	}
-	// JSON null under a known name would decode to the field's zero value ("limit": null gives 0):
-	// refused under every known name, as one rule.
-	if value == nil {
-		return nil, errors.New("null value")
-	}
 	if err != nil {
 		return nil, err
+	}
+	// JSON null under a known name would decode to the field's zero value ("limit": null gives 0):
+	// refused under every known name, as one rule. The encoded form is checked, so a typed nil
+	// pointer or slice and a json.RawMessage holding null are refused too.
+	if bytes.Equal(encoded, []byte("null")) {
+		return nil, errors.New("null value")
 	}
 	if err := checkOption(name, &o); err != nil {
 		return nil, err

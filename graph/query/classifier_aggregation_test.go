@@ -76,6 +76,13 @@ func TestOrdinaryAggregationPhrases(t *testing.T) {
 		{"lowest measurements", "Return the lowest voltage measurements", agg(AggregationMin, "voltage")},
 		{"highest level", "Report the highest tank level", agg(AggregationMax, "tank")},
 
+		// Precedence min > max holds for ordinary extrema in either order, each with its own field.
+		{"highest then lowest", "Give the highest pressure reading and lowest temperature reading", agg(AggregationMin, "temperature")},
+		{"lowest then highest", "Give the lowest temperature reading and highest pressure reading", agg(AggregationMin, "temperature")},
+		{"highest; lowest", "Give the highest pressure reading; give the lowest temperature reading", agg(AggregationMin, "temperature")},
+		{"maximum then minimum", "Give the maximum pressure reading and minimum temperature reading", agg(AggregationMin, "temperature")},
+		{"highest then lowest after which", "Which pump has the lowest flow value; give the highest pressure reading", agg(AggregationMax, "pressure")},
+
 		// Precedence: "total number of" keeps count over sum.
 		{"total number of is count", "What is the total number of pumps", agg(AggregationCount, "")},
 		{"total number of before a value noun", "Return the total number of humidity readings", agg(AggregationCount, "")},

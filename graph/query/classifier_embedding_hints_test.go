@@ -209,6 +209,44 @@ func TestTierOneHintsAreTyped(t *testing.T) {
 		})
 	}
 
+	// An example built in code can hold a typed nil or a raw JSON null; each encodes as JSON null
+	// and is refused under a known name like the file's null. A caller's own name passes through.
+	typedNulls := []struct {
+		name   string
+		option string
+		value  any
+	}{
+		{"nil *int limit", "limit", (*int)(nil)},
+		{"nil []string types", "types", []string(nil)},
+		{"raw null use_embeddings", "use_embeddings", json.RawMessage("null")},
+		{"nil *TimeRange time_range", "time_range", (*TimeRange)(nil)},
+	}
+	for _, tt := range typedNulls {
+		t.Run("refuses "+tt.name, func(t *testing.T) {
+			d := &DomainExamples{Domain: "plant-floor", Version: "1.0", Examples: []Example{
+				{Query: "Show pump readings", Intent: "hinted", Options: map[string]any{tt.option: tt.value}},
+			}}
+
+			c, err := NewEmbeddingClassifier(t.Context(), []*DomainExamples{d}, 0.3)
+
+			require.Error(t, err)
+			assert.Nil(t, c)
+			for _, name := range []string{"plant-floor", "Show pump readings", tt.option} {
+				assert.Contains(t, err.Error(), name)
+			}
+		})
+	}
+	t.Run("a caller's own null passes through", func(t *testing.T) {
+		d := &DomainExamples{Domain: "plant-floor", Version: "1.0", Examples: []Example{
+			{Query: question, Intent: "hinted", Options: map[string]any{"site": json.RawMessage("null")}},
+		}}
+		c, err := NewEmbeddingClassifier(t.Context(), []*DomainExamples{d}, 0.3)
+		require.NoError(t, err)
+		match, _ := c.FindBestMatch(t.Context(), question)
+		require.NotNil(t, match)
+		assert.Equal(t, json.RawMessage("null"), match.Options["site"])
+	})
+
 	t.Run("pole and antimeridian boxes are accepted", func(t *testing.T) {
 		d := hintFile(t, "geo", question,
 			`{"geo_bounds": {"north": 90, "south": -90, "east": 190, "west": -180}, "limit": 0}`)

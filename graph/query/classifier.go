@@ -395,21 +395,22 @@ func (k *KeywordClassifier) extractAggregation(query string) (string, string) {
 		return AggregationAvg, fieldAfter(query[loc[1]:])
 	}
 
-	// A numeric extremum ("the lowest pressure reading") is min or max like the words below.
-	extremumWord, extremumField := numericExtremum(query)
+	// A numeric extremum ("the lowest pressure reading") is min or max like the words below;
+	// each operation keeps its own first phrase, so min wins over max in either order.
+	minField, maxField := numericExtrema(query)
 
 	// min / max (check before sum so "minimum" / "maximum" are not partially matched)
 	if loc := minPattern.FindStringIndex(query); loc != nil {
 		return AggregationMin, fieldAfter(query[loc[1]:])
 	}
-	if extremumWord == "smallest" || extremumWord == "lowest" {
-		return AggregationMin, extremumField
+	if minField != "" {
+		return AggregationMin, minField
 	}
 	if loc := maxPattern.FindStringIndex(query); loc != nil {
 		return AggregationMax, fieldAfter(query[loc[1]:])
 	}
-	if extremumWord != "" {
-		return AggregationMax, extremumField
+	if maxField != "" {
+		return AggregationMax, maxField
 	}
 
 	// sum / total (bare "total" without "number of")
@@ -442,10 +443,11 @@ func nextWord(s string) (word, rest string) {
 	return s[m[2]:m[3]], s[m[1]:]
 }
 
-// numericExtremum returns the lower-cased extremum word and the field of the first numeric
-// extremum phrase in query whose clause has no "which", "who" or "with" before it, or two empty
-// strings. A field word of "of" or "the" is no field, so the phrase is not an extremum.
-func numericExtremum(query string) (word, field string) {
+// numericExtrema returns the field of the first min phrase ("smallest", "lowest") and of the
+// first max phrase ("largest", "highest", "greatest") among the numeric extremum phrases of query
+// whose clause has no "which", "who" or "with" before them; "" where there is none. A field word
+// of "of" or "the" is no field, so that phrase is not an extremum.
+func numericExtrema(query string) (minField, maxField string) {
 	for _, m := range extremumPattern.FindAllStringSubmatchIndex(query, -1) {
 		field := query[m[4]:m[5]]
 		if strings.EqualFold(field, "of") || strings.EqualFold(field, "the") {
@@ -454,9 +456,18 @@ func numericExtremum(query string) (word, field string) {
 		if entityChoicePattern.MatchString(clauseBefore(query, m[0])) {
 			continue
 		}
-		return strings.ToLower(query[m[2]:m[3]]), field
+		switch strings.ToLower(query[m[2]:m[3]]) {
+		case "smallest", "lowest":
+			if minField == "" {
+				minField = field
+			}
+		default:
+			if maxField == "" {
+				maxField = field
+			}
+		}
 	}
-	return "", ""
+	return minField, maxField
 }
 
 // clauseBefore returns the text of the clause holding byte offset pos, from the clause's start

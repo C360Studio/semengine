@@ -11,9 +11,10 @@ SemEngine is a live semantic knowledge-graph framework with durable execution. I
 baby." It has two halves. The **live semantic knowledge graph**: ingest, index, query, vocabulary, provenance,
 fusion, and a tier ladder that degrades gracefully; tier 0 needs no external provider. **Durable execution**:
 workflows that survive restarts, replay, settlement, retries with known outcomes, and the rules that drive them.
-A capability is engine-owned when it belongs to either half and runs at tier 0; the owner admits it at a named tier
-with a named qualifying workload, and consumer need decides order, never membership (epic #8, Q14).
-Everything else is a consumer adapter. SemEngine owns primitives and contracts, never consumer domain semantics.
+A capability is engine-owned when it belongs to either half and runs at tier 0 without an external provider; it is
+admitted by owner mandate at a named tier with a named qualifying workload, and consumer need decides order, never
+membership (epic #8, Q14). Everything outside both halves is a consumer adapter. SemEngine owns primitives and
+contracts, never a consumer's domain semantics.
 
 It is built by extracting admitted packages from SemStreams at the frozen pin `8b99efe9` (epic #7). Starter
 consumers: semsource, semconnect, semteams, semboids; semembed, seminstruct are support services.
@@ -41,7 +42,7 @@ task vet          # go vet
 task lint         # pinned revive, fixed-port guard
 task vuln         # pinned govulncheck
 task test:unit    # unit tests once, race detector, one CPU
-task test:repeat  # unit tests five times, shuffled
+task test:repeat  # unit tests but the contract guards, five times, shuffled
 task test:tools   # tests of scripts, Taskfile, CI
 task ledger:diff  # -- <source_path>...: ledger vs pin
 task mutate:check # one test against one mutant
@@ -72,11 +73,11 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `verify` | No bare `select {}` | `harness-boundaries` spec |
 | `verify+review` | Public packages' exported signatures name no `internal/` type | `harness-boundaries` spec |
 | `verify` | Production code imports no test library and nothing under `internal/harness` | `harness-boundaries` spec |
-| `verify` | `component` reaches no agentic or graph-family package | `component-registration` spec |
+| `verify` | `component` reaches no agentic or graph-family package (`graph`, `internal/graphmutation`, `pkg/lifecycle`, `pkg/projection` outside `contract`) | `component-registration` spec |
 | `verify+review` | Components register collectors only on the injected `metric.MetricsRegistry`, never Prometheus' global or a self-built registry | `metric-registry` spec |
 | `review` | Callers use the collector `metric.RegisterOrGet` returns, never their own candidate | `metric/registry.go`; ledger `metric` |
 | `verify+review` | Ported components refuse unknown config keys at construction, naming the key | `component-registration` spec; `dev` |
-| `review` | A component keeps its lifecycle state in `component.Lifecycle`, a service in `internal/lifecycleguard`, never its own copy | `dev`, `rev`; `component/lifecycle_type.go` |
+| `review` | A component keeps its lifecycle state in `component.Lifecycle`, a service in `internal/lifecycleguard`, never its own copy | `dev`, `rev`; `component/lifecycle_type.go`, `internal/lifecycleguard` |
 | `review` | Consumers call `CreateComponent`, `SealComposition`, `Snapshots` only via `service.ComponentManager` (#91) | `component/registry.go`; `dev` |
 | `verify+review` | Ported components whose failed `Start` cannot clean up report both errors and keep handles for `Stop` | `lifecycle-suite` spec |
 | `review` | Every polymorphic payload is published inside a `message.BaseMessage` | `dev`, `rev` |
@@ -103,13 +104,13 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `verify+review` | Test cleanup never stops, closes, or terminates under an unbounded context | `harness-boundaries` spec |
 | `review` | Tests confirm a child process is still running before inspecting it | `docs/testing.md` |
 | `review` | A test running a `nats.go` connection inside `testing/synctest` runs in its own test process (#156) | `docs/testing.md` |
-| `review` | An assertion on state another goroutine writes waits on the event that orders the read after the write, named in a comment when not the line before; never wall clock alone or a log line (#392) | `docs/testing.md`; `dev`, `rev` |
+| `review` | An assertion on state another goroutine writes waits on the event that orders the read after the write, named in a comment when not the line before; never wall clock alone or an unordered log line (#392) | `docs/testing.md`; `dev`, `rev` |
 | `verify` | Tests bind no fixed address or port | `harness-boundaries` spec |
-| `verify+review` | A test's port-0 pick is in the family that is bound; an every-address pick says why in `// Every address: <reason>` above it; a release check dials the listener's own loopback (#390, #391) | `harness-boundaries` spec; `docs/testing.md`; `rev` |
+| `verify+review` | A test's port-0 pick is in the family that is bound; an every-address pick says why with `// Every address: <reason>` on the line above; a release check dials the listener's own loopback (#390, #391) | `harness-boundaries` spec; `docs/testing.md`; `rev` |
 | `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |
 | `verify+review` | No test calls `Skip`/`Skipf`/`SkipNow`; no test file carries a build tag other than `integration` | `harness-boundaries` spec |
-| `verify` | Unit tests also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |
-| `verify+review` | Tool tests run only when a trigger path changes (`task test:tools:changed`), never in `test:repeat`; a test reading other real-tree files stays in `contract` | `merge-gate` spec; `internal/harness/toolcheck/doc.go` |
+| `verify` | Unit tests (every package but the tool packages and `contract`) also run five times at one CPU, without `-race`, shuffled | `merge-gate` spec |
+| `verify+review` | Tool tests run only when a trigger path changes (`task test:tools:changed`), never in `test:repeat`; a test reading any other real-tree file stays in `contract`, which runs once every time | `merge-gate` spec; `internal/harness/toolcheck/doc.go` |
 | `verify+review` | One NATS image pin, a digest reference; no broad Docker cleanup; script/Compose Docker names start `semengine-` | `harness-boundaries` spec |
 | `verify+review` | Integration tests (only packages that have one) run under plain `go test -tags integration`; `task test:integration` only pins flags; no lock, no refused run (#205) | `integration-test-runner` spec; `docs/test-infrastructure.md` |
 | `verify+review` | natsfixture turns Ryuk off, labels containers `org.c360studio.semengine.test`, sweeps labelled leftovers over 30 min old; never by name or liveness | `nats-fixture` spec; `docs/test-infrastructure.md` |
@@ -134,7 +135,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Production code carries no back door (test-only hook, method or option to swap deps, read private state, or skip lifecycle steps); unexported test-only pin code follows Bounded port scope (#186, #190) | `dev`, `rev`, `arch` |
 | `review` | A change establishing a reusable primitive lists who should adopt it | `arch` |
 | `review` | A porting design cites a pin probe for every statement on how the pin behaves | `arch`, `rev` |
-| `review` | Added/edited statements on how a library (`nats.go`, `nats-server`) times, orders, bounds, or fails cite a probe at the pinned version or say it is not promised (#170) | `arch`, `rev`, `dev`, `writer`; ADR-112 |
+| `review` | Added/edited statements on how a library (`nats.go`, `nats-server`, etc.) times, orders, bounds, or fails cite a probe at the pinned version or say it is not promised (#170) | `arch`, `rev`, `dev`, `writer`; ADR-112 |
 | `review` | Porting designs cite the pin's governing ADRs per carried package, port binding ADRs (or say why not), and name changed/dropped ADR decisions for the owner (#157) | `arch`, `rev` |
 | `review` | Designs state observable behaviour and proving test, not lock/join mechanics; findings open after three review rounds go to the owner | `arch`; `.agents/README.md` |
 | `review` | Inventories list every overlapping open PR (drafts included), and designs state merge order | `arch`, `rev` |
@@ -142,7 +143,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Ported packages bring their SemStreams guidance (contract sections and skills) with them | `arch` |
 | `review` | Ported packages building `GenericJSON` from known fields get an `adapt` item (registered payload or stated reason) (#9) | `arch`, `rev` |
 | `review` | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` |
-| `review` | A porting PR carries one package or lifecycle owner (<= ~3,000 non-test pin lines, ~1-page design, own OpenSpec change) unless the owner waives (#159) | `arch`, `rev` |
+| `review` | A porting PR carries one package or lifecycle owner (<= ~3,000 non-test pin lines, ~1-page design, own OpenSpec change) unless the owner waives by count (#159) | `arch`, `rev` |
 | `review` | Before a porting design, the shape sweep reads each carried package on the pin copy and records each finding's required/optional disposition (#159, #9) | `arch`, `rev`; `protocol` |
 | `review` | Before a porting design, the inventory lists every open issue naming a carried package; the design says whether the PR retires it (`Closes #n`) or it stays under Bounded port scope (#160) | `arch`, `rev`; `protocol` |
 | `review` | Porting findings add required work only when tied to a binding requirement, admission/verify gate, owner ruling, accepted design commitment, or build/packaging need | `protocol` |
@@ -156,13 +157,13 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Clarify declares the track (`quick` or `design`); `proposal.md` stays one page with `Approved-by:` the owner fills; its first task holds `OPEN-Q` until then | `protocol`; `arch` |
 | `review` | After the squash merge the claimer removes its worktree and remote branch (`ateam state prune`); never another agent's, dirty or unpushed | `protocol` |
 | `review` | Conclusions/handoffs end with the skipped/residual-risk footer; a deliberate limit is marked `// shortcut: <limit>, <when to upgrade>` | `protocol`; ponytail skill |
-| `verify+review` | A step ends at a local clean-tree `task verify` pass; pushes batch at review/end; CI checked once before merge; reviewer `PASS` cites commit + local verify (#171) | `dev`, `rev`; `protocol` |
+| `verify+review` | A step ends at a local clean-tree `task verify` pass; pushes batch at review/end; CI checked once before merge; reviewer `PASS` cites commit + local verify, never CI (#171) | `dev`, `rev`; `protocol` |
 | `CI required` | A merge needs `Required` and `Merge check` green | `protocol` |
 | `merge:check` | No merge while a known flake (`class:flake` issue) is open, unless the PR closes all of them | `protocol`; `merge-gate` spec |
 | `review` | A defect in repo code the change does not fix is filed as an issue (`status:blocked`, linked without a closing keyword on a PR branch), never a residual or comment (#212, #193) | `protocol`; `rev` |
-| `review` | A finding needing an unchosen condition (library timing, OS/network state, fault injection, test-only calls) is `BLOCKING`/`HIGH` only with a named real-world trigger, else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
+| `review` | A finding needing an unchosen condition (library timing/ordering, OS/network state, fault injection, test-only calls) is `BLOCKING`/`HIGH` only with a named real-world trigger, else `MEDIUM` at most (#185) | `rev`, `dev`; `protocol` |
 | `review` | A new rule names what enforces it and adds its row to `AGENTS.md` and `.agents/rules-index.md` | `rev` |
-| `review` | Before claiming, mutating state, or spawning role subagents on a vague prompt, read named issues/PRs/files, confirm Deliverable, Scope/non-goals, Definition of Done, Stop boundary; if unclear, propose a 3–4 bullet Definition of Done and ask 1–3 questions (#224) | `protocol`; `.agents/README.md` |
+| `review` | Before claiming, mutating state, or spawning role subagents on a vague prompt, read named issues/PRs/files first, then confirm Deliverable, Scope/non-goals, Definition of Done/verification, Stop boundary; if unclear, propose a 3–4 bullet Definition of Done and ask 1–3 questions (#224) | `protocol`; `.agents/README.md` |
 | `review` | Role-agent briefs carry the owner's intent and the artifact, not a paraphrase; resume for continuity, fresh for mechanics | `.agents/README.md` |
 | `verify+review` | Architect/developer/reviewer: frontier tier, effort `medium`/`medium`/`high` (the first two `high` for cross-cutting concurrency/boundary work or failed reviews); writer: `sonnet`/`flash`, `low`/`medium`; adapters pin both (#224, #225) | `.agents/README.md`; `harness-boundaries` spec |
 | `verify+review` | `AGENTS.md` < 24,000 bytes, matching `.agents/rules-index.md` in domains and row counts (`verify`), row for row (`review`); adapters match contracts (#224, #225) | `task ateam:doctor`; `.agents/README.md`; `harness-boundaries` spec |
@@ -213,8 +214,8 @@ Role agents are the default path for nontrivial work; contracts: `.agents/contra
 
 - `semengine-architect` designs, inventory first; read-only.
 - `semengine-developer` implements: failing test, implementation, evidence.
-- `semengine-reviewer` reviews every nontrivial change independently; read-only. A code PR's review of record is
-  another agent's (`.agents/protocol.md`, "Cross-agent review").
+- `semengine-reviewer` reviews every nontrivial change independently before integration; read-only. A code PR's
+  review of record is another agent's (`.agents/protocol.md`, "Cross-agent review").
 - `semengine-technical-writer` updates current docs and task truth with the approved code.
 
 Binding rulings stay with the owner, on the issue. Provenance and license rules: `docs/provenance.md`.

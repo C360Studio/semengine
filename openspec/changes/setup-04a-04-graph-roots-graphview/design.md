@@ -59,19 +59,19 @@ Required: `background-work`, the foundation adapt row, ADR-113 (pin `view.go:217
 
 ## D3. Surface
 
-Kept as at the pin: `New`, `Option`, `WithTickInterval`, `WithHooks`, `Hooks` (all seven; `OnTick` has a production
-caller in the consumer adapter `processor/agentic-dispatch`, #190), `DecodeFunc`, `EntryMeta.Created`,
-`WatcherSource`, `WaitCaughtUp`, `Get`, `SnapshotAndSubscribe`, `Subscription`, `Delta`, `DeltaOp`, `Entry`,
-`Snapshot.Entries`/`Poisoned`, `PoisonError`, the five sentinels. Kept with no reader, on a contract line:
-`Subscribe` (ADR-081 D3), `List`/`KeyedEntry` (D6), `Applied`, `Snapshot.Revision`/`AppliedAt` (ADR-085 D5); the
-four unread sentinels are the typed errors the methods' contracts return. The caught-up state and watermark that
-ADR-081 D5 and pin spec `:132-134` ask the view to expose are carried by `WaitCaughtUp`, the `OnCaughtUp` and
-`OnWatcherLost` hooks and `Applied`. Contract lines: the package `README.md` and the ledger `contract` field; each
-unread kept symbol gets a test calling it as a product would (package `graphview_test`).
+Kept as at the pin: `New`, `Option`, `WithTickInterval`, `WithHooks`, `Hooks` (six; `OnTick` goes, below), `DecodeFunc`,
+`EntryMeta.Created`, `WatcherSource`, `WaitCaughtUp`, `Get`, `SnapshotAndSubscribe`, `Subscription`, `Delta`, `DeltaOp`,
+`Entry`, `Snapshot.Entries`/`Poisoned`, `PoisonError`, the five sentinels. Kept with no reader, on a contract line:
+`Subscribe` (ADR-081 D3), `List`/`KeyedEntry` (D6), `Applied`, `Snapshot.Revision`/`AppliedAt` (ADR-085 D5); the four
+unread sentinels are the typed errors the methods return. The caught-up state and watermark that ADR-081 D5 and pin spec
+`:132-134` ask the view to expose are carried by `WaitCaughtUp`, the `OnCaughtUp` and `OnWatcherLost` hooks and
+`Applied`. Contract lines: the package `README.md` and the ledger `contract` field; each unread kept symbol gets a test
+calling it as a product would (package `graphview_test`).
 
 Changed: `Start`/`Stop` become `Run` (D2), new exported surface for the owner's acceptance. Dropped as unread with no
 contract line (inventory 4): `AppliedRevision` (second spelling of `Applied`), `CaughtUp`, `View.Poisoned`,
-`Snapshot.Sequence`, `EntryMeta.Revision`; `DefaultTickInterval` becomes unexported.
+`Snapshot.Sequence`, `EntryMeta.Revision`; `DefaultTickInterval` becomes unexported. Dropped as a test back door
+(#186): `Hooks.OnTick`, whose only pin reader forwards it to agentic-dispatch's test hooks (inventory 4).
 
 ## D4. Corrections and retained findings (Bounded port scope)
 

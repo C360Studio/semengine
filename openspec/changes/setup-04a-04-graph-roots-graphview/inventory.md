@@ -125,7 +125,7 @@ Pin importers: `processor/graph-query` (`summary_view.go`, `component.go`), `pro
 | `View.SnapshotAndSubscribe`, `Snapshot` (`.Entries`, `.Poisoned`), `Entry`, `Subscription` (`Deltas`, `Err`, `Unsubscribe`), `Delta` (all fields), `DeltaOp` consts, `PoisonError` | agentic-dispatch, semboids `graphstream.go:181`, `:215`, `:241-247` |
 | `ErrWatcherLost` | agentic-dispatch `:280`, `:301` |
 | Hooks fields `OnApply`, `OnCaughtUp`, `OnWatcherLost`, `OnPoison`, `OnSubscribers`, `OnFanOut` | semboids `graphstream_metrics.go:92-116`; agentic-dispatch `:139-185` |
-| `Hooks.OnTick` | agentic-dispatch `:166` only, forwarding to its test hooks |
+| `Hooks.OnTick` | none in production: agentic-dispatch `http_activity.go:165-168` forwards it to `activityTestHooks`, test synchronization zero in production (`component.go:139-141`); dropped as a test back door (Codex design review, PR #476 comment 6522851399) |
 | **No reader**: `View.Subscribe`, `View.List`, `KeyedEntry`, `View.CaughtUp`, `View.AppliedRevision`, `View.Applied`, `View.Poisoned`, `DefaultTickInterval`, `Snapshot.Sequence`, `Snapshot.Revision`, `Snapshot.AppliedAt`, `EntryMeta.Revision`; sentinels `ErrNotReady`, `ErrViewStopped`, `ErrKeyNotFound`, `ErrAlreadyStarted` by name | — |
 
 Contract lines for unread symbols: ADR-081 Decision 3 names delta-only attach (`Subscribe`), Decision 6 names

@@ -17,13 +17,15 @@ promises it. It has no provider code.
   only when every goroutine the view started and the watch's delivery have ended (`background-work` spec, ADR-113),
   stopping the watch through `internal/kvwatch.Stop`.
 - Ending `Run`'s context is a clean stop (`ErrViewStopped`, no `OnWatcherLost`); only an update channel that closes
-  while the context is live is a lost watch. At the pin a context ending was reported as a loss.
+  while the context is live is a lost watch. The pin's spec counted a context ending as a loss, so every semboids
+  shutdown bumped its lost-watch metric.
 - Unread surface with no contract line is dropped: `AppliedRevision`, `CaughtUp`, `View.Poisoned`,
   `Snapshot.Sequence`, `EntryMeta.Revision`; `DefaultTickInterval` becomes unexported. `Subscribe`, `List` and
   `Applied` stay: ADR-081 and ADR-085 promise them.
 - Tests move to `synctest` and `natsfixture.Open`; a seeded history test checks the snapshot-and-changes guarantee
   against a model; new tests prove the stop/loss split on a real watch and that no watch delivery outlives `Run`.
-- ADR-081 is ported with a port note naming its two changed decisions. Ledger row, repository map, 80% coverage
+- Every requirement of the pin's `graph-view-subscription` spec is carried (inventory 6a). ADR-081 is ported with
+  its decisions kept. Ledger row, repository map, 80% coverage
   target (03B D10), one line in the `kv-or-stream` skill.
 
 ## Capabilities
@@ -45,5 +47,5 @@ promises it. It has no provider code.
    anything, because a view never restarts (a replacement starts empty); deleting it leaves every test passing.
    (b) A hidden option that lets tests swap the view's ticker; the new tests do not need it. Remove both? (Optional:
    keeping them is allowed.)
-3. **ADR-081 changes.** Two of its decisions change as above (context ending is a stop, not a loss; restart cleanup
-   is replaced by "a view runs once"). Accept both as the ported record's notes?
+3. **Shutdown is not a failure.** SemStreams treated a normal shutdown as a broken watch; we treat it as a normal
+   stop. The cleanup-on-restart rule is kept, and holds automatically because a view never restarts. OK?

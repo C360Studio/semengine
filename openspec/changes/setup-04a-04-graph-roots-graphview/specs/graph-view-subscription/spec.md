@@ -25,45 +25,112 @@ delivery have ended, or with an error joined with `kvwatch.ErrDeliveryOpen` when
 ### Requirement: A view runs once
 
 `Run` SHALL refuse a nil context before touching its source, SHALL return `ErrAlreadyStarted` on a view that is
-running, and SHALL return `ErrViewStopped` on a view whose `Run` has returned.
+running, and SHALL return `ErrViewStopped` on a view whose `Run` has returned, whether it stopped or failed. A view
+SHALL never re-bootstrap, so a replacement view holds no key its own replay did not deliver.
 
 #### Scenario: A nil context, a second Run
 
-- **WHEN** `Run` is called with a nil context, or while another `Run` on the view runs, or after `Run` returned
+- **WHEN** `Run` is called with a nil context, or while another `Run` on the view runs, or after `Run` returned on a
+  stop or a lost watch
 - **THEN** it returns an error and starts nothing, and the running `Run` keeps running
 - **AND** the tests that verify this are `TestRunRefusesNilContext` and `TestRunOnce`
 
 ### Requirement: Ending the context is a stop, not a loss
 
-When `Run`'s context ends, the view SHALL refuse reads and attaches with `ErrViewStopped`, SHALL set every
-subscription's `Err` to `ErrViewStopped` before closing its `Deltas`, SHALL NOT call `OnWatcherLost`, and `Run`
-SHALL return `ctx.Err()`, even though ending the watch's context closes its update channel.
+When `Run`'s context ends, the view SHALL refuse reads and attaches with `ErrViewStopped`, SHALL set each
+subscription's `Err` to `ErrViewStopped`, or to the subscription context's error when that ended first, before
+closing its `Deltas`, SHALL NOT call `OnWatcherLost`, and `Run` SHALL return `ctx.Err()`, even when the watch's
+update channel has closed by the time `Run` reads it.
 
-#### Scenario: Cancelled on a real watch
+#### Scenario: Context end and channel close both ready
 
-- **WHEN** a view over a real bucket with an attached subscription has its `Run` context cancelled, twenty times
-- **THEN** `OnWatcherLost` is never called and every subscription's `Err` is `ErrViewStopped`
-- **AND** the tests that verify this are `TestRunContextEndIsNotALoss` and `TestRunContextEndIsAStop`
+- **WHEN** an `OnApply` hook holds `Run`, the test cancels `Run`'s context, the source closes the update channel,
+  and the hook returns, on 200 fresh views
+- **THEN** on every view `OnWatcherLost` is never called, a subscription attached with a live context reports
+  `ErrViewStopped`, and `Run` returns `context.Canceled`
+- **AND** the test that verifies this is `TestRunContextEndIsAStop`
 
 ### Requirement: A lost watch fails closed
 
 When the watch's update channel closes while `Run`'s context is live, the view SHALL refuse reads and attaches with an
 error matching `ErrNotReady` and `ErrWatcherLost`, SHALL set every subscription's `Err` to an error matching
 `ErrWatcherLost` before closing its `Deltas`, SHALL call `OnWatcherLost` once after that, and `Run` SHALL return an
-error matching `ErrWatcherLost`. The view SHALL never serve its frozen copy as live.
+error matching `ErrWatcherLost`. How soon a deleted bucket closes the channel is not promised.
 
 #### Scenario: The update channel closes
 
-- **WHEN** the bucket is deleted while `Run` has a live context and two subscriptions
-- **THEN** both subscriptions close with `ErrWatcherLost`, `Get` returns an error matching `ErrWatcherLost`, and
-  `Run` returns an error matching `ErrWatcherLost`
-- **AND** the tests that verify this are `TestRunReportsLostWatch` and `TestRunLostWatchFailsClosed`
+- **WHEN** the source closes the update channel while `Run` has a live context and two subscriptions
+- **THEN** both subscriptions close with `ErrWatcherLost` before `OnWatcherLost` fires once, `Get` returns an error
+  matching `ErrWatcherLost`, and `Run` returns an error matching `ErrWatcherLost`
+- **AND** the test that verifies this is `TestRunLostWatchFailsClosed`
+
+#### Scenario: The bucket is deleted
+
+- **WHEN** a real bucket is deleted under a running view
+- **THEN** once nats.go closes the update channel, `Run` returns an error matching `ErrWatcherLost`
+- **AND** the test that verifies this is `TestRunReportsLostWatch`
 
 #### Scenario: The watch cannot open
 
 - **WHEN** the source's `WatchAll` fails while the context is live
-- **THEN** `Run` returns that error, `WaitCaughtUp` returns an error matching `ErrWatcherLost`, and nothing is running
+- **THEN** `Run` returns that error, `WaitCaughtUp` returns an error matching `ErrWatcherLost`, `OnWatcherLost` is
+  not called, and nothing is running
 - **AND** the test that verifies this is `TestRunOpenFailure`
+
+### Requirement: Each write is decoded once
+
+The view SHALL call its decode function once per delivered write, whatever the number of subscriptions, and SHALL
+open no watch or consumer per subscription.
+
+#### Scenario: Many subscribers
+
+- **WHEN** five subscriptions are attached and one write lands
+- **THEN** the decode function is called once for it and every subscription receives the change
+- **AND** the test that verifies this is `TestDecodeOncePerWrite`
+
+### Requirement: Deletes reach every subscriber
+
+A delete or purge of a key SHALL reach every attached subscription as a `DeltaDelete` at its revision, in the same
+lane as upserts, and SHALL NOT be followed by an older value of the key.
+
+#### Scenario: Attached subscriber learns of the delete
+
+- **WHEN** a key held in a subscriber's snapshot is deleted and the next tick fires
+- **THEN** the subscriber receives a delete delta for it at the delete's revision
+- **AND** the test that verifies this is `TestDeleteDeliveryToAttachedSubscriber`
+
+### Requirement: Point reads are coherent with the stream
+
+`Get` and `List` SHALL read the same copy the deltas come from, SHALL never return a value older than one the view
+has applied, and SHALL honour the readiness and poison rules; `List` SHALL sort by key before applying its limit and
+SHALL omit poisoned keys.
+
+#### Scenario: Point read after an apply
+
+- **WHEN** the view has applied a key at revision R
+- **THEN** `Get` returns it at R or newer, or not-found when deleted at or after R, and `List` agrees
+- **AND** the test that verifies this is `TestGetAndListSurface`
+
+### Requirement: Detach releases its state
+
+After `Unsubscribe` or the end of a subscription's context, the view SHALL hold no pending changes for it, SHALL
+close its `Deltas`, and later ticks SHALL deliver nothing to it.
+
+#### Scenario: Unsubscribed or cancelled
+
+- **WHEN** a subscription unsubscribes, or its context is cancelled, and further ticks fire
+- **THEN** its `Deltas` is closed and no pending buffer is kept for it
+- **AND** the tests that verify this are `TestUnsubscribeReleasesState` and `TestSubscriberContextCancelDetaches`
+
+### Requirement: The view coexists with raw watches
+
+A view SHALL open only its own watch and SHALL place no constraint on another watch or consumer of the same bucket.
+
+#### Scenario: An independent watch beside a view
+
+- **WHEN** a view runs over a bucket and another `WatchAll` on the same bucket receives writes
+- **THEN** the independent watch receives every revision, as it would with no view
+- **AND** the test that verifies this is `TestIndependentWatchUnaffected`
 
 ### Requirement: Reads and attaches wait for the initial replay
 

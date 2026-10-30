@@ -8,8 +8,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance, including the proposal's three questions. Gate: `task spec:check` and `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Post the nats.go KV watch probe (inventory 7, G1-G5) on PR #476 with its source, command, versions and
-  output; re-run it at the new version if #464 has merged first. Gate: the comment read back.
+- [ ] 1.2 Post the nats.go KV watch probes (inventory 7: G1-G5 `/tmp/gv-probe`, G6 `/tmp/gv-probe-g6`) on PR #476
+  with source, command, versions and output; re-run them at the new version if #464 has merged first. Gate: the
+  comment read back.
 - [ ] 1.3 Comment on #461 that `pkg/graphview` is a new `kvwatch.Stop` caller (design D7), no closing keyword. Gate:
   the comment read back.
 - [ ] 1.4 File the adoption issue listing design D7's sites, linked from the PR without a closing keyword. Gate: the
@@ -18,16 +19,18 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 ## 2. Tests first
 
 - [ ] 2.1 Port the pin's unit tests onto `Run` in `synctest` (design D6): the fake source closes `Updates()` when the
-  watch context ends; the 50 ms windows become `synctest.Wait`; `time.After(testWait)` bounds go; the concurrent seam
-  test takes its expected state from the writes. Tests of dropped surface are rewritten on kept surface or dropped,
+  watch context ends (a change: the pin fake ignores it, `harness_test.go:56`); the 50 ms windows become
+  `synctest.Wait`; `time.After(testWait)` bounds go; the concurrent seam test takes its expected state from the
+  writes. Tests of dropped surface are rewritten on kept surface or dropped,
   each named in `notes/2.1.md`. Gate: in 3.2.
 - [ ] 2.2 The new unit tests of design D6 (`TestRunRefusesNilContext`, `TestRunOnce`, `TestRunLeavesNothingBehind`,
-  `TestRunContextEndIsAStop`, `TestRunLostWatchFailsClosed`, `TestRunOpenFailure`) and the product-shaped tests of
+  `TestRunContextEndIsAStop` with its constructed both-ready loop, `TestRunLostWatchFailsClosed`, `TestRunOpenFailure`,
+  `TestDecodeOncePerWrite`) and the product-shaped tests of
   each kept symbol with no reader (design D3), each shown failing against the pin's shape. Gate: in 3.2.
 - [ ] 2.3 `TestViewHistoryMatchesModel` (design D6): seed, run count and completed checks in `notes/2.3.md`. Gate:
   in 3.2.
 - [ ] 2.4 Integration tests of design D6 on `natsfixture.Open`: the pin's real-bucket test,
-  `TestRunLeavesNoWatchDelivery`, `TestRunContextEndIsNotALoss`, `TestRunReportsLostWatch`. Gate: in 3.2.
+  `TestRunLeavesNoWatchDelivery`, `TestRunReportsLostWatch`, `TestIndependentWatchUnaffected`. Gate: in 3.2.
 
 ## 3. The package
 

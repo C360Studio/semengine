@@ -9,8 +9,11 @@ each). SemStreams `main` is identical to the pin (`compare/8b99efe9...main`: `id
 work touches the package. Consumer cites: semboids `8c03cc53836ced93a5df7064473c63ff144e64f1` via `gh api … ?ref=`
 (the SHA SETUP 03B §5.3 cites), read for "the workload it drives" (`docs/inventory-scope.md:18`).
 
-Status: round 1, inventory only. Kind of change: a port of one package, by the owner's order ruling (#9 comment
-6386856657, item 7: "`pkg/graphview`; second-lane capable") under the change 4 scope ruling (#9 comment 6386603659:
+Status: round 2, inventory only (round 1 FAIL at `1049ab1`: the pin's capability spec added as § 6a; G6 probed;
+semboids' shutdown evidence in § 12; #475 re-listed).
+
+Kind of change: a port of one package, by the owner's order ruling (#9 comment 6386856657, item 7: "`pkg/graphview`;
+second-lane capable") under the change 4 scope ruling (#9 comment 6386603659:
 tier-0 halves only). The package has no provider code; nothing is excluded.
 
 Briefing hypotheses checked:
@@ -67,7 +70,9 @@ stream of changes"), `docs/tier1-cross-check.md:62`, and the port notes of ADR-0
 `gh pr list --state open --json number,title,changedFiles,files` at 2026-10-30:
 
 - #476 (this claim), 0 files.
-- #475 `feat(query): port graph/query (change 4, PR 7 of 9)`, draft, 0 files (claim only, design stage). At the pin
+- #475 `feat(query): port graph/query (change 4, PR 7 of 9)`, draft, 5 files, all under
+  `openspec/changes/setup-04a-04-graph-roots-query/` (no overlap). Its `design.md:153-154` states the same order:
+  whichever of #475 and #476 merges second merges `origin/main` and re-runs `task verify`. At the pin
   `graph/query` does not import `pkg/graphview` and `pkg/graphview` does not import it (`grep -rn graphview
   graph/query` empty). Expected shared files: `docs/admission-ledger.yaml`, `docs/repository-map.md` (text only).
   ADR-081 lists `graph/query/client.go:221` as "convert only in multi-reader processes"; the pin never converted it.
@@ -159,6 +164,32 @@ Search: all 85 records at the pin, `grep -l` for `graphview`, `pkg/graphview`, `
 | 092 lifecycle poison | admits no `pkg/graphview` dependency for lifecycle (`:31`) | no | not ported |
 | 113 Start context (SemEngine) | a lifecycle owner's run context outlives Start; Stop is the only stop | pin violates it: `view.go:217` `runCtx, cancel := context.WithCancel(ctx)` and `:200-202` (Start's ctx ending is a watcher loss) | accepted |
 
+## 6a. The pin's capability spec
+
+`pin:openspec/specs/graph-view-subscription/spec.md` (291 lines; `grep -c '^### Requirement'`: 13 requirements). The
+pin tests cite it by requirement (`pin:pkg/graphview/stop_join_test.go:45`: `// spec: graph-view-subscription / View
+lifecycle and ownership`). It, not ADR-081, counts context cancellation as a loss (`:147-150`; ADR-081 has no
+"cancel", `grep -ci cancel` 0), matching `pin:pkg/graphview/view.go:200-202`. Each requirement against the staged
+spec (`specs/graph-view-subscription/spec.md`):
+
+| Pin requirement (line) | Disposition | Proving test |
+| --- | --- | --- |
+| Single-watcher shared projection (`:16`) | carried: "Each write is decoded once". Its trusted-decode clause is moot: `UnmarshalEntityStateTrusted` is unexported in graph-ingest here (`simplify-04a-13-graph/design.md:144`) | new `TestDecodeOncePerWrite` (no pin test counts decodes) |
+| View-rate coalescing (`:36`) | merged into "Snapshot and changes form one history" | `TestCoalescingLWWWithinWindow`, history test |
+| Tombstone propagation (`:63`) | carried | `TestDeleteDeliveryToAttachedSubscriber` |
+| Snapshot-and-delta consistency (`:81`) | merged into the history requirement | `TestSnapshotDeltaSeamScripted`, history test |
+| Read-after-write coherence (`:102`) | merged into the history requirement | `TestRacingAttachNeverObservesPreAppliedState`, `TestTickSeamNoStaleDeliveryToLateAttacher` |
+| Readiness gate on initial replay (`:128`) | carried; "expose caught-up state and watermark" (`:132-134`) is carried by `WaitCaughtUp`, the `OnCaughtUp` hook and `Applied` | `TestBootstrapGatesAttach`, `TestAppliedAdvancesWithTheRevisionWatermark` |
+| Watcher loss fails closed (`:147`) | carried, **changed**: context cancellation leaves the loss list and becomes a stop; re-bootstrap without ghost keys (`:162-165`) holds because a view runs once | `TestRunLostWatchFailsClosed`, `TestRunContextEndIsAStop`, `TestRunOnce` |
+| Decode failure surfaces as poison (`:167`) | carried (the latch scenario: `*PoisonError` unwraps to the decode error) | `TestPoisonSurfacedNotDelivered` (`require.ErrorAs`, `delta_test.go:171`) |
+| Per-subscriber at-most-once backpressure (`:188`) | carried | `TestSlowSubscriberBackpressure` |
+| Coherent point reads (`:208`) | carried | `TestGetAndListSurface`, `TestRacingAttachNeverObservesPreAppliedState` |
+| View lifecycle and ownership (`:221`) | carried as the `Run` requirements plus "Detach releases its state" | `TestUnsubscribeReleasesState`, `TestSubscriberContextCancelDetaches`, `TestRunLeavesNothingBehind` |
+| Coexistence with raw WatchAll (`:237`) | carried | new integration `TestIndependentWatchUnaffected` |
+| The view reports its currency (`:248`) | carried | `TestAppliedPairIsNeverTorn`, `TestAppliedIsZeroBeforeFirstApply`, `TestSnapshotCarriesAppliedAt` |
+
+None dropped. The trusted-decode clause is the only text not carried, and nothing here can call that API.
+
 ## 7. Library behaviour the port relies on (#170, ADR-112)
 
 Already probed at nats.go v1.54.0 / nats-server v2.15.1 on PR #458 comment 6472856197: P8 (empty bucket: first entry
@@ -175,10 +206,13 @@ New probe, `/tmp/gv-probe/main.go` (embedded server, file store, `go run .`, go1
 | G3 | live order across keys, with delete and purge | ascending (`x@8 a@9 x@10 a@11(del) x@12(purge)`); every delivered revision ascending in this run |
 | G4 | `Created()` on delete and purge markers | non-zero |
 | G5 | a second nil marker or extra entry within 500 ms after live entries | none |
+| G6 | `DeleteKeyValue` under a live `WatchAll` (`/tmp/gv-probe-g6/main.go`, one run each: embedded v2.15.1, and the repo's image `nats:2.15.0-alpine@sha256:ac8f88a6…d8d4` via `NATS_URL`) | `Updates()` closes 20.0 s after the delete on both, after nats.go logs "stream not found: recreating ordered consumer"; a later `Stop` returns `nats: invalid subscription` |
 
-G3 is one run: ascending delivery is the ordered consumer's purpose but no tree test drives a reorder; ADR-081 G2
-states it as an assumption. G5 is bounded by 500 ms: "exactly one nil marker" is not promised. The pin code tolerates
-both (`view.go:647` guards the watermark by revision; `:709` ignores a second marker).
+G6's 20 s comes from missed heartbeats and the failed consumer recreate (`js.go:2356-2358`, `:2400-2414` at
+v1.54.0); the delay is not promised. G3 is one run: ascending delivery is the ordered consumer's purpose but no
+tree test drives a reorder; ADR-081 G2 states it as an assumption. G5 is bounded by 500 ms: "exactly one nil
+marker" is not promised. The pin code tolerates both (`view.go:647` guards the watermark by revision; `:709` ignores a
+second marker).
 
 ## 8. Lifecycle owners, NATS use, payloads
 
@@ -265,9 +299,12 @@ The adopter is a component author or a product (semboids) who has not read `view
    errors forever (not silent); a mutated shared value corrupts every subscriber's copy silently.
 3. **Where they find out**: `ErrNotReady`/`ErrWatcherLost` are typed runtime errors; the `Stop`-after-failed-`Start`
    rule and value immutability are doc only (findings by the contract's ranking).
-4. **What they should know**: run the view, wait for caught-up, read deltas until closed. Both semboids
-   (`graphstream_views.go:118-175`) and graph-query (`summary_view.go:108-196`) wrote a supervisor loop that
-   constructs, starts, waits for loss through `OnWatcherLost`, stops and retries.
+4. **What they should know**: run the view, wait for caught-up, read deltas until closed. graph-query wrote a
+   supervisor that constructs, starts, waits for loss through `OnWatcherLost`, stops and retries
+   (`summary_view.go:108-196`). semboids does not rebuild: `supervise` returns after its first success
+   (`graphstream_views.go:120-133`), and its `stop()` cancels the context before `view.Stop()` (`:157-170`), so at
+   the pin every semboids shutdown is reported as a loss and bumps its `watcherLost` metric
+   (`graphstream_metrics.go:99-104`): consumer evidence for treating a context end as a stop.
 
 ## Intent check
 

@@ -4,6 +4,9 @@ import (
 	"context"
 	"testing"
 	"testing/synctest"
+	"time"
+
+	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/stretchr/testify/require"
 )
@@ -91,6 +94,79 @@ func TestWatcherLossFailsClosed(t *testing.T) {
 
 		// WaitCaughtUp reports the loss instead of blocking forever.
 		err = h.view.WaitCaughtUp(t.Context())
+		require.ErrorIs(t, err, ErrWatcherLost)
+	})
+}
+
+// TestRunLostWatchFailsClosed (spec "The update channel closes"): when the
+// update channel closes while Run's context is live, both subscriptions have
+// closed their Deltas with an error matching ErrWatcherLost by the time
+// OnWatcherLost fires, it fires once, Get reports the loss, and Run returns it.
+// Neither subscriber reads before the loss, and one has a delivery blocked on
+// its full channel, so a consumer that never reads cannot hold the report.
+func TestRunLostWatchFailsClosed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		w := newFakeWatcher()
+		var subs []*Subscription[string]
+		type observation struct {
+			cause  error
+			open   []bool
+			errors []error
+		}
+		var seen []observation
+		view, err := New[string](&fakeSource{queue: []*fakeWatcher{w}}, decodeTest, WithHooks(Hooks{
+			OnWatcherLost: func(cause error) {
+				o := observation{cause: cause}
+				for _, s := range subs {
+					// Drain anything buffered; the channel must then be closed.
+					open := true
+				drain:
+					for {
+						select {
+						case _, ok := <-s.Deltas():
+							if !ok {
+								open = false
+								break drain
+							}
+						default:
+							break drain
+						}
+					}
+					o.open = append(o.open, open)
+					o.errors = append(o.errors, s.Err())
+				}
+				seen = append(seen, o)
+			},
+		}), WithTickInterval(testTick))
+		require.NoError(t, err)
+		done := make(chan error, 1)
+		go func() { done <- view.Run(t.Context()) }()
+		w.updates <- nil
+		require.NoError(t, view.WaitCaughtUp(t.Context()))
+
+		_, subA, err := view.SnapshotAndSubscribe(t.Context())
+		require.NoError(t, err)
+		subB, err := view.Subscribe(t.Context())
+		require.NoError(t, err)
+		subs = []*Subscription[string]{subA, subB}
+		// Two windows nobody reads: each delivery goroutine fills its channel
+		// with the first and blocks sending the second.
+		for rev := uint64(1); rev <= 2; rev++ {
+			w.updates <- fakeEntry{key: "k", value: []byte("v"), rev: rev, op: jetstream.KeyValuePut}
+			<-time.After(testTick)
+		}
+		synctest.Wait() // both delivery goroutines are blocked; subs is read only by the hook after this
+
+		w.lose()
+		runErr := <-done
+		require.ErrorIs(t, runErr, ErrWatcherLost)
+		require.Len(t, seen, 1, "OnWatcherLost fires once")
+		require.Error(t, seen[0].cause)
+		for i := range subs {
+			require.False(t, seen[0].open[i], "subscription %d's Deltas still open when OnWatcherLost fired", i)
+			require.ErrorIs(t, seen[0].errors[i], ErrWatcherLost, "subscription %d", i)
+		}
+		_, _, err = view.Get("k")
 		require.ErrorIs(t, err, ErrWatcherLost)
 	})
 }

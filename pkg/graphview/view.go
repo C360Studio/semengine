@@ -518,6 +518,7 @@ func (v *View[T]) attachLocked() *Subscription[T] {
 		notify:    make(chan struct{}, 1),
 		deltas:    make(chan []Delta[T], 1),
 		done:      make(chan struct{}),
+		closed:    make(chan struct{}),
 	}
 	v.subs[id] = s
 	v.wg.Add(1)
@@ -689,6 +690,12 @@ func (v *View[T]) failClosed(cause error) error {
 	term := fmt.Errorf("%w: %w", ErrWatcherLost, cause)
 	for _, s := range subs {
 		s.terminate(term)
+	}
+	// OnWatcherLost reports the loss only once every attached subscription's
+	// Deltas has closed (design D2). Each delivery goroutine returns promptly
+	// once terminate closed its done channel (Subscription.run).
+	for _, s := range subs {
+		<-s.closed
 	}
 	if len(subs) > 0 && v.hooks.OnSubscribers != nil {
 		v.hooks.OnSubscribers(0)

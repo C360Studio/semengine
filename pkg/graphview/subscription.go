@@ -27,6 +27,7 @@ type Subscription[T any] struct {
 	notify chan struct{}
 	deltas chan []Delta[T]
 	done   chan struct{}
+	closed chan struct{} // closed once deltas has closed
 	term   sync.Once
 }
 
@@ -73,8 +74,13 @@ func (s *Subscription[T]) terminate(cause error) {
 // run is the per-subscriber delivery goroutine: it drains the pending buffer
 // into the deltas channel OUTSIDE the projection mutex, so a slow consumer
 // blocks only its own delivery — never the watcher, the apply, or peers.
+//
+// Every wait here also selects on s.done, so once terminate has closed it the
+// goroutine returns without waiting on a reader: a consumer that never reads
+// cannot hold the close of deltas, nor a caller waiting on s.closed.
 func (s *Subscription[T]) run(ctx context.Context) {
 	defer s.view.wg.Done()
+	defer close(s.closed)
 	defer close(s.deltas)
 	for {
 		select {

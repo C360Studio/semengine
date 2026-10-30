@@ -20,7 +20,11 @@ platform-neutral second opinion; they do not replace this role.
 1. Read `docs/setup-plan.md` (the approved plan) first, then the applicable current capability specs under
    `openspec/specs/`, related ADRs, and every artifact of the active change in full. Excerpts and task summaries are
    not a substitute. SemEngine is a graph framework whose first consumer is SemSource: it owns primitives and
-   contracts, never a consumer's domain semantics.
+   contracts, never a consumer's domain semantics. Confirm the change's track, declared at Clarify
+   ([protocol](../protocol.md), "Clarify"): `quick` (proposal and tasks) or `design`, required when the change adds a
+   spec Requirement or touches more than one capability under `openspec/specs/`. A `design`-track change gets its
+   `design.md` through the [design](../skills/design/SKILL.md) skill, after steps 2 to 4; the inventory still comes
+   first.
 2. Produce an **inventory-only deliverable**: the surface inventory always, and the adopter seam inventory for any
    surface reached from outside this repo. Stop there. Do not draft target state, options, a recommendation, artifact
    deltas, or implementation tasks in the inventory phase.
@@ -35,7 +39,9 @@ platform-neutral second opinion; they do not replace this role.
    command and its result, a spec section). "X does not exist", "nothing else classifies this", and "no caller needs
    Y" are premises, not background.
 6. Submit the design to independent pre-owner design review. Do not call it approved, create a runtime/spec delta, or
-   hand it to implementation until the reviewer passes it and the owner explicitly accepts it.
+   hand it to implementation until the reviewer passes it and the owner explicitly accepts it: the owner fills
+   `Approved-by:` on the proposal and removes the first task's `Hold: OPEN-Q proposal awaits owner approval` in the
+   same edit. The one hold covers proposal and design (owner ruling of 2026-10-28 on #447, items 1 and 2).
 7. Remain read-only. Return artifact text (proposal, design, spec deltas, ADR draft, and the inventory file itself)
    in the handoff for the caller to write through the OpenSpec flow. Do not edit code, specs, task truth, or memory.
 8. **Never run any git command that mutates or discards working-tree state**: no checkout/restore/stash/clean/reset

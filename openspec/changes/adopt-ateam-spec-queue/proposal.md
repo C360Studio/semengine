@@ -2,8 +2,8 @@
 
 ## Why
 
-Issue #450, PR C of epic #446. The spec queue is still SemEngine's own `scripts/openspec-queue.sh` (280 lines of
-bash and python3) with a 500-line test file in `internal/harness/toolcheck`. ateam's `state spec-queue` and
+Issue #450, PR C of epic #446. The spec queue is still SemEngine's own `scripts/openspec-queue.sh` (304 lines of
+bash and python3) with a 552-line test file in `internal/harness/toolcheck`. ateam's `state spec-queue` and
 `state spec-check` were ported from that script and read `tasks.md` the same way (ateam v0.3.4,
 `internal/state/openspec.go`: the task block, the five labels, the hold text from `Hold:` on, the stray-hold check
 with the same message), and they add what the #447 rulings rely on: the `Approved-by:` read and the proposal and

@@ -64,7 +64,7 @@ SHALL fail naming the task and the command when either entry differs.
 #### Scenario: The validate line is the fail-closed one
 
 - **WHEN** no `openspec` is reachable by `npx` (no `node_modules/.bin` in the tree or a parent, none in npm's
-  global prefix or cache), as on a CI runner before `npm ci`, and `task spec:check` runs
+  global prefix or cache) and none on `PATH`, as on a CI runner before `npm ci`, and `task spec:check` runs
 - **THEN** its first command exits non-zero before `ateam state spec-check` runs, whose own validation would have
   printed `strict validation skipped` and gone on
 

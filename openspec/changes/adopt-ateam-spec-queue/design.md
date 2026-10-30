@@ -2,7 +2,7 @@
 
 ## Context
 
-- `scripts/openspec-queue.sh:1-280`: reads `openspec list --json` through python3, then each `tasks.md`; labels
+- `scripts/openspec-queue.sh:1-304`: reads `openspec list --json` through python3, then each `tasks.md`; labels
   open tasks' first lines, prints each hold from `Hold:` on, `--check` fails on a stray hold (exit 1) and on an
   unreadable file (exit 2), `--strict` exits 1 on any reported line, `--stale-days` is parsed and unused by any
   caller (`git grep` on `main`: `Taskfile.yml` calls the script bare and with `--check` only).
@@ -14,8 +14,8 @@
   proposal and 120-line design warnings, `holds: ok (<n> tasks.md read)`. `cmd/ateam/main.go:188-215`:
   `spec-queue` exits 0 or 2, `spec-check` 0, 1 or 2.
 - `internal/harness/toolcheck/specqueue_test.go`: five tests drive the script against a stand-in `openspec` and
-  planted files; `TestSpecCheckWiring` (lines 470-510) checks the `spec:check` Task entry; `lines` (line 100) is
-  used by `ateamtemplates_test.go`, `ledgercheck_test.go` and `mergegate_test.go`.
+  planted files; `TestSpecCheckWiring` (lines 469-512) checks the `spec:check` Task entry; its `lines` helper
+  (line 100) has no caller outside the file.
 - `scripts/doctor.sh:59-62`: the python3 row names the queue script; `scripts/port-status.sh` also runs python3
   (lines 57, 211, 319, 361, 388), and `task status` runs that script.
 - semteams after its #375 epic: `spec:queue` is `ateam state spec-queue`; `spec:check` still runs its own script

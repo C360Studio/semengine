@@ -141,7 +141,7 @@ tasks:
       - scripts/cover-check.sh
 
   spec:check:
-    desc: Validate all OpenSpec changes and specs strictly (fails when the pinned openspec CLI is missing), then run ateam state spec-check, which fails on a hold written outside every task and warns on a proposal over 60 lines or a design over 120
+    desc: Validate all OpenSpec changes and specs strictly (fails when npx reaches no openspec), then run ateam state spec-check, which fails on a hold written outside every task and warns on a proposal over 60 lines or a design over 120
     cmds:
       - npx --no-install openspec validate --all --strict --no-interactive
       - ateam state spec-check

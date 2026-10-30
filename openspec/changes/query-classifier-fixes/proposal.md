@@ -9,7 +9,7 @@ comment 6036107878), then added #478 (#9 comment 6522523604, answer 3) and #479 
 6525285377). Each is a tier-0 bug in the tier-0 stage, and graph is "our secret sauce. it needs to be solid". Every
 named case reproduces on main (inventory Q1-Q3).
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-10-30), in session, recorded on #9 (comment 6528578346).
 
 ## What Changes
 

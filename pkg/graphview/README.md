@@ -17,14 +17,22 @@ function that turns one stored value into your type `T`. Run the view on its own
 read the bucket's current values, then attach a reader:
 
 ```go
-// decode has the type graphview.DecodeFunc[T].
+// Inside func run(ctx context.Context) (retErr error); decode has the type graphview.DecodeFunc[T].
 view, err := graphview.New(bucket, decode)
 if err != nil {
     return err
 }
 
+// The view's owner cancels Run and waits for it on every exit, keeping Run's error.
+runCtx, cancel := context.WithCancel(ctx)
 errc := make(chan error, 1)
-go func() { errc <- view.Run(ctx) }()
+go func() { errc <- view.Run(runCtx) }()
+defer func() {
+    cancel()
+    if runErr := <-errc; runErr != nil && !errors.Is(runErr, context.Canceled) && retErr == nil {
+        retErr = runErr // a lost watch, or a delivery that did not drain
+    }
+}()
 
 if err := view.WaitCaughtUp(ctx); err != nil {
     return err
@@ -41,7 +49,7 @@ for batch := range sub.Deltas() {
         // d.Op is DeltaUpsert, DeltaDelete or DeltaPoison
     }
 }
-err = sub.Err() // why the channel closed
+return sub.Err() // why the channel closed; Run's own error is joined by the deferred wait
 ```
 
 The decode function returns `(value, keep, err)`. `keep == false` leaves the key out of the view. A non-nil `err`

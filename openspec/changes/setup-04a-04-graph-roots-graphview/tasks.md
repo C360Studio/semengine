@@ -30,8 +30,8 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   `TestDecodeOncePerWrite`) and the product-shaped tests of
   each kept symbol with no reader (design D3), each shown failing against the pin's shape. Gate: in 3.2. Done:
   unit gates green, each test's wrong change in `notes/2.2.md`.
-- [ ] 2.3 `TestViewHistoryMatchesModel` (design D6): seed, run count and completed checks in `notes/2.3.md`. Gate:
-  in 3.2.
+- [x] 2.3 `TestViewHistoryMatchesModel` (design D6): seed, run count and completed checks in `notes/2.3.md`. Gate:
+  in 3.2. Done: unit gates green; three wrong changes detected, recorded in `notes/2.3.md`.
 - [ ] 2.4 Integration tests of design D6 on `natsfixture.Open`: the pin's real-bucket test,
   `TestRunLeavesNoWatchDelivery`, `TestRunReportsLostWatch`. Gate: in 3.2.
 

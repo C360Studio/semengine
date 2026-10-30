@@ -109,8 +109,8 @@ over 256 entries, G1), `TestRunReportsLostWatch`; coexistence with raw watches i
 view fails a test of it). Mutation checks (`task mutate:check`): a close counted as a loss regardless of `ctx`
 (`TestRunContextEndIsAStop`); `kvwatch.Stop` replaced by `watcher.Stop` (`TestRunLeavesNoWatchDelivery`); the
 attach-sequence filter (`view.go:840`) removed (the history test); a second `Run` allowed (`TestRunOnce`); decode
-moved per subscriber (`TestDecodeOncePerWrite`); `terminate` without its once-only guard
-(`TestDetachedReasonSurvivesStop`). Survivors are reported as survivors.
+moved per subscriber (`TestDecodeOncePerWrite`); detach leaving the subscription in the set plus `terminate`
+without its once-only guard (`TestDetachedReasonSurvivesStop`; either half alone survives). Survivors are reported.
 
 ## D7. Issues and merge order
 

@@ -3756,3 +3756,78 @@
     internal/harness/contract (TestEmbeddingImportsNoProviderModule); the 04C fallback test is #32's
   owner: setup-04a-04-graph-roots-embedding developer
   disposition: defer-exclude
+
+- source_path: graph/query
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the query classifier: turns a natural-language question into search hints (a time range, an area, a path start,
+    an aggregation or a ranking) with no graph reads and no store. A ClassifierChain asks tier 0 (keyword patterns),
+    tier 1 (the most similar example, as BM25 vectors from graph/embedding) and tier 3 (a language model through a
+    caller-supplied LLMClient), and answers from the first tier that produces a hint. processor/graph-query (item 9)
+    calls it
+  destination: graph/query
+  contract: >-
+    Surface as at the pin, less the dead surface below, with these adaptations (spec query-classification; design
+    D2-D5): (1) NewEmbeddingClassifier(ctx, domains, threshold) returns (*EmbeddingClassifier, error) and passes the
+    caller's context to the embedder; a nil or ended context, an embedding error or fewer vectors than examples gives
+    an error and no classifier, where the pin used a root context and built a classifier that could never match;
+    (2) FindBestMatch returns (nil, 0) for a nil classifier, a blank query, a nil or ended context or an embedding
+    error, and a returned Example, its Options map and its Vector are copies; (3) ClassifierChain.ClassifyQuery
+    returns nil for a nil chain, a nil context, a context already ended, and a context that ends during a tier after
+    the keyword tier that produced nothing (the pin answered the default result or panicked), and a result's Options
+    map is the caller's own; a failed LLM tier under a live context is a declared degrade to the default result (tier
+    0, no hints, confidence 1.0); (4) LLMClassifier.ClassifyQuery refuses a nil context with an invalid-input error
+    before calling the client; (5) the keyword tier no longer adds a located_in path predicate to a zone or area
+    phrase (it kept path_intent and path_start_node; owner answer 4); (6) the examples are fixed at construction: the
+    classifier is BM25 only. Both constructors keep the domains' examples and their Options maps rather than copying
+    them. Framework API (pin consumer-adapter callers plus Classifier): Classifier, KeywordClassifier,
+    NewKeywordClassifier, ClassifierChain, NewClassifierChain, ClassificationResult, EmbeddingClassifier,
+    NewEmbeddingClassifier, FindBestMatch, Threshold, LLMClient, LLMClassifier, NewLLMClassifier, Example,
+    DomainExamples, LoadDomainExamples, SearchOptions (less three fields), TimeRange, SpatialBounds, SearchStrategy
+    and its eight values, and the five Aggregation names. Not carried: UpgradeVectors, InferStrategy,
+    HasIndexFilters, SetDefaults, DefaultMaxCommunities, LoadAllDomainExamples, Embedder, bm25Adapter, the
+    SearchOptions fields RequireAllFilters, Level and MaxCommunities, and cosineSimilarity (embedding.CosineSimilarity
+    is the same arithmetic)
+  dependencies_and_side_effects: >-
+    graph/embedding and pkg/errs (in-set); graph/embedding brings nats.go into the import closure, which this package
+    never calls. No goroutine, no provider module (TestQueryImportsNoProviderModule), no bucket, no stream. The only
+    state is the BM25 embedder's corpus statistics, locked by the embedder
+  known_risks: >-
+    Generate (not the read-only GenerateQuery) embeds each query on the query path, so it folds the query into the
+    embedder's statistics and later scores depend on the queries seen so far; the move to GenerateQuery stays with
+    #96, which this port advances and does not close. Hint values keep the type their tier gave them, with no
+    shared type: tier 0 puts Go values in the map (*TimeRange, *SpatialBounds), tier 1 puts what encoding/json decodes
+    from the example file (arrays as []any, objects as map[string]any, numbers as float64) and tier 3 puts typed
+    Go values, so a reader that asserts one type misses another tier's value (S13, filed for the classifier
+    follow-up with #94 and #95). The keyword tier reads the host clock for its time ranges (S14) and does not bound
+    the numbers in "last N hours" or a latitude (S15); both filed. Nested values inside an Options entry are shared
+    with the classifier. The LLM tier drops an unknown strategy and an unparsable time range without an error (S8c).
+    Issues: #94 and #95 stay open (follow-up after this port); #96 advanced, stays open
+  proving_tests: >-
+    graph/query: classifier_outcomes_test.go (TestChainEndedContextReturnsNil, TestChainLLMFailureGivesDefault,
+    TestChainKeywordHintStopsTheLadder, TestLLMClassifierRefusesNilContext,
+    TestNewEmbeddingClassifierRefusesEndedContext, TestFindBestMatchEndedContext, TestResultEditsDoNotReachClassifier,
+    TestZoneQueryAddsNoPredicate, TestEmbeddingClassifierAsAProduct); classifier_test.go, classifier_chain_test.go,
+    classifier_embedding_test.go, classifier_llm_test.go, examples_test.go (the pin's tests, ported);
+    internal/harness/contract (TestQueryImportsNoProviderModule); notes/2.1.md and 2.2.md of the change record
+    each changed behaviour shown failing against the pin's shape
+  owner: setup-04a-04-graph-roots-query developer; docs by setup-04a-04-graph-roots-query technical writer
+  disposition: adapt
+
+- source_path: graph/query/classifier_llm_adapter.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's adapter from the platform's LLM capability registry to query.LLMClient (a tier-3 provider call). No
+    tier-0 consumer needs it, and tier 0 needs no external provider
+  destination: none
+  contract: >-
+    not ported; graph/query carries no adapter, no DefaultClassificationTimeout and no provider import
+    (TestQueryImportsNoProviderModule holds that). The pin's classifier_llm_adapter_test.go and the live test
+    classifier_llm_live_test.go go with it. A product supplies its own LLMClient
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    issue #32 owns the tier-1 provider work and is the home of this row
+  proving_tests: >-
+    internal/harness/contract (TestQueryImportsNoProviderModule)
+  owner: setup-04a-04-graph-roots-query developer
+  disposition: defer-exclude

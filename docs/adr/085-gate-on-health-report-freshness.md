@@ -12,8 +12,9 @@
 > - Of the records named here, ADR-066, ADR-083 and ADR-084 are ported with this one. ADR-081 and ADR-082 are not yet
 >   ported.
 > - None of the code named here is ported: `processor/graph-clustering`, `processor/graph-index`,
->   `processor/graph-query`, `graph/query`, `pkg/fusion`, `pkg/graphview`, and the types and functions named with them
->   (`EvaluateReadinessGate`, `IndexStatusResponse`, `readiness.MinBoundedStaleness`, `LPADetector`, `CommunityCache`).
+>   `processor/graph-query`, `graph/query`'s client (retired before the pin), `pkg/fusion`, `pkg/graphview`, and the
+>   types and functions named with them (`EvaluateReadinessGate`, `IndexStatusResponse`,
+>   `readiness.MinBoundedStaleness`, `LPADetector`, `CommunityCache`).
 
 ## Status
 

@@ -54,12 +54,14 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 5. Evidence and review
 
-- [ ] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
-  comment.
-- [ ] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body retires no issue and names #96 as advanced.
-- [ ] 5.3 Comment on #96 ("context half implemented in PR #475 at `<SHA>`, pending merge"), read back.
+- [x] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
+  comment. Passed at `b1a09d5` (pinned ateam v0.3.4); notes linked from PR #475 comment 6524493459.
+- [x] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body retires no issue and names #96 as advanced.
+  Codex approved the code at `d27d3ac` (PR #475) and the whole pre-archive PR at `b1a09d5` (owner, 2026-10-30).
+- [x] 5.3 Comment on #96 ("context half implemented in PR #475 at `<SHA>`, pending merge"), read back.
+  Posted as #96 comment 6524492426 at `b1a09d5`.
 
 ## 6. Close
 
-- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-query`) as the last content commit, syncing
+- [x] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-query`) as the last content commit, syncing
   `query-classification` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

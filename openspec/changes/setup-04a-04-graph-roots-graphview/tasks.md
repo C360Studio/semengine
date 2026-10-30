@@ -19,11 +19,11 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 2. Tests first
 
-- [ ] 2.1 Port the pin's unit tests onto `Run` in `synctest` (design D6): the fake source closes `Updates()` when the
+- [x] 2.1 Port the pin's unit tests onto `Run` in `synctest` (design D6): the fake source closes `Updates()` when the
   watch context ends (a change: the pin fake ignores it, `harness_test.go:56`); the 50 ms windows become
   `synctest.Wait`; `time.After(testWait)` bounds go; the concurrent seam test takes its expected state from the
   writes; the pin harness's `OnTick` waits (`harness_test.go:128`, `hooks_test.go:44`) become `synctest.Wait` after
-  the tick. Tests of dropped surface are rewritten on kept surface or dropped, each named in `notes/2.1.md`. Gate: in 3.2.
+  the tick. Tests of dropped surface are rewritten on kept surface or dropped, each named in `notes/2.1.md`. Gate: in 3.2. Done at `7aa3a21`: unit gates of 3.2 green, `task verify` ok.
 - [ ] 2.2 The new unit tests of design D6 (`TestRunRefusesNilContext`, `TestRunOnce`, `TestRunLeavesNothingBehind`,
   `TestRunContextEndIsAStop` with its constructed both-ready loop, `TestRunLostWatchFailsClosed`, `TestRunOpenFailure`,
   `TestDecodeOncePerWrite`) and the product-shaped tests of
@@ -35,12 +35,13 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 3. The package
 
-- [ ] 3.1 `doc.go`, `errors.go`, `delta.go` with the dropped fields gone and the docs of design D4 (S10). Gate:
+- [x] 3.1 `doc.go`, `errors.go`, `delta.go` with the dropped fields gone and the docs of design D4 (S10). Gate:
   `go build ./pkg/graphview`.
 - [ ] 3.2 `view.go` and `subscription.go`: `Run(ctx)` in place of `Start`/`Stop` (design D2), `kvwatch.Stop`, the
   dropped surface (design D3), and the optional removals the owner accepted at 1.1 (design D4). Gate:
   `go test -race -count=1 ./pkg/graphview`, `go test -count=5 -cpu 1 -shuffle=on ./pkg/graphview`,
-  `task test:integration -- ./pkg/graphview`.
+  `task test:integration -- ./pkg/graphview`. Unit gates green at `7aa3a21`; ticks with 2.4, which adds the
+  integration tests.
 - [ ] 3.3 The mutation checks of design D6 (`task mutate:check`), recorded in `notes/3.3.md`, survivors reported as
   survivors; a survivor is a gap fixed before 5.1. Gate: each named test fails on its mutant.
 

@@ -21,7 +21,8 @@ are adopted. A hold is written as `Hold:` inside the unticked task it stops.
   on b070579's `tasks.md` `OPEN-Q   L10    Hold: OPEN-Q proposal awaits owner approval.`; the first line stops only
   with no openspec reachable anywhere (`exit status 1`, see `notes/2.1.md`).
 - [x] 2.2 `scripts/openspec-queue.sh` and `internal/harness/toolcheck/specqueue_test.go` deleted (its `lines` helper
-  had no other caller and goes with it); `scripts/doctor.sh` python3 comment names `scripts/port-status.sh` (design D2). Gate:
+  had no other caller and goes with it); `scripts/doctor.sh` python3 comment names `scripts/port-status.sh` (design
+  D2). Gate:
   `task test:tools` passes; `scripts/doctor.sh` prints the python3 row; `git grep openspec-queue` outside
   `openspec/` finds only the planted wrong command in the 2.3 test.
   Done in 6778e4e: `task test:tools` `ok` for mutcheck, pindiff, toolcheck; doctor `ok    python3       3.14.5`;

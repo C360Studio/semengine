@@ -62,14 +62,15 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 5. Evidence and review
 
-- [ ] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
-  comment.
-- [ ] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body advances #195 and addresses #9, with no
-  closing keyword for either.
-- [ ] 5.3 Comment on #195 ("implemented in PR #476 at `<SHA>`, pending merge", this package's site), read back.
+- [x] 5.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a PR
+  comment. `edcda1e`, PR #476 comment 6533262358.
+- [x] 5.2 Cross-agent review stop; `reviewed-by:` in the PR body. The body advances #195 and addresses #9, with no
+  closing keyword for either. Codex approved through `088a1f2`; the PR body carries `reviewed-by:`.
+- [x] 5.3 Comment on #195 ("implemented in PR #476 at `<SHA>`, pending merge", this package's site), read back.
+  #195 comment 6533269013.
 
 ## 6. Close
 
-- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-graphview`) as the last content commit, syncing
+- [x] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-graphview`) as the last content commit, syncing
   `graph-view-subscription` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive
   commit.

@@ -34,13 +34,13 @@ commit (#171). One task is one developer's unit.
 
 ## 5. Exclusions (#95, design D2; after 4)
 
-- [ ] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (design § Proving
+- [x] 5.1 `TestKeywordExclusions` (R28-R31 and the controls) and `TestChainKeepsExclusions` (design § Proving
   tests: `FindBestMatch` shows the unwanted example is eligible; the full chain gives the default result and never
   calls the fake LLM; affirmative controls give tier 0), the chain part failing on main (premise
   `classifier_chain.go:69-102`).
-- [ ] 5.2 `FuzzKeywordClassify` with the two laws of D2's spec requirement; seed, run count and any failure in
+- [x] 5.2 `FuzzKeywordClassify` with the two laws of D2's spec requirement; seed, run count and any failure in
   notes. Gate: `task mutate:check` on one exclusion rule, survivors reported as survivors.
-- [ ] 5.3 Keyword exclusions and the chain rule; doc comments state D2's table. Gate: as 2.2.
+- [x] 5.3 Keyword exclusions and the chain rule; doc comments state D2's table. Gate: as 2.2.
 
 ## 6. Clock and bounds (#479 items 1-2, design D5-D6)
 

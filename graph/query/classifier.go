@@ -97,15 +97,32 @@ var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 // ClassifyQuery analyzes a natural language query and populates SearchOptions.
 // Detects temporal, spatial, similarity, path, and aggregation intents.
 // Always returns non-nil SearchOptions with the original query preserved.
+//
+// An excluded operation gives no hint and other hints stand (#95). The seven operations are
+// count, avg, sum, min, max, similarity and ranking, each excluded on its own when one of its
+// triggers (a) follows not, no, never, don't, do not or without in the same clause, (b) lies
+// inside a balanced pair of straight (") or curly (“ ”) double quotes, or (c) is one of two
+// different operations joined by "or" in one clause. A clause is the text between ; , . : ? !
+// (each followed by a space or the end of the question) or the word "but". These are word rules:
+// "not only count but average" reads count as negated.
 func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *SearchOptions {
+	opts, _ := k.classify(query)
+	return opts
+}
+
+// classify is ClassifyQuery, also reporting whether it excluded an operation, so the chain can
+// keep the exclusion from later tiers.
+func (k *KeywordClassifier) classify(query string) (*SearchOptions, bool) {
 	opts := &SearchOptions{
 		Query: query,
 	}
 
 	// Empty query returns empty options
 	if query == "" {
-		return opts
+		return opts, false
 	}
+
+	excluded := excludedOperations(query)
 
 	// Extract temporal information (first match wins)
 	if timeRange := k.extractTemporal(query); timeRange != nil {
@@ -113,7 +130,7 @@ func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *Sear
 	}
 
 	// Detect similarity intent
-	if similarityPattern.MatchString(query) {
+	if !excluded[operationSimilarity] && similarityPattern.MatchString(query) {
 		opts.UseEmbeddings = true
 	}
 
@@ -153,7 +170,7 @@ func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *Sear
 
 	// Detect aggregation intent — count, avg, sum, min, max.
 	// Must be checked before ranking because "most" / "least" are also aggregation-adjacent.
-	if aggType, aggField := k.extractAggregation(query); aggType != "" {
+	if aggType, aggField := k.extractAggregation(query, excluded); aggType != "" {
 		opts.AggregationType = aggType
 		opts.AggregationField = aggField
 	}
@@ -161,7 +178,7 @@ func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *Sear
 	// Detect ranking intent — "top N", "bottom N", "most", "least".
 	// Only set ranking when there is no aggregation type already assigned (ranking
 	// queries are a separate intent from numeric aggregations).
-	if opts.AggregationType == "" {
+	if opts.AggregationType == "" && !excluded[operationRanking] {
 		if rankingIntent, limit := k.extractRanking(query); rankingIntent {
 			opts.RankingIntent = true
 			if limit > 0 {
@@ -170,7 +187,7 @@ func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *Sear
 		}
 	}
 
-	return opts
+	return opts, len(excluded) > 0
 }
 
 // extractTemporal attempts to extract temporal range from query text.
@@ -383,15 +400,16 @@ func (k *KeywordClassifier) extractSpatialBounds(query string) *SpatialBounds {
 // Patterns are checked in precedence order: count > avg > min > max > sum.
 // "total number of" binds to count before "total" alone can bind to sum.
 // The field is the first word after the trigger that selected the type, skipping an optional
-// "of" and "the" ("mean of pressure" gives "pressure"); count takes no field.
-func (k *KeywordClassifier) extractAggregation(query string) (string, string) {
+// "of" and "the" ("mean of pressure" gives "pressure"); count takes no field. An operation in
+// excluded is skipped, so the next one in precedence order may answer.
+func (k *KeywordClassifier) extractAggregation(query string, excluded map[string]bool) (string, string) {
 	// count — "how many", "total number of", "the number of", "count"
-	if countPattern.MatchString(query) {
+	if !excluded[AggregationCount] && countPattern.MatchString(query) {
 		return AggregationCount, ""
 	}
 
 	// average / mean
-	if loc := avgPattern.FindStringIndex(query); loc != nil {
+	if loc := avgPattern.FindStringIndex(query); loc != nil && !excluded[AggregationAvg] {
 		return AggregationAvg, fieldAfter(query[loc[1]:])
 	}
 
@@ -400,22 +418,26 @@ func (k *KeywordClassifier) extractAggregation(query string) (string, string) {
 	minField, maxField := numericExtrema(query)
 
 	// min / max (check before sum so "minimum" / "maximum" are not partially matched)
-	if loc := minPattern.FindStringIndex(query); loc != nil {
-		return AggregationMin, fieldAfter(query[loc[1]:])
+	if !excluded[AggregationMin] {
+		if loc := minPattern.FindStringIndex(query); loc != nil {
+			return AggregationMin, fieldAfter(query[loc[1]:])
+		}
+		if minField != "" {
+			return AggregationMin, minField
+		}
 	}
-	if minField != "" {
-		return AggregationMin, minField
-	}
-	if loc := maxPattern.FindStringIndex(query); loc != nil {
-		return AggregationMax, fieldAfter(query[loc[1]:])
-	}
-	if maxField != "" {
-		return AggregationMax, maxField
+	if !excluded[AggregationMax] {
+		if loc := maxPattern.FindStringIndex(query); loc != nil {
+			return AggregationMax, fieldAfter(query[loc[1]:])
+		}
+		if maxField != "" {
+			return AggregationMax, maxField
+		}
 	}
 
 	// sum / total (bare "total" without "number of")
-	if loc := sumPattern.FindStringIndex(query); loc != nil {
-		return AggregationSum, fieldAfter(query[loc[1]:])
+	if sums := sumTriggers(query); len(sums) > 0 && !excluded[AggregationSum] {
+		return AggregationSum, fieldAfter(query[sums[0][1]:])
 	}
 
 	return "", ""
@@ -443,11 +465,42 @@ func nextWord(s string) (word, rest string) {
 	return s[m[2]:m[3]], s[m[1]:]
 }
 
-// numericExtrema returns the field of the first min phrase ("smallest", "lowest") and of the
-// first max phrase ("largest", "highest", "greatest") among the numeric extremum phrases of query
-// whose clause has no "which", "who" or "with" before them; "" where there is none. A field word
-// of "of" or "the" is no field, so that phrase is not an extremum.
-func numericExtrema(query string) (minField, maxField string) {
+// sumTriggers returns the [start, end) of each sum trigger in query, leaving out the "total" of
+// "total number of", which is a count trigger.
+func sumTriggers(query string) [][]int {
+	counts := countPattern.FindAllStringIndex(query, -1)
+	var sums [][]int
+	for _, loc := range sumPattern.FindAllStringIndex(query, -1) {
+		if !insideAny(counts, loc[0]) {
+			sums = append(sums, loc)
+		}
+	}
+	return sums
+}
+
+// insideAny reports whether pos lies within one of the [start, end) spans.
+func insideAny(spans [][]int, pos int) bool {
+	for _, s := range spans {
+		if s[0] <= pos && pos < s[1] {
+			return true
+		}
+	}
+	return false
+}
+
+// extremumPhrase is a numeric extremum phrase that selects min or max: its [start, end) in the
+// question, and its field.
+type extremumPhrase struct {
+	loc   []int
+	isMin bool
+	field string
+}
+
+// numericExtremumPhrases returns, in order, the numeric extremum phrases of query whose clause has
+// no "which", "who" or "with" before them. A field word of "of" or "the" is no field, so that
+// phrase is not an extremum.
+func numericExtremumPhrases(query string) []extremumPhrase {
+	var phrases []extremumPhrase
 	for _, m := range extremumPattern.FindAllStringSubmatchIndex(query, -1) {
 		field := query[m[4]:m[5]]
 		if strings.EqualFold(field, "of") || strings.EqualFold(field, "the") {
@@ -456,28 +509,170 @@ func numericExtrema(query string) (minField, maxField string) {
 		if entityChoicePattern.MatchString(clauseBefore(query, m[0])) {
 			continue
 		}
-		switch strings.ToLower(query[m[2]:m[3]]) {
-		case "smallest", "lowest":
-			if minField == "" {
-				minField = field
-			}
-		default:
-			if maxField == "" {
-				maxField = field
-			}
+		word := strings.ToLower(query[m[2]:m[3]])
+		phrases = append(phrases, extremumPhrase{
+			loc:   m[0:2],
+			isMin: word == "smallest" || word == "lowest",
+			field: field,
+		})
+	}
+	return phrases
+}
+
+// numericExtrema returns the field of the first min phrase ("smallest", "lowest") and of the
+// first max phrase ("largest", "highest", "greatest") among numericExtremumPhrases; "" where there
+// is none.
+func numericExtrema(query string) (minField, maxField string) {
+	for _, p := range numericExtremumPhrases(query) {
+		if p.isMin && minField == "" {
+			minField = p.field
+		}
+		if !p.isMin && maxField == "" {
+			maxField = p.field
 		}
 	}
 	return minField, maxField
 }
 
-// clauseBefore returns the text of the clause holding byte offset pos, from the clause's start
-// up to pos. A clause ends at ; , . : ? ! or the word "but".
-func clauseBefore(query string, pos int) string {
+// clauseStart returns the byte offset where the clause holding pos starts. A clause ends at
+// ; , . : ? ! followed by a space or the end of the question, or at the word "but"; the breaks
+// are read on the whole question, so a mark directly before pos ("not.count") ends nothing.
+func clauseStart(query string, pos int) int {
 	start := 0
-	for _, loc := range clauseBreakPattern.FindAllStringIndex(query[:pos], -1) {
+	for _, loc := range clauseBreakPattern.FindAllStringIndex(query, -1) {
+		if loc[1] > pos {
+			break
+		}
 		start = loc[1]
 	}
-	return query[start:pos]
+	return start
+}
+
+// clauseBefore returns the text of the clause holding byte offset pos, from the clause's start
+// up to pos.
+func clauseBefore(query string, pos int) string {
+	return query[clauseStart(query, pos):pos]
+}
+
+// Names of the two operations that are not aggregation types; the other five are the
+// Aggregation constants.
+const (
+	operationSimilarity = "similarity"
+	operationRanking    = "ranking"
+)
+
+// Exclusion words (#95).
+var (
+	// negationPattern matches a word that negates a trigger after it in its clause. "do not" is
+	// matched by its "not"; "don't" with a straight or a typographic apostrophe.
+	negationPattern = regexp.MustCompile(`(?i)\b(?:not|no|never|don['’]t|without)\b`)
+	// orPattern matches the word that joins two alternatives.
+	orPattern = regexp.MustCompile(`(?i)\bor\b`)
+)
+
+// operationTriggers returns the [start, end) of every trigger of each of the seven operations
+// in query: every match of the patterns the keyword tier reads for that operation.
+func operationTriggers(query string) map[string][][]int {
+	triggers := map[string][][]int{
+		AggregationCount:    countPattern.FindAllStringIndex(query, -1),
+		AggregationAvg:      avgPattern.FindAllStringIndex(query, -1),
+		AggregationSum:      sumTriggers(query),
+		AggregationMin:      minPattern.FindAllStringIndex(query, -1),
+		AggregationMax:      maxPattern.FindAllStringIndex(query, -1),
+		operationSimilarity: similarityPattern.FindAllStringIndex(query, -1),
+	}
+	for _, p := range numericExtremumPhrases(query) {
+		op := AggregationMax
+		if p.isMin {
+			op = AggregationMin
+		}
+		triggers[op] = append(triggers[op], p.loc)
+	}
+	for _, pattern := range []*regexp.Regexp{topNPattern, bottomNPattern, mostPattern, leastPattern} {
+		triggers[operationRanking] = append(triggers[operationRanking], pattern.FindAllStringIndex(query, -1)...)
+	}
+	return triggers
+}
+
+// excludedOperations returns the operations of query that give no hint, by the rules
+// KeywordClassifier.ClassifyQuery states. One excluded trigger excludes its operation, even when
+// another trigger of it stands alone: an exclusion fails closed.
+func excludedOperations(query string) map[string]bool {
+	triggers := operationTriggers(query)
+	quoted := quotedSpans(query)
+	excluded := make(map[string]bool)
+
+	for op, locs := range triggers {
+		for _, loc := range locs {
+			if insideAny(quoted, loc[0]) || negationPattern.MatchString(clauseBefore(query, loc[0])) {
+				excluded[op] = true
+			}
+		}
+	}
+
+	// Two different operations joined by "or" in one clause: each is undecided.
+	for _, or := range orPattern.FindAllStringIndex(query, -1) {
+		clause := clauseStart(query, or[0])
+		before, after := map[string]bool{}, map[string]bool{}
+		for op, locs := range triggers {
+			for _, loc := range locs {
+				if clauseStart(query, loc[0]) != clause {
+					continue
+				}
+				if loc[1] <= or[0] {
+					before[op] = true
+				} else if loc[0] >= or[1] {
+					after[op] = true
+				}
+			}
+		}
+		if len(before) == 0 || len(after) == 0 {
+			continue
+		}
+		joined := make(map[string]bool)
+		for op := range before {
+			joined[op] = true
+		}
+		for op := range after {
+			joined[op] = true
+		}
+		if len(joined) > 1 {
+			for op := range joined {
+				excluded[op] = true
+			}
+		}
+	}
+	return excluded
+}
+
+// quotedSpans returns the inside of each balanced pair of double quotes in query, as [open, close)
+// spans from the byte after the opening mark: straight quotes pair in order (first with second,
+// third with fourth), and a curly “ pairs with the next ”. An unpaired mark opens nothing.
+func quotedSpans(query string) [][]int {
+	var spans [][]int
+	open := -1
+	for i := 0; i < len(query); i++ {
+		if query[i] != '"' {
+			continue
+		}
+		if open < 0 {
+			open = i + 1
+		} else {
+			spans = append(spans, []int{open, i})
+			open = -1
+		}
+	}
+	open = -1
+	for i, r := range query {
+		switch {
+		case r == '“' && open < 0:
+			open = i + len("“")
+		case r == '”' && open >= 0:
+			spans = append(spans, []int{open, i})
+			open = -1
+		}
+	}
+	return spans
 }
 
 // extractRanking detects ranking intent ("top N", "bottom N", "most", "least") and

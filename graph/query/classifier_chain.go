@@ -16,6 +16,7 @@ type ClassificationResult struct {
 //
 // Routing logic:
 //   - T0 (keyword): Always try first - a keyword hint stops the ladder
+//   - An operation the keyword tier excluded, with no keyword hint: the default result
 //   - T1 (example classifier): Only if no keyword hint AND one is composed
 //   - T3 (LLM): Only if no earlier tier produced a hint AND one is composed
 //   - Default: T0 with no hints and confidence 1.0, while the context is live
@@ -51,6 +52,18 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 //   - T3: the LLM classifier's result, when it is composed and succeeds
 //   - Default: T0 with no hints and confidence 1.0
 //
+// The keyword tier's outcome decides whether the later tiers are asked (#95):
+//
+//	Keyword outcome                    Chain result
+//	any hint                           tier 0, those hints
+//	no hint, nothing excluded          tiers 1, 3, then the default result
+//	no hint, some operation excluded   the default result; tiers 1 and 3 are not asked
+//
+// An exclusion (a negated, quoted or undecided operation; KeywordClassifier.ClassifyQuery
+// states the rules) binds the final decision whichever later tiers are composed. A later tier
+// answers in the caller's own words, which no framework rule can read, so the chain does not ask
+// it. The cost: a question whose only operation is excluded gets no tier 1 or tier 3 answer.
+//
 // It returns nil when the chain is nil, when ctx is nil or has ended before it starts, and when
 // ctx has ended by the time a tier after the keyword tier has produced nothing: an ended context
 // never gets the default result.
@@ -67,14 +80,17 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) *Clas
 
 	// T0: Try keyword classifier first (if available)
 	if c.keyword != nil {
-		opts := c.keyword.ClassifyQuery(ctx, query)
-		if opts != nil && hasExplicitIntent(opts) {
+		opts, excluded := c.keyword.classify(query)
+		if hasExplicitIntent(opts) {
 			return &ClassificationResult{
 				Tier:       0,
 				Intent:     "", // Keyword tier doesn't set Intent (uses SearchOptions fields)
 				Options:    searchOptionsToMap(opts),
 				Confidence: 1.0,
 			}
+		}
+		if excluded {
+			return noHintResult()
 		}
 	}
 
@@ -106,7 +122,11 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) *Clas
 		return nil
 	}
 
-	// Default: Return T0 result with no filters
+	return noHintResult()
+}
+
+// noHintResult is the default result: tier 0, no hints, confidence 1.0.
+func noHintResult() *ClassificationResult {
 	return &ClassificationResult{
 		Tier:       0,
 		Intent:     "",

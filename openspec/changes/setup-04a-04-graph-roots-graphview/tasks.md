@@ -23,7 +23,8 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   watch context ends (a change: the pin fake ignores it, `harness_test.go:56`); the 50 ms windows become
   `synctest.Wait`; `time.After(testWait)` bounds go; the concurrent seam test takes its expected state from the
   writes; the pin harness's `OnTick` waits (`harness_test.go:128`, `hooks_test.go:44`) become `synctest.Wait` after
-  the tick. Tests of dropped surface are rewritten on kept surface or dropped, each named in `notes/2.1.md`. Gate: in 3.2. Done at `7aa3a21`: unit gates of 3.2 green, `task verify` ok.
+  the tick. Tests of dropped surface are rewritten on kept surface or dropped, each named in `notes/2.1.md`. Gate:
+  in 3.2. Done at `7aa3a21`: unit gates of 3.2 green, `task verify` ok.
 - [ ] 2.2 The new unit tests of design D6 (`TestRunRefusesNilContext`, `TestRunOnce`, `TestRunLeavesNothingBehind`,
   `TestRunContextEndIsAStop` with its constructed both-ready loop, `TestRunLostWatchFailsClosed`, `TestRunOpenFailure`,
   `TestDecodeOncePerWrite`) and the product-shaped tests of

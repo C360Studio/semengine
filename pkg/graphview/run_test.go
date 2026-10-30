@@ -224,3 +224,39 @@ func TestDetachedReasonSurvivesStop(t *testing.T) {
 		})
 	}
 }
+
+// TestDetachReasonIsTheFirst: a subscription keeps the reason it was first
+// detached with. A context end followed by Unsubscribe (a deferred Unsubscribe
+// after the context ended) leaves context.Canceled; an Unsubscribe followed by
+// the context's end leaves nil.
+func TestDetachReasonIsTheFirst(t *testing.T) {
+	t.Run("context end, then Unsubscribe", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t)
+			h.endReplay()
+			ctx, cancel := context.WithCancel(t.Context())
+			sub, err := h.view.Subscribe(ctx)
+			require.NoError(t, err)
+			cancel()
+			recvClosed(t, sub)
+			sub.Unsubscribe()
+			require.ErrorIs(t, sub.Err(), context.Canceled)
+			require.ErrorIs(t, h.stop(), context.Canceled)
+		})
+	})
+	t.Run("Unsubscribe, then context end", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			h := newHarness(t)
+			h.endReplay()
+			ctx, cancel := context.WithCancel(t.Context())
+			sub, err := h.view.Subscribe(ctx)
+			require.NoError(t, err)
+			sub.Unsubscribe()
+			recvClosed(t, sub)
+			cancel()
+			synctest.Wait() // anything the context's end would run in the bubble has run
+			require.NoError(t, sub.Err())
+			require.ErrorIs(t, h.stop(), context.Canceled)
+		})
+	})
+}

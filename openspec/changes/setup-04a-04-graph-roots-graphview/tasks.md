@@ -44,8 +44,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   `go test -race -count=1 ./pkg/graphview`, `go test -count=5 -cpu 1 -shuffle=on ./pkg/graphview`,
   `task test:integration -- ./pkg/graphview`. All three gates green with 2.4 (integration
   22.5 s, coverage 93.4%).
-- [ ] 3.3 The mutation checks of design D6 (`task mutate:check`), recorded in `notes/3.3.md`, survivors reported as
-  survivors; a survivor is a gap fixed before 5.1. Gate: each named test fails on its mutant.
+- [x] 3.3 The mutation checks of design D6 (`task mutate:check`), recorded in `notes/3.3.md`, survivors reported as
+  survivors; a survivor is a gap fixed before 5.1. Gate: each named test fails on its mutant. Done at `9173734`:
+  all six D6 rows detected; one survivor (`terminate` half alone) closed by `TestDetachReasonIsTheFirst`.
 
 ## 4. Ledger, records and docs
 

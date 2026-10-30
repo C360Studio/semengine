@@ -11,7 +11,7 @@ in many ways our secret sauce. it needs to be solid… i would rather not bring 
 Tier 0 only (#9 comment 6386603659): the provider file `classifier_llm_adapter.go` stays out; the `LLMClient`
 interface stays.
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-10-30), in session, recorded on #9 (comment 6523037096).
 
 ## What Changes
 

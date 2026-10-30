@@ -5,13 +5,12 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 1. Design and measurement
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance. Gate: `task spec:check` and `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Owner answers on the design's four questions (`UpgradeVectors` dropped; `NewEmbeddingClassifier`'s new
+- [x] 1.2 Owner answers on the design's four questions (`UpgradeVectors` dropped; `NewEmbeddingClassifier`'s new
   signature; hint types left to the classifier follow-up; `located_in` dropped here), recorded on PR #475.
-- [ ] 1.3 File the two issues of design D9 (S13; the keyword tier's inputs), linked from PR #475 without a closing
-  keyword. Gate: each issue
+- [x] 1.3 File the two issues of design D9 (S13; the keyword tier's inputs), linked from PR #475 without a closing
+  keyword (#478, #479). Gate: each issue
   read back.
 
 ## 2. Tests first

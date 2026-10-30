@@ -392,10 +392,9 @@ The repository's own checks follow the same pattern, built into the tests:
   `TestLintTestPortsSkipsIgnoredFiles` run it on a planted tree (`TestLintTestPortsPasses`, which runs it over the
   real tree, stays in `contract`). `TestMergeCheckWrapper` runs the merge-check wrapper
   against a stand-in `ateam` and checks it passes the arguments and exit status through; the gate's own rules are
-  tested in ateam at the pinned release. `TestSpecQueueHolds`, `TestSpecQueueFirstLineCaveats`, `TestSpecQueueCheck`,
-  `TestSpecCheckWiring` and `TestSpecQueueArguments` run the OpenSpec queue script, `scripts/openspec-queue.sh`,
-  against a stand-in `openspec` command and planted `tasks.md` files, each run under a deadline so a script that does
-  not end fails the test.
+  tested in ateam at the pinned release. `TestSpecTaskWiring` checks that `task spec:check` runs `openspec validate`
+  then `ateam state spec-check`, and `task spec:queue` runs `ateam state spec-queue`, with nothing that can skip a
+  command or discard its exit status; the queue and the hold check are tested in ateam at the pinned release.
 - `TestEachFailpointTripsExactlyItsCheck` in `internal/harness/lifecycletest/` runs every lifecycle check against a
   reference component with one defect switched on at a time, and requires exactly the matching check to fail.
 

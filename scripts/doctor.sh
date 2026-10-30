@@ -56,10 +56,9 @@ elif command -v ateam >/dev/null; then
   if [ "$have" = "$pins" ]; then ok ateam "$have"; else bad ateam "${have:-unknown} != workflow pin $pins (put \$(go env GOPATH)/bin first on PATH)"; fi
 else bad ateam "not found (GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@$pins)"; fi
 
-# python3: no pin; scripts/openspec-queue.sh parses JSON and timestamps with it. task spec:check runs that
-# script with --check, so task verify needs python3 too.
+# python3: no pin; scripts/port-status.sh (task status) builds its scoreboard and reads GitHub's JSON with it.
 if command -v python3 >/dev/null; then ok python3 "$(python3 --version 2>&1 | sed 's/^Python //')"
-else bad python3 "not found (task spec:check, task verify and task spec:queue need it)"; fi
+else bad python3 "not found (task status needs it)"; fi
 
 # npm-installed tools resolve from node_modules, pinned in package.json.
 check_npm_tool() { # name bin

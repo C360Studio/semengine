@@ -15,25 +15,25 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 2. Tests first
 
-- [ ] 2.1 Port the pin's keyword, chain, example, LLM-parse and loader tests less those of dropped surface
+- [x] 2.1 Port the pin's keyword, chain, example, LLM-parse and loader tests less those of dropped surface
   (`TestUpgradeVectors*`, `TestKeywordClassifier_InferStrategy_Aggregation`, `TestLoadAllDomainExamples_*`,
   `TestCosineSimilarity`), with no `time.Sleep` (two of the pin's four go with `UpgradeVectors`, two become an
   already-ended context); record each dropped or rewritten test in `notes/2.1.md`. Gate: in 3.1.
-- [ ] 2.2 The new tests of design D8 (`TestChainEndedContextReturnsNil`, `TestChainLLMFailureGivesDefault`,
+- [x] 2.2 The new tests of design D8 (`TestChainEndedContextReturnsNil`, `TestChainLLMFailureGivesDefault`,
   `TestChainKeywordHintStopsTheLadder`,
   `TestLLMClassifierRefusesNilContext`, `TestNewEmbeddingClassifierRefusesEndedContext`,
   `TestFindBestMatchEndedContext`, `TestResultEditsDoNotReachClassifier` (an edited classifier
   against an untouched control with the same examples and query history, both on `Generate`, so the corpus drift #96
   keeps is the same on both; shown to fail by `task mutate:check` with each copy removed in turn, the `Example`, its
-  map, its vector, the chain's map, recorded with survivors as survivors), `TestZoneQueryAddsNoPredicate`,
-  `TestEmbeddingClassifierAsAProduct`), each changed behaviour shown failing
+  map, its vector, and that map's clone again through the chain's results, recorded with survivors as survivors),
+  `TestZoneQueryAddsNoPredicate`, `TestEmbeddingClassifierAsAProduct`), each changed behaviour shown failing
   against the pin's shape in `notes/2.2.md`; `TestQueryImportsNoProviderModule` in `internal/harness/contract`
   (the embedding guard's helper on `./graph/query`, its own requirement name).
   Gate: in 3.1.
 
 ## 3. The package
 
-- [ ] 3.1 `graph/query` less the adapter (design D1-D5): `NewEmbeddingClassifier` with a context and an error, the
+- [x] 3.1 `graph/query` less the adapter (design D1-D5): `NewEmbeddingClassifier` with a context and an error, the
   BM25 embedder held directly, `embedding.CosineSimilarity`, D4's outcomes, copies on every result, no `located_in`,
   dead surface not carried. Gate: `go test -race -count=1 ./graph/query`, `go test -count=5 -cpu 1 -shuffle=on ./graph/query`,
   `go test ./internal/harness/contract`; `go mod tidy` changes nothing.

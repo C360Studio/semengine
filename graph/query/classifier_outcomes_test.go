@@ -300,7 +300,7 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 	require.NoError(t, err)
 
 	var keyword Classifier = NewKeywordClassifier()
-	const question = "temperature readings for every sensor"
+	const question = "temperature readings for the pumps"
 	opts := keyword.ClassifyQuery(t.Context(), question)
 	require.NotNil(t, opts)
 	assert.Equal(t, question, opts.Query)
@@ -318,6 +318,12 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 	assert.Equal(t, "sensor_query", got.Intent)
 	// The oracle is the iot file's options as encoding/json decodes them.
 	assert.Equal(t, map[string]any{"metric": "temperature"}, got.Options)
-	assert.GreaterOrEqual(t, got.Confidence, threshold)
-	assert.LessOrEqual(t, got.Confidence, 1.0+1e-9)
+	// The score's oracle is a control classifier built from the same domains and asked the same
+	// question first, so both have the same Generate history (#96).
+	control, err := NewEmbeddingClassifier(t.Context(), domains, threshold)
+	require.NoError(t, err)
+	match, wantScore := control.FindBestMatch(t.Context(), question)
+	require.NotNil(t, match)
+	require.Less(t, wantScore, 1.0, "the question must not match an example exactly")
+	assert.Equal(t, wantScore, got.Confidence)
 }

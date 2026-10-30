@@ -39,7 +39,11 @@ are adopted. A hold is written as `Hold:` inside the unticked task it stops.
 
 ## 4. Review and archive
 
-- [ ] 4.1 In-house review, then the cross-agent record on the PR in ateam's grammar; `implemented-by:` and
+- [x] 4.1 In-house review, then the cross-agent record on the PR in ateam's grammar; `implemented-by:` and
   `reviewed-by:` with `(model, effort)` in the PR body.
-- [ ] 4.2 Archive as the last content commit, syncing the `spec-queue` delta; the merged spec's Purpose paragraph
+  Done: in-house `semengine-reviewer` APPROVE at 1d6cee2 (three wording findings, fixed in df4aef7); Codex record
+  PR #472 comment 6519476407, `Reviewed at df4aef7`, `Verdict: APPROVE`, `reviewed-by: codex (gpt-6-astra, high)`;
+  its one MEDIUM (`docs/repository-map.md` toolcheck row still named the queue script) is fixed in the archive commit.
+- [x] 4.2 Archive as the last content commit, syncing the `spec-queue` delta; the merged spec's Purpose paragraph
   names the ateam commands. Gate: `task spec:check` and `task docs:check`.
+  Done in the archive commit; both gates green.

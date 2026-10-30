@@ -5,9 +5,10 @@ are adopted. A hold is written as `Hold:` inside the unticked task it stops.
 
 ## 1. Proposal and design
 
-- [ ] 1.1 Proposal, design, tasks and the `spec-queue` delta committed; draft PR opened with `Closes #450` and
+- [x] 1.1 Proposal, design, tasks and the `spec-queue` delta committed; draft PR opened with `Closes #450` and
   `Addresses #446`. Gate: `task spec:check` and `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval.
+  Done in b070579; draft PR #472. Owner approved the proposal as proposed (D1 validate line kept, D2 python3 row kept)
+  in session on 2026-10-29 (`Approved-by:` filled, recorded on #450).
 
 ## 2. Task wiring, script, test
 

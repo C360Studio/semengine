@@ -11,7 +11,7 @@ design length warnings. They read the queue from the directory, with no `openspe
 
 Owner ruling on this epic: match ateam unless there is a very good reason not to, and record the divergence.
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-10-29), in session, recorded on #450.
 
 ## What Changes
 

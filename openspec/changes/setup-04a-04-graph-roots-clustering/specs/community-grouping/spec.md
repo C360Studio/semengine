@@ -110,20 +110,21 @@ stay readable.
 
 A group record SHALL hold its level, ID, member count, at most `MaxKeywords` types, at most `MaxKeywords` keywords, a
 summary, and at most `MaxRepEntities` representative IDs, SHALL NOT hold the member list, and its encoding SHALL be at
-most `clustering.MaxRecordBytes` whatever the members' values. A word SHALL be a run of 3 to `MaxWordBytes` lowercase
-letters and digits; a longer run SHALL NOT be a word and SHALL NOT be truncated into one.
+most `clustering.MaxRecordBytes` whatever the members' values. A word SHALL be a run of 3 to `MaxWordBytes` ASCII
+`a-z` and `0-9` characters; a longer run SHALL NOT be a word and SHALL NOT be truncated into one.
 
 #### Scenario: A large group
 
-- **WHEN** a group has more members than fit in one NATS message
-- **THEN** its record is written and holds no member IDs beyond its representatives
-- **AND** the test that verifies this is `TestRecordIsBounded`
+- **WHEN** a group has more members than fit in one NATS message, `MaxKeywords` types whose type positions are
+  246 bytes, `MaxRepEntities` 256-byte representative IDs and `MaxKeywords` 32-byte keywords
+- **THEN** its record holds no member IDs beyond its representatives and encodes to at most `MaxRecordBytes`
+- **AND** the test that verifies this is `TestRecordIsBounded`, which fails if an eleventh type is kept
 
 #### Scenario: Long literals
 
 - **WHEN** members' string values hold ten 120 KB alphanumeric literals
 - **THEN** none is a keyword and the encoded record is at most `MaxRecordBytes`
-- **AND** the tests that verify this are `TestLongLiteralIsNotAWord` and `TestRecordIsBounded`
+- **AND** the test that verifies this is `TestLongLiteralIsNotAWord`
 
 ### Requirement: Keywords and representatives come from the group alone
 

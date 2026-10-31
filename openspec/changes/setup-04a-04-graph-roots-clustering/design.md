@@ -9,7 +9,7 @@ Coined terms. Entity IDs are `org.platform.system.domain.type.instance`. A *grou
 prefix of one length; its *level* is that length: 0 = `org.platform.system.domain`, 1 = the source
 `org.platform.system`, 2 = the deployment `org.platform` (ADR-102 d6). An entity's *contribution* is what it adds to
 each of its three groups: one member, one count for its type, and its capped word set. A *word* is a run of 3 to
-`MaxWordBytes` lowercase letters and digits in a string value, not a stop word. A *tick* publishes the groups changed
+`MaxWordBytes` ASCII `a-z` and `0-9` characters in a string value, not a stop word. A *tick* publishes the groups changed
 since the last.
 
 ## What was ruled (2026-10-31), and what change 7 must supply

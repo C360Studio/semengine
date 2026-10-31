@@ -39,7 +39,8 @@ levels as entity-ID prefixes.
 
 - New `graph/clustering`; edges to `graph`, `natsclient`, `pkg/errs`, `pkg/types`. New framework API, for the owner's
   acceptance: `Maintainer` (`NewMaintainer`, `Upsert`, `Delete`, `BootstrapDone`, `Tick`), `IncompleteError`,
-  `ErrBootstrapIncomplete`, the `Community` record, `MaxRepEntities`, `MaxKeywords`, `MaxEntityTerms`.
+  `ErrBootstrapIncomplete`, the `Community` record, `MaxRepEntities`, `MaxKeywords`,
+  `MaxEntityTerms`, `MaxWordBytes`, `MaxRecordBytes`.
 - `COMMUNITY_INDEX` records change shape (fresh state, no migration). semboids, a load generator, reads `members` and
   sees empty communities until it changes.
 - Change 7's `processor/graph-clustering` wires the `ENTITY_STATES` watch to the maintainer. Item 9

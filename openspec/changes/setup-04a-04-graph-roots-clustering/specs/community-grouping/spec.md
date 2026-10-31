@@ -16,10 +16,10 @@ deployment prefix `org.platform`. A group's ID SHALL be that prefix.
 
 ### Requirement: Applying a change depends only on the latest revision
 
-The maintainer SHALL keep each entity's last-applied revision and contribution. An `Upsert` or `Delete` at or below
-that revision SHALL change nothing. A newer `Upsert` SHALL replace the entity's contribution, and a `Delete` SHALL
-remove it and keep its revision so that an older `Upsert` arriving later changes nothing. The published records after
-any history SHALL equal those computed from the final entity values alone.
+The maintainer SHALL keep each present entity's last-applied revision and contribution; an `Upsert` or `Delete` at
+or below that revision SHALL change nothing; a newer `Upsert` SHALL replace the contribution, and a `Delete` SHALL
+remove it. The published records after any history SHALL equal those computed from the final entity values alone.
+The caller SHALL pass, with each `Upsert`, the revision of the exact value decoded, in increasing order per key.
 
 #### Scenario: Two histories, one final state
 
@@ -27,11 +27,21 @@ any history SHALL equal those computed from the final entity values alone.
 - **THEN** the published records are byte-identical
 - **AND** the tests that verify this are `TestHistoryOrderIrrelevant` and `TestMaintainerMatchesModel`
 
-#### Scenario: A late older upsert after a delete
+#### Scenario: An obsolete delivery
 
-- **WHEN** an entity is deleted at revision 9 and an upsert at revision 7 arrives afterwards
-- **THEN** the entity stays absent from every group
-- **AND** the test that verifies this is `TestTombstoneBlocksOlderUpsert`
+- **WHEN** an entity applied at revision 9 receives an upsert or delete at revision 7
+- **THEN** its contribution is unchanged
+- **AND** the test that verifies this is `TestObsoleteDeliveryIgnored`
+
+### Requirement: Applying never waits on publication
+
+`Upsert` and `Delete` SHALL return without waiting for a `Tick`'s storage write to finish.
+
+#### Scenario: A blocked write
+
+- **WHEN** a `Tick` is blocked inside a storage write and an `Upsert` is called
+- **THEN** the `Upsert` returns while the write is still blocked
+- **AND** the test that verifies this is `TestUpsertDuringBlockedWrite`
 
 ### Requirement: Refused entities are reported
 
@@ -58,7 +68,7 @@ tick that otherwise publishes everything SHALL return a `*clustering.IncompleteE
 
 ### Requirement: A tick publishes only what changed
 
-After the first tick following bootstrap, a tick SHALL read no value from `COMMUNITY_INDEX` or `ENTITY_STATES`, SHALL
+After the first tick following bootstrap, a tick SHALL read nothing from `COMMUNITY_INDEX`, SHALL
 write only records of groups touched by changes applied since their last successful publication and whose record
 differs from the one last published, and SHALL remove the records of groups that became empty. A write or removal
 failure SHALL make `Tick` return an error and leave those groups pending for the next tick.
@@ -66,7 +76,7 @@ failure SHALL make `Tick` return an error and leave those groups pending for the
 #### Scenario: k changed entities
 
 - **WHEN** k entities change after bootstrap and a tick runs
-- **THEN** the storage sees no read and writes only the groups those k entities belong to
+- **THEN** `COMMUNITY_INDEX` sees no read and only the groups those k entities belong to are written
 - **AND** the test that verifies this is `TestTickCost`
 
 #### Scenario: Unchanged graph
@@ -85,14 +95,25 @@ failure SHALL make `Tick` return an error and leave those groups pending for the
 
 A group record SHALL hold its level, ID, member count, the most frequent types, at most `clustering.MaxKeywords`
 keywords, a summary, and at most `clustering.MaxRepEntities` representative IDs, and SHALL NOT hold the member list.
-Keywords SHALL be the group's own most frequent terms with lexical tie-breaks, so a change outside the group never
-changes them.
 
 #### Scenario: A large group
 
 - **WHEN** a group has more members than fit in one NATS message
 - **THEN** its record is written and holds no member IDs beyond its representatives
 - **AND** the test that verifies this is `TestRecordIsBounded`
+
+### Requirement: Keywords and representatives come from the group alone
+
+Keywords SHALL be the group's most frequent words from its members' string values, with lexical tie-breaks, and SHALL
+NOT include terms from ID positions or predicate names, so a change outside the group never changes them.
+Representatives SHALL be the lexically smallest members that carry text.
+
+#### Scenario: Keywords and representatives
+
+- **WHEN** every member shares its predicates and ID positions, and the smallest text-bearing member is deleted
+- **THEN** no keyword comes from a predicate or ID position, and the next smallest text-bearing member becomes a
+  representative
+- **AND** the tests that verify this are `TestKeywordsIgnoreIDAndPredicates` and `TestRepresentativesWithoutScan`
 
 ### Requirement: A product can maintain the index
 

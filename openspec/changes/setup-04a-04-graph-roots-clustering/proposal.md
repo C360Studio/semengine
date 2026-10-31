@@ -25,8 +25,8 @@ levels as entity-ID prefixes.
 - Storage fixes from the pin: unreadable entries fail loudly, a cancelled context is reported, the test-only store and
   the error-text match leave production code.
 - Not carried, each with a ledger row: label propagation and its edge machinery (ADR-099); the LLM lane, the
-  membership hash and the summarizer interface (#485); PageRank and `provider.go`. The ledger rows for the HTTP
-  embedder and the classifier LLM adapter move to their tracker issues (#489, #486).
+  membership hash and the statistical summarizer with its interface (#485); PageRank and `provider.go`. The ledger
+  rows for the HTTP embedder and the classifier LLM adapter move to their tracker issues (#489, #486).
 - ADR-099 ported with a port note; ADR-085's note gains the package; the setup plan's tier-0 line reads "community
   grouping by entity-ID prefix"; ledger, README, repository map, 80 % coverage target, one skill line.
 
@@ -48,8 +48,10 @@ levels as entity-ID prefixes.
 ## Rulings (owner, 2026-10-31)
 
 - Community model: the ADR-099 entity-ID prefix partition, maintained incrementally from changes; no label
-  propagation, ever ("Yes, as summarized"; recorded on PR #483).
+  propagation, ever ("Yes, as summarized"; PR #483 comment 6543795826).
 - Scope: "Library maintainer only; change 7 wires the watch (recommended)".
-- The LLM lane, the membership hash and the summarizer interface leave whole for tier 2 (#485, epic #484).
+- The LLM lane and the membership hash leave whole for tier 2 (#485, epic #484).
+- `CommunitySummarizer` and `StatisticalSummarizer` leave tier 0: "Drop it; tier 2 (#485) brings back what it needs."
+  Supersedes the 2026-10-24 ruling that the interface stays (PR #483 comment 6543960797; #485 comment 6543961011).
 - semboids is a load generator, not a customer; its member decoder breaking under bounded records is accepted.
 - A detection overlay over explicit relationship predicates is a later change, with its own gates.

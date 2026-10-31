@@ -39,8 +39,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 - [ ] 4.1 Ledger: `graph/clustering` (`adapt`), the `defer-exclude` rows of design D1 naming #485, `docs/adr/099-…`.
   Gate: `task ledger:check`.
-- [ ] 4.2 Re-point the existing `defer-exclude` rows: `graph/embedding/http_embedder.go` to #489 and
-  `graph/query/classifier_llm_adapter.go` to #486 (their home text in `known_risks`). Gate: `task ledger:check`.
+- [ ] 4.2 Re-point the existing `defer-exclude` rows: `graph/embedding/http_embedder.go` to #489
+  (`docs/admission-ledger.yaml:3752`, `:3756`) and `graph/query/classifier_llm_adapter.go` to #486 (`:3845`); and the
+  `docs/repository-map.md:77-78` rows that name #32 as their home. Gate: `task ledger:check`, `task docs:check`.
 - [ ] 4.3 `graph/clustering/doc.go` and `README.md`; ADR-099 with its port note; ADR-085 port note; repository map
   and `docs/adr/` rows; the `entity-or-bucket` skill line; the setup plan's tier-0 line ("community grouping by
   entity-ID prefix", ruling 2026-10-31). Gate: `task docs:check`.

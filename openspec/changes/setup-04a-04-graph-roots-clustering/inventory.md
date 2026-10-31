@@ -307,11 +307,16 @@ semboids' test implements `CommunityStorage` and runs `NewLPADetector` on two cl
 
 ## 13. Round 4 premises (rulings of 2026-10-31)
 
-- Watch precedent for change 7: graph-index declares its `ENTITY_STATES` input as a KV watch port
-  (`processor/graph-index/config.go:136` — `{Name: "entity_watch", Config: component.KVWatchPort{Bucket:
-  graph.BucketEntityStates}}`) and runs it through `graph/follower`, whose `Entry` carries `Key`, `Revision` and
-  `Deleted` (`graph/follower/follower.go:46-51`) and whose `Deliver` is called in delivery order on one goroutine
-  (`:67-69`). The maintainer's `Upsert`/`Delete` take exactly those facts.
+- What a watch gives change 7. graph-index declares its `ENTITY_STATES` input as a KV watch port
+  (`processor/graph-index/config.go:136`) and runs it through `graph/follower`. The follower cannot feed the
+  maintainer as it stands: its `Entry` carries `Key`, `Revision`, `Deleted` and `Bytes` but no value
+  (`graph/follower/follower.go:46-51`); it consumes the end-of-replay nil entry itself (`:227-235`), so no plug-in learns
+  that the replay ended; and graph-index re-reads the current state per key (`processor/graph-index/index.go:155-163`),
+  which here would pair a newer value with an older revision. A raw `WatchAll` gives the value, its revision, the
+  operation (DEL and PURGE both remove, `natsclient/kv.go:739-741`) and the nil end-of-snapshot entry (relied on at
+  `graph/follower/follower.go:227`). Change 7 runs its own watch or extends the follower.
+- A counting fake for storage tests: `natsclient.NewClient` does not dial (`natsclient/client.go:312-341`) and
+  `(*Client).NewKVStore` takes any `jetstream.KeyValue` (`natsclient/kv.go:55`).
 - ID bound: `MaxEntityIDBytes = 256` (`pkg/types/entity_id.go:13`), checked by the canonical parser (`:197`).
 - Position order: `TaxonomyPrefix` returns `org.platform.system.domain` (`pkg/types/entity_id.go:279-281`),
   `SourcePrefix` `org.platform.system` (`:274-276`), `DeploymentPrefix` `org.platform` (`:268-270`). ADR-099's own text
@@ -323,8 +328,9 @@ semboids' test implements `CommunityStorage` and runs `NewLPADetector` on two cl
   slices the requested page" (`graph/query_prefix_types.go:30-33`); held for item 9.
 - Tier tracker (owner, 2026-10-31): epic #484; #485 LLM community summaries (every clustering tier-2 item, including
   `MembershipHash`); #486 classifier LLM adapter; #487 answer synthesis; #488 inference review worker; #489 HTTP
-  embedder (epic #11). #32 keeps only `graph/llm`, `model/wire`, `go-openai`. Existing ledger rows to re-point:
-  `docs/admission-ledger.yaml:3741` (`graph/embedding/http_embedder.go`), `:3833` (`graph/query/classifier_llm_adapter.go`).
+  embedder (epic #11). #32 keeps only `graph/llm`, `model/wire`, `go-openai`. Existing text to re-point:
+  `docs/admission-ledger.yaml:3752`, `:3756` (`graph/embedding/http_embedder.go`), `:3845`
+  (`graph/query/classifier_llm_adapter.go`), `docs/repository-map.md:77-78`.
 
 ## Intent check
 

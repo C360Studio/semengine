@@ -44,3 +44,18 @@ func TestUnchangedRecordAddsNoRevision(t *testing.T) {
 		t.Fatalf("a tick with equal records moved the bucket from %d to %d", published, seq)
 	}
 }
+
+// TestKVRevisionStartsAtOne is the probe behind refusing revision 0 (Maintainer.Upsert):
+// on the pinned nats.go and nats-server, the first entry of a new bucket has revision 1,
+// a stream sequence, so 0 is no entry's revision. That it is never 0 in general is not
+// promised by nats.go's documentation.
+func TestKVRevisionStartsAtOne(t *testing.T) {
+	kv, _ := communityBucket(t)
+	rev, err := kv.Put(t.Context(), "0.acme.dep1.src.docs", []byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rev != 1 {
+		t.Fatalf("first revision = %d, want 1", rev)
+	}
+}

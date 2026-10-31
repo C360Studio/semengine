@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -111,10 +112,15 @@ func NewMaintainer(storage *NATSCommunityStorage) (*Maintainer, error) {
 
 // Upsert applies entityID's value at revision, the revision of the exact value state was
 // decoded from. A revision at or below the one last applied for entityID changes
-// nothing. It refuses, with an invalid error naming the entity, a nil state, an ID the
+// nothing. Revision 0 is refused and changes nothing: a KV entry's revision is its
+// stream sequence, which starts at 1 (TestKVRevisionStartsAtOne), so 0 is a caller that
+// passed no revision. It refuses, with an invalid error naming the entity, a nil state, an ID the
 // canonical parser refuses, or a state whose ID is not entityID; a refused entity
 // contributes nothing until a valid Upsert or a Delete for it.
 func (m *Maintainer) Upsert(entityID string, revision uint64, state *graph.EntityState) error {
+	if revision == 0 {
+		return errRevisionZero(entityID, "Upsert")
+	}
 	next, refusal := newContribution(entityID, state)
 
 	m.mu.Lock()
@@ -136,25 +142,26 @@ func (m *Maintainer) Upsert(entityID string, revision uint64, state *graph.Entit
 }
 
 // Delete removes entityID's contribution at revision. A revision at or below the one last
-// applied changes nothing; an entity it does not hold is already gone, unless its ID is
-// one the canonical parser refuses, which is refused.
+// applied changes nothing, and an entity it does not hold has nothing to remove. Revision
+// 0 is refused, as in Upsert.
 func (m *Maintainer) Delete(entityID string, revision uint64) error {
+	if revision == 0 {
+		return errRevisionZero(entityID, "Delete")
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	old, ok := m.members[entityID]
-	if !ok {
-		if err := types.ValidateEntityID(entityID); err != nil {
-			return errs.WrapInvalid(fmt.Errorf("entity %q: %w", entityID, err), "Maintainer", "Delete", "parse entity ID")
-		}
-		return nil
-	}
-	if revision <= old.revision {
+	if !ok || revision <= old.revision {
 		return nil
 	}
 	m.subtract(old.contribution)
 	delete(m.members, entityID)
 	delete(m.refused, entityID)
 	return nil
+}
+
+func errRevisionZero(entityID, method string) error {
+	return errs.WrapInvalid(fmt.Errorf("entity %q: revision 0", entityID), "Maintainer", method, "check revision")
 }
 
 // BootstrapDone records that the initial replay has been applied; Tick publishes only
@@ -243,7 +250,6 @@ func (m *Maintainer) plan() (writes []*Community, removals []string, taken []gro
 			}
 			continue
 		}
-		delete(m.stale, key) // the group's own record replaces it
 		record := newCommunity(ref.level, ref.id, g.members, g.types, g.words, g.textMembers.first(MaxRepEntities))
 		if reflect.DeepEqual(record, m.published[key]) {
 			continue
@@ -252,7 +258,9 @@ func (m *Maintainer) plan() (writes []*Community, removals []string, taken []gro
 		taken = append(taken, ref)
 	}
 	for key := range m.stale {
-		removals = append(removals, key)
+		if !m.exists(key) { // a live group's write replaces its listed key
+			removals = append(removals, key)
+		}
 	}
 	slices.SortFunc(writes, func(a, b *Community) int {
 		return strings.Compare(communityKey(a.Level, a.ID), communityKey(b.Level, b.ID))
@@ -269,8 +277,10 @@ func (m *Maintainer) write(ctx context.Context, record *Community) error {
 	if err := m.storage.save(ctx, record); err != nil {
 		return err
 	}
+	key := communityKey(record.Level, record.ID)
 	m.mu.Lock()
-	m.published[communityKey(record.Level, record.ID)] = record
+	m.published[key] = record
+	delete(m.stale, key)
 	m.mu.Unlock()
 	return nil
 }
@@ -287,6 +297,16 @@ func (m *Maintainer) remove(ctx context.Context, key string) error {
 	delete(m.stale, key)
 	m.mu.Unlock()
 	return nil
+}
+
+// exists reports whether key is the key of a group with members. The caller holds mu.
+func (m *Maintainer) exists(key string) bool {
+	for level, groups := range m.groups {
+		if id, ok := strings.CutPrefix(key, strconv.Itoa(level)+"."); ok && groups[id] != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // requeue marks refs dirty again after a failed tick.

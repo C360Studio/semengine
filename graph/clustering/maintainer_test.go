@@ -292,15 +292,37 @@ func TestRefusedEntityMakesTickIncomplete(t *testing.T) {
 	}
 }
 
-// TestDeleteRefusesUnparseableUnknownID: a delete for an ID the maintainer never held and
-// the parser refuses is refused; a valid unknown ID is already gone.
-func TestDeleteRefusesUnparseableUnknownID(t *testing.T) {
+// TestDeleteUnknownID: a delete for an ID the maintainer does not hold, parseable or not,
+// has nothing to remove; a watch replay can deliver one.
+func TestDeleteUnknownID(t *testing.T) {
 	m, _ := newTestMaintainer(t)
-	if err := m.Delete("acme.dep1", 1); !errs.IsInvalid(err) || !strings.Contains(err.Error(), "acme.dep1") {
-		t.Fatalf("Delete(unparseable) = %v, want an invalid error naming it", err)
+	for _, id := range []string{"acme.dep1", "acme.dep1.src.docs.note.n1"} {
+		if err := m.Delete(id, 1); err != nil {
+			t.Fatalf("Delete(%s) = %v, want nil", id, err)
+		}
 	}
-	if err := m.Delete("acme.dep1.src.docs.note.n1", 1); err != nil {
-		t.Fatalf("Delete(unknown) = %v, want nil", err)
+}
+
+// TestRevisionZeroRefused: revision 0 is no stored entry's revision, so an Upsert or
+// Delete at 0 is refused and changes nothing; a later upsert at revision 1 applies.
+func TestRevisionZeroRefused(t *testing.T) {
+	m, kv := newTestMaintainer(t)
+	id := "acme.dep1.src.docs.note.n1"
+	if err := m.Upsert(id, 0, textState(id, "alpha")); !errs.IsInvalid(err) || !strings.Contains(err.Error(), id) {
+		t.Fatalf("Upsert at revision 0 = %v, want an invalid error naming the entity", err)
+	}
+	if err := m.Delete(id, 0); !errs.IsInvalid(err) {
+		t.Fatalf("Delete at revision 0 = %v, want an invalid error", err)
+	}
+	m.BootstrapDone()
+	mustTick(t, m)
+	if n := len(kv.records(t)); n != 0 {
+		t.Fatalf("%d records after refused revision-0 upsert, want none", n)
+	}
+	mustUpsert(t, m, id, 1, "alpha")
+	mustTick(t, m)
+	if r := kv.records(t)["0.acme.dep1.src.docs"]; r == nil || r.MemberCount != 1 {
+		t.Fatalf("record after the revision-1 upsert = %+v, want one member", r)
 	}
 }
 
@@ -417,6 +439,38 @@ func TestFirstTickFailedPublicationKeepsOldRecords(t *testing.T) {
 	}
 	if keys, _ := kv.reads(); keys != 2 {
 		t.Fatalf("%d listings, want 2 (the failed one and its retry)", keys)
+	}
+}
+
+// TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick: the first listing finds an old
+// record whose group still exists; the first tick fails to write it; the group's last
+// member is then deleted. The next good tick must remove the old record, which no write
+// replaced.
+func TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick(t *testing.T) {
+	m, kv := newTestMaintainer(t)
+	old := "0.acme.dep1.src.docs"
+	kv.set(func(f *fakeKV) { f.data[old] = []byte(`{"id":"acme.dep1.src.docs","level":0,"member_count":9}`) })
+	id := "acme.dep1.src.docs.note.n1"
+	mustUpsert(t, m, id, 1, "alpha")
+	m.BootstrapDone()
+	kv.set(func(f *fakeKV) {
+		f.beforePut = func(_ context.Context, key string) error {
+			if key == old {
+				return errors.New("injected put failure")
+			}
+			return nil
+		}
+	})
+	if err := m.Tick(t.Context()); err == nil {
+		t.Fatal("Tick with a failing write = nil, want an error")
+	}
+	kv.set(func(f *fakeKV) { f.beforePut = nil })
+	if err := m.Delete(id, 2); err != nil {
+		t.Fatal(err)
+	}
+	mustTick(t, m)
+	if records := kv.records(t); len(records) != 0 {
+		t.Fatalf("records = %v after every member was deleted, want none", slices.Sorted(maps.Keys(records)))
 	}
 }
 

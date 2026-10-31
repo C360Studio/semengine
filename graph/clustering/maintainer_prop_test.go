@@ -2,6 +2,7 @@ package clustering
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"maps"
@@ -216,14 +217,19 @@ func modelRefused(entities map[string]modelEntity) []string {
 	return out
 }
 
+var errInjected = errors.New("injected bucket failure")
+
 type matchCounts struct {
-	compared, incomplete, obsolete, refusals, deletes, capped, repsFull, keywordsFull, emptied int
+	compared, incomplete, obsolete, refusals, deletes, capped, repsFull, keywordsFull, emptied, failedTicks int
 }
 
 // TestMaintainerMatchesModel applies generated histories of upserts (valid and refused),
 // deletes, obsolete deliveries and ticks, and after every tick past BootstrapDone compares
 // every published record and Tick's result with the model computed from the held values.
-// Each history starts with fixed upserts: an entity with 40 distinct words, so the
+// Failing ticks make the listing, a write or a removal fail partway; the model does not
+// change, so the next good tick must publish what the failed one left pending.
+// The bucket starts with records an earlier run left, which the first good tick replaces
+// or removes. Each history starts with fixed upserts: an entity with 40 distinct words, so the
 // MaxEntityTerms cap is applied in every check, and five more members with words in one
 // source, so its level-1 and level-2 records hold MaxRepEntities representatives.
 func TestMaintainerMatchesModel(t *testing.T) {
@@ -233,6 +239,16 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		if err != nil {
 			rt.Fatal(err)
 		}
+		// Records an earlier run left: of groups the fixed prefix creates, of a group a history
+		// may create, of a group no history creates. None is in the model.
+		kv.set(func(f *fakeKV) {
+			for _, key := range []string{
+				"0.aaa.dep1.s1.misc", "1.aaa.dep1.s1", "2.aaa.dep1", "0.acme.dep1.s1.docs", "1.acme.dep2.s2", "2.acme.dep9",
+			} {
+				level, id, _ := strings.Cut(key, ".")
+				f.data[key] = fmt.Appendf(nil, `{"id":%q,"level":%s,"member_count":99}`, id, level)
+			}
+		})
 		entities := map[string]modelEntity{}
 		bad := map[string]bool{}
 		for _, id := range propBadIDs {
@@ -299,6 +315,11 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		revision++
 		upsert(propIDs[0], revision, propValue{kind: kindValid, words: propVocabulary[:40]})
 		c.capped++
+		// first is alone in its groups, whose keys sort first: a failing tick's first write is
+		// one of them, and the suffix empties them before the last good tick.
+		first := "aaa.dep1.s1.misc.note.i0"
+		revision++
+		upsert(first, revision, propValue{kind: kindValid, words: []string{"w02"}})
 		for _, id := range propIDs[1:6] { // with propIDs[0], five members with words in acme.dep1.s1
 			revision++
 			upsert(id, revision, propValue{kind: kindValid, words: []string{"w01", "w44"}})
@@ -306,7 +327,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 
 		ops := rapid.SliceOfN(rapid.SampledFrom([]string{
 			"upsert", "upsert", "upsert", "upsert", "delete", "delete-held", "obsolete-upsert", "obsolete-delete", "tick",
-			"bootstrap",
+			"bootstrap", "failing-tick",
 		}), 1, 80).Draw(rt, "ops")
 		for _, op := range ops {
 			switch op {
@@ -326,8 +347,8 @@ func TestMaintainerMatchesModel(t *testing.T) {
 				revision++
 				_, held := entities[id]
 				err := m.Delete(id, revision)
-				if wantErr := !held && bad[id]; wantErr != (err != nil) {
-					rt.Fatalf("Delete(%s) = %v, want error=%v", id, err, wantErr)
+				if err != nil {
+					rt.Fatalf("Delete(%s) = %v, want nil", id, err)
 				}
 				if held {
 					c.deletes++
@@ -347,6 +368,32 @@ func TestMaintainerMatchesModel(t *testing.T) {
 					rt.Fatalf("obsolete Delete(%s, %d) = %v", id, rev, err)
 				}
 				c.obsolete++
+			case "failing-tick":
+				// The listing, a write or a removal fails after n bucket operations. Nothing is
+				// compared here; the next good tick must still match the model.
+				n := rapid.IntRange(0, 3).Draw(rt, "operations before the failure")
+				ops := 0
+				fail := func(context.Context, string) error {
+					if ops++; ops > n {
+						return errInjected
+					}
+					return nil
+				}
+				kv.set(func(f *fakeKV) {
+					f.beforePut, f.beforeDelete = fail, fail
+					f.beforeKeys = func(ctx context.Context) error { return fail(ctx, "") }
+				})
+				err := m.Tick(t.Context())
+				kv.set(func(f *fakeKV) { f.beforePut, f.beforeDelete, f.beforeKeys = nil, nil, nil })
+				var incomplete *IncompleteError
+				switch {
+				case !bootstrapped && !errors.Is(err, ErrBootstrapIncomplete):
+					rt.Fatalf("failing Tick before BootstrapDone = %v", err)
+				case bootstrapped && err != nil && !errors.Is(err, errInjected) && !errors.As(err, &incomplete):
+					rt.Fatalf("failing Tick = %v, want the injected failure, nil or *IncompleteError", err)
+				case errors.Is(err, errInjected):
+					c.failedTicks++
+				}
 			case "tick":
 				tick()
 			case "bootstrap":
@@ -359,6 +406,11 @@ func TestMaintainerMatchesModel(t *testing.T) {
 				c.refusals++
 			}
 		}
+		revision++
+		if err := m.Delete(first, revision); err != nil {
+			rt.Fatal(err)
+		}
+		delete(entities, first)
 		m.BootstrapDone()
 		bootstrapped = true
 		tick()
@@ -378,8 +430,9 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		c.emptied++
 	})
 	t.Logf("assertions run: compared ticks %d (incomplete %d), obsolete deliveries %d, refused at the end %d, "+
-		"deletes of held entities %d, capped entities %d, records at MaxRepEntities %d, at MaxKeywords %d, groups emptied %d",
-		c.compared, c.incomplete, c.obsolete, c.refusals, c.deletes, c.capped, c.repsFull, c.keywordsFull, c.emptied)
+		"deletes of held entities %d, capped entities %d, records at MaxRepEntities %d, at MaxKeywords %d, groups emptied %d, failed ticks %d",
+		c.compared, c.incomplete, c.obsolete, c.refusals, c.deletes, c.capped, c.repsFull, c.keywordsFull, c.emptied,
+		c.failedTicks)
 }
 
 // propDelivery is one delivery of one entity's history.

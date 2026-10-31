@@ -114,20 +114,28 @@ func summarize(memberCount int, types []string, typeCounts map[string]int, keywo
 }
 
 // topCounted returns the at most n keys with the highest counts, highest first, ties
-// broken lexically.
+// broken lexically. It keeps only the n best while it reads the counts, so a group with v
+// distinct words costs O(v log n) comparisons, not a sort of all v.
 func topCounted(counts map[string]int, n int) []string {
-	keys := make([]string, 0, len(counts))
-	for k := range counts {
-		keys = append(keys, k)
-	}
-	slices.SortFunc(keys, func(a, b string) int {
+	before := func(a, b string) int {
 		if c := cmp.Compare(counts[b], counts[a]); c != 0 {
 			return c
 		}
 		return strings.Compare(a, b)
-	})
-	if len(keys) > n {
-		keys = keys[:n]
 	}
-	return keys
+	if n <= 0 {
+		return nil
+	}
+	best := make([]string, 0, min(n, len(counts)))
+	for k := range counts {
+		if len(best) == n && before(k, best[n-1]) > 0 {
+			continue
+		}
+		i, _ := slices.BinarySearchFunc(best, k, before)
+		best = slices.Insert(best, i, k)
+		if len(best) > n {
+			best = best[:n]
+		}
+	}
+	return best
 }

@@ -443,12 +443,12 @@ connection was lost or closed by anything other than this client's Close.
 ### Requirement: Subscribe does not promise to report a refused SUB
 
 The call SHALL NOT be relied on to report a SUB the server refused, for permissions or for the connection's limit on
-subscriptions; with nats.go v1.54.0 the call returns the subscription and nil.
+subscriptions; with nats.go v1.55.0 the call returns the subscription and nil.
 
 #### Scenario: A refused SUB
 
 - **WHEN** the server refuses the SUB for permissions or for the connection's limit on subscriptions
-- **THEN** with nats.go v1.54.0 the call returns the subscription and nil
+- **THEN** with nats.go v1.55.0 the call returns the subscription and nil
 
 ### Requirement: Connect is bounded by its context
 

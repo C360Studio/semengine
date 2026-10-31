@@ -13,7 +13,7 @@ import (
 // takes a create that finds the bucket already there for a race with another
 // creator by matching jetstream.ErrBucketExists. This pins the nats.go fact it
 // relies on: a second create of a bucket, with a different config, matches
-// ErrBucketExists (jetstream/kv.go:540-545 at v1.54.0). It fails if a nats.go or
+// ErrBucketExists (jetstream/kv.go:540-545 at v1.55.0). It fails if a nats.go or
 // nats-server upgrade stops joining ErrBucketExists to that error.
 func TestCreateKeyValueOfAnExistingBucketIsErrBucketExists(t *testing.T) {
 	nc, err := nats.Connect(embeddedJetStreamURL(t))
@@ -32,7 +32,7 @@ func TestCreateKeyValueOfAnExistingBucketIsErrBucketExists(t *testing.T) {
 
 // CreateKeyValueBucket's ErrBucketExists branch, reached with no race. A plain
 // stream named KV_<bucket> is not a KV bucket (MaxMsgsPerSubject < 1), so the
-// first get returns ErrBadBucket (jetstream/kv.go:523-524 at v1.54.0), the
+// first get returns ErrBadBucket (jetstream/kv.go:523-524 at v1.55.0), the
 // create collides on the stream name and carries ErrBucketExists (:545), and
 // the branch's second get returns ErrBadBucket again, wrapped with its action.
 // Without the branch the create's error comes back as it is, and it does not

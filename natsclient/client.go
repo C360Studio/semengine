@@ -524,7 +524,7 @@ func (m *Client) Connect(ctx context.Context) error {
 	// counts and logs failed async acks (asyncPublishErrHandler). Keep both
 	// candidates local until admission.
 	// Whether jetstream.New can fail here is not promised: a read of nats.go
-	// v1.54.0, not a test, found that it fails only when an option does, and
+	// v1.55.0, not a test, found that it fails only when an option does, and
 	// that this option never does. The error is still returned, never dropped.
 	js, err := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
 	if err != nil {

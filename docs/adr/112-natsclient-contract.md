@@ -213,8 +213,8 @@ Each line below names its backing. Anything not backed is not promised.
   `ReconnectWait` of 2 s (`client.go:308-309`). A reconnect after `Connect`'s context has ended works (T5).
 - **With a finite `WithMaxReconnects`, nats.go closes the connection once its attempts run out.** The client keeps it
   installed and reports Disconnected, and `Connect` refuses with `errs.ErrAlreadyStarted`; recovery is a new Client.
-  Measured at 0 by `TestIntegration_ReconnectionIsRedial`; above 0 not promised (read at `nats.go:3591-3597`,
-  v1.54.0).
+  Measured at 0 by `TestIntegration_ReconnectionIsRedial`; above 0 not promised (read at `nats.go:3639-3645`,
+  v1.55.0; `:3591-3597` at v1.54.0).
 - **While reconnecting,** `Publish`, `RequestClassified`, `Subscribe`, `PublishToStream` and `GetStream`
   return `ErrNotConnected` at once (P15). KV calls wait for their context.
 - **Not promised:**

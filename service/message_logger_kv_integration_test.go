@@ -235,8 +235,8 @@ func TestKVQueryLookupFailureIs500(t *testing.T) {
 }
 
 // TestKVQuerySortsKeysBeforeLimit: the query answers keys in byte order and applies limit to that
-// order, whatever order the keys were written in (D4, M23; AGENTS.md § 2). nats.go v1.54.0 sorts
-// Keys itself (jetstream/kv.go:1420) without promising it, so the mutant that drops the logger's
+// order, whatever order the keys were written in (D4, M23; AGENTS.md § 2). nats.go v1.55.0 sorts
+// Keys itself (jetstream/kv.go:1421) without promising it, so the mutant that drops the logger's
 // sort survives at this version; the test is the guard for a nats.go that stops sorting.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger

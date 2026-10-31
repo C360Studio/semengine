@@ -11,7 +11,7 @@ import (
 )
 
 // natsBucketName is the NATS KV bucket grammar, transcribed from the pinned
-// client (nats.go v1.54.0 jetstream/kv.go:504 validBucketRe), not from BucketName.
+// client (nats.go v1.55.0 jetstream/kv.go:504 validBucketRe), not from BucketName.
 var natsBucketName = regexp.MustCompile(`^[a-zA-Z0-9_-]+$`)
 
 const segmentAlphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"

@@ -563,7 +563,7 @@ func (cm *Manager) release(ctx context.Context) error {
 		cm.subscribers = make(map[string][]chan update)
 	}
 	if len(watchers) > 0 || cancel != nil {
-		// Stopping a watch deletes its consumer with a request nats.go v1.54.0
+		// Stopping a watch deletes its consumer with a request nats.go v1.55.0
 		// bounds by its own timeout, not by ctx
 		// (TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied). The teardown
 		// therefore runs on a goroutine Stop waits on below under ctx: a Stop whose
@@ -591,7 +591,7 @@ func (cm *Manager) release(ctx context.Context) error {
 // consumer delete rather than one per watch, and then ends the run context.
 //
 // Each watcher is stopped before the run context ends. Ending it also
-// unsubscribes them, in the background (nats.go v1.54.0 js.go:2063-2068);
+// unsubscribes them, in the background (nats.go v1.55.0 js.go:2072-2077);
 // stopping first makes this the unsubscribe that deletes each consumer, which
 // TestManagerPassesTheLifecycleSuite counts on the server.
 func (cm *Manager) stopWatches(watchers []jetstream.KeyWatcher, cancel context.CancelFunc) {

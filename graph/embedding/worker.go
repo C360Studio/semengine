@@ -46,7 +46,7 @@ const MaxSourceTextLenCeiling = 1_000_000
 
 // workerQueueCapacity is the Worker's keyed pool queue, split across its lanes: as many
 // accepted entries as the watch's update channel buffers, which the pin's workers read from
-// directly (256 at nats.go v1.54.0, jetstream/kv.go WatchFiltered, not promised).
+// directly (256 at nats.go v1.55.0, jetstream/kv.go WatchFiltered, not promised).
 const workerQueueCapacity = 256
 
 // GeneratedCallback is called when an embedding has been stored. It receives the context Run

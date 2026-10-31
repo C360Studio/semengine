@@ -47,7 +47,7 @@ func (e fakeEntry) Operation() jetstream.KeyValueOp { return e.op }
 // marker) and calls lose to close the update channel while Run's context is live. Its update
 // channel also closes when the watch's context ends, as nats.go's does (probe P11, PR #458
 // comment 6472856197); the pin's fake ignored the context (pin harness_test.go:56). Stop only
-// counts calls: at nats.go v1.54.0 Stop unsubscribes, and the channel closes when the delivery
+// counts calls: at nats.go v1.55.0 Stop unsubscribes, and the channel closes when the delivery
 // ends (internal/kvwatch).
 type fakeWatcher struct {
 	updates   chan jetstream.KeyValueEntry

@@ -10,7 +10,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/probe"
 )
 
-// The failure these two exist for: at nats.go v1.54.0 a KV watch's Stop only unsubscribes, so a
+// The failure these two exist for: at nats.go v1.55.0 a KV watch's Stop only unsubscribes, so a
 // delivery already blocked sending into the watch's full updates buffer keeps running after Stop
 // until someone reads the buffer (#418), and a watch can be left with a channel that never closes
 // (#454). internal/kvwatch.Stop drains for that; a test proving a caller leaves no delivery behind

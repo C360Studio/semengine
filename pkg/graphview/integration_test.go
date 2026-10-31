@@ -292,13 +292,13 @@ func TestRunLeavesNoWatchDelivery(t *testing.T) {
 		}
 		// Run has returned, so every goroutine it started has been joined.
 		for _, frame := range []string{"graphview.(*View[", "graphview.(*Subscription["} {
-			if stacks := stacksIn(frame); stacks != "" {
-				t.Fatalf("cycle %d: a goroutine is still in %s after Run returned:\n%s", cycle, frame, stacks)
+			if err := natsfixture.AwaitNoStacks(t.Context(), waitBound, func() string { return stacksIn(frame) }); err != nil {
+				t.Fatalf("cycle %d: a goroutine is still in %s after Run returned: %v", cycle, frame, err)
 			}
 		}
 		// Run drained the watch until nats.go closed it, which it does after its last delivery returns.
-		if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned:\n%s", cycle, stacks)
+		if err := natsfixture.AwaitNoStacks(t.Context(), waitBound, natsfixture.NativeDeliveryStacks); err != nil {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned: %v", cycle, err)
 		}
 	}
 }
@@ -339,7 +339,7 @@ func TestRunReportsLostWatch(t *testing.T) {
 	_, _, err = view.Get("alpha")
 	require.ErrorIs(t, err, ErrWatcherLost)
 	require.ErrorIs(t, err, ErrNotReady)
-	if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-		t.Fatalf("nats.go's watch delivery is still running after Run returned:\n%s", stacks)
+	if err := natsfixture.AwaitNoStacks(t.Context(), waitBound, natsfixture.NativeDeliveryStacks); err != nil {
+		t.Fatalf("nats.go's watch delivery is still running after Run returned: %v", err)
 	}
 }

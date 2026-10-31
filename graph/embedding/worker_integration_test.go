@@ -91,12 +91,12 @@ func TestWorkerRunLeavesNoWatchDelivery(t *testing.T) {
 		if err := receive(t, done, "Run to return"); !errors.Is(err, context.Canceled) {
 			t.Fatalf("cycle %d: Run returned %v; want context.Canceled", cycle, err)
 		}
-		if stacks := workerStacks(); stacks != "" {
-			t.Fatalf("cycle %d: a goroutine is still in the Worker or its pool after Run returned:\n%s", cycle, stacks)
+		if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, workerStacks); err != nil {
+			t.Fatalf("cycle %d: a goroutine is still in the Worker or its pool after Run returned: %v", cycle, err)
 		}
 		// Run drained the watch until nats.go closed it, which it does after its last delivery returns.
-		if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned:\n%s", cycle, stacks)
+		if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, natsfixture.NativeDeliveryStacks); err != nil {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned: %v", cycle, err)
 		}
 	}
 }
@@ -138,11 +138,11 @@ func TestWorkerRunReportsLostWatch(t *testing.T) {
 	if err == nil || errors.Is(err, context.Canceled) || !errors.Is(err, errWatchLost) {
 		t.Fatalf("Run returned %v; want the lost-watch error", err)
 	}
-	if stacks := workerStacks(); stacks != "" {
-		t.Fatalf("a goroutine is still in the Worker or its pool after Run returned:\n%s", stacks)
+	if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, workerStacks); err != nil {
+		t.Fatalf("a goroutine is still in the Worker or its pool after Run returned: %v", err)
 	}
-	if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-		t.Fatalf("nats.go's watch delivery is still running after Run returned:\n%s", stacks)
+	if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, natsfixture.NativeDeliveryStacks); err != nil {
+		t.Fatalf("nats.go's watch delivery is still running after Run returned: %v", err)
 	}
 	wait, cancelWait := context.WithTimeout(t.Context(), cacheWaitBound)
 	defer cancelWait()

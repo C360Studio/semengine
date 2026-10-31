@@ -58,5 +58,8 @@ watch as a work queue.
   (`natsclient/delivery_settlement_integration_test.go` drives this against the pinned server).
 - How nats.go marks the end of the current values when a watch starts is not promised here: no test in this tree
   drives it (ADR-112). A design that depends on it cites a probe.
+- Many local readers of one bucket share one `graphview.View` (`pkg/graphview`), never one `WatchAll` each: the view
+  decodes each write once and gives every reader a snapshot followed by its changes. A reader that needs its own
+  filter, history replay, every revision or its own acknowledgement still opens a real consumer.
 
 Using both in one component, KV for state and a stream for work, is the normal shape.

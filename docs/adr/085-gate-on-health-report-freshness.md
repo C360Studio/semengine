@@ -9,11 +9,14 @@
 >
 > - Issue numbers in the text below (`gh#590`, `gh#605`) are SemStreams' or a sister repository's, not SemEngine's; the
 >   OpenSpec change it names, `fusion-consistency-simplification`, is SemStreams'.
-> - Of the records named here, ADR-066, ADR-083 and ADR-084 are ported with this one. ADR-081 and ADR-082 are not yet
->   ported.
-> - None of the code named here is ported: `processor/graph-clustering`, `processor/graph-index`,
->   `processor/graph-query`, `graph/query`'s client (retired before the pin), `pkg/fusion`, `pkg/graphview`, and the
->   types and functions named with them (`EvaluateReadinessGate`, `IndexStatusResponse`,
+> - Of the records named here, ADR-066, ADR-083 and ADR-084 are ported with this one. ADR-081 is ported with
+>   `pkg/graphview` (change `setup-04a-04-graph-roots-graphview`, draft PR #476); ADR-082 is not yet ported.
+> - Decision 5 is kept: `pkg/graphview` has `Applied()` and the snapshot pair `Snapshot.Revision` and
+>   `Snapshot.AppliedAt`, and no `graphview` API gates on them. The package changed two things Decision 5 does not
+>   mention: `Start` and `Stop` became `Run(ctx)`, and ending `Run`'s context is a stop, not a watcher loss.
+> - Apart from `pkg/graphview`, none of the code named here is ported: `processor/graph-clustering`,
+>   `processor/graph-index`, `processor/graph-query`, `graph/query`'s client (retired before the pin), `pkg/fusion`,
+>   and the types and functions named with them (`EvaluateReadinessGate`, `IndexStatusResponse`,
 >   `readiness.MinBoundedStaleness`, `LPADetector`, `CommunityCache`).
 
 ## Status

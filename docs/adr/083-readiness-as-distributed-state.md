@@ -8,10 +8,11 @@
 >
 > - Issue numbers in the text below (`#590`, `#592`) are SemStreams' or a sister repository's, not SemEngine's; the
 >   OpenSpec change it names, `readiness-distribution-and-staleness-contract`, is SemStreams'.
-> - Of the records named here, ADR-066, ADR-084 and ADR-085 are ported with this one. ADR-055, ADR-081 and ADR-082 are
->   not yet ported.
+> - Of the records named here, ADR-066, ADR-084 and ADR-085 are ported with this one. ADR-081 is ported with
+>   `pkg/graphview`. ADR-055 and ADR-082 are not yet ported.
 > - None of the code named here is ported: the graph-index, graph-embedding, graph-ingest and graph-clustering
->   processors, the `graph` package, `pkg/fusion` and `pkg/graphview`. No code here creates the `GRAPH_STATUS` bucket.
+>   processors, the `graph` package and `pkg/fusion`. `pkg/graphview` is ported (ADR-081). No code here creates the
+>   `GRAPH_STATUS` bucket.
 
 ## Status
 

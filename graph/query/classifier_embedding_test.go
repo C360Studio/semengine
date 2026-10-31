@@ -371,8 +371,14 @@ func TestFindBestMatch_MultipleMatches(t *testing.T) {
 	assert.Greater(t, score, 0.8) // Exact match should be very high
 }
 
-// TestFindBestMatch_PreservesOptions tests that matched example options are preserved
+// TestFindBestMatch_PreservesOptions tests that matched example options are preserved: a
+// caller's own name unchanged and a known name as its typed value. The pin's version gave
+// time_range the word "week", which construction now refuses (#478, design D4).
 func TestFindBestMatch_PreservesOptions(t *testing.T) {
+	week := &TimeRange{
+		Start: time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC),
+		End:   time.Date(2026, 3, 9, 0, 0, 0, 0, time.UTC),
+	}
 	domains := []*DomainExamples{
 		{
 			Domain: "logistics",
@@ -382,7 +388,7 @@ func TestFindBestMatch_PreservesOptions(t *testing.T) {
 					Intent: "temporal_filter",
 					Options: map[string]any{
 						"status_filter": "delayed",
-						"time_range":    "week",
+						"time_range":    map[string]any{"start": "2026-03-02T00:00:00Z", "end": "2026-03-09T00:00:00Z"},
 						"limit":         100,
 					},
 				},
@@ -400,7 +406,7 @@ func TestFindBestMatch_PreservesOptions(t *testing.T) {
 
 	// Verify options are preserved
 	assert.Equal(t, "delayed", match.Options["status_filter"])
-	assert.Equal(t, "week", match.Options["time_range"])
+	assert.Equal(t, week, match.Options["time_range"])
 	assert.Equal(t, 100, match.Options["limit"])
 }
 

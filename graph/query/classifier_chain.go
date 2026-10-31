@@ -2,6 +2,9 @@ package query
 
 import (
 	"context"
+	"time"
+
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // ClassificationResult contains the classification output from the tiered classifier chain.
@@ -16,6 +19,7 @@ type ClassificationResult struct {
 //
 // Routing logic:
 //   - T0 (keyword): Always try first - a keyword hint stops the ladder
+//   - An operation the keyword tier excluded, with no keyword hint: the default result
 //   - T1 (example classifier): Only if no keyword hint AND one is composed
 //   - T3 (LLM): Only if no earlier tier produced a hint AND one is composed
 //   - Default: T0 with no hints and confidence 1.0, while the context is live
@@ -51,30 +55,61 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 //   - T3: the LLM classifier's result, when it is composed and succeeds
 //   - Default: T0 with no hints and confidence 1.0
 //
-// It returns nil when the chain is nil, when ctx is nil or has ended before it starts, and when
-// ctx has ended by the time a tier after the keyword tier has produced nothing: an ended context
-// never gets the default result.
+// The keyword tier's outcome decides whether the later tiers are asked (#95):
+//
+//	Keyword outcome                    Chain result
+//	any hint                           tier 0, those hints
+//	no hint, nothing excluded          tiers 1, 3, then the default result
+//	no hint, some operation excluded   the default result; tiers 1 and 3 are not asked
+//
+// An exclusion (a negated, quoted or undecided operation; KeywordClassifier.ClassifyQuery
+// states the rules) binds the final decision whichever later tiers are composed. A later tier
+// answers in the caller's own words, which no framework rule can read, so the chain does not ask
+// it. The cost: a question whose only operation is excluded gets no tier 1 or tier 3 answer.
+//
+// A question with an out-of-range number is refused (#479 item 2): no result and an invalid-input
+// error (errs.IsInvalid) naming the phrase and the bound it broke. The bounds: "last N hours" and
+// "last N days" need N of at least 1 and N hours or days within a time.Duration (about 292
+// years), so a negative N is refused; "within R of lat,lon" needs lat in [-90, 90], lon in
+// [-180, 180] and R finite. The refusal holds whichever tiers are composed, the keyword tier
+// included or not, and no tier is asked: answering without the phrase's filter would answer a
+// wider question than the one asked. Every other outcome comes with a nil error.
+//
+// The keyword tier reads the clock once per question; "today", "yesterday", "this week" and the
+// other calendar ranges are in that instant's zone, the server's time.Local.
+//
+// It returns nil and a nil error when the chain is nil, when ctx is nil or has ended before it
+// starts, and when ctx has ended by the time a tier after the keyword tier has produced nothing:
+// an ended context never gets the default result.
 //
 // A failed LLM tier under a live context is a declared degrade to the default result: the chain
 // answers as if no LLM were composed, and the error is not reported. A caller that must tell the
 // two apart calls LLMClassifier.ClassifyQuery itself.
 //
 // Each result's Options map is the caller's own; values nested inside an entry may be shared.
-func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) *ClassificationResult {
+func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) (*ClassificationResult, error) {
 	if c == nil || ctx == nil || ctx.Err() != nil {
-		return nil
+		return nil, nil
+	}
+
+	// A question with an out-of-range number is refused whichever tiers are composed (#479 item 2).
+	if err := numbersOutOfRange(query); err != nil {
+		return nil, errs.WrapInvalid(err, "ClassifierChain", "ClassifyQuery", "read the question's numbers")
 	}
 
 	// T0: Try keyword classifier first (if available)
 	if c.keyword != nil {
-		opts := c.keyword.ClassifyQuery(ctx, query)
-		if opts != nil && hasExplicitIntent(opts) {
+		opts, excluded := c.keyword.classify(query, time.Now())
+		if hasExplicitIntent(opts) {
 			return &ClassificationResult{
 				Tier:       0,
 				Intent:     "", // Keyword tier doesn't set Intent (uses SearchOptions fields)
 				Options:    searchOptionsToMap(opts),
 				Confidence: 1.0,
-			}
+			}, nil
+		}
+		if excluded {
+			return noHintResult(), nil
 		}
 	}
 
@@ -88,7 +123,7 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) *Clas
 				Intent:     match.Intent,
 				Options:    match.Options,
 				Confidence: score,
-			}
+			}, nil
 		}
 	}
 
@@ -96,17 +131,21 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) *Clas
 	if c.llm != nil {
 		result, err := c.llm.ClassifyQuery(ctx, query)
 		if err == nil && result != nil {
-			return result
+			return result, nil
 		}
 		// A failure under a live context degrades to the default result (declared above).
 	}
 
 	// A context that ended during a later tier gets no answer, not the default result.
 	if ctx.Err() != nil {
-		return nil
+		return nil, nil
 	}
 
-	// Default: Return T0 result with no filters
+	return noHintResult(), nil
+}
+
+// noHintResult is the default result: tier 0, no hints, confidence 1.0.
+func noHintResult() *ClassificationResult {
 	return &ClassificationResult{
 		Tier:       0,
 		Intent:     "",

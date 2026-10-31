@@ -47,7 +47,9 @@ func TestChainEndedContextReturnsNil(t *testing.T) {
 	t.Run("nil context", func(t *testing.T) {
 		chain := NewClassifierChain(NewKeywordClassifier(), createTestEmbeddingClassifier(t))
 		var nilCtx context.Context
-		assert.Nil(t, chain.ClassifyQuery(nilCtx, noHintQuery))
+		got, err := chain.ClassifyQuery(nilCtx, noHintQuery)
+		require.NoError(t, err)
+		assert.Nil(t, got)
 	})
 
 	t.Run("ended at entry", func(t *testing.T) {
@@ -55,7 +57,9 @@ func TestChainEndedContextReturnsNil(t *testing.T) {
 			return `{"strategy":"semantic"}`, nil
 		}}
 		chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
-		assert.Nil(t, chain.ClassifyQuery(endedContext(t), noHintQuery))
+		got, err := chain.ClassifyQuery(endedContext(t), noHintQuery)
+		require.NoError(t, err)
+		assert.Nil(t, got)
 		assert.Zero(t, client.calls.Load(), "no tier runs for an ended context")
 	})
 
@@ -67,7 +71,9 @@ func TestChainEndedContextReturnsNil(t *testing.T) {
 			return "", ctx.Err()
 		}}
 		chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
-		assert.Nil(t, chain.ClassifyQuery(ctx, noHintQuery))
+		got, err := chain.ClassifyQuery(ctx, noHintQuery)
+		require.NoError(t, err)
+		assert.Nil(t, got)
 		assert.Equal(t, int64(1), client.calls.Load())
 	})
 }
@@ -80,7 +86,8 @@ func TestChainLLMFailureGivesDefault(t *testing.T) {
 	}}
 	chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
 
-	got := chain.ClassifyQuery(t.Context(), noHintQuery)
+	got, err := chain.ClassifyQuery(t.Context(), noHintQuery)
+	require.NoError(t, err)
 
 	assert.Equal(t, defaultResult(), got)
 	assert.Equal(t, int64(1), client.calls.Load(), "the LLM tier was tried")
@@ -94,7 +101,8 @@ func TestChainKeywordHintStopsTheLadder(t *testing.T) {
 	}}
 	chain := NewClassifierChain(NewKeywordClassifier(), nil, NewLLMClassifier(client, nil))
 
-	got := chain.ClassifyQuery(t.Context(), "events from yesterday")
+	got, err := chain.ClassifyQuery(t.Context(), "events from yesterday")
+	require.NoError(t, err)
 
 	require.NotNil(t, got)
 	assert.Equal(t, 0, got.Tier)
@@ -232,8 +240,10 @@ func TestResultEditsDoNotReachClassifier(t *testing.T) {
 		control := NewClassifierChain(NewKeywordClassifier(), mustNewEmbeddingClassifier(t, copyTestDomains(), 0.3))
 
 		for step, query := range copyTestQueries {
-			got := edited.ClassifyQuery(t.Context(), query)
-			want := control.ClassifyQuery(t.Context(), query)
+			got, err := edited.ClassifyQuery(t.Context(), query)
+			require.NoError(t, err)
+			want, err := control.ClassifyQuery(t.Context(), query)
+			require.NoError(t, err)
 			require.NotNil(t, want)
 			require.Equal(t, 1, want.Tier, "step %d: the control must answer at tier 1", step)
 			assert.Equal(t, want, got, "step %d: result", step)
@@ -267,7 +277,8 @@ func TestZoneQueryAddsNoPredicate(t *testing.T) {
 			assert.Equal(t, tt.startNode, opts.PathStartNode)
 			assert.Empty(t, opts.PathPredicates)
 
-			got := chain.ClassifyQuery(t.Context(), tt.query)
+			got, err := chain.ClassifyQuery(t.Context(), tt.query)
+			require.NoError(t, err)
 			require.NotNil(t, got)
 			assert.Equal(t, map[string]any{"path_intent": true, "path_start_node": tt.startNode}, got.Options)
 		})
@@ -307,11 +318,13 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 
 	kc, ok := keyword.(*KeywordClassifier)
 	require.True(t, ok)
-	require.Equal(t, defaultResult(), NewClassifierChain(kc, nil).ClassifyQuery(t.Context(), question),
-		"the question must carry no keyword hint")
+	keywordOnly, err := NewClassifierChain(kc, nil).ClassifyQuery(t.Context(), question)
+	require.NoError(t, err)
+	require.Equal(t, defaultResult(), keywordOnly, "the question must carry no keyword hint")
 	chain := NewClassifierChain(kc, examples)
 
-	got := chain.ClassifyQuery(t.Context(), question)
+	got, err := chain.ClassifyQuery(t.Context(), question)
+	require.NoError(t, err)
 
 	require.NotNil(t, got)
 	assert.Equal(t, 1, got.Tier)

@@ -13,6 +13,11 @@
 // hints, confidence 1.0. A nil or ended context gets no answer (nil), never the default
 // result. ClassifierChain.ClassifyQuery documents each outcome, including a failed LLM tier.
 //
+// A question holding an impossible number ("last 0 hours", a latitude of 95) is refused:
+// ClassifierChain.ClassifyQuery returns no result and an invalid-input error naming the phrase,
+// whichever tiers are composed. "Today" and the other calendar ranges follow the server's zone
+// (time.Local).
+//
 // Hints travel as ClassificationResult.Options, a map keyed by the SearchOptions JSON names
 // (time_range, path_intent, path_start_node, ...). Each result's map is the caller's own copy.
 package query

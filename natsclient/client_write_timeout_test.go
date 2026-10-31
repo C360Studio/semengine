@@ -18,9 +18,10 @@ import (
 const optionStep = 300 * time.Millisecond
 
 // T9, design "Tests that replace the probes" and D4. WithWriteTimeout ends a
-// publish the server is not reading. The write it ends partway leaves the
-// connection connected but unable to carry anything, and WithPingInterval is
-// what lets nats.go find it stale and reconnect (P22, P24).
+// publish the server is not reading. At nats.go v1.55.0 the write it ends
+// partway closes the socket and nats.go reconnects, so the echo arrives after a
+// reconnect (P24r, PR #492 comment 6545759092). The ping interval is set too, as
+// P24 measured; at v1.54.0 it was what found the connection stale (P22, P24).
 func TestWriteTimeoutAndPingIntervalOptions(t *testing.T) {
 	t.Run("a held write fails, then the connection carries an echo", func(t *testing.T) {
 		client, proxy := newHeldClient(t, WithWriteTimeout(optionStep), WithPingInterval(optionStep))

@@ -19,9 +19,15 @@ the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were 
 run beside it). P7, P8, P9, P10, P12, P13, P15, P16 and p15b gave the same results. The sources of P17 to P25 were
 never posted, so they were not re-run; P24r, a reconstruction of the P20, P22 and P24 cases, stands in for them.
 P11, P14 and P24r's case with the write timeout alone changed: at v1.55.0 a write the write timeout ends partway
-closes the socket, and nats.go reconnects (`nats.go:2389-2395`, read). The lines below that rest on the earlier
-behaviour (§1's write-timeout bullets, §2's `Publish` timing, the Alternatives' shorter-write-timeout bullet) are not
-amended by this note; they wait for a ruling on PR #492.
+closes the socket, and nats.go reconnects (`nats.go:2389-2395`, read). The lines that rested on the earlier
+behaviour are amended (see the amendment of 2026-10-31 below).
+
+**Amendment, 2026-10-31 (nats.go v1.55.0).** The owner accepted v1.55.0's write-timeout behaviour: "Accept it and
+update the docs to match" (PR #492 comment 6545866336). Amended in place, each citing the re-run (PR #492 comment
+6545759092): §1's held-call bullet, its write-timeout bullets and its "not promised" recovery bullet; §2's `Publish`
+timing; the Alternatives' shorter-write-timeout bullet. The requirement to set `WithWriteTimeout` and
+`WithPingInterval` together is dropped: the write timeout alone now heals a held write. No production behaviour
+changes.
 
 **Amendment, 2026-10-12 (#184).** `Client.SetConnection` is removed, with the code and tests that served it (owner,
 2026-10-12: "I have no idea why we have a setter in Go for SetConnection — this is not Java"). §4's sentence about a
@@ -143,18 +149,28 @@ Each line below names its backing. Anything not backed is not promised.
   - Behind a write the server is not reading, each call waits for every write ahead of it, up to the write timeout
     each, and `Close` ends the wait. In P17 each held call was held until the write ended: past the 5 s cap, or
     1.6-2.0 s when darwin's buffers took it; never at the call's deadline. In P13 each returned 0 to 29 ms after the
-    server read again.
+    server read again. At nats.go v1.55.0, a write the timeout ends partway closes the socket, so every call held
+    behind it returns then: in P14 held `Publish`, `Put` and `Subscribe` calls returned at the first write timeout
+    (59.6 s), where at v1.54.0 they waited for each write in turn (PR #492 comment 6545759092; amended 2026-10-31).
 - **The write timeout and the PING interval are the caller's to set.**
   - `WithWriteTimeout` and `WithPingInterval` default to one minute and 30 s, and refuse a value that is not positive
     (T9; P24).
   - With both at 300 ms, a held publish failed at the write timeout, and the connection reconnected and carried a
     request 1 to 3 ms after the server read again (P24, 3 of 3 at each server version).
-  - With the write timeout alone, it stayed connected and carried nothing for 5 s (P22, P24: 6 of 6). So set them
-    together.
+  - With the write timeout alone, at nats.go v1.55.0, the held publish failed at the write timeout, the connection
+    reconnected at once, and it carried a request 2.0 to 2.1 s after the server read again, within the client's 2 s
+    `ReconnectWait` (P24r, 3 of 3; PR #492 comment 6545759092). At v1.54.0 it stayed connected and carried nothing for
+    5 s (P22, P24: 6 of 6), which is why the two were once to be set together; that requirement is dropped (owner
+    ruling, PR #492 comment 6545866336; amended 2026-10-31).
 - **Not promised:**
-  - **That the connection works after a write timeout.** It recovers when nats.go's stale-connection check closes
-    it. That check declares the connection stale at the third PING with no answer (`nats.go:5993-6013`, read). At
-    300 ms it took 1.21 s (P20, P24 idle, 5 of 5). At the default 30 s it is not measured: 60 to 90 s by the code.
+  - **How soon the connection works after a write timeout.** At nats.go v1.55.0 a write the timeout ends partway
+    closes the socket and nats.go reconnects (`nats.go:2389-2395`, read; P14, P24r in PR #492 comment 6545759092),
+    and reconnect pacing is not promised (§5). A write that times out before any byte is sent leaves the socket open
+    (the same lines, read, not measured). Amended 2026-10-31 (owner ruling, PR #492 comment 6545866336).
+  - **How soon a dead server is found when no write is held.** nats.go's stale-connection check declares the
+    connection stale at the third PING with no answer (`nats.go:5993-6013` at v1.54.0, `:6081-6101` at v1.55.0,
+    read). At 300 ms it took 1.21 s (P20, P24 idle, 5 of 5), and 0.90 s in P24r's measure at v1.55.0. At the
+    default 30 s it is not measured: 60 to 90 s by the code.
   - **How long a reconnect attempt holds the connection.** Go's `net.Dialer` puts a hostname's lookup and all its
     addresses under one `WithTimeout` (5 s by default). Each address gets an equal share of what is left, raised to
     2 s only while 2 s remain: with the default 5 s, a first and a second address get 2 s each, a third about 1 s, and
@@ -168,8 +184,9 @@ Each line below names its backing. Anything not backed is not promised.
 - **`Subscribe`, `SubscribeForRequests`:** the server has read the SUB, not that it accepted it. A refused SUB returns
   the subscription and nil, and is counted when metrics are configured (amended 2026-10-17, see Status).
   Backed by the test at `subscribe_registration_test.go:240`, and by P7, P8 and #169.
-- **`Publish`:** the message is in nats.go's buffer, not sent: nil came back after 1 m 59.6 s with the server never
-  reading (P14). Delivery is not promised: a message still buffered when the connection closes is lost, including
+- **`Publish`:** the message is in nats.go's buffer, not sent: nil came back after 59.6 s and after 1 m 1.8 s with the
+  server never reading (P14 at nats.go v1.55.0, PR #492 comment 6545759092; 1 m 59.6 s at v1.54.0; amended
+  2026-10-31). Delivery is not promised: a message still buffered when the connection closes is lost, including
   when `Close`'s context ends before its drain does.
 - **`PublishToStream`:** the server stored it, in the stream's storage class. On a memory stream it does not survive
   a restart (test `integration_test.go:109`).
@@ -244,7 +261,9 @@ Each alternative that needed a timeout was measured with a short one, so no prob
 - **A shorter default write timeout.**
   - It bounds every held call: 1 s ended `Publish` at 0.6 s (P19).
   - On a healthy slow link it fails writes that a minute would complete (P19, P21).
-  - A write it ends partway leaves the connection unusable until the stale-connection check fires (P22).
+  - At nats.go v1.54.0, a write it ended partway left the connection unusable until the stale-connection check fired
+    (P22). At v1.55.0 such a write closes the socket and nats.go reconnects (P24r, PR #492 comment 6545759092;
+    amended 2026-10-31).
 
   The owner kept the default and asked for an option instead.
 - **One option for both settings.** Two durations of one type invite swapped arguments. A short ping is also useful
@@ -267,7 +286,8 @@ Each alternative that needed a timeout was measured with a short one, so no prob
 ## Consequences
 
 - **A component's `Stop` that closes its client is bounded by its context.** Its other calls are not, while a server
-  is not reading. A caller that needs a shorter bound sets `WithWriteTimeout` and `WithPingInterval` together.
+  is not reading. A caller that needs a shorter bound sets `WithWriteTimeout` (at nats.go v1.55.0 the write timeout alone
+  heals the connection; amended 2026-10-31).
 - **A retry keyed on `errs.IsTransient` now retries `ErrNotConnected`.** (It also
   retried a circuit refusal; struck with the breaker, #222.) No responders is unchanged. A KV write's error is
   commit-unknown, so re-read before retrying a write that is not compare-and-set.

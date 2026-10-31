@@ -100,9 +100,9 @@ remove the records of groups that became empty.
 ### Requirement: Removal follows publication
 
 A tick SHALL remove a record, including on the first tick after bootstrap the keys of groups that do not exist, only
-after every changed record has been written. A write failure, a removal failure, or the context ending SHALL make
-`Tick` return an error and leave the unwritten records and the cleanup pending for the next tick, so the old records
-stay readable.
+after every changed record has been written. A write failure, a removal failure, or the context ending before pending
+work is done SHALL make `Tick` return an error and leave the unwritten records and the cleanup pending for the next
+tick, so the old records stay readable.
 
 #### Scenario: The first publication fails
 
@@ -114,7 +114,7 @@ stay readable.
 
 #### Scenario: Cancelled during a tick
 
-- **WHEN** the context ends while a tick writes or removes records
+- **WHEN** the context ends while a tick writes or removes pending records
 - **THEN** `Tick` returns the context's error and the next tick completes the pending work
 - **AND** the test that verifies this is `TestTickReportsCancel`
 

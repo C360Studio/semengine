@@ -175,8 +175,9 @@ func (m *Maintainer) BootstrapDone() {
 // Tick publishes every group changed since its last successful publication: it writes
 // each record that differs from the one last written and, only after every write
 // succeeded, removes the records of groups that became empty and, after the first tick's
-// one key listing, the keys of groups that do not exist. A failure or the context ending
-// returns an error and leaves the work pending for the next Tick. It returns
+// one key listing, the keys of groups that do not exist. A failure, or the context ending
+// before the pending work is done, returns an error and leaves the work pending for the
+// next Tick; with nothing pending, an ended context is not consulted. It returns
 // ErrBootstrapIncomplete before BootstrapDone, an *IncompleteError when all is published
 // but some entities are refused, and nil otherwise.
 func (m *Maintainer) Tick(ctx context.Context) error {

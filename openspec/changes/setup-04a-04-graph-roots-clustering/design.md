@@ -72,9 +72,9 @@ write.
   order, `pin:graph/clustering/lpa.go:243-250`). If any write fails, nothing is removed and both the writes and the
   cleanup stay pending for the next tick, so the old records stay readable. It reads nothing from `COMMUNITY_INDEX`
   after the first tick and holds no `ENTITY_STATES` handle.
-- **Failure signals.** A write or removal failure, or the context ending, returns an error and leaves the work
-  pending. With a non-empty refused set, an otherwise complete tick returns `*IncompleteError` naming the refused IDs.
-  `Tick` returns nil only when everything is published and nothing is refused.
+- **Failure signals.** A write or removal failure, or the context ending before pending work is done, returns an error
+  and leaves the work pending. With a non-empty refused set, an otherwise complete tick returns `*IncompleteError`
+  naming the refused IDs. `Tick` returns nil only when everything is published and nothing is refused.
 
 ## D3. Storage
 

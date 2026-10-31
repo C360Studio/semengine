@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/message"
@@ -471,6 +472,42 @@ func TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick(t *testing.T) {
 	mustTick(t, m)
 	if records := kv.records(t); len(records) != 0 {
 		t.Fatalf("records = %v after every member was deleted, want none", slices.Sorted(maps.Keys(records)))
+	}
+}
+
+// TestRetainedWordsDoNotPinInput: the words a contribution keeps, and the keywords of a
+// published record, are copies, not substrings of the value they came from, so a large
+// literal is not kept alive by a short word. It checks after the first upsert and after a
+// replacement whose published records stay equal (they keep the first value's keywords).
+func TestRetainedWordsDoNotPinInput(t *testing.T) {
+	original := "alpha " + strings.Repeat("x", 512<<10)
+	replacement := "alpha " + strings.Repeat("y", 256<<10)
+	id := "acme.dep1.src.docs.note.n1"
+	m, _ := newTestMaintainer(t)
+	check := func(label, word, input string) {
+		t.Helper()
+		start := uintptr(unsafe.Pointer(unsafe.StringData(input)))
+		addr := uintptr(unsafe.Pointer(unsafe.StringData(word)))
+		if addr >= start && addr < start+uintptr(len(input)) {
+			t.Errorf("%s: kept %d-byte word %q points into the %d-byte value", label, len(word), word, len(input))
+		}
+	}
+
+	mustUpsert(t, m, id, 1, original)
+	for _, word := range m.members[id].contribution.words {
+		check("first contribution", word, original)
+	}
+	m.BootstrapDone()
+	mustTick(t, m)
+	mustUpsert(t, m, id, 2, replacement)
+	for _, word := range m.members[id].contribution.words {
+		check("replacement contribution", word, replacement)
+	}
+	mustTick(t, m)
+	for key, record := range m.published {
+		for _, word := range record.Keywords {
+			check("published "+key, word, original)
+		}
 	}
 }
 

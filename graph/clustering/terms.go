@@ -66,7 +66,15 @@ func entityWords(state *graph.EntityState) []string {
 			}
 		}
 	}
-	return topCounted(counts, MaxEntityTerms)
+	// The words are substrings of the values (strings.ToLower returns lower-case input
+	// as is), so each kept word is copied: a short word must not keep a large value alive
+	// (TestRetainedWordsDoNotPinInput).
+	top := topCounted(counts, MaxEntityTerms)
+	words := make([]string, len(top))
+	for i, w := range top {
+		words[i] = strings.Clone(w)
+	}
+	return words
 }
 
 // newCommunity builds a group's record from its counts: the MaxKeywords most common

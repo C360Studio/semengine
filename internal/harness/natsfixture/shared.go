@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +29,9 @@ const (
 	// statzSubject is the server's account-statistics subject, imported into every account
 	// (nats-server v2.15.0 server/events.go:2404; probe on PR #206 comment 6133623880).
 	statzSubject = "$SYS.REQ.ACCOUNT.PING.STATZ"
+	// connzSubject is the server's per-account connection listing, imported into every account
+	// beside statzSubject (nats-server v2.15.1 server/events.go:2402).
+	connzSubject = "$SYS.REQ.ACCOUNT.PING.CONNZ"
 	// defaultAccount is the global default account nats-server places clients in when started
 	// without an accounts configuration.
 	defaultAccount = "$G"
@@ -147,7 +151,8 @@ func (s *Shared) Reset(t testing.TB) string {
 		}
 		defer checkConn.Close()
 		if other, err := awaitOnlySelf(ctx, checkConn); err != nil {
-			t.Errorf("natsfixture: %d client connection(s) still open after the test ended (%v)", other, err)
+			t.Errorf("natsfixture: %d client connection(s) still open after the test ended (%v)\n%s",
+				other, err, openConns(checkConn))
 		}
 	})
 	return url
@@ -211,4 +216,50 @@ func statzConns(ctx context.Context, nc *nats.Conn) (int, error) {
 		}
 	}
 	return 0, fmt.Errorf("account %s absent from %s reply", defaultAccount, statzSubject)
+}
+
+type connzReply struct {
+	Data struct {
+		Conns []struct {
+			CID          uint64    `json:"cid"`
+			Name         string    `json:"name"`
+			Lang         string    `json:"lang"`
+			Version      string    `json:"version"`
+			IP           string    `json:"ip"`
+			Port         int       `json:"port"`
+			Start        time.Time `json:"start"`
+			LastActivity time.Time `json:"last_activity"`
+			Subs         uint32    `json:"subscriptions"`
+		} `json:"connections"`
+	} `json:"data"`
+}
+
+// openConns describes every client connection on the server but self's, one per line, so a
+// failed connection check says whose connection stayed open and since when, not only how many
+// (#493: a check that saw one extra connection could not say whose it was).
+func openConns(self *nats.Conn) string {
+	ctx, cancel := context.WithTimeout(context.Background(), connWaitBudget)
+	defer cancel()
+	msg, err := self.RequestWithContext(ctx, connzSubject, nil)
+	if err != nil {
+		return fmt.Sprintf("  (list connections: %v)", err)
+	}
+	var reply connzReply
+	if err := json.Unmarshal(msg.Data, &reply); err != nil {
+		return fmt.Sprintf("  (list connections: %v)", err)
+	}
+	selfID, _ := self.GetClientID()
+	var lines []string
+	for _, c := range reply.Data.Conns {
+		if c.CID == selfID {
+			continue
+		}
+		lines = append(lines, fmt.Sprintf("  cid=%d name=%q lang=%s/%s from=%s:%d start=%s last_activity=%s subs=%d",
+			c.CID, c.Name, c.Lang, c.Version, c.IP, c.Port, c.Start.Format(time.RFC3339Nano),
+			c.LastActivity.Format(time.RFC3339Nano), c.Subs))
+	}
+	if len(lines) == 0 {
+		return "  (no other connection listed now)"
+	}
+	return strings.Join(lines, "\n")
 }

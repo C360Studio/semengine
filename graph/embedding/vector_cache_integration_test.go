@@ -130,12 +130,14 @@ func TestVectorCacheRunLeavesNoWatchDelivery(t *testing.T) {
 			t.Fatalf("cycle %d: Run returned %v; want context.Canceled", cycle, err)
 		}
 		<-read // joins the test's own FindSimilar, so only Run could be left in a VectorCache method
-		if stacks := stacksIn("embedding.(*VectorCache)"); stacks != "" {
-			t.Fatalf("cycle %d: a goroutine is still in a VectorCache method after Run returned:\n%s", cycle, stacks)
+		if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, func() string {
+			return stacksIn("embedding.(*VectorCache)")
+		}); err != nil {
+			t.Fatalf("cycle %d: a goroutine is still in a VectorCache method after Run returned: %v", cycle, err)
 		}
 		// Run drained the watch until nats.go closed it, which it does after its last delivery returns.
-		if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned:\n%s", cycle, stacks)
+		if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, natsfixture.NativeDeliveryStacks); err != nil {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned: %v", cycle, err)
 		}
 	}
 }
@@ -173,8 +175,8 @@ func TestVectorCacheRunReportsLostWatch(t *testing.T) {
 	if _, ok := cache.FindSimilar("", []float32{1, 0}, nil, 1); ok {
 		t.Fatal("the cache answered after its watch was lost")
 	}
-	if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-		t.Fatalf("nats.go's watch delivery is still running after Run returned:\n%s", stacks)
+	if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, natsfixture.NativeDeliveryStacks); err != nil {
+		t.Fatalf("nats.go's watch delivery is still running after Run returned: %v", err)
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), cacheWaitBound)
 	defer cancel()

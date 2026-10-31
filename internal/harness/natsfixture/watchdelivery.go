@@ -43,3 +43,19 @@ func AwaitNativeDeliveryBlocked(ctx context.Context, bound time.Duration) error 
 	}
 	return nil
 }
+
+// AwaitNoStacks waits, up to bound, for scan to return "", and returns an error carrying the last
+// stacks it saw when it does not. A goroutine that has told its joiner it is done (a deferred
+// WaitGroup.Done, a deferred channel close) is still in the dump until it exits, so a single read
+// taken just after the join can see one that has already finished (#490). A goroutine that is
+// really left behind is still there when the bound ends.
+func AwaitNoStacks(ctx context.Context, bound time.Duration, scan func() string) error {
+	ctx, cancel := context.WithTimeout(ctx, bound)
+	defer cancel()
+	if stacks, err := probe.Await(ctx, func(context.Context) (string, error) {
+		return scan(), nil
+	}, func(stacks string) bool { return stacks == "" }); err != nil {
+		return fmt.Errorf("%w\n%s", err, stacks)
+	}
+	return nil
+}

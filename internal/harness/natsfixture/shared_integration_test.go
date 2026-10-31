@@ -5,6 +5,7 @@ package natsfixture
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -250,7 +251,7 @@ func TestSharedServerAndReset(t *testing.T) {
 		if len(rec.fatals) != 0 {
 			t.Fatalf("Reset fatals: %q", rec.fatals)
 		}
-		leaked, err := nats.Connect(url, nats.MaxReconnects(0))
+		leaked, err := nats.Connect(url, nats.MaxReconnects(0), nats.Name("leaked-by-test"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -260,10 +261,17 @@ func TestSharedServerAndReset(t *testing.T) {
 		if err := leaked.FlushWithContext(flushCtx); err != nil {
 			t.Fatal(err)
 		}
+		leakedID, err := leaked.GetClientID()
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		rec.runCleanups()
-		if len(rec.errors) != 1 || !strings.Contains(rec.errors[0], "1 client connection") {
-			t.Fatalf("cleanups errors = %q, want one naming \"1 client connection\"", rec.errors)
+		// The error names the connection left open, so a failure says whose it was (#493).
+		if len(rec.errors) != 1 || !strings.Contains(rec.errors[0], "1 client connection") ||
+			!strings.Contains(rec.errors[0], fmt.Sprintf("cid=%d name=\"leaked-by-test\"", leakedID)) {
+			t.Fatalf("cleanups errors = %q, want one naming \"1 client connection\" and the leaked connection's cid %d and name",
+				rec.errors, leakedID)
 		}
 		leaked.Close()
 	})

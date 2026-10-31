@@ -304,13 +304,12 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 			t.Fatalf("cycle %d: Run returned %v; want nil", cycle, err)
 		}
 		// Run has returned, so every goroutine it started has been joined: none is in a Follower method.
-		buf := make([]byte, 1<<20)
-		if dump := string(buf[:runtime.Stack(buf, true)]); strings.Contains(dump, "follower.(*Follower)") {
-			t.Fatalf("cycle %d: a goroutine is still in a Follower method after Run returned:\n%s", cycle, dump)
+		if err := natsfixture.AwaitNoStacks(t.Context(), waitBound, followerStacks); err != nil {
+			t.Fatalf("cycle %d: a goroutine is still in a Follower method after Run returned: %v", cycle, err)
 		}
 		// Run drained the watch until nats.go closed it, which it does after its last delivery returns.
-		if stacks := natsfixture.NativeDeliveryStacks(); stacks != "" {
-			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned:\n%s", cycle, stacks)
+		if err := natsfixture.AwaitNoStacks(t.Context(), waitBound, natsfixture.NativeDeliveryStacks); err != nil {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned: %v", cycle, err)
 		}
 	}
 	js, err := client.JetStream()
@@ -548,4 +547,16 @@ func lostFeedCase(t *testing.T, recreate bool) {
 		return s.State == graph.IndexStateDegraded && !s.Ready
 	})
 	requireCode(t, f.QueryReady(t.Context()), errs.ErrorTransient, graph.ErrorCodeIndexNotReady)
+}
+
+// followerStacks returns the stacks of any goroutine in a Follower method, or "".
+func followerStacks() string {
+	buf := make([]byte, 1<<20)
+	var found []string
+	for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+		if strings.Contains(stack, "follower.(*Follower)") {
+			found = append(found, stack)
+		}
+	}
+	return strings.Join(found, "\n\n")
 }

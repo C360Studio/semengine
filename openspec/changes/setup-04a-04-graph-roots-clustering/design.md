@@ -39,9 +39,11 @@ other partition, written somewhere graph-query does not read.
 - **C. The ADR-099 base partition (recommended).** Groups by ID prefix at levels 0-2, bounded records, write on change,
   the statistical summary per group. Conforms to ADR-099 and ADR-102; deterministic with no algorithm to tune; about
   1,350 pin lines carried plus a small partition step the pin never wrote, from a design you already ruled (gh606
-  §3.3, Q5, Q6, Q8). Cost: semboids' flock view collapses to one group (every boid shares
-  `c360.semboids.sim.flock`) and must read members by prefix, until B′ lands as its own change with its fixture;
-  graph-query (item 9) is ported to the bounded record.
+  §3.3, Q5, Q6, Q8). Cost: every boid lands in one community (all share the prefix `<org>.<platform>.sim.flock`,
+  semboids `internal/boidgraph/payload.go:42`), and semboids' flock view shows no members until semboids reads members
+  by prefix: it decodes `members` from each record (`internal/api/graphstream_decode.go:78`, `:86`), which C records
+  do not carry. Flock clusters return only with B′, its own change with its fixture. graph-query (item 9) is ported
+  to the bounded record.
 - **D. Do nothing until change 7.** Item 9 cannot build its community path.
 
 Trade-off in plain words: B keeps one demo working and ports code you already threw out; C follows your own ruling
@@ -64,18 +66,28 @@ community grouping.
 
 ## D2. The partition step (new exported surface, owner approval needed)
 
-`clustering.NewPartitioner(storage, summarizer, entities)` and `(*Partitioner).Refresh(ctx, entityIDs)`, called by
-`processor/graph-clustering` on its interval (change 7). Observable behaviour:
+`clustering.NewPartitioner(requester, storage, summarizer)` and `(*Partitioner).Refresh(ctx) (Partition, error)`.
+`requester` is the one-method interface `graph.NewExactEntityReader` takes (`RequestClassified`, satisfied by
+`*natsclient.Client`); the partitioner reads the graph through graph-ingest's `prefix` verb with an empty prefix, paged
+by cursor, its subject taken from `graph.QueryVerbs()` (query-pattern skill, read 2). No entity list is passed in.
 
-- `Refresh` refuses a nil context and a constructor refuses nil dependencies, each with a typed error.
-- Each listed entity belongs to exactly one group per level, its ID prefix at that level; singletons get a record (Q6).
-  An ID the canonical parser refuses is left out and named in the result's `Skipped`, never silently.
+Who it is for: framework API. The contract line is the `community-grouping` spec and the package `README.md`; a
+product-style test (`TestRefreshAsAProduct`, package `clustering_test`, on `natsfixture` with graph-ingest serving the
+verb) calls it as a product would. `processor/graph-clustering` (change 7) is its first framework caller. Observable
+behaviour:
+
+- The constructor refuses a nil requester, storage or summarizer, and `Refresh` a nil context, each with an error.
+- Each entity read belongs to exactly one group per level, its ID prefix at that level; singletons get a record (Q6).
 - Each record holds level, prefix ID, member count, `MembershipHash` of the members, keywords, statistical summary
-  and at most `MaxRepEntities` representative IDs; no member list. Summaries for groups of two or more members.
-- A record equal to the stored one is not written (no new revision). Every changed record is written before any
-  removal; any write failure returns an error and removes nothing. Then records of groups that no longer exist are
-  removed; a removal failure is returned in the result's `PruneErr` with the partition (fixes S17), not only logged.
-- Each entity state is read at most once per refresh.
+  and at most `clustering.MaxRepEntities` (a framework constant, 5 as at the pin; gh606 `:220`) representative IDs; no
+  member list. Summaries for groups of two or more members.
+- A record equal to the stored one is not written. Every changed record is written before any removal; a read or
+  write failure returns `(nil, err)` and removes nothing.
+- Incomplete runs are errors the caller cannot miss: when an ID the canonical parser refuses was left out, or removing
+  stale records failed, `Refresh` returns the partition **and** a non-nil `*IncompleteError` (fields `Skipped
+  []string`, `Prune error`; `Unwrap` returns the prune error). `err == nil` means complete.
+- Each entity state is read once per refresh. A page boundary is keyset: an entity created mid-refresh with an ID
+  before the cursor waits for the next refresh (`graph/query_prefix_types.go:24-28`).
 
 ## D3. Storage
 
@@ -101,18 +113,21 @@ ADR-087 stays out with the tier-2 lane (#32); ADR-086 and ADR-061 are not ported
 
 ## D5a. Spec delta
 
-`specs/community-detection/spec.md` is written against option C. If the owner rules otherwise on question 1, or
+`specs/community-grouping/spec.md` is written against option C. If the owner rules otherwise on question 1, or
 answers question 3 by asking for the overlay in this change, it is rewritten before review continues.
 
 ## D6. Proving tests
 
-Unit, on a fake storage and entity reader: `TestRefreshRefusesNilContext`, `TestGroupsArePrefixes` (each level),
-`TestSingletonRecorded`, `TestUnparseableIDNamed`, `TestRecordIsBounded`, `TestUnchangedRecordNotRewritten`,
-`TestWriteFailureRemovesNothing`, `TestPruneFailureReturned`, `TestEachStateReadOnce`, `TestSummaryDeterministic`.
-Generated: `TestPartitionMatchesModel`, seeded random ID sets against a model (group = prefix), seed and run count
-recorded. Integration on `natsfixture`: `TestUnchangedRefreshAddsNoRevision`, `TestGetAllCommunitiesFailsOnCorruptEntry`,
+Unit, on a fake requester serving prefix pages and a fake storage: `TestRefreshRefusesNilContext`,
+`TestGroupsArePrefixes` (each level), `TestSingletonRecorded`, `TestUnparseableIDIsAnError` (`errors.As` finds
+`*IncompleteError` naming the ID), `TestRecordIsBounded`, `TestUnchangedRecordNotRewritten`,
+`TestWriteFailureRemovesNothing`, `TestPruneFailureIsAnError`, `TestEachStateReadOnce` (pages across several
+cursors), `TestSummaryDeterministic`. Generated: `TestPartitionMatchesModel`, seeded random ID sets; the model splits
+each ID string on `.` and joins the first 4, 3 and 2 parts itself, never calling the `types.EntityID` prefix methods
+the code uses; seed and run count recorded. Product-style: `TestRefreshAsAProduct` (D2). Integration on `natsfixture`:
+`TestUnchangedRefreshAddsNoRevision`, `TestGetAllCommunitiesFailsOnCorruptEntry`,
 `TestPruneReportsCancel`, `TestGetAllReportsCancel`. Mutation checks: tie-break removed; equality skip removed;
-removal before writes; `PruneErr` dropped. Coverage floor 80 %.
+removal before writes; the `*IncompleteError` replaced by `nil`. Coverage floor 80 %.
 
 ## D7. Issues and merge order
 

@@ -27,13 +27,15 @@ SemEngine's ported ADR-102 already defines community levels as entity-ID prefixe
 
 ## Capabilities
 
-- New `community-detection`.
+- New `community-grouping`.
 
 ## Impact
 
-- New `graph/clustering`; edges to `graph`, `natsclient`, `pkg/errs`, `pkg/types`. No new subject, bucket or payload.
+- New `graph/clustering`; edges to `graph`, `natsclient`, `pkg/errs`, `pkg/types`. New framework API:
+  `Partitioner` (reads the graph through graph-ingest's `prefix` verb), for your approval. No new subject, bucket or payload.
   `COMMUNITY_INDEX` records change shape (fresh state, no migration): item 9 reads members by prefix query.
-- semboids' flock view becomes one group per flock prefix until a detection overlay is built and measured.
+- semboids: every boid lands in one community, and semboids' flock view shows no members until semboids reads
+  members by prefix; flock clusters return only with a measured detection overlay.
 - `processor/graph-clustering` (change 7) calls the new partition step and refuses its old LPA config keys.
 - Retires nothing. Stays open: #32, #68, #141, #477. Addresses #9.
 
@@ -50,5 +52,7 @@ SemEngine's ported ADR-102 already defines community levels as entity-ID prefixe
 2. **The LLM lane leaves whole.** Your 2026-10-24 ruling kept the enhancement worker holding an interface. With no
    tier-2 summarizer the worker has nothing to run, so this draft leaves out the worker, the summary store and its
    metrics under #32 (the membership hash stays: the new record carries it). OK?
-3. **semboids' flocks.** Under C, semboids sees one community per flock prefix and loses its flock clusters until a
-   detection overlay is built with a test that can fail. Accept that gap, with the overlay as its own later change?
+3. **semboids' flocks.** Under C, every boid lands in one community, and semboids' flock view shows no members until
+   semboids reads members by prefix (it reads the member list from each record today, and C records have none). Its
+   flock clusters come back only with a detection overlay built with a test that can fail. Accept that gap, with the
+   overlay as its own later change?

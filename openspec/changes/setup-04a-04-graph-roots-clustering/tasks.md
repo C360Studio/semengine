@@ -8,7 +8,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance, including the proposal's three questions. Gate: `task spec:check` and `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 The `community-detection` spec delta (`specs/community-detection/spec.md`), staged against option C and
+- [ ] 1.2 The `community-grouping` spec delta (`specs/community-grouping/spec.md`), staged against option C and
   rewritten if the owner rules otherwise on proposal question 1 or asks for the overlay under question 3; each
   scenario names its test. Gate: `task spec:check`.
 - [ ] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.
@@ -52,4 +52,4 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 ## 6. Close
 
 - [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-clustering`) as the last content commit, syncing
-  `community-detection` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.
+  `community-grouping` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

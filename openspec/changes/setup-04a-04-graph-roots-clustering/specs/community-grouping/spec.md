@@ -1,13 +1,13 @@
-# community-detection
+# community-grouping
 
 ## ADDED Requirements
 
 ### Requirement: A community is an entity-ID prefix
 
-`clustering.Partitioner.Refresh(ctx, entityIDs)` SHALL place each listed entity in exactly one group per level: at
-level 0 the group of its four-position prefix, at level 1 its three-position source prefix, at level 2 its
-two-position deployment prefix. A group's ID SHALL be that prefix. A group with one member SHALL get a record. An ID
-the canonical parser refuses SHALL be left out of every group and named in the result.
+`clustering.Partitioner.Refresh(ctx)` SHALL read every stored entity through graph-ingest's `prefix` verb and place
+each in exactly one group per level: at level 0 the group of its four-position prefix, at level 1 its three-position
+source prefix, at level 2 its two-position deployment prefix. A group's ID SHALL be that prefix. A group with one
+member SHALL get a record.
 
 #### Scenario: Three levels
 
@@ -15,16 +15,35 @@ the canonical parser refuses SHALL be left out of every group and named in the r
 - **THEN** level 0 holds one group per four-position prefix, level 1 one group per source, level 2 one group
 - **AND** the tests that verify this are `TestGroupsArePrefixes` and `TestPartitionMatchesModel`
 
-#### Scenario: A singleton and an unparseable ID
+#### Scenario: A singleton
 
-- **WHEN** one entity is alone under its prefix and another listed ID does not parse
-- **THEN** the first has a group of one, and the second is in no group and is named in the result
-- **AND** the tests that verify this are `TestSingletonRecorded` and `TestUnparseableIDNamed`
+- **WHEN** one entity is alone under its four-position prefix
+- **THEN** it has a level-0 group of one
+- **AND** the test that verifies this is `TestSingletonRecorded`
 
-### Requirement: Refresh refuses missing inputs
+### Requirement: An incomplete refresh is an error
 
-`Refresh` SHALL return a typed error and touch nothing when its context is nil, and `NewPartitioner` SHALL return a
-typed error when its storage, summarizer or entity reader is nil.
+When an entity ID the canonical parser refuses is left out of every group, or removing the records of vanished
+groups fails, `Refresh` SHALL return the partition together with a non-nil `*clustering.IncompleteError` naming the
+skipped IDs and carrying the removal error. A nil error SHALL mean the refresh was complete.
+
+#### Scenario: An unparseable ID
+
+- **WHEN** one stored entity's ID does not parse
+- **THEN** that entity is in no group, the other groups are written, and `errors.As` on the returned error finds an
+  `*IncompleteError` naming the ID
+- **AND** the test that verifies this is `TestUnparseableIDIsAnError`
+
+#### Scenario: Removal fails
+
+- **WHEN** every write succeeds and removing a vanished group's record fails
+- **THEN** `Refresh` returns the partition and an `*IncompleteError` that unwraps to the removal error
+- **AND** the test that verifies this is `TestPruneFailureIsAnError`
+
+### Requirement: Partitioner refuses missing inputs
+
+`clustering.NewPartitioner` SHALL return an error when its requester, storage or summarizer is nil, and `Refresh`
+SHALL return an error and read and write nothing when its context is nil.
 
 #### Scenario: Nil context
 
@@ -35,8 +54,8 @@ typed error when its storage, summarizer or entity reader is nil.
 ### Requirement: A group record is bounded
 
 A group record SHALL hold its level, ID, member count, `clustering.MembershipHash` of its members, keywords, a
-statistical summary and at most `MaxRepEntities` representative entity IDs, and SHALL NOT hold the member list, so
-its size does not grow with the group.
+statistical summary and at most `clustering.MaxRepEntities` representative entity IDs, and SHALL NOT hold the member
+list, so its size does not grow with the group.
 
 #### Scenario: A large group
 
@@ -47,12 +66,12 @@ its size does not grow with the group.
 ### Requirement: The community index is rebuilt on change, never emptied first
 
 A refresh SHALL NOT write a record equal to the stored one, SHALL write every changed record before removing
-anything, and SHALL then remove the records of groups that no longer exist. Any write failure SHALL make `Refresh`
-return an error and remove nothing. A removal failure SHALL be returned to the caller with the partition.
+anything, and SHALL then remove the records of groups that no longer exist. Any read or write failure SHALL make
+`Refresh` return an error and no partition, and remove nothing.
 
 #### Scenario: Unchanged graph
 
-- **WHEN** two refreshes run over the same entity IDs and states
+- **WHEN** two refreshes run over the same entities
 - **THEN** the second adds no revision to `COMMUNITY_INDEX`
 - **AND** the tests that verify this are `TestUnchangedRecordNotRewritten` and `TestUnchangedRefreshAddsNoRevision`
 
@@ -62,21 +81,26 @@ return an error and remove nothing. A removal failure SHALL be returned to the c
 - **THEN** `Refresh` returns an error and no record is removed
 - **AND** the test that verifies this is `TestWriteFailureRemovesNothing`
 
-#### Scenario: Removal fails
-
-- **WHEN** every write succeeds and the removal fails
-- **THEN** `Refresh` returns the partition and the removal error in its result
-- **AND** the test that verifies this is `TestPruneFailureReturned`
-
 ### Requirement: Each entity state is read once per refresh
 
-A refresh SHALL read each listed entity's state at most once, whatever the number of levels.
+A refresh SHALL read each stored entity's state at most once, whatever the number of levels and pages.
 
-#### Scenario: Three levels, one read
+#### Scenario: Several pages, three levels
 
-- **WHEN** `Refresh` runs over N entities
-- **THEN** the entity reader is asked for each of them exactly once
+- **WHEN** `Refresh` runs over N entities served across several prefix pages
+- **THEN** each entity is delivered and used exactly once
 - **AND** the test that verifies this is `TestEachStateReadOnce`
+
+### Requirement: A product can run a refresh
+
+A product composing graph-ingest SHALL be able to construct a `Partitioner` from a NATS client, a
+`NATSCommunityStorage` and a `StatisticalSummarizer` and refresh `COMMUNITY_INDEX` with no other SemEngine component.
+
+#### Scenario: Refresh from outside the package
+
+- **WHEN** a test in package `clustering_test` stores entities through graph-ingest and calls `Refresh`
+- **THEN** `COMMUNITY_INDEX` holds one record per group at each level
+- **AND** the test that verifies this is `TestRefreshAsAProduct`
 
 ### Requirement: Community storage fails closed
 

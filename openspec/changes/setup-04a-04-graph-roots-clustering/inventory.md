@@ -9,7 +9,8 @@ written `pin:<path>:<line>`, read from `git archive 8b99efe9` into `/tmp/cl-pin`
 `8c03cc53836ced93a5df7064473c63ff144e64f1` (the SHA SETUP 03B cites) read for "the workload it drives"
 (`docs/inventory-scope.md`, semboids row).
 
-Status: round 2 (round 1 `INVENTORY CHANGES REQUESTED` at `180741d`: the ADR-099 row quotes its deciding clauses;
+Status: round 3 (`INVENTORY PASS` at `5c2f610`; § 1 gains the admitted reads, § 12 the semboids record read and its
+scope). Round 2 (round 1 `INVENTORY CHANGES REQUESTED` at `180741d`: the ADR-099 row quotes its deciding clauses;
 semsource's level use measured; SummaryStatus, e2e readers, two shape findings and the consumer scope corrected).
 Round 1 was inventory only. The design (`design.md`) is drafted beside it at the orchestrator's request and is
 not reviewable until this inventory has `INVENTORY PASS` (architect contract, Required workflow step 3).
@@ -67,6 +68,11 @@ hit. Already present: `graph.Provider` (`graph/types.go:93` — `type Provider i
 `natsclient.KVStore.Keys` with the empty-bucket case (`natsclient/kv.go:571`, `:582` — `if err ==
 jetstream.ErrNoKeysFound {`), `natsclient.FilteredKeys` (`natsclient/kv.go:630`), `types.EntityID` prefix methods
 (`pkg/types/entity_id.go:268-285`), `message.ParseEntityID` delegating to `pkg/types` (`message/types.go:13`).
+The admitted reads of entity state (`.agents/skills/query-pattern/SKILL.md:14-19`): `graph.NewExactEntityReader`
+(`graph/exact_entity.go:46`), graph-ingest's `batch` and `prefix` verbs (`graph/query_verbs.go:33`; full states per page,
+`graph/query_prefix_types.go:9-60`, limit `MaxPrefixQueryLimit` `:7`), graph-index's verbs, owner bucket access. The
+pin's `EntityProvider` (`pin:graph/clustering/lpa.go:44`) and `EntityQuerier`
+(`pin:graph/clustering/enhancement_worker.go:33`) live in files not carried.
 
 ## 2. Every current spelling of the facts the package models
 
@@ -274,10 +280,14 @@ in the tree; the pin's LPA levels mean something else (§ 2).
 ## 12. Adopter seam inventory
 
 Scope (`docs/inventory-scope.md`): semboids' row allows the workload it drives (streams, rates, entities) and symbol
-use of `pkg/lifecycle` and `processor/rule`. Relied on here: `configs/flock.json` (workload) and its entity-ID shape
-`c360.semboids.sim.flock.boid.<n>` (entities). Its `graph/clustering` symbol use and `internal/api/graphstream.go`
-reads, cited below, were read beyond that row; they are not relied on for a disposition and need an owner ruling
-on #22 to be used. semsource's row allows its use of retained contracts; its `graph.query.searchGraph` request is one.
+use of `pkg/lifecycle` and `processor/rule`. Relied on, as the workload it drives: `configs/flock.json`; the boid ID
+shape `%s.%s.sim.flock.boid.%d` (`internal/boidgraph/payload.go:42` at `8c03cc53`); and how it reads the
+`COMMUNITY_INDEX` records that workload fills: it decodes `level` and `members` from each record and keeps level 0
+(`internal/api/graphstream_decode.go:78` — `Members []string` with tag `members`; `:86` — `return c.Members, true, nil`).
+Under option C the records carry no `members`, so semboids sees empty communities until it changes its own read.
+Not relied on: its `graph/clustering` symbol use in `internal/boidgraph/lpa_unit_test.go`, outside the row; using
+it needs a scope-doc change or a new owner ruling (#22 is closed). semsource's row allows its use of retained
+contracts; its `graph.query.searchGraph` request is one.
 
 Reached from outside: products composing `processor/graph-clustering` (semboids `configs/flock.json:288-300` at
 `8c03cc53`: `"enable_llm": false`, `"entity_id_edges": {"include_siblings": false, "include_system_peers": false}`,

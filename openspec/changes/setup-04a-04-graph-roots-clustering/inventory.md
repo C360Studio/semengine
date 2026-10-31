@@ -1,0 +1,268 @@
+# Inventory: setup-04a-04-graph-roots-clustering
+
+base: `f3b48f6612282b61e4dc72d34331353216cbf42d` (origin/main at the claim; the claim commit `4aa3599` on
+`claude/port-graph-clustering` adds no file). Pin paths are SemStreams `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`,
+written `pin:<path>:<line>`, read from `git archive 8b99efe9` into `/tmp/cl-pin` (local only). All 33 files of
+`graph/clustering` there are blob-equal to `gh api repos/C360Studio/semstreams/contents/graph/clustering?ref=8b99efe9`
+(`git hash-object` equals the API `sha` for each). `gh api repos/C360Studio/semstreams/compare/8b99efe9...main`:
+`identical`, ahead 0, so no unmerged SemStreams work touches the package. Consumer cites: semboids
+`8c03cc53836ced93a5df7064473c63ff144e64f1` (the SHA SETUP 03B cites) read for "the workload it drives"
+(`docs/inventory-scope.md`, semboids row).
+
+Status: round 1, inventory only. The design (`design.md`) is drafted beside it at the orchestrator's request and is
+not reviewable until this inventory has `INVENTORY PASS` (architect contract, Required workflow step 3).
+
+Kind of change: a port of one package by the owner's order ruling (#9 comment 6386856657, item 8: "`graph/clustering`
+without the LLM summarizer (#141, #68)") under the change 4 scope ruling (#9 comment 6386603659: tier-0 halves only;
+"`EnhancementWorker` holds the interface, not `*LLMSummarizer`").
+
+Briefing hypotheses checked:
+
+- "Port the tier-0 half; only the LLM summarizer is tier 2": the tier-2 lane is four files, not one region:
+  `summarizer.go:499-863`, `enhancement_worker.go`, `summary_store.go`, `metrics.go` (§ 8). The worker exists only to
+  run an LLM summarizer; its only implementation is `*LLMSummarizer` (`pin:graph/clustering/enhancement_worker.go:56`,
+  `:106-110` refuses a nil one).
+- "The tier-0 half is LPA plus the statistical summarizer" (SETUP 03B design row `:218`): the pin's own accepted
+  ADR-099 (2026-08-23) decides that LPA's edge-synthesis chain, the semantic-edge provider and the fake hierarchy
+  leave the tree. The pin never implemented it (§ 6). 03B did not read ADR-099 (`git grep -n '099' -- openspec/changes/
+  archive/2026-10-01-setup-03b-contract-boundary/`: no hit on the ADR).
+- "#111, #108, #300, #408 name the package": none does (§ 3).
+
+## Pin probe
+
+Run on `/tmp/cl-pin`, go1.26.4 darwin/arm64, `GOPROXY=off GOFLAGS=-mod=mod`:
+
+- `go test -race -count=1 ./graph/clustering`: ok 1.444 s.
+- `go test -count=5 -cpu 1 -shuffle=on ./graph/clustering`: ok; seed `-test.shuffle 1793448128639624000`, no failure.
+- `go test -count=1 -cover ./graph/clustering`: 57.0 % of statements (unit). The 80 % floor applies (03B D10, extended
+  list names `graph/clustering`).
+- `go test -tags integration -count=1 ./graph/clustering`: ok (Docker; `TestMain` uses `natsclient.NewSharedTestClient`,
+  `pin:graph/clustering/main_test.go:22`).
+- Test-text rules: `time.Sleep` none; `Skip`/`Skipf`/`SkipNow` none; build tags: `integration` only, four files
+  (`main_test.go`, `storage_integration_test.go`, `summary_store_integration_test.go`,
+  `enhancement_worker_race_integration_test.go`).
+- Lifecycle suite: no service or component is ported. The one lifecycle owner, `EnhancementWorker`
+  (`Start`/`Stop`, `pin:graph/clustering/enhancement_worker.go:215,511`), is tier 2 and not carried (§ 8).
+- Behaviour probes (`/tmp/cl-probe-src/zz_probe_test.go`, package `clustering_test`, run with `-run TestProbe -v`):
+  - P1: `EntityIDProvider`'s sibling cache is built once and `ResetEdgeCache` does not refresh it. Before: `e1`
+    sees `[e2]`; after adding `e3` to the base and calling `ResetEdgeCache` (what `DetectCommunities` calls each
+    cycle, `pin:graph/clustering/lpa.go:174-176`): `e1` sees `[e2]`, `e3` sees `[e1 e2]` (asymmetric virtual edges).
+    `ClearCache` has no production caller (`grep -rn ClearCache processor/graph-clustering`: none); the chain is built
+    once in `Start` (`pin:processor/graph-clustering/component.go:1052`, `:1354`).
+  - P2: two triangles joined by one edge, no virtual edges. Level 0: two communities; level 1: one community of six;
+    level 2: two communities again. Level 2 is finer than level 1; `ParentID` is nil at every level.
+  - P3: `StatisticalSummarizer.SummarizeCommunity` on two entities with tied term scores, 200 runs: 5 distinct
+    `Keywords` orders (`sort.Slice` without a tie-break, `pin:graph/clustering/summarizer.go:205`).
+  - P4: `NewQueryManagerProvider(nil).GetAllEntityIDs` returns "full graph scan not yet implemented" on every call
+    (`pin:graph/clustering/provider.go:53-67`).
+
+## 1. The claimed gap
+
+The package is absent here: `ls graph/` at base has no `clustering`; `git grep -n 'graph/clustering"' -- '*.go'`: no
+hit. Already present: `graph.Provider` (`graph/types.go:93` — `type Provider interface {`), the bucket names
+(`graph/constants.go:31` — `BucketCommunityIndex = "COMMUNITY_INDEX"`, `:38` — `BucketCommunitySummaries =
+"COMMUNITY_SUMMARIES"`) and their catalog rows (`graph/kvcatalog/kvcatalog.go:188-190`, owner `graph-clustering`),
+`natsclient.KVStore.Keys` with the empty-bucket case (`natsclient/kv.go:571`, `:582` — `if err ==
+jetstream.ErrNoKeysFound {`), `natsclient.FilteredKeys` (`natsclient/kv.go:630`), `types.EntityID` prefix methods
+(`pkg/types/entity_id.go:268-285`), `message.ParseEntityID` delegating to `pkg/types` (`message/types.go:13`).
+
+## 2. Every current spelling of the facts the package models
+
+- Community partition by explicit edges: none in the tree.
+- Grouping by entity-ID prefix: `pkg/types/entity_id.go:268` (`DeploymentPrefix`), `:274` (`SourcePrefix`), `:279`
+  (`TaxonomyPrefix`), `:285` (`TypePrefix`); hierarchy containers in `graph/inference` (`graph/inference/
+  container_entity.go:17` — "Transitional until gh606 retires containers"). Ported ADR-102 calls the containers "a
+  second spelling of the ADR-099 partition" (`docs/adr/102-entity-id-segment-semantics.md:129`) and fixes ADR-099's
+  levels (`:103` — "ADR-099 levels are 0 = 4 parts, 1 = 3 parts (source), 2 = 2 parts."). The pin's LPA levels 0-2
+  are re-runs over one entity set (P2), a different meaning of "level" from the one ADR-102 records.
+- At the pin, the package spells "explicit edge exists" twice: `EntityIDProvider.isExplicitEdge` (neighbour set) and
+  `explicitEdgeWeight` (numeric weight) (`pin:graph/clustering/entityid_provider.go:461`, `:445`); both go with the
+  provider chain if it is not carried.
+- Entity-ID parsing in the package: `semtypes.ParseEntityID` (`pin:graph/clustering/entityid_provider.go:212`) and
+  `message.ParseEntityID` (`pin:graph/clustering/summarizer.go:19`); here the second delegates to the first.
+
+## 3. Adjacent claims
+
+### Open pull requests
+
+`gh pr list --state open --json number,title,isDraft,changedFiles,files` at base: #483 (this claim, 0 files); #465
+(markdownlint-cli2 bump: `package.json`, `package-lock.json`); #464 (nats.go 1.54.0 → 1.55.0: `go.mod`, `go.sum`).
+No file or capability overlap. #464 changes the library the storage tests drive; if it merges first, the integration
+run is repeated at the new version. #465 changes `task docs:check`'s linter; no ordering need.
+
+### Open issues naming the package
+
+Queries: `gh issue list --state open --search clustering`, `community`, `COMMUNITY_INDEX` (each `--limit 200`), and
+each issue the brief named, read in full with comments.
+
+| Issue | Names it at | Disposition (design § D7) |
+| --- | --- | --- |
+| #32 capability seam | body edit and 2026-10-24 ruling comment: `graph/clustering/summarizer.go` from `:499` | stays: home of the excluded tier-2 files; this PR adds `defer-exclude` rows naming it |
+| #68 metric `sync.Once` | 2026-10-24 drift comment: `graph/clustering/metrics.go:43-71` | stays: `metrics.go` is tier-2-only (read only by the worker), excluded |
+| #141 `UpdateWithRetryRead` adoption | body: `graph/clustering/summary_store.go:179` (also ADR-110 D7) | stays: `summary_store.go` excluded |
+| #477 `pkg/graphview` adoption | body: `graph/clustering` `enhancement_worker.go:239` | stays: worker excluded; the site moves with #32 |
+| #9 epic | order ruling item 8 | addressed |
+
+Names the word, not the package: #105, #106, #196, #198, #406, #11, #479, and #195 (its list counts
+`natsclient.NewTestClient` sites; the package's tests use `NewSharedTestClient`, and `git grep -c` for
+`natsclient\.NewTestClient(` at the pin under `graph/clustering` finds none). Named in the brief but not naming the
+package (body and comments read): #111 (graph-ingest, graph-query summary, NL fallback, spatial),
+issue #108 (graph-index), #300 (graph-ingest), #408 (revlag).
+
+### Specs, ledger, records
+
+- No `openspec/specs/` capability names the package (`git grep -n -i clustering -- openspec/specs`: none).
+- Ledger: no `source_path: graph/clustering` row. `graph/llm` row (`docs/admission-ledger.yaml:2539`) names
+  `graph/clustering` as its next reader; `graph/structural` row (`:2558`) names `processor/graph-clustering`
+  (change 7); `graph/inference` row (`:2226`) defers its anomaly half to change 7 with graph-clustering.
+- SETUP 03B design row `:218` admits `graph/clustering` (5,516) at tier 0 ("LPA ... and `StatisticalSummarizer` ... are
+  deterministic"); D10 extended list puts it under the 80 % floor; `:698` names the proving harness "communities
+  written to `COMMUNITY_INDEX` with `EnableLLM` false", consumer semboids. Setup plan tier 0: "clustering on explicit
+  edges" (`docs/setup-plan.md:78-79`); tier 2: "clustering summaries" (`:82`).
+- Foundation design: non-context `Stop` adapt row names `graph/clustering` (`:423`) for `EnhancementWorker`.
+
+## 4. Who reads the surface (pin-wide production readers, outside the package)
+
+Command: per exported name, `grep -n "clustering\.<Name>\b"` over the 15 non-test importing files at the pin.
+
+| Reader | Symbols |
+| --- | --- |
+| `processor/graph-clustering` (change 7) `component.go` | `NewLPADetector`, `CommunityDetector`, `NewNATSCommunityStorage`, `NATSCommunityStorage`, `NewStatisticalSummarizer`, `NewEntityIDProvider`, `EntityIDProvider(Config)`, `DefaultEntityIDProviderConfig`, `NewSemanticEdgeProvider`, `SemanticEdgeProvider`, `SemanticEdgeParams`, `WeightConfig`, `DefaultSemantic*`, `Provider`, `NewLLMSummarizer`, `LLMSummarizerConfig`, `NewEnhancementWorker`, `EnhancementWorker(Config)`, `EntityQuerier` |
+| `processor/graph-clustering` `similarity.go`, `metrics.go`, `anomaly.go`, `query.go` | `SemanticNeighborFinder`, `ErrSemanticIndexNotReady`, `ErrSemanticQueryTransient`, `SemanticEdgeMetrics`, `Provider`, `Community`; `storage.GetAllCommunities` (`anomaly.go:342`) |
+| `processor/graph-query` (item 9) | `Community` (`community_cache.go`, `graphrag.go`); `CommunitySummaryRecord`, `MembershipHash`, `SummaryKey`, `SummaryStatusEnhanced/Failed` (`summary_view.go`, `component.go`) |
+| semboids `8c03cc53` | test only: `internal/boidgraph/lpa_unit_test.go` (`NewLPADetector`, `DetectCommunities`, `Community`, a fake `CommunityStorage`) |
+
+No production reader anywhere: `UpdateCommunities`, `InferRelationshipsFromCommunities`, `InferenceConfig`,
+`DefaultInferenceConfig`, `InferredTriple`, `WithProgressiveSummarization`, `ComputePageRank`,
+`ComputePageRankForCommunity`, `PageRankConfig`, `DefaultPageRankConfig`, `PageRankResult` (package-internal reader:
+`ComputeRepresentativeEntities` from `summarizer.go:235`), `QueryManagerProvider`, `PredicateProvider`,
+`RelationshipQuerier`, `Relationship`, `Direction*`, `NewNATSCommunityStorageWithConfig`, `CommunityStorageConfig`,
+`GetCreatedTriples`, `ClearCache`, `GetCacheStats`, `GetSiblingEdgeMetrics`, `IsActive`; storage `GetCommunity`,
+`GetEntityCommunity`, `GetCommunitiesByLevel` (readers only the detector getters and the dormant inference),
+`DeleteCommunity`, `Clear`. Detector getters `GetCommunity`, `GetEntityCommunity`, `GetCommunitiesByLevel`: no
+caller (`grep -rn 'c.detector\.' processor/graph-clustering`: `DetectCommunities` only). `Community` fields with no
+production reader (`grep -rn '\.<Field>\b' processor/graph-query processor/graph-clustering gateway`): `ParentID`,
+`SummaryStatus`, `SummaryTruncated`, `LLMSummary` (0 each; `graphrag.go:2414` says the field is empty since ADR-087).
+
+## 5. The problem shape
+
+Iterative partition over a provider-supplied graph, write-then-prune into a derived bucket, and a deterministic
+statistical digest per group. Closest instance here: write-then-prune of a derived view in `graph/embedding.Storage`
+(`graph/embedding/storage.go:138` — "Every read-modify-write goes through natsclient.KVStore.UpdateWithRetryRead"),
+which holds a `*natsclient.KVStore` (`:149`). The design adopts its store shape (KVStore, not a raw
+`jetstream.KeyValue`). No reusable primitive is established, so no adoption sweep is owed.
+
+## 6. Decision records at the pin, and their state here
+
+Search: every `docs/adr/*.md` at the pin for `graph/clustering`, `clustering.`, `LPADetector`, `COMMUNITY_INDEX`,
+`COMMUNITY_SUMMARIES`, `MembershipHash`, `EntityIDProvider`, `SemanticEdgeProvider`, `EnhancementWorker`, `community
+detection`, `Label Propagation`; then titles naming clustering, communities, summaries, partitions.
+
+| ADR | Decides | Here |
+| --- | --- | --- |
+| 099 Community partition derived from entity identity; detection removed (Accepted 2026-08-23) | base partition = ID prefix per level, membership never stored; LPA, edge synthesis, semantic-edge provider and determinism machinery leave the tree; detection returns only as an overlay over explicit edges with a fixture that can fail | not ported (`docs/adr/100-…:16`); ADR-102 (ported) amends its levels. Not implemented at the pin (P1, P2; `pin:docs/proposals/gh606-derived-communities-design.md:319-345` owner rulings Q1-Q8) |
+| 087 Community summary store ownership | worker-exclusive, content-addressed `COMMUNITY_SUMMARIES`; one `MembershipHash` | not ported; governs the tier-2 lane only |
+| 086 Semantic co-location edges | mutual-kNN semantic tier, weighted LPA; outcome default-off | not ported; ADR-099 removes the mechanism |
+| 085 Gate on health, report freshness | write-then-prune, never clear before rebuild | ported (`docs/adr/085-…:17` names `LPADetector` as not ported) |
+| 061 Remove orphaned `SemanticProvider` | removal-with-recoverability pattern | not ported; history |
+| 081, 082, 084 | graphview sites; bounded-lag readiness of graph-clustering; readiness licenses health | 081, 084 ported; 082 governs the component (change 7) |
+| 049, 054, 065, 073 | name community detection or `storage.go:206` in passing | n/a |
+
+Pin capability spec `graph-clustering` (`pin:openspec/specs/graph-clustering/spec.md`, 14 requirements): edge
+synthesis `:6`, `:29`, `:45`; non-destructive rebuild `:66`; projection identity `:135`; semantic edges `:164`,
+`:213`, `:256`; determinism `:301`; LLM summary store `:320`, hash `:358`, volume `:372`; component `:385`, `:408`.
+
+## 7. Library behaviour the port relies on (#170, ADR-112)
+
+Carried: `kv.Put` failure classes (`nats.ErrMaxPayload` permanent, `pin:graph/clustering/storage.go:138`),
+`jetstream.ErrKeyNotFound` on `Get`. Changed: empty-bucket key listing moves to `natsclient.KVStore.Keys`
+(`natsclient/kv.go:582`), already tested in the tree, so the design adds no new library statement. No timing,
+ordering or bound statement is added.
+
+## 8. Lifecycle owners, NATS use, payloads, and the tier split (non-test pin lines)
+
+| File | Lines | Tier | Lifecycle / NATS |
+| --- | --- | --- | --- |
+| `types.go` | 126 | 0 | none |
+| `storage.go` | 526 | 0 (`MembershipHash` `:42-48` is the tier-2 key) | `COMMUNITY_INDEX` Put/Get/Keys/Delete; no goroutine |
+| `lpa.go` | 820 | 0 | none; `mu` held for a whole run (`:76`, `:163`; the getters take it too, `:616-637`) |
+| `summarizer.go` `:1-498` | 498 | 0 | none |
+| `summarizer.go` `:499-863` (`LLMSummarizer`, `ProgressiveSummarizer`) | 365 | 2 | imports `graph/llm` (`:12`) |
+| `pagerank.go` | 335 | 0 | none |
+| `entityid_provider.go` | 521 | 0 (ADR-099: removed) | none |
+| `provider.go` | 272 | 0 (dead) | none |
+| `semantic_edge_provider.go` | 935 | 1 by measurement (ADR-086 on neural; not provider-gated in code) | none |
+| `enhancement_worker.go` | 549 | 2 | `Start`/`Stop`, `WatchAll` on `COMMUNITY_INDEX`, writes `COMMUNITY_SUMMARIES` |
+| `summary_store.go` | 254 | 2 | `COMMUNITY_SUMMARIES` CAS loop `:179` |
+| `metrics.go` | 117 | 2 | Prometheus, worker only |
+| `doc.go` | 198 | — | — |
+
+No payload type, no subject. Total 5,516; tier-2 1,285; ADR-099-removed and dead 1,728; semantic 935.
+
+## 9. Shape sweep (pin copy, every non-test file)
+
+| # | Shape | Pin cite | Text |
+| --- | --- | --- | --- |
+| S1 | back door (#186) | `storage.go:64`, `:78-80`, `:153-155`, `:201`, `:270`, `:400-415` | `testStore map[string]*Community // In-memory store for testing when kv is nil` |
+| S2 | exported surface, no reader | `storage.go:189` | `func (s *NATSCommunityStorage) GetCreatedTriples() []message.Triple {` (triples built only for it, `:160-186`) |
+| S3 | classification by error text | `storage.go:286`, `:434`, `:481`; `summary_store.go:237`; `enhancement_worker.go:27-28` | `strings.Contains(err.Error(), "no keys found")` |
+| S4 | silent skip (fail-closed rule) | `storage.go:250-258`, `:302-311` | `continue // Skip errors for individual entries` |
+| S5 | silent success on cancel | `storage.go:290`, `:438`, `:451`, `:485`, `:496` | `if stderrors.Is(err, context.Canceled) {` → `return nil` |
+| S6 | advertised-absent: hierarchy | `lpa.go:576-605`; `types.go:14`, `:20-21`; `doc.go:6-9` | `// Link communities to their parents (future enhancement)` (P2) |
+| S7 | exported surface, no reader | `lpa.go:607`, `:616-637`, `:640-771` | `InferRelationshipsFromCommunities` ("DORMANT", `:787`, `:811`), `UpdateCommunities`, three getters |
+| S8 | layered interface, one impl | `types.go:55-78` | `CommunityDetector` (one implementation; component holds it) |
+| S9 | nondeterministic order on ties | `summarizer.go:205`, `:284`, `:412` | `sort.Slice(scores, func(i, j int) bool {` (P3) |
+| S10 | advertised-absent provider | `provider.go:53-67` | `"full graph scan not yet implemented - use PredicateProvider instead"` (P4) |
+| S11 | stale cache, no refresh caller | `entityid_provider.go:493-503`, `:316-372` | `func (p *EntityIDProvider) ClearCache() {` (P1) |
+| S12 | wrong sentinel for empty input | `storage.go:111`, `:197`, `:322`, `:345` | `errs.WrapInvalid(errs.ErrMissingConfig, …, "id is empty")` |
+| S13 | two parsers of one ID | `summarizer.go:19`, `entityid_provider.go:212` | `message.ParseEntityID` / `semtypes.ParseEntityID` |
+| S14 | unexported-reader-only exports | `pagerank.go:10-62` | `ComputePageRank`, `PageRankConfig`, … |
+| S15 | doc drift | `doc.go:30-35`, `:96-122`, `:160-168` | names the LLM worker, member-of triples, `Pause`/`Resume` |
+
+## 10. Size against the one-package rule (#159)
+
+Whole package 5,516 pin lines; tier-0 half (less 1,285 tier-2) 4,231; less `provider.go` (dead) 3,959; less
+`semantic_edge_provider.go` 3,024; less `entityid_provider.go` (ADR-099) 2,503 (`types` 126, `storage` 526, `lpa` 820,
+`summarizer` 1-498, `pagerank` 335, `doc` 198). Only the last is under the ~3,000 bound without a waiver.
+
+## 11. Collision table
+
+No new durable, communication or coordination primitive is proposed: `COMMUNITY_INDEX` and its catalog row exist
+(§ 1); the port supplies its writer. Same-class note: "community level" already has ADR-102's meaning (prefix length)
+in the tree; the pin's LPA levels mean something else (§ 2).
+
+## 12. Adopter seam inventory
+
+Reached from outside: products composing `processor/graph-clustering` (semboids `configs/flock.json:288-300` at
+`8c03cc53`: `"enable_llm": false`, `"entity_id_edges": {"include_siblings": false, "include_system_peers": false}`,
+so LPA on explicit flock edges only); semboids reads level-0 `Members` from `COMMUNITY_INDEX` through a graphview
+(`internal/api/graphstream.go:34`, `:44` — `communities map[string][]string // community ID → members (level 0)`);
+semboids' test implements `CommunityStorage` and runs `NewLPADetector` on two cliques
+(`internal/boidgraph/lpa_unit_test.go:139-165`). semsource composes graph-clustering only behind
+`graph.enable_clustering` (default false; its README calls it "tier-2 community routes").
+
+1. What must they know: a `Provider` returns neighbours for `"both"` and positive weights; the detector is the one
+   writer of `COMMUNITY_INDEX`; a provider that caches edges implements `ResetEdgeCache`; which levels exist.
+2. If they do nothing: a fake `CommunityStorage` with removed methods still compiles (extra methods are allowed); a
+   query for a level that is not a hierarchy returns a partition with no stated meaning (P2), silently.
+3. Where they find out: interface shrink, compile error for callers of removed methods; level meaning, nowhere.
+4. What they should know: the provider contract only; level meaning should be a refusal, not a doc.
+
+## Intent check
+
+| Capability (`AGENTS.md`, setup plan) | State | Ruling |
+| --- | --- | --- |
+| Clustering on explicit edges, tier 0 | admitted | 03B Q11 (#8 comment 5930898291); #9 6386603659 |
+| Clustering summaries (LLM), tier 2 | deferred | #9 6386603659; #32 |
+| Statistical community summary | admitted | 03B row `:218` |
+| EntityID virtual edges (sibling, system peer) | excluded in the draft | no SemEngine ruling (ADR-099 is SemStreams') |
+| Semantic co-location edges | excluded in the draft | no SemEngine ruling |
+| Hierarchy levels 1-2 | excluded in the draft | no ruling |
+| Inferred `clustered-with` triples | excluded in the draft | no ruling; setup plan `:106-108` (relevance is not an asserted fact) |
+| ID-derived partition (ADR-099 base) | not designed | no ruling |
+
+## Open evidence questions
+
+- Does semsource's gateway pass `level` > 0 to community search at the pin? (graph-query item 9's inventory; it
+  decides what a level-1/2 request returns.)
+- Whether the owner's ADR-099 ruling binds SemEngine is a ruling, not evidence: owner question 1.

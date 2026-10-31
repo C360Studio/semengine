@@ -114,8 +114,8 @@ var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 // range gives no hint and other hints stand: "last N hours" or "last N days" with N below 1
 // (negative N included) or a span past a time.Duration (about 292 years), and "within R of
 // lat,lon" with lat outside [-90, 90], lon outside [-180, 180] or R not finite.
-// ClassifierChain.ClassifyQuery refuses such a question instead. A box is clamped to the poles, spans every longitude when it reaches one,
-// and is not wrapped across the antimeridian (East can exceed 180, West fall below -180).
+// ClassifierChain.ClassifyQuery refuses such a question instead. A box is clamped to the poles,
+// spans every longitude when it reaches one, and is not wrapped across the antimeridian (East can exceed 180, West fall below -180).
 func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *SearchOptions {
 	opts, _ := k.classify(query, time.Now())
 	return opts

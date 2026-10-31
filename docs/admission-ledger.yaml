@@ -3768,7 +3768,7 @@
   destination: graph/query
   contract: >-
     Surface as at the pin, less the dead surface below, with these adaptations (spec query-classification; design
-    D2-D5): (1) NewEmbeddingClassifier(ctx, domains, threshold) returns (*EmbeddingClassifier, error) and passes the
+    D2-D5 of the port, D1-D6 of query-classifier-fixes): (1) NewEmbeddingClassifier(ctx, domains, threshold) returns (*EmbeddingClassifier, error) and passes the
     caller's context to the embedder; a nil or ended context, an embedding error or fewer vectors than examples gives
     an error and no classifier, where the pin used a root context and built a classifier that could never match;
     (2) FindBestMatch returns (nil, 0) for a nil classifier, a blank query, a nil or ended context or an embedding
@@ -3779,8 +3779,22 @@
     0, no hints, confidence 1.0); (4) LLMClassifier.ClassifyQuery refuses a nil context with an invalid-input error
     before calling the client; (5) the keyword tier no longer adds a located_in path predicate to a zone or area
     phrase (it kept path_intent and path_start_node; owner answer 4); (6) the examples are fixed at construction: the
-    classifier is BM25 only. Both constructors keep the domains' examples and their Options maps rather than copying
-    them. Framework API (pin consumer-adapter callers plus Classifier): Classifier, KeywordClassifier,
+    classifier is BM25 only, and FindBestMatch embeds a query with the read-only GenerateQuery (D3, #96); the LLM
+    constructor keeps the domains' examples and their Options maps rather than copying them; (7) the aggregation
+    field is the first word after the trigger, skipping an optional "of" and "the", "the number of" is count, and
+    "smallest|lowest|largest|highest|greatest" plus a field word and a value noun is a numeric min or max (D1, #94);
+    (8) the keyword tier excludes a negated, quoted or undecided ("A or B") operation and gives no hint for it; when
+    it excludes one and finds no other hint, the chain returns the default result and asks no later tier (D2, #95);
+    (9) NewEmbeddingClassifier keeps its own copy of each example and decodes each SearchOptions-named option into the
+    type tiers 0 and 3 give it, refusing an example that does not decode, a null, a strategy outside the eight
+    values, a time_range with a zero or inverted end, a geo_bounds with a latitude outside [-90, 90] or South above
+    North, and a negative limit; unknown names pass through (D4, #478); (10) the keyword tier computes every range
+    from one reading of the clock, in that instant's zone (the server's time.Local) (D5); (11)
+    ClassifierChain.ClassifyQuery returns (*ClassificationResult, error): a "last N hours/days" with N below 1 or past
+    a time.Duration, or a "within R of lat,lon" with a latitude or longitude out of range or a non-finite radius, is
+    refused whichever tiers are composed, with no result and an errs.WrapInvalid error naming the phrase; the
+    keyword tier alone gives no hint for it (D6, #479 items 1-2). Pole boxes are clamped, an antimeridian box is not
+    wrapped, a zero radius gives no box and no error. Framework API (pin consumer-adapter callers plus Classifier): Classifier, KeywordClassifier,
     NewKeywordClassifier, ClassifierChain, NewClassifierChain, ClassificationResult, EmbeddingClassifier,
     NewEmbeddingClassifier, FindBestMatch, Threshold, LLMClient, LLMClassifier, NewLLMClassifier, Example,
     DomainExamples, LoadDomainExamples, SearchOptions (less three fields), TimeRange, SpatialBounds, SearchStrategy
@@ -3793,21 +3807,23 @@
     never calls. No goroutine, no provider module (TestQueryImportsNoProviderModule), no bucket, no stream. The only
     state is the BM25 embedder's corpus statistics, locked by the embedder
   known_risks: >-
-    Generate (not the read-only GenerateQuery) embeds each query on the query path, so it folds the query into the
-    embedder's statistics and later scores depend on the queries seen so far; the move to GenerateQuery stays with
-    #96, which this port advances and does not close. Hint values keep the type their tier gave them, with no
-    shared type: tier 0 puts Go values in the map (*TimeRange, *SpatialBounds), tier 1 puts what encoding/json decodes
-    from the example file (arrays as []any, objects as map[string]any, numbers as float64) and tier 3 puts typed
-    Go values, so a reader that asserts one type misses another tier's value (S13, filed for the classifier
-    follow-up with #94 and #95). The keyword tier reads the host clock for its time ranges (S14) and does not bound
-    the numbers in "last N hours" or a latitude (S15); both filed. Nested values inside an Options entry are shared
-    with the classifier. The LLM tier drops an unknown strategy and an unparsable time range without an error (S8c).
-    Issues: #94 and #95 stay open (follow-up after this port); #96 advanced, stays open
+    The exclusion rule is word rules: "not only count but average" loses the count, and a comma splits a clause, so
+    in "count, average or sum" count stands. Quoted filter phrases are still read for numbers, so a quoted "last 0
+    hours" is refused. A box across the antimeridian is not wrapped. "Today" follows the server's zone, with no
+    zone setting until a consumer asks. Nested values inside an Options entry are shared with the classifier. The
+    LLM tier drops an unknown strategy and an unparsable time range without an error (S8c). #479 item 3 stays open:
+    a zone or area phrase gives path_intent and path_start_node but no start node resolved from a zone or area
+    (change 4, PR 9)
   proving_tests: >-
     graph/query: classifier_outcomes_test.go (TestChainEndedContextReturnsNil, TestChainLLMFailureGivesDefault,
     TestChainKeywordHintStopsTheLadder, TestLLMClassifierRefusesNilContext,
     TestNewEmbeddingClassifierRefusesEndedContext, TestFindBestMatchEndedContext, TestResultEditsDoNotReachClassifier,
-    TestZoneQueryAddsNoPredicate, TestEmbeddingClassifierAsAProduct); classifier_test.go, classifier_chain_test.go,
+    TestZoneQueryAddsNoPredicate, TestEmbeddingClassifierAsAProduct); the classifier follow-up (design
+    D1-D6): classifier_aggregation_test.go (TestAggregationFieldBinding, TestOrdinaryAggregationPhrases),
+    classifier_exclusion_test.go (TestKeywordExclusions, TestChainKeepsExclusions, FuzzKeywordClassify),
+    classifier_embedding_hints_test.go (TestQueryEmbeddingIsReadOnly, TestTierOneHintsAreTyped,
+    TestEveryHintNameIsTyped), classifier_clock_test.go (TestTimeRangesFromOneInstant, TestOutOfRangeNumbersAreRefused,
+    TestOutOfRangeRefusedWithoutKeywordTier); classifier_test.go, classifier_chain_test.go,
     classifier_embedding_test.go, classifier_llm_test.go, examples_test.go (the pin's tests, ported);
     internal/harness/contract (TestQueryImportsNoProviderModule); notes/2.1.md and 2.2.md of the change record
     each changed behaviour shown failing against the pin's shape

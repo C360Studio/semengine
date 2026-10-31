@@ -53,7 +53,7 @@ commit (#171). One task is one developer's unit.
 
 ## 7. Records and docs
 
-- [ ] 7.1 Ledger row `graph/query`: contract and `known_risks` say what ships (D1-D6). README: hint table, zone,
+- [x] 7.1 Ledger row `graph/query`: contract and `known_risks` say what ships (D1-D6). README: hint table, zone,
   bounds, exclusion rule and its limits; package doc. Gate: `task ledger:check`, `task docs:check`.
 
 ## 8. Evidence and review

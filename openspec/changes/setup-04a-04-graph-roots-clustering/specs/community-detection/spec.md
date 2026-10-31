@@ -2,91 +2,108 @@
 
 ## ADDED Requirements
 
-### Requirement: Detection partitions entities over explicit edges only
+### Requirement: A community is an entity-ID prefix
 
-`clustering.LPADetector.DetectCommunities(ctx)` SHALL assign every entity the provider lists to exactly one community
-using only the edges and weights its `graph.Provider` returns, SHALL synthesize no edge from entity-ID positions or
-embedding similarity, and SHALL write one level, level 0, returned as a map with the single key 0.
+`clustering.Partitioner.Refresh(ctx, entityIDs)` SHALL place each listed entity in exactly one group per level: at
+level 0 the group of its four-position prefix, at level 1 its three-position source prefix, at level 2 its
+two-position deployment prefix. A group's ID SHALL be that prefix. A group with one member SHALL get a record. An ID
+the canonical parser refuses SHALL be left out of every group and named in the result.
 
-#### Scenario: Two disjoint groups
+#### Scenario: Three levels
 
-- **WHEN** the provider serves two cliques with no edge between them
-- **THEN** detection returns two level-0 communities, each holding one clique, and no community at any other level
-- **AND** the tests that verify this are `TestDetectDisjointCliques` and `TestOneLevel`
+- **WHEN** `Refresh` runs over entities from two sources of one deployment
+- **THEN** level 0 holds one group per four-position prefix, level 1 one group per source, level 2 one group
+- **AND** the tests that verify this are `TestGroupsArePrefixes` and `TestPartitionMatchesModel`
 
-#### Scenario: Entities sharing an ID prefix but no edge
+#### Scenario: A singleton and an unparseable ID
 
-- **WHEN** two entities share every entity-ID position but the type instance, and the provider returns no edge
-  between them
-- **THEN** each is in its own community
-- **AND** the test that verifies this is `TestNoVirtualEdges`
+- **WHEN** one entity is alone under its prefix and another listed ID does not parse
+- **THEN** the first has a group of one, and the second is in no group and is named in the result
+- **AND** the tests that verify this are `TestSingletonRecorded` and `TestUnparseableIDNamed`
 
-### Requirement: Detection refuses missing inputs
+### Requirement: Refresh refuses missing inputs
 
-`DetectCommunities` SHALL return a typed error and write nothing when its context, provider or storage is nil.
+`Refresh` SHALL return a typed error and touch nothing when its context is nil, and `NewPartitioner` SHALL return a
+typed error when its storage, summarizer or entity reader is nil.
 
 #### Scenario: Nil context
 
-- **WHEN** `DetectCommunities` is called with a nil context
-- **THEN** it returns an error and calls neither the provider nor the storage
-- **AND** the test that verifies this is `TestDetectRefusesNilContext`
+- **WHEN** `Refresh` is called with a nil context
+- **THEN** it returns an error and reads and writes nothing
+- **AND** the test that verifies this is `TestRefreshRefusesNilContext`
 
-### Requirement: Detection is reproducible given a fixed edge set
+### Requirement: A group record is bounded
 
-Repeated detection over an unchanged entity and edge set SHALL produce the same partition regardless of the order
-in which the provider lists entities or neighbours: the shuffle is seeded per run and a vote tie goes to the
-lexicographically smallest label.
+A group record SHALL hold its level, ID, member count, `clustering.MembershipHash` of its members, keywords, a
+statistical summary and at most `MaxRepEntities` representative entity IDs, and SHALL NOT hold the member list, so
+its size does not grow with the group.
 
-#### Scenario: Shuffled provider order
+#### Scenario: A large group
 
-- **WHEN** detection runs twice over the same seeded random graph, the second time with the provider's entity and
-  neighbour order shuffled
-- **THEN** both runs return identical communities with identical members
-- **AND** the test that verifies this is `TestDetectionMatchesModel`, which records its seed and run count
+- **WHEN** a group has more members than fit in one NATS message
+- **THEN** its record is written and holds no member IDs beyond its representatives
+- **AND** the test that verifies this is `TestRecordIsBounded`
 
-### Requirement: The community index is rebuilt non-destructively
+### Requirement: The community index is rebuilt on change, never emptied first
 
-A detection run SHALL save every community before it removes anything, SHALL call `Prune` once with the complete
-partition, and SHALL NOT clear the store first. Any save failure SHALL make the run return an error without calling
-`Prune`. A `Prune` failure SHALL be logged and SHALL NOT fail the run.
+A refresh SHALL NOT write a record equal to the stored one, SHALL write every changed record before removing
+anything, and SHALL then remove the records of groups that no longer exist. Any write failure SHALL make `Refresh`
+return an error and remove nothing. A removal failure SHALL be returned to the caller with the partition.
 
-#### Scenario: A save fails
+#### Scenario: Unchanged graph
 
-- **WHEN** one community's save fails
-- **THEN** `DetectCommunities` returns an error, `Prune` is not called, and no prior key is deleted
-- **AND** the test that verifies this is `TestSaveFailureDoesNotPrune`
+- **WHEN** two refreshes run over the same entity IDs and states
+- **THEN** the second adds no revision to `COMMUNITY_INDEX`
+- **AND** the tests that verify this are `TestUnchangedRecordNotRewritten` and `TestUnchangedRefreshAddsNoRevision`
 
-#### Scenario: Prune fails
+#### Scenario: A write fails
 
-- **WHEN** every save succeeds and `Prune` fails
-- **THEN** `DetectCommunities` returns the partition with no error
-- **AND** the test that verifies this is `TestPruneFailureIsNotFatal`
+- **WHEN** one changed record cannot be written
+- **THEN** `Refresh` returns an error and no record is removed
+- **AND** the test that verifies this is `TestWriteFailureRemovesNothing`
 
-### Requirement: Storage fails closed
+#### Scenario: Removal fails
+
+- **WHEN** every write succeeds and the removal fails
+- **THEN** `Refresh` returns the partition and the removal error in its result
+- **AND** the test that verifies this is `TestPruneFailureReturned`
+
+### Requirement: Each entity state is read once per refresh
+
+A refresh SHALL read each listed entity's state at most once, whatever the number of levels.
+
+#### Scenario: Three levels, one read
+
+- **WHEN** `Refresh` runs over N entities
+- **THEN** the entity reader is asked for each of them exactly once
+- **AND** the test that verifies this is `TestEachStateReadOnce`
+
+### Requirement: Community storage fails closed
 
 `NATSCommunityStorage.GetAllCommunities` SHALL return an error naming the key when an entry cannot be read or
-decoded, and every storage method SHALL return the context's error when its context ends, never a nil error with a
-partial result. An empty bucket SHALL return no communities and no error.
+decoded. `GetAllCommunities` and `Prune` SHALL return the context's error when their context ends. An empty bucket
+SHALL give no records and no error.
 
 #### Scenario: A corrupt entry
 
-- **WHEN** `COMMUNITY_INDEX` holds a community key whose value is not a community record
+- **WHEN** `COMMUNITY_INDEX` holds a key whose value is not a group record
 - **THEN** `GetAllCommunities` returns an error naming that key
 - **AND** the test that verifies this is `TestGetAllCommunitiesFailsOnCorruptEntry`
 
-#### Scenario: Cancelled during prune
+#### Scenario: Cancelled
 
-- **WHEN** the context ends while `Prune` lists or deletes keys
-- **THEN** `Prune` returns the context's error
-- **AND** the test that verifies this is `TestPruneReportsCancel`
+- **WHEN** the context ends during `Prune` or during `GetAllCommunities`
+- **THEN** each returns the context's error
+- **AND** the tests that verify this are `TestPruneReportsCancel` and `TestGetAllReportsCancel`
 
-### Requirement: A community summary is a function of its members
+### Requirement: A summary is a function of its members and corpus
 
-`StatisticalSummarizer.SummarizeCommunity` SHALL return the same keywords, representative entities and summary text,
-in the same order, for the same member entities, breaking every score tie by term or entity ID.
+`StatisticalSummarizer` SHALL return the same keywords, representative entities and summary text, in the same order,
+for the same member entities and the same corpus statistics.
 
 #### Scenario: Tied scores
 
-- **WHEN** a community's entities give two terms the same score and the summary is computed 200 times
+- **WHEN** a group's entities give two terms the same score and its summary is computed 200 times with the same
+  corpus statistics
 - **THEN** every result is identical
 - **AND** the test that verifies this is `TestSummaryDeterministic`

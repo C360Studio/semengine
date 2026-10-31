@@ -8,9 +8,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance, including the proposal's three questions. Gate: `task spec:check` and `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 The `community-detection` spec delta (`specs/community-detection/spec.md`), staged against option B and
-  rewritten if the owner rules otherwise on proposal question 1; each scenario names its test. Gate:
-  `task spec:check`.
+- [ ] 1.2 The `community-detection` spec delta (`specs/community-detection/spec.md`), staged against option C and
+  rewritten if the owner rules otherwise on proposal question 1 or asks for the overlay under question 3; each
+  scenario names its test. Gate: `task spec:check`.
 - [ ] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.
   Gate: the comment read back.
 - [ ] 1.4 Comment on #32, #68, #141 and #477 that their `graph/clustering` site is excluded with the tier-2 lane, no
@@ -18,19 +18,18 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 2. Tests first
 
-- [ ] 2.1 Port the pin's LPA, summarizer and PageRank unit tests onto a fake `CommunityStorage` (no nil-KV store);
-  tests of dropped surface rewritten on kept surface or dropped, each named in `notes/2.1.md`. Gate: in 3.3.
-- [ ] 2.2 New unit tests of design D6 (`TestDetectRefusesNilContext`, `TestOneLevel`, `TestSummaryDeterministic`),
-  each shown failing against the pin's shape. Gate: in 3.3.
-- [ ] 2.3 `TestDetectionMatchesModel` (design D6): seed, run count, completed checks in `notes/2.3.md`. Gate: in 3.3.
-- [ ] 2.4 Integration tests on `natsfixture`: the pin's storage tests, `TestGetAllCommunitiesFailsOnCorruptEntry`,
-  `TestPruneReportsCancel`. Gate: in 3.3.
+- [ ] 2.1 Port the pin's storage and summarizer unit tests onto a fake storage (no nil-KV store); tests of
+  surface not carried are dropped, each named in `notes/2.1.md`. Gate: in 3.3.
+- [ ] 2.2 The unit tests of design D6, each shown failing against a wrong change named in `notes/2.2.md`. Gate: in
+  3.3.
+- [ ] 2.3 `TestPartitionMatchesModel` (design D6): seed, run count, completed checks in `notes/2.3.md`. Gate: in 3.3.
+- [ ] 2.4 The integration tests of design D6 on `natsfixture`. Gate: in 3.3.
 
 ## 3. The package
 
-- [ ] 3.1 `types.go`, `storage.go` (design D3). Gate: `go build ./graph/clustering`.
-- [ ] 3.2 `summarizer.go` tier-0 half and `pagerank.go` (design D4). Gate: `go build ./graph/clustering`.
-- [ ] 3.3 `lpa.go` (design D2). Gate: `go test -race -count=1 ./graph/clustering`,
+- [ ] 3.1 `types.go`, `storage.go` (design D3, D2 record). Gate: `go build ./graph/clustering`.
+- [ ] 3.2 `summarizer.go` tier-0 half (design D4). Gate: `go build ./graph/clustering`.
+- [ ] 3.3 `partition.go` (design D2). Gate: `go test -race -count=1 ./graph/clustering`,
   `go test -count=5 -cpu 1 -shuffle=on ./graph/clustering`, `task test:integration -- ./graph/clustering`.
 - [ ] 3.4 Mutation checks of design D6 (`task mutate:check`), in `notes/3.4.md`, survivors reported as survivors.
   Gate: each named test fails on its mutant.

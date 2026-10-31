@@ -9,7 +9,9 @@ written `pin:<path>:<line>`, read from `git archive 8b99efe9` into `/tmp/cl-pin`
 `8c03cc53836ced93a5df7064473c63ff144e64f1` (the SHA SETUP 03B cites) read for "the workload it drives"
 (`docs/inventory-scope.md`, semboids row).
 
-Status: round 1, inventory only. The design (`design.md`) is drafted beside it at the orchestrator's request and is
+Status: round 2 (round 1 `INVENTORY CHANGES REQUESTED` at `180741d`: the ADR-099 row quotes its deciding clauses;
+semsource's level use measured; SummaryStatus, e2e readers, two shape findings and the consumer scope corrected).
+Round 1 was inventory only. The design (`design.md`) is drafted beside it at the orchestrator's request and is
 not reviewable until this inventory has `INVENTORY PASS` (architect contract, Required workflow step 3).
 
 Kind of change: a port of one package by the owner's order ruling (#9 comment 6386856657, item 8: "`graph/clustering`
@@ -130,6 +132,7 @@ Command: per exported name, `grep -n "clustering\.<Name>\b"` over the 15 non-tes
 | `processor/graph-clustering` (change 7) `component.go` | `NewLPADetector`, `CommunityDetector`, `NewNATSCommunityStorage`, `NATSCommunityStorage`, `NewStatisticalSummarizer`, `NewEntityIDProvider`, `EntityIDProvider(Config)`, `DefaultEntityIDProviderConfig`, `NewSemanticEdgeProvider`, `SemanticEdgeProvider`, `SemanticEdgeParams`, `WeightConfig`, `DefaultSemantic*`, `Provider`, `NewLLMSummarizer`, `LLMSummarizerConfig`, `NewEnhancementWorker`, `EnhancementWorker(Config)`, `EntityQuerier` |
 | `processor/graph-clustering` `similarity.go`, `metrics.go`, `anomaly.go`, `query.go` | `SemanticNeighborFinder`, `ErrSemanticIndexNotReady`, `ErrSemanticQueryTransient`, `SemanticEdgeMetrics`, `Provider`, `Community`; `storage.GetAllCommunities` (`anomaly.go:342`) |
 | `processor/graph-query` (item 9) | `Community` (`community_cache.go`, `graphrag.go`); `CommunitySummaryRecord`, `MembershipHash`, `SummaryKey`, `SummaryStatusEnhanced/Failed` (`summary_view.go`, `component.go`) |
+| SemStreams e2e harness (not admitted, not counted as readers) | `test/e2e/client/nats.go`, `test/e2e/scenarios/{tiered_semantic,tiered_statistical,validate_partition_colocation,validate_thematic_eval}.go`, `test/e2e/scenarios/community/validator.go`: `Community`, `CommunitySummaryRecord`, `MembershipHash`, `SummaryKey`, statuses |
 | semboids `8c03cc53` | test only: `internal/boidgraph/lpa_unit_test.go` (`NewLPADetector`, `DetectCommunities`, `Community`, a fake `CommunityStorage`) |
 
 No production reader anywhere: `UpdateCommunities`, `InferRelationshipsFromCommunities`, `InferenceConfig`,
@@ -142,7 +145,9 @@ No production reader anywhere: `UpdateCommunities`, `InferRelationshipsFromCommu
 `DeleteCommunity`, `Clear`. Detector getters `GetCommunity`, `GetEntityCommunity`, `GetCommunitiesByLevel`: no
 caller (`grep -rn 'c.detector\.' processor/graph-clustering`: `DetectCommunities` only). `Community` fields with no
 production reader (`grep -rn '\.<Field>\b' processor/graph-query processor/graph-clustering gateway`): `ParentID`,
-`SummaryStatus`, `SummaryTruncated`, `LLMSummary` (0 each; `graphrag.go:2414` says the field is empty since ADR-087).
+`SummaryTruncated`, `LLMSummary` (0 each; `graphrag.go:2414` says the field is empty since ADR-087). `SummaryStatus` is
+stored as `"statistical"` (`pin:graph/clustering/summarizer.go:126`); its one reader is the e2e harness
+(`pin:test/e2e/scenarios/tiered.go:761`), no production reader.
 
 ## 5. The problem shape
 
@@ -160,13 +165,44 @@ detection`, `Label Propagation`; then titles naming clustering, communities, sum
 
 | ADR | Decides | Here |
 | --- | --- | --- |
-| 099 Community partition derived from entity identity; detection removed (Accepted 2026-08-23) | base partition = ID prefix per level, membership never stored; LPA, edge synthesis, semantic-edge provider and determinism machinery leave the tree; detection returns only as an overlay over explicit edges with a fixture that can fail | not ported (`docs/adr/100-…:16`); ADR-102 (ported) amends its levels. Not implemented at the pin (P1, P2; `pin:docs/proposals/gh606-derived-communities-design.md:319-345` owner rulings Q1-Q8) |
+| 099 Community partition derived from entity identity; detection removed (Accepted 2026-08-23) | see 6b | not ported (`docs/adr/100-…:16`); ADR-102 (ported) amends its levels and binds them (`docs/adr/102-…:103`, `:129`). Not implemented at the pin (P1, P2) |
 | 087 Community summary store ownership | worker-exclusive, content-addressed `COMMUNITY_SUMMARIES`; one `MembershipHash` | not ported; governs the tier-2 lane only |
 | 086 Semantic co-location edges | mutual-kNN semantic tier, weighted LPA; outcome default-off | not ported; ADR-099 removes the mechanism |
 | 085 Gate on health, report freshness | write-then-prune, never clear before rebuild | ported (`docs/adr/085-…:17` names `LPADetector` as not ported) |
 | 061 Remove orphaned `SemanticProvider` | removal-with-recoverability pattern | not ported; history |
 | 081, 082, 084 | graphview sites; bounded-lag readiness of graph-clustering; readiness licenses health | 081, 084 ported; 082 governs the component (change 7) |
-| 049, 054, 065, 073 | name community detection or `storage.go:206` in passing | n/a |
+| 034, 049, 054, 065, 073, 079 | name graph-clustering, community detection or `storage.go:206` in passing (034 `:16` a release tag; 079 `:20` a second watcher) | n/a |
+
+## 6b. ADR-099's deciding clauses, quoted
+
+- Base partition (`pin:docs/adr/099-community-partition-derived-from-entity-identity.md:25-30`): "The community base
+  partition is **derived, not detected**: `community(entity, level)` is the entity ID prefix at that level"; "membership
+  is a pure function of the ID and is **never stored** — group records carry bounded metadata only, and member
+  enumeration rides the existing paginated prefix-query lane." ADR-102 restates the levels here: "ADR-099 levels are 0 =
+  4 parts, 1 = 3 parts (source), 2 = 2 parts." (`docs/adr/102-entity-id-segment-semantics.md:103`), and "Hierarchy
+  containers are a second spelling of the ADR-099 partition and are retired with it" (`:129`).
+- Removal (`:35-36`): "LPA and its supporting machinery — edge synthesis and its weights/caps configuration, the
+  semantic-edge provider, detection determinism — **leave the tree**."
+- Re-entry (`:36-40`): "Detection may return only as an overlay under a re-entry contract: explicit relationship edges
+  in, a namespace the serving path does not read out, a fixture that can fail as the shipping gate, and never a
+  readiness dependency of graph-query."
+- The ruling it records (`pin:docs/proposals/gh606-derived-communities-design.md:321-326`): "Q1 (largest) — **RULED:
+  REMOVE.** LPA + providers + `semantic_edge_provider.go` + weights/caps config + detection-determinism machinery leave
+  the tree now"; "Owner basis: LPA over this entity-ID model is re-derivation of the IDs — waste of compute"; "by this
+  epic's own ruling an unmeasured overlay cannot ship anyway." The recommendation it accepted names the file: "REMOVE
+  the LPA path from the tree now — `lpa.go` detector, provider chain, `semantic_edge_provider.go`" (`:192-194`).
+- Overlay contract (`:183-191`): "detection survives only as an optional overlay over EXPLICIT relationship edges,
+  default-off, shipping only once a fixture can measure it (the current ground-truth check — never better than 1/3,
+  warn-only — cannot)"; "output = overlay records in a namespace the serving path does not read; gate = a fixture that
+  can fail; it never writes the base partition records and never becomes a readiness dependency of graph-query."
+- Measurement (ADR-099 `:16-21`): "largest community 47–82% of the graph"; "The hierarchy levels above 0 were re-runs
+  over the full entity set, not a hierarchy"; "The e2e coherence check could not exceed 1 of 3 and was warn-only."
+- The ruled design for the base: record shape (`gh606…design.md:128-145`, no `Members`, no `entity.{level}.{id}` keys,
+  `membership_hash` via `clustering.MembershipHash`), write-on-change (`:106-107`), Q5 "deterministic text-bearing rep
+  selection" (`:335`), Q6 "record singleton groups" (`:338`), Q8 level 1 served by default (`:344`); summaries
+  only for groups of two or more (`:219`).
+- Order of rulings: ADR-099 2026-08-23; SETUP 03B admitted "clustering on explicit edges" 2026-10-01 without reading
+  it (§ intro).
 
 Pin capability spec `graph-clustering` (`pin:openspec/specs/graph-clustering/spec.md`, 14 requirements): edge
 synthesis `:6`, `:29`, `:45`; non-destructive rebuild `:66`; projection identity `:135`; semantic edges `:164`,
@@ -217,13 +253,17 @@ No payload type, no subject. Total 5,516; tier-2 1,285; ADR-099-removed and dead
 | S12 | wrong sentinel for empty input | `storage.go:111`, `:197`, `:322`, `:345` | `errs.WrapInvalid(errs.ErrMissingConfig, …, "id is empty")` |
 | S13 | two parsers of one ID | `summarizer.go:19`, `entityid_provider.go:212` | `message.ParseEntityID` / `semtypes.ParseEntityID` |
 | S14 | unexported-reader-only exports | `pagerank.go:10-62` | `ComputePageRank`, `PageRankConfig`, … |
+| S16 | silent clamp of configured values | `lpa.go:97-119` | `if maxN > MaxIterationsLimit {` (config refuses only `<= 0`, `pin:processor/graph-clustering/component.go:385`; `:1385` feeds it) |
+| S17 | log-only degrade | `lpa.go:262-268` | a `Prune` failure is a Warn; the run reports success while stale records stay until the next cycle |
 | S15 | doc drift | `doc.go:30-35`, `:96-122`, `:160-168` | names the LLM worker, member-of triples, `Pause`/`Resume` |
 
 ## 10. Size against the one-package rule (#159)
 
 Whole package 5,516 pin lines; tier-0 half (less 1,285 tier-2) 4,231; less `provider.go` (dead) 3,959; less
 `semantic_edge_provider.go` 3,024; less `entityid_provider.go` (ADR-099) 2,503 (`types` 126, `storage` 526, `lpa` 820,
-`summarizer` 1-498, `pagerank` 335, `doc` 198). Only the last is under the ~3,000 bound without a waiver.
+`summarizer` 1-498, `pagerank` 335, `doc` 198). Only the last is under the ~3,000 bound without a waiver. The parts
+ADR-099's base keeps: `types` 126, `storage` 526, `summarizer` 1-498, `doc` 198 = 1,348 pin lines considered, plus
+new partition code (no pin code exists for it).
 
 ## 11. Collision table
 
@@ -232,6 +272,12 @@ No new durable, communication or coordination primitive is proposed: `COMMUNITY_
 in the tree; the pin's LPA levels mean something else (§ 2).
 
 ## 12. Adopter seam inventory
+
+Scope (`docs/inventory-scope.md`): semboids' row allows the workload it drives (streams, rates, entities) and symbol
+use of `pkg/lifecycle` and `processor/rule`. Relied on here: `configs/flock.json` (workload) and its entity-ID shape
+`c360.semboids.sim.flock.boid.<n>` (entities). Its `graph/clustering` symbol use and `internal/api/graphstream.go`
+reads, cited below, were read beyond that row; they are not relied on for a disposition and need an owner ruling
+on #22 to be used. semsource's row allows its use of retained contracts; its `graph.query.searchGraph` request is one.
 
 Reached from outside: products composing `processor/graph-clustering` (semboids `configs/flock.json:288-300` at
 `8c03cc53`: `"enable_llm": false`, `"entity_id_edges": {"include_siblings": false, "include_system_peers": false}`,
@@ -252,17 +298,21 @@ semboids' test implements `CommunityStorage` and runs `NewLPADetector` on two cl
 
 | Capability (`AGENTS.md`, setup plan) | State | Ruling |
 | --- | --- | --- |
-| Clustering on explicit edges, tier 0 | admitted | 03B Q11 (#8 comment 5930898291); #9 6386603659 |
+| Clustering on explicit edges, tier 0 | admitted | 03B Q11 (#8 comment 5930898291, 2026-10-01); predates no ruling here, but postdates and did not read ADR-099 |
+| LPA detection | removed by the owner in SemStreams | ADR-099 / gh606 Q1 "RULED: REMOVE" (2026-08-23); no SemEngine ruling |
+| ID-derived base partition | ruled in SemStreams; levels already bound here | ADR-099; ADR-102 d6 (ported, `docs/adr/102-…:103`) |
+| Detection overlay (explicit edges, own namespace, default off) | allowed in SemStreams only with a fixture that can fail | ADR-099 `:36-40`; no SemEngine ruling |
 | Clustering summaries (LLM), tier 2 | deferred | #9 6386603659; #32 |
-| Statistical community summary | admitted | 03B row `:218` |
-| EntityID virtual edges (sibling, system peer) | excluded in the draft | no SemEngine ruling (ADR-099 is SemStreams') |
-| Semantic co-location edges | excluded in the draft | no SemEngine ruling |
-| Hierarchy levels 1-2 | excluded in the draft | no ruling |
-| Inferred `clustered-with` triples | excluded in the draft | no ruling; setup plan `:106-108` (relevance is not an asserted fact) |
-| ID-derived partition (ADR-099 base) | not designed | no ruling |
+| Statistical community summary | admitted | 03B row `:218`; ADR-099 keeps it (gh606 design `:103-104`) |
+| EntityID virtual edges, semantic edges | removed | ADR-099 `:35-36`; no SemEngine ruling |
+| Inferred `clustered-with` triples | no reader | no ruling; setup plan `:106-108` (relevance is not an asserted fact) |
+
+Each "no SemEngine ruling" row is owner question 1.
 
 ## Open evidence questions
 
-- Does semsource's gateway pass `level` > 0 to community search at the pin? (graph-query item 9's inventory; it
-  decides what a level-1/2 request returns.)
+- Measured (semsource `4093d3ce421371f4a99d7168e372552899bf6795`): its one production community path sends
+  `{"query": …, "summarize_threshold": 1}` to `graph.query.searchGraph` (`processor/mcp-gateway/query_tools.go:103`),
+  no `level`, so the pin decodes level 0 (`pin:processor/graph-query/searchgraph.go:90`). Its
+  `scripts/measure-communities/main.go:44` is an operator script, default level 0. No production request for level > 0.
 - Whether the owner's ADR-099 ruling binds SemEngine is a ruling, not evidence: owner question 1.

@@ -1,104 +1,123 @@
 # Design: setup-04a-04-graph-roots-clustering
 
-Base: `f3b48f6`. Inventory: `inventory.md` (round 1; this design waits on its `INVENTORY PASS`). Change 4, PR 9 of 10
-(#9 comment 6386856657, item 8). Tier 0 only (#9 comment 6386603659). Draft PR #483. Governing records: ADR-085
-(ported, kept), ADR-099 (SemStreams owner ruling at the pin, unimplemented there; question 1), ADR-087 and ADR-086
-(not ported, their mechanisms excluded), the pin spec `graph-clustering` (inventory 6). Probes: inventory, Pin probe.
+Base: `f3b48f6`. Inventory: `inventory.md` (round 2; this design waits on its `INVENTORY PASS`). Change 4, PR 9 of 10
+(#9 comment 6386856657, item 8). Tier 0 only (#9 comment 6386603659). Draft PR #483. Governing records: ADR-099 and
+the owner rulings behind it (inventory 6b), ADR-102 d6 (ported; binds the levels), ADR-085 (ported, kept), ADR-087
+(not ported; tier-2 lane). Probes: inventory, Pin probe.
 
-Coined terms: a *partition* is one community per entity, written to `COMMUNITY_INDEX`; *explicit edges* are the
-relationship edges a `graph.Provider` returns; *virtual edges* are edges the pin synthesizes from entity-ID positions
-(sibling, system peer) or embedding similarity (semantic).
+Coined terms: a *group* is one community: every entity whose ID shares a prefix of a given length; a *level* is that
+length (0 = four positions, org.platform.system.domain; 1 = three, the source; 2 = two, the deployment; ADR-102 d6);
+the *base partition* is the set of group records in `COMMUNITY_INDEX` that graph-query serves; an *overlay* is any
+other partition, written somewhere graph-query does not read.
+
+## The facts the choice rests on
+
+- Label propagation (LPA), the algorithm `graph/clustering` runs at the pin, was removed by your own SemStreams ruling
+  of 2026-08-23 (ADR-099; gh606 Q1 "RULED: REMOVE", naming `lpa.go`). The reason, in that ruling: over these entity
+  IDs it re-derives the IDs. SemStreams never carried the removal out, so the pin still has LPA (inventory 6b).
+- SETUP 03B admitted "clustering on explicit edges" at tier 0 on 2026-10-01 without reading ADR-099.
+- SemEngine has already ported ADR-102, which fixes what a community level is (level 0 = the four-position prefix)
+  and retires the `graph/inference` containers together with the ADR-099 partition (`docs/adr/102-…:103`, `:129`).
+  An LPA level 0 is a second, contradicting meaning of "level".
+- ADR-099 allows detection back only as an overlay: explicit edges in, written where graph-query does not read,
+  default off, never writing the base partition, never a readiness dependency of graph-query, and shipping only once
+  a fixture that can fail measures it. The pin's quality check never scored better than 1 of 3.
+- Who uses communities today: semboids (its flock view; LPA over explicit edges, `configs/flock.json`); semsource only
+  behind `enable_clustering` (default off) and never asks for a level above 0 (inventory, Open evidence questions).
 
 ## Options
 
-- **A. Port the pin's tier-0 half whole** (4,231 pin lines; waiver needed). Carries what the pin's own ADR-099 rules
-  out: virtual-edge synthesis with a cache that never refreshes (P1), semantic edges, and levels 1-2 that are not a
-  hierarchy (P2). Instant debt by the owner's bar.
-- **B. Explicit-edge clustering, the half both rulings keep (recommended).** 2,503 pin lines, no waiver. LPA over the
-  provider's explicit edges, one level, the statistical summary, write-then-prune storage. Matches 03B Q11 ("clustering
-  on explicit edges"), ADR-099's removals and its overlay rule (explicit edges in, a fixture that can fail: semboids'
-  two-clique test), and semboids' live configuration (virtual edges off, `enable_llm` false; inventory 12).
-- **C. ADR-099's derived partition** (community = ID prefix, members not stored). New design, not a port: no pin code.
-  It gives semboids one community for the whole flock (every boid shares `c360.semboids.sim.flock`), changes the
-  `COMMUNITY_INDEX` record graph-query and semboids read, and adds a third spelling of ID-prefix grouping beside
-  `types.EntityID` prefixes and `graph/inference` containers (inventory 2).
-- **D. Do nothing until change 7.** Item 9 (`processor/graph-query`) cannot build its community path.
+- **A. Port the pin's tier-0 half whole** (4,231 pin lines; waiver). Carries everything ADR-099 removed, plus a sibling
+  cache that never refreshes (P1) and levels that are not a hierarchy (P2).
+- **B. LPA over explicit edges writing `COMMUNITY_INDEX`** (2,503 lines). Keeps semboids' flock view working today.
+  Contradicts ADR-099 twice (LPA stays; detection writes the base partition graph-query serves) and ADR-102 (level 0
+  would not be the four-position prefix). semboids' two-clique unit test is not the quality fixture ADR-099 asks for.
+- **B′. LPA as a default-off overlay** in its own bucket, which graph-query never reads, shipped only with a fixture
+  that can fail (for example, flocks with known membership scored against the result). Conforms to ADR-099 and could
+  serve semboids, but alone it gives graph-query no base partition, adds a new bucket (a new durable primitive, owner
+  decision), and the fixture does not exist yet.
+- **C. The ADR-099 base partition (recommended).** Groups by ID prefix at levels 0-2, bounded records, write on change,
+  the statistical summary per group. Conforms to ADR-099 and ADR-102; deterministic with no algorithm to tune; about
+  1,350 pin lines carried plus a small partition step the pin never wrote, from a design you already ruled (gh606
+  §3.3, Q5, Q6, Q8). Cost: semboids' flock view collapses to one group (every boid shares
+  `c360.semboids.sim.flock`) and must read members by prefix, until B′ lands as its own change with its fixture;
+  graph-query (item 9) is ported to the bounded record.
+- **D. Do nothing until change 7.** Item 9 cannot build its community path.
 
-## D1. Files, edges, exclusions
+Trade-off in plain words: B keeps one demo working and ports code you already threw out; C follows your own ruling
+and leaves semboids without flock clusters until an overlay is built and measured.
 
-Carried into `graph/clustering/`: `types.go`, `storage.go`, `lpa.go`, `summarizer.go` `:1-498`, `pagerank.go`, a new
-`doc.go` and `README.md` (the product contract line). Import edges: `graph`, `natsclient`, `pkg/errs`, `pkg/types`;
-no `graph/llm`, `metric`, Prometheus or `go-openai`. Ledger: one `adapt` row for the package and `defer-exclude` rows:
+## D1. Files, edges, exclusions (option C)
 
-- tier 2, naming #32: `summarizer.go:499-863` (`LLMSummarizer`, `ProgressiveSummarizer`), `enhancement_worker.go`,
-  `summary_store.go`, `metrics.go`, and `MembershipHash` (`storage.go:42-48`, the `COMMUNITY_SUMMARIES` key);
-- ADR-099, naming question 1: `entityid_provider.go`, `semantic_edge_provider.go`;
-- dead: `provider.go` (no reader; `QueryManagerProvider.GetAllEntityIDs` always fails, P4).
+Carried into `graph/clustering/`: `types.go` (the group record and storage interface), `storage.go`, `summarizer.go`
+`:1-498`, a new `doc.go` and `README.md` (the product contract line), and a new `partition.go`. Edges: `graph`,
+`natsclient`, `pkg/errs`, `pkg/types`. Ledger: one `adapt` row and `defer-exclude` rows:
 
-One line in `.agents/skills/entity-or-bucket/SKILL.md` item 2: community detection reads `ENTITY_STATES` through a
-provider (the pin skill's clause, `pin:.agents/skills/entity-or-bucket/SKILL.md:47`).
+- tier 2, naming #32: `summarizer.go:499-863`, `enhancement_worker.go`, `summary_store.go`, `metrics.go`;
+- ADR-099, naming question 1: `lpa.go`, `entityid_provider.go`, `semantic_edge_provider.go`, `pagerank.go` (its only
+  reader is representative selection, which Q5 replaces; it is quadratic in group size);
+- no reader: `provider.go` (P4).
 
-## D2. The detector (observable behaviour)
+`MembershipHash` stays: the record carries it (gh606 §3.3). One line in `.agents/skills/entity-or-bucket/SKILL.md`
+item 2 (the pin skill's "community detection" clause, `pin:.agents/skills/entity-or-bucket/SKILL.md:47`), reworded to
+community grouping.
 
-- `NewLPADetector(provider, storage)`; `WithLogger`, `WithMaxIterations`, `WithSummarizer`, `SetEntityProvider` as at
-  the pin. `DetectCommunities(ctx)` refuses a nil `ctx` and a nil provider or storage with a typed error.
-- One level (**changed, question 3**): every community has `Level` 0; `WithLevels` and `detectHierarchicalLevel` go.
-  The result keeps its pin type, a map keyed by level, now with key 0 only. The pin's levels 1-2 re-run LPA over
-  the same entities (P2) and nothing sets `ParentID`.
-- Kept from the pin spec: entity IDs and neighbours are sorted, the shuffle is seeded per run and ties go to the
-  smallest label (`:301`); write-then-prune (`:66`, ADR-085): every community is saved before `Prune` runs; any save
-  failure returns an error, skips `Prune` and reports no success; a `Prune` failure is logged and not returned.
-- `ResetEdgeCache` is called on a provider that has it at the start of each run (the change 7 `kvProvider` does).
-- Dropped as unread (inventory 4): `UpdateCommunities`, `GetCommunity`, `GetEntityCommunity`,
-  `GetCommunitiesByLevel`, `InferRelationshipsFromCommunities` with `InferenceConfig`, `DefaultInferenceConfig`,
-  `InferredTriple` (dormant at the pin, errors swallowed, and it would assert facts with no mutation or provenance
-  contract, setup plan `:106-108`), `WithProgressiveSummarization`. `CommunityDetector` keeps `DetectCommunities`
-  only; its one implementation is retained as the component's seam (optional finding S8).
+## D2. The partition step (new exported surface, owner approval needed)
+
+`clustering.NewPartitioner(storage, summarizer, entities)` and `(*Partitioner).Refresh(ctx, entityIDs)`, called by
+`processor/graph-clustering` on its interval (change 7). Observable behaviour:
+
+- `Refresh` refuses a nil context and a constructor refuses nil dependencies, each with a typed error.
+- Each listed entity belongs to exactly one group per level, its ID prefix at that level; singletons get a record (Q6).
+  An ID the canonical parser refuses is left out and named in the result's `Skipped`, never silently.
+- Each record holds level, prefix ID, member count, `MembershipHash` of the members, keywords, statistical summary
+  and at most `MaxRepEntities` representative IDs; no member list. Summaries for groups of two or more members.
+- A record equal to the stored one is not written (no new revision). Every changed record is written before any
+  removal; any write failure returns an error and removes nothing. Then records of groups that no longer exist are
+  removed; a removal failure is returned in the result's `PruneErr` with the partition (fixes S17), not only logged.
+- Each entity state is read at most once per refresh.
 
 ## D3. Storage
 
-`NATSCommunityStorage` holds a `*natsclient.KVStore` (the `graph/embedding.Storage` shape) and keeps `SaveCommunity`,
-`Prune` and `GetAllCommunities` (read by the anomaly half, change 7). Required: S1 the nil-KV in-memory store goes
-(#186; tests use a fake `CommunityStorage`); S2 the member-of triples and `NewNATSCommunityStorageWithConfig` go; S3
-key listing uses `KVStore.Keys`, so no error text is searched; S4 an unreadable or undecodable entry fails
-`GetAllCommunities` with an error naming the key; S5 a cancelled context returns its error. Kept: a value over the
-payload ceiling is a permanent (invalid) error. Dropped as unread: `GetCommunity`, `GetEntityCommunity`,
-`GetCommunitiesByLevel`, `DeleteCommunity`, `Clear`, `MaxCommunityLevels`. The key format is unchanged
-(`{level}.{id}`, `entity.{level}.{id}`), so item 9 and semboids read the same bytes.
+`NATSCommunityStorage` over `*natsclient.KVStore` keeps `SaveCommunity`, `Prune`, `GetAllCommunities`. Required: S1
+the nil-KV in-memory store goes (#186); S2 triples go; S3 key listing uses `KVStore.Keys`, which already maps nats.go's
+empty-bucket sentinel by identity (`natsclient/kv.go:582`), so no error text is searched (AGENTS § 2 uses `errors.Is`
+for library sentinels); S4 an unreadable entry fails `GetAllCommunities`, naming the key; S5 a cancelled context
+returns its error. Key `{level}.{prefix}`; no `entity.{level}.{id}` keys. Unread methods dropped (inventory 4).
 
-## D4. Summary and the community record
+## D4. Summary
 
-`CommunitySummarizer` and `StatisticalSummarizer` port (ruling 6386603659). Required: S9, keyword, representative
-and type orders break ties by term or ID, so one membership always yields the same record (03B row `:218` admits the
-summarizer as deterministic; P3 shows it is not). `Community` loses `ParentID`, `SummaryStatus`, `LLMSummary`,
-`SummaryTruncated` (no reader, never stored since ADR-087). PageRank's exported names become unexported (S14).
-Optional, retained: S12 sentinel choice, S13 the second parser.
+`CommunitySummarizer` and `StatisticalSummarizer` port. Required: S9, ties break by term or ID; representative
+selection is deterministic, prefers members with text, and needs no graph index (Q5), replacing PageRank. A summary
+depends on the members and on the corpus statistics of that refresh (`BuildCorpusDF`, `summarizer.go:74`).
+`Community`'s pin fields `Members`, `ParentID`, `SummaryStatus` (stored `"statistical"`, `summarizer.go:126`, read only
+by the e2e harness), `LLMSummary`, `SummaryTruncated`, `Metadata` give way to the bounded record.
 
 ## D5. ADRs
 
-ADR-085 kept, port note gains this package. ADR-099 ported with a port note (question 1): SemEngine applies its
-removals (virtual edges, semantic edges, levels) and keeps detection over explicit edges as the tier-0 capability 03B
-admits, with semboids' clique test as its fixture; the derived base partition is not adopted. ADR-087 stays out with
-the tier-2 lane (#32); ADR-086 and ADR-061 are not ported (the mechanism they decide is excluded).
+ADR-099 ported with a port note: its decision is applied (base partition derived; LPA, edge synthesis and semantic
+edges not carried); the overlay contract stands for any later detection change. ADR-085's note gains the package.
+ADR-087 stays out with the tier-2 lane (#32); ADR-086 and ADR-061 are not ported.
 
 ## D5a. Spec delta
 
-`specs/community-detection/spec.md` is written against option B. If the owner rules otherwise on question 1,
-it is rewritten before review continues.
+`specs/community-detection/spec.md` is written against option C. If the owner rules otherwise on question 1, or
+answers question 3 by asking for the overlay in this change, it is rewritten before review continues.
 
 ## D6. Proving tests
 
-Unit, on fakes: the pin's LPA and storage tests rewritten off the nil-KV store; `TestDetectRefusesNilContext`;
-`TestOneLevel`; `TestDetectDisjointCliques`; `TestNoVirtualEdges`; `TestSaveFailureDoesNotPrune`;
-`TestPruneFailureIsNotFatal`; `TestSummaryDeterministic` (tied scores, 200 runs, one result; fails on the pin, P3);
-`TestDetectionMatchesModel`, seeded, random explicit-edge graphs: every entity in exactly one community, the result
-identical across two runs and across shuffled provider order. Integration on `natsfixture`: the pin's storage tests,
-`TestGetAllCommunitiesFailsOnCorruptEntry`, `TestPruneReportsCancel`. Mutation checks: tie-break removed, `Prune`
-called after a failed save, corrupt-entry skip restored. Coverage floor 80 % (pin 57 %).
+Unit, on a fake storage and entity reader: `TestRefreshRefusesNilContext`, `TestGroupsArePrefixes` (each level),
+`TestSingletonRecorded`, `TestUnparseableIDNamed`, `TestRecordIsBounded`, `TestUnchangedRecordNotRewritten`,
+`TestWriteFailureRemovesNothing`, `TestPruneFailureReturned`, `TestEachStateReadOnce`, `TestSummaryDeterministic`.
+Generated: `TestPartitionMatchesModel`, seeded random ID sets against a model (group = prefix), seed and run count
+recorded. Integration on `natsfixture`: `TestUnchangedRefreshAddsNoRevision`, `TestGetAllCommunitiesFailsOnCorruptEntry`,
+`TestPruneReportsCancel`, `TestGetAllReportsCancel`. Mutation checks: tie-break removed; equality skip removed;
+removal before writes; `PruneErr` dropped. Coverage floor 80 %.
 
 ## D7. Issues and merge order
 
-Retires none. Stay open: #32 (gains the exclusion rows), #68 (`metrics.go`), #141 (`summary_store.go:179`), #477
-(`enhancement_worker.go:239`): each site leaves with the tier-2 lane; a comment on each says so. No open PR overlaps;
-if #464 merges first, the integration run repeats at nats.go 1.55.0. Item 9 ports after this and decides its
-summary view (tier 2) and what a level-1/2 request returns.
+Retires none. Stay open: #32, #68, #141, #477 (sites leave with the tier-2 lane; a comment on each). No open PR
+overlaps; if #464 merges first, the integration run repeats at nats.go 1.55.0. Item 9 ports after this, onto the
+bounded record (gh606 §3.3: membership by prefix query, summary join by stored hash). Change 7's
+`processor/graph-clustering` calls `Refresh` and drops its LPA config keys as refused keys (gh606 Q4). A semboids
+overlay (B′) is its own later change, with its fixture.

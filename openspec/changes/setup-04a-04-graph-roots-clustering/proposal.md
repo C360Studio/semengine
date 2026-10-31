@@ -1,6 +1,7 @@
 # Proposal: setup-04a-04-graph-roots-clustering
 
-Approved-by:
+Approved-by: owner, 2026-10-31 in Enjoy: design at `4d844e0` accepted, including its new exported surface; rulings
+recorded on PR #483 (comments 6543795826, 6543960797)
 
 ## Why
 

@@ -8,7 +8,8 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and design pass the independent pre-owner review; owner
   acceptance of the rewritten design and its new exported surface (proposal, Impact). Gate: `task spec:check` and
   `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
+  Owner accepted 2026-10-31 (proposal `Approved-by:`).
+  Hold: Codex design review (owner started it 2026-10-31)
 - [ ] 1.2 The `community-grouping` spec delta (`specs/community-grouping/spec.md`), written to the 2026-10-31
   rulings; each scenario names its test. Gate: `task spec:check`.
 - [ ] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.

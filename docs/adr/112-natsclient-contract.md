@@ -158,8 +158,8 @@ Each line below names its backing. Anything not backed is not promised.
   - With both at 300 ms, a held publish failed at the write timeout, and the connection reconnected and carried a
     request 1 to 3 ms after the server read again (P24, 3 of 3 at each server version).
   - With the write timeout alone, at nats.go v1.55.0, the held publish failed at the write timeout, the connection
-    reconnected at once, and it carried a request 2.0 to 2.1 s after the server read again, within the client's 2 s
-    `ReconnectWait` (P24r, 3 of 3; PR #492 comment 6545759092). At v1.54.0 it stayed connected and carried nothing for
+    started reconnecting at once, and it carried a request 2.0 to 2.1 s after the server read again, a span that
+    includes the client's 2 s `ReconnectWait` (P24r, 3 of 3; PR #492 comment 6545759092). At v1.54.0 it stayed connected and carried nothing for
     5 s (P22, P24: 6 of 6), which is why the two were once to be set together; that requirement is dropped (owner
     ruling, PR #492 comment 6545866336; amended 2026-10-31).
 - **Not promised:**

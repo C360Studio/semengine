@@ -15,6 +15,14 @@ The record was measured at nats.go v1.54.0 and nats-server v2.15.0, re-run on 20
 the quick probes (P10, P12, P13, P15, p15b, P17, P18, P20, and P23 to P25) were run again there with the same results
 (PR #177 comment 6111119623). P11, P14, P16, P19, P21 and P22 were measured at v2.14.7 only.
 
+**Re-run at nats.go v1.55.0, 2026-10-31** (Dependabot PR #464; PR #492 comment 6545759092, with a v1.54.0 control
+run beside it). P7, P8, P9, P10, P12, P13, P15, P16 and p15b gave the same results. The sources of P17 to P25 were
+never posted, so they were not re-run; P24r, a reconstruction of the P20, P22 and P24 cases, stands in for them.
+P11, P14 and P24r's case with the write timeout alone changed: at v1.55.0 a write the write timeout ends partway
+closes the socket, and nats.go reconnects (`nats.go:2389-2395`, read). The lines below that rest on the earlier
+behaviour (§1's write-timeout bullets, §2's `Publish` timing, the Alternatives' shorter-write-timeout bullet) are not
+amended by this note; they wait for a ruling on PR #492.
+
 **Amendment, 2026-10-12 (#184).** `Client.SetConnection` is removed, with the code and tests that served it (owner,
 2026-10-12: "I have no idea why we have a setter in Go for SetConnection — this is not Java"). §4's sentence about a
 connection it replaced is struck where it stands. §2's `Close` line still cites `:1399` and `:1442`, tests removed

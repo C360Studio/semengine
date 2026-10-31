@@ -13,8 +13,8 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   next commit.
 - [x] 1.2 The `community-grouping` spec delta (`specs/community-grouping/spec.md`), written to the 2026-10-31
   rulings; each scenario names its test. Gate: `task spec:check`.
-- [ ] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.
-  Gate: the comment read back.
+- [x] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.
+  Gate: the comment read back. Posted as PR #483 comment 6546125383.
 - [ ] 1.4 Comment on #68, #141 and #477 that their `graph/clustering` site leaves with the tier-2 lane to #485, no
   closing keyword. Gate: each comment read back.
 
@@ -34,20 +34,20 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 - [x] 3.2 `terms.go` (design D1). Gate: `go build ./graph/clustering`.
 - [x] 3.3 `maintainer.go` (design D2). Gate: `go test -race -count=1 ./graph/clustering`,
   `go test -count=5 -cpu 1 -shuffle=on ./graph/clustering`, `task test:integration -- ./graph/clustering`.
-- [ ] 3.4 Mutation checks of design D5 (`task mutate:check`), in `notes/3.4.md`, survivors reported as survivors.
+- [x] 3.4 Mutation checks of design D5 (`task mutate:check`), in `notes/3.4.md`, survivors reported as survivors.
   Gate: each named test fails on its mutant.
 
 ## 4. Ledger, records and docs
 
-- [ ] 4.1 Ledger: `graph/clustering` (`adapt`), the `defer-exclude` rows of design D1 naming #485, `docs/adr/099-…`.
+- [x] 4.1 Ledger: `graph/clustering` (`adapt`), the `defer-exclude` rows of design D1 naming #485, `docs/adr/099-…`.
   Gate: `task ledger:check`.
-- [ ] 4.2 Re-point the existing `defer-exclude` rows: `graph/embedding/http_embedder.go` to #489
+- [x] 4.2 Re-point the existing `defer-exclude` rows: `graph/embedding/http_embedder.go` to #489
   (`docs/admission-ledger.yaml:3752`, `:3756`) and `graph/query/classifier_llm_adapter.go` to #486 (`:3845`); and the
   `docs/repository-map.md:77-78` rows that name #32 as their home. Gate: `task ledger:check`, `task docs:check`.
-- [ ] 4.3 `graph/clustering/doc.go` and `README.md`; ADR-099 with its port note; ADR-085 port note; repository map
+- [x] 4.3 `graph/clustering/doc.go` and `README.md`; ADR-099 with its port note; ADR-085 port note; repository map
   and `docs/adr/` rows; the `entity-or-bucket` skill line; the setup plan's tier-0 line ("community grouping by
   entity-ID prefix", ruling 2026-10-31). Gate: `task docs:check`.
-- [ ] 4.4 `graph/clustering unit` in `scripts/cover-check.sh` and `d11Targets` in
+- [x] 4.4 `graph/clustering unit` in `scripts/cover-check.sh` and `d11Targets` in
   `internal/harness/toolcheck/cover_test.go`; the measured figure on the PR. Gate: `task cover:check`,
   `task test:tools`.
 

@@ -41,7 +41,8 @@ Nothing in SemEngine waits on it, and no value in it changes what a query return
 ## Keep it in ENTITY_STATES when
 
 1. The data is facts the graph should reason over.
-2. Graph queries or inference should see it.
+2. Graph queries or inference should see it. Community records (`COMMUNITY_INDEX`) are derived from entity IDs by
+   `graph/clustering` (grouping by ID prefix, not detection) and rebuilt from `ENTITY_STATES`; they are not facts.
 3. Several readers need one current state through their own interfaces. That state is not an audit trail:
    `ENTITY_STATES` keeps one revision per key (`graph/kvcatalog/kvcatalog.go`).
 4. You need no compare-and-set finer than graph-ingest's one write per entity.

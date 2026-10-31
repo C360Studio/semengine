@@ -25,7 +25,7 @@
 > - Tier 2 is not here. The LLM summaries and the content-addressed `COMMUNITY_SUMMARIES` store (ADR-087, not
 >   ported) belong to issue #485. The owner dropped `CommunitySummarizer` and `StatisticalSummarizer` from tier 0
 >   (2026-10-31); a record's `statistical_summary` is a one-line template over its counts.
-> - Not decided here: how `graph/query` reads these records during a tick, and the watch wiring in
+> - Not decided here: how `processor/graph-query` reads these records during a tick, and the watch wiring in
 >   `processor/graph-clustering` (change 7). The statement "zero shipped deployments consume the community index" is
 >   the pin's measurement, not this repository's.
 

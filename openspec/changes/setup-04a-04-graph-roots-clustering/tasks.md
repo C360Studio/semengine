@@ -54,7 +54,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 ## 5. Evidence and review
 
 - [ ] 5.1 `task verify` on a clean tree at the last commit before the archive commit; notes linked from a PR comment.
-- [ ] 5.2 Cross-agent review; `reviewed-by:` in the PR body, which addresses #9 with no closing keyword.
+- [x] 5.2 Cross-agent review; `reviewed-by:` in the PR body, which addresses #9 with no closing keyword.
+  Codex approved the code at `a6fad64` (PR #483 comment by the owner's Codex session, 2026-10-31T17:21Z); its one NIT
+  (ADR-099 port note names `processor/graph-query`) is fixed in the next commit.
 
 ## 6. Close
 

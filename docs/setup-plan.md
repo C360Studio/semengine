@@ -75,8 +75,8 @@ Every tier runs the same graph model and contracts. A tier is a capability level
 boundary exists only where a dependency can be lost at runtime. A deployment runs at the highest tier whose providers
 are available and degrades to the next lower tier when one is lost.
 
-- **Tier 0: no external provider.** Graph foundation, rules, entity workflows, settlement, clustering on explicit
-  edges, hierarchy inference, lexical BM25 (in process), change observation, and the operator surface.
+- **Tier 0: no external provider.** Graph foundation, rules, entity workflows, settlement, community grouping by
+  entity-ID prefix, hierarchy inference, lexical BM25 (in process), change observation, and the operator surface.
 - **Tier 1: an embedding provider is present.** Neural retrieval; losing the provider degrades to tier 0 with search
   intact.
 - **Tier 2: an LLM provider is present.** The slot is defined and empty at the MVP: clustering summaries, the
@@ -442,8 +442,8 @@ branch. SemSource has no no-embedder config, so the baseline is its structural t
 `tier0-statistical.json` at the pin. NATS remains required; no model service is needed. Compile-time imports beyond
 the admitted port set, including clustering, LLM, agentic, and rule packages, need a reviewed separation; any
 dormant bridge needs an owner and exit condition, not implicit higher-tier admission. Architect contract approval
-and independent evidence review unlock slice 04B. (Under the ruled scope, rules, entity workflows and clustering on
-explicit edges are tier 0; the SETUP 03B change records their rows.)
+and independent evidence review unlock slice 04B. (Under the ruled scope, rules, entity workflows and community grouping
+by entity-ID prefix are tier 0; the SETUP 03B change records their rows.)
 
 #### Slice 04B: tier-0 lexical — BM25 completes tier 0 (provisional)
 

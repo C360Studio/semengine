@@ -3749,11 +3749,11 @@
     (TestEmbeddingImportsNoProviderModule holds that). A product supplies its own Embedder
   dependencies_and_side_effects: none; excluded
   known_risks: >-
-    issue #32 owns the 04C tier-1 embedding provider and its fallback test; issue #35 (the file's port refactor) is
+    issue #489 owns the tier-1 HTTP embedding provider and its tier-0 fallback test; issue #35 (the file's port refactor) is
     retired by excluding it, owner ruling item 1 on PR #458 comment 6473224284. The pin's http_embedder_test.go and
     http_embedder_dimensions_test.go are excluded with it
   proving_tests: >-
-    internal/harness/contract (TestEmbeddingImportsNoProviderModule); the 04C fallback test is #32's
+    internal/harness/contract (TestEmbeddingImportsNoProviderModule); the fallback test is #489's
   owner: setup-04a-04-graph-roots-embedding developer
   disposition: defer-exclude
 
@@ -3842,7 +3842,7 @@
     classifier_llm_live_test.go go with it. A product supplies its own LLMClient
   dependencies_and_side_effects: none; excluded
   known_risks: >-
-    issue #32 owns the tier-1 provider work and is the home of this row
+    issue #486 owns the tier-2 LLM classifier adapter and is the home of this row
   proving_tests: >-
     internal/harness/contract (TestQueryImportsNoProviderModule)
   owner: setup-04a-04-graph-roots-query developer
@@ -3928,4 +3928,211 @@
     are dropped
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graphview technical writer
+  disposition: adapt
+
+# Change setup-04a-04-graph-roots-clustering (PR #483, epic #9): graph/clustering, the tier-0 community records
+# maintained incrementally from entity changes by entity-ID prefix (ADR-099), with ADR-099 (change 4, PR 9 of 9).
+
+- source_path: graph/clustering
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    tier-0 community grouping: one group per entity-ID prefix at three levels (ADR-099 as amended by ADR-102), kept
+    current from entity changes by a Maintainer and published as bounded records to COMMUNITY_INDEX.
+    processor/graph-clustering (change 7) drives the Maintainer from its ENTITY_STATES watch and reads every record
+    through GetAllCommunities (pin processor/graph-clustering/anomaly.go:342); processor/graph-query (item 9) and
+    products decode Community
+  destination: graph/clustering
+  contract: >-
+    The pin's types.go, storage.go and summarizer.go:388-490 (word extraction and the summary template, now terms.go)
+    adapted, plus the new maintainer.go (spec community-grouping; design D1-D5): (1) the partition is the entity-ID
+    prefix (level 0 org.platform.system.domain, 1 org.platform.system, 2 org.platform), maintained from changes; no
+    label propagation and no edge providers (ADR-099; owner ruling 2026-10-31, PR #483 comment 6543795826); (2)
+    Maintainer (NewMaintainer, Upsert, Delete, BootstrapDone, Tick) is new framework API: a delivery at or below an
+    entity's applied revision and revision 0 change nothing, a newer Upsert subtracts the old contribution, a refused
+    entity contributes nothing and Tick then returns *IncompleteError naming it, Tick returns ErrBootstrapIncomplete
+    before BootstrapDone, writes only records that differ from the last published, removes nothing until every write
+    succeeded, lists COMMUNITY_INDEX keys once (first tick) and reads nothing else from it, and a failure or an ended
+    context leaves the work pending; Upsert and Delete never wait on a Tick write; (3) Community is bounded by
+    construction (no member list, no membership hash, MaxKeywords 10 types and keywords, MaxRepEntities 5,
+    MaxEntityTerms 32, MaxWordBytes 32, encoded under MaxRecordBytes 8 KiB); words come only from string values, never
+    from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word;
+    kept words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records
+    {level}.{group ID}, lists keys through KVStore.Keys, and GetAllCommunities refuses a nil context, fails naming the
+    key on an unreadable entry or one that is not its key's record, and returns an ended context's error (pin skipped
+    unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not carried:
+    lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own row);
+    summarizer.go outside :388-490 (own row); enhancement_worker.go, summary_store.go, metrics.go (own rows, #485);
+    MembershipHash (storage.go:42-48, tier 2, #485), storage's triples, GetCommunity and the other unread storage
+    methods, NewNATSCommunityStorageWithConfig, CommunityStorageConfig (design D3, inventory § 8); the pin's doc.go
+    and README.md are rewritten for the package, and TRIPLE_TESTS_SUMMARY.md is not carried
+  dependencies_and_side_effects: >-
+    graph, natsclient, pkg/errs, pkg/types (in-set); nats.go/jetstream through natsclient. No goroutine, no
+    Prometheus, no provider module. Writes, removes and lists keys of COMMUNITY_INDEX through the injected KVStore;
+    creates no bucket, stream or consumer; holds no ENTITY_STATES handle
+  known_risks: >-
+    The precondition that each key's deliveries arrive in increasing revision order is change 7's, from one ordered
+    watch, not a library promise. Keywords are the top words over capped per-entity contributions: a word outside
+    every member's top 32 cannot be a keyword. Tick's cost per changed group is paid while Upsert and Delete wait.
+    Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the fixture's server image
+    (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's consistency contract
+    during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config keys. semboids'
+    member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #32, #68, #141, #477
+  proving_tests: >-
+    graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
+    TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go;
+    maintainer_test.go (TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
+    TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,
+    TestFirstTickFailedPublicationKeepsOldRecords, TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick,
+    TestRetainedWordsDoNotPinInput, TestUpsertDuringBlockedWrite, TestTickReportsCancel,
+    TestRepresentativesWithoutScan, TestTickCost); maintainer_prop_test.go (TestMaintainerMatchesModel,
+    TestHistoryOrderIrrelevant); storage_integration_test.go (TestGetAllCommunitiesFailsOnCorruptEntry,
+    TestGetAllReportsCancel); maintainer_integration_test.go (TestUnchangedRecordAddsNoRevision,
+    TestKVRevisionStartsAtOne); maintainer_product_integration_test.go (TestMaintainerAsAProduct); notes/2.2.md, 2.3.md
+    and 3.4.md of the change record the mutation checks
+  owner: setup-04a-04-graph-roots-clustering developer; docs by setup-04a-04-graph-roots-clustering technical writer
+  disposition: adapt
+
+- source_path: graph/clustering/summarizer.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's summarizers. Lines 388-490 (the summary template and word extraction) are carried into
+    graph/clustering/terms.go under the package row; the rest has no tier-0 consumer
+  destination: none
+  contract: >-
+    not ported outside :388-490. CommunitySummarizer and StatisticalSummarizer (:27-129, :165-387) with BuildCorpusDF
+    leave tier 0 (owner ruling 2026-10-31: "Drop it; tier 2 (#485) brings back what it needs", PR #483 comment
+    6543960797, superseding the 2026-10-24 ruling that the interface stays); LLMSummarizer and ProgressiveSummarizer
+    (:499-863), which import graph/llm, go to tier 2. The pin's summarizer_test.go goes with them
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    issue #485 (epic #484) owns the tier-2 summary lane and brings back what it needs (#485 comment 6543961011)
+  proving_tests: n/a (excluded; graph/clustering imports no graph/llm)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/enhancement_worker.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's LLM summary worker (watches COMMUNITY_INDEX, writes COMMUNITY_SUMMARIES), a tier-2 capability; no
+    tier-0 consumer
+  destination: none
+  contract: >-
+    not ported; the pin's enhancement_worker_test.go and enhancement_worker_race_integration_test.go go with it
+  dependencies_and_side_effects: none; excluded
+  known_risks: issue #485 (epic #484) owns the tier-2 summary lane (owner ruling 2026-10-31)
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/summary_store.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's COMMUNITY_SUMMARIES store for LLM summaries, a tier-2 capability; no tier-0 consumer
+  destination: none
+  contract: >-
+    not ported; the pin's summary_store_integration_test.go goes with it
+  dependencies_and_side_effects: none; excluded
+  known_risks: issue #485 (epic #484) owns the tier-2 summary lane and ADR-087 (owner ruling 2026-10-31)
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/metrics.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's Prometheus metrics, read only by the enhancement worker; no tier-0 consumer
+  destination: none
+  contract: not ported; graph/clustering registers no collector
+  dependencies_and_side_effects: none; excluded
+  known_risks: issue #485 (epic #484) owns the tier-2 summary lane (owner ruling 2026-10-31)
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/lpa.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's label propagation detector, which ADR-099 removes: the community partition is derived from entity
+    identity
+  destination: none
+  contract: >-
+    not ported; no label propagation, ever (owner ruling 2026-10-31, PR #483 comment 6543795826). The pin's lpa_*_test.go
+    files go with it
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    ADR-099 (docs/adr/099-community-partition-derived-from-entity-identity.md) is the home of this row. A detection
+    overlay over chosen relationship predicates is a later change with its own gates (design D6)
+  proving_tests: n/a (excluded; graph/clustering groups by prefix, TestMaintainerAsAProduct)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/entityid_provider.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's entity-ID sibling edge provider for label propagation, removed with detection by ADR-099
+  destination: none
+  contract: not ported; the pin's entityid_provider_test.go goes with it
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    ADR-099 (docs/adr/099-community-partition-derived-from-entity-identity.md) is the home of this row
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/semantic_edge_provider.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's similarity edge provider for label propagation, removed with detection by ADR-099
+  destination: none
+  contract: >-
+    not ported; the pin's semantic_edge_provider_test.go, semantic_edge_cache_test.go and
+    semantic_edge_activation_test.go go with it
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    ADR-099 (docs/adr/099-community-partition-derived-from-entity-identity.md) is the home of this row
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/pagerank.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's PageRank over detected communities; its only reader was the statistical summarizer's representative
+    choice (summarizer.go:235). Representatives are now the lexically smallest text-bearing members
+  destination: none
+  contract: not ported; the pin's pagerank_test.go goes with it
+  dependencies_and_side_effects: none; excluded
+  known_risks: >-
+    ADR-099 (docs/adr/099-community-partition-derived-from-entity-identity.md) is the home of this row (design D1)
+  proving_tests: n/a (excluded; TestRepresentativesWithoutScan proves the representatives)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: graph/clustering/provider.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's graph and query-manager providers for detection; no reader anywhere, and
+    NewQueryManagerProvider(nil).GetAllEntityIDs fails on every call (provider.go:53-67, inventory P4)
+  destination: none
+  contract: not ported; dead at the pin
+  dependencies_and_side_effects: none; excluded
+  known_risks: none; no reader (design D1)
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-clustering developer
+  disposition: defer-exclude
+
+- source_path: docs/adr/099-community-partition-derived-from-entity-identity.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record that the community partition is derived from entity identity and detection is
+    removed, which graph/clustering implements (SemStreams never carried it out); carried with the clustering port
+  destination: docs/adr/099-community-partition-derived-from-entity-identity.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's decision text; a port note added under the title says its base partition is applied, kept
+    current from changes, with levels as amended by ADR-102, and that label propagation and edge synthesis are not
+    carried (design D6)
+  proving_tests: n/a (task docs:check lints it); the partition is proved by TestMaintainerAsAProduct
+  owner: setup-04a-04-graph-roots-clustering technical writer
   disposition: adapt

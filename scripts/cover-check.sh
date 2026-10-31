@@ -55,6 +55,9 @@ readonly targets=(
   # setup-04a-04-graph-roots-graphview task 4.3: pkg/graphview is on the 03B critical list (03B design D10); its
   # unit lane runs the fake source in synctest and alone holds the floor.
   "pkg/graphview unit"
+  # setup-04a-04-graph-roots-clustering task 4.4 (design D5, floor 80%): the unit lane (counting fake bucket, Rapid
+  # histories) holds the floor alone.
+  "graph/clustering unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

@@ -14,7 +14,14 @@
 > - Decision 5 is kept: `pkg/graphview` has `Applied()` and the snapshot pair `Snapshot.Revision` and
 >   `Snapshot.AppliedAt`, and no `graphview` API gates on them. The package changed two things Decision 5 does not
 >   mention: `Start` and `Stop` became `Run(ctx)`, and ending `Run`'s context is a stop, not a watcher loss.
-> - Apart from `pkg/graphview`, none of the code named here is ported: `processor/graph-clustering`,
+> - Decision 7 is kept in `graph/clustering` (change `setup-04a-04-graph-roots-clustering`, draft PR #483):
+>   `Maintainer.Tick` writes every changed group record first and removes records (groups that became empty, and on
+>   the first tick the keys of groups that do not exist) only after every write succeeded, so a reader of the bucket
+>   sees old records, never an empty index. One difference: a failed removal makes `Tick` return an error and the
+>   removal stays pending for the next `Tick`; it does not end the run with the superset standing as the pin's
+>   prune did. The cache keyed by `(level, ID)` is `processor/graph-query`'s and is not ported yet. The bucket key
+>   `{level}.{prefix}` already carries the level.
+> - Apart from `pkg/graphview` and `graph/clustering`, none of the code named here is ported: `processor/graph-clustering`,
 >   `processor/graph-index`, `processor/graph-query`, `graph/query`'s client (retired before the pin), `pkg/fusion`,
 >   and the types and functions named with them (`EvaluateReadinessGate`, `IndexStatusResponse`,
 >   `readiness.MinBoundedStaleness`, `LPADetector`, `CommunityCache`).

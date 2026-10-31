@@ -4,58 +4,89 @@
 
 ### Requirement: A community is an entity-ID prefix
 
-`clustering.Partitioner.Refresh(ctx)` SHALL read every stored entity through graph-ingest's `prefix` verb and place
-each in exactly one group per level: at level 0 the group of its four-position prefix, at level 1 its three-position
-source prefix, at level 2 its two-position deployment prefix. A group's ID SHALL be that prefix. A group with one
-member SHALL get a record.
+`clustering.Maintainer` SHALL place each applied entity in exactly one group per level: at level 0 the group of its
+four-position prefix `org.platform.system.domain`, at level 1 its source prefix `org.platform.system`, at level 2 its
+deployment prefix `org.platform`. A group's ID SHALL be that prefix.
 
 #### Scenario: Three levels
 
-- **WHEN** `Refresh` runs over entities from two sources of one deployment
-- **THEN** level 0 holds one group per four-position prefix, level 1 one group per source, level 2 one group
-- **AND** the tests that verify this are `TestGroupsArePrefixes` and `TestPartitionMatchesModel`
+- **WHEN** entities from two sources of one deployment are applied and a tick runs
+- **THEN** level 0 holds one record per four-position prefix, level 1 one per source, level 2 one
+- **AND** the test that verifies this is `TestMaintainerMatchesModel`
 
-#### Scenario: A singleton
+### Requirement: Applying a change depends only on the latest revision
 
-- **WHEN** one entity is alone under its four-position prefix
-- **THEN** it has a level-0 group of one
-- **AND** the test that verifies this is `TestSingletonRecorded`
+The maintainer SHALL keep each entity's last-applied revision and contribution. An `Upsert` or `Delete` at or below
+that revision SHALL change nothing. A newer `Upsert` SHALL replace the entity's contribution, and a `Delete` SHALL
+remove it and keep its revision so that an older `Upsert` arriving later changes nothing. The published records after
+any history SHALL equal those computed from the final entity values alone.
 
-### Requirement: An incomplete refresh is an error
+#### Scenario: Two histories, one final state
 
-When an entity ID the canonical parser refuses is left out of every group, or removing the records of vanished
-groups fails, `Refresh` SHALL return the partition together with a non-nil `*clustering.IncompleteError` naming the
-skipped IDs and carrying the removal error. A nil error SHALL mean the refresh was complete.
+- **WHEN** two shuffled histories of upserts, deletes and obsolete deliveries end with the same entity values
+- **THEN** the published records are byte-identical
+- **AND** the tests that verify this are `TestHistoryOrderIrrelevant` and `TestMaintainerMatchesModel`
+
+#### Scenario: A late older upsert after a delete
+
+- **WHEN** an entity is deleted at revision 9 and an upsert at revision 7 arrives afterwards
+- **THEN** the entity stays absent from every group
+- **AND** the test that verifies this is `TestTombstoneBlocksOlderUpsert`
+
+### Requirement: Refused entities are reported
+
+`Upsert` SHALL return an invalid error naming the entity for a nil state, an ID the canonical parser refuses, or a
+state whose ID differs from the given one, and the entity SHALL contribute nothing. While any entity stays refused, a
+tick that otherwise publishes everything SHALL return a `*clustering.IncompleteError` naming the refused IDs.
 
 #### Scenario: An unparseable ID
 
-- **WHEN** one stored entity's ID does not parse
-- **THEN** that entity is in no group, the other groups are written, and `errors.As` on the returned error finds an
-  `*IncompleteError` naming the ID
-- **AND** the test that verifies this is `TestUnparseableIDIsAnError`
+- **WHEN** an entity with an unparseable ID is upserted and a tick runs
+- **THEN** `Upsert` returns an error, and `Tick` publishes the other groups and returns an `*IncompleteError` naming it
+- **AND** the test that verifies this is `TestRefusedEntityMakesTickIncomplete`
 
-#### Scenario: Removal fails
+### Requirement: Nothing is published before bootstrap completes
 
-- **WHEN** every write succeeds and removing a vanished group's record fails
-- **THEN** `Refresh` returns the partition and an `*IncompleteError` that unwraps to the removal error
-- **AND** the test that verifies this is `TestPruneFailureIsAnError`
+`Tick` SHALL return an error and write nothing when its context is nil, and SHALL return
+`clustering.ErrBootstrapIncomplete` and write nothing until `BootstrapDone` has been called.
 
-### Requirement: Partitioner refuses missing inputs
+#### Scenario: Tick during replay
 
-`clustering.NewPartitioner` SHALL return an error when its requester, storage or summarizer is nil, and `Refresh`
-SHALL return an error and read and write nothing when its context is nil.
+- **WHEN** `Tick` runs before `BootstrapDone`
+- **THEN** it returns `ErrBootstrapIncomplete` and `COMMUNITY_INDEX` is unchanged
+- **AND** the test that verifies this is `TestTickBeforeBootstrap`
 
-#### Scenario: Nil context
+### Requirement: A tick publishes only what changed
 
-- **WHEN** `Refresh` is called with a nil context
-- **THEN** it returns an error and reads and writes nothing
-- **AND** the test that verifies this is `TestRefreshRefusesNilContext`
+After the first tick following bootstrap, a tick SHALL read no value from `COMMUNITY_INDEX` or `ENTITY_STATES`, SHALL
+write only records of groups touched by changes applied since their last successful publication and whose record
+differs from the one last published, and SHALL remove the records of groups that became empty. A write or removal
+failure SHALL make `Tick` return an error and leave those groups pending for the next tick.
+
+#### Scenario: k changed entities
+
+- **WHEN** k entities change after bootstrap and a tick runs
+- **THEN** the storage sees no read and writes only the groups those k entities belong to
+- **AND** the test that verifies this is `TestTickCost`
+
+#### Scenario: Unchanged graph
+
+- **WHEN** a tick runs with no change since the last
+- **THEN** nothing is written and no revision is added to `COMMUNITY_INDEX`
+- **AND** the tests that verify this are `TestTickCost` and `TestUnchangedRecordAddsNoRevision`
+
+#### Scenario: A write fails
+
+- **WHEN** a record write fails during a tick
+- **THEN** `Tick` returns an error and the next tick writes that record
+- **AND** the test that verifies this is `TestFailedWriteRetried`
 
 ### Requirement: A group record is bounded
 
-A group record SHALL hold its level, ID, member count, `clustering.MembershipHash` of its members, keywords, a
-statistical summary and at most `clustering.MaxRepEntities` representative entity IDs, and SHALL NOT hold the member
-list, so its size does not grow with the group.
+A group record SHALL hold its level, ID, member count, the most frequent types, at most `clustering.MaxKeywords`
+keywords, a summary, and at most `clustering.MaxRepEntities` representative IDs, and SHALL NOT hold the member list.
+Keywords SHALL be the group's own most frequent terms with lexical tie-breaks, so a change outside the group never
+changes them.
 
 #### Scenario: A large group
 
@@ -63,44 +94,16 @@ list, so its size does not grow with the group.
 - **THEN** its record is written and holds no member IDs beyond its representatives
 - **AND** the test that verifies this is `TestRecordIsBounded`
 
-### Requirement: The community index is rebuilt on change, never emptied first
+### Requirement: A product can maintain the index
 
-A refresh SHALL NOT write a record equal to the stored one, SHALL write every changed record before removing
-anything, and SHALL then remove the records of groups that no longer exist. Any read or write failure SHALL make
-`Refresh` return an error and no partition, and remove nothing.
+A product SHALL be able to build a `Maintainer` over a `NATSCommunityStorage`, feed it entity changes, and publish
+`COMMUNITY_INDEX` with no other SemEngine component.
 
-#### Scenario: Unchanged graph
+#### Scenario: From outside the package
 
-- **WHEN** two refreshes run over the same entities
-- **THEN** the second adds no revision to `COMMUNITY_INDEX`
-- **AND** the tests that verify this are `TestUnchangedRecordNotRewritten` and `TestUnchangedRefreshAddsNoRevision`
-
-#### Scenario: A write fails
-
-- **WHEN** one changed record cannot be written
-- **THEN** `Refresh` returns an error and no record is removed
-- **AND** the test that verifies this is `TestWriteFailureRemovesNothing`
-
-### Requirement: Each entity state is read once per refresh
-
-A refresh SHALL read each stored entity's state at most once, whatever the number of levels and pages.
-
-#### Scenario: Several pages, three levels
-
-- **WHEN** `Refresh` runs over N entities served across several prefix pages
-- **THEN** each entity is delivered and used exactly once
-- **AND** the test that verifies this is `TestEachStateReadOnce`
-
-### Requirement: A product can run a refresh
-
-A product composing graph-ingest SHALL be able to construct a `Partitioner` from a NATS client, a
-`NATSCommunityStorage` and a `StatisticalSummarizer` and refresh `COMMUNITY_INDEX` with no other SemEngine component.
-
-#### Scenario: Refresh from outside the package
-
-- **WHEN** a test in package `clustering_test` stores entities through graph-ingest and calls `Refresh`
+- **WHEN** a test in package `clustering_test` applies entity changes, calls `BootstrapDone` and `Tick`
 - **THEN** `COMMUNITY_INDEX` holds one record per group at each level
-- **AND** the test that verifies this is `TestRefreshAsAProduct`
+- **AND** the test that verifies this is `TestMaintainerAsAProduct`
 
 ### Requirement: Community storage fails closed
 
@@ -119,15 +122,3 @@ SHALL give no records and no error.
 - **WHEN** the context ends during `Prune` or during `GetAllCommunities`
 - **THEN** each returns the context's error
 - **AND** the tests that verify this are `TestPruneReportsCancel` and `TestGetAllReportsCancel`
-
-### Requirement: A summary is a function of its members and corpus
-
-`StatisticalSummarizer` SHALL return the same keywords, representative entities and summary text, in the same order,
-for the same member entities and the same corpus statistics.
-
-#### Scenario: Tied scores
-
-- **WHEN** a group's entities give two terms the same score and its summary is computed 200 times with the same
-  corpus statistics
-- **THEN** every result is identical
-- **AND** the test that verifies this is `TestSummaryDeterministic`

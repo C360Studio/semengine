@@ -9,7 +9,8 @@ written `pin:<path>:<line>`, read from `git archive 8b99efe9` into `/tmp/cl-pin`
 `8c03cc53836ced93a5df7064473c63ff144e64f1` (the SHA SETUP 03B cites) read for "the workload it drives"
 (`docs/inventory-scope.md`, semboids row).
 
-Status: round 3 (`INVENTORY PASS` at `5c2f610`; § 1 gains the admitted reads, § 12 the semboids record read and its
+Status: round 4 adds § 13, the premises of the 2026-10-31 rulings; §§ 1-12 are unchanged since `INVENTORY PASS`.
+Round 3 (`INVENTORY PASS` at `5c2f610`; § 1 gains the admitted reads, § 12 the semboids record read and its
 scope). Round 2 (round 1 `INVENTORY CHANGES REQUESTED` at `180741d`: the ADR-099 row quotes its deciding clauses;
 semsource's level use measured; SummaryStatus, e2e readers, two shape findings and the consumer scope corrected).
 Round 1 was inventory only. The design (`design.md`) is drafted beside it at the orchestrator's request and is
@@ -105,7 +106,7 @@ each issue the brief named, read in full with comments.
 
 | Issue | Names it at | Disposition (design § D7) |
 | --- | --- | --- |
-| #32 capability seam | body edit and 2026-10-24 ruling comment: `graph/clustering/summarizer.go` from `:499` | stays: home of the excluded tier-2 files; this PR adds `defer-exclude` rows naming it |
+| #32 capability seam | body edit and 2026-10-24 ruling comment: `graph/clustering/summarizer.go` from `:499` | stays: since 2026-10-31 only the provider plumbing; the clustering tier-2 rows name #485 (§ 13) |
 | #68 metric `sync.Once` | 2026-10-24 drift comment: `graph/clustering/metrics.go:43-71` | stays: `metrics.go` is tier-2-only (read only by the worker), excluded |
 | #141 `UpdateWithRetryRead` adoption | body: `graph/clustering/summary_store.go:179` (also ADR-110 D7) | stays: `summary_store.go` excluded |
 | #477 `pkg/graphview` adoption | body: `graph/clustering` `enhancement_worker.go:239` | stays: worker excluded; the site moves with #32 |
@@ -303,6 +304,27 @@ semboids' test implements `CommunityStorage` and runs `NewLPADetector` on two cl
    query for a level that is not a hierarchy returns a partition with no stated meaning (P2), silently.
 3. Where they find out: interface shrink, compile error for callers of removed methods; level meaning, nowhere.
 4. What they should know: the provider contract only; level meaning should be a refusal, not a doc.
+
+## 13. Round 4 premises (rulings of 2026-10-31)
+
+- Watch precedent for change 7: graph-index declares its `ENTITY_STATES` input as a KV watch port
+  (`processor/graph-index/config.go:136` — `{Name: "entity_watch", Config: component.KVWatchPort{Bucket:
+  graph.BucketEntityStates}}`) and runs it through `graph/follower`, whose `Entry` carries `Key`, `Revision` and
+  `Deleted` (`graph/follower/follower.go:46-51`) and whose `Deliver` is called in delivery order on one goroutine
+  (`:67-69`). The maintainer's `Upsert`/`Delete` take exactly those facts.
+- ID bound: `MaxEntityIDBytes = 256` (`pkg/types/entity_id.go:13`), checked by the canonical parser (`:197`).
+- Position order: `TaxonomyPrefix` returns `org.platform.system.domain` (`pkg/types/entity_id.go:279-281`),
+  `SourcePrefix` `org.platform.system` (`:274-276`), `DeploymentPrefix` `org.platform` (`:268-270`). ADR-099's own text
+  at the pin says "level 0 = system (4 parts), 1 = domain (3)" (`pin:docs/adr/099-…:25`); ADR-102 amends that phrase
+  (`docs/adr/102-entity-id-segment-semantics.md:55`), and the change follows ADR-102.
+- Corpus document frequency at the pin exists to stop common predicates and type parts crowding out distinctive
+  keywords (`pin:graph/clustering/lpa.go:326-333`); the ruling drops it so one entity cannot re-rank every group.
+- Key-scan cost of graph-ingest's `prefix` verb: "the server fetches ALL keys matching the prefix, sorts them, then
+  slices the requested page" (`graph/query_prefix_types.go:30-33`); held for item 9.
+- Tier tracker (owner, 2026-10-31): epic #484; #485 LLM community summaries (every clustering tier-2 item, including
+  `MembershipHash`); #486 classifier LLM adapter; #487 answer synthesis; #488 inference review worker; #489 HTTP
+  embedder (epic #11). #32 keeps only `graph/llm`, `model/wire`, `go-openai`. Existing ledger rows to re-point:
+  `docs/admission-ledger.yaml:3741` (`graph/embedding/http_embedder.go`), `:3833` (`graph/query/classifier_llm_adapter.go`).
 
 ## Intent check
 

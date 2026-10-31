@@ -15,8 +15,9 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   rulings; each scenario names its test. Gate: `task spec:check`.
 - [x] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.
   Gate: the comment read back. Posted as PR #483 comment 6546125383.
-- [ ] 1.4 Comment on #68, #141 and #477 that their `graph/clustering` site leaves with the tier-2 lane to #485, no
-  closing keyword. Gate: each comment read back.
+- [x] 1.4 Comment on #68, #141 and #477 that their `graph/clustering` site leaves with the tier-2 lane to #485, no
+  closing keyword. Gate: each comment read back. Posted 2026-10-31 (#68 comment 6547121788, #141 6547122059,
+  #477 6547122377).
 
 ## 2. Tests first
 
@@ -53,12 +54,13 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 5. Evidence and review
 
-- [ ] 5.1 `task verify` on a clean tree at the last commit before the archive commit; notes linked from a PR comment.
+- [x] 5.1 `task verify` on a clean tree at the last commit before the archive commit; notes linked from a PR comment.
+  Passed at `ba0ce3d` (PR #483 comment 6546774480).
 - [x] 5.2 Cross-agent review; `reviewed-by:` in the PR body, which addresses #9 with no closing keyword.
   Codex approved the code at `a6fad64` (PR #483 comment by the owner's Codex session, 2026-10-31T17:21Z); its one NIT
-  (ADR-099 port note names `processor/graph-query`) is fixed in the next commit.
+  (ADR-099 port note names `processor/graph-query`) is fixed in `ba0ce3d`.
 
 ## 6. Close
 
-- [ ] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-clustering`) as the last content commit, syncing
+- [x] 6.1 Archive (`openspec archive setup-04a-04-graph-roots-clustering`) as the last content commit, syncing
   `community-grouping` into `openspec/specs/`. Gate: `task spec:check` and `task docs:check` on the archive commit.

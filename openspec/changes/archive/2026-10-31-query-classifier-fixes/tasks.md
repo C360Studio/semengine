@@ -58,14 +58,16 @@ commit (#171). One task is one developer's unit.
 
 ## 8. Evidence and review
 
-- [ ] 8.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a
-  PR comment.
-- [ ] 8.2 Cross-agent review; `reviewed-by:` in the PR body; body says `Closes #94`, `Closes #95`, `Closes #96`,
-  `Closes #478`, and names #479 without a closing keyword.
-- [ ] 8.3 Comment on #479 that PR #480 at head `<SHA>` (the reviewed head) carries items 1 and 2, and that
-  item 3 stays with change 4 PR 9. Read back.
+- [x] 8.1 `task verify` passes on a clean tree at the last commit before the archive commit; notes linked from a
+  PR comment. Passed at `2ed5cb1` (pinned ateam v0.3.4); notes linked from PR #480 comments 6529796160 and
+  6532788243.
+- [x] 8.2 Cross-agent review; `reviewed-by:` in the PR body; body says `Closes #94`, `Closes #95`, `Closes #96`,
+  `Closes #478`, and names #479 without a closing keyword. Codex approved sections 2-4 at `3587d01` and 5-6 at
+  `0530c69` (PR #480); the final record names the archive head.
+- [x] 8.3 Comment on #479 that PR #480 at head `<SHA>` (the reviewed head) carries items 1 and 2, and that
+  item 3 stays with change 4 PR 9. Read back. Posted as #479 comment 6542682571 at `2ed5cb1`.
 
 ## 9. Close
 
-- [ ] 9.1 Archive (`openspec archive query-classifier-fixes`) as the last content commit, syncing
+- [x] 9.1 Archive (`openspec archive query-classifier-fixes`) as the last content commit, syncing
   `query-classification`. Gate: `task spec:check`, `task docs:check`.

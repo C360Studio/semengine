@@ -11,7 +11,7 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
   Owner accepted 2026-10-31 (proposal `Approved-by:`).
   Codex approved the design at `4cf1520` (PR #483 comment 6544356482); its two MEDIUM wording notes are fixed in the
   next commit.
-- [ ] 1.2 The `community-grouping` spec delta (`specs/community-grouping/spec.md`), written to the 2026-10-31
+- [x] 1.2 The `community-grouping` spec delta (`specs/community-grouping/spec.md`), written to the 2026-10-31
   rulings; each scenario names its test. Gate: `task spec:check`.
 - [ ] 1.3 Post the pin probes P1-P4 (inventory, Pin probe) on PR #483 with source, command, versions and output.
   Gate: the comment read back.

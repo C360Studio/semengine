@@ -69,7 +69,8 @@ tick that otherwise publishes everything SHALL return a `*clustering.IncompleteE
 
 ### Requirement: A tick publishes only what changed
 
-After the first tick following bootstrap, a tick SHALL read nothing from `COMMUNITY_INDEX`, SHALL write only records of
+Once the first tick after bootstrap has listed the existing keys successfully, a tick SHALL read nothing from
+`COMMUNITY_INDEX`; a failed listing stays pending and is retried on the next tick. A tick SHALL write only records of
 groups touched since their last successful publication whose record differs from the one last published, and SHALL
 remove the records of groups that became empty.
 

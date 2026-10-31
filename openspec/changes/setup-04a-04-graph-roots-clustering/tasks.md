@@ -20,19 +20,19 @@ passes on a clean tree at its commit (#171). One task is one developer's unit.
 
 ## 2. Tests first
 
-- [ ] 2.1 Port the pin's storage tests and term-extraction tests off the nil-KV store; tests of surface not carried
+- [x] 2.1 Port the pin's storage tests and term-extraction tests off the nil-KV store; tests of surface not carried
   are dropped, each named in `notes/2.1.md`. Gate: in 3.3.
-- [ ] 2.2 The unit tests of design D5, each shown failing against a wrong change named in `notes/2.2.md`. Gate: in
+- [x] 2.2 The unit tests of design D5, each shown failing against a wrong change named in `notes/2.2.md`. Gate: in
   3.3.
-- [ ] 2.3 `TestMaintainerMatchesModel` and `TestHistoryOrderIrrelevant` (design D5): seed, run count, completed checks
+- [x] 2.3 `TestMaintainerMatchesModel` and `TestHistoryOrderIrrelevant` (design D5): seed, run count, completed checks
   in `notes/2.3.md`. Gate: in 3.3.
-- [ ] 2.4 `TestTickCost` and the integration tests of design D5 on `natsfixture`. Gate: in 3.3.
+- [x] 2.4 `TestTickCost` and the integration tests of design D5 on `natsfixture`. Gate: in 3.3.
 
 ## 3. The package
 
-- [ ] 3.1 `types.go`, `storage.go` (design D3, D4). Gate: `go build ./graph/clustering`.
-- [ ] 3.2 `terms.go` (design D1). Gate: `go build ./graph/clustering`.
-- [ ] 3.3 `maintainer.go` (design D2). Gate: `go test -race -count=1 ./graph/clustering`,
+- [x] 3.1 `types.go`, `storage.go` (design D3, D4). Gate: `go build ./graph/clustering`.
+- [x] 3.2 `terms.go` (design D1). Gate: `go build ./graph/clustering`.
+- [x] 3.3 `maintainer.go` (design D2). Gate: `go test -race -count=1 ./graph/clustering`,
   `go test -count=5 -cpu 1 -shuffle=on ./graph/clustering`, `task test:integration -- ./graph/clustering`.
 - [ ] 3.4 Mutation checks of design D5 (`task mutate:check`), in `notes/3.4.md`, survivors reported as survivors.
   Gate: each named test fails on its mutant.

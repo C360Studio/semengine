@@ -72,7 +72,7 @@ func TestIsKVConflictErrorClassifiesByType(t *testing.T) {
 			Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequence, Description: "wrong last sequence: 3",
 		}},
 		// A replicated stream reports a CAS conflict as 10164, "wrong last sequence",
-		// which the pin's text match also read (nats.go v1.54.0 jetstream/errors.go:61-64).
+		// which the pin's text match also read (nats.go v1.55.0 jetstream/errors.go:62-65).
 		{"APIError 10164", &jetstream.APIError{
 			Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequenceConstant, Description: "wrong last sequence",
 		}},

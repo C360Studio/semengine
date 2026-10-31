@@ -19,7 +19,7 @@ const DrainBudget = 5 * time.Second
 var ErrDeliveryOpen = errors.New("kvwatch: the watch's delivery did not close after Stop")
 
 // Stop stops the watch and drains its updates until nats.go closes the channel, for at most
-// DrainBudget after ctx, the caller's, has ended. Entries read here are dropped. At nats.go v1.54.0
+// DrainBudget after ctx, the caller's, has ended. Entries read here are dropped. At nats.go v1.55.0
 // Stop only unsubscribes: a delivery already blocked on the full updates buffer ends only when the
 // buffer is read, and the channel closes after it, so on that path returning is a join
 // (graph/follower's TestFollowerRunReturnsAndLeavesNothing drives it with a backlogged watch). The

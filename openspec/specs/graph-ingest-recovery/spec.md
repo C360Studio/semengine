@@ -337,7 +337,7 @@ delivery did not close after `Stop`, so `Start` fails (#456).
 
 #### Scenario: The snapshot watch's delivery never closes
 
-- **WHEN** the sweep stops its watch and the update channel stays open, as at nats.go v1.54.0 when the watch's
+- **WHEN** the sweep stops its watch and the update channel stays open, as at nats.go v1.55.0 when the watch's
   context ends, or its connection closes, after nats.go subscribes and before it installs the handler that closes the
   channel (no goroutine is then left to join; on every other path the wait ends when nats.go's delivery ends)
 - **THEN** the sweep returns, after 5 s of its clock, a transient error saying the delivery did not close after

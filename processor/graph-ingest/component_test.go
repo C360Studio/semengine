@@ -80,8 +80,8 @@ func (m *mockKVBucket) Get(ctx context.Context, key string) (jetstream.KeyValueE
 	return nil, jetstream.ErrKeyNotFound
 }
 
-// errWrongLastSequence is a CAS refusal as nats.go v1.54.0 returns it from Update and
-// from Delete with LastRevision (jetstream/kv.go:1109-1114): the server's API error,
+// errWrongLastSequence is a CAS refusal as nats.go v1.55.0 returns it from Update and
+// from Delete with LastRevision (jetstream/kv.go:1110-1115): the server's API error,
 // code 10071, wrapping jetstream.ErrKeyRevisionMismatch. natsclient reads the code,
 // never the text (#146).
 func errWrongLastSequence() error {

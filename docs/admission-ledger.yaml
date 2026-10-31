@@ -42,7 +42,7 @@
     an error; Stop once, replayed
   dependencies_and_side_effects: >-
     testcontainers-go v0.44.0 (upstream pins v0.40.0, whose docker/docker client carries two unfixed
-    advisories) and nats.go v1.54.0; creates a container per fixture; writes evidence files
+    advisories) and nats.go v1.55.0; creates a container per fixture; writes evidence files
   known_risks: >-
     production package imported testing/testcontainers upstream (not carried); mutable tag pin upstream
     (replaced by digest); eleven caller knobs upstream (dropped)
@@ -957,12 +957,12 @@
     ClosedHandler has returned) and the async publish error handler have finished, on every Close
     path, except an async publish error handler invocation that starts after the join completed,
     which runs unjoined because nats.go gives that goroutine no end signal (reply-subscription
-    callback at a forced close, resetPendingAcksOnReconnect, jetstream/publish.go:607-624) and is
+    callback at a forced close, resetPendingAcksOnReconnect, jetstream/publish.go:565-593 at nats.go v1.55.0) and is
     safe because it then only counts the publish_async metric and logs at debug level; the client
-    observes handler ends itself because nats.go v1.54.0 force-closes without
-    waiting (nats.go:6196-6227), ends a drain after its timeout with a callback running (:6349-6372,
-    :6389-6390), and its consumer Closed() closes at once for an invalid subscription
-    (jetstream/pull.go:822-837); a delivery handed over after the client recorded its consumer's or
+    observes handler ends itself because nats.go v1.55.0 force-closes without
+    waiting (nats.go:6284-6315), ends a drain after its timeout with a callback running (:6437-6465,
+    :6490-6491), and its consumer Closed() closes at once for an invalid subscription
+    (jetstream/pull.go:855-870); a delivery handed over after the client recorded its consumer's or
     subscription's end does not run the handler (ack explicit or all: left unacknowledged for
     redelivery; AckNone and core: lost, as the buffered messages the native library discards at the
     same moment are, nats.go:3801-3803, :3817-3828), is logged at warn level and is counted as
@@ -1042,8 +1042,8 @@
     jetstream.New's error, dropped at the pin
     (:525), is returned by Connect
     with the dialled connection closed (:747-756); no failing-first test exists, because nats.go
-    v1.54.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never
-    does (jetstream/jetstream.go:471-492, jetstream_options.go:41-46).
+    v1.55.0 jetstream.New fails only when an option does and WithPublishAsyncErrHandler never
+    does (jetstream/jetstream.go:475-496, jetstream_options.go:41-46).
     (13) natsclient-subscribe-registers-interest (#144, the class:flake issue; owner ruling 2026-10-09,
     fix it once in natsclient's subscribe, design accepted in PR #156 comments 6085722854 and
     6091034659, in place of the round trip in graph-ingest's Start that #144 comment 6083704443 ruled):
@@ -1104,7 +1104,7 @@
     *jetstream.APIError with code 10071, 10164 or 10058; the pin also matched the text "wrong last sequence",
     "10071", "key exists" and "10058" (kv.go:716-720). 10164 is the code a replicated stream reports for a
     wrong last sequence, with the server description "wrong last sequence" the pin's text match read (nats.go
-    v1.54.0 jetstream/errors.go:61-64). An error whose text alone holds one of those strings, such as a
+    v1.55.0 jetstream/errors.go:62-65). An error whose text alone holds one of those strings, such as a
     refusal naming an entity whose ID holds 10071 or 10037, is no longer a conflict or an absence. Present
     consumers: KVStore's Get, Create, Update, UpdateWithRetryRead's loop, Delete and DeleteAtRevision, and
     graph-ingest's not-found branches.
@@ -1128,7 +1128,7 @@
     client's life, so after its handlers finished or after Close returned nil it returns nil at once. The client keeps
     one map entry per consumer it returns, the handle as a lookup key only. Consumer: storage/objectstore's cleanup.
   dependencies_and_side_effects: >-
-    metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.54.0
+    metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.55.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
     github.com/nats-io/nats-server/v2 v2.15.0 (embedded broker, client_connect_test.go:104),
     stretchr/testify, prometheus client_model and testutil; the integration lane imports

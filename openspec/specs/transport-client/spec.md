@@ -443,12 +443,12 @@ connection was lost or closed by anything other than this client's Close.
 ### Requirement: Subscribe does not promise to report a refused SUB
 
 The call SHALL NOT be relied on to report a SUB the server refused, for permissions or for the connection's limit on
-subscriptions; with nats.go v1.54.0 the call returns the subscription and nil.
+subscriptions; with nats.go v1.55.0 the call returns the subscription and nil.
 
 #### Scenario: A refused SUB
 
 - **WHEN** the server refuses the SUB for permissions or for the connection's limit on subscriptions
-- **THEN** with nats.go v1.54.0 the call returns the subscription and nil
+- **THEN** with nats.go v1.55.0 the call returns the subscription and nil
 
 ### Requirement: Connect is bounded by its context
 
@@ -494,10 +494,11 @@ is full, a write holds that lock until it completes or nats.go's write timeout (
 `RequestWithHeaders` (and the classified calls through it), `Subscribe`, the JetStream and key-value calls, and a
 consumer's setup. A call behind more than one held write waits for each in turn.
 
-When the write timeout ends a write that was partly sent, the connection can stay connected and carry nothing until
-nats.go's stale-connection check closes it and reconnects. That check sends a PING every 30 s by default
-(`WithPingInterval`), and nats.go declares the connection stale at the third PING with no answer. The client does not
-promise when that happens, nor that the connection is usable sooner.
+When the write timeout ends a write that was partly sent, nats.go v1.55.0 closes the socket and reconnects (PR #492
+comments 6545759092, the probes, and 6545866336, the owner's ruling). The client does not promise how soon the
+connection carries messages again. nats.go's stale-connection check, which sends a PING every 30 s by default
+(`WithPingInterval`) and declares the connection stale at the third PING with no answer, finds a silent server when no
+write is held; it does not fire while a write is held.
 
 ### Requirement: A held call does not hold Close or Connect
 

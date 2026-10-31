@@ -275,10 +275,13 @@ gauges are set from what that client reads from the server. A second client on t
 collectors, so the two overwrite each other's gauges, and which client's value a scrape shows is not promised. No
 configuration we know of runs two clients on one registry.
 
-Set `WithWriteTimeout` and `WithPingInterval` together. A write the timeout ends partway leaves the connection
-connected but unable to carry anything. It recovers when its PINGs go unanswered: nats.go then finds the connection
-stale, closes it and reconnects (`TestWriteTimeoutAndPingIntervalOptions`; probe P24). Each option refuses a value
-that is not positive.
+At nats.go v1.55.0, a write the timeout ends partway closes the socket, and nats.go reconnects
+(`TestWriteTimeoutAndPingIntervalOptions`; probes P14 and P24r,
+[PR #492 comment](https://github.com/C360Studio/semengine/pull/492#issuecomment-6545759092); owner ruling,
+[comment 6545866336](https://github.com/C360Studio/semengine/pull/492#issuecomment-6545866336)). How soon the
+connection carries messages again is not promised. `WithPingInterval` sets how soon nats.go finds a silent server
+when no write is held; while a write is held its check does not fire. Each option refuses a value that is not
+positive.
 
 ## Error Handling
 

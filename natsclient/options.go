@@ -105,11 +105,11 @@ func WithTimeout(d time.Duration) ClientOption {
 // default is nats.go's, one minute. Other calls on the connection wait behind a
 // held write (T2; P17).
 //
-// Set WithPingInterval with it. A write the timeout ends partway leaves the
-// connection connected but unable to carry anything, until the stale-connection
-// check that PINGs drive closes it and reconnects (T9; P24). With the default
-// 30 s ping, when that happens is not promised. d must be positive: NewClient
-// refuses any other value as invalid (T9).
+// At nats.go v1.55.0 a write the timeout ends partway closes the socket, and
+// nats.go reconnects (probes P14 and P24r, PR #492 comment 6545759092; owner
+// ruling, comment 6545866336). How soon the connection carries messages again
+// is not promised. d must be positive: NewClient refuses any other value as
+// invalid (T9).
 func WithWriteTimeout(d time.Duration) ClientOption {
 	return func(c *Client) error {
 		if d <= 0 {
@@ -125,11 +125,9 @@ func WithWriteTimeout(d time.Duration) ClientOption {
 // finds the connection stale, closes it and reconnects: at 300 ms that took
 // 1.2 s (P20, P24); the timing at other values is not promised.
 //
-// Set it with WithWriteTimeout. While a write is held this check does not fire
-// (P20), so only the write timeout ends that write, and a write it ends partway
-// leaves the connection unable to carry anything until this check closes it
-// (T9; P24). d must be positive: NewClient refuses any other value as invalid
-// (T9).
+// While a write is held this check does not fire (P20; P24r at nats.go v1.55.0,
+// PR #492 comment 6545759092), so only the write timeout ends that write. d must
+// be positive: NewClient refuses any other value as invalid (T9).
 func WithPingInterval(d time.Duration) ClientOption {
 	return func(c *Client) error {
 		if d <= 0 {

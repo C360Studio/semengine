@@ -98,9 +98,11 @@ type Follower struct {
 	bootstrapTarget atomic.Uint64 // stored before snapshotDone is raised
 	bootstrapped    atomic.Bool   // the initial build is complete; never cleared
 
-	// statusMu serialises reads through status: nats.go v1.54.0's KV Status writes the handle's
+	// statusMu serialises reads through status: up to nats.go v1.54.0, KV Status wrote the handle's
 	// stream-info cache unsynchronised, and QueryReady callers and the heartbeat share the handle
-	// (#417, TestFollowerConcurrentQueryReady).
+	// (#417, TestFollowerConcurrentQueryReady). v1.55.0 stores that cache in an atomic.Pointer
+	// (jetstream/stream.go:499, read, not tested); the lock stays, since how nats.go guards it is
+	// not promised.
 	statusMu sync.Mutex
 
 	mu              sync.Mutex // guards the stuck detector's progress record

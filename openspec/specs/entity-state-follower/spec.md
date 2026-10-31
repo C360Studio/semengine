@@ -45,7 +45,7 @@ an error saying the delivery did not close after `Stop`. Changed: the wait had n
 
 #### Scenario: The watch's delivery never closes
 
-- **WHEN** the watch is stopped and its update channel stays open, as at nats.go v1.54.0 when the watch's context
+- **WHEN** the watch is stopped and its update channel stays open, as at nats.go v1.55.0 when the watch's context
   ends, or its connection closes, after nats.go subscribes and before it installs the handler that closes the channel
   (no goroutine is then left to join; on every other path the wait ends when nats.go's delivery ends)
 - **THEN** the wait returns, after 5 s of its clock, an error saying the delivery did not close after `Stop`

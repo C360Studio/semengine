@@ -31,7 +31,11 @@ import (
 // v1.52.0 -> v1.54.0 (SemEngine, task 3.7b; go.mod requires v1.54.0):
 // re-verified against jetstream/kv.go:504-506 at v1.54.0. The three patterns
 // are byte-identical to v1.52.0's above.
-const pinnedNATSGoContractVersion = "v1.54.0"
+//
+// v1.54.0 -> v1.55.0 (2026-10-31, Dependabot PR #464): re-verified against
+// jetstream/kv.go:504-506 and the legacy kv.go:391-393 at v1.55.0. All three
+// patterns are byte-identical to v1.54.0's.
+const pinnedNATSGoContractVersion = "v1.55.0"
 
 var (
 	pinnedLegacyKVKeyPattern     = regexp.MustCompile(`^[-/_=\.a-zA-Z0-9]+$`)

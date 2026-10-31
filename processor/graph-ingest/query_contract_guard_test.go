@@ -366,7 +366,7 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 }
 
 // openGuardWatcher is a snapshot watcher whose update channel never closes, Stop included: the
-// state nats.go v1.54.0 leaves a watch in when its context ends, or its connection closes, between
+// state nats.go v1.55.0 leaves a watch in when its context ends, or its connection closes, between
 // Subscribe and the install of the handler that closes the channel (#456).
 type openGuardWatcher struct {
 	updates chan jetstream.KeyValueEntry

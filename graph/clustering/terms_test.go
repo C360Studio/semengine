@@ -121,8 +121,10 @@ func TestRecordIsBounded(t *testing.T) {
 
 // TestKeywordsIgnoreIDAndPredicates: every member shares its ID positions and predicate
 // names, and one carries a relationship to another entity; only words in string values
-// count, so the keywords are exactly the words of the members' text.
+// count, so the keywords are exactly the words of the members' text, in the record built
+// from the counts and in every record a Maintainer publishes.
 func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
+	m, kv := newTestMaintainer(t)
 	wordCounts := map[string]int{}
 	for i := range 3 {
 		id := fmt.Sprintf("acme.dep1.src.robotics.drone.d%d", i)
@@ -134,10 +136,28 @@ func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 		for _, w := range entityWords(state) {
 			wordCounts[w]++
 		}
+		if err := m.Upsert(id, 1, state); err != nil {
+			t.Fatalf("Upsert(%s): %v", id, err)
+		}
 	}
+	want := []string{"hovering", "steady"}
 	record := newCommunity(0, "acme.dep1.src.robotics", 3, map[string]int{"drone": 3}, wordCounts, nil)
-	if want := []string{"hovering", "steady"}; !slices.Equal(record.Keywords, want) {
+	if !slices.Equal(record.Keywords, want) {
 		t.Fatalf("keywords = %q, want %q", record.Keywords, want)
+	}
+
+	m.BootstrapDone()
+	if err := m.Tick(t.Context()); err != nil {
+		t.Fatalf("Tick: %v", err)
+	}
+	records := kv.records(t)
+	if len(records) != 3 {
+		t.Fatalf("published %d records, want 3", len(records))
+	}
+	for key, r := range records {
+		if !slices.Equal(r.Keywords, want) {
+			t.Fatalf("published %s keywords = %q, want %q", key, r.Keywords, want)
+		}
 	}
 }
 

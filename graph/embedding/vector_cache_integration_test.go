@@ -23,8 +23,8 @@ const cacheWaitBound = time.Minute
 // cacheBucket is the bucket these tests watch; the shared server is reset before each test.
 const cacheBucket = "EMBEDDING_INDEX"
 
-// unsubscribeFrame is the goroutine nats.go v1.54.0 starts to unsubscribe a subscription when
-// the context it was made with ends (js.go:2063-2068), as a stack dump prints it: the module
+// unsubscribeFrame is the goroutine nats.go v1.55.0 starts to unsubscribe a subscription when
+// the context it was made with ends (js.go:2072-2077), as a stack dump prints it: the module
 // path's last element escapes its dot. Measured from this package's integration run
 // (notes/3.3.md); the lost-watch test fails if it stops matching a live watch.
 const unsubscribeFrame = "github.com/nats-io/nats%2ego.(*js).subscribe.func3("
@@ -145,9 +145,9 @@ func TestVectorCacheRunLeavesNoWatchDelivery(t *testing.T) {
 // TestVectorCacheRunReportsLostWatch: when the bucket is deleted under a live Run, nats.go
 // closes the watch's update channel; Run returns an error saying the watch was lost (not the
 // context's), the cache stops answering, and the delivery has ended. nats.go's unsubscribe
-// goroutine for the watch (js.go:2063-2068 at v1.54.0) waits on a child of the watch's context
-// that nats.go also ends when the subscription is unsubscribed (js.go:1911-1913,
-// nats.go:5553-5564); Run ends the watch's context and stops the watch, so it is released, not
+// goroutine for the watch (js.go:2072-2077 at v1.55.0) waits on a child of the watch's context
+// that nats.go also ends when the subscription is unsubscribed (js.go:1920-1922,
+// nats.go:5639-5650); Run ends the watch's context and stops the watch, so it is released, not
 // joined, and the test waits for its stack to go.
 func TestVectorCacheRunReportsLostWatch(t *testing.T) {
 	cache, client, _ := newCache(t, 3)

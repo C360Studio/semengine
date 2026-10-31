@@ -15,9 +15,9 @@ import (
 
 // ownedDelivery tracks the handler invocations of one subscription or consumer the client created,
 // so that Close knows when they have all returned (design D3, natsclient-close-is-final). nats.go
-// v1.54.0 cannot tell it: a forced close does not wait for a running callback (nats.go:6196-6227),
-// a drain gives up after its timeout with a callback running (:6349-6372, :6389-6390), and a
-// consumer's Closed() closes at once for an invalid subscription (jetstream/pull.go:822-837).
+// v1.55.0 cannot tell it: a forced close does not wait for a running callback (nats.go:6284-6315),
+// a drain gives up after its timeout with a callback running (:6437-6465, :6490-6491), and a
+// consumer's Closed() closes at once for an invalid subscription (jetstream/pull.go:855-870).
 //
 // The native library delivers on one goroutine per subscription, so at most one invocation runs
 // at a time. Once end has been recorded no invocation starts: a delivery handed over after that is
@@ -199,8 +199,8 @@ func (c *Client) commitConsumer(
 }
 
 // recordConsumerRelease records h, a handle about to be returned to the caller, with released,
-// for WaitConsumerHandlers. nats.go v1.54.0 returns a pointer (*pullSubscription,
-// jetstream/pull.go:228, :425); a handle that is not comparable cannot be a lookup key and is not
+// for WaitConsumerHandlers. nats.go v1.55.0 returns a pointer (*pullSubscription,
+// jetstream/pull.go:232, :426); a handle that is not comparable cannot be a lookup key and is not
 // recorded, so WaitConsumerHandlers refuses it as unknown.
 func (c *Client) recordConsumerRelease(h jetstream.ConsumeContext, released <-chan struct{}) {
 	if !reflect.ValueOf(h).Comparable() {
@@ -222,7 +222,7 @@ func (c *Client) recordConsumerRelease(h jetstream.ConsumeContext, released <-ch
 //
 // It waits and stops nothing: ending delivery stays the caller's (Drain or Stop on its handle) or
 // Close's. The handle's Closed() is not this wait: it can close while a handler still runs
-// (jetstream/pull.go:822-837 at nats.go v1.54.0). How long delivery takes to end after a Drain is
+// (jetstream/pull.go:855-870 at nats.go v1.55.0). How long delivery takes to end after a Drain is
 // not promised.
 //
 // If ctx ends first it returns an error matching ctx.Err() and changes nothing; a later call

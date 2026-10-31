@@ -11,7 +11,7 @@ import (
 )
 
 // openWatcher is a jetstream.KeyWatcher whose update channel never closes: the state nats.go
-// v1.54.0 leaves a watch in when its context ends between Subscribe and the install of the
+// v1.55.0 leaves a watch in when its context ends between Subscribe and the install of the
 // handler that closes the channel (#454).
 type openWatcher struct{ updates chan jetstream.KeyValueEntry }
 

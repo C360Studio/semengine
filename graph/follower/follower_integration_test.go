@@ -259,11 +259,11 @@ func TestFollowerOpenRefusesAbsentBucket(t *testing.T) {
 // returns nil, no goroutine is left in a Follower method or in nats.go's watch delivery, and the
 // watch's consumer is gone from ENTITY_STATES's stream. Deliver parks on the first of more stored
 // entities than the watch's buffer holds, so the native delivery is blocked sending when Run's
-// context ends: nats.go v1.54.0's Stop only unsubscribes, and Run must drain it (#418).
+// context ends: nats.go v1.55.0's Stop only unsubscribes, and Run must drain it (#418).
 func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 	client := fixtureClient(t)
 	kv := entityStates(t, client)
-	// nats.go v1.54.0's watch buffer holds 256 entries (jetstream/kv.go WatchFiltered).
+	// nats.go v1.55.0's watch buffer holds 256 entries (jetstream/kv.go WatchFiltered).
 	for n := 1; n <= 600; n++ {
 		put(t, kv, entityID(n), storedEntity(entityID(n)))
 	}

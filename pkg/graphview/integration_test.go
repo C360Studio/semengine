@@ -248,7 +248,7 @@ func mapsEqualIT(a, b map[string]string) bool {
 // while nats.go's watch delivery is blocked on its full updates buffer, Run returns
 // context.Canceled only after that delivery has ended, and no goroutine is left in a View or
 // Subscription method. An OnApply hook that blocks until the cycle's context ends holds Run on the
-// first of 600 stored entries, above the 256-entry buffer (nats.go v1.54.0, jetstream/kv.go
+// first of 600 stored entries, above the 256-entry buffer (nats.go v1.55.0, jetstream/kv.go
 // WatchFiltered), so the delivery backs up behind it. Once the context ends, Run's loop picks at
 // random between it and a ready update, and a read unblocks the delivery, so only some cycles
 // leave the delivery blocked at the stop; ten cycles on fresh views make missing the drain on code

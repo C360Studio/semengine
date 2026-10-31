@@ -542,7 +542,7 @@ including those.
   `select {}` was killed by Go's deadlock detector, so the test's `ps` call failed intermittently (CI runs
   37005148521, 37006036797 and 37013932497; fixed in 89395c2).
 - Give a `testing/synctest` bubble that runs a nats.go connection a test process of its own. A bubble is the set of
-  goroutines `synctest.Test` runs on a fake clock. nats.go v1.54.0 keeps one pool of timers for the whole process
+  goroutines `synctest.Test` runs on a fake clock. nats.go v1.55.0 keeps one pool of timers for the whole process
   (`timer.go:22`), so a timer made in one bubble can be taken by code outside it or by another bubble: the run then
   ends with a `fatal error` that names a synctest timer or channel used from outside its bubble, or a bubble waits on
   a timer its clock does not drive and the run hangs. Whether either happens depends on the shuffle order, so it

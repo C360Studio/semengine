@@ -91,7 +91,7 @@ write in the same call.
 
 - **WHEN** a create's first write was stored but its acknowledgement was malformed, other writers then deleted the key
   and created it again, and nats.go writes a second time (it does so when its first write fails and the key reads as
-  deleted, nats.go v1.54.0 `jetstream/kv.go:1072-1079`) and that second write is refused because the key exists
+  deleted, nats.go v1.55.0 `jetstream/kv.go:1073-1080`) and that second write is refused because the key exists
 - **THEN** the create is reported not committed with `entity_already_exists`, although an earlier write was stored
 
 ### Requirement: The typed client never reads the clock

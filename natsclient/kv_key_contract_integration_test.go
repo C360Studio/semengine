@@ -24,13 +24,13 @@ import (
 // owner ruling, #9 comment 5969522395, item 6). The pin ran it on its own
 // digest-pinned 2.14.4 image through a version override, which is gone. The
 // KV grammar is unchanged across the move: upstream's validBucketRe /
-// validKeyRe / validSearchKeyRe are byte-identical in nats.go v1.54.0
-// (jetstream/kv.go:504-506) and v1.52.0 (:501-503), and this test runs against
+// validKeyRe / validSearchKeyRe are byte-identical in nats.go v1.55.0 and
+// v1.54.0 (jetstream/kv.go:504-506) and v1.52.0 (:501-503), and this test runs against
 // the image's server.
 //
 // pinnedNATSGoVersion is REPORTED in this test's log line, beside the version
 // the broker itself reports and the image the fixture ran. It must track the
-// module actually in go.mod (v1.54.0); kv_key_contract_test.go says how it
+// module actually in go.mod (v1.55.0); kv_key_contract_test.go says how it
 // moves.
 const pinnedNATSGoVersion = pinnedNATSGoContractVersion
 

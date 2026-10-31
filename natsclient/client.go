@@ -524,7 +524,7 @@ func (m *Client) Connect(ctx context.Context) error {
 	// counts and logs failed async acks (asyncPublishErrHandler). Keep both
 	// candidates local until admission.
 	// Whether jetstream.New can fail here is not promised: a read of nats.go
-	// v1.54.0, not a test, found that it fails only when an option does, and
+	// v1.55.0, not a test, found that it fails only when an option does, and
 	// that this option never does. The error is still returned, never dropped.
 	js, err := jetstream.New(conn, jetstream.WithPublishAsyncErrHandler(m.asyncPublishErrHandler))
 	if err != nil {
@@ -652,9 +652,10 @@ func (m *Client) startMetricsPoller() bool {
 // message handlers keep handling messages already delivered during the drain.
 // Status keeps its value while Close drains and reports Disconnected once the
 // cleanup has finished. After a Close whose context cut the drain short, the
-// native connection GetConnection returned can report DRAINING_PUBS, and
-// IsConnected true, for up to 5 s before it reports CLOSED again: that is
-// nats.go v1.54.0's drain, and no event handler of the client runs then. A drain
+// native connection GetConnection returned reports CLOSED: nats.go v1.55.0's
+// drain no longer moves a connection closed under it back to DRAINING_PUBS
+// (nats.go:6442-6444, :6471-6480, read, not measured; v1.54.0's did, for up to
+// 5 s). No event handler of the client runs then. A drain
 // that runs out of time is reported by the first Close as a transient error
 // wrapping nats.ErrDrainTimeout. A Close called from inside one of the client's
 // callbacks waits on a join that includes its own invocation, so it returns
@@ -793,12 +794,14 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 
 // guardedConsumer serializes Info() on one consumer handle.
 //
-// jetstream.Consumer.Info() is NOT safe for concurrent use on the same handle: it
-// assigns the fetched ConsumerInfo to the consumer's own cache field with no
-// synchronization (nats.go jetstream/consumer.go — `p.info = resp.ConsumerInfo`). Two
-// callers reading the same bound consumer at once race inside the library, and the
-// detector reports it against OUR call site. Confirmed by the graph-ingest lifecycle
-// stress test the moment a second reader existed.
+// Up to nats.go v1.54.0, jetstream.Consumer.Info() was NOT safe for concurrent use on
+// the same handle: it assigned the fetched ConsumerInfo to the consumer's own cache
+// field with no synchronization (`p.info = resp.ConsumerInfo`). Two callers reading the
+// same bound consumer at once raced inside the library, and the detector reported it
+// against OUR call site; the graph-ingest lifecycle stress test confirmed it the moment
+// a second reader existed. nats.go v1.55.0 keeps that field in an atomic.Pointer
+// (jetstream/consumer.go:214, :222; read, not tested), so the library no longer races
+// there; the guard stays, as the paragraph below says.
 //
 // THE GUARD IS ON THE HANDLE, NOT ON A CALL SITE, and that is the point. The same
 // *jetstream.Consumer is read by the acquisition path and the metrics observer, so a
@@ -810,19 +813,18 @@ func (m *Client) join(joined chan struct{}, conn *nats.Conn) {
 // must stay EXACTLY `Info(context.Context) (*jetstream.ConsumerInfo, error)` — a
 // divergent signature would silently stop overriding and reopen the race.
 //
-// Whether nats.go v1.54.0, the version go.mod pins, still writes the field without
-// synchronization is not promised: it is a read of its source, not a test (checked
-// 2026-10-04 against v1.48.0: jetstream/consumer.go:209 and :242 unchanged). The guard
-// stays either way, so a dependency bump does NOT retire it — do not delete it on
-// upgrade. Filing it upstream is tracked in the change's follow-ups.
+// How nats.go synchronizes the field is not promised: it is a read of its source, not
+// a test (unsynchronized at v1.48.0 and v1.54.0; atomic at v1.55.0, the version go.mod
+// pins, read 2026-10-31). The guard stays either way, so a dependency bump does NOT
+// retire it — do not delete it on upgrade.
 type guardedConsumer struct {
 	jetstream.Consumer
 	infoMu sync.Mutex
 }
 
 // Info serializes the underlying call. The lock is held across the network round trip
-// because, by the same read of v1.54.0 (not promised), the library's Info() makes its
-// unsynchronized write at the END.
+// because the library's Info() writes its cache at the END (unsynchronized up to
+// v1.54.0; an atomic store at v1.55.0, jetstream/consumer.go:214; read, not promised).
 func (g *guardedConsumer) Info(ctx context.Context) (*jetstream.ConsumerInfo, error) {
 	g.infoMu.Lock()
 	defer g.infoMu.Unlock()

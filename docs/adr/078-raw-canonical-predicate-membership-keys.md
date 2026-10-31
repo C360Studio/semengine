@@ -13,7 +13,7 @@
 >   filter is three single-token wildcards, a dot and the entity ID, and there is no `PREDICATE_CATALOG`
 >   (`predicate_index.go`).
 > - The pins named under "Absolute representation gates passed" (`nats:2.12.4-alpine`, `nats.go v1.48.0`) are
->   SemStreams'. This repository pins nats.go v1.54.0 and nats-server v2.15.1 and has not rerun those gates; the
+>   SemStreams'. This repository pins nats.go v1.55.0 and nats-server v2.15.1 and has not rerun those gates; the
 >   record's statement that a new pin cannot inherit the evidence applies to it.
 
 ## Status

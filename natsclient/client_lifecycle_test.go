@@ -484,12 +484,13 @@ func TestClientCloseUnderShortDeadlineClosesConnection(t *testing.T) {
 			}
 			err = awaitErr(t, first, "Close whose context ends while the handler runs")
 			require.ErrorIs(t, err, tc.want, "Close whose context ended")
-			// Close has closed the connection by the time it returns, but nats.go's own drain
-			// goroutine, finding no subscriptions left once the connection closed, can still move its
-			// status to DRAINING_PUBS and then close it again (nats.go v1.54.0 nats.go:6378-6390), so
-			// IsClosed can read false for that moment. The wait is bounded by lifecycleBound; without
-			// Close's force close the native drain holds the connection open for the client's 30 s
-			// drain timeout, past that bound.
+			// Close has closed the connection by the time it returns. nats.go v1.54.0's own drain
+			// goroutine, finding no subscriptions left once the connection closed, could still move its
+			// status to DRAINING_PUBS and then close it again (nats.go:6378-6390 there), so IsClosed
+			// could read false for that moment; v1.55.0's returns once the connection is closed
+			// (nats.go:6442-6444, :6471-6480, read). The wait below accepts either, bounded by
+			// lifecycleBound; without Close's force close the native drain holds the connection open for
+			// the client's 30 s drain timeout, past that bound.
 			closedCtx, cancelClosed := context.WithTimeout(t.Context(), lifecycleBound)
 			defer cancelClosed()
 			_, err = probe.Await(closedCtx, func(context.Context) (bool, error) { return nc.IsClosed(), nil },

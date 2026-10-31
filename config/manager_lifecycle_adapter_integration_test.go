@@ -35,7 +35,7 @@ func stopManager(t *testing.T, manager *Manager) {
 }
 
 // watchConsumerCount reads, from the server, how many consumers the configuration bucket's backing
-// stream has. A KV watch is an ordered consumer on that stream (nats.go v1.54.0 js.go:2026), so this
+// stream has. A KV watch is an ordered consumer on that stream (nats.go v1.55.0 js.go:2035), so this
 // counts the Manager's open watches without anything added to the Manager. A bucket that does not
 // exist has none.
 func watchConsumerCount(ctx context.Context, js jetstream.JetStream, bucket string) (int, error) {
@@ -73,7 +73,7 @@ func awaitWatchConsumers(t *testing.T, ctx context.Context, client *natsclient.C
 // slice, its subscriber map, and the done channel of each goroutine it started, listed while that
 // channel is open. Watcher stops are counted on the server: the configuration bucket's backing
 // stream lists one consumer per open watch, and a successful KeyWatcher.Stop deletes it before it
-// returns (nats.go v1.54.0 jetstream/kv.go:1239, nats.go:5409-5411). An ordered-consumer reset
+// returns (nats.go v1.55.0 jetstream/kv.go:1240, nats.go:5495-5497). An ordered-consumer reset
 // deletes the old consumer in the background (js.go:2390, :2425), so the count is polled with
 // probe.Await under watchCountBound, never read once. Nothing is added to the Manager for this
 // adapter (#186, #190).

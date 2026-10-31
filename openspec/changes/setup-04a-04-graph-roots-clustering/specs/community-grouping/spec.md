@@ -23,7 +23,8 @@ The caller SHALL pass, with each `Upsert`, the revision of the exact value decod
 
 #### Scenario: Two histories, one final state
 
-- **WHEN** two shuffled histories of upserts, deletes and obsolete deliveries end with the same entity values
+- **WHEN** two histories interleave entities in different orders, keep each entity's own revision order, and end with
+  the same entity values; obsolete deliveries are generated only for entities still present
 - **THEN** the published records are byte-identical
 - **AND** the tests that verify this are `TestHistoryOrderIrrelevant` and `TestMaintainerMatchesModel`
 

@@ -31,7 +31,7 @@ of replay. Either way one watch serves the maintainer.
 ## D1. Files, edges, exclusions
 
 New or carried in `graph/clustering/`: `types.go` (the bounded `Community` record), `storage.go`, `maintainer.go`
-(new), `terms.go` (the pin's word extraction and summary template, `pin:graph/clustering/summarizer.go:388-480`),
+(new), `terms.go` (the pin's word extraction and summary template, `pin:graph/clustering/summarizer.go:388-490`),
 `doc.go`, `README.md`. Edges: `graph`, `natsclient`, `pkg/errs`, `pkg/types`. Ledger: one `adapt` row
 and `defer-exclude` rows:
 
@@ -43,8 +43,8 @@ and `defer-exclude` rows:
   `StatisticalSummarizer` (`summarizer.go:27-129`, `:165-387`), with corpus document frequency (`BuildCorpusDF`);
 - no reader: `provider.go` (P4).
 
-Size (#159): about 940 pin lines considered (`types.go` 126, `storage.go` 526, `summarizer.go` `:388-480`
-about 90, `doc.go` 198) plus the new maintainer; under the ~3,000 bound without a waiver.
+Size (#159): about 950 pin lines considered (`types.go` 126, `storage.go` 526, `summarizer.go` `:388-490`
+about 100, `doc.go` 198) plus the new maintainer; under the ~3,000 bound without a waiver.
 
 One line in `.agents/skills/entity-or-bucket/SKILL.md` item 2 (the pin skill's community clause,
 `pin:.agents/skills/entity-or-bucket/SKILL.md:47`), reworded to community grouping.
@@ -115,8 +115,10 @@ Generated, against an independent model: `TestMaintainerMatchesModel` applies se
 deletes, obsolete revisions and refusals, then compares every published record with a from-scratch computation over
 the final entity set. The generator builds each entity's string values from words it chose, so the model takes each
 entity's terms from the generator by construction and never runs the extraction in `terms.go`; it splits each ID on
-`.` itself. `TestHistoryOrderIrrelevant`: two shuffled histories with the same final values give byte-identical
-records. Seed, run count and completed checks in notes.
+`.` itself. `TestHistoryOrderIrrelevant`: two histories that interleave entities differently, keep each entity's revision
+order (change 7's precondition), and end with the same final values give byte-identical records; obsolete
+deliveries are generated only for entities still present, since with no tombstones an older upsert after a delete
+would bring the entity back. Seed, run count and completed checks in notes.
 
 `TestTickCost` runs on a counting fake `jetstream.KeyValue` behind a real `KVStore` (`natsclient.NewClient` does not
 dial, `natsclient/client.go:312-341`; `(*Client).NewKVStore` takes any `jetstream.KeyValue`, `natsclient/kv.go:55`):

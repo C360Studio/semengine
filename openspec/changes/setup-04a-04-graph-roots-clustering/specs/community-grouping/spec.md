@@ -34,6 +34,17 @@ The caller SHALL pass, with each `Upsert`, the revision of the exact value decod
 - **THEN** its contribution is unchanged
 - **AND** the test that verifies this is `TestObsoleteDeliveryIgnored`
 
+### Requirement: Revision zero is refused
+
+`Upsert` and `Delete` SHALL refuse revision 0 with an invalid-input error and SHALL change nothing; a NATS KV entry's
+revision is a stream sequence, at least 1 on the pinned versions (probe `TestKVRevisionStartsAtOne`).
+
+#### Scenario: A zero revision
+
+- **WHEN** `Upsert` or `Delete` is called with revision 0
+- **THEN** it returns an invalid-input error and the maintainer's state is unchanged
+- **AND** the test that verifies this is `TestRevisionZeroRefused`
+
 ### Requirement: Applying never waits on publication
 
 `Upsert` and `Delete` SHALL return without waiting for a `Tick`'s storage write to finish.

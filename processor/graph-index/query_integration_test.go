@@ -709,11 +709,11 @@ func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	src, target, stranger := entityID(1), entityID(2), entityID(3)
 	title := vocabulary.DCTermsTitle
-	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{title, "Alpha"}))
+	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{title, "Alpha"}, stmt{alias, "alpha-1"}))
 	h.awaitIndexed(t, rev)
 
 	// Spelled from the layouts (target.source6.hex(predicate), predicate3.entity6,
-	// sha256(folded name).entity6.hex(predicate)), not built by the package.
+	// sha256(folded name).entity6.hex(predicate), the same for an alias), not built by the package.
 	for bucket, rows := range map[string]map[string]string{
 		graph.BucketIncomingIndex: {target + ".not-a-row": "{}"},
 		// Nine tokens, so the exact predicate filter lists it, but "_bad" is no entity ID segment.
@@ -722,6 +722,7 @@ func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 			nameHash("Alpha") + ".not-a-row":                        "{}",
 			nameHash("Alpha") + "." + stranger + "." + hexOf(title): "not json",
 		},
+		graph.BucketAliasIndex: {nameHash("alpha-1") + ".not-a-row": "{}"},
 	} {
 		kv, err := kvcatalog.EnsureCatalogBucket(t.Context(), h.client, bucket)
 		if err != nil {
@@ -745,24 +746,27 @@ func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 		t.Errorf("predicate %s = %v, want [%s]", linkTo, linked.Entities, src)
 	}
 	list := answer[graph.PredicateListData](t, h.client, "predicateList", map[string]string{}, rev)
-	if want := []graph.PredicateSummary{{Predicate: title, EntityCount: 1}, {Predicate: linkTo, EntityCount: 1}}; !slices.Equal(list.Predicates, want) {
+	if want := []graph.PredicateSummary{{Predicate: alias, EntityCount: 1}, {Predicate: title, EntityCount: 1}, {Predicate: linkTo, EntityCount: 1}}; !slices.Equal(list.Predicates, want) {
 		t.Errorf("predicateList = %v, want %v", list.Predicates, want)
 	}
 	names := answer[graph.NameData](t, h.client, "byName", map[string]string{"name": "Alpha"}, rev)
 	if len(names.Matches) != 1 || names.Matches[0].EntityID != src {
 		t.Errorf("byName Alpha = %+v, want %s only", names.Matches, src)
 	}
+	if got := resolveAlias(t, h, "alpha-1", rev); got != src {
+		t.Errorf("alias alpha-1 = %q, want %s", got, src)
+	}
 
 	logs := h.logs.String()
-	for _, index := range []string{"incoming", "predicate", "name"} {
+	for _, index := range []string{"incoming", "predicate", "name", "alias"} {
 		warned := regexp.MustCompile(`level=WARN msg="index query: malformed row skipped" .*index_type=` + index + ` `)
 		if !warned.MatchString(logs) {
 			t.Errorf("no warning naming the %s index's skipped row; logs:\n%s", index, logs)
 		}
 	}
 	// incoming: one key; predicate: the bad key, listed by the predicate query and again by
-	// predicateList; name: the bad key and the bad value.
-	want := map[string]float64{"incoming": 1, "predicate": 2, "name": 2}
+	// predicateList; name: the bad key and the bad value; alias: one key.
+	want := map[string]float64{"incoming": 1, "predicate": 2, "name": 2, "alias": 1}
 	got := map[string]float64{}
 	families, err := h.c.metricsRegistry.PrometheusRegistry().Gather()
 	if err != nil {

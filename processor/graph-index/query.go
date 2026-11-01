@@ -257,9 +257,8 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	for _, key := range keys {
 		entityID, _, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
 		if !ok {
-			// shortcut: refuses on a malformed row; task 6 of fix-415-alias-index skips and
-			// declares it through skipMalformedRow instead.
-			return nil, internalError(fmt.Errorf("alias index row %q is not hash.entity.hex(predicate)", key))
+			c.skipMalformedRow("alias", key, "key is not hash.entity.hex(predicate)")
+			continue
 		}
 		holders[entityID] = struct{}{}
 	}

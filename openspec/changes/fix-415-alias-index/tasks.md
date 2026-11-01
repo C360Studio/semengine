@@ -49,9 +49,9 @@ developer's unit.
 
 ## 6. Malformed alias rows (spec "Malformed index rows are skipped and declared")
 
-- [ ] 6.1 Extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` with one malformed key under an alias prefix
+- [x] 6.1 Extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` with one malformed key under an alias prefix
   (alias read answers the well-formed row, warning names alias, counter alias 1), failing before its fix.
-- [ ] 6.2 The alias read skips through `skipMalformedRow("alias", …)`. Gate: as 3.2.
+- [x] 6.2 The alias read skips through `skipMalformedRow("alias", …)`. Gate: as 3.2.
 
 ## 7. Wording (every text naming the #415 exception)
 

@@ -11,37 +11,40 @@ for the #454 window. Five callers use it. The inventory (`inventory.md` § 1) ch
 production code. Five stop with a bare `Stop` and can return while such a delivery is still blocked, leaving it
 running for good:
 
-- `graph/readiness/watcher.go:279` (`Watcher.Run`'s `watchOnce`, on ctx end). Its doc says its return is the join.
-- `config/manager.go:601` (`Manager.Stop`'s teardown; the readers return on the run context, not on close).
+- `graph/readiness/watcher.go:279` (`Watcher.Run`'s `watchOnce`, on ctx end). Its doc says its return is the join;
+  adopting, not a doc-only fix, because that would be a new nats.go claim needing a probe.
+- `config/manager.go:601` (the teardown `release` runs for `Stop` and for a failed `Start`; readers return on the run
+  context, not on close).
 - `service/message_logger_kv_watch.go:174` (the `kv/{bucket}/watch` reader, on client exit or falling behind).
 - `pkg/lifecycle/manager_query.go:224` (`Watch` / `WatchEvents`, on ctx end, callback or decode error).
 - `natsclient/storagereport/storage_report_consumer.go:220` (`Consumer.Run`'s `watchOnce`, on ctx end).
 
-These five adopt `kvwatch.Stop`, the smallest change that mirrors what follower, embedding and graphview already
-do. Contexts follow ADR-113: each site passes the context it already holds (config's teardown gets `Stop`'s).
+These five adopt `kvwatch.Stop`, the smallest change that mirrors follower, embedding and graphview. Contexts follow
+ADR-113: each site passes the context it holds; config's teardown gets `release`'s, which is `Start`'s on a failed
+`Start` and `Stop`'s otherwise.
 
-These stay as they are, and say so: `processor/graph-ingest/poison_inventory.go:330` (stops after the channel closed)
-and `:370` (drains to close under its own 5 s bound, #456); `natsclient/storagereport/storage_report.go:708` (a key
-lister read to close); `natsclient/kv.go:699` `keysByFilter` (its own drain, kept by the owner on #420; moving
-`natsclient` onto `internal/kvwatch` would add mechanism to a public package, #170).
+Stay as they are: `processor/graph-ingest/poison_inventory.go:330` (stops after the channel closed) and `:370`
+(drains to close under its own 5 s bound, #456); `natsclient/kv.go:699` `keysByFilter` (its own drain, kept by the
+owner on #420; moving `natsclient` onto `internal/kvwatch` would add mechanism to a public package, #170).
 
 ## What Changes
 
 - Each of the five sites calls `kvwatch.Stop(ctx, watcher)` in place of `watcher.Stop()`. Errors are reported where
   the site reports today: logged by readiness (Debug), config (Warn, as at the pin, ruling Q4), service (Warn) and
-  storagereport (Warn, today discarded); joined into the returned error by `pkg/lifecycle`'s `runWatchLoop`, which
-  logs nothing. No exported signature changes; no exported signature names `internal/kvwatch`.
+  storagereport (Warn, today discarded). `pkg/lifecycle`'s `runWatchLoop`, which logs nothing, joins
+  `fmt.Errorf("lifecycle: stop the watch: %w", err)` into its return, as `pkg/graphview` does; the `Watch` and
+  `WatchEvents` docs say the error may carry a stop failure. No exported alias of `kvwatch.ErrDeliveryOpen` (#190);
+  no exported signature changes or names `internal/kvwatch`.
 - Doc comments of the five functions say the return waits for the watch's delivery to close, for at most
-  `kvwatch.DrainBudget`.
+  `kvwatch.DrainBudget`. Each package's test watcher closes `Updates` after `Stop`, as nats.go does.
 - One failing-first test per site proves its caller returns and leaves no nats.go delivery behind with a backlogged
-  watch (`tasks.md`).
-- Ledger rows of the five packages name the new `internal/kvwatch` dependency.
+  watch (`tasks.md`). Ledger rows of the five packages name the new `internal/kvwatch` dependency.
 
 ## Not covered
 
-- `pkg/lifecycle.List` (`manager_query.go:55-69`): an early return stops reading a `KeyLister`, and nats.go's lister
-  goroutine can block on its key send for good. Not a `kvwatch.Stop` site (a lister has no `Updates()`); filed as its
-  own issue.
+- `pkg/lifecycle.List` (`manager_query.go:55-69`) and storagereport's reclaim (`storage_report.go:708`): nats.go's key
+  lister can strand its goroutine or the watch delivery behind it (inventory sites G and I). A lister has no
+  `Updates()`, so neither is a `kvwatch.Stop` swap; the fix is a new listing shape, filed as its own issue.
 - `service/message_logger_kv_watch.go` moving onto `pkg/graphview` stays with #477.
 - Folding graph-ingest's guard drain into `kvwatch.Stop` is optional and not done.
 

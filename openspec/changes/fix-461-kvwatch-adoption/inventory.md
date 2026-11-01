@@ -23,17 +23,23 @@ Searches: `git grep -nE '\.(Watch|WatchAll|WatchFiltered|ListKeys|ListKeysFilter
 | D | `processor/graph-ingest/poison_inventory.go:330` — `_ = watcher.Stop()` | bare `Stop` after the channel closed (`!ok`) | No: the channel is closed, so the delivery has ended. | already drains |
 | E | `processor/graph-ingest/poison_inventory.go:370` — `_ = watcher.Stop()` | `stopEntityStateGuardWatcher` reads `updates` to close at `:378` — `case _, open = <-updates:` — bounded by `guardWatchDrainBudget` (5 s, #456) | No. A second spelling of `kvwatch.Stop` (discard count, own sentinel, spec `graph-ingest-recovery` names its 5 s); consolidating is optional. | already drains; stays |
 | F | `pkg/lifecycle/manager_query.go:224` — `defer watcher.Stop()` | deferred bare `Stop` in `runWatchLoop` | Yes: returns on ctx end `:228`, callback error `:250`, decode error `:243`. Trigger: a consumer's `onEvent` error or a bad entity during the bootstrap of a workflow pattern over a large `ENTITY_STATES`. | adopt |
-| G | `pkg/lifecycle/manager_query.go:55` — `defer lister.Stop()` | `KeyLister.Stop` = inner `watcher.Stop` (nats.go v1.55.0 `jetstream/kv.go:1495-1497`) | Not a KV watch the caller can drain: `KeyLister` exposes no `Updates()`; nats.go's own goroutine (`kv.go:1441-1455`) owns the watch, so `kvwatch.Stop` does not fit. **Separate defect:** the early return at `:69` — `return nil, fmt.Errorf("lifecycle: List Get %q: %w", key, getErr)` — stops ranging `Keys()`; nats.go's goroutine blocks on `kv.go:1450` — `kl.keys <- entry.Key()` — a send outside its `select`, once 256 keys are unread, for good. `ListKeys` lists the whole bucket. Trigger: `List` on `ENTITY_STATES` with more than 256 keys left when a `Get` fails or ctx ends. | not this change; file an issue |
+| G | `pkg/lifecycle/manager_query.go:55` — `defer lister.Stop()` | `KeyLister.Stop` = inner `watcher.Stop` (nats.go v1.55.0 `jetstream/kv.go:1495-1497`) | Yes, inside nats.go's lister; the caller cannot drain it (`KeyLister` exposes no `Updates()`; nats.go's goroutine `kv.go:1441-1455` owns the watch), so not a `kvwatch.Stop` site. Two ordinary triggers, HIGH by #185: (1) a `getWithRevision` error that is not skipped, `:69` — `return nil, fmt.Errorf("lifecycle: List Get %q: %w", key, getErr)`; (2) the caller's deadline ending mid-`List`, while nats.go's goroutine waits at `kv.go:1450` — `kl.keys <- entry.Key()`, a send outside its `select`, so `ctx.Done` cannot free it. Either way more than 256 keys are left unread and the goroutine (and the watch delivery behind it) stays for good. `ListKeys` lists the whole bucket. No production caller in this repository (`List` is consumer API). | not this change; filed issue (task 1.2) |
 | H | `natsclient/storagereport/storage_report_consumer.go:220` — `defer func() { _ = watcher.Stop() }()` | deferred bare `Stop` in `watchOnce` | Yes: returns on ctx end at `:234`. Trigger: shutdown while the report watch is backlogged (initial values of a large account); weak, MEDIUM at most. | adopt |
-| I | `natsclient/storagereport/storage_report.go:708` — `defer func() { _ = lister.Stop() }()` | `KeyLister`, ranged to close at `:713` — `for key := range lister.Keys() {` — with no early exit | No (caller reads `Keys()` until nats.go closes it). | not a KV watch; no change |
+| I | `natsclient/storagereport/storage_report.go:708` — `defer func() { _ = lister.Stop() }()` | `KeyLister`, ranged at `:713` — `for key := range lister.Keys() {` — with no early exit | Yes on ctx end, inside nats.go's lister: its goroutine leaves through `case <-ctx.Done(): return` (`kv.go:1451`) and stops reading the watch's updates; a delivery blocked on the full 256-entry buffer holds `w.mu` (`kv.go:1308-1309`, `w.mu.Lock()` / `defer w.mu.Unlock()`), so the channel never closes. Trigger: shutdown during a reclaim over more than about 256 report rows. Not drainable by the caller, so not a `kvwatch.Stop` site. | not this change; same filed issue as G (task 1.2) |
 | J | `natsclient/kv.go:699` — `stopErr := watcher.Stop()` (`keysByFilter`) | own 5 s drain to close | No. Owner kept it on #420; moving it onto `internal/kvwatch` adds mechanism to a public package (#170). | non-goal |
 
 Not stop sites: `natsclient/kv.go:729` — `watcher, err := kv.bucket.Watch(ctx, pattern)` (returns the watcher to its
 caller, site E); `service/storage_observability.go:371` — `return bucket.WatchAll(ctx, opts...)` (pass-through to site
 H); `graph/follower/follower.go:223` — `_ = watcher.Stop()` (after close). nats.go-owned watches: `.Keys(ctx)`
-(7 sites) and `.History(ctx` (`natsclient/storagereport/storage_report.go:616`) drain inside nats.go.
+(7 sites) and `.History(ctx` (`natsclient/storagereport/storage_report.go:616`) are read by nats.go to the nil
+marker (not to close); no caller-side stop, outside this change.
 Already on `kvwatch.Stop`: `graph/follower/follower.go:254`, `pkg/graphview/view.go:253`,
 `graph/embedding/vector_cache.go:87`, `graph/embedding/worker.go:322`, `graph/embedding/storage.go:538`.
+
+Sites G and I go to one filed issue, not this change. The fix that covers both is a new listing shape, not a swap:
+`WatchAll(IgnoreDeletes(), MetaOnly())` read to the nil marker, then `kvwatch.Stop`, in place of `ListKeys` in two
+packages, with its own tests of trigger 1, trigger 2 and the reclaim path. Draining `Keys()` to close would fix only
+G's trigger 1. Keeping it out leaves this change one swap per site.
 
 ## 2. Spellings of "stop a watch and drain it to close"
 
@@ -59,8 +65,8 @@ Adopters add no spelling.
   released after Stop). Each already promises what adoption makes true. `graph-readiness`, `storage-report`, and no
   spec for `pkg/lifecycle.Watch`, state nothing about the watch's delivery.
 - Ledger rows (`docs/admission-ledger.yaml`): `graph/readiness` (`:2099`, adapt), `config` (`:2800`, adapt),
-  `service`, `natsclient` incl. `storagereport` (`:846`, adapt), `pkg/lifecycle` (`:2294`, adapt). No `carry` row is
-  touched, so `ledger:check` is unaffected.
+  `service`, `natsclient` incl. `storagereport` (row at `:848`, adapt), `pkg/lifecycle` (`:2294`, adapt). No `carry` row
+  is touched, so `ledger:check` is unaffected.
 
 ## 4. Who it is for
 

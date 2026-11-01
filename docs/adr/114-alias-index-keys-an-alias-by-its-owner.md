@@ -66,10 +66,16 @@ allows dots, so its arity varies (`natsclient/kv_key_contract.go:15-17`), and `"
 4. **Read bound.** Two distinct owners decide the answer, so the read hydrates nothing and needs no
    `nameQueryMaxHydration`-style cap. The listing itself is bounded by the store's operation timeout
    (`natsclient/kv.go:616-623`) and the handler's `queryTimeout`; `KeysByPrefix` returns its whole snapshot
-   (`kv.go:594-601`), and stopping at two would be new natsclient mechanism, which #170 rules out. The listing cost of
-   an alias many entities share is not measured.
-5. **Any string.** An alias is indexed whatever its bytes; only an empty alias after trimming is not an alias (not
-   indexed; refused on read as `invalid_request`). The KV-unsafe skip and `aliases_skipped_total` go.
+   (`kv.go:594-601`). Stopping after two owners is possible only by building a second key lister in graph-index on
+   `KVStore.Watch` (`kv.go:725`), which would copy `keysByFilter`'s snapshot-and-drain handling (`kv.go:652`), the
+   code #461 and draft #494 are still settling; one listing with one implementation is kept instead. The listing cost
+   of an alias many entities share is not measured.
+5. **Any string.** An alias is indexed whatever its bytes; a value empty after trimming is not an alias: it is not
+   indexed, and a request for it is refused as `invalid_request`. NAME differs here: it refuses only `""` and answers
+   a whitespace-only name (`query.go:591-593`). The KV-unsafe skip and `aliases_skipped_total` go. The alias rows
+   count in `updates_total{index_type="alias"}` once per indexed or deleted entity, as name and predicate do (the
+   success loops `index.go:453-455`, `:624-626` gain `alias`; the per-alias increment at `index.go:529` goes with
+   `updateAliasIndex`).
 6. **One spelling.** `core.identity.alias` is declared once in `vocabulary` (identity type) and reaches graph-index
    through `DiscoverAliasPredicates`, like every other alias predicate; the literal at `index.go:385` goes.
 7. **No migration.** Rows in the raw layout are not read or converted; deployments wipe and start fresh.
@@ -94,15 +100,19 @@ allows dots, so its arity varies (`natsclient/kv_key_contract.go:15-17`), and `"
   once graph-index has indexed the revision. The `graph-index` and `graph-transport-boundary` exceptions for #415 go.
 - Matching is case-insensitive and ignores surrounding space: `SN-1` and `sn-1` are one alias, and held by two entities
   they are refused as ambiguous.
-- New exported surface: `graph.ErrorCodeAliasAmbiguous`, whose contract line is the `graph-index` requirement this
-  change adds; its first in-repo reader is graph-query.
+- New exported surface: `graph.ErrorCodeAliasAmbiguous`, whose contract line is the `graph-index` requirement "An
+  alias resolves to its one current holder", first read in this repository by graph-query; and
+  `vocabulary.CoreIdentityAlias`, the predicate constant, read by graph-index through `DiscoverAliasPredicates` and
+  offered to products that write the framework alias (contract line: "Every declared alias predicate is indexed").
+  Removed: the `aliases_skipped_total` collector.
 - **graph-query (change 4 PR 9)** must stop swallowing alias-verb errors. At the pin `entityByAlias` falls through to
   treating the input as an ID on any error (pin `query.go:166-177`) and the resolver returns "no match" (pin
   `entity_resolver.go:62-65`). PR 9 propagates `alias_ambiguous`, `index_not_ready` and `internal` as classified
   refusals; #405 already requires that of the resolver. Not found keeps falling through.
 - **Limit, not changed here:** graph-index reads the alias predicate set once, in `startIndexPool`
-  (`index.go:85-87`); a predicate registered after Start is not indexed until restart. Composition registers
-  vocabulary before Start; no test covers a late registration.
+  (`index.go:85-87`); a predicate registered after Start is not indexed until restart. No rule or test orders
+  vocabulary registration before Start (AGENTS.md § 1's registration rule covers payloads and components, not
+  vocabulary); a late registration is untested.
 - **Limit shared with every owner-keyed store, not measured:** whether a restart's replay delivers delete markers for
   entities deleted while graph-index was down (`graph/follower/follower.go:265` handles markers it receives).
 - Rebuild on start reconciles one more owner filter per entity (#108 measures rebuild cost).

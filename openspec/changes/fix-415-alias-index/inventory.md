@@ -386,7 +386,8 @@ openspec/specs` (ADR-107 `:12`, `openspec/specs/vocabulary-packs/spec.md:7`); se
   (`git grep -n 'core.identity.alias' -- '*.go' | grep -v _test`); no vocabulary registers it. A second spelling of
   "is an alias predicate", inherited from the pin (`component.go:1427`).
 - Discovery runs once, in `startIndexPool` (`index.go:85-87`), so a pack registered after graph-index starts is not
-  indexed. Composition registers packs in `main` before Start (AGENTS.md § 1 registration rule); not tested here.
+  indexed. No rule or test orders pack registration before graph-index's Start: AGENTS.md § 1's registration rule covers
+  payload and component registration (`RegisterPayloads`, `Register`), not vocabulary packs. Not tested here.
 
 12.2 What changed versus the pin to prepare for SemVocab (measured): `vocabulary/pack.go` (PackSpec, LoadPackJSON
 `:136`, LoadPackYAML `:159`, RegisterPack `:237`), `entity_type.go`, `projection.go` are new (`ls` of both trees;

@@ -24,13 +24,19 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
   ALIAS_INDEX assertions of `TestIndexReplacementThroughEveryIndex` (`index_integration_test.go:303`, `:316`, and the
   delete step), failing on `7ac1e13`.
 - [ ] 3.2 Alias key helpers beside NAME's, `reconcileAliasIndex` through `reconcileOwnedRows`, the `alias` delete set;
-  `updateAliasIndex` goes; the read lists by hash prefix and parses with `entityAndPredicate`. Gate:
+  `updateAliasIndex` goes, and `alias` joins the `updates_total` success loops (`index.go:453-455`, `:624-626`); the
+  read lists by hash prefix and parses with `entityAndPredicate`. Gate:
   `go test -race -count=1 -tags integration ./processor/graph-index`.
+- [ ] 3.3 Extend `TestMaximumLengthIDsAndPredicatesThroughPublicReads` (`query_integration_test.go:243-298`): register a
+  194-byte alias predicate (`WithAlias(AliasTypeIdentity, 0)`), give the 256-byte `src` an alias under it, read it
+  through the `alias` verb (answers `src`), then delete `src` and read again (answers no ID). Shown failing on
+  `7ac1e13` (the read after the delete still answers `src`); passes after 3.2. Gate: as 3.2.
 
 ## 4. Shared alias refused (ADR-114 §3-4, design D2)
 
 - [ ] 4.1 `TestSharedAliasIsRefusedAsAmbiguous` (two holders refused, class invalid, code `alias_ambiguous`, alias in
-  the message; resolves to the other after one drops it; one entity under two predicates resolves), failing on
+  the message; resolves to the other after one drops it; with E1 and E2 holding it again, E2 deleted, X answers E1,
+  so the `*.<entity6>.*` delete filter leaves E1's row; one entity under two predicates resolves), failing on
   `7ac1e13`.
 - [ ] 4.2 `graph.ErrorCodeAliasAmbiguous` with its doc comment; the read decides on distinct entities. Gate: as 3.2
   and `go test -race -count=1 ./graph`.
@@ -40,7 +46,7 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 - [ ] 5.1 `TestAliasMatchFoldsCase` and `TestKVUnsafeAliasIsIndexed`, failing on `7ac1e13`;
   `TestUnsafeAliasSkipIsLoggedAndCounted` is removed with the behaviour it pinned (named in notes).
 - [ ] 5.2 The plan keeps any non-empty trimmed alias; the skip, its warning, `aliasesSkipped` and
-  `aliases_skipped_total` go; the read refuses only an empty alias. Gate: as 3.2.
+  `aliases_skipped_total` go; the read refuses an alias empty after trimming. Gate: as 3.2.
 
 ## 6. Malformed alias rows (spec "Malformed index rows are skipped and declared")
 
@@ -50,16 +56,22 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 
 ## 7. Wording (every text naming the #415 exception)
 
-- [ ] 7.1 Bring to the new behaviour, by `git grep -n '#415' -- ':!openspec/changes/archive'` returning only this
-  change and ADR-114: `graph/query_response.go:12-13`; `processor/graph-index/doc.go:12`, `README.md:45-46`,
-  `:72-73`, `:174`, `:183-185`, `index.go` and `query.go` comments; `docs/adr/077-…md:22-23` (port note points to
-  ADR-114); `.agents/contracts/semengine-developer.md:161`; `.agents/contracts/semengine-reviewer.md:231`;
-  `.agents/skills/query-pattern/SKILL.md:38`; `docs/admission-ledger.yaml:3426-3427`, `:3435-3436`, `:3443` and the
-  row's proving tests. ADR-114 status to Accepted with the approval comment. Gate: `task docs:check`,
-  `task ledger:diff -- processor/graph-index`.
+- [ ] 7.1 Bring to the new behaviour every text naming the exception, done when
+  `git grep -n '#415' -- ':!openspec/changes/archive' ':!openspec/specs' ':!docs/adr/063-store-substrate-and-resolver.md'`
+  returns only this change and ADR-114 (ADR-063 `:45`, `:147`, `:455`, `:469` cite SemStreams gh#415; the specs
+  change at 8.1): `graph/query_response.go:12-13`; `processor/graph-index/doc.go:12`, `README.md:45-46`, `:72-73`,
+  `:174`, `:183-185`, `index.go` and `query.go` comments; `query_integration_test.go:556-558` (comment naming
+  `aliases_skipped_total`); `docs/adr/077-…md:22-23` (port note points to ADR-114);
+  `.agents/contracts/semengine-developer.md:161`; `.agents/contracts/semengine-reviewer.md:231`;
+  `.agents/skills/query-pattern/SKILL.md:38`. ADR-114 status to Accepted with the approval comment. Gate:
+  `task docs:check`.
+- [ ] 7.2 Ledger: `processor/graph-index` row `:3426-3427`, `:3433-3434` (item 9 no longer lists
+  `aliases_skipped_total`), `:3435-3436`, `:3443` and its proving tests; `vocabulary` row (`:477-512`) names
+  `CoreIdentityAlias`; `graph` row (`:2064`, error codes) names `ErrorCodeAliasAmbiguous`. Gate:
+  `task ledger:diff -- processor/graph-index vocabulary graph`, `task docs:check`.
 
 ## 8. Archive
 
 - [ ] 8.1 Spec sync into `openspec/specs/graph-index` and `openspec/specs/graph-transport-boundary`, archive as the
-  last content commit; the PR body carries `Closes #415`, `implemented-by:`, `reviewed-by:`. Gate:
-  `task spec:check`.
+  last content commit; then `git grep -n '#415' -- openspec/specs` returns nothing. The PR body carries
+  `Closes #415`, `implemented-by:`, `reviewed-by:`. Gate: `task spec:check`.

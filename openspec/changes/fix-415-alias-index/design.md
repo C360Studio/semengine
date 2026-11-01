@@ -33,7 +33,9 @@ graph.ErrorCodeAliasAmbiguous, …)` with the alias in the message. Adopter: a c
 new code; the PR 9 consequence is ADR-114's.
 
 D3 Any string: the plan keeps every alias whose trimmed form is non-empty; the skip, its warning, `aliasesSkipped`
-and `aliases_skipped_total` go; the read refuses only an empty alias.
+and `aliases_skipped_total` go; the read refuses an alias empty after trimming (NAME answers a whitespace-only name,
+`query.go:591-593`; alias does not). `updates_total{index_type="alias"}` moves from the per-alias increment
+(`index.go:529`) into the success loops (`index.go:453-455`, `:624-626`), once per entity like name and predicate.
 
 D4 One spelling: `vocabulary.CoreIdentityAlias = "core.identity.alias"`, registered in `init` with
 `WithAlias(AliasTypeIdentity, 0)` and `WithDataType(DataTypeString)`; `isAliasPredicate` reads the discovered set
@@ -52,7 +54,8 @@ literal expected answers; each is shown failing on `7ac1e13` in `notes/<task>.md
 | --- | --- |
 | dropped alias answers none; changed alias answers the new one only; deleted entity's alias answers none | `TestAliasReadImplementsReplacement` |
 | ALIAS_INDEX keys after A, B, none, delete are exactly the current rows | `TestIndexReplacementThroughEveryIndex` (line 316 flips) |
-| shared alias refused naming it; resolves to the other after one drops it; one entity under two predicates resolves | `TestSharedAliasIsRefusedAsAmbiguous` |
+| shared alias refused naming it; resolves to the other after one drops it, and after one is deleted (the `*.<entity6>.*` delete filter leaves the other's row); one entity under two predicates resolves | `TestSharedAliasIsRefusedAsAmbiguous` |
+| 256-byte entity ID and 194-byte alias predicate: the longest alias key is written, read through the verb, deleted | `TestMaximumLengthIDsAndPredicatesThroughPublicReads` (extended) |
 | `SN-1` found by ` sn-1 ` | `TestAliasMatchFoldsCase` |
 | `two words` indexed and found; other rows written | `TestKVUnsafeAliasIsIndexed` (replaces `TestUnsafeAliasSkipIsLoggedAndCounted`) |
 | malformed alias row skipped, warned, counted | `TestMalformedIndexRowsAreSkippedLoggedAndCounted` |

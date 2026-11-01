@@ -17,8 +17,10 @@ Approved-by:
 
 - ADR-114 decides the layout: `hash(alias).entity6.hex(predicate)`, NAME's shape, owned by the entity and reconciled
   from current state with the other owner-keyed indexes; entity delete removes the rows (#415 comment 6557704316).
-- The alias read folds case and surrounding space like NAME; one holder answers its ID; two or more distinct holders
-  are refused, class invalid, code `alias_ambiguous`, naming the alias. `graph.AliasData` keeps one ID.
+- The alias read folds case **and trims surrounding space**, exactly NAME's `normalizeName` (`name_index.go:26-28`),
+  so ` sn-1 ` matches `SN-1`; approving this proposal approves the trimming as part of ruling 2. One holder answers
+  its ID; two or more distinct holders are refused, class invalid, code `alias_ambiguous`, naming the alias.
+  `graph.AliasData` keeps one ID.
 - Any alias string is indexed; the KV-unsafe skip, `aliases_skipped_total` and the read-side refusal of such aliases go.
 - `vocabulary` declares `core.identity.alias` (identity type); graph-index's literal second spelling goes (#415
   comment 6557766571).

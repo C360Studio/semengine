@@ -17,8 +17,21 @@ deleting the entity SHALL leave each read answering nothing for it (ADR-114).
 #### Scenario: A deleted entity's alias
 
 - **WHEN** an entity carrying alias X is deleted and graph-index has indexed the delete
-- **THEN** an `alias` request for X answers no ID
-- **AND** the test that verifies this is `TestAliasReadImplementsReplacement`
+- **THEN** an `alias` request for X answers no ID, and every other read answers nothing for the entity
+- **AND** the tests that verify this are `TestAliasReadImplementsReplacement` and
+  `TestIndexReplacementThroughEveryIndex`
+
+#### Scenario: The longest alias key
+
+- **WHEN** an entity with a 256-byte ID carries an alias under a 194-byte alias predicate, and is then deleted
+- **THEN** an `alias` request answers that entity, and after the delete answers no ID
+- **AND** the test that verifies this is `TestMaximumLengthIDsAndPredicatesThroughPublicReads`
+
+#### Scenario: One holder of a shared alias is deleted
+
+- **WHEN** entities E1 and E2 both carry alias X and E2 is deleted
+- **THEN** an `alias` request for X answers E1
+- **AND** the test that verifies this is `TestSharedAliasIsRefusedAsAmbiguous`
 
 ### Requirement: Malformed index rows are skipped and declared
 
@@ -66,8 +79,8 @@ not an alias (ADR-114).
 
 An `alias` request SHALL match an alias trimmed and case-folded as NAME matches a name, and SHALL answer no ID when no
 live entity carries it, that entity's ID when exactly one does (under any number of predicates), and a refusal of
-class invalid with code `alias_ambiguous` naming the alias when two or more do (ADR-114). An empty alias SHALL be
-refused with code `invalid_request`.
+class invalid with code `alias_ambiguous` naming the alias when two or more do (ADR-114). An alias empty after
+trimming SHALL be refused with code `invalid_request`; unlike a name, a whitespace-only alias is refused.
 
 #### Scenario: A shared alias is refused, then resolves
 

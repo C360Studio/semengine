@@ -248,7 +248,7 @@ const watchDrainBudget = kvwatch.DrainBudget
 var errWatchDeliveryOpen = kvwatch.ErrDeliveryOpen
 
 // stopWatch stops the ENTITY_STATES watch and drains its delivery until it closes, for at most
-// watchDrainBudget after ctx, Run's, has ended (kvwatch.Stop, which says why the drain and the
+// watchDrainBudget after the watcher's own Stop returns (kvwatch.Stop, which says why the drain and the
 // bound are needed, #418 and #454).
 func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 	if err := kvwatch.Stop(ctx, watcher); err != nil {

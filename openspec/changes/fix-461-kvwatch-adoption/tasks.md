@@ -66,10 +66,11 @@ base failure is a coin flip.
   behind it, the channel closing only after the last is read (nats.go v1.55.0's shape, `internal/kvwatch` doc). The
   scripted `fakeBucket.watch` waits on `<-ctx.Done()` before it returns the watcher, so ctx has ended before `Run` reads
   (a live ctx would read all entries and pass on base). After ctx ends, `Run` returns only after the scripted delivery
-  has ended. On base the random `select` in `watchOnce` reads a handful at most, so it fails every run (synctest reports
-  the blocked goroutine). Then `watchOnce` stops through `kvwatch.Stop`, which makes the `Run` doc's "its return is the
-  join" true. Mutation check: `task mutate:check` with `kvwatch.Stop` replaced by `watcher.Stop()`, recorded as
-  detections out of 3 mutant runs (3 of 3 expected). Gate: `go test -race -count=1 ./graph/readiness/`; `task verify`.
+  has ended. On base the random `select` in `watchOnce` reads a handful at most, so it fails every run (on the test's
+  own assertion that the delivery ended, `notes/2.5.md`). Then `watchOnce` stops through `kvwatch.Stop`, which makes the
+  `Run` doc's "its return is the join" true. Mutation check: `task mutate:check` with `kvwatch.Stop` replaced by
+  `watcher.Stop()`, recorded as detections out of 3 mutant runs (3 of 3 expected). Gate: `go test -race -count=1
+  ./graph/readiness/`; `task verify`.
 - [x] 2.6 Ledger rows of `service`, `pkg/lifecycle`, `config`, `natsclient` (`storagereport`) and `graph/readiness`
   name `internal/kvwatch` (in-set; no exported signature names it) and the stop behaviour. Gate: `task docs:check`;
   `task verify`.

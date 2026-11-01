@@ -2825,7 +2825,7 @@
     internal/lifecycleguard (all in tree), internal/kvwatch (in-set; no exported signature names it), nats.go
     jetstream; reads files and env vars; creates and updates JetStream streams in EnsureStreams; Manager creates and
     writes the configuration bucket semengine_config_<org>_<stem> and watches it, with watch goroutines joined in
-    Stop; Manager stops its watch through internal/kvwatch.Stop, which drains the watch's updates until nats.go closes the channel, for at most kvwatch.DrainBudget (5 s) counted from when the watcher's own Stop returns
+    Stop; Manager stops each watch through internal/kvwatch.Stop, which drains the watch's updates until nats.go closes the channel, for at most kvwatch.DrainBudget (5 s) counted from when the watcher's own Stop returns
   known_risks: >-
     dropped as unread: StorageMode*, BucketConfig, Loader.AddLayer/EnableValidation/Load, Config.SaveToFile,
     Config.String, DeriveStreamSubjects, FrameworkStreamAutoCreate, loadJSONFile, mergeConfigs, validateEnvVar, and

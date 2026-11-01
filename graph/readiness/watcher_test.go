@@ -772,8 +772,9 @@ type backlogWatcher struct {
 	updates  chan jetstream.KeyValueEntry
 	stopped  chan struct{}
 	stopOnce sync.Once
-	// delivered is closed once the delivery goroutine has sent its last entry and
-	// closed updates.
+	// delivered is closed once the delivery goroutine has sent its last entry, just
+	// before it closes updates, so a reader that saw updates close also sees delivered
+	// closed.
 	delivered chan struct{}
 }
 
@@ -789,11 +790,11 @@ func newBacklogWatcher(entry jetstream.KeyValueEntry, bufferSize, queued int) *b
 		w.updates <- entry
 	}
 	go func() {
-		defer close(w.delivered)
 		for range queued {
 			w.updates <- entry
 		}
 		<-w.stopped
+		close(w.delivered)
 		close(w.updates)
 	}()
 	return w

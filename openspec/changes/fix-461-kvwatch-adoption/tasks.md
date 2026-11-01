@@ -15,8 +15,8 @@ since issue #129 keeps `task mutate:check` from running an integration test. A r
   `pkg/lifecycle.List` has no production caller in this repository (consumer API), and the fix shape
   (`WatchAll(IgnoreDeletes(), MetaOnly())` read to the nil marker, then `kvwatch.Stop`). Link it from PR #494
   without a closing keyword. Gate: `gh issue view <n>` reads back.
-- [ ] 1.3 Design review of record of the proposal and tasks: no `BLOCKING` finding.
-  Hold: design review
+- [x] 1.3 Design review of record of the proposal and tasks: no `BLOCKING` finding. Codex APPROVE at `eaa018c`
+  (PR #494 comment); its two MEDIUM corrections are applied to proposal and task 2.2.
 
 ## 2. Code
 
@@ -33,11 +33,13 @@ base failure is a coin flip.
   apart: it cannot be forced without falling behind. Fails on base; then `readKVWatch` stops through
   `kvwatch.Stop`. Gate: `go test -race -count=1 -tags integration ./service/`; `task verify`.
 - [ ] 2.2 `pkg/lifecycle`: `lifecycleAtomicWatcher` (`watch_atomic_bootstrap_test.go:30`) gets `closeUpdates`; the
-  lost-watch close at `:204` calls it. A test in `pkg/lifecycle/manager_integration_test.go`: `WatchEvents` over
-  more than 256 matching entities whose callback returns an error once the delivery is blocked
-  (`manager_query.go:250`; fails on base every time) returns an error that `errors.Is` the callback's and leaves no
-  nats.go watch delivery; a second case, 10 cycles, ends the context with the callback blocked and checks
-  `errors.Is(err, context.Canceled)`. Then `runWatchLoop` stops through `kvwatch.Stop` and joins its wrapped error.
+  lost-watch close at `:204` calls it. A test in `pkg/lifecycle/manager_integration_test.go`: `WatchEvents` over more
+  than 256 matching entities whose callback returns an error once the delivery is blocked (`manager_query.go:250`; fails
+  on base every time) returns an error that `errors.Is` the callback's and leaves no nats.go watch delivery; a second
+  case, 10 cycles, ends the context with the callback blocked and checks `errors.Is(err, context.Canceled)`. A unit case
+  in `pkg/lifecycle/watch_atomic_bootstrap_test.go`: a scripted watcher whose `Stop` returns a non-benign sentinel and
+  whose updates then close; through `Watch` or `WatchEvents`, `errors.Is` finds both the primary error and the sentinel
+  (fails on base, which discards it). Then `runWatchLoop` stops through `kvwatch.Stop` and joins its wrapped error.
   Gate: `go test -race -count=1 -tags integration ./pkg/lifecycle/`; `task verify`.
 - [ ] 2.3 `config`: a test in `config/manager_lifecycle_integration_test.go`, beside
   `TestBlockedKeyFamilyHandlerHoldsStop`, 10 cycles: a key family with more than 256 entries and a blocked handler;

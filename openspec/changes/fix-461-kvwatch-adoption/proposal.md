@@ -38,8 +38,11 @@ owner on #420; moving `natsclient` onto `internal/kvwatch` would add mechanism t
   no exported signature changes or names `internal/kvwatch`.
 - Doc comments of the five functions say the return waits for the watch's delivery to close, for at most
   `kvwatch.DrainBudget`. Test watchers close `Updates` once, after `Stop`, as nats.go does.
-- One failing-first test per site proves its caller returns and leaves no nats.go delivery behind with a backlogged
-  watch (`tasks.md`). Ledger rows of the five packages name the new `internal/kvwatch` dependency.
+- One failing-first test per site (`tasks.md`). At `service`, `pkg/lifecycle`, `config` and `storagereport` a
+  real-server test proves the caller returns and leaves no nats.go delivery behind with a backlogged watch. At
+  `graph/readiness` a scripted watcher under `synctest` proves only that `Run` stops through the drain and waits for it;
+  that nats.go needs the drain rests on `internal/kvwatch`'s own real-server evidence, not on this test. Ledger rows of
+  the five packages name the new `internal/kvwatch` dependency.
 
 ## Not covered
 

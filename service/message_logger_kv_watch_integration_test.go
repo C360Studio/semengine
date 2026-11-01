@@ -24,6 +24,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/natsclient"
 )
 
@@ -445,4 +446,64 @@ func TestKVWatchFallingBehindEndsStream(t *testing.T) {
 	// one more was in the stream's hands (design D4).
 	assert.GreaterOrEqual(t, changes, 100, "events buffered before the drop were not sent")
 	assert.LessOrEqual(t, changes, 101)
+}
+
+// TestKVWatchFallingBehindLeavesNoWatchDelivery (#461): a watch stream that ends by falling behind
+// leaves no nats.go watch delivery running after its handler returns. 600 keys are put, more than
+// the stream's 100-event buffer and nats.go's 256-entry updates buffer together (nats.go v1.55.0,
+// jetstream/kv.go WatchFiltered). The client does not read, so the reader falls behind; its drop
+// Warn is held, which keeps the reader from returning until the delivery is blocked on its full
+// buffer, so every run stops the watch with a backlogged delivery. A bare Stop only unsubscribes
+// and leaves that delivery blocked for good; the reader must drain it. Client exit is not tested
+// apart: without falling behind the reader keeps reading, so no delivery backs up.
+func TestKVWatchFallingBehindLeavesNoWatchDelivery(t *testing.T) {
+	client := fixtureClient(t)
+	ctx := t.Context()
+	const bucket = "WATCH_BEHIND_DRAIN"
+	const keys = 600
+	kv, err := client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{Bucket: bucket})
+	require.NoError(t, err)
+	for i := range keys {
+		_, err := kv.Put(ctx, fmt.Sprintf("k%03d", i), []byte(fmt.Sprintf(`{"i":%d}`, i)))
+		require.NoError(t, err)
+	}
+
+	handler := newHoldingHandler(t, watchDropWarn)
+	_, mux := startWatchLogger(t, client, slog.New(handler))
+
+	reqCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	req := httptest.NewRequestWithContext(reqCtx, http.MethodGet, watchURL("", bucket, ""), nil)
+	w := newBlockingResponseWriter(t)
+	served := make(chan struct{})
+	go func() {
+		defer close(served)
+		mux.ServeHTTP(w, req)
+	}()
+
+	waitForSignal(t, handler.heldRecord(), "the watch's buffer-full Warn")
+	// The reader is held in its drop Warn and reads no more, so the delivery fills its buffer; the
+	// stack dump showing it blocked orders the reader's return after the backlog.
+	if err := natsfixture.AwaitNativeDeliveryBlocked(ctx, watchBound); err != nil {
+		t.Fatal(err)
+	}
+	handler.releaseHeld()
+	w.releaseWrites()
+	timer := time.NewTimer(watchBound)
+	defer timer.Stop()
+	select {
+	case <-served:
+	case <-timer.C:
+		cancel()
+		t.Fatalf("the watch stream did not end within %s after it fell behind; body %q", watchBound, w.written())
+	}
+
+	events := readAllSSEEvents(t, w.written())
+	require.NotEmpty(t, events)
+	last := events[len(events)-1]
+	require.Equal(t, "error", last.name, "last event %+v", last)
+	// The handler returned after the reader did, and the reader stops the watch before it returns.
+	if err := natsfixture.AwaitNoStacks(ctx, watchBound, natsfixture.NativeDeliveryStacks); err != nil {
+		t.Fatalf("nats.go's watch delivery is still running after the handler returned: %v", err)
+	}
 }

@@ -34,6 +34,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/natsclient"
 )
 
@@ -160,7 +161,9 @@ func (ml *MessageLogger) handleKVWatch(w http.ResponseWriter, r *http.Request) {
 
 // readKVWatch forwards the watcher's entries to events until ctx ends, the watcher closes, or
 // an entry does not fit in events; in that last case it closes fellBehind. It never waits on
-// events. On return it stops the watcher, closes events, then closes done.
+// events. On return it stops the watcher through kvwatch.Stop, which waits for the watch's
+// delivery to close, for at most kvwatch.DrainBudget after ctx has ended; it then closes events,
+// then closes done.
 func (ml *MessageLogger) readKVWatch(
 	ctx context.Context,
 	watcher jetstream.KeyWatcher,
@@ -171,7 +174,7 @@ func (ml *MessageLogger) readKVWatch(
 	defer close(done)
 	defer close(events)
 	defer func() {
-		if err := watcher.Stop(); err != nil {
+		if err := kvwatch.Stop(ctx, watcher); err != nil {
 			ml.logger.Warn("Failed to stop KV watcher", "error", err, "bucket", bucket)
 		}
 	}()

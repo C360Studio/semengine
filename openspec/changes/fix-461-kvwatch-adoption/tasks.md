@@ -27,7 +27,7 @@ instead. Nothing sends on a fake's channel after its `Stop`. So no existing test
 closes a channel twice. A real-server test runs 10 cycles, as `TestRunLeavesNoWatchDelivery` does, where one cycle's
 base failure is a coin flip.
 
-- [ ] 2.1 `service`: a test in `service/message_logger_kv_watch_integration_test.go`, beside
+- [x] 2.1 `service`: a test in `service/message_logger_kv_watch_integration_test.go`, beside
   `TestKVWatchFallingBehindEndsStream`: a watch stream over a bucket holding more keys than both buffers (100 + 256)
   ends by falling behind, the handler returns, and no nats.go watch delivery is left. Client exit is not tested
   apart: it cannot be forced without falling behind. Fails on base; then `readKVWatch` stops through

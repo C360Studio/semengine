@@ -12,7 +12,7 @@ since issue #129 keeps `task mutate:check` from running an integration test. A r
 - [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and tasks committed; owner approval. Gate: `task spec:check`
   and `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 File one issue for the key-lister strands (`inventory.md` § 1, sites G and I): its triggers, that
+- [x] 1.2 File one issue (#496) for the key-lister strands (`inventory.md` § 1, sites G and I): its triggers, that
   `pkg/lifecycle.List` has no production caller in this repository (consumer API), and the fix shape
   (`WatchAll(IgnoreDeletes(), MetaOnly())` read to the nil marker, then `kvwatch.Stop`). Link it from PR #494
   without a closing keyword. Gate: `gh issue view <n>` reads back.
@@ -58,16 +58,17 @@ base failure is a coin flip.
   delivery is left. No production hook. Fails on base; then `watchOnce` stops through `kvwatch.Stop` and logs its
   error at Warn. Gate: `go test -race -count=1 -tags integration ./natsclient/storagereport/ ./service/`;
   `task verify`.
-- [ ] 2.5 `graph/readiness` (no integration harness in the package): the test runs entirely under
-  `testing/synctest`, so `kvwatch.DrainBudget` costs no real time and `fakeWatcher` (`watcher_test.go:56`, sharing
-  one channel per `watchSource`, `:85-90`) stays as it is. A unit test in `graph/readiness/watcher_test.go` on a
-  scripted watcher whose `Stop` leaves the channel open and whose delivery has a long tail: its buffer full, then many
-  sends (1,000) queued behind it, the channel closing only after the last is read (nats.go v1.55.0's shape,
-  `internal/kvwatch` doc). After ctx ends, `Run` returns only after the scripted delivery has ended. On base the
-  random `select` in `watchOnce` reads a handful at most, so it fails every run (synctest reports the blocked
-  goroutine). Then `watchOnce` stops through `kvwatch.Stop`, which makes the `Run` doc's "its return is the join"
-  true. Mutation check: `task mutate:check` with `kvwatch.Stop` replaced by `watcher.Stop()`, recorded as detections
-  out of 3 mutant runs (3 of 3 expected). Gate: `go test -race -count=1 ./graph/readiness/`; `task verify`.
+- [ ] 2.5 `graph/readiness` (no integration harness in the package): the test runs entirely under `testing/synctest`, so
+  `kvwatch.DrainBudget` costs no real time and `fakeWatcher` (`watcher_test.go:56`, sharing one channel per
+  `watchSource`, `:85-90`) stays as it is. A unit test in `graph/readiness/watcher_test.go` on a scripted watcher whose
+  `Stop` leaves the channel open and whose delivery has a long tail: its buffer full, then many sends (1,000) queued
+  behind it, the channel closing only after the last is read (nats.go v1.55.0's shape, `internal/kvwatch` doc). The
+  scripted `fakeBucket.watch` waits on `<-ctx.Done()` before it returns the watcher, so ctx has ended before `Run` reads
+  (a live ctx would read all entries and pass on base). After ctx ends, `Run` returns only after the scripted delivery
+  has ended. On base the random `select` in `watchOnce` reads a handful at most, so it fails every run (synctest reports
+  the blocked goroutine). Then `watchOnce` stops through `kvwatch.Stop`, which makes the `Run` doc's "its return is the
+  join" true. Mutation check: `task mutate:check` with `kvwatch.Stop` replaced by `watcher.Stop()`, recorded as
+  detections out of 3 mutant runs (3 of 3 expected). Gate: `go test -race -count=1 ./graph/readiness/`; `task verify`.
 - [ ] 2.6 Ledger rows of `service`, `pkg/lifecycle`, `config`, `natsclient` (`storagereport`) and `graph/readiness`
   name `internal/kvwatch` (in-set; no exported signature names it) and the stop behaviour. Gate: `task docs:check`;
   `task verify`.

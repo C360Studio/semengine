@@ -1,6 +1,7 @@
 # Proposal: fix-461-kvwatch-adoption
 
-Approved-by:
+Approved-by: owner, 2026-11-01 in Enjoy, proposal at `f8b7ad1` approved as drafted; recorded on #461
+(comment 6557756760).
 
 ## Why
 

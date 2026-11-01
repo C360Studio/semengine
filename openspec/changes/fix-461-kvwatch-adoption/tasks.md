@@ -9,9 +9,8 @@ since issue #129 keeps `task mutate:check` from running an integration test. A r
 
 ## 1. Proposal
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and tasks committed; owner approval. Gate: `task spec:check`
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); proposal and tasks committed; owner approval. Gate: `task spec:check`
   and `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
 - [x] 1.2 File one issue (#496) for the key-lister strands (`inventory.md` § 1, sites G and I): its triggers, that
   `pkg/lifecycle.List` has no production caller in this repository (consumer API), and the fix shape
   (`WatchAll(IgnoreDeletes(), MetaOnly())` read to the nil marker, then `kvwatch.Stop`). Link it from PR #494

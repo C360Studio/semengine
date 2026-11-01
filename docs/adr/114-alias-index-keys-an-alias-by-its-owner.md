@@ -2,9 +2,10 @@
 
 ## Status
 
-**Proposed (2026-11-01).** Drafted on PR #495 (`Closes #415`) ahead of any code, as the owner's ruling on PR #414
-(comment 6426254115, item 3, condition 1) requires: "the architect decides the alias key layout ADR-077 left open, as
-a decision record". It becomes accepted when the owner approves the change `fix-415-alias-index` (its `Approved-by:`).
+**Accepted (2026-11-01).** The owner approved the change `fix-415-alias-index` as written on PR #495 (comment
+6558330360). Drafted on PR #495 (`Closes #415`) ahead of any code, as the owner's ruling on PR #414 (comment
+6426254115, item 3, condition 1) requires: "the architect decides the alias key layout ADR-077 left open, as a
+decision record".
 It records these owner rulings and adds the layout, the reasons and the consequences:
 
 - 2026-11-01, #415 comment 6557704316: (1) an alias held by two or more live entities is refused as ambiguous, with

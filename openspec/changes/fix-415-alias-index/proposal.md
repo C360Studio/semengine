@@ -11,7 +11,7 @@ decided as a decision record before any code, and the fix lands as its own pull 
 (`processor/graph-query`), whose `entityByAlias` takes an alias hit as its answer. Graph "is in many ways our secret
 sauce. it needs to be solid."
 
-Approved-by:
+Approved-by: owner (Coby Leuschke), 2026-11-01, PR #495 comment 6558330360
 
 ## What Changes
 

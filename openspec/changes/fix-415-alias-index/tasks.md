@@ -6,9 +6,8 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 
 ## 1. Design
 
-- [ ] 1.1 Inventory reviewed (`INVENTORY PASS`); ADR-114, proposal, design and spec deltas pass the independent
+- [x] 1.1 Inventory reviewed (`INVENTORY PASS`); ADR-114, proposal, design and spec deltas pass the independent
   pre-owner review; owner approval. Gate: `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval.
 
 ## 2. One spelling of the framework alias predicate (design D4)
 

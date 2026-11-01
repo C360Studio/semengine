@@ -15,6 +15,17 @@ document states what a caller observes and the test that proves each, not lock o
 - Error-code precedent for a per-entity invalid refusal: `graph/mutation_responses.go:88-102`
   (`ErrorCodeEmbeddingUnavailable`, class invalid).
 
+## Rulings
+
+| Ruling | Where it is honoured |
+| --- | --- |
+| PR #414 comment 6426254115 (1): the alias layout is decided as an ADR before code | ADR-114; task 1.1 holds code until owner approval |
+| PR #414 comment 6426254115 (2): the fix lands as its own PR before change 4 PR 9 | proposal; PR #495 carries only this change |
+| #415 comment 6557704316 (1): a shared alias is refused as ambiguous, naming the alias | ADR-114 §3; D2; spec "An alias resolves to its one current holder"; tasks 4.1-4.2 |
+| #415 comment 6557704316 (2): alias matching folds case like NAME | ADR-114 §3; D2; spec scenario "Case and space fold"; task 5.1 |
+| #415 comment 6557704316 (3): KV-unsafe aliases are indexed; skip, counter and refusal dropped | ADR-114 §5; D3; spec "Every declared alias predicate is indexed"; tasks 5.1-5.2 |
+| #415 comment 6557766571: `core.identity.alias` declared in `vocabulary`; SemVocab changes none of this | ADR-114 §6; D4; spec scenario "The framework alias predicate is declared"; tasks 2.1-2.2 |
+
 ## Goals / Non-Goals
 
 Goals: `[A] -> [B] -> []` and delete on the alias read; the owner's three rulings; one spelling of the framework

@@ -593,7 +593,7 @@ func (cm *Manager) release(ctx context.Context) error {
 // ctx is release's: Start's on a failed Start, Stop's otherwise (ADR-113).
 //
 // Each watcher is stopped through kvwatch.Stop, which returns once nats.go has
-// closed the watch's delivery, for at most kvwatch.DrainBudget from the stop:
+// closed the watch's delivery, for at most kvwatch.DrainBudget after the watcher's Stop returns:
 // at nats.go v1.55.0 a delivery blocked on a full updates buffer outlives the
 // watch's Stop until the buffer is read, and a key-family handler that is slow
 // with a backlog leaves it blocked

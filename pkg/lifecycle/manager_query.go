@@ -143,12 +143,12 @@ type Event struct {
 // ends, onParticipant's error when it returns one, and an error when the
 // subscription closes or delivers a value it cannot decode or project into the
 // workflow's type; that error names the entity and its revision. Watch returns
-// after nats.go has closed the watch's delivery, for at most
-// internal/kvwatch's DrainBudget from the stop; a failure to stop the watch
-// is joined to the error (TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery
-// and TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery drive a
-// backlogged watch). A nil ctx or onParticipant is refused before any
-// subscription opens.
+// after nats.go has closed the watch's delivery, for at most internal/kvwatch's
+// DrainBudget after the watcher's Stop returns; a failure to stop the watch is
+// joined to the error
+// (TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery and
+// TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery drive a backlogged
+// watch). A nil ctx or onParticipant is refused before any subscription opens.
 func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func(Participant) error) error {
 	if ctx == nil {
 		return errors.New("lifecycle: Watch requires a non-nil context")

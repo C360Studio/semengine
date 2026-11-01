@@ -224,8 +224,9 @@ func entityAndPredicate(suffix string) (entityID, predicate string, ok bool) {
 	return entityID, predicate, true
 }
 
-// handleQueryAlias resolves an alias through ALIAS_INDEX. While #415 is open an alias that
-// was dropped or changed, or whose entity was deleted, may still resolve (design D12).
+// handleQueryAlias resolves an alias through ALIAS_INDEX: it lists the keys under the alias's
+// hash prefix (ADR-114 §3) and answers no ID when none is stored, the entity's ID when every
+// row is one entity's, under any number of predicates.
 func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
@@ -241,19 +242,38 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	if err := natsclient.ValidateKVLiteralKey(req.Alias); err != nil {
 		return nil, invalidRequest(err)
 	}
+	prefix := nameIndexKey(req.Alias) + "."
+	if err := validateKVPrefix(prefix); err != nil {
+		return nil, invalidRequest(err)
+	}
 	revision, err := c.queryRevision(ctx)
 	if err != nil {
 		return nil, err
 	}
-	entry, err := c.aliasBucket.Get(ctx, req.Alias)
-	if natsclient.IsKVNotFoundError(err) {
-		return reply(revision, graph.AliasData{})
-	}
+	keys, err := c.aliasBucket.KeysByPrefix(ctx, prefix)
 	if err != nil {
 		return nil, internalError(err)
 	}
-	canonicalID := string(entry.Value)
-	return reply(revision, graph.AliasData{CanonicalID: &canonicalID})
+	holders := make(map[string]struct{}, 1)
+	for _, key := range keys {
+		entityID, _, ok := entityAndPredicate(strings.TrimPrefix(key, prefix))
+		if !ok {
+			// shortcut: refuses on a malformed row; task 6 of fix-415-alias-index skips and
+			// declares it through skipMalformedRow instead.
+			return nil, internalError(fmt.Errorf("alias index row %q is not hash.entity.hex(predicate)", key))
+		}
+		holders[entityID] = struct{}{}
+	}
+	if len(holders) > 1 {
+		// shortcut: two or more holders are refused under invalid_request; task 4 of
+		// fix-415-alias-index gives the refusal its own code, alias_ambiguous.
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+			fmt.Errorf("alias %q is held by %d entities", req.Alias, len(holders)))
+	}
+	for canonicalID := range holders {
+		return reply(revision, graph.AliasData{CanonicalID: &canonicalID})
+	}
+	return reply(revision, graph.AliasData{})
 }
 
 // handleQueryPredicate answers the entities carrying a predicate, sorted; with a value,

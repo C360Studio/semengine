@@ -19,14 +19,14 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 
 ## 3. Owner-keyed layout and replacement (ADR-114 §1-2, design D1)
 
-- [ ] 3.1 `TestAliasReadImplementsReplacement` (dropped, changed, deleted, through the public verb) and the flipped
+- [x] 3.1 `TestAliasReadImplementsReplacement` (dropped, changed, deleted, through the public verb) and the flipped
   ALIAS_INDEX assertions of `TestIndexReplacementThroughEveryIndex` (`index_integration_test.go:303`, `:316`, and the
   delete step), failing on `7ac1e13`.
-- [ ] 3.2 Alias key helpers beside NAME's, `reconcileAliasIndex` through `reconcileOwnedRows`, the `alias` delete set;
+- [x] 3.2 Alias key helpers beside NAME's, `reconcileAliasIndex` through `reconcileOwnedRows`, the `alias` delete set;
   `updateAliasIndex` goes, and `alias` joins the `updates_total` success loops (`index.go:453-455`, `:624-626`); the
   read lists by hash prefix and parses with `entityAndPredicate`. Gate:
   `go test -race -count=1 -tags integration ./processor/graph-index`.
-- [ ] 3.3 Extend `TestMaximumLengthIDsAndPredicatesThroughPublicReads` (`query_integration_test.go:243-298`): register a
+- [x] 3.3 Extend `TestMaximumLengthIDsAndPredicatesThroughPublicReads` (`query_integration_test.go:243-298`): register a
   194-byte alias predicate (`WithAlias(AliasTypeIdentity, 0)`), give the 256-byte `src` an alias under it, read it
   through the `alias` verb (answers `src`), then delete `src` and read again (answers no ID). Shown failing on
   `7ac1e13` (the read after the delete still answers `src`); passes after 3.2. Gate: as 3.2.

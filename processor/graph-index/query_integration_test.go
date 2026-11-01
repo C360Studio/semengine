@@ -249,14 +249,25 @@ func TestMaximumLengthIDsAndPredicatesThroughPublicReads(t *testing.T) {
 	src, other, target := id("a", "a"), id("a", "b"), id("b", "a")
 	pred := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("c", 64)
 	label := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("d", 64)
-	if len(src) != 256 || len(target) != 256 || len(pred) != 194 {
-		t.Fatalf("fixture is not maximum length: %d %d %d", len(src), len(target), len(pred))
+	aliasPred := strings.Repeat("f", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("e", 64)
+	if len(src) != 256 || len(target) != 256 || len(pred) != 194 || len(aliasPred) != 194 {
+		t.Fatalf("fixture is not maximum length: %d %d %d %d", len(src), len(target), len(pred), len(aliasPred))
 	}
+	defer vocabulary.SnapshotRegistry()()
 	vocabulary.Register(label, vocabulary.WithAlias(vocabulary.AliasTypeLabel, 0))
+	vocabulary.Register(aliasPred, vocabulary.WithAlias(vocabulary.AliasTypeIdentity, 0))
 	h := startIndex(t, fixtureClient(t), `{}`)
 	h.put(t, other, entityValue(t, other, stmt{pred, target}))
-	rev := h.put(t, src, entityValue(t, src, stmt{pred, target}, stmt{label, "Longest"}))
+	rev := h.put(t, src, entityValue(t, src, stmt{pred, target}, stmt{label, "Longest"}, stmt{aliasPred, "longest-1"}))
 	h.awaitIndexed(t, rev)
+	// The longest alias key: 64 hex + 256-byte ID + 388 hex of the predicate, two dots.
+	if key := nameHash("longest-1") + "." + src + "." + hexOf(aliasPred); len(key) != 710 ||
+		!slices.Equal(h.keys(t, graph.BucketAliasIndex), []string{key}) {
+		t.Errorf("alias keys = %q, want the one %d-byte key %q", h.keys(t, graph.BucketAliasIndex), len(key), key)
+	}
+	if got := resolveAlias(t, h, "longest-1", rev); got != src {
+		t.Fatalf("alias = %q, want %s", got, src)
+	}
 
 	out := answer[graph.OutgoingRelationshipsData](t, h.client, "outgoing", map[string]any{"entity_id": src}, rev)
 	if len(out.Relationships) != 1 || out.Relationships[0].ToEntityID != target {
@@ -294,6 +305,22 @@ func TestMaximumLengthIDsAndPredicatesThroughPublicReads(t *testing.T) {
 	names = answer[graph.NameData](t, h.client, "byName", map[string]any{"name": "Longest"}, rev)
 	if len(names.Matches) != 0 {
 		t.Fatalf("name after replacement = %+v", names)
+	}
+
+	rev = h.put(t, src, entityValue(t, src, stmt{aliasPred, "longest-1"}))
+	h.awaitIndexed(t, rev)
+	if got := resolveAlias(t, h, "longest-1", rev); got != src {
+		t.Fatalf("alias before delete = %q, want %s", got, src)
+	}
+	if err := h.states.Delete(t.Context(), src); err != nil {
+		t.Fatalf("delete %s: %v", src, err)
+	}
+	// A later write's revision is above the delete's: the floor reaching it orders the read
+	// after the delete's apply.
+	rev = h.put(t, other, entityValue(t, other))
+	h.awaitIndexed(t, rev)
+	if got := resolveAlias(t, h, "longest-1", rev); got != "" {
+		t.Fatalf("alias after delete = %q, want no ID", got)
 	}
 }
 
@@ -410,6 +437,49 @@ func TestQueryReadsImplementReplacement(t *testing.T) {
 		compoundAnd: []string{other}, compoundOr: []string{other},
 		alpha: none, beta: none,
 	})
+}
+
+// resolveAlias reads alias through the public alias verb and returns the ID it answers, or ""
+// when it answers no ID.
+func resolveAlias(t *testing.T, h *harness, alias string, minRevision uint64) string {
+	t.Helper()
+	data := answer[graph.AliasData](t, h.client, "alias", map[string]string{"alias": alias}, minRevision)
+	if data.CanonicalID == nil {
+		return ""
+	}
+	return *data.CanonicalID
+}
+
+// TestAliasReadImplementsReplacement drives one entity's alias from alpha-1 to beta-1 to none,
+// then gives it beta-1 again and deletes the entity, reading both aliases through the public
+// alias verb after each step: a dropped or changed alias answers no ID, and a deleted entity's
+// alias answers no ID. Another entity's alias answers it throughout (spec "Indexes implement
+// replacement", ADR-114).
+func TestAliasReadImplementsReplacement(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
+	src, other := entityID(1), entityID(2)
+	h.put(t, other, entityValue(t, other, stmt{alias, "other-1"}))
+
+	check := func(step string, rev uint64, wantAlpha, wantBeta string) {
+		t.Helper()
+		h.awaitIndexed(t, rev)
+		for a, want := range map[string]string{"alpha-1": wantAlpha, "beta-1": wantBeta, "other-1": other} {
+			if got := resolveAlias(t, h, a, rev); got != want {
+				t.Errorf("%s: alias %q = %q, want %q", step, a, got, want)
+			}
+		}
+	}
+
+	check("A", h.put(t, src, entityValue(t, src, stmt{alias, "alpha-1"})), src, "")
+	check("changed", h.put(t, src, entityValue(t, src, stmt{alias, "beta-1"})), "", src)
+	check("dropped", h.put(t, src, entityValue(t, src)), "", "")
+	check("re-added", h.put(t, src, entityValue(t, src, stmt{alias, "beta-1"})), "", src)
+	if err := h.states.Delete(t.Context(), src); err != nil {
+		t.Fatalf("delete %s: %v", src, err)
+	}
+	// A later write's revision is above the delete's: the floor reaching it orders the reads
+	// after the delete's apply.
+	check("deleted", h.put(t, entityID(50), entityValue(t, entityID(50))), "", "")
 }
 
 // TestQueriesAreRefusedWhileTheFeedIsLost: ENTITY_STATES deleted under a running graph-index

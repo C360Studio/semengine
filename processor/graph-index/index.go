@@ -293,7 +293,7 @@ type entityIndexPlan struct {
 	outgoing         []graph.OutgoingEntry
 	predicatesUsed   map[string]bool
 	incomingByTarget map[string][]graph.IncomingEntry
-	aliases          []string
+	aliasWrites      []aliasIndexWrite
 	nameWrites       []nameIndexWrite
 }
 
@@ -325,7 +325,7 @@ func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID strin
 						slog.Any("error", err))
 					continue
 				}
-				plan.aliases = append(plan.aliases, alias)
+				plan.aliasWrites = append(plan.aliasWrites, aliasIndexWrite{alias: alias, predicate: triple.Predicate})
 			}
 		}
 		if priority, isName := c.namePredicates[triple.Predicate]; isName {
@@ -339,6 +339,7 @@ func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID strin
 
 	for _, filter := range []string{
 		incomingIndexSourceFilter(entityID), predicateIndexEntityFilter(entityID), nameIndexEntityFilter(entityID),
+		aliasIndexEntityFilter(entityID),
 	} {
 		if err := natsclient.ValidateKVWildcardFilter(filter); err != nil {
 			return entityIndexPlan{}, err
@@ -371,6 +372,11 @@ func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID strin
 			return entityIndexPlan{}, err
 		}
 	}
+	for _, write := range plan.aliasWrites {
+		if err := natsclient.ValidateKVLiteralKey(aliasIndexKey(write.alias, entityID, write.predicate)); err != nil {
+			return entityIndexPlan{}, err
+		}
+	}
 	for _, entry := range plan.outgoing {
 		if _, err := vocabulary.ParsePredicate(entry.Predicate); err != nil {
 			return entityIndexPlan{}, err
@@ -397,12 +403,8 @@ func (c *Component) applyEntityIndexPlan(ctx context.Context, plan entityIndexPl
 	if err := c.reconcilePredicateIndex(ctx, plan.entityID, plan.predicatesUsed); err != nil {
 		errList = append(errList, fmt.Errorf("predicate: %w", err))
 	}
-	// ALIAS_INDEX has no owner axis and is outside replacement: a dropped alias keeps
-	// resolving until #415 lands (design D12, owner ruling PR #414 comment 6426254115).
-	for _, alias := range plan.aliases {
-		if err := c.updateAliasIndex(ctx, alias, plan.entityID); err != nil {
-			errList = append(errList, fmt.Errorf("alias[%s]: %w", alias, err))
-		}
+	if err := c.reconcileAliasIndex(ctx, plan.entityID, plan.aliasWrites); err != nil {
+		errList = append(errList, fmt.Errorf("alias: %w", err))
 	}
 	if err := c.reconcileNameIndex(ctx, plan.entityID, plan.nameWrites); err != nil {
 		errList = append(errList, fmt.Errorf("name: %w", err))
@@ -450,7 +452,7 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 	}
 	c.clearEntityFailed(entityID)
 	c.lastProjections.Store(entityID, projection)
-	for _, indexType := range []string{"name", "predicate", "incoming", "outgoing"} {
+	for _, indexType := range []string{"name", "alias", "predicate", "incoming", "outgoing"} {
 		c.metrics.indexUpdates.WithLabelValues(indexType).Inc()
 	}
 	c.metrics.eventsProcessed.Inc()
@@ -513,28 +515,11 @@ func (c *Component) writeOutgoingIndex(ctx context.Context, entityID string, ent
 	return nil
 }
 
-// updateAliasIndex maps alias to entityID in ALIAS_INDEX.
-func (c *Component) updateAliasIndex(ctx context.Context, alias, entityID string) error {
-	if err := validateEntityLiteralKey(entityID); err != nil {
-		return err
-	}
-	if err := natsclient.ValidateKVLiteralKey(alias); err != nil {
-		return err
-	}
-	_, err := c.aliasBucket.Put(ctx, alias, []byte(entityID))
-	c.metrics.kvOperations.WithLabelValues("put", "alias").Inc()
-	if err != nil {
-		return errs.Wrap(err, "Component", "updateAliasIndex", "KV store")
-	}
-	c.metrics.indexUpdates.WithLabelValues("alias").Inc()
-	return nil
-}
-
 // deleteFromIndexes removes a deleted entity's rows. PREDICATE, NAME and OUTGOING rows are
 // owned by the entity. INCOMING rows are owned by their source, though their key begins
 // with the target, so the delete lists by the source filter and keeps edges from live
-// sources that still point at the deleted entity. ALIAS has no owner axis and is left
-// (design D12, #415).
+// sources that still point at the deleted entity. ALIAS rows are owned by the entity that
+// carries the alias (ADR-114 §2).
 func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) error {
 	// Validate the owner and its filters before the first list or delete.
 	if err := validateEntityLiteralKey(entityID); err != nil {
@@ -550,6 +535,7 @@ func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) erro
 		{name: "incoming", bucket: c.incomingBucket, filter: incomingIndexSourceFilter(entityID)},
 		{name: "predicate", bucket: c.predicateBucket, filter: predicateIndexEntityFilter(entityID)},
 		{name: "name", bucket: c.nameBucket, filter: nameIndexEntityFilter(entityID)},
+		{name: "alias", bucket: c.aliasBucket, filter: aliasIndexEntityFilter(entityID)},
 	}
 	for _, set := range deleteSets {
 		if err := natsclient.ValidateKVWildcardFilter(set.filter); err != nil {
@@ -621,7 +607,7 @@ func (c *Component) deleteFromIndexes(ctx context.Context, entityID string) erro
 	// A clean delete evicts the projection baseline, so a re-add is not read as unchanged.
 	c.lastProjections.Delete(entityID)
 	c.clearEntityFailed(entityID)
-	for _, indexType := range []string{"name", "predicate", "incoming", "outgoing"} {
+	for _, indexType := range []string{"name", "alias", "predicate", "incoming", "outgoing"} {
 		c.metrics.indexUpdates.WithLabelValues(indexType).Inc()
 	}
 	c.metrics.eventsProcessed.Inc()

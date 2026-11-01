@@ -279,9 +279,9 @@ const (
 
 // TestIndexReplacementThroughEveryIndex drives one entity's statements from A to B to none and then
 // deletes it, and after each step reads every index bucket's complete key set. Each owned index
-// holds exactly the current state; another source's edge to the entity survives its delete, since
-// the source owns it; and the alias index keeps every alias ever written, the pin's behaviour kept
-// until #415 (design D12).
+// holds exactly the current state, the alias index among them (ADR-114: hash(alias).entity6.
+// hex(predicate)); and another source's edge to the entity survives its delete, since the source
+// owns it.
 func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
 	src, other, targetA, targetB := entityID(1), entityID(2), entityID(10), entityID(11)
@@ -300,7 +300,7 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(
 		linkTo+"."+src, armed+"."+src, title+"."+src, alias+"."+src, linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, sorted(nameHash("Alpha")+"."+src+"."+hexOf(title)))
-	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1"))
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("alpha-1")+"."+src+"."+hexOf(alias)))
 
 	revB := h.put(t, src, entityValue(t, src,
 		stmt{linkTo, targetB}, stmt{disarmed, true}, stmt{title, "Beta"}, stmt{alias, "beta-1"}))
@@ -313,7 +313,7 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(
 		linkTo+"."+src, disarmed+"."+src, title+"."+src, alias+"."+src, linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, sorted(nameHash("Beta")+"."+src+"."+hexOf(title)))
-	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1", "beta-1")) // #415: a dropped alias stays
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("beta-1")+"."+src+"."+hexOf(alias)))
 
 	revNone := h.put(t, src, entityValue(t, src))
 	h.awaitIndexed(t, revNone)
@@ -323,9 +323,11 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketIncomingIndex, sorted(src+"."+other+"."+hexOf(linkTo)))
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, []string{})
+	assertKeys(t, h, graph.BucketAliasIndex, []string{})
 
-	revB2 := h.put(t, src, entityValue(t, src, stmt{linkTo, targetB}, stmt{title, "Beta"}))
+	revB2 := h.put(t, src, entityValue(t, src, stmt{linkTo, targetB}, stmt{title, "Beta"}, stmt{alias, "beta-1"}))
 	h.awaitIndexed(t, revB2)
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("beta-1")+"."+src+"."+hexOf(alias)))
 	if err := h.states.Delete(t.Context(), src); err != nil {
 		t.Fatalf("delete %s: %v", src, err)
 	}
@@ -336,6 +338,7 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketIncomingIndex, sorted(src+"."+other+"."+hexOf(linkTo)))
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, []string{})
+	assertKeys(t, h, graph.BucketAliasIndex, []string{})
 	if n := h.c.failedTotal(); n != 0 {
 		t.Errorf("failed entities = %d, want 0", n)
 	}
@@ -546,7 +549,7 @@ func TestUnsafeAliasSkipIsLoggedAndCounted(t *testing.T) {
 	// The lane logs and counts the skip while it plans, before it completes the revision.
 	h.awaitIndexed(t, rev)
 
-	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1"))
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("alpha-1")+"."+src+"."+hexOf(alias)))
 	assertKeys(t, h, graph.BucketOutgoingIndex, sorted(src))
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+src, alias+"."+src))
 	if n := h.c.failedTotal(); n != 0 {

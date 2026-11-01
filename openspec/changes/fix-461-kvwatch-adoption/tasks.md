@@ -41,7 +41,7 @@ base failure is a coin flip.
   whose updates then close; through `Watch` or `WatchEvents`, `errors.Is` finds both the primary error and the sentinel
   (fails on base, which discards it). Then `runWatchLoop` stops through `kvwatch.Stop` and joins its wrapped error.
   Gate: `go test -race -count=1 -tags integration ./pkg/lifecycle/`; `task verify`.
-- [ ] 2.3 `config`: a test in `config/manager_lifecycle_integration_test.go`, beside
+- [x] 2.3 `config`: a test in `config/manager_lifecycle_integration_test.go`, beside
   `TestBlockedKeyFamilyHandlerHoldsStop`, 10 cycles: a key family with more than 256 entries and a blocked handler;
   `Stop` returns nil once the handler is released, and no nats.go watch delivery is left. Fails on base; then
   `stopWatches` takes `release`'s context (`Start`'s on a failed `Start`, `Stop`'s otherwise; ADR-113) and stops each

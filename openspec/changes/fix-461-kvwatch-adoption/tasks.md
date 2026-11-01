@@ -32,7 +32,7 @@ base failure is a coin flip.
   ends by falling behind, the handler returns, and no nats.go watch delivery is left. Client exit is not tested
   apart: it cannot be forced without falling behind. Fails on base; then `readKVWatch` stops through
   `kvwatch.Stop`. Gate: `go test -race -count=1 -tags integration ./service/`; `task verify`.
-- [ ] 2.2 `pkg/lifecycle`: `lifecycleAtomicWatcher` (`watch_atomic_bootstrap_test.go:30`) gets `closeUpdates`; the
+- [x] 2.2 `pkg/lifecycle`: `lifecycleAtomicWatcher` (`watch_atomic_bootstrap_test.go:30`) gets `closeUpdates`; the
   lost-watch close at `:204` calls it. A test in `pkg/lifecycle/manager_integration_test.go`: `WatchEvents` over more
   than 256 matching entities whose callback returns an error once the delivery is blocked (`manager_query.go:250`; fails
   on base every time) returns an error that `errors.Is` the callback's and leaves no nats.go watch delivery; a second

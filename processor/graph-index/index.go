@@ -381,8 +381,8 @@ func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID strin
 
 // isAliasPredicate reports whether predicate's values go to ALIAS_INDEX.
 func (c *Component) isAliasPredicate(predicate string) bool {
-	_, isVocabAlias := c.aliasPredicates[predicate]
-	return isVocabAlias || predicate == "core.identity.alias"
+	_, ok := c.aliasPredicates[predicate]
+	return ok
 }
 
 // applyEntityIndexPlan writes plan to every index, returning every failure joined.

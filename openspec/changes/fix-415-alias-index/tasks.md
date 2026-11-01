@@ -11,9 +11,9 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 
 ## 2. One spelling of the framework alias predicate (design D4)
 
-- [ ] 2.1 `TestCoreIdentityAliasIsDeclared` (`DiscoverAliasPredicates` contains `core.identity.alias`), failing on
+- [x] 2.1 `TestCoreIdentityAliasIsDeclared` (`DiscoverAliasPredicates` contains `core.identity.alias`), failing on
   `7ac1e13` (premise `index.go:385` is the only spelling; `git grep -n 'core.identity.alias' -- '*.go'`).
-- [ ] 2.2 `vocabulary.CoreIdentityAlias` registered in `init` as an identity alias; `isAliasPredicate` reads the
+- [x] 2.2 `vocabulary.CoreIdentityAlias` registered in `init` as an identity alias; `isAliasPredicate` reads the
   discovered set only; the integration tests' `alias` constant uses the new name. Gate:
   `go test -race -count=1 ./vocabulary ./processor/graph-index`.
 

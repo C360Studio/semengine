@@ -274,7 +274,7 @@ const (
 	linkTo   = "test.link.to"
 	armed    = "test.state.armed"
 	disarmed = "test.state.disarmed"
-	alias    = "core.identity.alias"
+	alias    = vocabulary.CoreIdentityAlias
 )
 
 // TestIndexReplacementThroughEveryIndex drives one entity's statements from A to B to none and then

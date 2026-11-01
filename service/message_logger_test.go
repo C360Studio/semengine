@@ -188,7 +188,7 @@ func TestResolveLoggerSubjectsOmitsCoveredSubjects(t *testing.T) {
 // covers it. The oracle is flowgraph.SubjectCovers, tested on its own
 // (internal/flowgraph/subject_cover_test.go); the reference result is not recomputed.
 //
-// Generator: sets of zero to six subjects, each one to three tokens from {a, b, *}, the last
+// Generator: a slice of zero to six subjects, each one to three tokens from {a, b, *}, the last
 // possibly >, so every subject is valid under D3's grammar by construction (the reduction's input
 // is a validated set) and drawn from a small alphabet so covers are common. A slice is drawn and
 // folded into the set, so a repeated subject is part of the input. Two rare cases are also set up

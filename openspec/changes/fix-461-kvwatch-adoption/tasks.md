@@ -48,7 +48,7 @@ base failure is a coin flip.
   watch through `kvwatch.Stop`, still logging at Warn. `TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied` and
   `TestManagerPassesTheLifecycleSuite` still pass. Gate: `go test -race -count=1 -tags integration ./config/`;
   `task verify`.
-- [ ] 2.4 `natsclient/storagereport`: `fakeKeyWatcher` (`storage_report_consumer_test.go:38`) and `service`'s
+- [x] 2.4 `natsclient/storagereport`: `fakeKeyWatcher` (`storage_report_consumer_test.go:38`) and `service`'s
   `fakeReportWatcher` (`service/storage_observability_http_test.go:51`) get `closeUpdates`; the closes at
   `storage_report_consumer_test.go:314`, `storage_report_resync_test.go:36,84,119,298` and
   `reviewer_storage_snapshot_probe_test.go:33,43` call it. A test in a new

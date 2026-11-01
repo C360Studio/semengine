@@ -59,7 +59,7 @@ base failure is a coin flip.
   delivery is left. No production hook. Fails on base; then `watchOnce` stops through `kvwatch.Stop` and logs its
   error at Warn. Gate: `go test -race -count=1 -tags integration ./natsclient/storagereport/ ./service/`;
   `task verify`.
-- [ ] 2.5 `graph/readiness` (no integration harness in the package): the test runs entirely under `testing/synctest`, so
+- [x] 2.5 `graph/readiness` (no integration harness in the package): the test runs entirely under `testing/synctest`, so
   `kvwatch.DrainBudget` costs no real time and `fakeWatcher` (`watcher_test.go:56`, sharing one channel per
   `watchSource`, `:85-90`) stays as it is. A unit test in `graph/readiness/watcher_test.go` on a scripted watcher whose
   `Stop` leaves the channel open and whose delivery has a long tail: its buffer full, then many sends (1,000) queued

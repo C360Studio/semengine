@@ -38,6 +38,7 @@ import (
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/nats-io/nats.go/jetstream"
 )
@@ -182,8 +183,12 @@ func NewWatcher(src BucketSource, key string, heartbeat time.Duration, logger *s
 }
 
 // Run watches the key until ctx ends, then returns ctx.Err(). The caller runs it on a
-// goroutine it owns; Run starts no goroutine of its own and releases the KV watch
-// before it returns, so its return is the join.
+// goroutine it owns; Run starts no goroutine of its own. It stops the KV watch and
+// waits for the watch's delivery to close before it returns, so its return is the
+// join, for at most 5 s after the watcher's own Stop returns, whether or not ctx has
+// ended; past that bound it returns with the delivery still open. Why a stopped
+// nats.go watch needs that wait is in internal/kvwatch's doc. A failure to stop the
+// watch is logged at Debug.
 //
 // Run does NOT fail when the bucket or key is absent: a deployment running a consumer
 // without its producer is a legitimate configuration whose readiness is simply
@@ -263,7 +268,9 @@ func (w *Watcher) WaitForFirst(ctx context.Context) error {
 
 // watchOnce opens the bucket and the key watch and consumes updates until the watch
 // ends or the context is cancelled. A missing bucket is an ordinary error here —
-// held state stays unknown and the caller retries.
+// held state stays unknown and the caller retries. It stops the watch through
+// kvwatch.Stop, which waits for the watch's delivery to close, for at most
+// kvwatch.DrainBudget after the watcher's Stop returns.
 func (w *Watcher) watchOnce(ctx context.Context) error {
 	bucket, err := w.src.GetKeyValueBucket(ctx, w.bucket)
 	if err != nil {
@@ -276,7 +283,7 @@ func (w *Watcher) watchOnce(ctx context.Context) error {
 		return fmt.Errorf("readiness: watch %s/%s: %w", w.bucket, w.key, err)
 	}
 	defer func() {
-		if stopErr := watcher.Stop(); stopErr != nil {
+		if stopErr := kvwatch.Stop(ctx, watcher); stopErr != nil {
 			w.logger.Debug("readiness watch stop", slog.Any("error", stopErr))
 		}
 	}()

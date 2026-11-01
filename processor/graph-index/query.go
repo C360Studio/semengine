@@ -226,7 +226,8 @@ func entityAndPredicate(suffix string) (entityID, predicate string, ok bool) {
 
 // handleQueryAlias resolves an alias through ALIAS_INDEX: it lists the keys under the alias's
 // hash prefix (ADR-114 §3) and answers no ID when none is stored, the entity's ID when every
-// row is one entity's, under any number of predicates.
+// row is one entity's, under any number of predicates, and refuses as alias_ambiguous when the
+// rows name two or more distinct entities.
 func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
@@ -265,9 +266,7 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 		holders[entityID] = struct{}{}
 	}
 	if len(holders) > 1 {
-		// shortcut: two or more holders are refused under invalid_request; task 4 of
-		// fix-415-alias-index gives the refusal its own code, alias_ambiguous.
-		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest,
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeAliasAmbiguous,
 			fmt.Errorf("alias %q is held by %d entities", req.Alias, len(holders)))
 	}
 	for canonicalID := range holders {

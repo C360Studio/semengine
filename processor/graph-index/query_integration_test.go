@@ -482,6 +482,58 @@ func TestAliasReadImplementsReplacement(t *testing.T) {
 	check("deleted", h.put(t, entityID(50), entityValue(t, entityID(50))), "", "")
 }
 
+// TestSharedAliasIsRefusedAsAmbiguous: an alias two entities carry is refused, class invalid,
+// code alias_ambiguous, the message naming the alias; once one holder drops it, or is deleted,
+// the alias answers the other, so the delete's `*.<entity6>.*` filter leaves the other's row.
+// One entity carrying an alias under two predicates is one holder and answers (spec "A shared
+// alias is refused, then resolves", "One holder of a shared alias is deleted"; ADR-114 §3).
+func TestSharedAliasIsRefusedAsAmbiguous(t *testing.T) {
+	const serial = "test.identity.serial"
+	defer vocabulary.SnapshotRegistry()()
+	vocabulary.Register(serial, vocabulary.WithAlias(vocabulary.AliasTypeIdentity, 0))
+	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
+	e1, e2, e3 := entityID(1), entityID(2), entityID(3)
+
+	refused := func(step string, rev uint64) {
+		t.Helper()
+		h.awaitIndexed(t, rev)
+		_, err := query(t, h.client, "alias", map[string]string{"alias": "shared-1"})
+		var classified *errs.ClassifiedError
+		if !errors.As(err, &classified) {
+			t.Errorf("%s: err = %v, want a classified refusal", step, err)
+			return
+		}
+		// The literal, not the constant: callers match the wire string.
+		if classified.Class != errs.ErrorInvalid || classified.Code != "alias_ambiguous" {
+			t.Errorf("%s: class %v code %q (%v), want invalid alias_ambiguous", step, classified.Class,
+				classified.Code, err)
+		}
+		if !strings.Contains(err.Error(), `"shared-1"`) {
+			t.Errorf("%s: message %q does not name the alias", step, err)
+		}
+	}
+	resolves := func(step string, rev uint64, alias, want string) {
+		t.Helper()
+		h.awaitIndexed(t, rev)
+		if got := resolveAlias(t, h, alias, rev); got != want {
+			t.Errorf("%s: alias %q = %q, want %q", step, alias, got, want)
+		}
+	}
+
+	h.put(t, e1, entityValue(t, e1, stmt{alias, "shared-1"}))
+	refused("shared", h.put(t, e2, entityValue(t, e2, stmt{alias, "shared-1"})))
+	resolves("e2 dropped it", h.put(t, e2, entityValue(t, e2)), "shared-1", e1)
+	refused("shared again", h.put(t, e2, entityValue(t, e2, stmt{alias, "shared-1"})))
+	if err := h.states.Delete(t.Context(), e2); err != nil {
+		t.Fatalf("delete %s: %v", e2, err)
+	}
+	// A later write's revision is above the delete's: the floor reaching it orders the read
+	// after the delete's apply.
+	resolves("e2 deleted", h.put(t, entityID(50), entityValue(t, entityID(50))), "shared-1", e1)
+	resolves("two predicates", h.put(t, e3, entityValue(t, e3, stmt{alias, "dual-1"}, stmt{serial, "dual-1"})),
+		"dual-1", e3)
+}
+
 // TestQueriesAreRefusedWhileTheFeedIsLost: ENTITY_STATES deleted under a running graph-index
 // loses the feed; once Health names it, each of the eight verbs answers class transient, code
 // index_not_ready (spec "Queries are refused while the feed is lost"; owner ruling, PR #414

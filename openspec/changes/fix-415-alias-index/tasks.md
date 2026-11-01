@@ -34,10 +34,10 @@ developer's unit.
 
 ## 4. Shared alias refused (ADR-114 §3-4, design D2)
 
-- [ ] 4.1 `TestSharedAliasIsRefusedAsAmbiguous` (two holders refused, class invalid, code `alias_ambiguous`, alias in
+- [x] 4.1 `TestSharedAliasIsRefusedAsAmbiguous` (two holders refused, class invalid, code `alias_ambiguous`, alias in
   the message; resolves to the other after one drops it; with E1 and E2 holding it again, E2 deleted, X answers E1,
   so the `*.<entity6>.*` delete filter leaves E1's row; one entity under two predicates resolves), failing before its fix.
-- [ ] 4.2 `graph.ErrorCodeAliasAmbiguous` with its doc comment; the read decides on distinct entities. Gate: as 3.2
+- [x] 4.2 `graph.ErrorCodeAliasAmbiguous` with its doc comment; the read decides on distinct entities. Gate: as 3.2
   and `go test -race -count=1 ./graph`.
 
 ## 5. Case folding and any string (ADR-114 §3, §5, design D3)

@@ -162,7 +162,7 @@ func (ml *MessageLogger) handleKVWatch(w http.ResponseWriter, r *http.Request) {
 // readKVWatch forwards the watcher's entries to events until ctx ends, the watcher closes, or
 // an entry does not fit in events; in that last case it closes fellBehind. It never waits on
 // events. On return it stops the watcher through kvwatch.Stop, which waits for the watch's
-// delivery to close, for at most kvwatch.DrainBudget after ctx has ended; it then closes events,
+// delivery to close, for at most kvwatch.DrainBudget from the stop; it then closes events,
 // then closes done.
 func (ml *MessageLogger) readKVWatch(
 	ctx context.Context,

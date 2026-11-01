@@ -143,8 +143,8 @@ type Event struct {
 // ends, onParticipant's error when it returns one, and an error when the
 // subscription closes or delivers a value it cannot decode or project into the
 // workflow's type; that error names the entity and its revision. Watch returns
-// after nats.go has closed the watch's delivery, for at most 5 s
-// (internal/kvwatch's DrainBudget) after ctx ends; a failure to stop the watch
+// after nats.go has closed the watch's delivery, for at most
+// internal/kvwatch's DrainBudget from the stop; a failure to stop the watch
 // is joined to the error (TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery
 // and TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery drive a
 // backlogged watch). A nil ctx or onParticipant is refused before any

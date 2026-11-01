@@ -237,11 +237,9 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, invalidRequest(err)
 	}
-	if req.Alias == "" {
+	// Unlike a name, an alias empty after trimming is refused (ADR-114 §5).
+	if strings.TrimSpace(req.Alias) == "" {
 		return nil, invalidRequest(errors.New("empty alias"))
-	}
-	if err := natsclient.ValidateKVLiteralKey(req.Alias); err != nil {
-		return nil, invalidRequest(err)
 	}
 	prefix := nameIndexKey(req.Alias) + "."
 	if err := validateKVPrefix(prefix); err != nil {

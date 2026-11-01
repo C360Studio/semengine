@@ -297,8 +297,8 @@ type entityIndexPlan struct {
 	nameWrites       []nameIndexWrite
 }
 
-// buildEntityIndexPlan collects and validates the rows for state without store I/O. An
-// alias that is not a KV-safe key is skipped and logged; every required row is validated.
+// buildEntityIndexPlan collects and validates the rows for state without store I/O; every
+// required row is validated.
 func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID string) (entityIndexPlan, error) {
 	plan := entityIndexPlan{
 		entityID:         entityID,
@@ -315,16 +315,9 @@ func (c *Component) buildEntityIndexPlan(state graph.EntityState, entityID strin
 				graph.IncomingEntry{FromEntityID: entityID, Predicate: triple.Predicate})
 		}
 		if c.isAliasPredicate(triple.Predicate) {
-			if alias, ok := triple.Object.(string); ok && alias != "" {
-				if err := natsclient.ValidateKVLiteralKey(alias); err != nil {
-					// Declared skip, as at the pin: no alias key can hold this value, and the
-					// entity's other rows do not depend on it, so the rest is still written.
-					c.metrics.aliasesSkipped.Inc()
-					c.logger.Warn("alias index: KV-unsafe alias skipped",
-						slog.String("entity_id", entityID), slog.String("predicate", triple.Predicate),
-						slog.Any("error", err))
-					continue
-				}
+			// Any bytes: the key holds the alias's hash (ADR-114 §5). A value empty after
+			// trimming is not an alias.
+			if alias, ok := triple.Object.(string); ok && strings.TrimSpace(alias) != "" {
 				plan.aliasWrites = append(plan.aliasWrites, aliasIndexWrite{alias: alias, predicate: triple.Predicate})
 			}
 		}

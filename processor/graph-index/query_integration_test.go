@@ -534,6 +534,32 @@ func TestSharedAliasIsRefusedAsAmbiguous(t *testing.T) {
 		"dual-1", e3)
 }
 
+// TestAliasMatchFoldsCase: an alias request is trimmed and case-folded as NAME's is, so ` sn-1 `
+// finds the entity carrying `SN-1`; an alias empty after trimming is refused as invalid_request,
+// where NAME answers a whitespace-only name (spec "Case and space fold"; ADR-114 §3, §5).
+func TestAliasMatchFoldsCase(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	e := entityID(1)
+	rev := h.put(t, e, entityValue(t, e, stmt{alias, "SN-1"}))
+	h.awaitIndexed(t, rev)
+	for _, request := range []string{" sn-1 ", "sn-1", "SN-1"} {
+		if got := resolveAlias(t, h, request, rev); got != e {
+			t.Errorf("alias %q = %q, want %q", request, got, e)
+		}
+	}
+
+	_, err := query(t, h.client, "alias", map[string]string{"alias": "   "})
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) {
+		t.Fatalf("whitespace-only alias: err = %v, want a classified refusal", err)
+	}
+	// The literal, not the constant: callers match the wire string.
+	if classified.Class != errs.ErrorInvalid || classified.Code != "invalid_request" {
+		t.Errorf("whitespace-only alias: class %v code %q (%v), want invalid invalid_request",
+			classified.Class, classified.Code, err)
+	}
+}
+
 // TestQueriesAreRefusedWhileTheFeedIsLost: ENTITY_STATES deleted under a running graph-index
 // loses the feed; once Health names it, each of the eight verbs answers class transient, code
 // index_not_ready (spec "Queries are refused while the feed is lost"; owner ruling, PR #414

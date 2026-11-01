@@ -42,9 +42,9 @@ developer's unit.
 
 ## 5. Case folding and any string (ADR-114 §3, §5, design D3)
 
-- [ ] 5.1 `TestAliasMatchFoldsCase` and `TestKVUnsafeAliasIsIndexed`, failing before its fix;
+- [x] 5.1 `TestAliasMatchFoldsCase` and `TestKVUnsafeAliasIsIndexed`, failing before its fix;
   `TestUnsafeAliasSkipIsLoggedAndCounted` is removed with the behaviour it pinned (named in notes).
-- [ ] 5.2 The plan keeps any non-empty trimmed alias; the skip, its warning, `aliasesSkipped` and
+- [x] 5.2 The plan keeps any non-empty trimmed alias; the skip, its warning, `aliasesSkipped` and
   `aliases_skipped_total` go; the read refuses an alias empty after trimming. Gate: as 3.2.
 
 ## 6. Malformed alias rows (spec "Malformed index rows are skipped and declared")

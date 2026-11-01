@@ -21,7 +21,6 @@ type indexMetrics struct {
 	writeFailures       prometheus.Counter     // a required index write ultimately failed
 	reindexEvents       *prometheus.CounterVec // re-index events by result (changed|unchanged)
 	reconcileOperations *prometheus.CounterVec // owner reconciliation I/O by index, operation, and outcome
-	aliasesSkipped      prometheus.Counter     // aliases left out of ALIAS_INDEX: not a valid NATS KV key
 	queryRowsSkipped    *prometheus.CounterVec // stored index rows a query left out: not the index's layout, by index
 }
 
@@ -55,8 +54,6 @@ func newIndexMetrics(registry *metric.MetricsRegistry) (*indexMetrics, error) {
 			"Re-index events by whether the index-input projection changed (the L2 change-detection data gate)", "result"),
 		reconcileOperations: newCounterVec("reconcile_operations_total",
 			"Owner reconciliation KV operations by index type, operation, and outcome", "index_type", "operation", "result"),
-		aliasesSkipped: newCounter("aliases_skipped_total",
-			"Aliases not written to the alias index because they are not valid NATS KV keys (the entity's other rows are written)"),
 		queryRowsSkipped: newCounterVec("query_rows_skipped_total",
 			"Stored index rows a query left out of its answer because they are not the index's layout, by index type", "index_type"),
 	}
@@ -83,9 +80,6 @@ func newIndexMetrics(registry *metric.MetricsRegistry) (*indexMetrics, error) {
 		return nil, err
 	}
 	if m.reconcileOperations, err = metric.RegisterOrGet(registry, key, "reconcile_operations_total", m.reconcileOperations); err != nil {
-		return nil, err
-	}
-	if m.aliasesSkipped, err = metric.RegisterOrGet(registry, key, "aliases_skipped_total", m.aliasesSkipped); err != nil {
 		return nil, err
 	}
 	if m.queryRowsSkipped, err = metric.RegisterOrGet(registry, key, "query_rows_skipped_total", m.queryRowsSkipped); err != nil {

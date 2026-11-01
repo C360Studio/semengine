@@ -36,7 +36,7 @@ owner on #420; moving `natsclient` onto `internal/kvwatch` would add mechanism t
   `WatchEvents` docs say the error may carry a stop failure. No exported alias of `kvwatch.ErrDeliveryOpen` (#190);
   no exported signature changes or names `internal/kvwatch`.
 - Doc comments of the five functions say the return waits for the watch's delivery to close, for at most
-  `kvwatch.DrainBudget`. Each package's test watcher closes `Updates` after `Stop`, as nats.go does.
+  `kvwatch.DrainBudget`. Test watchers close `Updates` once, after `Stop`, as nats.go does.
 - One failing-first test per site proves its caller returns and leaves no nats.go delivery behind with a backlogged
   watch (`tasks.md`). Ledger rows of the five packages name the new `internal/kvwatch` dependency.
 

@@ -1,8 +1,9 @@
 # Tasks: fix-415-alias-index
 
 Design track: proposal, design, ADR-114, spec deltas for `graph-index` and `graph-transport-boundary`. Tests come
-first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` before its fix. Each step ends when
-`task verify` passes on a clean tree at its commit (#171). One task is one developer's unit.
+first; each failing test is shown failing on the commit before its fix, named with the output in
+`notes/<task>.md`. Each step ends when `task verify` passes on a clean tree at its commit (#171). One task is one
+developer's unit.
 
 ## 1. Design
 
@@ -11,8 +12,8 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 
 ## 2. One spelling of the framework alias predicate (design D4)
 
-- [x] 2.1 `TestCoreIdentityAliasIsDeclared` (`DiscoverAliasPredicates` contains `core.identity.alias`), failing on
-  `7ac1e13` (premise `index.go:385` is the only spelling; `git grep -n 'core.identity.alias' -- '*.go'`).
+- [x] 2.1 `TestCoreIdentityAliasIsDeclared` (`DiscoverAliasPredicates` contains `core.identity.alias`), failing
+  before its fix (premise `index.go:385` is the only spelling; `git grep -n 'core.identity.alias' -- '*.go'`).
 - [x] 2.2 `vocabulary.CoreIdentityAlias` registered in `init` as an identity alias; `isAliasPredicate` reads the
   discovered set only; the integration tests' `alias` constant uses the new name. Gate:
   `go test -race -count=1 ./vocabulary ./processor/graph-index`.
@@ -21,28 +22,27 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 
 - [x] 3.1 `TestAliasReadImplementsReplacement` (dropped, changed, deleted, through the public verb) and the flipped
   ALIAS_INDEX assertions of `TestIndexReplacementThroughEveryIndex` (`index_integration_test.go:303`, `:316`, and the
-  delete step), failing on `7ac1e13`.
+  delete step), failing before its fix.
 - [x] 3.2 Alias key helpers beside NAME's, `reconcileAliasIndex` through `reconcileOwnedRows`, the `alias` delete set;
   `updateAliasIndex` goes, and `alias` joins the `updates_total` success loops (`index.go:453-455`, `:624-626`); the
   read lists by hash prefix and parses with `entityAndPredicate`. Gate:
   `go test -race -count=1 -tags integration ./processor/graph-index`.
 - [x] 3.3 Extend `TestMaximumLengthIDsAndPredicatesThroughPublicReads` (`query_integration_test.go:243-298`): register a
   194-byte alias predicate (`WithAlias(AliasTypeIdentity, 0)`), give the 256-byte `src` an alias under it, read it
-  through the `alias` verb (answers `src`), then delete `src` and read again (answers no ID). Shown failing on
-  `7ac1e13` (the read after the delete still answers `src`); passes after 3.2. Gate: as 3.2.
+  through the `alias` verb (answers `src`), then delete `src` and read again (answers no ID). Shown failing before its
+  fix (the read after the delete still answers `src`); passes after 3.2. Gate: as 3.2.
 
 ## 4. Shared alias refused (ADR-114 §3-4, design D2)
 
 - [ ] 4.1 `TestSharedAliasIsRefusedAsAmbiguous` (two holders refused, class invalid, code `alias_ambiguous`, alias in
   the message; resolves to the other after one drops it; with E1 and E2 holding it again, E2 deleted, X answers E1,
-  so the `*.<entity6>.*` delete filter leaves E1's row; one entity under two predicates resolves), failing on
-  `7ac1e13`.
+  so the `*.<entity6>.*` delete filter leaves E1's row; one entity under two predicates resolves), failing before its fix.
 - [ ] 4.2 `graph.ErrorCodeAliasAmbiguous` with its doc comment; the read decides on distinct entities. Gate: as 3.2
   and `go test -race -count=1 ./graph`.
 
 ## 5. Case folding and any string (ADR-114 §3, §5, design D3)
 
-- [ ] 5.1 `TestAliasMatchFoldsCase` and `TestKVUnsafeAliasIsIndexed`, failing on `7ac1e13`;
+- [ ] 5.1 `TestAliasMatchFoldsCase` and `TestKVUnsafeAliasIsIndexed`, failing before its fix;
   `TestUnsafeAliasSkipIsLoggedAndCounted` is removed with the behaviour it pinned (named in notes).
 - [ ] 5.2 The plan keeps any non-empty trimmed alias; the skip, its warning, `aliasesSkipped` and
   `aliases_skipped_total` go; the read refuses an alias empty after trimming. Gate: as 3.2.
@@ -50,7 +50,7 @@ first; each failing test is shown failing on `7ac1e13` in `notes/<task>.md` befo
 ## 6. Malformed alias rows (spec "Malformed index rows are skipped and declared")
 
 - [ ] 6.1 Extend `TestMalformedIndexRowsAreSkippedLoggedAndCounted` with one malformed key under an alias prefix
-  (alias read answers the well-formed row, warning names alias, counter alias 1), failing on `7ac1e13`.
+  (alias read answers the well-formed row, warning names alias, counter alias 1), failing before its fix.
 - [ ] 6.2 The alias read skips through `skipMalformedRow("alias", …)`. Gate: as 3.2.
 
 ## 7. Wording (every text naming the #415 exception)

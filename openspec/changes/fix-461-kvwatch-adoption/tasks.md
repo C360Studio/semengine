@@ -70,7 +70,7 @@ base failure is a coin flip.
   the blocked goroutine). Then `watchOnce` stops through `kvwatch.Stop`, which makes the `Run` doc's "its return is the
   join" true. Mutation check: `task mutate:check` with `kvwatch.Stop` replaced by `watcher.Stop()`, recorded as
   detections out of 3 mutant runs (3 of 3 expected). Gate: `go test -race -count=1 ./graph/readiness/`; `task verify`.
-- [ ] 2.6 Ledger rows of `service`, `pkg/lifecycle`, `config`, `natsclient` (`storagereport`) and `graph/readiness`
+- [x] 2.6 Ledger rows of `service`, `pkg/lifecycle`, `config`, `natsclient` (`storagereport`) and `graph/readiness`
   name `internal/kvwatch` (in-set; no exported signature names it) and the stop behaviour. Gate: `task docs:check`;
   `task verify`.
 

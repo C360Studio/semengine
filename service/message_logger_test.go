@@ -191,10 +191,12 @@ func TestResolveLoggerSubjectsOmitsCoveredSubjects(t *testing.T) {
 // Generator: sets of zero to six subjects, each one to three tokens from {a, b, *}, the last
 // possibly >, so every subject is valid under D3's grammar by construction (the reduction's input
 // is a validated set) and drawn from a small alphabet so covers are common. A slice is drawn and
-// folded into the set, so a repeated subject is part of the input. Half the sets also get the pair
-// a.* and *.a, which overlap (a.a matches both) while neither covers the other. Random draws alone
-// reached that case about 10 times a run, as few as twice in 1,000 runs, and not at all in one run
-// (#497); with the pair it is about 50, at least 34. What makes each assertion run:
+// folded into the set, so a repeated subject is part of the input. Two rare cases are also set up
+// on purpose (#497), each in half the sets independently, so a quarter of the sets are the slice
+// alone, of any size: the pair a.* and *.a overlap (a.a matches both) while neither covers the
+// other, and b.>, b.*, b.b are a chain of three covers. Random draws alone missed the overlap in 2
+// of 3,000 runs of 100 sets and reached the chain as few as once in a run. What makes each
+// assertion run:
 // the cases below are counted when a set reaches them, and the test fails at the end unless each
 // count is above zero, so a generator that stops reaching one fails rather than passing quietly.
 // The run's seed and completed checks are recorded in the notes when the test first runs (task
@@ -214,6 +216,9 @@ func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
 		drawn := rapid.SliceOfN(rapid.Custom(drawValidSubject), 0, 6).Draw(rt, "subjects")
 		if rapid.Bool().Draw(rt, "overlap pair") {
 			drawn = append(drawn, "a.*", "*.a")
+		}
+		if rapid.Bool().Draw(rt, "cover chain") {
+			drawn = append(drawn, "b.>", "b.*", "b.b")
 		}
 		desired := make(map[string]struct{}, len(drawn))
 		for _, s := range drawn {

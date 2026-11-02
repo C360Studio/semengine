@@ -70,8 +70,8 @@ allows dots, so its arity varies (`natsclient/kv_key_contract.go:15-17`), and `"
    watcher stop and drain (`kv.go:699-706`), so no end-to-end return bound is promised. `KeysByPrefix` returns its
    whole snapshot (`kv.go:594-601`). Stopping after two owners is possible only by building a second key lister in
    graph-index on `KVStore.Watch` (`kv.go:725`), which would copy `keysByFilter`'s snapshot-and-drain handling
-   (`kv.go:652`), the code #461 and draft #494 are still settling; one listing with one implementation is kept
-   instead. The listing cost of an alias many entities share is not measured.
+   (`kv.go:652`); one listing with one implementation is kept instead.
+   The listing cost of an alias many entities share is not measured.
 5. **Any string.** An alias is indexed whatever its bytes; a value empty after trimming is not an alias: it is not
    indexed, and a request for it is refused as `invalid_request`. NAME differs here: it refuses only `""` and answers
    a whitespace-only name (`query.go:591-593`). The KV-unsafe skip and `aliases_skipped_total` go. The alias rows

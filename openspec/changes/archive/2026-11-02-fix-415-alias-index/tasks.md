@@ -71,6 +71,6 @@ developer's unit.
 
 ## 8. Archive
 
-- [ ] 8.1 Spec sync into `openspec/specs/graph-index` and `openspec/specs/graph-transport-boundary`, archive as the
+- [x] 8.1 Spec sync into `openspec/specs/graph-index` and `openspec/specs/graph-transport-boundary`, archive as the
   last content commit; then `git grep -n '#415' -- openspec/specs` returns nothing. The PR body carries
   `Closes #415`, `implemented-by:`, `reviewed-by:`. Gate: `task spec:check`.

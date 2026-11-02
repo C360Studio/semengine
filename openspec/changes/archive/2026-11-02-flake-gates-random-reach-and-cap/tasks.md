@@ -22,4 +22,4 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 4. Land
 
-- [ ] 4.1 Implementation verified and independently reviewed; specs synced and change archived.
+- [x] 4.1 Implementation verified and independently reviewed; specs synced and change archived.

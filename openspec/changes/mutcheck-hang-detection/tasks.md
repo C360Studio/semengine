@@ -14,4 +14,4 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 3. Spec and docs
 
-- [ ] 3.1 `openspec/specs/mutation-check/spec.md` delta applied; `docs/testing.md` verdict description updated.
+- [x] 3.1 `openspec/specs/mutation-check/spec.md` delta applied; `docs/testing.md` verdict description updated.

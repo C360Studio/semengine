@@ -37,5 +37,5 @@ Keep a timer arm that passes. Gate per group: `go test -race -count=1 -cpu 1 <pk
 
 ## 5. Land
 
-- [ ] 5.1 Implementation verified and independently reviewed; specs synced and change archived. Verification and the
+- [x] 5.1 Implementation verified and independently reviewed; specs synced and change archived. Verification and the
   narrow review of the archive commit go on the PR's landing record, after archive.

@@ -1,9 +1,11 @@
 package storagereport
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"testing/synctest"
@@ -23,6 +25,7 @@ import (
 type fakeKeyWatcher struct {
 	updates   chan jetstream.KeyValueEntry
 	stopped   chan struct{}
+	stopErr   error
 	once      sync.Once
 	closeOnce sync.Once
 }
@@ -37,11 +40,11 @@ func newFakeKeyWatcher() *fakeKeyWatcher {
 func (w *fakeKeyWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
 
 // Stop closes updates after it stops, as nats.go closes a watch's updates once its delivery has
-// ended. Nothing sends on a watcher after its Stop.
+// ended, and returns stopErr. Nothing sends on a watcher after its Stop.
 func (w *fakeKeyWatcher) Stop() error {
 	w.once.Do(func() { close(w.stopped) })
 	w.closeUpdates()
-	return nil
+	return w.stopErr
 }
 
 // closeUpdates closes the updates channel once, whether a test closes it to simulate a lost
@@ -351,6 +354,38 @@ func TestReportConsumer_RetriesWhenTheWatchCannotBeEstablished(t *testing.T) {
 		store.mu.Unlock()
 
 		eventually(t, func() bool { return store.watchCount() >= 1 }, "the retry succeeds once the bucket exists")
+	})
+}
+
+// TestReportConsumer_RunWarnsWhenTheWatchCannotBeStopped covers the only report of a failed watch
+// cleanup: Run returns no error, so without the Warn the failure is lost.
+func TestReportConsumer_RunWarnsWhenTheWatchCannotBeStopped(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		watcher := newFakeKeyWatcher()
+		watcher.stopErr = errors.New("test: the stop failed")
+		store := &fakeWatchStore{next: func() *fakeKeyWatcher { return watcher }}
+
+		var logs bytes.Buffer
+		consumer, err := NewConsumer(store, ConsumerConfig{Logger: slog.New(slog.NewTextHandler(&logs, nil))})
+		require.NoError(t, err)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			consumer.Run(ctx)
+		}()
+
+		synctest.Wait()
+		require.Equal(t, 1, store.watchCount(), "Run is waiting on its one watch")
+
+		cancel()
+		<-done // Run has returned, so its deferred stop has logged and nothing writes logs now.
+
+		assert.Contains(t, logs.String(),
+			`level=WARN msg="could not stop the storage report watch" error="test: the stop failed"`,
+			"no Warn reports the failed stop")
 	})
 }
 

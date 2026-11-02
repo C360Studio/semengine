@@ -55,4 +55,6 @@ owner on #420; moving `natsclient` onto `internal/kvwatch` would add mechanism t
 ## Capabilities
 
 None. No requirement under `openspec/specs/` changes: `config-manager` "Stop is the only stop" and `operator-surface`
-"The KV watch ends on client exit, falling behind or Stop" already promise what this makes true.
+"The KV watch ends on client exit, falling behind or Stop" already promise what this makes true. One evidence
+paragraph in `operator-surface` changes by hand: it said the backlog was never probed, and `service`'s new test now
+measures it (Codex review, PR #494).

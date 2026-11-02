@@ -100,6 +100,17 @@ const (
 	// empty (SemStreams #662 / Codex P1#2). Consumers classify by this stable code, never by the
 	// message text.
 	ErrorCodeEmbeddingUnavailable = "embedding_unavailable"
+
+	// ErrorCodeAliasAmbiguous indicates an alias query named an alias that two or
+	// more distinct entities carry, so no one entity answers it. Rows of one entity
+	// under several alias predicates are one holder and answer that entity. Class is
+	// ErrorInvalid; the message names the alias (ADR-114 §3).
+	//
+	// Emitted by graph-index's alias verb. The refusal holds while the alias is
+	// shared: once all but one holder drops the alias or is deleted, and graph-index
+	// has indexed that change, the same request answers the remaining holder.
+	// Consumers classify by this stable code, never by the message text.
+	ErrorCodeAliasAmbiguous = "alias_ambiguous"
 )
 
 // MutationOutcome is the outcome a graph-mutation reply carries. Every other

@@ -28,7 +28,8 @@ func TestQueryRefusesInvalidRequestsBeforeAnyRead(t *testing.T) {
 			`{"entity_id":"acme.ops.test.system.widget.*"}`, `{"entity_id":"acme.ops.test.system.widget.a b"}`},
 		"incoming": {`not json`, `{}`, `{"entity_id":"acme.ops.test.system.widget"}`,
 			`{"entity_id":"acme.ops.test.system.widget.>"}`},
-		"alias":          {`not json`, `{}`, `{"alias":"two words"}`, `{"alias":"alpha.>"}`, `{"alias":"alpha.*"}`},
+		// Any alias string is a valid request (ADR-114 §5); only one empty after trimming is refused.
+		"alias":          {`not json`, `{}`, `{"alias":"   "}`},
 		"predicate":      {`not json`, `{}`, `{"predicate":"test.link"}`, `{"predicate":"test.link.*"}`, `{"predicate":"test.link.to.far"}`},
 		"predicateList":  {`not json`, `{"unknown":1}`, `{"namespace":"test.link.to"}`, `{"namespace":"*"}`, `{"namespace":"te st"}`},
 		"predicateStats": {`not json`, `{}`, `{"predicate":"test.link"}`},

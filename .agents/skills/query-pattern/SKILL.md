@@ -34,9 +34,9 @@ component serves exactly its own verbs. graph-index's are `outgoing`, `incoming`
    verb, read from `graph.QueryVerbs()`. Every one of the eight refuses with transient `index_not_ready` during the
    index's startup rebuild and while it has lost its feed, so retry it; it refuses with fatal
    `graph_state_reset_required` after a stored entity could not be decoded, so do not retry. Compare a write's
-   `kv_revision` with the reply's `indexed_revision` to know whether the answer includes that write; the `alias`
-   verb is the exception until issue #415 is fixed: it can still return an alias that was dropped or whose entity was
-   deleted.
+   `kv_revision` with the reply's `indexed_revision` to know whether the answer includes that write, the `alias` verb
+   included. The `alias` verb also refuses with class invalid and code `alias_ambiguous` when two or more entities
+   carry the alias; do not retry it until a holder drops the alias.
 4. **Anything else:** there is no admitted read. Raw KV access and subjects are not a fallback for an application;
    direct bucket access is for the declared owner (`natsclient.OpenFrameworkBucket` with the descriptor from
    `graph/kvcatalog`) and for operator diagnostics.

@@ -499,14 +499,16 @@
     (Sensor, Time, Network, Quality, unused Geo/GraphRel/OWL/SKOS/RDFS/DC/Schema.org/PROV-O/FOAF
     constants, PredicateRole/WithRole, EntityTypeIRI, RelationshipIRI, SubjectIRI,
     RegisterPredicate, IsSymmetricPredicate, HasInverse, DiscoverInversePredicates); extended in
-    #234, #237, #251, and #256 with LookupByIRI, entity-type class metadata, ProjectionSpec
+    #234, #237, #251, #256, and ADR-114 with CoreIdentityAlias (the framework alias predicate
+    `core.identity.alias`, ADR-114), LookupByIRI, entity-type class metadata, ProjectionSpec
     (and pure ProjectionSpec.Validate), PackSpec (and pure PackSpec.Validate), W3C Turtle PN_PREFIX
     and IRIREF validation, and strict alias_priority rejection; doc.go and README.md updated to match.
     ParsePredicate keeps no memo; parseDomainCategory removed (#219)
   proving_tests: >-
-    vocabulary/*_test.go (15 test files covering predicate syntax, registration, reverse IRI lookup,
+    vocabulary/*_test.go (16 test files covering predicate syntax, registration, reverse IRI lookup,
     entity-type class metadata, projection specs, declarative JSON/YAML packs, hierarchy,
-    relationships, and namespace authority; FuzzParsePredicateAgreesWithGrammar in
+    relationships, namespace authority, and the framework alias predicate
+    (TestCoreIdentityAliasIsDeclared in identity_test.go); FuzzParsePredicateAgreesWithGrammar in
     predicate_parse_test.go replaces predicate_memo_test.go)
   owner: setup-04a-01-floor developer
   disposition: adapt
@@ -2078,7 +2080,9 @@
     producer and timestamp, and NewQueryResponse refuses an empty producer (design D6, ruling P);
     (16) QueryVerbs adds graph-index's eight verbs on graph.index.query.* (outgoing, incoming, alias,
     predicate, predicateList, predicateStats, predicateCompound, byName) with Responder
-    ResponderGraphIndex (graph/query_verbs.go; design D6, #106)
+    ResponderGraphIndex (graph/query_verbs.go; design D6, #106); and, in fix-415-alias-index (ADR-114):
+    (17) ErrorCodeAliasAmbiguous exports "alias_ambiguous", the code (class invalid) graph-index's alias
+    verb answers when two or more entities carry the alias
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -3435,24 +3439,25 @@
     (4) every one of the eight verbs refuses with transient index_not_ready during startup replay and while the
     feed is lost, and with fatal graph_state_reset_required after a reset (D5; ADR-109 D1; owner ruling item 2);
     (5) every reply is a graph.QueryResponse naming producer graph-index and indexed_revision, the follower's floor
-    read before the handler's first bucket read; the alias reply carries the same revision and promises nothing
-    about which aliases resolve (D6; #103); (6) query subjects are bound from graph.QueryVerbs and Start fails on a
+    read before the handler's first bucket read, the alias reply included (D6; #103); (6) query subjects are bound from graph.QueryVerbs and Start fails on a
     declared verb with no handler (D6); (7) the keyed pool is internal/dispatch.KeyedPool, keyed_dispatcher.go does
     not port (D7); (8) strict configuration: an unknown key is refused naming it, batch_size is refused, workers 0
     means one lane and 1 to 16 are accepted, a configuration with no ports takes the default ports and a ports block
     that is present is used as written (ruling K), and an input other than a kv-watch of every ENTITY_STATES key
     with no history is refused (D9; #424); (9) metrics register through metric.RegisterOrGet on the injected
-    registry under the semengine namespace, graph_index subsystem, and aliases_skipped_total and
-    query_rows_skipped_total are new (D10; #68, #426, #430); (10) the alias index keeps the pin's behaviour, a
-    dropped or changed alias and a deleted entity's alias keep resolving, until #415 (D12; owner ruling item 3)
+    registry under the semengine namespace, graph_index subsystem, and query_rows_skipped_total is new (D10; #68,
+    #426, #430); (10) ALIAS_INDEX keys an alias by its owner, hash(alias).entity6.hex(predicate), so a dropped or
+    changed alias and a deleted entity's alias stop resolving; the read answers the one holder, refuses two or more
+    as alias_ambiguous, matches trimmed and case-folded, indexes any non-empty string, and counts once per entity
+    in updates_total{index_type="alias"}; the alias skip counter is removed (ADR-114)
   dependencies_and_side_effects: >-
     component, graph, graph/follower, graph/kvcatalog, graph/readiness, internal/dispatch, metric, natsclient,
     pkg/errs, pkg/types, vocabulary (in-set); nats.go/jetstream, prometheus/client_golang; KV reads and writes on the
     five index buckets and reads on ENTITY_STATES, eight request subscriptions, one keyed lane pool, a coalescer and a
     repair loop started in Start and released by Stop
   known_risks: >-
-    G8 (#415): the alias read is the one declared exception to [A] -> [B] -> [] replacement; ENTITY_STATES keeps
-    History 1, so a revision overwritten before the follower reads it is never indexed; lastProjections keeps one
+    the alias predicates are read once at Start, so a predicate registered later is not indexed until restart
+    (ADR-114); ENTITY_STATES keeps History 1, so a revision overwritten before the follower reads it is never indexed; lastProjections keeps one
     string per entity in memory for reindex_events_total (#108's instrument); the index is rebuilt on every start,
     so queries are refused with index_not_ready for the replay's length (#108 stays open; the one load comparison is
     in openspec notes/1.6.md); kept optional pin shapes: S4 (the owned-bucket set spelled in five places), S6 (fixed 5 s
@@ -3467,13 +3472,14 @@
     TestConfigRefusesInputsTheFollowerDoesNotRead), factory_test.go, metrics_test.go, lifecycle_test.go,
     query_test.go, revision_coalescer_test.go, index_integration_test.go (TestIndexReplacementThroughEveryIndex,
     TestFailedWriteWithholdsReadinessAndRepairClearsIt, TestNoncanonicalValueLatchesResetAndHoldsItsRevision,
-    TestUnsafeAliasSkipIsLoggedAndCounted), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
+    TestKVUnsafeAliasIsIndexed), lifecycle_integration_test.go (TestGraphIndexLifecycleSuite,
     TestStopWritesAcceptedWork, TestSecondStartIsRefused, TestStartContextEndStopsNothing,
     TestHealthIgnoresErrorCountAndTracksStuckStates, TestLatchBootstrap_ContinuousWrite), query_integration_test.go
     (TestGraphIndexServesExactlyTheDeclaredVerbs, TestQueryDuringStartupReplayIsIndexNotReady,
     TestQueryResponseCarriesIndexedRevisionAndProducer, TestQueriesAreRefusedWhileTheFeedIsLost,
     TestQueryReadsImplementReplacement, TestMaximumLengthIDsAndPredicatesThroughPublicReads,
-    TestMalformedIndexRowsAreSkippedLoggedAndCounted); the pin tests dropped, each with its reason, are listed in
+    TestMalformedIndexRowsAreSkippedLoggedAndCounted, TestAliasReadImplementsReplacement,
+    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase); the pin tests dropped, each with its reason, are listed in
     openspec/changes/setup-04a-04-graph-roots-graph-index/notes/2.3.md
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt

@@ -90,3 +90,33 @@ func validateNameKeyInputs(entityID, predicate string, logger *slog.Logger) bool
 	}
 	return true
 }
+
+// aliasIndexKey builds the ALIAS_INDEX key for one (alias, entity, predicate) membership:
+// hash(alias).entity6.hex(predicate), NAME's layout (ADR-114 §1). The hash is nameIndexKey's,
+// so an alias is trimmed and case-folded as a name is; the value is an empty marker.
+func aliasIndexKey(alias, entityID, predicate string) string {
+	return nameCompositeKey(nameIndexKey(alias), entityID, predicate)
+}
+
+// aliasIndexEntityFilter lists every alias membership entityID owns (ADR-114 §2).
+func aliasIndexEntityFilter(entityID string) string {
+	return nameIndexEntityFilter(entityID)
+}
+
+type aliasIndexWrite struct {
+	alias     string
+	predicate string
+}
+
+// reconcileAliasIndex replaces entityID's alias memberships with writes. Retained keys are
+// not rewritten: the value is an empty marker, so a kept key has nothing to change.
+func (c *Component) reconcileAliasIndex(ctx context.Context, entityID string, writes []aliasIndexWrite) error {
+	if err := semtypes.ValidateEntityID(entityID); err != nil {
+		return err
+	}
+	desired := make(map[string][]byte, len(writes))
+	for _, write := range writes {
+		desired[aliasIndexKey(write.alias, entityID, write.predicate)] = []byte{}
+	}
+	return c.reconcileOwnedRows(ctx, "alias", c.aliasBucket, aliasIndexEntityFilter(entityID), desired, false)
+}

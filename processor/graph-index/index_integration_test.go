@@ -274,14 +274,14 @@ const (
 	linkTo   = "test.link.to"
 	armed    = "test.state.armed"
 	disarmed = "test.state.disarmed"
-	alias    = "core.identity.alias"
+	alias    = vocabulary.CoreIdentityAlias
 )
 
 // TestIndexReplacementThroughEveryIndex drives one entity's statements from A to B to none and then
 // deletes it, and after each step reads every index bucket's complete key set. Each owned index
-// holds exactly the current state; another source's edge to the entity survives its delete, since
-// the source owns it; and the alias index keeps every alias ever written, the pin's behaviour kept
-// until #415 (design D12).
+// holds exactly the current state, the alias index among them (ADR-114: hash(alias).entity6.
+// hex(predicate)); and another source's edge to the entity survives its delete, since the source
+// owns it.
 func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
 	src, other, targetA, targetB := entityID(1), entityID(2), entityID(10), entityID(11)
@@ -300,7 +300,7 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(
 		linkTo+"."+src, armed+"."+src, title+"."+src, alias+"."+src, linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, sorted(nameHash("Alpha")+"."+src+"."+hexOf(title)))
-	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1"))
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("alpha-1")+"."+src+"."+hexOf(alias)))
 
 	revB := h.put(t, src, entityValue(t, src,
 		stmt{linkTo, targetB}, stmt{disarmed, true}, stmt{title, "Beta"}, stmt{alias, "beta-1"}))
@@ -313,7 +313,7 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(
 		linkTo+"."+src, disarmed+"."+src, title+"."+src, alias+"."+src, linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, sorted(nameHash("Beta")+"."+src+"."+hexOf(title)))
-	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1", "beta-1")) // #415: a dropped alias stays
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("beta-1")+"."+src+"."+hexOf(alias)))
 
 	revNone := h.put(t, src, entityValue(t, src))
 	h.awaitIndexed(t, revNone)
@@ -323,9 +323,11 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketIncomingIndex, sorted(src+"."+other+"."+hexOf(linkTo)))
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, []string{})
+	assertKeys(t, h, graph.BucketAliasIndex, []string{})
 
-	revB2 := h.put(t, src, entityValue(t, src, stmt{linkTo, targetB}, stmt{title, "Beta"}))
+	revB2 := h.put(t, src, entityValue(t, src, stmt{linkTo, targetB}, stmt{title, "Beta"}, stmt{alias, "beta-1"}))
 	h.awaitIndexed(t, revB2)
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(nameHash("beta-1")+"."+src+"."+hexOf(alias)))
 	if err := h.states.Delete(t.Context(), src); err != nil {
 		t.Fatalf("delete %s: %v", src, err)
 	}
@@ -336,6 +338,7 @@ func TestIndexReplacementThroughEveryIndex(t *testing.T) {
 	assertKeys(t, h, graph.BucketIncomingIndex, sorted(src+"."+other+"."+hexOf(linkTo)))
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+other))
 	assertKeys(t, h, graph.BucketNameIndex, []string{})
+	assertKeys(t, h, graph.BucketAliasIndex, []string{})
 	if n := h.c.failedTotal(); n != 0 {
 		t.Errorf("failed entities = %d, want 0", n)
 	}
@@ -535,41 +538,26 @@ func TestErrorCountCountsOutcomesNotOperations(t *testing.T) {
 	})
 }
 
-// TestUnsafeAliasSkipIsLoggedAndCounted: an alias that is not a valid NATS KV key is skipped, as
-// at the pin, and the skip is declared: a warning names the entity and predicate, and
-// aliases_skipped_total counts it, while the entity's other rows, its safe alias among them, are
-// written (#426; the alias index otherwise keeps the pin's behaviour, #415).
-func TestUnsafeAliasSkipIsLoggedAndCounted(t *testing.T) {
+// TestKVUnsafeAliasIsIndexed: an alias is indexed whatever its bytes, so "two words", which is not
+// a NATS KV key, gets its row and resolves through the alias verb, beside the entity's other rows;
+// a value empty after trimming is not an alias and gets no row (spec "An alias that is not a KV
+// key"; ADR-114 §5).
+func TestKVUnsafeAliasIsIndexed(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	src, target := entityID(1), entityID(2)
-	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{alias, "two words"}, stmt{alias, "alpha-1"}))
-	// The lane logs and counts the skip while it plans, before it completes the revision.
+	rev := h.put(t, src, entityValue(t, src,
+		stmt{linkTo, target}, stmt{alias, "two words"}, stmt{alias, "alpha-1"}, stmt{alias, "   "}))
 	h.awaitIndexed(t, rev)
 
-	assertKeys(t, h, graph.BucketAliasIndex, sorted("alpha-1"))
+	assertKeys(t, h, graph.BucketAliasIndex, sorted(
+		nameHash("two words")+"."+src+"."+hexOf(alias),
+		nameHash("alpha-1")+"."+src+"."+hexOf(alias)))
 	assertKeys(t, h, graph.BucketOutgoingIndex, sorted(src))
 	assertKeys(t, h, graph.BucketPredicateIndex, sorted(linkTo+"."+src, alias+"."+src))
 	if n := h.c.failedTotal(); n != 0 {
-		t.Errorf("failed entities = %d, want 0: a skipped alias is not a failed write", n)
+		t.Errorf("failed entities = %d, want 0", n)
 	}
-	logs := h.logs.String()
-	if !strings.Contains(logs, "KV-unsafe alias skipped") || !strings.Contains(logs, "entity_id="+src) ||
-		!strings.Contains(logs, "predicate="+alias) {
-		t.Errorf("no warning naming the skipped alias's entity and predicate; logs:\n%s", logs)
-	}
-	families, err := h.c.metricsRegistry.PrometheusRegistry().Gather()
-	if err != nil {
-		t.Fatalf("Gather: %v", err)
-	}
-	var skipped float64
-	for _, family := range families {
-		if family.GetName() == "semengine_graph_index_aliases_skipped_total" {
-			for _, m := range family.GetMetric() {
-				skipped += m.GetCounter().GetValue()
-			}
-		}
-	}
-	if skipped != 1 {
-		t.Errorf("semengine_graph_index_aliases_skipped_total = %v, want 1", skipped)
+	if got := resolveAlias(t, h, "two words", rev); got != src {
+		t.Errorf(`alias "two words" = %q, want %q`, got, src)
 	}
 }

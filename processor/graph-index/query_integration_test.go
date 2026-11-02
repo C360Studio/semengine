@@ -3,12 +3,14 @@
 package graphindex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
 	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -241,9 +243,9 @@ func TestMinRevisionBoundary(t *testing.T) {
 	})
 
 	// With every index bucket gone, a read cannot succeed: the same request with a met minimum
-	// shows it, failing as internal. So a refusal that still names the revision read no bucket
-	// first; the other order would answer internal.
-	t.Run("refusal-reads-no-bucket", func(t *testing.T) {
+	// shows it, failing as internal. So a refusal that still names the revision came before any
+	// read whose failure reaches the reply; a read that ignored its error would not show here.
+	t.Run("refusal-before-reads", func(t *testing.T) {
 		h := startIndex(t, fixtureClient(t), `{}`)
 		rev := put(t, h)
 		js, err := h.client.JetStream()
@@ -410,6 +412,77 @@ func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
 		if len(reply.Data) == 0 || string(reply.Data) == "null" {
 			t.Errorf("%s reply carries no data: %s", verb, raw)
 		}
+	}
+}
+
+// replyMatchesEntry decodes raw as a caller holding verb's table entry does: the envelope when the
+// entry is Enveloped, then the entry's Reply, each refusing an unknown field. Re-encoding the decoded
+// body must give the same JSON, so a Reply with fields the wire does not carry fails too.
+func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
+	decodeStrict := func(data []byte, into any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(into)
+	}
+	body := raw
+	if verb.Enveloped {
+		var reply graph.QueryResponse[json.RawMessage]
+		if err := decodeStrict(raw, &reply); err != nil {
+			return fmt.Errorf("as an envelope: %w", err)
+		}
+		body = reply.Data
+	}
+	decoded := reflect.New(verb.Reply)
+	if err := decodeStrict(body, decoded.Interface()); err != nil {
+		return fmt.Errorf("as %s: %w", verb.Reply, err)
+	}
+	again, err := json.Marshal(decoded.Interface())
+	if err != nil {
+		return err
+	}
+	var sent, resent any
+	if err := errors.Join(json.Unmarshal(body, &sent), json.Unmarshal(again, &resent)); err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(sent, resent) {
+		return fmt.Errorf("as %s re-encodes to %s, the reply body is %s", verb.Reply, again, body)
+	}
+	return nil
+}
+
+// TestRepliesMatchTheirTableEntries: every row the verb table declares for graph-index, not a list
+// kept here, gets a real reply carrying data, and that reply has the row's shape and type
+// (graph-transport-boundary; notes/3.1-review.md shows a wrong mark fails).
+func TestRepliesMatchTheirTableEntries(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	subject, target := entityID(1), entityID(2)
+	rev := h.put(t, subject, entityValue(t, subject,
+		stmt{linkTo, target}, stmt{armed, true}, stmt{vocabulary.DCTermsTitle, "Alpha"}, stmt{alias, "alpha-1"}))
+	h.awaitIndexed(t, rev)
+
+	requests := everyVerb(subject, target)
+	walked := 0
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder != graph.ResponderGraphIndex {
+			continue
+		}
+		walked++
+		request, ok := requests[verb.Name]
+		if !ok {
+			t.Errorf("the table declares %s and this test has no request for it", verb.Name)
+			continue
+		}
+		raw, err := query(t, h.client, verb.Name, request)
+		if err != nil {
+			t.Errorf("%s: %v", verb.Name, err)
+			continue
+		}
+		if err := replyMatchesEntry(verb, raw); err != nil {
+			t.Errorf("%s reply does not match its table entry: %v; reply %s", verb.Name, err, raw)
+		}
+	}
+	if walked == 0 {
+		t.Fatal("the table declares no graph-index verb")
 	}
 }
 

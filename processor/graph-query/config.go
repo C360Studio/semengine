@@ -2,7 +2,9 @@ package graphquery
 
 import (
 	"fmt"
+	"math"
 	"reflect"
+	"time"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -12,6 +14,9 @@ import (
 // (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's 30 s
 // budget for a request handler (design D7).
 const defaultQueryTimeoutMs = 15000
+
+// maxQueryTimeoutMs is the largest millisecond count a time.Duration holds; one more wraps negative.
+const maxQueryTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
 
 // Config holds the graph-query configuration. Decoding is strict: a key it does not define is
 // refused, naming the key.
@@ -43,6 +48,10 @@ func queriesPort() component.PortDefinition {
 func (c *Config) Validate() error {
 	if c.QueryTimeoutMs < 0 {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "query_timeout_ms cannot be negative")
+	}
+	if int64(c.QueryTimeoutMs) > maxQueryTimeoutMs {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
+			fmt.Sprintf("query_timeout_ms %d does not fit a duration, at most %d", c.QueryTimeoutMs, maxQueryTimeoutMs))
 	}
 	if c.Ports == nil {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "ports configuration required")

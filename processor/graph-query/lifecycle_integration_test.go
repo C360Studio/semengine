@@ -149,9 +149,11 @@ func TestGraphQueryLifecycleSuite(t *testing.T) {
 	})
 }
 
-// TestStartThroughTheTable: the production Start walks the table on a connected client and serves
-// until Stop: Health follows, a second Start is refused, and a Start context that ends after Start
-// returned stops nothing (ADR-113). A Start whose context has already ended is refused.
+// TestStartThroughTheTable: the production Start on a connected client: Health follows, a second
+// Start is refused, and a Start context that ends after Start returned does not change Health
+// (ADR-113). A Start whose context has already ended is refused. The table has no graph-query row
+// yet, so this Start subscribes nothing and the test proves nothing about serving; task 3.2 sends
+// the request that does.
 func TestStartThroughTheTable(t *testing.T) {
 	client := fixtureClient(t)
 	c := newComponent(t, client)
@@ -222,6 +224,7 @@ func TestFailedCleanupKeepsHandlesForLaterStop(t *testing.T) {
 			go func() {
 				_, err := client.RequestClassified(context.WithoutCancel(ctx), busy.Subject, []byte(`{}`), 2*time.Minute)
 				replied <- err
+				close(replied) // so the wait below ends even if the arm under this took the value
 			}()
 			select {
 			case <-entered: // Drain now has a running handler to wait for

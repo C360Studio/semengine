@@ -59,6 +59,8 @@ backend (`cmd/cs-graph-backend/main.go:127`, on the branch of PR 74).
 - Delete `request_timeout`, `max_traversal_depth`, `max_traversal_nodes` from `deploy/semstreams.json` and
   `conformance/compose.semstreams.config.json`. The old version ignored them; unknown keys now refuse boot, naming the
   key. `query_timeout_ms` is the timeout (default 15000).
+- Keep the `graph-query` port block in `deploy/semstreams.json`: by reading, not run, it is accepted as written
+  (`outputs: []` counts as none). Only the three keys above must go.
 - Your 5 s default (`gateway/cs-api/config.go:157`) is under ingest's 10 s budget, so a 5 to 10 s `batch` still times
   out on your side, loudly, while graph-query keeps forwarding. Raise it if that matters.
 

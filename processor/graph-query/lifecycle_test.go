@@ -73,9 +73,11 @@ func TestLifecycleBeforeStart(t *testing.T) {
 }
 
 // TestDeclaredVerbWithNoHandlerFailsTheWalk: a verb declared for graph-query with no handler is a
-// failure naming the verb and its subject (design D7), found before anything is subscribed, and a
-// verb declared for another responder needs no handler here. The client is never connected, so a
-// walk that tried to subscribe would fail for another reason.
+// failure naming the verb and its subject (design D7), and a verb declared for another responder
+// needs no handler here. The walk finds it when it reaches that row, so rows before it are already
+// subscribed for the rollback to drain (the lifecycle suite's failing owner relies on that). Here
+// the only earlier row is another responder's, and the client is never connected, so a walk that
+// tried to subscribe would fail for another reason.
 func TestDeclaredVerbWithNoHandlerFailsTheWalk(t *testing.T) {
 	c, err := createFromJSON(t, `{}`)
 	if err != nil {

@@ -53,8 +53,9 @@ func TestRegisterAddsGraphQuery(t *testing.T) {
 	}
 }
 
-// TestInputPortsAreACopy: a caller cannot change the component's ports through the returned slice.
-func TestInputPortsAreACopy(t *testing.T) {
+// TestInputPortsSliceIsNew: a caller writing a field of a returned element does not change the
+// component's port. A write through the element's Interface pointer would: that is shared.
+func TestInputPortsSliceIsNew(t *testing.T) {
 	c, err := createFromJSON(t, `{}`)
 	if err != nil {
 		t.Fatalf("CreateGraphQuery({}): %v", err)

@@ -2,8 +2,10 @@ package graphquery
 
 import (
 	"encoding/json"
+	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/natsclient"
@@ -109,11 +111,34 @@ func TestConfigTimeout(t *testing.T) {
 	}
 }
 
+// TestConfigTimeoutFitsADuration: the largest accepted value is the last millisecond count a
+// time.Duration holds, 2^63-1 nanoseconds, written out here so the test does not take it from the
+// code. One more would wrap negative when the value is read as a duration, so it is refused, naming
+// the key.
+func TestConfigTimeoutFitsADuration(t *testing.T) {
+	c, err := createFromJSON(t, `{"query_timeout_ms":9223372036854}`)
+	if err != nil {
+		t.Fatalf("the largest timeout: %v", err)
+	}
+	if d := time.Duration(c.config.QueryTimeoutMs) * time.Millisecond; d <= 0 {
+		t.Fatalf("the largest accepted timeout reads as the duration %v", d)
+	}
+	for _, raw := range []string{`{"query_timeout_ms":9223372036855}`, `{"query_timeout_ms":9223372036854775807}`} {
+		_, err := createFromJSON(t, raw)
+		if err == nil {
+			t.Errorf("CreateGraphQuery accepted %s", raw)
+		} else if !strings.Contains(err.Error(), "query_timeout_ms") {
+			t.Errorf("CreateGraphQuery(%s) error does not name the key: %v", raw, err)
+		}
+	}
+}
+
 // TestConfigWithoutPortsTakesTheRequiredPort: no ports block means one required nats-request input
 // named graph_queries on graph.query.*, carrying the graph.query v1 contract, and no outputs. The
 // same port written out by hand is accepted and is the same port.
 func TestConfigWithoutPortsTakesTheRequiredPort(t *testing.T) {
-	for _, raw := range []string{``, `{}`, `{"ports":null}`, `{"ports":{"inputs":[` + requiredPort + `]}}`} {
+	for _, raw := range []string{``, `{}`, `{"ports":null}`, `{"ports":{"inputs":[` + requiredPort + `]}}`,
+		`{"ports":{"inputs":[` + requiredPort + `],"outputs":[]}}`} {
 		c, err := createFromJSON(t, raw)
 		if err != nil {
 			t.Errorf("CreateGraphQuery(%q): %v", raw, err)
@@ -243,9 +268,10 @@ func TestValidateRefusesHandBuiltConfigs(t *testing.T) {
 }
 
 // FuzzDeclarePorts: DeclarePorts takes operator bytes. Whatever they are it does not panic, and
-// whatever it accepts is exactly one required graph_queries input on graph.query.* and no output.
-// The seeds cover each class of the grammar: empty, the defaults, a timeout, the written-out port,
-// and each refusal (an unknown key, trailing data, a negative timeout, another port, not JSON).
+// whatever it accepts is exactly the one input, every field compared but the description and
+// external statement, which are the operator's, and no output. The seeds cover each class of the
+// grammar: empty, the defaults, a timeout, the written-out port, and each refusal (an unknown key,
+// trailing data, a negative or oversized timeout, another port, a port one config field off, not JSON).
 func FuzzDeclarePorts(f *testing.F) {
 	for _, seed := range []string{
 		``,
@@ -257,6 +283,10 @@ func FuzzDeclarePorts(f *testing.F) {
 		`{} {}`,
 		`{"query_timeout_ms":-1}`,
 		`{"query_timeout_ms":"5s"}`,
+		`{"query_timeout_ms":9223372036854775807}`,
+		`{"ports":{"inputs":[` + strings.Replace(requiredPort, `"kind"`, `"timeout":"5s","kind"`, 1) + `]}}`,
+		`{"ports":{"inputs":[` + strings.Replace(requiredPort, `"kind"`, `"retries":3,"kind"`, 1) + `]}}`,
+		`{"ports":{"inputs":[` + strings.Replace(requiredPort, `"v1"`, `"v2"`, 1) + `]}}`,
 		`{"ports":{"inputs":[{"name":"x","config":{"kind":"nats-request","subject":"graph.query.x"}}]}}`,
 		`{"ports":{"outputs":[{"name":"x","config":{"kind":"nats","subject":"x"}}]}}`,
 		`{`,
@@ -273,9 +303,19 @@ func FuzzDeclarePorts(f *testing.F) {
 			t.Fatalf("DeclarePorts(%q) accepted %+v", raw, declared)
 		}
 		input := declared.Inputs[0]
-		request, ok := input.Config.(component.NATSRequestPort)
-		if !ok || input.Name != "graph_queries" || !input.Required || request.Subject != "graph.query.*" {
-			t.Fatalf("DeclarePorts(%q) accepted input %+v", raw, input)
+		want := component.PortDefinition{
+			Name:        "graph_queries",
+			Required:    true,
+			Description: input.Description,
+			External:    input.External,
+			Config: component.NATSRequestPort{
+				Subject:   "graph.query.*",
+				Timeout:   "1s", // what resolving the port fills in when none is written
+				Interface: &component.InterfaceContract{Type: "graph.query", Version: "v1"},
+			},
+		}
+		if !reflect.DeepEqual(input, want) {
+			t.Fatalf("DeclarePorts(%q) accepted input %+v, want %+v", raw, input, want)
 		}
 	})
 }

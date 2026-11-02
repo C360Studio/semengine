@@ -26,7 +26,10 @@ failing-first output, recorded in the task's note. One task is one developer's u
 - [ ] 3.2 Forwards: `entity`, `batch`, `prefix`, `byName`, with their table rows. Premise:
   `pin:processor/graph-query/query.go:299-345` not carried (D2). Check: `TestForwardPassesBytesBothWays` on all four
   verbs, `TestForwardedRefusalKeepsClassCodeDetail`, `TestNoRespondersIsTransient`, `TestQueryTimeoutIsRead`,
-  `TestGraphQueryServesExactlyTheDeclaredVerbs`.
+  `TestGraphQueryServesExactlyTheDeclaredVerbs`. Retire `subscribeVerbs`' test parameters (review of 3.1): `subscribeQueries`
+  reads the table directly as graph-index does, the handler lookup is a pure helper, the suite runs `Component.Start`
+  and fails through a real failure, and `TestStartThroughTheTable` sends a real request after `Start` has ended, shown
+  to fail with `subscribeQueries` emptied.
 - [ ] 3.3 `entityByAlias` (ADR-114) and `relationships`, with their table rows. Premise: P5, P5b,
   `graph-index/query.go:272`, `graph-ingest/query.go:79-82` (D2, D4). Check: `TestEntityByAlias`, on real ingest and
   index except the rows D4 names, `TestRelationshipsEnvelopeKeepsIndexRevision`, `TestRelationshipsRowKeys`,

@@ -42,7 +42,7 @@ An empty configuration is enough. This is the same configuration written out:
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `ports` | object | the port above | A `ports` block that is present is used as written; one that is absent takes the default |
-| `query_timeout_ms` | int | 15000 | The bound on each request `graph-query` makes to graph-ingest or graph-index, in milliseconds. `0` means the default. Negative is refused. No handler makes such a request yet |
+| `query_timeout_ms` | int | 15000 | The bound on each request `graph-query` makes to graph-ingest or graph-index, in milliseconds. `0` means the default. Negative is refused, and so is anything above 9223372036854, which does not fit a Go duration. No handler makes such a request yet |
 
 The default is above graph-ingest's 10 second budget on `batch` and `prefix`, so the slowest of those can finish. A
 larger value gains little past `natsclient`'s limit on a request handler, 30 seconds by default, which also ends the
@@ -58,9 +58,10 @@ accepted and dropped. A configuration that still sets one of them fails at boot 
 | --- | --- | --- | --- |
 | input | `graph_queries` | nats-request | `graph.query.*` |
 
-The one input is required and has to be this port: a different name, subject, kind or interface, a `timeout` or
-`retries` that nothing would read, a second input, or any output is refused. Its `description` is yours to set, and
-so is `external`, which says requests come from outside the composition.
+The one input is required and has to be this port: a different name, subject, kind or interface, a `timeout` other
+than `1s` (the value it takes when none is written) or `retries`, which nothing would read, a second input, or any
+output is refused. Its `description` is yours to set, and so is `external`, which says requests come from outside the
+composition.
 
 ## Health
 

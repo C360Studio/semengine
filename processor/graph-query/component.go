@@ -107,7 +107,8 @@ func Register(registry *component.Registry) error {
 	})
 }
 
-// InputPorts returns the input ports, fixed at construction.
+// InputPorts returns a new slice of the input ports. The ports share their Interface pointer with
+// the component; no code writes through it.
 func (c *Component) InputPorts() []component.Port {
 	return slices.Clone(c.inputs)
 }

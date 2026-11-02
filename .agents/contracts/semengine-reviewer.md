@@ -130,9 +130,9 @@ Four further checks, scoped as the architect contract (Extraction slices) states
 
 For a porting design from Slice 04A change 3 on (architect contract, Extraction slices, "One package per pull request"
 and "The shape sweep"), check that the design names its unit, one package or one lifecycle owner with its package,
-states its pin line count and, over the bound, raises the waiver as an owner question (the waiver itself comes with
-the owner's ruling, so it cannot exist at this stage); and that the inventory carries the shape sweep's findings, each
-cited at the pin's `path:line`. Check each finding's disposition under
+states its pin line count and the split it chose with the reasoning;
+and that the inventory carries the shape sweep's findings, each cited at the pin's
+`path:line`. Check each finding's disposition under
 [Bounded port scope](../protocol.md#bounded-port-scope): a required correction names its binding basis and receives
 the appropriate ledger disposition; retained structure says why changing it is optional. A missing unit, line count,
 owner question, finding, or supported disposition is a finding.

@@ -138,10 +138,9 @@ Five obligations ride on every slice design in addition to its ledger row:
 
 From Slice 04A change 3 (`setup-04a-03-boot`) on, a porting pull request carries one package, or one lifecycle owner
 (defined in the archived Slice 04A design, `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:84-97`)
-with its package: about 3,000 pin lines at most, with a design of about one page. A package that alone exceeds that
-bound is ported as one pull request per lifecycle owner where it has several. Where one owner's pull request still
-exceeds the bound, its design states the line count, and the repository owner waives the bound for that number on
-that pull request. In change 3, `service` splits by lifecycle owner and `config`, with one owner, takes a waiver. Pin
+with its package: about 3,000 pin lines is a guide, not a limit (owner, 2026-11-02, #500), with a design of about one page.
+Split the way that suits the task and the developer, by lifecycle owner where a package has several; the design states
+the line count (both columns) and the split it chose and why. No owner waiver step. Pin
 lines are every Go line of the package at the pin, production and test, and the design's size table lists both columns,
 as in the Lines column of D2's table in the same design (`:145-151`); D2's package lists (`:155-178`) name the
 lifecycle owners in each change.

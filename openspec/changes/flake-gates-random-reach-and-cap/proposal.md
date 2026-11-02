@@ -22,8 +22,10 @@ Approved-by: Coby Leuschke, 2026-11-02, on #500 (comment 6580240783).
   witnesses in this change.
 - The sentence "Do not require a random run to reach a rare state a minimum number of times; that makes the test
   flaky" joins both role contracts as a `BLOCKING` finding, with its `AGENTS.md` and rules-index rows.
-- The #159 porting-PR cap (about 3,000 pin lines) counts every Go line, production and test, in `AGENTS.md` section 4,
-  the rules index, and the architect contract that defines the count.
+- The #159 porting-PR cap (about 3,000 pin lines) counts every Go line, production and test, and becomes a guide,
+  not a limit: PRs split the way that makes most sense for the task and the developer, with no waiver step (owner,
+  2026-11-02, on PR #504 and #500). Worded so in `AGENTS.md` section 4, the rules index, and the architect and
+  reviewer contracts.
 
 ## Capabilities
 

@@ -143,7 +143,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Ported packages bring their SemStreams guidance (contract sections and skills) with them | `arch` |
 | `review` | Ported packages building `GenericJSON` from known fields get an `adapt` item (registered payload or stated reason) (#9) | `arch`, `rev` |
 | `review` | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` |
-| `review` | A porting PR carries one package or lifecycle owner (<= ~3,000 pin Go lines, tests included, ~1-page design, own OpenSpec change) unless the owner waives by count (#159) | `arch`, `rev` |
+| `review` | A porting PR carries one package or lifecycle owner, split as suits the task and developer; ~3,000 pin Go lines, tests included, is a guide, not a limit; ~1-page design, own OpenSpec change (#159, #500) | `arch`, `rev` |
 | `review` | Before a porting design, the shape sweep reads each carried package on the pin copy and records each finding's required/optional disposition (#159, #9) | `arch`, `rev`; `protocol` |
 | `review` | Before a porting design, the inventory lists every open issue naming a carried package; the design says whether the PR retires it (`Closes #n`) or it stays under Bounded port scope (#160) | `arch`, `rev`; `protocol` |
 | `review` | Porting findings add required work only when tied to a binding requirement, admission/verify gate, owner ruling, accepted design commitment, or build/packaging need | `protocol` |

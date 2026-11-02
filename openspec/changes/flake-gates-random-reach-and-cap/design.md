@@ -39,9 +39,12 @@ resource), which does not depend on which inputs were drawn. A reach count is ne
 reviewer contract's property-test bullet as a `BLOCKING` finding, with a pointer to the witness pattern. `AGENTS.md`
 section 3 gains the row at gate `verify+review`; `.agents/rules-index.md` the same row.
 
-**D4. The cap.** `AGENTS.md` section 4 (#159 row), `.agents/rules-index.md` and `semengine-architect.md` ("about 3,000
-pin lines ... non-test Go lines") say: every Go line at the pin, production and test, with the design's size table
-listing both. The number stays 3,000; what it counts changes.
+**D4. The cap.** `AGENTS.md` section 4 (#159 row), `.agents/rules-index.md`, `semengine-architect.md` ("about 3,000
+pin lines at most ... non-test Go lines") and `semengine-reviewer.md` (the waiver check) say: a porting PR carries one
+package or lifecycle owner, split the way that makes most sense for the task and the developer; about 3,000 Go lines
+at the pin, production and test both counted, is a guide, not a limit, so there is no waiver step; the design states
+its line count (both columns) and the split it chose. Owner, 2026-11-02: "i am okay with us breaking the pr's up in a
+way that makes the most sense from a task/dev perspective - line coount is a guide."
 
 **D5. The one live site.** `TestPropComponentManagerStopHistory` in `service/component_manager_prop_test.go` gets a
 named witness history per branch, run through the same assertions before the generated run; its post-run counts become

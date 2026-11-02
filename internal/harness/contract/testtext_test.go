@@ -96,8 +96,8 @@ func scanTestText(t *testing.T, root string, files []string, alsoScan func(strin
 // harness-boundaries › "No own deadlines in tests": no *_test.go file has a select arm on the
 // literal text below whose body fails the test, unless the line above the arm is a comment
 // beginning "// Own deadline:" followed by a reason; go test -timeout is the one deadline. The
-// arms matched are the time.After literal below and a timer's channel, an identifier then ".C:"
-// (time.NewTimer). A time.After kept in a variable and a context deadline are outside it. The
+// arms matched are the time.After literal below and a timer's channel, a dotted name then ".C:"
+// (time.NewTimer, including a field such as s.timer.C). A time.After kept in a variable and a context deadline are outside it. The
 // body runs to the next case or default at the arm's depth, or the select's closing brace; the
 // contents of string and rune literals are ignored. The literal is assembled so this file does not
 // contain what it forbids.

@@ -98,16 +98,16 @@ func scanTestText(t *testing.T, root string, files []string, alsoScan func(strin
 // beginning "// Own deadline:" followed by a reason; go test -timeout is the one deadline. The
 // arms matched are the time.After literal below and a timer's channel, an identifier then ".C:"
 // (time.NewTimer). A time.After kept in a variable and a context deadline are outside it. The
-// body runs to the next case or default at the arm's depth, or the select's closing brace; braces
-// inside string literals are counted as code. The literal is assembled so this file does not
+// body runs to the next case or default at the arm's depth, or the select's closing brace; the
+// contents of string and rune literals are ignored. The literal is assembled so this file does not
 // contain what it forbids.
 var (
 	ownDeadlineArm = "case <-time." + "After("
-	timerChanArm   = regexp.MustCompile(`case <-[A-Za-z_][A-Za-z0-9_]*\.` + "C:")
-	// Any receiver (t, tb, b, a testify suite). Error, Errorf, Fatal, Fatalf and Fail need an
-	// argument so that err.Error() is not read as failing the test.
-	failsTheTest = regexp.MustCompile(`\.(` + "Fatal|Fatalf|Error|Errorf|Fail" + `)\([^)]|\.` + "FailNow" + `\(\)|\b` +
-		"require" + `\.|\.` + "Require" + `\(\)`)
+	timerChanArm   = regexp.MustCompile(`case <-[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\.` + "C:")
+	// Any receiver (t, tb, b, a testify suite). Error, Errorf, Fatal and Fatalf need an argument so
+	// that err.Error() is not read as failing the test; Fail and FailNow may have none.
+	failsTheTest = regexp.MustCompile(`\.(` + "Fatal|Fatalf|Error|Errorf" + `)\([^)]|\.(` + "Fail|FailNow" + `)\(|\b(` +
+		"require|assert" + `)\.|\.` + "Require" + `\(\)`)
 	ownDeadlineNote = "// Own deadline:"
 )
 
@@ -127,6 +127,9 @@ func TestNoOwnDeadlineInTestsSensitivity(t *testing.T) {
 			"\tselect {\n\t" + ownDeadlineNote + " Stop must return before the fixture's own 30 s cleanup budget\n" +
 			"\t" + ownDeadlineArm + "time.Second):\n\t\tt.Fatal(\"Stop did not return\")\n\tcase <-done:\n\t}\n" +
 			"\tselect {\n\tcase <-c:\n\t\tt.Fatal(\"unexpected\")\n\t" + "case <-timer." + "C:\n\t}\n" +
+			// The failing call belongs to the arm after the timer arm, a case or a default.
+			"\tselect {\n\t" + ownDeadlineArm + "d):\n\t\tt.Log(\"{\")\n\tcase <-c:\n\t\tt.Fatal(\"unexpected\")\n\t}\n" +
+			"\tselect {\n\t" + "case <-s.timer." + "C:\n\tdefault:\n\t\tt.Fail()\n\t}\n" +
 			"\t// A comment naming " + ownDeadlineArm + "x) is not an arm; t.Fatal(\"x\")\n}\n",
 		// Production code is outside the rule.
 		"x/x.go": "package x\n\nfunc f() {\n\tselect {\n\t" + ownDeadlineArm + "d):\n\t\trequire.Fail(nil, \"x\")\n\t}\n}\n",
@@ -142,6 +145,10 @@ func TestNoOwnDeadlineInTestsSensitivity(t *testing.T) {
 		{"fatal on its own deadline", "\tselect {\n\tcase <-done:\n\t" + ownDeadlineArm + "10 * time.Second):\n\t\tt.Fatal(\"timed out\")\n\t}\n", "x/x_test.go:6"},
 		{"errorf in a block", "\tselect {\n\t" + ownDeadlineArm + "time.Second): {\n\t\tt.Errorf(\"slow\")\n\t}\n\tcase <-done:\n\t}\n", "x/x_test.go:5"},
 		{"timer channel arm fails", "\tselect {\n\t" + "case <-timer." + "C:\n\t\tt.Fatal(\"timed out\")\n\t}\n", "x/x_test.go:5"},
+		{"bare fail", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Fail()\n\t}\n", "x/x_test.go:5"},
+		{"brace in a string before the failing call", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Logf(\"want }\")\n\t\tt.Fatal(\"slow\")\n\t}\n", "x/x_test.go:5"},
+		{"selector timer channel", "\tselect {\n\t" + "case <-s.timer." + "C:\n\t\tt.Fatal(\"timed out\")\n\t}\n", "x/x_test.go:5"},
+		{"assert call", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tassert.True(t, false)\n\t}\n", "x/x_test.go:5"},
 		{"suite fail", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\ts.Fail(\"slow\")\n\t}\n", "x/x_test.go:5"},
 		{"helper fatalf", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\ttb.Fatalf(\"slow\")\n\t}\n", "x/x_test.go:5"},
 		{"suite require", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\ts.Require().NoError(err)\n\t}\n", "x/x_test.go:5"},
@@ -172,7 +179,7 @@ func ownDeadlineViolations(t *testing.T, root string, files []string) []string {
 		tests++
 		lines := readLines(t, root, name)
 		for i, line := range lines {
-			code := codeBeforeLineComment(line)
+			code := codeOutsideLiterals(line)
 			body, isArm := timerArmBody(code)
 			if !isArm || !armFailsTest(body, lines[i+1:]) {
 				continue
@@ -192,6 +199,31 @@ func ownDeadlineViolations(t *testing.T, root string, files []string) []string {
 		violations = append(violations, fmt.Sprintf("scanned no test file among %d file(s)", len(files)))
 	}
 	return violations
+}
+
+// codeOutsideLiterals returns line up to its line comment with the contents of its string and rune
+// literals removed (the quotes stay), so a brace or "//" inside a literal is not read as code. A raw
+// string spanning lines is read one line at a time; none of the arms this check reads uses one.
+func codeOutsideLiterals(line string) string {
+	var b strings.Builder
+	for i := 0; i < len(line); i++ {
+		c := line[i]
+		switch {
+		case c == '/' && i+1 < len(line) && line[i+1] == '/':
+			return b.String()
+		case c == '"' || c == '\'' || c == '`':
+			b.WriteByte(c)
+			for i++; i < len(line) && line[i] != c; i++ {
+				if line[i] == '\\' && c != '`' {
+					i++
+				}
+			}
+			b.WriteByte(c)
+		default:
+			b.WriteByte(c)
+		}
+	}
+	return b.String()
 }
 
 // timerArmBody reports whether code opens a timer arm and returns the code after the arm's colon.
@@ -214,7 +246,7 @@ func armFailsTest(body string, rest []string) bool {
 	}
 	depth := strings.Count(body, "{") - strings.Count(body, "}")
 	for _, line := range rest {
-		code := codeBeforeLineComment(line)
+		code := codeOutsideLiterals(line)
 		trimmed := strings.TrimSpace(code)
 		if depth == 0 && (strings.HasPrefix(trimmed, "case ") || strings.HasPrefix(trimmed, "default:")) {
 			return false

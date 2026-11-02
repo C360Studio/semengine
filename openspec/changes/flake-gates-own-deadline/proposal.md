@@ -17,7 +17,8 @@ Approved-by: Coby Leuschke, 2026-11-02, on #500 (comment 6577539980): items 1 th
 - Every `select` arm `case <-time.After(...)` whose body fails the test is removed; the test waits directly on the
   event that orders its read (`sync.WaitGroup.Wait`, a receive, `<-done`). A timer arm that passes (a negative check:
   nothing arrived) is untouched. A deadline a test must own says why with `// Own deadline: <reason>` on the line
-  above; none is expected.
+  above: a `synctest` bubble's fake clock, a deadline that is itself the behaviour under test, or a tool-package
+  test whose timer arm alone kills a helper process on failure.
 - A contract test, `TestNoOwnDeadlineInTests`, sibling of `TestNoSleepsInTests`, refuses the shape, with a paired
   sensitivity test.
 - `test:unit` and `test:repeat` pin `-timeout 5m`: the one deadline per package, with four times headroom for the
@@ -25,7 +26,7 @@ Approved-by: Coby Leuschke, 2026-11-02, on #500 (comment 6577539980): items 1 th
   6577478437). A real hang fits inside CI's 15-minute job and prints every goroutine's stack.
 - `docs/testing.md`, both role contracts, `AGENTS.md` section 3 and `.agents/rules-index.md`: the sentence that
   permits a test's own timer becomes "a test sets no deadline of its own for work that must finish; `go test
-  -timeout` is the one deadline", and the new guard's row is added.
+  -timeout` is the one deadline", in the row for #392, whose gate becomes `verify+review`.
 
 ## Capabilities
 

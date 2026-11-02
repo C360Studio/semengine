@@ -249,17 +249,10 @@ func TestKVStore_Watch(t *testing.T) {
 
 	// Receive updates
 	updates := 0
-	timeout := time.After(failureBound)
-
 	for updates < 2 {
-		select {
-		case entry := <-watcher.Updates():
-			if entry != nil {
-				updates++
-				assert.Contains(t, entry.Key(), "watch.")
-			}
-		case <-timeout:
-			t.Fatal("Timeout waiting for watch updates")
+		if entry := <-watcher.Updates(); entry != nil {
+			updates++
+			assert.Contains(t, entry.Key(), "watch.")
 		}
 	}
 

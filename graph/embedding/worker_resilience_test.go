@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // panicLogRecorder counts ERROR records mentioning a recovered panic, and keeps
@@ -257,16 +256,9 @@ func TestWorkerTombstoneDuringGenerationIsNotAPanic(t *testing.T) {
 // waitForTerminal blocks until the worker reports a terminal outcome for want.
 func waitForTerminal(t *testing.T, done <-chan string, want string) {
 	t.Helper()
-
-	deadline := time.After(5 * time.Second)
 	for {
-		select {
-		case got := <-done:
-			if got == want {
-				return
-			}
-		case <-deadline:
-			t.Fatalf("timed out waiting for terminal outcome of %q; the worker goroutine is gone", want)
+		if <-done == want {
+			return
 		}
 	}
 }

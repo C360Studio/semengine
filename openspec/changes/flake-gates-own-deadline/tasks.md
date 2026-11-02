@@ -31,7 +31,7 @@ Keep a timer arm that passes. Gate per group: `go test -race -count=1 -cpu 1 <pk
 ## 4. Rule text
 
 - [x] 4.1 `docs/testing.md` "Concurrency and cleanup", developer and reviewer contracts, `AGENTS.md` section 3 row
-  for #392 and the new guard row, `.agents/rules-index.md` rows 55 and a new row. Gate: `task docs:check`,
+  for #392 (gate `verify+review`), `.agents/rules-index.md` row 55; no new row. Gate: `task docs:check`,
   `task ateam:doctor`.
 
 ## 5. Land

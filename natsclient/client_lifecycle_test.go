@@ -454,6 +454,9 @@ func TestClientCloseUnderShortDeadlineClosesConnection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 			require.NoError(t, err)
+			// No option sets the drain timeout; at its 30 s default a Close that ignored its context
+			// would return when the drain timed out, with the context's error, and pass.
+			c.drainTimeout = time.Hour
 			require.NoError(t, c.Connect(t.Context()))
 			closeInCleanup(t, c)
 			held := newHeldCall(t)

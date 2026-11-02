@@ -201,7 +201,7 @@ func TestManagerPassesTheLifecycleSuite(t *testing.T) {
 		watchDone := make(chan struct{})
 		go func() {
 			defer close(watchDone)
-			model.Watch(ctx, manager, func(*model.Registry) {
+			model.Watch(t.Context(), manager, func(*model.Registry) {
 				select {
 				case applied <- struct{}{}:
 				default:

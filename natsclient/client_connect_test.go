@@ -97,11 +97,13 @@ func TestConnectRefusesAnEndedContext(t *testing.T) {
 	})
 }
 
-// T4, design "Tests that replace the probes".
+// T4, design "Tests that replace the probes". Each client's connect timeout is an hour, so only
+// the context's cut can end the dial: a Connect that waited for the timeout instead hangs until
+// go test -timeout rather than returning late and passing.
 func TestConnectEndsWithItsContext(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
 		url, _ := silentListener(t)
-		client, err := NewClient(url)
+		client, err := NewClient(url, WithTimeout(time.Hour))
 		require.NoError(t, err)
 		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
@@ -112,7 +114,7 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 
 	t.Run("cancel once accepted", func(t *testing.T) {
 		url, accepted := silentListener(t)
-		client, err := NewClient(url)
+		client, err := NewClient(url, WithTimeout(time.Hour))
 		require.NoError(t, err)
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -130,7 +132,7 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 	t.Run("two addresses", func(t *testing.T) {
 		first, _ := silentListener(t)
 		second, _ := silentListener(t)
-		client, err := NewClient(first + "," + second)
+		client, err := NewClient(first+","+second, WithTimeout(time.Hour))
 		require.NoError(t, err)
 		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
@@ -142,7 +144,7 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 	// The context ends while the dial itself is in progress, as with an address
 	// that drops every packet. Only the dialer's Cancel can end it.
 	t.Run("deadline while dialling", func(t *testing.T) {
-		client, err := NewClient(refusedNATSURL(t))
+		client, err := NewClient(refusedNATSURL(t), WithTimeout(time.Hour))
 		require.NoError(t, err)
 		client.netDial = func(d *net.Dialer, _, _ string) (net.Conn, error) {
 			<-d.Cancel // the dial nobody answers ends only when Connect cancels it
@@ -164,7 +166,7 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 		require.NoError(t, err)
 		// Built from the ephemeral port: the URL names no fixed address.
 		hostPort := net.JoinHostPort("localhost", port)
-		client, err := NewClient("nats://" + hostPort)
+		client, err := NewClient("nats://"+hostPort, WithTimeout(time.Hour))
 		require.NoError(t, err)
 		dialled := make(chan string, 1)
 		client.netDial = func(d *net.Dialer, _, address string) (net.Conn, error) {

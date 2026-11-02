@@ -378,6 +378,9 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
+	// No option sets the drain timeout; at its 30 s default the held drain would end on its own and
+	// release a second Close that waits on it, so the test would pass against that bug.
+	c.drainTimeout = time.Hour
 	require.NoError(t, c.Connect(t.Context()))
 	callback, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
@@ -388,8 +391,9 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 	require.NoError(t, nc.FlushTimeout(10*time.Second))
 	require.NoError(t, nc.Publish("review.held", nil))
 	<-callback
-	firstCtx, cancelFirst := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancelFirst()
+	// Neither the first Close nor its drain has a deadline that ends while the callback is held:
+	// a second Close that waits on that drain hangs.
+	firstCtx := t.Context()
 	draining := nc.StatusChanged(nats.DRAINING_SUBS)
 	defer nc.RemoveStatusListener(draining)
 	first := make(chan error, 1)

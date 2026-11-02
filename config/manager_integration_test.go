@@ -158,8 +158,6 @@ func (s *ManagerIntegrationSuite) TestChannelSubscriptions() {
 
 	// Service channels should receive update
 	received := 0
-	timeout2 := time.After(500 * time.Millisecond)
-
 	for received < 2 {
 		select {
 		case <-serviceUpdates:
@@ -168,9 +166,6 @@ func (s *ManagerIntegrationSuite) TestChannelSubscriptions() {
 			received++
 		case <-componentUpdates:
 			s.Fail("Component channel should not receive service update")
-		case <-timeout2:
-			s.Fail("Timeout waiting for service updates")
-			return
 		}
 	}
 
@@ -211,18 +206,10 @@ func (s *ManagerIntegrationSuite) TestConcurrentKVUpdates() {
 
 	// Should receive updates for all services (order may vary)
 	receivedServices := make(map[string]bool)
-	timeout := time.After(1 * time.Second)
-
 	for len(receivedServices) < len(services) {
-		select {
-		case update := <-updates:
-			cfg := update.Config.Get()
-			for svcName := range cfg.Services {
-				receivedServices[svcName] = true
-			}
-		case <-timeout:
-			s.Failf("Timeout waiting for all service updates", "Received: %v", receivedServices)
-			return
+		update := <-updates
+		for svcName := range update.Config.Get().Services {
+			receivedServices[svcName] = true
 		}
 	}
 

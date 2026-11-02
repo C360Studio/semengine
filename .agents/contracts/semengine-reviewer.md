@@ -374,8 +374,9 @@ is the first bullet below.
   `probe.Await` on that value; where that wait is not the line just before the assertion and no comment names the
   event, that is a finding too. No test sets its own deadline for work that must finish; `go test -timeout` is the one
   deadline. A `case <-time.After(...)` arm that fails the test, with no `// Own deadline: <reason>` above it or a
-  reason that does not hold, is a finding, as is the same shape spelled so the text check cannot see it (a timer in a variable,
-  `time.NewTimer`, a `context.WithTimeout` deadline) (`docs/testing.md`, "Concurrency and cleanup"; #392, #500).
+  reason that does not hold, is a finding, as is the same shape spelled so the text check cannot see it (a
+  `time.After` in a variable, a `context.WithTimeout` on the test's own wait, `require.Eventually`); a context narrowed
+  because the deadline is the behaviour under test is not (`docs/testing.md`, "Concurrency and cleanup"; #392, #500).
 - A new **exported** parse/decode/validate surface without a fuzz target and seed corpus is a finding; check the
   harness asserts an invariant, not a table of expected outputs replayed through `f.Add`. Seed replay reported as
   fuzz exploration is a finding.

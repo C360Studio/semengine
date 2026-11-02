@@ -22,13 +22,14 @@ import (
 // must close the socket when its context ends rather than wait for nats.go's
 // write timeout (one minute by default).
 func TestCloseEndsAHeldWrite(t *testing.T) {
-	client, proxy := newHeldClient(t)
+	client, proxy := newHeldClient(t, WithWriteTimeout(time.Hour))
 	conn := client.GetConnection()
 	published := holdPublish(t, client, proxy)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	// The test's own wait. Before design D1, Close waited for the write.
+	// Before design D1, Close waited for the write. The hour write timeout makes
+	// that wait unreachable as a late pass: such a Close hangs.
 	err := within(t, startClose(ctx, client), lifecycleBound, "Close")
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -55,7 +56,7 @@ func requireClosed(t *testing.T, conn *nats.Conn) {
 // for nats.go's, or Close cannot begin, and so cannot cut the socket (design D3;
 // P21).
 func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
-	client, proxy := newHeldClient(t)
+	client, proxy := newHeldClient(t, WithWriteTimeout(time.Hour))
 	conn := client.GetConnection()
 	published := holdPublish(t, client, proxy)
 
@@ -87,8 +88,9 @@ func TestCloseEndsAReconnectDial(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	// The test's own wait, under nats.go's 5 s default dial timeout, which
-	// bounded Close before the cut ended the dial (P23: 4.69 s).
+	// The fake reconnect dial ignores the dial timeout and ends only on the
+	// dialer's Cancel, so a Close that waits for the dial instead of cutting it
+	// hangs (P23: before the cut, nats.go's 5 s dial timeout bounded Close).
 	err := within(t, startClose(ctx, client), 3*time.Second, "Close")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }

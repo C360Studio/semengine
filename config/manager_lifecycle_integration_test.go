@@ -202,7 +202,7 @@ func TestStopWithAModelRegistryWatcherReturnsPromptly(t *testing.T) {
 	go func() {
 		defer close(watchDone)
 		// The watch context stays live: only the channel closing can end model.Watch.
-		model.Watch(ctx, manager, func(*model.Registry) {
+		model.Watch(t.Context(), manager, func(*model.Registry) {
 			select {
 			case applied <- struct{}{}:
 			default:
@@ -218,7 +218,7 @@ func TestStopWithAModelRegistryWatcherReturnsPromptly(t *testing.T) {
 	require.NoError(t, stopCtx.Err(), "Stop returned nil only after its one-second context had ended")
 
 	<-watchDone
-	requireClosedSoon(t, direct, "the channel WatchModelRegistry returned before Stop")
+	requireClosed(direct)
 }
 
 // TestChannelsRequestedAfterStopAreClosed: onChange and WatchModelRegistry after Stop return a
@@ -234,8 +234,8 @@ func TestChannelsRequestedAfterStopAreClosed(t *testing.T) {
 	require.NoError(t, manager.Start(ctx))
 	stopManager(t, manager)
 
-	requireClosedSoon(t, manager.onChange("services.*"), "onChange after Stop")
-	requireClosedSoon(t, manager.WatchModelRegistry(), "WatchModelRegistry after Stop")
+	requireClosed(manager.onChange("services.*"))
+	requireClosed(manager.WatchModelRegistry())
 
 	observer := newManagerSuiteOwner(t, tc, manager)
 	require.Empty(t, observer.Observe().Unresolved, "a channel requested after Stop must start nothing")
@@ -308,20 +308,10 @@ func TestBlockedKeyFamilyHandlerHoldsStop(t *testing.T) {
 	stopManager(t, manager)
 }
 
-// requireClosedSoon reads ch until it is closed, failing if it is not closed within five seconds.
-// Values already buffered are read and dropped.
-func requireClosedSoon[T any](t *testing.T, ch <-chan T, what string) {
-	t.Helper()
-	timeout := time.After(5 * time.Second)
-	for {
-		select {
-		case _, ok := <-ch:
-			if !ok {
-				return
-			}
-		case <-timeout:
-			t.Fatalf("%s: channel not closed within 5s", what)
-		}
+// requireClosed reads ch until it is closed; a channel never closed holds the test until go test
+// -timeout. Values already buffered are read and dropped.
+func requireClosed[T any](ch <-chan T) {
+	for range ch {
 	}
 }
 

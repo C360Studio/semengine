@@ -1,6 +1,7 @@
 # Proposal: setup-04a-04-graph-roots-graph-query
 
-Approved-by:
+Approved-by: owner, 2026-11-02 in Enjoy: design at `07688c9` accepted, including its new exported surface; recorded on
+PR #504
 
 ## Why
 

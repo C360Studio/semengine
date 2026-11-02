@@ -6,8 +6,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Pre-owner design review passes; the owner fills `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
 
 ## 2. Table and index
 

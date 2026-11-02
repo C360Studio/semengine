@@ -79,11 +79,10 @@ base failure is a coin flip.
 
 ## 3. Code review
 
-- [ ] 3.1 Code review of record by another agent at the head: no actionable findings. The PR body carries
-  `implemented-by:` and `reviewed-by:`.
-  Hold: code review
+- [x] 3.1 Code review of record by another agent at the head: no actionable findings. The PR body carries
+  `implemented-by:` and `reviewed-by:`. Codex APPROVE at `ba40e29`, no actionable findings.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive fix-461-kvwatch-adoption --skip-specs`; no spec
+- [x] 4.1 Archive as the last content commit (`openspec archive fix-461-kvwatch-adoption --skip-specs`; no spec
   to sync). Gate: `task spec:check` and `task docs:check`.

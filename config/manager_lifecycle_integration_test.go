@@ -359,11 +359,7 @@ func TestStopWithABackloggedKeyFamilyLeavesNoWatchDelivery(t *testing.T) {
 			stopManager(t, manager)
 		})
 
-		select {
-		case <-entered:
-		case <-time.After(10 * time.Second):
-			t.Fatalf("cycle %d: the family handler was never called", cycle)
-		}
+		<-entered
 		// The stack dump showing the delivery blocked on its full buffer orders Stop after the
 		// backlog, not elapsed time.
 		require.NoError(t, natsfixture.AwaitNativeDeliveryBlocked(ctx, 10*time.Second), "cycle %d", cycle)
@@ -378,12 +374,8 @@ func TestStopWithABackloggedKeyFamilyLeavesNoWatchDelivery(t *testing.T) {
 		// Stop calls, so the released handler cannot read the backlog out before them.
 		awaitWatchConsumers(t, ctx, tc, manager.bucketName, 0)
 		releaseHandler()
-		select {
-		case err := <-stopped:
-			require.NoError(t, err, "cycle %d: Stop once the handler is released", cycle)
-		case <-time.After(30 * time.Second):
-			t.Fatalf("cycle %d: Stop did not return once the handler was released", cycle)
-		}
+		// A Stop still waiting at its 30 s context returns that context's error, which fails here.
+		require.NoError(t, <-stopped, "cycle %d: Stop once the handler is released", cycle)
 		if err := natsfixture.AwaitNoStacks(ctx, 10*time.Second, natsfixture.NativeDeliveryStacks); err != nil {
 			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Stop returned: %v", cycle, err)
 		}

@@ -423,6 +423,11 @@ func TestCheckVerdicts(t *testing.T) {
 			elapsed:  map[string]time.Duration{"baseline 1": 3 * time.Second, "baseline 2": 3 * time.Second, "baseline 3": 3 * time.Second, "after 1": 20 * time.Second},
 			plan:     map[string]recordedRun{"mutant 1": recHang},
 			wantRuns: hung, want: inconclusive, words: []string{"after-run", "20s", "margin of 15s"}},
+		// "At most a third": a control run at exactly the margin is within it.
+		{name: "a baseline at exactly the margin", exp: expectAt("value_test.go:99"), timeout: 45 * time.Second,
+			elapsed:  map[string]time.Duration{"baseline 1": 3 * time.Second, "baseline 2": 15 * time.Second, "baseline 3": 3 * time.Second, "after 1": 3 * time.Second},
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: detection, words: []string{"by hang", "slowest baseline run took 15s", "margin of 15s"}},
 		// The recorded runs' 1.247s is over a third of 3s: the -race build's exit pause alone puts a
 		// -timeout under about 3.75s out of reach of a detection by hang (design D1).
 		{name: "a timeout too short for the margin", exp: expectAt("value_test.go:99"), timeout: 3 * time.Second,

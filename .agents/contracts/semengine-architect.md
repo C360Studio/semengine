@@ -138,12 +138,12 @@ Five obligations ride on every slice design in addition to its ledger row:
 
 From Slice 04A change 3 (`setup-04a-03-boot`) on, a porting pull request carries one package, or one lifecycle owner
 (defined in the archived Slice 04A design, `openspec/changes/archive/2026-10-01-setup-04a-foundation/design.md:84-97`)
-with its package: about 3,000 pin lines at most, with a design of about one page. A package that alone exceeds that
-bound is ported as one pull request per lifecycle owner where it has several. Where one owner's pull request still
-exceeds the bound, its design states the line count, and the repository owner waives the bound for that number on
-that pull request. In change 3, `service` splits by lifecycle owner and `config`, with one owner, takes a waiver. Pin
-lines are the package's non-test Go lines at the pin, the count in the Lines column of D2's table in the same design
-(`:145-151`); D2's package lists (`:155-178`) name the lifecycle owners in each change.
+with its package: about 3,000 pin lines is a guide, not a limit (owner, 2026-11-02, #500), with a design of about one page.
+Split the way that suits the task and the developer, by lifecycle owner where a package has several; the design states
+the line count (both columns) and the split it chose and why. No owner waiver step. Pin
+lines are every Go line of the package at the pin, production and test, and the design's size table lists both columns,
+as in the Lines column of D2's table in the same design (`:145-151`); D2's package lists (`:155-178`) name the
+lifecycle owners in each change.
 
 From change 3 on, each change in D2's table becomes a group of pull requests under the Slice 04A milestone, not one
 pull request and one OpenSpec change: each pull request is its own OpenSpec change, holding its design of about one
@@ -156,8 +156,9 @@ after the packages it imports. A package that nothing ported so far imports is c
 its ledger row, its tests and its coverage floor where it has one, and waits for its importer. D8 of the same design
 (`:437-451`) is the precedent for carrying a package across changes.
 
-Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159. The split by lifecycle owner, the
-waiver by number and one OpenSpec change per pull request: owner rulings 2026-10-09, #159 comment 6091894475.
+Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159. The split by lifecycle owner and
+one OpenSpec change per pull request: owner rulings 2026-10-09, #159 comment 6091894475; the 2026-11-02 amendment
+on #500 makes the line count a guide, not a limit.
 
 ### The shape sweep
 

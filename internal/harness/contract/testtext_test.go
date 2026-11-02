@@ -93,6 +93,150 @@ func scanTestText(t *testing.T, root string, files []string, alsoScan func(strin
 	return violations
 }
 
+// harness-boundaries › "No own deadlines in tests": no *_test.go file has a select arm on the
+// literal text below whose body fails the test, unless the line above the arm is a comment
+// beginning "// Own deadline:" followed by a reason; go test -timeout is the one deadline. The
+// arms matched are the time.After literal below and a timer's channel, an identifier then ".C:"
+// (time.NewTimer). A time.After kept in a variable and a context deadline are outside it. The
+// body runs to the next case or default at the arm's depth, or the select's closing brace; braces
+// inside string literals are counted as code. The literal is assembled so this file does not
+// contain what it forbids.
+var (
+	ownDeadlineArm = "case <-time." + "After("
+	timerChanArm   = regexp.MustCompile(`case <-[A-Za-z_][A-Za-z0-9_]*\.` + "C:")
+	// Any receiver (t, tb, b, a testify suite). Error, Errorf, Fatal, Fatalf and Fail need an
+	// argument so that err.Error() is not read as failing the test.
+	failsTheTest = regexp.MustCompile(`\.(` + "Fatal|Fatalf|Error|Errorf|Fail" + `)\([^)]|\.` + "FailNow" + `\(\)|\b` +
+		"require" + `\.|\.` + "Require" + `\(\)`)
+	ownDeadlineNote = "// Own deadline:"
+)
+
+func TestNoOwnDeadlineInTests(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "own deadline", ownDeadlineViolations(t, root, repoFiles(t, root)))
+}
+
+func TestNoOwnDeadlineInTestsSensitivity(t *testing.T) {
+	test := func(body string) map[string]string {
+		return map[string]string{"x/x_test.go": "package x\n\nfunc TestX(t *testing.T) {\n" + body + "}\n"}
+	}
+	clean := map[string]string{
+		// A negative check: the timer arm only ends the select; the failing call is in the other arm.
+		"x/x_test.go": "package x\n\nfunc TestX(t *testing.T) {\n\tselect {\n\tcase <-c:\n\t\tt.Fatal(\"unexpected\")\n" +
+			"\t" + ownDeadlineArm + "200 * time.Millisecond):\n\t\tt.Log(err.Error())\n\t}\n" +
+			"\tselect {\n\t" + ownDeadlineNote + " Stop must return before the fixture's own 30 s cleanup budget\n" +
+			"\t" + ownDeadlineArm + "time.Second):\n\t\tt.Fatal(\"Stop did not return\")\n\tcase <-done:\n\t}\n" +
+			"\tselect {\n\tcase <-c:\n\t\tt.Fatal(\"unexpected\")\n\t" + "case <-timer." + "C:\n\t}\n" +
+			"\t// A comment naming " + ownDeadlineArm + "x) is not an arm; t.Fatal(\"x\")\n}\n",
+		// Production code is outside the rule.
+		"x/x.go": "package x\n\nfunc f() {\n\tselect {\n\t" + ownDeadlineArm + "d):\n\t\trequire.Fail(nil, \"x\")\n\t}\n}\n",
+	}
+	root, files := writeTree(t, clean)
+	requireNoViolations(t, "clean fixture", ownDeadlineViolations(t, root, files))
+
+	for _, tc := range []struct {
+		name string
+		body string
+		want string
+	}{
+		{"fatal on its own deadline", "\tselect {\n\tcase <-done:\n\t" + ownDeadlineArm + "10 * time.Second):\n\t\tt.Fatal(\"timed out\")\n\t}\n", "x/x_test.go:6"},
+		{"errorf in a block", "\tselect {\n\t" + ownDeadlineArm + "time.Second): {\n\t\tt.Errorf(\"slow\")\n\t}\n\tcase <-done:\n\t}\n", "x/x_test.go:5"},
+		{"timer channel arm fails", "\tselect {\n\t" + "case <-timer." + "C:\n\t\tt.Fatal(\"timed out\")\n\t}\n", "x/x_test.go:5"},
+		{"suite fail", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\ts.Fail(\"slow\")\n\t}\n", "x/x_test.go:5"},
+		{"helper fatalf", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\ttb.Fatalf(\"slow\")\n\t}\n", "x/x_test.go:5"},
+		{"suite require", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\ts.Require().NoError(err)\n\t}\n", "x/x_test.go:5"},
+		{"require call", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\trequire.FailNow(t, \"slow\")\n\t}\n", "x/x_test.go:5"},
+		{"fail after a nested select", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tselect {\n\t\tcase <-c:\n\t\tdefault:\n\t\t}\n\t\tt.FailNow()\n\t}\n", "x/x_test.go:5"},
+		{"other comment above", "\tselect {\n\t// Waits for done.\n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Fatalf(\"slow\")\n\t}\n", "x/x_test.go:6"},
+		{"empty reason", "\tselect {\n\t" + ownDeadlineNote + "   \n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Error(\"slow\")\n\t}\n", "x/x_test.go:6"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, files := writeTree(t, test(tc.body))
+			requireViolation(t, ownDeadlineViolations(t, root, files), tc.want, ownDeadlineNote)
+		})
+	}
+	t.Run("no test file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/x.go": "package x\n"})
+		requireViolation(t, ownDeadlineViolations(t, root, files), "scanned no test file")
+	})
+}
+
+func ownDeadlineViolations(t *testing.T, root string, files []string) []string {
+	t.Helper()
+	var violations []string
+	tests := 0
+	for _, name := range files {
+		if !strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		tests++
+		lines := readLines(t, root, name)
+		for i, line := range lines {
+			code := codeBeforeLineComment(line)
+			body, isArm := timerArmBody(code)
+			if !isArm || !armFailsTest(body, lines[i+1:]) {
+				continue
+			}
+			prev := ""
+			if i > 0 {
+				prev = strings.TrimSpace(lines[i-1])
+			}
+			reason, ok := strings.CutPrefix(prev, ownDeadlineNote)
+			if !ok || strings.TrimSpace(reason) == "" {
+				violations = append(violations, fmt.Sprintf("%s:%d: a timer arm that fails the test without `%s <reason>` on the line above; "+
+					"wait on the ordering event and let go test -timeout bound it", name, i+1, ownDeadlineNote))
+			}
+		}
+	}
+	if tests == 0 {
+		violations = append(violations, fmt.Sprintf("scanned no test file among %d file(s)", len(files)))
+	}
+	return violations
+}
+
+// timerArmBody reports whether code opens a timer arm and returns the code after the arm's colon.
+func timerArmBody(code string) (string, bool) {
+	if i := strings.Index(code, ownDeadlineArm); i >= 0 {
+		_, body, _ := strings.Cut(code[i:], "):")
+		return body, true
+	}
+	if loc := timerChanArm.FindStringIndex(code); loc != nil {
+		return code[loc[1]:], true
+	}
+	return "", false
+}
+
+// armFailsTest reports whether the arm whose code after the colon is body, followed by the lines in
+// rest, fails the test before the next case or default at its depth or the brace that closes its select.
+func armFailsTest(body string, rest []string) bool {
+	if failsTheTest.MatchString(body) {
+		return true
+	}
+	depth := strings.Count(body, "{") - strings.Count(body, "}")
+	for _, line := range rest {
+		code := codeBeforeLineComment(line)
+		trimmed := strings.TrimSpace(code)
+		if depth == 0 && (strings.HasPrefix(trimmed, "case ") || strings.HasPrefix(trimmed, "default:")) {
+			return false
+		}
+		for _, r := range code {
+			switch r {
+			case '{':
+				depth++
+			case '}':
+				depth--
+			}
+			if depth < 0 {
+				return false
+			}
+		}
+		if failsTheTest.MatchString(code) {
+			return true
+		}
+	}
+	return false
+}
+
 // harness-boundaries › "No skipped or hidden tests": no *_test.go file calls Skip, Skipf or
 // SkipNow, and none carries a build constraint other than integration. No baseline, allowlist or
 // marker. A skip reached through a helper and a platform suffix in a file name are outside these

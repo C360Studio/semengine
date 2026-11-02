@@ -213,7 +213,7 @@ func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
 		reached := map[string]int{}
 		checkCoveredSubjects(t, w.subjects, reached)
 		if reached[w.reaches] == 0 {
-			t.Errorf("subjects %q did not reach %q, so its assertions never ran", w.subjects, w.reaches)
+			t.Fatalf("subjects %q did not reach %q, so its assertions never ran", w.subjects, w.reaches)
 		}
 	}
 
@@ -230,7 +230,6 @@ func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
 // checkCoveredSubjects asserts D3's law on one subject list, folded into a set, and counts in
 // reached the cases the assertions ran on.
 func checkCoveredSubjects(t rapid.TB, drawn []string, reached map[string]int) {
-	t.Helper()
 	desired := make(map[string]struct{}, len(drawn))
 	for _, s := range drawn {
 		desired[s] = struct{}{}

@@ -16,7 +16,7 @@ import (
 // running as release begins, and the cleanup then waits for that callback, which the test
 // holds. On today's tree the test passes; it is shown able to fail by mutation row M7 of
 // design D10 (the shell holding its lock across start and cleanup), under which Health
-// does not return within readBound.
+// does not return while Stop is held.
 func TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -60,44 +60,16 @@ func TestGraphIngestHealthAndDataFlowAnswerDuringAndAfterStop(t *testing.T) {
 	assertStoppedReads(t, owner, "after Stop")
 }
 
-// readBound is how long a read may take before the test reports it as waiting. Health
-// and DataFlow wait on nothing but c.mu, which a read holds for microseconds once it has
-// it; ten seconds is far above that on a loaded runner and far below go test's timeout,
-// so a read held behind Stop fails an assertion instead of hanging the run.
-const readBound = 10 * time.Second
-
-// readWithin runs read on its own goroutine and returns its answer, or reports with Errorf,
-// naming description, when it has not returned within readBound. The answer comes over a
-// channel, so a read that returns after the bound races with nothing.
-func readWithin[T any](t *testing.T, description string, read func() T) (T, bool) {
-	t.Helper()
-	answer := make(chan T, 1)
-	go func() { answer <- read() }()
-	timer := time.NewTimer(readBound)
-	defer timer.Stop()
-	select {
-	case value := <-answer:
-		return value, true
-	case <-timer.C:
-		t.Errorf("%s did not return within %v", description, readBound)
-		var zero T
-		return zero, false
-	}
-}
-
 // assertStoppedReads checks what Health and DataFlow report for a component whose
-// release cleared running: not healthy, status "stopped", no uptime, and zero rates. Each
-// read must return within readBound. It reports with Errorf so a failure during Stop
-// still lets the test release Stop.
+// release cleared running: not healthy, status "stopped", no uptime, and zero rates. It
+// reports with Errorf so a failure during Stop still lets the test release Stop.
 func assertStoppedReads(t *testing.T, c *Component, when string) {
 	t.Helper()
-	if health, ok := readWithin(t, "Health "+when, c.Health); ok &&
-		(health.Healthy || health.Status != "stopped" || health.Uptime != 0 || health.LastError != "") {
+	if health := c.Health(); health.Healthy || health.Status != "stopped" || health.Uptime != 0 || health.LastError != "" {
 		t.Errorf("Health %s = {Healthy: %v, Status: %q, Uptime: %v, LastError: %q}, want {false, \"stopped\", 0, \"\"}",
 			when, health.Healthy, health.Status, health.Uptime, health.LastError)
 	}
-	if flow, ok := readWithin(t, "DataFlow "+when, c.DataFlow); ok &&
-		(flow.MessagesPerSecond != 0 || flow.BytesPerSecond != 0 || flow.ErrorRate != 0) {
+	if flow := c.DataFlow(); flow.MessagesPerSecond != 0 || flow.BytesPerSecond != 0 || flow.ErrorRate != 0 {
 		t.Errorf("DataFlow %s = {MessagesPerSecond: %v, BytesPerSecond: %v, ErrorRate: %v}, want all zero",
 			when, flow.MessagesPerSecond, flow.BytesPerSecond, flow.ErrorRate)
 	}

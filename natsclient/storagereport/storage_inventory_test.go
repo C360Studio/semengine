@@ -971,8 +971,7 @@ func TestStorageInventory_CollectionIsBoundedByTimeout(t *testing.T) {
 		case collectErr := <-done:
 			require.Error(t, collectErr)
 			assert.ErrorIs(t, collectErr, context.DeadlineExceeded)
-		// 5s on the bubble's clock is past the configured 100ms timeout, so only an
-		// unbounded collection reaches it.
+		// Own deadline: bubble clock, 5 s is past the configured 100 ms timeout, so only an unbounded collection reaches it
 		case <-time.After(5 * time.Second):
 			t.Fatal("collection was not bounded by its configured timeout")
 		}
@@ -1029,8 +1028,7 @@ func TestStorageInventory_LatestNeverWaitsOnCollection(t *testing.T) {
 		case inv := <-read:
 			assert.Len(t, inv.Resources, 1, "the read path returns last-good while a collection is in flight")
 			assert.Equal(t, good.CollectedAt, inv.CollectedAt)
-		// 3s on the bubble's clock is short of the 10s collection timeout, so only a
-		// read that waits on the collection reaches it.
+		// Own deadline: bubble clock, 3 s is short of the 10 s collection timeout: only a read that waits on it reaches it
 		case <-time.After(3 * time.Second):
 			t.Fatal("Latest() blocked behind an in-flight collection")
 		}
@@ -1106,6 +1104,7 @@ func TestStorageInventory_RunCollectsOnItsInterval(t *testing.T) {
 		cancel()
 		select {
 		case <-stopped:
+		// Own deadline: bubble clock, Run returns on cancel before the bubble's clock must advance
 		case <-time.After(3 * time.Second):
 			t.Fatal("Run did not return when its context was cancelled")
 		}

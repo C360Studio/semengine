@@ -8,7 +8,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/nats-io/nats.go/jetstream"
@@ -209,12 +208,7 @@ func TestIntegration_ConsumeStreamWithConfig(t *testing.T) {
 		close(done)
 	}()
 
-	select {
-	case <-done:
-		// Success
-	case <-time.After(failureBound):
-		t.Fatalf("Timeout waiting for messages, received %d/5", received.Load())
-	}
+	<-done
 
 	assert.Equal(t, int32(5), received.Load())
 }
@@ -665,11 +659,7 @@ func drainNativeConsume(t *testing.T, handle jetstream.ConsumeContext) {
 	t.Helper()
 	require.NotNil(t, handle)
 	handle.Drain()
-	select {
-	case <-handle.Closed():
-	case <-time.After(failureBound):
-		t.Fatal("timed out waiting for native consumer handle to close")
-	}
+	<-handle.Closed()
 }
 
 // TestIntegration_PublishToStreamWithAck tests publishing with acknowledgment

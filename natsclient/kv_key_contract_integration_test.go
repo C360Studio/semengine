@@ -405,13 +405,9 @@ func assertCurrentWatchMatch(t *testing.T, ctx context.Context, bucket jetstream
 	if _, err := bucket.Put(ctx, "watch.current.property", []byte("value")); err != nil {
 		t.Fatalf("current watched Put: %v", err)
 	}
-	select {
-	case entry := <-watcher.Updates():
-		if entry == nil || entry.Key() != "watch.current.property" {
-			t.Fatalf("current Watch entry = %#v", entry)
-		}
-	case <-time.After(failureBound):
-		t.Fatal("current Watch timed out")
+	entry := <-watcher.Updates()
+	if entry == nil || entry.Key() != "watch.current.property" {
+		t.Fatalf("current Watch entry = %#v", entry)
 	}
 }
 
@@ -429,13 +425,9 @@ func assertLegacyWatchMatch(t *testing.T, bucket gonats.KeyValue) {
 	if _, err := bucket.Put("watch.legacy.property", []byte("value")); err != nil {
 		t.Fatalf("legacy watched Put: %v", err)
 	}
-	select {
-	case entry := <-watcher.Updates():
-		if entry == nil || entry.Key() != "watch.legacy.property" {
-			t.Fatalf("legacy Watch entry = %#v", entry)
-		}
-	case <-time.After(failureBound):
-		t.Fatal("legacy Watch timed out")
+	entry := <-watcher.Updates()
+	if entry == nil || entry.Key() != "watch.legacy.property" {
+		t.Fatalf("legacy Watch entry = %#v", entry)
 	}
 }
 
@@ -454,20 +446,15 @@ func assertWrapperWatchMatch(
 	if _, err := bucket.Put(ctx, "watch.wrapper.property", []byte("value")); err != nil {
 		t.Fatalf("wrapper watched Put: %v", err)
 	}
-	deadline := time.After(failureBound)
 	for {
-		select {
-		case entry := <-watcher.Updates():
-			if entry == nil {
-				continue
-			}
-			if entry.Key() != "watch.wrapper.property" {
-				t.Fatalf("wrapper Watch entry = %#v", entry)
-			}
-			return
-		case <-deadline:
-			t.Fatal("wrapper Watch timed out")
+		entry := <-watcher.Updates()
+		if entry == nil {
+			continue
 		}
+		if entry.Key() != "watch.wrapper.property" {
+			t.Fatalf("wrapper Watch entry = %#v", entry)
+		}
+		return
 	}
 }
 

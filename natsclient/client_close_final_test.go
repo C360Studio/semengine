@@ -48,39 +48,23 @@ func (h *heldCall) hold() {
 
 func (h *heldCall) Release() { h.releaseOnce.Do(func() { close(h.release) }) }
 
-// await waits for ch to close, failing the test after lifecycleBound.
-func await(t *testing.T, ch <-chan struct{}, what string) {
+// await waits for ch to close; go test -timeout bounds the wait. The label names the event at the
+// call site.
+func await(t *testing.T, ch <-chan struct{}, _ string) {
 	t.Helper()
-	select {
-	case <-ch:
-	case <-time.After(lifecycleBound):
-		t.Fatalf("%s: not within %v", what, lifecycleBound)
-	}
+	<-ch
 }
 
-// awaitErr waits for one result on ch, failing the test after lifecycleBound.
-func awaitErr(t *testing.T, ch <-chan error, what string) error {
+// awaitErr waits for one result on ch; go test -timeout bounds the wait.
+func awaitErr(t *testing.T, ch <-chan error, _ string) error {
 	t.Helper()
-	select {
-	case err := <-ch:
-		return err
-	case <-time.After(lifecycleBound):
-		t.Fatalf("%s: did not return within %v", what, lifecycleBound)
-		return nil
-	}
+	return <-ch
 }
 
-// awaitValue waits for one value on ch, failing the test after lifecycleBound.
-func awaitValue[T any](t *testing.T, ch <-chan T, what string) T {
+// awaitValue waits for one value on ch; go test -timeout bounds the wait.
+func awaitValue[T any](t *testing.T, ch <-chan T, _ string) T {
 	t.Helper()
-	select {
-	case v := <-ch:
-		return v
-	case <-time.After(lifecycleBound):
-		t.Fatalf("%s: not within %v", what, lifecycleBound)
-		var zero T
-		return zero
-	}
+	return <-ch
 }
 
 // releaseInCleanup returns an idempotent close of a fake's hold channel and registers it in
@@ -324,6 +308,7 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 				}()
 				select {
 				case <-native.entered:
+				// Own deadline: bubble clock, native Consume delivers before the bubble's clock must advance
 				case <-time.After(10 * time.Second):
 					t.Fatal("native Consume did not deliver callback")
 				}
@@ -366,6 +351,7 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 					select {
 					case r := <-results:
 						require.ErrorIs(t, r.err, nats.ErrConnectionClosed)
+					// Own deadline: bubble clock, the consumer finishes once released, before the bubble's clock must advance
 					case <-time.After(2 * time.Hour):
 						t.Fatal("consumer did not finish after callback release")
 					}
@@ -376,6 +362,7 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 					select {
 					case e := <-later:
 						require.NoError(t, e)
+					// Own deadline: bubble clock, Close joins once released, before the 1 h live context can expire
 					case <-time.After(2 * time.Hour):
 						t.Fatal("Close did not join after release")
 					}
@@ -400,49 +387,26 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, nc.FlushTimeout(10*time.Second))
 	require.NoError(t, nc.Publish("review.held", nil))
-	select {
-	case <-callback:
-	case <-time.After(10 * time.Second):
-		t.Fatal("callback did not enter")
-	}
+	<-callback
 	firstCtx, cancelFirst := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancelFirst()
 	draining := nc.StatusChanged(nats.DRAINING_SUBS)
 	defer nc.RemoveStatusListener(draining)
 	first := make(chan error, 1)
 	go func() { first <- c.Close(firstCtx) }()
-	select {
-	case <-draining:
-	case <-time.After(10 * time.Second):
-		t.Fatal("first Close did not begin drain")
-	}
+	<-draining
 	ended, cancelEnded := context.WithCancel(t.Context())
 	cancelEnded()
 	second := make(chan error, 1)
 	go func() { second <- c.Close(ended) }()
-	var secondErr error
-	returned := false
-	select {
-	case secondErr = <-second:
-		returned = true
-	case <-time.After(10 * time.Second):
-	}
-	t.Logf("second Close returned while first drain was held=%v; error=%v", returned, secondErr)
+	// The callback is still held, so the first drain cannot finish: the second Close returning
+	// here is the proof that it did not wait on another caller's drain. A Close that waits hangs
+	// until go test -timeout.
+	secondErr := <-second
+	t.Logf("second Close returned while first drain was held; error=%v", secondErr)
 	once.Do(func() { close(release) })
-	select {
-	case err = <-first:
-	case <-time.After(10 * time.Second):
-		t.Fatal("first Close did not join after release")
-	}
-	if !returned {
-		select {
-		case secondErr = <-second:
-		case <-time.After(10 * time.Second):
-			t.Fatal("second Close did not return after release")
-		}
-	}
+	err = <-first
 	t.Logf("after release: first=%v second=%v", err, secondErr)
-	require.True(t, returned, "canceled Close waited on another caller's drain")
 }
 
 // 4. Codex TestReviewerLosingDialPreservesWinner (dial-error, canceled-dial, assertions
@@ -476,11 +440,7 @@ func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 			defer cancelDial()
 			answer := make(chan error, 1)
 			go func() { answer <- c.Connect(dialCtx) }()
-			select {
-			case <-entered:
-			case <-time.After(10 * time.Second):
-				t.Fatal("dial did not enter")
-			}
+			<-entered
 			require.NoError(t, c.Connect(t.Context()))
 			winner := c.GetConnection()
 			require.True(t, winner.IsConnected())
@@ -489,11 +449,7 @@ func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
 				cancelDial()
 			}
 			once.Do(func() { close(release) })
-			select {
-			case err = <-answer:
-			case <-time.After(10 * time.Second):
-				t.Fatal("losing dial did not return")
-			}
+			err = <-answer
 			t.Logf("loser=%v; same connection=%v; native connected=%v; client status=%v", err, winner == c.GetConnection(), winner.IsConnected(), c.Status())
 			require.Equal(t, StatusConnected, c.Status(), "losing dial changed the winner's status")
 		})

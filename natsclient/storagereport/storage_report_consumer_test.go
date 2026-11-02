@@ -166,11 +166,7 @@ func runConsumer(t *testing.T, store *fakeWatchStore, observer Observer) *Consum
 	}()
 	t.Cleanup(func() {
 		cancel()
-		select {
-		case <-done:
-		case <-time.After(10 * time.Second):
-			t.Error("consumer did not stop when its context ended")
-		}
+		<-done
 	})
 	return consumer
 }

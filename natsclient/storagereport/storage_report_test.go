@@ -830,6 +830,7 @@ func TestStorageInventory_RunPublishesEveryCollection(t *testing.T) {
 		cancel()
 		select {
 		case <-stopped:
+		// Own deadline: bubble clock, Run returns on cancel before the bubble's clock must advance
 		case <-time.After(3 * time.Second):
 			t.Fatal("Run did not return when its context was cancelled")
 		}
@@ -873,6 +874,7 @@ func TestStorageInventory_PublicationFailureDoesNotStopCollection(t *testing.T) 
 		cancel()
 		select {
 		case <-stopped:
+		// Own deadline: bubble clock, Run returns on cancel before the bubble's clock must advance
 		case <-time.After(3 * time.Second):
 			t.Fatal("Run did not return when its context was cancelled")
 		}
@@ -930,6 +932,7 @@ func TestStorageInventory_FailedCollectionPublishesNothing(t *testing.T) {
 		cancel()
 		select {
 		case <-stopped:
+		// Own deadline: bubble clock, Run returns on cancel before the bubble's clock must advance
 		case <-time.After(3 * time.Second):
 			t.Fatal("Run did not return when its context was cancelled")
 		}

@@ -238,12 +238,8 @@ func TestKVStore_Watch(t *testing.T) {
 
 	// The watcher sends nil once it has delivered the bucket's initial values (none here); changes
 	// made after that arrive as updates. The pin waited 100 ms instead.
-	select {
-	case entry := <-watcher.Updates():
-		require.Nil(t, entry, "an empty bucket has no initial values")
-	case <-time.After(failureBound):
-		t.Fatal("watcher did not finish its initial values")
-	}
+	entry := <-watcher.Updates()
+	require.Nil(t, entry, "an empty bucket has no initial values")
 
 	// Make changes
 	_, err = kvStore.Put(ctx, "watch.key1", []byte("value1"))

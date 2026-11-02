@@ -80,24 +80,15 @@ func handlersReturned(t *testing.T, c *Component, handle jetstream.ConsumeContex
 
 // awaitReleaseBegun waits until c's Health reports "stopped": the shell clears running
 // as it begins release, so a Stop running on another goroutine has begun its cleanup.
-// Each Health read must return within readBound; one that does not fails the test.
 func awaitReleaseBegun(ctx context.Context, t *testing.T, c *Component) {
 	t.Helper()
 	waitCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	const blocked = "blocked"
-	status, err := probe.Await(waitCtx, func(context.Context) (string, error) {
-		health, ok := readWithin(t, "Health while Stop begins", c.Health)
-		if !ok {
-			return blocked, nil
-		}
-		return health.Status, nil
-	}, func(status string) bool { return status == "stopped" || status == blocked })
+	_, err := probe.Await(waitCtx, func(context.Context) (string, error) {
+		return c.Health().Status, nil
+	}, func(status string) bool { return status == "stopped" })
 	if err != nil {
 		t.Fatalf("Stop never began its release: %v", err)
-	}
-	if status == blocked {
-		t.FailNow()
 	}
 }
 

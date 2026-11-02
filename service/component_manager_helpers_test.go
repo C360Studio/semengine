@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -124,19 +123,4 @@ func startTestComponentManager(t *testing.T, cm *ComponentManager) {
 		defer cancel()
 		require.NoError(t, cm.Stop(ctx))
 	})
-}
-
-// waitForSignal waits for signal to close or receive, failing the test, naming description, once
-// stopBound passes or the test's context ends.
-func waitForSignal(t *testing.T, signal <-chan struct{}, description string) {
-	t.Helper()
-	timer := time.NewTimer(stopBound)
-	defer timer.Stop()
-	select {
-	case <-signal:
-	case <-timer.C:
-		t.Fatalf("timed out waiting for %s", description)
-	case <-t.Context().Done():
-		t.Fatalf("test context ended waiting for %s", description)
-	}
 }

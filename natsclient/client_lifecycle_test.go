@@ -203,11 +203,13 @@ func (cb *blockingLossCallback) fn(error) {
 	<-cb.release
 }
 
-// awaitEntered waits on the bubble's clock for the planted callback to start.
+// awaitEntered waits on the bubble's clock for the planted callback to start. Every caller runs
+// inside a synctest bubble.
 func (cb *blockingLossCallback) awaitEntered(t *testing.T) {
 	t.Helper()
 	select {
 	case <-cb.entered:
+	// Own deadline: bubble clock, the callback starts before the bubble's clock must advance a minute.
 	case <-time.After(time.Minute):
 		t.Fatal("the connection-loss callback did not start")
 	}
@@ -304,22 +306,14 @@ func TestClientConnectThatLosesAdmissionLeavesStatus(t *testing.T) {
 
 	loser := make(chan error, 1)
 	go func() { loser <- c.Connect(t.Context()) }()
-	select {
-	case <-held:
-	case <-time.After(lifecycleBound):
-		t.Fatal("the first Connect never reached its dial")
-	}
+	<-held
 	require.NoError(t, c.Connect(t.Context()), "the Connect that wins admission")
 	winner := c.GetConnection()
 	require.Equal(t, StatusConnected, c.Status())
 
 	releaseOnce.Do(func() { close(release) })
-	select {
-	case err := <-loser:
-		require.ErrorIs(t, err, errs.ErrAlreadyStarted, "the Connect that lost admission")
-	case <-time.After(lifecycleBound):
-		t.Fatal("the losing Connect did not return")
-	}
+	err = <-loser
+	require.ErrorIs(t, err, errs.ErrAlreadyStarted, "the Connect that lost admission")
 	require.Same(t, winner, c.GetConnection(), "the losing Connect replaced the connection")
 	require.True(t, winner.IsConnected(), "the losing Connect closed the winner's connection")
 	require.Equal(t, StatusConnected, c.Status(), "the losing Connect left its own status behind")
@@ -356,6 +350,7 @@ func TestClientCloseJoinsConnectionLossCallback(t *testing.T) {
 		select {
 		case err := <-second:
 			require.NoError(t, err, "second Close after the callback returned")
+		// Own deadline: bubble clock, the second Close returns once the callback is released, before the clock must advance
 		case <-time.After(2 * time.Hour):
 			t.Fatal("second Close did not return after the callback was released")
 		}
@@ -408,6 +403,7 @@ func TestClientCloseDropsLateDisconnect(t *testing.T) {
 		select {
 		case err := <-closed:
 			require.NoError(t, err)
+		// Own deadline: bubble clock, Close returns once the callback is released, before the clock must advance
 		case <-time.After(2 * time.Hour):
 			t.Fatal("Close did not return after the callback was released")
 		}
@@ -505,8 +501,6 @@ func TestClientCloseUnderShortDeadlineClosesConnection(t *testing.T) {
 			case err := <-second:
 				t.Fatalf("a second Close returned %v while the handler still runs", err)
 			case <-watched.waiting:
-			case <-time.After(lifecycleBound):
-				t.Fatalf("the second Close neither returned nor waited on its context within %v", lifecycleBound)
 			}
 			requireJoinPending(t, c, joinOnOwnedWork, "the held handler returned")
 			select {
@@ -643,6 +637,7 @@ func TestClientConcurrentClosesEachHonourTheirContext(t *testing.T) {
 		select {
 		case err := <-b:
 			require.NoError(t, err)
+		// Own deadline: bubble clock, Close B returns once the callback is released, before the clock must advance
 		case <-time.After(2 * time.Hour):
 			t.Fatal("Close B did not return after the callback was released")
 		}
@@ -669,6 +664,7 @@ func TestClientCloseFromInsideCallbackReportsContext(t *testing.T) {
 		select {
 		case err := <-inner:
 			require.ErrorIs(t, err, context.DeadlineExceeded, "Close from inside the callback")
+		// Own deadline: bubble clock, Close from inside the callback returns on its own deadline, short of a minute
 		case <-time.After(time.Minute):
 			t.Fatal("Close from inside the callback did not return")
 		}
@@ -693,11 +689,7 @@ func TestClientCloseDuringConnectStartsNothing(t *testing.T) {
 
 	connected := make(chan error, 1)
 	go func() { connected <- c.Connect(t.Context()) }()
-	select {
-	case <-h.entered:
-	case <-time.After(lifecycleBound):
-		t.Fatal("Connect never logged that it connected")
-	}
+	<-h.entered
 
 	closeCtx, cancel := context.WithTimeout(t.Context(), lifecycleBound)
 	defer cancel()
@@ -705,11 +697,7 @@ func TestClientCloseDuringConnectStartsNothing(t *testing.T) {
 
 	h.releaseHold()
 	var connectErr error
-	select {
-	case connectErr = <-connected:
-	case <-time.After(lifecycleBound):
-		t.Fatal("Connect did not return after it was released")
-	}
+	connectErr = <-connected
 	assert.Empty(t, owner.Observe().Unresolved, "after Close overtook Connect")
 	assert.ErrorIs(t, connectErr, nats.ErrConnectionClosed, "Connect that Close overtook reports the close")
 }

@@ -96,6 +96,7 @@ func TestConsumeSetupDeadlineDoesNotEndLaterHandlers(t *testing.T) {
 				select {
 				case err := <-handlerErr:
 					assert.NoError(t, err, "a handler after the setup deadline must get a live context")
+				// Own deadline: bubble clock, the delivered handler runs before the bubble's clock must advance
 				case <-time.After(lifecycleBound):
 					t.Fatal("the handler did not run")
 				}

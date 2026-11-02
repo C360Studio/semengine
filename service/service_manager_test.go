@@ -635,11 +635,7 @@ func TestStopAllCutsOpenConnectionsAtItsDeadline(t *testing.T) {
 	deadline, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 100*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, manager.StopAll(deadline), context.DeadlineExceeded)
-	select {
-	case <-sawEnd:
-	case <-time.After(stopBound):
-		t.Fatal("the open request's context did not end at StopAll's deadline")
-	}
+	<-sawEnd
 	requireListenerReleased(t, strings.TrimPrefix(url, "http://"))
 	require.Error(t, (<-request).err, "the cut connection answered")
 

@@ -58,17 +58,6 @@ func collectingFamily(t *testing.T, prefix string) (*KeyFamily, <-chan KeyFamily
 	return family, entries
 }
 
-func nextEntry(t *testing.T, entries <-chan KeyFamilyEntry) KeyFamilyEntry {
-	t.Helper()
-	select {
-	case entry := <-entries:
-		return entry
-	case <-time.After(5 * time.Second):
-		t.Fatal("no key family entry delivered within 5s")
-		return KeyFamilyEntry{}
-	}
-}
-
 // spec: config-manager / A registered key family is delivered to its owner
 func TestKeyFamilyDeliversSnapshotThenChanges(t *testing.T) {
 	tc := fixtureClient(t)
@@ -94,7 +83,7 @@ func TestKeyFamilyDeliversSnapshotThenChanges(t *testing.T) {
 	require.NoError(t, manager.Start(ctx))
 	defer stopManager(t, manager)
 
-	snapshot := nextEntry(t, entries)
+	snapshot := <-entries
 	require.Equal(t, KeyFamilyEntry{Name: "a", Value: []byte(`"a1"`), Operation: KeyFamilyPut, Initial: true}, snapshot)
 
 	// A key outside the family must never be delivered: it is written first,
@@ -104,8 +93,8 @@ func TestKeyFamilyDeliversSnapshotThenChanges(t *testing.T) {
 	require.NoError(t, family.Put(ctx, "b", []byte(`"b1"`)))
 	require.NoError(t, family.Delete(ctx, "a"))
 
-	require.Equal(t, KeyFamilyEntry{Name: "b", Value: []byte(`"b1"`), Operation: KeyFamilyPut}, nextEntry(t, entries))
-	deleted := nextEntry(t, entries)
+	require.Equal(t, KeyFamilyEntry{Name: "b", Value: []byte(`"b1"`), Operation: KeyFamilyPut}, <-entries)
+	deleted := <-entries
 	require.Equal(t, "a", deleted.Name)
 	require.Equal(t, KeyFamilyDelete, deleted.Operation)
 	require.False(t, deleted.Initial)
@@ -136,7 +125,7 @@ func TestKeyFamilyDeliversSnapshotThenChanges(t *testing.T) {
 	// The nested put was written before rules.c, so had the watch delivered
 	// it, it would arrive first.
 	require.NoError(t, family.Put(ctx, "c", []byte(`"c1"`)))
-	require.Equal(t, KeyFamilyEntry{Name: "c", Value: []byte(`"c1"`), Operation: KeyFamilyPut}, nextEntry(t, entries))
+	require.Equal(t, KeyFamilyEntry{Name: "c", Value: []byte(`"c1"`), Operation: KeyFamilyPut}, <-entries)
 	names, err = family.Names(ctx)
 	require.NoError(t, err)
 	require.ElementsMatch(t, []string{"b", "c"}, names, "a nested key is not a family member")

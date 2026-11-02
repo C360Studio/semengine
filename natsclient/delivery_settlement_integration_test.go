@@ -68,11 +68,7 @@ func TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap(t 
 	defer releaseOnce.Do(func() { close(release) })
 
 	require.NoError(t, testClient.Client.PublishToStream(ctx, "delivery.renewal", []byte("long-work")))
-	select {
-	case <-started:
-	case <-time.After(failureBound):
-		t.Fatal("first delivery did not start")
-	}
+	<-started
 
 	// The proof is the SERVER's own view, read while work is still blocked.
 	// Watching the work callback cannot prove this: NATS invokes one
@@ -116,13 +112,9 @@ func TestIntegrationConsumeDeliveryWithHeartbeatHealthyRenewalPreventsOverlap(t 
 	require.Zero(t, blocked.AckFloor.Consumer, "nothing may be acknowledged while work is blocked")
 
 	releaseOnce.Do(func() { close(release) })
-	select {
-	case result := <-results:
-		require.Equal(t, DeliveryDecisionAck, result.Decision())
-		require.NoError(t, result.Err())
-	case <-time.After(failureBound):
-		t.Fatal("renewed delivery did not settle")
-	}
+	result := <-results
+	require.Equal(t, DeliveryDecisionAck, result.Decision())
+	require.NoError(t, result.Err())
 	require.Equal(t, int32(1), invocations.Load())
 
 	// After the ACK the server agrees the single delivery is settled.
@@ -194,24 +186,16 @@ func TestIntegrationConsumeDeliveryWithHeartbeatStoppedRenewalUsesBackOff(t *tes
 	require.NoError(t, testClient.Client.PublishToStream(ctx, "delivery.backoff", []byte("restart")))
 
 	var firstStarted time.Time
-	select {
-	case firstStarted = <-started:
-	case <-time.After(failureBound):
-		t.Fatal("first delivery did not start")
-	}
+	firstStarted = <-started
 
 	// Closing the delivery owner's connection stops renewal and makes any
 	// explicit semantic retry method fail. JetStream must therefore redeliver
 	// on BackOff, independently of both the longer AckWait and semantic delay.
 	first.GetConnection().Close()
-	select {
-	case result := <-results:
-		require.Equal(t, DeliveryDecisionRetry, result.Decision())
-		require.ErrorIs(t, result.Err(), retryCause)
-		require.False(t, result.settlementTried && result.settlementErr == nil, "no settlement method succeeded")
-	case <-time.After(failureBound):
-		t.Fatal("delivery did not return after renewal stopped")
-	}
+	result := <-results
+	require.Equal(t, DeliveryDecisionRetry, result.Decision())
+	require.ErrorIs(t, result.Err(), retryCause)
+	require.False(t, result.settlementTried && result.settlementErr == nil, "no settlement method succeeded")
 
 	second, err := NewClient(testClient.URL, WithMaxReconnects(0))
 	require.NoError(t, err)

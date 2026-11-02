@@ -55,6 +55,7 @@ func TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire(t *testing.T)
 			r.Attrs(func(a slog.Attr) bool { attrs[a.Key] = a.Value; return true })
 			assert.Equal(t, "coalescing callback panic sentinel", attrs["panic"].Any())
 			assert.Equal(t, int64(1), attrs["batch_size"].Int64())
+		// Own deadline: bubble clock, the recovered panic is logged within one second of the 50 ms window
 		case <-time.After(time.Second):
 			t.Fatal("the recovered panic was not logged")
 		}
@@ -70,6 +71,7 @@ semengine_cache_coalescing_callback_panics_total{component="coalescer"} 1
 		select {
 		case keys := <-batches:
 			assert.Equal(t, []string{"after"}, keys)
+		// Own deadline: bubble clock, the batch after the panic fires within one second of the 50 ms window
 		case <-time.After(time.Second):
 			t.Fatal("the batch after the panic did not reach the callback")
 		}

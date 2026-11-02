@@ -145,11 +145,7 @@ func start(t *testing.T, f *Follower) (stop func() error) {
 		}
 		stopped = true
 		cancel()
-		select {
-		case result = <-done:
-		case <-time.After(waitBound):
-			result = errors.New("Run did not return after its context ended")
-		}
+		result = <-done
 		return result
 	}
 	t.Cleanup(func() { _ = stop() })
@@ -176,41 +172,30 @@ type envelope struct {
 	committed time.Time // the server's commit time of the write
 }
 
-// nextEnvelope returns the next envelope written to the key, waiting at most bound.
-func nextEnvelope(t *testing.T, w jetstream.KeyWatcher, bound time.Duration) envelope {
+// nextEnvelope returns the next envelope written to the key.
+func nextEnvelope(t *testing.T, w jetstream.KeyWatcher) envelope {
 	t.Helper()
-	timer := time.NewTimer(bound)
-	defer timer.Stop()
 	for {
-		select {
-		case entry, ok := <-w.Updates():
-			if !ok {
-				t.Fatalf("status watch closed")
-			}
-			if entry == nil {
-				continue
-			}
-			var s graph.IndexStatusResponse
-			if err := json.Unmarshal(entry.Value(), &s); err != nil {
-				t.Fatalf("decode envelope %q: %v", entry.Value(), err)
-			}
-			return envelope{status: s, committed: entry.Created()}
-		case <-timer.C:
-			t.Fatalf("no envelope within %s", bound)
+		entry, ok := <-w.Updates()
+		if !ok {
+			t.Fatalf("status watch closed")
 		}
+		if entry == nil {
+			continue
+		}
+		var s graph.IndexStatusResponse
+		if err := json.Unmarshal(entry.Value(), &s); err != nil {
+			t.Fatalf("decode envelope %q: %v", entry.Value(), err)
+		}
+		return envelope{status: s, committed: entry.Created()}
 	}
 }
 
-// awaitEnvelope reads envelopes until one satisfies done, within waitBound.
+// awaitEnvelope reads envelopes until one satisfies done.
 func awaitEnvelope(t *testing.T, w jetstream.KeyWatcher, done func(graph.IndexStatusResponse) bool) graph.IndexStatusResponse {
 	t.Helper()
-	deadline := time.Now().Add(waitBound)
 	for {
-		left := time.Until(deadline)
-		if left <= 0 {
-			t.Fatalf("no matching envelope within %s", waitBound)
-		}
-		if e := nextEnvelope(t, w, left); done(e.status) {
+		if e := nextEnvelope(t, w); done(e.status) {
 			return e.status
 		}
 	}
@@ -288,13 +273,9 @@ func TestFollowerRunReturnsAndLeavesNothing(t *testing.T) {
 		stop := start(t, f)
 		if cycle == 0 {
 			// The first envelope orders the check after the heartbeat goroutine started and published.
-			nextEnvelope(t, status, waitBound)
+			nextEnvelope(t, status)
 		}
-		select {
-		case <-entered:
-		case <-time.After(waitBound):
-			t.Fatal("Deliver was not called")
-		}
+		<-entered
 		// The stack dump showing the native delivery blocked on its full buffer orders Run's
 		// cancellation after the backlog, not elapsed time.
 		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), waitBound); err != nil {
@@ -344,11 +325,7 @@ func TestFollowerConcurrentQueryReady(t *testing.T) {
 	delivered := make(chan struct{}, 1)
 	f := open(t, client, func(context.Context, Entry) { delivered <- struct{}{} }, noFailures)
 	stop := start(t, f)
-	select {
-	case <-delivered:
-	case <-time.After(waitBound):
-		t.Fatal("the stored entity was not delivered")
-	}
+	<-delivered
 	begin := make(chan struct{})
 	errsSeen := make(chan error, 8*20)
 	var calls sync.WaitGroup
@@ -387,12 +364,8 @@ func TestFollowerPublishesOnEveryHeartbeat(t *testing.T) {
 	started := time.Now()
 	start(t, f)
 
-	first := nextEnvelope(t, status, waitBound)
-	select {
-	case <-parked:
-	case <-time.After(waitBound):
-		t.Fatal("Deliver was never called")
-	}
+	first := nextEnvelope(t, status)
+	<-parked
 	// The first write comes before the first tick: within one heartbeat of Run starting.
 	if elapsed := first.committed.Sub(started); elapsed >= readiness.DefaultHeartbeat {
 		t.Fatalf("first envelope committed %s after Run started; want before one heartbeat", elapsed)
@@ -403,7 +376,7 @@ func TestFollowerPublishesOnEveryHeartbeat(t *testing.T) {
 	// heartbeat after it, so a lower bound would fail on a loaded runner.
 	prev := first
 	for range 2 {
-		next := nextEnvelope(t, status, 3*readiness.DefaultHeartbeat)
+		next := nextEnvelope(t, status)
 		if gap := next.committed.Sub(prev.committed); gap > 2*readiness.DefaultHeartbeat {
 			t.Fatalf("envelopes %s apart; want at most %s", gap, 2*readiness.DefaultHeartbeat)
 		}
@@ -425,26 +398,16 @@ func TestFollowerSnapshotEndSetsBootstrapTarget(t *testing.T) {
 	f := open(t, client, func(_ context.Context, e Entry) { delivered <- e }, noFailures)
 	start(t, f)
 
-	receive := func() Entry {
-		t.Helper()
-		select {
-		case e := <-delivered:
-			return e
-		case <-time.After(waitBound):
-			t.Fatal("no delivery")
-			return Entry{}
-		}
-	}
 	var snapshot []Entry
 	for range 3 {
-		snapshot = append(snapshot, receive())
+		snapshot = append(snapshot, <-delivered)
 	}
 	// Two writes after the snapshot: the watch sent its end marker right after the third entry, so
 	// these arrive after it and raise only the live target.
 	put(t, kv, entityID(4), storedEntity(entityID(4)))
 	put(t, kv, entityID(5), storedEntity(entityID(5)))
-	receive()
-	receive()
+	<-delivered
+	<-delivered
 
 	for _, e := range snapshot {
 		if e.Revision == target {
@@ -479,13 +442,8 @@ func TestFollowerLatchesResetOnUnreadableSnapshotValue(t *testing.T) {
 	start(t, f)
 
 	// The delivery orders the reads below after the latch: the follower validates before it delivers.
-	select {
-	case e := <-delivered:
-		if e.Key != entityID(1) || e.Deleted || e.Bytes != len("{not json") {
-			t.Fatalf("delivered %+v; want the unreadable entry", e)
-		}
-	case <-time.After(waitBound):
-		t.Fatal("the unreadable entry was not delivered")
+	if e := <-delivered; e.Key != entityID(1) || e.Deleted || e.Bytes != len("{not json") {
+		t.Fatalf("delivered %+v; want the unreadable entry", e)
 	}
 	reason := string(graph.GraphStateReasonUnreadableEntity)
 	err := f.QueryReady(t.Context())

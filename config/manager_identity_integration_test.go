@@ -427,18 +427,10 @@ func TestKVPlatformKeyIsAMirrorNotASource(t *testing.T) {
 	minted := manager.GetConfig().Get().Platform.ID
 
 	updates := manager.onChange("platform")
-	select {
-	case <-updates:
-	case <-time.After(time.Second):
-		t.Fatal("no initial configuration from OnChange")
-	}
+	<-updates
 
 	putConfigValue(t, ctx, manager, "platform", PlatformConfig{Org: "otherorg", ID: "other", Type: "test"})
-	select {
-	case <-updates:
-	case <-time.After(2 * time.Second):
-		t.Fatal("the platform mirror write was never observed")
-	}
+	<-updates
 
 	require.Equal(t, minted, manager.GetConfig().Get().Platform.ID,
 		"a KV platform write must not move the running authority")

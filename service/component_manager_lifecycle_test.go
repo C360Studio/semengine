@@ -215,7 +215,7 @@ func TestComponentStartContextIsTheManagersStartContext(t *testing.T) {
 		require.NoError(t, recorded.Err(), "the manager's Stop ended the component's Start context")
 
 		cancelStart()
-		waitForSignal(t, recorded.Done(), "the component's Start context to end with the caller's")
+		<-recorded.Done()
 		require.ErrorIs(t, recorded.Err(), context.Canceled)
 	})
 
@@ -227,7 +227,7 @@ func TestComponentStartContextIsTheManagersStartContext(t *testing.T) {
 
 		require.NoError(t, cm.Start(startCtx))
 		cancelStart()
-		waitForSignal(t, c.startContext().Done(), "the component's Start context to end with the caller's")
+		<-c.startContext().Done()
 
 		require.Zero(t, c.stops.Load(), "ending the Start context stopped the component")
 		requireComponentStates(t, cm, component.StateStarted, c.name)

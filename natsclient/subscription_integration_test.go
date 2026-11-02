@@ -74,11 +74,7 @@ func TestIntegration_SubscriptionDrainAfterConnectionCloseJoinsCallback(t *testi
 
 	require.NoError(t, client.Publish(t.Context(), "subscription.drain.closed", []byte("x")))
 	require.NoError(t, client.GetConnection().Flush())
-	select {
-	case <-entered:
-	case <-time.After(10 * time.Second):
-		t.Fatal("handler never received the message")
-	}
+	<-entered
 
 	// Close the client's own native connection directly: Client.Close would
 	// drain first. (The pin's GetNativeConnection returned this connection.)

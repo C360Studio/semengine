@@ -50,6 +50,7 @@ func TestAttack_RapidAddRemoveSameEntity(t *testing.T) {
 			}
 			assert.False(t, keySet["entity-volatile"], "volatile entity should not appear (was removed)")
 			assert.True(t, keySet["entity-stable"], "stable entity should appear")
+		// Own deadline: bubble clock, the batch fires within two seconds of the 100 ms window
 		case <-time.After(2 * time.Second):
 			t.Fatal("callback did not fire")
 		}
@@ -85,6 +86,7 @@ func TestAttack_HighVolumeBatching(t *testing.T) {
 				require.False(t, keySet[k], "duplicate key detected: %s", k)
 				keySet[k] = true
 			}
+		// Own deadline: bubble clock, the 10K-key batch fires within five seconds of the 200 ms window
 		case <-time.After(5 * time.Second):
 			t.Fatal("callback did not fire within timeout")
 		}
@@ -94,11 +96,11 @@ func TestAttack_HighVolumeBatching(t *testing.T) {
 // TestAttack_CallbackLatency verifies long-running callback doesn't block adds
 //
 // It runs on the real clock, not in a bubble: an Add blocked on the set's mutex is not durably
-// blocked, so inside a bubble a regression would stall the fake clock and hang the test instead of
-// failing it. The callback is held on a channel the test releases, never on a timer (design D8,
-// R1b): the 100 Adds must all return while it is held; the 10 s bound is a failure bound only.
+// blocked, so inside a bubble a regression would stall the fake clock. The callback is held on a
+// channel the test releases, never on a timer (design D8, R1b): the 100 Adds must all return while
+// it is held; a regression blocks them and go test -timeout fails the test with their stacks.
 // Every exit path releases the callback and joins the adds before anything takes the set's
-// mutex, so a callback run under that mutex fails the test and the test still ends (Codex F6).
+// mutex (Codex F6).
 func TestAttack_CallbackLatency(t *testing.T) {
 	ctx := context.Background()
 	var callCount atomic.Int32
@@ -136,16 +138,9 @@ func TestAttack_CallbackLatency(t *testing.T) {
 	}()
 	defer func() { releaseCallback(); <-addsDone }() // every later exit: release, then join
 
-	// Adds should not block while the callback runs
-	select {
-	case <-addsDone:
-	case <-time.After(10 * time.Second):
-		// Release the callback and let the blocked adds finish before failing, so nothing that
-		// follows waits on a mutex the held callback owns.
-		releaseCallback()
-		<-addsDone
-		t.Fatal("Add() blocked during callback execution")
-	}
+	// Adds should not block while the callback runs: the callback is still held here, so an Add
+	// that waits on it never returns and go test -timeout reports the blocked Add's stack.
+	<-addsDone
 	assert.Equal(t, 1, set.PendingCount(), "the adds made during the callback are pending")
 
 	// Release the callback and wait for it to finish
@@ -294,6 +289,7 @@ func TestAttack_CloseWhileCallbackRunning(t *testing.T) {
 			default:
 				t.Fatal("Shutdown() returned before callback finished")
 			}
+		// Own deadline: bubble clock, Shutdown returns within one second while a callback runs
 		case <-time.After(1 * time.Second):
 			t.Fatal("Shutdown() hung waiting for callback")
 		}
@@ -413,6 +409,7 @@ func TestAttack_AddAfterClose(t *testing.T) {
 		select {
 		case <-done:
 			// Good - Add returned
+		// Own deadline: bubble clock, Add after Shutdown returns within one second
 		case <-time.After(1 * time.Second):
 			t.Fatal("Add() hung after Shutdown()")
 		}
@@ -446,6 +443,7 @@ func TestAttack_LargeKeyNames(t *testing.T) {
 			}
 			assert.True(t, keySet[largeKey], "large key should be present")
 			assert.True(t, keySet["normal-key"], "normal key should be present")
+		// Own deadline: bubble clock, the batch fires within two seconds of the 50 ms window
 		case <-time.After(2 * time.Second):
 			t.Fatal("callback did not fire")
 		}

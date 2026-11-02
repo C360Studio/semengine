@@ -275,11 +275,7 @@ func TestRunLeavesNoWatchDelivery(t *testing.T) {
 		}))
 		require.NoError(t, err)
 		wait, stop := startRun(t, view)
-		select {
-		case <-entered:
-		case <-time.After(waitBound):
-			t.Fatal("OnApply was not called")
-		}
+		<-entered
 		// The stack dump showing the native delivery blocked on its full buffer orders the
 		// cancellation after the backlog, not elapsed time.
 		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), waitBound); err != nil {

@@ -225,12 +225,7 @@ func TestIntegration_SubscribeForRequests(t *testing.T) {
 	assert.Equal(t, []byte("response"), response)
 
 	// Verify handler was called
-	select {
-	case <-handlerCalled:
-		// Success
-	case <-time.After(failureBound):
-		t.Fatal("Handler was not called")
-	}
+	<-handlerCalled
 }
 
 // TestIntegration_SubscribeForRequests_HandlerTimeoutConfigurable proves, through a

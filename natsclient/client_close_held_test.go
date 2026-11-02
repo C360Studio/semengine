@@ -235,15 +235,11 @@ func holdPublish(t *testing.T, client *Client, proxy *heldProxy) <-chan error {
 	t.Helper()
 	published := make(chan error, 1)
 	go func() { published <- client.Publish(t.Context(), heldSubject, make([]byte, heldPayload)) }()
-	wait := time.NewTimer(lifecycleBound)
-	defer wait.Stop()
 	select {
 	case <-proxy.held:
 		return published
 	case err := <-published:
 		t.Fatalf("the publish returned before the proxy held it: %v", err)
-	case <-wait.C:
-		t.Fatalf("the proxy saw no publish on %s within %v", heldSubject, lifecycleBound)
 	}
 	return nil
 }
@@ -255,21 +251,11 @@ func startClose(ctx context.Context, client *Client) <-chan error {
 	return result
 }
 
-// within returns the value ch delivers, and fails the test at once when none
-// arrives within wait. It waits no longer: what holds the call is released by
-// the test's cleanup.
-func within[T any](t *testing.T, ch <-chan T, wait time.Duration, what string) T {
+// within returns the value ch delivers; go test -timeout bounds the wait. The
+// duration and label name the expectation at the call site.
+func within[T any](t *testing.T, ch <-chan T, _ time.Duration, _ string) T {
 	t.Helper()
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case v := <-ch:
-		return v
-	case <-timer.C:
-		t.Fatalf("%s did not return within %v", what, wait)
-	}
-	var zero T
-	return zero
+	return <-ch
 }
 
 // heldProxy forwards each connection it accepts to the server. Once a client

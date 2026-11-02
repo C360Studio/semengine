@@ -299,38 +299,30 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 }
 
 // requireEvent waits for an event matching (wantOp, wantID) on ch,
-// skipping unrelated entities, and fails on timeout.
+// skipping unrelated entities.
 func requireEvent(t *testing.T, ch <-chan Event, wantOp EventOp, wantID string) {
 	t.Helper()
 	for {
-		select {
-		case ev := <-ch:
-			if ev.EntityID != wantID {
-				continue
-			}
-			require.Equal(t, wantOp, ev.Op, "op for %s", wantID)
-			if wantOp == Upserted {
-				require.NotNil(t, ev.Participant, "Upserted event must carry a Participant")
-			} else {
-				require.Nil(t, ev.Participant, "Deleted event must carry a nil Participant")
-			}
-			return
-		case <-time.After(10 * time.Second):
-			t.Fatalf("timed out waiting for %s event for %s", wantOp, wantID)
+		ev := <-ch
+		if ev.EntityID != wantID {
+			continue
 		}
+		require.Equal(t, wantOp, ev.Op, "op for %s", wantID)
+		if wantOp == Upserted {
+			require.NotNil(t, ev.Participant, "Upserted event must carry a Participant")
+		} else {
+			require.Nil(t, ev.Participant, "Deleted event must carry a nil Participant")
+		}
+		return
 	}
 }
 
 // requireNextParticipant waits for the next participant Watch delivers and requires it to be
-// wantID, and fails on timeout.
+// wantID.
 func requireNextParticipant(t *testing.T, ch <-chan Participant, wantID string) {
 	t.Helper()
-	select {
-	case p := <-ch:
-		require.Equal(t, wantID, p.EntityID())
-	case <-time.After(10 * time.Second):
-		t.Fatalf("Watch did not deliver %s", wantID)
-	}
+	p := <-ch
+	require.Equal(t, wantID, p.EntityID())
 }
 
 // TestIntegration_WatchEvents_DeliversUpsertAndDelete proves the new

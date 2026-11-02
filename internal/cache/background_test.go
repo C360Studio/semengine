@@ -50,6 +50,7 @@ func requireJoined(t *testing.T, stop func() error, exited <-chan struct{}, rele
 			t.Fatal("stop returned while the background goroutine was still running")
 		}
 		require.NoError(t, r.err)
+	// Own deadline: bubble clock, stop returns within an hour of fake time
 	case <-time.After(time.Hour):
 		release()
 		<-returned

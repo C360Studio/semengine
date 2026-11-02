@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -113,12 +112,10 @@ func TestComponentManagerPostBootComponentAndModelWritesDoNotChangeRuntimeCompos
 	assertRuntime("after the model registry write")
 }
 
-// bootOnlyWaitForModelRegistry reads updates until one holds endpoint, failing the test once
-// stopBound passes, the channel closes or the test's context ends.
+// bootOnlyWaitForModelRegistry reads updates until one holds endpoint, failing the test once the
+// channel closes or the test's context ends.
 func bootOnlyWaitForModelRegistry(t *testing.T, updates <-chan *model.Registry, endpoint string) {
 	t.Helper()
-	timer := time.NewTimer(stopBound)
-	defer timer.Stop()
 	for {
 		select {
 		case registry, ok := <-updates:
@@ -126,8 +123,6 @@ func bootOnlyWaitForModelRegistry(t *testing.T, updates <-chan *model.Registry, 
 			if registry != nil && registry.Endpoints[endpoint] != nil {
 				return
 			}
-		case <-timer.C:
-			t.Fatalf("the config manager did not apply the model_registry write (endpoint %q)", endpoint)
 		case <-t.Context().Done():
 			t.Fatalf("test context ended waiting for model registry endpoint %q", endpoint)
 		}

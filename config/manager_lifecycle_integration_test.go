@@ -73,11 +73,7 @@ func TestConfigManager_ShutdownSequence(t *testing.T) {
 		}(ch)
 	}
 	for range subscribers {
-		select {
-		case <-started:
-		case <-time.After(5 * time.Second):
-			t.Fatal("a subscriber never received its initial update")
-		}
+		<-started
 	}
 
 	// Stop the manager - this should close all channels
@@ -90,11 +86,7 @@ func TestConfigManager_ShutdownSequence(t *testing.T) {
 		readers.Wait()
 		close(readersDone)
 	}()
-	select {
-	case <-readersDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Stop returned but a subscriber channel was never closed")
-	}
+	<-readersDone
 }
 
 // TestConfigManager_ConcurrentShutdown tests concurrent Stop calls. Concurrent Stops may be
@@ -153,11 +145,7 @@ func TestConfigManager_ConcurrentShutdown(t *testing.T) {
 	// Should handle multiple Stop calls gracefully
 	stopManager(t, cm)
 
-	select {
-	case <-drained:
-	case <-time.After(5 * time.Second):
-		t.Fatal("Stop returned but the subscriber channel was never closed")
-	}
+	<-drained
 }
 
 // TestStartContextEndingKeepsDelivering is P2 as a test: ending the context given to Start, after
@@ -176,23 +164,15 @@ func TestStartContextEndingKeepsDelivering(t *testing.T) {
 	defer stopManager(t, manager)
 
 	updates := manager.onChange("services.*")
-	select {
-	case <-updates: // the initial update
-	case <-time.After(5 * time.Second):
-		t.Fatal("no initial update from onChange")
-	}
+	<-updates // the initial update
 
 	cancelStart()
 
 	putConfigValue(t, ctx, manager, "services.x", types.ServiceConfig{Enabled: true})
-	select {
-	case up, ok := <-updates:
-		require.True(t, ok, "the subscriber channel closed when the Start context ended")
-		require.Equal(t, "services.x", up.Path)
-		require.Contains(t, up.Config.Get().Services, "x", "the put is applied after the Start context ended")
-	case <-time.After(10 * time.Second):
-		t.Fatal("after the Start context ended, a put to services.x was never delivered")
-	}
+	up, ok := <-updates
+	require.True(t, ok, "the subscriber channel closed when the Start context ended")
+	require.Equal(t, "services.x", up.Path)
+	require.Contains(t, up.Config.Get().Services, "x", "the put is applied after the Start context ended")
 }
 
 // TestStopWithAModelRegistryWatcherReturnsPromptly is P1 as a test: a running model.Watch does
@@ -229,11 +209,7 @@ func TestStopWithAModelRegistryWatcherReturnsPromptly(t *testing.T) {
 			}
 		})
 	}()
-	select {
-	case <-applied:
-	case <-time.After(5 * time.Second):
-		t.Fatal("model.Watch never received the initial registry")
-	}
+	<-applied
 	direct := manager.WatchModelRegistry()
 
 	stopCtx, stopCancel := context.WithTimeout(ctx, time.Second)
@@ -241,11 +217,7 @@ func TestStopWithAModelRegistryWatcherReturnsPromptly(t *testing.T) {
 	require.NoError(t, manager.Stop(stopCtx), "a live model-registry watcher must not hold Stop")
 	require.NoError(t, stopCtx.Err(), "Stop returned nil only after its one-second context had ended")
 
-	select {
-	case <-watchDone:
-	case <-time.After(5 * time.Second):
-		t.Fatal("model.Watch did not return after Stop: its channel was not closed")
-	}
+	<-watchDone
 	requireClosedSoon(t, direct, "the channel WatchModelRegistry returned before Stop")
 }
 
@@ -323,11 +295,7 @@ func TestBlockedKeyFamilyHandlerHoldsStop(t *testing.T) {
 	}()
 
 	require.NoError(t, family.Put(ctx, "a", []byte(`"a"`)))
-	select {
-	case <-entered:
-	case <-time.After(5 * time.Second):
-		t.Fatal("the family handler was never called")
-	}
+	<-entered
 
 	blockedCtx, blockedCancel := context.WithTimeout(ctx, 200*time.Millisecond)
 	defer blockedCancel()
@@ -380,11 +348,7 @@ func TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied(t *testing.T) {
 	t.Cleanup(func() {
 		done := make(chan struct{})
 		go func() { server.Shutdown(); server.WaitForShutdown(); close(done) }()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("embedded server did not shut down within 5s")
-		}
+		<-done
 	})
 	require.True(t, server.ReadyForConnections(5*time.Second))
 

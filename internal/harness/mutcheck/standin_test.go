@@ -84,6 +84,7 @@ func (p *heldPipe) ended(t *testing.T, done <-chan result) result {
 	select {
 	case got := <-done:
 		return got
+	// Own deadline: on failure the helper (tail -f /dev/null) outlives a go test -timeout panic; only this arm kills it.
 	case <-time.After(30 * time.Second):
 		_ = syscall.Kill(p.pid, syscall.SIGKILL)
 		if p.parent > 1 {
@@ -109,6 +110,7 @@ func (p *heldPipe) requireGone(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	// Own deadline: on failure the helper (tail -f /dev/null) outlives a go test -timeout panic; only this arm kills it.
 	case <-time.After(30 * time.Second):
 		_ = syscall.Kill(p.pid, syscall.SIGKILL)
 		if p.parent > 1 {

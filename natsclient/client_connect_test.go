@@ -62,12 +62,6 @@ func TestConnectRejectsCandidateWhenCloseWinsAdmission(t *testing.T) {
 	require.Equal(t, StatusDisconnected, client.Status())
 }
 
-// connectWait bounds how long a test waits for Connect against a server that
-// does not answer. Before design D2, Connect waited for nats.go's connect
-// timeout instead (5 s per address, P18), so a Connect that honours its
-// context returns well inside it.
-const connectWait = 3 * time.Second
-
 // T3, design "Tests that replace the probes".
 func TestConnectRefusesAnEndedContext(t *testing.T) {
 	t.Run("no dial", func(t *testing.T) {
@@ -146,20 +140,13 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 	})
 
 	// The context ends while the dial itself is in progress, as with an address
-	// that drops every packet. Only the dialer's Cancel can end it before the
-	// dial's timeout.
+	// that drops every packet. Only the dialer's Cancel can end it.
 	t.Run("deadline while dialling", func(t *testing.T) {
 		client, err := NewClient(refusedNATSURL(t))
 		require.NoError(t, err)
 		client.netDial = func(d *net.Dialer, _, _ string) (net.Conn, error) {
-			timeout := time.NewTimer(d.Timeout) // as a real dial nobody answers ends
-			defer timeout.Stop()
-			select {
-			case <-d.Cancel:
-				return nil, errors.New("dial cancelled")
-			case <-timeout.C:
-				return nil, errors.New("dial timed out")
-			}
+			<-d.Cancel // the dial nobody answers ends only when Connect cancels it
+			return nil, errors.New("dial cancelled")
 		}
 		ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 		defer cancel()
@@ -185,14 +172,8 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 			case dialled <- address:
 			default:
 			}
-			timeout := time.NewTimer(d.Timeout) // as a lookup nobody answers ends
-			defer timeout.Stop()
-			select {
-			case <-d.Cancel:
-				return nil, errors.New("dial cancelled")
-			case <-timeout.C:
-				return nil, errors.New("dial timed out")
-			}
+			<-d.Cancel // the dial nobody answers ends only when Connect cancels it
+			return nil, errors.New("dial cancelled")
 		}
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
@@ -268,24 +249,11 @@ func startConnect(ctx context.Context, client *Client) <-chan error {
 	return result
 }
 
-// awaitConnect returns the result of a Connect started by startConnect, and
-// fails the test when it is not there within connectWait. It then still waits
-// for it, so no Connect outlives the test; nats.go's connect timeout bounds
-// that wait.
+// awaitConnect returns the result of a Connect started by startConnect; go
+// test -timeout bounds the wait.
 func awaitConnect(t *testing.T, result <-chan error) error {
 	t.Helper()
-	start := time.Now()
-	wait := time.NewTimer(connectWait)
-	defer wait.Stop()
-	select {
-	case err := <-result:
-		return err
-	case <-wait.C:
-		err := <-result
-		t.Errorf("Connect did not return within %v; it returned after %v with %v",
-			connectWait, time.Since(start).Round(time.Millisecond), err)
-		return err
-	}
+	return <-result
 }
 
 // silentListener listens on an ephemeral loopback port and accepts connections

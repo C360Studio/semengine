@@ -410,6 +410,7 @@ func TestConnectionLossTimeout_FiresAfterGrace(t *testing.T) {
 		select {
 		case e := <-gotErr:
 			assert.Equal(t, disconnectErr, e)
+		// Own deadline: bubble clock, 1 s is past the 50 ms loss grace, so only a watchdog that never fires reaches it
 		case <-time.After(time.Second):
 			t.Fatal("connection-loss callback did not fire within 1s")
 		}
@@ -485,6 +486,7 @@ func TestConnectionLossTimeout_RepeatDisconnectKeepsOriginalDeadline(t *testing.
 				"watchdog fired %v after first disconnect — deadline appears to have been extended", elapsed)
 			assert.GreaterOrEqual(t, elapsed, grace-slack,
 				"watchdog fired too early (%v before grace=%v)", elapsed, grace)
+		// Own deadline: bubble clock, 500 ms is past grace plus slack, so only a watchdog that never fires reaches it
 		case <-time.After(500 * time.Millisecond):
 			t.Fatal("watchdog did not fire within 500ms")
 		}

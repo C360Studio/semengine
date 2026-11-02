@@ -63,11 +63,7 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	callDone := make(chan struct{})
 	defer func() {
 		gate.open()
-		select {
-		case <-callDone:
-		case <-time.After(25 * time.Second):
-			t.Error("public listing task did not join during test cleanup")
-		}
+		<-callDone
 	}()
 	result := make(chan struct {
 		keys []string
@@ -83,11 +79,7 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	}()
 
 	var native nativeWatchConstruction
-	select {
-	case native = <-gate.constructed:
-	case <-time.After(10 * time.Second):
-		t.Fatal("native WatchFiltered construction did not complete")
-	}
+	native = <-gate.constructed
 	require.NoError(t, native.err)
 	require.NotNil(t, native.watcher)
 	updates := native.watcher.Updates()
@@ -105,11 +97,7 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	default:
 		t.Logf("native Updates reached capacity while child live: len=%d cap=%d", filled, cap(updates))
 	}
-	select {
-	case <-native.ctx.Done():
-	case <-time.After(failureBound):
-		t.Error("framework child did not reach its existing deadline")
-	}
+	<-native.ctx.Done()
 	assert.ErrorIs(t, native.ctx.Err(), context.DeadlineExceeded)
 	gate.open()
 
@@ -117,11 +105,7 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 		keys []string
 		err  error
 	}
-	select {
-	case got = <-result:
-	case <-time.After(20 * time.Second):
-		t.Fatal("public filtered listing did not return after native constructor release")
-	}
+	got = <-result
 	assert.Nil(t, got.keys)
 	assert.True(t, errors.Is(got.err, context.DeadlineExceeded), "public error=%v", got.err)
 	// This immediate nonblocking probe is the ownership assertion. A residual

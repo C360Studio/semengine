@@ -80,11 +80,7 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 
 	// The callback runs once the connection has been down for the configured grace; with no
 	// reconnects it never comes back, so a correct client always gets here.
-	select {
-	case <-lost:
-	case <-time.After(failureBound):
-		t.Fatal("connection-lost callback did not fire after the broker restarted")
-	}
+	<-lost
 	waitCtx, waitCancel := context.WithTimeout(ctx, failureBound)
 	defer waitCancel()
 	status, err := probe.Await(waitCtx, func(context.Context) (ConnectionStatus, error) { return manager.Status(), nil },
@@ -222,12 +218,8 @@ func TestIntegration_PublishSubscribe(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify message received
-	select {
-	case msg := <-received:
-		assert.Equal(t, testMessage, msg)
-	case <-time.After(failureBound):
-		t.Fatal("Message not received")
-	}
+	msg := <-received
+	assert.Equal(t, testMessage, msg)
 }
 
 // TestIntegration_JetStream tests JetStream functionality
@@ -275,12 +267,8 @@ func TestIntegration_JetStream(t *testing.T) {
 	t.Cleanup(consumeCtx.Stop)
 
 	// Verify message
-	select {
-	case msg := <-received:
-		assert.Equal(t, "stream message", msg)
-	case <-time.After(failureBound):
-		t.Fatal("Stream message not received")
-	}
+	msg := <-received
+	assert.Equal(t, "stream message", msg)
 }
 
 // TestIntegration_JetStreamMetrics verifies that JetStream metrics are properly collected
@@ -335,11 +323,7 @@ func TestIntegration_JetStreamMetrics(t *testing.T) {
 
 	// Wait for the five deliveries.
 	for i := 0; i < 5; i++ {
-		select {
-		case <-received:
-		case <-time.After(failureBound):
-			t.Fatalf("%d of 5 messages delivered", i)
-		}
+		<-received
 	}
 
 	// Trigger metrics update manually (normally happens every 30s)

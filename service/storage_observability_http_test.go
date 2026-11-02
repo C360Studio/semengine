@@ -398,18 +398,10 @@ func TestStorageReportHTTP_CannotDivergeFromTheMetricsSurface(t *testing.T) {
 	}()
 	t.Cleanup(func() {
 		cancel()
-		select {
-		case <-done:
-		case <-time.After(5 * time.Second):
-			t.Error("the consumer did not stop when its context ended")
-		}
+		<-done
 	})
 
-	select {
-	case <-observer.done:
-	case <-time.After(10 * time.Second):
-		t.Fatal("the consumer did not deliver every published row to the metrics surface")
-	}
+	<-observer.done
 
 	response, _ := wireReport(t, consumer.Snapshot())
 	require.True(t, response.Synced)

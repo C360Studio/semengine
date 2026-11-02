@@ -4,7 +4,6 @@ import (
 	"context"
 	"sync"
 	"testing"
-	"time"
 )
 
 // stubWatcher implements model.Watcher by feeding registries from a
@@ -69,11 +68,7 @@ func TestWatch_DeliversAllRegistries(t *testing.T) {
 	w.ch <- regA
 	w.ch <- regB
 
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for both registries")
-	}
+	<-done
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -94,23 +89,19 @@ func TestWatch_ChannelClose(t *testing.T) {
 	done := make(chan struct{})
 
 	go func() {
-		Watch(context.Background(), w, func(*Registry) {})
+		Watch(t.Context(), w, func(*Registry) {})
 		close(done)
 	}()
 
 	close(w.ch)
 
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("Watch did not return after channel close")
-	}
+	<-done
 }
 
 // Cancelling ctx must terminate Watch even when no updates arrive.
 func TestWatch_ContextCancel(t *testing.T) {
 	w := newStubWatcher()
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 
 	go func() {
@@ -120,11 +111,7 @@ func TestWatch_ContextCancel(t *testing.T) {
 
 	cancel()
 
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("Watch did not return after ctx cancel")
-	}
+	<-done
 }
 
 // Watch passes nil registries through without panicking. config.Manager
@@ -141,18 +128,12 @@ func TestWatch_NilRegistryDelivered(t *testing.T) {
 
 	w.ch <- nil
 
-	select {
-	case r := <-got:
-		if r != nil {
-			t.Errorf("apply got non-nil registry, want nil")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("apply not called for nil registry")
+	if r := <-got; r != nil {
+		t.Errorf("apply got non-nil registry, want nil")
 	}
 }
 
-// Helper used by TestWatch_NilArgs to assert that Watch returns
-// promptly. Sub-second budget is generous.
+// Helper used by TestWatch_NilArgs to assert that Watch returns.
 func assertWatchReturns(t *testing.T, fn func()) {
 	t.Helper()
 	done := make(chan struct{})
@@ -160,11 +141,7 @@ func assertWatchReturns(t *testing.T, fn func()) {
 		fn()
 		close(done)
 	}()
-	select {
-	case <-done:
-	case <-time.After(time.Second):
-		t.Fatal("Watch did not return promptly")
-	}
+	<-done
 }
 
 // Compile-time assertion that the public Watcher interface still

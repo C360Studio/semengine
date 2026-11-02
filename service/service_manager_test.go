@@ -610,7 +610,9 @@ func TestStopAllCutsOpenConnectionsAtItsDeadline(t *testing.T) {
 	entered := make(chan struct{})
 	sawEnd := make(chan struct{})
 	release := newReleaser(t)
-	manager := createTestServiceManager(ManagerConfig{}, createTestServiceDependencies())
+	// An hour's read timeout keeps the server's own read deadline (30 s by default) from ending the
+	// request context, so only StopAll's cut can close sawEnd.
+	manager := createTestServiceManager(ManagerConfig{HTTPReadTimeout: "1h"}, createTestServiceDependencies())
 	require.NoError(t, manager.RegisterInstance("component-manager", newStandInComponentManager()))
 	manager.UseHTTPMiddleware(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -635,11 +637,7 @@ func TestStopAllCutsOpenConnectionsAtItsDeadline(t *testing.T) {
 	deadline, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 100*time.Millisecond)
 	defer cancel()
 	require.ErrorIs(t, manager.StopAll(deadline), context.DeadlineExceeded)
-	select {
-	case <-sawEnd:
-	case <-time.After(stopBound):
-		t.Fatal("the open request's context did not end at StopAll's deadline")
-	}
+	<-sawEnd
 	requireListenerReleased(t, strings.TrimPrefix(url, "http://"))
 	require.Error(t, (<-request).err, "the cut connection answered")
 

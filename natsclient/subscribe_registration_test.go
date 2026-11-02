@@ -487,8 +487,6 @@ func TestSubscribeRegistrationCloseEndsConnectionDuringRoundTrip(t *testing.T) {
 	case r := <-res:
 		requireRefused(t, r.sub, r.err)
 		t.Fatalf("the call returned %v before the server read a PING", r.err)
-	case <-time.After(lifecycleBound):
-		t.Fatalf("the server read no PING within %v", lifecycleBound)
 	}
 	ended, cancel := context.WithCancel(t.Context())
 	cancel()

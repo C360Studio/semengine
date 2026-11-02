@@ -202,8 +202,7 @@ func TestMetricsForwarderReportsItsStatus(t *testing.T) {
 // publish fails over a client that never connects), so the loop is inside its log call and cannot
 // return until released.
 //
-// The two 200 ms windows are this file's only real-clock windows besides the bound on the held
-// record (design "Harness rules"). The first Stop's deadline cannot fail a correct service: the
+// The two 200 ms windows are this file's only real-clock windows (design "Harness rules"). The first Stop's deadline cannot fail a correct service: the
 // held loop keeps the join from finishing, so it can only end at the deadline. The second window
 // is an observation: a forwarder that forgets its loop after a failed Stop returns nil from the
 // second Stop at once; a correct one waits for the held loop.
@@ -220,13 +219,7 @@ func TestMetricsForwarderFailedStopIsRetried(t *testing.T) {
 	stopForwarderAtCleanup(t, mf)
 	t.Cleanup(handler.releaseHeld)
 
-	held := time.NewTimer(stopBound)
-	defer held.Stop()
-	select {
-	case <-handler.heldRecord():
-	case <-held.C:
-		t.Fatalf("the loop's first publish failure was not logged within %s", stopBound)
-	}
+	<-handler.heldRecord()
 
 	firstCtx, cancelFirst := context.WithTimeout(t.Context(), window)
 	defer cancelFirst()

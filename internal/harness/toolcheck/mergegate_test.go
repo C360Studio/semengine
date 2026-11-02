@@ -23,14 +23,14 @@ import (
 // package list into PKGS from scripts/test-pkgs.sh and runs plain go test over it. test:unit runs
 // once under the race detector at one CPU; test:repeat runs five times without it at one CPU in
 // shuffled order, over the repeat packages (the unit packages but the repository guards) or the
-// packages given after --; test:tools runs the tool
+// packages given after --; both carry -timeout 5m, the one deadline their tests have; test:tools runs the tool
 // packages as test:unit runs the unit ones; test:tools:changed runs only scripts/tools-changed.sh.
 // harness-boundaries › "ateam doctor gates verify": ateam:doctor runs ateam doctor --check with the
 // four session variables unset and is verify's first step.
 // Neither line is read from the file under test: these constants are the spec.
 const (
-	requiredUnitCmd         = "go test -race -count=1 -cpu 1 {{.PKGS}}"
-	requiredRepeatCmd       = "go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default .PKGS}}"
+	requiredUnitCmd         = "go test -race -count=1 -cpu 1 -timeout 5m {{.PKGS}}"
+	requiredRepeatCmd       = "go test -count=5 -cpu 1 -shuffle=on -timeout 5m {{.CLI_ARGS | default .PKGS}}"
 	requiredToolsCmd        = "go test -race -count=1 -cpu 1 {{.PKGS}}"
 	requiredToolsChangedCmd = "scripts/tools-changed.sh"
 	requiredAteamDoctorCmd  = "env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID ateam doctor --check"
@@ -126,6 +126,10 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 			[]string{"test:unit", requiredUnitCmd}},
 		{"race added to repeat", taskfile(map[string]string{"test:repeat": pkgs("repeat") + cmds(strings.Replace(requiredRepeatCmd, "go test", "go test -race", 1))}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
+		{"unit timeout dropped", taskfile(map[string]string{"test:unit": pkgs("unit") + cmds(strings.Replace(requiredUnitCmd, " -timeout 5m", "", 1))}), goodVerify,
+			[]string{"test:unit", requiredUnitCmd}},
+		{"repeat timeout widened", taskfile(map[string]string{"test:repeat": pkgs("repeat") + cmds(strings.Replace(requiredRepeatCmd, "-timeout 5m", "-timeout 10m", 1))}), goodVerify,
+			[]string{"test:repeat", requiredRepeatCmd}},
 		{"repeat task missing", taskfile(map[string]string{"test:repeat": ""}), goodVerify,
 			[]string{"test:repeat", "no such task"}},
 		{"integration shuffle dropped", taskfile(integration(rm, strings.Replace(goTest, " -shuffle=on", "", 1), fingerprint)),
@@ -147,7 +151,7 @@ func TestUnitInvocationsPinnedSensitivity(t *testing.T) {
 			[]string{"test:unit", "scripts/test-pkgs.sh unit"}},
 		{"test:repeat reads the unit list", taskfile(map[string]string{"test:repeat": pkgs("unit") + cmds(requiredRepeatCmd)}), goodVerify,
 			[]string{"test:repeat", "scripts/test-pkgs.sh repeat"}},
-		{"repeat has no PKGS and defaults to every package", taskfile(map[string]string{"test:repeat": cmds(`go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default "./..."}}`)}), goodVerify,
+		{"repeat has no PKGS and defaults to every package", taskfile(map[string]string{"test:repeat": cmds(`go test -count=5 -cpu 1 -shuffle=on -timeout 5m {{.CLI_ARGS | default "./..."}}`)}), goodVerify,
 			[]string{"test:repeat", requiredRepeatCmd}},
 		{"integration reads the unit list", taskfile(map[string]string{"test:integration": pkgs("unit") + cmds(requiredIntegrationCmds...)}), goodVerify,
 			[]string{"test:integration", "scripts/test-pkgs.sh integration"}},

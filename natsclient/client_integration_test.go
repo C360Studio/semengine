@@ -5,7 +5,6 @@ package natsclient
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -114,12 +113,8 @@ func TestIntegration_ContextAwareMethods_RealServer(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify message received
-	select {
-	case data := <-received:
-		assert.Equal(t, []byte("response"), data)
-	case <-time.After(failureBound):
-		t.Fatal("Message not received")
-	}
+	data := <-received
+	assert.Equal(t, []byte("response"), data)
 }
 
 // TestIntegration_JetStreamMethods_RealServer tests JetStream methods against a real NATS server.
@@ -173,10 +168,6 @@ func TestIntegration_JetStreamMethods_RealServer(t *testing.T) {
 	t.Cleanup(consumeCtx.Stop)
 
 	// Verify message received
-	select {
-	case data := <-received:
-		assert.Equal(t, []byte("test message"), data)
-	case <-time.After(failureBound):
-		t.Fatal("Stream message not received")
-	}
+	data := <-received
+	assert.Equal(t, []byte("test message"), data)
 }

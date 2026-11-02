@@ -93,7 +93,9 @@ tasks:
       PKGS:
         sh: scripts/test-pkgs.sh unit
     cmds:
-      - go test -race -count=1 -cpu 1 {{.PKGS}}
+      # -timeout 5m is the one deadline a unit package's tests have (merge-gate spec; toolcheck's
+      # TestUnitInvocationsPinned).
+      - go test -race -count=1 -cpu 1 -timeout 5m {{.PKGS}}
 
   test:repeat:
     desc: Run unit tests (every unit package but the repository guards in internal/harness/contract) five times at one CPU without the race detector, shuffled; -- <pkgs> to focus
@@ -101,9 +103,10 @@ tasks:
       PKGS:
         sh: scripts/test-pkgs.sh repeat
     cmds:
-      # The count, the CPU setting and the absence of -race are pinned by the merge-gate spec
-      # (toolcheck's TestUnitInvocationsPinned); one CPU without -race is the setting that found #40.
-      - 'go test -count=5 -cpu 1 -shuffle=on {{.CLI_ARGS | default .PKGS}}'
+      # The count, the CPU setting, the absence of -race and the five-minute timeout (the one deadline
+      # the tests have) are pinned by the merge-gate spec (toolcheck's TestUnitInvocationsPinned); one
+      # CPU without -race is the setting that found #40.
+      - 'go test -count=5 -cpu 1 -shuffle=on -timeout 5m {{.CLI_ARGS | default .PKGS}}'
 
   test:integration:
     desc: Run Docker-backed tests with plain go test over the packages with integration tests, shuffled, two packages at a time; on a pass, record the tree it measured for cover:check; -- <pkgs> to focus

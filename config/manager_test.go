@@ -99,25 +99,17 @@ func TestConfigManager_Subscriptions(t *testing.T) {
 	require.NotNil(t, componentUpdates)
 
 	// Should receive initial config immediately
-	select {
-	case update := <-serviceUpdates:
-		assert.Equal(t, "services.*", update.Path)
-		assert.NotNil(t, update.Config)
-		currentCfg := update.Config.Get()
-		assert.NotNil(t, currentCfg.Services["metrics"])
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout waiting for initial service config")
-	}
+	update := <-serviceUpdates
+	assert.Equal(t, "services.*", update.Path)
+	assert.NotNil(t, update.Config)
+	currentCfg := update.Config.Get()
+	assert.NotNil(t, currentCfg.Services["metrics"])
 
-	select {
-	case update := <-componentUpdates:
-		assert.Equal(t, "components.*", update.Path)
-		assert.NotNil(t, update.Config)
-		currentCfg := update.Config.Get()
-		assert.NotNil(t, currentCfg.Components["udp-sensor"])
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout waiting for initial component config")
-	}
+	update = <-componentUpdates
+	assert.Equal(t, "components.*", update.Path)
+	assert.NotNil(t, update.Config)
+	currentCfg = update.Config.Get()
+	assert.NotNil(t, currentCfg.Components["udp-sensor"])
 }
 
 func TestConfigManager_KVUpdates(t *testing.T) {
@@ -167,12 +159,8 @@ func TestConfigManager_KVUpdates(t *testing.T) {
 	updates := cm.onChange("services.metrics")
 
 	// Should receive initial config from OnChange
-	select {
-	case <-updates:
-		// Got initial config from OnChange
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout waiting for initial config from OnChange")
-	}
+	<-updates
+	// Got initial config from OnChange
 
 	// Update config via KV
 	newConfig := json.RawMessage(`{"enabled":false,"config":{"port":9090}}`)
@@ -180,18 +168,13 @@ func TestConfigManager_KVUpdates(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should receive update
-	select {
-	case update := <-updates:
-		assert.Equal(t, "services.metrics", update.Path)
-		currentCfg := update.Config.Get()
+	update := <-updates
+	assert.Equal(t, "services.metrics", update.Path)
+	currentCfg := update.Config.Get()
 
-		// Verify the config was updated
-		metricsService := currentCfg.Services["metrics"]
-		assert.Equal(t, false, metricsService.Enabled)
-
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for config update")
-	}
+	// Verify the config was updated
+	metricsService := currentCfg.Services["metrics"]
+	assert.Equal(t, false, metricsService.Enabled)
 }
 
 func TestConfigManager_PushToKVWritesEverySection(t *testing.T) {
@@ -369,11 +352,7 @@ func TestConfigManager_ModelRegistryKVUpdate(t *testing.T) {
 	updates := cm.onChange("model_registry")
 
 	// Drain initial config from OnChange
-	select {
-	case <-updates:
-	case <-time.After(100 * time.Millisecond):
-		t.Fatal("timeout waiting for initial config from OnChange")
-	}
+	<-updates
 
 	// Update model registry via KV (simulating external mutation)
 	updatedRegistry := &model.Registry{
@@ -401,17 +380,13 @@ func TestConfigManager_ModelRegistryKVUpdate(t *testing.T) {
 	require.NoError(t, err)
 
 	// Should receive update via watcher
-	select {
-	case update := <-updates:
-		assert.Equal(t, "model_registry", update.Path)
-		currentCfg := update.Config.Get()
-		require.NotNil(t, currentCfg.ModelRegistry)
-		assert.Contains(t, currentCfg.ModelRegistry.Endpoints, "claude-4")
-		assert.Equal(t, "anthropic", currentCfg.ModelRegistry.Endpoints["claude-4"].Provider)
-		assert.Equal(t, "claude-4", currentCfg.ModelRegistry.Defaults.Model)
-	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for model_registry update")
-	}
+	update := <-updates
+	assert.Equal(t, "model_registry", update.Path)
+	currentCfg := update.Config.Get()
+	require.NotNil(t, currentCfg.ModelRegistry)
+	assert.Contains(t, currentCfg.ModelRegistry.Endpoints, "claude-4")
+	assert.Equal(t, "anthropic", currentCfg.ModelRegistry.Endpoints["claude-4"].Provider)
+	assert.Equal(t, "claude-4", currentCfg.ModelRegistry.Defaults.Model)
 }
 
 // TestConfigManager_WatchModelRegistry verifies the typed convenience
@@ -486,15 +461,11 @@ func TestConfigManager_WatchModelRegistry(t *testing.T) {
 	require.NoError(t, err)
 
 	// WatchModelRegistry must emit the new registry.
-	select {
-	case got := <-regCh:
-		require.NotNil(t, got)
-		assert.Equal(t, "swapped", got.GetDefault())
-		assert.NotNil(t, got.GetEndpoint("swapped"))
-		assert.Nil(t, got.GetEndpoint("initial"))
-	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for WatchModelRegistry update")
-	}
+	got := <-regCh
+	require.NotNil(t, got)
+	assert.Equal(t, "swapped", got.GetDefault())
+	assert.NotNil(t, got.GetEndpoint("swapped"))
+	assert.Nil(t, got.GetEndpoint("initial"))
 }
 
 // TestConfigManager_WatchModelRegistry_ImplementsModelWatcher proves
@@ -536,11 +507,7 @@ func TestConfigManager_MultipleSubscribers(t *testing.T) {
 
 	// All should receive initial config
 	for i, sub := range []<-chan update{sub1, sub2, sub3} {
-		select {
-		case update := <-sub:
-			assert.NotNil(t, update.Config, "subscriber %d", i+1)
-		case <-time.After(100 * time.Millisecond):
-			t.Fatalf("timeout waiting for initial config on subscriber %d", i+1)
-		}
+		update := <-sub
+		assert.NotNil(t, update.Config, "subscriber %d", i+1)
 	}
 }

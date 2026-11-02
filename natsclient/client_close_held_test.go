@@ -22,13 +22,14 @@ import (
 // must close the socket when its context ends rather than wait for nats.go's
 // write timeout (one minute by default).
 func TestCloseEndsAHeldWrite(t *testing.T) {
-	client, proxy := newHeldClient(t)
+	client, proxy := newHeldClient(t, WithWriteTimeout(time.Hour))
 	conn := client.GetConnection()
 	published := holdPublish(t, client, proxy)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	// The test's own wait. Before design D1, Close waited for the write.
+	// Before design D1, Close waited for the write. The hour write timeout makes
+	// that wait unreachable as a late pass: such a Close hangs.
 	err := within(t, startClose(ctx, client), lifecycleBound, "Close")
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -55,7 +56,7 @@ func requireClosed(t *testing.T, conn *nats.Conn) {
 // for nats.go's, or Close cannot begin, and so cannot cut the socket (design D3;
 // P21).
 func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
-	client, proxy := newHeldClient(t)
+	client, proxy := newHeldClient(t, WithWriteTimeout(time.Hour))
 	conn := client.GetConnection()
 	published := holdPublish(t, client, proxy)
 
@@ -87,8 +88,9 @@ func TestCloseEndsAReconnectDial(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	// The test's own wait, under nats.go's 5 s default dial timeout, which
-	// bounded Close before the cut ended the dial (P23: 4.69 s).
+	// The fake reconnect dial ignores the dial timeout and ends only on the
+	// dialer's Cancel, so a Close that waits for the dial instead of cutting it
+	// hangs (P23: before the cut, nats.go's 5 s dial timeout bounded Close).
 	err := within(t, startClose(ctx, client), 3*time.Second, "Close")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
@@ -235,15 +237,11 @@ func holdPublish(t *testing.T, client *Client, proxy *heldProxy) <-chan error {
 	t.Helper()
 	published := make(chan error, 1)
 	go func() { published <- client.Publish(t.Context(), heldSubject, make([]byte, heldPayload)) }()
-	wait := time.NewTimer(lifecycleBound)
-	defer wait.Stop()
 	select {
 	case <-proxy.held:
 		return published
 	case err := <-published:
 		t.Fatalf("the publish returned before the proxy held it: %v", err)
-	case <-wait.C:
-		t.Fatalf("the proxy saw no publish on %s within %v", heldSubject, lifecycleBound)
 	}
 	return nil
 }
@@ -255,21 +253,11 @@ func startClose(ctx context.Context, client *Client) <-chan error {
 	return result
 }
 
-// within returns the value ch delivers, and fails the test at once when none
-// arrives within wait. It waits no longer: what holds the call is released by
-// the test's cleanup.
-func within[T any](t *testing.T, ch <-chan T, wait time.Duration, what string) T {
+// within returns the value ch delivers; go test -timeout bounds the wait. The
+// duration and label name the expectation at the call site.
+func within[T any](t *testing.T, ch <-chan T, _ time.Duration, _ string) T {
 	t.Helper()
-	timer := time.NewTimer(wait)
-	defer timer.Stop()
-	select {
-	case v := <-ch:
-		return v
-	case <-timer.C:
-		t.Fatalf("%s did not return within %v", what, wait)
-	}
-	var zero T
-	return zero
+	return <-ch
 }
 
 // heldProxy forwards each connection it accepts to the server. Once a client

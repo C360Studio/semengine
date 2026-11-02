@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 	"unsafe"
 
 	"github.com/c360studio/semengine/graph"
@@ -520,7 +519,7 @@ func TestUpsertDuringBlockedWrite(t *testing.T) {
 	m.BootstrapDone()
 
 	// The write waits only on release, not on the KVStore's own timeout, so an Upsert that
-	// waited on it would wait past the bound below.
+	// waited on it would never return.
 	entered := make(chan struct{})
 	release := make(chan struct{})
 	var entering, releasing sync.Once
@@ -541,14 +540,9 @@ func TestUpsertDuringBlockedWrite(t *testing.T) {
 		err := m.Upsert("acme.dep1.src.docs.note.n3", 1, textState("acme.dep1.src.docs.note.n3", "gamma"))
 		applied <- errors.Join(err, m.Delete("acme.dep1.src.docs.note.n2", 2))
 	}()
-	// The timer only bounds the wait; the receive orders the check after Upsert and Delete.
-	select {
-	case err := <-applied:
-		if err != nil {
-			t.Fatalf("Upsert/Delete during a blocked write: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("Upsert/Delete waited on the blocked write")
+	// The receive orders the check after Upsert and Delete.
+	if err := <-applied; err != nil {
+		t.Fatalf("Upsert/Delete during a blocked write: %v", err)
 	}
 
 	releasing.Do(func() { close(release) })

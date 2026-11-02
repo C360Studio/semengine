@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 
@@ -225,16 +224,10 @@ func TestStopInterruptedThenRetriedWritesAcceptedWork(t *testing.T) {
 		func(context.Context) (string, error) { return c.Health().Status, nil },
 		func(status string) bool { return status == "stopped" })
 	cancel()
-	select {
-	case err := <-first:
-		if err == nil {
-			t.Fatal("the first Stop returned nil: the drain finished before the cancel, no backlog interrupted")
-		}
-		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("first Stop = %v, want context.Canceled", err)
-		}
-	case <-time.After(waitBound):
-		t.Fatal("the first Stop did not return after its context ended")
+	if err := <-first; err == nil {
+		t.Fatal("the first Stop returned nil: the drain finished before the cancel, no backlog interrupted")
+	} else if !errors.Is(err, context.Canceled) {
+		t.Fatalf("first Stop = %v, want context.Canceled", err)
 	}
 
 	stopComponent(t, c)

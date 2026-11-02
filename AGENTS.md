@@ -104,7 +104,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `verify+review` | Test cleanup never stops, closes, or terminates under an unbounded context | `harness-boundaries` spec |
 | `review` | Tests confirm a child process is still running before inspecting it | `docs/testing.md` |
 | `review` | A test running a `nats.go` connection inside `testing/synctest` runs in its own test process (#156) | `docs/testing.md` |
-| `review` | An assertion on state another goroutine writes waits on the event that orders the read after the write, named in a comment when not the line before; never wall clock alone or an unordered log line (#392) | `docs/testing.md`; `dev`, `rev` |
+| `verify+review` | An assertion on state another goroutine writes waits on the event that orders the read after the write, named in a comment when not the line before; never wall clock alone or an unordered log line; no test sets its own deadline for work that must finish, `go test -timeout` is the one deadline (#392, #500) | `docs/testing.md`; `harness-boundaries` spec; `dev`, `rev` |
 | `verify` | Tests bind no fixed address or port | `harness-boundaries` spec |
 | `verify+review` | A test's port-0 pick is in the family that is bound; an every-address pick says why with `// Every address: <reason>` on the line above; a release check dials the listener's own loopback (#390, #391) | `harness-boundaries` spec; `docs/testing.md`; `rev` |
 | `verify+review` | No `time.Sleep` in a test file or under `internal/harness/` | `harness-boundaries` spec |

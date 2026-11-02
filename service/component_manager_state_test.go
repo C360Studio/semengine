@@ -85,18 +85,6 @@ func stateGet(mux *http.ServeMux, path string) *httptest.ResponseRecorder {
 	return recorder
 }
 
-// stateReadReturns runs read on its own goroutine and fails the test, naming description, unless
-// it returns within stopBound. A read that waits on a held Start or Stop is reported, not hung.
-func stateReadReturns(t *testing.T, description string, read func()) {
-	t.Helper()
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		read()
-	}()
-	waitForSignal(t, done, description+" to return")
-}
-
 // stateStartOrders returns each component's StartOrder as withComponents hands it out.
 func stateStartOrders(t *testing.T, cm *ComponentManager) map[string]int {
 	t.Helper()
@@ -209,24 +197,23 @@ func TestComponentReadsReturnWhileAComponentStartIsBlocked(t *testing.T) {
 	defer release()
 	started := make(chan error, 1)
 	go func() { started <- cm.Start(t.Context()) }()
-	waitForSignal(t, held.startEntered, "the held component's Start")
+	<-held.startEntered
 
+	// Each read below returns while the call is held; one that waits on it hangs until go test -timeout.
 	var statuses map[string]ComponentStatus
-	stateReadReturns(t, "GetComponentStatus during a held Start", func() { statuses = cm.GetComponentStatus() })
+	statuses = cm.GetComponentStatus()
 	require.Equal(t, component.StateStarted, statuses[provider.name].State,
 		"a sibling whose Start returned does not read started")
 	require.NotEqual(t, component.StateStarted, statuses[held.name].State,
 		"a component whose Start has not returned reads started")
 
 	var health map[string]component.HealthStatus
-	stateReadReturns(t, "GetComponentHealth during a held Start", func() { health = cm.GetComponentHealth() })
+	health = cm.GetComponentHealth()
 	require.Contains(t, health, held.name, "GetComponentHealth did not ask the component whose Start is held")
 	require.Contains(t, health, provider.name)
 
 	var response *httptest.ResponseRecorder
-	stateReadReturns(t, "/components/status/{name} during a held Start", func() {
-		response = stateGet(mux, "/components/status/"+held.name)
-	})
+	response = stateGet(mux, "/components/status/"+held.name)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 
 	release()
@@ -267,10 +254,11 @@ func TestComponentReadsReturnWhileAComponentStopIsBlocked(t *testing.T) {
 	stopCtx := stopContext(t)
 	stopped := make(chan error, 1)
 	go func() { stopped <- cm.Stop(stopCtx) }()
-	waitForSignal(t, stopEntered, "the held component's Stop")
+	<-stopEntered
 
+	// Each read below returns while the call is held; one that waits on it hangs until go test -timeout.
 	var statuses map[string]ComponentStatus
-	stateReadReturns(t, "GetComponentStatus during a held Stop", func() { statuses = cm.GetComponentStatus() })
+	statuses = cm.GetComponentStatus()
 	require.Equal(t, component.StateStopped, statuses[sibling.name].State,
 		"a sibling whose Stop returned does not read stopped")
 	require.NotEqual(t, component.StateStopped, statuses[held.name].State,
@@ -278,15 +266,13 @@ func TestComponentReadsReturnWhileAComponentStopIsBlocked(t *testing.T) {
 
 	heldCalls := held.healthCalls.Load()
 	var health map[string]component.HealthStatus
-	stateReadReturns(t, "GetComponentHealth during a held Stop", func() { health = cm.GetComponentHealth() })
+	health = cm.GetComponentHealth()
 	require.Greater(t, held.healthCalls.Load(), heldCalls, "GetComponentHealth did not ask the component whose Stop is held")
 	require.Equal(t, component.HealthStatus{Healthy: true, Status: "running"}, health[held.name])
 	require.Equal(t, component.HealthStatus{Healthy: false, Status: "stopped"}, health[sibling.name])
 
 	var response *httptest.ResponseRecorder
-	stateReadReturns(t, "/components/status/{name} during a held Stop", func() {
-		response = stateGet(mux, "/components/status/"+held.name)
-	})
+	response = stateGet(mux, "/components/status/"+held.name)
 	require.Equal(t, http.StatusOK, response.Code, response.Body.String())
 
 	release()
@@ -474,7 +460,7 @@ func TestComponentReadsRaceStartAndStop(t *testing.T) {
 	require.NoError(t, cm.Start(t.Context()))
 	require.ErrorIs(t, cm.Stop(stopContext(t)), errRaceStop)
 	failedStopReturned.Store(true)
-	waitForSignal(t, checkedBetween, "a health check between the failing Stop and its retry")
+	<-checkedBetween
 	retryBegun.Store(true)
 	require.NoError(t, cm.Stop(stopContext(t)))
 	endReaders()

@@ -113,11 +113,7 @@ func TestVectorCacheRunLeavesNoWatchDelivery(t *testing.T) {
 				return true
 			}, 1)
 		}()
-		select {
-		case <-entered:
-		case <-time.After(cacheWaitBound):
-			t.Fatal("keep was not called")
-		}
+		<-entered
 		rewrite()
 		// The stack dump showing the native delivery blocked on its full buffer orders the
 		// cancellation after the backlog, not elapsed time.
@@ -164,11 +160,7 @@ func TestVectorCacheRunReportsLostWatch(t *testing.T) {
 		t.Fatalf("delete %s: %v", cacheBucket, err)
 	}
 	// Run returns on its own, its context still live, once the update channel closes.
-	select {
-	case err = <-done:
-	case <-time.After(cacheWaitBound):
-		t.Fatal("Run did not return after its bucket was deleted")
-	}
+	err = <-done
 	if err == nil || errors.Is(err, context.Canceled) || !errors.Is(err, errWatchLost) {
 		t.Fatalf("Run returned %v; want the lost-watch error", err)
 	}

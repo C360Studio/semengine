@@ -66,6 +66,7 @@ func TestCoalescingSet_DeduplicatesKeys(t *testing.T) {
 			}
 			assert.True(t, keySet["entity-1"], "entity-1 should be present")
 			assert.True(t, keySet["entity-2"], "entity-2 should be present")
+		// Own deadline: bubble clock, the deduplicated batch fires within one second of the 50 ms window
 		case <-time.After(1 * time.Second):
 			t.Fatal("callback did not fire within timeout")
 		}
@@ -108,6 +109,7 @@ func TestCoalescingSet_CallbackFiresAfterWindow(t *testing.T) {
 			}
 			assert.True(t, keySet["entity-1"])
 			assert.True(t, keySet["entity-2"])
+		// Own deadline: bubble clock, the batch fires within two windows
 		case <-time.After(2 * windowDuration):
 			t.Fatal("callback did not fire within expected window")
 		}
@@ -195,6 +197,7 @@ func TestCoalescingSet_RemoveExcludesFromBatch(t *testing.T) {
 			assert.True(t, keySet["entity-1"])
 			assert.False(t, keySet["entity-2"], "removed key should not be present")
 			assert.True(t, keySet["entity-3"])
+		// Own deadline: bubble clock, the batch fires within one second of the 50 ms window
 		case <-time.After(1 * time.Second):
 			t.Fatal("callback did not fire")
 		}
@@ -220,6 +223,7 @@ func TestCoalescingSet_RemovePrefixExcludesMatchingKeys(t *testing.T) {
 		select {
 		case keys := <-received:
 			require.ElementsMatch(t, []string{"entity-10\x00watch-a\x001"}, keys)
+		// Own deadline: bubble clock, the batch fires within 500 ms of the 50 ms window
 		case <-time.After(500 * time.Millisecond):
 			t.Fatal("timed out waiting for coalesced batch")
 		}
@@ -301,6 +305,7 @@ func TestCoalescingSet_ZeroWindow(t *testing.T) {
 		case keys := <-callbackCh:
 			require.NotEmpty(t, keys, "should receive keys")
 			assert.Contains(t, keys, "entity-1")
+		// Own deadline: bubble clock, a zero window fires within 100 ms
 		case <-time.After(100 * time.Millisecond):
 			t.Fatal("callback did not fire quickly with zero window")
 		}
@@ -420,6 +425,7 @@ func TestCoalescingSet_ConcurrentAdds(t *testing.T) {
 			}
 			// At minimum we should have the shared-key
 			assert.True(t, keySet["shared-key"], "should have shared-key")
+		// Own deadline: bubble clock, the batch fires within two seconds of the 100 ms window
 		case <-time.After(2 * time.Second):
 			t.Fatal("callback did not fire")
 		}
@@ -512,6 +518,7 @@ func TestCoalescingSet_RapidUpdates(t *testing.T) {
 			assert.True(t, keySet["entity-1"])
 			assert.True(t, keySet["entity-2"])
 			assert.True(t, keySet["entity-3"])
+		// Own deadline: bubble clock, the batch fires within two seconds of the 100 ms window
 		case <-time.After(2 * time.Second):
 			t.Fatal("callback did not fire")
 		}
@@ -559,6 +566,7 @@ func TestCoalescingSet_EntityUpdateScenario(t *testing.T) {
 			assert.True(t, keySet["entity-A"], "entity-A should be present")
 			assert.True(t, keySet["entity-B"], "entity-B should be present")
 			assert.False(t, keySet["entity-C"], "entity-C should not be present (was removed)")
+		// Own deadline: bubble clock, the batch fires within two seconds of the 100 ms window
 		case <-time.After(2 * time.Second):
 			t.Fatal("callback did not fire")
 		}
@@ -641,6 +649,7 @@ func TestCoalescingSet_RemoveNonexistentKey(t *testing.T) {
 			}
 			assert.True(t, keySet["entity-1"])
 			assert.True(t, keySet["entity-2"])
+		// Own deadline: bubble clock, the batch fires within one second of the 50 ms window
 		case <-time.After(1 * time.Second):
 			t.Fatal("callback did not fire")
 		}
@@ -668,6 +677,7 @@ func TestCoalescingSet_EmptyKeyString(t *testing.T) {
 			// Implementation may choose to accept or reject empty keys
 			// Verify it handles consistently without panic
 			require.NotEmpty(t, keys, "should receive some keys")
+		// Own deadline: bubble clock, the batch fires within one second of the 50 ms window
 		case <-time.After(1 * time.Second):
 			t.Fatal("callback did not fire")
 		}

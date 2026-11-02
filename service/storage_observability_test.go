@@ -57,20 +57,6 @@ func awaitStorageHealthy(t *testing.T, s *StorageObservabilityService, why strin
 	return status
 }
 
-// awaitStorageLog fails the test unless ch closes within storageLoopBound.
-func awaitStorageLog(t *testing.T, ch <-chan struct{}, what string) {
-	t.Helper()
-	timer := time.NewTimer(storageLoopBound)
-	defer timer.Stop()
-	select {
-	case <-ch:
-	case <-timer.C:
-		t.Fatalf("%s: not within %s", what, storageLoopBound)
-	case <-t.Context().Done():
-		t.Fatalf("%s: test context ended", what)
-	}
-}
-
 // stopStorageObservabilityAtCleanup stops s when the test ends, under a bounded context detached
 // from the test's, which has ended by then.
 func stopStorageObservabilityAtCleanup(t *testing.T, s *StorageObservabilityService) {
@@ -234,7 +220,7 @@ func TestStorageObservabilityFailedStopIsRetried(t *testing.T) {
 	stopStorageObservabilityAtCleanup(t, s)
 	t.Cleanup(handler.releaseHeld)
 
-	awaitStorageLog(t, handler.heldRecord(), "the collector's failure record held")
+	<-handler.heldRecord()
 
 	firstCtx, cancelFirst := context.WithTimeout(t.Context(), window)
 	defer cancelFirst()
@@ -277,8 +263,8 @@ func TestStorageObservabilityBootsWithoutAReachableAccount(t *testing.T) {
 	require.NoError(t, s.Start(t.Context()), "Start must not depend on account state")
 	stopStorageObservabilityAtCleanup(t, s)
 
-	awaitStorageLog(t, collectorFailed, "the collector's failure warning")
-	awaitStorageLog(t, watchFailed, "the consumer's watch warning")
+	<-collectorFailed
+	<-watchFailed
 
 	status := awaitStorageHealthy(t, s, "an unreadable account must not make the service unhealthy")
 	assert.Contains(t, status.Message, "storage report has not been read yet")

@@ -60,11 +60,7 @@ func (h *heldHandler) releaseHandler() { h.once.Do(func() { close(h.release) }) 
 
 func (h *heldHandler) awaitEntered(t *testing.T) {
 	t.Helper()
-	select {
-	case <-h.entered:
-	case <-time.After(failureBound):
-		t.Fatal("the handler never received the first message")
-	}
+	<-h.entered
 }
 
 // expectHeld calls WaitConsumerHandlers under a context of heldWait and requires the call to end
@@ -192,11 +188,7 @@ func TestWaitConsumerHandlersContextEndsFirst(t *testing.T) {
 	// delivered to the handler.
 	held.releaseHandler()
 	require.NoError(t, tc.Client.PublishToStream(t.Context(), "w3.ctx.second", []byte("second")))
-	select {
-	case <-held.later:
-	case <-time.After(failureBound):
-		t.Fatal("a message published after the wait ended was not delivered: the wait stopped the consumer")
-	}
+	<-held.later
 
 	handle.Stop()
 	expectReturned(t, tc.Client, handle)
@@ -261,11 +253,7 @@ func TestWaitConsumerHandlersAfterClose(t *testing.T) {
 		})
 	require.NoError(t, err)
 	require.NoError(t, tc.Client.PublishToStream(t.Context(), "w5.close.work", []byte("work")))
-	select {
-	case <-delivered:
-	case <-time.After(failureBound):
-		t.Fatal("the handler never received the message")
-	}
+	<-delivered
 
 	// The handle is never stopped: Close stops it and joins its handlers.
 	closeClient(t, tc.Client)

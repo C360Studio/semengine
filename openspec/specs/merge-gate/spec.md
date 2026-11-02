@@ -14,11 +14,11 @@ its head by a different, not-weaker agent); this specification covers how the ga
 
 ### Requirement: Varied and repeated unit runs
 
-`task test:unit` SHALL run `go test -race -count=1 -cpu 1` over the unit packages: every package `go list ./...`
-names but the tool packages. `task test:repeat` SHALL run `go test -count=5 -cpu 1 -shuffle=on` over the packages
-after `--`, else the repeat packages: the unit packages but `internal/harness/contract`. A pinning test SHALL fail
-when a command line or the `scripts/verify.sh` step list differs from this or from "Verify runs both unit steps, the
-repeat step last".
+`task test:unit` SHALL run `go test -race -count=1 -cpu 1 -timeout 5m` over the unit packages (every package
+`go list ./...` names but the tool packages). `task test:repeat` SHALL run `go test -count=5 -cpu 1 -shuffle=on
+-timeout 5m` over the packages after `--`, else the repeat packages (the unit packages but
+`internal/harness/contract`). A pinning test SHALL fail when a command line or the `scripts/verify.sh` step list
+differs from this or from the next requirement.
 
 #### Scenario: Count lowered
 
@@ -39,6 +39,18 @@ repeat step last".
 
 - **WHEN** the `test:repeat` command in `Taskfile.yml` defaults to `./...` instead of the repeat packages
 - **THEN** the pinning test fails naming the task and the required command
+
+#### Scenario: Timeout dropped or widened
+
+- **WHEN** the `test:unit` or `test:repeat` command in `Taskfile.yml` has no `-timeout 5m`
+- **THEN** the pinning test fails naming the task and the required command
+
+#### Scenario: Why five minutes
+
+- **WHEN** a unit package hangs
+- **THEN** go test ends it at five minutes and prints every goroutine's stack, inside CI's 15-minute job; the bound is
+  four times the slowest package's measured time (`internal/harness/contract`, 72 s on CI run 41442032443), and no
+  test sets a shorter deadline of its own (`harness-boundaries`, "No own deadlines in tests")
 
 ### Requirement: Verify runs both unit steps, the repeat step last
 

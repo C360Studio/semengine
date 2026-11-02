@@ -112,20 +112,6 @@ func stopLogger(t *testing.T, ml *MessageLogger) error {
 	return ml.Stop(ctx)
 }
 
-// awaitSignal waits for ch under the test's context, bounded at stopBound.
-func awaitSignal(t *testing.T, ch <-chan struct{}, what string) {
-	t.Helper()
-	timer := time.NewTimer(stopBound)
-	defer timer.Stop()
-	select {
-	case <-ch:
-	case <-timer.C:
-		t.Fatalf("%s: not within %s", what, stopBound)
-	case <-t.Context().Done():
-		t.Fatalf("%s: test context ended", what)
-	}
-}
-
 // TestMessageLoggerMonitorsOnlyConfiguredSubjects carries the pin's explicit mode
 // (message_logger_registry_test.go:19-29, subscription_integration_test.go:17-56) onto the shared
 // server: with explicit monitor_subjects the logger monitors exactly those, sorted and
@@ -198,7 +184,7 @@ func TestMessageLoggerStopDrainsInFlightMessage(t *testing.T) {
 	first := capturedMessage{Subject: "logger.drain", Payload: `{"n":1}`}
 	second := capturedMessage{Subject: "logger.drain", Payload: `{"n":2}`}
 	publishAndFlush(t, client, first)
-	awaitSignal(t, handler.heldRecord(), "message 1's sample record held")
+	<-handler.heldRecord()
 	publishAndFlush(t, client, second)
 
 	stopCtx, cancel := context.WithTimeout(t.Context(), stopBound)
@@ -207,7 +193,7 @@ func TestMessageLoggerStopDrainsInFlightMessage(t *testing.T) {
 	stopResult := make(chan error, 1)
 	go func() { stopResult <- ml.Stop(observed) }()
 	// Stop waits on its context while the held callback keeps the drain from finishing.
-	awaitSignal(t, observed.Observed(), "Stop waiting on its context")
+	<-observed.Observed()
 	select {
 	case err := <-stopResult:
 		t.Fatalf("Stop returned while message 1's callback was held: %v", err)
@@ -240,7 +226,7 @@ func TestMessageLoggerFailedStopIsRetried(t *testing.T) {
 
 	held := capturedMessage{Subject: "logger.retry-stop", Payload: `{"n":1}`}
 	publishAndFlush(t, client, held)
-	awaitSignal(t, handler.heldRecord(), "the sample record held")
+	<-handler.heldRecord()
 
 	firstCtx, cancelFirst := context.WithTimeout(t.Context(), window)
 	defer cancelFirst()

@@ -122,7 +122,7 @@ func TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing(t *testing.T)
 	defer cancelStart()
 	startResult := make(chan error, 1)
 	go func() { startResult <- owner.Start(startCtx) }()
-	awaitSignal(t, handler.heldRecord(), "the subject's Subscribed record held")
+	<-handler.heldRecord()
 	cancelStart()
 	handler.releaseHeld()
 

@@ -89,21 +89,6 @@ func barrierStopOnCleanup(t *testing.T, cm *ComponentManager) {
 	})
 }
 
-// barrierStartResult waits for the result of a Start running on another goroutine, failing the
-// test, naming description, once stopBound passes.
-func barrierStartResult(t *testing.T, done <-chan error, description string) error {
-	t.Helper()
-	timer := time.NewTimer(stopBound)
-	defer timer.Stop()
-	select {
-	case err := <-done:
-		return err
-	case <-timer.C:
-		t.Fatalf("timed out waiting for %s", description)
-		return nil
-	}
-}
-
 // barrierNotEntered fails the test if entered closes within negativeWindow: a component of a
 // later phase that starts while the earlier phase is held.
 func barrierNotEntered(t *testing.T, entered <-chan struct{}, description string) {
@@ -151,22 +136,22 @@ func TestComponentManagerStart_ProvidersRegisterBeforeConcurrentConsumers(t *tes
 
 	// Both providers are inside Start at once: the provider phase starts its components
 	// concurrently.
-	waitForSignal(t, providerA.entered, "provider-a to start in the provider phase")
-	waitForSignal(t, providerB.entered, "provider-b to start in the provider phase")
+	<-providerA.entered
+	<-providerB.entered
 	barrierNotEntered(t, consumerA.entered, "consumer-a started before the provider phase completed")
 	barrierNotEntered(t, consumerB.entered, "consumer-b started before the provider phase completed")
 
 	close(providerRelease)
 
-	waitForSignal(t, consumerA.entered, "consumer-a to start in the consumer phase")
-	waitForSignal(t, consumerB.entered, "consumer-b to start in the consumer phase")
+	<-consumerA.entered
+	<-consumerB.entered
 	_, ok := cm.storeRegistry.Streamable("store-a")
 	assert.True(t, ok, "provider-a's store was not registered before consumers started")
 	_, ok = cm.storeRegistry.Streamable("store-b")
 	assert.True(t, ok, "provider-b's store was not registered before consumers started")
 
 	close(consumerRelease)
-	require.NoError(t, barrierStartResult(t, done, "Start to return after both phases"))
+	require.NoError(t, <-done)
 }
 
 func TestComponentManagerStart_ProviderFailurePreventsConsumerPhase(t *testing.T) {
@@ -305,7 +290,7 @@ func TestComponentManagerStart_WaitsForAllComponentStarts(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- cm.Start(t.Context()) }()
 
-	waitForSignal(t, gated.entered, "the gated component to enter Start")
+	<-gated.entered
 	select {
 	case err := <-done:
 		t.Fatalf("ComponentManager.Start returned (err=%v) while a component Start was in flight", err)
@@ -313,7 +298,7 @@ func TestComponentManagerStart_WaitsForAllComponentStarts(t *testing.T) {
 	}
 
 	close(gated.release)
-	require.NoError(t, barrierStartResult(t, done, "Start to return after the gate opened"))
+	require.NoError(t, <-done)
 	select {
 	case <-gated.startReturned:
 	default:

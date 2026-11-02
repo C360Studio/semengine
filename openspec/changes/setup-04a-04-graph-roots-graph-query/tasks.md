@@ -15,7 +15,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
   ones, since `processor/graph-ingest/failed_start_callbacks_integration_test.go:61` finds `batch` by name alone; a
   real name lookup checks the responder. Premise: `graph/query_verbs.go:5-11` (D1). Check:
   `TestQueryVerbsDeclareEachRespondersVerbs`.
-- [ ] 2.2 graph-index compares `min_revision` on all eight verbs. Premise: `processor/graph-index/query.go:79`,
+- [x] 2.2 graph-index compares `min_revision` on all eight verbs. Premise: `processor/graph-index/query.go:79`,
   `:398-399` (D3). Check: `TestMinRevisionBoundary`, shown to fail with the comparison removed.
 
 ## 3. Component

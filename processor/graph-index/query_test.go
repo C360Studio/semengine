@@ -58,6 +58,59 @@ func TestQueryRefusesInvalidRequestsBeforeAnyRead(t *testing.T) {
 	}
 }
 
+// TestMinRevisionMalformedIsRefusedBeforeAnyRead: a min_revision that is not a whole number from 0
+// to the largest uint64 is an invalid request on every verb, and validation comes before the
+// comparison. The component is never started, so a request that got past validation panics on
+// the missing follower, as in TestQueryRefusesInvalidRequestsBeforeAnyRead.
+func TestMinRevisionMalformedIsRefusedBeforeAnyRead(t *testing.T) {
+	c, err := createFromJSON(t, `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handlers := c.queryHandlers()
+	valid := map[string]string{
+		"outgoing":          `"entity_id":"acme.ops.test.system.widget.001"`,
+		"incoming":          `"entity_id":"acme.ops.test.system.widget.001"`,
+		"alias":             `"alias":"alpha-1"`,
+		"predicate":         `"predicate":"test.link.to"`,
+		"predicateList":     `"namespace":"test"`,
+		"predicateStats":    `"predicate":"test.link.to"`,
+		"predicateCompound": `"predicates":["test.link.to"],"operator":"AND"`,
+		"byName":            `"name":"Alpha"`,
+	}
+	invalid := map[string]string{
+		"outgoing":          `"entity_id":"acme.ops.test.system.widget"`,
+		"incoming":          `"entity_id":"acme.ops.test.system.widget"`,
+		"alias":             `"alias":"  "`,
+		"predicate":         `"predicate":"test.link"`,
+		"predicateList":     `"namespace":"*"`,
+		"predicateStats":    `"predicate":"test.link"`,
+		"predicateCompound": `"predicates":[],"operator":"AND"`,
+		"byName":            `"name":""`,
+	}
+	if len(valid) != len(handlers) || len(invalid) != len(handlers) {
+		t.Fatalf("cases cover %d and %d verbs, graph-index has %d handlers", len(valid), len(invalid), len(handlers))
+	}
+	requireInvalid := func(verb, body string) {
+		t.Helper()
+		reply, err := handlers[verb](context.Background(), []byte(body))
+		var classified *errs.ClassifiedError
+		if !errors.As(err, &classified) || classified.Class != errs.ErrorInvalid ||
+			classified.Code != graph.ErrorCodeInvalidRequest {
+			t.Errorf("%s %s: reply %q err %v, want class invalid, code %s", verb, body, reply, err,
+				graph.ErrorCodeInvalidRequest)
+		}
+	}
+	for verb, fields := range valid {
+		for _, malformed := range []string{`-1`, `1.5`, `1e3`, `"7"`, `true`, `{}`, `[7]`, `18446744073709551616`} {
+			requireInvalid(verb, `{`+fields+`,"min_revision":`+malformed+`}`)
+		}
+	}
+	for verb, fields := range invalid {
+		requireInvalid(verb, `{`+fields+`,"min_revision":7}`)
+	}
+}
+
 // TestRankNameMatches (pin name_index_test.go:24-65): exact case ranks first, then lower
 // priority, then entity ID; one match per entity, its best; the limit applies after ranking.
 func TestRankNameMatches(t *testing.T) {

@@ -73,15 +73,21 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 }
 
 // queryRevision refuses the query while the follower withholds readiness (QueryReady,
-// design D5) and otherwise returns the revision the reply carries. It is read here, before
-// the handler's first bucket read, so every revision at or below it is reflected in what
-// the handler then reads (design D6).
-func (c *Component) queryRevision(ctx context.Context) (uint64, error) {
+// design D5) or has not reached minRevision (zero means none), and otherwise returns the
+// revision the reply carries. It is read here, before the handler's first bucket read, so
+// every revision at or below it is reflected in what the handler then reads (design D6).
+func (c *Component) queryRevision(ctx context.Context, minRevision uint64) (uint64, error) {
 	f := c.follower.Load()
 	if err := f.QueryReady(ctx); err != nil {
 		return 0, err
 	}
-	return f.Indexed(), nil
+	revision := f.Indexed()
+	if minRevision > revision {
+		return 0, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
+			map[string]any{"indexed_revision": revision},
+			fmt.Errorf("min_revision %d is above the indexed revision %d", minRevision, revision))
+	}
+	return revision, nil
 }
 
 // reply is a successful reply: data in the graph.QueryResponse envelope, producer
@@ -105,21 +111,22 @@ func internalError(err error) error {
 // entityRequest is the request of the outgoing and incoming verbs.
 type entityRequest struct {
 	EntityID string `json:"entity_id"`
+	graph.MinRevisionField
 }
 
 // decodeEntityRequest decodes and validates an outgoing or incoming request.
-func decodeEntityRequest(data []byte) (string, error) {
+func decodeEntityRequest(data []byte) (entityRequest, error) {
 	var req entityRequest
 	if err := json.Unmarshal(data, &req); err != nil {
-		return "", invalidRequest(err)
+		return entityRequest{}, invalidRequest(err)
 	}
 	if req.EntityID == "" {
-		return "", invalidRequest(errors.New("empty entity_id"))
+		return entityRequest{}, invalidRequest(errors.New("empty entity_id"))
 	}
 	if err := validateEntityLiteralKey(req.EntityID); err != nil {
-		return "", invalidRequest(fmt.Errorf("entity_id: %w", err))
+		return entityRequest{}, invalidRequest(fmt.Errorf("entity_id: %w", err))
 	}
-	return req.EntityID, nil
+	return req, nil
 }
 
 // handleQueryOutgoing answers an entity's outgoing relationships: its OUTGOING_INDEX row,
@@ -127,15 +134,15 @@ func decodeEntityRequest(data []byte) (string, error) {
 func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	entityID, err := decodeEntityRequest(data)
+	req, err := decodeEntityRequest(data)
 	if err != nil {
 		return nil, err
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
-	entry, err := c.outgoingBucket.Get(ctx, entityID)
+	entry, err := c.outgoingBucket.Get(ctx, req.EntityID)
 	if natsclient.IsKVNotFoundError(err) {
 		return reply(revision, graph.OutgoingRelationshipsData{Relationships: []graph.OutgoingEntry{}})
 	}
@@ -154,15 +161,15 @@ func (c *Component) handleQueryOutgoing(ctx context.Context, data []byte) ([]byt
 func (c *Component) handleQueryIncoming(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	entityID, err := decodeEntityRequest(data)
+	req, err := decodeEntityRequest(data)
 	if err != nil {
 		return nil, err
 	}
-	prefix := entityID + "."
+	prefix := req.EntityID + "."
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -233,6 +240,7 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	defer cancel()
 	var req struct {
 		Alias string `json:"alias"`
+		graph.MinRevisionField
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, invalidRequest(err)
@@ -245,7 +253,7 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +289,7 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 		Predicate string  `json:"predicate"`
 		Value     *string `json:"value,omitempty"`
 		Limit     int     `json:"limit,omitempty"`
+		graph.MinRevisionField
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, invalidRequest(err)
@@ -288,7 +297,7 @@ func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]by
 	if _, err := predicateExactFilter(req.Predicate); err != nil {
 		return nil, invalidPredicateQuery(err)
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -408,7 +417,7 @@ func (c *Component) handleQueryPredicateList(ctx context.Context, data []byte) (
 			return nil, invalidPredicateQuery(err)
 		}
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -436,6 +445,7 @@ func (c *Component) handleQueryPredicateStats(ctx context.Context, data []byte) 
 	var req struct {
 		Predicate   string `json:"predicate"`
 		SampleLimit int    `json:"sample_limit"`
+		graph.MinRevisionField
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, invalidRequest(err)
@@ -446,7 +456,7 @@ func (c *Component) handleQueryPredicateStats(ctx context.Context, data []byte) 
 	if req.SampleLimit <= 0 {
 		req.SampleLimit = 10
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +491,7 @@ func (c *Component) handleQueryPredicateCompound(ctx context.Context, data []byt
 	if req.Operator != "AND" && req.Operator != "OR" {
 		return nil, invalidRequest(errors.New("operator must be AND or OR"))
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}
@@ -600,6 +610,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 	var req struct {
 		Name  string `json:"name"`
 		Limit int    `json:"limit,omitempty"`
+		graph.MinRevisionField
 	}
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, invalidRequest(err)
@@ -611,7 +622,7 @@ func (c *Component) handleQueryByName(ctx context.Context, data []byte) ([]byte,
 	if err := validateKVPrefix(prefix); err != nil {
 		return nil, invalidRequest(err)
 	}
-	revision, err := c.queryRevision(ctx)
+	revision, err := c.queryRevision(ctx, req.MinRevision)
 	if err != nil {
 		return nil, err
 	}

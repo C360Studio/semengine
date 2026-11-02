@@ -36,14 +36,16 @@ one entity in order (`internal/dispatch`).
 | --- | --- | --- | --- |
 | `OUTGOING_INDEX` | the entity ID | the entity's outgoing relationships | what the entity points to |
 | `INCOMING_INDEX` | `target.source.hex(predicate)` | none | what points at the target |
-| `ALIAS_INDEX` | the alias | the canonical entity ID | which entity an alias names |
+| `ALIAS_INDEX` | `hash(alias).entity.hex(predicate)` | none | which entity carries an alias |
 | `PREDICATE_INDEX` | `predicate.entity` (a 3-part predicate, a 6-part entity ID) | none | which entities carry a predicate |
 | `NAME_INDEX` | `hash(name).entity.hex(predicate)` | the name as written and its label priority | which entities carry a name |
 
 `NAME_INDEX` is graph-index's own and is not a configurable output; the other four are the configured outputs. A
 membership key encodes who owns it, so an update replaces exactly the rows its entity owns: the layouts are
-ADR-077 and ADR-078. An alias that is not a valid NATS KV key (for example `two words`) is left out of
-`ALIAS_INDEX`, logged, and counted in `aliases_skipped_total`; the entity's other rows are still written.
+ADR-077 and ADR-078 (the alias layout is ADR-114). An alias is trimmed and case-folded before it is hashed, as a
+name is, so `SN-1` and ` sn-1 ` are one alias. Any non-empty string is indexed, including one that is not a valid NATS
+KV key (for example `two words`): the key holds the hash, not the alias. The alias predicates are discovered once when
+graph-index starts; a predicate registered after that is not indexed until the next start.
 
 ## Query verbs
 
@@ -54,7 +56,7 @@ literal. All eight are on `graph.index.query.` followed by the name.
 | --- | --- | --- |
 | `outgoing` | `{"entity_id": ...}` | `graph.OutgoingRelationshipsData` |
 | `incoming` | `{"entity_id": ...}` | `graph.IncomingRelationshipsData`, sorted by source then predicate |
-| `alias` | `{"alias": ...}` | `graph.AliasData` |
+| `alias` | `{"alias": ...}` | `graph.AliasData`: the one live entity carrying the alias, or no ID |
 | `predicate` | `{"predicate": ..., "value": ..., "limit": ...}` (`value` and `limit` optional) | `graph.PredicateData` |
 | `predicateList` | `{"namespace": ...}` (optional) | `graph.PredicateListData` |
 | `predicateStats` | `{"predicate": ..., "sample_limit": ...}` | `graph.PredicateStatsData` |
@@ -69,8 +71,7 @@ A successful reply is a `graph.QueryResponse`:
 
 `indexed_revision` is the watermark read before the handler's first bucket read, so every `ENTITY_STATES` write at or
 below it is reflected in `data`. A caller holding the `kv_revision` of its own write compares it with this number to
-know whether the answer includes that write. An `alias` reply carries the same number but promises nothing about
-which aliases resolve (see Known limits). A refusal is a classified error and carries no envelope.
+know whether the answer includes that write, for an `alias` reply too. A refusal is a classified error and carries no envelope.
 
 A malformed request is refused as `invalid_request` before any readiness check, so a bad request fails the same way
 during a rebuild.
@@ -88,6 +89,15 @@ Every one of the eight verbs refuses:
   The state holds until the process restarts; the stored state has to be wiped and rebuilt first.
 
 A caller treats `index_not_ready` as retry later and `graph_state_reset_required` as do not retry.
+
+### Alias lookups
+
+The `alias` verb answers the one live entity that carries the alias, under any number of alias predicates. If no
+entity carries it, the reply holds no ID. If two or more entities do, the verb refuses with class `invalid` and code
+`alias_ambiguous` (`graph.ErrorCodeAliasAmbiguous`), the message naming the alias; it answers again once all but one
+holder has dropped the alias or been deleted and graph-index has indexed that change. An alias that is empty after
+trimming is refused as `invalid_request`. A stored `ALIAS_INDEX` row that is not in the layout above is left out of the
+answer, logged, and counted in `query_rows_skipped_total` under `alias`.
 
 ## Configuration
 
@@ -165,13 +175,12 @@ Collectors register on the injected `metric.MetricsRegistry`, never on Prometheu
 | Name | Type | Meaning |
 | --- | --- | --- |
 | `events_processed_total` | counter | `ENTITY_STATES` entries processed |
-| `updates_total` | counter vec | index updates by `index_type` |
+| `updates_total` | counter vec | index updates by `index_type`; `alias` counts once per entity indexed or deleted |
 | `kv_operations_total` | counter vec | KV operations by `operation` and `kv_bucket` |
 | `watch_events_total` | counter vec | watch events by `event_type` |
 | `write_failures_total` | counter | entities whose required index writes failed after retry |
 | `reindex_events_total` | counter vec | re-indexes by `result` (`changed` or `unchanged`) |
 | `reconcile_operations_total` | counter vec | owner reconciliation operations by `index_type`, `operation`, `result` |
-| `aliases_skipped_total` | counter | aliases left out of `ALIAS_INDEX` |
 | `query_rows_skipped_total` | counter vec | stored index rows a query left out, by `index_type` |
 
 The follower adds `readiness`, `lag`, `bootstrap_complete`, `readiness_state`, `status_publish_failures_total`,
@@ -180,9 +189,6 @@ graph-index on one registry writes the collectors the first registered.
 
 ## Known limits
 
-- **Aliases.** The alias read does not honour replacement: an alias that was dropped or changed, or whose entity was
-  deleted, can still resolve, and an alias added and dropped before graph-index read the key is never seen. Issue
-  [#415](https://github.com/C360Studio/semengine/issues/415) tracks the fix and its key layout.
 - **Overwritten revisions.** `ENTITY_STATES` keeps one revision per key, so a revision overwritten before the watch
   reads it is never delivered. The watermark tolerates this.
 - **Rebuild on every start.** The index is rebuilt from `ENTITY_STATES` at every start, and queries are refused for the

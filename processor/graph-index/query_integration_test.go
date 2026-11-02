@@ -703,8 +703,8 @@ func startGraphIngest(t *testing.T, client *natsclient.Client) {
 // TestMalformedIndexRowsAreSkippedLoggedAndCounted: a stored index row that is not its index's
 // layout is left out of every query that lists it, and the skip is declared: a warning names the
 // index, and query_rows_skipped_total counts it by index, while the query still answers the
-// well-formed rows (#430; the read-side counterpart of aliases_skipped_total, #426). No graph-index
-// writer stores such a row, so the test writes each one into its bucket directly.
+// well-formed rows (#430, #426). No graph-index writer stores such a row, so the test writes each
+// one into its bucket directly.
 func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	src, target, stranger := entityID(1), entityID(2), entityID(3)

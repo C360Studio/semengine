@@ -55,7 +55,7 @@ developer's unit.
 
 ## 7. Wording (every text naming the #415 exception)
 
-- [ ] 7.1 Bring to the new behaviour every text naming the exception, done when
+- [x] 7.1 Bring to the new behaviour every text naming the exception, done when
   `git grep -n '#415' -- ':!openspec/changes/archive' ':!openspec/specs' ':!docs/adr/063-store-substrate-and-resolver.md'`
   returns only this change and ADR-114 (ADR-063 `:45`, `:147`, `:455`, `:469` cite SemStreams gh#415; the specs
   change at 8.1): `graph/query_response.go:12-13`; `processor/graph-index/doc.go:12`, `README.md:45-46`, `:72-73`,
@@ -64,7 +64,7 @@ developer's unit.
   `.agents/contracts/semengine-developer.md:161`; `.agents/contracts/semengine-reviewer.md:231`;
   `.agents/skills/query-pattern/SKILL.md:38`. ADR-114 status to Accepted with the approval comment. Gate:
   `task docs:check`.
-- [ ] 7.2 Ledger: `processor/graph-index` row `:3426-3427`, `:3433-3434` (item 9 no longer lists
+- [x] 7.2 Ledger: `processor/graph-index` row `:3426-3427`, `:3433-3434` (item 9 no longer lists
   `aliases_skipped_total`), `:3435-3436`, `:3443` and its proving tests; `vocabulary` row (`:477-512`) names
   `CoreIdentityAlias`; `graph` row (`:2064`, error codes) names `ErrorCodeAliasAmbiguous`. Gate:
   `task ledger:diff -- processor/graph-index vocabulary graph`, `task docs:check`.

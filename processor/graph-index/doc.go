@@ -7,9 +7,13 @@
 //
 // Until the index has rebuilt from ENTITY_STATES after a start, and for as long as it has lost
 // its feed, every verb refuses with the transient error code index_not_ready; after a stored
-// entity that cannot be decoded, it refuses with the fatal graph_state_reset_required. The one
-// exception to replacement is the alias index: a dropped or changed alias keeps resolving until
-// issue #415 is fixed.
+// entity that cannot be decoded, it refuses with the fatal graph_state_reset_required.
+//
+// An alias lookup answers the one live entity carrying the alias (trimmed and case-folded, as
+// names are), answers no ID when none does, and refuses with class invalid and code
+// alias_ambiguous when two or more do. A dropped or changed alias, or a deleted entity's alias,
+// stops resolving once the revision is indexed. The alias predicates are read once, when
+// graph-index starts; a predicate registered later is not indexed until the next start.
 //
 // The package README.md describes its ports, configuration, query verbs, metrics and health.
 package graphindex

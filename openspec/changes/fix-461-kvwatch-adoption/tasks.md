@@ -74,6 +74,8 @@ base failure is a coin flip.
 - [x] 2.6 Ledger rows of `service`, `pkg/lifecycle`, `config`, `natsclient` (`storagereport`) and `graph/readiness`
   name `internal/kvwatch` (in-set; no exported signature names it) and the stop behaviour. Gate: `task docs:check`;
   `task verify`.
+- [x] 2.7 Flake #499, folded in on the owner's word (2026-11-02): `TestSafeConfig_ThreadSafety` waits on its
+  `WaitGroup`, not a fixed 10 s. Before and after under the same load: `notes/2.7.md`. Gate: `task verify`.
 
 ## 3. Code review
 

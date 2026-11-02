@@ -1,0 +1,9 @@
+{"Time":"2026-11-02T15:59:47.734026-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-11-02T15:59:47.977285-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestLoggedTimeout"}
+{"Time":"2026-11-02T15:59:47.977404-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLoggedTimeout","Output":"=== RUN   TestLoggedTimeout\n"}
+{"Time":"2026-11-02T15:59:47.977449-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLoggedTimeout","Output":"panic: test timed out after 1s\n"}
+{"Time":"2026-11-02T15:59:47.977469-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestLoggedTimeout","Output":"--- PASS: TestLoggedTimeout (0.00s)\n"}
+{"Time":"2026-11-02T15:59:47.977481-05:00","Action":"pass","Package":"rec.invalid/m/basic","Test":"TestLoggedTimeout","Elapsed":0}
+{"Time":"2026-11-02T15:59:47.977495-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"PASS\n"}
+{"Time":"2026-11-02T15:59:48.984468-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"ok  \trec.invalid/m/basic\t1.250s\n"}
+{"Time":"2026-11-02T15:59:48.984569-05:00","Action":"pass","Package":"rec.invalid/m/basic","Elapsed":1.251}

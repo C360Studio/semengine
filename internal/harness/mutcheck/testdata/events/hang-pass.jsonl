@@ -1,0 +1,8 @@
+{"Time":"2026-11-02T16:02:12.53953-05:00","Action":"start","Package":"rec.invalid/m/basic"}
+{"Time":"2026-11-02T16:02:12.761173-05:00","Action":"run","Package":"rec.invalid/m/basic","Test":"TestHang"}
+{"Time":"2026-11-02T16:02:12.761292-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestHang","Output":"=== RUN   TestHang\n"}
+{"Time":"2026-11-02T16:02:12.761335-05:00","Action":"output","Package":"rec.invalid/m/basic","Test":"TestHang","Output":"--- PASS: TestHang (0.00s)\n"}
+{"Time":"2026-11-02T16:02:12.761361-05:00","Action":"pass","Package":"rec.invalid/m/basic","Test":"TestHang","Elapsed":0}
+{"Time":"2026-11-02T16:02:12.761373-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"PASS\n"}
+{"Time":"2026-11-02T16:02:13.770278-05:00","Action":"output","Package":"rec.invalid/m/basic","Output":"ok  \trec.invalid/m/basic\t1.230s\n"}
+{"Time":"2026-11-02T16:02:13.770428-05:00","Action":"pass","Package":"rec.invalid/m/basic","Elapsed":1.231}

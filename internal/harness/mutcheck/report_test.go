@@ -6,8 +6,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 )
 
 // detectingStandIn prints the recorded failure for a mutant run (its GOFLAGS carries the overlay)
@@ -201,4 +203,56 @@ func TestHunksAreNotMerged(t *testing.T) {
 			t.Errorf("a region holds the unchanged lines 8 and 9: %q", line)
 		}
 	}
+}
+
+// TestReportElapsedTime (mutation-check › "The report describes each run", "Elapsed time in the
+// report"): a run's entry gives the package's elapsed time go test -json reported beside its wall
+// time, and says so when none was reported.
+func TestReportElapsedTime(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		obs  observed
+		want string
+	}{
+		{"reported", observed{elapsed: 2400 * time.Millisecond, elapsedReported: true}, "  wall time: 3.1s; package elapsed time: 2.4s"},
+		{"not reported", observed{}, "  wall time: 3.1s; package elapsed time: none reported"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := runRecord{kind: baselineRun, index: 1, wall: 3100 * time.Millisecond, obs: tc.obs,
+				reading: reading{pass, "the named test passed and go test exited zero"}}
+			var lines []string
+			writeRun(func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }, r)
+			if !slices.Contains(lines, tc.want) {
+				t.Errorf("the run's entry lacks %q:\n%s", tc.want, strings.Join(lines, "\n"))
+			}
+		})
+	}
+}
+
+// TestReportDetectionByHang (mutation-check › "Detection by hang", "Detected by hang", and "What
+// a detection by hang reports"): with -runs 3 and -timeout 45s, mutant run 1 ends by go test's
+// timeout panic with no expected line, and the unchanged code passes with an elapsed time of
+// 1.231s. One mutant run is made, the program exits zero, and the last line says the detection
+// came by hang, naming the timeout, the margin and the control runs' elapsed times.
+func TestReportDetectionByHang(t *testing.T) {
+	log := standIn(t, "case \" $GOFLAGS \" in *\" -overlay=\"*) cat '"+eventsPath(t, "hang")+"'; exit 1 ;; esac\n"+
+		"cat '"+eventsPath(t, "hang-pass")+"'\n")
+	root := plantModule(t, standInModule)
+	got := runIn(t, root, testEnv(t, "GOFLAGS="), "-pkg", "./p", "-test", "TestHang", "-file", "p/p.go",
+		"-mutant", outside(t, "p.go", valueMutant), "-expect", "value_test.go:99", "-runs", "3", "-timeout", "45s")
+	last := got.lastLine()
+	if got.code != 0 || !strings.HasPrefix(last, "verdict: detection: by hang, not by an assertion") {
+		t.Fatalf("got exit %d, last line %q; want exit 0 and a last line saying detection by hang\n%s", got.code, last, got)
+	}
+	for _, w := range []string{"timeout of 45s", "margin of 15s", "slowest baseline run took 1.231s", "after-run 1.231s"} {
+		if !strings.Contains(last, w) {
+			t.Errorf("last line %q lacks %q", last, w)
+		}
+	}
+	if calls := testCalls(t, log); len(calls) != 5 {
+		t.Errorf("go test calls: got %d, want 5 (three baseline runs, one mutant run, the after-run):\n%s", len(calls), strings.Join(calls, "\n"))
+	}
+	requireLines(t, "mutant run", section(got.stdout, "run mutant 1:"),
+		"run mutant 1: hang", "expected lines: none", "package elapsed time: 1.358s", "note: panic: test timed out after 1s")
+	requireLines(t, "baseline run", section(got.stdout, "run baseline 2:"), "package elapsed time: 1.231s")
 }

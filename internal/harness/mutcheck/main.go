@@ -130,7 +130,7 @@ func check(ctx context.Context, args []string, in inputs, p prepared, environ []
 	if err != nil {
 		return failed(err)
 	}
-	c.seed, c.treeBefore = in.seed, treeBefore
+	c.seed, c.treeBefore, c.timeout = in.seed, treeBefore, in.timeout
 	if c.treeAfter, err = fingerprint(ctx, p.root, environ); err != nil {
 		if ctx.Err() != nil {
 			return interrupted(stderr, logs)

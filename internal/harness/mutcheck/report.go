@@ -119,7 +119,11 @@ func writeRun(pf func(string, ...any), r runRecord) {
 	} else {
 		pf("  exit status: %d", r.end.code)
 	}
-	pf("  wall time: %s", r.wall.Round(time.Millisecond))
+	elapsed := "none reported"
+	if r.obs.elapsedReported {
+		elapsed = r.obs.elapsed.String()
+	}
+	pf("  wall time: %s; package elapsed time: %s", r.wall.Round(time.Millisecond), elapsed)
 	if len(r.obs.expectedLines) == 0 {
 		pf("  expected lines: none")
 	}

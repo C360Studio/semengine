@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 )
@@ -31,7 +32,8 @@ type runRecord struct {
 
 // checkResult is everything the verdict is decided from.
 type checkResult struct {
-	runs       int // -runs: the number of baseline runs and of mutant runs asked for
+	runs       int           // -runs: the number of baseline runs and of mutant runs asked for
+	timeout    time.Duration // -timeout: go test's timeout in every run
 	baselines  []runRecord
 	mutants    []runRecord
 	after      *runRecord // nil when no after-run was made
@@ -131,7 +133,11 @@ func decideRuns(c checkResult) (outcome, string) {
 			for _, m := range c.mutants {
 				each = append(each, fmt.Sprintf("run %d %s", m.index, m.reading.outcome))
 			}
-			return inconclusive, "the mutant runs disagree: " + strings.Join(each, ", ")
+			made := ""
+			if len(c.mutants) < c.runs {
+				made = fmt.Sprintf("; %d of the %d mutant runs were made", len(c.mutants), c.runs)
+			}
+			return inconclusive, "the mutant runs disagree: " + strings.Join(each, ", ") + made
 		}
 	}
 	// Invalid, like survivor and detection, needs the after-run to pass: a build that breaks for
@@ -145,6 +151,9 @@ func decideRuns(c checkResult) (outcome, string) {
 	}
 	if first == invalid {
 		return invalid, "the wrong change does not build"
+	}
+	if first == hang {
+		return byHang(c)
 	}
 	if first == detection {
 		return detection, fmt.Sprintf("each of the %d mutant runs failed the named test with an expected line, and the after-run passed", len(c.mutants))
@@ -166,6 +175,30 @@ func decideRuns(c checkResult) (outcome, string) {
 		return invalid, "the test did not reach the wrong change: no executed block of the reach run touches a changed region"
 	}
 	return inconclusive, fmt.Sprintf("reach was not judged (%q)", c.reachState)
+}
+
+// byHang judges a check whose only mutant run, run 1, was a hang (design D1, D3, D4): detection
+// when every baseline run and the after-run reported a package elapsed time of at most a third of
+// the timeout, so the hung run took at least three times the slowest of them.
+func byHang(c checkResult) (outcome, string) {
+	margin := c.timeout / 3
+	var slowest time.Duration
+	for _, r := range append(slices.Clone(c.baselines), *c.after) {
+		name := fmt.Sprintf("baseline run %d", r.index)
+		if r.kind == afterRun {
+			name = "the after-run"
+		}
+		switch {
+		case !r.obs.elapsedReported:
+			return inconclusive, fmt.Sprintf("mutant run 1 ended by go test's timeout of %s, but %s reported no elapsed time, so it is not shown to have passed within the margin of %s, a third of the timeout", c.timeout, name, margin)
+		case 3*r.obs.elapsed > c.timeout:
+			return inconclusive, fmt.Sprintf("mutant run 1 ended by go test's timeout of %s, but %s took %s, over the margin of %s, a third of the timeout; give -timeout at least three times the test's run time", c.timeout, name, r.obs.elapsed, margin)
+		}
+		if r.kind == baselineRun {
+			slowest = max(slowest, r.obs.elapsed)
+		}
+	}
+	return detection, fmt.Sprintf("by hang, not by an assertion: mutant run 1 of the %d asked for ran the named test and ended by go test's own timeout of %s before it reported a result, so no other mutant run was made; the slowest baseline run took %s and the after-run %s, within the margin of %s, a third of the timeout; a stall that hit only the mutant run would read the same", c.runs, c.timeout, slowest, c.after.obs.elapsed, margin)
 }
 
 func survivorReason(why string, seed uint64) string {

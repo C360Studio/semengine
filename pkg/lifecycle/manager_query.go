@@ -16,6 +16,7 @@ import (
 	"sort"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	semtypes "github.com/c360studio/semengine/pkg/types"
@@ -141,8 +142,13 @@ type Event struct {
 // watch has ended, with nothing it started left running: ctx.Err() when ctx
 // ends, onParticipant's error when it returns one, and an error when the
 // subscription closes or delivers a value it cannot decode or project into the
-// workflow's type; that error names the entity and its revision. A nil ctx or
-// onParticipant is refused before any subscription opens.
+// workflow's type; that error names the entity and its revision. Watch returns
+// after nats.go has closed the watch's delivery, for at most internal/kvwatch's
+// DrainBudget after the watcher's Stop returns; a failure to stop the watch is
+// joined to the error
+// (TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery and
+// TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery drive a backlogged
+// watch). A nil ctx or onParticipant is refused before any subscription opens.
 func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func(Participant) error) error {
 	if ctx == nil {
 		return errors.New("lifecycle: Watch requires a non-nil context")
@@ -174,7 +180,7 @@ func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func
 // learn of reclaims without a parallel raw KV watch (gh#497).
 //
 // onEvent runs on the caller's goroutine, and WatchEvents returns as Watch
-// does.
+// does, its error carrying a failure to stop the watch when there is one.
 func (m *Manager) WatchEvents(ctx context.Context, workflow string, onEvent func(Event) error) error {
 	if ctx == nil {
 		return errors.New("lifecycle: WatchEvents requires a non-nil context")
@@ -214,14 +220,19 @@ func (m *Manager) startWatch(ctx context.Context, workflow, caller string) (*reg
 // callback's error, a transient index-not-ready error when the watcher closes
 // while ctx is live, or the error of an entry it cannot decode or project,
 // naming the workflow, entity and revision. It logs nothing: the returned error
-// is the report. It stops the watcher before returning.
+// is the report. It stops the watcher through kvwatch.Stop before returning and
+// joins that stop's error, if any, to the one it returns.
 func (m *Manager) runWatchLoop(
 	ctx context.Context,
 	reg *registration,
 	watcher jetstream.KeyWatcher,
 	onEvent func(Event) error,
-) error {
-	defer watcher.Stop()
+) (err error) {
+	defer func() {
+		if stopErr := kvwatch.Stop(ctx, watcher); stopErr != nil {
+			err = errors.Join(err, fmt.Errorf("lifecycle: stop the watch: %w", stopErr))
+		}
+	}()
 	for {
 		select {
 		case <-ctx.Done():

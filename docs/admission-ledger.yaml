@@ -1130,7 +1130,10 @@
     client's life, so after its handlers finished or after Close returned nil it returns nil at once. The client keeps
     one map entry per consumer it returns, the handle as a lookup key only. Consumer: storage/objectstore's cleanup.
   dependencies_and_side_effects: >-
-    metric, pkg/errs, pkg/retry, internal/resource (in-set); github.com/nats-io/nats.go v1.55.0
+    metric, pkg/errs, pkg/retry, internal/resource, internal/kvwatch (in-set; no exported signature names it);
+    storagereport's report consumer stops its STORAGE_REPORT watch through internal/kvwatch.Stop, which drains the
+    watch's updates until nats.go closes the channel, for at most kvwatch.DrainBudget (5 s) counted from when the
+    watcher's own Stop returns; github.com/nats-io/nats.go v1.55.0
     and nats.go/jetstream; prometheus/client_golang; stdlib. Test-only:
     github.com/nats-io/nats-server/v2 v2.15.0 (embedded broker, client_connect_test.go:104),
     stretchr/testify, prometheus client_model and testutil; the integration lane imports
@@ -2131,8 +2134,9 @@
     NewGauges plus the indexed_revision and target_revision gauges (a constructor in place of the pin's
     WithRevisionGauges option)
   dependencies_and_side_effects: >-
-    graph, metric, natsclient (in-set); nats.go/jetstream,
-    prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine
+    graph, internal/kvwatch (in-set; no exported signature names it), metric, natsclient (in-set); nats.go/jetstream,
+    prometheus/client_golang; KV reads/writes on GRAPH_STATUS; Watcher.Run runs on caller goroutine and
+    stops its watch through internal/kvwatch.Stop, which drains the watch's updates until nats.go closes the channel, for at most kvwatch.DrainBudget (5 s) counted from when the watcher's own Stop returns
   known_risks: >-
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
     ADR-109 so Health() derives from nothing in the envelope). The pin's GaugeOption
@@ -2319,7 +2323,10 @@
     workflow (#193)
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, internal/graphmutation, message, natsclient, payloadregistry, pkg/errs,
-    pkg/projection, pkg/types, vocabulary (in-set); github.com/google/uuid, nats.go/jetstream
+    pkg/projection, pkg/types, vocabulary, internal/kvwatch (in-set; no exported signature names it);
+    github.com/google/uuid, nats.go/jetstream. Watch and WatchEvents stop their watch through internal/kvwatch.Stop,
+    which drains the watch's updates until nats.go closes the channel, for at most kvwatch.DrainBudget (5 s) counted
+    from when the watcher's own Stop returns; an error from that stop is joined into the error they return
   known_risks: >-
     Watch and WatchEvents kept whole until #24 decides the durable-execution surface (design D6 K1)
   proving_tests: >-
@@ -2819,9 +2826,10 @@
     both visit component entries in instance-name order (port-composition, #347, #348)
   dependencies_and_side_effects: >-
     model, pkg/platform, pkg/security, pkg/types, types, component, natsclient, pkg/errs, graph, graph/kvcatalog,
-    internal/lifecycleguard (all in tree), nats.go jetstream; reads files and env vars; creates and updates
-    JetStream streams in EnsureStreams; Manager creates and writes the configuration bucket
-    semengine_config_<org>_<stem> and watches it, with watch goroutines joined in Stop
+    internal/lifecycleguard (all in tree), internal/kvwatch (in-set; no exported signature names it), nats.go
+    jetstream; reads files and env vars; creates and updates JetStream streams in EnsureStreams; Manager creates and
+    writes the configuration bucket semengine_config_<org>_<stem> and watches it, with watch goroutines joined in
+    Stop; Manager stops each watch through internal/kvwatch.Stop, which drains the watch's updates until nats.go closes the channel, for at most kvwatch.DrainBudget (5 s) counted from when the watcher's own Stop returns
   known_risks: >-
     dropped as unread: StorageMode*, BucketConfig, Loader.AddLayer/EnableValidation/Load, Config.SaveToFile,
     Config.String, DeriveStreamSubjects, FrameworkStreamAutoCreate, loadJSONFile, mergeConfigs, validateEnvVar, and
@@ -2996,7 +3004,8 @@
     RegisterAll, with no OpenAPI spec because it serves no route), LogForwarderConfig and LogForwarder
   dependencies_and_side_effects: >-
     component, config, graph, graph/kvcatalog, health, internal/httpadmission, internal/keycase,
-    internal/lifecycleguard, message, metric, natsclient, payloadregistry, pkg/errs, pkg/lifecyclecleanup,
+    internal/lifecycleguard, internal/kvwatch (in-set; no exported signature names it), message, metric, natsclient,
+    payloadregistry, pkg/errs, pkg/lifecyclecleanup,
     pkg/projection, pkg/rulepack, pkg/security, pkg/types, storage/storeregistry, types, vocabulary, composition,
     model (all in tree); BaseService runs one health goroutine, joined in Stop; MaybeStartPProf binds :port on every interface and serves http.DefaultServeMux on a goroutine
     joined in Shutdown; the Manager binds :http_port (default 8080) and an optional health port on every interface,
@@ -3007,7 +3016,9 @@
     health.component.<name> every 5 s, and nothing else on a timer; the message
     logger subscribes to its monitored subjects under one run context, retries a failed subscribe every 100 ms until
     it succeeds, keeps up to max_entries messages in memory, and runs one KV watcher per open watch stream, each
-    ended and joined by Stop; the storage observability service uses natsclient/storagereport and runs two goroutines
+    ended and joined by Stop, each stopping its watch through internal/kvwatch.Stop (the drain bound is
+    kvwatch.DrainBudget, 5 s counted from when the watcher's own Stop returns); the storage observability service uses
+    natsclient/storagereport and runs two goroutines
     under one run context (a collection of the account's streams and buckets every interval, 1 minute by default, and
     a watch of STORAGE_REPORT retried every 5 s), both ended and joined by Stop; it creates or reconciles the
     STORAGE_REPORT bucket on first use and registers 19 collectors under the name storage-observability; the heartbeat runs one goroutine under a run context,

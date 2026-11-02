@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -17,9 +18,14 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
+// lifecycleAtomicWatcher is a scripted ENTITY_STATES watch. Its Stop closes the updates channel,
+// as nats.go does once its delivery has returned, and returns stopErr; nothing sends on the
+// channel after Stop.
 type lifecycleAtomicWatcher struct {
-	updates chan jetstream.KeyValueEntry
-	stopped atomic.Bool
+	updates   chan jetstream.KeyValueEntry
+	closeOnce sync.Once
+	stopped   atomic.Bool
+	stopErr   error
 }
 
 func newLifecycleAtomicWatcher() *lifecycleAtomicWatcher {
@@ -29,8 +35,13 @@ func newLifecycleAtomicWatcher() *lifecycleAtomicWatcher {
 func (w *lifecycleAtomicWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
 func (w *lifecycleAtomicWatcher) Stop() error {
 	w.stopped.Store(true)
-	return nil
+	w.closeUpdates()
+	return w.stopErr
 }
+
+// closeUpdates closes the updates channel once, whether a test closes it to simulate a lost
+// watch or Stop does.
+func (w *lifecycleAtomicWatcher) closeUpdates() { w.closeOnce.Do(func() { close(w.updates) }) }
 
 // errStopWatch is what a test's callback returns to end a watch once it has seen what it needs.
 var errStopWatch = errors.New("test: stop the watch")
@@ -201,7 +212,7 @@ func TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks(t *testing
 		return second, nil
 	}
 
-	close(first.updates)
+	first.closeUpdates()
 	err := mgr.Watch(context.Background(), "fixture", refuseCall(t, "transport-closed subscription"))
 	if err == nil || !serrs.IsTransient(err) {
 		t.Fatalf("transport-closed subscription returned %T %v, want transient", err, err)
@@ -220,6 +231,39 @@ func TestLifecycleWatchTransportCloseIsLocalAndLaterSubscriptionWorks(t *testing
 	if !errors.Is(err, errStopWatch) || len(seen) != 1 || seen[0] != validID {
 		t.Fatalf("later subscription returned %v having delivered %v, want the callback's stop after [%s]",
 			err, seen, validID)
+	}
+}
+
+// TestLifecycleWatchReportsAFailedStop: when the watch's Stop fails with more than "already
+// gone", Watch and WatchEvents return the error that ended the watch joined with the stop failure,
+// so errors.Is finds both.
+func TestLifecycleWatchReportsAFailedStop(t *testing.T) {
+	errStopFailed := errors.New("test: the watch's stop failed")
+	for _, watch := range []struct {
+		name string
+		run  func(*Manager) error
+	}{
+		{"Watch", func(mgr *Manager) error {
+			return mgr.Watch(context.Background(), "fixture", func(Participant) error { return errStopWatch })
+		}},
+		{"WatchEvents", func(mgr *Manager) error {
+			return mgr.WatchEvents(context.Background(), "fixture", func(Event) error { return errStopWatch })
+		}},
+	} {
+		t.Run(watch.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				mgr, watcher, _ := newWatchedManager(t)
+				watcher.stopErr = errStopFailed
+				watcher.updates <- validLifecycleWatchEntry(t, "acme.ops.gcs.lifecycle.mission.watched", 1)
+				err := watch.run(mgr)
+				if !errors.Is(err, errStopWatch) {
+					t.Errorf("%s returned %v, want the callback's error", watch.name, err)
+				}
+				if !errors.Is(err, errStopFailed) {
+					t.Errorf("%s returned %v, want it to carry the stop failure", watch.name, err)
+				}
+			})
+		})
 	}
 }
 

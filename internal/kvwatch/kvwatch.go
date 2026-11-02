@@ -12,23 +12,26 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// DrainBudget bounds Stop's wait for the watch's delivery to close after the caller's context has ended.
+// DrainBudget bounds Stop's wait for the watch's delivery to close, counted from when the watcher's
+// own Stop returns, whether or not the caller's context has ended. Time in that Stop is not
+// counted.
 const DrainBudget = 5 * time.Second
 
 // ErrDeliveryOpen says the watch's update channel was still open when DrainBudget ran out.
 var ErrDeliveryOpen = errors.New("kvwatch: the watch's delivery did not close after Stop")
 
 // Stop stops the watch and drains its updates until nats.go closes the channel, for at most
-// DrainBudget after ctx, the caller's, has ended. Entries read here are dropped. At nats.go v1.55.0
-// Stop only unsubscribes: a delivery already blocked on the full updates buffer ends only when the
-// buffer is read, and the channel closes after it, so on that path returning is a join
-// (graph/follower's TestFollowerRunReturnsAndLeavesNothing drives it with a backlogged watch). The
-// bound is for the one path with nothing to join: WatchAll subscribes before it installs the
-// handler that closes the channel (jetstream/kv.go:1356-1368), and nats.go reads that handler
-// once, when its delivery goroutine exits (nats.go:3830-3834). A watch whose context ends, or whose
-// connection closes, in between leaves the channel open for good with no delivery goroutine
-// running (#454). TestStopGivesUpOnADeliveryThatNeverCloses drives the bound on a scripted watcher;
-// the window itself has not been reproduced against nats.go.
+// DrainBudget after the watcher's own Stop returns; ctx's cancellation does not cut the drain
+// short. Entries read here are dropped. At nats.go v1.55.0 Stop only unsubscribes: a delivery
+// already blocked on the full updates buffer ends only when the buffer is read, and the channel
+// closes after it, so on that path returning is a join (graph/follower's
+// TestFollowerRunReturnsAndLeavesNothing drives it with a backlogged watch). The bound is for the
+// one path with nothing to join: WatchAll subscribes before it installs the handler that closes the
+// channel (jetstream/kv.go:1356-1368), and nats.go reads that handler once, when its delivery
+// goroutine exits (nats.go:3830-3834). A watch whose context ends, or whose connection closes, in
+// between leaves the channel open for good with no delivery goroutine running (#454).
+// TestStopGivesUpOnADeliveryThatNeverCloses drives the bound on a scripted watcher; the window
+// itself has not been reproduced against nats.go.
 //
 // Stop returns nil, or the watch's Stop error when it says more than that the watch was already
 // gone. When the budget runs out it returns ErrDeliveryOpen, joined with the watch's Stop error if
@@ -38,7 +41,7 @@ func Stop(ctx context.Context, watcher jetstream.KeyWatcher) error {
 		return errors.New("kvwatch: Stop needs a non-nil context")
 	}
 	stopErr := watcher.Stop()
-	// Terminal cleanup after the caller's context has ended, so it runs detached and bounded.
+	// Terminal cleanup, usually after the caller's context has ended, so it runs detached and bounded.
 	drainCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), DrainBudget)
 	defer cancel()
 	updates := watcher.Updates()

@@ -32,6 +32,7 @@ import (
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -192,6 +193,13 @@ func (c *Consumer) Snapshot() Snapshot {
 // surface frozen on its last values, and a frozen report is indistinguishable
 // from a calm account — which is the exact failure this capability exists to
 // end. Call Run in its own goroutine.
+//
+// Run returns after nats.go has closed the delivery of the watch it stopped,
+// for at most 5 s after the watcher's own Stop returns, whether or not ctx has
+// ended: at nats.go v1.55.0 a delivery blocked on a full updates buffer
+// outlives the watch's Stop until the buffer is read
+// (TestIntegration_ReportConsumer_RunLeavesNoWatchDelivery). A failure to stop
+// the watch is logged at Warn.
 func (c *Consumer) Run(ctx context.Context) {
 	for {
 		if ctx.Err() != nil {
@@ -207,7 +215,9 @@ func (c *Consumer) Run(ctx context.Context) {
 	}
 }
 
-// watchOnce establishes one watch and drains it until it ends.
+// watchOnce establishes one watch and drains it until it ends. It stops the
+// watch through kvwatch.Stop, which waits for the watch's delivery to close,
+// for at most kvwatch.DrainBudget after the watcher's Stop returns.
 func (c *Consumer) watchOnce(ctx context.Context) {
 	watcher, err := c.store.WatchAll(ctx)
 	if err != nil {
@@ -217,7 +227,12 @@ func (c *Consumer) watchOnce(ctx context.Context) {
 		}
 		return
 	}
-	defer func() { _ = watcher.Stop() }()
+	defer func() {
+		if err := kvwatch.Stop(ctx, watcher); err != nil {
+			c.logger.Warn("could not stop the storage report watch",
+				slog.String("error", err.Error()))
+		}
+	}()
 
 	// Until this watch's sync marker its entries fill initial, not the view. A
 	// Snapshot caller meanwhile sees the previous view whole (or, on the first

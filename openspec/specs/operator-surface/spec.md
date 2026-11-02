@@ -527,10 +527,10 @@ follows a dropped event.
   `initial_sync_complete` anywhere, and fewer `kv_change` events than keys
 - **AND** the test that verifies this is `TestKVWatchFallingBehindEndsStream`
 
-Review only: when a client falls behind, `nats.go` waits for room when it puts an entry on the watcher's 256-entry
-updates channel. If more than 256 entries arrive between the reader's last receive and its stop, a `nats.go` goroutine
-could stay blocked until the stop. This was not probed and no real-world trigger is named, so the behaviour is not
-promised.
+When a client falls behind on a bucket holding more keys than the stream buffers, `nats.go` waits for room to put an
+entry on the watcher's 256-entry updates channel, and that `nats.go` goroutine stays blocked after a bare stop. The
+reader stops through `kvwatch.Stop`, which reads the channel until it closes.
+`TestKVWatchFallingBehindLeavesNoWatchDelivery` verifies that no watch delivery is left; it failed on the bare stop.
 
 ### Requirement: The KV watch ends cleanly
 

@@ -10,7 +10,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 2. Table and index
 
-- [ ] 2.1 `graph.QueryVerb` gains `Enveloped` and `Reply`; existing rows marked; `graph.ResponderGraphQuery`,
+- [x] 2.1 `graph.QueryVerb` gains `Enveloped` and `Reply`; existing rows marked; `graph.ResponderGraphQuery`,
   `graph.RelationshipEdge`, `graph.MinRevisionField`, `graph.ErrorCodeRevisionNotReached`. New rows go after existing
   ones, since `processor/graph-ingest/failed_start_callbacks_integration_test.go:61` finds `batch` by name alone; a
   real name lookup checks the responder. Premise: `graph/query_verbs.go:5-11` (D1). Check:

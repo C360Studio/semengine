@@ -1,5 +1,7 @@
 package graph
 
+import "reflect"
+
 // QueryVerb declares one request/reply verb: the subject it is served on and
 // the component that answers it.
 type QueryVerb struct {
@@ -8,6 +10,13 @@ type QueryVerb struct {
 	Subject string
 	// Responder is the component type that answers on Subject.
 	Responder string
+	// Enveloped says the reply is a QueryResponse rather than a bare body: true
+	// when any part of the answer comes from a graph-index reply. A caller
+	// decodes by verb; nothing decides a reply's shape from its content.
+	Enveloped bool
+	// Reply is the type of the reply body, or of the envelope's Data when
+	// Enveloped.
+	Reply reflect.Type
 }
 
 // ResponderGraphIngest is the Responder of the verbs graph-ingest answers.
@@ -16,28 +25,43 @@ const ResponderGraphIngest = "graph-ingest"
 // ResponderGraphIndex is the Responder of the verbs graph-index answers.
 const ResponderGraphIndex = "graph-index"
 
+// ResponderGraphQuery is the Responder of the verbs graph-query answers.
+const ResponderGraphQuery = "graph-query"
+
 // entityVerb is the table's entity entry: ExactEntityReader requests on its
 // Subject with an EntityRequest and decodes an ExactEntity.
-var entityVerb = QueryVerb{Name: "entity", Subject: "graph.ingest.query.entity", Responder: ResponderGraphIngest}
+var entityVerb = QueryVerb{
+	Name: "entity", Subject: "graph.ingest.query.entity", Responder: ResponderGraphIngest,
+	Reply: reflect.TypeFor[ExactEntity](),
+}
 
 // QueryVerbs returns the declared request/reply verbs. Each call returns a new
 // slice, so a caller cannot change the declaration. The entity verb takes an
-// EntityRequest and replies with an ExactEntity; batch takes an
-// EntityBatchRequest and replies with an EntityBatchResponse; prefix takes a
-// PrefixQueryRequest and replies with a PrefixQueryResponse. graph-index's
-// verbs reply with a QueryResponse whose Data is the verb's result.
+// EntityRequest, batch an EntityBatchRequest and prefix a PrefixQueryRequest.
+// Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
+// QueryResponse whose Data is the entry's Reply.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
-		{Name: "batch", Subject: "graph.ingest.query.batch", Responder: ResponderGraphIngest},
-		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: ResponderGraphIngest},
-		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: ResponderGraphIndex},
-		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: ResponderGraphIndex},
-		{Name: "alias", Subject: "graph.index.query.alias", Responder: ResponderGraphIndex},
-		{Name: "predicate", Subject: "graph.index.query.predicate", Responder: ResponderGraphIndex},
-		{Name: "predicateList", Subject: "graph.index.query.predicateList", Responder: ResponderGraphIndex},
-		{Name: "predicateStats", Subject: "graph.index.query.predicateStats", Responder: ResponderGraphIndex},
-		{Name: "predicateCompound", Subject: "graph.index.query.predicateCompound", Responder: ResponderGraphIndex},
-		{Name: "byName", Subject: "graph.index.query.byName", Responder: ResponderGraphIndex},
+		{Name: "batch", Subject: "graph.ingest.query.batch", Responder: ResponderGraphIngest,
+			Reply: reflect.TypeFor[EntityBatchResponse]()},
+		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: ResponderGraphIngest,
+			Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[OutgoingRelationshipsData]()},
+		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[IncomingRelationshipsData]()},
+		{Name: "alias", Subject: "graph.index.query.alias", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[AliasData]()},
+		{Name: "predicate", Subject: "graph.index.query.predicate", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[PredicateData]()},
+		{Name: "predicateList", Subject: "graph.index.query.predicateList", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[PredicateListData]()},
+		{Name: "predicateStats", Subject: "graph.index.query.predicateStats", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[PredicateStatsData]()},
+		{Name: "predicateCompound", Subject: "graph.index.query.predicateCompound", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[CompoundPredicateData]()},
+		{Name: "byName", Subject: "graph.index.query.byName", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 	}
 }

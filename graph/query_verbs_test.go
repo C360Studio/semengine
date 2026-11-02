@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"encoding/json"
+	"reflect"
 	"slices"
 	"testing"
 )
@@ -12,22 +14,37 @@ import (
 // D6), the subjects the SemStreams pin's graph-index subscribed to
 // (pin:processor/graph-index/query.go:31-80); no other entry exists.
 func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
+	// The marks are literals per verb, read from what each handler replies with
+	// (graph-transport-boundary, "The verb table declares each reply's shape"):
+	// graph-ingest's replies are bare, graph-index's are enveloped.
 	want := []QueryVerb{
-		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest"},
-		{Name: "batch", Subject: "graph.ingest.query.batch", Responder: "graph-ingest"},
-		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: "graph-ingest"},
-		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: "graph-index"},
-		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: "graph-index"},
-		{Name: "alias", Subject: "graph.index.query.alias", Responder: "graph-index"},
-		{Name: "predicate", Subject: "graph.index.query.predicate", Responder: "graph-index"},
-		{Name: "predicateList", Subject: "graph.index.query.predicateList", Responder: "graph-index"},
-		{Name: "predicateStats", Subject: "graph.index.query.predicateStats", Responder: "graph-index"},
-		{Name: "predicateCompound", Subject: "graph.index.query.predicateCompound", Responder: "graph-index"},
-		{Name: "byName", Subject: "graph.index.query.byName", Responder: "graph-index"},
+		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
+			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
+		{Name: "batch", Subject: "graph.ingest.query.batch", Responder: "graph-ingest",
+			Enveloped: false, Reply: reflect.TypeFor[EntityBatchResponse]()},
+		{Name: "prefix", Subject: "graph.ingest.query.prefix", Responder: "graph-ingest",
+			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "outgoing", Subject: "graph.index.query.outgoing", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[OutgoingRelationshipsData]()},
+		{Name: "incoming", Subject: "graph.index.query.incoming", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[IncomingRelationshipsData]()},
+		{Name: "alias", Subject: "graph.index.query.alias", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[AliasData]()},
+		{Name: "predicate", Subject: "graph.index.query.predicate", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[PredicateData]()},
+		{Name: "predicateList", Subject: "graph.index.query.predicateList", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[PredicateListData]()},
+		{Name: "predicateStats", Subject: "graph.index.query.predicateStats", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[PredicateStatsData]()},
+		{Name: "predicateCompound", Subject: "graph.index.query.predicateCompound", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[CompoundPredicateData]()},
+		{Name: "byName", Subject: "graph.index.query.byName", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 	}
 
-	if ResponderGraphIngest != "graph-ingest" || ResponderGraphIndex != "graph-index" {
-		t.Fatalf("responders = %q, %q; want graph-ingest, graph-index", ResponderGraphIngest, ResponderGraphIndex)
+	if ResponderGraphIngest != "graph-ingest" || ResponderGraphIndex != "graph-index" || ResponderGraphQuery != "graph-query" {
+		t.Fatalf("responders = %q, %q, %q; want graph-ingest, graph-index, graph-query",
+			ResponderGraphIngest, ResponderGraphIndex, ResponderGraphQuery)
 	}
 
 	got := QueryVerbs()
@@ -39,5 +56,40 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	got[0].Subject = "graph.ingest.query.changed"
 	if again := QueryVerbs(); !slices.Equal(again, want) {
 		t.Fatalf("editing a returned table changed the declaration: %+v", again)
+	}
+}
+
+// TestQueryWireNames holds the spellings callers and responders meet on the wire:
+// a relationships row (design D5) and min_revision with its refusal code (design D3).
+func TestQueryWireNames(t *testing.T) {
+	row, err := json.Marshal(RelationshipEdge{Predicate: "test.rel.knows", FromEntityID: "from", ToEntityID: "to"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"predicate":"test.rel.knows","from_entity_id":"from","to_entity_id":"to"}`; string(row) != want {
+		t.Fatalf("RelationshipEdge = %s, want %s", row, want)
+	}
+
+	// Embedded, as a request embeds it: its key sits at the request's top level,
+	// and zero, meaning none, sends no key.
+	var request struct {
+		MinRevisionField
+	}
+	unset, err := json.Marshal(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(unset) != `{}` {
+		t.Fatalf("unset MinRevisionField = %s, want {}", unset)
+	}
+	if err := json.Unmarshal([]byte(`{"min_revision":7}`), &request); err != nil {
+		t.Fatal(err)
+	}
+	if request.MinRevision != 7 {
+		t.Fatalf("MinRevision = %d, want 7", request.MinRevision)
+	}
+
+	if ErrorCodeRevisionNotReached != "revision_not_reached" {
+		t.Fatalf("ErrorCodeRevisionNotReached = %q, want revision_not_reached", ErrorCodeRevisionNotReached)
 	}
 }

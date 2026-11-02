@@ -19,6 +19,14 @@ type QueryResponse[T any] struct {
 	Timestamp       time.Time `json:"timestamp"`
 }
 
+// MinRevisionField is the part of a query request that names the ENTITY_STATES
+// revision the reply must reflect. A request embeds it. MinRevision is a kv_revision
+// the caller holds; zero means none. graph-index refuses a request above the revision
+// it would reply with, ErrorCodeRevisionNotReached, and never waits for it.
+type MinRevisionField struct {
+	MinRevision uint64 `json:"min_revision,omitempty"`
+}
+
 // errQueryResponseProducer is NewQueryResponse's refusal of an empty producer.
 var errQueryResponseProducer = errors.New("graph: query response producer is required")
 

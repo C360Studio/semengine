@@ -14,6 +14,14 @@ type IncomingEntry struct {
 	Predicate    string `json:"predicate"`
 }
 
+// RelationshipEdge is one row of the graph-query relationships verb's reply, in
+// either direction.
+type RelationshipEdge struct {
+	Predicate    string `json:"predicate"`
+	FromEntityID string `json:"from_entity_id"`
+	ToEntityID   string `json:"to_entity_id"`
+}
+
 // --- Index Query Response Payloads ---
 
 // OutgoingRelationshipsData contains outgoing relationships for an entity.

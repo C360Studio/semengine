@@ -30,7 +30,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
   `TestGraphQueryServesExactlyTheDeclaredVerbs`.
 - [ ] 3.3 `entityByAlias` (ADR-114) and `relationships`, with their table rows. Premise: P5, P5b,
   `graph-index/query.go:272`, `graph-ingest/query.go:79-82` (D2, D4). Check: `TestEntityByAlias`, on real ingest and
-  index except the rows D4 names, `TestRelationshipsEnvelopeKeepsIndexRevision`,
+  index except the rows D4 names, `TestRelationshipsEnvelopeKeepsIndexRevision`, `TestRelationshipsRowKeys`,
   `TestRelationshipsRefusesUnknownDirection`, `TestRelationshipsRefusesBrokenIndexReply`, each failing case shown to
   fail.
 - [ ] 3.4 `request_subject_conflict` in `composition.Analyze`, with the service's boot refusal; needs the
@@ -55,6 +55,8 @@ failing-first output, recorded in the task's note. One task is one developer's u
 - [ ] 4.3 Amend ADR-114's "Not found keeps falling through" (`docs/adr/114`:113): valid IDs fall through, an unknown
   non-ID is `entity_not_found`, citing this change (D4). `graph/README.md` and `processor/graph-index/README.md:60-66`
   gain `min_revision`, `revision_not_reached` and the table's marks. Check: `task docs:check`.
+- [ ] 4.4 Move `consumer-migration.md` to `processor/graph-query/MIGRATION.md`, so it survives this change's archive, and
+  point `split.md` at it. Each later step appends what it changes. Check: `task docs:check`.
 
 ## 5. Land
 

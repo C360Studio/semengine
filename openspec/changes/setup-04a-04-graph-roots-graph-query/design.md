@@ -39,6 +39,7 @@ field, odd spacing, each direction), `TestForwardedRefusalKeepsClassCodeDetail`,
 and nothing at all as outgoing (`:371`). Rows are `predicate`, `from_entity_id`, `to_entity_id`; no rows is `[]`; an
 index reply that does not decode or names no `producer` (`{}` decodes; `NewQueryResponse` refuses an empty one) is
 transient `internal`. *Proof:* `TestRelationshipsEnvelopeKeepsIndexRevision`,
+`TestRelationshipsRowKeys` (literal JSON, both directions, on a real index),
 `TestRelationshipsRefusesUnknownDirection`, `TestRelationshipsRefusesBrokenIndexReply`.
 
 ## D3. `min_revision` lands here, in graph-index

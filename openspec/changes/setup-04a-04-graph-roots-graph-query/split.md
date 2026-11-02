@@ -60,7 +60,10 @@ Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `compone
   forward lands with its responder's port.
 - Step 3's design: the one new community record field (owner left it there); the community verbs' `indexed_revision`
   depends on it.
-- Step 5's silent consumer change, SemSource's `searchGraph` decode: `consumer-migration.md`.
+- Step 5's silent consumer change, SemSource's `searchGraph` decode: `consumer-migration.md`, which moves to
+  `processor/graph-query/MIGRATION.md` in step 1; each later step appends what it changes.
+- Steps 2 to 5 carry the owner's ruling (PR #504 comment 6588079803): each design decides a shape on its merits, with a
+  consumer break a migration note. Pin keys such as `startTime` and `totalEntities` are the next candidates.
 
 ## Step 1 dispositions
 

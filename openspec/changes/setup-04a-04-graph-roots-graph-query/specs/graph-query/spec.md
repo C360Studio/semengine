@@ -81,6 +81,12 @@ An alias with no holder whose input is not a valid entity ID SHALL be refused wi
 SHALL be a `graph.QueryResponse` from producer `graph-query`, `indexed_revision` being the index reply's and `data` a
 non-null list of `graph.RelationshipEdge`, each with `predicate`, `from_entity_id` and `to_entity_id`.
 
+#### Scenario: Row keys on the wire
+
+- **WHEN** a real index holds one relationship and a caller asks for it in each direction
+- **THEN** `data` compares equal to the literal JSON row, with exactly the keys `predicate`, `from_entity_id` and
+  `to_entity_id`, in both directions (`TestRelationshipsRowKeys`)
+
 #### Scenario: A direction the component does not read
 
 - **WHEN** a request sends `direction` `both`, or none
@@ -122,7 +128,7 @@ M SHALL carry `indexed_revision` at or above M.
 
 Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL bound each downstream request, default
 15000. A configuration with no ports SHALL take the default required `graph_queries` NATS-request port on
-   `graph.query.*`, and any other input port shape SHALL be refused.
+`graph.query.*`, and any other input port shape SHALL be refused.
 
 #### Scenario: A key the pin ignored
 

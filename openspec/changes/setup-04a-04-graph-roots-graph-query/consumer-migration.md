@@ -17,6 +17,14 @@ Read these first. Nothing errors.
   reports no answer rather than a failure.
 - **Fix for both:** unwrap once before reading, and assert it on a real reply. No framework mechanism does this for
   you.
+- **A copy of the GraphQL gateway (step 1, more by step 5).** It nests every wrapped answer one level too deep; see
+  its section below.
+- **A `relationships` decoder that keeps `edge_type` (step 1).** After unwrapping, the field reads empty. With a
+  predicate filter, the old fusion client drops every edge (SemStreams `client.go:526`). Change 5's port of fusion must
+  not carry this.
+- **A bare `entityByAlias` decoder (step 1).** It reads no entity from the wrapper and gets nil.
+- **A `kvRevision` decoder with no zero check (step 1).** It gets revision 0. SemConnect's has the check, so its failure
+  is loud; see its section.
 
 ## SemSource
 
@@ -35,7 +43,7 @@ prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged
   its hand list. Declaring your verbs as ports also works. The framework adds no check at start: it would miss
   anything that starts later.
 - Nothing in your graph-query config: `ports` alone is valid.
-- A slow `batch`: your 10 s default (`mcp-gateway/component.go:194-199`) can still time out first, loudly.
+- A slow `searchGraph`, from step 5: your 10 s default (`mcp-gateway/component.go:194-199`) can time out first, loudly.
 
 ## SemConnect
 
@@ -79,7 +87,8 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | --- | --- |
 | `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which step 1 amends |
 | `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
-| `entity`, `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
+| `entity` | Bytes forwarded unchanged, with no re-check by graph-query. The revision key is `kv_revision`, was `kvRevision` |
+| `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
 A stream capturing a declared `graph.query.*` subject refuses boot (#16). Decode by the verb table:

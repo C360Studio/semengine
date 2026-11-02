@@ -38,7 +38,7 @@ against the inventory's 14,328 carried; both count differently, so treat that as
 | 1 | Six lookups, against in-tree responders | SemConnect decodes `entity` after its one-tag change (`design.md` D5) |
 | 2 | Path search, counts | Four forwards: refused transient, when the request reports no responders, until changes 5 and 7 bring them |
 | 3 | Nothing until `COMMUNITY_INDEX` has records | `localSearch` refuses `index_not_ready` until change 7 wires the writer (ruling 3) |
-| 4 **(stepping stone)** | Entity and path questions | Questions needing the text tier refuse with a distinct temporary code, whether or not records exist, so `index_not_ready` stays true (ADR-109 D4, ruling 3) and no filter is lost; step 5 removes it. Absent: `searchGraph` |
+| 4 **(stepping stone)** | Entity and path questions | Questions needing the text tier refuse with a distinct temporary code, whether or not records exist, so `index_not_ready` stays true (ADR-109 D4, ruling 3) and no filter is lost; step 5 removes it. Step 4's design names its class, since transient invites retries until step 5. Absent: `searchGraph` |
 | 5 | The package is whole (contract, "One package per pull request") | Semantic fallback until change 5 |
 
 Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `component.go`, so the later one merges

@@ -22,8 +22,8 @@ either.
 
 #### Scenario: Bytes pass through
 
-- **WHEN** a caller sends bytes Q, with an unknown field and non-canonical spacing, and the downstream verb replies
-  with such bytes B
+- **WHEN** a caller of `entity`, `batch`, `prefix` or `byName` sends bytes Q, with an unknown field and non-canonical
+  spacing, and the downstream verb replies with such bytes B
 - **THEN** the downstream verb receives exactly Q and the caller receives exactly B (`TestForwardPassesBytesBothWays`)
 
 ### Requirement: A refusal reaches the caller intact
@@ -57,7 +57,8 @@ subject. A downstream request that times out SHALL stay transient.
 The request SHALL be `aliasOrID` with optional `min_revision`. A held alias SHALL read its holder. An alias with no
 holder SHALL read the input as an entity ID when it is a valid one. A success SHALL be a `graph.QueryResponse` from
 producer `graph-query` whose `data` is the entity verb's reply bytes, a `graph.ExactEntity`, and whose
-`indexed_revision` is the alias reply's. An alias reply that does not decode SHALL be refused transient `internal`.
+`indexed_revision` is the alias reply's. An alias reply that does not decode or names no `producer` SHALL be refused
+transient `internal`.
 
 #### Scenario: An ID given to the alias verb
 
@@ -87,6 +88,16 @@ the index reply's and `data` a non-null list of `graph.RelationshipEdge`.
 - **THEN** the caller receives `invalid_request` and no index verb receives a request
   (`TestRelationshipsRefusesUnknownDirection`)
 
+### Requirement: A broken index reply is refused
+
+An index reply to `relationships` that does not decode or names no `producer` SHALL be refused transient `internal`.
+
+#### Scenario: A broken index reply
+
+- **WHEN** the index replies `{}`
+- **THEN** the caller receives a transient `internal` refusal, not an empty list
+  (`TestRelationshipsRefusesBrokenIndexReply`)
+
 ### Requirement: Revision requests answer or refuse, never wrongly succeed
 
 Every verb SHALL accept `min_revision`. On an enveloped verb it SHALL reach graph-index unchanged; on a bare verb it
@@ -112,7 +123,7 @@ M SHALL carry `indexed_revision` at or above M.
 
 Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL bound each downstream request, default
 15000. A configuration with no ports SHALL take the default required `graph_queries` NATS-request port on
-`graph.query.*`, and any other input port shape SHALL be refused.
+   `graph.query.*`, and any other input port shape SHALL be refused.
 
 #### Scenario: A key the pin ignored
 

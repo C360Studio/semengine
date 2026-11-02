@@ -52,4 +52,5 @@ coordinator and structured strategies (4); the text tier and `searchGraph` (5). 
   question 5). SemSource's graph-query config passes as it stands.
 - **SemSource's search would go silently empty at its cutover** unless it reads `data`: this step settles the
   envelope, and `searchGraph` takes it at step 5 (`owner-questions.md`, 1).
-- No code before the owner approves this proposal and its design. Retires no issue; `design.md` lists each one.
+- No code before the owner approves this proposal and its design. Retires no issue; `split.md`, "Step 1 dispositions",
+  lists each one.

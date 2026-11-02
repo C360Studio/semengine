@@ -25,13 +25,14 @@ failing-first output, recorded in the task's note. One task is one developer's u
   arrive with 3.2. Premise: `processor/graph-index/component.go:43`, `:107` (D7); P1, P2, P3. Check: lifecycle suite
   with the failed-cleanup branch, `TestUnknownConfigKeyIsRefused`.
 - [ ] 3.2 Forwards: `entity`, `batch`, `prefix`, `byName`, with their table rows. Premise:
-  `pin:processor/graph-query/query.go:299-345` not carried (D2). Check: `TestForwardPassesBytesBothWays`,
-  `TestForwardedRefusalKeepsClassCodeDetail`, `TestNoRespondersIsTransient`, `TestQueryTimeoutIsRead`,
+  `pin:processor/graph-query/query.go:299-345` not carried (D2). Check: `TestForwardPassesBytesBothWays` on all four
+  verbs, `TestForwardedRefusalKeepsClassCodeDetail`, `TestNoRespondersIsTransient`, `TestQueryTimeoutIsRead`,
   `TestGraphQueryServesExactlyTheDeclaredVerbs`.
 - [ ] 3.3 `entityByAlias` (ADR-114) and `relationships`, with their table rows. Premise: P5, P5b,
   `graph-index/query.go:272`, `graph-ingest/query.go:79-82` (D2, D4). Check: `TestEntityByAlias`, on real ingest and
   index except the rows D4 names, `TestRelationshipsEnvelopeKeepsIndexRevision`,
-  `TestRelationshipsRefusesUnknownDirection`, each failing case shown to fail.
+  `TestRelationshipsRefusesUnknownDirection`, `TestRelationshipsRefusesBrokenIndexReply`, each failing case shown to
+  fail.
 - [ ] 3.4 `request_subject_conflict` in `composition.Analyze`, with the service's boot refusal; needs the
   `graph.query.entity` row from 3.2. Premise: `composition/analyze.go:28`, `:35`, `service/component_manager.go:328`
   (D6). Check: `TestAnalyzeReportsSecondResponder`, `TestBootRefusesSecondResponder`,
@@ -48,15 +49,15 @@ failing-first output, recorded in the task's note. One task is one developer's u
   package is whole at step 5; ADR-060 row; `defer-exclude` rows for `answer.go`'s language-model half,
   `component.go`'s wiring and `summary_view.go` (#485, #486, #487, #32); dropped `router.go`; `graph` row no longer
   defers `MinRevisionField`. Check: `task ledger:diff`.
-- [ ] 4.3 Amend ADR-114's "Not found keeps falling through" (`docs/adr/114`:113): valid IDs fall through, an unknown
-  non-ID is `entity_not_found`, citing this change (D4). `graph/README.md` and `processor/graph-index/README.md:60-66`
-  gain `min_revision`, `revision_not_reached` and the table's marks. Check: `task docs:check`.
 - [ ] 4.2 `.agents/skills/query-pattern/SKILL.md`: the six verbs, `min_revision`, decoding by verb. `AGENTS.md` § 2
   and `.agents/rules-index.md`: the reserved-subject row names `graph.query.*`. Check: `task ateam:doctor`, `task
   docs:check`.
+- [ ] 4.3 Amend ADR-114's "Not found keeps falling through" (`docs/adr/114`:113): valid IDs fall through, an unknown
+  non-ID is `entity_not_found`, citing this change (D4). `graph/README.md` and `processor/graph-index/README.md:60-66`
+  gain `min_revision`, `revision_not_reached` and the table's marks. Check: `task docs:check`.
 
 ## 5. Land
 
 - [ ] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`), and the branch has merged
-  `origin/main` with #505 in it. The PR #504 body carries `implemented-by:` and no closing keyword; the design lists
-  what stays open. Check: read `closingIssuesReferences` back, empty. Hold: #505 merged
+  `origin/main` with #505 in it. The PR #504 body carries `implemented-by:` and no closing keyword; `split.md`, "Step
+  1 dispositions", lists what stays open. Check: read `closingIssuesReferences` back, empty. Hold: #505 merged

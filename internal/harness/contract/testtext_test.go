@@ -258,17 +258,209 @@ func failsTest(body []ast.Stmt) bool {
 	for _, stmt := range body {
 		ast.Inspect(stmt, func(n ast.Node) bool {
 			if call, ok := n.(*ast.CallExpr); ok {
-				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
-					name := sel.Sel.Name
-					pkg, isPkg := sel.X.(*ast.Ident)
-					fails = fails || (isPkg && (pkg.Name == "require" || pkg.Name == "assert")) || name == "Require" ||
-						(failingCalls[name] && (name != "Error" || len(call.Args) > 0))
-				}
+				fails = fails || isFailingCall(call)
 			}
 			return !fails
 		})
 	}
 	return fails
+}
+
+// isFailingCall reports whether call is a failing method on any receiver (a bare Error()
+// excepted), a require. or assert. function, or a Require() method.
+func isFailingCall(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok {
+		return false
+	}
+	name := sel.Sel.Name
+	pkg, isPkg := sel.X.(*ast.Ident)
+	return (isPkg && (pkg.Name == "require" || pkg.Name == "assert")) || name == "Require" ||
+		(failingCalls[name] && (name != "Error" || len(call.Args) > 0))
+}
+
+// harness-boundaries › "No reach check after a generated run": in a *_test.go file, a function
+// body (a test, a helper, or a function literal) that calls rapid.Check has no failing call (the
+// set failsTest names) after that call, unless the comment group ending on the line directly above
+// a statement holding the call, after the check, starts "// After check:" followed by a reason. A
+// failing call inside a closure passed to the check is the property's own assertion and is not
+// seen. A case the test must cover runs as a named witness before the check; after it, only log.
+// rapid.MakeCheck, other entry points, and a reach check in a helper called after the run are
+// outside the check. A file that does not parse is a violation. The check call in the fixtures is
+// assembled so this file contains none.
+var (
+	rapidCheckCall = "rapid." + "Check("
+	afterCheckNote = "// After check:"
+)
+
+func TestNoReachCheckAfterGeneratedRun(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "reach check", reachCheckViolations(t, root, repoFiles(t, root)))
+}
+
+func TestNoReachCheckAfterGeneratedRunSensitivity(t *testing.T) {
+	test := func(body string) map[string]string {
+		return map[string]string{"x/x_test.go": "package x\n\nfunc TestX(t *testing.T) {\n" + body + "}\n"}
+	}
+	clean := map[string]string{
+		"x/x_test.go": "package x\n\n" +
+			// Witnesses before the run, failing on any; after it, only logging (the #498 shape).
+			"func TestWitness(t *testing.T) {\n\tfor _, w := range witnesses {\n\t\tif !holds(w) {\n\t\t\tt.Fatalf(\"witness %v\", w)\n\t\t}\n\t}\n" +
+			"\texplored := 0\n\t" + rapidCheckCall + "t, func(rt *rapid.T) {\n\t\texplored++\n" +
+			// Assertions inside the property are its own.
+			"\t\tif !holds(draw(rt)) {\n\t\t\trt.Fatalf(\"property\")\n\t\t}\n\t\trequire.True(rt, true)\n\t})\n" +
+			"\tt.Logf(\"reached %d times\", explored)\n\tt.Log(err.Error())\n}\n\n" +
+			// A post-run assertion with a reason, on a call and on a block; a reason may run on.
+			"func TestReason(t *testing.T) {\n\t" + rapidCheckCall + "t, prop)\n" +
+			"\t" + afterCheckNote + " the run must leave no goroutine behind\n\trequire.Zero(t, leaked())\n" +
+			"\t" + afterCheckNote + " the pool must be closed whatever the run drew,\n\t// so the count is not a reach count\n" +
+			"\tif open() != 0 {\n\t\tt.Fatal(\"pool open\")\n\t}\n}\n\n" +
+			// Shapes outside the check: another entry point, a reach check in a helper called after the run.
+			"func TestOutside(t *testing.T) {\n\tt.Run(\"make\", rapid.MakeCheck(prop))\n\tt.Fatal(\"not seen\")\n" +
+			"\t" + rapidCheckCall + "t, prop)\n\tcheckReached(t)\n}\n\n" +
+			"func checkReached(t *testing.T) {\n\tif explored == 0 {\n\t\tt.Fatal(\"never reached\")\n\t}\n}\n",
+		// Production code is outside the rule.
+		"x/x.go": "package x\n\nfunc f(t rapid.TB) {\n\t" + rapidCheckCall + "t, prop)\n\tt.Fatal(\"x\")\n}\n",
+	}
+	root, files := writeTree(t, clean)
+	requireNoViolations(t, "clean fixture", reachCheckViolations(t, root, files))
+
+	for _, tc := range []struct {
+		name  string
+		files map[string]string
+		want  string
+	}{
+		{"reach check after the run", test("\texplored := 0\n\t" + rapidCheckCall + "t, func(rt *rapid.T) { explored++ })\n" +
+			"\tif explored == 0 {\n\t\tt.Fatalf(\"case never reached\")\n\t}\n"), "x/x_test.go:7"},
+		{"failing call in a loop after the run", test("\t" + rapidCheckCall + "t, prop)\n\tfor _, c := range cases {\n\t\tt.Errorf(\"case %v\", c)\n\t}\n"), "x/x_test.go:6"},
+		{"empty reason", test("\t" + rapidCheckCall + "t, prop)\n\t" + afterCheckNote + "   \n\trequire.NotZero(t, n)\n"), "x/x_test.go:6"},
+		{"other comment above", test("\t" + rapidCheckCall + "t, prop)\n\t// The run must reach every case.\n\tt.Fatal(\"x\")\n"), "x/x_test.go:6"},
+		{"note not directly above", test("\t" + rapidCheckCall + "t, prop)\n\t" + afterCheckNote + " leak check\n\n\ts.Require().Zero(n)\n"), "x/x_test.go:7"},
+		{"helper", map[string]string{"x/x_test.go": "package x\n\nfunc checkAll(tb testing.TB) {\n\tn := 0\n\t" + rapidCheckCall +
+			"tb, func(rt *rapid.T) { n++ })\n\tassert.NotZero(tb, n)\n}\n"}, "x/x_test.go:6"},
+		{"check inside a subtest", test("\tt.Run(\"p\", func(t *testing.T) {\n\t\t" + rapidCheckCall + "t, prop)\n\t\tt.FailNow()\n\t})\n"), "x/x_test.go:6"},
+		{"between two runs", test("\t" + rapidCheckCall + "t, prop)\n\ttb.Fatalf(\"x\")\n\t" + rapidCheckCall + "t, prop)\n"), "x/x_test.go:5"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root, files := writeTree(t, tc.files)
+			requireViolation(t, reachCheckViolations(t, root, files), tc.want, afterCheckNote)
+		})
+	}
+	t.Run("unparsable file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/x_test.go": "package x\n\nfunc f() {\n"})
+		requireViolation(t, reachCheckViolations(t, root, files), "x/x_test.go", "parse")
+	})
+	t.Run("no test file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/x.go": "package x\n"})
+		requireViolation(t, reachCheckViolations(t, root, files), "scanned no test file")
+	})
+}
+
+func reachCheckViolations(t *testing.T, root string, files []string) []string {
+	t.Helper()
+	var violations []string
+	tests := 0
+	fset := token.NewFileSet()
+	for _, name := range files {
+		if !strings.HasSuffix(name, "_test.go") {
+			continue
+		}
+		tests++
+		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(name)), nil, parser.ParseComments|parser.SkipObjectResolution)
+		if err != nil {
+			violations = append(violations, fmt.Sprintf("%s: parse: %v", name, err))
+			continue
+		}
+		notes := map[int]bool{} // line after a comment group that starts with the note and a reason
+		for _, group := range file.Comments {
+			reason, ok := strings.CutPrefix(group.List[0].Text, afterCheckNote)
+			notes[fset.Position(group.End()).Line+1] = ok && strings.TrimSpace(reason) != ""
+		}
+		seen := map[int]bool{} // a check nested in a function literal after another check is seen twice
+		ast.Inspect(file, func(n ast.Node) bool {
+			var body *ast.BlockStmt
+			switch f := n.(type) {
+			case *ast.FuncDecl:
+				body = f.Body
+			case *ast.FuncLit:
+				body = f.Body
+			}
+			if body == nil {
+				return true
+			}
+			for _, call := range reachChecks(body, notes, fset) {
+				if line := fset.Position(call.Pos()).Line; !seen[line] {
+					seen[line] = true
+					violations = append(violations, fmt.Sprintf("%s:%d: a failing call after a rapid.Check run without `%s <reason>` on the line above its statement; "+
+						"run each case the test must cover as a named witness before the run, and only log after it", name, line, afterCheckNote))
+				}
+			}
+			return true
+		})
+	}
+	if tests == 0 {
+		violations = append(violations, fmt.Sprintf("scanned no test file among %d file(s)", len(files)))
+	}
+	return violations
+}
+
+// reachChecks returns the failing calls in body after its first rapid.Check call, outside every
+// check call's arguments, that no statement after the check holding them exempts with a note
+// (notes is keyed by the line a note stands above). A check inside a function literal belongs to
+// that literal's body, not to this one.
+func reachChecks(body *ast.BlockStmt, notes map[int]bool, fset *token.FileSet) []*ast.CallExpr {
+	after := token.NoPos
+	ast.Inspect(body, func(n ast.Node) bool {
+		if call, ok := n.(*ast.CallExpr); ok && after == token.NoPos && isRapidCheck(call) {
+			after = call.End()
+		}
+		_, lit := n.(*ast.FuncLit)
+		return after == token.NoPos && !lit
+	})
+	if after == token.NoPos {
+		return nil
+	}
+	var found []*ast.CallExpr
+	var stmts []ast.Stmt // statements after the check enclosing the node visited
+	var stack []ast.Node
+	ast.Inspect(body, func(n ast.Node) bool {
+		if n == nil {
+			if _, ok := stack[len(stack)-1].(ast.Stmt); ok && stack[len(stack)-1].Pos() >= after {
+				stmts = stmts[:len(stmts)-1]
+			}
+			stack = stack[:len(stack)-1]
+			return false
+		}
+		call, isCall := n.(*ast.CallExpr)
+		if isCall && isRapidCheck(call) {
+			return false
+		}
+		if isCall && call.Pos() >= after && isFailingCall(call) {
+			exempt := false
+			for _, s := range stmts {
+				exempt = exempt || notes[fset.Position(s.Pos()).Line]
+			}
+			if !exempt {
+				found = append(found, call)
+			}
+			return false
+		}
+		if s, ok := n.(ast.Stmt); ok && s.Pos() >= after {
+			stmts = append(stmts, s)
+		}
+		stack = append(stack, n)
+		return true
+	})
+	return found
+}
+
+func isRapidCheck(call *ast.CallExpr) bool {
+	sel, ok := call.Fun.(*ast.SelectorExpr)
+	if !ok || sel.Sel.Name != "Check" {
+		return false
+	}
+	pkg, ok := sel.X.(*ast.Ident)
+	return ok && pkg.Name == "rapid"
 }
 
 // harness-boundaries › "No skipped or hidden tests": no *_test.go file calls Skip, Skipf or

@@ -135,7 +135,7 @@ and that the inventory carries the shape sweep's findings, each cited at the pin
 `path:line`. Check each finding's disposition under
 [Bounded port scope](../protocol.md#bounded-port-scope): a required correction names its binding basis and receives
 the appropriate ledger disposition; retained structure says why changing it is optional. A missing unit, line count,
-owner question, finding, or supported disposition is a finding.
+split reasoning, finding, or supported disposition is a finding.
 
 For the same porting designs (architect contract, Extraction slices, "Open issues against the package"), re-run the
 candidate query yourself, `gh issue list --state open --search "<last path segment>" --limit 200` for each carried
@@ -203,8 +203,8 @@ when each "stays" has a supported basis.
   defer it to a follow-up.
 - Verify caller/callee behavior, error classes, state/readiness transitions, and consumer-visible results with
   evidence. Require an architect-reviewed TDD slice and behavior-level tests through production seams.
-- For a porting pull request whose package exceeds the bound (architect contract, "One package per pull request"),
-  check before merge that the owner's waiver for that number is on the pull request. A missing waiver is a finding.
+- For a porting pull request (architect contract, "One package per pull request"), the line count is a guide, not a
+  limit: check that its design states the line count and the split it chose and why. No waiver exists to look for.
 - For each task under review, check that the choices it made beyond its design are in its notes file,
   `openspec/changes/<id>/notes/<task>.md` (developer contract, Handoff), and that a pull request comment links the
   file. Notes posted only as a pull request comment are a finding.
@@ -388,8 +388,10 @@ is the first bullet below.
   assertion run (an always-empty loop checks nothing), that a history's reference model is not filled from production
   code, and that the run's seed, completed check count and replay command are recorded. A failing call after
   the generated run that depends on which inputs were drawn is `BLOCKING`; the case belongs in a named witness before
-  the run. `TestNoReachCheckAfterGeneratedRun` catches the literal shape; check `rapid.MakeCheck` and reach checks in
-  helpers yourself (#466, #497, #500).
+  the run. `TestNoReachCheckAfterGeneratedRun` catches the literal shape; check yourself what it cannot see:
+  `rapid.MakeCheck`, a reach check in a helper called after the run, one in `defer` or `t.Cleanup` registered before
+  the run, the run inside a helper with the test failing after calling it, and `rapid` imported under an alias
+  (#466, #497, #500).
 - Paid or prolonged operations use validated monitors plus active polling of authoritative state every 30-60 seconds.
 
 ## Adopter seam review

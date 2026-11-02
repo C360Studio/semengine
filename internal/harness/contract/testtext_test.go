@@ -318,6 +318,9 @@ func TestNoReachCheckAfterGeneratedRunSensitivity(t *testing.T) {
 			// Shapes outside the check: another entry point, a reach check in a helper called after the run.
 			"func TestOutside(t *testing.T) {\n\tt.Run(\"make\", rapid.MakeCheck(prop))\n\tt.Fatal(\"not seen\")\n" +
 			"\t" + rapidCheckCall + "t, prop)\n\tcheckReached(t)\n}\n\n" +
+			// A second run's closure asserts on its own draws, as the first one's does.
+			"func TestTwoRuns(t *testing.T) {\n\t" + rapidCheckCall + "t, prop)\n\t" + rapidCheckCall +
+			"t, func(rt *rapid.T) {\n\t\trt.Fatalf(\"property\")\n\t})\n}\n\n" +
 			"func checkReached(t *testing.T) {\n\tif explored == 0 {\n\t\tt.Fatal(\"never reached\")\n\t}\n}\n",
 		// Production code is outside the rule.
 		"x/x.go": "package x\n\nfunc f(t rapid.TB) {\n\t" + rapidCheckCall + "t, prop)\n\tt.Fatal(\"x\")\n}\n",
@@ -339,6 +342,8 @@ func TestNoReachCheckAfterGeneratedRunSensitivity(t *testing.T) {
 		{"helper", map[string]string{"x/x_test.go": "package x\n\nfunc checkAll(tb testing.TB) {\n\tn := 0\n\t" + rapidCheckCall +
 			"tb, func(rt *rapid.T) { n++ })\n\tassert.NotZero(tb, n)\n}\n"}, "x/x_test.go:6"},
 		{"check inside a subtest", test("\tt.Run(\"p\", func(t *testing.T) {\n\t\t" + rapidCheckCall + "t, prop)\n\t\tt.FailNow()\n\t})\n"), "x/x_test.go:6"},
+		{"failing call in the parent after a run in a subtest", test("\tt.Run(\"p\", func(t *testing.T) {\n\t\t" + rapidCheckCall +
+			"t, prop)\n\t})\n\tt.Fatal(\"never reached\")\n"), "x/x_test.go:7"},
 		{"between two runs", test("\t" + rapidCheckCall + "t, prop)\n\ttb.Fatalf(\"x\")\n\t" + rapidCheckCall + "t, prop)\n"), "x/x_test.go:5"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -406,16 +411,15 @@ func reachCheckViolations(t *testing.T, root string, files []string) []string {
 
 // reachChecks returns the failing calls in body after its first rapid.Check call, outside every
 // check call's arguments, that no statement after the check holding them exempts with a note
-// (notes is keyed by the line a note stands above). A check inside a function literal belongs to
-// that literal's body, not to this one.
+// (notes is keyed by the line a note stands above). A check inside a function literal, such as a
+// t.Run closure, counts for this body too: a failing call after the literal is after the run.
 func reachChecks(body *ast.BlockStmt, notes map[int]bool, fset *token.FileSet) []*ast.CallExpr {
 	after := token.NoPos
 	ast.Inspect(body, func(n ast.Node) bool {
 		if call, ok := n.(*ast.CallExpr); ok && after == token.NoPos && isRapidCheck(call) {
 			after = call.End()
 		}
-		_, lit := n.(*ast.FuncLit)
-		return after == token.NoPos && !lit
+		return after == token.NoPos
 	})
 	if after == token.NoPos {
 		return nil

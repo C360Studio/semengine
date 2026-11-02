@@ -32,10 +32,11 @@ SHALL have no baseline and no allowlist, and SHALL fail when it scanned no test 
 
 #### Scenario: Shapes outside the check
 
-- **WHEN** a test runs a property through `rapid.MakeCheck` or another entry point, or a reach check lives in a helper
-  the test calls after the run
-- **THEN** the check does not see it: it recognises `rapid.Check` calls and failing calls in the same function body,
-  and those shapes stay review work
+- **WHEN** a test runs a property through `rapid.MakeCheck` or another entry point, imports `rapid` under an alias,
+  keeps a reach check in a helper the test calls after the run or in a `defer` or `t.Cleanup` registered before it, or
+  runs the check inside a helper and fails after calling the helper
+- **THEN** the check does not see it: it recognises `rapid.Check` calls (including inside a `t.Run` closure) and failing
+  calls in the same function body, and those shapes stay review work
 
 #### Scenario: Nothing scanned
 

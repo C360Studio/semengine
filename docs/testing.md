@@ -452,7 +452,9 @@ inputs happened to cover (#466, #497, #500). What passes: a named witness (an in
 same assertions before the generated run, so the case is reached every time), logging after the run, and assertions
 inside the property closure. The only escape is `// After check: <reason>` on the line above, for an assertion on
 state the run must leave behind (a goroutine count, a closed resource); a reach count is never a reason. The check
-cannot see `rapid.MakeCheck` or a reach check hidden in a helper called after the run; the reviewer checks those.
+cannot see `rapid.MakeCheck`, a reach check in a helper called after the run, one in `defer` or `t.Cleanup`
+registered before the run, the run inside a helper with the test failing after calling it, or `rapid` imported under
+an alias; the reviewer checks those.
 
 ### Check a history against a reference model
 

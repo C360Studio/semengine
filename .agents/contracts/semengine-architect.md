@@ -156,8 +156,9 @@ after the packages it imports. A package that nothing ported so far imports is c
 its ledger row, its tests and its coverage floor where it has one, and waits for its importer. D8 of the same design
 (`:437-451`) is the precedent for carrying a package across changes.
 
-Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159. The split by lifecycle owner, the
-waiver by number and one OpenSpec change per pull request: owner rulings 2026-10-09, #159 comment 6091894475.
+Source: owner ruling 2026-10-09, epic #9 comment 6085243841, ruling 1; issue #159. The split by lifecycle owner and
+one OpenSpec change per pull request: owner rulings 2026-10-09, #159 comment 6091894475; the 2026-11-02 amendment
+on #500 makes the line count a guide, not a limit.
 
 ### The shape sweep
 

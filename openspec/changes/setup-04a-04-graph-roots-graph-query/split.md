@@ -2,8 +2,8 @@
 
 The port, re-cut after the rulings on PR #504. Line figures are hand estimates of what each step holds, production
 plus tests, not measurements; the owner's "line count is a guide" applies (draft PR #505). Each step compiles, is
-tested and passes `task verify`. A later verb is not in the table until its step, so a request for it gets "no
-responders", not a wrong answer.
+tested and passes `task verify`. A later verb is not in the table until its step, so on a default server a request for
+it reports no responders, and never gets a wrong answer.
 
 | Step | PR | Purpose | Delivers | Depends on | Retires | Lines (prod + test) |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -36,9 +36,9 @@ against the inventory's 14,328 carried; both count differently, so treat that as
 | After step | Answers on merge | Refuses or absent until |
 | --- | --- | --- |
 | 1 | Six lookups, against in-tree responders | SemConnect decodes `entity` after its one-tag change (`design.md` D5) |
-| 2 | Path search, counts | Four forwards: "no responders" refused transient until changes 5 and 7 bring responders |
+| 2 | Path search, counts | Four forwards: refused transient, when the request reports no responders, until changes 5 and 7 bring them |
 | 3 | Nothing until `COMMUNITY_INDEX` has records | `localSearch` refuses `index_not_ready` until change 7 wires the writer (ruling 3) |
-| 4 **(stepping stone)** | Entity and path questions | Questions needing the text tier refuse `index_not_ready`: what a tier 0 deployment gets anyway until change 7 has written records, so no filter is lost and no degrade is hidden. Absent: `searchGraph` |
+| 4 **(stepping stone)** | Entity and path questions | Questions needing the text tier refuse with a distinct temporary code, whether or not records exist, so `index_not_ready` stays true (ADR-109 D4, ruling 3) and no filter is lost; step 5 removes it. Absent: `searchGraph` |
 | 5 | The package is whole (contract, "One package per pull request") | Semantic fallback until change 5 |
 
 Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `component.go`, so the later one merges
@@ -46,24 +46,42 @@ Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `compone
 
 ## Issues, ADRs and carried questions
 
-- #103 retires at step 5 only if the owner agrees the generation marker moves to #15; otherwise it stays. #106: boot
-  refusal in step 1, retires when the last rows land. #111: item 2 step 2, item 3 steps 4 and 5, item 4 stays for
-  change 7. #105: `IncludePredicates` in step 2; stays folded into #32. #68, #477: sites in step 3; stay for other
+- `#103` retires at step 5, its marker left with `#15` (ruling 1). `#106`: boot refusal in step 1; retires when the
+  last rows land only if the owner accepts the declared-ports limit or SemSource's check is in place
+  (`owner-questions.md`, 2), otherwise it stays. #111: item 2 step 2, item 3 steps 4 and 5, item 4 stays for change
+  7. #105: `IncludePredicates` in step 2; stays folded into #32. #68, #477: sites in step 3; stay for other
   packages. #506 keyword index: not this port.
 - ADR-060 step 1. ADR-071 step 2. ADR-087 Decision 5 step 3. ADR-099's sentence stands (ruling 2); ADR-081, ADR-085
   apply in step 3.
 - Applied from section 13 by each step's design: Q5(b) in steps 3 to 5; Q7(a) in step 2, with Q7(b) a follow-up after
   change 7; Q8(a) in step 2. Hard limits' numbers are step 2's design (owner, D); SemConnect's config already names
   `max_traversal_depth` and `max_traversal_nodes`, which the pin ignored.
-- Step 2's design: ruling 1 does not name `semantic`, `similar`, `spatial`, `temporal` (not graph-index, not
-  authority). Recommend forwards marked bare as the pin replies, and each responder's port in change 5 or 7 decides,
-  changing its row.
+- Step 2 owner question: ruling 1 does not name `semantic`, `similar`, `spatial`, `temporal` (not graph-index, not
+  authority), and marking them bare sits against its headline, with a later flip a second consumer break. Recommend
+  deciding the shape once, in the port that brings each responder.
 - Step 3's design: the one new community record field (owner left it there); the community verbs' `indexed_revision`
   depends on it.
 - **Step 5 consumer risk:** SemSource decodes `searchGraph` with `json.Unmarshal` into a struct of optional fields
   (`processor/mcp-gateway/query_tools.go:113`, `graph_matches.go:107` at `e4febc0d`). Once that verb is enveloped
-  (ruling 1) its old decoder returns no error and no matches. That is silent, unlike D5's. Step 5's design owes its
-  adopter note, and SemSource's cutover must read `data`.
+  (ruling 1) its old decoder returns no error and no matches. That is silent, unlike D5's, and `deriveDisclosure`
+  (`disclosure.go:84`) reports no answer. Put to the owner now (`owner-questions.md`, 1); step 5 carries the adopter
+  note.
+
+## Step 1 dispositions
+
+- **Shape sweep** (`inventory.md` § 8). Required, done here (`AGENTS.md` rows, ADR-108, ADR-114, surface audit,
+  build): S4, S5, S6, S9 for reserved subjects, S10, S17, S24, S25. Optional, gone with D2 and D7 at no cost: S19,
+  S21, S23, S26. Code not carried here, step in `split.md`: S1, S2, S7, S8, S11-S16, S18, S20, S22. Clean: S3, S27,
+  S28. Dead surface dropped: `router.go`. Pin tests rewritten on a broker (`split.md`).
+- **Issues:** retires none. Stay, required later: `#103` (step 5; marker `#15`), `#106` (see above), `#405` (4;
+  ADR-114 half here), `#406`, `#31`, `#477` (3), `#479` (4), `#105` (2), `#111` (2, 4, 5; item 4 change 7). Stay,
+  optional or not this package's: `#68` (no collector yet), `#195`, `#196`, `#16` (the table widens it), `#15`,
+  `#108`, `#155`, `#32`, `#485`-`#487`, `#506`, `#484`, `#9`, `#500`. Names the word only: `#7`, `#24`, `#109`,
+  `#300`, `#350`.
+- **ADRs:** ADR-060 ported, with a note that ADR-091 amends it and is not here; ADR-109, -113, -114 applied; D18
+  amended by ruling 1; ADR-071 step 2, ADR-087 D5 step 3.
+- **Overlap:** draft PR `#505` merges first (`AGENTS.md`, rules index, other rows); this step updates the
+  reserved-subject row. The `query-pattern` skill grows.
 
 ## Tests, by step (`inventory.md` § 9)
 

@@ -17,27 +17,30 @@ another component serves under `graph.query.*` that the table does not declare S
 ### Requirement: Authority and name replies are forwarded unchanged
 
 `entity`, `batch`, `prefix` and `byName` SHALL forward the request bytes to the matching `graph.ingest.query.*` or
-`graph.index.query.byName` verb and return the reply bytes unchanged, without decoding or re-checking either.
+`graph.index.query.byName` verb and return the reply bytes unchanged, without decoding, re-encoding or re-checking
+either.
 
 #### Scenario: Bytes pass through
 
-- **WHEN** the downstream verb replies with bytes B
-- **THEN** the caller receives exactly B (`TestForwardReturnsReplyBytesUnchanged`)
+- **WHEN** a caller sends bytes Q, with an unknown field and non-canonical spacing, and the downstream verb replies
+  with such bytes B
+- **THEN** the downstream verb receives exactly Q and the caller receives exactly B (`TestForwardPassesBytesBothWays`)
 
 ### Requirement: A refusal reaches the caller intact
 
 Every verb SHALL return a downstream classified refusal with its class, code and detail unchanged. When a downstream
-verb has no responder, the component SHALL refuse with class transient and code `internal`, naming the subject.
+request reports no responders, the component SHALL refuse with class transient and code `internal`, naming the
+subject. A downstream request that times out SHALL stay transient.
 
 #### Scenario: A relayed refusal
 
 - **WHEN** a downstream verb refuses with class C, code X and detail D
 - **THEN** the caller's classified error has class C, code X and detail D (`TestForwardedRefusalKeepsClassCodeDetail`)
 
-#### Scenario: No responder
+#### Scenario: No responders
 
-- **WHEN** no component answers the downstream subject
-- **THEN** the caller receives a transient `internal` refusal naming that subject (`TestNoResponderIsTransient`)
+- **WHEN** a downstream request reports no responders
+- **THEN** the caller receives a transient `internal` refusal naming that subject (`TestNoRespondersIsTransient`)
 
 ### Requirement: Alias lookup refuses what the alias verb refuses
 
@@ -51,9 +54,10 @@ verb has no responder, the component SHALL refuse with class transient and code 
 
 ### Requirement: Alias lookup answers in one envelope
 
-A held alias SHALL read its holder. An alias with no holder SHALL read the input as an entity ID when it is a valid one.
-A success SHALL be a `graph.QueryResponse` from producer `graph-query` whose `data` is a `graph.ExactEntity` and whose
-`indexed_revision` is the alias reply's.
+The request SHALL be `aliasOrID` with optional `min_revision`. A held alias SHALL read its holder. An alias with no
+holder SHALL read the input as an entity ID when it is a valid one. A success SHALL be a `graph.QueryResponse` from
+producer `graph-query` whose `data` is the entity verb's reply bytes, a `graph.ExactEntity`, and whose
+`indexed_revision` is the alias reply's. An alias reply that does not decode SHALL be refused transient `internal`.
 
 #### Scenario: An ID given to the alias verb
 
@@ -72,9 +76,10 @@ An alias with no holder whose input is not a valid entity ID SHALL be refused wi
 
 ### Requirement: Relationships are enveloped and refuse an unknown direction
 
-`relationships` SHALL read `direction` as `outgoing`, empty (meaning outgoing) or `incoming`, and SHALL refuse any other
-value with `invalid_request`. A success SHALL be a `graph.QueryResponse` from producer `graph-query`, `indexed_revision`
-being the index reply's and `data` a non-null list of `graph.RelationshipEdge`.
+`relationships` SHALL take `entity_id` and `direction`, forwarding the request bytes unchanged, and SHALL read
+`direction` as `outgoing`, empty (meaning outgoing) or `incoming`, and SHALL refuse any other value with
+`invalid_request`. A success SHALL be a `graph.QueryResponse` from producer `graph-query`, `indexed_revision` being
+the index reply's and `data` a non-null list of `graph.RelationshipEdge`.
 
 #### Scenario: A direction the component does not read
 
@@ -85,21 +90,29 @@ being the index reply's and `data` a non-null list of `graph.RelationshipEdge`.
 ### Requirement: Revision requests answer or refuse, never wrongly succeed
 
 Every verb SHALL accept `min_revision`. On an enveloped verb it SHALL reach graph-index unchanged; on a bare verb it
-SHALL be ignored, an authority read reflecting every committed write. A success on an enveloped verb to `min_revision` M
-SHALL carry `indexed_revision` at or above M.
+SHALL be ignored, an authority read reflecting every committed write. A success on an enveloped verb to `min_revision`
+M SHALL carry `indexed_revision` at or above M.
 
 #### Scenario: Reading a write back
 
-- **WHEN** a caller writes entity E, receives `kv_revision` W, and requests `relationships` for E with `min_revision` W
+- **WHEN** a caller writes entity E, receives `kv_revision` W, and requests `relationships` for E with `min_revision`
+  W
 - **THEN** it receives a reply with `indexed_revision` at or above W reflecting the write, or a `revision_not_reached`
   refusal
 - **AND** never a success with `indexed_revision` below W (`TestReadYourWrites`)
 
+#### Scenario: A revision far ahead
+
+- **WHEN** `byName`, `relationships` in either direction, or `entityByAlias` carries a `min_revision` far above the
+  index's revision
+- **THEN** the caller receives `revision_not_reached` with its class and detail
+  (`TestMinRevisionRefusalThroughGraphQuery`)
+
 ### Requirement: Configuration is strict and read
 
-Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL bound each downstream request, default 5000. A
-configuration with no ports SHALL take the default required `graph_queries` NATS-request port on `graph.query.*`, and
-any other input port shape SHALL be refused.
+Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL bound each downstream request, default
+15000. A configuration with no ports SHALL take the default required `graph_queries` NATS-request port on
+`graph.query.*`, and any other input port shape SHALL be refused.
 
 #### Scenario: A key the pin ignored
 

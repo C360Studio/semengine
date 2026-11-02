@@ -135,7 +135,7 @@ Behaviour probes, a temporary test in the pin copy, since removed (package-inter
 | P2 | unknown key `no_such_key` | accepted silently |
 | P3 | `doc.go:44-46` per-operation port example | refused: `input must be the required graph_queries port` |
 | P4 | summary: 1,000-row prefix page, predicate verb refusing | no error; `total_entities:1000`; `entity_sample_truncated:false`; no `predicates` |
-| P5 | `entityByAlias`, alias verb refuses `alias_ambiguous` | asks entity verb with `{"id":"sn-1"}`; caller sees the entity's not-found |
+| P5 | `entityByAlias`, alias verb refuses `alias_ambiguous` | asks entity verb with `{"id":"sn-1"}`; the probe's fake answered not-found, while real graph-ingest refuses this non-ID as `invalid_request` (`processor/graph-ingest/query.go:79-82`, pin `:82`) |
 | P5b | resolver, same refusal | `""`, nil error |
 | P6 | `{"entity":{"id":"a"},"kv_revision":7}` through `validateEntityQueryResponse` | `zero KV revision` |
 | P7 | `applyLimits(-5, 2000000000)` with `maxDepth` 10 | `-5, 2000000000`: only an over-large depth is capped |
@@ -506,7 +506,7 @@ Surfaces reached from outside: the `graph.query.*` wire; `Register`; the config.
 stream on `graph.>` is refused at boot (#16); that some verbs need change 5/7 components; that an answer may be degraded
 (`degraded_reason`); that `kv_revision` replaced `kvRevision`. That is more than two facts: a finding by the contract's measure.
 
-**2. If they do nothing?** Traced on the pin: an alias collision reads as "not found" (P5); a big graph's summary reads as
+**2. If they do nothing?** Traced on the pin: an alias collision reads as "not found" or, on a non-ID, a malformed request (P5); a big graph's summary reads as
 complete (P4); a missing index reads as an empty facet (P4); unknown config keys are ignored (P2). Semconnect's
 `kvRevision` decoder sees revision 0 unless its decode refuses it (**not measured**). If D18's envelope wraps
 `entity`/`batch`, the same decoder sees an empty entity (read; `systems.go:808`).

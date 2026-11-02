@@ -4,12 +4,12 @@ Approved-by:
 
 ## Why
 
-Change 4 of epic #9 ports the graph roots in the owner's order (#9 comment 6386856657); item 9, `processor/graph-query`,
-is the last. The owner, 2026-11-02: "graph-query is essential to our success - many lessons learned in semstreams gets
-us pretty close but does not mean we can not improve from ground up." The rulings on PR #504 (comments 6582751320,
-6582751783, 6582752155, 6585009466) settled the reply contract and removed the pin's community cache, member walks and
-answer-writer interface, so the port splits into five steps (`split.md`). This change is step 1: the component and the
-six direct lookups, the first thing to answer on `graph.query.*`.
+Change 4 of epic #9 ports the graph roots in the owner's order (#9 comment 6386856657); item 9,
+`processor/graph-query`, is the last. The owner, 2026-11-02: "graph-query is essential to our success - many lessons
+learned in semstreams gets us pretty close but does not mean we can not improve from ground up." The rulings on
+PR #504 (comments 6582751320, 6582751783, 6582752155, 6585009466) settled the reply contract and removed the pin's
+community cache, member walks and answer-writer interface, so the port splits into five steps (`split.md`). This
+change is step 1: the component and the six direct lookups, the first thing to answer on `graph.query.*`.
 
 ## What Changes
 
@@ -21,7 +21,8 @@ six direct lookups, the first thing to answer on `graph.query.*`.
   `relationships` build one `graph.QueryResponse`.
 - `min_revision` on graph-index's eight verbs: an index behind the revision refuses with transient
   `revision_not_reached`, naming the revision it has reached. No reply waits (ADR-109 Decision 4).
-- `entityByAlias` refuses what the alias verb refuses, `alias_ambiguous` and `index_not_ready` among them (ADR-114).
+- `entityByAlias` refuses what the alias verb refuses (ADR-114), and answers `entity_not_found` for an unknown non-ID,
+  amending one ADR-114 sentence.
 - `composition.Analyze` reports a second responder on a declared verb, which refuses boot (#106, in part).
 - Port ADR-060 with a note. Add ledger rows; grow the `query-pattern` skill.
 
@@ -44,8 +45,11 @@ coordinator and structured strategies (4); the text tier and `searchGraph` (5). 
   `graph.ErrorCodeRevisionNotReached`, `graph.RelationshipEdge`, `composition.TypeRequestSubjectConflict`. Package
   `graphquery` exports `Register`, `DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.
 - New subjects: six on `graph.query.*`, now reserved (no stream may capture them; #16). New config key:
-  `query_timeout_ms`. New buckets: none.
+  `query_timeout_ms`, default 15000. New buckets: none.
 - Consumers, at their cutover to this module. SemConnect must read `kv_revision` (one struct tag) and delete three
-  config keys its deployment sets and the pin ignored. `relationships` replies change shape; no consumer decodes them
-  except through fusion, which change 5 ports here. SemSource's graph-query config passes as it stands.
+  config keys its deployment sets and the pin ignored. `relationships` and `entityByAlias` go from bare to enveloped;
+  fusion reads the first (change 5 ports it here) and a copied graph-gateway would nest both (`design.md` D5, owner
+  question 5). SemSource's graph-query config passes as it stands.
+- **SemSource's search would go silently empty at its cutover** unless it reads `data`: this step settles the
+  envelope, and `searchGraph` takes it at step 5 (`owner-questions.md`, 1).
 - No code before the owner approves this proposal and its design. Retires no issue; `design.md` lists each one.

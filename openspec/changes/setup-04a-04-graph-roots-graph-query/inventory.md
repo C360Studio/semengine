@@ -155,7 +155,7 @@ laptop. Only the first page is read before each first walk, so those walks are m
 | 100,000 | empty prefix | 164 ms | not walked |
 | 1,000,000 | empty prefix | 1.43 s | not walked |
 
-Bounded walks, the reviewer's re-run by build overlay, one run, 2 min 46 s (`/tmp/rev-504-tool/ov2/run.log`, read here; local only). Same
+Bounded walks, the reviewer's re-run by build overlay, one run, 2 min 46 s (`notes/probes/prefix-cost-bounded-walks.log`). Same
 bucket of 1,000,000, 2 KB bodies, first 23 pages, 10,396 entities:
 
 | Group | First and last page | 23 pages |
@@ -779,7 +779,7 @@ publication"); `archive/2026-10-31-...-clustering/design.md` D6; ADR-085 (`pin:.
 `graphrag.go:279-397`, `:1372-1498`, all read in this run. Enumeration cost is F3's; a request's cost during a tick is not part of F1.
 
 **F3, before 9.3 (Q2).** *"Given that every page of a prefix read rescans the whole group, how should a search reach a group's entities?"*
-Evidence: section 1's two cost tables and `probe-prefixcost2.log`, `/tmp/rev-504-tool/ov2/run.log` (local only); `docs/adr/099-*.md:19`,
+Evidence: section 1's two cost tables and `notes/probes/prefix-cost-full-walks.log`, `notes/probes/prefix-cost-bounded-walks.log`; `docs/adr/099-*.md:19`,
 `:57-58`, `:73`; `graph/query_prefix_types.go:30-33`; `processor/graph-ingest/query.go` prefix handler; pin `graphrag.go:162`, `:279-397`,
 `:1372-1498`, `:29`; Q2's option table. Real sizes at levels 0 and 1 are unknown to it, and it should say what its answer depends on.
 

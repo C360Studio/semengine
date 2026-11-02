@@ -191,140 +191,138 @@ func TestResolveLoggerSubjectsOmitsCoveredSubjects(t *testing.T) {
 // Generator: a slice of zero to six subjects, each one to three tokens from {a, b, *}, the last
 // possibly >, so every subject is valid under D3's grammar by construction (the reduction's input
 // is a validated set) and drawn from a small alphabet so covers are common. A slice is drawn and
-// folded into the set, so a repeated subject is part of the input. Two rare cases are also set up
-// on purpose (#497), each in half the sets independently, so a quarter of the sets are the slice
-// alone, of any size: the pair a.* and *.a overlap (a.a matches both) while neither covers the
-// other, and b.>, b.*, b.b are a chain of three covers. Random draws alone missed the overlap in 2
-// of 3,000 runs of 100 sets and reached the chain as few as once in a run. What makes each
-// assertion run:
-// the cases below are counted when a set reaches them, and the test fails at the end unless each
-// count is above zero, so a generator that stops reaching one fails rather than passing quietly.
-// The run's seed and completed checks are recorded in the notes when the test first runs (task
-// 2.2).
+// folded into the set, so a repeated subject is part of the input.
+//
+// What makes each assertion run: every case below has a named set that reaches it, run through the
+// same assertions, and the test fails unless the set reaches its case. No random run has to reach a
+// case (docs/testing.md, "Show that each assertion runs"; requiring one was flake #497); how often
+// the random sets reach each case is logged only.
 func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
-	reached := map[string]int{}
-	cases := []string{
-		"a subject omitted under a > subject",
-		"a subject omitted under a * subject with no >",
-		"a chain of three covers",
-		"two subscribed subjects overlap without a cover",
-		"a repeated subject",
-		"nothing omitted from two or more subjects",
+	witnesses := []struct {
+		reaches  string
+		subjects []string
+	}{
+		{"a subject omitted under a > subject", []string{"a.>", "a.b"}},
+		{"a subject omitted under a * subject with no >", []string{"a.*", "a.b"}},
+		{"a chain of three covers", []string{"a.>", "a.*", "a.b"}},
+		{"two subscribed subjects overlap without a cover", []string{"a.*", "*.a"}}, // a.a matches both
+		{"a repeated subject", []string{"a.b", "a.b"}},
+		{"nothing omitted from two or more subjects", []string{"a", "b"}},
+	}
+	for _, w := range witnesses {
+		reached := map[string]int{}
+		checkCoveredSubjects(t, w.subjects, reached)
+		if reached[w.reaches] == 0 {
+			t.Errorf("subjects %q did not reach %q, so its assertions never ran", w.subjects, w.reaches)
+		}
 	}
 
+	explored := map[string]int{}
 	rapid.Check(t, func(rt *rapid.T) {
 		drawn := rapid.SliceOfN(rapid.Custom(drawValidSubject), 0, 6).Draw(rt, "subjects")
-		if rapid.Bool().Draw(rt, "overlap pair") {
-			drawn = append(drawn, "a.*", "*.a")
-		}
-		if rapid.Bool().Draw(rt, "cover chain") {
-			drawn = append(drawn, "b.>", "b.*", "b.b")
-		}
-		desired := make(map[string]struct{}, len(drawn))
-		for _, s := range drawn {
-			desired[s] = struct{}{}
-		}
-		input := make(map[string]struct{}, len(desired))
-		for s := range desired {
-			input[s] = struct{}{}
-		}
-
-		subjects, overlaps := resolveLoggerSubjects(desired)
-
-		// Sorted, duplicate-free subset of the input.
-		if !slices.IsSorted(subjects) {
-			rt.Fatalf("subscribed %q is not sorted", subjects)
-		}
-		if len(slices.Compact(slices.Clone(subjects))) != len(subjects) {
-			rt.Fatalf("subscribed %q holds a duplicate", subjects)
-		}
-		subscribed := make(map[string]bool, len(subjects))
-		for _, s := range subjects {
-			if _, ok := input[s]; !ok {
-				rt.Fatalf("subscribed %q was never desired (input %q)", s, drawn)
-			}
-			subscribed[s] = true
-		}
-
-		// Every desired subject is covered by a subscribed one.
-		for s := range input {
-			if !slices.ContainsFunc(subjects, func(sub string) bool { return flowgraph.SubjectCovers(sub, s) }) {
-				rt.Fatalf("desired %q is covered by no subscribed subject in %q", s, subjects)
-			}
-		}
-
-		// No subscribed subject covers another.
-		for _, a := range subjects {
-			for _, b := range subjects {
-				if a != b && flowgraph.SubjectCovers(a, b) {
-					rt.Fatalf("subscribed %q covers subscribed %q", a, b)
-				}
-			}
-		}
-
-		// Each omission is reported once, by a desired subject that covers it.
-		reported := map[string]int{}
-		for _, o := range overlaps {
-			reported[o.Covered]++
-			if o.Resolution != "covered subscription omitted" {
-				rt.Fatalf("overlap %+v has resolution %q", o, o.Resolution)
-			}
-			if _, ok := input[o.Broader]; !ok || o.Broader == o.Covered || !flowgraph.SubjectCovers(o.Broader, o.Covered) {
-				rt.Fatalf("overlap %+v: broader is not another desired subject covering the omitted one", o)
-			}
-		}
-		for s := range input {
-			want := 0
-			if !subscribed[s] {
-				want = 1
-			}
-			if reported[s] != want {
-				rt.Fatalf("desired %q reported as omitted %d times, want %d (subscribed %q)", s, reported[s], want, subjects)
-			}
-		}
-
-		// Count the cases the assertions above ran on.
-		for _, o := range overlaps {
-			if strings.HasSuffix(o.Broader, ">") {
-				reached["a subject omitted under a > subject"]++
-			} else {
-				reached["a subject omitted under a * subject with no >"]++
-			}
-		}
-		for a := range input {
-			for b := range input {
-				for c := range input {
-					if a != b && b != c && flowgraph.SubjectCovers(a, b) && flowgraph.SubjectCovers(b, c) {
-						reached["a chain of three covers"]++
-					}
-				}
-			}
-		}
-		for _, a := range subjects {
-			for _, b := range subjects {
-				if a < b && flowgraph.SubjectsOverlap(a, b) {
-					reached["two subscribed subjects overlap without a cover"]++
-				}
-			}
-		}
-		if len(drawn) > len(input) {
-			reached["a repeated subject"]++
-		}
-		if len(overlaps) == 0 && len(subjects) >= 2 {
-			reached["nothing omitted from two or more subjects"]++
-		}
+		checkCoveredSubjects(rt, drawn, explored)
 	})
+	for _, w := range witnesses {
+		t.Logf("case %q reached %d times by random sets", w.reaches, explored[w.reaches])
+	}
+}
 
-	if t.Failed() {
-		return
+// checkCoveredSubjects asserts D3's law on one subject list, folded into a set, and counts in
+// reached the cases the assertions ran on.
+func checkCoveredSubjects(t rapid.TB, drawn []string, reached map[string]int) {
+	t.Helper()
+	desired := make(map[string]struct{}, len(drawn))
+	for _, s := range drawn {
+		desired[s] = struct{}{}
 	}
-	for _, c := range cases {
-		t.Logf("case %q reached %d times", c, reached[c])
+	input := make(map[string]struct{}, len(desired))
+	for s := range desired {
+		input[s] = struct{}{}
 	}
-	for _, c := range cases {
-		if reached[c] == 0 {
-			t.Errorf("no generated set reached %q, so its assertions never ran", c)
+
+	subjects, overlaps := resolveLoggerSubjects(desired)
+
+	// Sorted, duplicate-free subset of the input.
+	if !slices.IsSorted(subjects) {
+		t.Fatalf("subscribed %q is not sorted", subjects)
+	}
+	if len(slices.Compact(slices.Clone(subjects))) != len(subjects) {
+		t.Fatalf("subscribed %q holds a duplicate", subjects)
+	}
+	subscribed := make(map[string]bool, len(subjects))
+	for _, s := range subjects {
+		if _, ok := input[s]; !ok {
+			t.Fatalf("subscribed %q was never desired (input %q)", s, drawn)
 		}
+		subscribed[s] = true
+	}
+
+	// Every desired subject is covered by a subscribed one.
+	for s := range input {
+		if !slices.ContainsFunc(subjects, func(sub string) bool { return flowgraph.SubjectCovers(sub, s) }) {
+			t.Fatalf("desired %q is covered by no subscribed subject in %q", s, subjects)
+		}
+	}
+
+	// No subscribed subject covers another.
+	for _, a := range subjects {
+		for _, b := range subjects {
+			if a != b && flowgraph.SubjectCovers(a, b) {
+				t.Fatalf("subscribed %q covers subscribed %q", a, b)
+			}
+		}
+	}
+
+	// Each omission is reported once, by a desired subject that covers it.
+	reported := map[string]int{}
+	for _, o := range overlaps {
+		reported[o.Covered]++
+		if o.Resolution != "covered subscription omitted" {
+			t.Fatalf("overlap %+v has resolution %q", o, o.Resolution)
+		}
+		if _, ok := input[o.Broader]; !ok || o.Broader == o.Covered || !flowgraph.SubjectCovers(o.Broader, o.Covered) {
+			t.Fatalf("overlap %+v: broader is not another desired subject covering the omitted one", o)
+		}
+	}
+	for s := range input {
+		want := 0
+		if !subscribed[s] {
+			want = 1
+		}
+		if reported[s] != want {
+			t.Fatalf("desired %q reported as omitted %d times, want %d (subscribed %q)", s, reported[s], want, subjects)
+		}
+	}
+
+	// Count the cases the assertions above ran on.
+	for _, o := range overlaps {
+		if strings.HasSuffix(o.Broader, ">") {
+			reached["a subject omitted under a > subject"]++
+		} else {
+			reached["a subject omitted under a * subject with no >"]++
+		}
+	}
+	for a := range input {
+		for b := range input {
+			for c := range input {
+				if a != b && b != c && flowgraph.SubjectCovers(a, b) && flowgraph.SubjectCovers(b, c) {
+					reached["a chain of three covers"]++
+				}
+			}
+		}
+	}
+	for _, a := range subjects {
+		for _, b := range subjects {
+			if a < b && flowgraph.SubjectsOverlap(a, b) {
+				reached["two subscribed subjects overlap without a cover"]++
+			}
+		}
+	}
+	if len(drawn) > len(input) {
+		reached["a repeated subject"]++
+	}
+	if len(overlaps) == 0 && len(subjects) >= 2 {
+		reached["nothing omitted from two or more subjects"]++
 	}
 }
 

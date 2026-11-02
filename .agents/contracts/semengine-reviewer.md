@@ -372,8 +372,10 @@ is the first bullet below.
   ordering is elapsed wall clock, or a log line that can print before the write. The ordering event is a channel
   receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
   `probe.Await` on that value; where that wait is not the line just before the assertion and no comment names the
-  event, that is a finding too. A real-clock timer that only bounds the wait is not a finding (`docs/testing.md`,
-  "Concurrency and cleanup"; #392).
+  event, that is a finding too. No test sets its own deadline for work that must finish; `go test -timeout` is the one
+  deadline. A `case <-time.After(...)` arm that fails the test, with no `// Own deadline: <reason>` above it or a
+  reason that does not hold, is a finding, as is the same shape spelled so the text check cannot see it (a timer in a variable,
+  `time.NewTimer`, a `context.WithTimeout` deadline) (`docs/testing.md`, "Concurrency and cleanup"; #392, #500).
 - A new **exported** parse/decode/validate surface without a fuzz target and seed corpus is a finding; check the
   harness asserts an invariant, not a table of expected outputs replayed through `f.Add`. Seed replay reported as
   fuzz exploration is a finding.

@@ -510,8 +510,18 @@ including those.
 - Before asserting on state another goroutine writes, wait on the event that puts your read after that write: a
   channel receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
   `probe.Await` on that value. If the wait is not the line just before the assertion, add a comment naming the event.
-  Time passing is not such an event, and neither is a log line that can print before the write; a real-clock timer
-  may still bound how long the wait runs (#392).
+  Time passing is not such an event, and neither is a log line that can print before the write. A test sets no
+  deadline of its own for work that must finish: `go test -timeout` is the one deadline (five minutes per package on
+  `task test:unit` and `task test:repeat`, ten on `task test:integration`), and when it fires it prints every
+  goroutine's stack (#392, #500).
+- Do not write `case <-time.After(...)` in a `select` when the arm's body fails the test (`t.Fatal`, `t.Fatalf`,
+  `t.Error`, `t.Errorf`, `t.FailNow` or a `require.` call). That is a deadline of your own, and a loaded machine
+  trips it before the work is wrong. `TestNoOwnDeadlineInTests` refuses it in every `*_test.go` file. It leaves a
+  timer arm that passes, and a negative check (the arm only ends the `select` to show nothing arrived). The only
+  escape is a comment on the line above the arm, `// Own deadline: <reason>`, for two reasons: a `synctest` bubble's
+  fake clock, or a deadline that is itself the behaviour under test. The check matches the literal text
+  `case <-time.After(`; it cannot see a timer held in a variable, `time.NewTimer`, or a `context.WithTimeout`
+  deadline, so a reviewer checks those (#500).
 - Run with `-race`. `task test:unit` and `task test:integration` both do.
 - Pass contexts in. Derive test contexts from `t.Context()` and narrow them with `context.WithTimeout`. Helpers take
   the caller's context rather than making their own.

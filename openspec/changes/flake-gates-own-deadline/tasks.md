@@ -13,24 +13,24 @@ At each site: delete the `case <-time.After(...)` arm that fails the test and wa
 Keep a timer arm that passes. Gate per group: `go test -race -count=1 -cpu 1 <pkgs>` and
 `go test -count=5 -cpu 1 -shuffle=on <pkgs>`; every kept deadline listed in the PR with its reason.
 
-- [ ] 2.1 `natsclient` (65 sites), `natsclient/storagereport` (7).
-- [ ] 2.2 `config` (25), `internal/cache` (17), `service` (7), `graph/embedding` (7).
-- [ ] 2.3 `model` (5), `graph/follower` (5), `metric` (3), `processor/graph-ingest` (2), `pkg/lifecycle` (2),
+- [x] 2.1 `natsclient` (65 sites), `natsclient/storagereport` (7).
+- [x] 2.2 `config` (25), `internal/cache` (17), `service` (7), `graph/embedding` (7).
+- [x] 2.3 `model` (5), `graph/follower` (5), `metric` (3), `processor/graph-ingest` (2), `pkg/lifecycle` (2),
   `processor/graph-index` (1), `pkg/graphview` (1), `graph/clustering` (1).
 
 ## 3. Guard and the one deadline
 
-- [ ] 3.1 `TestNoOwnDeadlineInTests` and `TestNoOwnDeadlineInTestsSensitivity` in
+- [x] 3.1 `TestNoOwnDeadlineInTests` and `TestNoOwnDeadlineInTestsSensitivity` in
   `internal/harness/contract/testtext_test.go`: a `case <-time.After(...)` arm whose body fails the test
   (`t.Fatal`, `t.Fatalf`, `t.Error`, `t.Errorf`, `t.FailNow`, `require.`) without `// Own deadline: <reason>` on the
   line above; a passing timer arm is not a violation; a scan of no test file fails. Spec delta: `harness-boundaries`.
   Gate: `go test -race -count=1 -cpu 1 ./internal/harness/contract`.
-- [ ] 3.2 `-timeout 5m` on `test:unit` and `test:repeat` in `Taskfile.yml`; toolcheck's pin test and the
+- [x] 3.2 `-timeout 5m` on `test:unit` and `test:repeat` in `Taskfile.yml`; toolcheck's pin test and the
   `merge-gate` spec say so. Gate: `task test:tools`, `task spec:check`.
 
 ## 4. Rule text
 
-- [ ] 4.1 `docs/testing.md` "Concurrency and cleanup", developer and reviewer contracts, `AGENTS.md` section 3 row
+- [x] 4.1 `docs/testing.md` "Concurrency and cleanup", developer and reviewer contracts, `AGENTS.md` section 3 row
   for #392 and the new guard row, `.agents/rules-index.md` rows 55 and a new row. Gate: `task docs:check`,
   `task ateam:doctor`.
 

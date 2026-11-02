@@ -1,5 +1,5 @@
 === RUN   TestPrefixCostProbe
-2026/11/02 11:02:27 github.com/testcontainers/testcontainers-go - Connected to docker: 
+2026/11/02 11:02:27 github.com/testcontainers/testcontainers-go - Connected to docker:
   Server Version: 29.9.2
   API Version: 1.56
   Operating System: Docker Desktop

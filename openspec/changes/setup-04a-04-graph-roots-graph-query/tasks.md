@@ -6,8 +6,8 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:`, rules on `owner-questions.md` and accepts
-  the new exports. Gate: `task spec:check`, `task docs:check`. Hold: OPEN-Q proposal awaits owner approval
+- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
+  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Table and index
 
@@ -58,6 +58,6 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 5. Land
 
-- [ ] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`), and the branch has merged
-  `origin/main` with #505 in it. The PR #504 body carries `implemented-by:` and no closing keyword; `split.md`, "Step
-  1 dispositions", lists what stays open. Check: read `closingIssuesReferences` back, empty. Hold: #505 merged
+- [ ] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). The PR #504 body carries
+  `implemented-by:` and no closing keyword; `split.md`, "Step 1 dispositions", lists what stays open. Check: read
+  `closingIssuesReferences` back, empty.

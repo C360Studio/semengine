@@ -54,11 +54,10 @@ subject. A downstream request that times out SHALL stay transient.
 
 ### Requirement: Alias lookup answers in one envelope
 
-The request SHALL be `aliasOrID` with optional `min_revision`. A held alias SHALL read its holder. An alias with no
-holder SHALL read the input as an entity ID when it is a valid one. A success SHALL be a `graph.QueryResponse` from
-producer `graph-query` whose `data` is the entity verb's reply bytes, a `graph.ExactEntity`, and whose
-`indexed_revision` is the alias reply's. An alias reply that does not decode or names no `producer` SHALL be refused
-transient `internal`.
+The request SHALL be `alias` with optional `min_revision`. A held alias SHALL read its holder. An alias with no holder
+SHALL read the input as an entity ID when it is a valid one. A success SHALL be a `graph.QueryResponse` from producer
+`graph-query` whose `data` is the entity verb's reply bytes, a `graph.ExactEntity`, and whose `indexed_revision` is
+the alias reply's. An alias reply that does not decode or names no `producer` SHALL be refused transient `internal`.
 
 #### Scenario: An ID given to the alias verb
 
@@ -78,13 +77,13 @@ An alias with no holder whose input is not a valid entity ID SHALL be refused wi
 ### Requirement: Relationships are enveloped and refuse an unknown direction
 
 `relationships` SHALL take `entity_id` and `direction`, forwarding the request bytes unchanged, and SHALL read
-`direction` as `outgoing`, empty (meaning outgoing) or `incoming`, and SHALL refuse any other value with
-`invalid_request`. A success SHALL be a `graph.QueryResponse` from producer `graph-query`, `indexed_revision` being
-the index reply's and `data` a non-null list of `graph.RelationshipEdge`.
+`direction` as `outgoing` or `incoming`, and SHALL refuse any other value, or none, with `invalid_request`. A success
+SHALL be a `graph.QueryResponse` from producer `graph-query`, `indexed_revision` being the index reply's and `data` a
+non-null list of `graph.RelationshipEdge`, each with `predicate`, `from_entity_id` and `to_entity_id`.
 
 #### Scenario: A direction the component does not read
 
-- **WHEN** a request sends `direction` `both`
+- **WHEN** a request sends `direction` `both`, or none
 - **THEN** the caller receives `invalid_request` and no index verb receives a request
   (`TestRelationshipsRefusesUnknownDirection`)
 

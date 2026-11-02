@@ -18,11 +18,11 @@ change is step 1: the component and the six direct lookups, the first thing to a
 - `graph.QueryVerbs()` gains those six under responder `graph-query`, and every entry gains `Enveloped` and `Reply`
   (Fable ruling 1). `graph.ingest.*` and `graph.index.*` entries get the marks too.
 - Authority replies and `byName` are forwarded byte for byte, with no re-check (owner, Q3). `entityByAlias` and
-  `relationships` build one `graph.QueryResponse`.
+  `relationships` build one `graph.QueryResponse`; `relationships` requires `direction` and its rows name `predicate`.
 - `min_revision` on graph-index's eight verbs: an index behind the revision refuses with transient
   `revision_not_reached`, naming the revision it has reached. No reply waits (ADR-109 Decision 4).
-- `entityByAlias` refuses what the alias verb refuses (ADR-114), and answers `entity_not_found` for an unknown non-ID,
-  amending one ADR-114 sentence.
+- `entityByAlias` takes `alias`, refuses what the alias verb refuses (ADR-114), and answers `entity_not_found` for an
+  unknown non-ID, amending one ADR-114 sentence.
 - `composition.Analyze` reports a second responder on a declared verb, which refuses boot (#106, in part).
 - Port ADR-060 with a note. Add ledger rows; grow the `query-pattern` skill.
 
@@ -38,19 +38,15 @@ coordinator and structured strategies (4); the text tier and `searchGraph` (5). 
 
 ## Impact
 
-- About 1,900 lines including tests (a hand estimate, not measured). `line count is a guide` (owner); draft PR #505
-  words the rule so.
-- **New exported surface, for the owner's acceptance.** Each has a caller named in `design.md`:
-  `graph.ResponderGraphQuery`, `graph.QueryVerb.Enveloped`, `graph.QueryVerb.Reply`, `graph.MinRevisionField`,
-  `graph.ErrorCodeRevisionNotReached`, `graph.RelationshipEdge`, `composition.TypeRequestSubjectConflict`. Package
-  `graphquery` exports `Register`, `DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.
+- About 1,900 lines including tests (a hand estimate, not measured). `line count is a guide` (owner, #505).
+- **New exported surface, accepted by the owner (PR #504 comment 6588079803).** Each has a caller named in
+  `design.md`: `graph.ResponderGraphQuery`, `graph.QueryVerb.Enveloped`, `graph.QueryVerb.Reply`,
+  `graph.MinRevisionField`, `graph.ErrorCodeRevisionNotReached`, `graph.RelationshipEdge`,
+  `composition.TypeRequestSubjectConflict`. Package `graphquery` exports `Register`, `DeclarePorts`,
+  `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.
 - New subjects: six on `graph.query.*`, now reserved (no stream may capture them; #16). New config key:
   `query_timeout_ms`, default 15000. New buckets: none.
-- Consumers, at their cutover to this module. SemConnect must read `kv_revision` (one struct tag) and delete three
-  config keys its deployment sets and the pin ignored. `relationships` and `entityByAlias` go from bare to enveloped;
-  fusion reads the first (change 5 ports it here) and a copied graph-gateway would nest both (`design.md` D5, owner
-  question 5). SemSource's graph-query config passes as it stands.
-- **SemSource's search would go silently empty at its cutover** unless it reads `data`: this step settles the
-  envelope, and `searchGraph` takes it at step 5 (`owner-questions.md`, 1).
+- Consumers change at their cutover, the silent ones included: `consumer-migration.md`. Consumer use is recorded
+  there, not a reason to keep a shape (owner, comment 6588079803; `design.md` D5).
 - No code before the owner approves this proposal and its design. Retires no issue; `split.md`, "Step 1 dispositions",
   lists each one.

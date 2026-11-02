@@ -1,13 +1,13 @@
 # Split: `processor/graph-query`
 
 The port, re-cut after the rulings on PR #504. Line figures are hand estimates of what each step holds, production
-plus tests, not measurements; the owner's "line count is a guide" applies (draft PR #505). Each step compiles, is
-tested and passes `task verify`. A later verb is not in the table until its step, so on a default server a request for
-it reports no responders, and never gets a wrong answer.
+plus tests, not measurements; the owner's "line count is a guide" applies (#505). Each step compiles, is tested and
+passes `task verify`. A later verb is not in the table until its step, so on a default server a request for it reports
+no responders, and never gets a wrong answer.
 
 | Step | PR | Purpose | Delivers | Depends on | Retires | Lines (prod + test) |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 Direct lookups | #504 | First answers on `graph.query.*`; settles the table, the envelope and `min_revision` | Shell; table marks; `entity`, `batch`, `prefix`, `byName` forwards; `entityByAlias`; `relationships`; `min_revision` in graph-index; second-responder finding; ADR-060 | #505 first (rule text only) | none | 700 + 1,200 |
+| 1 Direct lookups | #504 | First answers on `graph.query.*`; settles the table, the envelope and `min_revision` | Shell; table marks; `entity`, `batch`, `prefix`, `byName` forwards; `entityByAlias`; `relationships`; `min_revision` in graph-index; second-responder finding; ADR-060 | none | none | 700 + 1,200 |
 | 2 Traversal and counts | new draft | Everything else that answers without a community or the classifier | `pathSearch` with hard limits and validators; `hierarchyStats` and `summary` with truncation and predicate state declared; `semantic`, `similar`, `spatial`, `temporal` forwards; ADR-071 | 1 | none | 750 + 1,300 |
 | 3 Community reads | new draft | One honest read of `COMMUNITY_INDEX`, and local search over it | `graphview.View[clustering.Community]` per ruling 3; poison-counting list in `pkg/graphview`; exported key helper in `graph/clustering`; one page per group per ruling 2; `localSearch`, `entities_truncated`, truncation metric; entity loading, labels, digests, scoring; plain-function answer; ADR-087 note | 1 (and 2 for the embedding subject's table row, if local search keeps its semantic call, `pin:graphrag.go:308`) | #406, #31 | 900 + 1,100 |
 | 4 Coordinator and structured strategies | new draft | Questions that need no text tier | Classifier call with its refusal; `globalSearch` coordinator with typed strategies (Q5(b)); entity, path, temporal, spatial, semantic strategies; resolver | 2, 3 | #405, #479 | 700 + 700 |
@@ -29,13 +29,13 @@ against the inventory's 14,328 carried; both count differently, so treat that as
 | `searchGraph` last, alone | Still last, with the text tier it needs | It delegates to global search; moving it earlier gains nothing, since it refuses until changes 5 and 7 |
 | `AnswerSynthesizer`, `LLMAnswerSynthesizer` split | Plain function in step 3 | Owner, Q6 |
 | `min_revision` "if ruled" | Step 1, in graph-index too | Ruling 1 |
-| Cap dependency, second #500 PR gates | #505 only orders rule text | The cap is now a guide (owner); #501 merged (`f7528d9`) |
+| Cap dependency, second #500 PR gates | None | The cap is now a guide (owner); #501 and #505 merged (`f7528d9`, `e61ce55`) |
 
 ## Stepping stones and what each step answers
 
 | After step | Answers on merge | Refuses or absent until |
 | --- | --- | --- |
-| 1 | Six lookups, against in-tree responders | SemConnect decodes `entity` after its one-tag change (`design.md` D5) |
+| 1 | Six lookups, against in-tree responders | Consumer changes: `consumer-migration.md` |
 | 2 | Path search, counts | Four forwards: refused transient, when the request reports no responders, until changes 5 and 7 bring them |
 | 3 | Nothing until `COMMUNITY_INDEX` has records | `localSearch` refuses `index_not_ready` until change 7 wires the writer (ruling 3) |
 | 4 **(stepping stone)** | Entity and path questions | Questions needing the text tier refuse with a distinct temporary code, whether or not records exist, so `index_not_ready` stays true (ADR-109 D4, ruling 3) and no filter is lost; step 5 removes it. Step 4's design names its class, since transient invites retries until step 5. Absent: `searchGraph` |
@@ -47,25 +47,20 @@ Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `compone
 ## Issues, ADRs and carried questions
 
 - `#103` retires at step 5, its marker left with `#15` (ruling 1). `#106`: boot refusal in step 1; retires when the
-  last rows land only if the owner accepts the declared-ports limit or SemSource's check is in place
-  (`owner-questions.md`, 2), otherwise it stays. #111: item 2 step 2, item 3 steps 4 and 5, item 4 stays for change
-  7. #105: `IncludePredicates` in step 2; stays folded into #32. #68, #477: sites in step 3; stay for other
-  packages. #506 keyword index: not this port.
+  last rows land; the declared-ports limit is accepted (`consumer-migration.md`). #111: item 2 step 2, item 3 steps 4
+  and 5, item 4 stays for change 7. #105: `IncludePredicates` in step 2; stays folded into #32. #68, #477: sites in
+  step 3; stay for other packages. #506 keyword index: not this port.
 - ADR-060 step 1. ADR-071 step 2. ADR-087 Decision 5 step 3. ADR-099's sentence stands (ruling 2); ADR-081, ADR-085
   apply in step 3.
 - Applied from section 13 by each step's design: Q5(b) in steps 3 to 5; Q7(a) in step 2, with Q7(b) a follow-up after
   change 7; Q8(a) in step 2. Hard limits' numbers are step 2's design (owner, D); SemConnect's config already names
-  `max_traversal_depth` and `max_traversal_nodes`, which the pin ignored.
-- Step 2 owner question: ruling 1 does not name `semantic`, `similar`, `spatial`, `temporal` (not graph-index, not
-  authority), and marking them bare sits against its headline, with a later flip a second consumer break. Recommend
-  deciding the shape once, in the port that brings each responder.
+  `max_traversal_depth` and `max_traversal_nodes`, which the pin ignored; a reason to look, not a shape to keep.
+- Step 2's design: ruling 1 does not name `semantic`, `similar`, `spatial`, `temporal` (not graph-index, not
+  authority), and marking them bare sits against its headline. A design choice on its merits, including whether each
+  forward lands with its responder's port.
 - Step 3's design: the one new community record field (owner left it there); the community verbs' `indexed_revision`
   depends on it.
-- **Step 5 consumer risk:** SemSource decodes `searchGraph` with `json.Unmarshal` into a struct of optional fields
-  (`processor/mcp-gateway/query_tools.go:113`, `graph_matches.go:107` at `e4febc0d`). Once that verb is enveloped
-  (ruling 1) its old decoder returns no error and no matches. That is silent, unlike D5's, and `deriveDisclosure`
-  (`disclosure.go:84`) reports no answer. Put to the owner now (`owner-questions.md`, 1); step 5 carries the adopter
-  note.
+- Step 5's silent consumer change, SemSource's `searchGraph` decode: `consumer-migration.md`.
 
 ## Step 1 dispositions
 
@@ -80,8 +75,8 @@ Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `compone
   `#300`, `#350`.
 - **ADRs:** ADR-060 ported, with a note that ADR-091 amends it and is not here; ADR-109, -113, -114 applied; D18
   amended by ruling 1; ADR-071 step 2, ADR-087 D5 step 3.
-- **Overlap:** draft PR `#505` merges first (`AGENTS.md`, rules index, other rows); this step updates the
-  reserved-subject row. The `query-pattern` skill grows.
+- **Overlap:** none (draft #507 holds only its own OpenSpec change so far). This step updates the reserved-subject
+  row. The `query-pattern` skill grows.
 
 ## Tests, by step (`inventory.md` § 9)
 
@@ -96,5 +91,5 @@ blocked-write tick, poison, watch loss (3).
 
 ## Merge order
 
-Draft PR #505 first, then 1, 2 and 3 (either order), 4, 5, all before change 5 and change 7, which step 4's stepping
-stone relies on. Change 5's fusion port reads `relationships` as enveloped.
+1, then 2 and 3 (either order), 4, 5, all before change 5 and change 7, which step 4's stepping stone relies on.
+Change 5's fusion port reads `relationships` as enveloped, with `predicate`.

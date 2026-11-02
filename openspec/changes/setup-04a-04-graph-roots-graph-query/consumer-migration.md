@@ -1,0 +1,91 @@
+# Consumer migration: `processor/graph-query`
+
+For developers of projects moving onto SemEngine's graph-query. It says what keeps working and what you change at your
+cutover. The port breaks old shapes where that gives a better result (owner, PR #504 comment 6588079803). Step numbers
+are from `split.md`; cites to sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here
+was run against your code: it comes from reading it.
+
+## The changes that fail silently
+
+Read these first. Nothing errors.
+
+- **SemSource `searchGraph` (step 5).** Search replies gain a wrapper: `data`, `indexed_revision`, `producer`,
+  `timestamp`. `graphSearch` (`processor/mcp-gateway/query_tools.go:113`) decodes into `graphSearchBody`
+  (`graph_matches.go:107`), which has no `data` field. It ignores the unexpected wrapper instead of failing, so you
+  get no error, no matches and no answer.
+- **SemSource `deriveDisclosure` (step 5).** It reads the same bytes for top-level fields (`disclosure.go:86`), so it
+  reports no answer rather than a failure.
+- **Fix for both:** unwrap once before reading, and assert it on a real reply. No framework mechanism does this for
+  you.
+
+## SemSource
+
+**Use cases kept:** free-text search (`searchGraph`, once step 5 lands and changes 5 and 7 bring what it needs);
+prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged); your own verbs on the same family
+(`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not reserve.
+
+**What you change:**
+
+- The search decode above.
+- Your collision guard. graph-query's second-responder check sees declared ports only. Your graph requests subscribe
+  with no port (`processor/source-manifest/component.go:176`, `InputPorts` empty at `:613`), so your old
+  `graph.query.summary` collision (`:34-41`) would still pass it. Change
+  `TestNoSemSourceSubjectCollidesWithTheSubstrate` (`cmd/semsource/subject_ownership_test.go`) to compare
+  `RequestSubjects()` (`source-manifest/component.go:932`, and supersession's) with `graph.QueryVerbs()`, in place of
+  its hand list. Declaring your verbs as ports also works. The framework adds no check at start: it would miss
+  anything that starts later.
+- Nothing in your graph-query config: `ports` alone is valid.
+- A slow `batch`: your 10 s default (`mcp-gateway/component.go:194-199`) can still time out first, loudly.
+
+## SemConnect
+
+**Use cases kept:** exact entity reads and batch hydration (`graph.query.entity`, `graph.query.batch`,
+`gateway/cs-api/systems.go:80-81`), both still bare; predicate reads, already enveloped (`:993`); `Register`, for your
+backend (`cmd/cs-graph-backend/main.go:127`, on the branch of PR 74).
+
+**What you change:**
+
+- `gateway/cs-api/systems.go:808` decodes `kvRevision`; the key is `kv_revision`. Change the struct tag, or decode
+  `graph.ExactEntity` as your ADR-004 § 3 already says. Until then entity reads fail loudly: `:814` turns revision 0
+  into fatal `internal`.
+- Delete `request_timeout`, `max_traversal_depth`, `max_traversal_nodes` from `deploy/semstreams.json` and
+  `conformance/compose.semstreams.config.json`. The old version ignored them; unknown keys now refuse boot, naming the
+  key. `query_timeout_ms` is the timeout (default 15000).
+- Your 5 s default (`gateway/cs-api/config.go:157`) is under ingest's 10 s budget, so a 5 to 10 s `batch` still times
+  out on your side, loudly, while graph-query keeps forwarding. Raise it if that matters.
+
+## Whoever keeps the GraphQL gateway
+
+`gateway/graph-gateway` is not ported: the ledger has it as consumer-owned, composed by SemSource but not exercised,
+and a copy needs the agentic and `graph/inference` packages. SemSource composes it (`cmd/semsource/run.go:867`) and
+documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no owner is named after cutover.
+
+**Use case to keep:** GraphQL over the `graph.query.*` verbs, if anyone still wants it.
+
+**What a copy must change:**
+
+- It unwraps by detection (`component.go:2059`), which is not ported, and the old unwrap accepts only `data` and
+  `timestamp` (SemStreams `graph/query_contracts.go:89`). The new envelope has four keys, so a copy silently nests
+  every wrapped answer one level too deep: `relationships` and `entityByAlias` from step 1, `summary` and the rest by
+  step 5. Decode by `graph.QueryVerbs()` instead.
+- Its schema advertises `kvRevision` (`:1869`); the key is `kv_revision`.
+- Its `relationships` type must read `predicate`, not `edge_type`, and must send `direction`.
+- At the old version its alias lookup looks broken: it sends `alias` and the handler read `aliasOrID`, refusing as
+  empty (read, not run). The request key is now `alias`, so that mismatch goes.
+
+## Any caller
+
+| Verb | Change |
+| --- | --- |
+| `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which step 1 amends |
+| `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
+| `entity`, `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
+| Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
+
+A stream capturing a declared `graph.query.*` subject refuses boot (#16). Decode by the verb table:
+`QueryVerb.Enveloped` and `QueryVerb.Reply`.
+
+**New names step 1 exports.** In `graph`: `ResponderGraphQuery`, `QueryVerb.Enveloped`, `QueryVerb.Reply`,
+`MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In `composition`: `TypeRequestSubjectConflict`.
+In the new `graphquery` package, the old version's names: `Register`, `DeclarePorts`, `CreateGraphQuery`,
+`DefaultConfig`, `Config`, `Component`.

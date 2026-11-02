@@ -126,17 +126,17 @@ Each is evidence, not a ruling.
 
 The race and repeat runs passed on an otherwise unloaded machine, once each. That is no evidence against load flakes.
 
-Behaviour probes, a temporary test in the pin copy, since removed (package-internal, `go test -run '^TestInventoryProbe$' -v`):
+Behaviour probes: source, log and replay command in `notes/probes/` (`pin-behaviour-probe.go.txt`, `.log`, `README.md`). Fakes are stated in the log:
 
 | # | Input | Result |
 | --- | --- | --- |
-| P0 | `DefaultConfig` JSON | round-trips; `query_timeout` is `5000000000` |
+| P0 | `DefaultConfig` JSON | accepted back; `query_timeout` is `5000000000`; a second marshal adds `recheck_interval` (`ApplyDefaults`) |
 | P1 | `"query_timeout":"5s"`, the form the schema and `doc.go:49` advertise | refused: `cannot unmarshal string into ... time.Duration` |
 | P2 | unknown key `no_such_key` | accepted silently |
-| P3 | `doc.go:44-46` per-operation port example | refused: `input must be the required graph_queries port` |
+| P3 | `doc.go:44-46` per-operation port example | refused: `exactly one graph_queries input port is required, got 3`; `doc.go:44` alone: `input must be the required graph_queries port` |
 | P4 | summary: 1,000-row prefix page, predicate verb refusing | no error; `total_entities:1000`; `entity_sample_truncated:false`; no `predicates` |
 | P5 | `entityByAlias`, alias verb refuses `alias_ambiguous` | asks entity verb with `{"id":"sn-1"}`; the probe's fake answered not-found, while real graph-ingest refuses this non-ID as `invalid_request` (`processor/graph-ingest/query.go:79-82`, pin `:82`) |
-| P5b | resolver, same refusal | `""`, nil error |
+| P5b | resolver, same refusal, through `resolvePartialEntityID` | `""`, nil error; this path also asks `graph.ingest.query.suffix`, which the fake refuses |
 | P6 | `{"entity":{"id":"a"},"kv_revision":7}` through `validateEntityQueryResponse` | `zero KV revision` |
 | P7 | `applyLimits(-5, 2000000000)` with `maxDepth` 10 | `-5, 2000000000`: only an over-large depth is capped |
 

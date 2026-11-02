@@ -93,21 +93,18 @@ func scanTestText(t *testing.T, root string, files []string, alsoScan func(strin
 	return violations
 }
 
-// harness-boundaries › "No own deadlines in tests": no *_test.go file has a select arm on the
-// literal text below whose body fails the test, unless the line above the arm is a comment
-// beginning "// Own deadline:" followed by a reason; go test -timeout is the one deadline. The
-// arms matched are the time.After literal below and a timer's channel, a dotted name then ".C:"
-// (time.NewTimer, including a field such as s.timer.C). A time.After kept in a variable and a context deadline are outside it. The
-// body runs to the next case or default at the arm's depth, or the select's closing brace; the
-// contents of string and rune literals are ignored. The literal is assembled so this file does not
-// contain what it forbids.
+// harness-boundaries › "No own deadlines in tests": no select arm in a *_test.go file that
+// receives from a timer, <-time.After(...) or <-<name>.C with any dotted name before .C (a
+// time.NewTimer channel, such as s.timer.C), has a body that fails the test, unless the line above
+// the arm is a comment beginning "// Own deadline:" followed by a reason; go test -timeout is the
+// one deadline. The check parses each file. A failing call is Fatal, Fatalf, Error, Errorf, Fail or
+// FailNow on any receiver, with or without arguments, except a bare Error(), the method of an error
+// value (so t.Error() with no argument is missed); or any require. or assert. call, or a Require()
+// method. A time.After kept in a variable and a context deadline are outside it. A file that does
+// not parse is a violation. The arm texts in the fixtures are assembled so this file contains none.
 var (
-	ownDeadlineArm = "case <-time." + "After("
-	timerChanArm   = regexp.MustCompile(`case <-[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*\.` + "C:")
-	// Any receiver (t, tb, b, a testify suite). Error, Errorf, Fatal and Fatalf need an argument so
-	// that err.Error() is not read as failing the test; Fail and FailNow may have none.
-	failsTheTest = regexp.MustCompile(`\.(` + "Fatal|Fatalf|Error|Errorf" + `)\([^)]|\.(` + "Fail|FailNow" + `)\(|\b(` +
-		"require|assert" + `)\.|\.` + "Require" + `\(\)`)
+	ownDeadlineArm  = "case <-time." + "After("
+	failingCalls    = map[string]bool{"Fatal": true, "Fatalf": true, "Error": true, "Errorf": true, "Fail": true, "FailNow": true}
 	ownDeadlineNote = "// Own deadline:"
 )
 
@@ -155,6 +152,8 @@ func TestNoOwnDeadlineInTestsSensitivity(t *testing.T) {
 		{"require call", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\trequire.FailNow(t, \"slow\")\n\t}\n", "x/x_test.go:5"},
 		{"fail after a nested select", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tselect {\n\t\tcase <-c:\n\t\tdefault:\n\t\t}\n\t\tt.FailNow()\n\t}\n", "x/x_test.go:5"},
 		{"other comment above", "\tselect {\n\t// Waits for done.\n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Fatalf(\"slow\")\n\t}\n", "x/x_test.go:6"},
+		{"bare fatal", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Fatal()\n\t}\n", "x/x_test.go:5"},
+		{"brace in a multiline raw string before the failing call", "\tselect {\n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Log(`state:\n}\n`)\n\t\tt.Fatal(\"slow\")\n\t}\n", "x/x_test.go:5"},
 		{"empty reason", "\tselect {\n\t" + ownDeadlineNote + "   \n\t" + ownDeadlineArm + "time.Second):\n\t\tt.Error(\"slow\")\n\t}\n", "x/x_test.go:6"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,6 +161,10 @@ func TestNoOwnDeadlineInTestsSensitivity(t *testing.T) {
 			requireViolation(t, ownDeadlineViolations(t, root, files), tc.want, ownDeadlineNote)
 		})
 	}
+	t.Run("unparsable file", func(t *testing.T) {
+		root, files := writeTree(t, map[string]string{"x/x_test.go": "package x\n\nfunc f() {\n"})
+		requireViolation(t, ownDeadlineViolations(t, root, files), "x/x_test.go", "parse")
+	})
 	t.Run("no test file", func(t *testing.T) {
 		root, files := writeTree(t, map[string]string{"x/x.go": "package x\n"})
 		requireViolation(t, ownDeadlineViolations(t, root, files), "scanned no test file")
@@ -172,28 +175,35 @@ func ownDeadlineViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string
 	tests := 0
+	fset := token.NewFileSet()
 	for _, name := range files {
 		if !strings.HasSuffix(name, "_test.go") {
 			continue
 		}
 		tests++
+		file, err := parser.ParseFile(fset, filepath.Join(root, filepath.FromSlash(name)), nil, parser.SkipObjectResolution)
+		if err != nil {
+			violations = append(violations, fmt.Sprintf("%s: parse: %v", name, err))
+			continue
+		}
 		lines := readLines(t, root, name)
-		for i, line := range lines {
-			code := codeOutsideLiterals(line)
-			body, isArm := timerArmBody(code)
-			if !isArm || !armFailsTest(body, lines[i+1:]) {
-				continue
+		ast.Inspect(file, func(n ast.Node) bool {
+			arm, ok := n.(*ast.CommClause)
+			if !ok || !isTimerReceive(arm.Comm) || !failsTest(arm.Body) {
+				return true
 			}
+			line := fset.Position(arm.Case).Line
 			prev := ""
-			if i > 0 {
-				prev = strings.TrimSpace(lines[i-1])
+			if line >= 2 {
+				prev = strings.TrimSpace(lines[line-2])
 			}
 			reason, ok := strings.CutPrefix(prev, ownDeadlineNote)
 			if !ok || strings.TrimSpace(reason) == "" {
 				violations = append(violations, fmt.Sprintf("%s:%d: a timer arm that fails the test without `%s <reason>` on the line above; "+
-					"wait on the ordering event and let go test -timeout bound it", name, i+1, ownDeadlineNote))
+					"wait on the ordering event and let go test -timeout bound it", name, line, ownDeadlineNote))
 			}
-		}
+			return true
+		})
 	}
 	if tests == 0 {
 		violations = append(violations, fmt.Sprintf("scanned no test file among %d file(s)", len(files)))
@@ -201,72 +211,64 @@ func ownDeadlineViolations(t *testing.T, root string, files []string) []string {
 	return violations
 }
 
-// codeOutsideLiterals returns line up to its line comment with the contents of its string and rune
-// literals removed (the quotes stay), so a brace or "//" inside a literal is not read as code. A raw
-// string spanning lines is read one line at a time; none of the arms this check reads uses one.
-func codeOutsideLiterals(line string) string {
-	var b strings.Builder
-	for i := 0; i < len(line); i++ {
-		c := line[i]
-		switch {
-		case c == '/' && i+1 < len(line) && line[i+1] == '/':
-			return b.String()
-		case c == '"' || c == '\'' || c == '`':
-			b.WriteByte(c)
-			for i++; i < len(line) && line[i] != c; i++ {
-				if line[i] == '\\' && c != '`' {
-					i++
-				}
-			}
-			b.WriteByte(c)
-		default:
-			b.WriteByte(c)
+// isTimerReceive reports whether a select arm receives from time.After(...) or from a dotted name
+// ending in .C, as a statement or on the right of an assignment.
+func isTimerReceive(comm ast.Stmt) bool {
+	var recv ast.Expr
+	switch s := comm.(type) {
+	case *ast.ExprStmt:
+		recv = s.X
+	case *ast.AssignStmt:
+		if len(s.Rhs) == 1 {
+			recv = s.Rhs[0]
 		}
 	}
-	return b.String()
-}
-
-// timerArmBody reports whether code opens a timer arm and returns the code after the arm's colon.
-func timerArmBody(code string) (string, bool) {
-	if i := strings.Index(code, ownDeadlineArm); i >= 0 {
-		_, body, _ := strings.Cut(code[i:], "):")
-		return body, true
+	u, ok := recv.(*ast.UnaryExpr)
+	if !ok || u.Op != token.ARROW {
+		return false
 	}
-	if loc := timerChanArm.FindStringIndex(code); loc != nil {
-		return code[loc[1]:], true
-	}
-	return "", false
-}
-
-// armFailsTest reports whether the arm whose code after the colon is body, followed by the lines in
-// rest, fails the test before the next case or default at its depth or the brace that closes its select.
-func armFailsTest(body string, rest []string) bool {
-	if failsTheTest.MatchString(body) {
-		return true
-	}
-	depth := strings.Count(body, "{") - strings.Count(body, "}")
-	for _, line := range rest {
-		code := codeOutsideLiterals(line)
-		trimmed := strings.TrimSpace(code)
-		if depth == 0 && (strings.HasPrefix(trimmed, "case ") || strings.HasPrefix(trimmed, "default:")) {
+	switch x := u.X.(type) {
+	case *ast.CallExpr:
+		sel, ok := x.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel.Name != "After" {
 			return false
 		}
-		for _, r := range code {
-			switch r {
-			case '{':
-				depth++
-			case '}':
-				depth--
-			}
-			if depth < 0 {
-				return false
-			}
-		}
-		if failsTheTest.MatchString(code) {
-			return true
-		}
+		pkg, ok := sel.X.(*ast.Ident)
+		return ok && pkg.Name == "time"
+	case *ast.SelectorExpr:
+		return x.Sel.Name == "C" && isDottedName(x.X)
 	}
 	return false
+}
+
+func isDottedName(e ast.Expr) bool {
+	switch x := e.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.SelectorExpr:
+		return isDottedName(x.X)
+	}
+	return false
+}
+
+// failsTest reports whether a select arm's body calls a failing method on any receiver (a bare
+// Error() excepted), a require. or assert. function, or a Require() method.
+func failsTest(body []ast.Stmt) bool {
+	fails := false
+	for _, stmt := range body {
+		ast.Inspect(stmt, func(n ast.Node) bool {
+			if call, ok := n.(*ast.CallExpr); ok {
+				if sel, ok := call.Fun.(*ast.SelectorExpr); ok {
+					name := sel.Sel.Name
+					pkg, isPkg := sel.X.(*ast.Ident)
+					fails = fails || (isPkg && (pkg.Name == "require" || pkg.Name == "assert")) || name == "Require" ||
+						(failingCalls[name] && (name != "Error" || len(call.Args) > 0))
+				}
+			}
+			return !fails
+		})
+	}
+	return fails
 }
 
 // harness-boundaries › "No skipped or hidden tests": no *_test.go file calls Skip, Skipf or

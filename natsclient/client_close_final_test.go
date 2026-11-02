@@ -968,9 +968,11 @@ func TestClientCloseJoinsRunningAsyncPublishErrorHandler(t *testing.T) {
 
 // 19. F-3, H9: a client-owned handler outlasts the drain. Whichever timer runs out first, the
 // native drain's or the client's own, the first Close returns a transient error wrapping
-// nats.ErrDrainTimeout, after the handler has returned.
+// nats.ErrDrainTimeout, after the handler has returned. The other timer is an hour and Close's
+// context is the test's, so only the timer under test can end the drain: a drain that ignored it
+// hangs until go test -timeout instead of passing on a fallback.
 func TestClientCloseReportsDrainTimeout(t *testing.T) {
-	const short, long = 100 * time.Millisecond, 30 * time.Second
+	const short, long = 100 * time.Millisecond, time.Hour
 	for _, tc := range []struct {
 		name                 string
 		nativeTimer, ownTime time.Duration
@@ -997,9 +999,7 @@ func TestClientCloseReportsDrainTimeout(t *testing.T) {
 			closedStatus := nc.StatusChanged(nats.CLOSED)
 			defer nc.RemoveStatusListener(closedStatus)
 
-			ctx, cancel := context.WithTimeout(t.Context(), 2*long)
-			defer cancel()
-			first := closeAsync(ctx, c)
+			first := closeAsync(t.Context(), c)
 			await(t, onceClosed(closedStatus), "the connection closing after the drain timeout")
 			held.Release()
 			err = awaitErr(t, first, "the first Close")

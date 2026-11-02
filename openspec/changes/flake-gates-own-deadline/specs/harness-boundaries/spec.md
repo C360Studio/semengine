@@ -11,17 +11,18 @@ allowlist, and SHALL fail when it scanned no test file.
 
 #### Scenario: What counts as failing the test
 
-- **WHEN** the arm's body calls `Fatal`, `Fatalf`, `Error`, `Errorf`, `FailNow` or `Fail` (with or without
-  arguments) on any receiver (`t`, `tb`, `b`, a testify suite), a `require.` or `assert.` function, or a `Require()`
-  method, before the next `case`, `default` or the select's closing brace, braces inside string literals not counted
+- **WHEN** the arm's body calls `Fatal`, `Fatalf`, `Error`, `Errorf`, `FailNow` or `Fail` on any receiver (`t`, `tb`,
+  `b`, a testify suite), with or without arguments except a bare `Error()` (the error-string method on an `error`
+  value), or a `require.` or `assert.` function, or a `Require()` method, anywhere in the arm's body up to the next
+  `case`, `default` or the select's closing brace, including after a multiline string literal
 - **THEN** the arm is a violation; a body that only ends the select (a negative check: nothing arrived) is not
 
 #### Scenario: Shapes outside the check
 
 - **WHEN** a test stores `time.After(...)` in a variable and receives from that, uses a `context.WithTimeout`
   deadline, or polls under a bound (`require.Eventually`, `probe.Await`)
-- **THEN** the check does not see it: it matches the literal texts `case <-time.After(` and `case <-<name>.C:`, and
-  those shapes stay review work
+- **THEN** the check does not see it: it parses each test file and recognises only a `select` arm receiving from
+  `time.After(...)` or from a timer channel `<name>.C`, and those shapes stay review work
 
 #### Scenario: A test fails on its own deadline
 

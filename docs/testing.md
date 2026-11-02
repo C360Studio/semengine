@@ -521,9 +521,10 @@ including those.
   escape is a comment on the line above the arm, `// Own deadline: <reason>`, for three reasons: a `synctest` bubble's
   fake clock; a deadline that is itself the behaviour under test; or a tool-package test whose timer arm is the only
   code that kills a helper process (such as `tail -f /dev/null`) that would outlive a `go test -timeout` panic. The
-  check matches the literal text `case <-time.After(`, and also a `case <-x.C:` arm (any dotted name before `.C`). It
-  cannot see a `time.After` stored in a variable, a `context.WithTimeout` deadline, or a polling helper such as
-  `require.Eventually`, so a reviewer checks those. A `context.WithTimeout` on the test's own wait for work that must
+  check parses each test file and recognises a `select` arm that receives from `time.After(...)` or from a timer
+  channel `x.C` (any dotted name before `.C`). It cannot see a `time.After` stored in a variable, a
+  `context.WithTimeout` deadline, or a polling helper such as `require.Eventually`, so a reviewer checks those.
+  A `context.WithTimeout` on the test's own wait for work that must
   finish is the same own-deadline shape and is treated as one; a context narrowed because the deadline is itself the
   behaviour under test is not. Removing a deadline is safe only when a wrong implementation hangs. Where the awaited
   call has a shorter fallback of its own (a 30 s context, a library timeout), make that fallback unreachable (derive

@@ -1,6 +1,7 @@
 # Proposal: flake-gates-own-deadline
 
-Track: quick.
+Track: design (adds a Requirement to `harness-boundaries` and modifies `merge-gate`); `design.md` records the
+choices.
 
 ## Why
 

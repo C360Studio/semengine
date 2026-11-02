@@ -20,7 +20,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 3. Component
 
-- [ ] 3.1 Shell, strict configuration, `Register`, `doc.go`, `README.md`. No handler reads downstream yet; table rows
+- [x] 3.1 Shell, strict configuration, `Register`, `doc.go`, `README.md`. No handler reads downstream yet; table rows
   arrive with 3.2. Premise: `processor/graph-index/component.go:43`, `:107` (D7); P1, P2, P3. Check: lifecycle suite
   with the failed-cleanup branch, `TestUnknownConfigKeyIsRefused`.
 - [ ] 3.2 Forwards: `entity`, `batch`, `prefix`, `byName`, with their table rows. Premise:

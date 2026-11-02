@@ -1,0 +1,96 @@
+package graphquery
+
+import (
+	"fmt"
+	"reflect"
+
+	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/pkg/errs"
+)
+
+// defaultQueryTimeoutMs is above graph-ingest's 10 s budget on batch and prefix
+// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's 30 s
+// budget for a request handler (design D7).
+const defaultQueryTimeoutMs = 15000
+
+// Config holds the graph-query configuration. Decoding is strict: a key it does not define is
+// refused, naming the key.
+type Config struct {
+	Ports *component.PortConfig `json:"ports" schema:"type:ports,description:The one required graph_queries input,category:basic"`
+	// QueryTimeoutMs bounds each downstream request, in milliseconds; 0 means the default, 15000.
+	QueryTimeoutMs int `json:"query_timeout_ms,omitempty" schema:"type:int,description:Bound on each downstream request in milliseconds,default:15000,category:basic"`
+}
+
+// queriesPort is the one input graph-query serves.
+func queriesPort() component.PortDefinition {
+	return component.PortDefinition{
+		Name:     "graph_queries",
+		Required: true,
+		Config: component.NATSRequestPort{
+			Subject:   "graph.query.*",
+			Interface: &component.InterfaceContract{Type: "graph.query", Version: "v1"},
+		},
+	}
+}
+
+// Validate implements component.Validatable. It only checks; a Config that has not had its
+// defaults applied has no ports and is refused.
+//
+// graph-query answers the verbs graph.QueryVerbs declares for it, on one subject family, and writes
+// nothing of its own. A port that says anything else would advertise what nothing serves, so the
+// one input must match queriesPort in name, required and everything under config. Its description
+// and external statement change nothing it serves, and are the operator's.
+func (c *Config) Validate() error {
+	if c.QueryTimeoutMs < 0 {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "query_timeout_ms cannot be negative")
+	}
+	if c.Ports == nil {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "ports configuration required")
+	}
+	if len(c.Ports.Outputs) != 0 {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
+			fmt.Sprintf("graph-query has no output ports, got %d", len(c.Ports.Outputs)))
+	}
+	want := queriesPort()
+	if len(c.Ports.Inputs) != 1 {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
+			fmt.Sprintf("exactly one %s input port is required, got %d", want.Name, len(c.Ports.Inputs)))
+	}
+	input, err := c.Ports.Inputs[0].Resolve(component.DirectionInput)
+	if err != nil {
+		return errs.WrapInvalid(err, "Config", "Validate", "resolve input port")
+	}
+	wantPort, err := want.Resolve(component.DirectionInput)
+	if err != nil {
+		return errs.WrapInvalid(err, "Config", "Validate", "resolve the required port")
+	}
+	if input.Name != wantPort.Name || !input.Required || !reflect.DeepEqual(input.Config, wantPort.Config) {
+		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
+			fmt.Sprintf("input port %q must be the required %s nats-request port on graph.query.*, graph.query v1, with no timeout or retries",
+				input.Name, want.Name))
+	}
+	return nil
+}
+
+// ApplyDefaults sets default values. A configuration with no ports takes DefaultConfig's; a ports
+// block that is present is used as written, never merged with the defaults (ruling K, #91 comment
+// 6062681355).
+func (c *Config) ApplyDefaults() {
+	if c.QueryTimeoutMs == 0 {
+		c.QueryTimeoutMs = defaultQueryTimeoutMs
+	}
+	if c.Ports == nil {
+		c.Ports = DefaultConfig().Ports
+	}
+}
+
+// DefaultConfig returns a valid default configuration.
+func DefaultConfig() Config {
+	return Config{
+		Ports:          &component.PortConfig{Inputs: []component.PortDefinition{queriesPort()}},
+		QueryTimeoutMs: defaultQueryTimeoutMs,
+	}
+}
+
+// schema defines the configuration schema for the graph-query component.
+var schema = component.GenerateConfigSchema(reflect.TypeOf(Config{}))

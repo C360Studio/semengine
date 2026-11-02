@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -758,5 +759,95 @@ func TestWaitForFirstRefusesNilContext(t *testing.T) {
 				t.Fatalf("WaitForFirst(nil) = %v, want an error naming nil context", err)
 			}
 		})
+	})
+}
+
+// backlogWatcher is a scripted jetstream.KeyWatcher shaped like a nats.go v1.55.0 watch
+// whose delivery is backed up (internal/kvwatch's doc): its updates buffer is full, a
+// delivery goroutine has more entries queued behind it, Stop leaves the channel open,
+// and the channel closes only once the last queued entry has been read and Stop has
+// run. It stands in for nats.go's shape only; that nats.go needs the drain rests on
+// internal/kvwatch's real-server evidence, not on this watcher.
+type backlogWatcher struct {
+	updates  chan jetstream.KeyValueEntry
+	stopped  chan struct{}
+	stopOnce sync.Once
+	// delivered is closed once the delivery goroutine has sent its last entry, just
+	// before it closes updates, so a reader that saw updates close also sees delivered
+	// closed.
+	delivered chan struct{}
+}
+
+// newBacklogWatcher fills a buffer of bufferSize with entry and starts a delivery
+// goroutine that sends queued more behind it. It must be called inside a bubble.
+func newBacklogWatcher(entry jetstream.KeyValueEntry, bufferSize, queued int) *backlogWatcher {
+	w := &backlogWatcher{
+		updates:   make(chan jetstream.KeyValueEntry, bufferSize),
+		stopped:   make(chan struct{}),
+		delivered: make(chan struct{}),
+	}
+	for range bufferSize {
+		w.updates <- entry
+	}
+	go func() {
+		for range queued {
+			w.updates <- entry
+		}
+		<-w.stopped
+		close(w.delivered)
+		close(w.updates)
+	}()
+	return w
+}
+
+func (w *backlogWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
+func (w *backlogWatcher) Stop() error {
+	w.stopOnce.Do(func() { close(w.stopped) })
+	return nil
+}
+
+// TestWatcherRunWaitsForABackedUpDeliveryAfterContextEnds: once Run's context has
+// ended, Run returns only after the stopped watch's delivery has ended, even when that
+// delivery has a long tail queued behind a full buffer. The scripted watch is handed
+// to Run only after its context has ended, so Run never reads it while live; a Run that
+// stops the watch and returns at once leaves the delivery goroutine blocked on its send.
+// The bubble's clock moves only when every goroutine is blocked, so the drain's 5 s
+// bound costs no real time.
+func TestWatcherRunWaitsForABackedUpDeliveryAfterContextEnds(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		const bufferSize, queued = 256, 1000
+		kvWatch := newBacklogWatcher(readyEntry(t), bufferSize, queued)
+		src := &fakeSource{open: func(context.Context) (jetstream.KeyValue, error) {
+			return &fakeBucket{watch: func(ctx context.Context) (jetstream.KeyWatcher, error) {
+				<-ctx.Done()
+				return kvWatch, nil
+			}}, nil
+		}}
+		w := newTestWatcher(src, KeyGraphIndex, DefaultHeartbeat)
+
+		ctx, cancel := context.WithCancel(t.Context())
+		done := make(chan error, 1)
+		go func() { done <- w.Run(ctx) }()
+		synctest.Wait() // Run is blocked in Watch, waiting for its context to end.
+		cancel()
+
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Errorf("Run = %v, want context.Canceled", err)
+		}
+		select {
+		case <-kvWatch.delivered:
+		default:
+			t.Errorf("Run returned with the watch's delivery still blocked behind its buffer")
+			// Read the rest so the bubble can end and report this failure, not a deadlock.
+			_ = kvWatch.Stop()
+			for open := true; open; {
+				_, open = <-kvWatch.updates
+			}
+		}
+		select {
+		case <-kvWatch.stopped:
+		default:
+			t.Error("Run returned without stopping the watch")
+		}
 	})
 }

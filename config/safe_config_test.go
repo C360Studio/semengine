@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semengine/types"
 )
@@ -69,23 +68,12 @@ func TestSafeConfig_ThreadSafety(t *testing.T) {
 		}(i)
 	}
 
-	// Wait for all goroutines to complete
-	done := make(chan bool)
-	go func() {
-		wg.Wait()
-		close(done)
-	}()
-
-	// Wait for completion or timeout
-	select {
-	case <-done:
-		// Check for errors
-		close(errors)
-		for err := range errors {
-			t.Fatalf("Concurrent access error: %v", err)
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("Test timed out - possible deadlock")
+	// A deadlock here is caught by go test's own timeout, which prints every goroutine's stack; a
+	// fixed limit of this test's own failed a slow run with no deadlock (#499).
+	wg.Wait()
+	close(errors)
+	for err := range errors {
+		t.Fatalf("Concurrent access error: %v", err)
 	}
 }
 

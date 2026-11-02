@@ -5,7 +5,8 @@ test for the sweep (task 2): before the sweep it names 148 sites; after it, none
 
 ## 1. Design
 
-- [x] 1.1 Quick track; owner approval on #500 (comment 6577539980), measurements on #500 (comment 6577478437).
+- [x] 1.1 Design track (`design.md`); owner approval on #500 (comment 6577539980), measurements on #500 (comment
+  6577478437).
 
 ## 2. Sweep: no test fails on its own deadline
 
@@ -36,6 +37,5 @@ Keep a timer arm that passes. Gate per group: `go test -race -count=1 -cpu 1 <pk
 
 ## 5. Land
 
-- [ ] 5.1 `task verify` passes on the final content commit; the cross-agent review record approves at that commit
-  (`reviewed-by:` in the PR body); specs synced and the change archived in the last content commit. The squash
-  merge and the closing of #499 are the PR's landing record, not this task.
+- [ ] 5.1 Implementation verified and independently reviewed; specs synced and change archived. Verification and the
+  narrow review of the archive commit go on the PR's landing record, after archive.

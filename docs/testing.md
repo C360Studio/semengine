@@ -273,17 +273,27 @@ Only step 3 going red as expected counts as a detection. Record any other outcom
   way it says nothing about the test's assertions. Fix a wrong change that does not compile. For one the test never
   reached, look for a missing input, or choose a wrong change on the path the test is meant to cover; then check
   again.
-- **Inconclusive:** the run ended without the intended assertion failing: an error, a timeout of the whole run, a run
-  killed by a signal, a different or unrelated failure, or a `-run` pattern that did not select the test. Runs with the
-  wrong change that disagree, a baseline or after-run that failed, and a change to the tree during the check also give
-  inconclusive. A failing exit code alone is not a detection. Fix the cause and run the check again; never skip or
-  weaken a test to get past it.
+- **Inconclusive:** the run ended without the intended assertion failing: an error, a run stopped at twice
+  `-timeout` or by a signal, a timeout of a baseline run or the after-run, a timeout that does not meet the
+  conditions for a detection by hang below, a different or unrelated failure, or a `-run` pattern that did not select
+  the test. Runs with the wrong change that disagree, a baseline or after-run that failed, and a change to the tree
+  during the check also give inconclusive. A failing exit code alone is not a detection. Fix the cause and run the
+  check again; never skip or weaken a test to get past it.
 
-When the wrong change makes something never finish, a test can still detect it if the test waits with a time limit of
-its own and fails with its own message when that limit runs out (for example, a `probe.Await` whose context has a
-deadline): that failure line is an assertion like any other. The timeout of the whole `go test` run cannot detect it.
-It shows only that the run did not finish, not which check caught the wrong change, so the outcome is inconclusive.
-When you need a detection from such a test, give the test its own time limit.
+When the wrong change makes something never finish, a test that waits for it with no time limit of its own hangs by
+design (see "Concurrency and cleanup": `go test -timeout` is the one deadline). The command reads that hang as a
+detection, reported as `verdict: detection: by hang, not by an assertion`, when all of these hold: `go test` ended the
+run by its own timeout; the named test started and never reported a result; the hung run is mutant run 1; and every
+baseline run and the after-run passed within a third of `-timeout`, by the package time (`Elapsed`) that `go test
+-json` reports. The report names the timeout, that margin and the control runs' times. It shows that the test did not
+finish with the wrong change and finished quickly without it; it does not show which line was waiting. Each run line
+in the report gives its wall time and its package time.
+
+The outcome stays inconclusive when a control run was slow, because a slow test could time out without any wrong
+change; the reason names the slow run, its time and the margin. It also stays inconclusive when `-timeout` is too
+short for the margin. Under `-race` even an instant test reports about 1.25 s, so a `-timeout` under about 3.75 s can
+never read as a detection by hang; the default is `2m`. Do not answer a slow control run by giving the test a time
+limit of its own: that is the own-deadline shape "Concurrency and cleanup" forbids. Raise `-timeout` instead.
 
 A report from Go's race detector, the line `race detected during execution of test`, counts as the expected failure
 only when you named it before running: with the command, `-expect-text 'race detected during execution of test'`.

@@ -17,7 +17,9 @@ Approved-by: Coby Leuschke, 2026-11-02, on #500 (comment 6580240783).
 - A contract test, `TestNoReachCheckAfterGeneratedRun`, sibling of `TestNoOwnDeadlineInTests` and built on the same
   parser: in a test function that calls `rapid.Check`, a failing call after that call returns is refused unless the
   line directly above carries `// After check: <reason>`. Witness cases that run before the check, and logging after
-  it, pass untouched (the shape PR #498 landed). Nothing to sweep: no test on `main` has the shape today.
+  it, pass untouched (the shape PR #498 landed). One test on `main` has the shape
+  (`service/component_manager_prop_test.go`, a reach count two blocks deep that an earlier census missed); it gets
+  witnesses in this change.
 - The sentence "Do not require a random run to reach a rare state a minimum number of times; that makes the test
   flaky" joins both role contracts as a `BLOCKING` finding, with its `AGENTS.md` and rules-index rows.
 - The #159 porting-PR cap (about 3,000 pin lines) counts every Go line, production and test, in `AGENTS.md` section 4,

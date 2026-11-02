@@ -12,6 +12,9 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
   (design D1, D2), every scenario of the spec delta shown able to fail. Gate:
   `go test -race -count=1 -cpu 1 -timeout 5m ./internal/harness/contract`.
 
+- [ ] 2.2 `service/component_manager_prop_test.go`: a witness history per branch before the run, counts only logged
+  after (design D5); the guard then names no file. Gate: `go test -race -count=1 -cpu 1 -timeout 5m ./service/`.
+
 ## 3. Rule text
 
 - [ ] 3.1 Contract text (D3) and the cap (D4): `docs/testing.md`, developer, reviewer and architect contracts,

@@ -446,6 +446,14 @@ every rule you claim, say what makes its assertion run and how the test gets the
 deterministically (a fixed prefix of operations or a named example) rather than hoping a random run hits it. Do not
 require a random run to reach a rare state a minimum number of times; that makes the test flaky.
 
+`TestNoReachCheckAfterGeneratedRun` refuses a failing call (`t.Fatal`, `t.Error`, `require.`, `assert.` and the
+like) placed after `rapid.Check` returns in the same function, because such a call usually asks what the random
+inputs happened to cover (#466, #497, #500). What passes: a named witness (an input you write out and run through the
+same assertions before the generated run, so the case is reached every time), logging after the run, and assertions
+inside the property closure. The only escape is `// After check: <reason>` on the line above, for an assertion on
+state the run must leave behind (a goroutine count, a closed resource); a reach count is never a reason. The check
+cannot see `rapid.MakeCheck` or a reach check hidden in a helper called after the run; the reviewer checks those.
+
 ### Check a history against a reference model
 
 A reference model is a small, simplified version of the expected behavior that the test itself owns, such as a map

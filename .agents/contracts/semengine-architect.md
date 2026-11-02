@@ -142,8 +142,9 @@ with its package: about 3,000 pin lines at most, with a design of about one page
 bound is ported as one pull request per lifecycle owner where it has several. Where one owner's pull request still
 exceeds the bound, its design states the line count, and the repository owner waives the bound for that number on
 that pull request. In change 3, `service` splits by lifecycle owner and `config`, with one owner, takes a waiver. Pin
-lines are the package's non-test Go lines at the pin, the count in the Lines column of D2's table in the same design
-(`:145-151`); D2's package lists (`:155-178`) name the lifecycle owners in each change.
+lines are every Go line of the package at the pin, production and test, and the design's size table lists both columns,
+as in the Lines column of D2's table in the same design (`:145-151`); D2's package lists (`:155-178`) name the
+lifecycle owners in each change.
 
 From change 3 on, each change in D2's table becomes a group of pull requests under the Slice 04A milestone, not one
 pull request and one OpenSpec change: each pull request is its own OpenSpec change, holding its design of about one

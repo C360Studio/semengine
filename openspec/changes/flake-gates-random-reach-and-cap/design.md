@@ -11,8 +11,9 @@ reached on every run.
 ## Context
 
 Both flakes failed on a reach check. The fix in #498 moved each case into a witness that runs before the check and
-turned the post-run counts into log lines. On `main` at `f7528d9`, 20 test files call `rapid.Check` and none has a
-failing call at function level after it, so the guard has nothing to sweep.
+turned the post-run counts into log lines. On `main` at `f7528d9`, 20 test files call `rapid.Check`; the guard, once
+written, found one reach check (`service/component_manager_prop_test.go`, a `t.Errorf` on a zero count inside a loop
+after the run) that a line-level census had missed. It is converted to witnesses in this change (D5).
 
 ## Goals / Non-Goals
 
@@ -41,6 +42,10 @@ section 3 gains the row at gate `verify+review`; `.agents/rules-index.md` the sa
 **D4. The cap.** `AGENTS.md` section 4 (#159 row), `.agents/rules-index.md` and `semengine-architect.md` ("about 3,000
 pin lines ... non-test Go lines") say: every Go line at the pin, production and test, with the design's size table
 listing both. The number stays 3,000; what it counts changes.
+
+**D5. The one live site.** `TestPropComponentManagerStopHistory` in `service/component_manager_prop_test.go` gets a
+named witness history per branch, run through the same assertions before the generated run; its post-run counts become
+log lines, as #498 did.
 
 ## Verification
 

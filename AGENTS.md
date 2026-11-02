@@ -122,7 +122,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `verify` | Critical packages hold their coverage floor | `.agents/skills/preflight/SKILL.md` |
 | `verify+review` | Tests use an independent oracle and are shown able to fail | `docs/testing.md`; `dev`, `rev` |
 | `review` | Changes with interacting inputs, a stated law, or order-dependent history record whether generated checks are used or why examples suffice | `docs/testing.md`; `dev`, `rev` |
-| `review` | Generated runs record seed, completed checks, replayable failure; assertions are shown to run; histories check against a reference model | `docs/testing.md`; `dev`, `rev` |
+| `verify+review` | Generated runs record seed, completed checks, replayable failure; assertions are shown to run; histories check against a reference model; no reach check after a generated run, named witnesses run before it (#466, #497, #500) | `docs/testing.md`; `harness-boundaries` spec; `dev`, `rev` |
 | `review` | Mutation checks report survivors/inconclusive runs as such, never detections; fuzz seed replay and exploration apart; PRs record uncovered cases | `docs/testing.md`; `dev` |
 | `verify+review` | Production code creates JetStream consumers only via natsclient's policy entry points, called only from allowlisted files (#422) | `harness-boundaries` spec |
 
@@ -143,7 +143,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Ported packages bring their SemStreams guidance (contract sections and skills) with them | `arch` |
 | `review` | Ported packages building `GenericJSON` from known fields get an `adapt` item (registered payload or stated reason) (#9) | `arch`, `rev` |
 | `review` | Sister repositories are read-only and inventoried only as scoped | `docs/inventory-scope.md` |
-| `review` | A porting PR carries one package or lifecycle owner (<= ~3,000 non-test pin lines, ~1-page design, own OpenSpec change) unless the owner waives by count (#159) | `arch`, `rev` |
+| `review` | A porting PR carries one package or lifecycle owner (<= ~3,000 pin Go lines, tests included, ~1-page design, own OpenSpec change) unless the owner waives by count (#159) | `arch`, `rev` |
 | `review` | Before a porting design, the shape sweep reads each carried package on the pin copy and records each finding's required/optional disposition (#159, #9) | `arch`, `rev`; `protocol` |
 | `review` | Before a porting design, the inventory lists every open issue naming a carried package; the design says whether the PR retires it (`Closes #n`) or it stays under Bounded port scope (#160) | `arch`, `rev`; `protocol` |
 | `review` | Porting findings add required work only when tied to a binding requirement, admission/verify gate, owner ruling, accepted design commitment, or build/packaging need | `protocol` |

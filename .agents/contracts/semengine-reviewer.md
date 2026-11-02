@@ -386,7 +386,10 @@ is the first bullet below.
   implementation's branching is the test-that-reconstructs finding at property scale. Verify the generator reaches
   every boundary the clause names; a bound the generator cannot hit is unguarded. Check separately what makes each
   assertion run (an always-empty loop checks nothing), that a history's reference model is not filled from production
-  code, and that the run's seed, completed check count and replay command are recorded.
+  code, and that the run's seed, completed check count and replay command are recorded. A failing call after
+  the generated run that depends on which inputs were drawn is `BLOCKING`; the case belongs in a named witness before
+  the run. `TestNoReachCheckAfterGeneratedRun` catches the literal shape; check `rapid.MakeCheck` and reach checks in
+  helpers yourself (#466, #497, #500).
 - Paid or prolonged operations use validated monitors plus active polling of authoritative state every 30-60 seconds.
 
 ## Adopter seam review

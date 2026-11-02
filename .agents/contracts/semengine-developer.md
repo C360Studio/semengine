@@ -358,7 +358,10 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 - A property-based test encodes an invariant the design cited, never one inferred from the implementation. The
   generator must provably reach every boundary the cited clause names, by construction or by a committed shrunk
   counterexample from a mutation kill; a wide range that merely strides a bound catches an off-by-one only
-  probabilistically. Reaching an input is not running the assertion: state what makes each assertion run. A history
+  probabilistically. Reaching an input is not running the assertion: state what makes each assertion run.
+  Never fail a test after `rapid.Check` returns on how often a case was reached; run each case that must be
+  covered as a named witness through the same assertions before the check (`// After check: <reason>` only for state
+  the run must leave behind; `docs/testing.md`, "Show that each assertion runs"; #466, #497, #500). A history
   is compared against a test-owned reference model filled from the requirement, never from production code. A run
   records its seed, the checks completed (read from the output, not the budget requested), and a replayable failure.
 - A mutation check reports only its observed outcome. A survivor or an inconclusive run is recorded as such and is

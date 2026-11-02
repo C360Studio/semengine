@@ -9,11 +9,9 @@ import (
 // either this body or a classified error (ADR-060); a refusal carries no envelope.
 //
 // IndexedRevision is the ENTITY_STATES revision the reply reflects: every write at
-// or below it is reflected in Data, except on an alias reply while issue #415 is
-// open, which carries the same revision but promises nothing about which aliases
-// resolve. A caller holding a write's kv_revision compares it here. Producer names
-// the component that answered, so a reply relayed through another component can
-// still be attributed.
+// or below it is reflected in Data, on an alias reply too. A caller holding a write's
+// kv_revision compares it here. Producer names the component that answered, so a reply
+// relayed through another component can still be attributed.
 type QueryResponse[T any] struct {
 	Data            T         `json:"data"`
 	IndexedRevision uint64    `json:"indexed_revision"`

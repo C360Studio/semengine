@@ -30,7 +30,7 @@ func TestReviewerStorageReportResyncDropsAbsentRows(t *testing.T) {
 	first := newFakeKeyWatcher()
 	first.put("GONE", reportRow("GONE", TierFile, PressureNormal))
 	first.synced()
-	close(first.updates)
+	first.closeUpdates()
 	store.next = func() *fakeKeyWatcher { return first }
 	consumer, err := NewConsumer(store, ConsumerConfig{})
 	require.NoError(t, err)
@@ -40,7 +40,7 @@ func TestReviewerStorageReportResyncDropsAbsentRows(t *testing.T) {
 	// only the sync marker (e.g. bucket recreated or delete markers purged).
 	second := newFakeKeyWatcher()
 	second.synced()
-	close(second.updates)
+	second.closeUpdates()
 	store.next = func() *fakeKeyWatcher { return second }
 	consumer.watchOnce(context.Background())
 	require.Empty(t, consumer.Snapshot().Resources, "complete new snapshot must retract rows absent from the bucket")

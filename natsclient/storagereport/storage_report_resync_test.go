@@ -33,7 +33,7 @@ func TestReportConsumer_ReplacementWatchKeepsThePreviousViewUntilItsSyncMarker(t
 		require.True(t, before.AccountKnown)
 		require.Len(t, before.Resources, 2)
 
-		close(first.updates)
+		first.closeUpdates()
 		eventually(t, func() bool { return store.watchCount() == 2 }, "the dropped watch is replaced")
 		store.mu.Lock()
 		second := store.watchers[1]
@@ -81,7 +81,7 @@ func TestReportConsumer_ReplayedTombstoneForgetsTheRowOnce(t *testing.T) {
 		first.put("DELETED", reportRow("DELETED", TierFile, PressureNormal))
 		first.synced()
 		synctest.Wait()
-		close(first.updates)
+		first.closeUpdates()
 		eventually(t, func() bool { return store.watchCount() == 2 }, "the dropped watch is replaced")
 
 		store.mu.Lock()
@@ -116,7 +116,7 @@ func TestReportConsumer_UndecodableValueInAReplacementKeepsTheHeldRow(t *testing
 		first.put(StorageAccountReportKey, AccountReport{ProducedBy: "first"})
 		first.synced()
 		synctest.Wait()
-		close(first.updates)
+		first.closeUpdates()
 		eventually(t, func() bool { return store.watchCount() == 2 }, "the dropped watch is replaced")
 
 		store.mu.Lock()
@@ -295,7 +295,7 @@ func TestReportConsumer_ResyncRetractionReachesObserver(t *testing.T) {
 		synctest.Wait()
 		_, _, observed := observer.snapshot()
 		require.Len(t, observed, 1)
-		close(first.updates)
+		first.closeUpdates()
 		eventually(t, func() bool { return store.watchCount() == 2 }, "the dropped watch is replaced")
 		store.mu.Lock()
 		defer store.mu.Unlock()

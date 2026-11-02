@@ -158,7 +158,7 @@ Carried with `graph`, `pkg/types`, `vocabulary` and graph-ingest from SemStreams
 - For graph-index's indexes (`processor/graph-index`; ADR-077, ADR-078): a token's position in an index key belongs
   to a named owner; prove the owner and the exact forward and owner filters before relying on it. Every index a query
   can see implements replacement, including `[A] -> [B] -> []`, tested through every public read of it
-  (`TestQueryReadsImplementReplacement`). The alias read is the one declared exception, until issue #415 is fixed.
+  (`TestQueryReadsImplementReplacement`), the alias read included (ADR-114).
 
 ## Exported-surface contracts
 

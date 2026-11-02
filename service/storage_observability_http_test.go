@@ -8,6 +8,7 @@ import (
 	"os"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -43,12 +44,22 @@ func (e fakeReportEntry) Operation() jetstream.KeyValueOp { return e.op }
 
 // fakeReportWatcher reproduces one KV watch, including the single nil entry nats.go sends once
 // every current value has been delivered.
+// Its Stop closes updates, as nats.go does once a watch's delivery has ended; nothing sends on it
+// after its Stop.
 type fakeReportWatcher struct {
-	updates chan jetstream.KeyValueEntry
+	updates   chan jetstream.KeyValueEntry
+	closeOnce sync.Once
 }
 
 func (w *fakeReportWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
-func (w *fakeReportWatcher) Stop() error                             { return nil }
+
+func (w *fakeReportWatcher) Stop() error {
+	w.closeUpdates()
+	return nil
+}
+
+// closeUpdates closes the updates channel once, however often the consumer stops the watcher.
+func (w *fakeReportWatcher) closeUpdates() { w.closeOnce.Do(func() { close(w.updates) }) }
 
 func (w *fakeReportWatcher) put(t *testing.T, key string, value any) {
 	t.Helper()

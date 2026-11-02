@@ -389,6 +389,129 @@ func TestIntegration_WatchEvents_DeliversUpsertAndDelete(t *testing.T) {
 	requireNextParticipant(t, watchCh, marker)
 }
 
+// watchBound bounds each wait in the backlogged-watch tests; a healthy run finishes each in well
+// under a second.
+const watchBound = 10 * time.Second
+
+// putWatchBacklog stores 600 entities the fixture workflow's pattern matches, above nats.go's
+// 256-entry watch updates buffer (nats.go v1.55.0, jetstream/kv.go WatchFiltered), so a watch whose
+// reader stops backs its delivery up behind the full buffer.
+func putWatchBacklog(t *testing.T, client *natsclient.Client) {
+	t.Helper()
+	kv, err := client.GetKeyValueBucket(t.Context(), graph.BucketEntityStates)
+	require.NoError(t, err)
+	for n := range 600 {
+		id := fmt.Sprintf("c360.platform1.gcs.lifecycle.mission.backlog-%03d", n)
+		body, err := graph.MarshalEntityState(validLifecycleState(id))
+		require.NoError(t, err)
+		_, err = kv.Put(t.Context(), id, body)
+		require.NoError(t, err)
+	}
+}
+
+// awaitWatchReturn waits for the watch running on done to return, up to watchBound.
+func awaitWatchReturn(t *testing.T, done <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(watchBound):
+		t.Fatal("WatchEvents did not return")
+		return nil
+	}
+}
+
+// TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery: a WatchEvents whose callback
+// returns an error while nats.go's watch delivery is blocked on its full updates buffer returns
+// that error, and only after the delivery has ended. The callback holds the first of 600 matching
+// entities until the delivery is blocked, so every run stops a backlogged watch.
+func TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery(t *testing.T) {
+	client := fixtureClient(t)
+	putWatchBacklog(t, client)
+	mgr := NewManager(client, nil)
+	require.NoError(t, mgr.Register(lifecycle{}.fixtureWorkflow()))
+
+	errCallback := errors.New("test: the callback ends the watch")
+	// held ends when the delivery is blocked, or when t.Context ends before the cleanups run, so
+	// the callback never keeps WatchEvents from returning.
+	held, release := context.WithCancel(t.Context())
+	defer release()
+	entered := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	go func() {
+		done <- mgr.WatchEvents(t.Context(), "fixture", func(Event) error {
+			entered <- struct{}{}
+			<-held.Done()
+			return errCallback
+		})
+	}()
+	select {
+	case <-entered:
+	case <-time.After(watchBound):
+		t.Fatal("WatchEvents did not call its callback")
+	}
+	// The stack dump showing the delivery blocked on its full buffer orders the callback's error
+	// after the backlog, not elapsed time.
+	if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), watchBound); err != nil {
+		t.Fatal(err)
+	}
+	release()
+	if err := awaitWatchReturn(t, done); !errors.Is(err, errCallback) {
+		t.Fatalf("WatchEvents returned %v; want the callback's error", err)
+	}
+	// WatchEvents drained the watch until nats.go closed it, which it does after its last delivery
+	// returns.
+	if err := natsfixture.AwaitNoStacks(t.Context(), watchBound, natsfixture.NativeDeliveryStacks); err != nil {
+		t.Fatalf("nats.go's watch delivery is still running after WatchEvents returned: %v", err)
+	}
+}
+
+// TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery: a WatchEvents whose context ends
+// while its callback is blocked and nats.go's watch delivery is blocked on its full updates buffer
+// returns context.Canceled, and only after the delivery has ended. Ten cycles, each a fresh watch
+// over the same 600 entities, as pkg/graphview's TestRunLeavesNoWatchDelivery runs.
+func TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery(t *testing.T) {
+	client := fixtureClient(t)
+	putWatchBacklog(t, client)
+	mgr := NewManager(client, nil)
+	require.NoError(t, mgr.Register(lifecycle{}.fixtureWorkflow()))
+
+	for cycle := range 10 {
+		ctx, cancel := context.WithCancel(t.Context())
+		entered := make(chan struct{}, 1)
+		done := make(chan error, 1)
+		go func() {
+			done <- mgr.WatchEvents(ctx, "fixture", func(Event) error {
+				select {
+				case entered <- struct{}{}:
+				default:
+				}
+				<-ctx.Done()
+				return nil
+			})
+		}()
+		select {
+		case <-entered:
+		case <-time.After(watchBound):
+			cancel()
+			t.Fatalf("cycle %d: WatchEvents did not call its callback", cycle)
+		}
+		// The stack dump showing the delivery blocked on its full buffer orders the cancel after
+		// the backlog, not elapsed time.
+		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), watchBound); err != nil {
+			cancel()
+			t.Fatalf("cycle %d: %v", cycle, err)
+		}
+		cancel()
+		if err := awaitWatchReturn(t, done); !errors.Is(err, context.Canceled) {
+			t.Fatalf("cycle %d: WatchEvents returned %v; want context.Canceled", cycle, err)
+		}
+		if err := natsfixture.AwaitNoStacks(t.Context(), watchBound, natsfixture.NativeDeliveryStacks); err != nil {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after WatchEvents returned: %v", cycle, err)
+		}
+	}
+}
+
 // TestIntegration_CreateFromOperator_BirthLane drives gh#814's create lane
 // against the real graph-mutation wire: an operator-supplied JSON initial
 // state becomes a committed, readable, transitionable instance.

@@ -68,7 +68,8 @@ func TestSafeConfig_ThreadSafety(t *testing.T) {
 		}(i)
 	}
 
-	// Every sender has returned once Wait does, so the channel can close and drain.
+	// A deadlock here is caught by go test's own timeout, which prints every goroutine's stack; a
+	// fixed limit of this test's own failed a slow run with no deadlock (#499).
 	wg.Wait()
 	close(errors)
 	for err := range errors {

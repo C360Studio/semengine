@@ -15,6 +15,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/internal/lifecycleguard"
 	"github.com/c360studio/semengine/model"
 	"github.com/c360studio/semengine/natsclient"
@@ -568,7 +569,7 @@ func (cm *Manager) release(ctx context.Context) error {
 		// (TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied). The teardown
 		// therefore runs on a goroutine Stop waits on below under ctx: a Stop whose
 		// ctx ends first returns, and the next Stop waits for it again.
-		cm.goLocked(func() { cm.stopWatches(watchers, cancel) })
+		cm.goLocked(func() { cm.stopWatches(ctx, watchers, cancel) })
 	}
 	pending := slices.Clone(cm.workDone)
 	cm.mu.Unlock()
@@ -589,16 +590,24 @@ func (cm *Manager) release(ctx context.Context) error {
 
 // stopWatches stops every watcher, all at once so the teardown waits for one
 // consumer delete rather than one per watch, and then ends the run context.
+// ctx is release's: Start's on a failed Start, Stop's otherwise (ADR-113).
+//
+// Each watcher is stopped through kvwatch.Stop, which returns once nats.go has
+// closed the watch's delivery, for at most kvwatch.DrainBudget after the watcher's Stop returns:
+// at nats.go v1.55.0 a delivery blocked on a full updates buffer outlives the
+// watch's Stop until the buffer is read, and a key-family handler that is slow
+// with a backlog leaves it blocked
+// (TestStopWithABackloggedKeyFamilyLeavesNoWatchDelivery).
 //
 // Each watcher is stopped before the run context ends. Ending it also
 // unsubscribes them, in the background (nats.go v1.55.0 js.go:2072-2077);
 // stopping first makes this the unsubscribe that deletes each consumer, which
 // TestManagerPassesTheLifecycleSuite counts on the server.
-func (cm *Manager) stopWatches(watchers []jetstream.KeyWatcher, cancel context.CancelFunc) {
+func (cm *Manager) stopWatches(ctx context.Context, watchers []jetstream.KeyWatcher, cancel context.CancelFunc) {
 	var wg sync.WaitGroup
 	for _, watcher := range watchers {
 		wg.Go(func() {
-			if err := watcher.Stop(); err != nil {
+			if err := kvwatch.Stop(ctx, watcher); err != nil {
 				// Logged, not returned, as at the pin (owner ruling Q4, #9 comment
 				// 6278986482): a second unsubscribe fails, so returning it would fail
 				// every later Stop.

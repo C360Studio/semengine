@@ -5,6 +5,7 @@ package config
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	natsserver "github.com/nats-io/nats-server/v2/server"
 	"github.com/stretchr/testify/require"
 
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/model"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/types"
@@ -306,6 +308,86 @@ func TestBlockedKeyFamilyHandlerHoldsStop(t *testing.T) {
 	close(release)
 	released = true
 	stopManager(t, manager)
+}
+
+// TestStopWithABackloggedKeyFamilyLeavesNoWatchDelivery: a key family holding more entries than
+// nats.go's 256-entry watch buffer, whose handler blocks on its first one, so nats.go's delivery is
+// blocked sending into the full buffer when Stop runs. At nats.go v1.55.0 the watch's Stop only
+// unsubscribes and that delivery ends only when the buffer is read (internal/kvwatch). Stop must
+// return nil once the handler is released and leave no nats.go watch delivery running. Ten
+// cycles, as pkg/graphview's TestRunLeavesNoWatchDelivery runs: the handler is released after the
+// watches' consumers are gone from the server, and one cycle's base failure can still lose the
+// race to the run context's end.
+//
+// spec: config-manager / Stop(ctx) stops the Manager
+func TestStopWithABackloggedKeyFamilyLeavesNoWatchDelivery(t *testing.T) {
+	tc := fixtureClient(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
+	defer cancel()
+
+	// Fill the family once, through a Manager whose handler does not block.
+	seed, err := NewKeyFamily("rules", func(KeyFamilyEntry) {})
+	require.NoError(t, err)
+	seeder, err := NewConfigManager(identityTestConfig("acme", "dep"), tc, nil, WithKeyFamily(seed))
+	require.NoError(t, err)
+	require.NoError(t, seeder.Start(ctx))
+	for i := range 600 {
+		require.NoError(t, seed.Put(ctx, fmt.Sprintf("r%03d", i), []byte(`"r"`)))
+	}
+	stopManager(t, seeder)
+
+	for cycle := range 10 {
+		entered := make(chan struct{}, 1)
+		release := make(chan struct{})
+		family, err := NewKeyFamily("rules", func(KeyFamilyEntry) {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		})
+		require.NoError(t, err)
+		manager, err := NewConfigManager(identityTestConfig("acme", "dep"), tc, nil, WithKeyFamily(family))
+		require.NoError(t, err)
+		require.NoError(t, manager.Start(ctx))
+		var releaseOnce sync.Once
+		releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+		// Runs after the Stop below has returned nil, and returns nil again; it releases the Manager
+		// if an assertion fails first.
+		t.Cleanup(func() {
+			releaseHandler()
+			stopManager(t, manager)
+		})
+
+		select {
+		case <-entered:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("cycle %d: the family handler was never called", cycle)
+		}
+		// The stack dump showing the delivery blocked on its full buffer orders Stop after the
+		// backlog, not elapsed time.
+		require.NoError(t, natsfixture.AwaitNativeDeliveryBlocked(ctx, 10*time.Second), "cycle %d", cycle)
+
+		stopped := make(chan error, 1)
+		go func() {
+			stopCtx, stopCancel := context.WithTimeout(ctx, 30*time.Second)
+			defer stopCancel()
+			stopped <- manager.Stop(stopCtx)
+		}()
+		// Every watch's consumer gone from the server orders the release after the watches'
+		// Stop calls, so the released handler cannot read the backlog out before them.
+		awaitWatchConsumers(t, ctx, tc, manager.bucketName, 0)
+		releaseHandler()
+		select {
+		case err := <-stopped:
+			require.NoError(t, err, "cycle %d: Stop once the handler is released", cycle)
+		case <-time.After(30 * time.Second):
+			t.Fatalf("cycle %d: Stop did not return once the handler was released", cycle)
+		}
+		if err := natsfixture.AwaitNoStacks(ctx, 10*time.Second, natsfixture.NativeDeliveryStacks); err != nil {
+			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Stop returned: %v", cycle, err)
+		}
+	}
 }
 
 // requireClosed reads ch until it is closed; a channel never closed holds the test until go test

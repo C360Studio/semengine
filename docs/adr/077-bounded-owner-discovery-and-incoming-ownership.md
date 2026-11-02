@@ -19,8 +19,8 @@
 >   SemStreams' record at the pins that record names. The pin's load tests are not ported. This port keeps the worker
 >   maximum (`workers` is 1 to 16, enforced by configuration validation); its one load comparison is a measurement
 >   recorded on issue #108, not a gate.
-> - ALIAS stays the open item this record says it is: alias replacement is not done here, and the alias read is the
->   one declared exception to `[A] -> [B] -> []` until issue #415 supplies an alias key layout.
+> - ALIAS stays the open item this record says it is: its key layout is not decided here. ADR-114 decides it, and the
+>   alias read implements `[A] -> [B] -> []` like the other indexes.
 
 ## Status
 

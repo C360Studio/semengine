@@ -249,14 +249,25 @@ func TestMaximumLengthIDsAndPredicatesThroughPublicReads(t *testing.T) {
 	src, other, target := id("a", "a"), id("a", "b"), id("b", "a")
 	pred := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("c", 64)
 	label := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("d", 64)
-	if len(src) != 256 || len(target) != 256 || len(pred) != 194 {
-		t.Fatalf("fixture is not maximum length: %d %d %d", len(src), len(target), len(pred))
+	aliasPred := strings.Repeat("f", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("e", 64)
+	if len(src) != 256 || len(target) != 256 || len(pred) != 194 || len(aliasPred) != 194 {
+		t.Fatalf("fixture is not maximum length: %d %d %d %d", len(src), len(target), len(pred), len(aliasPred))
 	}
+	defer vocabulary.SnapshotRegistry()()
 	vocabulary.Register(label, vocabulary.WithAlias(vocabulary.AliasTypeLabel, 0))
+	vocabulary.Register(aliasPred, vocabulary.WithAlias(vocabulary.AliasTypeIdentity, 0))
 	h := startIndex(t, fixtureClient(t), `{}`)
 	h.put(t, other, entityValue(t, other, stmt{pred, target}))
-	rev := h.put(t, src, entityValue(t, src, stmt{pred, target}, stmt{label, "Longest"}))
+	rev := h.put(t, src, entityValue(t, src, stmt{pred, target}, stmt{label, "Longest"}, stmt{aliasPred, "longest-1"}))
 	h.awaitIndexed(t, rev)
+	// The longest alias key: 64 hex + 256-byte ID + 388 hex of the predicate, two dots.
+	if key := nameHash("longest-1") + "." + src + "." + hexOf(aliasPred); len(key) != 710 ||
+		!slices.Equal(h.keys(t, graph.BucketAliasIndex), []string{key}) {
+		t.Errorf("alias keys = %q, want the one %d-byte key %q", h.keys(t, graph.BucketAliasIndex), len(key), key)
+	}
+	if got := resolveAlias(t, h, "longest-1", rev); got != src {
+		t.Fatalf("alias = %q, want %s", got, src)
+	}
 
 	out := answer[graph.OutgoingRelationshipsData](t, h.client, "outgoing", map[string]any{"entity_id": src}, rev)
 	if len(out.Relationships) != 1 || out.Relationships[0].ToEntityID != target {
@@ -294,6 +305,22 @@ func TestMaximumLengthIDsAndPredicatesThroughPublicReads(t *testing.T) {
 	names = answer[graph.NameData](t, h.client, "byName", map[string]any{"name": "Longest"}, rev)
 	if len(names.Matches) != 0 {
 		t.Fatalf("name after replacement = %+v", names)
+	}
+
+	rev = h.put(t, src, entityValue(t, src, stmt{aliasPred, "longest-1"}))
+	h.awaitIndexed(t, rev)
+	if got := resolveAlias(t, h, "longest-1", rev); got != src {
+		t.Fatalf("alias before delete = %q, want %s", got, src)
+	}
+	if err := h.states.Delete(t.Context(), src); err != nil {
+		t.Fatalf("delete %s: %v", src, err)
+	}
+	// A later write's revision is above the delete's: the floor reaching it orders the read
+	// after the delete's apply.
+	rev = h.put(t, other, entityValue(t, other))
+	h.awaitIndexed(t, rev)
+	if got := resolveAlias(t, h, "longest-1", rev); got != "" {
+		t.Fatalf("alias after delete = %q, want no ID", got)
 	}
 }
 
@@ -410,6 +437,127 @@ func TestQueryReadsImplementReplacement(t *testing.T) {
 		compoundAnd: []string{other}, compoundOr: []string{other},
 		alpha: none, beta: none,
 	})
+}
+
+// resolveAlias reads alias through the public alias verb and returns the ID it answers, or ""
+// when it answers no ID.
+func resolveAlias(t *testing.T, h *harness, alias string, minRevision uint64) string {
+	t.Helper()
+	data := answer[graph.AliasData](t, h.client, "alias", map[string]string{"alias": alias}, minRevision)
+	if data.CanonicalID == nil {
+		return ""
+	}
+	return *data.CanonicalID
+}
+
+// TestAliasReadImplementsReplacement drives one entity's alias from alpha-1 to beta-1 to none,
+// then gives it beta-1 again and deletes the entity, reading both aliases through the public
+// alias verb after each step: a dropped or changed alias answers no ID, and a deleted entity's
+// alias answers no ID. Another entity's alias answers it throughout (spec "Indexes implement
+// replacement", ADR-114).
+func TestAliasReadImplementsReplacement(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
+	src, other := entityID(1), entityID(2)
+	h.put(t, other, entityValue(t, other, stmt{alias, "other-1"}))
+
+	check := func(step string, rev uint64, wantAlpha, wantBeta string) {
+		t.Helper()
+		h.awaitIndexed(t, rev)
+		for a, want := range map[string]string{"alpha-1": wantAlpha, "beta-1": wantBeta, "other-1": other} {
+			if got := resolveAlias(t, h, a, rev); got != want {
+				t.Errorf("%s: alias %q = %q, want %q", step, a, got, want)
+			}
+		}
+	}
+
+	check("A", h.put(t, src, entityValue(t, src, stmt{alias, "alpha-1"})), src, "")
+	check("changed", h.put(t, src, entityValue(t, src, stmt{alias, "beta-1"})), "", src)
+	check("dropped", h.put(t, src, entityValue(t, src)), "", "")
+	check("re-added", h.put(t, src, entityValue(t, src, stmt{alias, "beta-1"})), "", src)
+	if err := h.states.Delete(t.Context(), src); err != nil {
+		t.Fatalf("delete %s: %v", src, err)
+	}
+	// A later write's revision is above the delete's: the floor reaching it orders the reads
+	// after the delete's apply.
+	check("deleted", h.put(t, entityID(50), entityValue(t, entityID(50))), "", "")
+}
+
+// TestSharedAliasIsRefusedAsAmbiguous: an alias two entities carry is refused, class invalid,
+// code alias_ambiguous, the message naming the alias; once one holder drops it, or is deleted,
+// the alias answers the other, so the delete's `*.<entity6>.*` filter leaves the other's row.
+// One entity carrying an alias under two predicates is one holder and answers (spec "A shared
+// alias is refused, then resolves", "One holder of a shared alias is deleted"; ADR-114 §3).
+func TestSharedAliasIsRefusedAsAmbiguous(t *testing.T) {
+	const serial = "test.identity.serial"
+	defer vocabulary.SnapshotRegistry()()
+	vocabulary.Register(serial, vocabulary.WithAlias(vocabulary.AliasTypeIdentity, 0))
+	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
+	e1, e2, e3 := entityID(1), entityID(2), entityID(3)
+
+	refused := func(step string, rev uint64) {
+		t.Helper()
+		h.awaitIndexed(t, rev)
+		_, err := query(t, h.client, "alias", map[string]string{"alias": "shared-1"})
+		var classified *errs.ClassifiedError
+		if !errors.As(err, &classified) {
+			t.Errorf("%s: err = %v, want a classified refusal", step, err)
+			return
+		}
+		// The literal, not the constant: callers match the wire string.
+		if classified.Class != errs.ErrorInvalid || classified.Code != "alias_ambiguous" {
+			t.Errorf("%s: class %v code %q (%v), want invalid alias_ambiguous", step, classified.Class,
+				classified.Code, err)
+		}
+		if !strings.Contains(err.Error(), `"shared-1"`) {
+			t.Errorf("%s: message %q does not name the alias", step, err)
+		}
+	}
+	resolves := func(step string, rev uint64, alias, want string) {
+		t.Helper()
+		h.awaitIndexed(t, rev)
+		if got := resolveAlias(t, h, alias, rev); got != want {
+			t.Errorf("%s: alias %q = %q, want %q", step, alias, got, want)
+		}
+	}
+
+	h.put(t, e1, entityValue(t, e1, stmt{alias, "shared-1"}))
+	refused("shared", h.put(t, e2, entityValue(t, e2, stmt{alias, "shared-1"})))
+	resolves("e2 dropped it", h.put(t, e2, entityValue(t, e2)), "shared-1", e1)
+	refused("shared again", h.put(t, e2, entityValue(t, e2, stmt{alias, "shared-1"})))
+	if err := h.states.Delete(t.Context(), e2); err != nil {
+		t.Fatalf("delete %s: %v", e2, err)
+	}
+	// A later write's revision is above the delete's: the floor reaching it orders the read
+	// after the delete's apply.
+	resolves("e2 deleted", h.put(t, entityID(50), entityValue(t, entityID(50))), "shared-1", e1)
+	resolves("two predicates", h.put(t, e3, entityValue(t, e3, stmt{alias, "dual-1"}, stmt{serial, "dual-1"})),
+		"dual-1", e3)
+}
+
+// TestAliasMatchFoldsCase: an alias request is trimmed and case-folded as NAME's is, so ` sn-1 `
+// finds the entity carrying `SN-1`; an alias empty after trimming is refused as invalid_request,
+// where NAME answers a whitespace-only name (spec "Case and space fold"; ADR-114 §3, §5).
+func TestAliasMatchFoldsCase(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	e := entityID(1)
+	rev := h.put(t, e, entityValue(t, e, stmt{alias, "SN-1"}))
+	h.awaitIndexed(t, rev)
+	for _, request := range []string{" sn-1 ", "sn-1", "SN-1"} {
+		if got := resolveAlias(t, h, request, rev); got != e {
+			t.Errorf("alias %q = %q, want %q", request, got, e)
+		}
+	}
+
+	_, err := query(t, h.client, "alias", map[string]string{"alias": "   "})
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) {
+		t.Fatalf("whitespace-only alias: err = %v, want a classified refusal", err)
+	}
+	// The literal, not the constant: callers match the wire string.
+	if classified.Class != errs.ErrorInvalid || classified.Code != "invalid_request" {
+		t.Errorf("whitespace-only alias: class %v code %q (%v), want invalid invalid_request",
+			classified.Class, classified.Code, err)
+	}
 }
 
 // TestQueriesAreRefusedWhileTheFeedIsLost: ENTITY_STATES deleted under a running graph-index
@@ -555,17 +703,17 @@ func startGraphIngest(t *testing.T, client *natsclient.Client) {
 // TestMalformedIndexRowsAreSkippedLoggedAndCounted: a stored index row that is not its index's
 // layout is left out of every query that lists it, and the skip is declared: a warning names the
 // index, and query_rows_skipped_total counts it by index, while the query still answers the
-// well-formed rows (#430; the read-side counterpart of aliases_skipped_total, #426). No graph-index
-// writer stores such a row, so the test writes each one into its bucket directly.
+// well-formed rows (#430, #426). No graph-index writer stores such a row, so the test writes each
+// one into its bucket directly.
 func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	src, target, stranger := entityID(1), entityID(2), entityID(3)
 	title := vocabulary.DCTermsTitle
-	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{title, "Alpha"}))
+	rev := h.put(t, src, entityValue(t, src, stmt{linkTo, target}, stmt{title, "Alpha"}, stmt{alias, "alpha-1"}))
 	h.awaitIndexed(t, rev)
 
 	// Spelled from the layouts (target.source6.hex(predicate), predicate3.entity6,
-	// sha256(folded name).entity6.hex(predicate)), not built by the package.
+	// sha256(folded name).entity6.hex(predicate), the same for an alias), not built by the package.
 	for bucket, rows := range map[string]map[string]string{
 		graph.BucketIncomingIndex: {target + ".not-a-row": "{}"},
 		// Nine tokens, so the exact predicate filter lists it, but "_bad" is no entity ID segment.
@@ -574,6 +722,7 @@ func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 			nameHash("Alpha") + ".not-a-row":                        "{}",
 			nameHash("Alpha") + "." + stranger + "." + hexOf(title): "not json",
 		},
+		graph.BucketAliasIndex: {nameHash("alpha-1") + ".not-a-row": "{}"},
 	} {
 		kv, err := kvcatalog.EnsureCatalogBucket(t.Context(), h.client, bucket)
 		if err != nil {
@@ -597,24 +746,27 @@ func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 		t.Errorf("predicate %s = %v, want [%s]", linkTo, linked.Entities, src)
 	}
 	list := answer[graph.PredicateListData](t, h.client, "predicateList", map[string]string{}, rev)
-	if want := []graph.PredicateSummary{{Predicate: title, EntityCount: 1}, {Predicate: linkTo, EntityCount: 1}}; !slices.Equal(list.Predicates, want) {
+	if want := []graph.PredicateSummary{{Predicate: alias, EntityCount: 1}, {Predicate: title, EntityCount: 1}, {Predicate: linkTo, EntityCount: 1}}; !slices.Equal(list.Predicates, want) {
 		t.Errorf("predicateList = %v, want %v", list.Predicates, want)
 	}
 	names := answer[graph.NameData](t, h.client, "byName", map[string]string{"name": "Alpha"}, rev)
 	if len(names.Matches) != 1 || names.Matches[0].EntityID != src {
 		t.Errorf("byName Alpha = %+v, want %s only", names.Matches, src)
 	}
+	if got := resolveAlias(t, h, "alpha-1", rev); got != src {
+		t.Errorf("alias alpha-1 = %q, want %s", got, src)
+	}
 
 	logs := h.logs.String()
-	for _, index := range []string{"incoming", "predicate", "name"} {
+	for _, index := range []string{"incoming", "predicate", "name", "alias"} {
 		warned := regexp.MustCompile(`level=WARN msg="index query: malformed row skipped" .*index_type=` + index + ` `)
 		if !warned.MatchString(logs) {
 			t.Errorf("no warning naming the %s index's skipped row; logs:\n%s", index, logs)
 		}
 	}
 	// incoming: one key; predicate: the bad key, listed by the predicate query and again by
-	// predicateList; name: the bad key and the bad value.
-	want := map[string]float64{"incoming": 1, "predicate": 2, "name": 2}
+	// predicateList; name: the bad key and the bad value; alias: one key.
+	want := map[string]float64{"incoming": 1, "predicate": 2, "name": 2, "alias": 1}
 	got := map[string]float64{}
 	families, err := h.c.metricsRegistry.PrometheusRegistry().Gather()
 	if err != nil {

@@ -344,13 +344,8 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 
 	done := make(chan error, 1)
 	go func() { done <- c.startEntityStateGuard(context.Background(), c.entityBucket) }()
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("deliberate stop reported as a sweep failure: %v", err)
-		}
-	case <-time.After(time.Second):
-		t.Fatal("guard did not drain to close after the deliberate stop")
+	if err := <-done; err != nil {
+		t.Fatalf("deliberate stop reported as a sweep failure: %v", err)
 	}
 
 	if !watcher.stopped() {

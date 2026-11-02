@@ -258,13 +258,7 @@ func TestHeartbeatFailedStopIsRetried(t *testing.T) {
 	})
 	t.Cleanup(handler.releaseHeld)
 
-	held := time.NewTimer(stopBound)
-	defer held.Stop()
-	select {
-	case <-handler.heldRecord():
-	case <-held.C:
-		t.Fatalf("the loop's first record was not held within %s", stopBound)
-	}
+	<-handler.heldRecord()
 
 	firstCtx, cancelFirst := context.WithTimeout(t.Context(), window)
 	defer cancelFirst()

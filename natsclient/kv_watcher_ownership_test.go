@@ -137,6 +137,7 @@ func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filter
 						if !ok {
 							break rescue
 						}
+					// Own deadline: bubble clock, test-owned rescue in cleanup, bounded so a failed run still ends
 					case <-rescueLimit.C:
 						t.Error("test-owned Updates rescue did not finish")
 						break rescue
@@ -146,11 +147,13 @@ func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filter
 			}
 			select {
 			case <-bucket.watcher.done:
+			// Own deadline: bubble clock, test-owned rescue join, bounded so a failed run still ends
 			case <-time.After(10 * time.Second):
 				t.Error("test-owned producer did not join")
 			}
 			select {
 			case <-callDone:
+			// Own deadline: bubble clock, test-owned rescue join, bounded so a failed run still ends
 			case <-time.After(10 * time.Second):
 				t.Error("public listing task did not join")
 			}
@@ -166,11 +169,13 @@ func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filter
 		}()
 		select {
 		case <-bucket.entered:
+		// Own deadline: bubble clock, the constructor is entered before the 5 s drain window can expire
 		case <-time.After(10 * time.Second):
 			t.Fatal("filtered constructor was not entered")
 		}
 		select {
 		case <-bucket.attempted:
+		// Own deadline: bubble clock, the Updates send is attempted before the 5 s drain window can expire
 		case <-time.After(10 * time.Second):
 			t.Fatal("native Updates send was not attempted")
 		}
@@ -182,6 +187,7 @@ func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filter
 		}
 		select {
 		case got = <-result:
+		// Own deadline: bubble clock, the listing returns on cancellation, not on its 5 s drain window
 		case <-time.After(10 * time.Second):
 			t.Fatal("public listing did not return after cancellation")
 		}
@@ -211,6 +217,7 @@ func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filter
 			}
 			select {
 			case <-bucket.watcher.done:
+			// Own deadline: bubble clock, the producer finishes after delivery closure before the clock must advance
 			case <-time.After(10 * time.Second):
 				t.Error("test-owned producer did not finish after delivery closure")
 			}

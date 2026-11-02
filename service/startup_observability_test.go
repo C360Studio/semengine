@@ -10,7 +10,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -108,12 +107,7 @@ func beginObservedManagerStart(t *testing.T, manager *Manager, release func()) *
 		if release != nil {
 			release()
 		}
-		select {
-		case <-result.done:
-		case <-time.After(stopBound):
-			t.Error("Manager.StartAll did not finish after the test's gates were released")
-			return
-		}
+		<-result.done
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), stopBound)
 		defer cancel()
 		if err := manager.StopAll(ctx); err != nil {
@@ -134,21 +128,14 @@ func (result *observedManagerStart) requireSignal(t *testing.T, signal <-chan st
 	case <-signal:
 	case <-result.done:
 		t.Fatalf("Manager.StartAll returned before %s: %v", owner, result.err)
-	case <-time.After(stopBound):
-		t.Fatalf("%s was not observed while Manager.StartAll was running", owner)
 	}
 }
 
 // wait returns StartAll's result.
 func (result *observedManagerStart) wait(t *testing.T) error {
 	t.Helper()
-	select {
-	case <-result.done:
-		return result.err
-	case <-time.After(stopBound):
-		t.Fatal("Manager.StartAll did not return")
-		return nil
-	}
+	<-result.done
+	return result.err
 }
 
 // requireAnswer requests url and requires status and, when body is not empty, that body.
@@ -634,7 +621,7 @@ func TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts(t *test
 
 	done := make(chan error, 1)
 	go func() { done <- cm.Start(t.Context()) }()
-	waitForSignal(t, gated.entered, "the gated component's Start entry")
+	<-gated.entered
 
 	require.Equal(t, startupUnitCounts{
 		Admitted:              2,
@@ -648,7 +635,7 @@ func TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts(t *test
 	require.Equal(t, float64(0), componentGauge("starts_completed"))
 
 	release.release()
-	require.NoError(t, barrierStartResult(t, done, "the component manager's Start"))
+	require.NoError(t, <-done)
 	completed := cm.startupSnapshot()
 	require.Equal(t, 1, completed.StartsCompleted)
 	require.Equal(t, 0, completed.StartsFailed)
@@ -704,7 +691,7 @@ func TestReadinessWaitsForInitialServiceHealthObservation(t *testing.T) {
 	require.NoError(t, manager.StartAll(t.Context()))
 	url := observedManagerHTTPURL(t, manager)
 	requireAnswer(t, url+"/graph/triples", http.StatusOK, "[]\n")
-	waitForSignal(t, checkEntered, "the component manager's first health check")
+	<-checkEntered
 	requireAnswer(t, url+"/readyz", http.StatusServiceUnavailable, "NOT READY")
 	require.False(t, cm.IsHealthy())
 

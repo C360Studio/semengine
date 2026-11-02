@@ -250,12 +250,8 @@ func TestWorkerPassesExactRunContextThroughWatcherIOEmbedderAndCallbacks(t *test
 	require.Equal(t, "generation-1", watchCtx.Value(workerContextKey{}))
 
 	cancel()
-	select {
-	case err := <-done:
-		require.ErrorIs(t, err, context.Canceled)
-	case <-time.After(5 * time.Second):
-		t.Fatal("Run did not return after its context ended")
-	}
+	err = <-done
+	require.ErrorIs(t, err, context.Canceled)
 	require.ErrorIs(t, watchCtx.Err(), context.Canceled)
 }
 
@@ -364,6 +360,7 @@ func TestColdStartIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 
 		select {
 		case <-firstIn:
+		// Own deadline: bubble clock, the first Generate call arrives within five seconds
 		case <-time.After(5 * time.Second):
 			t.Fatal("no Generate call arrived")
 		}

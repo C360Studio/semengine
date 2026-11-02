@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/assert"
@@ -49,11 +48,7 @@ func TestIntegration_PublishToStreamAsync_PipelinesAndDrains(t *testing.T) {
 
 	// Drain: block until every outstanding async publish is acked.
 	js := jetStreamOf(t, client)
-	select {
-	case <-js.PublishAsyncComplete():
-	case <-time.After(failureBound):
-		t.Fatalf("PublishAsyncComplete did not close; %d still pending", js.PublishAsyncPending())
-	}
+	<-js.PublishAsyncComplete()
 
 	assert.Equal(t, 0, js.PublishAsyncPending(), "no async publishes should remain pending after drain")
 
@@ -100,11 +95,7 @@ func TestIntegration_PublishToStreamAsync_Ordering(t *testing.T) {
 		_, perr := client.publishToStreamAsync(ctx, "asyncorder.seq", []byte(strconv.Itoa(i)))
 		require.NoError(t, perr)
 	}
-	select {
-	case <-jetStreamOf(t, client).PublishAsyncComplete():
-	case <-time.After(failureBound):
-		t.Fatal("drain timeout")
-	}
+	<-jetStreamOf(t, client).PublishAsyncComplete()
 
 	// Consume in stream order and assert the sequence matches publish order.
 	got := make([]int, 0, n)
@@ -130,11 +121,7 @@ func TestIntegration_PublishToStreamAsync_Ordering(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(failureBound):
-		t.Fatalf("consume timeout, got %d/%d", len(got), n)
-	}
+	<-done
 
 	want := make([]int, n)
 	for i := range want {
@@ -196,11 +183,7 @@ func TestIntegration_PublishBatchToStream(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(failureBound):
-		t.Fatalf("consume timeout, got %d/%d", len(got), m)
-	}
+	<-done
 
 	want := make([]string, m)
 	for i := range want {
@@ -255,11 +238,7 @@ func TestIntegration_PublishToStreamAsync_StampsTrace(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() { wg.Wait(); close(done) }()
-	select {
-	case <-done:
-	case <-time.After(failureBound):
-		t.Fatal("consume timeout")
-	}
+	<-done
 
 	require.NotNil(t, hdr)
 	assert.NotEmpty(t, hdr[TraceIDHeader], "async publish must inject a trace ID header")
@@ -310,9 +289,5 @@ func jetStreamOf(t *testing.T, c *Client) jetstream.JetStream {
 // acknowledged; the pin received from PublishAsyncComplete with no bound.
 func awaitAsyncComplete(t *testing.T, c *Client) {
 	t.Helper()
-	select {
-	case <-jetStreamOf(t, c).PublishAsyncComplete():
-	case <-time.After(failureBound):
-		t.Fatal("async publishes were not acknowledged")
-	}
+	<-jetStreamOf(t, c).PublishAsyncComplete()
 }

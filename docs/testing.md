@@ -510,11 +510,30 @@ including those.
 - Before asserting on state another goroutine writes, wait on the event that puts your read after that write: a
   channel receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
   `probe.Await` on that value. If the wait is not the line just before the assertion, add a comment naming the event.
-  Time passing is not such an event, and neither is a log line that can print before the write; a real-clock timer
-  may still bound how long the wait runs (#392).
+  Time passing is not such an event, and neither is a log line that can print before the write. A test sets no
+  deadline of its own for work that must finish: `go test -timeout` is the one deadline (five minutes per package on
+  `task test:unit` and `task test:repeat`, ten on `task test:integration`), and when it fires it prints every
+  goroutine's stack (#392, #500).
+- Do not write `case <-time.After(...)` in a `select` when the arm's body fails the test (`t.Fatal`, `t.Fatalf`,
+  `t.Error`, `t.Errorf`, `t.FailNow` or a `require.` call). That is a deadline of your own, and a loaded machine
+  trips it before the work is wrong. `TestNoOwnDeadlineInTests` refuses it in every `*_test.go` file. It leaves a
+  timer arm that passes, and a negative check (the arm only ends the `select` to show nothing arrived). The only
+  escape is a comment on the line above the arm, `// Own deadline: <reason>`, for three reasons: a `synctest` bubble's
+  fake clock; a deadline that is itself the behaviour under test; or a tool-package test whose timer arm is the only
+  code that kills a helper process (such as `tail -f /dev/null`) that would outlive a `go test -timeout` panic. The
+  check parses each test file and recognises a `select` arm that receives from `time.After(...)` or from a timer
+  channel `x.C` (any dotted name before `.C`). It cannot see a `time.After` stored in a variable, a
+  `context.WithTimeout` deadline, or a polling helper such as `require.Eventually`, so a reviewer checks those.
+  A `context.WithTimeout` on the test's own wait for work that must
+  finish is the same own-deadline shape and is treated as one; a context narrowed because the deadline is itself the
+  behaviour under test is not. Removing a deadline is safe only when a wrong implementation hangs. Where the awaited
+  call has a shorter fallback of its own (a 30 s context, a library timeout), make that fallback unreachable (derive
+  from `t.Context()`, or give it a budget of an hour) so a hang is the only wrong outcome; otherwise the old deadline
+  was the assertion (#500).
 - Run with `-race`. `task test:unit` and `task test:integration` both do.
-- Pass contexts in. Derive test contexts from `t.Context()` and narrow them with `context.WithTimeout`. Helpers take
-  the caller's context rather than making their own.
+- Pass contexts in. Derive test contexts from `t.Context()`. Narrow one with `context.WithTimeout` only when the
+  deadline is the behaviour under test, never to bound a wait for work that must finish. Helpers take the caller's
+  context rather than making their own.
 - Bound cleanup. The test's context is already cancelled when `t.Cleanup` functions run, so cleanup needs its own
   context, and it must have a deadline: `context.WithTimeout(context.Background(), budget)`. `task cleanup-roots:check`
   fails any test that calls `Stop`, `Close` or `Terminate` with a bare `context.Background()` or `context.TODO()`.

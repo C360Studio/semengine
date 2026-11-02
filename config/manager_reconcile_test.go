@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"log/slog"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semengine/types"
 	"github.com/stretchr/testify/require"
@@ -48,13 +47,9 @@ func TestHandleUpdate_EngineOwnedRevisionStillNotifies(t *testing.T) {
 	// Engine-owned event: revision 50 <= the key's applied revision 100.
 	cm.handleUpdate("components.doc-source-003", componentJSON(t, "doc-source-003"), 50)
 
-	select {
-	case up := <-ch:
-		require.Equal(t, "components.doc-source-003", up.Path,
-			"engine-owned revision must still notify subscribers (gh#388)")
-	case <-time.After(time.Second):
-		t.Fatal("engine-owned revision did not notify subscriber (gh#388)")
-	}
+	up := <-ch
+	require.Equal(t, "components.doc-source-003", up.Path,
+		"engine-owned revision must still notify subscribers (gh#388)")
 
 	// The in-memory config must NOT be re-applied from the event — the engine
 	// owns the apply, so the component is absent until the engine applies it.
@@ -75,12 +70,8 @@ func TestHandleUpdate_ExternalRevisionAppliesAndNotifies(t *testing.T) {
 	// External event: revision 150 > the key's applied revision 100.
 	cm.handleUpdate("components.ext-comp", componentJSON(t, "ext-comp"), 150)
 
-	select {
-	case up := <-ch:
-		require.Equal(t, "components.ext-comp", up.Path)
-	case <-time.After(time.Second):
-		t.Fatal("external revision did not notify subscriber")
-	}
+	up := <-ch
+	require.Equal(t, "components.ext-comp", up.Path)
 
 	_, present := cm.config.Get().Components["ext-comp"]
 	require.True(t, present, "external event must apply in memory")

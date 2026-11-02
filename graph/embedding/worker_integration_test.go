@@ -11,7 +11,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
@@ -42,18 +41,6 @@ func workerStacks() string {
 		}
 	}
 	return strings.Join(found, "\n\n")
-}
-
-// receive waits for one value on ch for at most cacheWaitBound.
-func receive[T any](t *testing.T, ch <-chan T, what string) T {
-	t.Helper()
-	select {
-	case v := <-ch:
-		return v
-	case <-time.After(cacheWaitBound):
-		t.Fatalf("timed out waiting for %s", what)
-	}
-	panic("unreachable")
 }
 
 // TestWorkerRunLeavesNoWatchDelivery: after Run's context ends while nats.go's watch delivery
@@ -88,7 +75,7 @@ func TestWorkerRunLeavesNoWatchDelivery(t *testing.T) {
 			t.Fatal(err)
 		}
 		cancel()
-		if err := receive(t, done, "Run to return"); !errors.Is(err, context.Canceled) {
+		if err := <-done; !errors.Is(err, context.Canceled) {
 			t.Fatalf("cycle %d: Run returned %v; want context.Canceled", cycle, err)
 		}
 		if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, workerStacks); err != nil {
@@ -120,7 +107,7 @@ func TestWorkerRunReportsLostWatch(t *testing.T) {
 	if err := pendingText(t.Context(), s, id, "", "before the loss", 1); err != nil {
 		t.Fatal(err)
 	}
-	if got := receive(t, processed, "the record to be processed"); got != id {
+	if got := <-processed; got != id {
 		t.Fatalf("processed %s; want %s", got, id)
 	}
 	if stacks := stacksIn(unsubscribeFrame); stacks == "" {
@@ -134,7 +121,7 @@ func TestWorkerRunReportsLostWatch(t *testing.T) {
 		t.Fatalf("delete %s: %v", cacheBucket, err)
 	}
 	// Run returns on its own, its context still live, once the update channel closes.
-	err = receive(t, done, "Run to return after its bucket was deleted")
+	err = <-done
 	if err == nil || errors.Is(err, context.Canceled) || !errors.Is(err, errWatchLost) {
 		t.Fatalf("Run returned %v; want the lost-watch error", err)
 	}
@@ -211,7 +198,7 @@ func runNoText(t *testing.T, writeM func(context.Context, *Storage) error, wantM
 	if err := pendingRef(ctx, s, id, "", "", &StorageRef{StorageInstance: "objectstore", Key: "n"}, 1); err != nil {
 		t.Fatal(err)
 	}
-	receive(t, gate.entered, "N's body fetch")
+	<-gate.entered
 	if err := writeM(ctx, s); err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +206,7 @@ func runNoText(t *testing.T, writeM func(context.Context, *Storage) error, wantM
 		t.Fatalf("record before N is released = %+v, %v; want M's", rec, err)
 	}
 	close(gate.release)
-	got := receive(t, seen, "N's terminal callback")
+	got := <-seen
 	stopWorker(t, stop)
 	return got
 }

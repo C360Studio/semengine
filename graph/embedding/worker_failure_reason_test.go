@@ -126,13 +126,9 @@ func TestGenerationFailureClassifiedThroughWorker(t *testing.T) {
 		t.Fatalf("pendingText: %v", err)
 	}
 
-	select {
-	case tm := <-done:
-		if tm.outcome != OutcomeFailed || tm.reason != failReasonConnectionRefused {
-			t.Fatalf("terminal = %+v, want {OutcomeFailed, connection_refused}", tm)
-		}
-	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for terminal outcome")
+	tm := <-done
+	if tm.outcome != OutcomeFailed || tm.reason != failReasonConnectionRefused {
+		t.Fatalf("terminal = %+v, want {OutcomeFailed, connection_refused}", tm)
 	}
 	stopWorker(t, stop)
 
@@ -193,6 +189,7 @@ func TestConcurrentIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 
 		select {
 		case <-firstIn:
+		// Own deadline: bubble clock, the first Generate call arrives within five seconds
 		case <-time.After(5 * time.Second):
 			t.Fatal("no Generate call arrived")
 		}

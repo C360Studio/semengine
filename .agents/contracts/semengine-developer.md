@@ -369,8 +369,14 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 - An assertion on state another goroutine writes first waits on the event that orders the read after the write: a
   channel receive, a callback, a call that returns only after the write, `sync.WaitGroup.Wait`, `synctest.Wait`, or
   `probe.Await` on that value. Where that wait is not the line just before the assertion, a comment names the event.
-  Elapsed wall clock alone, or a log line that can print before the write, orders nothing; a real-clock timer may still
-  bound how long the wait runs (`docs/testing.md`, "Concurrency and cleanup"; #392).
+  Elapsed wall clock alone, or a log line that can print before the write, orders nothing. A test sets no deadline of its
+  own for work that must finish: `go test -timeout` is the one deadline. A `case <-time.After(...)` arm that fails the
+  test needs `// Own deadline: <reason>` on the line above (`synctest` fake clock, a deadline that is the behaviour
+  under test, or a tool-package timer arm that is the only code killing a helper process a `go test -timeout` panic
+  would leave running); `TestNoOwnDeadlineInTests` refuses the rest. A `context.WithTimeout` on your own wait for work
+  that must finish is the same shape, which the check cannot see; one narrowed because the deadline is the behaviour
+  under test is not. Where the awaited call has a shorter fallback of its own, make it unreachable, or the old deadline
+  was the assertion (`docs/testing.md`, "Concurrency and cleanup"; #392, #500).
 - Run gates through the Task entrypoint: focused tests during iteration, then `task verify` before an implementation
   push; `scripts/verify.sh` lists the gates it runs, including `task test:integration` and `task cover:check`.
   Consumer lanes are added to the gate graph when their packages and workload exist; until then there is no such

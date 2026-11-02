@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/c360studio/semengine/storage"
 )
@@ -398,12 +397,7 @@ func TestDedupSkippedIsCounted(t *testing.T) {
 // waitForN blocks until n terminal outcomes have been reported, regardless of ID.
 func waitForN(t *testing.T, done <-chan string, n int) {
 	t.Helper()
-	deadline := time.After(5 * time.Second)
 	for i := 0; i < n; i++ {
-		select {
-		case <-done:
-		case <-deadline:
-			t.Fatalf("timed out waiting for %d terminal outcomes (got %d)", n, i)
-		}
+		<-done
 	}
 }

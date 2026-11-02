@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"github.com/stretchr/testify/require"
@@ -100,11 +99,7 @@ func TestIntegration_MaxAckPendingUpdatesDurableInPlace(t *testing.T) {
 	})
 	_, err = client.PublishToStreamWithAck(ctx, subject, []byte("establish durable position"))
 	require.NoError(t, err)
-	select {
-	case <-acked:
-	case <-time.After(failureBound):
-		t.Fatal("timed out waiting for acknowledged delivery")
-	}
+	<-acked
 
 	js, err := client.JetStream()
 	require.NoError(t, err)

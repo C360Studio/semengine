@@ -73,12 +73,8 @@ func (s *ManagerIntegrationSuite) TestJSONOnlyUpdates() {
 
 	// With UpdatesOnly, we should get initial config from OnChange
 	// but no replay from watcher
-	select {
-	case <-updates:
-		// Expected - OnChange sends initial config
-	case <-time.After(100 * time.Millisecond):
-		s.Fail("No initial config received from OnChange")
-	}
+	<-updates
+	// Expected - OnChange sends initial config
 
 	// 1. Write JSON service config - should work
 	metricsConfig := types.ServiceConfig{Enabled: true, Config: json.RawMessage(`{"port": 9090, "path": "/metrics"}`)}
@@ -88,20 +84,16 @@ func (s *ManagerIntegrationSuite) TestJSONOnlyUpdates() {
 	s.Require().NoError(err)
 
 	// 2. Wait for update via channel
-	select {
-	case update := <-updates:
-		s.Equal("services.metrics", update.Path) // Should be exact key, not pattern
-		cfg := update.Config.Get()
-		s.NotNil(cfg.Services["metrics"])
+	update := <-updates
+	s.Equal("services.metrics", update.Path) // Should be exact key, not pattern
+	cfg := update.Config.Get()
+	s.NotNil(cfg.Services["metrics"])
 
-		// Verify the config was properly stored
-		svcConfig := cfg.Services["metrics"]
-		s.T().Logf("Service config: %+v", svcConfig)
-		s.T().Logf("Raw config: %s", string(svcConfig.Config))
-		s.True(svcConfig.Enabled)
-	case <-time.After(500 * time.Millisecond):
-		s.Fail("No config update received")
-	}
+	// Verify the config was properly stored
+	svcConfig := cfg.Services["metrics"]
+	s.T().Logf("Service config: %+v", svcConfig)
+	s.T().Logf("Raw config: %s", string(svcConfig.Config))
+	s.True(svcConfig.Enabled)
 
 	// 3. Try property-level update - should be ignored
 	s.T().Log("Writing property-level key services.metrics.enabled")
@@ -129,13 +121,9 @@ func (s *ManagerIntegrationSuite) TestJSONOnlyUpdates() {
 	s.Require().NoError(err)
 
 	// 6. Should receive update for JSON change
-	select {
-	case update := <-updates:
-		cfg := update.Config.Get()
-		s.NotNil(cfg.Services["metrics"])
-	case <-time.After(500 * time.Millisecond):
-		s.Fail("Should receive update for JSON config change")
-	}
+	update = <-updates
+	cfg = update.Config.Get()
+	s.NotNil(cfg.Services["metrics"])
 }
 
 func (s *ManagerIntegrationSuite) TestChannelSubscriptions() {
@@ -170,8 +158,6 @@ func (s *ManagerIntegrationSuite) TestChannelSubscriptions() {
 
 	// Service channels should receive update
 	received := 0
-	timeout2 := time.After(500 * time.Millisecond)
-
 	for received < 2 {
 		select {
 		case <-serviceUpdates:
@@ -180,9 +166,6 @@ func (s *ManagerIntegrationSuite) TestChannelSubscriptions() {
 			received++
 		case <-componentUpdates:
 			s.Fail("Component channel should not receive service update")
-		case <-timeout2:
-			s.Fail("Timeout waiting for service updates")
-			return
 		}
 	}
 
@@ -223,18 +206,10 @@ func (s *ManagerIntegrationSuite) TestConcurrentKVUpdates() {
 
 	// Should receive updates for all services (order may vary)
 	receivedServices := make(map[string]bool)
-	timeout := time.After(1 * time.Second)
-
 	for len(receivedServices) < len(services) {
-		select {
-		case update := <-updates:
-			cfg := update.Config.Get()
-			for svcName := range cfg.Services {
-				receivedServices[svcName] = true
-			}
-		case <-timeout:
-			s.Failf("Timeout waiting for all service updates", "Received: %v", receivedServices)
-			return
+		update := <-updates
+		for svcName := range update.Config.Get().Services {
+			receivedServices[svcName] = true
 		}
 	}
 
@@ -266,41 +241,32 @@ func (s *ManagerIntegrationSuite) TestCompleteFlow_KVToService() {
 	s.Require().NoError(err)
 
 	// 3. Verify update received via channel
-	select {
-	case <-updates:
-		// 4. Verify config is accessible via GetConfig()
-		currentConfig := s.configManager.GetConfig()
-		cfg := currentConfig.Get()
+	<-updates
+	// 4. Verify config is accessible via GetConfig()
+	currentConfig := s.configManager.GetConfig()
+	cfg := currentConfig.Get()
 
-		s.NotNil(cfg.Services["metrics"])
-		s.True(cfg.Services["metrics"].Enabled)
+	s.NotNil(cfg.Services["metrics"])
+	s.True(cfg.Services["metrics"].Enabled)
 
-		// 5. Verify the raw config is preserved correctly
-		var parsedConfig map[string]any
-		err := json.Unmarshal(cfg.Services["metrics"].Config, &parsedConfig)
-		s.NoError(err)
-		s.Equal(float64(9090), parsedConfig["port"])
-		s.Equal("/metrics", parsedConfig["path"])
-
-	case <-time.After(500 * time.Millisecond):
-		s.Fail("No config update received")
-	}
+	// 5. Verify the raw config is preserved correctly
+	var parsedConfig map[string]any
+	err = json.Unmarshal(cfg.Services["metrics"].Config, &parsedConfig)
+	s.NoError(err)
+	s.Equal(float64(9090), parsedConfig["port"])
+	s.Equal("/metrics", parsedConfig["path"])
 
 	// 6. Test config deletion
 	err = s.kvStore.Delete(s.ctx, "services.metrics")
 	s.NoError(err)
 
 	// 7. Should receive update for deletion
-	select {
-	case <-updates:
-		// After deletion, service should be removed from config
-		currentConfig := s.configManager.GetConfig()
-		cfg := currentConfig.Get()
-		_, exists := cfg.Services["metrics"]
-		s.False(exists, "Service should be removed after deletion")
-	case <-time.After(500 * time.Millisecond):
-		s.Fail("No update received for deletion")
-	}
+	<-updates
+	// After deletion, service should be removed from config
+	currentConfig = s.configManager.GetConfig()
+	cfg = currentConfig.Get()
+	_, exists := cfg.Services["metrics"]
+	s.False(exists, "Service should be removed after deletion")
 }
 
 func (s *ManagerIntegrationSuite) TestKVStore_OptimisticLocking() {
@@ -343,11 +309,7 @@ func (s *ManagerIntegrationSuite) TestKVStore_OptimisticLocking() {
 // components.* notification, so a runtime add reconciles without PushToKV.
 func (s *ManagerIntegrationSuite) TestRuntimeComponentAdd_AppliesAndReconciles() {
 	updates := s.configManager.onChange("components.*")
-	select {
-	case <-updates: // drain the initial-config send
-	case <-time.After(500 * time.Millisecond):
-		s.Fail("no initial config from OnChange")
-	}
+	<-updates // drain the initial-config send
 
 	comp := types.ComponentConfig{Type: "input", Name: "doc-source-003", Enabled: true}
 	s.Require().NoError(s.configManager.PutComponentToKV(s.ctx, "doc-source-003", comp))
@@ -357,14 +319,10 @@ func (s *ManagerIntegrationSuite) TestRuntimeComponentAdd_AppliesAndReconciles()
 	s.True(present, "PutComponentToKV must apply the component in memory synchronously")
 
 	// A components.* notification is delivered carrying the added component.
-	select {
-	case up := <-updates:
-		s.Equal("components.doc-source-003", up.Path)
-		_, ok := up.Config.Get().Components["doc-source-003"]
-		s.True(ok, "notified config must carry the added component")
-	case <-time.After(2 * time.Second):
-		s.Fail("PutComponentToKV did not deliver a reconcile notification (gh#388)")
-	}
+	up := <-updates
+	s.Equal("components.doc-source-003", up.Path)
+	_, ok := up.Config.Get().Components["doc-source-003"]
+	s.True(ok, "notified config must carry the added component")
 }
 
 // TestRuntimeComponentRemove_AppliesAndReconciles (gh#388) proves
@@ -379,11 +337,7 @@ func (s *ManagerIntegrationSuite) TestRuntimeComponentRemove_AppliesAndReconcile
 	s.Require().True(present, "precondition: component seeded in memory")
 
 	updates := s.configManager.onChange("components.*")
-	select {
-	case <-updates: // drain initial
-	case <-time.After(500 * time.Millisecond):
-		s.Fail("no initial config from OnChange")
-	}
+	<-updates // drain initial
 
 	s.Require().NoError(s.configManager.DeleteComponentFromKV(s.ctx, "doc-source-009"))
 
@@ -392,13 +346,9 @@ func (s *ManagerIntegrationSuite) TestRuntimeComponentRemove_AppliesAndReconcile
 	s.False(stillPresent, "DeleteComponentFromKV must remove the component in memory synchronously")
 
 	// A components.* notification is delivered without the removed component.
-	select {
-	case up := <-updates:
-		_, ok := up.Config.Get().Components["doc-source-009"]
-		s.False(ok, "notified config must not carry the removed component")
-	case <-time.After(2 * time.Second):
-		s.Fail("DeleteComponentFromKV did not deliver a reconcile notification (gh#388)")
-	}
+	up := <-updates
+	_, ok := up.Config.Get().Components["doc-source-009"]
+	s.False(ok, "notified config must not carry the removed component")
 }
 
 // TestRuntimeComponentAddRemove_ConcurrentNoLostUpdate is the gh#515 regression at

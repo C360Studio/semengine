@@ -333,17 +333,9 @@ func TestServerConcurrentStopIsTypedTransientAndDoesNotHoldLifecycleLock(t *test
 	t.Cleanup(func() {
 		releaseCollector()
 		if stopFinished != nil {
-			select {
-			case <-stopFinished:
-			case <-time.After(failureBound):
-				t.Error("concurrent Stop did not finish after collector release")
-			}
+			<-stopFinished
 		}
-		select {
-		case <-requestFinished:
-		case <-time.After(failureBound):
-			t.Error("metrics request did not finish after collector release")
-		}
+		<-requestFinished
 		ctx, cancel := context.WithTimeout(context.Background(), failureBound)
 		defer cancel()
 		require.NoError(t, server.Stop(ctx))
@@ -416,11 +408,7 @@ func TestServerStopIsCallerBounded(t *testing.T) {
 	requestFinished := make(chan struct{})
 	t.Cleanup(func() {
 		releaseCollector()
-		select {
-		case <-requestFinished:
-		case <-time.After(failureBound):
-			t.Error("metrics request did not finish after collector release")
-		}
+		<-requestFinished
 		ctx, cancel := context.WithTimeout(context.Background(), failureBound)
 		defer cancel()
 		require.NoError(t, server.Stop(ctx))

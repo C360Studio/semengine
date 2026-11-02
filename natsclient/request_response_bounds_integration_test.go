@@ -9,7 +9,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/stretchr/testify/assert"
@@ -202,10 +201,6 @@ func TestIntegration_SubscribeForRequestsLogsResponseLimitRefusalPublishFailure(
 	require.Zero(t, pending, "the responder must publish no reply after its refusal publish failed")
 
 	cancelRequest()
-	select {
-	case requestErr := <-requestResult:
-		require.ErrorIs(t, requestErr, context.Canceled, "with no reply published, only the cancellation ends the request")
-	case <-time.After(failureBound):
-		t.Fatal("request did not end after its context was cancelled")
-	}
+	requestErr := <-requestResult
+	require.ErrorIs(t, requestErr, context.Canceled, "with no reply published, only the cancellation ends the request")
 }

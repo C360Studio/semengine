@@ -415,16 +415,9 @@ func TestKVWatchFallingBehindEndsStream(t *testing.T) {
 		mux.ServeHTTP(w, req)
 	}()
 
-	waitForSignal(t, dropped, "the watch's buffer-full Warn")
+	<-dropped
 	w.releaseWrites()
-	timer := time.NewTimer(watchBound)
-	defer timer.Stop()
-	select {
-	case <-served:
-	case <-timer.C:
-		cancel()
-		t.Fatalf("the watch stream did not end within %s after it fell behind; body %q", watchBound, w.written())
-	}
+	<-served
 
 	body := w.written()
 	events := readAllSSEEvents(t, body)
@@ -481,7 +474,7 @@ func TestKVWatchFallingBehindLeavesNoWatchDelivery(t *testing.T) {
 		mux.ServeHTTP(w, req)
 	}()
 
-	waitForSignal(t, handler.heldRecord(), "the watch's buffer-full Warn")
+	<-handler.heldRecord()
 	// The reader is held in its drop Warn and reads no more, so the delivery fills its buffer; the
 	// stack dump showing it blocked orders the reader's return after the backlog.
 	if err := natsfixture.AwaitNativeDeliveryBlocked(ctx, watchBound); err != nil {
@@ -489,14 +482,7 @@ func TestKVWatchFallingBehindLeavesNoWatchDelivery(t *testing.T) {
 	}
 	handler.releaseHeld()
 	w.releaseWrites()
-	timer := time.NewTimer(watchBound)
-	defer timer.Stop()
-	select {
-	case <-served:
-	case <-timer.C:
-		cancel()
-		t.Fatalf("the watch stream did not end within %s after it fell behind; body %q", watchBound, w.written())
-	}
+	<-served
 
 	events := readAllSSEEvents(t, w.written())
 	require.NotEmpty(t, events)

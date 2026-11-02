@@ -105,13 +105,7 @@ func deliverStreamLane(t *testing.T, lane *inputLane, data []byte, seq uint64) s
 	t.Helper()
 	msg := newStreamLaneMsg(data, seq)
 	lane.deliver(t.Context(), msg)
-	select {
-	case disposition := <-msg.settled:
-		return disposition
-	case <-time.After(10 * time.Second):
-		t.Fatalf("message %d was neither acked, naked nor terminated within 10s", seq)
-		return ""
-	}
+	return <-msg.settled
 }
 
 // storedRevision returns the entity's stored bytes and revision, or ok false when the

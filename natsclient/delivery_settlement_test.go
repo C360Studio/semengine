@@ -373,6 +373,7 @@ func TestConsumeDeliveryWithHeartbeatInProgressFailureRequiresOwnerStop(t *testi
 		var result DeliveryResult
 		select {
 		case result = <-returned:
+		// Own deadline: bubble clock, the delivery returns after work cleanup before the bubble's clock must advance
 		case <-time.After(5 * time.Second):
 			require.FailNow(t, "ConsumeDeliveryWithHeartbeat did not return after work cleanup")
 		}

@@ -72,22 +72,12 @@ func TestIntegration_ReportConsumer_RunLeavesNoWatchDelivery(t *testing.T) {
 			defer close(done)
 			consumer.Run(ctx)
 		}()
-		select {
-		case err := <-store.blocked:
-			if err != nil {
-				cancel()
-				t.Fatalf("cycle %d: %v", cycle, err)
-			}
-		case <-time.After(failureBound):
+		if err := <-store.blocked; err != nil {
 			cancel()
-			t.Fatalf("cycle %d: the consumer did not open its watch", cycle)
+			t.Fatalf("cycle %d: %v", cycle, err)
 		}
 		cancel()
-		select {
-		case <-done:
-		case <-time.After(failureBound):
-			t.Fatalf("cycle %d: Run did not return after its context ended", cycle)
-		}
+		<-done
 		if err := natsfixture.AwaitNoStacks(t.Context(), failureBound, natsfixture.NativeDeliveryStacks); err != nil {
 			t.Fatalf("cycle %d: nats.go's watch delivery is still running after Run returned: %v", cycle, err)
 		}

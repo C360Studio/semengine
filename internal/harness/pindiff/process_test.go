@@ -95,6 +95,7 @@ func TestFetchLeavesNoProcess(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+	// Own deadline: on failure the helper (tail -f /dev/null) outlives a go test -timeout panic; only this arm kills it.
 	case <-time.After(30 * time.Second):
 		// Clean up what the failing run left behind: the helper and the git process that ran it,
 		// never this test's own process group.

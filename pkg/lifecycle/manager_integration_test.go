@@ -299,38 +299,30 @@ func TestIntegration_DespawnWith_DoesNotDeleteNewerStateAfterTerminalCommit(t *t
 }
 
 // requireEvent waits for an event matching (wantOp, wantID) on ch,
-// skipping unrelated entities, and fails on timeout.
+// skipping unrelated entities.
 func requireEvent(t *testing.T, ch <-chan Event, wantOp EventOp, wantID string) {
 	t.Helper()
 	for {
-		select {
-		case ev := <-ch:
-			if ev.EntityID != wantID {
-				continue
-			}
-			require.Equal(t, wantOp, ev.Op, "op for %s", wantID)
-			if wantOp == Upserted {
-				require.NotNil(t, ev.Participant, "Upserted event must carry a Participant")
-			} else {
-				require.Nil(t, ev.Participant, "Deleted event must carry a nil Participant")
-			}
-			return
-		case <-time.After(10 * time.Second):
-			t.Fatalf("timed out waiting for %s event for %s", wantOp, wantID)
+		ev := <-ch
+		if ev.EntityID != wantID {
+			continue
 		}
+		require.Equal(t, wantOp, ev.Op, "op for %s", wantID)
+		if wantOp == Upserted {
+			require.NotNil(t, ev.Participant, "Upserted event must carry a Participant")
+		} else {
+			require.Nil(t, ev.Participant, "Deleted event must carry a nil Participant")
+		}
+		return
 	}
 }
 
 // requireNextParticipant waits for the next participant Watch delivers and requires it to be
-// wantID, and fails on timeout.
+// wantID.
 func requireNextParticipant(t *testing.T, ch <-chan Participant, wantID string) {
 	t.Helper()
-	select {
-	case p := <-ch:
-		require.Equal(t, wantID, p.EntityID())
-	case <-time.After(10 * time.Second):
-		t.Fatalf("Watch did not deliver %s", wantID)
-	}
+	p := <-ch
+	require.Equal(t, wantID, p.EntityID())
 }
 
 // TestIntegration_WatchEvents_DeliversUpsertAndDelete proves the new
@@ -417,18 +409,6 @@ func putWatchBacklog(t *testing.T, client *natsclient.Client) {
 	}
 }
 
-// awaitWatchReturn waits for the watch running on done to return, up to watchBound.
-func awaitWatchReturn(t *testing.T, done <-chan error) error {
-	t.Helper()
-	select {
-	case err := <-done:
-		return err
-	case <-time.After(watchBound):
-		t.Fatal("WatchEvents did not return")
-		return nil
-	}
-}
-
 // TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery: a WatchEvents whose callback
 // returns an error while nats.go's watch delivery is blocked on its full updates buffer returns
 // that error, and only after the delivery has ended. The callback holds the first of 600 matching
@@ -453,18 +433,14 @@ func TestIntegration_WatchEventsCallbackErrorLeavesNoWatchDelivery(t *testing.T)
 			return errCallback
 		})
 	}()
-	select {
-	case <-entered:
-	case <-time.After(watchBound):
-		t.Fatal("WatchEvents did not call its callback")
-	}
+	<-entered
 	// The stack dump showing the delivery blocked on its full buffer orders the callback's error
 	// after the backlog, not elapsed time.
 	if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), watchBound); err != nil {
 		t.Fatal(err)
 	}
 	release()
-	if err := awaitWatchReturn(t, done); !errors.Is(err, errCallback) {
+	if err := <-done; !errors.Is(err, errCallback) {
 		t.Fatalf("WatchEvents returned %v; want the callback's error", err)
 	}
 	// WatchEvents drained the watch until nats.go closed it, which it does after its last delivery
@@ -498,12 +474,7 @@ func TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery(t *testing.T) {
 				return nil
 			})
 		}()
-		select {
-		case <-entered:
-		case <-time.After(watchBound):
-			cancel()
-			t.Fatalf("cycle %d: WatchEvents did not call its callback", cycle)
-		}
+		<-entered
 		// The stack dump showing the delivery blocked on its full buffer orders the cancel after
 		// the backlog, not elapsed time.
 		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), watchBound); err != nil {
@@ -511,7 +482,7 @@ func TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery(t *testing.T) {
 			t.Fatalf("cycle %d: %v", cycle, err)
 		}
 		cancel()
-		if err := awaitWatchReturn(t, done); !errors.Is(err, context.Canceled) {
+		if err := <-done; !errors.Is(err, context.Canceled) {
 			t.Fatalf("cycle %d: WatchEvents returned %v; want context.Canceled", cycle, err)
 		}
 		if err := natsfixture.AwaitNoStacks(t.Context(), watchBound, natsfixture.NativeDeliveryStacks); err != nil {

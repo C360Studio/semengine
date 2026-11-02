@@ -201,28 +201,20 @@ func TestManagerPassesTheLifecycleSuite(t *testing.T) {
 		watchDone := make(chan struct{})
 		go func() {
 			defer close(watchDone)
-			model.Watch(ctx, manager, func(*model.Registry) {
+			model.Watch(t.Context(), manager, func(*model.Registry) {
 				select {
 				case applied <- struct{}{}:
 				default:
 				}
 			})
 		}()
-		select {
-		case <-applied:
-		case <-time.After(5 * time.Second):
-			t.Fatal("model.Watch never received the initial registry")
-		}
+		<-applied
 		require.ElementsMatch(t,
 			[]string{"watchers", "subscriber channels", "goroutines", "watch consumers on the server"},
 			owner.Observe().Unresolved)
 
 		stopManager(t, manager)
 		require.Empty(t, owner.Observe().Unresolved, "a Stop that returned nil left something held")
-		select {
-		case <-watchDone:
-		case <-time.After(5 * time.Second):
-			t.Fatal("model.Watch did not return after Stop")
-		}
+		<-watchDone
 	})
 }

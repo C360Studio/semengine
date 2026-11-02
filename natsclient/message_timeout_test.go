@@ -21,13 +21,9 @@ func TestMessageHandlerContext_DisabledUsesLifecycleContext(t *testing.T) {
 		t.Fatal("disabled message timeout unexpectedly installed a deadline")
 	}
 	parentCancel()
-	select {
-	case <-ctx.Done():
-		if ctx.Err() != context.Canceled {
-			t.Fatalf("context error = %v, want context.Canceled", ctx.Err())
-		}
-	case <-time.After(10 * time.Second):
-		t.Fatal("lifecycle cancellation did not reach no-timeout message context")
+	<-ctx.Done()
+	if ctx.Err() != context.Canceled {
+		t.Fatalf("context error = %v, want context.Canceled", ctx.Err())
 	}
 }
 

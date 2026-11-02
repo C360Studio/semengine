@@ -12,7 +12,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
@@ -315,16 +314,6 @@ func (s *orderGateService) Stop(context.Context) error {
 	return nil
 }
 
-// requireClosed waits for signal.
-func requireClosed(t *testing.T, signal <-chan struct{}, what string) {
-	t.Helper()
-	select {
-	case <-signal:
-	case <-time.After(stopBound):
-		t.Fatalf("%s was not observed", what)
-	}
-}
-
 // TestConcreteMetricsLifecycleRetainsRegistrationAndReverseStopOrder: the real Metrics,
 // registered between two services, starts after the first and before the second and stops
 // after the second and before the first, while its claimed server already serves when the first
@@ -368,7 +357,7 @@ func TestConcreteMetricsLifecycleRetainsRegistrationAndReverseStopOrder(t *testi
 	stopCtx := stopContext(t)
 	stopDone := make(chan error, 1)
 	go func() { stopDone <- manager.StopAll(stopCtx) }()
-	requireClosed(t, later.stopEntered, "later service Stop entry")
+	<-later.stopEntered // later service Stop entry
 	require.Equal(t, StatusRunning, metrics.Status(), "metrics stopped before the service registered after it")
 	select {
 	case <-componentManager.stopEntered:
@@ -376,7 +365,7 @@ func TestConcreteMetricsLifecycleRetainsRegistrationAndReverseStopOrder(t *testi
 	default:
 	}
 	releaseStopLater()
-	requireClosed(t, componentManager.stopEntered, "component-manager Stop entry")
+	<-componentManager.stopEntered // component-manager Stop entry
 	require.NotEqual(t, StatusRunning, metrics.Status(), "metrics had not stopped when the service before it stopped")
 	releaseStopFirst()
 	require.NoError(t, <-stopDone)
@@ -447,11 +436,11 @@ func TestPreparedComponentIsNotInvokedUntilLaunchBoundary(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() { done <- cm.Start(t.Context()) }()
-	waitForSignal(t, gated.entered, "the prepared component's Start entry")
+	<-gated.entered
 	require.Equal(t, startupUnitCounts{Admitted: 1, LifecycleParticipants: 1, StartsInvoked: 1}, cm.startupSnapshot())
 
 	release.release()
-	require.NoError(t, barrierStartResult(t, done, "the component manager's Start"))
+	require.NoError(t, <-done)
 	require.Equal(t, startupUnitCounts{
 		Admitted: 1, LifecycleParticipants: 1, StartsInvoked: 1, StartsCompleted: 1,
 	}, cm.startupSnapshot())
@@ -483,8 +472,8 @@ func TestComponentMetricPublicationRemainsMonotonicUnderReverseCompletion(t *tes
 
 	done := make(chan error, 1)
 	go func() { done <- cm.Start(t.Context()) }()
-	waitForSignal(t, first.entered, "the first component's Start entry")
-	waitForSignal(t, second.entered, "the second component's Start entry")
+	<-first.entered
+	<-second.entered
 	require.Equal(t, float64(2), requireGauge(t, registry, "semengine_startup_units", map[string]string{
 		"owner": "components", "stage": "starts_invoked",
 	}))
@@ -493,7 +482,7 @@ func TestComponentMetricPublicationRemainsMonotonicUnderReverseCompletion(t *tes
 	awaitComponentStartupGauges(t, registry, map[string]float64{"starts_completed": 1, "starts_failed": 1})
 
 	firstRelease.release()
-	startErr := barrierStartResult(t, done, "the component manager's Start")
+	startErr := <-done
 	require.ErrorIs(t, startErr, secondErr)
 	require.ErrorContains(t, startErr, `component "second"`)
 	require.Equal(t, float64(2), requireGauge(t, registry, "semengine_startup_units", map[string]string{

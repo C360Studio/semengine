@@ -7,8 +7,9 @@
 //
 // entity, batch and prefix forward to graph-ingest's verbs of the same name, byName to graph-index's.
 // A forward passes the request and reply bytes unchanged, and returns a refusal with its class, code
-// and detail. A request that gets no answer, because nothing responds or query_timeout_ms passes, is
-// refused transient with code internal, naming the subject.
+// and detail. A request that gets no answer is refused transient with code internal, naming the
+// subject: nothing responding, query_timeout_ms passing, the handler's context ending (natsclient's
+// handler budget or the client closing), or a lost connection.
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // bound on each downstream request in milliseconds, default 15000. A key it does not define is

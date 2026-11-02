@@ -124,6 +124,16 @@ M SHALL carry `indexed_revision` at or above M.
 - **THEN** the caller receives `revision_not_reached` with its class and detail
   (`TestMinRevisionRefusalThroughGraphQuery`)
 
+### Requirement: Forwards are counted for operators
+
+A forward SHALL count its request in `DataFlow` on entry and SHALL count an error in `Health` only when no answer
+arrived; a responder's refusal is an answer and SHALL NOT count as an error.
+
+#### Scenario: An unanswered forward and a refusal
+
+- **WHEN** one forward is refused by its responder and another finds no responder
+- **THEN** `DataFlow` shows both requests and `Health` shows one error (`TestForwardCountsRequestsAndUnansweredOnes`)
+
 ### Requirement: Configuration is strict and read
 
 Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL bound each downstream request, default

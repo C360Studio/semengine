@@ -23,7 +23,8 @@ reaches graph-index on `byName` and an authority read on the other three ignores
 
 A refusal from the verb behind a forward reaches the caller with its class, code, detail and message. A request that
 gets no answer is refused by `graph-query` itself, class transient, code `internal`, naming the subject: nothing
-responding, `query_timeout_ms` passing, or a lost connection.
+responding, `query_timeout_ms` passing, the handler's context ending (`natsclient`'s limit on a request handler, or the
+client closing), or a lost connection.
 
 ## Configuration
 
@@ -79,7 +80,13 @@ composition.
 
 ## Health
 
-`Health` is running or stopped, from `component.Lifecycle`. It keeps no state that could leave it degraded.
+`Health` is running or stopped, from `component.Lifecycle`. It keeps no state that could leave it degraded, and
+`ErrorCount` never lowers `Healthy`.
+
+`DataFlow` counts every request a forward receives, with its bytes; the reply's bytes are not counted. `ErrorCount`, and
+`DataFlow`'s `ErrorRate` with it, counts the requests that got no answer, the ones `graph-query` refuses itself, so an
+outage of graph-ingest or graph-index shows here. A refusal the responder sent is an answer and is not counted: "no such
+entity" is ordinary traffic.
 
 ## Starting and stopping
 

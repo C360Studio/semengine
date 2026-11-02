@@ -222,10 +222,13 @@ func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
 // kept here, gets a real reply with its optional keys present (batch's missing, prefix's next_cursor),
 // and that reply has the row's shape and type.
 func TestRepliesMatchTheirTableEntries(t *testing.T) {
-	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
+	ctx := t.Context()
 	c, nc, owner := startPrefixTestComponent(ctx, t, withAuthority("acme", "ops"))
-	defer owner.finish(ctx, t)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		owner.finish(stopCtx, t)
+	})
 	const one, two, absent = "acme.ops.dom.sys.type.one", "acme.ops.dom.sys.type.two", "acme.ops.dom.sys.type.absent"
 	seedPrefixEntity(t, ctx, c, one)
 	seedPrefixEntity(t, ctx, c, two)

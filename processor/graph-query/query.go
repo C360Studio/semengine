@@ -74,11 +74,18 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 // returned.
 //
 // A refusal the responder sent returns as it arrived, keeping class, code and detail. Any other
-// failure means no answer arrived: no responders, whose class is not promised (ADR-112), a timeout,
-// or a lost connection. Each is graph-query's own transient internal refusal, naming the subject.
+// failure means no answer arrived: no responders, whose class is not promised (ADR-112),
+// query_timeout_ms passing, the handler's context ending (natsclient's handler budget or the client
+// closing), or a lost connection. Each is graph-query's own transient internal refusal, naming the
+// subject.
+//
+// Every request counts as one input. Only a request with no answer counts as an error: a responder's
+// refusal is an answer, and the forward did its work, as a refused graph-ingest mutation counts its
+// input and no error (graph-ingest's meteredCanonicalMutation).
 func (c *Component) forward(subject string) queryHandler {
 	timeout := time.Duration(c.config.QueryTimeoutMs) * time.Millisecond
 	return func(ctx context.Context, data []byte) ([]byte, error) {
+		c.lifecycle.CountInput(len(data))
 		reply, err := c.natsClient.RequestClassified(ctx, subject, data, timeout)
 		if err == nil {
 			return reply, nil
@@ -87,6 +94,7 @@ func (c *Component) forward(subject string) queryHandler {
 		if errors.As(err, &refusal) {
 			return nil, err
 		}
+		c.lifecycle.CountError()
 		return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, fmt.Errorf("request to %s: %w", subject, err))
 	}
 }

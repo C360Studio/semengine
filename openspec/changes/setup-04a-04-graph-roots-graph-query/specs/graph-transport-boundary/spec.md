@@ -38,8 +38,13 @@ for. When `Start` returns, the server SHALL route each of those subjects to it f
 
 - **WHEN** a responder has started and its test adapter lists its request subscriptions
 - **THEN** the listed subjects equal the table's subjects for that responder
-- **AND** the tests that verify this are `TestGraphIngestServesExactlyTheDeclaredVerbs`,
-  `TestGraphIndexServesExactlyTheDeclaredVerbs` and `TestGraphQueryServesExactlyTheDeclaredVerbs`
+- **AND** the tests that verify this are `TestGraphIngestServesExactlyTheDeclaredVerbs` and
+  `TestGraphIndexServesExactlyTheDeclaredVerbs`
+- **AND** graph-query's proof, `TestGraphQueryServesExactlyTheDeclaredVerbs`, is count and behaviour rather than a list:
+  it holds one recorded subscription per row declared for it, each of those subjects gets its refusal naming the row
+  behind it, and a `graph.query.*` subject outside the table has no responder until a consumer subscribes, which a
+  wildcard subscription would answer
+- **AND** neither proof catches a subscription to one more literal subject that the responder does not record
 
 #### Scenario: Routable when Start returns
 

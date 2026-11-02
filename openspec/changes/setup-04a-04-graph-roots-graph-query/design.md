@@ -108,7 +108,8 @@ handler, so no run context yet (ADR-113, step 3). Input port per D5 (P3). Decodi
 `"5s"` the pin refused (P1); default 15000, above ingest's 10 s budget on `batch` and `prefix`
 (`graph-ingest/query.go:109,:234`; gh#830), inside natsclient's 30 s handler budget (`entityByAlias`'s two hops can
 reach it, still transient). This cures one hop; a caller's own shorter timeout still fires, loudly. Keys the pin
-ignored refuse at boot (`AGENTS.md` § 1). No test hook, no requester interface (S5, S21). *Proof:* lifecycle suite;
+ignored refuse at boot (`AGENTS.md` § 1). No test hook, no requester interface (S5, S21). A forward counts its
+request, and an error only when no answer arrived (a refusal is an answer). *Proof:* lifecycle suite;
 `TestGraphQueryServesExactlyTheDeclaredVerbs`; `TestUnknownConfigKeyIsRefused`; `TestQueryTimeoutIsRead`.
 
 ## Scope

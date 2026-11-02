@@ -235,6 +235,118 @@ func TestForwardCarriesTheRequestContext(t *testing.T) {
 	}
 }
 
+// TestHandlerBudgetEndsAForward: natsclient's budget on a request handler ends the forward's
+// downstream request, however high query_timeout_ms is, and the caller gets graph-query's transient
+// refusal. A forward under a context the budget does not end would hold until the stub lets go. The
+// refusal counts as a request with no answer. No responders would refuse at once, so the elapsed
+// time also shows the stub was there and the budget ended the wait.
+func TestHandlerBudgetEndsAForward(t *testing.T) {
+	const budget = 300 * time.Millisecond
+	t.Setenv("SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT", budget.String()) // read when the client is built
+	client := fixtureClient(t)
+	c := startComponent(t, client, `{"query_timeout_ms": 600000}`)
+
+	f := forwardRows(t)[0]
+	release := make(chan struct{})
+	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
+	serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
+		<-release
+		return nil, nil
+	})
+
+	// Own deadline: the deadline is the behaviour under test. Far above the budget and below
+	// query_timeout_ms, so a forward the budget did not end leaves this caller with a transport
+	// timeout, which carries no class, rather than holding until the stub is released.
+	const callerTimeout = 10 * time.Second
+	began := time.Now()
+	reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), callerTimeout)
+	elapsed := time.Since(began)
+	if err == nil {
+		t.Fatalf("a downstream verb that never replies gave the success %q", reply)
+	}
+	got := refusalOf(t, err)
+	if got.Class != errs.ErrorTransient || got.Code != graph.ErrorCodeInternal {
+		t.Errorf("class, code = %v, %q, want transient, %q", got.Class, got.Code, graph.ErrorCodeInternal)
+	}
+	if !strings.Contains(err.Error(), f.downstream.Subject) {
+		t.Errorf("refusal %q does not name %s", err, f.downstream.Subject)
+	}
+	if elapsed < budget {
+		t.Errorf("refused after %v, before the handler budget %v", elapsed, budget)
+	}
+	// The handler counts before it returns, so before the reply above.
+	if got := c.Health().ErrorCount; got != 1 {
+		t.Errorf("ErrorCount = %d after one request the budget ended, want 1", got)
+	}
+}
+
+// TestForwardCountsRequestsAndUnansweredOnes: every request a forward receives is one message on
+// DataFlow, with its bytes, whatever became of it. ErrorCount moves only for a request that got no
+// answer, graph-query's own refusal. A refusal the responder sent is an answer and moves nothing, as
+// graph-ingest's refused mutation counts its input and no error. Health stays healthy throughout,
+// outage included: ErrorCount never lowers it (component.Lifecycle.Health, ADR-109).
+func TestForwardCountsRequestsAndUnansweredOnes(t *testing.T) {
+	client := fixtureClient(t)
+	c := startComponent(t, client, `{}`)
+	rows := forwardRows(t)
+
+	var wantMessages, wantBytes int64
+	var wantErrors int
+	// Each handler counts before it returns, so before its reply: the caller's reply orders every
+	// read here after the counts it expects.
+	check := func(phase string) {
+		t.Helper()
+		flow, health := c.DataFlow(), c.Health()
+		if flow.Messages != wantMessages || flow.Bytes != wantBytes {
+			t.Errorf("%s: DataFlow messages, bytes = %d, %d, want %d, %d", phase, flow.Messages, flow.Bytes, wantMessages, wantBytes)
+		}
+		if health.ErrorCount != wantErrors {
+			t.Errorf("%s: ErrorCount = %d, want %d", phase, health.ErrorCount, wantErrors)
+		}
+		if !health.Healthy {
+			t.Errorf("%s: Health = %+v, want healthy", phase, health)
+		}
+	}
+	check("before any request")
+
+	send := func(f forward, request string) ([]byte, error) {
+		wantMessages++
+		wantBytes += int64(len(request))
+		return client.RequestClassified(t.Context(), f.verb.Subject, []byte(request), requestTimeout)
+	}
+
+	for _, f := range rows {
+		if reply, err := send(f, "with nothing downstream"); err == nil {
+			t.Fatalf("%s with no downstream responder succeeded: %q", f.verb.Name, reply)
+		}
+		wantErrors++
+	}
+	check("no responders")
+
+	const answered, refused = "answered", "refused, a longer request"
+	for _, f := range rows {
+		serve(t, client, f.downstream.Subject, func(_ context.Context, data []byte) ([]byte, error) {
+			if string(data) == refused {
+				return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("no such entity"))
+			}
+			return []byte("a reply that is not counted"), nil
+		})
+	}
+	for _, f := range rows {
+		if _, err := send(f, answered); err != nil {
+			t.Fatalf("%s: %v", f.verb.Name, err)
+		}
+	}
+	check("answered")
+
+	for _, f := range rows {
+		if reply, err := send(f, refused); err == nil {
+			t.Fatalf("%s: refusal arrived as the success %q", f.verb.Name, reply)
+		}
+	}
+	check("refused by the responder")
+}
+
 // TestForwardedRefusalKeepsClassCodeDetail: each forward returns a downstream refusal with its class,
 // code, detail and message as the downstream verb gave them, whatever the class, coded or not.
 func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {

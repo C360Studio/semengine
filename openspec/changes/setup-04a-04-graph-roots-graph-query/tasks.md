@@ -1,6 +1,57 @@
 # Tasks: setup-04a-04-graph-roots-graph-query
 
+Step 1 of `split.md`. Tests come first. Each code task ends at a clean-tree local `task verify` at its commit (#171);
+integration tests run under `task test:integration -- <pkgs>`. "Shown to fail" means `task mutate:check`, or the
+failing-first output, recorded in the task's note. One task is one developer's unit.
+
 ## 1. Design
 
-- [ ] 1.1 Owner rules on the split and the questions in `inventory.md`, and fills `Approved-by:`. OPEN-Q: the inventory's
-  owner summary. Hold: the owner's ruling on the split.
+- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:`, rules on the design's open questions and
+  accepts the new exports. Gate: `task spec:check`, `task docs:check`. Hold: OPEN-Q proposal awaits owner approval
+
+## 2. Table and index
+
+- [ ] 2.1 `graph.QueryVerb` gains `Enveloped` and `Reply`; existing rows marked; `graph.ResponderGraphQuery`,
+  `graph.RelationshipEdge`, `graph.MinRevisionField`, `graph.ErrorCodeRevisionNotReached`. New rows go after existing
+  ones, since `processor/graph-ingest/failed_start_callbacks_integration_test.go:61` finds `batch` by name alone; a
+  real name lookup checks the responder. Premise: `graph/query_verbs.go:5-11` (D1). Check:
+  `TestQueryVerbsDeclareEachRespondersVerbs`.
+- [ ] 2.2 graph-index compares `min_revision` on all eight verbs. Premise: `processor/graph-index/query.go:79`,
+  `:398-399` (D3). Check: `TestMinRevisionBoundary`, shown to fail with the comparison removed.
+- [ ] 2.3 `request_subject_conflict` in `composition.Analyze`, with the service's boot refusal. Premise:
+  `composition/analyze.go:28`, `:35`, `service/component_manager.go:328` (D6). Check:
+  `TestAnalyzeReportsSecondResponder`, `TestBootRefusesSecondResponder`, `TestValidateFindingsVocabularyIsClosed`.
+
+## 3. Component
+
+- [ ] 3.1 Shell, strict configuration, `Register`, `doc.go`, `README.md`. No handler reads downstream yet; table rows
+  arrive with 3.2. Premise: `processor/graph-index/component.go:43`, `:107` (D7); P1, P2, P3. Check: lifecycle suite
+  with the failed-cleanup branch, `TestUnknownConfigKeyIsRefused`.
+- [ ] 3.2 Forwards: `entity`, `batch`, `prefix`, `byName`, with their table rows. Premise:
+  `pin:processor/graph-query/query.go:299-345` not carried (D2). Check: `TestForwardReturnsReplyBytesUnchanged`,
+  `TestForwardedRefusalKeepsClassCodeDetail`, `TestNoResponderIsTransient`, `TestQueryTimeoutIsRead`,
+  `TestGraphQueryServesExactlyTheDeclaredVerbs`.
+- [ ] 3.3 `entityByAlias` (ADR-114) and `relationships`, with their table rows. Premise: P5, P5b,
+  `graph-index/query.go:272`, `graph-ingest/query.go:79-82` (D2, D4). Check: `TestEntityByAlias`,
+  `TestRelationshipsEnvelopeKeepsIndexRevision`, `TestRelationshipsRefusesUnknownDirection`, each failing case shown
+  to fail.
+- [ ] 3.4 End to end, real ingest and index: `TestReadYourWrites`, `TestMinRevisionRefusalThroughGraphQuery`,
+  `TestGraphQueryRepliesDecodeByTheTable`. A wait in these tests is on the reply itself, never `time.Sleep`; a
+  deadline is an outer bound only (#501).
+
+## 4. Records and guidance
+
+- [ ] 4.1 Port ADR-060 with a note under its title (pin path and SHA, packages, ledger row, ADR-091 amends it and is
+  not here, `060-pr-d-*` not carried). Ledger: new `processor/graph-query` row, disposition `adapt`, saying the
+  package is whole at step 5; ADR-060 row; `defer-exclude` rows for `answer.go`'s language-model half,
+  `component.go`'s wiring and `summary_view.go` (#485, #486, #487, #32); dropped `router.go`; `graph` row no longer
+  defers `MinRevisionField`. Check: `task ledger:diff`.
+- [ ] 4.2 `.agents/skills/query-pattern/SKILL.md`: the six verbs, `min_revision`, decoding by verb. `AGENTS.md` § 2
+  and `.agents/rules-index.md`: the reserved-subject row names `graph.query.*`. Check: `task ateam:doctor`, `task
+  docs:check`.
+
+## 5. Land
+
+- [ ] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`), and the branch has merged
+  `origin/main` with #505 in it. The PR #504 body carries `implemented-by:` and no closing keyword; the design lists
+  what stays open. Check: read `closingIssuesReferences` back, empty.

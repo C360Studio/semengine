@@ -23,7 +23,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
 - [x] 3.1 Shell, strict configuration, `Register`, `doc.go`, `README.md`. No handler reads downstream yet; table rows
   arrive with 3.2. Premise: `processor/graph-index/component.go:43`, `:107` (D7); P1, P2, P3. Check: lifecycle suite
   with the failed-cleanup branch, `TestUnknownConfigKeyIsRefused`.
-- [ ] 3.2 Forwards: `entity`, `batch`, `prefix`, `byName`, with their table rows. Premise:
+- [x] 3.2 Forwards: `entity`, `batch`, `prefix`, `byName`, with their table rows. Premise:
   `pin:processor/graph-query/query.go:299-345` not carried (D2). Check: `TestForwardPassesBytesBothWays` on all four
   verbs, `TestForwardedRefusalKeepsClassCodeDetail`, `TestNoRespondersIsTransient`, `TestQueryTimeoutIsRead`,
   `TestGraphQueryServesExactlyTheDeclaredVerbs`. Retire `subscribeVerbs`' test parameters (review of 3.1): `subscribeQueries`

@@ -75,7 +75,7 @@ func (c *Config) Validate() error {
 	}
 	if input.Name != wantPort.Name || !input.Required || !reflect.DeepEqual(input.Config, wantPort.Config) {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
-			fmt.Sprintf("input port %q must be the required %s nats-request port on graph.query.*, graph.query v1, with no timeout or retries",
+			fmt.Sprintf("input port %q must be the required %s nats-request port on graph.query.*, graph.query v1, with no retries and no timeout but the default 1s",
 				input.Name, want.Name))
 	}
 	return nil

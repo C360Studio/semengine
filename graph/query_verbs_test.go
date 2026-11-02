@@ -12,11 +12,13 @@ import (
 // names its subject and responder. There is no suffix verb (design D19).
 // graph-index's eight verbs follow on graph.index.query.* (change 4, design
 // D6), the subjects the SemStreams pin's graph-index subscribed to
-// (pin:processor/graph-index/query.go:31-80); no other entry exists.
+// (pin:processor/graph-index/query.go:31-80). graph-query's forwards follow on
+// graph.query.* (design D1); no other entry exists.
 func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	// The marks are literals per verb, read from what each handler replies with
 	// (graph-transport-boundary, "The verb table declares each reply's shape"):
-	// graph-ingest's replies are bare, graph-index's are enveloped.
+	// graph-ingest's replies are bare, graph-index's are enveloped, and a forward
+	// answers as the verb it forwards to.
 	want := []QueryVerb{
 		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
@@ -39,6 +41,14 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 		{Name: "predicateCompound", Subject: "graph.index.query.predicateCompound", Responder: "graph-index",
 			Enveloped: true, Reply: reflect.TypeFor[CompoundPredicateData]()},
 		{Name: "byName", Subject: "graph.index.query.byName", Responder: "graph-index",
+			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "entity", Subject: "graph.query.entity", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
+		{Name: "batch", Subject: "graph.query.batch", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[EntityBatchResponse]()},
+		{Name: "prefix", Subject: "graph.query.prefix", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "byName", Subject: "graph.query.byName", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 	}
 

@@ -39,7 +39,9 @@ var entityVerb = QueryVerb{
 // slice, so a caller cannot change the declaration. The entity verb takes an
 // EntityRequest, batch an EntityBatchRequest and prefix a PrefixQueryRequest.
 // Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
-// QueryResponse whose Data is the entry's Reply.
+// QueryResponse whose Data is the entry's Reply. graph-query's forwards answer as
+// the verb they forward to does, on graph.query.*; a verb a consumer serves under
+// graph.query.* is not in this table. A Name is unique only within its Responder.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
@@ -62,6 +64,14 @@ func QueryVerbs() []QueryVerb {
 		{Name: "predicateCompound", Subject: "graph.index.query.predicateCompound", Responder: ResponderGraphIndex,
 			Enveloped: true, Reply: reflect.TypeFor[CompoundPredicateData]()},
 		{Name: "byName", Subject: "graph.index.query.byName", Responder: ResponderGraphIndex,
+			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "entity", Subject: "graph.query.entity", Responder: ResponderGraphQuery,
+			Reply: reflect.TypeFor[ExactEntity]()},
+		{Name: "batch", Subject: "graph.query.batch", Responder: ResponderGraphQuery,
+			Reply: reflect.TypeFor[EntityBatchResponse]()},
+		{Name: "prefix", Subject: "graph.query.prefix", Responder: ResponderGraphQuery,
+			Reply: reflect.TypeFor[PrefixQueryResponse]()},
+		{Name: "byName", Subject: "graph.query.byName", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
 	}
 }

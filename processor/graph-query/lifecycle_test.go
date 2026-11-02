@@ -1,6 +1,7 @@
 package graphquery
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -72,30 +73,46 @@ func TestLifecycleBeforeStart(t *testing.T) {
 	})
 }
 
-// TestDeclaredVerbWithNoHandlerFailsTheWalk: a verb declared for graph-query with no handler is a
-// failure naming the verb and its subject (design D7), and a verb declared for another responder
-// needs no handler here. The walk finds it when it reaches that row, so rows before it are already
-// subscribed for the rollback to drain (the lifecycle suite's failing owner relies on that). Here
-// the only earlier row is another responder's, and the client is never connected, so a walk that
-// tried to subscribe would fail for another reason.
-func TestDeclaredVerbWithNoHandlerFailsTheWalk(t *testing.T) {
+// TestHandlerForNamesAnUnservedVerb: a verb with no handler is a failure naming the verb and its
+// subject (design D7), which subscribeQueries returns from Start; a verb with one gets that handler.
+func TestHandlerForNamesAnUnservedVerb(t *testing.T) {
+	verb := graph.QueryVerb{Name: "unserved", Subject: "graph.query.unserved", Responder: graph.ResponderGraphQuery}
+
+	_, err := handlerFor(verb, map[string]queryHandler{"other": nil})
+	if err == nil {
+		t.Fatal("a verb with no handler was given one")
+	}
+	for _, want := range []string{"unserved", "graph.query.unserved"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not name %s", err, want)
+		}
+	}
+
+	handler, err := handlerFor(verb, map[string]queryHandler{
+		"unserved": func(context.Context, []byte) ([]byte, error) { return []byte("this one"), nil },
+	})
+	if err != nil {
+		t.Fatalf("a verb with a handler: %v", err)
+	}
+	if got, _ := handler(t.Context(), nil); string(got) != "this one" {
+		t.Errorf("handlerFor returned another handler, which answered %q", got)
+	}
+}
+
+// TestEveryDeclaredVerbHasAHandler: every row the table declares for graph-query has a handler, so
+// a row added without one is caught here as well as at Start.
+func TestEveryDeclaredVerbHasAHandler(t *testing.T) {
 	c, err := createFromJSON(t, `{}`)
 	if err != nil {
 		t.Fatalf("CreateGraphQuery: %v", err)
 	}
-	ours := graph.QueryVerb{Name: "unserved", Subject: "graph.query.unserved", Responder: graph.ResponderGraphQuery}
-	theirs := graph.QueryVerb{Name: "entity", Subject: "graph.ingest.query.entity", Responder: graph.ResponderGraphIngest}
-
-	if err := c.subscribeVerbs(t.Context(), []graph.QueryVerb{theirs}, nil); err != nil {
-		t.Fatalf("a verb of another responder: %v", err)
-	}
-	err = c.subscribeVerbs(t.Context(), []graph.QueryVerb{theirs, ours}, nil)
-	if err == nil {
-		t.Fatal("a declared verb with no handler passed the walk")
-	}
-	for _, want := range []string{"unserved", "graph.query.unserved"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("walk error %q does not name %s", err, want)
+	handlers := c.queryHandlers()
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder != graph.ResponderGraphQuery {
+			continue
+		}
+		if _, err := handlerFor(verb, handlers); err != nil {
+			t.Error(err)
 		}
 	}
 }

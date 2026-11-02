@@ -8,8 +8,22 @@ The component that answers the graph's read requests on `graph.query.*`.
 name indexes. It keeps no state of its own and writes nothing.
 
 `graph.QueryVerbs()` (`graph/query_verbs.go`) decides what it serves: at start it subscribes a handler to each verb
-declared for `graph-query`, and fails to start if a declared verb has no handler. The table declares no `graph-query`
-verb yet, so today a started `graph-query` answers nothing. A request to a `graph.query.*` subject gets no responder.
+declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
+left alone, so a consumer can serve its own verb there.
+
+## Verbs
+
+| Verb on `graph.query.` | Answers from | Reply |
+| --- | --- | --- |
+| `entity`, `batch`, `prefix` | `graph.ingest.query.` same name | bare, as graph-ingest sends it |
+| `byName` | `graph.index.query.byName` | enveloped, as graph-index sends it |
+
+These four are forwards: the request and reply bytes pass unchanged, neither decoded nor checked, so `min_revision`
+reaches graph-index on `byName` and an authority read on the other three ignores it.
+
+A refusal from the verb behind a forward reaches the caller with its class, code, detail and message. A request that
+gets no answer is refused by `graph-query` itself, class transient, code `internal`, naming the subject: nothing
+responding, `query_timeout_ms` passing, or a lost connection.
 
 ## Configuration
 
@@ -42,7 +56,7 @@ An empty configuration is enough. This is the same configuration written out:
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `ports` | object | the port above | A `ports` block that is present is used as written; one that is absent takes the default |
-| `query_timeout_ms` | int | 15000 | The bound on each request `graph-query` makes to graph-ingest or graph-index, in milliseconds. `0` means the default. Negative is refused, and so is anything above 9223372036854, which does not fit a Go duration. No handler makes such a request yet |
+| `query_timeout_ms` | int | 15000 | The bound on each request `graph-query` makes to graph-ingest or graph-index, in milliseconds. `0` means the default. Negative is refused, and so is anything above 9223372036854, which does not fit a Go duration. |
 
 The default is above graph-ingest's 10 second budget on `batch` and `prefix`, so the slowest of those can finish. A
 larger value gains little past `natsclient`'s limit on a request handler, 30 seconds by default, which also ends the

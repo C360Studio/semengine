@@ -3,6 +3,7 @@
 package graphquery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -16,7 +17,6 @@ import (
 	"github.com/nats-io/nats.go"
 
 	"github.com/c360studio/semengine/component"
-	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/natsclient"
@@ -66,7 +66,12 @@ func openClient(ctx context.Context, url string) (*natsclient.Client, func(conte
 // initializes it.
 func newComponent(t *testing.T, client *natsclient.Client) *Component {
 	t.Helper()
-	built, err := CreateGraphQuery(json.RawMessage(`{}`), component.Dependencies{NATSClient: client})
+	return newConfigured(t, client, `{}`)
+}
+
+func newConfigured(t *testing.T, client *natsclient.Client, config string) *Component {
+	t.Helper()
+	built, err := CreateGraphQuery(json.RawMessage(config), component.Dependencies{NATSClient: client})
 	if err != nil {
 		t.Fatalf("CreateGraphQuery: %v", err)
 	}
@@ -77,28 +82,14 @@ func newComponent(t *testing.T, client *natsclient.Client) *Component {
 	return c
 }
 
-// A row the table does not declare, for a test that needs a walk with something to hold: the table
-// has no graph-query rows until task 3.2.
-func testVerb(name string) graph.QueryVerb {
-	return graph.QueryVerb{Name: name, Subject: "graph.query." + name, Responder: graph.ResponderGraphQuery}
-}
-
-func echo(_ context.Context, data []byte) ([]byte, error) { return data, nil }
-
-// suiteOwner is graph-query as the lifecycle suite's owner. It starts through the shell with the
-// component's own walk and cleanup, over rows the test names, because the table has no graph-query
-// rows until task 3.2 and a suite over an owner that holds nothing would judge nothing.
+// suiteOwner is graph-query as the lifecycle suite's owner: start is how it starts, the component's
+// own Start for a good owner.
 type suiteOwner struct {
-	c        *Component
-	verbs    []graph.QueryVerb
-	handlers map[string]queryHandler
+	c     *Component
+	start func(context.Context) error
 }
 
-func (o suiteOwner) Start(ctx context.Context) error {
-	return o.c.lifecycle.Start(ctx, func(ctx context.Context) error {
-		return o.c.subscribeVerbs(ctx, o.verbs, o.handlers)
-	}, o.c.cleanup)
-}
+func (o suiteOwner) Start(ctx context.Context) error { return o.start(ctx) }
 
 func (o suiteOwner) Stop(ctx context.Context) error { return o.c.Stop(ctx) }
 
@@ -113,19 +104,25 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	return lifecycletest.Observation{Unresolved: held}
 }
 
-// TestGraphQueryLifecycleSuite runs the lifecycle suite. The failing owner's walk subscribes its
-// first verb and then finds the second has no handler, so its rollback has a real subscription to
-// release.
+// TestGraphQueryLifecycleSuite runs the lifecycle suite on the production Start. The failing owner
+// has the shape of graph-ingest's: its start function subscribes every declared verb through the
+// component's own subscribeQueries and then fails, so its rollback has real subscriptions to release.
 func TestGraphQueryLifecycleSuite(t *testing.T) {
 	client := fixtureClient(t)
-	first, second := testVerb("first"), testVerb("second")
 	factory := func() lifecycletest.Owner {
-		return suiteOwner{newComponent(t, client), []graph.QueryVerb{first, second},
-			map[string]queryHandler{first.Name: echo, second.Name: echo}}
+		c := newComponent(t, client)
+		return suiteOwner{c, c.Start}
 	}
 	mustFail := func() lifecycletest.Owner {
-		return suiteOwner{newComponent(t, client), []graph.QueryVerb{first, second},
-			map[string]queryHandler{first.Name: echo}}
+		c := newComponent(t, client)
+		return suiteOwner{c, func(ctx context.Context) error {
+			return c.lifecycle.Start(ctx, func(ctx context.Context) error {
+				if err := c.subscribeQueries(ctx); err != nil {
+					return err
+				}
+				return errors.New("start fails after acquiring")
+			}, c.cleanup)
+		}}
 	}
 	lifecycletest.Run(t, factory, mustFail, lifecycletest.Promise{})
 
@@ -149,14 +146,18 @@ func TestGraphQueryLifecycleSuite(t *testing.T) {
 	})
 }
 
-// TestStartThroughTheTable: the production Start on a connected client: Health follows, a second
-// Start is refused, and a Start context that ends after Start returned does not change Health
-// (ADR-113). A Start whose context has already ended is refused. The table has no graph-query row
-// yet, so this Start subscribes nothing and the test proves nothing about serving; task 3.2 sends
-// the request that does.
+// TestStartThroughTheTable: the production Start on a connected client serves every forward after
+// its context has ended and until Stop. Health follows, a second Start is refused, and a Start
+// context that ends after Start returned changes neither Health nor serving (ADR-113). A Start whose
+// context has already ended is refused.
 func TestStartThroughTheTable(t *testing.T) {
 	client := fixtureClient(t)
 	c := newComponent(t, client)
+	for _, f := range forwardRows(t) {
+		serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
+			return []byte(f.downstream.Subject), nil
+		})
+	}
 
 	ended, end := context.WithCancel(t.Context())
 	end()
@@ -172,6 +173,15 @@ func TestStartThroughTheTable(t *testing.T) {
 	if health := c.Health(); !health.Healthy || health.Status != "running" {
 		t.Errorf("Health once started and the Start context ended = %+v, want running", health)
 	}
+	for _, f := range forwardRows(t) {
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), requestTimeout)
+		if err != nil {
+			t.Fatalf("request to %s once Start has ended: %v", f.verb.Subject, err)
+		}
+		if string(reply) != f.downstream.Subject {
+			t.Errorf("reply on %s = %q, want the one from %s", f.verb.Subject, reply, f.downstream.Subject)
+		}
+	}
 	if err := c.Start(t.Context()); !errors.Is(err, errs.ErrAlreadyStarted) {
 		t.Errorf("second Start = %v, want ErrAlreadyStarted", err)
 	}
@@ -180,6 +190,13 @@ func TestStartThroughTheTable(t *testing.T) {
 	}
 	if health := c.Health(); health.Healthy || health.Status != "stopped" {
 		t.Errorf("Health after Stop = %+v, want stopped", health)
+	}
+	// One connection carries the unsubscribe and this request, in that order (the probe is this
+	// assertion).
+	for _, f := range forwardRows(t) {
+		if reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), requestTimeout); !errors.Is(err, nats.ErrNoResponders) {
+			t.Errorf("request to %s after Stop = %q, %v, want no responders", f.verb.Subject, reply, err)
+		}
 	}
 }
 
@@ -190,46 +207,51 @@ func TestStartThroughTheTable(t *testing.T) {
 //
 // As graph-ingest's TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop does, it reaches
 // the shell's Start with a start function that fails after acquiring, and a rollback that is the
-// component's own cleanup under an ended context. The subscriptions are real, bound by the
-// component's own walk. The first has a request in its handler, which is what Drain must wait for;
-// the second is idle, and is released even though the first could not be.
+// component's own cleanup under an ended context. The subscriptions are the component's own. The
+// busy verb's handler is the real forward, waiting on a downstream stub that holds its reply: that
+// is what Drain must wait for. The other verbs are idle, and are released even though the busy one
+// could not be. query_timeout_ms is set high so the stub, not that bound, ends the forward; natsclient's
+// 30 s handler budget still applies, and a run that slow fails here loudly.
 func TestFailedCleanupKeepsHandlesForLaterStop(t *testing.T) {
 	client := fixtureClient(t)
-	c := newComponent(t, client)
+	c := newConfigured(t, client, `{"query_timeout_ms": 600000}`)
 	owner := suiteOwner{c: c}
 
-	busy, idle := testVerb("busy"), testVerb("idle")
+	rows := forwardRows(t)
+	busy, idle := rows[0], rows[1:]
+	request := []byte(`{"held": true}`)
 	entered, release := make(chan struct{}), make(chan struct{})
 	releaseOnce := sync.OnceFunc(func() { close(release) })
 	t.Cleanup(releaseOnce) // before the fixture's Close, which joins the handler
-	handlers := map[string]queryHandler{
-		busy.Name: func(_ context.Context, data []byte) ([]byte, error) {
-			close(entered)
-			<-release
-			return data, nil
-		},
-		idle.Name: echo,
-	}
+	serve(t, client, busy.downstream.Subject, func(_ context.Context, data []byte) ([]byte, error) {
+		close(entered)
+		<-release
+		return data, nil
+	})
 
-	replied := make(chan error, 1)
+	type outcome struct {
+		reply []byte
+		err   error
+	}
+	replied := make(chan outcome, 1)
 	errStart := errors.New("start fails after acquiring")
 	expired, expire := context.WithCancel(t.Context())
 	expire()
 	rolledBack := false // the guard runs the cleanup one call at a time
 	err := c.lifecycle.Start(t.Context(),
 		func(ctx context.Context) error {
-			if err := c.subscribeVerbs(ctx, []graph.QueryVerb{busy, idle}, handlers); err != nil {
+			if err := c.subscribeQueries(ctx); err != nil {
 				return err
 			}
 			go func() {
-				_, err := client.RequestClassified(context.WithoutCancel(ctx), busy.Subject, []byte(`{}`), 2*time.Minute)
-				replied <- err
+				reply, err := client.RequestClassified(context.WithoutCancel(ctx), busy.verb.Subject, request, 2*time.Minute)
+				replied <- outcome{reply, err}
 				close(replied) // so the wait below ends even if the arm under this took the value
 			}()
 			select {
 			case <-entered: // Drain now has a running handler to wait for
-			case err := <-replied:
-				t.Errorf("the request returned before its handler ran: %v", err)
+			case got := <-replied:
+				t.Errorf("the request returned before the stub received it: %q, %v", got.reply, got.err)
 			}
 			return errStart
 		},
@@ -247,21 +269,27 @@ func TestFailedCleanupKeepsHandlesForLaterStop(t *testing.T) {
 	if got := owner.Observe().Unresolved; !slices.Equal(got, want) {
 		t.Fatalf("held after the failed cleanup = %v, want %v", got, want)
 	}
-	if got := len(c.subscriptions); got != 2 {
-		t.Fatalf("subscriptions kept after the failed cleanup = %d, want 2", got)
+	if got := len(c.subscriptions); got != len(rows) {
+		t.Fatalf("subscriptions kept after the failed cleanup = %d, want %d", got, len(rows))
 	}
 	if err := c.Start(t.Context()); !errors.Is(err, errs.ErrAlreadyStarted) {
 		t.Fatalf("Start while cleanup is pending = %v, want ErrAlreadyStarted", err)
 	}
-	// One connection carries the unsubscribe and this request, in that order (the probe is this
-	// assertion), so the idle verb is already unserved although the busy one could not be released.
-	if reply, err := client.RequestClassified(t.Context(), idle.Subject, []byte(`{}`), time.Minute); !errors.Is(err, nats.ErrNoResponders) {
-		t.Fatalf("request to the idle verb after the failed cleanup = %q, %v, want no responders", reply, err)
+	// One connection carries the unsubscribes and these requests, in that order (the probe is this
+	// assertion), so the idle verbs are already unserved although the busy one could not be released.
+	for _, f := range idle {
+		if reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), time.Minute); !errors.Is(err, nats.ErrNoResponders) {
+			t.Fatalf("request to idle %s after the failed cleanup = %q, %v, want no responders", f.verb.Subject, reply, err)
+		}
 	}
 
 	releaseOnce()
-	if err := <-replied; err != nil {
-		t.Errorf("the request in flight during the failed cleanup: %v", err)
+	got := <-replied
+	if got.err != nil {
+		t.Errorf("the request in flight during the failed cleanup: %v", got.err)
+	}
+	if !bytes.Equal(got.reply, request) {
+		t.Errorf("the request in flight during the failed cleanup replied %q, want %q", got.reply, request)
 	}
 	if err := c.Stop(t.Context()); err != nil {
 		t.Fatalf("later Stop: %v", err)

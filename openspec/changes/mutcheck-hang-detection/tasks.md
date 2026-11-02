@@ -4,7 +4,7 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 1. Design
 
-- [ ] 1.1 Design track (`design.md`); owner ruling on #503 (comment 6587993650).
+- [x] 1.1 Design track (`design.md`); owner ruling on #503 (comment 6587993650).
 
 ## 2. Harness
 

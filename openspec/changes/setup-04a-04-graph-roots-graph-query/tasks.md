@@ -39,7 +39,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
   `graph.query.entity` row from 3.2. Premise: `composition/analyze.go:28`, `:35`, `service/component_manager.go:328`
   (D6). Check: `TestAnalyzeReportsSecondResponder`, `TestBootRefusesSecondResponder`,
   `TestValidateFindingsVocabularyIsClosed`.
-- [ ] 3.5 End to end, real ingest and index: `TestReadYourWrites`, `TestMinRevisionRefusalThroughGraphQuery`
+- [x] 3.5 End to end, real ingest and index: `TestReadYourWrites`, `TestMinRevisionRefusalThroughGraphQuery`
   (`byName`, `relationships` both ways, `entityByAlias`, M far above R, shown to fail with the field re-marshalled
   away), `TestGraphQueryRepliesDecodeByTheTable`. A wait in these tests is on the reply itself, never `time.Sleep`; a
   deadline is an outer bound only (#501).

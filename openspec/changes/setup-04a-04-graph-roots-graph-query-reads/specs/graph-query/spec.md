@@ -5,8 +5,7 @@
 ### Requirement: Derived-index replies are forwarded unchanged
 
 `semantic`, `similar`, `spatial` and `temporal` SHALL forward the request bytes to the verb their table row names and
-return the reply bytes unchanged. A reply SHALL be the responder's `graph.QueryResponse`, with the entry's `Reply` as
-its `data`.
+return the reply bytes unchanged. The table row declares what changes 5 and 7 must send; no responder serves these yet.
 
 #### Scenario: A field graph-query does not read rides through
 
@@ -36,8 +35,9 @@ a canonical predicate; a `direction` other than `outgoing`, `incoming` or `both`
 
 A success SHALL be a `graph.QueryResponse` from producer `graph-query` whose `data` is a `graph.PathSearchData`.
 `entities` SHALL hold at most `max_nodes` rows, each entity once, the start first at depth 0, each `depth` the shortest
-distance and at most `max_depth`. `edges` SHALL hold one row per entity past the start, joining it to an earlier one.
-Neighbours SHALL be ordered by entity then predicate and deduplicated before the limit.
+distance and at most `max_depth`. `edges[i]` SHALL be the edge that first reached `entities[i+1]`, joining it to an
+earlier entity. Neighbours SHALL be ordered by entity, predicate, then outgoing before incoming, and deduplicated before
+the limit.
 
 #### Scenario: Generated graphs
 
@@ -56,7 +56,8 @@ Each row of `edges` SHALL name the edge in the direction the graph holds it, whi
 
 ### Requirement: Path search truncation is exact
 
-`truncated` SHALL be true exactly when the walk found an unseen entity and left it out. When it is false, `entities`
+`truncated` SHALL be true exactly when the walk, as read at the hops, found an unseen entity and left it out. When it
+is false, `entities`
 SHALL be every entity within `max_depth` under `direction` and `predicates`.
 
 #### Scenario: The limit meets the graph exactly
@@ -75,6 +76,11 @@ answer is returned. Every hop SHALL carry the request's `min_revision`.
 
 - **WHEN** a request names an entity with no record
 - **THEN** the caller receives the entity verb's `entity_not_found` (`TestPathSearchOnARealIndex`)
+
+#### Scenario: A hub over the reply limit
+
+- **WHEN** a hop's reply is too large for the connection
+- **THEN** the caller receives that `response_too_large` refusal, whole (`TestPathSearchRefusedMidWalk`)
 
 #### Scenario: A hop refused mid-walk
 
@@ -100,7 +106,8 @@ SHALL make exactly one prefix request, and `summary` one prefix request and, unl
 ### Requirement: Counts declare a partial page
 
 `hierarchyStats` and `summary` SHALL read one prefix page, IDs only, sending the request's `cursor` unchanged, and SHALL
-decode their request strictly. `entities_scanned` SHALL be the rows on that page; `next_cursor` SHALL be the page's; and
+decode their request strictly. `total_entities` SHALL be the page's `total`; `entities_scanned` the rows on
+that page; `next_cursor` the page's; and
 `truncated` SHALL be true exactly when `next_cursor` is set. A page with no `entities` key, or an ID that does not
 parse, SHALL be refused transient `internal`.
 
@@ -108,12 +115,14 @@ parse, SHALL be refused transient `internal`.
 
 - **WHEN** a group holds more entities than one page
 - **THEN** `truncated` is true and `next_cursor` is set (`TestHierarchyStatsDeclaresAPartialPage`)
-- **AND** a caller following `next_cursor` to the end sums to the counts seeded (`TestCountsAddUpAcrossPages`)
+- **AND** `total_entities` is the number seeded, and a caller following `next_cursor` to the end sums to it
+  (`TestCountsAddUpAcrossPages`)
 
 #### Scenario: An empty group
 
 - **WHEN** a prefix holds no entity
-- **THEN** `entities_scanned` is 0, `truncated` false and the lists empty, not an error (`TestCountsOfAnEmptyGroup`)
+- **THEN** `total_entities` and `entities_scanned` are 0, `truncated` false and the lists empty, not an error
+  (`TestCountsOfAnEmptyGroup`)
 
 #### Scenario: A broken page
 
@@ -123,7 +132,8 @@ parse, SHALL be refused transient `internal`.
 ### Requirement: Hierarchy counts name each child
 
 `hierarchyStats` SHALL take `prefix`, `cursor` and `min_revision`, refusing an invalid non-empty prefix with the
-validator's refusal. `data` SHALL be `graph.HierarchyStatsData`: `prefix`, `entities_scanned`, `truncated`,
+validator's refusal. `data` SHALL be `graph.HierarchyStatsData`: `prefix`, `total_entities`, `entities_scanned`,
+`truncated`,
 `next_cursor` when set, and `children`, each `{prefix, count}`, by count descending then prefix. An entity whose ID is
 the prefix SHALL count in `entities_scanned` and in no child.
 
@@ -134,10 +144,9 @@ the prefix SHALL count in `entities_scanned` and in no child.
 
 ### Requirement: A summary has its predicates or says why not
 
-`summary` SHALL take `exclude_predicates`, `examples_per_type`, `cursor` and `min_revision`. A negative
-`examples_per_type` SHALL be `invalid_request`, and 0 SHALL mean 2. `data` SHALL be `graph.SummaryData`:
-`entities_scanned`, `truncated`, `next_cursor` when set, `entity_types`, and `predicates`. Unless excluded, `summary`
-SHALL ask `predicateList` first and SHALL return its refusal unchanged, without reading a page. `predicates` SHALL be
+`summary` SHALL take `prefix`, `exclude_predicates`, `examples_per_type`, `cursor` and `min_revision`; a negative
+`examples_per_type` SHALL be `invalid_request`, and 0 SHALL mean 2. `data` SHALL be `graph.SummaryData`. Unless excluded,
+`summary` SHALL ask `predicateList` first and return its refusal unchanged, without reading a page. `predicates` SHALL be
 `null` when excluded and `[]` when there are none.
 
 #### Scenario: The three states of predicates
@@ -150,6 +159,11 @@ SHALL ask `predicateList` first and SHALL return its refusal unchanged, without 
 - **WHEN** `predicateList` refuses
 - **THEN** the caller receives that refusal with class, code and detail, and the prefix verb no request
   (`TestSummaryRefusesWhenPredicatesCannot`)
+
+#### Scenario: A broken predicate reply
+
+- **WHEN** `predicateList` replies with bytes that do not decode or name no `producer`
+- **THEN** the caller receives transient `internal`, not an empty list (`TestSummaryRefusesABrokenPredicateReply`)
 
 ## MODIFIED Requirements
 

@@ -1,5 +1,17 @@
 # graph-transport-boundary
 
+## ADDED Requirements
+
+### Requirement: A prefix page names its total
+
+A `graph.ingest.query.prefix` reply SHALL carry `total`, the number of keys the request's listing found, before the
+cursor and before any limit, on every path. It SHALL be counted in the byte fit. It is true as of that listing.
+
+#### Scenario: A later page
+
+- **WHEN** a group of N entities is read on its second page, or on a page the byte fit trimmed
+- **THEN** `total` is N (`TestPrefixPageNamesItsTotal`)
+
 ## MODIFIED Requirements
 
 ### Requirement: Reserved request subjects have one declaration

@@ -1,0 +1,223 @@
+//go:build integration
+
+package graphquery
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"strconv"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/inference"
+	"github.com/c360studio/semengine/internal/graphmutation"
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
+	"github.com/c360studio/semengine/internal/harness/payloadfixture"
+	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/lifecycle"
+	"github.com/c360studio/semengine/pkg/types"
+	graphindex "github.com/c360studio/semengine/processor/graph-index"
+	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
+	"github.com/nats-io/nats.go/jetstream"
+)
+
+func stackWorkers(t *testing.T, workers int) graphStack {
+	t.Helper()
+	client := fixtureClient(t)
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := natsfixture.CreateStream(t.Context(), js, jetstream.FileStorage, "ENTITY", "entity.>"); err != nil {
+		t.Fatal(err)
+	}
+	registry := payloadfixture.NewWithSubset(t, message.RegisterPayloads, inference.RegisterPayloads, lifecycle.RegisterPayloads)
+	payloadfixture.RegisterTestType(t, registry, testEntityType)
+	ingestConfig, _ := json.Marshal(graphingest.DefaultConfig())
+	ingest, err := graphingest.CreateGraphIngest(ingestConfig, component.Dependencies{
+		NATSClient: client, PayloadRegistry: registry, MetricsRegistry: metric.NewMetricsRegistry(),
+		Platform: types.PlatformMeta{Org: "c360", Platform: "test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startLifecycle(t, "graph-ingest", ingest)
+	index, err := graphindex.CreateGraphIndex(json.RawMessage(fmt.Sprintf(`{"workers":%d}`, workers)), component.Dependencies{
+		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startLifecycle(t, "graph-index", index)
+	startComponent(t, client, `{}`)
+	mutations, err := graphmutation.NewClient(client, requestTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return graphStack{client: client, mutations: mutations}
+}
+
+func envInt(name string, def int) int {
+	if v, err := strconv.Atoi(os.Getenv(name)); err == nil {
+		return v
+	}
+	return def
+}
+
+func reviewID(i int) string { return fmt.Sprintf("c360.test.query.system.drone.%06d", i) }
+
+func TestReviewRate(t *testing.T) {
+	workers, entities := envInt("RATE_WORKERS", 1), envInt("RATE_N", 3000)
+	limit := time.Duration(envInt("RATE_LIMIT_S", 360)) * time.Second
+	stack := stackWorkers(t, workers)
+	start := time.Now()
+	var wg sync.WaitGroup
+	work := make(chan int)
+	var mu sync.Mutex
+	var last uint64
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				rev := stack.create(t, reviewID(i), [2]string{linkTo, reviewID((i + 1) % entities)})
+				mu.Lock()
+				if rev > last {
+					last = rev
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for i := range entities {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+	t.Logf("RESULT workers=%d seeded %d in %s last=%d", workers, entities, time.Since(start), last)
+	subject := subjectOf(graph.ResponderGraphIndex, "outgoing")
+	body, _ := json.Marshal(map[string]any{"entity_id": reviewID(0), "min_revision": last})
+	waitStart := time.Now()
+	lastLog := time.Time{}
+	for {
+		_, err := stack.client.RequestClassified(t.Context(), subject, body, 30*time.Second)
+		if err == nil {
+			break
+		}
+		if time.Since(lastLog) >= 15*time.Second {
+			t.Logf("RESULT t=%s %v", time.Since(waitStart).Round(time.Second), err)
+			lastLog = time.Now()
+		}
+		if time.Since(waitStart) > limit {
+			t.Logf("RESULT gave up after %s", limit)
+			return
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	t.Logf("RESULT workers=%d caught up after %s", workers, time.Since(waitStart))
+
+	js, _ := stack.client.JetStream()
+	kv, err := js.KeyValue(t.Context(), graph.BucketIncomingIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	began := time.Now()
+	for i := range 200 {
+		if _, err := kv.Get(t.Context(), reviewID(i)+"."+reviewID(i)+".00"); err == nil {
+			t.Log("unexpected hit")
+		}
+	}
+	t.Logf("RESULT kv miss get mean %s", time.Since(began)/200)
+	began = time.Now()
+	for i := range 50 {
+		lister, err := kv.ListKeysFiltered(t.Context(), "*.*.*.*.*.*."+reviewID(i)+".*")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for range lister.Keys() {
+		}
+	}
+	t.Logf("RESULT wildcard listing on %d-entity INCOMING_INDEX mean %s", entities, time.Since(began)/50)
+}
+
+func TestReviewRawReplies(t *testing.T) {
+	stack := stackWorkers(t, 1)
+	ask := func(subject string, body any) string {
+		data, _ := json.Marshal(body)
+		reply, err := stack.client.RequestClassified(t.Context(), subject, data, 30*time.Second)
+		if err != nil {
+			return "ERR " + err.Error()
+		}
+		return string(reply)
+	}
+	t.Logf("RESULT empty group prefix: %s", ask(subjectOf(graph.ResponderGraphIngest, "prefix"), graph.PrefixQueryRequest{Prefix: "c360.none"}))
+	t.Logf("RESULT empty bucket prefix: %s", ask(subjectOf(graph.ResponderGraphIngest, "prefix"), graph.PrefixQueryRequest{}))
+	t.Logf("RESULT predicateList none: %s", ask(subjectOf(graph.ResponderGraphIndex, "predicateList"), map[string]any{}))
+	t.Logf("RESULT outgoing of no record: %s", ask(subjectOf(graph.ResponderGraphIndex, "outgoing"), map[string]any{"entity_id": reviewID(9)}))
+	t.Logf("RESULT incoming of no record: %s", ask(subjectOf(graph.ResponderGraphIndex, "incoming"), map[string]any{"entity_id": reviewID(9)}))
+	t.Logf("RESULT entity min_revision: %s", ask(subjectOf(graph.ResponderGraphIngest, "entity"), map[string]any{"id": reviewID(9), "min_revision": 5}))
+	t.Logf("RESULT prefix with min_revision: %s", ask(subjectOf(graph.ResponderGraphIngest, "prefix"), map[string]any{"prefix": "c360.none", "min_revision": 5}))
+}
+
+func publishKeys(t *testing.T, js jetstream.JetStream, bucket string, keys func(int) string, from, to int) {
+	t.Helper()
+	for i := from; i < to; i++ {
+		if _, err := js.PublishAsync("$KV."+bucket+"."+keys(i), nil); err != nil {
+			t.Fatal(err)
+		}
+		if i%2000 == 1999 {
+			select {
+			case <-js.PublishAsyncComplete():
+			case <-t.Context().Done():
+				t.Fatal("ended")
+			}
+		}
+	}
+	<-js.PublishAsyncComplete()
+}
+
+func TestReviewHub(t *testing.T) {
+	stack := stackWorkers(t, 1)
+	js, _ := stack.client.JetStream()
+	hub := reviewID(999999)
+	token := graph.EncodePredicateToken("test.link.hub")
+	key := func(i int) string { return hub + "." + reviewID(i) + "." + token }
+	subject := subjectOf(graph.ResponderGraphIndex, "incoming")
+	body, _ := json.Marshal(map[string]any{"entity_id": hub})
+	from := 0
+	for _, n := range []int{1000, 5000, 10000, 12000, 13000, 15000, 30000} {
+		start := time.Now()
+		publishKeys(t, js, graph.BucketIncomingIndex, key, from, n)
+		from = n
+		seeded := time.Since(start)
+		began := time.Now()
+		reply, err := stack.client.RequestClassified(t.Context(), subject, body, 30*time.Second)
+		t.Logf("RESULT hub %d edges (seed %s): %s, %d bytes, err=%v", n, seeded, time.Since(began), len(reply), err)
+	}
+}
+
+func TestReviewPredicateList(t *testing.T) {
+	stack := stackWorkers(t, 1)
+	js, _ := stack.client.JetStream()
+	predicates := []string{"test.kind.a", "test.kind.b", "test.kind.c", "test.kind.d", "test.kind.e"}
+	key := func(i int) string { return predicates[i%5] + "." + reviewID(i/5) }
+	subject := subjectOf(graph.ResponderGraphIndex, "predicateList")
+	from := 0
+	for _, n := range []int{100000, 500000, 1000000, 2000000, 3000000, 5000000} {
+		start := time.Now()
+		publishKeys(t, js, graph.BucketPredicateIndex, key, from, n)
+		from = n
+		seeded := time.Since(start)
+		began := time.Now()
+		reply, err := stack.client.RequestClassified(t.Context(), subject, []byte(`{}`), 60*time.Second)
+		t.Logf("RESULT predicateList %d keys (seed %s): %s, %d bytes, err=%v", n, seeded, time.Since(began), len(reply), err)
+		if err != nil {
+			return
+		}
+	}
+}

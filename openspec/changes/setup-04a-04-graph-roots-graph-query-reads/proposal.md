@@ -18,9 +18,9 @@ traversal takes any depth and node count (P7) and reports an incoming edge backw
   `direction`, all validated before any request. Refusals reach the caller. The reply names entities and true edges
   once each, and `truncated` is exact.
 - **`hierarchyStats`, `summary`:** each request reads one prefix page, so it costs one key scan of the group.
-  `entities_scanned`, `truncated` and `next_cursor` declare a partial answer; a caller who wants more pays per page,
-  visibly. A predicate index that cannot answer refuses `summary`; `exclude_predicates` asks without it (#105, #111
-  item 2).
+  `total_entities` is true, from a new `total` on the `prefix` reply; `entities_scanned`, `truncated` and `next_cursor`
+  declare a sample, and a caller who wants more pays per page. `summary` gains `prefix`. A predicate index that cannot
+  answer refuses `summary`; `exclude_predicates` asks without it (#105, #111 item 2).
 - **`semantic`, `similar`, `spatial`, `temporal`:** forwarded byte for byte, with their reply shapes decided here:
   enveloped by the responder, as `byName` is. Each refuses transient `internal` until changes 5 and 7 bring the
   responder.
@@ -31,21 +31,23 @@ the four forwards (changes 5, 7).
 
 ## Capabilities
 
-- Modified: `graph-query` (three requirements), `graph-transport-boundary` (the table, its marks, the revision rule).
+- Modified: `graph-query` (two requirements), `graph-transport-boundary` (the table, its marks, the revision rule).
 - Added requirements: `graph-query` (path search, counts, predicates, forwards).
 
 ## Impact
 
-- About 600 production and 1,200 test lines (hand estimate). Pin: 917 and 1,643 (`inventory.md` § 12, row 9.2). One PR:
+- About 620 production and 1,250 test lines (hand estimate). Pin: 917 and 1,643 (`inventory.md` § 12, row 9.2). One PR:
   three independent handlers on one shell, one developer's unit per task; not worth two PRs.
 - **New exported surface, for the owner to accept.** In `graph`: `ResponderGraphEmbedding`,
   `ResponderGraphIndexSpatial`, `ResponderGraphIndexTemporal`, `MaxPathSearchDepth`, `MaxPathSearchNodes`,
   `DefaultPathSearchNodes`, `PathSearchRequest`, `PathSearchData`, `PathEntity`, `HierarchyStatsRequest`,
   `HierarchyStatsData`, `HierarchyChild`, `SemanticData`, `SimilarData`, `SimilarityHit`, `SpatialData`, `SpatialHit`,
-  `TemporalData`, `TemporalHit`. `SummaryRequest` and `SummaryData` change. Package `graphquery` exports nothing new.
-  Each has its reader in `inventory-delta.md`.
-- New subjects, reserved by the table: `graph.query.{pathSearch,hierarchyStats,summary,semantic,similar,spatial,temporal}`,
-  `graph.embedding.query.{search,similar}`, `graph.spatial.query.bounds`, `graph.temporal.query.range`. No new bucket and
-  no new config key: `max_traversal_depth` and `max_traversal_nodes` stay refused.
-- One question for the owner, whether counts should be exact: `owner-questions.md`. The design stands either way.
+  `TemporalData`, `TemporalHit`, `PrefixQueryResponse.Total`. `SummaryRequest` and `SummaryData` change. Package
+  `graphquery` exports nothing new. Each has its reader in `inventory-delta.md`.
+- New subjects, reserved by the table:
+  `graph.query.{pathSearch,hierarchyStats,summary,semantic,similar,spatial,temporal}`,
+  `graph.embedding.query.{search,similar}`, `graph.spatial.query.bounds`, `graph.temporal.query.range`. No new bucket
+  and no new config key: `max_traversal_depth` and `max_traversal_nodes` stay refused.
+- Two questions for the owner in `owner-questions.md`: whether counts should be exact, and whether `hierarchyStats`
+  keeps the envelope, which narrows ruling 1 either way. The design is written on the ruling's list until answered.
 - No code before the owner approves. Retires no issue; `design.md`, "Scope", disposes each one.

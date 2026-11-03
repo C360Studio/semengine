@@ -1,26 +1,34 @@
 # Owner questions: setup-04a-04-graph-roots-graph-query-reads
 
-## Should the graph overview and the hierarchy counts be exact?
+## 1. Should the graph overview and hierarchy counts be exact?
 
-**Recommendation: yes, add one small request to graph-ingest that counts IDs from a single key listing. By my estimate
-it adds about 250 lines to this PR. If you say no, the design as written stands and is honest, but it answers with a
-sample on almost every real graph.**
+**Not fully, not yet. Take two small changes, already in the design, and build exact counts when someone needs them.**
 
-**What you accepted.** Read one page of entities and say when it is partial. That page is the alphabetically first
-1,000 entities, fewer when they are large (about 450 at 2 KB). So on any graph past that size, the overview's type
-list and the hierarchy's children come from the first few systems only. The answer says so, but it cannot tell the
-caller what else is there. Getting the true numbers means walking every page, and each page repeats the whole listing:
-36 to 53 seconds for 100,000 entities in one group, in the earlier measurements.
+**Why not now.** No sister project's production code calls either request. The only caller is the GraphQL gateway, which
+is not being ported, and SemSource cut its tool. How large real groups get has not been measured.
 
-**What was not on the table then.** Both reads need only entity IDs, never their contents. graph-ingest already lists
-every key under the prefix on each request, before it picks a page (`processor/graph-ingest/query.go:280-298`). A
-request that counts those keys by next segment and by type answers exactly, for the price of the listing alone: about
-155 ms for a 100,000-entity group, 1.4 s for a million-entity bucket. Those figures are for one page including the
-listing, so the count should cost no more; I did not measure it separately.
+**The limit.** Each answer reads one page: the alphabetically first 1,000 entities, about 450 at 2 KB. Past that, type
+and child counts are a sample, and the answer says so.
 
-**What yes changes.** `summary` and `hierarchyStats` read the new verb, and `entities_scanned`, `truncated` and
-`next_cursor` go, replaced by a true `total_entities`. A child list too long for one reply still says so. The two
-counting tasks change and one is added for graph-ingest, a merged package, with its spec. The later plan to answer
-counts from community records would no longer be needed.
+| Option | What you get | Cost |
+| --- | --- | --- |
+| As you accepted | A sample that says it is one | Nothing more |
+| **Add a true total** (in the design) | "1,000 read of 1,000,000" | About 10 lines plus tests in graph-ingest (reviewer's estimate, not run); no extra scan |
+| **Add a prefix to the overview** (in the design) | A large graph can show any group, not only its first | A few lines; one group's scan |
+| New count request | Every count exact | About 250 lines (my estimate), in a merged package, for no caller today |
 
-**What no changes.** Nothing. This can also land later as its own PR, and consumers would change shape once more.
+If you want the new request now, or neither small change, say so. The design adjusts either way.
+
+## 2. What should `hierarchyStats` say about how current it is?
+
+**Return it without the wrapper, as direct lookups do.**
+
+Your accepted ruling lists it as wrapped, but also says direct reads from graph-ingest are unwrapped, and this one reads
+only graph-ingest. Its answer is current. The wrapper's revision field has nothing true to report.
+
+- **Keep the wrapper, revision 0.** Callers are told to compare that field, so one that does would never see it catch up,
+  and a retry loop would spin for ever. Only a doc warns them.
+- **Remove the wrapper (recommended).** There is no field to misread. It departs from the ruling's list, which only you
+  can accept. The design is written the first way until you say; the change is one table mark, one test, one spec clause.
+
+Either way `summary` keeps the wrapper, and reports 0 only when a caller asks to leave predicates out.

@@ -1,7 +1,8 @@
 # Probe evidence for graph-query step 2
 
 Evidence, not tests of this repository: a `.go.txt` file stays out of the build and the guards. The earlier probes
-P0-P7 and the prefix costs are in `openspec/changes/archive/2026-11-03-setup-04a-04-graph-roots-graph-query/notes/probes/`.
+P0-P7 and the prefix costs are in
+`openspec/changes/archive/2026-11-03-setup-04a-04-graph-roots-graph-query/notes/probes/`.
 
 ## P8-P12, path search at the pin
 
@@ -43,4 +44,19 @@ go test -tags integration -run '^TestHopCostProbe$' -v -count=1 -timeout 8m ./pr
 | One prefix page, 1,000 rows, 964,335 bytes, empty prefix then a five-part one | 156 ms, 40 ms | | |
 
 Side reading: the index applied about 33 entities a second during this run (revision 192 at 0 s, 1,188 at 30 s, 2,160
-at 60 s), while the writes took 4.6 s. An earlier run with 10,000 entities had not caught up after three minutes.
+at 60 s), while the writes took 4.6 s. An earlier run with 10,000 entities had not caught up after three minutes. This
+is
+the default of one index worker, not a defect: see the reviewer's figures below.
+
+## The reviewer's re-probe
+
+`review-reprobe.go.txt`, overlaid the same way at `26c35c1`, one run; its figures are as reported in design review
+round 1,
+with no log kept.
+
+| Read | Result |
+| --- | --- |
+| Hop | `outgoing` 3.5 ms, `incoming` 5.4 ms |
+| `incoming` on a hub | 12,000 edges: 1,020,121 bytes, ok. 13,000: `response_too_large`, class invalid |
+| `predicateList`, `PREDICATE_INDEX` seeded directly | 1M keys 2.8 s, 2M 6.0 s, 3M 8.1 s, 5M 8.0 s; `listTimeout` is 10 s |
+| Index catch-up | 3,000 entities, one worker: 66 s. 10,000: 4m15s. 3,000, eight workers: about 4 s after a 4.8 s seed |

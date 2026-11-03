@@ -5,26 +5,28 @@ unless marked `pin:` (`8b99efe9`).
 
 ## Surface: what landed, and what step 2 meets
 
-- `processor/graph-query/query.go:24` — `func (c *Component) queryHandlers() map[string]queryHandler {`: `forwardedFrom`
-  finds a row by the verb's own name, so `semantic` to `search` needs the downstream name too.
+- `processor/graph-query/query.go:24` — `func (c *Component) queryHandlers() map[string]queryHandler {`:
+  `forwardedFrom` finds a row by the verb's own name, so `semantic` to `search` needs the downstream name too.
 - `graph/query_summary_types.go:21` — `type SummaryRequest struct {`: at base `IncludePredicates bool`, a default an
   omitted field cannot express (#105 comment).
-- `graph/query_summary_types.go:76` — `type SummaryData struct {`: `Predicates` has `omitempty`, so `[]` and absent match.
-- `graph/query_predicate_types.go:22` — `type PredicateListQuery struct {`: embeds `MinRevisionField`, strict decoder, so
-  `summary` sends `{"min_revision":M}`.
+- `graph/query_summary_types.go:76` — `type SummaryData struct {`: `Predicates` has `omitempty`, so `[]` and absent
+  match.
+- `graph/query_predicate_types.go:22` — `type PredicateListQuery struct {`: embeds `MinRevisionField`, strict decoder,
+  so `summary` sends `{"min_revision":M}`.
 - `natsclient/request.go:40` — `const DefaultRequestHandlerTimeout = 30 * time.Second`.
 - `natsclient/owned_delivery.go:21` — `// The native library delivers on one goroutine per subscription, so at most one
   invocation runs`: natsclient's reading, not probed here; the design promises only that another verb still answers.
 - `natsclient/kv_key_contract.go:43` — `ErrorCodeResponseTooLarge = "response_too_large"`, sent by
-  `natsclient/request.go`'s `errors.Is(respErr, nats.ErrMaxPayload)` branch, driven by `natsclient/request_response_bounds_integration_test.go:141`.
+  `natsclient/request.go`'s `errors.Is(respErr, nats.ErrMaxPayload)` branch, driven by
+  `natsclient/request_response_bounds_integration_test.go:141`.
 - `processor/graph-ingest/query.go:280` — `keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)`: every page lists
   every key under the prefix.
 - `processor/graph-ingest/query.go:468` — `if len(ids) == 0 {`, returning nil: an empty group's page marshals
   `"entities":null` (read, not run; task 4.1's `TestCountsOfAnEmptyGroup` runs it), so `{}` differs only by the key.
 - `processor/graph-query/config_test.go:42` — `{"max_traversal_depth", 5}`: stays refused, as do the spec scenario and
   `MIGRATION.md`'s instruction to delete both keys.
-- `vocabulary/predicates.go:365` — `func IsValidPredicate(predicate string) bool {`; `graph` already imports `vocabulary`
-  (`go list -deps ./graph`: 1 match).
+- `vocabulary/predicates.go:365` — `func IsValidPredicate(predicate string) bool {`; `graph` already imports
+  `vocabulary` (`go list -deps ./graph`: 1 match).
 - Searches closed empty: `git grep -n 'graph\.embedding\.query\|graph\.spatial\.query\|graph\.temporal\.query' --
   ':!openspec' ':!docs'`: no line, so the new rows add no reserved-subject violation at base.
 
@@ -32,20 +34,22 @@ unless marked `pin:` (`8b99efe9`).
 
 P8-P12 and the hop costs: `notes/probes/`. Reads, not runs: spatial and temporal watch `ENTITY_STATES`
 (`pin:processor/graph-index-spatial/component.go:123`, `pin:processor/graph-index-temporal/component.go:125`);
-graph-embedding's watermark (`pin:processor/graph-embedding/readiness.go:53,:70`); `TemporalResult{ID: event.Entity, Type:
-"entity"}` (`pin:processor/graph-index-temporal/query.go:144`); fusion reads `results[].entity_id`, `similarity`
+graph-embedding's watermark (`pin:processor/graph-embedding/readiness.go:53,:70`); `TemporalResult{ID: event.Entity,
+Type: "entity"}` (`pin:processor/graph-index-temporal/query.go:144`); fusion reads `results[].entity_id`, `similarity`
 (`pin:pkg/fusion/fusionnats/client.go:328-331`); `include_siblings` has no reader (`git grep` on the pin copy: only
 `pathrag.go:28`); `.Score` hits in `graphrag.go` are semantic hits, none a `PathEntity`. SemConnect sets
 `max_traversal_depth` 5, `max_traversal_nodes` 100 (`deploy/semstreams.json:114-115`,
 `conformance/compose.semstreams.config.json:114-115` at `d0d06e00`).
 
-Measured beside this work, not acted on: the index applied about 33 entities a second in the hop probe. Read-your-writes
-refuses until then, correctly. It is not filed because it is one laptop run with no comparison; #108 is the nearest issue.
+Measured beside this work: the index applied about 33 to 37 entities a second. It refuses correctly until caught up, so
+no defect and nothing to file. Cause, per the reviewer's re-probe: the one-lane default, `workers` 1 as at the pin
+(`pin:processor/graph-index/component.go:134,:201`), four listings per apply by reading; 8 workers caught 3,000 about 4
+s after a 4.8 s seed. The rate goes on the rebuild-cost issue (coordinator).
 
 ## Open pull requests
 
-`gh pr list --state open`, 2026-11-03: #511 (this claim, no files yet); #510 draft, `fix(graph-index): Stop begins every
-query drain`, three files in `processor/graph-index`. No overlap: this edits no graph-index file and reads
+`gh pr list --state open`, 2026-11-03: #511 (this claim, no files yet); #510 draft, `fix(graph-index): Stop begins
+every query drain`, six files, none this change edits. No overlap: this edits no graph-index file and reads
 `predicateList`, `outgoing`, `incoming` as they are. Either merges first. No PR has over 100 files.
 
 ## Open issues
@@ -91,27 +95,36 @@ Names the word, not the package: #7, #24, #108, #110, #134, #141, #195, #196, #1
 | New `graph.query.*` subjects | Whoever keeps the GraphQL gateway (`MIGRATION.md`), fusion in change 5 (`semantic`) |
 
 Dropped from the pin's exports, each with no reader outside the package but a test (`inventory.md` § 3):
-`DirectionOutgoing`, `PathSearcher`, `NewPathSearcher`, `RelationshipEntry`. Problem shape: a bounded read with a declared
-continuation; closest instance `graph/query_prefix_types.go:5` (`MaxPrefixQueryLimit`), adopted for counts. No new
-primitive for reuse, so no adoption list.
+`DirectionOutgoing`, `DirectionIncoming`, `DirectionBoth`, `PathSearcher`, `NewPathSearcher`, `PathSearchResponse`,
+`PathStep`, `RelationshipEntry`. Problem shape: a bounded read with a declared continuation; closest instance
+`graph/query_prefix_types.go:5` (`MaxPrefixQueryLimit`), adopted for counts. No new primitive for reuse, so no adoption
+list.
 
 ## Adopter seam
 
-**1. What must they know?** Decode by the table. Read `truncated` on `pathSearch` and the two count verbs. Two facts; the
-limits and required fields are not on the list, since a refusal teaches them. `indexed_revision` 0 on two verbs is a third
-for anyone comparing revisions there, a design finding kept: its failure is a false alarm.
+**1. What must they know?** Decode by the table. Read `truncated` on `pathSearch` and the two count verbs. Two facts;
+the limits and required fields are not on the list, since a refusal teaches them. `indexed_revision` 0 is a third for
+anyone comparing revisions there, a finding: the alarm never clears and a retry loop spins for ever. Owner question 2.
 
-**2. If they do nothing?** Sending nothing but a start: refused, naming `direction`, then `max_depth`. Calling `semantic`
-before change 5: transient refusal naming the subject. Ignoring `truncated` on a count: reads a sample as the whole, though
-the key says `entities_scanned`. That is the path this design leaves open, and the owner question closes it for counts.
-A pin caller sending `include_predicates` or `timeout`: refused, naming the key. A pin decoder of `paths`: empty,
-silently; tasks 3.1 and 4.x list these under `MIGRATION.md`'s "The changes that fail silently".
+**2. If they do nothing?** Sending nothing but a start: refused, naming `direction`, then `max_depth`. Calling
+`semantic` before change 5: transient refusal naming the subject. Ignoring `truncated` on a count: reads a sample as
+the whole, though the key says `entities_scanned`. `total_entities` beside it shows the gap, and owner question 1
+weighs closing it. A walk through a hub over about 12,000 edges (near 3,500 at longest IDs): `response_too_large`,
+whole, naming no entity, as at the pin; `predicates` cannot help. A pin caller sending `include_predicates` or
+`timeout`: refused, naming the key. A pin decoder of `paths`: empty, silently; tasks 3.1 and 4.x list these under
+`MIGRATION.md`'s "The changes that fail silently".
 
-**3. Where do they find out?** Bad request, limit: typed runtime error. Partial answer: a field in every reply. Down index:
-typed runtime error.
+**3. Where do they find out?** Bad request, limit: typed runtime error. Partial answer: a field in every reply. Down
+index: typed runtime error.
 
-**4. What should they have to know?** Which verb to call. **Gap:** `truncated` on counts, which only exact counts remove.
-**Prefer observation:** the caller predicts no limit, no readiness and no index position; it asks and reads the refusal.
+**4. What should they have to know?** Which verb to call. **Gaps:** `truncated` on counts, which only exact counts
+remove; the hub limit, which only a paged `incoming` removes. **Prefer observation:** the caller predicts no limit, no
+readiness and no index position; it asks and reads the refusal.
+
+## ADRs, guidance and overlap
+
+ADR-071 ported with a note. ADR-060, ADR-099, ADR-102 (type key order), ADR-109 applied. `query-pattern` grows. Step 3
+also edits `graph/query_verbs.go`; the later merges `origin/main`. Consumers: `processor/graph-query/MIGRATION.md`.
 
 ## Intent check
 

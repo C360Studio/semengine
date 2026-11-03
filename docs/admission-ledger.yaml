@@ -4185,8 +4185,9 @@
     revision_not_reached instead of swallowing them (ADR-114); relationships requires direction and names the
     predicate where the pin named edge_type; the entity reply names kv_revision
   dependencies_and_side_effects: >-
-    component, graph, metric, natsclient, pkg/errs (in-set); nats.go; one request subscription per served verb and
-    one downstream request per call; no bucket access, no state of its own
+    production: component, graph, natsclient, pkg/errs, pkg/types (in-set); tests also use metric and nats.go; one
+    request subscription per served verb; zero to two downstream requests per call (a refused request makes none,
+    entityByAlias up to two); no bucket access, no state of its own
   known_risks: >-
     a package in steps: later verbs are not in the verb table until their step, so a request for one reports no
     responders; the second-responder check sees declared ports only (composition request_subject_conflict); a

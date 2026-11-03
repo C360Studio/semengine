@@ -63,6 +63,6 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 5. Land
 
-- [ ] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). The PR #504 body carries
+- [x] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). The PR #504 body carries
   `implemented-by:` and no closing keyword; `split.md`, "Step 1 dispositions", lists what stays open. Check: read
   `closingIssuesReferences` back, empty.

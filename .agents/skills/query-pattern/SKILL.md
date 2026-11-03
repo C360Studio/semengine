@@ -34,7 +34,7 @@ serves now), so a verb not in the table has no responder yet.
    `{"alias": ...}` and answers the entity whose alias it is, or reads the input as an entity ID; `relationships`
    takes `{"entity_id": ..., "direction": "outgoing" or "incoming"}` and the direction is required.
 2. **One entity by ID, from embedded code:** use `graph.NewExactEntityReader`. It is the only typed adapter so
-   far, and the only read that returns the revision with the value.
+   far.
 3. **Several entities, or a prefix, straight from graph-ingest:** send a classified request (`RequestClassified`,
    developer contract § NATS RPC) on the verb's subject, read from `graph.QueryVerbs()`. Never spell the subject as a literal;
    `TestReservedSubjectsDeclaredOnce` fails on one outside its declaration.

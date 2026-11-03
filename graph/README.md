@@ -35,11 +35,22 @@ transport"; `TestGraphImportsNoTransport`).
   fills the envelope is in `graph/readiness`.
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
-  and the answering component in `producer`; `NewQueryResponse` refuses an empty producer.
+  and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
+  depends on the verb: `entity`, `batch` and `prefix` are bare, and `byName`, `entityByAlias` and `relationships` are
+  enveloped. A caller decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the
+  body or of `data`), never by the reply's content.
+- **Reading at a revision.** A request on an enveloped verb may carry `min_revision` (`MinRevisionField`), the
+  `kv_revision` of a write the answer must include. An index that has not reached it refuses with transient
+  `revision_not_reached` (`ErrorCodeRevisionNotReached`), the revision it reached in the detail, and does not wait. The
+  bare verbs ignore the field.
 - **The verb table.** `QueryVerbs` declares the request/reply verbs, each with its subject and responder:
   graph-ingest's `entity`, `batch` and `prefix` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
   `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
-  `graph.index.query.*`; `QueryVerbs`' doc comment names each verb's request and reply types.
+  `graph.index.query.*`, and graph-query's `entity`, `batch`, `prefix`, `byName`, `entityByAlias` and `relationships`
+  on `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for
+  graph-query. Each row also marks `Enveloped` and gives the `Reply` type. graph-query lands in steps, so its other
+  verbs are not in the table yet; a verb a consumer serves under `graph.query.*` is not in it either.
+  `QueryVerbs`' doc comment names each verb's request and reply types.
 
 ### Entity Identification
 

@@ -76,8 +76,8 @@ the envelope's revision is the alias reply's and not `kv_revision`.
 
 ## D5. Wire shapes, decided on what is best after the port (owner, 6588079803)
 
-A consumer reading a shape today is not a reason to keep it; migrations are in `consumer-migration.md`. Each shape
-kept from the pin was checked:
+A consumer reading a shape today is not a reason to keep it; migrations are in `processor/graph-query/MIGRATION.md`.
+Each shape kept from the pin was checked:
 
 | Shape | Decision | Why |
 | --- | --- | --- |
@@ -98,7 +98,7 @@ probes each subject before subscribing; (c) `natsclient` tracks subjects, agains
 `FactoryIdentity` is not the verb's responder, or on the later instance when two are. **Plain limit:** it sees
 declared ports only. SemSource's verbs subscribe with no port (`processor/source-manifest/component.go:176` at
 `e4febc0d`), so the one real collision on record, its old `graph.query.summary` (`:34-41`), would pass; accepted, and
-SemSource's guard test covers it (`consumer-migration.md`). *Proof:* `TestAnalyzeReportsSecondResponder`,
+SemSource's guard test covers it (`processor/graph-query/MIGRATION.md`). *Proof:* `TestAnalyzeReportsSecondResponder`,
 `TestBootRefusesSecondResponder`.
 
 ## D7. Shell and configuration
@@ -117,4 +117,4 @@ lifecycle suite; `TestGraphQueryServesExactlyTheDeclaredVerbs`; `TestUnknownConf
 ## Scope
 
 `split.md`, "Step 1 dispositions", holds every shape finding and open issue; this retires no issue. ADR-060 ported;
-ADR-114 amended (D4). What each consumer changes: `consumer-migration.md`.
+ADR-114 amended (D4). What each consumer changes: `processor/graph-query/MIGRATION.md`.

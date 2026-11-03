@@ -35,7 +35,7 @@ against the inventory's 14,328 carried; both count differently, so treat that as
 
 | After step | Answers on merge | Refuses or absent until |
 | --- | --- | --- |
-| 1 | Six lookups, against in-tree responders | Consumer changes: `consumer-migration.md` |
+| 1 | Six lookups, against in-tree responders | Consumer changes: `processor/graph-query/MIGRATION.md` |
 | 2 | Path search, counts | Four forwards: refused transient, when the request reports no responders, until changes 5 and 7 bring them |
 | 3 | Nothing until `COMMUNITY_INDEX` has records | `localSearch` refuses `index_not_ready` until change 7 wires the writer (ruling 3) |
 | 4 **(stepping stone)** | Entity and path questions | Questions needing the text tier refuse with a distinct temporary code, whether or not records exist, so `index_not_ready` stays true (ADR-109 D4, ruling 3) and no filter is lost; step 5 removes it. Step 4's design names its class, since transient invites retries until step 5. Absent: `searchGraph` |
@@ -47,9 +47,9 @@ Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `compone
 ## Issues, ADRs and carried questions
 
 - `#103` retires at step 5, its marker left with `#15` (ruling 1). `#106`: boot refusal in step 1; retires when the
-  last rows land; the declared-ports limit is accepted (`consumer-migration.md`). #111: item 2 step 2, item 3 steps 4
-  and 5, item 4 stays for change 7. #105: `IncludePredicates` in step 2; stays folded into #32. #68, #477: sites in
-  step 3; stay for other packages. #506 keyword index: not this port.
+  last rows land; the declared-ports limit is accepted (`processor/graph-query/MIGRATION.md`). #111: item 2 step 2,
+  item 3 steps 4 and 5, item 4 stays for change 7. #105: `IncludePredicates` in step 2; stays folded into #32. #68,
+  #477: sites in step 3; stay for other packages. #506 keyword index: not this port.
 - ADR-060 step 1. ADR-071 step 2. ADR-087 Decision 5 step 3. ADR-099's sentence stands (ruling 2); ADR-081, ADR-085
   apply in step 3.
 - Applied from section 13 by each step's design: Q5(b) in steps 3 to 5; Q7(a) in step 2, with Q7(b) a follow-up after
@@ -60,8 +60,8 @@ Steps 2 and 3 can run in parallel; both edit `graph/query_verbs.go` and `compone
   forward lands with its responder's port.
 - Step 3's design: the one new community record field (owner left it there); the community verbs' `indexed_revision`
   depends on it.
-- Step 5's silent consumer change, SemSource's `searchGraph` decode: `consumer-migration.md`, which moves to
-  `processor/graph-query/MIGRATION.md` in step 1; each later step appends what it changes.
+- Step 5's silent consumer change, SemSource's `searchGraph` decode: `processor/graph-query/MIGRATION.md`, which
+  step 1 moved out of this change so it survives the archive; each later step appends what it changes.
 - Steps 2 to 5 carry the owner's ruling (PR #504 comment 6588079803): each design decides a shape on its merits, with a
   consumer break a migration note. Pin keys such as `startTime` and `totalEntities` are the next candidates.
 

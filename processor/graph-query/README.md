@@ -11,6 +11,9 @@ name indexes. It keeps no state of its own and writes nothing.
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
+graph-query is ported in steps; the table below is what is in the tree. `MIGRATION.md` lists what a consumer changes
+at its cutover and grows with each step.
+
 ## Verbs
 
 | Verb on `graph.query.` | Answers from | Reply |

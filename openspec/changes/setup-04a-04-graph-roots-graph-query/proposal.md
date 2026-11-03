@@ -47,7 +47,7 @@ coordinator and structured strategies (4); the text tier and `searchGraph` (5). 
   `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.
 - New subjects: six on `graph.query.*`, now reserved (no stream may capture them; #16). New config key:
   `query_timeout_ms`, default 15000. New buckets: none.
-- Consumers change at their cutover, the silent ones included: `consumer-migration.md`. Consumer use is recorded
+- Consumers change at their cutover, the silent ones included: `processor/graph-query/MIGRATION.md`. Consumer use is recorded
   there, not a reason to keep a shape (owner, comment 6588079803; `design.md` D5).
 - No code before the owner approves this proposal and its design. Retires no issue; `split.md`, "Step 1 dispositions",
   lists each one.

@@ -34,7 +34,7 @@ func createFromJSON(t *testing.T, raw string) (*Component, error) {
 
 // TestUnknownConfigKeyIsRefused: a key Config does not define is refused at construction and by
 // DeclarePorts, naming the key, with and without a ports block. The list holds what the pin
-// accepted and read, what it accepted and ignored (P2; consumer-migration.md's deployed keys), and
+// accepted and read, what it accepted and ignored (P2; MIGRATION.md's deployed keys), and
 // the old spelling of the timeout, whose advertised "5s" the pin refused for another reason (P1).
 func TestUnknownConfigKeyIsRefused(t *testing.T) {
 	for _, entry := range []struct{ key, value string }{

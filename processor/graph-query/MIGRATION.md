@@ -1,36 +1,49 @@
 # Consumer migration: `processor/graph-query`
 
 For developers of projects moving onto SemEngine's graph-query. It says what keeps working and what you change at your
-cutover. The port breaks old shapes where that gives a better result (owner, PR #504 comment 6588079803). Step numbers
-are from `split.md`; cites to sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here
-was run against your code: it comes from reading it.
+cutover. The port breaks old shapes where that gives a better result (owner, PR #504 comment 6588079803). Cites to
+sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here was run against your code: it
+comes from reading it.
+
+`processor/graph-query` is ported in five steps, and this file grows with them. Only step 1 is in the tree today; a
+change marked with a later step describes what that step will bring and does not apply yet. Each later step appends
+what it changes here.
+
+| Step | What it adds to graph-query |
+| --- | --- |
+| 1 | The six lookups: `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`; `min_revision`; the check for a second responder on a declared subject |
+| 2 | Path search and counts (`pathSearch`, `hierarchyStats`, `summary`), and the `semantic`, `similar`, `spatial` and `temporal` forwards |
+| 3 | Community reads and local search (`localSearch`) |
+| 4 | The `globalSearch` coordinator and its structured strategies |
+| 5 | The text tier and `searchGraph`; the package is whole |
 
 ## The changes that fail silently
 
 Read these first. Nothing errors.
 
-- **SemSource `searchGraph` (step 5).** Search replies gain a wrapper: `data`, `indexed_revision`, `producer`,
-  `timestamp`. `graphSearch` (`processor/mcp-gateway/query_tools.go:113`) decodes into `graphSearchBody`
-  (`graph_matches.go:107`), which has no `data` field. It ignores the unexpected wrapper instead of failing, so you
-  get no error, no matches and no answer.
-- **SemSource `deriveDisclosure` (step 5).** It reads the same bytes for top-level fields (`disclosure.go:86`), so it
-  reports no answer rather than a failure.
+- **SemSource `searchGraph` (not yet in the tree; arrives with step 5, the text tier).** Search replies gain a wrapper:
+  `data`, `indexed_revision`, `producer`, `timestamp`. `graphSearch` (`processor/mcp-gateway/query_tools.go:113`)
+  decodes into `graphSearchBody` (`graph_matches.go:107`), which has no `data` field. It ignores the unexpected wrapper
+  instead of failing, so you get no error, no matches and no answer.
+- **SemSource `deriveDisclosure` (with `searchGraph`, step 5).** It reads the same bytes for top-level fields
+  (`disclosure.go:86`), so it reports no answer rather than a failure.
 - **Fix for both:** unwrap once before reading, and assert it on a real reply. No framework mechanism does this for
   you.
-- **A copy of the GraphQL gateway (step 1, more by step 5).** It nests every wrapped answer one level too deep; see
-  its section below.
-- **A `relationships` decoder that keeps `edge_type` (step 1).** After unwrapping, the field reads empty. With a
-  predicate filter, the old fusion client drops every edge (SemStreams `client.go:526`). Change 5's port of fusion must
-  not carry this.
-- **A bare `entityByAlias` decoder (step 1).** It reads no entity from the wrapper and gets nil.
-- **A `kvRevision` decoder with no zero check (step 1).** It gets revision 0. SemConnect's has the check, so its failure
-  is loud; see its section.
+- **A copy of the GraphQL gateway (already at step 1, more at each later step).** It nests every wrapped answer one
+  level too deep; see its section below.
+- **A `relationships` decoder that keeps `edge_type` (the `relationships` verb, step 1).** After unwrapping, the field
+  reads empty. With a predicate filter, the old fusion client drops every edge (SemStreams `client.go:526`). Change 5's
+  port of fusion must not carry this.
+- **A bare `entityByAlias` decoder (the `entityByAlias` verb, step 1).** It reads no entity from the wrapper and gets nil.
+- **A `kvRevision` decoder with no zero check (the `entity` verb, step 1).** It gets revision 0. SemConnect's has the
+  check, so its failure is loud; see its section.
 
 ## SemSource
 
-**Use cases kept:** free-text search (`searchGraph`, once step 5 lands and changes 5 and 7 bring what it needs);
-prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged); your own verbs on the same family
-(`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not reserve.
+**Use cases kept:** free-text search (`searchGraph`, which is not in the tree until step 5 lands and changes 5 and 7
+bring what it needs); prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged); your own verbs
+on the same family (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not
+reserve.
 
 **What you change:**
 
@@ -43,7 +56,7 @@ prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged
   its hand list. Declaring your verbs as ports also works. The framework adds no check at start: it would miss
   anything that starts later.
 - Nothing in your graph-query config: `ports` alone is valid.
-- A slow `searchGraph`, from step 5: your 10 s default (`mcp-gateway/component.go:194-199`) can time out first, loudly.
+- A slow `searchGraph`, once step 5 lands: your 10 s default (`mcp-gateway/component.go:194-199`) can time out first, loudly.
 
 ## SemConnect
 
@@ -76,8 +89,8 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 
 - It unwraps by detection (`component.go:2059`), which is not ported, and the old unwrap accepts only `data` and
   `timestamp` (SemStreams `graph/query_contracts.go:89`). The new envelope has four keys, so a copy silently nests
-  every wrapped answer one level too deep: `relationships` and `entityByAlias` from step 1, `summary` and the rest by
-  step 5. Decode by `graph.QueryVerbs()` instead.
+  every wrapped answer one level too deep: `relationships` and `entityByAlias` from step 1, `summary` and the other verbs
+  as their steps land. Decode by `graph.QueryVerbs()` instead.
 - Its schema advertises `kvRevision` (`:1869`); the key is `kv_revision`.
 - Its `relationships` type must read `predicate`, not `edge_type`, and must send `direction`.
 - At the old version its alias lookup looks broken: it sends `alias` and the handler read `aliasOrID`, refusing as
@@ -87,7 +100,7 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 
 | Verb | Change |
 | --- | --- |
-| `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which step 1 amends |
+| `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which ADR-114 now records |
 | `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
 | `entity` | Bytes forwarded unchanged, with no re-check by graph-query. The revision key is `kv_revision`, was `kvRevision` |
 | `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
@@ -97,7 +110,7 @@ A stream capturing a declared `graph.query.*` subject refuses boot (#16), and so
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
 `QueryVerb.Enveloped` and `QueryVerb.Reply`.
 
-**New names step 1 exports.** In `graph`: `ResponderGraphQuery`, `QueryVerb.Enveloped`, `QueryVerb.Reply`,
-`MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In `composition`: `TypeRequestSubjectConflict`.
-In the new `graphquery` package, the old version's names: `Register`, `DeclarePorts`, `CreateGraphQuery`,
-`DefaultConfig`, `Config`, `Component`.
+**New names step 1 exports** (later steps add theirs after these). In `graph`: `ResponderGraphQuery`,
+`QueryVerb.Enveloped`, `QueryVerb.Reply`, `MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In
+`composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
+`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.

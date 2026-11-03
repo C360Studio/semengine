@@ -46,19 +46,19 @@ failing-first output, recorded in the task's note. One task is one developer's u
 
 ## 4. Records and guidance
 
-- [ ] 4.1 Port ADR-060 with a note under its title (pin path and SHA, packages, ledger row, ADR-091 amends it and is
+- [x] 4.1 Port ADR-060 with a note under its title (pin path and SHA, packages, ledger row, ADR-091 amends it and is
   not here, `060-pr-d-*` not carried). Ledger: new `processor/graph-query` row, disposition `adapt`, saying the
   package is whole at step 5; ADR-060 row; `defer-exclude` rows for `answer.go`'s language-model half,
   `component.go`'s wiring and `summary_view.go` (#485, #486, #487, #32); dropped `router.go`; `graph` row no longer
   defers `MinRevisionField`; the `composition` row names `request_subject_conflict`
   (`docs/admission-ledger.yaml:3329`). Check: `task ledger:diff`.
-- [ ] 4.2 `.agents/skills/query-pattern/SKILL.md`: the six verbs, `min_revision`, decoding by verb. `AGENTS.md` § 2
+- [x] 4.2 `.agents/skills/query-pattern/SKILL.md`: the six verbs, `min_revision`, decoding by verb. `AGENTS.md` § 2
   and `.agents/rules-index.md`: the reserved-subject row names `graph.query.*`. Check: `task ateam:doctor`, `task
   docs:check`.
-- [ ] 4.3 Amend ADR-114's "Not found keeps falling through" (`docs/adr/114`:113): valid IDs fall through, an unknown
+- [x] 4.3 Amend ADR-114's "Not found keeps falling through" (`docs/adr/114`:113): valid IDs fall through, an unknown
   non-ID is `entity_not_found`, citing this change (D4). `graph/README.md` and `processor/graph-index/README.md:60-66`
   gain `min_revision`, `revision_not_reached` and the table's marks. Check: `task docs:check`.
-- [ ] 4.4 Move `consumer-migration.md` to `processor/graph-query/MIGRATION.md`, so it survives this change's archive, and
+- [x] 4.4 Move `consumer-migration.md` to `processor/graph-query/MIGRATION.md`, so it survives this change's archive, and
   point `split.md` at it. Each later step appends what it changes. Check: `task docs:check`.
 
 ## 5. Land

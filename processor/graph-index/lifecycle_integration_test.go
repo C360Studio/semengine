@@ -19,6 +19,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -267,16 +268,7 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 	if err := client.GetConnection().PublishRequest(stuckSubject, "test.graph-index.reply", nil); err != nil {
 		t.Fatalf("publish %s: %v", stuckSubject, err)
 	}
-	await(t, "the stuck handler running",
-		func(context.Context) (bool, error) {
-			select {
-			case <-entered:
-				return true, nil
-			default:
-				return false, nil
-			}
-		},
-		func(running bool) bool { return running })
+	<-entered
 
 	stopCtx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -285,9 +277,11 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 	// The lifecycle refuses a context already ended without running cleanup, and reports "stopped"
 	// before it runs cleanup, so this orders the cancel after Stop has passed that check. The stuck
 	// handler holds the first drain until the cancel.
-	await(t, "Stop entered",
+	if _, err := probe.Await(t.Context(),
 		func(context.Context) (string, error) { return h.c.Health().Status, nil },
-		func(status string) bool { return status == "stopped" })
+		func(status string) bool { return status == "stopped" }); err != nil {
+		t.Fatalf("Stop entered: %v", err)
+	}
 	cancel()
 	if err := <-stopped; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Stop with a stuck handler = %v, want context.Canceled", err)
@@ -301,7 +295,7 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 			verbs = append(verbs, verb.Subject)
 		}
 	}
-	await(t, "no graph-index verb answering",
+	if _, err := probe.Await(t.Context(),
 		func(context.Context) ([]string, error) {
 			var answering []string
 			for _, subject := range verbs {
@@ -312,7 +306,9 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 			}
 			return answering, nil
 		},
-		func(answering []string) bool { return len(answering) == 0 })
+		func(answering []string) bool { return len(answering) == 0 }); err != nil {
+		t.Fatalf("no graph-index verb answering: %v", err)
+	}
 
 	releaseOnce()
 	stopComponent(t, h.c)

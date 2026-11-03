@@ -193,7 +193,7 @@ func TestStartThroughTheTable(t *testing.T) {
 	}
 	// One connection carries the unsubscribe and this request, in that order (the probe is this
 	// assertion).
-	for _, f := range forwardRows(t) {
+	for _, f := range declaredRows(t) {
 		if reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), requestTimeout); !errors.Is(err, nats.ErrNoResponders) {
 			t.Errorf("request to %s after Stop = %q, %v, want no responders", f.verb.Subject, reply, err)
 		}
@@ -217,7 +217,7 @@ func TestFailedCleanupKeepsHandlesForLaterStop(t *testing.T) {
 	c := newConfigured(t, client, `{"query_timeout_ms": 600000}`)
 	owner := suiteOwner{c: c}
 
-	rows := forwardRows(t)
+	rows := declaredRows(t)
 	busy, idle := rows[0], rows[1:]
 	request := []byte(`{"held": true}`)
 	entered, release := make(chan struct{}), make(chan struct{})

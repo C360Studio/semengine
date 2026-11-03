@@ -61,8 +61,9 @@ class, code, detail intact; `TestReadYourWrites` on real ingest and index: never
 Request `{"alias": ..., "min_revision": ...}`. The alias verb's one non-refusal miss is a success with `canonical_id`
 null (`graph-index/query.go:272`). So: holder, read that ID; no holder, read the input as an ID; **any** refusal
 reaches the caller unchanged. An alias reply that does not decode or names no `producer` is transient `internal`, not
-"no holder" as at `pin:query.go:175`. The reply is `graph.QueryResponse` with the entity verb's bytes unchanged as
-`data` (Q3) and the alias reply's revision. Bare at the pin, enveloped now. The pin swallowed all refusals (P5, P5b).
+"no holder" as at `pin:query.go:175`. The reply is `graph.QueryResponse` with the entity verb's JSON as it came as
+`data`, not re-decoded into a struct (Q3), and the alias reply's revision. An entity reply that is not JSON cannot be
+enveloped, and is transient `internal`. Bare at the pin, enveloped now. The pin swallowed all refusals (P5, P5b).
 
 Inventory correction: P5's "caller sees not-found" came from a fake. The real entity verb refuses a non-ID as
 `invalid_request` (`graph-ingest/query.go:79-82`, pin `:82`), so an unknown alias `sn-1` would read as malformed.
@@ -107,9 +108,12 @@ handler, so no run context yet (ADR-113, step 3). Input port per D5 (P3). Decodi
 `graph-index/component.go:107`). Keys: `ports`, and `query_timeout_ms` replacing `query_timeout`, whose advertised
 `"5s"` the pin refused (P1); default 15000, above ingest's 10 s budget on `batch` and `prefix`
 (`graph-ingest/query.go:109,:234`; gh#830), inside natsclient's 30 s handler budget (`entityByAlias`'s two hops can
-reach it, still transient). This cures one hop; a caller's own shorter timeout still fires, loudly. Keys the pin
-ignored refuse at boot (`AGENTS.md` § 1). No test hook, no requester interface (S5, S21). A forward counts its
-request, and an error only when no answer arrived (a refusal is an answer). *Proof:* lifecycle suite;
+reach it, still transient). `query_timeout_ms` and the handler budget are deadlines on the wait for a reply; a broker
+that has stopped reading can hold a request's write past both (ADR-112, "Time"), which nothing here adds to. This
+cures one hop; a caller's own shorter timeout still fires, loudly. Keys the pin ignored refuse at boot (`AGENTS.md`
+§ 1). No test hook, no requester interface (S5, S21). Every verb counts its request once, and one
+error when graph-query itself refuses because no usable answer arrived: no answer, or a broken reply. A responder's
+refusal and a caller's bad request count none. *Proof:* lifecycle suite;
 `TestGraphQueryServesExactlyTheDeclaredVerbs`; `TestUnknownConfigKeyIsRefused`; `TestQueryTimeoutIsRead`.
 
 ## Scope

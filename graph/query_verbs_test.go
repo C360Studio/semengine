@@ -17,8 +17,9 @@ import (
 func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	// The marks are literals per verb, read from what each handler replies with
 	// (graph-transport-boundary, "The verb table declares each reply's shape"):
-	// graph-ingest's replies are bare, graph-index's are enveloped, and a forward
-	// answers as the verb it forwards to.
+	// graph-ingest's replies are bare, graph-index's are enveloped, a forward
+	// answers as the verb it forwards to, and the two verbs graph-query composes
+	// from an index reply are enveloped (design D1).
 	want := []QueryVerb{
 		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
@@ -50,6 +51,10 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
 		{Name: "byName", Subject: "graph.query.byName", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "entityByAlias", Subject: "graph.query.entityByAlias", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
+		{Name: "relationships", Subject: "graph.query.relationships", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[[]RelationshipEdge]()},
 	}
 
 	if ResponderGraphIngest != "graph-ingest" || ResponderGraphIndex != "graph-index" || ResponderGraphQuery != "graph-query" {

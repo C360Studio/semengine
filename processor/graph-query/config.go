@@ -22,8 +22,10 @@ const maxQueryTimeoutMs = math.MaxInt64 / int64(time.Millisecond)
 // refused, naming the key.
 type Config struct {
 	Ports *component.PortConfig `json:"ports" schema:"type:ports,description:The one required graph_queries input,category:basic"`
-	// QueryTimeoutMs bounds each downstream request, in milliseconds; 0 means the default, 15000.
-	QueryTimeoutMs int `json:"query_timeout_ms,omitempty" schema:"type:int,description:Bound on each downstream request in milliseconds,default:15000,category:basic"`
+	// QueryTimeoutMs is the deadline on the reply to each downstream request, in milliseconds; 0 means
+	// the default, 15000. It does not end a wait to write to a broker that has stopped reading
+	// (ADR-112, "Time").
+	QueryTimeoutMs int `json:"query_timeout_ms,omitempty" schema:"type:int,description:Deadline on the reply to each downstream request in milliseconds; a blocked write can outlast it (ADR-112),default:15000,category:basic"`
 }
 
 // queriesPort is the one input graph-query serves.

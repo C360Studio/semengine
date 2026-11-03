@@ -43,6 +43,21 @@ func forwardRows(t *testing.T) []forward {
 	return rows
 }
 
+// everyVerbRequest is a request all six verbs accept: a forward does not read it, and each composed
+// verb reads its own keys.
+var everyVerbRequest = []byte(`{"alias":"sn-1","entity_id":"c360.test.query.system.drone.001","direction":"outgoing"}`)
+
+// declaredRows is every verb graph-query serves, with the row its first downstream request goes to
+// when it is sent everyVerbRequest: the four forwards, then entityByAlias and relationships. The
+// tests of what a forward does with bytes keep to forwardRows, since the other two read theirs.
+func declaredRows(t *testing.T) []forward {
+	t.Helper()
+	return append(forwardRows(t),
+		forward{verbRow(t, graph.ResponderGraphQuery, "entityByAlias"), verbRow(t, graph.ResponderGraphIndex, "alias")},
+		forward{verbRow(t, graph.ResponderGraphQuery, "relationships"), verbRow(t, graph.ResponderGraphIndex, "outgoing")},
+	)
+}
+
 func verbRow(t *testing.T, responder, name string) graph.QueryVerb {
 	t.Helper()
 	for _, verb := range graph.QueryVerbs() {
@@ -235,9 +250,9 @@ func TestForwardCarriesTheRequestContext(t *testing.T) {
 	}
 }
 
-// TestHandlerBudgetEndsAForward: natsclient's budget on a request handler ends the forward's
-// downstream request, however high query_timeout_ms is, and the caller gets graph-query's transient
-// refusal. A forward under a context the budget does not end would hold until the stub lets go. The
+// TestHandlerBudgetEndsAForward: on every verb, natsclient's budget on a request handler ends the wait
+// for the downstream reply, however high query_timeout_ms is, and the caller gets graph-query's
+// transient refusal. A forward under a context the budget does not end would hold until the stub lets go. The
 // refusal counts as a request with no answer. No responders would refuse at once, so the elapsed
 // time also shows the stub was there and the budget ended the wait.
 func TestHandlerBudgetEndsAForward(t *testing.T) {
@@ -246,37 +261,38 @@ func TestHandlerBudgetEndsAForward(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{"query_timeout_ms": 600000}`)
 
-	f := forwardRows(t)[0]
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
-	serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
-		<-release
-		return nil, nil
-	})
+	for i, f := range declaredRows(t) {
+		serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
+			<-release
+			return nil, nil
+		})
 
-	// Own deadline: the deadline is the behaviour under test. Far above the budget and below
-	// query_timeout_ms, so a forward the budget did not end leaves this caller with a transport
-	// timeout, which carries no class, rather than holding until the stub is released.
-	const callerTimeout = 10 * time.Second
-	began := time.Now()
-	reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), callerTimeout)
-	elapsed := time.Since(began)
-	if err == nil {
-		t.Fatalf("a downstream verb that never replies gave the success %q", reply)
-	}
-	got := refusalOf(t, err)
-	if got.Class != errs.ErrorTransient || got.Code != graph.ErrorCodeInternal {
-		t.Errorf("class, code = %v, %q, want transient, %q", got.Class, got.Code, graph.ErrorCodeInternal)
-	}
-	if !strings.Contains(err.Error(), f.downstream.Subject) {
-		t.Errorf("refusal %q does not name %s", err, f.downstream.Subject)
-	}
-	if elapsed < budget {
-		t.Errorf("refused after %v, before the handler budget %v", elapsed, budget)
-	}
-	// The handler counts before it returns, so before the reply above.
-	if got := c.Health().ErrorCount; got != 1 {
-		t.Errorf("ErrorCount = %d after one request the budget ended, want 1", got)
+		// Own deadline: the deadline is the behaviour under test. Far above the budget and below
+		// query_timeout_ms, so a forward the budget did not end leaves this caller with a transport
+		// timeout, which carries no class, rather than holding until the stub is released.
+		const callerTimeout = 10 * time.Second
+		began := time.Now()
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, callerTimeout)
+		elapsed := time.Since(began)
+		if err == nil {
+			t.Fatalf("%s: a downstream verb that never replies gave the success %q", f.verb.Name, reply)
+		}
+		got := refusalOf(t, err)
+		if got.Class != errs.ErrorTransient || got.Code != graph.ErrorCodeInternal {
+			t.Errorf("%s: class, code = %v, %q, want transient, %q", f.verb.Name, got.Class, got.Code, graph.ErrorCodeInternal)
+		}
+		if !strings.Contains(err.Error(), f.downstream.Subject) {
+			t.Errorf("%s: refusal %q does not name %s", f.verb.Name, err, f.downstream.Subject)
+		}
+		if elapsed < budget {
+			t.Errorf("%s: refused after %v, before the handler budget %v", f.verb.Name, elapsed, budget)
+		}
+		// The handler counts before it returns, so before the reply above.
+		if got := c.Health().ErrorCount; got != i+1 {
+			t.Errorf("%s: ErrorCount = %d after %d requests the budget ended, want %d", f.verb.Name, got, i+1, i+1)
+		}
 	}
 }
 
@@ -347,7 +363,7 @@ func TestForwardCountsRequestsAndUnansweredOnes(t *testing.T) {
 	check("refused by the responder")
 }
 
-// TestForwardedRefusalKeepsClassCodeDetail: each forward returns a downstream refusal with its class,
+// TestForwardedRefusalKeepsClassCodeDetail: each verb returns a refusal from its first downstream verb with its class,
 // code, detail and message as the downstream verb gave them, whatever the class, coded or not.
 func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 	cases := []struct {
@@ -387,11 +403,11 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			client := fixtureClient(t)
 			startComponent(t, client, `{}`)
-			for _, f := range forwardRows(t) {
+			for _, f := range declaredRows(t) {
 				serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
 					return nil, tc.refusal
 				})
-				reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), requestTimeout)
+				reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, requestTimeout)
 				if err == nil {
 					t.Fatalf("%s: refusal arrived as the success %q", f.verb.Name, reply)
 				}
@@ -416,8 +432,8 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 func TestNoRespondersIsTransient(t *testing.T) {
 	client := fixtureClient(t)
 	startComponent(t, client, `{}`)
-	for _, f := range forwardRows(t) {
-		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), requestTimeout)
+	for _, f := range declaredRows(t) {
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, requestTimeout)
 		if err == nil {
 			t.Fatalf("%s with no downstream responder succeeded: %q", f.verb.Name, reply)
 		}
@@ -445,7 +461,7 @@ func TestQueryTimeoutIsRead(t *testing.T) {
 
 	release := make(chan struct{})
 	t.Cleanup(func() { close(release) }) // before the Stop and the fixture's Close
-	for _, f := range forwardRows(t) {
+	for _, f := range declaredRows(t) {
 		serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
 			<-release
 			return nil, nil
@@ -454,9 +470,9 @@ func TestQueryTimeoutIsRead(t *testing.T) {
 	// The caller's timeout is itself the behaviour under test: below the 15 s default, so a forward
 	// that did not read the configuration fails here rather than answering in time.
 	const callerTimeout = 10 * time.Second
-	for _, f := range forwardRows(t) {
+	for _, f := range declaredRows(t) {
 		began := time.Now()
-		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), callerTimeout)
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, callerTimeout)
 		elapsed := time.Since(began)
 		if err == nil {
 			t.Fatalf("%s: a downstream verb that never replies gave the success %q", f.verb.Name, reply)
@@ -485,17 +501,14 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 	other := natsfixture.Open(t, url, openClient) // a connection graph-query does not use
 	c := startComponent(t, client, `{}`)
 
-	rows := forwardRows(t)
+	rows := declaredRows(t)
 	var declared []string
 	for _, verb := range graph.QueryVerbs() {
 		if verb.Responder == graph.ResponderGraphQuery {
 			declared = append(declared, verb.Name)
 		}
 	}
-	var want []string
-	for _, f := range rows {
-		want = append(want, f.verb.Name)
-	}
+	want := []string{"entity", "batch", "prefix", "byName", "entityByAlias", "relationships"}
 	if !reflect.DeepEqual(declared, want) {
 		t.Fatalf("the verb table declares %v for graph-query, want %v", declared, want)
 	}
@@ -505,7 +518,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 
 	// With nothing downstream, only graph-query can answer, and it refuses naming the downstream row.
 	for _, f := range rows {
-		_, err := other.RequestClassified(t.Context(), f.verb.Subject, []byte(`{}`), requestTimeout)
+		_, err := other.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, requestTimeout)
 		if err == nil || natsclient.IsNoResponders(err) {
 			t.Errorf("%s = %v, want graph-query's refusal", f.verb.Subject, err)
 			continue

@@ -56,13 +56,23 @@ subject. A downstream request that times out SHALL stay transient.
 
 The request SHALL be `alias` with optional `min_revision`. A held alias SHALL read its holder. An alias with no holder
 SHALL read the input as an entity ID when it is a valid one. A success SHALL be a `graph.QueryResponse` from producer
-`graph-query` whose `data` is the entity verb's reply bytes, a `graph.ExactEntity`, and whose `indexed_revision` is
-the alias reply's. An alias reply that does not decode or names no `producer` SHALL be refused transient `internal`.
+`graph-query` whose `data` is the entity verb's JSON as it came, a `graph.ExactEntity` not re-decoded into a struct,
+and whose `indexed_revision` is the alias reply's.
 
 #### Scenario: An ID given to the alias verb
 
 - **WHEN** a query names a valid entity ID that no entity holds as an alias, and that entity exists
 - **THEN** the reply's `data` is that entity and `indexed_revision` is the alias reply's (`TestEntityByAlias`)
+
+### Requirement: A broken alias or entity reply is refused
+
+An alias reply that does not decode or names no `producer`, and an entity reply that is not JSON, SHALL be refused
+transient `internal`, naming the subject.
+
+#### Scenario: An entity reply that is not JSON
+
+- **WHEN** the alias verb names a holder and the entity verb replies with bytes that are not JSON
+- **THEN** the caller receives a transient `internal` refusal naming the entity verb's subject (`TestEntityByAlias`)
 
 ### Requirement: An unknown alias that is no entity ID is not found
 
@@ -124,21 +134,37 @@ M SHALL carry `indexed_revision` at or above M.
 - **THEN** the caller receives `revision_not_reached` with its class and detail
   (`TestMinRevisionRefusalThroughGraphQuery`)
 
-### Requirement: Forwards are counted for operators
+### Requirement: Requests are counted for operators
 
-A forward SHALL count its request in `DataFlow` on entry and SHALL count an error in `Health` only when no answer
-arrived; a responder's refusal is an answer and SHALL NOT count as an error.
+Every verb SHALL count its request once in `DataFlow` on entry and SHALL count one error in `Health` whenever
+`graph-query` itself refuses because no usable answer arrived: a downstream request got no answer, or a reply that
+`entityByAlias` or `relationships` reads does not decode, names no `producer` or is not JSON. A responder's classified
+refusal and a caller's `invalid_request` SHALL NOT count as an error.
 
 #### Scenario: An unanswered forward and a refusal
 
 - **WHEN** one forward is refused by its responder and another finds no responder
 - **THEN** `DataFlow` shows both requests and `Health` shows one error (`TestForwardCountsRequestsAndUnansweredOnes`)
 
+#### Scenario: A verb that makes two requests
+
+- **WHEN** `entityByAlias` reads a holder through the alias and entity verbs, and later finds no responder on the
+  entity verb
+- **THEN** each request to `entityByAlias` is one in `DataFlow`, and only the second is an error in `Health`
+  (`TestComposedVerbsCountAsForwardsDo`)
+
+#### Scenario: A broken reply
+
+- **WHEN** an alias or index reply does not decode or names no `producer`, or an entity reply is not JSON
+- **THEN** the request is one error in `Health`, while a responder's refusal and a caller's `invalid_request` add none
+  (`TestComposedVerbsCountAsForwardsDo`)
+
 ### Requirement: Configuration is strict and read
 
-Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL bound each downstream request, default
-15000. A configuration with no ports SHALL take the default required `graph_queries` NATS-request port on
-`graph.query.*`, and any other input port shape SHALL be refused.
+Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL be the deadline on the wait for each
+downstream reply, default 15000; like the handler's context, it does not end a wait to write to a broker that has
+stopped reading (ADR-112, "Time"). A configuration with no ports SHALL take the default required `graph_queries`
+NATS-request port on `graph.query.*`, and any other input port shape SHALL be refused.
 
 #### Scenario: A key the pin ignored
 

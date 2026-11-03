@@ -30,7 +30,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
   reads the table directly as graph-index does, the handler lookup is a pure helper, the suite runs `Component.Start`
   and fails through a real failure, and `TestStartThroughTheTable` sends a real request after `Start` has ended, shown
   to fail with `subscribeQueries` emptied.
-- [ ] 3.3 `entityByAlias` (ADR-114) and `relationships`, with their table rows. Premise: P5, P5b,
+- [x] 3.3 `entityByAlias` (ADR-114) and `relationships`, with their table rows. Premise: P5, P5b,
   `graph-index/query.go:272`, `graph-ingest/query.go:79-82` (D2, D4). Check: `TestEntityByAlias`, on real ingest and
   index except the rows D4 names, `TestRelationshipsEnvelopeKeepsIndexRevision`, `TestRelationshipsRowKeys`,
   `TestRelationshipsRefusesUnknownDirection`, `TestRelationshipsRefusesBrokenIndexReply`, each failing case shown to

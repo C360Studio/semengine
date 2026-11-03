@@ -15,7 +15,10 @@
 //     whose subject filter could capture a graph request subject
 //     (reserved_subject_capture), and reports every NATS, NATS-request or
 //     JetStream port subject, in either lane, and every explicit stream
-//     subject that fails the subject grammar (malformed_subject).
+//     subject that fails the subject grammar (malformed_subject). It refuses
+//     a NATS-request input overlapping a subject of graph.QueryVerbs() that is
+//     not its factory's to answer, or that an earlier instance of the responder
+//     already declares (request_subject_conflict); it sees declared ports only.
 //     Service's component manager runs Analyze over what was admitted at boot
 //     and refuses to boot on an error-severity finding (ADR-100 decision 3).
 //

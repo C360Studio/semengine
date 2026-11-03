@@ -1,0 +1,97 @@
+//go:build integration
+
+package graphingest
+
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/c360studio/semengine/graph"
+)
+
+func body(id string) []byte {
+	pad := strings.Repeat("x", 2000)
+	return []byte(`{"id":"` + id + `","triples":[{"subject":"` + id + `","predicate":"dc.terms.description","object":"` + pad + `","source":"probe","timestamp":"2026-11-02T00:00:00Z","confidence":1}]}`)
+}
+
+func TestPrefixCostProbe(t *testing.T) {
+	client, _ := startGraphIngestOnFixture(t)
+	ctx := t.Context()
+	js, err := client.JetStream()
+	if err != nil { t.Fatal(err) }
+	kv, err := js.KeyValue(ctx, graph.BucketEntityStates)
+	if err != nil { t.Fatal(err) }
+	seed := func(prefix string, from, to int) {
+		var wg sync.WaitGroup
+		ch := make(chan int)
+		for w := 0; w < 64; w++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				for i := range ch {
+					id := fmt.Sprintf("%s.e%07d", prefix, i)
+					if _, err := kv.Put(ctx, id, body(id)); err != nil { t.Error(err); return }
+				}
+			}()
+		}
+		for i := from; i < to; i++ { ch <- i }
+		close(ch); wg.Wait()
+	}
+	page := func(prefix, cursor string) (int, string, time.Duration) {
+		b, _ := json.Marshal(graph.PrefixQueryRequest{Prefix: prefix, Limit: 1000, Cursor: cursor})
+		s := time.Now()
+		r, err := client.RequestClassified(ctx, "graph.ingest.query.prefix", b, 120*time.Second)
+		d := time.Since(s)
+		if err != nil { t.Fatal(err) }
+		var resp graph.PrefixQueryResponse
+		if err := json.Unmarshal(r, &resp); err != nil { t.Fatal(err) }
+		return len(resp.Entities), resp.NextCursor, d
+	}
+	measure := func(total int) {
+		for _, g := range []struct{ name, prefix string }{{"small(1k)", "acme.ops.robotics.small.drone"}, {"mid(10k)", "acme.ops.robotics.mid.drone"}} {
+			var firsts []time.Duration
+			for i := 0; i < 3; i++ { n, _, d := page(g.prefix, ""); _ = n; firsts = append(firsts, d) }
+			pages, ents := 0, 0
+			cur := ""
+			s := time.Now()
+			for { n, nc, _ := page(g.prefix, cur); pages++; ents += n; if nc == "" { break }; cur = nc }
+			fmt.Printf("COST total=%d group=%s firstPage=%v walk pages=%d entities=%d took=%v\n", total, g.name, firsts, pages, ents, time.Since(s))
+		}
+		s := time.Now()
+		n, _, _ := page("", "")
+		fmt.Printf("COST total=%d emptyPrefix page=%d took=%v\n", total, n, time.Since(s))
+	}
+	count := func() { st, err := kv.Status(ctx); if err != nil { t.Fatal(err) }; fmt.Println("COST bucket values", st.Values(), "bytes", st.Bytes()) }
+	s := time.Now()
+	seed("acme.ops.robotics.small.drone", 0, 1000)
+	seed("acme.ops.robotics.mid.drone", 0, 10000)
+	seed("acme.ops.robotics.rest.drone", 0, 89000)
+	fmt.Println("COST seeded 100000 in", time.Since(s)); count()
+	measure(100000)
+	s = time.Now()
+	seed("acme.ops.robotics.big.drone", 0, 100000)
+	seed("acme.ops.robotics.rest.drone", 89000, 889000)
+	fmt.Println("COST seeded 1000000 in", time.Since(s)); count()
+	measure(1000000)
+	bounded := func(label, prefix string, maxPages int) {
+		pages, ents, cur := 0, 0, ""
+		var ds []time.Duration
+		w := time.Now()
+		for pages < maxPages { n, nc, d := page(prefix, cur); pages++; ents += n; if pages == 1 || pages == maxPages { ds = append(ds, d) }; if nc == "" { break }; cur = nc }
+		fmt.Printf("COST bounded %s pages=%d entities=%d took=%v firstLast=%v\n", label, pages, ents, time.Since(w), ds)
+	}
+	bounded("10k-of-100k-group", "acme.ops.robotics.big.drone", 23)
+	bounded("10k-of-1M-deployment", "acme.ops", 23)
+	var pagesT []time.Duration
+	pages, ents, cur := 0, 0, ""
+	w := time.Now()
+	for { n, nc, d := page("acme.ops.robotics.big.drone", cur); pages++; ents += n; if pages%50 == 1 { pagesT = append(pagesT, d) }; if nc == "" { break }; cur = nc }
+	fmt.Printf("COST big(100k) walk pages=%d entities=%d took=%v sampledPages=%v\n", pages, ents, time.Since(w), pagesT)
+	w2 := time.Now(); p2, cur2 := 0, ""
+	for { _, nc, _ := page("acme.ops.robotics.big.drone", cur2); p2++; if nc == "" { break }; cur2 = nc }
+	fmt.Printf("COST big(100k) second walk pages=%d took=%v\n", p2, time.Since(w2))
+}

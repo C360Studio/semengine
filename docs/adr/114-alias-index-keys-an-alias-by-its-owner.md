@@ -110,7 +110,11 @@ allows dots, so its arity varies (`natsclient/kv_key_contract.go:15-17`), and `"
 - **graph-query (change 4 PR 9)** must stop swallowing alias-verb errors. At the pin `entityByAlias` falls through to
   treating the input as an ID on any error (pin `query.go:166-177`) and the resolver returns "no match" (pin
   `entity_resolver.go:62-65`). PR 9 propagates `alias_ambiguous`, `index_not_ready` and `internal` as classified
-  refusals; #405 already requires that of the resolver. Not found keeps falling through.
+  refusals; #405 already requires that of the resolver. Not found falls through only for a valid entity ID: with no
+  holder, graph-query reads the input as an ID when it passes `ValidateEntityID`, and answers `entity_not_found` (class
+  invalid) for an input that does not, without a second request, since graph-ingest would refuse such a non-ID as
+  `invalid_request` and an unknown alias would read as malformed. Amended by change
+  `setup-04a-04-graph-roots-graph-query` (design D4).
 - **Limit, not changed here:** graph-index reads the alias predicate set once, in `startIndexPool`
   (`index.go:85-87`); a predicate registered after Start is not indexed until restart. No rule or test orders
   vocabulary registration before Start (AGENTS.md § 1's registration rule covers payloads and components, not

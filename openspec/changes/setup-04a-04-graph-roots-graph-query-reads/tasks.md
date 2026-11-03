@@ -48,7 +48,7 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   and pattern paths and the exact-ID fallback; the byte fit counts it. Premise:
   `processor/graph-ingest/query.go:280-298`, `:355` (D5). Check: `TestPrefixPageNamesItsTotal` on real graph-ingest
   (first page, later page, byte-trimmed page, empty group), shown to fail with the cursor applied first; the existing
-  fit tests stay exact, and tests asserting `{"entities":null}` gain the key. Ledger: the `graph` and
+  fit tests stay exact, and prefix tests asserting `{"entities":null}` gain the key. Ledger: the `graph` and
   `processor/graph-ingest` rows name `total`. MIGRATION: the additive key; `processor/graph-query/MIGRATION.md`'s
   `batch`, `prefix`, `byName` row and SemSource's "bare reply, unchanged" line say `prefix` gains it.
 - [ ] 4.2 `hierarchyStats` with its row, `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`, and the one

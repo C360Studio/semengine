@@ -103,7 +103,7 @@ a held stub the test releases.
 verb reads one page at the maximum limit, IDs only, passing a request `cursor` unchanged. `total_entities` is the
 page's `total`: the length of the key listing, the whole group as listed, before cursor and limit. A listing under
 concurrent overwrites can repeat some keys and omit as many (`natsclient/kv.go:648-693`, the reviewer's probe at
-nats.go v1.55.0; being filed), so `total` keeps its length and a page can repeat one entity and miss another.
+nats.go v1.55.0; #512), so `total` keeps its length and a page can repeat one entity and miss another.
 `entities_scanned` is the rows read, and type and child counts are a sample of the lexically smallest IDs; `truncated`
 is true exactly when `next_cursor` is set. A caller wanting the rest sends the cursor, paying one scan per page.
 `entity_sample_limit` goes: its default 2000 exceeds the page, and the scan is the same. One law on literal seeds, no

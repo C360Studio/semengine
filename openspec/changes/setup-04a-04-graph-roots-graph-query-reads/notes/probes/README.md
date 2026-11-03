@@ -29,7 +29,7 @@ polls with a sleep, which a test of this tree may not. Real graph-ingest and gra
 entities, one client, one run, an otherwise idle laptop. It says nothing about load or real entity shapes.
 
 ```bash
-tree="$(mktemp -d)"; git archive b17886a | tar -x -C "$tree"
+tree="$(mktemp -d)"; git -C "$(git rev-parse --show-toplevel)" archive b17886a | tar -x -C "$tree"
 cp hop-cost-probe.go.txt "$tree/processor/graph-query/zz_hopcost_integration_test.go"
 cd "$tree"
 go test -tags integration -run '^TestHopCostProbe$' -v -count=1 -timeout 8m ./processor/graph-query/
@@ -54,7 +54,7 @@ is the default of one index worker, not a defect: see the reviewer's figures bel
 log kept. `RATE_WORKERS`, `RATE_N` and `RATE_LIMIT_S` set the catch-up test's workers, entities and limit.
 
 ```bash
-tree="$(mktemp -d)"; git archive 26c35c1 | tar -x -C "$tree"
+tree="$(mktemp -d)"; git -C "$(git rev-parse --show-toplevel)" archive 26c35c1 | tar -x -C "$tree"
 cp review-reprobe.go.txt "$tree/processor/graph-query/zz_review_integration_test.go"
 cd "$tree"
 RATE_WORKERS=1 RATE_N=3000 go test -tags integration -run '^TestReview' -v -count=1 -timeout 20m ./processor/graph-query/

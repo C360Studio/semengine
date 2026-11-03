@@ -36,8 +36,8 @@ a canonical predicate; a `direction` other than `outgoing`, `incoming` or `both`
 A success SHALL be a `graph.QueryResponse` from producer `graph-query` whose `data` is a `graph.PathSearchData`.
 `entities` SHALL hold at most `max_nodes` rows, each entity once, the start first at depth 0, each `depth` the shortest
 distance and at most `max_depth`. `edges[i]` SHALL be the edge that first reached `entities[i+1]`, joining it to an
-earlier entity. Neighbours SHALL be ordered by entity, predicate, then outgoing before incoming, and deduplicated before
-the limit.
+earlier entity. Neighbours SHALL be ordered by entity, predicate, then outgoing before incoming, and deduplicated
+before the limit.
 
 #### Scenario: Generated graphs
 
@@ -57,8 +57,7 @@ Each row of `edges` SHALL name the edge in the direction the graph holds it, whi
 ### Requirement: Path search truncation is exact
 
 `truncated` SHALL be true exactly when the walk, as read at the hops, found an unseen entity and left it out. When it
-is false, `entities`
-SHALL be every entity within `max_depth` under `direction` and `predicates`.
+is false, `entities` SHALL be every entity within `max_depth` under `direction` and `predicates`.
 
 #### Scenario: The limit meets the graph exactly
 
@@ -69,8 +68,8 @@ SHALL be every entity within `max_depth` under `direction` and `predicates`.
 ### Requirement: A failed read ends a path search
 
 `pathSearch` SHALL read the start through the entity verb first. Any refusal or broken reply, on any hop, SHALL end the
-walk: a refusal reaches the caller with class, code and detail, a broken reply is transient `internal`, and no partial
-answer is returned. Every hop SHALL carry the request's `min_revision`.
+walk: a refusal reaches the caller with class, code and detail, its message naming the hop's entity, a broken reply is
+transient `internal`, and no partial answer is returned. Every hop SHALL carry the request's `min_revision`.
 
 #### Scenario: A start that does not exist
 
@@ -80,7 +79,8 @@ answer is returned. Every hop SHALL carry the request's `min_revision`.
 #### Scenario: A hub over the reply limit
 
 - **WHEN** a hop's reply is too large for the connection
-- **THEN** the caller receives that `response_too_large` refusal, whole (`TestPathSearchRefusedMidWalk`)
+- **THEN** the caller receives that `response_too_large` refusal, whole, naming the entity
+  (`TestPathSearchRefusedMidWalk`)
 
 #### Scenario: A hop refused mid-walk
 
@@ -89,9 +89,9 @@ answer is returned. Every hop SHALL carry the request's `min_revision`.
 
 ### Requirement: A request's cost is bounded
 
-`pathSearch` SHALL make at most 1 + `max_nodes` downstream requests, or 1 + 2 × `max_nodes` for `both`. `hierarchyStats`
-SHALL make exactly one prefix request, and `summary` one prefix request and, unless predicates are excluded, one
-`predicateList` request first. A long request on one verb SHALL NOT stop another verb answering.
+`pathSearch` SHALL make at most 1 + `max_nodes` downstream requests, or 1 + 2 × `max_nodes` for `both`.
+`hierarchyStats` SHALL make exactly one prefix request, and `summary` one prefix request and, unless predicates are
+excluded, one `predicateList` request first. A long request on one verb SHALL NOT stop another verb answering.
 
 #### Scenario: Counting the requests
 
@@ -105,11 +105,11 @@ SHALL make exactly one prefix request, and `summary` one prefix request and, unl
 
 ### Requirement: Counts declare a partial page
 
-`hierarchyStats` and `summary` SHALL read one prefix page, IDs only, sending the request's `cursor` unchanged, and SHALL
-decode their request strictly. `total_entities` SHALL be the page's `total`; `entities_scanned` the rows on
-that page; `next_cursor` the page's; and
-`truncated` SHALL be true exactly when `next_cursor` is set. A page with no `entities` key, or an ID that does not
-parse, SHALL be refused transient `internal`.
+`hierarchyStats` and `summary` SHALL read one prefix page, IDs only, sending the request's `cursor` unchanged, and
+SHALL decode their request strictly. `total_entities` SHALL be the page's `total`, the group as listed;
+`entities_scanned` the rows on that page; `next_cursor` the page's; and `truncated` SHALL be true exactly when
+`next_cursor` is set. A page with no `entities` key, or an ID that does not parse, SHALL be refused transient
+`internal`.
 
 #### Scenario: A group larger than a page
 
@@ -133,9 +133,8 @@ parse, SHALL be refused transient `internal`.
 
 `hierarchyStats` SHALL take `prefix`, `cursor` and `min_revision`, refusing an invalid non-empty prefix with the
 validator's refusal. `data` SHALL be `graph.HierarchyStatsData`: `prefix`, `total_entities`, `entities_scanned`,
-`truncated`,
-`next_cursor` when set, and `children`, each `{prefix, count}`, by count descending then prefix. An entity whose ID is
-the prefix SHALL count in `entities_scanned` and in no child.
+`truncated`, `next_cursor` when set, and `children`, each `{prefix, count}`, by count descending then prefix. An entity
+whose ID is the prefix SHALL count in `entities_scanned` and in no child.
 
 #### Scenario: Keys on the wire
 
@@ -145,9 +144,21 @@ the prefix SHALL count in `entities_scanned` and in no child.
 ### Requirement: A summary has its predicates or says why not
 
 `summary` SHALL take `prefix`, `exclude_predicates`, `examples_per_type`, `cursor` and `min_revision`; a negative
-`examples_per_type` SHALL be `invalid_request`, and 0 SHALL mean 2. `data` SHALL be `graph.SummaryData`. Unless excluded,
-`summary` SHALL ask `predicateList` first and return its refusal unchanged, without reading a page. `predicates` SHALL be
-`null` when excluded and `[]` when there are none.
+`examples_per_type` SHALL be `invalid_request`, and 0 SHALL mean 2. `data` SHALL be `graph.SummaryData`. Unless
+excluded, `summary` SHALL ask `predicateList` first and return its refusal unchanged, without reading a page. A
+`prefix` without `exclude_predicates` SHALL be `invalid_request` naming both. `predicates` SHALL be `null` when
+excluded and `[]` when there are none.
+
+#### Scenario: One group
+
+- **WHEN** two groups hold entities and a caller sends the first's `prefix` with `exclude_predicates`
+- **THEN** `data` compares equal to the literal JSON of that group alone (`TestSummaryPrefixReadsOneGroup`)
+
+#### Scenario: A prefix with predicates
+
+- **WHEN** a caller sends `prefix` without `exclude_predicates`
+- **THEN** the caller receives `invalid_request` and no downstream verb a request
+  (`TestSummaryRefusesPrefixWithPredicates`)
 
 #### Scenario: The three states of predicates
 
@@ -176,8 +187,7 @@ above M.
 
 #### Scenario: Reading a write back
 
-- **WHEN** a caller writes entity E, receives `kv_revision` W, and requests `relationships` for E with `min_revision`
-  W
+- **WHEN** a caller writes entity E, receives `kv_revision` W, and requests `relationships` for E with `min_revision` W
 - **THEN** it receives a reply with `indexed_revision` at or above W reflecting the write, or a `revision_not_reached`
   refusal
 - **AND** never a success with `indexed_revision` below W (`TestReadYourWrites`)
@@ -197,9 +207,9 @@ above M.
 ### Requirement: Requests are counted for operators
 
 Every verb SHALL count its request once in `DataFlow` on entry and SHALL count one error in `Health` whenever
-`graph-query` itself refuses because no usable answer arrived: a downstream request got no answer, or a reply a composed
-verb reads does not decode, names no `producer` or is not JSON, or a prefix page is broken. A responder's classified
-refusal and a caller's `invalid_request` SHALL NOT count as an error.
+`graph-query` itself refuses because no usable answer arrived: a downstream request got no answer, or a reply a
+composed verb reads does not decode, names no `producer` or is not JSON, or a prefix page is broken. A responder's
+classified refusal and a caller's `invalid_request` SHALL NOT count as an error.
 
 #### Scenario: An unanswered forward and a refusal
 

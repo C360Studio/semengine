@@ -34,13 +34,13 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   taking the hop as an argument, also what production calls, with no test-only path. Premise: P7-P12,
   `pin:processor/graph-query/pathrag.go` (D2, D3, D4). Check: `TestPathSearchRefusesBadRequests`,
   `TestPathSearchOnARealIndex`, `TestPathSearchTruncatedIsExact`, `TestPathSearchMatchesTheModel`,
-  `TestPathSearchRevisionIsTheSmallest`, `TestPathSearchRefusedMidWalk`, `TestPathSearchRequestsAreBounded`,
-  `TestSlowPathSearchLeavesOtherVerbsAnswering`, the two new cases of `TestMinRevisionRefusalThroughGraphQuery` and
-  `TestComposedVerbsCountAsForwardsDo`; the exactness and limit checks shown to fail. Carries the behaviours of
-  `pathrag_test` and `TestComponent_PathSearch_*` (`inventory.md` § 9); their mock goes. MIGRATION: request keys, the
-  reply, required `max_depth` and `direction`, dropped `timeout`, `include_siblings`, `max_paths`, `type`, `score`;
-  `max_nodes` now counts the start (P9: the pin's did not); a decoder of `paths` reads empty, so it goes under "The
-  changes that fail silently".
+  `TestPathSearchRevisionIsTheSmallest`, `TestPathSearchRefusedMidWalk` (message names the entity),
+  `TestPathSearchRequestsAreBounded`, `TestSlowPathSearchLeavesOtherVerbsAnswering`, the two new cases of
+  `TestMinRevisionRefusalThroughGraphQuery` and `TestComposedVerbsCountAsForwardsDo`; the exactness and limit checks
+  shown to fail. Carries the behaviours of `pathrag_test` and `TestComponent_PathSearch_*` (`inventory.md` § 9); their
+  mock goes. MIGRATION: request keys, the reply, required `max_depth` and `direction`, dropped `timeout`,
+  `include_siblings`, `max_paths`, `type`, `score`; `max_nodes` now counts the start (P9: the pin's did not); a decoder
+  of `paths` reads empty, so it goes under "The changes that fail silently".
 
 ## 4. Counts
 
@@ -48,7 +48,9 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   and pattern paths and the exact-ID fallback; the byte fit counts it. Premise:
   `processor/graph-ingest/query.go:280-298`, `:355` (D5). Check: `TestPrefixPageNamesItsTotal` on real graph-ingest
   (first page, later page, byte-trimmed page, empty group), shown to fail with the cursor applied first; the existing
-  fit tests stay exact. MIGRATION: the additive key.
+  fit tests stay exact, and tests asserting `{"entities":null}` gain the key. Ledger: the `graph` and
+  `processor/graph-ingest` rows name `total`. MIGRATION: the additive key; `processor/graph-query/MIGRATION.md`'s
+  `batch`, `prefix`, `byName` row and SemSource's "bare reply, unchanged" line say `prefix` gains it.
 - [ ] 4.2 `hierarchyStats` with its row, `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`, and the one
   page read both count verbs share, IDs only. Premise: `pin:query.go:470-560`, P4,
   `processor/graph-ingest/query.go:280-346` (D4, D5, D7). Check: `TestHierarchyStatsDeclaresAPartialPage`,
@@ -60,13 +62,14 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   `entity_sample_limit`, `cursor`, `min_revision`, true `total_entities`, `entities_scanned`, `truncated`,
   `next_cursor`; `predicates` without `omitempty`; no `predicate_total`). Needs 4.2's page read. Premise:
   `graph/query_summary_types.go:21-104`, P4, `pin:summary.go:95-109` (D5, D6, D7). Check: `TestSummaryPredicates`,
-  `TestSummaryRefusesWhenPredicatesCannot`, `TestSummaryRefusesABrokenPredicateReply`, `summary`'s case of
-  `TestMinRevisionRefusalThroughGraphQuery`, `TestAuthorityOnlyAnswerClaimsNoRevision` (excluded case), a literal test
-  of type buckets in ADR-102 order carried from `summary_test`, with its `StillReturnsEntityFacet` case reversed. A PR
-  comment on #105 and #111 says which item landed. MIGRATION, under "The changes that fail silently" too:
-  `entity_sample_truncated` to `truncated`, where an old decoder reads false, "complete"; `total_entities` now the true
-  total; `include_predicates` to `exclude_predicates`, refused by name; `predicate_total` gone; a down index now
-  refuses.
+  `TestSummaryRefusesWhenPredicatesCannot`, `TestSummaryRefusesABrokenPredicateReply`,
+  `TestSummaryPrefixReadsOneGroup`, `TestSummaryRefusesPrefixWithPredicates`, the `prefix` field's doc saying why,
+  `summary`'s case of `TestMinRevisionRefusalThroughGraphQuery`, `TestAuthorityOnlyAnswerClaimsNoRevision` (excluded
+  case), a literal test of type buckets in ADR-102 order carried from `summary_test`, with its
+  `StillReturnsEntityFacet` case reversed. A PR comment on #105 and #111 says which item landed. MIGRATION, under "The
+  changes that fail silently" too: `entity_sample_truncated` to `truncated`, where an old decoder reads false,
+  "complete"; `total_entities` now the true total; `include_predicates` to `exclude_predicates`, refused by name;
+  `predicate_total` gone; a down index now refuses.
 
 ## 5. Records and guidance
 
@@ -83,5 +86,5 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 ## 6. Land
 
 - [ ] 6.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #511's body carries
-  `implemented-by:` and no closing keyword; `design.md`, "Scope", lists what stays open. Check: read
+  `implemented-by:` and no closing keyword; `inventory-delta.md`, "Open issues", lists what stays open. Check: read
   `closingIssuesReferences` back, empty.

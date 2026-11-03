@@ -59,19 +59,21 @@ breaks nobody; lowering does. *Proof:* `TestPathSearchRefusesBadRequests`, a tab
 
 ## D3. `pathSearch` reply and walk
 
-(a) The pin's full path per entity: 1,000 paths of 10 steps is 6 MB (P12). (b) **Each entity and edge once.** `data` is
-`graph.PathSearchData`: `entities` `[{entity_id, depth}]` in visit order, the start first; `edges`
+(a) The pin's full path per entity: 1,000 paths of 10 steps is 6 MB (P12), with `type` a constant and `score` a
+function of depth, and step 4 reads only IDs (`pin:graphrag.go:2590-2593`). (b) **Each entity and edge once.** `data`
+is `graph.PathSearchData`: `entities` `[{entity_id, depth}]` in visit order, the start first; `edges`
 `[graph.RelationshipEdge]`, where `edges[i]` first reached `entities[i+1]`; `truncated`. A path is the edges followed
 back. Enveloped (ruling 1). An edge says what the graph holds; the pin reports an incoming edge backwards (P8).
 
 Breadth first, so `depth` is the shortest distance. It reads `entity` for the start, then at each node below
 `max_depth` asks `outgoing`, `incoming` or both, each carrying `min_revision`. Neighbours are filtered, sorted by
 entity, predicate, then outgoing before incoming, and deduplicated before the limit (`AGENTS.md` § 2), so a truncated
-answer repeats against an unchanged graph. **Any refusal or broken reply ends the walk with that refusal, never a
-partial answer.** `truncated` is true exactly when an unseen entity was found and left out, as read at the hops; the
-pin says true when nothing was (P9). An edge may name an entity with no record. `indexed_revision` is the smallest
-among the hops. *Hubs, declared:* a hop over `max_payload` refuses the walk whole, as at the pin: `incoming` at 12,000
-edges fits, at 13,000 is `response_too_large`, class invalid, naming no entity, and longest IDs reach it near 3,500
+answer repeats against an unchanged graph. **Any refusal or broken reply ends the walk with that refusal, its message
+naming the hop's entity and its class, code and detail kept, never a partial answer.** `truncated` is true exactly when
+an unseen entity was found and left out, as read at the hops; the pin says true when nothing was (P9). An edge may name
+an entity with no record. `indexed_revision` is the smallest among the hops. *Hubs, declared:* a hop over `max_payload`
+refuses the walk whole, as at the pin (`pin:pathrag.go:290`), naming the entity so a caller can find the hub:
+`incoming` at 12,000 edges fits, at 13,000 is `response_too_large`, class invalid, and longest IDs reach it near 3,500
 (arithmetic). `predicates` filters after the hop. Real trigger, by reading: `enable_hierarchy` (default false) with a
 container over about 12,000 members.
 
@@ -86,7 +88,7 @@ for `TestPathSearchRevisionIsTheSmallest`, `TestPathSearchRefusedMidWalk`.
 | --- | --- | --- |
 | `pathSearch` | at most 1 + `max_nodes`, doubled for `both` | sparse nodes, two runs: 100: 0.4 s, `both` 0.9 to 1.2 s; 500: 1.8 s, `both` 4.5 to 6.2 s |
 | `hierarchyStats` | one page: one key scan of the group, up to 1,000 bodies | 20 ms at 10,000; 157 ms at 100,000; 1.8 to 2.7 s at 1,000,000 |
-| `summary` | `predicateList`, then one page of `prefix`, or of everything | a scan of `PREDICATE_INDEX`, 2.8 s at 1M keys, 8 s at 3M to 5M, one run, against graph-index's 10 s `listTimeout`; plus the page. Roughly 4 to 10 s at a million entities, near refusal; `exclude_predicates` is the way out |
+| `summary` | `predicateList`, then one page of everything; or, with `prefix`, one page of that group alone | a scan of `PREDICATE_INDEX`, 2.8 s at 1M keys, 8 s at 3M to 5M, one run, against graph-index's 10 s `listTimeout`; plus the page. Roughly 4 to 10 s at a million entities, near refusal; `exclude_predicates` is the way out |
 
 A request ends with the handler's 30 s budget, refused transient (`natsclient/request.go:32-40`). A reply over
 `max_payload` is `response_too_large` (`natsclient/request_response_bounds_integration_test.go:141`). natsclient reads
@@ -97,17 +99,22 @@ a held stub the test releases.
 
 ## D5. Counts: one page, declared (Q7(a), Fable ruling 2)
 
-(a) One page per request, as accepted. (b) A bounded walk, or (c) to the end: more scans, 36 to 53 s at 100,000. (d)
-`COMMUNITY_INDEX`: Q7(b), after change 7. (e) A new ID-count verb on graph-ingest: `owner-questions.md`, recommended
-not yet. (f) A true total on the `prefix` reply, read from the listing the handler already holds
-(`processor/graph-ingest/query.go:280-298`), no extra scan. (g) `prefix` on `summary`, so a large graph is not limited
-to its first groups. **(a) with (f) and (g),** both small; (f) touches a merged package, and comes out if the owner
-says so. Each verb reads one page at the maximum limit, IDs only, passing a request `cursor` unchanged.
-`total_entities` is now true: the page's `total`, every key listed, before the cursor. `entities_scanned` is the rows
-read, and the type and child counts are a sample of the group's lexically smallest IDs, as the doc says; `truncated` is
-true exactly when `next_cursor` is set. A caller wanting the rest sends the cursor, paying one scan per page.
-`entity_sample_limit` goes: its default 2000 exceeds the page, and the scan is the same. One law on literal seeds
-(pages sum to the total), no interacting inputs: examples suffice, no generated check.
+**One page per request, as accepted, plus (f) a true total and (g) `prefix` on `summary` limited to entities.** Each
+verb reads one page at the maximum limit, IDs only, passing a request `cursor` unchanged. `total_entities` is the
+page's `total`: the length of the key listing, the whole group as listed, before cursor and limit. A listing under
+concurrent overwrites can repeat some keys and omit as many (`natsclient/kv.go:648-693`, the reviewer's probe at
+nats.go v1.55.0; being filed), so `total` keeps its length and a page can repeat one entity and miss another.
+`entities_scanned` is the rows read, and type and child counts are a sample of the lexically smallest IDs; `truncated`
+is true exactly when `next_cursor` is set. A caller wanting the rest sends the cursor, paying one scan per page.
+`entity_sample_limit` goes: its default 2000 exceeds the page, and the scan is the same. One law on literal seeds, no
+interacting inputs: examples suffice.
+
+*(g).* `predicateList` takes no entity prefix (`graph/query_predicate_types.go:22-25`), so a prefix with predicates
+would set one group's types beside the whole graph's predicates. As asked that is a poor shape, and it costs the full
+`PREDICATE_INDEX` scan too. **So `prefix` without `exclude_predicates: true` is `invalid_request`, naming both.** One
+scope, one group's scan, and its `indexed_revision` is 0 (D7). *Others rejected:* a bounded walk or a walk to the end
+(36 to 53 s at 100,000); `COMMUNITY_INDEX`, Q7(b), after change 7; an ID-count verb on graph-ingest,
+`owner-questions.md`, recommended not yet. (f) touches a merged package and comes out if the owner says so.
 
 `hierarchyStats` takes `prefix` (validated unless empty), `cursor`, `min_revision`; children are `{prefix, count}`
 (`name` repeats the prefix's last segment). An entity whose ID is the prefix counts in `entities_scanned` and no child.
@@ -116,7 +123,8 @@ true exactly when `next_cursor` is set. A caller wanting the rest sends the curs
 `null` for an empty group), or an ID that does not parse, is transient `internal`; the pin skipped such IDs. *Proof:*
 `TestPrefixPageNamesItsTotal` in graph-ingest, each path, a byte-trimmed page and a later page;
 `TestHierarchyStatsDeclaresAPartialPage`, real ingest, literal JSON; `TestCountsAddUpAcrossPages`, against the seeded
-literals; `TestCountsOfAnEmptyGroup`; `TestCountsRefuseABrokenPage` (stub).
+literals; `TestCountsOfAnEmptyGroup`; `TestCountsRefuseABrokenPage` (stub); `TestSummaryPrefixReadsOneGroup`, two
+groups, literal JSON; `TestSummaryRefusesPrefixWithPredicates`.
 
 ## D6. Predicates: refuse, or leave out when asked (#111 item 2, #105)
 

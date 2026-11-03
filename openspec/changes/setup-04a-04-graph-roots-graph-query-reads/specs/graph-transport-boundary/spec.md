@@ -4,8 +4,8 @@
 
 ### Requirement: A prefix page names its total
 
-A `graph.ingest.query.prefix` reply SHALL carry `total`, the number of keys the request's listing found, before the
-cursor and before any limit, on every path. It SHALL be counted in the byte fit. It is true as of that listing.
+A `graph.ingest.query.prefix` reply SHALL carry `total`, the length of the request's key listing, before the cursor and
+before any limit, on every path. It SHALL be counted in the byte fit. It is true as listed.
 
 #### Scenario: A later page
 
@@ -13,6 +13,17 @@ cursor and before any limit, on every path. It SHALL be counted in the byte fit.
 - **THEN** `total` is N (`TestPrefixPageNamesItsTotal`)
 
 ## MODIFIED Requirements
+
+### Requirement: A pattern query lists keys by filter
+
+A non-empty `Pattern` SHALL list matching keys via `KVStore.KeysByFilter` and SHALL NOT fall back to an exact-key `Get`
+when zero keys match.
+
+#### Scenario: A pattern with no matches skips exact-key fallback
+
+- **WHEN** a caller sends a valid `Pattern` that matches zero keys in `ENTITY_STATES`
+- **THEN** graph-ingest returns an empty `Entities` result (`{"entities":null,"total":0}`) with no `NextCursor` and
+  performs no exact-key `Get` call on the bucket
 
 ### Requirement: Reserved request subjects have one declaration
 
@@ -26,8 +37,8 @@ reserved.
 #### Scenario: graph-index's verbs are in the table
 
 - **WHEN** `graph.QueryVerbs()` is read
-- **THEN** it holds `outgoing`, `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`
-  and `byName` on `graph.index.query.*`, each with responder `graph-index`
+- **THEN** it holds `outgoing`, `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`,
+  `predicateCompound` and `byName` on `graph.index.query.*`, each with responder `graph-index`
 
 #### Scenario: graph-query's verbs are in the table
 

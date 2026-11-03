@@ -7,8 +7,8 @@ P0-P7 and the prefix costs are in
 ## P8-P12, path search at the pin
 
 `pin-path-probe.go.txt` is `TestPathProbe`; `pin-path-probe.log` is its output. It runs in a pin copy, beside the pin's
-own `mockNATSClient`, and needs `gh` and Go, no Docker. Its answers from graph-ingest and graph-index are its own fakes.
-The results describe what the pin does with those bytes.
+own `mockNATSClient`, and needs `gh` and Go, no Docker. Its answers from graph-ingest and graph-index are its own
+fakes. The results describe what the pin does with those bytes.
 
 ```bash
 probes="$PWD"
@@ -45,18 +45,25 @@ go test -tags integration -run '^TestHopCostProbe$' -v -count=1 -timeout 8m ./pr
 
 Side reading: the index applied about 33 entities a second during this run (revision 192 at 0 s, 1,188 at 30 s, 2,160
 at 60 s), while the writes took 4.6 s. An earlier run with 10,000 entities had not caught up after three minutes. This
-is
-the default of one index worker, not a defect: see the reviewer's figures below.
+is the default of one index worker, not a defect: see the reviewer's figures below.
 
 ## The reviewer's re-probe
 
-`review-reprobe.go.txt`, overlaid the same way at `26c35c1`, one run; its figures are as reported in design review
-round 1,
-with no log kept.
+`review-reprobe.go.txt` was copied into an archive of this tree at `26c35c1` as
+`processor/graph-query/zz_review_integration_test.go`; one run of each test, figures as reported in design review, no
+log kept. `RATE_WORKERS`, `RATE_N` and `RATE_LIMIT_S` set the catch-up test's workers, entities and limit.
+
+```bash
+tree="$(mktemp -d)"; git archive 26c35c1 | tar -x -C "$tree"
+cp review-reprobe.go.txt "$tree/processor/graph-query/zz_review_integration_test.go"
+cd "$tree"
+RATE_WORKERS=1 RATE_N=3000 go test -tags integration -run '^TestReview' -v -count=1 -timeout 20m ./processor/graph-query/
+```
 
 | Read | Result |
 | --- | --- |
-| Hop | `outgoing` 3.5 ms, `incoming` 5.4 ms |
-| `incoming` on a hub | 12,000 edges: 1,020,121 bytes, ok. 13,000: `response_too_large`, class invalid |
+| Hop (`hop-cost-probe`, the reviewer's run) | `outgoing` 3.5 ms, `incoming` 5.4 ms |
+| `incoming` on a hub | 12,000 edges: 1,020,121 bytes, ok. 13,000: `response_too_large` (class invalid by reading `natsclient/request.go:393-395`) |
 | `predicateList`, `PREDICATE_INDEX` seeded directly | 1M keys 2.8 s, 2M 6.0 s, 3M 8.1 s, 5M 8.0 s; `listTimeout` is 10 s |
 | Index catch-up | 3,000 entities, one worker: 66 s. 10,000: 4m15s. 3,000, eight workers: about 4 s after a 4.8 s seed |
+| Listing under overwrite | 20,000 keys, 8 writers, 60 listings: 4 had repeats, at most 4, length 20,000 each time |

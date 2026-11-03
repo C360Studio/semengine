@@ -19,8 +19,9 @@ import (
 	"github.com/c360studio/semengine/internal/harness/payloadfixture"
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/lifecycle"
-	"github.com/c360studio/semengine/pkg/types"
+	"github.com/c360studio/semengine/types"
 	graphindex "github.com/c360studio/semengine/processor/graph-index"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
 	"github.com/nats-io/nats.go/jetstream"
@@ -220,4 +221,87 @@ func TestReviewPredicateList(t *testing.T) {
 			return
 		}
 	}
+}
+
+func TestReviewListing(t *testing.T) {
+	stack := stackWorkers(t, 1)
+	js, _ := stack.client.JetStream()
+	token := graph.EncodePredicateToken("test.link.to")
+	key := func(i int) string { return reviewID(i%100000) + "." + reviewID(i) + "." + token }
+	kv, err := js.KeyValue(t.Context(), graph.BucketIncomingIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	from := 0
+	for _, n := range []int{3000, 10000, 100000, 500000, 999999} {
+		publishKeys(t, js, graph.BucketIncomingIndex, key, from, n)
+		from = n
+		began := time.Now()
+		const runs = 20
+		found := 0
+		for i := range runs {
+			lister, err := kv.ListKeysFiltered(t.Context(), "*.*.*.*.*.*."+reviewID(i*7)+".*")
+			if err != nil {
+				t.Fatal(err)
+			}
+			for range lister.Keys() {
+				found++
+			}
+		}
+		t.Logf("RESULT owner listing on %d keys: mean %s, found %d of %d", n, time.Since(began)/runs, found, runs)
+	}
+}
+
+func TestReviewListingDuplicates(t *testing.T) {
+	client := fixtureClient(t)
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	kv, err := js.CreateKeyValue(t.Context(), jetstream.KeyValueConfig{Bucket: "REVIEW_DUP", History: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 20000
+	publishKeys(t, js, "REVIEW_DUP", reviewID, 0, n)
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	for w := range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := w; ; i += 97 {
+				select {
+				case <-stop:
+					return
+				default:
+				}
+				if _, err := kv.Put(t.Context(), reviewID(i%n), []byte("x")); err != nil {
+					return
+				}
+			}
+		}()
+	}
+	runs, withDups, maxDups, minLen, maxLen := 60, 0, 0, 1<<30, 0
+	for range runs {
+		keys, err := natsclient.FilteredKeys(t.Context(), kv, "c360.>")
+		if err != nil {
+			t.Fatal(err)
+		}
+		seen := map[string]bool{}
+		dups := 0
+		for _, k := range keys {
+			if seen[k] {
+				dups++
+			}
+			seen[k] = true
+		}
+		if dups > 0 {
+			withDups++
+		}
+		maxDups, minLen, maxLen = max(maxDups, dups), min(minLen, len(keys)), max(maxLen, len(keys))
+	}
+	close(stop)
+	wg.Wait()
+	t.Logf("RESULT listing under overwrites, %d keys, %d runs: %d with duplicates, max %d, len %d..%d", n, runs, withDups, maxDups, minLen, maxLen)
 }

@@ -92,6 +92,8 @@ Names the word, not the package: #7, #24, #108, #110, #134, #141, #195, #196, #1
 | `Responder*`, `SemanticData`, `SimilarData`, `SpatialData`, `TemporalData` and their rows | The table: graph-query's handlers now; step 3 and 4 strategies; responders of changes 5, 7; contract line `graph-transport-boundary` |
 | `PathSearchRequest`, `PathSearchData`, `PathEntity`, limits | graph-query's handler; step 4's path strategy; products, contract line `graph-query`, "Path search" with a test calling it as a product |
 | `HierarchyStats*`, `HierarchyChild`, changed `Summary*` | graph-query's handlers; products, contract line `graph-query`, "Counts" |
+| `PrefixQueryResponse.Total` | graph-query's two count verbs (task 4.2); contract line `graph-transport-boundary`, "A prefix page names its total" |
+| `SummaryRequest.Prefix` | graph-query's handler; no consumer today; products, contract line `graph-query`, "A summary has its predicates", with `TestSummaryPrefixReadsOneGroup` calling it as a product |
 | New `graph.query.*` subjects | Whoever keeps the GraphQL gateway (`MIGRATION.md`), fusion in change 5 (`semantic`) |
 
 Dropped from the pin's exports, each with no reader outside the package but a test (`inventory.md` § 3):
@@ -110,9 +112,9 @@ anyone comparing revisions there, a finding: the alarm never clears and a retry 
 `semantic` before change 5: transient refusal naming the subject. Ignoring `truncated` on a count: reads a sample as
 the whole, though the key says `entities_scanned`. `total_entities` beside it shows the gap, and owner question 1
 weighs closing it. A walk through a hub over about 12,000 edges (near 3,500 at longest IDs): `response_too_large`,
-whole, naming no entity, as at the pin; `predicates` cannot help. A pin caller sending `include_predicates` or
-`timeout`: refused, naming the key. A pin decoder of `paths`: empty, silently; tasks 3.1 and 4.x list these under
-`MIGRATION.md`'s "The changes that fail silently".
+whole, naming the entity, as at the pin (`pin:pathrag.go:290`); `predicates` cannot help. A pin caller sending
+`include_predicates` or `timeout`: refused, naming the key. A pin decoder of `paths`: empty, silently; tasks 3.1 and
+4.x list these under `MIGRATION.md`'s "The changes that fail silently".
 
 **3. Where do they find out?** Bad request, limit: typed runtime error. Partial answer: a field in every reply. Down
 index: typed runtime error.

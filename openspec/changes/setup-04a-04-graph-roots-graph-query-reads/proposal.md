@@ -19,8 +19,8 @@ traversal takes any depth and node count (P7) and reports an incoming edge backw
   once each, and `truncated` is exact.
 - **`hierarchyStats`, `summary`:** each request reads one prefix page, so it costs one key scan of the group.
   `total_entities` is true, from a new `total` on the `prefix` reply; `entities_scanned`, `truncated` and `next_cursor`
-  declare a sample, and a caller who wants more pays per page. `summary` gains `prefix`. A predicate index that cannot
-  answer refuses `summary`; `exclude_predicates` asks without it (#105, #111 item 2).
+  declare a sample, and a caller who wants more pays per page. `summary` gains `prefix`, predicates left out. A
+  predicate index that cannot answer refuses `summary`; `exclude_predicates` asks without it (#105, #111 item 2).
 - **`semantic`, `similar`, `spatial`, `temporal`:** forwarded byte for byte, with their reply shapes decided here:
   enveloped by the responder, as `byName` is. Each refuses transient `internal` until changes 5 and 7 bring the
   responder.
@@ -50,4 +50,4 @@ the four forwards (changes 5, 7).
   and no new config key: `max_traversal_depth` and `max_traversal_nodes` stay refused.
 - Two questions for the owner in `owner-questions.md`: whether counts should be exact, and whether `hierarchyStats`
   keeps the envelope, which narrows ruling 1 either way. The design is written on the ruling's list until answered.
-- No code before the owner approves. Retires no issue; `design.md`, "Scope", disposes each one.
+- No code before the owner approves. Retires no issue; `inventory-delta.md` disposes each one.

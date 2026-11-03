@@ -10,12 +10,14 @@ is not being ported, and SemSource cut its tool. How large real groups get has n
 **The limit.** Each answer reads one page: the alphabetically first 1,000 entities, about 450 at 2 KB. Past that, type
 and child counts are a sample, and the answer says so.
 
-| Option | What you get | Cost |
-| --- | --- | --- |
-| As you accepted | A sample that says it is one | Nothing more |
-| **Add a true total** (in the design) | "1,000 read of 1,000,000" | About 10 lines plus tests in graph-ingest (reviewer's estimate, not run); no extra scan |
-| **Add a prefix to the overview** (in the design) | A large graph can show any group, not only its first | A few lines; one group's scan |
-| New count request | Every count exact | About 250 lines (my estimate), in a merged package, for no caller today |
+**The options:**
+
+- **As you accepted:** a sample that says it is one. Nothing more to build.
+- **A true total (in the design):** "1,000 read of 1,000,000", with no extra scan. About 10 lines plus tests (reviewer's
+  estimate, not run), in graph-ingest, a merged package; every prefix reply gains a key.
+- **A prefix on the overview (in the design):** one group's types for one group's scan, a few lines. Predicate counts
+  cannot be narrowed to a group, so a caller using a prefix must leave predicates out; asking for both is refused.
+- **A new count request:** every count exact. About 250 lines (my estimate), in a merged package, for no caller today.
 
 If you want the new request now, or neither small change, say so. The design adjusts either way.
 
@@ -29,6 +31,8 @@ only graph-ingest. Its answer is current. The wrapper's revision field has nothi
 - **Keep the wrapper, revision 0.** Callers are told to compare that field, so one that does would never see it catch up,
   and a retry loop would spin for ever. Only a doc warns them.
 - **Remove the wrapper (recommended).** There is no field to misread. It departs from the ruling's list, which only you
-  can accept. The design is written the first way until you say; the change is one table mark, one test, one spec clause.
+  can accept. The design is written the first way until you say. The change: one table mark, the reply, one test, two
+  spec scenarios and a migration line.
 
-Either way `summary` keeps the wrapper, and reports 0 only when a caller asks to leave predicates out.
+Either way `summary` keeps the wrapper. When a caller leaves predicates out, it reports 0, so the same never-clearing
+alarm stays there, with only a doc to warn them.

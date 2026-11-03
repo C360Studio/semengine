@@ -5,14 +5,13 @@ code. Each step ends when `task verify` passes on a clean tree at its commit (#1
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and tasks committed; owner approval. Gate: `task spec:check` and `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Proposal and tasks committed; owner approval. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Code
 
-- [ ] 2.1 `TestStopWithAStuckHandlerStopsEveryOtherVerb` in `processor/graph-index/lifecycle_integration_test.go`,
+- [x] 2.1 `TestStopWithAStuckHandlerStopsEveryOtherVerb` in `processor/graph-index/lifecycle_integration_test.go`,
   failing on the base commit; the failure is recorded in `notes/2.1.md`. Gate: the test fails on base.
-- [ ] 2.2 `cleanup` begins every drain and joins their errors. Gate: the test in 2.1 and the package's integration tests
+- [x] 2.2 `cleanup` begins every drain and joins their errors. Gate: the test in 2.1 and the package's integration tests
   pass; `task verify` passes on a clean tree.
 
 ## 3. Code review

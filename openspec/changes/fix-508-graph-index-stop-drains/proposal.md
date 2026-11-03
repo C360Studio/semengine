@@ -1,6 +1,6 @@
 # Proposal: fix-508-graph-index-stop-drains
 
-Approved-by:
+Approved-by: owner, 2026-11-03 in Enjoy, proposal at `c376deb` approved as drafted; recorded on #508
 
 ## Why
 

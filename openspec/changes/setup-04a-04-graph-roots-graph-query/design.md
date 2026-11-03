@@ -108,13 +108,11 @@ handler, so no run context yet (ADR-113, step 3). Input port per D5 (P3). Decodi
 `graph-index/component.go:107`). Keys: `ports`, and `query_timeout_ms` replacing `query_timeout`, whose advertised
 `"5s"` the pin refused (P1); default 15000, above ingest's 10 s budget on `batch` and `prefix`
 (`graph-ingest/query.go:109,:234`; gh#830), inside natsclient's 30 s handler budget (`entityByAlias`'s two hops can
-reach it, still transient). `query_timeout_ms` and the handler budget are deadlines on the wait for a reply; a broker
-that has stopped reading can hold a request's write past both (ADR-112, "Time"), which nothing here adds to. This
-cures one hop; a caller's own shorter timeout still fires, loudly. Keys the pin ignored refuse at boot (`AGENTS.md`
-§ 1). No test hook, no requester interface (S5, S21). Every verb counts its request once, and one
-error when graph-query itself refuses because no usable answer arrived: no answer, or a broken reply. A responder's
-refusal and a caller's bad request count none. *Proof:* lifecycle suite;
-`TestGraphQueryServesExactlyTheDeclaredVerbs`; `TestUnknownConfigKeyIsRefused`; `TestQueryTimeoutIsRead`.
+reach it, still transient). Both bound the wait for a reply; a broker that stopped reading can hold a write past them
+(ADR-112, "Time"). This cures one hop; a caller's shorter timeout still fires, loudly. Keys the pin ignored refuse at
+boot (`AGENTS.md` § 1). No test hook, no requester interface (S5, S21). Each request counts once, and one error when
+graph-query refuses for lack of a usable answer; a responder's refusal or a bad request counts none. *Proof:*
+lifecycle suite; `TestGraphQueryServesExactlyTheDeclaredVerbs`; `TestUnknownConfigKeyIsRefused`; `TestQueryTimeoutIsRead`.
 
 ## Scope
 

@@ -50,7 +50,8 @@ failing-first output, recorded in the task's note. One task is one developer's u
   not here, `060-pr-d-*` not carried). Ledger: new `processor/graph-query` row, disposition `adapt`, saying the
   package is whole at step 5; ADR-060 row; `defer-exclude` rows for `answer.go`'s language-model half,
   `component.go`'s wiring and `summary_view.go` (#485, #486, #487, #32); dropped `router.go`; `graph` row no longer
-  defers `MinRevisionField`. Check: `task ledger:diff`.
+  defers `MinRevisionField`; the `composition` row names `request_subject_conflict`
+  (`docs/admission-ledger.yaml:3329`). Check: `task ledger:diff`.
 - [ ] 4.2 `.agents/skills/query-pattern/SKILL.md`: the six verbs, `min_revision`, decoding by verb. `AGENTS.md` § 2
   and `.agents/rules-index.md`: the reserved-subject row names `graph.query.*`. Check: `task ateam:doctor`, `task
   docs:check`.

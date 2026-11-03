@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-// QueryResponse is the success envelope of a graph-index query reply. A reply is
+// QueryResponse is the success envelope of an enveloped query verb's reply (QueryVerb.Enveloped). A reply is
 // either this body or a classified error (ADR-060); a refusal carries no envelope.
 //
 // IndexedRevision is the ENTITY_STATES revision the reply reflects: every write at

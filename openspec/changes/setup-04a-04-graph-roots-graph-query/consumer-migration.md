@@ -93,7 +93,8 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
-A stream capturing a declared `graph.query.*` subject refuses boot (#16). Decode by the verb table:
+A stream capturing a declared `graph.query.*` subject refuses boot (#16), and so does a declared NATS-request input
+port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
 `QueryVerb.Enveloped` and `QueryVerb.Reply`.
 
 **New names step 1 exports.** In `graph`: `ResponderGraphQuery`, `QueryVerb.Enveloped`, `QueryVerb.Reply`,

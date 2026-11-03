@@ -221,7 +221,7 @@ func spyOnEntityVerb(t *testing.T, client *natsclient.Client) func() {
 
 // TestEntityByAlias: the alias verb is asked first and its refusals reach the caller; a holder is read,
 // an unheld valid ID is read as itself, an unheld non-ID is not found, and the reply wraps the entity
-// verb's bytes with the alias reply's revision (design D4, ADR-114). Real ingest and index where a
+// verb's JSON with the alias reply's revision (design D4, ADR-114). Real ingest and index where a
 // real one can produce the case; stubs for the rows D4 names, and for reply bytes no real ingest
 // sends.
 func TestEntityByAlias(t *testing.T) {
@@ -231,9 +231,6 @@ func TestEntityByAlias(t *testing.T) {
 }
 
 func testEntityByAliasReal(t *testing.T) {
-	const serial = "test.identity.serial"
-	defer vocabulary.SnapshotRegistry()()
-	vocabulary.Register(serial, vocabulary.WithAlias(vocabulary.AliasTypeIdentity, 0))
 	stack := startStack(t)
 	aliased := func(alias string) [2]string { return [2]string{vocabulary.CoreIdentityAlias, alias} }
 

@@ -6,6 +6,9 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/component"
+	"github.com/c360studio/semengine/composition"
+	"github.com/c360studio/semengine/config"
+	"github.com/c360studio/semengine/types"
 )
 
 // TestCreateGraphQueryRequiresNATSClient: a missing NATS client is a construction error.
@@ -63,5 +66,43 @@ func TestInputPortsSliceIsNew(t *testing.T) {
 	c.InputPorts()[0].Name = "changed"
 	if name := c.InputPorts()[0].Name; name != "graph_queries" {
 		t.Fatalf("changing the returned inputs changed the component's port to %q", name)
+	}
+}
+
+// TestGraphQueryIsItsVerbsResponder: the real factory's name and declared port satisfy the check the
+// graph.QueryVerbs table drives: one instance draws no request_subject_conflict, so a composition
+// with graph-query boots, and a second draws one, on the later in instance-name order.
+func TestGraphQueryIsItsVerbsResponder(t *testing.T) {
+	registry := component.NewRegistry()
+	if err := Register(registry); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	instance := types.ComponentConfig{
+		Name: "graph-query", Type: types.ComponentTypeProcessor, Enabled: true, Config: json.RawMessage(`{}`),
+	}
+	validate := func(components config.ComponentConfigs) []composition.Finding {
+		t.Helper()
+		result, err := composition.Validate(registry, &config.Config{
+			Version:    "1.0.0",
+			Platform:   config.PlatformConfig{Org: "test", ID: "composition", Environment: "test"},
+			Components: components,
+		})
+		if err != nil {
+			t.Fatalf("Validate: %v", err)
+		}
+		var conflicts []composition.Finding
+		for _, finding := range result.Errors {
+			if finding.Type == composition.TypeRequestSubjectConflict {
+				conflicts = append(conflicts, finding)
+			}
+		}
+		return conflicts
+	}
+	if got := validate(config.ComponentConfigs{"query": instance}); len(got) != 0 {
+		t.Errorf("one instance drew %+v", got)
+	}
+	got := validate(config.ComponentConfigs{"query-a": instance, "query-b": instance})
+	if len(got) != 1 || got[0].Component != "query-b" || got[0].Port != "graph_queries" {
+		t.Errorf("two instances drew %+v, want one on query-b's graph_queries", got)
 	}
 }

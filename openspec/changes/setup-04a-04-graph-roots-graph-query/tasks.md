@@ -35,7 +35,7 @@ failing-first output, recorded in the task's note. One task is one developer's u
   index except the rows D4 names, `TestRelationshipsEnvelopeKeepsIndexRevision`, `TestRelationshipsRowKeys`,
   `TestRelationshipsRefusesUnknownDirection`, `TestRelationshipsRefusesBrokenIndexReply`, each failing case shown to
   fail.
-- [ ] 3.4 `request_subject_conflict` in `composition.Analyze`, with the service's boot refusal; needs the
+- [x] 3.4 `request_subject_conflict` in `composition.Analyze`, with the service's boot refusal; needs the
   `graph.query.entity` row from 3.2. Premise: `composition/analyze.go:28`, `:35`, `service/component_manager.go:328`
   (D6). Check: `TestAnalyzeReportsSecondResponder`, `TestBootRefusesSecondResponder`,
   `TestValidateFindingsVocabularyIsClosed`.

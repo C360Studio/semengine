@@ -30,11 +30,12 @@ var allFindingTypes = []string{
 	composition.TypeEmptyComposition,
 	composition.TypeReservedSubjectCapture,
 	composition.TypeMalformedSubject,
+	composition.TypeRequestSubjectConflict,
 }
 
 // TestValidateFindingsVocabularyIsClosed drives compositions that exhibit each
-// of the fifteen conditions and asserts every emitted type is one of the
-// fifteen constants and every constant is emitted at least once.
+// of the sixteen conditions and asserts every emitted type is one of the
+// sixteen constants and every constant is emitted at least once.
 func TestValidateFindingsVocabularyIsClosed(t *testing.T) {
 	registry := fakeRegistry(t,
 		fakeSpec{name: "src", typ: "input", outputs: []component.PortDefinition{natsOut("out", "data.raw", nil)}},
@@ -48,27 +49,29 @@ func TestValidateFindingsVocabularyIsClosed(t *testing.T) {
 		fakeSpec{name: "listener", typ: "input", inputs: []component.PortDefinition{{Name: "sock", Required: true, Config: component.NetworkPort{Protocol: "udp", Host: "0.0.0.0", Port: 14550}}}},
 		fakeSpec{name: "writer", typ: "processor", outputs: []component.PortDefinition{{Name: "idx", Config: component.KVWritePort{Bucket: "SHARED"}}}},
 		fakeSpec{name: "broken", typ: "processor", declareErr: errors.New("declarer refused")},
+		fakeSpec{name: "squatter", typ: "processor", inputs: []component.PortDefinition{requestIn("in", "graph.query.entity")}},
 	)
 	reservedCapture := compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)})
 	reservedCapture.Streams = config.StreamConfigs{"GRAPH": {Subjects: []string{"graph.>"}}}
 	malformed := compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)})
 	malformed.Streams = config.StreamConfigs{"BAD": {Subjects: []string{"a..b"}}}
 	cases := map[string]*config.Config{
-		"config_invalid": {Platform: config.PlatformConfig{ID: "x"}, Components: config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)}},
-		"unknown":        compositionOf(config.ComponentConfigs{"ghost": instance("nope", types.ComponentTypeProcessor)}),
-		"type_mismatch":  compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeProcessor)}),
-		"config_bad":     compositionOf(config.ComponentConfigs{"a": {Name: "src", Type: "widget", Enabled: true}}),
-		"declarer":       compositionOf(config.ComponentConfigs{"a": instance("broken", types.ComponentTypeProcessor)}),
-		"exclusive":      compositionOf(config.ComponentConfigs{"a": instance("listener", types.ComponentTypeInput), "b": instance("listener", types.ComponentTypeInput)}),
-		"pattern":        compositionOf(config.ComponentConfigs{"a": instance("writer", types.ComponentTypeProcessor), "b": instance("writer", types.ComponentTypeProcessor)}),
-		"stream":         compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput), "b": instance("sink", types.ComponentTypeOutput)}),
-		"disconnected":   compositionOf(config.ComponentConfigs{"a": instance("lonely", types.ComponentTypeProcessor)}),
-		"orphaned":       compositionOf(config.ComponentConfigs{"a": instance("needy", types.ComponentTypeProcessor)}),
-		"interface":      compositionOf(config.ComponentConfigs{"a": instance("typed-src", types.ComponentTypeInput), "b": instance("typed-sink", types.ComponentTypeOutput)}),
-		"missing":        compositionOf(config.ComponentConfigs{"a": instance("untyped-src", types.ComponentTypeInput), "b": instance("requiring-sink", types.ComponentTypeOutput)}),
-		"empty":          compositionOf(config.ComponentConfigs{}),
-		"reserved":       reservedCapture,
-		"malformed":      malformed,
+		"config_invalid":   {Platform: config.PlatformConfig{ID: "x"}, Components: config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput)}},
+		"unknown":          compositionOf(config.ComponentConfigs{"ghost": instance("nope", types.ComponentTypeProcessor)}),
+		"type_mismatch":    compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeProcessor)}),
+		"config_bad":       compositionOf(config.ComponentConfigs{"a": {Name: "src", Type: "widget", Enabled: true}}),
+		"declarer":         compositionOf(config.ComponentConfigs{"a": instance("broken", types.ComponentTypeProcessor)}),
+		"exclusive":        compositionOf(config.ComponentConfigs{"a": instance("listener", types.ComponentTypeInput), "b": instance("listener", types.ComponentTypeInput)}),
+		"pattern":          compositionOf(config.ComponentConfigs{"a": instance("writer", types.ComponentTypeProcessor), "b": instance("writer", types.ComponentTypeProcessor)}),
+		"stream":           compositionOf(config.ComponentConfigs{"a": instance("src", types.ComponentTypeInput), "b": instance("sink", types.ComponentTypeOutput)}),
+		"disconnected":     compositionOf(config.ComponentConfigs{"a": instance("lonely", types.ComponentTypeProcessor)}),
+		"orphaned":         compositionOf(config.ComponentConfigs{"a": instance("needy", types.ComponentTypeProcessor)}),
+		"interface":        compositionOf(config.ComponentConfigs{"a": instance("typed-src", types.ComponentTypeInput), "b": instance("typed-sink", types.ComponentTypeOutput)}),
+		"missing":          compositionOf(config.ComponentConfigs{"a": instance("untyped-src", types.ComponentTypeInput), "b": instance("requiring-sink", types.ComponentTypeOutput)}),
+		"empty":            compositionOf(config.ComponentConfigs{}),
+		"reserved":         reservedCapture,
+		"malformed":        malformed,
+		"second_responder": compositionOf(config.ComponentConfigs{"a": instance("squatter", types.ComponentTypeProcessor)}),
 	}
 	allowed := map[string]bool{}
 	for _, typ := range allFindingTypes {

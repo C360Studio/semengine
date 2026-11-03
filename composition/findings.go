@@ -41,6 +41,9 @@ const (
 	// TypeMalformedSubject: a port's or an explicit stream's subject fails the subject grammar
 	// (flowgraph.ValidSubject), which is stricter than NATS: a token such as "a*" is refused.
 	TypeMalformedSubject = "malformed_subject"
+	// TypeRequestSubjectConflict: a NATS-request input overlaps a subject of graph.QueryVerbs() it is
+	// not the responder for, or that an earlier instance of the responder already declares.
+	TypeRequestSubjectConflict = "request_subject_conflict"
 )
 
 // Finding severities.

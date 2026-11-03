@@ -106,7 +106,8 @@ accepted and dropped. A configuration that still sets one of them fails at boot 
 The one input is required and has to be this port: a different name, subject, kind or interface, a `timeout` other
 than `1s` (the value it takes when none is written) or `retries`, which nothing would read, a second input, or any
 output is refused. Its `description` is yours to set, and so is `external`, which says requests come from outside the
-composition.
+composition. A composition runs one graph-query: a second instance, or another component declaring a NATS-request input
+on one of these verbs, is the `request_subject_conflict` error that refuses boot (`composition.Analyze`).
 
 ## Health
 

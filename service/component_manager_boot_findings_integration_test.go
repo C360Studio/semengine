@@ -180,6 +180,64 @@ func TestComponentManagerRefusesBootOnErrorFinding(t *testing.T) {
 	require.Equal(t, int32(1), lateCalls.Load(), "the registry was sealed after a refused boot")
 }
 
+// requestPorts declares one required NATS-request input on subject.
+func requestPorts(subject string) component.PortConfig {
+	return component.PortConfig{Inputs: []component.PortDefinition{
+		{Name: "in", Required: true, Config: component.NATSRequestPort{Subject: subject}},
+	}}
+}
+
+// TestBootRefusesSecondResponder: NewComponentManager refuses a composition in which a declared
+// port claims a graph query verb that is not its own, or that an earlier instance of the responder
+// already declares, and the error names the subject and both parties. The responder alone boots.
+//
+// spec: composition-validation / A second responder on a declared verb is an error finding
+func TestBootRefusesSecondResponder(t *testing.T) {
+	t.Run("another factory", func(t *testing.T) {
+		client := fixtureClient(t)
+		registry := component.NewRegistry()
+		registerBootFindingsFactory(t, registry, "graph-query", requestPorts("graph.query.*"))
+		registerBootFindingsFactory(t, registry, "squatter", requestPorts("graph.query.entity"))
+
+		built, err := newBootFindingsManager(t, client, registry, "second-responder-factory", config.ComponentConfigs{
+			"gq": bootFindingsProcessor("graph-query"),
+			"sq": bootFindingsProcessor("squatter"),
+		}, nil)
+		require.Error(t, err, "booted with another factory on graph.query.entity")
+		require.Nil(t, built, "a refused boot returned a manager")
+		for _, want := range []string{"request_subject_conflict", "graph.query.entity", `"sq"`, `"squatter"`, `"graph-query"`} {
+			require.Contains(t, err.Error(), want, "the boot error does not name %s", want)
+		}
+	})
+
+	t.Run("two instances of the responder", func(t *testing.T) {
+		client := fixtureClient(t)
+		registry := component.NewRegistry()
+		registerBootFindingsFactory(t, registry, "graph-query", requestPorts("graph.query.*"))
+
+		built, err := newBootFindingsManager(t, client, registry, "second-responder-instance", config.ComponentConfigs{
+			"gq-a": bootFindingsProcessor("graph-query"),
+			"gq-b": bootFindingsProcessor("graph-query"),
+		}, nil)
+		require.Error(t, err, "booted with two instances of the responder on one verb")
+		require.Nil(t, built, "a refused boot returned a manager")
+		for _, want := range []string{"request_subject_conflict", "graph.query.entity", `"gq-a"`, `"gq-b"`} {
+			require.Contains(t, err.Error(), want, "the boot error does not name %s", want)
+		}
+	})
+
+	t.Run("the responder alone boots", func(t *testing.T) {
+		client := fixtureClient(t)
+		registry := component.NewRegistry()
+		registerBootFindingsFactory(t, registry, "graph-query", requestPorts("graph.query.*"))
+
+		manager := bootFindingsComponentManager(t, client, registry, "second-responder-none", config.ComponentConfigs{
+			"gq": bootFindingsProcessor("graph-query"),
+		}, nil)
+		require.Empty(t, manager.bootCompositionResult().Errors)
+	})
+}
+
 // TestComponentManagerExposesBootFindings: a booted composition with one disconnected_node
 // warning serves the result construction kept, verbatim, at <components>/validate.
 //

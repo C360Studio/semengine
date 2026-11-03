@@ -5,18 +5,22 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"regexp"
 	"slices"
 	"strings"
 	"time"
 )
 
-// outcome is the reading of one run, or the verdict of a whole check. pass is a reading only: a
-// run of the unchanged code that passed, or a mutant run in which the named test passed.
+// outcome is the reading of one run, or the verdict of a whole check. pass and hang are readings
+// only: pass is a run of the unchanged code that passed, or a mutant run in which the named test
+// passed; hang is a mutant run that ran the named test and that go test's own timeout ended
+// before the test reported a result (design D2). decide maps hang to detection or inconclusive.
 type outcome string
 
 const (
 	pass         outcome = "pass"
+	hang         outcome = "hang"
 	detection    outcome = "detection"
 	survivor     outcome = "survivor"
 	invalid      outcome = "invalid"
@@ -56,6 +60,10 @@ type observed struct {
 	locations     []string // each file.go:N that starts an output line of the named test, once
 	notes         []string // panics and fatal errors anywhere; other located lines of the named test, in full
 	buildLines    []string // the build's output
+	// elapsed is the package's elapsed time from go test -json's package pass or fail event, when
+	// elapsedReported; a stream with no such event reports none, which is not zero (design D1).
+	elapsed         time.Duration
+	elapsedReported bool
 }
 
 // processEnd is how the go command of a run ended.
@@ -88,6 +96,7 @@ type event struct {
 	Test        string
 	Output      string
 	FailedBuild string
+	Elapsed     *float64 // seconds; nil when the event carries none
 }
 
 const (
@@ -126,6 +135,11 @@ func observe(stream []byte, end processEnd, test string, exp expectation) observ
 		case "pass", "fail", "skip":
 			if e.Test == test {
 				o.result = e.Action
+			}
+			// Only the package's own result carries the elapsed time the margin is read from.
+			if e.Test == "" && e.Action != "skip" && e.Elapsed != nil {
+				o.elapsed = time.Duration(math.Round(*e.Elapsed*1000)) * time.Millisecond
+				o.elapsedReported = true
 			}
 			o.buildFailed = o.buildFailed || (e.Test == "" && e.FailedBuild != "")
 		case "output":
@@ -168,7 +182,8 @@ func (o *observed) readLine(line, test string, ours bool, exp expectation) {
 
 // read gives one run's reading by the rules of design D5. A run of the unchanged code (baseline,
 // after or reach) reads pass or inconclusive; a mutant run can also read detection or invalid.
-// A run ended by the timeout, a signal or the bound is inconclusive whatever it printed first.
+// A run ended by the timeout, a signal or the bound is inconclusive whatever it printed first,
+// except a mutant run that is a hang (design D2); decide judges a hang.
 func read(f facts, mutant bool, bound time.Duration) reading {
 	switch {
 	case f.bounded:
@@ -178,7 +193,10 @@ func read(f facts, mutant bool, bound time.Duration) reading {
 	case f.buildFailed:
 		return reading{inconclusive, "the unchanged code does not build"}
 	// A timeout or a signal can end the run before the named test starts; the reason names what
-	// ended it, not the selection.
+	// ended it, not the selection. A timeout panic printed by a test that then reported a result
+	// is not a hang.
+	case f.timedOut && mutant && f.selected && f.result == "" && f.signal == "":
+		return reading{hang, "the named test ran and go test's own timeout ended the run before it reported a result"}
 	case f.timedOut:
 		return reading{inconclusive, "go test's whole-run timeout ended the run"}
 	case f.signal != "":

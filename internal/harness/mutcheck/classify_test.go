@@ -21,6 +21,12 @@ import (
 // ./exit, whose TestMain exits 3 after its test passes; killed-before-run ran ./early, whose
 // TestMain kills its own process before any test starts. A stream holds no exit status, so each
 // case below states the status go test exited with, as it was recorded.
+//
+// hang, hang-pass and logged-timeout were recorded the same way with go1.26.10, from
+// basic/hang_test.go: hang ran TestHang with the mutant overlay and -timeout 1s (Value returns 2,
+// so the test blocks with no assertion); hang-pass ran TestHang on the unchanged code with
+// -timeout 2m; logged-timeout ran TestLoggedTimeout on the unchanged code with -timeout 2m (the
+// test prints go test's timeout panic text and passes).
 
 const testBound = 4 * time.Minute
 
@@ -46,6 +52,13 @@ var (
 	recNoTest       = recordedRun{"no-test", "TestNope", processEnd{code: 0}}
 	recPassNonzero  = recordedRun{"pass-exit-nonzero", "TestPasses", processEnd{code: 1}}
 	recKilledEarly  = recordedRun{"killed-before-run", "TestEarly", processEnd{code: 1}}
+	recHang         = recordedRun{"hang", "TestHang", processEnd{code: 1}}
+	recLoggedTO     = recordedRun{"logged-timeout", "TestLoggedTimeout", processEnd{code: 0}}
+	// recTimeoutBeforeRun is the timeout recording read for a test that never ran in it: go
+	// test's timeout ended the run before the named test started.
+	recTimeoutBeforeRun = recordedRun{"timeout", "TestOther", processEnd{code: 1}}
+	// recBoundedTimeout is the timeout recording as a run the program stopped at the bound.
+	recBoundedTimeout = recordedRun{"timeout", "TestTimeout", processEnd{code: -1, signal: "killed", bounded: true}}
 )
 
 func stream(t *testing.T, file string) []byte {
@@ -127,11 +140,29 @@ func TestObserveRecordedRuns(t *testing.T) {
 			outcome:   detection,
 			expected:  []string{"    testing.go:1712: race detected during execution of test"},
 			locations: []string{"testing.go:1712"}}},
-		{"a whole-run timeout after an expected line", recTimeout, true, expectAt("value_test.go:53"), want{
+		// Design D2: an expected line before the panic does not change the reading.
+		{"a hang after an expected line", recTimeout, true, expectAt("value_test.go:53"), want{
 			facts:   facts{selected: true, timedOut: true, expectedHit: true},
-			outcome: inconclusive, words: []string{"timeout"},
+			outcome: hang, words: []string{"timeout"},
 			expected: []string{"    value_test.go:53: Value() = 2, want 1"}, locations: []string{"value_test.go:53"},
 			note: "panic: test timed out after 1s"}},
+		{"a hang with no expected line", recHang, true, expectAt("value_test.go:99"), want{
+			facts:   facts{selected: true, timedOut: true},
+			outcome: hang, words: []string{"timeout"},
+			note: "panic: test timed out after 1s"}},
+		{"a timeout on the unchanged code", recHang, false, expectAt("value_test.go:99"), want{
+			facts:   facts{selected: true, timedOut: true},
+			outcome: inconclusive, words: []string{"timeout"}}},
+		{"a timeout before the named test ran", recTimeoutBeforeRun, true, expectAt("value_test.go:53"), want{
+			facts:   facts{timedOut: true},
+			outcome: inconclusive, words: []string{"timeout"}}},
+		{"a test that passed after printing the timeout text", recLoggedTO, true, expectAt("value_test.go:99"), want{
+			facts:   facts{selected: true, timedOut: true, result: "pass", exitZero: true},
+			outcome: inconclusive, words: []string{"timeout"}}},
+		{"a timeout panic stopped at the bound", recBoundedTimeout, true, expectAt("value_test.go:53"), want{
+			facts:   facts{selected: true, timedOut: true, expectedHit: true, signal: "killed", bounded: true},
+			outcome: inconclusive, words: []string{"bound"},
+			expected: []string{"    value_test.go:53: Value() = 2, want 1"}, locations: []string{"value_test.go:53"}}},
 		{"killed by a signal", recKilled, true, expectAt("value_test.go:60"), want{
 			facts:   facts{selected: true, signal: "killed"},
 			outcome: inconclusive, words: []string{"signal", "killed"}}},
@@ -196,17 +227,46 @@ func TestObserveBoundedRun(t *testing.T) {
 	}
 }
 
+// TestObserveElapsed (design D1, D6): the package's elapsed time is read from the recorded
+// package pass or fail event, and only from it: a test's own Elapsed is not the package's, and a
+// stream cut before the package's result reports none, which differs from zero.
+func TestObserveElapsed(t *testing.T) {
+	head := []byte(strings.Join(strings.SplitAfter(string(stream(t, "pass")), "\n")[:5], ""))
+	for _, tc := range []struct {
+		name     string
+		data     []byte
+		want     time.Duration
+		reported bool
+	}{
+		{"a package that passed", stream(t, "pass"), 1247 * time.Millisecond, true},
+		{"a package that failed by the timeout", stream(t, "timeout"), 1168 * time.Millisecond, true},
+		{"a hang", stream(t, "hang"), 1358 * time.Millisecond, true},
+		{"only the test's own elapsed time", head, 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got := observe(tc.data, processEnd{}, "TestValue", expectAt("value_test.go:10"))
+			if got.elapsed != tc.want || got.elapsedReported != tc.reported {
+				t.Errorf("elapsed: got %s (reported %v), want %s (reported %v)", got.elapsed, got.elapsedReported, tc.want, tc.reported)
+			}
+		})
+	}
+}
+
 // wantReading is the reading the spec gives, written from "Outcome classification" and design D5
 // as the conditions for each outcome, not as the program's ordered cases. Detection needs a
-// failed named test with an expected line; a run ended by the timeout, a signal or the bound is
-// inconclusive whatever it printed; a mutant that does not build is invalid; an unchanged-code
-// run passes only when the named test passed and go test exited zero.
+// failed named test with an expected line; a mutant run that built, ran the named test and was
+// ended by go test's timeout with no result, no signal and before the bound is a hang (design
+// D2); any other run ended by the timeout, a signal or the bound is inconclusive whatever it
+// printed; a mutant that does not build is invalid; an unchanged-code run passes only when the
+// named test passed and go test exited zero.
 func wantReading(f facts, mutant bool) outcome {
 	endedEarly := f.timedOut || f.signal != "" || f.bounded
 	ran := !f.buildFailed && f.selected && !endedEarly
 	switch {
 	case mutant && f.buildFailed && !f.bounded:
 		return invalid
+	case mutant && !f.buildFailed && f.selected && f.timedOut && f.result == "" && f.signal == "" && !f.bounded:
+		return hang
 	case ran && f.result == "pass" && f.exitZero:
 		return pass
 	case mutant && ran && f.result == "fail" && f.expectedHit:
@@ -280,7 +340,8 @@ var kindNames = map[runKind]string{baselineRun: "baseline", mutantRun: "mutant",
 type planned struct {
 	t        *testing.T
 	exp      expectation
-	plan     map[string]recordedRun // keyed "baseline 2", "mutant 1", "after 1", "reach 1"
+	plan     map[string]recordedRun   // keyed "baseline 2", "mutant 1", "after 1", "reach 1"
+	elapsed  map[string]time.Duration // the package's elapsed time a run reports, in place of its recording's; negative: none reported
 	asked    []string
 	cancel   context.CancelFunc // when set, called once the run named by cancelAt is asked for
 	cancelAt string
@@ -301,7 +362,11 @@ func (p *planned) run(ctx context.Context, kind runKind, index int) (runRecord, 
 	if kind != mutantRun {
 		exp = expectAt("value_test.go:10")
 	}
-	return runAs(p.t, rec, kind, index, exp), nil
+	r := runAs(p.t, rec, kind, index, exp)
+	if d, ok := p.elapsed[name]; ok {
+		r.obs.elapsed, r.obs.elapsedReported = d, d >= 0
+	}
+	return r, nil
 }
 
 // TestCheckVerdicts: one named example for each rule of "The runs" and "Outcome classification"
@@ -318,12 +383,17 @@ func TestCheckVerdicts(t *testing.T) {
 	mutants3 := []string{"mutant 1", "mutant 2", "mutant 3"}
 	full := []string{"baseline 1", "baseline 2", "baseline 3", "mutant 1", "mutant 2", "mutant 3", "after 1"}
 	withReach := append(slices.Clone(full), "reach 1")
+	// hung is the runs a check makes when mutant run 1 ends early: no mutant run 2, no reach run.
+	hung := []string{"baseline 1", "baseline 2", "baseline 3", "mutant 1", "after 1"}
+	controls3s := map[string]time.Duration{"baseline 1": 3 * time.Second, "baseline 2": 3 * time.Second, "baseline 3": 3 * time.Second, "after 1": 3 * time.Second}
 	for _, tc := range []struct {
 		name       string
 		exp        expectation
 		plan       map[string]recordedRun
 		reachState reachState
-		treeAfter  string // the fingerprint after the last run; "before" when unchanged
+		treeAfter  string                   // the fingerprint after the last run; "before" when unchanged
+		timeout    time.Duration            // -timeout; 2m, the program's default, when zero
+		elapsed    map[string]time.Duration // see planned.elapsed
 		wantRuns   []string
 		want       outcome
 		words      []string
@@ -336,10 +406,59 @@ func TestCheckVerdicts(t *testing.T) {
 		{name: "a flaky baseline", exp: expectAt("value_test.go:10"),
 			plan:     map[string]recordedRun{"baseline 3": recFailExpected},
 			wantRuns: []string{"baseline 1", "baseline 2", "baseline 3"}, want: inconclusive, words: []string{"baseline run 3"}},
-		{name: "a mutant run times out", exp: expectAt("value_test.go:53"),
+		// mutation-check › "Detection by hang" and "What a detection by hang reports".
+		{name: "detected by hang", exp: expectAt("value_test.go:99"), timeout: 45 * time.Second, elapsed: controls3s,
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: detection,
+			words: []string{"by hang, not by an assertion", "timeout of 45s", "margin of 15s", "slowest baseline run took 3s",
+				"after-run 3s", "would read the same"}},
+		{name: "a hang after an expected line", exp: expectAt("value_test.go:53"),
 			plan:     map[string]recordedRun{"mutant 1": recTimeout},
-			wantRuns: []string{"baseline 1", "baseline 2", "baseline 3", "mutant 1", "after 1"},
-			want:     inconclusive, words: []string{"timeout"}},
+			wantRuns: hung, want: detection, words: []string{"by hang", "1.247s"}},
+		{name: "a slow baseline", exp: expectAt("value_test.go:99"), timeout: 45 * time.Second,
+			elapsed:  map[string]time.Duration{"baseline 1": 3 * time.Second, "baseline 2": 20 * time.Second, "baseline 3": 3 * time.Second, "after 1": 3 * time.Second},
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: inconclusive, words: []string{"baseline run 2", "20s", "margin of 15s"}},
+		{name: "a slow after-run", exp: expectAt("value_test.go:99"), timeout: 45 * time.Second,
+			elapsed:  map[string]time.Duration{"baseline 1": 3 * time.Second, "baseline 2": 3 * time.Second, "baseline 3": 3 * time.Second, "after 1": 20 * time.Second},
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: inconclusive, words: []string{"after-run", "20s", "margin of 15s"}},
+		// "At most a third": a control run at exactly the margin is within it.
+		{name: "a baseline at exactly the margin", exp: expectAt("value_test.go:99"), timeout: 45 * time.Second,
+			elapsed:  map[string]time.Duration{"baseline 1": 3 * time.Second, "baseline 2": 15 * time.Second, "baseline 3": 3 * time.Second, "after 1": 3 * time.Second},
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: detection, words: []string{"by hang", "slowest baseline run took 15s", "margin of 15s"}},
+		// The recorded runs' 1.247s is over a third of 3s: the -race build's exit pause alone puts a
+		// -timeout under about 3.75s out of reach of a detection by hang (design D1).
+		{name: "a timeout too short for the margin", exp: expectAt("value_test.go:99"), timeout: 3 * time.Second,
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: inconclusive, words: []string{"baseline run 1", "1.247s", "margin of 1s"}},
+		{name: "an after-run that reported no elapsed time", exp: expectAt("value_test.go:99"),
+			elapsed:  map[string]time.Duration{"after 1": -1},
+			plan:     map[string]recordedRun{"mutant 1": recHang},
+			wantRuns: hung, want: inconclusive, words: []string{"after-run", "no elapsed time"}},
+		{name: "stopped at the bound", exp: expectAt("value_test.go:53"), timeout: 45 * time.Second, elapsed: controls3s,
+			plan:     map[string]recordedRun{"mutant 1": recBoundedTimeout},
+			wantRuns: hung, want: inconclusive, words: []string{"bound"}},
+		{name: "a timeout before the named test runs", exp: expectAt("value_test.go:53"),
+			plan:     map[string]recordedRun{"mutant 1": recTimeoutBeforeRun},
+			wantRuns: hung, want: inconclusive, words: []string{"mutant run 1", "timeout"}},
+		// The named test passed in its one mutant run, so the reach run is made as before.
+		{name: "a test that reported a result", exp: expectAt("value_test.go:99"),
+			plan:     map[string]recordedRun{"mutant 1": recLoggedTO},
+			wantRuns: append(slices.Clone(hung), "reach 1"), want: inconclusive, words: []string{"mutant run 1", "timeout"}},
+		{name: "a passing mutant run before the hang", exp: expectAt("value_test.go:99"),
+			plan:     map[string]recordedRun{"mutant 2": recHang},
+			wantRuns: []string{"baseline 1", "baseline 2", "baseline 3", "mutant 1", "mutant 2", "after 1"},
+			want:     inconclusive, words: []string{"disagree", "run 1 pass", "run 2 hang", "2 of the 3 mutant runs"}},
+		{name: "a detected mutant run before the hang", exp: expectAt("value_test.go:10"),
+			plan:     map[string]recordedRun{"mutant 1": recFailExpected, "mutant 2": recHang},
+			wantRuns: []string{"baseline 1", "baseline 2", "baseline 3", "mutant 1", "mutant 2", "after 1"},
+			want:     inconclusive, words: []string{"disagree", "run 1 detection", "run 2 hang", "2 of the 3 mutant runs"}},
+		// mutation-check › "Inconclusive", "Whole-run timeout": the after-run ends by the timeout.
+		{name: "whole-run timeout", exp: expectAt("value_test.go:10"),
+			plan:     map[string]recordedRun{"mutant 1": recFailExpected, "mutant 2": recFailExpected, "mutant 3": recFailExpected, "after 1": recTimeout},
+			wantRuns: full, want: inconclusive, words: []string{"after-run", "timeout"}},
 		{name: "killed by a signal", exp: expectAt("value_test.go:60"),
 			plan:     map[string]recordedRun{"mutant 1": recKilled},
 			wantRuns: []string{"baseline 1", "baseline 2", "baseline 3", "mutant 1", "after 1"},
@@ -349,8 +468,12 @@ func TestCheckVerdicts(t *testing.T) {
 			wantRuns: full, want: inconclusive, words: []string{"disagree"}},
 		{name: "a different assertion fails", exp: expectAt("value_test.go:11"), plan: all(recFailExpected, mutants3...),
 			wantRuns: full, want: inconclusive, words: []string{"value_test.go:10"}},
+		// mutation-check › "Detection", "A failure that names no expected location": non-zero exits
+		// with no expected line and no timeout panic.
 		{name: "a failure that names no expected location", exp: expectAt("value_test.go:99"),
 			plan: all(recPassNonzero, mutants3...), wantRuns: withReach, want: inconclusive},
+		{name: "a failure at no expected location", exp: expectAt("value_test.go:99"),
+			plan: all(recFailExpected, mutants3...), wantRuns: full, want: inconclusive, words: []string{"no expected line"}},
 		{name: "a race report that is not expected", exp: expectAt("value_test.go:43"), plan: all(recRace, mutants3...),
 			wantRuns: full, want: inconclusive, words: []string{"race"}},
 		{name: "a race report that is expected", exp: expectation{texts: []string{raceText}}, plan: all(recRace, mutants3...),
@@ -380,7 +503,7 @@ func TestCheckVerdicts(t *testing.T) {
 			wantRuns: withReach, want: inconclusive, words: []string{"reach run"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			p := &planned{t: t, exp: tc.exp, plan: tc.plan}
+			p := &planned{t: t, exp: tc.exp, plan: tc.plan, elapsed: tc.elapsed}
 			c, err := sequence(t.Context(), 3, p.run)
 			if err != nil {
 				t.Fatal(err)
@@ -389,6 +512,10 @@ func TestCheckVerdicts(t *testing.T) {
 				t.Errorf("runs made: got %q, want %q", p.asked, tc.wantRuns)
 			}
 			c.seed, c.treeBefore, c.treeAfter = 7, "before", "before"
+			c.timeout = 2 * time.Minute
+			if tc.timeout != 0 {
+				c.timeout = tc.timeout
+			}
 			if tc.treeAfter != "" {
 				c.treeAfter = tc.treeAfter
 			}

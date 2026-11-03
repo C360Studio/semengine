@@ -40,6 +40,10 @@ func Analyze(declarations []component.Declaration, streams config.StreamConfigs)
 	for _, finding := range malformedSubjectFindings(sorted, streams) {
 		result.add(finding)
 	}
+	// So does the second-responder check.
+	for _, finding := range requestConflictFindings(sorted) {
+		result.add(finding)
+	}
 
 	if len(sorted) == 0 {
 		result.add(Finding{
@@ -236,6 +240,76 @@ func malformedSubjectFindings(declarations []component.Declaration, streams conf
 		checkLane(declaration, "output", declaration.OutputPorts, declaration.OutputFacts)
 	}
 	return findings
+}
+
+// requestConflictFindings reports a second responder on a declared verb (#106):
+// a NATS-request input overlapping a subject of graph.QueryVerbs() when its
+// factory is not that verb's responder, or when an instance of the responder
+// earlier in declarations, which arrive in instance-name order, already declares
+// the verb. One finding per port names the first such subject in table order and
+// the other party. It reads declared ports only: a component that subscribes
+// without declaring a port is not seen.
+func requestConflictFindings(declarations []component.Declaration) []Finding {
+	verbs := graph.QueryVerbs()
+	firstResponder := map[string]string{} // verb subject to the first responder instance declaring it
+	var findings []Finding
+	for _, declaration := range declarations {
+		for index, port := range declaration.InputPorts {
+			if index >= len(declaration.InputFacts) || declaration.InputFacts[index].Kind() != component.PortKindNATSRequest {
+				continue
+			}
+			for _, subject := range declaration.InputFacts[index].NATSSubjects() {
+				finding, conflict := requestConflict(declaration, port.Name, subject, verbs, firstResponder)
+				if conflict {
+					findings = append(findings, finding)
+				}
+			}
+		}
+	}
+	return findings
+}
+
+// requestConflict judges one port subject against every verb it overlaps,
+// recording the verbs its instance is the first responder to declare. It visits
+// them all, past a first conflict, so a later instance is judged against every
+// verb this one declares.
+func requestConflict(
+	declaration component.Declaration, portName, subject string, verbs []graph.QueryVerb, firstResponder map[string]string,
+) (Finding, bool) {
+	var finding Finding
+	found := false
+	for _, verb := range verbs {
+		if !flowgraph.SubjectsOverlap(subject, verb.Subject) {
+			continue
+		}
+		var party string
+		first, claimed := firstResponder[verb.Subject]
+		switch {
+		case declaration.FactoryIdentity != verb.Responder:
+			party = fmt.Sprintf("which factory %q answers", verb.Responder)
+		case claimed && first != declaration.InstanceName:
+			party = fmt.Sprintf("which instance %q of factory %q already answers", first, verb.Responder)
+		default:
+			firstResponder[verb.Subject] = declaration.InstanceName
+			continue
+		}
+		if found {
+			continue
+		}
+		found = true
+		finding = Finding{
+			Type: TypeRequestSubjectConflict, Severity: severityOf(TypeRequestSubjectConflict, nil),
+			Component: declaration.InstanceName,
+			Port:      portName,
+			Message: fmt.Sprintf("instance %q of factory %q declares NATS-request input subject %q, overlapping %q, %s",
+				declaration.InstanceName, declaration.FactoryIdentity, subject, verb.Subject, party),
+			Suggestions: []string{
+				"Serve this component's own verbs on a subject that overlaps no subject of graph.QueryVerbs()",
+				"Run one instance of each graph query responder",
+			},
+		}
+	}
+	return finding, found
 }
 
 // explicitStreamCovers reports whether the subscriber is fed by an explicit

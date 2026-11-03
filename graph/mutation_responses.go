@@ -111,6 +111,15 @@ const (
 	// has indexed that change, the same request answers the remaining holder.
 	// Consumers classify by this stable code, never by the message text.
 	ErrorCodeAliasAmbiguous = "alias_ambiguous"
+
+	// ErrorCodeRevisionNotReached indicates a query's min_revision is above the
+	// revision its reply would carry, on an index that is otherwise sound to read
+	// (contrast ErrorCodeIndexNotReady). Class is ErrorTransient; the detail's
+	// indexed_revision names the revision reached, and the caller may retry.
+	//
+	// Emitted by graph-index's verbs and relayed unchanged by graph-query.
+	// Consumers classify by this stable code, never by the message text.
+	ErrorCodeRevisionNotReached = "revision_not_reached"
 )
 
 // MutationOutcome is the outcome a graph-mutation reply carries. Every other

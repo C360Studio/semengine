@@ -2082,13 +2082,18 @@
     predicate, predicateList, predicateStats, predicateCompound, byName) with Responder
     ResponderGraphIndex (graph/query_verbs.go; design D6, #106); and, in fix-415-alias-index (ADR-114):
     (17) ErrorCodeAliasAmbiguous exports "alias_ambiguous", the code (class invalid) graph-index's alias
-    verb answers when two or more entities carry the alias
+    verb answers when two or more entities carry the alias; and, in setup-04a-04-graph-roots-graph-query:
+    (18) QueryVerb gains Enveloped and Reply, so a caller decodes a reply by its verb, and QueryVerbs adds
+    graph-query's six verbs on graph.query.* (entity, batch, prefix, byName, entityByAlias, relationships) with
+    Responder ResponderGraphQuery, new rows after the existing ones; (19) RelationshipEdge, the row of a
+    relationships reply, names the predicate where the pin's list named edge_type; (20) MinRevisionField, the
+    optional min_revision a request embeds, and ErrorCodeRevisionNotReached ("revision_not_reached", class
+    transient), the refusal graph-index gives when its indexed revision is below it
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
   known_risks: >-
-    no context roots. Still deferred: MinRevisionField, with the graph.query.* request types graph-query
-    brings (PR 9; ruled P, design D18), and the generation marker beside indexed_revision so a revision
+    no context roots. Still deferred: the generation marker beside indexed_revision so a revision
     from a recreated bucket is detectable (#103 stays open; ADR-109). pkg/fusion (change 5)
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
@@ -3318,7 +3323,10 @@
     of a component.Registry and a config.Config whose every judgment is a finding of the closed vocabulary; two
     components whose exclusive claims clash give one exclusive_resource_conflict on the later in instance-name order,
     whose message is component.Declaration.ConflictWith's error text, so the offline judgment is boot admission's
-    (#338); a component whose own claims clash gives port_declaration_error; the reserved-subject requirement of the
+    (#338); a component whose own claims clash gives port_declaration_error; a NATS-request input port whose
+    subject overlaps a subject of graph.QueryVerbs() gives one request_subject_conflict error when the component's
+    factory identity is not the verb's responder, or on the later instance when two are (setup-04a-04-graph-roots-
+    graph-query D6; it sees declared ports only, so a subscriber with no port is not seen); the reserved-subject requirement of the
     graph-transport-boundary spec (the composition share of #16): Analyze gives one reserved_subject_capture error for
     each explicit stream filter and JetStream output filter that overlaps a subject of graph.QueryVerbs() or
     graphmutation.SubjectFamily, read from those declarations, naming the stream (a derived one by
@@ -3349,6 +3357,7 @@
     TestValidateSelfClashIsPortDeclarationError), catalog_test.go (TestCatalogCarriesDefaultPortsOrRequiresConfig),
     mermaid_test.go (TestMermaidIsDeterministic), reserved_test.go (TestValidateRefusesStreamCapturingReservedSubject,
     TestValidateDoesNotRefuseNeighbouringSubjects, TestReservedSubjectOverlapMatchesEnumeration),
+    analyze_test (TestAnalyzeReportsSecondResponder),
     flowpaths_test.go (TestFlowPathsKeysEachOrigin, TestFlowPathsWalksDepthFirstInEdgeOrder,
     TestFlowPathsVisitsEachNodeOnce, TestFlowPathsOverAnEmptyGraph)
   owner: port-composition developer
@@ -3449,7 +3458,10 @@
     #426, #430); (10) ALIAS_INDEX keys an alias by its owner, hash(alias).entity6.hex(predicate), so a dropped or
     changed alias and a deleted entity's alias stop resolving; the read answers the one holder, refuses two or more
     as alias_ambiguous, matches trimmed and case-folded, indexes any non-empty string, and counts once per entity
-    in updates_total{index_type="alias"}; the alias skip counter is removed (ADR-114)
+    in updates_total{index_type="alias"}; the alias skip counter is removed (ADR-114); (11) every one of the
+    eight verbs accepts an optional min_revision and refuses with transient revision_not_reached, the reached
+    revision in the detail, when its indexed revision is below it; it never waits (setup-04a-04-graph-roots-
+    graph-query D3)
   dependencies_and_side_effects: >-
     component, graph, graph/follower, graph/kvcatalog, graph/readiness, internal/dispatch, metric, natsclient,
     pkg/errs, pkg/types, vocabulary (in-set); nats.go/jetstream, prometheus/client_golang; KV reads and writes on the
@@ -4153,3 +4165,114 @@
   proving_tests: n/a (task docs:check lints it); the partition is proved by TestMaintainerAsAProduct
   owner: setup-04a-04-graph-roots-clustering technical writer
   disposition: adapt
+
+- source_path: processor/graph-query
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the component that answers the graph's read requests on graph.query.* in front of graph-ingest and graph-index;
+    SemSource's search and prefix paging and SemConnect's entity reads call it
+  destination: processor/graph-query
+  contract: >-
+    graph.QueryVerbs() decides what it serves: Start subscribes a handler to each verb declared for graph-query and
+    fails on a declared verb with no handler. Ported in steps (split.md of change
+    setup-04a-04-graph-roots-graph-query); the package is whole only at step 5. Step 1 serves entity, batch, prefix
+    and byName as forwards, request and reply bytes unchanged, a refusal behind them reaching the caller with class,
+    code and detail, and entityByAlias and relationships as enveloped replies (graph.QueryResponse) built from
+    graph-index replies. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
+    requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
+    key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
+    revision_not_reached instead of swallowing them (ADR-114); relationships requires direction and names the
+    predicate where the pin named edge_type; the entity reply names kv_revision
+  dependencies_and_side_effects: >-
+    production: component, graph, natsclient, pkg/errs, pkg/types (in-set); tests also use metric and nats.go; one
+    request subscription per served verb; zero to two downstream requests per call (a refused request makes none,
+    entityByAlias up to two); no bucket access, no state of its own
+  known_risks: >-
+    a package in steps: later verbs are not in the verb table until their step, so a request for one reports no
+    responders; the second-responder check sees declared ports only (composition request_subject_conflict); a
+    consumer reading a pin shape changes at its cutover (processor/graph-query/MIGRATION.md). Not carried at step 1:
+    router.go, the relay validators (pin query.go:299-345) and the files in the rows below. Later steps carry
+    graphrag.go, pathrag.go, summary.go, searchgraph.go, entity_resolver.go and their tests
+  proving_tests: >-
+    processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
+    TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
+    TestUnknownConfigKeyIsRefused, TestStartThroughTheTable, TestEntityByAlias,
+    TestRelationshipsEnvelopeKeepsIndexRevision, TestRelationshipsRowKeys, TestRelationshipsRefusesUnknownDirection,
+    TestRelationshipsRefusesBrokenIndexReply, TestReadYourWrites, TestMinRevisionRefusalThroughGraphQuery,
+    TestGraphQueryRepliesDecodeByTheTable) and the lifecycle suite
+  owner: setup-04a-04-graph-roots-graph-query developer
+  disposition: adapt
+
+- source_path: docs/adr/060-unified-rpc-error-contract.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for the classified RPC error (one wrappable error carrying class, code and detail
+    over the wire), which graph-query relays between its callers and graph-ingest and graph-index
+  destination: docs/adr/060-unified-rpc-error-contract.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    markdownlint fixes (a doubled blank line removed; disable comments on one code span, three long headings and
+    one line starting with #) and a port note under the title naming the pin path and SHA, that ADR-091 amends
+    this record and is not ported, and that 060-pr-d-breaking-change-summary.md is not carried
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-graph-query technical writer
+  disposition: adapt
+
+- source_path: processor/graph-query/answer.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's answer synthesis; the plain-function half lands in step 3 of processor/graph-query, the half that
+    calls a language model is not carried (owner, #9 comment 6386603659)
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    the language-model half waits for a provider path: issue #487 (tier 2) and #32 (provider plumbing)
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-graph-query developer
+  disposition: defer-exclude
+
+- source_path: processor/graph-query/component.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's component wiring (hand-written lifecycle, requester interface, test hooks, router and summary-view
+    wiring); replaced by the shell in processor/graph-query/component.go
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    the language-model and summary-view wiring waits for issues #485, #486, #487 and #32; the rest is rewritten on
+    component.Lifecycle, not carried
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-graph-query developer
+  disposition: defer-exclude
+
+- source_path: processor/graph-query/summary_view.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's stored, language-model-written community summaries and the buckets behind them (pin ADR-087's
+    summary store); not carried
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    issue #485 owns language-model community summaries; its tests (summary_view_*, summary_bucket_*,
+    community_summary_wire_*) are not carried either
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-graph-query developer
+  disposition: defer-exclude
+
+- source_path: processor/graph-query/router.go
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's query router; dropped, since graph-query forwards graph.query.* verbs to the responder that answers
+    them and a router has no reader (owner, PR #504 rulings)
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: none; dead surface once the forwards replace it. router_test.go is dropped with it
+  proving_tests: n/a (excluded)
+  owner: setup-04a-04-graph-roots-graph-query developer
+  disposition: defer-exclude

@@ -3,10 +3,13 @@
 package graphingest
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
+	"reflect"
 	"slices"
 	"sync"
 	"testing"
@@ -177,5 +180,89 @@ func TestGraphIngestServesExactlyTheDeclaredVerbs(t *testing.T) {
 		if !hasResponder(t, nc, subject) {
 			t.Errorf("listed subject %s has no responder", subject)
 		}
+	}
+}
+
+// replyMatchesEntry decodes raw as a caller holding verb's table entry does: the envelope when the
+// entry is Enveloped, then the entry's Reply, each refusing an unknown field. Re-encoding the decoded
+// body must give the same JSON, so a Reply with fields the wire does not carry fails too.
+func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
+	decodeStrict := func(data []byte, into any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(into)
+	}
+	body := raw
+	if verb.Enveloped {
+		var reply graph.QueryResponse[json.RawMessage]
+		if err := decodeStrict(raw, &reply); err != nil {
+			return fmt.Errorf("as an envelope: %w", err)
+		}
+		body = reply.Data
+	}
+	decoded := reflect.New(verb.Reply)
+	if err := decodeStrict(body, decoded.Interface()); err != nil {
+		return fmt.Errorf("as %s: %w", verb.Reply, err)
+	}
+	again, err := json.Marshal(decoded.Interface())
+	if err != nil {
+		return err
+	}
+	var sent, resent any
+	if err := errors.Join(json.Unmarshal(body, &sent), json.Unmarshal(again, &resent)); err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(sent, resent) {
+		return fmt.Errorf("as %s re-encodes to %s, the reply body is %s", verb.Reply, again, body)
+	}
+	return nil
+}
+
+// TestRepliesMatchTheirTableEntries: every row the verb table declares for graph-ingest, not a list
+// kept here, gets a real reply with its optional keys present (batch's missing, prefix's next_cursor),
+// and that reply has the row's shape and type.
+func TestRepliesMatchTheirTableEntries(t *testing.T) {
+	ctx := t.Context()
+	c, nc, owner := startPrefixTestComponent(ctx, t, withAuthority("acme", "ops"))
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		owner.finish(stopCtx, t)
+	})
+	const one, two, absent = "acme.ops.dom.sys.type.one", "acme.ops.dom.sys.type.two", "acme.ops.dom.sys.type.absent"
+	seedPrefixEntity(t, ctx, c, one)
+	seedPrefixEntity(t, ctx, c, two)
+
+	requests := map[string]any{
+		"entity": map[string]string{"id": one},
+		"batch":  map[string][]string{"ids": {one, absent}},
+		"prefix": map[string]any{"prefix": "acme", "limit": 1},
+	}
+	walked := 0
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder != graph.ResponderGraphIngest {
+			continue
+		}
+		walked++
+		request, ok := requests[verb.Name]
+		if !ok {
+			t.Errorf("the table declares %s and this test has no request for it", verb.Name)
+			continue
+		}
+		data, err := json.Marshal(request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := nc.RequestClassified(ctx, verb.Subject, data, wireRequestTimeout)
+		if err != nil {
+			t.Errorf("%s: %v", verb.Name, err)
+			continue
+		}
+		if err := replyMatchesEntry(verb, raw); err != nil {
+			t.Errorf("%s reply does not match its table entry: %v; reply %s", verb.Name, err, raw)
+		}
+	}
+	if walked == 0 {
+		t.Fatal("the table declares no graph-ingest verb")
 	}
 }

@@ -21,6 +21,7 @@ type PredicateListData struct {
 // (SemStreams ADR-065).
 type PredicateListQuery struct {
 	Namespace string `json:"namespace,omitempty"`
+	MinRevisionField
 }
 
 // PredicateStatsData contains detailed statistics for a single predicate.
@@ -35,6 +36,7 @@ type CompoundPredicateQuery struct {
 	Predicates []string `json:"predicates"`
 	Operator   string   `json:"operator"` // "AND" or "OR"
 	Limit      int      `json:"limit,omitempty"`
+	MinRevisionField
 }
 
 // CompoundPredicateData contains entities matching a compound predicate query.

@@ -1,0 +1,45 @@
+=== RUN   TestPrefixCostProbe
+2026/11/02 10:55:27 github.com/testcontainers/testcontainers-go - Connected to docker:
+  Server Version: 29.9.2
+  API Version: 1.56
+  Operating System: Docker Desktop
+  Total Memory: 23742 MB
+  Labels:
+    com.docker.desktop.address=unix:///Users/coby/Library/Containers/com.docker.docker/Data/docker-cli.sock
+  Testcontainers for Go Version: v0.44.0
+  Resolved Docker Host: unix:///var/run/docker.sock
+  Resolved Docker Socket Path: /var/run/docker.sock
+  Test SessionID: 3da16e2c0fff98c33f1f8b47c86893565f47837547cdf9f0e6d38c9053b7bdb0
+  Test ProcessID: 1a319ef1-4e32-47e2-b5f5-aac7f5022452
+2026/11/02 10:55:27 🐳 Creating container for image nats:2.15.0-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4
+2026/11/02 10:55:27 ✅ Container created: c0c6ceafe174
+2026/11/02 10:55:27 🐳 Starting container: c0c6ceafe174
+2026/11/02 10:55:27 ✅ Container started: c0c6ceafe174
+2026/11/02 10:55:27 ⏳ Waiting for container id c0c6ceafe174 image: nats:2.15.0-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4. Waiting for: log message "Server is ready"
+2026/11/02 10:55:27 🔔 Container is ready: c0c6ceafe174
+2026/11/02 10:55:27 INFO Connecting to NATS urls=nats://localhost:57453
+2026/11/02 10:55:27 INFO Successfully connected to NATS urls=nats://localhost:57453
+2026/11/02 10:55:27 INFO Created new KV bucket bucket=ENTITY_STATES
+2026/11/02 10:55:27 INFO Created new KV bucket bucket=GRAPH_INGEST_APPLIED_SEQ
+2026/11/02 10:55:27 INFO Created new KV bucket bucket=GRAPH_STATUS
+2026/11/02 10:55:27 INFO JetStream consumer acknowledgement policy applied component=graph-ingest port=entity_stream stream=ENTITY consumer=graph-ingest-entity-wildcard policy_source=server requested_max_ack_pending=0 effective_max_ack_pending=1000
+COST seeded 100000 in 1.086776084s
+COST bucket values 100000 bytes 230873000
+COST total=100000 group=small(1k) firstPage=[39.0745ms 6.758083ms 6.571792ms] walk pages=3 entities=1000 took=29.454042ms
+COST total=100000 group=mid(10k) firstPage=[56.653166ms 18.634291ms 22.147375ms] walk pages=23 entities=10000 took=842.795959ms
+COST total=100000 emptyPrefix page=452 took=163.649083ms
+COST seeded 1000000 in 8.6585405s
+COST bucket values 1000000 bytes 2308673000
+COST total=1000000 group=small(1k) firstPage=[37.423833ms 14.0795ms 7.450708ms] walk pages=3 entities=1000 took=25.628041ms
+COST total=1000000 group=mid(10k) firstPage=[20.826375ms 20.713709ms 20.682667ms] walk pages=23 entities=10000 took=852.112292ms
+COST total=1000000 emptyPrefix page=452 took=1.434777791s
+COST big(100k) walk pages=222 entities=100000 took=35.781004333s sampledPages=[148.895416ms 162.007541ms 176.21175ms 154.327625ms 155.727042ms]
+--- PASS: TestPrefixCostProbe (49.38s)
+PASS
+2026/11/02 10:56:16 🐳 Stopping container: c0c6ceafe174
+2026/11/02 10:56:16 ✅ Container stopped: c0c6ceafe174
+2026/11/02 10:56:16 🐳 Terminating container: c0c6ceafe174
+2026/11/02 10:56:16 🚫 Container terminated: c0c6ceafe174
+ok  	github.com/c360studio/semengine/processor/graph-ingest	50.194s
+timeout 800 go test -v -tags integration -count=1 -timeout 13m -run    55.05s user 27.36s system 159% cpu 51.685 total
+rc=0

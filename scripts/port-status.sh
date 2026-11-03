@@ -148,6 +148,9 @@ for cname, pkgs in changes:
         elif p == "graph/inference":
             partial += 1
             c_partial.append("graph/inference (hierarchy slice; rest in change 7)")
+        elif p == "processor/graph-query":
+            partial += 1
+            c_partial.append("processor/graph-query (lands in steps; whole at step 5)")
         else:
             ported += 1
             c_ported.append(p)

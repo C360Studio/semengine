@@ -3,11 +3,14 @@
 package graphindex
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"maps"
+	"math"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -116,6 +119,178 @@ func everyVerb(subject, target string) map[string]any {
 		"predicateCompound": map[string]any{"predicates": []string{linkTo, armed}, "operator": "AND"},
 		"byName":            map[string]string{"name": "Alpha"},
 	}
+}
+
+// withMinRevision is body with min_revision set, spelled here as it is on the wire so the test
+// does not take the field's name from the code under test.
+func withMinRevision(t *testing.T, body, minRevision any) map[string]any {
+	t.Helper()
+	data, err := json.Marshal(body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fields := map[string]any{}
+	if err := json.Unmarshal(data, &fields); err != nil {
+		t.Fatal(err)
+	}
+	fields["min_revision"] = minRevision
+	return fields
+}
+
+// answeredAt sends body on verb, requires a successful reply carrying exactly revision, and
+// returns its data as the wire spelled it.
+func answeredAt(t *testing.T, client *natsclient.Client, verb string, body any, revision uint64) string {
+	t.Helper()
+	raw, err := query(t, client, verb, body)
+	if err != nil {
+		t.Errorf("%s %v: %v, want an answer", verb, body, err)
+		return ""
+	}
+	var reply envelope[json.RawMessage]
+	if err := json.Unmarshal(raw, &reply); err != nil {
+		t.Fatalf("%s reply %s: %v", verb, raw, err)
+	}
+	if reply.IndexedRevision != revision {
+		t.Errorf("%s %v: indexed_revision = %d, want %d", verb, body, reply.IndexedRevision, revision)
+	}
+	return string(reply.Data)
+}
+
+// requireRevisionNotReached requires err to be the transient revision_not_reached refusal whose
+// detail names reached and nothing else. The code and the detail key are the wire's literals. A
+// number in a decoded detail is a JSON number, so float64.
+func requireRevisionNotReached(t *testing.T, verb string, err error, reached uint64) {
+	t.Helper()
+	var classified *errs.ClassifiedError
+	if !errors.As(err, &classified) {
+		t.Errorf("%s: err = %v, want a classified refusal", verb, err)
+		return
+	}
+	if classified.Class != errs.ErrorTransient || classified.Code != "revision_not_reached" {
+		t.Errorf("%s: class %v code %q (%v), want transient revision_not_reached", verb, classified.Class,
+			classified.Code, err)
+	}
+	want := map[string]any{"indexed_revision": float64(reached)}
+	if !maps.Equal(classified.Detail, want) {
+		t.Errorf("%s: detail = %v, want %v", verb, classified.Detail, want)
+	}
+}
+
+// TestMinRevisionBoundary: a verb compares min_revision with the revision its reply would carry,
+// after validation and readiness and before its first bucket read (spec "An unmet min_revision is
+// refused"; design D3). The expected revisions are the ones the fixture's own writes returned.
+func TestMinRevisionBoundary(t *testing.T) {
+	subject, target := entityID(1), entityID(2)
+	requests := everyVerb(subject, target)
+	declared := 0
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder != graph.ResponderGraphIndex {
+			continue
+		}
+		declared++
+		if _, ok := requests[verb.Name]; !ok {
+			t.Fatalf("no request for declared verb %s", verb.Name)
+		}
+	}
+	if declared != 8 || len(requests) != 8 {
+		t.Fatalf("declared verbs %d, requests %d, want 8 of each", declared, len(requests))
+	}
+	// put writes the entity everyVerb's requests read, after another write, so the revision is
+	// neither 0 nor 1, and waits until the follower has indexed it.
+	put := func(t *testing.T, h *harness) uint64 {
+		t.Helper()
+		h.put(t, target, entityValue(t, target, stmt{armed, false}))
+		rev := h.put(t, subject, entityValue(t, subject,
+			stmt{linkTo, target}, stmt{armed, true}, stmt{vocabulary.DCTermsTitle, "Alpha"}, stmt{alias, "alpha-1"}))
+		h.awaitIndexed(t, rev)
+		return rev
+	}
+
+	t.Run("boundary", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		rev := put(t, h)
+		for verb, body := range requests {
+			absent := answeredAt(t, h.client, verb, body, rev)
+			if absent == "" || absent == "null" {
+				t.Errorf("%s without min_revision carries no data: %q", verb, absent)
+			}
+			// Zero and JSON null are no minimum, as an absent field is; R is met.
+			for _, met := range []any{0, nil, rev} {
+				if got := answeredAt(t, h.client, verb, withMinRevision(t, body, met), rev); got != absent {
+					t.Errorf("%s min_revision %v: data %s, want the answer without it, %s", verb, met, got, absent)
+				}
+			}
+			for _, above := range []uint64{rev + 1, math.MaxUint64} {
+				_, err := query(t, h.client, verb, withMinRevision(t, body, above))
+				requireRevisionNotReached(t, verb, err, rev)
+			}
+		}
+	})
+
+	// A follower at revision 0: zero is still no minimum, 1 is above it, and the detail still
+	// names the revision. The latch is awaited as a remote reader sees it, the published envelope,
+	// because the empty index is otherwise not ready yet.
+	t.Run("empty-index", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		await(t, "an envelope reporting bootstrap complete",
+			func(ctx context.Context) (graph.IndexStatusResponse, error) { return publishedEnvelope(ctx, h.client) },
+			func(s graph.IndexStatusResponse) bool { return s.BootstrapComplete })
+		for verb, body := range requests {
+			answeredAt(t, h.client, verb, withMinRevision(t, body, 0), 0)
+			_, err := query(t, h.client, verb, withMinRevision(t, body, 1))
+			requireRevisionNotReached(t, verb, err, 0)
+		}
+	})
+
+	// With every index bucket gone, a read cannot succeed: the same request with a met minimum
+	// shows it, failing as internal. So a refusal that still names the revision came before any
+	// read whose failure reaches the reply; a read that ignored its error would not show here.
+	t.Run("refusal-before-reads", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		rev := put(t, h)
+		js, err := h.client.JetStream()
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, bucket := range []string{graph.BucketOutgoingIndex, graph.BucketIncomingIndex, graph.BucketAliasIndex,
+			graph.BucketPredicateIndex, graph.BucketNameIndex} {
+			if err := js.DeleteKeyValue(t.Context(), bucket); err != nil {
+				t.Fatalf("delete %s: %v", bucket, err)
+			}
+		}
+		for verb, body := range requests {
+			_, err := query(t, h.client, verb, withMinRevision(t, body, rev+1))
+			requireRevisionNotReached(t, verb, err, rev)
+
+			_, err = query(t, h.client, verb, withMinRevision(t, body, rev))
+			var classified *errs.ClassifiedError
+			if !errors.As(err, &classified) || classified.Code != graph.ErrorCodeInternal {
+				t.Errorf("%s with its bucket gone and min_revision met: err = %v, want code %s", verb, err,
+					graph.ErrorCodeInternal)
+			}
+		}
+	})
+
+	// A follower with an unresolved write withholds readiness: being behind is not reported in
+	// its place (spec "index_not_ready keeps its meaning"; ADR-109 Decision 4).
+	t.Run("not-ready-first", func(t *testing.T) {
+		h := startIndex(t, fixtureClient(t), `{}`)
+		js, err := h.client.JetStream()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := js.DeleteKeyValue(t.Context(), graph.BucketIncomingIndex); err != nil {
+			t.Fatalf("delete %s: %v", graph.BucketIncomingIndex, err)
+		}
+		rev := put(t, h) // the lane marks the entity failed before it completes the revision
+		if n := h.c.failedTotal(); n == 0 {
+			t.Fatal("no failed entity: the fixture no longer withholds readiness")
+		}
+		for verb, body := range requests {
+			_, err := query(t, h.client, verb, withMinRevision(t, body, rev+1))
+			requireNotReady(t, verb, err)
+		}
+	})
 }
 
 // listedSubjects is the test adapter's list of graph-index's query request subscriptions: the
@@ -237,6 +412,77 @@ func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
 		if len(reply.Data) == 0 || string(reply.Data) == "null" {
 			t.Errorf("%s reply carries no data: %s", verb, raw)
 		}
+	}
+}
+
+// replyMatchesEntry decodes raw as a caller holding verb's table entry does: the envelope when the
+// entry is Enveloped, then the entry's Reply, each refusing an unknown field. Re-encoding the decoded
+// body must give the same JSON, so a Reply with fields the wire does not carry fails too.
+func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
+	decodeStrict := func(data []byte, into any) error {
+		decoder := json.NewDecoder(bytes.NewReader(data))
+		decoder.DisallowUnknownFields()
+		return decoder.Decode(into)
+	}
+	body := raw
+	if verb.Enveloped {
+		var reply graph.QueryResponse[json.RawMessage]
+		if err := decodeStrict(raw, &reply); err != nil {
+			return fmt.Errorf("as an envelope: %w", err)
+		}
+		body = reply.Data
+	}
+	decoded := reflect.New(verb.Reply)
+	if err := decodeStrict(body, decoded.Interface()); err != nil {
+		return fmt.Errorf("as %s: %w", verb.Reply, err)
+	}
+	again, err := json.Marshal(decoded.Interface())
+	if err != nil {
+		return err
+	}
+	var sent, resent any
+	if err := errors.Join(json.Unmarshal(body, &sent), json.Unmarshal(again, &resent)); err != nil {
+		return err
+	}
+	if !reflect.DeepEqual(sent, resent) {
+		return fmt.Errorf("as %s re-encodes to %s, the reply body is %s", verb.Reply, again, body)
+	}
+	return nil
+}
+
+// TestRepliesMatchTheirTableEntries: every row the verb table declares for graph-index, not a list
+// kept here, gets a real reply carrying data, and that reply has the row's shape and type
+// (graph-transport-boundary; notes/3.1-review.md shows a wrong mark fails).
+func TestRepliesMatchTheirTableEntries(t *testing.T) {
+	h := startIndex(t, fixtureClient(t), `{}`)
+	subject, target := entityID(1), entityID(2)
+	rev := h.put(t, subject, entityValue(t, subject,
+		stmt{linkTo, target}, stmt{armed, true}, stmt{vocabulary.DCTermsTitle, "Alpha"}, stmt{alias, "alpha-1"}))
+	h.awaitIndexed(t, rev)
+
+	requests := everyVerb(subject, target)
+	walked := 0
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder != graph.ResponderGraphIndex {
+			continue
+		}
+		walked++
+		request, ok := requests[verb.Name]
+		if !ok {
+			t.Errorf("the table declares %s and this test has no request for it", verb.Name)
+			continue
+		}
+		raw, err := query(t, h.client, verb.Name, request)
+		if err != nil {
+			t.Errorf("%s: %v", verb.Name, err)
+			continue
+		}
+		if err := replyMatchesEntry(verb, raw); err != nil {
+			t.Errorf("%s reply does not match its table entry: %v; reply %s", verb.Name, err, raw)
+		}
+	}
+	if walked == 0 {
+		t.Fatal("the table declares no graph-index verb")
 	}
 }
 

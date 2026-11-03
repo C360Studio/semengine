@@ -1,0 +1,187 @@
+// Behaviour probes P0-P7 of inventory.md section 1, for processor/graph-query at
+// the SemStreams pin 8b99efe9. Not a test of this repository: it builds only
+// inside a pin copy, through a build overlay. README.md beside it has the replay.
+package graphquery
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log/slog"
+	"testing"
+	"time"
+
+	"github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/pkg/errs"
+)
+
+func TestInventoryProbe(t *testing.T) {
+	t.Run("P0", probeDefaultConfigRoundTrip)
+	t.Run("P1", probeTimeoutString)
+	t.Run("P2", probeUnknownKey)
+	t.Run("P3", probeDocPortExample)
+	t.Run("P4", probeSummary)
+	t.Run("P5", probeEntityByAlias)
+	t.Run("P5b", probeResolver)
+	t.Run("P6", probeKVRevision)
+	t.Run("P7", probeApplyLimits)
+}
+
+// validPortsJSON is DefaultConfig's own port block, so a probe's other keys reach
+// the code they are about instead of stopping at the ports check.
+func validPortsJSON(t *testing.T) json.RawMessage {
+	t.Helper()
+	b, err := json.Marshal(DefaultConfig().Ports)
+	if err != nil {
+		t.Fatalf("marshal default ports: %v", err)
+	}
+	return b
+}
+
+func probeDefaultConfigRoundTrip(t *testing.T) {
+	first, err := json.Marshal(DefaultConfig())
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	cfg, _, err := resolveConfig(first)
+	if err != nil {
+		t.Logf("RESULT resolveConfig refused its own default: %v", err)
+		return
+	}
+	second, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("re-marshal: %v", err)
+	}
+	var fields struct {
+		QueryTimeout json.RawMessage `json:"query_timeout"`
+	}
+	if err := json.Unmarshal(first, &fields); err != nil {
+		t.Fatalf("read query_timeout: %v", err)
+	}
+	t.Logf("RESULT resolveConfig err=nil query_timeout=%s decoded=%v", fields.QueryTimeout, cfg.QueryTimeout)
+	// ApplyDefaults also fills recheck_interval, so the second form may carry more.
+	t.Logf("RESULT first=%s", first)
+	t.Logf("RESULT second=%s", second)
+}
+
+func probeTimeoutString(t *testing.T) {
+	raw := fmt.Sprintf(`{"ports":%s,"query_timeout":"5s"}`, validPortsJSON(t))
+	_, _, err := resolveConfig(json.RawMessage(raw))
+	t.Logf("RESULT query_timeout=\"5s\" with valid ports: err=%v", err)
+}
+
+func probeUnknownKey(t *testing.T) {
+	raw := fmt.Sprintf(`{"ports":%s,"no_such_key":1}`, validPortsJSON(t))
+	_, _, err := resolveConfig(json.RawMessage(raw))
+	t.Logf("RESULT no_such_key with valid ports: err=%v", err)
+	_, _, control := resolveConfig(json.RawMessage(`{"no_such_key":1}`))
+	t.Logf("RESULT no_such_key without ports stops earlier: err=%v", control)
+}
+
+func probeDocPortExample(t *testing.T) {
+	// doc.go:44-46 as written, three input ports.
+	three := `{"ports":{"inputs":[
+		{"name":"query_entity","config":{"kind":"nats-request","subject":"graph.query.entity"}},
+		{"name":"query_relationships","config":{"kind":"nats-request","subject":"graph.query.relationships"}},
+		{"name":"query_path_search","config":{"kind":"nats-request","subject":"graph.query.pathSearch"}}
+	]}}`
+	_, _, err := resolveConfig(json.RawMessage(three))
+	t.Logf("RESULT doc.go:44-46 as written (3 ports): err=%v", err)
+	// doc.go:44 alone: one port passes the count check and reaches the name check.
+	one := `{"ports":{"inputs":[
+		{"name":"query_entity","config":{"kind":"nats-request","subject":"graph.query.entity"}}
+	]}}`
+	_, _, err = resolveConfig(json.RawMessage(one))
+	t.Logf("RESULT doc.go:44 only (1 port): err=%v", err)
+}
+
+func probeSummary(t *testing.T) {
+	page := graph.PrefixQueryResponse{Entities: make([]graph.EntityState, 1000)}
+	for i := range page.Entities {
+		page.Entities[i] = graph.EntityState{ID: fmt.Sprintf("acme.ops.robotics.gcs.drone.e%04d", i)}
+	}
+	body, err := json.Marshal(page)
+	if err != nil {
+		t.Fatalf("marshal page: %v", err)
+	}
+	m := newMockNATSClient()
+	m.requestClassifiedFunc = func(_ context.Context, subject string, _ []byte, _ time.Duration) ([]byte, error) {
+		if subject == "graph.ingest.query.prefix" {
+			return body, nil
+		}
+		return nil, errs.ClassifiedCode(errs.ErrorTransient, "probe_refused", errors.New("predicate verb refused"))
+	}
+	out, err := probeComponent(m).handleQueryGraphSummary(context.Background(), []byte(`{}`))
+	t.Log("FAKE prefix verb returns one page of 1000 entities; every other verb refuses with probe_refused")
+	if err != nil {
+		t.Logf("RESULT err=%v", err)
+		return
+	}
+	var resp graph.QueryResponse[graph.SummaryData]
+	if err := json.Unmarshal(out, &resp); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	t.Logf("RESULT err=nil total_entities=%d entity_sample_truncated=%v predicates=%v predicate_total=%d",
+		resp.Data.TotalEntities, resp.Data.EntitySampleTruncated, resp.Data.Predicates, resp.Data.PredicateTotal)
+}
+
+// aliasRefusingClient is the fake P5 and P5b share. It is not real responder
+// behaviour: real graph-ingest refuses the non-ID "sn-1" as invalid_request
+// (processor/graph-ingest/query.go:82 at the pin), not as not_found.
+func aliasRefusingClient(calls *[]string) *mockNATSClient {
+	m := newMockNATSClient()
+	m.requestClassifiedFunc = func(_ context.Context, subject string, data []byte, _ time.Duration) ([]byte, error) {
+		*calls = append(*calls, subject+" "+string(data))
+		if subject == "graph.index.query.alias" {
+			return nil, errs.ClassifiedCode(errs.ErrorInvalid, "alias_ambiguous", errors.New("two holders"))
+		}
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, "not_found", errors.New("fake: no such entity"))
+	}
+	return m
+}
+
+const aliasFakeStatement = "FAKE alias verb refuses alias_ambiguous; every other verb refuses not_found. " +
+	"This is the probe's fake, not real responder behaviour: real graph-ingest refuses this non-ID as invalid_request"
+
+func probeEntityByAlias(t *testing.T) {
+	var calls []string
+	c := probeComponent(aliasRefusingClient(&calls))
+	out, err := c.handleQueryEntityByAlias(context.Background(), []byte(`{"aliasOrID":"sn-1"}`))
+	t.Log(aliasFakeStatement)
+	t.Logf("RESULT out=%q err=%v", out, err)
+	for _, call := range calls {
+		t.Logf("RESULT asked %s", call)
+	}
+}
+
+func probeResolver(t *testing.T) {
+	var calls []string
+	c := probeComponent(aliasRefusingClient(&calls))
+	id, err := c.resolvePartialEntityID(context.Background(), "sn-1")
+	t.Log(aliasFakeStatement)
+	t.Logf("RESULT resolvePartialEntityID id=%q err=%v", id, err)
+	for _, call := range calls {
+		t.Logf("RESULT asked %s", call)
+	}
+}
+
+func probeKVRevision(t *testing.T) {
+	err := validateEntityQueryResponse([]byte(`{"entity":{"id":"a"},"kv_revision":7}`))
+	t.Logf("RESULT kv_revision (snake case): err=%v", err)
+	err = validateEntityQueryResponse([]byte(`{"entity":{"id":"a"},"kvRevision":7}`))
+	t.Logf("RESULT kvRevision (the field's tag, control): err=%v", err)
+}
+
+func probeApplyLimits(t *testing.T) {
+	p := &PathSearcher{maxDepth: 10}
+	d, n := p.applyLimits(-5, 2000000000)
+	t.Logf("RESULT applyLimits(-5, 2000000000) maxDepth=10: %d, %d", d, n)
+	d, n = p.applyLimits(11, 0)
+	t.Logf("RESULT applyLimits(11, 0) maxDepth=10, control: %d, %d", d, n)
+}
+
+func probeComponent(m *mockNATSClient) *Component {
+	logger := slog.New(slog.DiscardHandler)
+	return &Component{natsClient: m, router: NewStaticRouter(logger), logger: logger, config: DefaultConfig()}
+}

@@ -1,0 +1,44 @@
+=== RUN   TestInventoryProbe
+=== RUN   TestInventoryProbe/P0
+    zz_inventory_probe_test.go:62: RESULT resolveConfig err=nil query_timeout=5000000000 decoded=5s
+    zz_inventory_probe_test.go:64: RESULT first={"ports":{"inputs":[{"name":"graph_queries","required":true,"config":{"interface":{"type":"graph.query","version":"v1"},"kind":"nats-request","subject":"graph.query.*","timeout":"1s"}}]},"query_timeout":5000000000,"max_depth":10}
+    zz_inventory_probe_test.go:65: RESULT second={"ports":{"inputs":[{"name":"graph_queries","required":true,"config":{"interface":{"type":"graph.query","version":"v1"},"kind":"nats-request","subject":"graph.query.*","timeout":"1s"}}]},"query_timeout":5000000000,"max_depth":10,"recheck_interval":5000000000}
+=== RUN   TestInventoryProbe/P1
+    zz_inventory_probe_test.go:71: RESULT query_timeout="5s" with valid ports: err=parse config: json: cannot unmarshal string into Go struct field Config.query_timeout of type time.Duration
+=== RUN   TestInventoryProbe/P2
+    zz_inventory_probe_test.go:77: RESULT no_such_key with valid ports: err=<nil>
+    zz_inventory_probe_test.go:79: RESULT no_such_key without ports stops earlier: err=invalid config: ports configuration is required
+=== RUN   TestInventoryProbe/P3
+    zz_inventory_probe_test.go:90: RESULT doc.go:44-46 as written (3 ports): err=invalid config: exactly one graph_queries input port is required, got 3
+    zz_inventory_probe_test.go:96: RESULT doc.go:44 only (1 port): err=invalid config: graph-query input must be the required graph_queries port
+=== RUN   TestInventoryProbe/P4
+    zz_inventory_probe_test.go:116: FAKE prefix verb returns one page of 1000 entities; every other verb refuses with probe_refused
+    zz_inventory_probe_test.go:125: RESULT err=nil total_entities=1000 entity_sample_truncated=false predicates=[] predicate_total=0
+=== RUN   TestInventoryProbe/P5
+    zz_inventory_probe_test.go:151: FAKE alias verb refuses alias_ambiguous; every other verb refuses not_found. This is the probe's fake, not real responder behaviour: real graph-ingest refuses this non-ID as invalid_request
+    zz_inventory_probe_test.go:152: RESULT out="" err=fake: no such entity
+    zz_inventory_probe_test.go:154: RESULT asked graph.index.query.alias {"alias":"sn-1"}
+    zz_inventory_probe_test.go:154: RESULT asked graph.ingest.query.entity {"id":"sn-1"}
+=== RUN   TestInventoryProbe/P5b
+    zz_inventory_probe_test.go:162: FAKE alias verb refuses alias_ambiguous; every other verb refuses not_found. This is the probe's fake, not real responder behaviour: real graph-ingest refuses this non-ID as invalid_request
+    zz_inventory_probe_test.go:163: RESULT resolvePartialEntityID id="" err=<nil>
+    zz_inventory_probe_test.go:165: RESULT asked graph.index.query.alias {"alias":"sn-1"}
+    zz_inventory_probe_test.go:165: RESULT asked graph.ingest.query.suffix {"suffix":"sn-1"}
+=== RUN   TestInventoryProbe/P6
+    zz_inventory_probe_test.go:171: RESULT kv_revision (snake case): err=validate exact entity query response: zero KV revision
+    zz_inventory_probe_test.go:173: RESULT kvRevision (the field's tag, control): err=validate entity query response: graph.ValidateDecodedEntityState: validate authoritative entity state failed: graph_state_reset_required: noncanonical_entity_id: entity state contract violation: id
+=== RUN   TestInventoryProbe/P7
+    zz_inventory_probe_test.go:179: RESULT applyLimits(-5, 2000000000) maxDepth=10: -5, 2000000000
+    zz_inventory_probe_test.go:181: RESULT applyLimits(11, 0) maxDepth=10, control: 10, 100
+--- PASS: TestInventoryProbe (0.00s)
+    --- PASS: TestInventoryProbe/P0 (0.00s)
+    --- PASS: TestInventoryProbe/P1 (0.00s)
+    --- PASS: TestInventoryProbe/P2 (0.00s)
+    --- PASS: TestInventoryProbe/P3 (0.00s)
+    --- PASS: TestInventoryProbe/P4 (0.00s)
+    --- PASS: TestInventoryProbe/P5 (0.00s)
+    --- PASS: TestInventoryProbe/P5b (0.00s)
+    --- PASS: TestInventoryProbe/P6 (0.00s)
+    --- PASS: TestInventoryProbe/P7 (0.00s)
+PASS
+ok  	github.com/c360studio/semstreams/processor/graph-query	0.397s

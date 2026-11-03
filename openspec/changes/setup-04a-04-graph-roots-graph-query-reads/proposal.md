@@ -38,7 +38,7 @@ the four forwards (changes 5, 7).
 
 - About 620 production and 1,250 test lines (hand estimate). Pin: 917 and 1,643 (`inventory.md` § 12, row 9.2). One PR:
   three independent handlers on one shell, one developer's unit per task; not worth two PRs.
-- **New exported surface, for the owner to accept.** In `graph`: `ResponderGraphEmbedding`,
+- **New exported surface, accepted by the owner 2026-11-03.** In `graph`: `ResponderGraphEmbedding`,
   `ResponderGraphIndexSpatial`, `ResponderGraphIndexTemporal`, `MaxPathSearchDepth`, `MaxPathSearchNodes`,
   `DefaultPathSearchNodes`, `PathSearchRequest`, `PathSearchData`, `PathEntity`, `HierarchyStatsRequest`,
   `HierarchyStatsData`, `HierarchyChild`, `SemanticData`, `SimilarData`, `SimilarityHit`, `SpatialData`, `SpatialHit`,
@@ -48,6 +48,6 @@ the four forwards (changes 5, 7).
   `graph.query.{pathSearch,hierarchyStats,summary,semantic,similar,spatial,temporal}`,
   `graph.embedding.query.{search,similar}`, `graph.spatial.query.bounds`, `graph.temporal.query.range`. No new bucket
   and no new config key: `max_traversal_depth` and `max_traversal_nodes` stay refused.
-- Two questions for the owner in `owner-questions.md`: whether counts should be exact, and whether `hierarchyStats`
-  keeps the envelope, which narrows ruling 1 either way. The design is written on the ruling's list until answered.
+- The owner answered `owner-questions.md` on 2026-11-03: the true `total` and `prefix` on `summary`, no count verb yet;
+  `hierarchyStats` bare, which narrows ruling 1's list.
 - No code before the owner approves. Retires no issue; `inventory-delta.md` disposes each one.

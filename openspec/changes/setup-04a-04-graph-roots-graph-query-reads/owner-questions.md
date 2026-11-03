@@ -1,5 +1,9 @@
 # Owner questions: setup-04a-04-graph-roots-graph-query-reads
 
+Answered by the owner on 2026-11-03: question 1, the true total and the prefix on the overview, no new count request yet;
+question 2, remove the wrapper from `hierarchyStats`. The new exports in `proposal.md` are accepted. The text below is
+what they answered.
+
 ## 1. Should the graph overview and hierarchy counts be exact?
 
 **Not fully, not yet. Take two small changes, already in the design, and build exact counts when someone needs them.**

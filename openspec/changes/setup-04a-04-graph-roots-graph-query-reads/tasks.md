@@ -55,9 +55,9 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   page read both count verbs share, IDs only. Premise: `pin:query.go:470-560`, P4,
   `processor/graph-ingest/query.go:280-346` (D4, D5, D7). Check: `TestHierarchyStatsDeclaresAPartialPage`,
   `TestCountsAddUpAcrossPages`, `TestCountsOfAnEmptyGroup`, `TestCountsReadOnePage`, `TestCountsRefuseABrokenPage`,
-  `TestAuthorityOnlyAnswerClaimsNoRevision`; `truncated` shown to fail. MIGRATION, under "The changes that fail
+  `TestHierarchyStatsIgnoresMinRevision`; `truncated` shown to fail. MIGRATION, under "The changes that fail
   silently" too: `totalEntities` to `total_entities`, now true; `entities_scanned`, `truncated`, `next_cursor` new;
-  `name` gone; enveloped.
+  `name` gone; bare.
 - [ ] 4.3 `summary` with its row; `SummaryRequest` and `SummaryData` change (`prefix`, `exclude_predicates`, no
   `entity_sample_limit`, `cursor`, `min_revision`, true `total_entities`, `entities_scanned`, `truncated`,
   `next_cursor`; `predicates` without `omitempty`; no `predicate_total`). Needs 4.2's page read. Premise:

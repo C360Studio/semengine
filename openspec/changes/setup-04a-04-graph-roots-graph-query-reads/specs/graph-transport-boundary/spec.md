@@ -56,17 +56,18 @@ reserved.
 
 ### Requirement: The verb table declares each reply's shape
 
-An entry's `Enveloped` SHALL be true when any part of the verb's answer comes from a graph-index or other derived-index
-reply, or the verb is one graph-query composes, and false when its responder is an authority or only forwards an
-authority's reply. `Reply` SHALL be the type of the reply body, or of `data` when enveloped. A caller SHALL decode by
-verb; nothing SHALL decide a reply's shape from its content.
+An entry's `Enveloped` SHALL be true when any answer of the verb can use a graph-index or other derived-index reply, and
+false when its responder is an authority or every answer comes from an authority alone. `Reply` SHALL be the type of the
+reply body, or of `data` when enveloped. A caller SHALL decode by verb; nothing SHALL decide a reply's shape from its
+content.
 
 #### Scenario: The table matches the wire
 
 - **WHEN** each declared verb of graph-query answers a request, from a real responder where one exists and from literal
   JSON on a stub for the four verbs whose responders are not yet in the tree
 - **THEN** its reply decodes by its entry with unknown fields refused
-- **AND** `entity` decodes bare and `entityByAlias` enveloped (`TestGraphQueryRepliesDecodeByTheTable`)
+- **AND** `entity` and `hierarchyStats` decode bare and `entityByAlias` enveloped
+  (`TestGraphQueryRepliesDecodeByTheTable`)
 
 ### Requirement: An enveloped reply names the smallest revision
 
@@ -85,5 +86,5 @@ derived-index replies the answer was built from, or 0 when the answer was built 
 
 #### Scenario: No index reply
 
-- **WHEN** `hierarchyStats` answers, or `summary` with `exclude_predicates`
+- **WHEN** `summary` with `exclude_predicates` answers
 - **THEN** its `indexed_revision` is 0 (`TestAuthorityOnlyAnswerClaimsNoRevision`)

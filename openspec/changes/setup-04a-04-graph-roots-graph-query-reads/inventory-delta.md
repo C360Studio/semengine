@@ -106,12 +106,13 @@ list.
 
 **1. What must they know?** Decode by the table. Read `truncated` on `pathSearch` and the two count verbs. Two facts;
 the limits and required fields are not on the list, since a refusal teaches them. `indexed_revision` 0 is a third for
-anyone comparing revisions there, a finding: the alarm never clears and a retry loop spins for ever. Owner question 2.
+anyone comparing revisions on `summary` with predicates excluded, a finding: the alarm never clears and a retry loop
+spins for ever. The owner made `hierarchyStats` bare, so it holds there only, with a doc warning.
 
 **2. If they do nothing?** Sending nothing but a start: refused, naming `direction`, then `max_depth`. Calling
 `semantic` before change 5: transient refusal naming the subject. Ignoring `truncated` on a count: reads a sample as
-the whole, though the key says `entities_scanned`. `total_entities` beside it shows the gap, and owner question 1
-weighs closing it. A walk through a hub over about 12,000 edges (near 3,500 at longest IDs): `response_too_large`,
+the whole, though the key says `entities_scanned`. `total_entities` beside it shows the gap; the owner left closing it
+until a caller needs it. A walk through a hub over about 12,000 edges (near 3,500 at longest IDs): `response_too_large`,
 whole, naming the entity, as at the pin (`pin:pathrag.go:290`); `predicates` cannot help. A pin caller sending
 `include_predicates` or `timeout`: refused, naming the key. A pin decoder of `paths`: empty, silently; tasks 3.1 and
 4.x list these under `MIGRATION.md`'s "The changes that fail silently".

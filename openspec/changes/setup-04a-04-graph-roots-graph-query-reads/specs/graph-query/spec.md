@@ -132,14 +132,14 @@ SHALL decode their request strictly. `total_entities` SHALL be the page's `total
 ### Requirement: Hierarchy counts name each child
 
 `hierarchyStats` SHALL take `prefix`, `cursor` and `min_revision`, refusing an invalid non-empty prefix with the
-validator's refusal. `data` SHALL be `graph.HierarchyStatsData`: `prefix`, `total_entities`, `entities_scanned`,
+validator's refusal. The reply SHALL be a bare `graph.HierarchyStatsData`: `prefix`, `total_entities`, `entities_scanned`,
 `truncated`, `next_cursor` when set, and `children`, each `{prefix, count}`, by count descending then prefix. An entity
 whose ID is the prefix SHALL count in `entities_scanned` and in no child.
 
 #### Scenario: Keys on the wire
 
 - **WHEN** a real graph-ingest holds entities under two children of a prefix, and one whose ID is the prefix
-- **THEN** `data` compares equal to the literal JSON (`TestHierarchyStatsDeclaresAPartialPage`)
+- **THEN** the reply compares equal to the literal JSON (`TestHierarchyStatsDeclaresAPartialPage`)
 
 ### Requirement: A summary has its predicates or says why not
 
@@ -202,6 +202,11 @@ above M.
 #### Scenario: An answer that read only the authority
 
 - **WHEN** `hierarchyStats` carries a `min_revision` far above any revision
+- **THEN** it answers bare (`TestHierarchyStatsIgnoresMinRevision`)
+
+#### Scenario: A summary that read only the authority
+
+- **WHEN** `summary` with `exclude_predicates` carries a `min_revision` far above any revision
 - **THEN** it answers, with `indexed_revision` 0 (`TestAuthorityOnlyAnswerClaimsNoRevision`)
 
 ### Requirement: Requests are counted for operators

@@ -114,7 +114,7 @@ would set one group's types beside the whole graph's predicates. As asked that i
 `PREDICATE_INDEX` scan too. **So `prefix` without `exclude_predicates: true` is `invalid_request`, naming both.** One
 scope, one group's scan, and its `indexed_revision` is 0 (D7). *Others rejected:* a bounded walk or a walk to the end
 (36 to 53 s at 100,000); `COMMUNITY_INDEX`, Q7(b), after change 7; an ID-count verb on graph-ingest,
-`owner-questions.md`, recommended not yet. (f) touches a merged package and comes out if the owner says so.
+not yet, the owner's answer in `owner-questions.md`, as for (f) and (g).
 
 `hierarchyStats` takes `prefix` (validated unless empty), `cursor`, `min_revision`; children are `{prefix, count}`
 (`name` repeats the prefix's last segment). An entity whose ID is the prefix counts in `entities_scanned` and no child.
@@ -139,13 +139,14 @@ intact, no prefix request; `TestSummaryRefusesABrokenPredicateReply` (stub).
 
 ## D7. An answer that read no index
 
-Ruling 1's list envelopes `hierarchyStats`, while its headline says bare where the authority answers; `summary` with
-predicates excluded has the same gap. Both read graph-ingest's live listing after the request, which holds every
-committed write, and the page cut is declared by `truncated`, so neither is a wrong success, even with `min_revision`
-far ahead. **As the list stands, `indexed_revision` is 0, claiming nothing.** But callers are told to compare that
-field (`graph/query_response.go:10-13`, `query-pattern`), and against 0 the alarm never clears: a retry loop spins for
-ever. The doc must say not to compare on these. This narrows ruling 1, so it is the owner's: `owner-questions.md`
-recommends `hierarchyStats` bare, one mark, one test, one spec clause. *Proof:*
+Ruling 1's list envelopes `hierarchyStats`, while its headline says bare where the authority answers. Both it and
+`summary` with predicates excluded read graph-ingest's live listing after the request, which holds every committed
+write, and the page cut is declared by `truncated`, so neither is a wrong success, even with `min_revision` far ahead.
+But callers are told to compare `indexed_revision` (`graph/query_response.go:10-13`, `query-pattern`), and against 0
+the alarm never clears: a retry loop spins for ever. **`hierarchyStats` is bare**, so it has no such field to misread
+(owner, 2026-11-03, narrowing ruling 1's list). **`summary` keeps the envelope**, since it reads the predicate index
+unless asked not to, and with predicates excluded its `indexed_revision` is 0, claiming nothing. Only the doc warns
+there: it must say not to compare on that answer. *Proof:* `TestHierarchyStatsIgnoresMinRevision`;
 `TestAuthorityOnlyAnswerClaimsNoRevision`.
 
 ## Scope

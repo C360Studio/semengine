@@ -95,7 +95,9 @@ failure status when filtering output; do not infer success from a quiet log.
 
 Resolve failures from evidence; a successful re-run is not a fix for a flake. A red that your diff does not explain
 is filed as an issue before the next push, labelled `class:flake` when it is a test or check that passes and fails
-on the same tree. A network fetch that did not answer is not a flake: follow the protocol's "Known flakes" item. An
+on the same tree. A network fetch that did not answer is not a flake, and a local red whose `host:` line shows a
+one-minute load average at or above twice the core count is a host-load suspect first: follow the protocol's "Known
+flakes" item for both. An
 open flake is fixed; nothing else gets a pull request past it, and `Merge check` fails every pull request that does
 not close it. Long or paid runs need the role contract's active progress
 checks and bounded stopping behavior.

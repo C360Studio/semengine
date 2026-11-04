@@ -244,7 +244,10 @@ on optional maintenance.
   request in this repository can end: a test or check that passes and fails on the same tree. A network fetch that did
   not answer is not one. Record it as a comment on the pull request it hit, with the run's link, and re-run when the
   remote answers; the second failure of the same fetch gets an ordinary issue, without the label. A red you cannot
-  explain by your diff is filed before the next push. While a known flake is open, `Merge check` fails on every pull
+  explain by your diff is filed before the next push. Before filing a red from a local run, read the `host:` lines in
+  the verify log: a one-minute load average at or above twice the core count makes the red a host-load suspect first;
+  rerun on an idle host, and the issue quotes those lines either way (the three reds of 2026-11-04, #513, #514 and #518,
+  fired at load 37–52 on 12 cores and never in CI). While a known flake is open, `Merge check` fails on every pull
   request except one whose description closes every open flake (`Closes #n` for each). No comment or label on a pull
   request exempts it. A pull request that closes a flake shows the reproduction: the command, and how often it failed
   before the fix and after. A flake that comes back after its fix reopens its issue. A property-based test that fails on

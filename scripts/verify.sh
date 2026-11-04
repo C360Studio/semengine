@@ -20,6 +20,22 @@ steps=(ateam:doctor spec:check docs:check fmt:check tidy:check cleanup-roots:che
 tracked_state() { git status --porcelain --untracked-files=no; git diff HEAD | shasum; }
 before=$(tracked_state)
 
+# Host state, printed at the start and beside the timings: a red in a run whose one-minute load
+# average is above twice the core count is a host-load suspect before it is a flake
+# (.agents/protocol.md, "Known flakes"; the three 2026-11-04 flakes fired at load 37-52 on 12 cores).
+# macOS prints "load averages: a b c", Linux "load average: a, b, c".
+host_state() {
+  local cores load load1
+  cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 0)
+  load=$(uptime | sed -E 's/.*load averages?: *//; s/,//g')
+  load1=${load%% *}
+  echo "host: $cores cores, load average $load"
+  if [ "$cores" -gt 0 ] && [ "${load1%%.*}" -ge $((cores * 2)) ]; then
+    echo "host: WARNING load average $load1 is at least twice the $cores cores; a red here is a host-load suspect first (.agents/protocol.md, \"Known flakes\")"
+  fi
+}
+host_state
+
 failed=()
 timings=()
 for s in "${steps[@]}"; do
@@ -32,6 +48,7 @@ done
 echo
 echo "step timings:"
 printf '  %s\n' "${timings[@]}"
+host_state
 
 if [ "$(tracked_state)" != "$before" ]; then
   echo "verify: tracked files changed during verification:"

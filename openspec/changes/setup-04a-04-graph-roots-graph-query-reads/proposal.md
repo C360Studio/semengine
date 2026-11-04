@@ -1,6 +1,7 @@
 # Proposal: setup-04a-04-graph-roots-graph-query-reads
 
-Approved-by:
+Approved-by: owner, 2026-11-04 in Enjoy: design at `bd98ec8` accepted, with the answers in `owner-questions.md` and the
+new exported surface.
 
 Track: `design` (adds spec requirements and touches two capabilities).
 

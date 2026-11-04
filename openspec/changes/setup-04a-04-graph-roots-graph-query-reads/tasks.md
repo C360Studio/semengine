@@ -62,14 +62,14 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   `entity_sample_limit`, `cursor`, `min_revision`, as-listed `total_entities`, `entities_scanned`, `truncated`,
   `next_cursor`; `predicates` without `omitempty`; no `predicate_total`). Needs 4.2's page read. Premise:
   `graph/query_summary_types.go:21-104`, P4, `pin:summary.go:95-109` (D5, D6, D7). Check: `TestSummaryPredicates`,
-  `TestSummaryRefusesWhenPredicatesCannot`, `TestSummaryRefusesABrokenPredicateReply`,
-  `TestSummaryPrefixReadsOneGroup`, `TestSummaryRefusesPrefixWithPredicates`, the `prefix` field's doc saying why,
-  `summary`'s case of `TestMinRevisionRefusalThroughGraphQuery`, `TestAuthorityOnlyAnswerClaimsNoRevision` (excluded
-  case), a literal test of type buckets in ADR-102 order carried from `summary_test`, with its
-  `StillReturnsEntityFacet` case reversed. A PR comment on #105 and #111 says which item landed. MIGRATION, under "The
-  changes that fail silently" too: `entity_sample_truncated` to `truncated`, where an old decoder reads false,
-  "complete"; `total_entities` now the true total; `include_predicates` to `exclude_predicates`, refused by name;
-  `predicate_total` gone; a down index now refuses.
+  `TestSummaryRefusesWhenPredicatesCannot`, `TestSummaryRefusesABrokenPredicateReply`, `TestSummaryPrefixReadsOneGroup`,
+  `TestSummaryRefusesPrefixWithPredicates`, the `prefix` field's doc saying why, `summary`'s case of
+  `TestMinRevisionRefusalThroughGraphQuery`, `TestAuthorityOnlyAnswerClaimsNoRevision` (excluded case), a literal test
+  of type buckets in ADR-102 order carried from `summary_test`, with its `StillReturnsEntityFacet` case reversed. A PR
+  comment on #105 and #111 says which item landed. MIGRATION, under "The changes that fail silently" too:
+  `entity_sample_truncated` to `truncated`, where an old decoder reads false, "complete"; `total_entities` now the group
+  as listed; `include_predicates` to `exclude_predicates`, refused by name; `predicate_total` gone; a down index now
+  refuses.
 
 ## 5. Records and guidance
 

@@ -105,7 +105,7 @@ a held stub the test releases.
 
 ## D5. Counts: one page, declared (Q7(a), Fable ruling 2)
 
-**One page per request, as accepted, plus (f) a true total and (g) `prefix` on `summary` limited to entities.** Each
+**One page per request, as accepted, plus (f) a total and (g) `prefix` on `summary` limited to entities.** Each
 verb reads one page at the maximum limit, IDs only, passing a request `cursor` unchanged. `total_entities` is the
 page's `total`: the length of the key listing, the whole group as listed, before cursor and limit. A listing under
 concurrent overwrites can repeat some keys and omit as many (`natsclient/kv.go:648-693`, the reviewer's probe at
@@ -135,14 +135,14 @@ real ingest; `TestCountsAddUpAcrossPages`, against the seeded literals; `TestCou
 
 ## D6. Predicates: refuse, or leave out when asked (#111 item 2, #105)
 
-(a) A `predicates_unavailable` flag: a caller who does not read it sees no predicates, the defect again. (b)
-**Refuse:** the index's refusal reaches the caller unchanged; `exclude_predicates: true` gets entities alone. It fails
-closed (`AGENTS.md` § 1). `predicates` is `null` when excluded and `[]` when there are none; `omitempty` and
-`predicate_total` go. #105 offers inverting: the zero value is the default, with no pointer. `predicateList` runs
-first, so a refusal costs no scan and the page, read after, reflects at least as much (ruling 1). A reply that does not
-decode or names no `producer` is transient `internal`, the case #111 item 2 names. *Proof:* `TestSummaryPredicates`,
-literal JSON on a real index: some, none, excluded; `TestSummaryRefusesWhenPredicatesCannot`, class, code and detail
-intact, no prefix request; `TestSummaryRefusesABrokenPredicateReply` (stub).
+(a) A `predicates_unavailable` flag: a caller who does not read it sees no predicates, the defect again. (b) **Refuse:**
+the index's refusal reaches the caller unchanged; `exclude_predicates: true` gets entities alone. It fails closed
+(`AGENTS.md` § 1). `predicates` is `null` when excluded and `[]` when there are none; `omitempty` and `predicate_total`
+go. #105 offers inverting: the zero value is the default, with no pointer. `predicateList` runs first, so a refusal
+costs no scan and the page is read after it (ruling 1): later, as listed, not a snapshot of the two (D5). A reply that
+does not decode or names no `producer` is transient `internal`, the case #111 item 2 names. *Proof:*
+`TestSummaryPredicates`, literal JSON on a real index: some, none, excluded; `TestSummaryRefusesWhenPredicatesCannot`,
+class, code and detail intact, no prefix request; `TestSummaryRefusesABrokenPredicateReply` (stub).
 
 ## D7. An answer that read no index
 

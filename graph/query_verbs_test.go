@@ -65,6 +65,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "relationships", Subject: "graph.query.relationships", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[[]RelationshipEdge]()},
+		{Name: "pathSearch", Subject: "graph.query.pathSearch", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[PathSearchData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
 		{Name: "similar", Subject: "graph.query.similar", Responder: "graph-query",
@@ -94,6 +96,35 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	got[0].Subject = "graph.ingest.query.changed"
 	if again := QueryVerbs(); !slices.Equal(again, want) {
 		t.Fatalf("editing a returned table changed the declaration: %+v", again)
+	}
+}
+
+// TestPathSearchWireNames holds the keys of the pathSearch request and reply and the limits callers read.
+func TestPathSearchWireNames(t *testing.T) {
+	request, err := json.Marshal(PathSearchRequest{
+		StartEntity: "start", Direction: "both", MaxDepth: 2, MaxNodes: 3, Predicates: []string{"test.rel.knows"},
+		MinRevisionField: MinRevisionField{MinRevision: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"start_entity":"start","direction":"both","max_depth":2,"max_nodes":3,"predicates":["test.rel.knows"],"min_revision":4}`; string(request) != want {
+		t.Errorf("PathSearchRequest = %s, want %s", request, want)
+	}
+	reply, err := json.Marshal(PathSearchData{
+		Entities: []PathEntity{{EntityID: "from", Depth: 0}, {EntityID: "to", Depth: 1}},
+		Edges:    []RelationshipEdge{{Predicate: "test.rel.knows", FromEntityID: "from", ToEntityID: "to"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"entities":[{"entity_id":"from","depth":0},{"entity_id":"to","depth":1}],` +
+		`"edges":[{"predicate":"test.rel.knows","from_entity_id":"from","to_entity_id":"to"}],"truncated":false}`
+	if string(reply) != want {
+		t.Errorf("PathSearchData = %s, want %s", reply, want)
+	}
+	if MaxPathSearchDepth != 10 || MaxPathSearchNodes != 500 || DefaultPathSearchNodes != 100 {
+		t.Errorf("limits = %d, %d, %d, want 10, 500, 100", MaxPathSearchDepth, MaxPathSearchNodes, DefaultPathSearchNodes)
 	}
 }
 

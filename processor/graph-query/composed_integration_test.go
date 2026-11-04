@@ -689,18 +689,59 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	alias.Store(refusing)
 	step("alias: refused by the responder", entityByAlias, aliasRequest, 6)
 
+	// A responder that leaves after two hops: the server drops the subscription as it delivers the
+	// second message, so the third hop has no responder (spec, "A walk that loses its responder"). Raw
+	// NATS, since natsclient puts no count on a subscription. The walk waits for each reply, so the
+	// handler's calls do not overlap.
+	const pathSearch = "graph.query.pathSearch"
+	walkRequest := `{"start_entity":"` + drone1 + `","direction":"outgoing","max_depth":3}`
+	entity.Store(replying(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`))
+	nextHops := []string{drone2, drone3}
+	leaving, err := client.GetConnection().Subscribe(verbRow(t, graph.ResponderGraphIndex, "outgoing").Subject, func(msg *nats.Msg) {
+		reply := `{"data":{"relationships":[{"to_entity_id":"` + nextHops[0] + `","predicate":"` + linkTo + `"}]},"producer":"graph-index"}`
+		nextHops = nextHops[1:]
+		if err := msg.Respond([]byte(reply)); err != nil {
+			t.Errorf("respond: %v", err)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := leaving.AutoUnsubscribe(2); err != nil {
+		t.Fatal(err)
+	}
+	step("walk: a later hop finds no responder", pathSearch, walkRequest, 7)
+
 	outgoing := stub(graph.ResponderGraphIndex, "outgoing")
 	incoming := stub(graph.ResponderGraphIndex, "incoming")
 	outgoing.Store(replying(`not json`))
-	step("outgoing: a reply that does not decode", relationships, outgoingRequest, 7)
+	step("outgoing: a reply that does not decode", relationships, outgoingRequest, 8)
 	outgoing.Store(replying(`{}`))
-	step("outgoing: a reply naming no producer", relationships, outgoingRequest, 8)
+	step("outgoing: a reply naming no producer", relationships, outgoingRequest, 9)
 	incoming.Store(replying(`not json`))
-	step("incoming: a reply that does not decode", relationships, incomingRequest, 9)
+	step("incoming: a reply that does not decode", relationships, incomingRequest, 10)
 	incoming.Store(replying(`{}`))
-	step("incoming: a reply naming no producer", relationships, incomingRequest, 10)
+	step("incoming: a reply naming no producer", relationships, incomingRequest, 11)
 	outgoing.Store(refusing)
-	step("outgoing: refused by the responder", relationships, outgoingRequest, 10)
+	step("outgoing: refused by the responder", relationships, outgoingRequest, 11)
 	incoming.Store(replying(`{"data":{"relationships":[]},"producer":"graph-index"}`))
-	step("incoming: answered", relationships, incomingRequest, 10)
+	step("incoming: answered", relationships, incomingRequest, 11)
+
+	step("walk: a request it refuses", pathSearch, `{"start_entity":"`+drone1+`","direction":"sideways","max_depth":3}`, 11)
+	entity.Store(refusing)
+	step("walk: the start refused by the responder", pathSearch, walkRequest, 11)
+	entity.Store(replying(`not json`))
+	step("walk: a start reply that is not JSON", pathSearch, walkRequest, 12)
+	entity.Store(replying(`{"kv_revision":5}`))
+	step("walk: a start reply with no entity", pathSearch, walkRequest, 13)
+
+	entity.Store(replying(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`))
+	outgoing.Store(refusing)
+	step("walk: a hop refused by the responder", pathSearch, walkRequest, 13)
+	outgoing.Store(replying(`not json`))
+	step("walk: a hop reply that does not decode", pathSearch, walkRequest, 14)
+	outgoing.Store(replying(`{}`))
+	step("walk: a hop reply naming no producer", pathSearch, walkRequest, 15)
+	outgoing.Store(replying(`{"data":{"relationships":[]},"producer":"graph-index"}`))
+	step("walk: answered", pathSearch, walkRequest, 15)
 }

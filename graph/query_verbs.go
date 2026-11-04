@@ -55,9 +55,9 @@ var entityVerb = QueryVerb{
 // QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
 // (search, similar, bounds, range), whose responders are not in the tree yet. On
 // graph.query.*, graph-query's forwards answer as the verb they forward to does, and
-// entityByAlias and relationships, which read an index reply, are enveloped from
-// graph-query; a verb a consumer serves under graph.query.* is not in this table. A
-// Name is unique only within its Responder.
+// entityByAlias, relationships and pathSearch, which read index replies, are enveloped
+// from graph-query; a verb a consumer serves under graph.query.* is not in this table.
+// A Name is unique only within its Responder. pathSearch takes a PathSearchRequest.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
@@ -101,6 +101,8 @@ func QueryVerbs() []QueryVerb {
 			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "relationships", Subject: "graph.query.relationships", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[[]RelationshipEdge]()},
+		{Name: "pathSearch", Subject: "graph.query.pathSearch", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[PathSearchData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
 		{Name: "similar", Subject: "graph.query.similar", Responder: ResponderGraphQuery,

@@ -34,6 +34,9 @@ Read these first. Nothing errors.
 - **A `relationships` decoder that keeps `edge_type` (the `relationships` verb, step 1).** After unwrapping, the field
   reads empty. With a predicate filter, the old fusion client drops every edge (SemStreams `client.go:526`). Change 5's
   port of fusion must not carry this.
+- **A `pathSearch` decoder that reads `paths` (the `pathSearch` verb, step 2).** After unwrapping, `paths` is gone, so
+  the field reads empty and every entity looks unreachable. Read `edges`, where `edges[i]` first reached
+  `entities[i+1]`, and follow them back for a path.
 - **A bare `entityByAlias` decoder (the `entityByAlias` verb, step 1).** It reads no entity from the wrapper and gets nil.
 - **A `kvRevision` decoder with no zero check (the `entity` verb, step 1).** It gets revision 0. SemConnect's has the
   check, so its failure is loud; see its section.
@@ -102,6 +105,7 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | --- | --- |
 | `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which ADR-114 now records |
 | `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
+| `pathSearch` (step 2) | Request keys: `start_entity`, `direction`, `max_depth`, `max_nodes`, `predicates`, `min_revision`. `direction` is required, `outgoing`, `incoming` or `both`: nothing, or a typo, read as outgoing before. `max_depth` is required, 1 to 10; there is no default. `max_nodes` is 1 to 500, 0 means 100, and it now counts the start: the old limit did not, so the same number gives one entity fewer. `timeout`, `include_siblings` and `max_paths` are gone, and any unknown key is refused. Over a limit is `invalid_request` stating the bound, never a clamp. Reply enveloped: `data` holds `entities`, `edges` and `truncated`. Rows name `entity_id` and `depth`, were `id`, `type` and `score`; `paths` is gone, see "The changes that fail silently". An incoming edge now reads as the graph holds it, `from_entity_id` and `to_entity_id`, not backwards. `truncated` is true only when an entity was left out, not on reaching the limit. Any hop's refusal ends the walk, its message naming that hop's entity; a hop over `max_payload` is `response_too_large` |
 | `entity` | Bytes forwarded unchanged, with no re-check by graph-query. The revision key is `kv_revision`, was `kvRevision` |
 | `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
 | `semantic` (step 2) | Forwards to `graph.embedding.query.search`, bytes unchanged, so `scope` reaches the responder (ADR-071). Reply enveloped by the responder, `data` holding `results` and `embedder_type`; `query` and `duration` are gone. Refused transient `internal`, naming that subject, until change 5 brings the responder. Fusion reads this; change 5 ports fusion here |
@@ -117,4 +121,5 @@ port overlapping one, unless it belongs to graph-query. An undeclared subscriber
 **New names step 1 exports** (later steps add theirs after these). In `graph`: `ResponderGraphQuery`,
 `QueryVerb.Enveloped`, `QueryVerb.Reply`, `MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In
 `composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
-`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.
+`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2's path search adds, in `graph`:
+`PathSearchRequest`, `PathSearchData`, `PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`.

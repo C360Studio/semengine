@@ -18,8 +18,8 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its handler.
 // A forward answers from the row it names here by responder and name, since semantic forwards to
-// search (design D1), and entityByAlias and relationships from the rows they name, so a row that is
-// gone leaves its verb with no handler, and Start fails naming it.
+// search (design D1), and entityByAlias, relationships and pathSearch from the rows they name, so a
+// row that is gone leaves its verb with no handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
 		"entity":   {graph.ResponderGraphIngest, "entity"},
@@ -44,6 +44,9 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	outgoing, incoming := subjectOf(graph.ResponderGraphIndex, "outgoing"), subjectOf(graph.ResponderGraphIndex, "incoming")
 	if outgoing != "" && incoming != "" {
 		handlers["relationships"] = c.relationships(outgoing, incoming)
+	}
+	if entity != "" && outgoing != "" && incoming != "" {
+		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
 	}
 	return handlers
 }
@@ -204,35 +207,55 @@ func (c *Component) relationships(outgoingSubject, incomingSubject string) query
 }
 
 func (c *Component) outgoingEdges(ctx context.Context, subject, entityID string, data []byte) ([]byte, error) {
-	raw, err := c.ask(ctx, subject, data)
+	edges, revision, err := c.outgoingRows(ctx, subject, entityID, data)
 	if err != nil {
 		return nil, err
 	}
-	reply, err := decodeIndexReply[graph.OutgoingRelationshipsData](c, subject, raw)
+	return envelope(c, subject, revision, edges)
+}
+
+func (c *Component) incomingEdges(ctx context.Context, subject, entityID string, data []byte) ([]byte, error) {
+	edges, revision, err := c.incomingRows(ctx, subject, entityID, data)
 	if err != nil {
 		return nil, err
+	}
+	return envelope(c, subject, revision, edges)
+}
+
+// outgoingRows asks the outgoing verb and reads its reply as edges the graph holds, with the revision
+// it answered at.
+func (c *Component) outgoingRows(ctx context.Context, subject, entityID string, data []byte) ([]graph.RelationshipEdge, uint64, error) {
+	raw, err := c.ask(ctx, subject, data)
+	if err != nil {
+		return nil, 0, err
+	}
+	reply, err := decodeIndexReply[graph.OutgoingRelationshipsData](c, subject, raw)
+	if err != nil {
+		return nil, 0, err
 	}
 	edges := make([]graph.RelationshipEdge, 0, len(reply.Data.Relationships))
 	for _, entry := range reply.Data.Relationships {
 		edges = append(edges, graph.RelationshipEdge{Predicate: entry.Predicate, FromEntityID: entityID, ToEntityID: entry.ToEntityID})
 	}
-	return envelope(c, subject, reply.IndexedRevision, edges)
+	return edges, reply.IndexedRevision, nil
 }
 
-func (c *Component) incomingEdges(ctx context.Context, subject, entityID string, data []byte) ([]byte, error) {
+// incomingRows asks the incoming verb and reads its reply as edges the graph holds, with the revision
+// it answered at.
+func (c *Component) incomingRows(ctx context.Context, subject, entityID string, data []byte) ([]graph.RelationshipEdge, uint64, error) {
 	raw, err := c.ask(ctx, subject, data)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	reply, err := decodeIndexReply[graph.IncomingRelationshipsData](c, subject, raw)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	edges := make([]graph.RelationshipEdge, 0, len(reply.Data.Relationships))
 	for _, entry := range reply.Data.Relationships {
 		edges = append(edges, graph.RelationshipEdge{Predicate: entry.Predicate, FromEntityID: entry.FromEntityID, ToEntityID: entityID})
 	}
-	return envelope(c, subject, reply.IndexedRevision, edges)
+	return edges, reply.IndexedRevision, nil
 }
 
 // decodeIndexReply reads an index verb's success. One that does not decode, or names no producer,

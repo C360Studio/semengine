@@ -28,7 +28,7 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 
 ## 3. Path search
 
-- [ ] 3.1 `pathSearch` with its row, `PathSearchRequest`, `PathSearchData`, `PathEntity`, `MaxPathSearchDepth`,
+- [x] 3.1 `pathSearch` with its row, `PathSearchRequest`, `PathSearchData`, `PathEntity`, `MaxPathSearchDepth`,
   `MaxPathSearchNodes`, `DefaultPathSearchNodes` in `graph/query_path_types.go`. The walk is one unexported function
   taking the hop as an argument, also what production calls, with no test-only path. Premise: P7-P12,
   `pin:processor/graph-query/pathrag.go` (D2, D3, D4). Check: `TestPathSearchRefusesBadRequests`,

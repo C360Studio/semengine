@@ -149,10 +149,15 @@ func startComponent(t *testing.T, c *Component) {
 	t.Cleanup(func() { stopComponent(t, c) })
 }
 
-// stopComponent stops c within waitBound and fails the test unless Stop returns nil.
+// stopBound is out of reach: a Stop writes every entry the pool accepted, up to indexLaneCapacity
+// of them, so how long it takes depends on the machine's load (#513). go test -timeout is the
+// deadline that fails a Stop that never returns, and it prints every goroutine's stack.
+const stopBound = time.Hour
+
+// stopComponent stops c and fails the test unless Stop returns nil.
 func stopComponent(t *testing.T, c *Component) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), waitBound)
+	ctx, cancel := context.WithTimeout(context.Background(), stopBound)
 	defer cancel()
 	if err := c.Stop(ctx); err != nil {
 		t.Errorf("Stop: %v", err)

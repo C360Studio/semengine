@@ -46,14 +46,12 @@ func (g *nativeWatchReturnGate) open() { g.once.Do(func() { close(g.release) }) 
 // spec: nats-kv-keys / Filtered KVStore listings finalize native watcher delivery
 func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	testClient := newFixtureClient(t)
-	setupCtx, cancelSetup := context.WithTimeout(t.Context(), 40*time.Second)
-	defer cancelSetup()
-	bucket, err := testClient.Client.CreateKeyValueBucket(setupCtx, jetstream.KeyValueConfig{
+	bucket, err := testClient.Client.CreateKeyValueBucket(t.Context(), jetstream.KeyValueConfig{
 		Bucket: "KV_NATIVE_DELIVERY_CLOSURE", Storage: jetstream.FileStorage,
 	})
 	require.NoError(t, err)
 	for i := range 5000 {
-		_, putErr := bucket.Put(setupCtx, fmt.Sprintf("diag.%04d", i), []byte("v"))
+		_, putErr := bucket.Put(t.Context(), fmt.Sprintf("diag.%04d", i), []byte("v"))
 		require.NoError(t, putErr)
 	}
 	t.Logf("native fixture keys=5000 storage=file server=%s sdk=%s",

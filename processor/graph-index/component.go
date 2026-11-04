@@ -301,11 +301,15 @@ func (c *Component) Stop(ctx context.Context) error {
 // first returns its error with the handles kept, and the next Stop resumes; the handles are
 // cleared only once everything is released.
 func (c *Component) cleanup(ctx context.Context) error {
-	// Stop serving queries first: Drain returns once every running handler has returned.
+	// Stop serving queries first: Drain returns once every running handler has returned. Each drain
+	// is begun whatever the one before returned, so one handler that outlasts ctx does not keep the
+	// other verbs serving.
+	var failures []error
 	for _, sub := range c.subscriptions {
-		if err := sub.Drain(ctx); err != nil {
-			return err
-		}
+		failures = append(failures, sub.Drain(ctx))
+	}
+	if err := errors.Join(failures...); err != nil {
+		return err
 	}
 	if c.runCancel != nil {
 		c.runCancel()

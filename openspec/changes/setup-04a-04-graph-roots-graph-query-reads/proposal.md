@@ -18,9 +18,10 @@ traversal takes any depth and node count (P7) and reports an incoming edge backw
   `direction`, all validated before any request. Refusals reach the caller. The reply names entities and true edges
   once each, and `truncated` is exact.
 - **`hierarchyStats`, `summary`:** each request reads one prefix page, so it costs one key scan of the group.
-  `total_entities` is true, from a new `total` on the `prefix` reply; `entities_scanned`, `truncated` and `next_cursor`
-  declare a sample, and a caller who wants more pays per page. `summary` gains `prefix`, predicates left out. A
-  predicate index that cannot answer refuses `summary`; `exclude_predicates` asks without it (#105, #111 item 2).
+  `total_entities` is the whole group as listed, from a new `total` on the `prefix` reply; `entities_scanned`,
+  `truncated` and `next_cursor` declare a sample, and a caller who wants more pays per page. `summary` gains `prefix`,
+  predicates left out. A predicate index that cannot answer refuses `summary`; `exclude_predicates` asks without it
+  (#105, #111 item 2).
 - **`semantic`, `similar`, `spatial`, `temporal`:** forwarded byte for byte, with their reply shapes decided here:
   enveloped by the responder, as `byName` is. Each refuses transient `internal` until changes 5 and 7 bring the
   responder.

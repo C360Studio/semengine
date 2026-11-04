@@ -43,9 +43,10 @@ any downstream request, naming the field and bound. `min_revision` is optional.
 - `direction` is required: `outgoing`, `incoming` or `both`. The pin read a typo and nothing as outgoing (P11).
 - `max_depth` is required, 1 to 10: it is the question asked, and a default would hide a cut-off. `max_nodes` is the
   most entities in the reply, the start included: 0 means 100, else 1 to 500. P7 is gone.
-- Dropped: `timeout`, since `max_depth`, `max_nodes` and the handler budget bound the walk and a valid value worked at
-  the pin (`pin:pathrag.go:100-105`, P10); a walk does outlive a caller who gave up, on a verb that runs serially;
-  `include_siblings` (no reader, `pin:pathrag.go:28`), `max_paths` (with one path per entity, it is `max_nodes`).
+- Dropped: `timeout`, since `max_depth` and `max_nodes` bound its requests, the handler's context deadline ends its
+  waits for replies, and a valid value worked at the pin (`pin:pathrag.go:100-105`, P10); a walk does outlive a caller
+  who gave up, on a verb that runs serially; `include_siblings` (no reader, `pin:pathrag.go:28`), `max_paths` (with one
+  path per entity, it is `max_nodes`).
 
 *Where limits live.* (a) Constants beside `MaxPrefixQueryLimit`. (b) Config `max_traversal_*`: its one setter on record
 is SemConnect's file (5, 100), and SemConnect does not call the verb (`inventory.md` § 3). **(a);** a caller wanting
@@ -53,9 +54,11 @@ less sends less. *Over a limit.* (a) Refuse. (b) Clamp as `prefix` does: a clamp
 echoes it, and `truncated` stops being exact. **Refuse;** the refusal states the bound.
 
 *Numbers.* 10: the pin's default (`pin:component.go:97`). 100: the pin's node default and step 4's value. 500 is a
-judgement: `both` on sparse nodes takes 4.5 to 6.2 s across two runs, hubs take longer and the true bound is the 30 s
-budget. No consumer calls the verb, so no timeout decides it. A reply at 500 is at most about 456 KB. Raising later
-breaks nobody; lowering does. *Proof:* `TestPathSearchRefusesBadRequests`, a table, no downstream request.
+judgement: `both` on sparse nodes is an estimate of 4.5 to 6.2 s, calculated from two runs' measured hop averages, since
+no probe runs this walk; hubs take longer, and nothing bounds elapsed time (D4). No consumer calls the verb, so no
+timeout decides it. A reply at 500 is at most about 521 KB before the envelope (longest valid IDs and predicates,
+calculated). Raising later breaks nobody; lowering does. *Proof:* `TestPathSearchRefusesBadRequests`, a table, no
+downstream request.
 
 ## D3. `pathSearch` reply and walk
 
@@ -84,13 +87,16 @@ for `TestPathSearchRevisionIsTheSmallest`, `TestPathSearchRefusedMidWalk`.
 
 ## D4. What a request costs
 
-| Verb | Requests | Measured: one client, idle laptop, not a promise |
+| Verb | Requests | Measured unless marked: one client, idle laptop, not a promise |
 | --- | --- | --- |
-| `pathSearch` | at most 1 + `max_nodes`, doubled for `both` | sparse nodes, two runs: 100: 0.4 s, `both` 0.9 to 1.2 s; 500: 1.8 s, `both` 4.5 to 6.2 s |
+| `pathSearch` | at most 1 + `max_nodes`, doubled for `both` | estimate from measured hop averages, sparse nodes, two runs: 100: 0.4 s, `both` 0.9 to 1.2 s; 500: 1.8 s, `both` 4.5 to 6.2 s |
 | `hierarchyStats` | one page: one key scan of the group, up to 1,000 bodies | 20 ms at 10,000; 157 ms at 100,000; 1.8 to 2.7 s at 1,000,000 |
 | `summary` | `predicateList`, then one page of everything; or, with `prefix`, one page of that group alone | a scan of `PREDICATE_INDEX`, 2.8 s at 1M keys, 8 s at 3M to 5M, one run, against graph-index's 10 s `listTimeout`; plus the page. Roughly 4 to 10 s at a million entities, near refusal; `exclude_predicates` is the way out |
 
-A request ends with the handler's 30 s budget, refused transient (`natsclient/request.go:32-40`). A reply over
+The request counts bound the work; nothing here bounds elapsed time. The handler's context deadline, 30 s by default and
+`SEMENGINE_NATS_REQUEST_HANDLER_TIMEOUT` per deployment (`natsclient/request.go:32-40`), ends a wait for a reply,
+refused transient. It does not end a wait for the connection's write lock: a broker that has stopped reading can hold a
+downstream call past it, up to nats.go's write timeout for each write ahead of the call (ADR-112, "Time"). A reply over
 `max_payload` is `response_too_large` (`natsclient/request_response_bounds_integration_test.go:141`). natsclient reads
 nats.go as one handler at a time per subscription (`owned_delivery.go:21-22`), so a slow walk would delay the next
 `pathSearch`: not promised here. What is: another verb still answers. *Proof:* counting subscribers beside real
@@ -122,9 +128,10 @@ not yet, the owner's answer in `owner-questions.md`, as for (f) and (g).
 `min_revision`; type keys keep ADR-102's order. Both decode strictly. A page with no `entities` key (real ingest sends
 `null` for an empty group), or an ID that does not parse, is transient `internal`; the pin skipped such IDs. *Proof:*
 `TestPrefixPageNamesItsTotal` in graph-ingest, each path, a byte-trimmed page and a later page;
-`TestHierarchyStatsDeclaresAPartialPage`, real ingest, literal JSON; `TestCountsAddUpAcrossPages`, against the seeded
-literals; `TestCountsOfAnEmptyGroup`; `TestCountsRefuseABrokenPage` (stub); `TestSummaryPrefixReadsOneGroup`, two
-groups, literal JSON; `TestSummaryRefusesPrefixWithPredicates`.
+`TestHierarchyStatsDeclaresAPartialPage`, real ingest, literal JSON; `TestHierarchyStatsOfAnExactID`, a six-part prefix,
+real ingest; `TestCountsAddUpAcrossPages`, against the seeded literals; `TestCountsOfAnEmptyGroup`;
+`TestCountsRefuseABrokenPage` (stub); `TestSummaryPrefixReadsOneGroup`, two groups, literal JSON;
+`TestSummaryRefusesPrefixWithPredicates`.
 
 ## D6. Predicates: refuse, or leave out when asked (#111 item 2, #105)
 
@@ -140,14 +147,14 @@ intact, no prefix request; `TestSummaryRefusesABrokenPredicateReply` (stub).
 ## D7. An answer that read no index
 
 Ruling 1's list envelopes `hierarchyStats`, while its headline says bare where the authority answers. Both it and
-`summary` with predicates excluded read graph-ingest's live listing after the request, which holds every committed
-write, and the page cut is declared by `truncated`, so neither is a wrong success, even with `min_revision` far ahead.
-But callers are told to compare `indexed_revision` (`graph/query_response.go:10-13`, `query-pattern`), and against 0
-the alarm never clears: a retry loop spins for ever. **`hierarchyStats` is bare**, so it has no such field to misread
-(owner, 2026-11-03, narrowing ruling 1's list). **`summary` keeps the envelope**, since it reads the predicate index
-unless asked not to, and with predicates excluded its `indexed_revision` is 0, claiming nothing. Only the doc warns
-there: it must say not to compare on that answer. *Proof:* `TestHierarchyStatsIgnoresMinRevision`;
-`TestAuthorityOnlyAnswerClaimsNoRevision`.
+`summary` with predicates excluded read graph-ingest's live listing after the request, with no index to catch up, and
+the page cut is declared by `truncated`, so `min_revision` has nothing to refuse. The answer is live and as listed, not
+a snapshot, with the listing's limits (D5, #512). But callers are told to compare `indexed_revision`
+(`graph/query_response.go:10-13`, `query-pattern`), and against 0 the alarm never clears: a retry loop spins for ever.
+**`hierarchyStats` is bare**, so it has no such field to misread (owner, 2026-11-03, narrowing ruling 1's list).
+**`summary` keeps the envelope**, since it reads the predicate index unless asked not to, and with predicates excluded
+its `indexed_revision` is 0, claiming nothing. Only the doc warns there: it must say not to compare on that answer.
+*Proof:* `TestHierarchyStatsIgnoresMinRevision`; `TestAuthorityOnlyAnswerClaimsNoRevision`.
 
 ## Scope
 

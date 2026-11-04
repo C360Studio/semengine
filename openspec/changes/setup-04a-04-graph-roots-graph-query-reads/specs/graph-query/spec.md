@@ -132,14 +132,19 @@ SHALL decode their request strictly. `total_entities` SHALL be the page's `total
 ### Requirement: Hierarchy counts name each child
 
 `hierarchyStats` SHALL take `prefix`, `cursor` and `min_revision`, refusing an invalid non-empty prefix with the
-validator's refusal. The reply SHALL be a bare `graph.HierarchyStatsData`: `prefix`, `total_entities`, `entities_scanned`,
-`truncated`, `next_cursor` when set, and `children`, each `{prefix, count}`, by count descending then prefix. An entity
-whose ID is the prefix SHALL count in `entities_scanned` and in no child.
+validator's refusal. The reply SHALL be a bare `graph.HierarchyStatsData`: `prefix`, `total_entities`,
+`entities_scanned`, `truncated`, `next_cursor` when set, and `children`, each `{prefix, count}`, by count descending
+then prefix. An entity whose ID is the prefix SHALL count in `entities_scanned` and in no child.
 
 #### Scenario: Keys on the wire
 
-- **WHEN** a real graph-ingest holds entities under two children of a prefix, and one whose ID is the prefix
+- **WHEN** a real graph-ingest holds entities under two children of a prefix shorter than an entity ID
 - **THEN** the reply compares equal to the literal JSON (`TestHierarchyStatsDeclaresAPartialPage`)
+
+#### Scenario: A prefix that is an entity's ID
+
+- **WHEN** the prefix is the six-part ID of an entity a real graph-ingest holds
+- **THEN** `total_entities` and `entities_scanned` are 1 and `children` is empty (`TestHierarchyStatsOfAnExactID`)
 
 ### Requirement: A summary has its predicates or says why not
 
@@ -181,8 +186,8 @@ excluded and `[]` when there are none.
 ### Requirement: Revision requests answer or refuse, never wrongly succeed
 
 Every verb SHALL accept `min_revision`. On an enveloped verb it SHALL reach every derived-index read unchanged; on a
-bare verb, and on an answer built from no derived-index read, it SHALL be ignored, an authority read reflecting every
-committed write. A success built from a derived-index read to `min_revision` M SHALL carry `indexed_revision` at or
+bare verb, and on an answer built from no derived-index read, it SHALL be ignored, an authority read having no index to
+catch up. A success built from a derived-index read to `min_revision` M SHALL carry `indexed_revision` at or
 above M.
 
 #### Scenario: Reading a write back

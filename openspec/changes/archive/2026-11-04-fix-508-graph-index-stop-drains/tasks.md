@@ -16,8 +16,9 @@ code. Each step ends when `task verify` passes on a clean tree at its commit (#1
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record at the head. The PR body carries `implemented-by:` and `reviewed-by:`.
+- [x] 3.1 Codex code review of record: approved at `05243fa0cac6722a9066aa68c0682bf1ecce1a2e` (PR #510 comment
+  6629754236), after two findings at `e50a989` were fixed. The PR body carries `implemented-by:` and `reviewed-by:`.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive`). Gate: `task spec:check` and `task docs:check`.
+- [x] 4.1 Archive as the last content commit (`openspec archive`). Gate: `task spec:check` and `task docs:check`.

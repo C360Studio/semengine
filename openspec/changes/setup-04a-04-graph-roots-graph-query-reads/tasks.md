@@ -1,7 +1,7 @@
 # Tasks: setup-04a-04-graph-roots-graph-query-reads
 
 Step 2 of the archived `split.md`. Tests come first. Each code task ends at a clean-tree local `task verify` at its
-commit (#171); integration tests run under `task test:integration -- processor/graph-query`. "Shown to fail" means
+commit (#171); integration tests run under `task test:integration -- ./processor/graph-query/`. "Shown to fail" means
 `task mutate:check`, or the failing-first output, recorded in `notes/<task>.md`. One task is one developer's unit.
 Every task that adds a table row extends `declaredRows` (with a per-row request, since a composed verb decodes strictly
 and `everyVerbRequest` no longer fits) and `TestQueryVerbsDeclareEachRespondersVerbs`, and adds its row to
@@ -17,7 +17,7 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 
 ## 2. Forwards
 
-- [ ] 2.1 Four forwards: the eight rows, `ResponderGraphEmbedding`, `ResponderGraphIndexSpatial`,
+- [x] 2.1 Four forwards: the eight rows, `ResponderGraphEmbedding`, `ResponderGraphIndexSpatial`,
   `ResponderGraphIndexTemporal`, and `SemanticData`, `SimilarData`, `SimilarityHit`, `SpatialData`, `SpatialHit`,
   `TemporalData`, `TemporalHit` in a new `graph/query_search_types.go`. `queryHandlers` takes each forward's downstream
   row by responder and name, since `semantic` forwards to `search`; forwards stay byte for byte. Premise:

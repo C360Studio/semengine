@@ -11,8 +11,9 @@ type QueryVerb struct {
 	// Responder is the component type that answers on Subject.
 	Responder string
 	// Enveloped says the reply is a QueryResponse rather than a bare body: true
-	// when any part of the answer comes from a graph-index reply. A caller
-	// decodes by verb; nothing decides a reply's shape from its content.
+	// when any answer of the verb can use a graph-index or other derived-index
+	// reply. A caller decodes by verb; nothing decides a reply's shape from its
+	// content.
 	Enveloped bool
 	// Reply is the type of the reply body, or of the envelope's Data when
 	// Enveloped.
@@ -28,6 +29,18 @@ const ResponderGraphIndex = "graph-index"
 // ResponderGraphQuery is the Responder of the verbs graph-query answers.
 const ResponderGraphQuery = "graph-query"
 
+// ResponderGraphEmbedding is the Responder of the embedding verbs, whose
+// component arrives with a later change.
+const ResponderGraphEmbedding = "graph-embedding"
+
+// ResponderGraphIndexSpatial is the Responder of the spatial verb, whose
+// component arrives with a later change.
+const ResponderGraphIndexSpatial = "graph-index-spatial"
+
+// ResponderGraphIndexTemporal is the Responder of the temporal verb, whose
+// component arrives with a later change.
+const ResponderGraphIndexTemporal = "graph-index-temporal"
+
 // entityVerb is the table's entity entry: ExactEntityReader requests on its
 // Subject with an EntityRequest and decodes an ExactEntity.
 var entityVerb = QueryVerb{
@@ -39,11 +52,12 @@ var entityVerb = QueryVerb{
 // slice, so a caller cannot change the declaration. The entity verb takes an
 // EntityRequest, batch an EntityBatchRequest and prefix a PrefixQueryRequest.
 // Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
-// QueryResponse whose Data is the entry's Reply. On graph.query.*, graph-query's
-// forwards answer as the verb they forward to does, and entityByAlias and
-// relationships, which read an index reply, are enveloped from graph-query; a verb
-// a consumer serves under graph.query.* is not in this table. A Name is unique only
-// within its Responder.
+// QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
+// (search, similar, bounds, range), whose responders are not in the tree yet. On
+// graph.query.*, graph-query's forwards answer as the verb they forward to does, and
+// entityByAlias and relationships, which read an index reply, are enveloped from
+// graph-query; a verb a consumer serves under graph.query.* is not in this table. A
+// Name is unique only within its Responder.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
@@ -67,6 +81,14 @@ func QueryVerbs() []QueryVerb {
 			Enveloped: true, Reply: reflect.TypeFor[CompoundPredicateData]()},
 		{Name: "byName", Subject: "graph.index.query.byName", Responder: ResponderGraphIndex,
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "search", Subject: "graph.embedding.query.search", Responder: ResponderGraphEmbedding,
+			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
+		{Name: "similar", Subject: "graph.embedding.query.similar", Responder: ResponderGraphEmbedding,
+			Enveloped: true, Reply: reflect.TypeFor[SimilarData]()},
+		{Name: "bounds", Subject: "graph.spatial.query.bounds", Responder: ResponderGraphIndexSpatial,
+			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
+		{Name: "range", Subject: "graph.temporal.query.range", Responder: ResponderGraphIndexTemporal,
+			Enveloped: true, Reply: reflect.TypeFor[TemporalData]()},
 		{Name: "entity", Subject: "graph.query.entity", Responder: ResponderGraphQuery,
 			Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "batch", Subject: "graph.query.batch", Responder: ResponderGraphQuery,
@@ -79,5 +101,13 @@ func QueryVerbs() []QueryVerb {
 			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "relationships", Subject: "graph.query.relationships", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[[]RelationshipEdge]()},
+		{Name: "semantic", Subject: "graph.query.semantic", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
+		{Name: "similar", Subject: "graph.query.similar", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[SimilarData]()},
+		{Name: "spatial", Subject: "graph.query.spatial", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
+		{Name: "temporal", Subject: "graph.query.temporal", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[TemporalData]()},
 	}
 }

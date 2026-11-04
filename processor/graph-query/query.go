@@ -17,20 +17,24 @@ import (
 type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its handler.
-// A forward answers from the row of the same name whose responder is given here (design D1), and
-// entityByAlias and relationships from the rows they name, so a row that is gone leaves its verb with
-// no handler, and Start fails naming it.
+// A forward answers from the row it names here by responder and name, since semantic forwards to
+// search (design D1), and entityByAlias and relationships from the rows they name, so a row that is
+// gone leaves its verb with no handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
-	forwardedFrom := map[string]string{
-		"entity": graph.ResponderGraphIngest,
-		"batch":  graph.ResponderGraphIngest,
-		"prefix": graph.ResponderGraphIngest,
-		"byName": graph.ResponderGraphIndex,
+	forwards := map[string]struct{ responder, name string }{
+		"entity":   {graph.ResponderGraphIngest, "entity"},
+		"batch":    {graph.ResponderGraphIngest, "batch"},
+		"prefix":   {graph.ResponderGraphIngest, "prefix"},
+		"byName":   {graph.ResponderGraphIndex, "byName"},
+		"semantic": {graph.ResponderGraphEmbedding, "search"},
+		"similar":  {graph.ResponderGraphEmbedding, "similar"},
+		"spatial":  {graph.ResponderGraphIndexSpatial, "bounds"},
+		"temporal": {graph.ResponderGraphIndexTemporal, "range"},
 	}
-	handlers := make(map[string]queryHandler, len(forwardedFrom))
-	for _, verb := range graph.QueryVerbs() {
-		if forwardedFrom[verb.Name] == verb.Responder {
-			handlers[verb.Name] = c.forward(verb.Subject)
+	handlers := make(map[string]queryHandler, len(forwards))
+	for verb, downstream := range forwards {
+		if subject := subjectOf(downstream.responder, downstream.name); subject != "" {
+			handlers[verb] = c.forward(subject)
 		}
 	}
 	alias, entity := subjectOf(graph.ResponderGraphIndex, "alias"), subjectOf(graph.ResponderGraphIngest, "entity")

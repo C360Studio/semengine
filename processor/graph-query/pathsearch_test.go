@@ -285,6 +285,40 @@ func TestPathSearchMatchesTheModel(t *testing.T) {
 		}
 	})
 
+	t.Run("max_depth 10 stops at the tenth hop", func(t *testing.T) {
+		var chain modelGraph
+		for i := range graph.MaxPathSearchDepth + 1 {
+			chain = append(chain, edge(modelNode(100+i), p, modelNode(101+i)))
+		}
+		g := request("outgoing", graph.MaxPathSearchDepth, 0)
+		g.StartEntity = modelNode(100)
+		got := checkWalk(t.Context(), t, chain, g, constantRevision)
+		last := got.Entities[len(got.Entities)-1]
+		if len(got.Entities) != graph.MaxPathSearchDepth+1 || last.EntityID != modelNode(110) || last.Depth != graph.MaxPathSearchDepth || got.Truncated {
+			t.Errorf("%d entities, last %+v, truncated %t; want 11, %s at depth 10, false", len(got.Entities), last, got.Truncated, modelNode(110))
+		}
+	})
+
+	for _, tc := range []struct {
+		name      string
+		leaves    int
+		truncated bool
+	}{
+		{"max_nodes 500 holds an exact fit", graph.MaxPathSearchNodes - 1, false},
+		{"max_nodes 500 declares one more", graph.MaxPathSearchNodes, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var star modelGraph
+			for i := range tc.leaves {
+				star = append(star, edge(a, p, modelNode(100+i)))
+			}
+			got := checkWalk(t.Context(), t, star, request("outgoing", 1, graph.MaxPathSearchNodes), constantRevision)
+			if len(got.Entities) != graph.MaxPathSearchNodes || got.Truncated != tc.truncated {
+				t.Errorf("%d entities, truncated %t; want 500, %t", len(got.Entities), got.Truncated, tc.truncated)
+			}
+		})
+	}
+
 	predicates := []string{p, q, "test.link.r"}
 	rapid.Check(t, func(rt *rapid.T) {
 		nodes := rapid.IntRange(1, 8).Draw(rt, "nodes")

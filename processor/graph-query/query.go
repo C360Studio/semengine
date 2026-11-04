@@ -233,6 +233,9 @@ func (c *Component) outgoingRows(ctx context.Context, subject, entityID string, 
 	if err != nil {
 		return nil, 0, err
 	}
+	if reply.Data.Relationships == nil {
+		return nil, 0, c.brokenReply(subject, errors.New("holds no relationships"))
+	}
 	edges := make([]graph.RelationshipEdge, 0, len(reply.Data.Relationships))
 	for _, entry := range reply.Data.Relationships {
 		edges = append(edges, graph.RelationshipEdge{Predicate: entry.Predicate, FromEntityID: entityID, ToEntityID: entry.ToEntityID})
@@ -250,6 +253,9 @@ func (c *Component) incomingRows(ctx context.Context, subject, entityID string, 
 	reply, err := decodeIndexReply[graph.IncomingRelationshipsData](c, subject, raw)
 	if err != nil {
 		return nil, 0, err
+	}
+	if reply.Data.Relationships == nil {
+		return nil, 0, c.brokenReply(subject, errors.New("holds no relationships"))
 	}
 	edges := make([]graph.RelationshipEdge, 0, len(reply.Data.Relationships))
 	for _, entry := range reply.Data.Relationships {

@@ -438,6 +438,11 @@ func TestPathSearchRefusedMidWalk(t *testing.T) {
 			class: errs.ErrorTransient, code: graph.ErrorCodeInternal, messageHas: "names no producer"},
 		{name: "an envelope with no relationships or producer", direction: "outgoing", outgoing: second(stubAnswer{reply: `{"data":{}}`}),
 			class: errs.ErrorTransient, code: graph.ErrorCodeInternal, messageHas: "names no producer"},
+		{name: "a producer and no relationships", direction: "outgoing", outgoing: second(stubAnswer{reply: `{"data":{},"producer":"graph-index"}`}),
+			class: errs.ErrorTransient, code: graph.ErrorCodeInternal, messageHas: "holds no relationships"},
+		{name: "null relationships on the incoming leg", direction: "both", outgoing: first,
+			incoming: map[string]stubAnswer{drone2: {reply: `{"data":{"relationships":null},"producer":"graph-index"}`}},
+			class:    errs.ErrorTransient, code: graph.ErrorCodeInternal, messageHas: "holds no relationships"},
 		{name: "a broken incoming leg", direction: "both", outgoing: first, incoming: map[string]stubAnswer{drone2: {reply: `{"data":{}}`}},
 			class: errs.ErrorTransient, code: graph.ErrorCodeInternal, messageHas: "graph.index.query.incoming"},
 	} {

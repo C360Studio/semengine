@@ -241,7 +241,7 @@ func TestReservedSubjectOverlapMatchesEnumeration(t *testing.T) {
 // filter over the alphabet reaches it only through a `*` or `>` at or before each of those positions,
 // and the same wildcards reach the earlier kept subject. Its first overlap is therefore always a kept
 // subject. The premise is checked here; when it fails, widen the alphabet. A family with no kept
-// subject gets its exact-filter case in TestValidateRefusesStreamCapturingReservedSubject.
+// subject gets its named case in TestValidateRefusesStreamCapturingReservedSubject.
 func reservedInAlphabet(t *testing.T) []string {
 	t.Helper()
 	inAlphabet := map[string]bool{}

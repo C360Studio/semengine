@@ -12,12 +12,14 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
+	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -238,6 +240,78 @@ func TestStopInterruptedThenRetriedWritesAcceptedWork(t *testing.T) {
 			t.Fatalf("accepted entity %s not written after the retried Stop", entityID(n))
 		}
 	}
+}
+
+// TestStopWithAStuckHandlerStopsEveryOtherVerb: a handler that outlasts Stop's context does not
+// leave the other verbs answering. The stuck subscription is put first, so its drain is the first
+// to fail. A later Stop, once the handler has returned, finishes (#508).
+func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
+	client := fixtureClient(t)
+	h := startIndex(t, client, `{}`)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	releaseOnce := sync.OnceFunc(func() { close(release) })
+	t.Cleanup(releaseOnce)
+	const stuckSubject = "test.graph-index.stuck"
+	stuck, err := client.SubscribeForRequests(t.Context(), stuckSubject,
+		func(context.Context, []byte) ([]byte, error) {
+			close(entered)
+			<-release
+			return nil, nil
+		})
+	if err != nil {
+		t.Fatalf("subscribe %s: %v", stuckSubject, err)
+	}
+	h.c.subscriptions = append([]*natsclient.Subscription{stuck}, h.c.subscriptions...)
+
+	if err := client.GetConnection().PublishRequest(stuckSubject, "test.graph-index.reply", nil); err != nil {
+		t.Fatalf("publish %s: %v", stuckSubject, err)
+	}
+	<-entered
+
+	stopCtx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stopped := make(chan error, 1)
+	go func() { stopped <- h.c.Stop(stopCtx) }()
+	// The lifecycle refuses a context already ended without running cleanup, and reports "stopped"
+	// before it runs cleanup, so this orders the cancel after Stop has passed that check. The stuck
+	// handler holds the first drain until the cancel.
+	if _, err := probe.Await(t.Context(),
+		func(context.Context) (string, error) { return h.c.Health().Status, nil },
+		func(status string) bool { return status == "stopped" }); err != nil {
+		t.Fatalf("Stop entered: %v", err)
+	}
+	cancel()
+	if err := <-stopped; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Stop with a stuck handler = %v, want context.Canceled", err)
+	}
+
+	// Every drain has begun when Stop returns, but the server drops a subscription only once it has
+	// read the unsubscribe, so this waits for the verbs to go quiet.
+	var verbs []string
+	for _, verb := range graph.QueryVerbs() {
+		if verb.Responder == graph.ResponderGraphIndex {
+			verbs = append(verbs, verb.Subject)
+		}
+	}
+	if _, err := probe.Await(t.Context(),
+		func(context.Context) ([]string, error) {
+			var answering []string
+			for _, subject := range verbs {
+				_, err := client.GetConnection().Request(subject, []byte(`{}`), requestTimeout)
+				if !errors.Is(err, nats.ErrNoResponders) {
+					answering = append(answering, subject)
+				}
+			}
+			return answering, nil
+		},
+		func(answering []string) bool { return len(answering) == 0 }); err != nil {
+		t.Fatalf("no graph-index verb answering: %v", err)
+	}
+
+	releaseOnce()
+	stopComponent(t, h.c)
 }
 
 // TestSecondStartIsRefused: a second Start on a running graph-index returns errs.ErrAlreadyStarted

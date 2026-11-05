@@ -27,9 +27,9 @@ func TestPrefixQueryTypesRoundTrip(t *testing.T) {
 		{"pattern request", PrefixQueryRequest{Pattern: "acme.ops.*.intel.platform.*", Limit: 25},
 			[]string{"prefix", "pattern", "limit"}, []string{"cursor"}},
 		{"exhausted response", PrefixQueryResponse{Entities: []EntityState{}},
-			[]string{"entities"}, []string{"next_cursor"}},
+			[]string{"entities", "total"}, []string{"next_cursor"}},
 		{"response with continuation", PrefixQueryResponse{Entities: []EntityState{{ID: entityID}}, NextCursor: "opaque"},
-			[]string{"entities", "next_cursor"}, nil},
+			[]string{"entities", "total", "next_cursor"}, nil},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

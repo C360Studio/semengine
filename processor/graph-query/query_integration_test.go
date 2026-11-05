@@ -24,37 +24,69 @@ import (
 // requestTimeout outlasts every wait these tests expect; a caller hitting it fails loudly.
 const requestTimeout = time.Minute
 
-// forward is one row of design D1's table: a verb graph-query serves and the row that answers it.
-type forward struct{ verb, downstream graph.QueryVerb }
+// forward is one row of design D1's table: a verb graph-query serves, the row that answers it, and a
+// request it accepts.
+type forward struct {
+	verb, downstream graph.QueryVerb
+	request          []byte
+}
 
 // forwardRows reads design D1's table, written out here as the test's own statement of it, and finds
-// each row in graph.QueryVerbs. The order is the table's: a row of another responder shares a name.
+// each row in graph.QueryVerbs. The order is the table's: a row of another responder shares a name,
+// and semantic forwards to a row of another name. A forward does not read its request.
 func forwardRows(t *testing.T) []forward {
 	t.Helper()
 	var rows []forward
-	for _, want := range []struct{ name, answeredBy string }{
-		{"entity", graph.ResponderGraphIngest},
-		{"batch", graph.ResponderGraphIngest},
-		{"prefix", graph.ResponderGraphIngest},
-		{"byName", graph.ResponderGraphIndex},
+	for _, want := range []struct{ name, answeredBy, downstream string }{
+		{"entity", graph.ResponderGraphIngest, "entity"},
+		{"batch", graph.ResponderGraphIngest, "batch"},
+		{"prefix", graph.ResponderGraphIngest, "prefix"},
+		{"byName", graph.ResponderGraphIndex, "byName"},
+		{"semantic", graph.ResponderGraphEmbedding, "search"},
+		{"similar", graph.ResponderGraphEmbedding, "similar"},
+		{"spatial", graph.ResponderGraphIndexSpatial, "bounds"},
+		{"temporal", graph.ResponderGraphIndexTemporal, "range"},
 	} {
-		rows = append(rows, forward{verbRow(t, graph.ResponderGraphQuery, want.name), verbRow(t, want.answeredBy, want.name)})
+		rows = append(rows, forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, want.name),
+			downstream: verbRow(t, want.answeredBy, want.downstream),
+			request:    []byte(`{}`),
+		})
 	}
 	return rows
 }
 
-// everyVerbRequest is a request all six verbs accept: a forward does not read it, and each composed
-// verb reads its own keys.
-var everyVerbRequest = []byte(`{"alias":"sn-1","entity_id":"c360.test.query.system.drone.001","direction":"outgoing"}`)
-
 // declaredRows is every verb graph-query serves, with the row its first downstream request goes to
-// when it is sent everyVerbRequest: the four forwards, then entityByAlias and relationships. The
-// tests of what a forward does with bytes keep to forwardRows, since the other two read theirs.
+// when it is sent the row's request: the forwards, then entityByAlias, relationships and pathSearch.
+// The tests of what a forward does with bytes keep to forwardRows, since the others read theirs.
 func declaredRows(t *testing.T) []forward {
 	t.Helper()
 	return append(forwardRows(t),
-		forward{verbRow(t, graph.ResponderGraphQuery, "entityByAlias"), verbRow(t, graph.ResponderGraphIndex, "alias")},
-		forward{verbRow(t, graph.ResponderGraphQuery, "relationships"), verbRow(t, graph.ResponderGraphIndex, "outgoing")},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "entityByAlias"),
+			downstream: verbRow(t, graph.ResponderGraphIndex, "alias"),
+			request:    []byte(`{"alias":"sn-1"}`),
+		},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "relationships"),
+			downstream: verbRow(t, graph.ResponderGraphIndex, "outgoing"),
+			request:    []byte(`{"entity_id":"c360.test.query.system.drone.001","direction":"outgoing"}`),
+		},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "pathSearch"),
+			downstream: verbRow(t, graph.ResponderGraphIngest, "entity"),
+			request:    []byte(`{"start_entity":"c360.test.query.system.drone.001","direction":"outgoing","max_depth":1}`),
+		},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "hierarchyStats"),
+			downstream: verbRow(t, graph.ResponderGraphIngest, "prefix"),
+			request:    []byte(`{"prefix":"c360.test"}`),
+		},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "summary"),
+			downstream: verbRow(t, graph.ResponderGraphIndex, "predicateList"),
+			request:    []byte(`{}`),
+		},
 	)
 }
 
@@ -106,9 +138,9 @@ func refusalOf(t *testing.T, err error) *errs.ClassifiedError {
 }
 
 // TestForwardPassesBytesBothWays: each forward hands its downstream verb the request's bytes and its
-// caller the reply's, exactly: an unknown field, odd spacing, and bytes that are not JSON at all, in
-// each direction. Each downstream verb answers with its own bytes, so a forward wired to the wrong
-// row fails as well.
+// caller the reply's, exactly: an unknown field, odd spacing, a scope graph-query does not read
+// (ADR-071, on semantic among the rest), and bytes that are not JSON at all, in each direction. Each
+// downstream verb answers with its own bytes, so a forward wired to the wrong row fails as well.
 func TestForwardPassesBytesBothWays(t *testing.T) {
 	client := fixtureClient(t)
 	startComponent(t, client, `{}`)
@@ -125,6 +157,7 @@ func TestForwardPassesBytesBothWays(t *testing.T) {
 
 	for _, request := range [][]byte{
 		[]byte("{ \"unknown_field\" :  [1, 2.0e0],\t\"id\":\"caf\\u00e9\"  ,\"min_revision\": 007 }\n"),
+		[]byte(`{"query":"drones over the north field","scope":["team-a","team-b"],"limit":5}`),
 		[]byte("not json \xff\x00 at all"),
 	} {
 		for _, f := range forwardRows(t) {
@@ -274,7 +307,7 @@ func TestHandlerBudgetEndsAForward(t *testing.T) {
 		// timeout, which carries no class, rather than holding until the stub is released.
 		const callerTimeout = 10 * time.Second
 		began := time.Now()
-		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, callerTimeout)
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, f.request, callerTimeout)
 		elapsed := time.Since(began)
 		if err == nil {
 			t.Fatalf("%s: a downstream verb that never replies gave the success %q", f.verb.Name, reply)
@@ -407,7 +440,7 @@ func TestForwardedRefusalKeepsClassCodeDetail(t *testing.T) {
 				serve(t, client, f.downstream.Subject, func(context.Context, []byte) ([]byte, error) {
 					return nil, tc.refusal
 				})
-				reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, requestTimeout)
+				reply, err := client.RequestClassified(t.Context(), f.verb.Subject, f.request, requestTimeout)
 				if err == nil {
 					t.Fatalf("%s: refusal arrived as the success %q", f.verb.Name, reply)
 				}
@@ -433,7 +466,7 @@ func TestNoRespondersIsTransient(t *testing.T) {
 	client := fixtureClient(t)
 	startComponent(t, client, `{}`)
 	for _, f := range declaredRows(t) {
-		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, requestTimeout)
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, f.request, requestTimeout)
 		if err == nil {
 			t.Fatalf("%s with no downstream responder succeeded: %q", f.verb.Name, reply)
 		}
@@ -472,7 +505,7 @@ func TestQueryTimeoutIsRead(t *testing.T) {
 	const callerTimeout = 10 * time.Second
 	for _, f := range declaredRows(t) {
 		began := time.Now()
-		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, callerTimeout)
+		reply, err := client.RequestClassified(t.Context(), f.verb.Subject, f.request, callerTimeout)
 		elapsed := time.Since(began)
 		if err == nil {
 			t.Fatalf("%s: a downstream verb that never replies gave the success %q", f.verb.Name, reply)
@@ -508,7 +541,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 			declared = append(declared, verb.Name)
 		}
 	}
-	want := []string{"entity", "batch", "prefix", "byName", "entityByAlias", "relationships"}
+	want := []string{"entity", "batch", "prefix", "byName", "entityByAlias", "relationships", "pathSearch", "hierarchyStats", "summary", "semantic", "similar", "spatial", "temporal"}
 	if !reflect.DeepEqual(declared, want) {
 		t.Fatalf("the verb table declares %v for graph-query, want %v", declared, want)
 	}
@@ -518,7 +551,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 
 	// With nothing downstream, only graph-query can answer, and it refuses naming the downstream row.
 	for _, f := range rows {
-		_, err := other.RequestClassified(t.Context(), f.verb.Subject, everyVerbRequest, requestTimeout)
+		_, err := other.RequestClassified(t.Context(), f.verb.Subject, f.request, requestTimeout)
 		if err == nil || natsclient.IsNoResponders(err) {
 			t.Errorf("%s = %v, want graph-query's refusal", f.verb.Subject, err)
 			continue

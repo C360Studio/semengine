@@ -92,7 +92,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Classified NATS RPC handlers use `RequestClassified` / `RequestWithRetryClassified`, propagating class, code, detail | `dev`, `rev` |
 | `verify+review` | Non-evictable buckets have no TTL or binding `MaxBytes`; stream bounds protect capacity, not entity lifecycle | `dev`, `rev` |
 | `review` | Large content moves as a `StorageReference`, never a bucket or stream name; `StoreContent` stores only the raw body | `dev`, `rev` |
-| `verify+review` | `graph.ingest.query.*`, `graph.index.query.*`, `graph.query.*` (the verbs in the table), `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
+| `verify+review` | `graph.ingest.query.*`, `graph.index.query.*`, `graph.embedding.query.*`, `graph.spatial.query.*`, `graph.temporal.query.*`, `graph.query.*` (the verbs in the table), `graph.mutation.` subjects are spelled only in `graph/query_verbs.go` and `internal/graphmutation/protocol.go` | `graph-transport-boundary` spec |
 | `verify` | The `graph` root package imports no NATS client, directly or transitively | `graph-transport-boundary` spec |
 | `verify+review` | Predicates (3 parts), literal entity IDs (6 parts, <=256B), entity patterns/prefixes, NATS KV keys/filters pass shared validators at entry; sort/dedup before limit; no partial readiness | `dev`, `rev` |
 | `verify+review` | Only `graph-ingest` writes domain entities to `ENTITY_STATES`; other code emits `graph.Graphable` or writes its own `graph/kvcatalog` bucket; single-valued predicates replace | `dev`, `rev`; `graph-entity-writes` spec |

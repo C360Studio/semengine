@@ -4,6 +4,7 @@ package graphquery
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -114,6 +115,9 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"relationships outgoing", "relationships", fmt.Sprintf(`"entity_id":%q,"direction":"outgoing"`, drone1)},
 		{"relationships incoming", "relationships", fmt.Sprintf(`"entity_id":%q,"direction":"incoming"`, drone2)},
 		{"entityByAlias", "entityByAlias", `"alias":"held-1"`},
+		{"pathSearch outgoing", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"outgoing","max_depth":1`, drone1)},
+		{"pathSearch incoming", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"incoming","max_depth":1`, drone1)},
+		{"summary", "summary", `"examples_per_type":1`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			subject := verbRow(t, graph.ResponderGraphQuery, tc.verb).Subject
@@ -177,8 +181,10 @@ func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
 }
 
 // TestGraphQueryRepliesDecodeByTheTable: every row the verb table declares for graph-query, not a list
-// kept here, gets a real reply naming the entity written, from real ingest and index, and that reply
-// has the row's shape and type (design D1). relationships is read both ways, its two reply paths.
+// kept here, gets a reply naming the entity written, and that reply has the row's shape and type
+// (design D1). The reply is real, from real ingest and index, except on the four forwards whose
+// responders changes 5 and 7 bring: there a stub sends the literal JSON the row declares.
+// relationships is read both ways, its two reply paths.
 func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, drone1,
@@ -188,7 +194,22 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	written := stack.create(t, drone3)
 	stack.awaitIndexed(t, written)
 
+	for _, stub := range []struct{ responder, name, reply string }{
+		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25"},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphEmbedding, "similar", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.5}]},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphIndexSpatial, "bounds", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","lat":48.25,"lon":11.5,"alt":310.5}],"truncated":true},"indexed_revision":9,"producer":"graph-index-spatial","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphIndexTemporal, "range", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001"}],"truncated":false},"indexed_revision":9,"producer":"graph-index-temporal","timestamp":"2026-11-04T10:00:00Z"}`},
+	} {
+		serve(t, stack.client, verbRow(t, stub.responder, stub.name).Subject, func(context.Context, []byte) ([]byte, error) {
+			return []byte(stub.reply), nil
+		})
+	}
+
 	requests := map[string][]string{
+		"semantic":      {`{"query":"alpha","scope":["team-a"]}`},
+		"similar":       {fmt.Sprintf(`{"entity_id":%q}`, drone2)},
+		"spatial":       {`{"north":49,"south":48,"east":12,"west":11}`},
+		"temporal":      {`{"start_time":"2026-11-04T00:00:00Z","end_time":"2026-11-05T00:00:00Z"}`},
 		"entity":        {fmt.Sprintf(`{"id":%q}`, drone1)},
 		"batch":         {fmt.Sprintf(`{"ids":[%q,%q]}`, drone1, absentDrone)},
 		"prefix":        {`{"prefix":"c360","limit":1}`},
@@ -198,6 +219,9 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 			fmt.Sprintf(`{"entity_id":%q,"direction":"outgoing"}`, drone1),
 			fmt.Sprintf(`{"entity_id":%q,"direction":"incoming"}`, drone2),
 		},
+		"pathSearch":     {fmt.Sprintf(`{"start_entity":%q,"direction":"outgoing","max_depth":2,"predicates":[%q]}`, drone1, linkTo)},
+		"hierarchyStats": {`{"prefix":"c360.test.query.system.drone"}`},
+		"summary":        {`{}`, `{"prefix":"c360.test.query.system.drone","exclude_predicates":true}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

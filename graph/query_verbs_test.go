@@ -13,13 +13,15 @@ import (
 // graph-index's eight verbs follow on graph.index.query.* (change 4, design
 // D6), the subjects the SemStreams pin's graph-index subscribed to
 // (pin:processor/graph-index/query.go:31-80). graph-query's forwards follow on
-// graph.query.* (design D1); no other entry exists.
+// graph.query.* (design D1), with the derived-index verbs four of them forward
+// to (step 2, design D1); no other entry exists.
 func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	// The marks are literals per verb, read from what each handler replies with
 	// (graph-transport-boundary, "The verb table declares each reply's shape"):
 	// graph-ingest's replies are bare, graph-index's are enveloped, a forward
 	// answers as the verb it forwards to, and the two verbs graph-query composes
-	// from an index reply are enveloped (design D1).
+	// from an index reply are enveloped (design D1). The derived-index verbs have no
+	// handler in the tree yet; their marks are design D1's of step 2.
 	want := []QueryVerb{
 		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
@@ -43,6 +45,14 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[CompoundPredicateData]()},
 		{Name: "byName", Subject: "graph.index.query.byName", Responder: "graph-index",
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "search", Subject: "graph.embedding.query.search", Responder: "graph-embedding",
+			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
+		{Name: "similar", Subject: "graph.embedding.query.similar", Responder: "graph-embedding",
+			Enveloped: true, Reply: reflect.TypeFor[SimilarData]()},
+		{Name: "bounds", Subject: "graph.spatial.query.bounds", Responder: "graph-index-spatial",
+			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
+		{Name: "range", Subject: "graph.temporal.query.range", Responder: "graph-index-temporal",
+			Enveloped: true, Reply: reflect.TypeFor[TemporalData]()},
 		{Name: "entity", Subject: "graph.query.entity", Responder: "graph-query",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "batch", Subject: "graph.query.batch", Responder: "graph-query",
@@ -55,11 +65,30 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "relationships", Subject: "graph.query.relationships", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[[]RelationshipEdge]()},
+		{Name: "pathSearch", Subject: "graph.query.pathSearch", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[PathSearchData]()},
+		{Name: "hierarchyStats", Subject: "graph.query.hierarchyStats", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[HierarchyStatsData]()},
+		{Name: "summary", Subject: "graph.query.summary", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[SummaryData]()},
+		{Name: "semantic", Subject: "graph.query.semantic", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
+		{Name: "similar", Subject: "graph.query.similar", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[SimilarData]()},
+		{Name: "spatial", Subject: "graph.query.spatial", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
+		{Name: "temporal", Subject: "graph.query.temporal", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[TemporalData]()},
 	}
 
 	if ResponderGraphIngest != "graph-ingest" || ResponderGraphIndex != "graph-index" || ResponderGraphQuery != "graph-query" {
 		t.Fatalf("responders = %q, %q, %q; want graph-ingest, graph-index, graph-query",
 			ResponderGraphIngest, ResponderGraphIndex, ResponderGraphQuery)
+	}
+	if ResponderGraphEmbedding != "graph-embedding" || ResponderGraphIndexSpatial != "graph-index-spatial" ||
+		ResponderGraphIndexTemporal != "graph-index-temporal" {
+		t.Fatalf("responders = %q, %q, %q; want graph-embedding, graph-index-spatial, graph-index-temporal",
+			ResponderGraphEmbedding, ResponderGraphIndexSpatial, ResponderGraphIndexTemporal)
 	}
 
 	got := QueryVerbs()
@@ -71,6 +100,35 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	got[0].Subject = "graph.ingest.query.changed"
 	if again := QueryVerbs(); !slices.Equal(again, want) {
 		t.Fatalf("editing a returned table changed the declaration: %+v", again)
+	}
+}
+
+// TestPathSearchWireNames holds the keys of the pathSearch request and reply and the limits callers read.
+func TestPathSearchWireNames(t *testing.T) {
+	request, err := json.Marshal(PathSearchRequest{
+		StartEntity: "start", Direction: "both", MaxDepth: 2, MaxNodes: 3, Predicates: []string{"test.rel.knows"},
+		MinRevisionField: MinRevisionField{MinRevision: 4},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := `{"start_entity":"start","direction":"both","max_depth":2,"max_nodes":3,"predicates":["test.rel.knows"],"min_revision":4}`; string(request) != want {
+		t.Errorf("PathSearchRequest = %s, want %s", request, want)
+	}
+	reply, err := json.Marshal(PathSearchData{
+		Entities: []PathEntity{{EntityID: "from", Depth: 0}, {EntityID: "to", Depth: 1}},
+		Edges:    []RelationshipEdge{{Predicate: "test.rel.knows", FromEntityID: "from", ToEntityID: "to"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"entities":[{"entity_id":"from","depth":0},{"entity_id":"to","depth":1}],` +
+		`"edges":[{"predicate":"test.rel.knows","from_entity_id":"from","to_entity_id":"to"}],"truncated":false}`
+	if string(reply) != want {
+		t.Errorf("PathSearchData = %s, want %s", reply, want)
+	}
+	if MaxPathSearchDepth != 10 || MaxPathSearchNodes != 500 || DefaultPathSearchNodes != 100 {
+		t.Errorf("limits = %d, %d, %d, want 10, 500, 100", MaxPathSearchDepth, MaxPathSearchNodes, DefaultPathSearchNodes)
 	}
 }
 

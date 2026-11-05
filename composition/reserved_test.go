@@ -43,6 +43,24 @@ func TestValidateRefusesStreamCapturingReservedSubject(t *testing.T) {
 				Message: `stream "EXACT" subject filter "graph.ingest.query.entity" captures reserved request subject "graph.ingest.query.entity"`},
 		},
 		{
+			name:    "explicit filter on the embedding verbs",
+			streams: config.StreamConfigs{"EMB": {Subjects: []string{"graph.embedding.query.>"}}},
+			want: composition.Finding{Component: "config",
+				Message: `stream "EMB" subject filter "graph.embedding.query.>" captures reserved request subject "graph.embedding.query.search"`},
+		},
+		{
+			name:    "explicit filter on the spatial verb",
+			streams: config.StreamConfigs{"GEO": {Subjects: []string{"graph.spatial.query.bounds"}}},
+			want: composition.Finding{Component: "config",
+				Message: `stream "GEO" subject filter "graph.spatial.query.bounds" captures reserved request subject "graph.spatial.query.bounds"`},
+		},
+		{
+			name:    "explicit filter on the temporal verb",
+			streams: config.StreamConfigs{"TIME": {Subjects: []string{"graph.temporal.query.*"}}},
+			want: composition.Finding{Component: "config",
+				Message: `stream "TIME" subject filter "graph.temporal.query.*" captures reserved request subject "graph.temporal.query.range"`},
+		},
+		{
 			// Overlap, not cover: neither pattern covers the other, yet graph.mutation.create
 			// matches both. The stream is unnamed, so it is named as provisioning names it.
 			name:       "JetStream output crossing filter",
@@ -115,8 +133,9 @@ func TestValidateDoesNotRefuseNeighbouringSubjects(t *testing.T) {
 
 // enumerationTokens is the alphabet of the generated check (design "Generated checks"): every token
 // of graph-ingest's and the mutation family's reserved subjects, graph-index's tokens up to its first
-// verb, and z, a token no reserved subject has. graph-index's later verbs are left out because each
-// one widens the enumeration by a power of five; reservedInAlphabet says why the first is enough.
+// verb, and z, a token no reserved subject has. graph-index's later verbs, graph-query's and the
+// derived-index verbs are left out because each token widens the enumeration by a power of five (these
+// six took the check from 6 s to 93 s); reservedInAlphabet says why the alphabet is enough.
 var enumerationTokens = []string{"graph", "ingest", "query", "mutation", "entity", "batch", "prefix", "index", "outgoing", "z"}
 
 // TestReservedSubjectOverlapMatchesEnumeration checks every filter of one to four tokens over the
@@ -218,64 +237,59 @@ func TestReservedSubjectOverlapMatchesEnumeration(t *testing.T) {
 // family), the reserved subjects whose every token is in the alphabet or is a final `>`. The oracle
 // checks only these, and that is enough for the subject Analyze reports: Analyze names the first
 // reserved subject in that order a filter overlaps (reservedCaptureFindings). A left-out subject
-// differs from an earlier kept subject of the same responder only in its last token, which is not in
-// the alphabet; so a filter over the alphabet reaches it only through a `*` or `>` at or before that
-// position, and the same wildcard reaches the earlier kept sibling. Its first overlap is therefore
-// always a kept subject. Both premises are checked here; when one fails, widen the alphabet.
+// differs from an earlier kept subject of the same length only in tokens not in the alphabet; so a
+// filter over the alphabet reaches it only through a `*` or `>` at or before each of those positions,
+// and the same wildcards reach the earlier kept subject. Its first overlap is therefore always a kept
+// subject. The premise is checked here; when it fails, widen the alphabet. A family with no kept
+// subject gets its named case in TestValidateRefusesStreamCapturingReservedSubject.
 func reservedInAlphabet(t *testing.T) []string {
 	t.Helper()
 	inAlphabet := map[string]bool{}
 	for _, token := range enumerationTokens {
 		inAlphabet[token] = true
 	}
-	type entry struct{ subject, responder string }
-	var all []entry
+	var all []string
 	for _, verb := range graph.QueryVerbs() {
-		all = append(all, entry{verb.Subject, verb.Responder})
+		all = append(all, verb.Subject)
 	}
-	all = append(all, entry{graphmutation.SubjectFamily, "graph-mutation"})
+	all = append(all, graphmutation.SubjectFamily)
 
-	var kept []entry
-	keptBy := map[string]bool{}
+	var kept []string
 	for _, candidate := range all {
-		tokens := strings.Split(candidate.subject, ".")
+		tokens := strings.Split(candidate, ".")
 		whole := true
 		for index, token := range tokens {
 			if !inAlphabet[token] && (token != ">" || index != len(tokens)-1) {
 				whole = false
-				break
 			}
 		}
 		if whole {
 			kept = append(kept, candidate)
-			keptBy[candidate.responder] = true
 			continue
 		}
-		sibling := false
+		reached := false
 		for _, earlier := range kept {
-			earlierTokens := strings.Split(earlier.subject, ".")
-			if earlier.responder == candidate.responder && len(earlierTokens) == len(tokens) &&
-				!strings.ContainsAny(tokens[len(tokens)-1], "*>") &&
-				strings.Join(earlierTokens[:len(tokens)-1], ".") == strings.Join(tokens[:len(tokens)-1], ".") {
-				sibling = true
+			earlierTokens := strings.Split(earlier, ".")
+			if len(earlierTokens) != len(tokens) {
+				continue
+			}
+			differsOutsideAlphabet := true
+			for index, token := range tokens {
+				if token != earlierTokens[index] && inAlphabet[token] {
+					differsOutsideAlphabet = false
+				}
+			}
+			if differsOutsideAlphabet {
+				reached = true
 				break
 			}
 		}
-		if !sibling {
-			t.Fatalf("no concrete subject over the alphabet matches reserved %q, and no earlier kept subject of %s differs from it only in its last token: widen the alphabet",
-				candidate.subject, candidate.responder)
+		if !reached {
+			t.Fatalf("no concrete subject over the alphabet matches reserved %q, and no earlier kept subject differs from it only in tokens not in the alphabet: widen the alphabet",
+				candidate)
 		}
 	}
-	for _, candidate := range all {
-		if !keptBy[candidate.responder] {
-			t.Fatalf("no reserved subject of %s is over the alphabet: widen the alphabet", candidate.responder)
-		}
-	}
-	subjects := make([]string, 0, len(kept))
-	for _, candidate := range kept {
-		subjects = append(subjects, candidate.subject)
-	}
-	return subjects
+	return kept
 }
 
 // enumerateFilters returns every filter of 1 to maxTokens tokens over the alphabet and `*`, with `>`

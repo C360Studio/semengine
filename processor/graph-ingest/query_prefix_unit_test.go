@@ -200,14 +200,16 @@ func TestMarshalFittingPrefixPageIncludesCursorInExactCandidate(t *testing.T) {
 		{ID: "a.b.c.d.e.three"},
 	}
 
+	// A total of five digits: the fit must count its real width, not assume one.
 	want := graph.PrefixQueryResponse{
 		Entities:   entities[:1],
+		Total:      12345,
 		NextCursor: encodeCursor(entities[0].ID),
 	}
 	wantBytes, err := json.Marshal(want)
 	require.NoError(t, err)
 
-	encoded, err := marshalFittingPrefixPage(entities, "", int64(len(wantBytes)))
+	encoded, err := marshalFittingPrefixPage(entities, 12345, "", int64(len(wantBytes)))
 	require.NoError(t, err)
 	assert.JSONEq(t, string(wantBytes), string(encoded))
 	assert.Len(t, encoded, len(wantBytes), "fitting must use the exact complete page encoding")
@@ -217,12 +219,13 @@ func TestMarshalFittingPrefixPageRejectsFirstIndivisibleEntity(t *testing.T) {
 	entities := []graph.EntityState{{ID: "a.b.c.d.e.one"}, {ID: "a.b.c.d.e.two"}}
 	firstCandidate, err := json.Marshal(graph.PrefixQueryResponse{
 		Entities:   entities[:1],
+		Total:      12345,
 		NextCursor: encodeCursor(entities[0].ID),
 	})
 	require.NoError(t, err)
 	maxPayload := int64(len(firstCandidate) - 1)
 
-	encoded, fitErr := marshalFittingPrefixPage(entities, "", maxPayload)
+	encoded, fitErr := marshalFittingPrefixPage(entities, 12345, "", maxPayload)
 	require.Error(t, fitErr)
 	assert.Nil(t, encoded)
 	assert.True(t, errs.IsInvalid(fitErr))
@@ -489,7 +492,7 @@ func TestQueryPrefix_PatternNoMatches(t *testing.T) {
 
 		respData, err := comp.handleQueryPrefixWithMaxPayload(context.Background(), reqData, 1<<20)
 		require.NoError(t, err)
-		assert.JSONEq(t, `{"entities":null}`, string(respData))
+		assert.JSONEq(t, `{"entities":null,"total":0}`, string(respData))
 
 		var resp graph.PrefixQueryResponse
 		require.NoError(t, json.Unmarshal(respData, &resp))

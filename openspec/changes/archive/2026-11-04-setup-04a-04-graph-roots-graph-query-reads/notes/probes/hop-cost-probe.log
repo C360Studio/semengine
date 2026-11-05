@@ -1,0 +1,17 @@
+    zz_hopcost_integration_test.go:55: RESULT seeded 3000 entities in 4.6046425s, last revision 3000
+    zz_hopcost_integration_test.go:76: RESULT waiting 4.871458ms: min_revision 3000 is above the indexed revision 192
+    zz_hopcost_integration_test.go:76: RESULT waiting 30.0956895s: min_revision 3000 is above the indexed revision 1188
+    zz_hopcost_integration_test.go:76: RESULT waiting 1m0.2032915s: min_revision 3000 is above the indexed revision 2160
+    zz_hopcost_integration_test.go:80: RESULT index caught up after 1m30.314715875s
+    zz_hopcost_integration_test.go:94: RESULT outgoing, 1 edge n=2000 total=7.302946916s p50=2.938958ms p99=14.766375ms max=39.101125ms
+    zz_hopcost_integration_test.go:94: RESULT incoming, 1-2 edges n=1500 total=12.972623666s p50=7.187167ms p99=32.827792ms max=88.461041ms
+    zz_hopcost_integration_test.go:94: RESULT incoming, hub of 1000 edges n=200 total=2.309782083s p50=11.216875ms p99=20.979667ms max=27.720834ms
+    zz_hopcost_integration_test.go:107: RESULT predicateList over 3000 entities: 46.565875ms, 345 reply bytes
+    zz_hopcost_integration_test.go:107: RESULT predicateList over 3000 entities: 40.813541ms, 345 reply bytes
+    zz_hopcost_integration_test.go:107: RESULT predicateList over 3000 entities: 47.723584ms, 345 reply bytes
+    zz_hopcost_integration_test.go:120: RESULT one prefix page "" over 3000 entities: 156.272541ms, 1000 rows, 964335 reply bytes, cursor true
+    zz_hopcost_integration_test.go:120: RESULT one prefix page "c360.test.query.system.drone" over 3000 entities: 39.883833ms, 1000 rows, 964335 reply bytes, cursor true
+ok  	github.com/c360studio/semengine/processor/graph-query	119.281s
+go test -tags integration -run '^TestHopCostProbe$' -v -count=1 -timeout 8m    7.40s user 5.36s system 10% cpu 2:00.37 total
+grep -E 'RESULT|FAIL|^ok|panic|hopcost'  0.05s user 0.11s system 0% cpu 2:00.37 total
+cut -c1-200  0.00s user 0.00s system 0% cpu 2:00.36 total

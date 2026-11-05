@@ -2088,7 +2088,20 @@
     Responder ResponderGraphQuery, new rows after the existing ones; (19) RelationshipEdge, the row of a
     relationships reply, names the predicate where the pin's list named edge_type; (20) MinRevisionField, the
     optional min_revision a request embeds, and ErrorCodeRevisionNotReached ("revision_not_reached", class
-    transient), the refusal graph-index gives when its indexed revision is below it
+    transient), the refusal graph-index gives when its indexed revision is below it; and, in
+    setup-04a-04-graph-roots-graph-query-reads: (21) PrefixQueryResponse gains Total, key total, always
+    present, the length of the key listing before the cursor and any limit, as listed, not a snapshot;
+    (22) ResponderGraphEmbedding, ResponderGraphIndexSpatial and ResponderGraphIndexTemporal, and QueryVerbs rows
+    for the four verbs they answer (graph.embedding.query.search and similar, graph.spatial.query.bounds,
+    graph.temporal.query.range; their responders arrive in changes 5 and 7) and for graph-query's seven new verbs
+    on graph.query.* (pathSearch, hierarchyStats, summary, semantic, similar, spatial, temporal); (23) PathSearchRequest,
+    PathSearchData, PathEntity and the limits MaxPathSearchDepth, MaxPathSearchNodes, DefaultPathSearchNodes
+    (graph/query_path_types.go); (24) HierarchyStatsRequest, HierarchyStatsData and HierarchyChild
+    (graph/query_hierarchy_types.go); (25) the reply bodies of the four forwards, SemanticData, SimilarData,
+    SimilarityHit, SpatialData, SpatialHit, TemporalData and TemporalHit; (26) SummaryRequest gains prefix and
+    exclude_predicates in place of include_predicates, and SummaryData gains entities_scanned, truncated and
+    next_cursor in place of entity_sample_truncated, and drops predicate_total; with predicates excluded its
+    indexed_revision is 0, which claims nothing (graph/query_response.go)
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -2430,7 +2443,10 @@
     or any one of whose NATS subjects starts with graph.mutation. is a graph-mutation port, and exactly one,
     a required nats-request input on graph.mutation.> for semengine.graph.mutation v1, is accepted; a first
     graph-mutation input that is not valid is refused with an error naming the port (#331)
-    (one-mutation-port-check, #323)
+    (one-mutation-port-check, #323); (9) graph.ingest.query.prefix replies name total, always present, the
+    length of the key listing before the cursor and any limit, on the prefix and pattern paths and the
+    exact-ID fallback, counted in the byte fit, as listed, not a snapshot (TestPrefixPageNamesItsTotal;
+    setup-04a-04-graph-roots-graph-query-reads)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
     internal/dispatch, internal/graphmutation, message, metric, natsclient,
@@ -4178,29 +4194,44 @@
     setup-04a-04-graph-roots-graph-query); the package is whole only at step 5. Step 1 serves entity, batch, prefix
     and byName as forwards, request and reply bytes unchanged, a refusal behind them reaching the caller with class,
     code and detail, and entityByAlias and relationships as enveloped replies (graph.QueryResponse) built from
-    graph-index replies. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    graph-index replies. Step 2 (setup-04a-04-graph-roots-graph-query-reads, pathrag.go and summary.go) adds
+    pathSearch (required max_depth to 10, max_nodes default 100 to 500, required direction, all checked before any
+    request; a walk of the index's outgoing and incoming verbs, each entity and edge once, truncated exact; a hop over
+    max_payload refuses the walk, naming the entity); hierarchyStats and summary, each reading one prefix page
+    (total_entities the whole group as listed, a sample declared by entities_scanned, truncated and next_cursor; a
+    page that cannot be counted is refused transient internal; summary refuses when its predicate index cannot answer,
+    exclude_predicates asks without it and reports indexed_revision 0); and semantic, similar, spatial and temporal
+    as forwards to graph.embedding.query.search and similar, graph.spatial.query.bounds and graph.temporal.query.range,
+    refused transient internal until changes 5 and 7 bring the responders. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
     requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
     key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
     revision_not_reached instead of swallowing them (ADR-114); relationships requires direction and names the
     predicate where the pin named edge_type; the entity reply names kv_revision
   dependencies_and_side_effects: >-
-    production: component, graph, natsclient, pkg/errs, pkg/types (in-set); tests also use metric and nats.go; one
-    request subscription per served verb; zero to two downstream requests per call (a refused request makes none,
-    entityByAlias up to two); no bucket access, no state of its own
+    production: component, graph, natsclient, pkg/errs, pkg/types, vocabulary (in-set); tests also use metric and
+    nats.go; one request subscription per served verb; zero to two downstream requests per call (a refused request
+    makes none, entityByAlias up to two), except pathSearch, at most 1 plus max_nodes, doubled for direction both, and
+    summary, two (predicateList, then one prefix page); no bucket access, no state of its own
   known_risks: >-
     a package in steps: later verbs are not in the verb table until their step, so a request for one reports no
     responders; the second-responder check sees declared ports only (composition request_subject_conflict); a
     consumer reading a pin shape changes at its cutover (processor/graph-query/MIGRATION.md). Not carried at step 1:
-    router.go, the relay validators (pin query.go:299-345) and the files in the rows below. Later steps carry
-    graphrag.go, pathrag.go, summary.go, searchgraph.go, entity_resolver.go and their tests
+    router.go, the relay validators (pin query.go:299-345) and the files in the rows below. Request counts bound
+    the work of pathSearch, hierarchyStats and summary; nothing bounds their elapsed time (ADR-112, "Time"), and a count
+    covers one page, live and as listed, not a snapshot (#512). Later steps carry graphrag.go, searchgraph.go,
+    entity_resolver.go and their tests
   proving_tests: >-
     processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
     TestUnknownConfigKeyIsRefused, TestStartThroughTheTable, TestEntityByAlias,
     TestRelationshipsEnvelopeKeepsIndexRevision, TestRelationshipsRowKeys, TestRelationshipsRefusesUnknownDirection,
     TestRelationshipsRefusesBrokenIndexReply, TestReadYourWrites, TestMinRevisionRefusalThroughGraphQuery,
-    TestGraphQueryRepliesDecodeByTheTable) and the lifecycle suite
+    TestGraphQueryRepliesDecodeByTheTable) and, for step 2, TestPathSearchRefusesBadRequests, TestPathSearchOnARealIndex,
+    TestPathSearchTruncatedIsExact, TestPathSearchRequestsAreBounded, TestCountsReadOnePage,
+    TestCountsAddUpAcrossPages, TestCountsRefuseABrokenPage, TestHierarchyStatsDeclaresAPartialPage,
+    TestHierarchyStatsOfAnExactID, TestSummaryRefusesWhenPredicatesCannot, TestAuthorityOnlyAnswerClaimsNoRevision,
+    TestSummaryPrefixReadsOneGroup, and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 
@@ -4218,6 +4249,21 @@
     this record and is not ported, and that 060-pr-d-breaking-change-summary.md is not carried
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query technical writer
+  disposition: adapt
+
+- source_path: docs/adr/071-fusion-domain-scoped-nl-retrieval.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for scoping natural-language retrieval to a domain (a scope list on the fusion request,
+    carried to graph.embedding.query.search), which graph-query's semantic verb forwards byte for byte
+  destination: docs/adr/071-fusion-domain-scoped-nl-retrieval.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    one markdownlint disable comment (a long line) and a port note under the title naming the pin path and SHA, and
+    that pkg/fusion and graph-embedding, which it describes, arrive in change 5 and are not in the tree
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-04-graph-roots-graph-query-reads technical writer
   disposition: adapt
 
 - source_path: processor/graph-query/answer.go

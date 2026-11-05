@@ -12,8 +12,9 @@
 //
 // The wire types are the request and reply bodies of the graph's request/reply
 // subjects: the query types (QueryVerbs declares the verbs each responder
-// answers, whether its reply is a QueryResponse, and the reply's type), the
-// mutation requests and responses,
+// answers, whether its reply is a QueryResponse, and the reply's type, for
+// graph-ingest, graph-index, graph-query and the embedding, spatial and temporal
+// responders), the mutation requests and responses,
 // ExactEntity with its reader, and IndexStatusResponse, the readiness envelope
 // stored in GRAPH_STATUS. A request/reply body is identified by the subject it
 // travels on, so these types are not registered in the payload registry.

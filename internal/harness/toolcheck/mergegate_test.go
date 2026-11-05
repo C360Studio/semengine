@@ -265,6 +265,8 @@ const (
 
 	// The merge-check job runs whatever the probe did (always()), and is skipped only on a draft or
 	// on the probe's awaiting=true: a failed probe leaves no answer, so the full check runs.
+	// Skipped on a draft or while awaiting, the job is renamed, so no skipped run is named Merge check.
+	mergeCheckName        = "${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || needs.awaiting.outputs.awaiting == 'true' && 'Merge check (awaiting review record, skipped)' || 'Merge check' }}"
 	mergeCheckCondition   = "always() && !github.event.pull_request.draft && needs.awaiting.outputs.awaiting != 'true'"
 	mergeCheckProbeJob    = "awaiting"
 	mergeCheckProbeName   = "Merge check probe"
@@ -340,6 +342,7 @@ permissions:
 jobs:
   merge-check:
     needs: awaiting
+    name: ${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || needs.awaiting.outputs.awaiting == 'true' && 'Merge check (awaiting review record, skipped)' || 'Merge check' }}
     runs-on: ubuntu-24.04
     if: ${{ always() && !github.event.pull_request.draft && needs.awaiting.outputs.awaiting != 'true' }}
     timeout-minutes: 5
@@ -512,6 +515,10 @@ jobs:
 			[]string{"merge-check.yml", "job merge-check", "if:", "awaiting"}},
 		{"skipped when the probe fails", "${{ always() && ", "${{ ",
 			[]string{"merge-check.yml", "job merge-check", "if:", "always()"}},
+		{"name kept on a draft", "    name: " + mergeCheckName + "\n", "    name: Merge check\n",
+			[]string{"merge-check.yml", "job merge-check", `is named "Merge check"`}},
+		{"name kept while awaiting", "    name: " + mergeCheckName + "\n", "    name: ${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || 'Merge check' }}\n",
+			[]string{"merge-check.yml", "job merge-check", `is named "${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || 'Merge check' }}"`}},
 		{"merge-check does not need the probe", "    needs: awaiting\n", "",
 			[]string{"merge-check.yml", "job merge-check", "needs", "awaiting"}},
 		{"probe removed", "  awaiting:\n    name: Merge check probe\n", "  probe:\n    name: Merge check probe\n",
@@ -674,7 +681,7 @@ func jobsGrantAndRunnerViolations(file string, perms any, jobs map[string]ciJob)
 // spec, "The merge-check workflow": the pull_request trigger alone, with exactly five activity
 // types, edited among them; one queued run per pull request (concurrency grouped by its number,
 // cancel-in-progress false); no write anywhere and every job on the one runner label; a job
-// merge-check that needs the probe, runs under always() and is skipped only on a draft or on the
+// merge-check that needs the probe, is renamed when skipped, runs under always() and is skipped only on a draft or on the
 // probe's awaiting=true, and runs scripts/merge-check.sh with ATEAM_REQUIRED_CHECKS naming Required
 // and Merge check; a probe job awaiting, named Merge check probe and skipped on a draft, whose step
 // probe runs ateam review gate --awaiting and writes its answer as the job's output. Both jobs are
@@ -710,6 +717,9 @@ func mergeCheckWorkflowViolations(data []byte) []string {
 		violations = append(violations, file+": no job merge-check; the merge-gate spec requires it")
 	} else {
 		violations = append(violations, gateJobViolations(file, "merge-check", job, mergeCheckCondition)...)
+		if strings.TrimSpace(job.Name) != mergeCheckName {
+			violations = append(violations, fmt.Sprintf("%s: job merge-check is named %q; the merge-gate spec requires %s, so a job skipped on a draft or while awaiting leaves no run named Merge check", file, job.Name, mergeCheckName))
+		}
 		if !slices.Contains(jobNeeds(job), mergeCheckProbeJob) {
 			violations = append(violations, fmt.Sprintf("%s: job merge-check needs %v; the merge-gate spec requires it to need %s, the probe whose answer its if: reads", file, job.Needs, mergeCheckProbeJob))
 		}

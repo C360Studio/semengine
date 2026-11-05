@@ -10,10 +10,12 @@ name: Merge check
 # - One run per pull request at a time, queued: a newer event replaces a
 #   pending run, and a running one finishes rather than being cancelled, so
 #   no cancelled Merge check sits beside a passing one at the same head.
-# - It judges from the base commit: the script, the review policy it reads and
-#   the ateam pin come from main, never from the tree under review, so a pull
-#   request cannot loosen the gate judging it. The pull request itself is read
-#   through the API.
+# - It judges from the base commit: the script and the review policy it reads
+#   come from main, never from the tree under review, so a pull request cannot
+#   loosen them. This file is not: on pull_request GitHub runs the workflow
+#   from the pull request's merge ref, so its jobs and the ateam pin in its
+#   install lines are part of the tree under review (#471). The pull request
+#   itself is read through the API.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review, edited]
@@ -26,10 +28,10 @@ permissions:
   contents: read
 
 jobs:
-  # The awaiting probe (ateam #262): with the ateam pin, from the base commit as
-  # the merge check is, it reads the pull request through the API and answers
-  # awaiting=true only for a code pull request with no reviewed-by: line and no
-  # review record comment. It reads the pull request when it runs, so a rerun
+  # The awaiting probe (ateam #262): it checks out the base commit and installs
+  # the ateam pin as the merge check does, reads the pull request through the
+  # API, and answers awaiting=true only for a code pull request with no
+  # reviewed-by: line and no review record comment. It reads the pull request when it runs, so a rerun
   # sees the description and records of that moment. The main ruleset does not
   # require it.
   awaiting:

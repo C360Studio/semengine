@@ -1,6 +1,6 @@
 # Proposal: adopt-ateam-v037-probe
 
-Track: quick (one pin bump and one workflow job; two existing requirements modified, no new Requirement).
+Track: quick (one pin bump and one workflow job; three existing requirements modified, no new Requirement).
 
 ## Why
 
@@ -29,7 +29,8 @@ required check blocks the merge. A review record posted as a comment starts no r
 
 ## Capabilities
 
-- Modified `merge-gate` (the merge-check workflow requirement: probe sentences, three scenarios).
+- Modified `merge-gate` (the merge-check workflow requirement: probe sentences, three scenarios; the contract-test
+  requirement: the `merge-check` job's name).
 - Modified `harness-boundaries` (the ateam doctor requirement: pin `v0.3.7`).
 
 ## Impact
@@ -37,3 +38,5 @@ required check blocks the merge. A review record posted as a comment starts no r
 - `.github/workflows/{ci,merge-check}.yml`, `internal/harness/toolcheck/mergegate_test.go`, `.agents/README.md`,
   `.agents/contracts/reviewer.md`, `.agents/skills/{review-pr,ponytail}/SKILL.md` (v0.3.7 template text,
   `notes/1.2.md`), `AGENTS.md`, the two specs.
+- Closes #471: the `merge-check.yml` comments say the ateam install lines come from the tree under review, not from
+  `main`.

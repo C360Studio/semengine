@@ -351,8 +351,9 @@ reads that ruleset on every run.
 
 A contract test SHALL fail when `ci.yml` differs from "Required needs verify" or "The verify job has a time limit",
 grants a write permission, or lists other `pull_request` types than `opened`, `synchronize`, `reopened`,
-`ready_for_review`; and when `merge-check.yml` differs from "The merge-check workflow" in types, draft condition,
-concurrency, checkout ref, pin, environment, permissions or limit. Every install line SHALL name one release.
+`ready_for_review`; and when `merge-check.yml` differs from "The merge-check workflow" in types, draft condition, the
+`merge-check` job's name, concurrency, checkout ref, pin, environment, permissions or limit. Every install line SHALL
+name one release.
 
 #### Scenario: Edited type missing
 

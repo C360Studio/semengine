@@ -13,5 +13,3 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171), w
 ## 2. Prose and spec
 
 - [x] 2.1 `AGENTS.md` Merge gate line; both spec deltas applied to `openspec/specs/`.
-- [ ] 2.2 On this pull request once ready: `Merge check probe` answers `awaiting=true` and `Merge check` is absent before
-  the review record, and runs once the record and `reviewed-by:` line exist; run links in the PR.

@@ -41,3 +41,26 @@ checks out the base commit without credentials and installs the pinned release. 
 
 - **WHEN** the `Merge check probe` job fails or prints no `awaiting=` line
 - **THEN** the `merge-check` job runs the full check
+
+### Requirement: A contract test guards both workflows
+
+A contract test SHALL fail when `ci.yml` differs from "Required needs verify" or "The verify job has a time limit",
+grants a write permission, or lists other `pull_request` types than `opened`, `synchronize`, `reopened`,
+`ready_for_review`; and when `merge-check.yml` differs from "The merge-check workflow" in types, draft condition, the
+`merge-check` job's name, concurrency, checkout ref, pin, environment, permissions or limit. Every install line SHALL
+name one release.
+
+#### Scenario: Edited type missing
+
+- **WHEN** `merge-check.yml` lists `opened`, `synchronize`, `reopened` and `ready_for_review` only
+- **THEN** the contract test fails naming `edited`
+
+#### Scenario: Head checked out instead of base
+
+- **WHEN** the checkout step of `merge-check.yml` has no `ref` of the base commit
+- **THEN** the contract test fails naming the step
+
+#### Scenario: Pins differ
+
+- **WHEN** `ci.yml` installs `ateam@v0.3.4` and `merge-check.yml` installs `ateam@v0.3.3`
+- **THEN** the contract test and `scripts/doctor.sh` fail naming both versions

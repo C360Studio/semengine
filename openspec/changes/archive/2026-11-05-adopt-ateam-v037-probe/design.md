@@ -16,8 +16,9 @@ nothing SemEngine uses. At v0.3.7, `ateam doctor --check` and `TestAteamTemplate
 ## Decisions
 
 - **D1. The workflow follows ateam's.** `.github/workflows/merge-check.yml` takes the probe job and the `merge-check`
-  job's `needs`, `if` and `name` exactly as in ateam v0.3.7's workflow (lines 38-39 and 81-83). One difference: both
-  jobs `go install` the pinned release where ateam builds from source, because SemEngine is not ateam's repository.
+  job's `needs`, `if` and `name` exactly as in ateam v0.3.7's workflow (lines 29-30 and 72-74 there; 37-38 and 81-83
+  here). One difference: both jobs `go install` the pinned release where ateam builds from source, because SemEngine is
+  not ateam's repository.
 - **D2. It fails closed.** The `merge-check` job runs under `always()` unless the probe answered `awaiting=true`. A
   probe that fails, is cancelled or prints nothing leaves the output empty, so the full check runs as `Merge check`.
   On a draft, or while the probe answers `awaiting=true`, the job is skipped. GitHub lists a skipped job under its raw

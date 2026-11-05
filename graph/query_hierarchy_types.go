@@ -23,9 +23,11 @@ type HierarchyChild struct {
 //
 // TotalEntities is the length of the key listing: the whole group as listed, before the cursor and any
 // limit. EntitiesScanned is the rows on this page. Children, by count descending then prefix, count
-// those rows alone, so they are a sample of the lexically smallest IDs when Truncated is true; an
-// entity whose ID is the prefix is scanned and in no child. Truncated is true exactly when NextCursor
-// is set; a caller wanting the rest sends NextCursor as Cursor, paying one key scan per page.
+// those rows alone, so they cover this page and no more: on a first page with Truncated true, a sample
+// of the lexically smallest IDs; on a page read with a cursor, that page. An entity whose ID is the
+// prefix is scanned and in no child. Truncated is true exactly when NextCursor is set, so false says
+// only that this is the last page; a caller wanting the rest sends NextCursor as Cursor, paying one
+// key scan per page.
 type HierarchyStatsData struct {
 	Prefix          string           `json:"prefix"`
 	TotalEntities   int              `json:"total_entities"`

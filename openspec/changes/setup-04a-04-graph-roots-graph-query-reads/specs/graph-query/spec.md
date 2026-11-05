@@ -108,8 +108,8 @@ excluded, one `predicateList` request first. A long request on one verb SHALL NO
 `hierarchyStats` and `summary` SHALL read one prefix page, IDs only, sending the request's `cursor` unchanged, and
 SHALL decode their request strictly. `total_entities` SHALL be the page's `total`, the group as listed;
 `entities_scanned` the rows on that page; `next_cursor` the page's; and `truncated` SHALL be true exactly when
-`next_cursor` is set. A page with no `entities` key, or an ID that does not parse, SHALL be refused transient
-`internal`.
+`next_cursor` is set. A page with no `entities` or `total` key, an ID that does not parse, or a row outside the prefix,
+SHALL be refused transient `internal`.
 
 #### Scenario: A group larger than a page
 

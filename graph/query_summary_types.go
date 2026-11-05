@@ -86,9 +86,10 @@ type SummaryData struct {
 	// EntitiesScanned is the rows on this page. The type counts count those rows alone.
 	EntitiesScanned int `json:"entities_scanned"`
 
-	// Truncated is true exactly when NextCursor is set: EntityTypes is then a sample of the lexically
-	// smallest IDs, and a caller wanting the rest sends NextCursor as Cursor, paying one key scan per
-	// page.
+	// Truncated is true exactly when NextCursor is set, so false says only that this is the last page.
+	// EntityTypes covers this page and no more: on a first page with Truncated true, a sample of the
+	// lexically smallest IDs. A caller wanting the rest sends NextCursor as Cursor, paying one key scan
+	// per page.
 	Truncated bool `json:"truncated"`
 
 	// NextCursor is the page's cursor, opaque, absent on the last page.
@@ -97,7 +98,7 @@ type SummaryData struct {
 	// EntityTypes lists the type buckets on this page, by count descending then type. Never null.
 	EntityTypes []EntityTypeSummary `json:"entity_types"`
 
-	// Predicates is every predicate with its entity count from the predicate index, whole-graph and
+	// Predicates is each predicate as listed, with its entity count from the predicate index, whole-graph and
 	// unaffected by the page: null when the request excluded them, [] when there are none. Each
 	// request for it reads it again, whatever the cursor.
 	Predicates []PredicateSummary `json:"predicates"`

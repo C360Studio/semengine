@@ -333,7 +333,7 @@ func TestSummaryRefusesABrokenPredicateReply(t *testing.T) {
 }
 
 // TestSummaryRefusesABrokenPage: the page read is hierarchyStats' (TestCountsRefuseABrokenPage), and a
-// summary refuses what it refuses. The pin's skip of an ID that does not parse is reversed here.
+// summary refuses what it refuses. The pin refused a bad ID too; the class and code are new.
 func TestSummaryRefusesABrokenPage(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{}`)

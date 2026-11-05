@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/nats-io/nats.go"
@@ -276,16 +277,16 @@ var brokenPages = []struct{ name, reply, says string }{
 func TestCountsRefuseABrokenPage(t *testing.T) {
 	client := fixtureClient(t)
 	c := startComponent(t, client, `{}`)
-	var reply string
+	var reply atomic.Pointer[string]
 	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(context.Context, []byte) ([]byte, error) {
-		return []byte(reply), nil
+		return []byte(*reply.Load()), nil
 	})
 	request := []byte(`{"prefix":"c360.test"}`)
 
 	errorsSoFar := 0
 	for _, tc := range brokenPages {
 		t.Run(tc.name, func(t *testing.T) {
-			reply = tc.reply
+			reply.Store(&tc.reply)
 			got, err := client.RequestClassified(t.Context(), hierarchyStatsSubject, request, requestTimeout)
 			refusal := requireRefusal(t, got, err, errs.ErrorTransient, "internal")
 			if !strings.Contains(refusal.Error(), tc.says) {
@@ -298,7 +299,8 @@ func TestCountsRefuseABrokenPage(t *testing.T) {
 		})
 	}
 
-	reply = `{"entities":[{"id":"` + drone1 + `"}],"total":1}`
+	good := `{"entities":[{"id":"` + drone1 + `"}],"total":1}`
+	reply.Store(&good)
 	got, err := client.RequestClassified(t.Context(), hierarchyStatsSubject, request, requestTimeout)
 	if err != nil {
 		t.Fatalf("a good page: %v", err)

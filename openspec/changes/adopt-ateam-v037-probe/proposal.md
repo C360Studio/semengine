@@ -1,6 +1,7 @@
 # Proposal: adopt-ateam-v037-probe
 
-Track: quick (one pin bump and one workflow job; three existing requirements modified, no new Requirement).
+Track: design (two capabilities change, `merge-gate` and `harness-boundaries`; three existing requirements
+modified, no new Requirement; `design.md`).
 
 ## Why
 

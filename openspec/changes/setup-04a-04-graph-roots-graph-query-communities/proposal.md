@@ -1,6 +1,7 @@
 # Proposal: setup-04a-04-graph-roots-graph-query-communities
 
-Approved-by:
+Approved-by: owner, 2026-11-05 in Enjoy: design at `48c1b89` approved, with question 1 answered "accept" in
+`owner-questions.md` and the five new exports.
 
 Track: `design` (adds spec requirements and touches three capabilities).
 

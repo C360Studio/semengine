@@ -13,8 +13,8 @@ and at most one `CountError`.
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner answers `owner-questions.md`, accepts the new exports and fills
-  `Approved-by:`. Hold: OPEN-Q proposal awaits owner approval. Gate: `task spec:check`, `task docs:check`.
+- [x] 1.1 Pre-owner design review passes; the owner answers `owner-questions.md`, accepts the new exports and fills
+  `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
 
 ## 2. The record's revision
 

@@ -4,6 +4,8 @@ One question. The design is written to the recommended answer.
 
 ## 1. A revision check on local search can keep refusing. Accept that for now?
 
+**Owner, 2026-11-05 in Enjoy: accept.**
+
 **Yes, accept it. Nobody sends a revision to local search today, and the fix is ready if someone needs one.**
 
 **What happens.** Each community record will say which entity write it last took in. Local search compares a caller's

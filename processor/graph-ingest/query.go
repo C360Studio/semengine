@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -211,8 +212,9 @@ const maxLoggedMissingIDs = 20
 //
 // Wire contract:
 //   - Accepts PrefixQueryRequest; omitted cursor requests the first page.
-//   - Returns graph.PrefixQueryResponse {"entities":[…],"next_cursor":"…"};
-//     next_cursor is omitted when the result set is exhausted.
+//   - Returns graph.PrefixQueryResponse {"entities":[…],"total":N,"next_cursor":"…"};
+//     next_cursor is omitted when the result set is exhausted, and total is
+//     always present.
 //   - Keys are sorted lexicographically before cursor application. This is a
 //     behaviour change from pre-pagination (where order was KV-scan order,
 //     i.e. non-deterministic) but is required for cursor correctness and is
@@ -297,6 +299,9 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	// without a deterministic key order.
 	sort.Strings(keys)
 
+	// The reply's total is the listing as listed, whichever page this request reads.
+	total := len(keys)
+
 	// Apply cursor: advance past keys up to and including lastKey.
 	if req.Cursor != "" {
 		lastKey, decodeErr := decodeCursor(req.Cursor)
@@ -343,17 +348,18 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 		followingBoundary = pageKeys[len(pageKeys)-1]
 	}
 
-	return marshalFittingPrefixPage(entities, followingBoundary, maxPayload)
+	return marshalFittingPrefixPage(entities, total, followingBoundary, maxPayload)
 }
 
 // marshalFittingPrefixPage returns the largest sorted entity prefix whose
 // complete typed response encoding fits maxPayload. Candidate measurement
-// includes the final continuation cursor; no envelope reserve or average
+// includes total and the final continuation cursor; no envelope reserve or average
 // entity estimate participates in the decision. A page that cannot be encoded,
 // or an encoding that breaks the fit, is an invariant failure: internal, class
 // fatal, since a retry would fail the same way.
 func marshalFittingPrefixPage(
 	entities []graph.EntityState,
+	total int,
 	followingBoundary string,
 	maxPayload int64,
 ) ([]byte, error) {
@@ -378,7 +384,7 @@ func marshalFittingPrefixPage(
 	}
 
 	encodedSize := func(count int, cursor string) (int64, error) {
-		size := int64(len(`{"entities":[`) + len(`]}`))
+		size := int64(len(`{"entities":[`) + len(`],"total":`) + len(strconv.Itoa(total)) + len(`}`))
 		for i := 0; i < count; i++ {
 			size += int64(len(entityBytes[i]))
 			if i > 0 {
@@ -430,6 +436,7 @@ func marshalFittingPrefixPage(
 
 	response := graph.PrefixQueryResponse{
 		Entities:   entities[:bestCount],
+		Total:      total,
 		NextCursor: bestCursor,
 	}
 	encoded, err := json.Marshal(response)

@@ -1,0 +1,123 @@
+//go:build integration
+
+package graphquery
+
+import (
+	"encoding/json"
+	"fmt"
+	"sort"
+	"sync"
+	"testing"
+	"time"
+
+	"github.com/c360studio/semengine/graph"
+)
+
+// TestHopCostProbe measures what one path-search hop and one predicate list cost on real graph-ingest
+// and graph-index on NATS in Docker: evidence for the limits in design.md, asserting nothing.
+func TestHopCostProbe(t *testing.T) {
+	const entities = 3000
+	const hubIncoming = 1000
+	stack := startStack(t)
+	id := func(i int) string { return fmt.Sprintf("c360.test.query.system.drone.%06d", i) }
+	hub := id(0)
+
+	start := time.Now()
+	var wg sync.WaitGroup
+	work := make(chan int)
+	var mu sync.Mutex
+	var last uint64
+	for range 32 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := range work {
+				var statements [][2]string
+				// A chain through every entity; the first hubIncoming also point at the hub.
+				statements = append(statements, [2]string{linkTo, id((i + 1) % entities)})
+				if i > 0 && i <= hubIncoming {
+					statements = append(statements, [2]string{"test.link.hub", hub})
+				}
+				rev := stack.create(t, id(i), statements...)
+				mu.Lock()
+				if rev > last {
+					last = rev
+				}
+				mu.Unlock()
+			}
+		}()
+	}
+	for i := range entities {
+		work <- i
+	}
+	close(work)
+	wg.Wait()
+	t.Logf("RESULT seeded %d entities in %s, last revision %d", entities, time.Since(start), last)
+
+	ask := func(subject string, body any) ([]byte, error) {
+		data, err := json.Marshal(body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return stack.client.RequestClassified(t.Context(), subject, data, 30*time.Second)
+	}
+	// Wait for the index by its own refusal: min_revision is answered or refused, never waited on.
+	waitStart := time.Now()
+	outgoingSubject, incomingSubject := subjectOf(graph.ResponderGraphIndex, "outgoing"), subjectOf(graph.ResponderGraphIndex, "incoming")
+	for {
+		_, err := ask(outgoingSubject, map[string]any{"entity_id": hub, "min_revision": last})
+		if err == nil {
+			break
+		}
+		if time.Since(waitStart) > 4*time.Minute {
+			t.Fatalf("index did not catch up: %v", err)
+		}
+		if int(time.Since(waitStart).Seconds())%30 == 0 {
+			t.Logf("RESULT waiting %s: %v", time.Since(waitStart), err)
+		}
+		time.Sleep(time.Second) // A probe's poll, never in a test of this tree.
+	}
+	t.Logf("RESULT index caught up after %s", time.Since(waitStart))
+
+	hops := func(name, subject string, target func(i int) string, n int) {
+		samples := make([]time.Duration, 0, n)
+		start := time.Now()
+		for i := range n {
+			began := time.Now()
+			if _, err := ask(subject, map[string]any{"entity_id": target(i)}); err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
+			samples = append(samples, time.Since(began))
+		}
+		total := time.Since(start)
+		sort.Slice(samples, func(a, b int) bool { return samples[a] < samples[b] })
+		t.Logf("RESULT %s n=%d total=%s p50=%s p99=%s max=%s", name, n, total, samples[n/2], samples[n*99/100], samples[n-1])
+	}
+	hops("outgoing, 1 edge", outgoingSubject, func(i int) string { return id(i + 1) }, 2000)
+	hops("incoming, 1-2 edges", incomingSubject, func(i int) string { return id(i + 1001) }, 1500)
+	hops("incoming, hub of 1000 edges", incomingSubject, func(int) string { return hub }, 200)
+
+	listSubject := subjectOf(graph.ResponderGraphIndex, "predicateList")
+	for range 3 {
+		began := time.Now()
+		reply, err := ask(listSubject, map[string]any{})
+		if err != nil {
+			t.Fatalf("predicateList: %v", err)
+		}
+		t.Logf("RESULT predicateList over %d entities: %s, %d reply bytes", entities, time.Since(began), len(reply))
+	}
+	prefixSubject := subjectOf(graph.ResponderGraphIngest, "prefix")
+	for _, prefix := range []string{"", "c360.test.query.system.drone"} {
+		began := time.Now()
+		reply, err := ask(prefixSubject, graph.PrefixQueryRequest{Prefix: prefix})
+		if err != nil {
+			t.Fatalf("prefix: %v", err)
+		}
+		var page graph.PrefixQueryResponse
+		if err := json.Unmarshal(reply, &page); err != nil {
+			t.Fatal(err)
+		}
+		t.Logf("RESULT one prefix page %q over %d entities: %s, %d rows, %d reply bytes, cursor %t",
+			prefix, entities, time.Since(began), len(page.Entities), len(reply), page.NextCursor != "")
+	}
+}

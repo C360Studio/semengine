@@ -196,7 +196,7 @@ func TestQueryRefusalsCarryACode(t *testing.T) {
 				_, err := marshalFittingPrefixPage([]graph.EntityState{{
 					ID: stored, MessageType: testEntityType(), UpdatedAt: time.Now(),
 					Triples: []message.Triple{{Subject: stored, Predicate: "test.entity.value", Object: math.Inf(1)}},
-				}}, "", 1<<20)
+				}}, 1, "", 1<<20)
 				return err
 			},
 			class: errs.ErrorFatal, code: "internal",

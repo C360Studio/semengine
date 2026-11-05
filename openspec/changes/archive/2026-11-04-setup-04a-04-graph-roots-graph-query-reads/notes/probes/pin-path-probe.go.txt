@@ -1,0 +1,70 @@
+// Behaviour probes P8-P12 for processor/graph-query at the SemStreams pin 8b99efe9, for
+// setup-04a-04-graph-roots-graph-query-reads. Not a test of this repository: it builds only inside a
+// pin copy, through a build overlay, beside the pin's own mockNATSClient. Fakes are the probe's own:
+// each stands in for graph-ingest or graph-index with the bytes shown.
+package graphquery
+
+import (
+	"context"
+	"encoding/json"
+	"log/slog"
+	"strings"
+	"testing"
+	"time"
+)
+
+func TestPathProbe(t *testing.T) {
+	ctx := context.Background()
+	start := "acme.test.foo.bar.baz.001"
+	other := "acme.test.foo.bar.baz.002"
+	newSearcher := func(respond func(subject string, data []byte) string, calls *int) *PathSearcher {
+		m := &mockNATSClient{}
+		m.requestFunc = func(_ context.Context, subject string, data []byte, _ time.Duration) ([]byte, error) {
+			*calls++
+			return []byte(respond(subject, data)), nil
+		}
+		m.requestClassifiedFunc = m.requestFunc
+		return NewPathSearcher(m, time.Second, 10, slog.Default())
+	}
+	entity := `{"entity":{"id":"` + start + `","triples":[]},"kvRevision":1}`
+	respond := func(subject string, data []byte) string {
+		switch {
+		case subject == "graph.ingest.query.entity":
+			return entity
+		case strings.HasSuffix(subject, "incoming") && strings.Contains(string(data), start):
+			return `{"data":{"relationships":[{"from_entity_id":"` + other + `","predicate":"t.r.p"}]}}`
+		case strings.HasSuffix(subject, "outgoing") && strings.Contains(string(data), start):
+			return `{"data":{"relationships":[{"to_entity_id":"` + other + `","predicate":"t.r.p"}]}}`
+		}
+		return `{"data":{"relationships":[]}}`
+	}
+
+	calls := 0
+	reply, err := newSearcher(respond, &calls).Search(ctx, PathSearchRequest{StartEntity: start, MaxDepth: 2, MaxNodes: 9, Direction: "incoming"})
+	out, _ := json.Marshal(reply)
+	t.Logf("RESULT P8 incoming edge %s -> %s: %s err=%v", other, start, out, err)
+
+	calls = 0
+	reply, err = newSearcher(respond, &calls).Search(ctx, PathSearchRequest{StartEntity: start, MaxDepth: 2, MaxNodes: 1, Direction: "outgoing"})
+	out, _ = json.Marshal(reply)
+	t.Logf("RESULT P9 max_nodes 1, graph holds exactly that one neighbour: %s err=%v calls=%d", out, err, calls)
+
+	calls = 0
+	reply, err = newSearcher(respond, &calls).Search(ctx, PathSearchRequest{StartEntity: start, MaxDepth: 1, MaxNodes: 9, Timeout: "not-a-duration"})
+	t.Logf("RESULT P10 timeout not-a-duration: entities=%d err=%v", len(reply.Entities), err)
+
+	reply, err = newSearcher(respond, &calls).Search(ctx, PathSearchRequest{StartEntity: start, MaxDepth: 1, MaxNodes: 9, Direction: "sideways"})
+	t.Logf("RESULT P11 direction sideways: entities=%d err=%v (read as outgoing)", len(reply.Entities), err)
+
+	step := PathStep{From: strings.Repeat("a", 256), Predicate: strings.Repeat("p", 60), To: strings.Repeat("b", 256)}
+	path := make([]PathStep, 10)
+	for i := range path {
+		path[i] = step
+	}
+	paths := make([][]PathStep, 1000)
+	for i := range paths {
+		paths[i] = path
+	}
+	encoded, _ := json.Marshal(PathSearchResponse{Paths: paths})
+	t.Logf("RESULT P12 1000 paths of 10 steps, longest IDs: %d bytes", len(encoded))
+}

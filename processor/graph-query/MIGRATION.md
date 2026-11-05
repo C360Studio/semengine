@@ -5,7 +5,7 @@ cutover. The port breaks old shapes where that gives a better result (owner, PR 
 sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here was run against your code: it
 comes from reading it.
 
-`processor/graph-query` is ported in five steps, and this file grows with them. Only step 1 is in the tree today; a
+`processor/graph-query` is ported in five steps, and this file grows with them. Steps 1 and 2 are in the tree today; a
 change marked with a later step describes what that step will bring and does not apply yet. Each later step appends
 what it changes here.
 
@@ -34,6 +34,28 @@ Read these first. Nothing errors.
 - **A `relationships` decoder that keeps `edge_type` (the `relationships` verb, step 1).** After unwrapping, the field
   reads empty. With a predicate filter, the old fusion client drops every edge (SemStreams `client.go:526`). Change 5's
   port of fusion must not carry this.
+- **A `pathSearch` decoder that reads `paths` (the `pathSearch` verb, step 2).** After unwrapping, `paths` is gone, so
+  the field reads empty and every entity looks unreachable. Read `edges`, where `edges[i]` first reached
+  `entities[i+1]`, and follow them back for a path.
+- **A `hierarchyStats` decoder that reads `totalEntities` (the `hierarchyStats` verb, step 2).** The key is now
+  `total_entities`, so the old field reads 0. It also means something new: the whole group as listed, where the old
+  value was the rows on one page, stopping at 1,000. Children count one page only, so on a prefix with children they add
+  up to `entities_scanned`, not `total_entities`; a prefix that is itself a full six-part entity ID has no children, and
+  `entities_scanned` is 1 (`TestHierarchyStatsOfAnExactID`). `truncated` false says only that this is the last page;
+  send `next_cursor` as `cursor` for the next page. The counts are live and as listed, not a snapshot, so a group that
+  is written to while you page can repeat or miss an entity (#512). A child's `name` reads empty, since the key is
+  gone.
+- **A `summary` decoder that reads `entity_sample_truncated` (the `summary` verb, step 2).** The key is now `truncated`,
+  so an old decoder reads false, which says "complete", on an answer that is a sample.
+- **A `summary` decoder that reads `total_entities` as the rows scanned (step 2).** It is now the whole group as listed,
+  before the cursor and any limit, so it can exceed the type counts' sum. The rows read are `entities_scanned`. Type
+  counts and examples cover one page: on a first page with `truncated` true, the lexically smallest IDs. `truncated`
+  false says only that this is the last page.
+- **A `summary` decoder that reads `predicate_total` (step 2).** The key is gone, so it reads 0. Use the length of
+  `predicates`, which is `null` when you excluded them and `[]` when there are none.
+- **A `summary` caller that compares `indexed_revision` with predicates excluded (step 2).** That answer reads no index
+  and reports 0, which claims nothing. Against a write's `kv_revision` it never catches up, so a retry loop would spin
+  for ever. Do not compare on that answer.
 - **A bare `entityByAlias` decoder (the `entityByAlias` verb, step 1).** It reads no entity from the wrapper and gets nil.
 - **A `kvRevision` decoder with no zero check (the `entity` verb, step 1).** It gets revision 0. SemConnect's has the
   check, so its failure is loud; see its section.
@@ -41,9 +63,9 @@ Read these first. Nothing errors.
 ## SemSource
 
 **Use cases kept:** free-text search (`searchGraph`, which is not in the tree until step 5 lands and changes 5 and 7
-bring what it needs); prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged); your own verbs
-on the same family (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not
-reserve.
+bring what it needs); prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `total`); your
+own verbs on the same family (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table
+does not reserve.
 
 **What you change:**
 
@@ -102,15 +124,27 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | --- | --- |
 | `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which ADR-114 now records |
 | `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
+| `pathSearch` (step 2) | Request keys: `start_entity`, `direction`, `max_depth`, `max_nodes`, `predicates`, `min_revision`. `direction` is required, `outgoing`, `incoming` or `both`: nothing, or a typo, read as outgoing before. `max_depth` is required, 1 to 10; there is no default. `max_nodes` is 1 to 500, 0 means 100, and it now counts the start: the old limit did not, so the same number gives one entity fewer. `timeout`, `include_siblings` and `max_paths` are gone, and any unknown key is refused. Over a limit is `invalid_request` stating the bound, never a clamp. Reply enveloped: `data` holds `entities`, `edges` and `truncated`. Rows name `entity_id` and `depth`, were `id`, `type` and `score`; `paths` is gone, see "The changes that fail silently". An incoming edge now reads as the graph holds it, `from_entity_id` and `to_entity_id`, not backwards. `truncated` is true only when an entity was left out, not on reaching the limit. Any hop's refusal ends the walk, its message naming that hop's entity; a hop over `max_payload` is `response_too_large` |
+| `hierarchyStats` (step 2) | Reply still bare. `totalEntities` is now `total_entities`, the length of the key listing, before the cursor and any limit, true as listed, not a snapshot; see "The changes that fail silently". New: `entities_scanned`, the rows on this page; `truncated`, true exactly when `next_cursor` is set; `next_cursor`. Children are `{prefix, count}` from this page; `name` is gone, being the prefix's last segment. Request keys: `prefix`, `cursor`, `min_revision`, which is ignored since no index is read; any unknown key is refused. A page with no `entities` or `total` key read as zero; it is now refused transient `internal`, as is a row whose ID does not parse or is not under the prefix. A refusal by graph-ingest reaches you with its class, code and detail. Each request, so each page, costs one key scan of the group |
+| `summary` (step 2) | Reply still enveloped. A page with no `entities` or `total` key is refused transient `internal`, as is a row whose ID does not parse or is not under the prefix. A down or behind predicate index now refuses the whole request, with its class, code and detail, where it used to answer with no predicates: send `exclude_predicates: true` for entities alone. `include_predicates` is now `exclude_predicates`; the old key is refused by name, and so are `entity_sample_limit` and any other unknown key. An empty body is refused: send `{}`. New request keys: `prefix`, only with `exclude_predicates`, `cursor`, `min_revision`, which reaches the index. A negative `examples_per_type` is refused. Reply: `entity_sample_truncated` is now `truncated`; new `entities_scanned`, `next_cursor`; `total_entities` is the group as listed; `predicate_total` is gone; a page with no `entities` or `total` key, or an ID that does not parse, is refused transient `internal`; see "The changes that fail silently" |
 | `entity` | Bytes forwarded unchanged, with no re-check by graph-query. The revision key is `kv_revision`, was `kvRevision` |
-| `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
+| `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query. `prefix` (step 2) gains `total`, always present: the length of the key listing, before the cursor and any limit, true as listed, not a snapshot. The key is additive |
+| `semantic` (step 2) | Forwards to `graph.embedding.query.search`, bytes unchanged, so `scope` reaches the responder (ADR-071). Reply enveloped by the responder, `data` holding `results` and `embedder_type`; `query` and `duration` are gone. Refused transient `internal`, naming that subject, until change 5 brings the responder. Fusion reads this; change 5 ports fusion here |
+| `similar` (step 2) | Forwards to `graph.embedding.query.similar`, bytes unchanged. Reply enveloped by the responder. `data.similar` is now `data.results`; the echoed `entity_id` and `duration` are gone. Refused transient `internal` until change 5 |
+| `spatial` (step 2) | Forwards to `graph.spatial.query.bounds`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`, with `lat`, `lon`, `alt`; `type` is gone. Refused transient `internal` until change 7 |
+| `temporal` (step 2) | Forwards to `graph.temporal.query.range`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`; `type` is gone. Request keys become `start_time` and `end_time`, were `startTime` and `endTime`, at change 7, with the responder; until then it is refused transient `internal` |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
 A stream capturing a declared `graph.query.*` subject refuses boot (#16), and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
 `QueryVerb.Enveloped` and `QueryVerb.Reply`.
 
-**New names step 1 exports** (later steps add theirs after these). In `graph`: `ResponderGraphQuery`,
+**New names steps 1 and 2 export** (later steps add theirs after these). Step 1, in `graph`: `ResponderGraphQuery`,
 `QueryVerb.Enveloped`, `QueryVerb.Reply`, `MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In
 `composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
-`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`.
+`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2, in `graph`: `ResponderGraphEmbedding`,
+`ResponderGraphIndexSpatial`, `ResponderGraphIndexTemporal`; for path search `PathSearchRequest`, `PathSearchData`,
+`PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`; for counts `HierarchyStatsRequest`,
+`HierarchyStatsData`, `HierarchyChild`, and `PrefixQueryResponse.Total`; for the forwards `SemanticData`, `SimilarData`,
+`SimilarityHit`, `SpatialData`, `SpatialHit`, `TemporalData`, `TemporalHit`. `SummaryRequest` and `SummaryData` change
+as the `summary` row says. Package `graphquery` exports nothing new.

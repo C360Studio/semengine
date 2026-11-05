@@ -268,3 +268,108 @@ func TestIntegration_PrefixQuery_PatternAcrossSystems(t *testing.T) {
 	require.Error(t, bothErr)
 	assert.True(t, errs.IsInvalid(bothErr))
 }
+
+// TestPrefixPageNamesItsTotal: a prefix reply's total is the length of the request's key listing,
+// before the cursor and any limit, on each path of a real graph-ingest: prefix, pattern and the
+// exact-ID fallback, a first page, a later page, a page the byte fit trimmed, and an empty group.
+// The oracle is the literal count of the entities this test seeds.
+func TestPrefixPageNamesItsTotal(t *testing.T) {
+	ctx := t.Context()
+	c, nc, owner := startPrefixTestComponent(ctx, t, withAuthority("acme", "ops"))
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		owner.finish(stopCtx, t)
+	})
+	const small1, small2, small3 = "acme.ops.dom.sys.type.a", "acme.ops.dom.sys.type.b", "acme.ops.dom.sys.type.c"
+	for _, id := range []string{small1, small2, small3} {
+		seedPrefixEntity(t, ctx, c, id)
+	}
+	// Two of these fit max_payload and three do not, so a request with no limit is trimmed by bytes.
+	maxPayload, err := nc.MaxPayload()
+	require.NoError(t, err)
+	const big1, big2, big3 = "acme.ops.big.sys.type.a", "acme.ops.big.sys.type.b", "acme.ops.big.sys.type.c"
+	for _, id := range []string{big1, big2, big3} {
+		require.NoError(t, c.CreateEntity(ctx, &graph.EntityState{
+			ID:          id,
+			MessageType: testEntityType(),
+			Triples: withTestMetadata(message.Triple{
+				Subject:   id,
+				Predicate: "test.entity.attribute",
+				Object:    strings.Repeat("x", int(maxPayload)*2/5),
+				Timestamp: time.Now(),
+			}),
+			UpdatedAt: time.Now(),
+		}))
+	}
+
+	request := func(t *testing.T, req graph.PrefixQueryRequest) []byte {
+		t.Helper()
+		data, err := json.Marshal(req)
+		require.NoError(t, err)
+		raw, err := nc.RequestClassified(ctx, "graph.ingest.query.prefix", data, wireRequestTimeout)
+		require.NoError(t, err)
+		return raw
+	}
+	// page reads one reply with its entities cut to their IDs and its cursor to true, since the
+	// entities carry timestamps and the cursor is opaque, and holds the rest to the literal.
+	page := func(t *testing.T, req graph.PrefixQueryRequest, want string) string {
+		t.Helper()
+		raw := request(t, req)
+		var keys map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(raw, &keys))
+		var reply graph.PrefixQueryResponse
+		require.NoError(t, json.Unmarshal(raw, &reply))
+		ids := make([]string, 0, len(reply.Entities))
+		for _, entity := range reply.Entities {
+			ids = append(ids, entity.ID)
+		}
+		encodedIDs, err := json.Marshal(ids)
+		require.NoError(t, err)
+		keys["entities"] = encodedIDs
+		if _, ok := keys["next_cursor"]; ok {
+			keys["next_cursor"] = json.RawMessage(`true`)
+		}
+		got, err := json.Marshal(keys)
+		require.NoError(t, err)
+		assert.JSONEq(t, want, string(got))
+		return reply.NextCursor
+	}
+
+	t.Run("prefix, first page then later page", func(t *testing.T) {
+		cursor := page(t, graph.PrefixQueryRequest{Prefix: "acme.ops.dom", Limit: 2},
+			fmt.Sprintf(`{"entities":[%q,%q],"total":3,"next_cursor":true}`, small1, small2))
+		page(t, graph.PrefixQueryRequest{Prefix: "acme.ops.dom", Limit: 2, Cursor: cursor},
+			fmt.Sprintf(`{"entities":[%q],"total":3}`, small3))
+	})
+	t.Run("pattern, first page then later page", func(t *testing.T) {
+		const pattern = "acme.ops.*.sys.type.a"
+		cursor := page(t, graph.PrefixQueryRequest{Pattern: pattern, Limit: 1},
+			fmt.Sprintf(`{"entities":[%q],"total":2,"next_cursor":true}`, big1))
+		page(t, graph.PrefixQueryRequest{Pattern: pattern, Limit: 1, Cursor: cursor},
+			fmt.Sprintf(`{"entities":[%q],"total":2}`, small1))
+	})
+	t.Run("exact-ID fallback", func(t *testing.T) {
+		page(t, graph.PrefixQueryRequest{Prefix: small1},
+			fmt.Sprintf(`{"entities":[%q],"total":1}`, small1))
+	})
+	t.Run("byte-trimmed page then the page after it", func(t *testing.T) {
+		cursor := page(t, graph.PrefixQueryRequest{Prefix: "acme.ops.big"},
+			fmt.Sprintf(`{"entities":[%q,%q],"total":3,"next_cursor":true}`, big1, big2))
+		page(t, graph.PrefixQueryRequest{Prefix: "acme.ops.big", Cursor: cursor},
+			fmt.Sprintf(`{"entities":[%q],"total":3}`, big3))
+	})
+	// An empty group's whole reply is literal, null included: graph-query's count verbs read it.
+	for _, tt := range []struct {
+		name string
+		req  graph.PrefixQueryRequest
+	}{
+		{"empty group by prefix", graph.PrefixQueryRequest{Prefix: "acme.ops.none"}},
+		{"empty group by pattern", graph.PrefixQueryRequest{Pattern: "acme.ops.none.*.*.*"}},
+		{"absent exact ID", graph.PrefixQueryRequest{Prefix: "acme.ops.dom.sys.type.absent"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, `{"entities":null,"total":0}`, string(request(t, tt.req)))
+		})
+	}
+}

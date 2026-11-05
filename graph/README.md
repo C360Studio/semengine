@@ -36,9 +36,10 @@ transport"; `TestGraphImportsNoTransport`).
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
   and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
-  depends on the verb: `entity`, `batch` and `prefix` are bare, and `byName`, `entityByAlias` and `relationships` are
-  enveloped. A caller decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the
-  body or of `data`), never by the reply's content.
+  depends on the verb: `entity`, `batch`, `prefix` and `hierarchyStats` are bare, and `byName`, `entityByAlias`,
+  `relationships`, `pathSearch`, `summary`, `semantic`, `similar`, `spatial` and `temporal` are enveloped. A caller
+  decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the body or of `data`),
+  never by the reply's content.
 - **Reading at a revision.** A request on an enveloped verb may carry `min_revision` (`MinRevisionField`), the
   `kv_revision` of a write the answer must include. An index that has not reached it refuses with transient
   `revision_not_reached` (`ErrorCodeRevisionNotReached`), the revision it reached in the detail, and does not wait. The
@@ -46,11 +47,21 @@ transport"; `TestGraphImportsNoTransport`).
 - **The verb table.** `QueryVerbs` declares the request/reply verbs, each with its subject and responder:
   graph-ingest's `entity`, `batch` and `prefix` on `graph.ingest.query.*`, and graph-index's eight verbs (`outgoing`,
   `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
-  `graph.index.query.*`, and graph-query's `entity`, `batch`, `prefix`, `byName`, `entityByAlias` and `relationships`
-  on `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for
-  graph-query. Each row also marks `Enveloped` and gives the `Reply` type. graph-query lands in steps, so its other
-  verbs are not in the table yet; a verb a consumer serves under `graph.query.*` is not in it either.
+  `graph.index.query.*`, the four verbs of the embedding, spatial and temporal responders (`search` and `similar` on
+  `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), and graph-query's
+  `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`, `summary`,
+  `semantic`, `similar`, `spatial` and `temporal` on `graph.query.*`. A name is unique only within its responder:
+  `entity` is declared for graph-ingest and for graph-query. Each row also marks `Enveloped` and gives the `Reply` type.
+  The embedding, spatial and temporal responders are not in the tree yet, so those four rows name a responder that does
+  not exist, and graph-query's four forwards to them are refused transient `internal`. graph-query lands in steps, so
+  its remaining verbs are not in the table yet; a verb a consumer serves under `graph.query.*` is not in it either.
   `QueryVerbs`' doc comment names each verb's request and reply types.
+- **Counts.** `PrefixQueryResponse.Total` is the length of the key listing before the cursor and any limit, as listed and
+  not a snapshot (#512). `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities` is the whole
+  group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type counts or
+  children cover that page and no more. `Truncated` false says only that it is the last page. When `summary` leaves
+  predicates out (`ExcludePredicates`), its `indexed_revision` is 0, which claims nothing: do not compare it with a
+  `kv_revision`.
 
 ### Entity Identification
 

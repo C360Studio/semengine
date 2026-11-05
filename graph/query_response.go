@@ -10,8 +10,10 @@ import (
 //
 // IndexedRevision is the ENTITY_STATES revision the reply reflects: every write at
 // or below it is reflected in Data, on an alias reply too. A caller holding a write's
-// kv_revision compares it here. Producer names the component that answered, so a reply
-// relayed through another component can still be attributed.
+// kv_revision compares it here. 0 claims nothing: a reply that read no index (summary
+// with predicates left out) reports it, and a caller must not compare on it, since it
+// never reaches a write's revision. Producer names the component that answered, so a
+// reply relayed through another component can still be attributed.
 type QueryResponse[T any] struct {
 	Data            T         `json:"data"`
 	IndexedRevision uint64    `json:"indexed_revision"`

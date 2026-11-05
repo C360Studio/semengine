@@ -116,7 +116,8 @@ other query subject. Replies are bare JSON, not wrapped in an envelope.
 `graph.ingest.query.prefix` accepts `graph.PrefixQueryRequest`, which filters keys either by a 1–6 part literal
 `prefix` (`Prefix`) or by an exact 6-position `*` wildcard `pattern` (`Pattern`, validated by
 `pkg/types.ValidateEntityIDPattern` and evaluated via `KVStore.KeysByFilter`). `prefix` and `pattern` are mutually
-exclusive; omitting both matches all entities.
+exclusive; omitting both matches all entities. Its reply's `total` is the length of the key listing, before the cursor
+and any limit, on every path; it is true as listed, not a snapshot.
 
 ## Hierarchy inference
 

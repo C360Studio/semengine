@@ -1,0 +1,6 @@
+    zz_path_probe_test.go:45: RESULT P8 incoming edge acme.test.foo.bar.baz.002 -> acme.test.foo.bar.baz.001: {"entities":[{"id":"acme.test.foo.bar.baz.001","type":"entity","score":1},{"id":"acme.test.foo.bar.baz.002","type":"entity","score":0.8}],"paths":[[],[{"from":"acme.test.foo.bar.baz.001","predicate":"t.r.p","to":"acme.test.foo.bar.baz.002"}]],"truncated":false} err=<nil>
+    zz_path_probe_test.go:50: RESULT P9 max_nodes 1, graph holds exactly that one neighbour: {"entities":[{"id":"acme.test.foo.bar.baz.001","type":"entity","score":1},{"id":"acme.test.foo.bar.baz.002","type":"entity","score":0.8}],"paths":[[],[{"from":"acme.test.foo.bar.baz.001","predicate":"t.r.p","to":"acme.test.foo.bar.baz.002"}]],"truncated":true} err=<nil> calls=2
+    zz_path_probe_test.go:54: RESULT P10 timeout not-a-duration: entities=2 err=<nil>
+    zz_path_probe_test.go:57: RESULT P11 direction sideways: entities=2 err=<nil> (read as outgoing)
+    zz_path_probe_test.go:69: RESULT P12 1000 paths of 10 steps, longest IDs: 6072045 bytes
+ok  	github.com/c360studio/semstreams/processor/graph-query	0.394s

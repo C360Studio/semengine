@@ -16,51 +16,51 @@ package graph
 // full triple walk, neither of which fits a V1 budget; see the
 // project_graph_tools_gateway_first_plan memory.
 
-// SummaryRequest is the request shape for the graph summary
-// query. Both fields are optional with sensible V1 defaults.
+// SummaryRequest is the summary verb's request, decoded strictly: an unknown key is refused. The zero
+// value asks for the first page of the whole graph with its predicates.
 type SummaryRequest struct {
-	// IncludePredicates toggles the predicate counts section.
-	// Defaults to true. Setting false is useful when the caller
-	// already has the predicate list cached or when the response
-	// would otherwise exceed the gateway's body budget at large
-	// scales.
-	IncludePredicates bool `json:"include_predicates"`
+	// Prefix, when not empty, narrows the entity types to one group: a dot-delimited entity-ID prefix
+	// with no trailing dot. It needs ExcludePredicates, and is refused without it: predicateList takes
+	// no entity prefix, so the answer would set one group's types beside the whole graph's predicates,
+	// at the cost of scanning the whole predicate index.
+	Prefix string `json:"prefix,omitempty"`
 
-	// EntitySampleLimit caps how many entity IDs the type-distribution
-	// aggregation walks. Defaults to 2000. The resulting type counts
-	// are approximate when the scan is truncated; the response sets
-	// EntitySampleTruncated=true and TotalEntities reflects what was
-	// scanned, not what the graph holds. V2 candidates: write-time
-	// type-count index for exact counts.
-	EntitySampleLimit int `json:"entity_sample_limit"`
+	// ExcludePredicates leaves the predicate counts out, so the answer does not depend on graph-index,
+	// which otherwise refuses for the whole request when it cannot answer. Predicates is then null and
+	// IndexedRevision 0.
+	ExcludePredicates bool `json:"exclude_predicates,omitempty"`
 
-	// ExamplesPerType caps how many sample entity IDs to retain per
-	// type bucket in the response. Defaults to 2. Example IDs are
-	// load-bearing for the discovery use case (semspec's bug log
-	// confirms models invent IDs when no examples are provided);
-	// keep this >= 1.
-	ExamplesPerType int `json:"examples_per_type"`
+	// ExamplesPerType caps how many sample entity IDs to retain per type. 0 means 2; a negative count
+	// is refused. Example IDs are load-bearing for the discovery use case: models invent IDs when no
+	// examples are provided.
+	ExamplesPerType int `json:"examples_per_type,omitempty"`
+
+	// Cursor is a NextCursor from an earlier reply; empty reads the first page.
+	Cursor string `json:"cursor,omitempty"`
+
+	// MinRevision reaches predicateList. With ExcludePredicates no index is read, so it is accepted
+	// and ignored.
+	MinRevisionField
 }
 
 // EntityTypeSummary represents one entity-type bucket — entities
-// grouped by their 6-part ID's domain.system.type segments (parts
-// 3.4.5 in 1-indexed terms; parts 2-4 in 0-indexed slice terms).
+// grouped by their 6-part ID's system.domain.type segments (parts
+// 3.4.5 in 1-indexed terms; parts 2-4 in 0-indexed slice terms; ADR-102).
 //
 // Examples in this codebase:
 //
 //	acme.platform1.agentic-loop.agent.execution.<loopID>
-//	→ type "agent.agentic-loop.execution"
+//	→ type "agentic-loop.agent.execution"
 //
 //	acme.platform1.web.agent.observation.<hash>
-//	→ type "agent.web.observation"
+//	→ type "web.agent.observation"
 type EntityTypeSummary struct {
 	// Type is the system.domain.type triple (positions 3-5 of the canonical
 	// entity ID, by named field) — the bucket name.
 	Type string `json:"type"`
 
-	// Count is how many entities in the scanned sample fall in this
-	// bucket. Approximate when EntitySampleTruncated is set on the
-	// parent SummaryData.
+	// Count is how many rows of the page read fall in this bucket: a
+	// sample when Truncated is set on the parent SummaryData.
 	Count int `json:"count"`
 
 	// Examples is up to ExamplesPerType real entity IDs from this
@@ -69,33 +69,37 @@ type EntityTypeSummary struct {
 	Examples []string `json:"examples"`
 }
 
-// SummaryData is the composite response. Caller-friendly text
-// formatting happens at the tool-wrapper layer (agent tools / future
-// MCP); this shape stays structured for non-LLM consumers (dashboards,
-// audit, programmatic clients).
+// SummaryData is the summary verb's reply, in a QueryResponse from graph-query: one prefix page and,
+// unless excluded, the predicate list read before it, live and as listed, not a snapshot of the two.
+// Caller-friendly text formatting happens at the tool-wrapper layer; this shape stays structured for
+// non-LLM consumers (dashboards, audit, programmatic clients).
+//
+// With predicates excluded the reply's IndexedRevision is 0, which claims nothing: no index was read.
+// Do not compare it against a kv_revision on that answer, since it never catches up and a retry loop
+// would spin for ever.
 type SummaryData struct {
-	// TotalEntities is the count of entities actually scanned (= sum
-	// of EntityTypes counts). When EntitySampleTruncated is true,
-	// the underlying graph holds more than this.
+	// TotalEntities is the length of the key listing: the whole group as listed, before the cursor
+	// and any limit. A listing under concurrent overwrites can repeat some keys and omit as many, so
+	// this is its length, not a count of distinct entities (#512).
 	TotalEntities int `json:"total_entities"`
 
-	// EntitySampleTruncated is true when the entity scan hit
-	// EntitySampleLimit before draining the bucket. The TotalEntities
-	// and per-type counts are then approximate.
-	EntitySampleTruncated bool `json:"entity_sample_truncated"`
+	// EntitiesScanned is the rows on this page. The type counts count those rows alone.
+	EntitiesScanned int `json:"entities_scanned"`
 
-	// EntityTypes is the sorted (highest-count-first) list of type
-	// buckets discovered in the scanned sample.
+	// Truncated is true exactly when NextCursor is set, so false says only that this is the last page.
+	// EntityTypes covers this page and no more: on a first page with Truncated true, a sample of the
+	// lexically smallest IDs. A caller wanting the rest sends NextCursor as Cursor, paying one key scan
+	// per page.
+	Truncated bool `json:"truncated"`
+
+	// NextCursor is the page's cursor, opaque, absent on the last page.
+	NextCursor string `json:"next_cursor,omitempty"`
+
+	// EntityTypes lists the type buckets on this page, by count descending then type. Never null.
 	EntityTypes []EntityTypeSummary `json:"entity_types"`
 
-	// Predicates is populated when IncludePredicates is true (default).
-	// Each entry mirrors PredicateSummary — predicate name + the
-	// entity count from the predicate index. Counts here are exact
-	// (the predicate index maintains them at write time); they do
-	// NOT inherit the entity-scan truncation.
-	Predicates []PredicateSummary `json:"predicates,omitempty"`
-
-	// PredicateTotal is len(Predicates). Convenience for callers
-	// formatting "N predicates registered" lines.
-	PredicateTotal int `json:"predicate_total,omitempty"`
+	// Predicates is each predicate as listed, with its entity count from the predicate index, whole-graph and
+	// unaffected by the page: null when the request excluded them, [] when there are none. Each
+	// request for it reads it again, whatever the cursor.
+	Predicates []PredicateSummary `json:"predicates"`
 }

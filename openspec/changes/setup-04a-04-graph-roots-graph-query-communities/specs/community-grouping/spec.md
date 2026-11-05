@@ -14,6 +14,8 @@ SHALL, every `ENTITY_STATES` write at or below `entity_revision` SHALL be reflec
 - **WHEN** a group receives an upsert, an upsert with the same words, a delete of a member, a delete of an entity the
   maintainer never held, and a refused value, each at a higher revision and followed by a tick
 - **THEN** `entity_revision` takes each of those revisions in turn
+- **AND** the refused value is reflected as contributing nothing to the record's counts; `Tick` names it to the
+  operator, and a reader reads the entity itself from its page
 - **AND** the test that verifies this is `TestRecordNamesItsLatestWrite`
 
 #### Scenario: Obsolete deliveries and a recreated group

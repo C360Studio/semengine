@@ -87,6 +87,7 @@ Searches, each `gh issue list --state open --search <term>`: `community`, `local
 | #32 | Stays; the owner's Q6 removes the answer interface its 2026-10-24 line kept; comment, task 5.1 |
 | #15 | Stays; a recreated `ENTITY_STATES` restarts revisions, for every `indexed_revision` |
 | #68 | Stays; graph-query's pin site (`metrics.go`, `sync.Once` and global fallback) is not carried, and the new counter uses `RegisterOrGet` on the injected registry (D6); comment, task 5.1 |
+| #525 | Filed from this change's review: change 7 probes the watch order `entity_revision` relies on (D1); stays open |
 | #111, #106, #103, #479, #405 | Stay; steps 4 and 5 (`split.md`) |
 | #195, #196 | Stay; no site in this step's code |
 | #484, #486, #487, #9 | Tier 2 and the epic; stay |

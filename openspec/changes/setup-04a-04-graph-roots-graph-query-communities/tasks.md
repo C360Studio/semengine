@@ -7,7 +7,8 @@ developer's unit. The task that adds the table row extends `declaredRows` with i
 `TestQueryVerbsDeclareEachRespondersVerbs` and `TestGraphQueryRepliesDecodeByTheTable`. Every task that moves a
 consumer's shape appends to `processor/graph-query/MIGRATION.md`. Test oracles are literal JSON. Records come from a
 real `clustering.Maintainer` and `Tick` wherever one can produce the case. No `time.Sleep`, no `Skip`, no test deadline
-of its own; a wait for the view retries the request, each refusal being the event. Each request stays one `CountInput`
+of its own; a wait for the view retries the request, each refusal being the event,
+under `probe.Await` and `t.Context()`. Each request stays one `CountInput`
 and at most one `CountError`.
 
 ## 1. Design

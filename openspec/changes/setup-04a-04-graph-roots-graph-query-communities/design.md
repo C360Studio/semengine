@@ -59,7 +59,7 @@ graph-query gets its first run context, from `Start` and ended in `cleanup` (ADR
 - Readiness is per request through the view, never `GRAPH_STATUS` or `COMMUNITY_SUMMARIES` (ADR-087 Decision 5).
 
 *Proof:* `TestLocalSearchBeforeCommunityIndexExists`, `TestLocalSearchAfterCommunityIndexAppears` (waits up to one
-interval), `TestLocalSearchRefusesAfterWatchLoss`, `TestStopEndsTheCommunityView`, the lifecycle suite, under `-race`;
+interval), `TestLocalSearchRefusesAfterWatchLoss` (two), `TestStopEndsTheCommunityView`, the lifecycle suite, `-race`;
 `TestLocalSearchDuringBlockedTick`: one group's next record written straight to the bucket, as a tick held between two
 writes leaves it (only `clustering`'s fake holds a real tick, `maintainer_test.go:515`); the written group answers from
 its new record, the other from its old.

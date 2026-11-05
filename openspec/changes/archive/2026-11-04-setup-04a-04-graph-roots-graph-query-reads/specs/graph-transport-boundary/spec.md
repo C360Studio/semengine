@@ -29,8 +29,7 @@ when zero keys match.
 
 Each reserved request subject SHALL be declared once: graph-ingest's (`graph.ingest.query.*`), graph-index's
 (`graph.index.query.*`), graph-query's (`graph.query.*`, only the verbs it serves) and the derived-index verbs
-graph-query forwards to (`graph.embedding.query.search`, `graph.embedding.query.similar`, `graph.spatial.query.bounds`,
-`graph.temporal.query.range`) in the `graph` verb table, and the mutation family (`graph.mutation.>`) in
+graph-query forwards to in the `graph` verb table, and the mutation family (`graph.mutation.>`) in
 `internal/graphmutation`. A verb a consumer serves under `graph.query.*` that the table does not declare SHALL not be
 reserved.
 

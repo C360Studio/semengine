@@ -85,6 +85,6 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 
 ## 6. Land
 
-- [ ] 6.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #511's body carries
+- [x] 6.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #511's body carries
   `implemented-by:` and no closing keyword; `inventory-delta.md`, "Open issues", lists what stays open. Check: read
   `closingIssuesReferences` back, empty.

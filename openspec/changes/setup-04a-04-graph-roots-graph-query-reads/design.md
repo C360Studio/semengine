@@ -126,12 +126,12 @@ not yet, the owner's answer in `owner-questions.md`, as for (f) and (g).
 (`name` repeats the prefix's last segment). An entity whose ID is the prefix counts in `entities_scanned` and no child.
 `summary` takes `prefix`, `exclude_predicates`, `examples_per_type` (0 means 2; negative refused), `cursor`,
 `min_revision`; type keys keep ADR-102's order. Both decode strictly. A page with no `entities` key (real ingest sends
-`null` for an empty group), or an ID that does not parse, is transient `internal`; the pin skipped such IDs. *Proof:*
-`TestPrefixPageNamesItsTotal` in graph-ingest, each path, a byte-trimmed page and a later page;
-`TestHierarchyStatsDeclaresAPartialPage`, real ingest, literal JSON; `TestHierarchyStatsOfAnExactID`, a six-part prefix,
-real ingest; `TestCountsAddUpAcrossPages`, against the seeded literals; `TestCountsOfAnEmptyGroup`;
-`TestCountsRefuseABrokenPage` (stub); `TestSummaryPrefixReadsOneGroup`, two groups, literal JSON;
-`TestSummaryRefusesPrefixWithPredicates`.
+`null` for an empty group), or an ID that does not parse, is transient `internal`; the pin refuses a bad ID too
+(`pin:query.go:514`, `pin:summary.go:166`). *Proof:* `TestPrefixPageNamesItsTotal` in graph-ingest, each path, a
+byte-trimmed page and a later page; `TestHierarchyStatsDeclaresAPartialPage`, real ingest, literal JSON;
+`TestHierarchyStatsOfAnExactID`, a six-part prefix, real ingest; `TestCountsAddUpAcrossPages`, against the seeded
+literals; `TestCountsOfAnEmptyGroup`; `TestCountsRefuseABrokenPage` (stub); `TestSummaryPrefixReadsOneGroup`, two
+groups, literal JSON; `TestSummaryRefusesPrefixWithPredicates`.
 
 ## D6. Predicates: refuse, or leave out when asked (#111 item 2, #105)
 

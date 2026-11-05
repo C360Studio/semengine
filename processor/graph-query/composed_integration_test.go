@@ -756,4 +756,22 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	step("counts: refused by the responder", hierarchyStats, countRequest, 17)
 	prefix.Store(replying(`{"entities":null,"total":0}`))
 	step("counts: answered", hierarchyStats, countRequest, 17)
+
+	const summary = "graph.query.summary"
+	step("summary: no responder on predicateList", summary, `{}`, 18)
+	step("summary: a request it refuses", summary, `{"prefix":"c360.test"}`, 18)
+	predicateList := stub(graph.ResponderGraphIndex, "predicateList")
+	predicateList.Store(replying(`not json`))
+	step("summary: a predicate reply that does not decode", summary, `{}`, 19)
+	predicateList.Store(replying(`{}`))
+	step("summary: a predicate reply naming no producer", summary, `{}`, 20)
+	predicateList.Store(refusing)
+	step("summary: predicates refused by the responder", summary, `{}`, 20)
+	predicateList.Store(replying(`{"data":{"predicates":[]},"producer":"graph-index"}`))
+	prefix.Store(replying(`{}`))
+	step("summary: predicates answered, a broken page", summary, `{}`, 21)
+	prefix.Store(refusing)
+	step("summary: predicates answered, the page refused", summary, `{}`, 21)
+	prefix.Store(replying(`{"entities":null,"total":0}`))
+	step("summary: both requests, one input", summary, `{}`, 21)
 }

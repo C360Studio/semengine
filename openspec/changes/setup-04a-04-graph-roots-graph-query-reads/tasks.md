@@ -57,7 +57,7 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   `TestHierarchyStatsIgnoresMinRevision`, `TestHierarchyStatsOfAnExactID`; `truncated` shown to fail. MIGRATION, under
   "The changes that fail silently" too: `totalEntities` to `total_entities`, now the group as listed;
   `entities_scanned`, `truncated`, `next_cursor` new; `name` gone; bare.
-- [ ] 4.3 `summary` with its row; `SummaryRequest` and `SummaryData` change (`prefix`, `exclude_predicates`, no
+- [x] 4.3 `summary` with its row; `SummaryRequest` and `SummaryData` change (`prefix`, `exclude_predicates`, no
   `entity_sample_limit`, `cursor`, `min_revision`, as-listed `total_entities`, `entities_scanned`, `truncated`,
   `next_cursor`; `predicates` without `omitempty`; no `predicate_total`). Needs 4.2's page read. Premise:
   `graph/query_summary_types.go:21-104`, P4, `pin:summary.go:95-109` (D5, D6, D7). Check: `TestSummaryPredicates`,

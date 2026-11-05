@@ -117,6 +117,7 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"entityByAlias", "entityByAlias", `"alias":"held-1"`},
 		{"pathSearch outgoing", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"outgoing","max_depth":1`, drone1)},
 		{"pathSearch incoming", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"incoming","max_depth":1`, drone1)},
+		{"summary", "summary", `"examples_per_type":1`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			subject := verbRow(t, graph.ResponderGraphQuery, tc.verb).Subject
@@ -220,6 +221,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		},
 		"pathSearch":     {fmt.Sprintf(`{"start_entity":%q,"direction":"outgoing","max_depth":2,"predicates":[%q]}`, drone1, linkTo)},
 		"hierarchyStats": {`{"prefix":"c360.test.query.system.drone"}`},
+		"summary":        {`{}`, `{"prefix":"c360.test.query.system.drone","exclude_predicates":true}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

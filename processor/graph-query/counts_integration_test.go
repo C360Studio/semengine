@@ -188,12 +188,18 @@ func TestCountsOfAnEmptyGroup(t *testing.T) {
 	requireSameJSON(t, raw, `{"prefix":"c360.test.empty","total_entities":0,"entities_scanned":0,"truncated":false,"children":[]}`)
 }
 
-// spyOnPrefixVerb returns a check giving the bodies the prefix verb has received since the last one. It
-// sends a marker on the connection every component here shares and reads up to it, as spyOnEntityVerb
-// does, under the same order and the same limit on what is promised across versions.
+// spyOnPrefixVerb is spyOnDownstream on the prefix verb.
 func spyOnPrefixVerb(t *testing.T, client *natsclient.Client) func() []string {
 	t.Helper()
-	subject := verbRow(t, graph.ResponderGraphIngest, "prefix").Subject
+	return spyOnDownstream(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject)
+}
+
+// spyOnDownstream returns a check giving the bodies subject has received since the last one. It sends a
+// marker on the connection every component here shares and reads up to it, as spyOnEntityVerb does,
+// under the same order and the same limit on what is promised across versions. Whatever answers the
+// marker is not read.
+func spyOnDownstream(t *testing.T, client *natsclient.Client, subject string) func() []string {
+	t.Helper()
 	seen := make(chan string, 16)
 	if _, err := client.Subscribe(t.Context(), subject, func(_ context.Context, msg *nats.Msg) { seen <- string(msg.Data) }); err != nil {
 		t.Fatalf("subscribe %s: %v", subject, err)
@@ -252,6 +258,18 @@ func TestCountsReadOnePage(t *testing.T) {
 	}
 }
 
+// brokenPages are prefix replies no real graph-ingest sends, each with what its refusal says.
+var brokenPages = []struct{ name, reply, says string }{
+	{"an empty object", `{}`, "names no entities"},
+	{"not JSON", `not json`, "invalid character"},
+	{"no entities key", `{"total":1}`, "names no entities"},
+	{"no total key", `{"entities":null}`, "names no total"},
+	{"entities not a list", `{"entities":"none","total":1}`, "cannot unmarshal"},
+	{"a row whose ID does not parse", `{"entities":[{"id":"c360.test.short"}],"total":1}`, "entity_id[0]"},
+	{"a row with no ID", `{"entities":[{}],"total":1}`, "is not under prefix"},
+	{"a row outside the prefix", `{"entities":[{"id":"c360.testing.query.system.drone.001"}],"total":1}`, "is not under prefix"},
+}
+
 // TestCountsRefuseABrokenPage: a stub sends what no real graph-ingest does. Each is one transient
 // internal refusal and one error. A good page on the same stub answers, so the refusals are the
 // replies' doing.
@@ -265,16 +283,7 @@ func TestCountsRefuseABrokenPage(t *testing.T) {
 	request := []byte(`{"prefix":"c360.test"}`)
 
 	errorsSoFar := 0
-	for _, tc := range []struct{ name, reply, says string }{
-		{"an empty object", `{}`, "names no entities"},
-		{"not JSON", `not json`, "invalid character"},
-		{"no entities key", `{"total":1}`, "names no entities"},
-		{"no total key", `{"entities":null}`, "names no total"},
-		{"entities not a list", `{"entities":"none","total":1}`, "cannot unmarshal"},
-		{"a row whose ID does not parse", `{"entities":[{"id":"c360.test.short"}],"total":1}`, "entity_id[0]"},
-		{"a row with no ID", `{"entities":[{}],"total":1}`, "is not under prefix"},
-		{"a row outside the prefix", `{"entities":[{"id":"c360.testing.query.system.drone.001"}],"total":1}`, "is not under prefix"},
-	} {
+	for _, tc := range brokenPages {
 		t.Run(tc.name, func(t *testing.T) {
 			reply = tc.reply
 			got, err := client.RequestClassified(t.Context(), hierarchyStatsSubject, request, requestTimeout)

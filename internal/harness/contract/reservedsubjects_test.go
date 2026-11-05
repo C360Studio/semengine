@@ -72,6 +72,7 @@ func TestReservedSubjectsDeclaredOnceSensitivity(t *testing.T) {
 		// graph-query's forwards and the derived-index verbs behind them (setup-04a-04 step 2, design D1).
 		{"pathSearch subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.pathSearch\"\n", "processor/x/x.go:3"},
 		{"hierarchyStats subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.hierarchyStats\"\n", "processor/x/x.go:3"},
+		{"summary subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.summary\"\n", "processor/x/x.go:3"},
 		{"semantic subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.semantic\"\n", "processor/x/x.go:3"},
 		{"similar subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.similar\"\n", "processor/x/x.go:3"},
 		{"spatial subject", "processor/x/x.go", "package x\n\nconst s = \"graph.query.spatial\"\n", "processor/x/x.go:3"},

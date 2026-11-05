@@ -1,13 +1,11 @@
 package graphquery
 
 import (
-	"bytes"
 	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math"
 	"slices"
 	"strings"
@@ -49,13 +47,8 @@ func (c *Component) pathSearch(entitySubject, outgoingSubject, incomingSubject s
 // decodePathSearchRequest decodes strictly and checks every field, before any downstream request.
 func decodePathSearchRequest(data []byte) (graph.PathSearchRequest, error) {
 	var request graph.PathSearchRequest
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&request); err != nil {
+	if err := decodeStrict(data, &request); err != nil {
 		return request, err
-	}
-	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
-		return request, errors.New("bytes after the request")
 	}
 	if err := semtypes.ValidateEntityID(request.StartEntity); err != nil {
 		return request, fmt.Errorf("start_entity: %w", err)

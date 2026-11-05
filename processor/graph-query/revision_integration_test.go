@@ -218,7 +218,8 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 			fmt.Sprintf(`{"entity_id":%q,"direction":"outgoing"}`, drone1),
 			fmt.Sprintf(`{"entity_id":%q,"direction":"incoming"}`, drone2),
 		},
-		"pathSearch": {fmt.Sprintf(`{"start_entity":%q,"direction":"outgoing","max_depth":2,"predicates":[%q]}`, drone1, linkTo)},
+		"pathSearch":     {fmt.Sprintf(`{"start_entity":%q,"direction":"outgoing","max_depth":2,"predicates":[%q]}`, drone1, linkTo)},
+		"hierarchyStats": {`{"prefix":"c360.test.query.system.drone"}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

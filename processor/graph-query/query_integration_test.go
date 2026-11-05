@@ -77,6 +77,11 @@ func declaredRows(t *testing.T) []forward {
 			downstream: verbRow(t, graph.ResponderGraphIngest, "entity"),
 			request:    []byte(`{"start_entity":"c360.test.query.system.drone.001","direction":"outgoing","max_depth":1}`),
 		},
+		forward{
+			verb:       verbRow(t, graph.ResponderGraphQuery, "hierarchyStats"),
+			downstream: verbRow(t, graph.ResponderGraphIngest, "prefix"),
+			request:    []byte(`{"prefix":"c360.test"}`),
+		},
 	)
 }
 
@@ -531,7 +536,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 			declared = append(declared, verb.Name)
 		}
 	}
-	want := []string{"entity", "batch", "prefix", "byName", "entityByAlias", "relationships", "pathSearch", "semantic", "similar", "spatial", "temporal"}
+	want := []string{"entity", "batch", "prefix", "byName", "entityByAlias", "relationships", "pathSearch", "hierarchyStats", "semantic", "similar", "spatial", "temporal"}
 	if !reflect.DeepEqual(declared, want) {
 		t.Fatalf("the verb table declares %v for graph-query, want %v", declared, want)
 	}

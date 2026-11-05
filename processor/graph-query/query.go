@@ -1,10 +1,12 @@
 package graphquery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"time"
 
@@ -18,8 +20,8 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its handler.
 // A forward answers from the row it names here by responder and name, since semantic forwards to
-// search (design D1), and entityByAlias, relationships and pathSearch from the rows they name, so a
-// row that is gone leaves its verb with no handler, and Start fails naming it.
+// search (design D1), and entityByAlias, relationships, pathSearch and hierarchyStats from the rows
+// they name, so a row that is gone leaves its verb with no handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
 		"entity":   {graph.ResponderGraphIngest, "entity"},
@@ -47,6 +49,9 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	}
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
+	}
+	if prefix := subjectOf(graph.ResponderGraphIngest, "prefix"); prefix != "" {
+		handlers["hierarchyStats"] = c.hierarchyStats(prefix)
 	}
 	return handlers
 }
@@ -262,6 +267,19 @@ func (c *Component) incomingRows(ctx context.Context, subject, entityID string, 
 		edges = append(edges, graph.RelationshipEdge{Predicate: entry.Predicate, FromEntityID: entry.FromEntityID, ToEntityID: entityID})
 	}
 	return edges, reply.IndexedRevision, nil
+}
+
+// decodeStrict decodes one composed verb's request: an unknown key or bytes after it are refused.
+func decodeStrict(data []byte, into any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(into); err != nil {
+		return err
+	}
+	if _, err := decoder.Token(); !errors.Is(err, io.EOF) {
+		return errors.New("bytes after the request")
+	}
+	return nil
 }
 
 // decodeIndexReply reads an index verb's success. One that does not decode, or names no producer,

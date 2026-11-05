@@ -50,7 +50,7 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
   fit tests stay exact, and prefix tests asserting `{"entities":null}` gain the key. Ledger: the `graph` and
   `processor/graph-ingest` rows name `total`. MIGRATION: the additive key; `processor/graph-query/MIGRATION.md`'s
   `batch`, `prefix`, `byName` row and SemSource's "bare reply, unchanged" line say `prefix` gains it.
-- [ ] 4.2 `hierarchyStats` with its row, `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`, and the one
+- [x] 4.2 `hierarchyStats` with its row, `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`, and the one
   page read both count verbs share, IDs only. Premise: `pin:query.go:470-560`, P4,
   `processor/graph-ingest/query.go:280-346` (D4, D5, D7). Check: `TestHierarchyStatsDeclaresAPartialPage`,
   `TestCountsAddUpAcrossPages`, `TestCountsOfAnEmptyGroup`, `TestCountsReadOnePage`, `TestCountsRefuseABrokenPage`,

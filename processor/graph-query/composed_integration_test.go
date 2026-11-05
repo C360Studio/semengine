@@ -744,4 +744,16 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	step("walk: a hop reply naming no producer", pathSearch, walkRequest, 15)
 	outgoing.Store(replying(`{"data":{"relationships":[]},"producer":"graph-index"}`))
 	step("walk: answered", pathSearch, walkRequest, 15)
+
+	const hierarchyStats = "graph.query.hierarchyStats"
+	countRequest := `{"prefix":"c360.test"}`
+	step("counts: no responders", hierarchyStats, countRequest, 16)
+	step("counts: a request it refuses", hierarchyStats, `{"prefix":"c360..test"}`, 16)
+	prefix := stub(graph.ResponderGraphIngest, "prefix")
+	prefix.Store(replying(`{}`))
+	step("counts: a broken page", hierarchyStats, countRequest, 17)
+	prefix.Store(refusing)
+	step("counts: refused by the responder", hierarchyStats, countRequest, 17)
+	prefix.Store(replying(`{"entities":null,"total":0}`))
+	step("counts: answered", hierarchyStats, countRequest, 17)
 }

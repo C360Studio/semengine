@@ -37,6 +37,11 @@ Read these first. Nothing errors.
 - **A `pathSearch` decoder that reads `paths` (the `pathSearch` verb, step 2).** After unwrapping, `paths` is gone, so
   the field reads empty and every entity looks unreachable. Read `edges`, where `edges[i]` first reached
   `entities[i+1]`, and follow them back for a path.
+- **A `hierarchyStats` decoder that reads `totalEntities` (the `hierarchyStats` verb, step 2).** The key is now
+  `total_entities`, so the old field reads 0. It also means something new: the whole group as listed, where the old
+  value was the rows on one page, stopping at 1,000. Children count one page only, so when `truncated` is true they do
+  not add up to `total_entities`; send `next_cursor` as `cursor` for the next page. A child's `name` reads empty, since
+  the key is gone.
 - **A bare `entityByAlias` decoder (the `entityByAlias` verb, step 1).** It reads no entity from the wrapper and gets nil.
 - **A `kvRevision` decoder with no zero check (the `entity` verb, step 1).** It gets revision 0. SemConnect's has the
   check, so its failure is loud; see its section.
@@ -106,6 +111,7 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | `entityByAlias` | Request key `alias`, was `aliasOrID`. Reply enveloped, with the entity in `data`. Refusals reach you: `alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`. An unknown alias not shaped like an ID answers `entity_not_found`, not `invalid_request`; this narrows one sentence of ADR-114, which ADR-114 now records |
 | `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
 | `pathSearch` (step 2) | Request keys: `start_entity`, `direction`, `max_depth`, `max_nodes`, `predicates`, `min_revision`. `direction` is required, `outgoing`, `incoming` or `both`: nothing, or a typo, read as outgoing before. `max_depth` is required, 1 to 10; there is no default. `max_nodes` is 1 to 500, 0 means 100, and it now counts the start: the old limit did not, so the same number gives one entity fewer. `timeout`, `include_siblings` and `max_paths` are gone, and any unknown key is refused. Over a limit is `invalid_request` stating the bound, never a clamp. Reply enveloped: `data` holds `entities`, `edges` and `truncated`. Rows name `entity_id` and `depth`, were `id`, `type` and `score`; `paths` is gone, see "The changes that fail silently". An incoming edge now reads as the graph holds it, `from_entity_id` and `to_entity_id`, not backwards. `truncated` is true only when an entity was left out, not on reaching the limit. Any hop's refusal ends the walk, its message naming that hop's entity; a hop over `max_payload` is `response_too_large` |
+| `hierarchyStats` (step 2) | Reply still bare. `totalEntities` is now `total_entities`, the length of the key listing, before the cursor and any limit, true as listed, not a snapshot; see "The changes that fail silently". New: `entities_scanned`, the rows on this page; `truncated`, true exactly when `next_cursor` is set; `next_cursor`. Children are `{prefix, count}` from this page; `name` is gone, being the prefix's last segment. Request keys: `prefix`, `cursor`, `min_revision`, which is ignored since no index is read; any unknown key is refused. A page with no `entities` or `total` key read as zero; it is now refused transient `internal`, as is a row whose ID does not parse or is not under the prefix. A refusal by graph-ingest reaches you with its class, code and detail. Each request, so each page, costs one key scan of the group |
 | `entity` | Bytes forwarded unchanged, with no re-check by graph-query. The revision key is `kv_revision`, was `kvRevision` |
 | `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query. `prefix` (step 2) gains `total`, always present: the length of the key listing, before the cursor and any limit, true as listed, not a snapshot. The key is additive |
 | `semantic` (step 2) | Forwards to `graph.embedding.query.search`, bytes unchanged, so `scope` reaches the responder (ADR-071). Reply enveloped by the responder, `data` holding `results` and `embedder_type`; `query` and `duration` are gone. Refused transient `internal`, naming that subject, until change 5 brings the responder. Fusion reads this; change 5 ports fusion here |
@@ -123,3 +129,4 @@ port overlapping one, unless it belongs to graph-query. An undeclared subscriber
 `composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
 `DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2's path search adds, in `graph`:
 `PathSearchRequest`, `PathSearchData`, `PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`.
+Its counts add, in `graph`: `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`.

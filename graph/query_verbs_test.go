@@ -67,6 +67,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[[]RelationshipEdge]()},
 		{Name: "pathSearch", Subject: "graph.query.pathSearch", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[PathSearchData]()},
+		{Name: "hierarchyStats", Subject: "graph.query.hierarchyStats", Responder: "graph-query",
+			Enveloped: false, Reply: reflect.TypeFor[HierarchyStatsData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
 		{Name: "similar", Subject: "graph.query.similar", Responder: "graph-query",

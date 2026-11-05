@@ -22,4 +22,3 @@ the same version, compared by `scripts/doctor.sh`.
 - **WHEN** `ateam doctor --check` reports only a warning (hook latency above the 10 ms target but below 100 ms, or a
   shared forge token)
 - **THEN** `task verify` continues
-

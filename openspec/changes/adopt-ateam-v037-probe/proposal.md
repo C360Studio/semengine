@@ -29,10 +29,11 @@ required check blocks the merge. A review record posted as a comment starts no r
 
 ## Capabilities
 
-- Modified `merge-gate` (the merge-check workflow requirement: probe sentence, two scenarios).
+- Modified `merge-gate` (the merge-check workflow requirement: probe sentences, three scenarios).
 - Modified `harness-boundaries` (the ateam doctor requirement: pin `v0.3.7`).
 
 ## Impact
 
 - `.github/workflows/{ci,merge-check}.yml`, `internal/harness/toolcheck/mergegate_test.go`, `.agents/README.md`,
-  `.agents/contracts/reviewer.md`, `AGENTS.md`, the two specs.
+  `.agents/contracts/reviewer.md`, `.agents/skills/{review-pr,ponytail}/SKILL.md` (v0.3.7 template text,
+  `notes/1.2.md`), `AGENTS.md`, the two specs.

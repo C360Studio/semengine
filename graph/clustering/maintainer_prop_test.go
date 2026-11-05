@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -30,7 +31,11 @@ import (
 //     and names the entity in Tick's *IncompleteError until a valid upsert or a delete;
 //   - a record holds the member count, the MaxKeywords most common types and words (ties
 //     lexical), the pin's summary template, and the MaxRepEntities smallest members with
-//     words; a group with no members has no record.
+//     words; a group with no members has no record;
+//   - a record's entity_revision is the highest revision among the applied upserts and
+//     deletes of entities whose IDs parse into the group, held, refused or not; a group
+//     that is removed takes its mark with it (task 2.1, "A record names the latest entity
+//     write it reflects").
 
 // propIDs are the valid entity IDs a history draws from: two deployments, two sources,
 // two domains, two types and two instances, so every level holds several groups.
@@ -134,8 +139,32 @@ func modelTop(counts map[string]int, n int) []string {
 	return out
 }
 
-// modelRecords computes every group's record from scratch over the held entities.
-func modelRecords(entities map[string]modelEntity) map[string]*Community {
+// modelGroupKeys are the record keys of an ID the canonical parser accepts: its first
+// four, three and two positions, each after its level.
+func modelGroupKeys(id string) []string {
+	p := strings.Split(id, ".")
+	return []string{"0." + strings.Join(p[:4], "."), "1." + strings.Join(p[:3], "."), "2." + strings.Join(p[:2], ".")}
+}
+
+// modelApplied raises the marks of id's groups to revision after an applied delivery,
+// when id parses (bad is false), then drops the marks of groups left with no members.
+func modelApplied(marks map[string]uint64, entities map[string]modelEntity, id string, revision uint64, bad bool) {
+	if !bad {
+		for _, key := range modelGroupKeys(id) {
+			marks[key] = max(marks[key], revision)
+		}
+	}
+	live := modelRecords(entities, nil)
+	for key := range marks {
+		if live[key] == nil {
+			delete(marks, key)
+		}
+	}
+}
+
+// modelRecords computes every group's record from scratch over the held entities, its
+// entity_revision from marks.
+func modelRecords(entities map[string]modelEntity, marks map[string]uint64) map[string]*Community {
 	type acc struct {
 		level   int
 		id      string
@@ -199,7 +228,7 @@ func modelRecords(entities map[string]modelEntity) map[string]*Community {
 			reps = g.text[:min(MaxRepEntities, len(g.text))]
 		}
 		out[key] = &Community{
-			ID: g.id, Level: g.level, MemberCount: g.members, TypeCounts: typeCounts,
+			ID: g.id, Level: g.level, MemberCount: g.members, EntityRevision: marks[key], TypeCounts: typeCounts,
 			Keywords: keywords, StatisticalSummary: summary + ".", RepEntities: reps,
 		}
 	}
@@ -250,6 +279,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 			}
 		})
 		entities := map[string]modelEntity{}
+		marks := map[string]uint64{} // by record key: the model's entity_revision
 		bad := map[string]bool{}
 		for _, id := range propBadIDs {
 			bad[id] = true
@@ -268,6 +298,11 @@ func TestMaintainerMatchesModel(t *testing.T) {
 				return
 			}
 			entities[id] = e
+			modelApplied(marks, entities, id, rev, bad[id])
+		}
+		applyDelete := func(id string, rev uint64) {
+			delete(entities, id)
+			modelApplied(marks, entities, id, rev, bad[id])
 		}
 		tick := func() {
 			err := m.Tick(t.Context())
@@ -291,7 +326,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 			if err != nil {
 				rt.Fatal(err)
 			}
-			want := modelRecords(entities)
+			want := modelRecords(entities, marks)
 			if !reflect.DeepEqual(got, want) {
 				keys := slices.Concat(slices.Collect(maps.Keys(got)), slices.Collect(maps.Keys(want)))
 				slices.Sort(keys)
@@ -353,7 +388,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 				if held {
 					c.deletes++
 				}
-				delete(entities, id)
+				applyDelete(id, revision)
 			case "obsolete-upsert", "obsolete-delete":
 				if len(entities) == 0 {
 					continue
@@ -410,7 +445,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		if err := m.Delete(first, revision); err != nil {
 			rt.Fatal(err)
 		}
-		delete(entities, first)
+		applyDelete(first, revision)
 		m.BootstrapDone()
 		bootstrapped = true
 		tick()
@@ -425,7 +460,7 @@ func TestMaintainerMatchesModel(t *testing.T) {
 		if err := m.Delete(lone, revision); err != nil {
 			rt.Fatal(err)
 		}
-		delete(entities, lone)
+		applyDelete(lone, revision)
 		tick()
 		c.emptied++
 	})
@@ -445,8 +480,10 @@ type propDelivery struct {
 
 // TestHistoryOrderIrrelevant: two histories that interleave the same per-entity
 // deliveries differently, each entity's in its own revision order, with ticks at
-// different points, leave byte-identical records and the same Tick result. Obsolete
-// deliveries are inserted only after an upsert, where the entity is still held.
+// different points, leave records byte-identical apart from entity_revision, and the same
+// Tick result. Revisions here ascend per entity only, not across entities, so
+// entity_revision, which only an ascending feed fixes, is masked before comparing.
+// Obsolete deliveries are inserted only after an upsert, where the entity is still held.
 func TestHistoryOrderIrrelevant(t *testing.T) {
 	var differing, obsolete, nonEmpty int
 	rapid.Check(t, func(rt *rapid.T) {
@@ -524,7 +561,7 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 		if resultA != resultB {
 			rt.Fatalf("final Tick: %q after %q, %q after %q", resultA, orderA, resultB, orderB)
 		}
-		if !maps.EqualFunc(dataA, dataB, bytes.Equal) {
+		if !maps.EqualFunc(dataA, dataB, func(a, b []byte) bool { return bytes.Equal(maskRevision(a), maskRevision(b)) }) {
 			rt.Fatalf("records differ:\n%q\n%q\nafter %q and %q", dataA, dataB, orderA, orderB)
 		}
 		if !slices.Equal(orderA, orderB) {
@@ -536,4 +573,12 @@ func TestHistoryOrderIrrelevant(t *testing.T) {
 	})
 	t.Logf("assertions run: differing interleavings %d, obsolete deliveries %d, non-empty final indexes %d",
 		differing, obsolete, nonEmpty)
+}
+
+// entityRevisionField is the encoded entity_revision field; a record holds it once.
+var entityRevisionField = regexp.MustCompile(`"entity_revision":[0-9]+`)
+
+// maskRevision replaces the value of a record's entity_revision with "_".
+func maskRevision(record []byte) []byte {
+	return entityRevisionField.ReplaceAll(record, []byte(`"entity_revision":_`))
 }

@@ -18,14 +18,14 @@ import (
 func sampleCommunities() []*Community {
 	return []*Community{
 		{
-			ID: "acme.dep1.src.robotics", Level: 0, MemberCount: 3,
+			ID: "acme.dep1.src.robotics", Level: 0, MemberCount: 3, EntityRevision: 12,
 			TypeCounts:         map[string]int{"drone": 2, "sensor": 1},
 			Keywords:           []string{"autonomous", "navigation"},
 			StatisticalSummary: "Community of 3 entities including 2 drones, 1 sensor. Key themes: autonomous, navigation.",
 			RepEntities:        []string{"acme.dep1.src.robotics.drone.d1", "acme.dep1.src.robotics.sensor.s1"},
 		},
-		{ID: "acme.dep1.src", Level: 1, MemberCount: 3, TypeCounts: map[string]int{"drone": 2, "sensor": 1}},
-		{ID: "acme.dep1", Level: 2, MemberCount: 3, TypeCounts: map[string]int{"drone": 2, "sensor": 1}},
+		{ID: "acme.dep1.src", Level: 1, MemberCount: 3, EntityRevision: 12, TypeCounts: map[string]int{"drone": 2, "sensor": 1}},
+		{ID: "acme.dep1", Level: 2, MemberCount: 3, EntityRevision: 12, TypeCounts: map[string]int{"drone": 2, "sensor": 1}},
 	}
 }
 
@@ -113,6 +113,7 @@ func TestGetAllCommunitiesFailsOnCorruptEntry(t *testing.T) {
 		{"not JSON", "0.acme.dep1.src.zz", []byte("not a record")},
 		{"another key's record", "1.acme.dep1.other", foreign},
 		{"empty object", "2.acme.dep9", []byte("{}")},
+		{"revision 0", "2.acme.dep9", []byte(`{"id":"acme.dep9","level":2,"member_count":1,"entity_revision":0}`)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

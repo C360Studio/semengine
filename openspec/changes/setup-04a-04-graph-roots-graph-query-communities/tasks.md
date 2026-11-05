@@ -18,7 +18,7 @@ and at most one `CountError`.
 
 ## 2. The record's revision
 
-- [ ] 2.1 `Community.EntityRevision` (`entity_revision`, no `omitempty`), the group's latest applied write, held or not;
+- [x] 2.1 `Community.EntityRevision` (`entity_revision`, no `omitempty`), the group's latest applied write, held or not;
   `GroupKey(entityID, level)` and `DecodeCommunity(key, value)`, which refuses bad JSON, a record whose level and ID
   do not give its key, and revision 0; `GetAllCommunities` and the maintainer use them. Premise:
   `graph/clustering/maintainer.go:120-161`, `:240-272`, `:390`; `storage.go:55-68`, `:107-110` (D1). Check:

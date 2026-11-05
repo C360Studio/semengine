@@ -79,8 +79,8 @@ func entityWords(state *graph.EntityState) []string {
 
 // newCommunity builds a group's record from its counts: the MaxKeywords most common
 // types and words, the summary, and the first MaxRepEntities of reps, which the caller
-// passes in ascending order.
-func newCommunity(level int, id string, memberCount int, typeCounts, wordCounts map[string]int, reps []string) *Community {
+// passes in ascending order. revision is the group's mark (Community.EntityRevision).
+func newCommunity(level int, id string, memberCount int, revision uint64, typeCounts, wordCounts map[string]int, reps []string) *Community {
 	types := topCounted(typeCounts, MaxKeywords)
 	kept := make(map[string]int, len(types))
 	for _, typ := range types {
@@ -91,6 +91,7 @@ func newCommunity(level int, id string, memberCount int, typeCounts, wordCounts 
 		ID:                 id,
 		Level:              level,
 		MemberCount:        memberCount,
+		EntityRevision:     revision,
 		TypeCounts:         kept,
 		Keywords:           keywords,
 		StatisticalSummary: summarize(memberCount, types, typeCounts, keywords),

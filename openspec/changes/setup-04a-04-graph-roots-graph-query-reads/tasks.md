@@ -43,7 +43,7 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 
 ## 4. Counts
 
-- [ ] 4.1 `PrefixQueryResponse.Total`, key `total`, always present: every key listed, before the cursor, on the prefix
+- [x] 4.1 `PrefixQueryResponse.Total`, key `total`, always present: every key listed, before the cursor, on the prefix
   and pattern paths and the exact-ID fallback; the byte fit counts it. Premise:
   `processor/graph-ingest/query.go:280-298`, `:355` (D5). Check: `TestPrefixPageNamesItsTotal` on real graph-ingest
   (first page, later page, byte-trimmed page, empty group), shown to fail with the cursor applied first; the existing
@@ -73,9 +73,10 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 ## 5. Records and guidance
 
 - [ ] 5.1 Port ADR-071 with a note under its title (pin path and SHA, packages, ledger row, that `pkg/fusion` and
-  `graph-embedding` arrive in change 5). Ledger: new ADR-071 row; the `processor/graph-query` row's contract,
-  dependencies, risks and tests name this step; `pathrag.go`, `summary.go` leave "later steps". Check: `task
-  ledger:diff -- docs/adr/071-fusion-domain-scoped-nl-retrieval.md`, `task docs:check`.
+  `graph-embedding` arrive in change 5). Ledger: new ADR-071 row; the `graph` row names the exports of tasks 2.1 to 4.3;
+  the `processor/graph-query` row's contract, dependencies, risks and tests name this step; `pathrag.go`, `summary.go`
+  leave "later steps". Check: `task ledger:diff -- docs/adr/071-fusion-domain-scoped-nl-retrieval.md`, `task
+  docs:check`.
 - [ ] 5.2 `.agents/skills/query-pattern/SKILL.md`, `graph/README.md`, `processor/graph-query/README.md`, `doc.go`: the
   new verbs, limits, costs, the hub refusal, the sample being the lexically smallest IDs, and not to compare
   `indexed_revision` on an answer that reports 0. `graph/query_response.go`'s doc says 0 claims nothing. `AGENTS.md` §

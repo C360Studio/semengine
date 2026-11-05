@@ -22,7 +22,7 @@ unless marked `pin:` (`8b99efe9`).
 - `processor/graph-ingest/query.go:280` — `keys, err = c.entityBucket.KeysByPrefix(ctx, prefixDot)`: every page lists
   every key under the prefix.
 - `processor/graph-ingest/query.go:468` — `if len(ids) == 0 {`, returning nil: an empty group's page marshals
-  `"entities":null` (read, not run; task 4.1's `TestCountsOfAnEmptyGroup` runs it), so `{}` differs only by the key.
+  `"entities":null` (read, not run; task 4.2's `TestCountsOfAnEmptyGroup` runs it), so `{}` differs only by the key.
 - `processor/graph-query/config_test.go:42` — `{"max_traversal_depth", 5}`: stays refused, as do the spec scenario and
   `MIGRATION.md`'s instruction to delete both keys.
 - `vocabulary/predicates.go:365` — `func IsValidPredicate(predicate string) bool {`; `graph` already imports

@@ -2088,7 +2088,9 @@
     Responder ResponderGraphQuery, new rows after the existing ones; (19) RelationshipEdge, the row of a
     relationships reply, names the predicate where the pin's list named edge_type; (20) MinRevisionField, the
     optional min_revision a request embeds, and ErrorCodeRevisionNotReached ("revision_not_reached", class
-    transient), the refusal graph-index gives when its indexed revision is below it
+    transient), the refusal graph-index gives when its indexed revision is below it; and, in
+    setup-04a-04-graph-roots-graph-query-reads: (21) PrefixQueryResponse gains Total, key total, always
+    present, the length of the key listing before the cursor and any limit, as listed, not a snapshot
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -2430,7 +2432,10 @@
     or any one of whose NATS subjects starts with graph.mutation. is a graph-mutation port, and exactly one,
     a required nats-request input on graph.mutation.> for semengine.graph.mutation v1, is accepted; a first
     graph-mutation input that is not valid is refused with an error naming the port (#331)
-    (one-mutation-port-check, #323)
+    (one-mutation-port-check, #323); (9) graph.ingest.query.prefix replies name total, always present, the
+    length of the key listing before the cursor and any limit, on the prefix and pattern paths and the
+    exact-ID fallback, counted in the byte fit, as listed, not a snapshot (TestPrefixPageNamesItsTotal;
+    setup-04a-04-graph-roots-graph-query-reads)
   dependencies_and_side_effects: >-
     component, graph, graph/inference, graph/kvcatalog, graph/readiness, internal/cache,
     internal/dispatch, internal/graphmutation, message, metric, natsclient,

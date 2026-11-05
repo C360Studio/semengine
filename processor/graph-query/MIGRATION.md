@@ -44,9 +44,9 @@ Read these first. Nothing errors.
 ## SemSource
 
 **Use cases kept:** free-text search (`searchGraph`, which is not in the tree until step 5 lands and changes 5 and 7
-bring what it needs); prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, unchanged); your own verbs
-on the same family (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not
-reserve.
+bring what it needs); prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `total`); your
+own verbs on the same family (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table
+does not reserve.
 
 **What you change:**
 
@@ -107,7 +107,7 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | `relationships` | Reply enveloped, was a bare list. `direction` is required, `outgoing` or `incoming`. Rows name `predicate`, was `edge_type`. Fusion reads this; change 5 ports fusion here |
 | `pathSearch` (step 2) | Request keys: `start_entity`, `direction`, `max_depth`, `max_nodes`, `predicates`, `min_revision`. `direction` is required, `outgoing`, `incoming` or `both`: nothing, or a typo, read as outgoing before. `max_depth` is required, 1 to 10; there is no default. `max_nodes` is 1 to 500, 0 means 100, and it now counts the start: the old limit did not, so the same number gives one entity fewer. `timeout`, `include_siblings` and `max_paths` are gone, and any unknown key is refused. Over a limit is `invalid_request` stating the bound, never a clamp. Reply enveloped: `data` holds `entities`, `edges` and `truncated`. Rows name `entity_id` and `depth`, were `id`, `type` and `score`; `paths` is gone, see "The changes that fail silently". An incoming edge now reads as the graph holds it, `from_entity_id` and `to_entity_id`, not backwards. `truncated` is true only when an entity was left out, not on reaching the limit. Any hop's refusal ends the walk, its message naming that hop's entity; a hop over `max_payload` is `response_too_large` |
 | `entity` | Bytes forwarded unchanged, with no re-check by graph-query. The revision key is `kv_revision`, was `kvRevision` |
-| `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query |
+| `batch`, `prefix`, `byName` | Bytes forwarded unchanged, with no re-check by graph-query. `prefix` (step 2) gains `total`, always present: the length of the key listing, before the cursor and any limit, true as listed, not a snapshot. The key is additive |
 | `semantic` (step 2) | Forwards to `graph.embedding.query.search`, bytes unchanged, so `scope` reaches the responder (ADR-071). Reply enveloped by the responder, `data` holding `results` and `embedder_type`; `query` and `duration` are gone. Refused transient `internal`, naming that subject, until change 5 brings the responder. Fusion reads this; change 5 ports fusion here |
 | `similar` (step 2) | Forwards to `graph.embedding.query.similar`, bytes unchanged. Reply enveloped by the responder. `data.similar` is now `data.results`; the echoed `entity_id` and `duration` are gone. Refused transient `internal` until change 5 |
 | `spatial` (step 2) | Forwards to `graph.spatial.query.bounds`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`, with `lat`, `lon`, `alt`; `type` is gone. Refused transient `internal` until change 7 |

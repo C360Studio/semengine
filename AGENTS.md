@@ -202,7 +202,8 @@ never become a pointer:
   the PR closes every open one; `task merge:check -- <n>` just before merging (`GITHUB_ACTIONS` unset);
   `implemented-by: <agent> (<model>, <effort>)` in the PR body; archive/spec sync as the last content commit; squash
   merge. A code PR (any file the gate does not call a document) also needs another agent's approving review record at
-  its head and `reviewed-by:` in the PR body, or `Merge check` fails once non-draft.
+  its head and `reviewed-by:` in the PR body: until a record or that line exists `Merge check` is absent, which
+  blocks the merge, and without an approving record it fails.
 - **Close:** the squash merge of a PR that declared `Closes #n` is the authorization. A close with no merged PR behind
   it takes the owner's word on the issue.
 

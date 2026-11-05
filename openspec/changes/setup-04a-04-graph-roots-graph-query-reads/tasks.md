@@ -72,12 +72,12 @@ after `rapid.Check`. Each count rule stays one `CountInput` and at most one `Cou
 
 ## 5. Records and guidance
 
-- [ ] 5.1 Port ADR-071 with a note under its title (pin path and SHA, packages, ledger row, that `pkg/fusion` and
+- [x] 5.1 Port ADR-071 with a note under its title (pin path and SHA, packages, ledger row, that `pkg/fusion` and
   `graph-embedding` arrive in change 5). Ledger: new ADR-071 row; the `graph` row names the exports of tasks 2.1 to 4.3;
   the `processor/graph-query` row's contract, dependencies, risks and tests name this step; `pathrag.go`, `summary.go`
   leave "later steps". Check: `task ledger:diff -- docs/adr/071-fusion-domain-scoped-nl-retrieval.md`, `task
   docs:check`.
-- [ ] 5.2 `.agents/skills/query-pattern/SKILL.md`, `graph/README.md`, `processor/graph-query/README.md`, `doc.go`: the
+- [x] 5.2 `.agents/skills/query-pattern/SKILL.md`, `graph/README.md`, `processor/graph-query/README.md`, `doc.go`: the
   new verbs, limits, costs, the hub refusal, the sample being the lexically smallest IDs, and not to compare
   `indexed_revision` on an answer that reports 0. `graph/query_response.go`'s doc says 0 claims nothing. `AGENTS.md` §
   2 and `.agents/rules-index.md`: the reserved-subject row names the three new families. `MIGRATION.md`'s table and

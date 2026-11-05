@@ -5,7 +5,7 @@ cutover. The port breaks old shapes where that gives a better result (owner, PR 
 sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here was run against your code: it
 comes from reading it.
 
-`processor/graph-query` is ported in five steps, and this file grows with them. Only step 1 is in the tree today; a
+`processor/graph-query` is ported in five steps, and this file grows with them. Steps 1 and 2 are in the tree today; a
 change marked with a later step describes what that step will bring and does not apply yet. Each later step appends
 what it changes here.
 
@@ -39,10 +39,12 @@ Read these first. Nothing errors.
   `entities[i+1]`, and follow them back for a path.
 - **A `hierarchyStats` decoder that reads `totalEntities` (the `hierarchyStats` verb, step 2).** The key is now
   `total_entities`, so the old field reads 0. It also means something new: the whole group as listed, where the old
-  value was the rows on one page, stopping at 1,000. Children count one page only, so they add up to `entities_scanned`,
-  not `total_entities`, and `truncated` false says only that this is the last page; send `next_cursor` as `cursor` for
-  the next page. A child's `name` reads empty, since
-  the key is gone.
+  value was the rows on one page, stopping at 1,000. Children count one page only, so on a prefix with children they add
+  up to `entities_scanned`, not `total_entities`; a prefix that is itself a full six-part entity ID has no children, and
+  `entities_scanned` is 1 (`TestHierarchyStatsOfAnExactID`). `truncated` false says only that this is the last page;
+  send `next_cursor` as `cursor` for the next page. The counts are live and as listed, not a snapshot, so a group that
+  is written to while you page can repeat or miss an entity (#512). A child's `name` reads empty, since the key is
+  gone.
 - **A `summary` decoder that reads `entity_sample_truncated` (the `summary` verb, step 2).** The key is now `truncated`,
   so an old decoder reads false, which says "complete", on an answer that is a sample.
 - **A `summary` decoder that reads `total_entities` as the rows scanned (step 2).** It is now the whole group as listed,
@@ -137,9 +139,12 @@ A stream capturing a declared `graph.query.*` subject refuses boot (#16), and so
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
 `QueryVerb.Enveloped` and `QueryVerb.Reply`.
 
-**New names step 1 exports** (later steps add theirs after these). In `graph`: `ResponderGraphQuery`,
+**New names steps 1 and 2 export** (later steps add theirs after these). Step 1, in `graph`: `ResponderGraphQuery`,
 `QueryVerb.Enveloped`, `QueryVerb.Reply`, `MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In
 `composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
-`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2's path search adds, in `graph`:
-`PathSearchRequest`, `PathSearchData`, `PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`.
-Its counts add, in `graph`: `HierarchyStatsRequest`, `HierarchyStatsData`, `HierarchyChild`.
+`DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2, in `graph`: `ResponderGraphEmbedding`,
+`ResponderGraphIndexSpatial`, `ResponderGraphIndexTemporal`; for path search `PathSearchRequest`, `PathSearchData`,
+`PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`; for counts `HierarchyStatsRequest`,
+`HierarchyStatsData`, `HierarchyChild`, and `PrefixQueryResponse.Total`; for the forwards `SemanticData`, `SimilarData`,
+`SimilarityHit`, `SpatialData`, `SpatialHit`, `TemporalData`, `TemporalHit`. `SummaryRequest` and `SummaryData` change
+as the `summary` row says. Package `graphquery` exports nothing new.

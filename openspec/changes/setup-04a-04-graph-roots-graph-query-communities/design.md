@@ -1,10 +1,9 @@
 # Design: `processor/graph-query` step 3, community reads and local search
 
-Base `b940e29`; pin `8b99efe9`. Evidence: archived `inventory.md` §§ 1, 11, 13; `inventory-delta.md`;
-`notes/probes/step3-pin-probe.*`. Binding: PR #504 comments 6582751320 (ruling 1), 6582751783 (ruling 2), 6582752155
-(ruling 3), 6585009466, 6588079803. **Goal.** A community read answers from the latest record, says when it searched a
-sample, or refuses. **Non-goals:** steps 4 and 5, enumeration, change 7's writer wiring. Pin about 825 + 820 lines,
-this about 450 + 1,000 (estimate); one PR.
+Base `b940e29`; pin `8b99efe9`. Evidence: archived `inventory.md` §§ 1, 11, 13; `inventory-delta.md`; `notes/probes/`.
+Binding: PR #504 comments 6582751320, 6582751783, 6582752155 (rulings 1-3), 6585009466, 6588079803. **Goal.** A
+community read answers from the latest record, says when it searched a sample, or refuses. **Non-goals:** steps 4, 5,
+enumeration, change 7's writer wiring. Pin about 880 + 820 lines, this about 450 + 1,000 (estimate); one PR.
 
 ## D1. The record's revision (the one new field)
 
@@ -19,26 +18,26 @@ Ruling 1 left the community verbs' `indexed_revision` open: no record carries an
 | (d) No field; `localSearch` reports 0 | Claims nothing, against ruling 1's list; a caller comparing never sees it catch up |
 | (e) A published tick watermark | No stuck case (D2), but ruling 3 says no tick marker; a key outside `{level}.{id}` that `GetAllCommunities` refuses |
 
-**(b).** `entity_revision` is the highest revision of an `Upsert` or `Delete` the maintainer applied that changed a
-contribution in the group, so a touched group's record differs and is written at the next tick. *Truth:* when the
-maintainer is fed one watch in ascending revision order, every write at or below it is reflected. A KV watch delivers
-that order (ported ADR-066, "Why it is correct"; `internal/revlag` rests on it). Fed per key only, as the spec now
-allows, counts stay right and the field is a best effort. *Costs, declared:* a write that changes no count, word or
-representative now writes its three records once (`TestUnchangedRecordAddsNoRevision` changes its second half); a tick
-with nothing applied still writes nothing. A refused first value touches no group, so nothing advances, and `Tick`
-names it. After a restart a group whose last write was a purged delete comes back lower: lower, still true. *Proof:*
-`TestRecordNamesItsLatestWrite` (upsert, same-content upsert, delete, obsolete delivery, refused first value);
-`TestMaintainerMatchesModel`, model extended from the spec; `TestHistoryOrderIrrelevant` unchanged.
+**(b).** `entity_revision` is the highest revision of an `Upsert` or `Delete` applied for any entity whose ID parses
+into the group, held or not, refused or not; a delivery at or below the entity's last-applied revision is not applied.
+So a delete of an entity never held, such as a replayed delete marker after a restart, still raises it, unlike (c).
+The mark ends with the group: a recreated group starts at the write that recreated it. A raised record differs, so the
+next tick writes it. *Truth:* the caller SHALL feed the maintainer in ascending revision order across keys; then every
+write at or below `entity_revision` is reflected. That a KV watch delivers that order is not promised here: ADR-066
+states it as carried text, unprobed at the pinned versions (ADR-112); change 7, which wires the watch, probes it.
+*Costs:* a write that changes no count, word or representative now writes its records once; a purged delete comes back
+lower after a restart, still true. *Proof:* `TestRecordNamesItsLatestWrite` (upsert, same-content upsert, held and
+unheld delete, obsolete, refused, a group emptied and recreated); `TestUnchangedRecordAddsNoRevision` (nothing applied,
+no write); `TestMaintainerMatchesModel` on its ascending histories, model from the spec; `TestHistoryOrderIrrelevant`,
+whose histories keep only each entity's order, comparing records apart from `entity_revision`.
 
 ## D2. `indexed_revision` and `min_revision` on `localSearch`
 
-`indexed_revision` is the record's `entity_revision`. The page is read after the record from the authority, so it
-reflects at least as much (ruling 1). A `min_revision` above it is refused `revision_not_reached`, transient, detail
-`indexed_revision`, before the page is read. **The stuck case:** a `min_revision` from a write to no member of E's
-group at that level stays above the record until the group's next write. A level-2 group takes every write of its
-deployment, so it catches up; a quiet level-0 group can refuse indefinitely. The doc says to send the revision of a
-write to the group searched. Owner question 1; (e) is the fix if a caller needs it. *Proof:*
-`TestLocalSearchReadsItsWriteBack` (write at W, before and after a tick); `localSearch` joins
+`indexed_revision` is the record's `entity_revision`; the page, read after it from the authority, reflects at least as
+much (ruling 1). A `min_revision` above it is refused `revision_not_reached` (transient, detail `indexed_revision`)
+before the page is read. **Stuck case:** a `min_revision` from a write outside E's group stays above the record until
+the group's next write; a level-2 group catches up, a quiet level-0 one may never. Docs: send a revision of a write to
+the group searched. Owner question 1; (e) fixes it. *Proof:* `TestLocalSearchReadsItsWriteBack`; `localSearch` joins
 `TestMinRevisionRefusalThroughGraphQuery`.
 
 ## D3. The community view
@@ -46,35 +45,36 @@ write to the group searched. Owner question 1; (e) is the fix if a caller needs 
 graph-query gets its first run context, from `Start` and ended in `cleanup` (ADR-113), as graph-index's
 (`processor/graph-index/component.go:258-283`). What a caller sees:
 
-- `Start` neither waits for nor fails on a missing `COMMUNITY_INDEX`: its writer is graph-clustering's, not yet wired
-  (`graph/kvcatalog/kvcatalog.go:188`). Until it exists `localSearch` refuses `index_not_ready` and every other verb
-  answers. `Health` is the shell's.
-- Once the bucket exists, `localSearch` answers without a restart. When to reopen is the developer's: on an interval
-  or on demand, never retrying without waiting, no config key.
-- A lost watch (the bucket deleted) refuses `index_not_ready`, never the last projection (ADR-081); a new view serves
-  once caught up.
-- `Stop` drains the subscriptions, then returns only after the view's `Run` has; a `Stop` whose context ends first
-  returns its error and the next resumes.
+- `Start` neither waits for nor fails on a missing `COMMUNITY_INDEX`, whose writer is not yet wired
+  (`graph/kvcatalog/kvcatalog.go:188`). Until it exists `localSearch` refuses `index_not_ready`, the other verbs answer,
+  and `Health` is the shell's.
+- Once the bucket exists, `localSearch` answers without a restart. As at the pin (`pin:component.go:563-576`,
+  `:710-750`), one supervisor opens the reader, runs a view until it returns, waits 5 s (the pin's `recheck_interval`
+  default, `:100-103`; the key stays refused) and opens again. Not `internal/resource.Watcher`: it watches the bucket,
+  not the watch, so a view lost while the bucket stays would never reopen, and its callbacks need a second goroutine.
+- A lost watch refuses `index_not_ready`, never the last projection (ADR-081); a new view serves once caught up. During
+  a tick each group answers from its latest record, without waiting or refusing (ruling 3).
+- `Stop` drains the subscriptions and returns after the view's `Run` has; a `Stop` whose context ends first returns
+  its error and the next resumes.
 - Readiness is per request through the view, never `GRAPH_STATUS` or `COMMUNITY_SUMMARIES` (ADR-087 Decision 5).
 
-*Proof:* `TestLocalSearchBeforeCommunityIndexExists`, `TestLocalSearchAfterCommunityIndexAppears`,
-`TestLocalSearchRefusesAfterWatchLoss` (deleted bucket, as `pkg/graphview`'s `TestRunReportsLostWatch`),
-`TestStopEndsTheCommunityView`, and the lifecycle suite with the view running, all under `-race`.
+*Proof:* `TestLocalSearchBeforeCommunityIndexExists`, `TestLocalSearchAfterCommunityIndexAppears` (waits up to one
+interval), `TestLocalSearchRefusesAfterWatchLoss`, `TestStopEndsTheCommunityView`, the lifecycle suite, under `-race`;
+`TestLocalSearchDuringBlockedTick`: one group's next record written straight to the bucket, as a tick held between two
+writes leaves it (only `clustering`'s fake holds a real tick, `maintainer_test.go:515`); the written group answers from
+its new record, the other from its old.
 
 ## D4. Request and reply
 
 `graph.LocalSearchRequest` decodes strictly: `entity_id` passes `ValidateEntityID`; `level` 0 to 2, omitted 0
 (`GroupKey` refuses others); `query` lowercased, split on white space, repeats removed, 1 to `MaxSearchTerms` (16)
-terms; `min_revision`. Each failure is `invalid_request` naming the field, before any read. *16:* each term is a
-substring scan of every entity's text, so a 1 MB page costs about 16 MB of scanning; the pin took any length
-(arithmetic). Raising later breaks nobody.
-
-`data` is `graph.LocalSearchData`: `community_id`, `level`, `member_count`, `community_summary`, `keywords` (the
-record's); `entities`, the matches, best first, each the page's bytes unchanged, so a value graph-query does not read
-survives; `entities_scanned`, distinct entities read; `entities_truncated`; `answer`. Dropped from the pin:
-`communityId` (snake case now), `count` (`len(entities)`), `durationMs`, `entity_digests` (the entities' ID and type
-again; digests return with step 5's summary mode), `answer_model`, `degraded`, `degraded_reason` (nothing degrades at
-tier 0). Enveloped (ruling 1).
+terms; `min_revision`. Each failure is `invalid_request` naming the field, before any read. *16:* each term scans every
+entity's text, about 16 MB at a 1 MB page; the pin took any length (arithmetic). `data` is `graph.LocalSearchData`:
+the record's `community_id`, `level`, `member_count`, `community_summary`, `keywords`; `entities`, the matches, best
+first, each the page's bytes unchanged; `entities_scanned`, distinct entities read; `entities_truncated`; `answer`.
+Dropped from the pin: `communityId` (now snake case), `count`, `durationMs`, `entity_digests` (the entities' ID and
+type again; back with step 5's summary mode), `answer_model`, `degraded`, `degraded_reason` (nothing degrades at tier
+0). Enveloped (ruling 1).
 
 ## D5. One page, ranked
 
@@ -82,17 +82,15 @@ After the record, one `graph.ingest.query.prefix` request at `MaxPrefixQueryLimi
 through step 2's page checks; a repeated ID (#512) counts once. The score is the pin's (`pin:graphrag.go:2360-2397`):
 per term 1.0 if it equals the type position, else 0.5 if it is a substring of a predicate or a string value, over the
 term count; kept at 0.3 or above (constant; `min_text_relevance` stays refused). Probe: two terms with one text match
-score 0.25 and are dropped; a repeated term counted twice (0.33), now once; a predicate name matches (carried,
-optional). Order: score, then entity ID; the pin's `sort.Slice` is not stable (the probe kept input order on 40 ties;
-not promised). A reply over `max_payload` (`natsclient.Client.MaxPayload`) leaves out the lowest-ranked matches until it
-fits and sets `entities_truncated`; only a byte-full page that nearly all matches reaches it. The answer is a plain
-function (owner, Q6), literally `Found {n} matching entities among {entities_scanned} read from {community_id}, which
-has {member_count} members.`, then the record's summary if set, then `Key themes:` and the first five keywords. The
-pin printed "(7 entities, 0% match)" (probe), a relevance local search never computes. *Proof:*
-`TestLocalSearchReadsOnePage` (ruling 2's: one prefix request; a match past the page is absent, truncated; a group that
-fits equals an independent filter), `TestLocalSearchScoresAsThePin` (literals from `graphrag_test`),
-`TestLocalSearchTermsAreDistinctAndBounded`, `TestLocalSearchOrderIsDeterministic`, `TestLocalSearchAnswerTemplate`,
-`TestLocalSearchEntitiesPassUnchanged` (a large integer), `TestLocalSearchFitsMaxPayload` (own server, small limit).
+score 0.25 and are dropped; a repeated term counted twice (0.33), now once; a predicate name matches (carried). Order:
+score, then entity ID; the pin's `sort.Slice` is not stable (40 ties kept input order once; not promised). A reply over
+`max_payload` (`natsclient.Client.MaxPayload`) leaves out the lowest-ranked matches until it fits and sets
+`entities_truncated`. The answer is a plain function (owner, Q6), literally `Found {n} matching entities among
+{entities_scanned} read from {community_id}, which has {member_count} members.`, `{n}` counting the entities in the
+reply, after any cut; then the record's summary if set, then `Key themes:` and the first five keywords. The pin printed
+"(7 entities, 0% match)" (probe), a relevance local search never computes. *Proof:* `TestLocalSearchReadsOnePage`
+(ruling 2's: one prefix request; a later match absent, truncated; a fitting group equals an independent filter), the
+scoring, terms, order and answer tests, `TestLocalSearchEntitiesPassUnchanged`, `TestLocalSearchFitsMaxPayload`.
 
 ## D6. Refusals and counting
 
@@ -106,21 +104,17 @@ fits equals an independent filter), `TestLocalSearchScoresAsThePin` (literals fr
 | `min_revision` above the record | transient `revision_not_reached`, detail | no |
 | Page broken or no responder | transient `internal`, as step 2 | yes |
 
-A present record costs no entity read; a level with no records falls in rows 3 and 4 (ruling 3). One input per
-request. A truncated answer adds one to a `verb`-labelled counter on the injected registry; none given, none registered
-(`metric-registry`). *Proof:* `TestLocalSearchRefusals`, `TestLocalSearchRefusesBadRequests`,
-`TestTruncatedSearchIsCounted`.
+A present record costs no entity read. A keyed read follows ruling 3's sentence for one entity; its empty-level
+sentence is enumeration's (step 5). On an empty level an existing entity is still `index_not_ready`; an absent one
+gets the entity verb's refusal, since no index state makes it exist. A truncated answer adds one to
+`semengine_graph_query_search_truncated_total{verb}` through `metric.RegisterOrGet`'s returned collector (no registry,
+none); the pin's `metrics.go` (`sync.Once`, global fallback: #68's site) is not carried. *Proof:* tasks 3.2, 3.3.
 
 ## D7. What leaves step 3, and ADRs
 
-Not carried: generation, lease, fence and the community cache (ruling 3; #406 retires); the `graph.clustering.query.entity`
-fallback, which swallowed every failure (S15); the semantic fallback, whose trigger, an entity with no community, is
-gone (ADR-099); the answer interface (Q6). Moved, each to its reader: the poison-counting `List` and labels and digests
-(#31) to step 5. A keyed `Get` already reports poison (`pkg/graphview/view.go:403-412`). ADR-087 ported with a note:
-Decision 2 (one writer) and 5 kept, the store's decisions left with #485. ADR-081 (first production view), ADR-085
-(level in the key: a level-1 request reads the level-1 record, `TestLocalSearchReadsTheAskedLevel`), ADR-066, ADR-109
-D4 and ADR-113 applied. ADR-099's "shape-for-shape" yields to the owner's 2026-11-02 ruling, now cited in its port note.
-
-## Scope
-
-Retires #406 and #522. Shape findings, issues, overlap, exports: `inventory-delta.md`.
+Not carried: generation, lease, fence, community cache (ruling 3; #406 retires); the `graph.clustering.query.entity`
+fallback that swallowed failures (S15); the semantic fallback, since ruling 3 decides its case, no record (D6); the
+answer interface (Q6). Moved to their reader, step 5: the poison-counting `List` (`Get` reports poison,
+`pkg/graphview/view.go:403-412`), labels and digests (#31). ADR-087 ported with a note, Decisions 2 and 5 kept, the
+store's with #485. ADR-081, ADR-085 (`TestLocalSearchReadsTheAskedLevel`), ADR-109 D4, ADR-113 applied. ADR-099's
+"shape-for-shape" yields to the 2026-11-02 ruling, cited in its port note. Retires #406, #522.

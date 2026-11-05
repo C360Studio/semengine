@@ -44,8 +44,9 @@ Not here: the poison-counting list, labels and digests (step 5, with the text ti
 
 ## Impact
 
-- About 450 production and 1,000 test lines (hand estimate). Pin: about 825 and 820 (`graphrag.go:66-158`, `:279-400`,
-  `:2218-2397`, `community_cache.go`, and their tests; `inventory-delta.md`). One PR, one developer unit per task.
+- About 450 production and 1,000 test lines (hand estimate). Pin: about 880 and 820 (`graphrag.go:66-158`, `:279-400`,
+  `:2218-2397`, `community_cache.go`, the supervisor in `component.go`, and their tests; `inventory-delta.md`). One PR,
+  one developer unit per task.
 - **New exported surface, for the owner to accept:** in `graph`, `LocalSearchRequest`, `LocalSearchData`,
   `MaxSearchTerms`; in `graph/clustering`, `Community.EntityRevision`, `GroupKey`, `DecodeCommunity`. Readers in
   `inventory-delta.md`. New subject `graph.query.localSearch`. No new bucket and no new config key.

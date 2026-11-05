@@ -1,0 +1,27 @@
+package graphquery
+
+import (
+	"fmt"
+	"testing"
+
+	gtypes "github.com/c360studio/semstreams/graph"
+	"github.com/c360studio/semstreams/message"
+)
+
+func TestZZStep3Probe(t *testing.T) {
+	fmt.Printf("ANSWER=%q\n", synthesizeAnswer([]CommunitySummary{{CommunityID: "acme.ops.src.docs", Summary: "7 notes", Keywords: []string{"alpha", "beta"}, Level: 0, MemberCount: 7}}, 3))
+	var ents []*gtypes.EntityState
+	for i := 0; i < 40; i++ {
+		ents = append(ents, &gtypes.EntityState{ID: fmt.Sprintf("acme.ops.src.docs.note.n%02d", i), Triples: []message.Triple{{Subject: "x", Predicate: "dc.terms.title", Object: "alpha"}}})
+	}
+	out := filterEntitiesByQuery(ents, "alpha", 0.3)
+	ids := make([]string, 0, 8)
+	for _, e := range out[:8] {
+		ids = append(ids, e.ID[len(e.ID)-3:])
+	}
+	fmt.Printf("TIES_FIRST8=%v of %d\n", ids, len(out))
+	fmt.Printf("TWO_TERMS_ONE_TEXT=%v\n", scoreEntityQuery(ents[0], []string{"alpha", "zzz"}))
+	fmt.Printf("DUP_TERMS=%v\n", scoreEntityQuery(ents[0], []string{"alpha", "alpha", "zzz"}))
+	fmt.Printf("TYPE_TERM=%v\n", scoreEntityQuery(ents[0], []string{"note"}))
+	fmt.Printf("PRED_TERM=%v\n", scoreEntityQuery(ents[0], []string{"title"}))
+}

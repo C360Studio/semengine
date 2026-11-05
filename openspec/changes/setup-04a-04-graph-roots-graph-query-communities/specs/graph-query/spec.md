@@ -108,7 +108,15 @@ key.
 graph-query's `Start` SHALL neither wait for nor fail on a missing `COMMUNITY_INDEX`. While the bucket is missing, or
 its view is catching up or lost, `localSearch` SHALL refuse `index_not_ready` and the other verbs SHALL answer. Once
 the bucket exists, `localSearch` SHALL answer without a restart; after a lost watch it SHALL never answer from the old
-projection. `Stop` SHALL return only after the view has stopped.
+projection. During a tick it SHALL answer each group from its latest record. `Stop` SHALL return only after the view
+has stopped.
+
+#### Scenario: During a tick
+
+- **WHEN** the bucket holds one group's new record and another group's old one, as a tick held between two writes
+  leaves it
+- **THEN** a `localSearch` in each group answers at once, from the new record and the old one respectively, with no
+  refusal (`TestLocalSearchDuringBlockedTick`)
 
 #### Scenario: Readiness comes from the view alone
 

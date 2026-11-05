@@ -5,16 +5,22 @@
 ### Requirement: A record names the latest entity write it reflects
 
 A group record SHALL carry `entity_revision`: the highest revision among the `Upsert` and `Delete` calls the
-maintainer applied that changed a contribution to the group. A tick SHALL write the record of every group such a call
-touched since its last publication. When the caller feeds the maintainer one watch in ascending revision order across
-keys, as a KV watch delivers (ADR-066), every `ENTITY_STATES` write at or below `entity_revision` SHALL be reflected in
-the record.
+maintainer applied for entities whose IDs parse into the group, held or not; a removed group takes its mark with it.
+A tick SHALL write every group whose mark rose. With the caller feeding ascending revisions across keys, which it
+SHALL, every `ENTITY_STATES` write at or below `entity_revision` SHALL be reflected in the record.
 
 #### Scenario: Writes to a group
 
-- **WHEN** a group receives an upsert, an upsert with the same words, a delete, an obsolete delivery, and an entity
-  whose first value is refused, each followed by a tick
-- **THEN** `entity_revision` takes the first three revisions in turn, and the last two leave it unchanged
+- **WHEN** a group receives an upsert, an upsert with the same words, a delete of a member, a delete of an entity the
+  maintainer never held, and a refused value, each at a higher revision and followed by a tick
+- **THEN** `entity_revision` takes each of those revisions in turn
+- **AND** the test that verifies this is `TestRecordNamesItsLatestWrite`
+
+#### Scenario: Obsolete deliveries and a recreated group
+
+- **WHEN** a member receives a delivery at or below its last-applied revision, and later every member is deleted and
+  one entity at revision R recreates the group
+- **THEN** the obsolete delivery leaves `entity_revision` unchanged, and the recreated group's record carries R
 - **AND** the test that verifies this is `TestRecordNamesItsLatestWrite`
 
 #### Scenario: Nothing applied
@@ -51,7 +57,8 @@ apart from `entity_revision`, which is computed from the deliveries applied. The
 
 - **WHEN** two histories interleave entities in different orders, keep each entity's own revision order, and end with
   the same entity values; obsolete deliveries are generated only for entities still present
-- **THEN** the published records are byte-identical
+- **THEN** the published records are byte-identical apart from `entity_revision`, which those histories need not
+  agree on, since only an ascending feed fixes it
 - **AND** the tests that verify this are `TestHistoryOrderIrrelevant` and `TestMaintainerMatchesModel`
 
 #### Scenario: An obsolete delivery

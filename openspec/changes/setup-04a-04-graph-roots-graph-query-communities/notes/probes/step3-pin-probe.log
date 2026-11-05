@@ -1,0 +1,10 @@
+=== RUN   TestZZStep3Probe
+ANSWER="Found 3 entities across 1 knowledge clusters.\n\n(7 entities, 0% match) 7 notes Key themes: alpha, beta.\n"
+TIES_FIRST8=[n00 n01 n02 n03 n04 n05 n06 n07] of 40
+TWO_TERMS_ONE_TEXT=0.25
+DUP_TERMS=0.3333333333333333
+TYPE_TERM=1
+PRED_TERM=0.5
+--- PASS: TestZZStep3Probe (0.00s)
+PASS
+ok  	github.com/c360studio/semstreams/processor/graph-query	0.404s

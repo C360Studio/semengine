@@ -32,7 +32,8 @@ nothing they settle. Pins are at base unless marked `pin:` (`8b99efe9`).
 
 ## Pin facts added
 
-Probe, one run on the pin copy, Go 1.26.4, source and output in `notes/probes/step3-pin-probe.*`: the local answer
+Probe, one run on the pin copy, Go 1.26.4, source, command and output in `notes/probes/` (`README.md`,
+`step3-pin-probe.go.txt`, `step3-pin-probe.log`): the local answer
 reads `(7 entities, 0% match)`; two terms with one text match score 0.25 (dropped at 0.3); `alpha alpha zzz` scores
 0.33 (kept); a type term 1.0; `title` matches a predicate name, 0.5; 40 tied scores kept input order. Reads, not runs:
 `pin:graphrag.go:308-337` semantic fallback when no community; `:2264-2316` the clustering query that logs and swallows
@@ -41,7 +42,8 @@ every failure (S15); `:2341` `sort.Slice` (not stable); `component.go:56` `min_t
 (archived `inventory.md` § 3; SemSource `query_tools.go` at `e4febc0d` has no `localSearch`).
 
 Pin lines carried or replaced: production `graphrag.go:66-124` (lease, 59), `:126-158` (types, 33), `:279-400`
-(handler, 122), `:2218-2397` (lookup and scoring, 180), `community_cache.go` (431): about 825. Tests
+(handler, 122), `:2218-2397` (lookup and scoring, 180), `community_cache.go` (431), the supervisor
+`component.go:563-576`, `:710-750` (14 and 41, retrying every `recheck_interval`, default 5 s, `:100-103`): about 880. Tests
 `community_cache_test` 321, `community_generation_test` 217, `community_summary_join_test` 51, `graphrag_test.go:347-481`
 135, `community_query_behavior_test.go:19-50`, `:400-464` 97: about 820.
 
@@ -79,12 +81,12 @@ Searches, each `gh issue list --state open --search <term>`: `community`, `local
 | #406 | **Retired**: the lease is not carried (ruling 3), so no state rides a context value; task 3.2 |
 | #522 | **Retired**: three docs corrections scheduled for "a later graph-query step"; task 4.2 |
 | #31 | Stays; labels come with step 5's digests, which then drop the agentic predicates |
-| #477 | Stays; graph-query's site adopts the view here (task 3.2, comment on the issue), other sites remain |
+| #477 | Stays; graph-query's site adopts the view here (task 3.2; comment, task 5.1), other sites remain |
 | #506 | Stays; the counter of task 3.3 is its measurement |
 | #485 | Stays; the summary store and ADR-087's store decisions |
-| #32 | Stays; the owner's Q6 removes the answer interface its 2026-10-24 line kept; comment on the issue |
+| #32 | Stays; the owner's Q6 removes the answer interface its 2026-10-24 line kept; comment, task 5.1 |
 | #15 | Stays; a recreated `ENTITY_STATES` restarts revisions, for every `indexed_revision` |
-| #68 | Stays; the new counter uses the injected registry, so no site here |
+| #68 | Stays; graph-query's pin site (`metrics.go`, `sync.Once` and global fallback) is not carried, and the new counter uses `RegisterOrGet` on the injected registry (D6); comment, task 5.1 |
 | #111, #106, #103, #479, #405 | Stay; steps 4 and 5 (`split.md`) |
 | #195, #196 | Stay; no site in this step's code |
 | #484, #486, #487, #9 | Tier 2 and the epic; stay |

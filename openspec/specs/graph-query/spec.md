@@ -157,11 +157,11 @@ above M.
 
 ### Requirement: Requests are counted for operators
 
-Each request SHALL count once in `DataFlow`, and one error in `Health` when `graph-query` refuses for want of a
-usable answer: no downstream answer; a composed verb's reply that does not decode, names
-no `producer` or is not JSON; a broken prefix page; an unreadable community record; or a `localSearch` that cannot
-read `max_payload` or fit its reply even with no entities. A responder's classified refusal, a caller's
-`invalid_request` and an unusable community view SHALL NOT count as an error.
+Each request SHALL count once in `DataFlow` on entry, and one error in `Health` when `graph-query` refuses: no
+downstream answer; a composed verb's reply that does not decode, names no `producer` or is not JSON; a broken prefix
+page; an unreadable community record; or a `localSearch` that cannot read `max_payload` or fit its reply even with no
+entities. A responder's classified refusal, a caller's `invalid_request` and an unusable community view SHALL NOT count
+as an error.
 
 #### Scenario: An unanswered forward and a refusal
 

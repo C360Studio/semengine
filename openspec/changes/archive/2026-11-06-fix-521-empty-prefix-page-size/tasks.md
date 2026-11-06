@@ -18,10 +18,10 @@ code. Each step ends when `task verify` passes on a clean tree at its commit (#1
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record at the head; the PR body carries `implemented-by: claude (opus, medium)` and
-  `reviewed-by: codex`. Hold: waiting on the Codex review, which the owner starts.
+- [x] 3.1 Codex code review of record: approve at `2cc8390` (PR #531), no BLOCKING or HIGH; its two MEDIUMs are fixed in
+  the approval and examples commits. The PR body carries `implemented-by: claude (opus, medium)` and `reviewed-by: codex`.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive --skip-specs`). Gate: `task spec:check` and
+- [x] 4.1 Archive as the last content commit (`openspec archive --skip-specs`). Gate: `task spec:check` and
   `task docs:check`.

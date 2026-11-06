@@ -110,6 +110,43 @@ func TestGlobalSearchEntity(t *testing.T) {
 	})
 }
 
+// TestGlobalSearchOneWordIsAReference: a one-word question is resolved as an entity reference before
+// any classification, so trigger words inside an ID or alias are not read as hints (design D1, spec "A
+// one-word question is an entity reference"). Each word below is one the keyword tier reads as a time
+// range (today), a path (zone-a, connector-7) or a hint no strategy honours (link, most, max, total).
+// The IDs carry the reviewer's segments under the authority graph-ingest runs with here.
+func TestGlobalSearchOneWordIsAReference(t *testing.T) {
+	stack := startStack(t)
+	const (
+		todayID = "c360.test.today.sensor.temp.001"
+		zoneID  = "c360.test.zone-a.sensor.temp.001"
+		linkID  = "c360.test.link.sensor.temp.001"
+		mostID  = "c360.test.most.sensor.temp.001"
+	)
+	for _, id := range []string{todayID, zoneID, linkID, mostID} {
+		stack.create(t, id)
+	}
+	stack.create(t, drone1, aliased("connector-7"))
+	stack.create(t, drone2, aliased("max-pump"))
+	later := stack.create(t, drone3, aliased("total-flow"))
+	stack.awaitIndexed(t, later)
+
+	for _, tc := range []struct{ question, id string }{
+		{todayID, todayID}, {zoneID, zoneID}, {linkID, linkID}, {mostID, mostID},
+		{"connector-7", drone1}, {"max-pump", drone2}, {" total-flow\t", drone3},
+	} {
+		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, tc.question))
+		if err != nil {
+			t.Errorf("%q: %v", tc.question, err)
+			continue
+		}
+		want := `{"strategy":"entity","entity":` + string(stack.entityBytes(t, tc.id)) + `}`
+		if got := string(decodeEnvelope(t, raw).Data); got != want {
+			t.Errorf("%q: data = %s, want %s", tc.question, got, want)
+		}
+	}
+}
+
 // TestGlobalSearchPath: a path question is answered by step 2's walk from the resolved start, in both
 // directions, to depth 3 and 100 entities (design D4): the reply's path is pathSearch's data for the
 // same request, and the literal walk below. Stubbed, the requests are literal, min_revision reaches the

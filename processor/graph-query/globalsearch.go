@@ -177,12 +177,16 @@ func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, error) {
 	return request, nil
 }
 
-// routeGlobalSearch classifies question once with the keyword tier and chooses the strategy that
-// answers it (design D1). Every refusal comes before any downstream request: two filters or an
-// impossible number is invalid_request, a question only the text search could answer is
-// codeTextSearchUnsupported, and a classification ended with ctx is transient internal, which the
-// caller counts as an error.
+// routeGlobalSearch chooses the strategy that answers question (design D1). A one-word question is an
+// entity reference, read before any hint: the keyword patterns find trigger words inside IDs and
+// aliases (today, zone-a, link, max, most). Any other question is classified once with the keyword
+// tier. Every refusal comes before any downstream request: two filters or an impossible number is
+// invalid_request, a question only the text search could answer is codeTextSearchUnsupported, and a
+// classification ended with ctx is transient internal, which the caller counts as an error.
 func routeGlobalSearch(ctx context.Context, question string) (globalRoute, error) {
+	if reference := strings.TrimSpace(question); !strings.ContainsFunc(reference, unicode.IsSpace) {
+		return globalRoute{strategy: strategyEntity, reference: reference}, nil
+	}
 	result, err := query.NewClassifierChain(query.NewKeywordClassifier(), nil).ClassifyQuery(ctx, question)
 	if err != nil {
 		if errs.IsInvalid(err) {
@@ -199,7 +203,7 @@ func routeGlobalSearch(ctx context.Context, question string) (globalRoute, error
 	if err != nil {
 		return globalRoute{}, internalError(err)
 	}
-	return chooseRoute(hints, question)
+	return chooseRoute(hints)
 }
 
 // readHints reads the keyword tier's Options (graph/query/classifier_chain.go:182-222) into their
@@ -235,9 +239,10 @@ func readHints(options map[string]any) (questionHints, error) {
 	return hints, nil
 }
 
-// chooseRoute is design D1's table. Two filters are refused first, since the caller can fix the
-// question; otherwise a strategy answers only when its hint is the question's only hint.
-func chooseRoute(hints questionHints, question string) (globalRoute, error) {
+// chooseRoute is design D1's table for a question of more than one word. Two filters are refused
+// first, since the caller can fix the question; otherwise a strategy answers only when its hint is the
+// question's only hint, and a question with no hint is the text search's.
+func chooseRoute(hints questionHints) (globalRoute, error) {
 	var filters []string
 	if hints.pathStart != "" {
 		filters = append(filters, "a path from "+hints.pathStart)
@@ -269,11 +274,7 @@ func chooseRoute(hints questionHints, question string) (globalRoute, error) {
 	case hints.area != nil:
 		return globalRoute{strategy: strategySpatial, area: hints.area}, nil
 	}
-	reference := strings.TrimSpace(question)
-	if strings.ContainsFunc(reference, unicode.IsSpace) {
-		return globalRoute{}, textSearchUnsupported()
-	}
-	return globalRoute{strategy: strategyEntity, reference: reference}, nil
+	return globalRoute{}, textSearchUnsupported()
 }
 
 // twoFilters names the filters a question holds together: "two filters, a path from x and a time

@@ -51,8 +51,17 @@ func TestGlobalSearchRoutesByHints(t *testing.T) {
 		{"what is within 5km of 40.7,-74.0", "spatial", ""},
 		{"sensor-001", "entity", "sensor-001"},
 		{"  acme.ops.robotics.gcs.drone.001\t", "entity", "acme.ops.robotics.gcs.drone.001"},
-		// One token and no hint is an entity reference; one naming no entity is the resolver's to refuse.
+		// One token is an entity reference, read before any hint; one naming no entity is the
+		// resolver's to refuse. The keyword tier would read these words as a time range, a path, a
+		// count or a ranking (design D1).
 		{"forklift", "entity", "forklift"},
+		{"acme.plant.today.sensor.temp.001", "entity", "acme.plant.today.sensor.temp.001"},
+		{"acme.plant.zone-a.sensor.temp.001", "entity", "acme.plant.zone-a.sensor.temp.001"},
+		{"acme.plant.link.sensor.temp.001", "entity", "acme.plant.link.sensor.temp.001"},
+		{"acme.plant.most.sensor.temp.001", "entity", "acme.plant.most.sensor.temp.001"},
+		{"connector-7", "entity", "connector-7"},
+		{"max-pump", "entity", "max-pump"},
+		{"total-flow", "entity", "total-flow"},
 	}
 	for _, tc := range answered {
 		route, err := routeGlobalSearch(t.Context(), tc.question)
@@ -178,12 +187,13 @@ func TestGlobalSearchRefusesImpossibleNumbers(t *testing.T) {
 func TestGlobalSearchEndedClassification(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	// "sensor-001" would route to entity under a live context.
-	route, err := routeGlobalSearch(ctx, "sensor-001")
+	// The question would route to path under a live context; a one-word question is not classified.
+	const question = "what is connected to sensor-001"
+	route, err := routeGlobalSearch(ctx, question)
 	if err == nil {
 		t.Fatalf("route under an ended context = %s %q, want refused", route.strategy, route.reference)
 	}
-	refusalOfRoute(t, "sensor-001", err, errs.ErrorTransient, graph.ErrorCodeInternal)
+	refusalOfRoute(t, question, err, errs.ErrorTransient, graph.ErrorCodeInternal)
 	const want = "internal error: the question's classification ended with the request: context canceled"
 	if err.Error() != want {
 		t.Errorf("refusal = %q, want %q", err.Error(), want)
@@ -195,12 +205,12 @@ func TestGlobalSearchEndedClassification(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateGraphQuery: %v", err)
 	}
-	const request = `{"query":"sensor-001"}`
+	const request = `{"query":"what is connected to sensor-001"}`
 	reply, err := c.queryHandlers()["globalSearch"](ctx, []byte(request))
 	if err == nil {
 		t.Fatalf("globalSearch under an ended context = %q, want refused", reply)
 	}
-	refusalOfRoute(t, "sensor-001", err, errs.ErrorTransient, graph.ErrorCodeInternal)
+	refusalOfRoute(t, question, err, errs.ErrorTransient, graph.ErrorCodeInternal)
 	if err.Error() != want {
 		t.Errorf("handler refusal = %q, want %q", err.Error(), want)
 	}

@@ -205,9 +205,9 @@ func (c *Component) reconcileEntity(ctx context.Context, entityID string) bool {
 		return true
 	}
 	if err := c.indexEntity(ctx, entityID, entry.Value()); err != nil {
-		// A failed write still completes: readiness is gated on the failed set, and a
-		// revision left pending would pin the watermark for ever (ADR-066 §1).
-		c.logger.Warn("entity index write failed; readiness withheld until re-index",
+		// A refused plan or a failed write still completes: readiness is gated on the failed
+		// set, and a revision left pending would pin the watermark for ever (ADR-066 §1).
+		c.logger.Warn("entity index failed; readiness withheld until re-index",
 			slog.String("entity", entityID), slog.Any("error", err))
 		return !errors.Is(err, errAuthoritativeIdentityMismatch)
 	}

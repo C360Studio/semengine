@@ -9,6 +9,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/clustering"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/pkg/graphview"
 )
 
@@ -61,12 +62,15 @@ func (c *Component) superviseCommunities(ctx context.Context) error {
 }
 
 // shutdownFailure is what a view's Run returned once ctx, the run context, has ended: nil for a view
-// that never opened, or one Run ended with the cancellation alone, and Run's error otherwise. Run
-// returns ctx.Err() itself when it ends cleanly, and joins to it a failure to stop its watch
-// (graphview.View.Run, kvwatch.Stop), so errors.Is still finds both. A blanket errors.Is on
-// context.Canceled would drop that joined failure.
+// that never opened, one Run ended with the cancellation alone, or one whose watch was lost as ctx
+// ended, and Run's error otherwise. Run returns ctx.Err() itself when it ends cleanly, and joins to
+// it, or to the loss, a failure to stop its watch (graphview.View.Run, kvwatch.Stop), so errors.Is
+// still finds both. A blanket errors.Is on context.Canceled would drop that joined failure.
 func shutdownFailure(ctx context.Context, opened bool, err error) error {
 	if !opened || err == nil || err == ctx.Err() {
+		return nil
+	}
+	if errors.Is(err, graphview.ErrWatcherLost) && !errors.Is(err, kvwatch.ErrDeliveryOpen) {
 		return nil
 	}
 	return err

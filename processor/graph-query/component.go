@@ -190,9 +190,9 @@ func (c *Component) Stop(ctx context.Context) error {
 // subscription has returned. One handler that outlasts ctx does not keep the other verbs serving:
 // each drain is begun whatever the one before returned. Then it ends the run context and waits for
 // the supervisor, which returns after the view's Run has. A ctx that ends first returns its error
-// with the handles kept, as does a supervisor whose view could not stop its watch, returning that
-// failure (#527); the handles are cleared only once all of them are released, and a repeated Drain
-// rejoins the first.
+// with the handles kept; the handles are cleared only once all of them are released, and a repeated
+// Drain rejoins the first. A supervisor whose view could not stop its watch is reported once, by the
+// Stop that joined it (#527).
 func (c *Component) cleanup(ctx context.Context) error {
 	var failures []error
 	for _, sub := range c.subscriptions {
@@ -210,12 +210,15 @@ func (c *Component) cleanup(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		}
-		// Read after supervised closed. A view that could not stop its watch is not released, so the
-		// handles stay and every later Stop reports it again.
-		if c.supervisorErr != nil {
-			return fmt.Errorf("graph-query: stop the community view: %w", c.supervisorErr)
-		}
 	}
-	c.subscriptions, c.runCancel, c.supervised = nil, nil, nil
+	// Read after supervised closed. A view that could not stop its watch is reported by this Stop
+	// only: the supervisor has returned and there is nothing to retry, so the handles are cleared
+	// and the next Stop returns nil (owner ruling Q4, #9 comment 6278986482: returning it again
+	// would fail every later Stop).
+	err := c.supervisorErr
+	c.subscriptions, c.runCancel, c.supervised, c.supervisorErr = nil, nil, nil, nil
+	if err != nil {
+		return fmt.Errorf("graph-query: stop the community view: %w", err)
+	}
 	return nil
 }

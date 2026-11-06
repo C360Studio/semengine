@@ -11,6 +11,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/internal/kvwatch"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/graphview"
 )
 
 var (
@@ -76,9 +77,9 @@ func TestLifecycleBeforeStart(t *testing.T) {
 }
 
 // TestShutdownFailureKeepsAWatchCleanupFailure: once the run context has ended, the cancellation
-// alone, or a view that never opened, is a clean end, and a view's Run that joined a failure to stop
-// its watch to the cancellation (graphview.View.Run, kvwatch.Stop) is a failure that keeps both
-// errors (#527).
+// alone, a view that never opened, or a watch lost as it ended is a clean end, and a view's Run that
+// joined a failure to stop its watch to the cancellation (graphview.View.Run, kvwatch.Stop) is a
+// failure that keeps both errors (#527).
 func TestShutdownFailureKeepsAWatchCleanupFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -92,6 +93,14 @@ func TestShutdownFailureKeepsAWatchCleanupFailure(t *testing.T) {
 	}
 	if err := shutdownFailure(ctx, false, fmt.Errorf("open: %w", ctx.Err())); err != nil {
 		t.Errorf("an open refused by the cancellation = %v, want nil", err)
+	}
+	lost := fmt.Errorf("%w: %w", graphview.ErrWatcherLost, errors.New("updates closed"))
+	if err := shutdownFailure(ctx, true, lost); err != nil {
+		t.Errorf("a watch lost as the run context ended = %v, want nil", err)
+	}
+	lostOpen := errors.Join(lost, fmt.Errorf("graphview: stop the watch: %w", kvwatch.ErrDeliveryOpen))
+	if err := shutdownFailure(ctx, true, lostOpen); !errors.Is(err, kvwatch.ErrDeliveryOpen) {
+		t.Errorf("a lost watch whose delivery stayed open = %v, want kvwatch.ErrDeliveryOpen", err)
 	}
 	err := shutdownFailure(ctx, true, joined)
 	if !errors.Is(err, context.Canceled) || !errors.Is(err, kvwatch.ErrDeliveryOpen) {

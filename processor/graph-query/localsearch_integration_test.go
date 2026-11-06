@@ -719,11 +719,16 @@ func TestStopEndsTheCommunityView(t *testing.T) {
 		if c.communities.Load() == nil {
 			t.Fatal("no view held while it answers")
 		}
+		// Errorf, not Fatalf: a Stop that reports a watch it could not stop releases everything, and
+		// the next Stop returns nil (owner ruling Q4, #9 comment 6278986482).
 		if err := c.Stop(t.Context()); err != nil {
-			t.Fatalf("Stop: %v", err)
+			t.Errorf("Stop: %v", err)
 		}
 		if c.communities.Load() != nil || c.supervised != nil {
 			t.Error("a view or its supervisor is held after Stop returned")
+		}
+		if err := c.Stop(t.Context()); err != nil {
+			t.Errorf("second Stop: %v", err)
 		}
 	})
 	t.Run("waiting to reopen", func(t *testing.T) {

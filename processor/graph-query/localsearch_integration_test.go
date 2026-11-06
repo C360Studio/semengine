@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/clustering"
 	"github.com/c360studio/semengine/graph/kvcatalog"
@@ -724,15 +728,125 @@ func TestStopEndsTheCommunityView(t *testing.T) {
 	})
 	t.Run("waiting to reopen", func(t *testing.T) {
 		client := fixtureClient(t)
-		c := newComponent(t, client)
+		c, logs := newLogged(t, client)
 		if err := c.Start(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		if err := c.Stop(t.Context()); err != nil {
-			t.Fatalf("Stop: %v", err)
+		// The supervisor logs the missing bucket just before it waits communityRecheck to reopen.
+		logs.await(t, 1)
+		// Own deadline: the bound is the behaviour under test; a Stop that waited out the reopen
+		// timer would take communityRecheck and miss it.
+		ctx, cancel := context.WithTimeout(t.Context(), communityRecheck/2)
+		defer cancel()
+		if err := c.Stop(ctx); err != nil {
+			t.Fatalf("Stop during the reopen wait: %v", err)
 		}
 		if c.communities.Load() != nil || c.supervised != nil {
 			t.Error("a view or its supervisor is held after Stop returned")
 		}
 	})
+}
+
+// supervisorLog is one record the community supervisor logged: its level and its error's text.
+type supervisorLog struct {
+	level slog.Level
+	err   string
+}
+
+// logCapture is a slog.Handler keeping the community supervisor's records, at every level.
+type logCapture struct {
+	mu      sync.Mutex
+	records []supervisorLog
+}
+
+func (l *logCapture) Enabled(context.Context, slog.Level) bool { return true }
+func (l *logCapture) WithAttrs([]slog.Attr) slog.Handler       { return l }
+func (l *logCapture) WithGroup(string) slog.Handler            { return l }
+
+func (l *logCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Message != communityUnavailable {
+		return nil
+	}
+	record := supervisorLog{level: r.Level}
+	r.Attrs(func(a slog.Attr) bool {
+		if a.Key == "error" {
+			record.err = a.Value.String()
+		}
+		return true
+	})
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.records = append(l.records, record)
+	return nil
+}
+
+// await waits until the supervisor has logged n records, and returns them.
+func (l *logCapture) await(t *testing.T, n int) []supervisorLog {
+	t.Helper()
+	records, err := probe.Await(t.Context(), func(context.Context) ([]supervisorLog, error) {
+		l.mu.Lock()
+		defer l.mu.Unlock()
+		return append([]supervisorLog(nil), l.records...), nil
+	}, func(records []supervisorLog) bool { return len(records) >= n })
+	if err != nil {
+		t.Fatalf("await %d supervisor records: %v", n, err)
+	}
+	return records
+}
+
+// newLogged builds and initializes graph-query with a logger that captures its supervisor's records.
+func newLogged(t *testing.T, client *natsclient.Client) (*Component, *logCapture) {
+	t.Helper()
+	logs := &logCapture{}
+	built, err := CreateGraphQuery(json.RawMessage(`{}`), component.Dependencies{NATSClient: client, Logger: slog.New(logs)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := built.(*Component)
+	if err := c.Initialize(); err != nil {
+		t.Fatal(err)
+	}
+	return c, logs
+}
+
+// TestCommunityViewLogsEachNewFailureOnce: the supervisor warns on its first failure, logs the same
+// failure again at Debug, and warns again when the failure changes or follows a view that opened, so a
+// deployment with no COMMUNITY_INDEX writer is not one Warn every 5 s (a departure from the pin).
+func TestCommunityViewLogsEachNewFailureOnce(t *testing.T) {
+	client := fixtureClient(t)
+	c, logs := newLogged(t, client)
+	if err := c.Start(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		if err := c.Stop(ctx); err != nil {
+			t.Errorf("Stop: %v", err)
+		}
+	})
+	const missing = "is not ready"
+	records := logs.await(t, 2) // the second comes one reopen interval after the first
+	if records[0].level != slog.LevelWarn || !strings.Contains(records[0].err, missing) {
+		t.Fatalf("first record = %+v, want a Warn that the bucket is missing", records[0])
+	}
+	if records[1].level != slog.LevelDebug || records[1].err != records[0].err {
+		t.Fatalf("second record = %+v, want the same failure at Debug", records[1])
+	}
+
+	_, m := communityRecords(t, client)
+	publishDrones(t, m, 1, drone1)
+	awaitCommunityView(t, client, drone1, 1)
+	opened := len(logs.await(t, 0))
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := js.DeleteKeyValue(t.Context(), graph.BucketCommunityIndex); err != nil {
+		t.Fatal(err)
+	}
+	records = logs.await(t, opened+1)
+	if lost := records[opened]; lost.level != slog.LevelWarn || !strings.Contains(lost.err, "watcher lost") {
+		t.Errorf("record after the view opened = %+v, want a Warn that its watch was lost", lost)
+	}
 }

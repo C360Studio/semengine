@@ -2,6 +2,7 @@ package graphquery
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
 
@@ -19,18 +20,33 @@ const communityRecheck = 5 * time.Second
 // communityView is graph-query's view of COMMUNITY_INDEX, one record per group key.
 type communityView = graphview.View[clustering.Community]
 
+// communityUnavailable is the supervisor's log message for a failed open or an ended view.
+const communityUnavailable = "community view unavailable; localSearch refuses index_not_ready until it opens again"
+
 // superviseCommunities runs views of COMMUNITY_INDEX until ctx, the run context, ends: it opens the
 // bucket through the catalog's reader, which never creates it, runs one view until it returns, waits
 // communityRecheck and opens again, as the pin did (pin:component.go:710-750). A missing bucket and a
 // lost watch are the same case: the key stays refused until a new view has caught up (design D3).
+//
+// Each failure is logged, at Warn when it is the first, differs from the last one logged, or follows a
+// view that opened, and at Debug otherwise. The pin warned on every retry; until change 7 brings
+// COMMUNITY_INDEX's writer, that is one Warn every 5 s in every deployment, for ever.
 func (c *Component) superviseCommunities(ctx context.Context) {
+	var last string
 	for {
-		err := c.runCommunityView(ctx)
+		opened, err := c.runCommunityView(ctx)
 		if ctx.Err() != nil {
 			return
 		}
-		c.logger.Warn("community view unavailable; localSearch refuses index_not_ready until it opens again",
-			slog.Any("error", err), slog.Duration("retry_in", communityRecheck))
+		if err == nil { // Run ends a live view only with an error; this keeps the log honest if not
+			err = errors.New("the community view returned")
+		}
+		level := slog.LevelDebug
+		if opened || err.Error() != last {
+			level = slog.LevelWarn
+		}
+		last = err.Error()
+		c.logger.Log(ctx, level, communityUnavailable, slog.Any("error", err), slog.Duration("retry_in", communityRecheck))
 		timer := time.NewTimer(communityRecheck)
 		select {
 		case <-ctx.Done():
@@ -42,20 +58,20 @@ func (c *Component) superviseCommunities(ctx context.Context) {
 }
 
 // runCommunityView opens COMMUNITY_INDEX, publishes a view of it for the handlers and runs the view
-// until ctx ends or its watch is lost. Once Run has returned the view answers nothing, and it is
-// withdrawn so the handlers see none.
-func (c *Component) runCommunityView(ctx context.Context) error {
+// until ctx ends or its watch is lost, reporting whether a view was opened. Once Run has returned the
+// view answers nothing, and it is withdrawn so the handlers see none.
+func (c *Component) runCommunityView(ctx context.Context) (bool, error) {
 	reader, err := kvcatalog.OpenCatalogReader(ctx, c.natsClient, graph.BucketCommunityIndex)
 	if err != nil {
-		return err
+		return false, err
 	}
 	view, err := graphview.New(reader, decodeCommunityEntry)
 	if err != nil {
-		return err
+		return false, err
 	}
 	c.communities.Store(view)
 	defer c.communities.Store(nil)
-	return view.Run(ctx)
+	return true, view.Run(ctx)
 }
 
 // decodeCommunityEntry is the view's decode: every key is a group record, and a value that is not the

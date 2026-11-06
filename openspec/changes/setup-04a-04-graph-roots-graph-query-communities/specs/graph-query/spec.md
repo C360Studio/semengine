@@ -146,8 +146,9 @@ has stopped.
 #### Scenario: A lost watch
 
 - **WHEN** `COMMUNITY_INDEX` is deleted under a live view
-- **THEN** the next `localSearch` is refused `index_not_ready`, and after the bucket is recreated and published it
-  answers again (`TestLocalSearchRefusesAfterWatchLoss`)
+- **THEN** once the view has seen the watch's loss (when nats.go reports it is not promised), `localSearch` is
+  refused `index_not_ready`, and after the bucket is recreated and published it answers again
+  (`TestLocalSearchRefusesAfterWatchLoss`)
 
 #### Scenario: Stop
 
@@ -210,7 +211,8 @@ above M.
 Every verb SHALL count its request once in `DataFlow` on entry and SHALL count one error in `Health` whenever
 `graph-query` itself refuses because no usable answer arrived: a downstream request got no answer, or a reply a
 composed verb reads does not decode, names no `producer` or is not JSON, or a prefix page is broken, or a community
-record is unreadable. A responder's classified refusal, a caller's `invalid_request` and a community view that is not
+record is unreadable, or `localSearch` cannot read the connection's `max_payload` or cannot fit its reply in it even
+with no entities. A responder's classified refusal, a caller's `invalid_request` and a community view that is not
 usable SHALL NOT count as an error.
 
 #### Scenario: An unanswered forward and a refusal

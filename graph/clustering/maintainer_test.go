@@ -664,8 +664,9 @@ func TestRepresentativesWithoutScan(t *testing.T) {
 }
 
 // TestTickCost: after the first tick, a tick reads nothing from COMMUNITY_INDEX and writes
-// only the changed groups' records; an unchanged graph, or a change that leaves every
-// record equal, writes nothing.
+// only the changed groups' records; an unchanged graph writes nothing, and the same value
+// at a newer revision writes only that entity's groups, whose entity_revision rose
+// (design D1, "Costs").
 func TestTickCost(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	var ids []string
@@ -710,7 +711,7 @@ func TestTickCost(t *testing.T) {
 	expectOps("unchanged graph", nil)
 
 	mustUpsert(t, m, ids[0], 2, "alpha docs")
-	expectOps("same value at a newer revision", nil)
+	expectOps("same value at a newer revision", puts(groupKeys(ids[0])...))
 
 	alone := "acme.dep1.s2.misc.note.n1"
 	mustUpsert(t, m, alone, 1, "alpha")
@@ -720,4 +721,105 @@ func TestTickCost(t *testing.T) {
 	}
 	keys := groupKeys(alone)
 	expectOps("one deleted", []string{"delete " + keys[0], "put " + keys[1], "put " + keys[2]})
+}
+
+// TestRecordNamesItsLatestWrite: each applied write to a group raises its records'
+// entity_revision to that write's revision and the next tick writes the three records:
+// an upsert, a same-content upsert, a delete of a member, a delete of an entity never
+// held, and a refused value, which adds nothing to the counts. Obsolete deliveries change
+// nothing and write nothing. After the group is emptied its records go, and the entity
+// that recreates it gives the records its own revision.
+func TestRecordNamesItsLatestWrite(t *testing.T) {
+	m, kv := newTestMaintainer(t)
+	prefix := "acme.dep1.s1.docs.note."
+	a, b := prefix+"a", prefix+"b"
+	keys := groupKeys(a)
+	mustUpsert(t, m, a, 1, "alpha")
+	mustUpsert(t, m, b, 2, "beta")
+	m.BootstrapDone()
+	mustTick(t, m)
+	kv.takeOps()
+
+	check := func(t *testing.T, wantOps []string, revision uint64, members int) {
+		t.Helper()
+		if ops := kv.takeOps(); !slices.Equal(ops, wantOps) {
+			t.Fatalf("tick operations = %q, want %q", ops, wantOps)
+		}
+		records := kv.records(t)
+		for _, key := range keys {
+			r := records[key]
+			if r == nil || r.EntityRevision != revision || r.MemberCount != members {
+				t.Fatalf("record %s = %+v, want entity_revision %d and %d members", key, r, revision, members)
+			}
+		}
+	}
+
+	steps := []struct {
+		name     string
+		apply    func(t *testing.T)
+		refused  []string // the IDs Tick's *IncompleteError names
+		revision uint64
+		members  int
+	}{
+		{"upsert", func(t *testing.T) { mustUpsert(t, m, a, 3, "gamma") }, nil, 3, 2},
+		{"same-content upsert", func(t *testing.T) { mustUpsert(t, m, a, 4, "gamma") }, nil, 4, 2},
+		{"delete of a member", func(t *testing.T) { mustDelete(t, m, b, 5) }, nil, 5, 1},
+		{"delete of an entity never held", func(t *testing.T) { mustDelete(t, m, prefix+"c", 6) }, nil, 6, 1},
+		{"refused value", func(t *testing.T) {
+			if err := m.Upsert(prefix+"d", 7, nil); !errs.IsInvalid(err) {
+				t.Fatalf("Upsert(nil state) = %v, want an invalid error", err)
+			}
+		}, []string{prefix + "d"}, 7, 1},
+		{"delete of the refused entity", func(t *testing.T) { mustDelete(t, m, prefix+"d", 8) }, nil, 8, 1},
+	}
+	for _, step := range steps {
+		t.Run(step.name, func(t *testing.T) {
+			step.apply(t)
+			err := m.Tick(t.Context())
+			var incomplete *IncompleteError
+			switch {
+			case step.refused == nil && err != nil:
+				t.Fatalf("Tick: %v", err)
+			case step.refused != nil && (!errors.As(err, &incomplete) || !slices.Equal(incomplete.Refused, step.refused)):
+				t.Fatalf("Tick = %v, want an *IncompleteError naming %q", err, step.refused)
+			}
+			check(t, puts(keys...), step.revision, step.members)
+		})
+	}
+
+	t.Run("obsolete deliveries", func(t *testing.T) {
+		mustUpsert(t, m, a, 4, "zeta")
+		mustDelete(t, m, a, 2)
+		mustTick(t, m)
+		check(t, nil, 8, 1)
+	})
+
+	t.Run("a recreated group", func(t *testing.T) {
+		mustDelete(t, m, a, 9)
+		mustTick(t, m)
+		if ops, want := kv.takeOps(), []string{"delete " + keys[0], "delete " + keys[1], "delete " + keys[2]}; !slices.Equal(ops, want) {
+			t.Fatalf("tick operations = %q, want %q", ops, want)
+		}
+		// Only a revision below the last delete's tells a mark that ends with the group from
+		// one that is kept; e's own deliveries still ascend.
+		mustUpsert(t, m, prefix+"e", 8, "delta")
+		mustTick(t, m)
+		check(t, puts(keys...), 8, 1)
+		kv.mu.Lock()
+		got := string(kv.data[keys[0]])
+		kv.mu.Unlock()
+		want := `{"id":"acme.dep1.s1.docs","level":0,"member_count":1,"entity_revision":8,"type_counts":{"note":1},` +
+			`"keywords":["delta"],"statistical_summary":"Community of 1 entities including 1 note. Key themes: delta.",` +
+			`"rep_entities":["acme.dep1.s1.docs.note.e"]}`
+		if got != want {
+			t.Fatalf("record %s = %s, want %s", keys[0], got, want)
+		}
+	})
+}
+
+func mustDelete(t *testing.T, m *Maintainer, id string, revision uint64) {
+	t.Helper()
+	if err := m.Delete(id, revision); err != nil {
+		t.Fatalf("Delete(%s, %d): %v", id, revision, err)
+	}
 }

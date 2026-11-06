@@ -13,10 +13,12 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// countPage is one prefix page as the count verbs read it: IDs only (design D5). total is the group as
-// listed, and an ID may repeat or be missing from it under concurrent overwrites (#512).
+// countPage is one prefix page: its IDs, which the count verbs read (design D5), and its rows as sent,
+// which local search ranks. total is the group as listed, and an ID may repeat or be missing from it
+// under concurrent overwrites (#512).
 type countPage struct {
 	ids        []string
+	rows       []json.RawMessage // each row as the page sent it, in the page's order, beside its ID in ids
 	total      int
 	nextCursor string
 }
@@ -50,14 +52,18 @@ func (c *Component) readCountPage(ctx context.Context, subject, prefix, cursor s
 	if reply.Total == nil {
 		return countPage{}, c.brokenReply(subject, errors.New("names no total"))
 	}
-	var rows []struct {
-		ID string `json:"id"`
-	}
+	var rows []json.RawMessage
 	if err := json.Unmarshal(reply.Entities, &rows); err != nil {
 		return countPage{}, c.brokenReply(subject, err)
 	}
 	ids := make([]string, 0, len(rows))
-	for _, row := range rows {
+	for _, raw := range rows {
+		var row struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &row); err != nil {
+			return countPage{}, c.brokenReply(subject, err)
+		}
 		if !underPrefix(row.ID, prefix) {
 			return countPage{}, c.brokenReply(subject, fmt.Errorf("row %q is not under prefix %q", row.ID, prefix))
 		}
@@ -66,7 +72,7 @@ func (c *Component) readCountPage(ctx context.Context, subject, prefix, cursor s
 	if err := graph.ValidateDecodedEntityIDs(ids); err != nil {
 		return countPage{}, c.brokenReply(subject, err)
 	}
-	return countPage{ids: ids, total: *reply.Total, nextCursor: reply.NextCursor}, nil
+	return countPage{ids: ids, rows: rows, total: *reply.Total, nextCursor: reply.NextCursor}, nil
 }
 
 // underPrefix says whether id is prefix itself or within it, as graph-ingest's listing reads a prefix:

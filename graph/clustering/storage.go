@@ -10,6 +10,7 @@ import (
 
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/types"
 )
 
 // NATSCommunityStorage reads and writes group records in the COMMUNITY_INDEX bucket
@@ -50,21 +51,13 @@ func (s *NATSCommunityStorage) GetAllCommunities(ctx context.Context) ([]*Commun
 	return communities, nil
 }
 
-// get reads and decodes the record at key, refusing a record whose own level and ID do
-// not give key back.
+// get reads the record at key through DecodeCommunity.
 func (s *NATSCommunityStorage) get(ctx context.Context, key string) (*Community, error) {
 	entry, err := s.kv.Get(ctx, key)
 	if err != nil {
 		return nil, errs.WrapTransient(fmt.Errorf("read %s: %w", key, err), "NATSCommunityStorage", "GetAllCommunities", "read community")
 	}
-	var community Community
-	if err := json.Unmarshal(entry.Value, &community); err != nil {
-		return nil, errs.WrapInvalid(fmt.Errorf("decode %s: %w", key, err), "NATSCommunityStorage", "GetAllCommunities", "decode community")
-	}
-	if own := communityKey(community.Level, community.ID); own != key {
-		return nil, errs.WrapInvalid(fmt.Errorf("%s holds the record of %q", key, own), "NATSCommunityStorage", "GetAllCommunities", "decode community")
-	}
-	return &community, nil
+	return DecodeCommunity(key, entry.Value)
 }
 
 // keys lists every key in the bucket, sorted.
@@ -102,6 +95,44 @@ func (s *NATSCommunityStorage) remove(ctx context.Context, key string) error {
 		return errs.WrapTransient(err, "NATSCommunityStorage", "remove", "delete community")
 	}
 	return nil
+}
+
+// GroupKey returns the COMMUNITY_INDEX key of entityID's group at level: the level, a
+// dot, and the ID's first four (level 0), three (1) or two (2) positions. It refuses, with
+// an invalid error, a level outside 0 to 2 and an ID the canonical parser refuses.
+func GroupKey(entityID string, level int) (string, error) {
+	if level < 0 || level >= levels {
+		return "", errs.WrapInvalid(fmt.Errorf("level %d is not 0, 1 or 2", level), "clustering", "GroupKey", "check level")
+	}
+	eid, err := types.ParseEntityID(entityID)
+	if err != nil {
+		return "", errs.WrapInvalid(fmt.Errorf("entity %q: %w", entityID, err), "clustering", "GroupKey", "parse entity ID")
+	}
+	return communityKey(level, groupIDs(eid)[level]), nil
+}
+
+// DecodeCommunity decodes value, the COMMUNITY_INDEX entry at key, as storage does. It
+// refuses, with an invalid error naming key, a value that is not JSON, a record whose
+// level is not 0, 1 or 2, a record whose level and ID do not give key, and a record whose
+// EntityRevision is 0, which no maintainer writes.
+func DecodeCommunity(key string, value []byte) (*Community, error) {
+	refuse := func(err error) (*Community, error) {
+		return nil, errs.WrapInvalid(err, "clustering", "DecodeCommunity", "decode community")
+	}
+	var community Community
+	if err := json.Unmarshal(value, &community); err != nil {
+		return refuse(fmt.Errorf("decode %s: %w", key, err))
+	}
+	if community.Level < 0 || community.Level >= levels {
+		return refuse(fmt.Errorf("%s holds a record at level %d, not 0, 1 or 2", key, community.Level))
+	}
+	if own := communityKey(community.Level, community.ID); own != key {
+		return refuse(fmt.Errorf("%s holds the record of %q", key, own))
+	}
+	if community.EntityRevision == 0 {
+		return refuse(fmt.Errorf("%s holds a record with entity_revision 0", key))
+	}
+	return &community, nil
 }
 
 // communityKey is a group record's key, {level}.{group ID} (pin storage.go:518-520).

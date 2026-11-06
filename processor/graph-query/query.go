@@ -20,8 +20,9 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its handler.
 // A forward answers from the row it names here by responder and name, since semantic forwards to
-// search (design D1), and entityByAlias, relationships, pathSearch, hierarchyStats and summary from
-// the rows they name, so a row that is gone leaves its verb with no handler, and Start fails naming it.
+// search (design D1), and entityByAlias, relationships, pathSearch, hierarchyStats, summary and
+// localSearch from the rows they name, so a row that is gone leaves its verb with no handler, and
+// Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
 		"entity":   {graph.ResponderGraphIngest, "entity"},
@@ -54,6 +55,9 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		handlers["hierarchyStats"] = c.hierarchyStats(prefix)
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)
+		}
+		if entity != "" {
+			handlers["localSearch"] = c.localSearch(entity, prefix)
 		}
 	}
 	return handlers

@@ -262,6 +262,17 @@ const (
 	mergeCheckDraftCondition = "!github.event.pull_request.draft"
 	mergeCheckBaseRef        = "${{ github.event.pull_request.base.sha }}"
 	mergeCheckGroupKey       = "github.event.pull_request.number"
+
+	// The merge-check job runs whatever the probe did (always()), and is skipped only on a draft or
+	// on the probe's awaiting=true: a failed probe leaves no answer, so the full check runs.
+	// Skipped on a draft or while awaiting, the job is renamed, so no skipped run is named Merge check.
+	mergeCheckName        = "${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || needs.awaiting.outputs.awaiting == 'true' && 'Merge check (awaiting review record, skipped)' || 'Merge check' }}"
+	mergeCheckCondition   = "always() && !github.event.pull_request.draft && needs.awaiting.outputs.awaiting != 'true'"
+	mergeCheckProbeJob    = "awaiting"
+	mergeCheckProbeName   = "Merge check probe"
+	mergeCheckProbeOutput = "${{ steps.probe.outputs.awaiting }}"
+	mergeCheckProbeRun    = `review gate --awaiting "$PR_NUMBER"`
+	mergeCheckProbeAnswer = `grep -xE 'awaiting=(true|false)' >> "$GITHUB_OUTPUT"`
 )
 
 // workflowFiles are the two workflow files under test, by the name violations use.
@@ -303,7 +314,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.4
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7
       - run: task verify
   required:
     runs-on: ubuntu-24.04
@@ -330,8 +341,10 @@ permissions:
   contents: read
 jobs:
   merge-check:
+    needs: awaiting
+    name: ${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || needs.awaiting.outputs.awaiting == 'true' && 'Merge check (awaiting review record, skipped)' || 'Merge check' }}
     runs-on: ubuntu-24.04
-    if: ${{ !github.event.pull_request.draft }}
+    if: ${{ always() && !github.event.pull_request.draft && needs.awaiting.outputs.awaiting != 'true' }}
     timeout-minutes: 5
     permissions:
       contents: read
@@ -342,11 +355,33 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.4
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7
       - name: Check
         env:
           ATEAM_REQUIRED_CHECKS: Required,Merge check
         run: scripts/merge-check.sh "$PR_NUMBER"
+  awaiting:
+    name: Merge check probe
+    runs-on: ubuntu-24.04
+    if: ${{ !github.event.pull_request.draft }}
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: read
+      pull-requests: read
+    outputs:
+      awaiting: ${{ steps.probe.outputs.awaiting }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7
+      - name: Probe
+        id: probe
+        run: |
+          out=$(ateam review gate --awaiting "$PR_NUMBER")
+          printf '%s\n' "$out" | grep -xE 'awaiting=(true|false)' >> "$GITHUB_OUTPUT"
 `
 	good := map[string]string{"ci.yml": goodCI, "merge-check.yml": goodMC}
 	files := func(m map[string]string) map[string][]byte {
@@ -441,9 +476,9 @@ jobs:
 		{"fetch-depth dropped", "        with:\n          fetch-depth: 0\n", "",
 			[]string{"job verify", "fetch-depth: 0"}},
 		// "Pins differ", from the ci.yml side.
-		{"ci.yml on another release", "ateam@v0.3.4", "ateam@v0.3.3",
-			[]string{"v0.3.3", "v0.3.4", "one version"}},
-		{"ci.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.4\n", "",
+		{"ci.yml on another release", "ateam@v0.3.7", "ateam@v0.3.4",
+			[]string{"v0.3.4", "v0.3.7", "one version"}},
+		{"ci.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n", "",
 			[]string{"ci.yml", "no ateam install line"}},
 	} {
 		t.Run("ci.yml/"+tc.name, func(t *testing.T) {
@@ -461,16 +496,50 @@ jobs:
 			[]string{"merge-check.yml", "step 1", "base commit"}},
 		{"head sha named", "pull_request.base.sha", "pull_request.head.sha",
 			[]string{"merge-check.yml", "step 1", "head.sha", "base commit"}},
-		{"pins differ", "ateam@v0.3.4", "ateam@v0.3.3",
-			[]string{"v0.3.3", "v0.3.4", "one version"}},
-		{"merge-check.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.4\n", "",
+		{"pins differ", "ateam@v0.3.7", "ateam@v0.3.4",
+			[]string{"v0.3.4", "v0.3.7", "one version"}},
+		{"merge-check.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n", "",
 			[]string{"merge-check.yml", "no ateam install line"}},
 		{"credentials persisted", "          persist-credentials: false\n", "",
 			[]string{"merge-check.yml", "persist-credentials", "false"}},
-		{"draft condition dropped", "    if: ${{ !github.event.pull_request.draft }}\n", "",
-			[]string{"merge-check.yml", "if:", "draft"}},
+		{"draft condition dropped", " && !github.event.pull_request.draft && ", " && ",
+			[]string{"merge-check.yml", "job merge-check", "if:", "draft"}},
 		{"draft condition inverted", "!github.event.pull_request.draft", "github.event.pull_request.draft",
-			[]string{"merge-check.yml", "if:", "draft"}},
+			[]string{"merge-check.yml", "job merge-check", "if:", "draft"}},
+		// The probe (ateam #262): the scenarios "Code pull request awaiting its review" and "Probe
+		// fails". The merge-check job is skipped on awaiting=true only, runs when the probe failed,
+		// and the probe is a job of its own from the base commit, never named Merge check.
+		{"awaiting skip dropped", " && needs.awaiting.outputs.awaiting != 'true'", "",
+			[]string{"merge-check.yml", "job merge-check", "if:", "awaiting"}},
+		{"skipped without an answer", "needs.awaiting.outputs.awaiting != 'true'", "needs.awaiting.outputs.awaiting == 'false'",
+			[]string{"merge-check.yml", "job merge-check", "if:", "awaiting"}},
+		{"skipped when the probe fails", "${{ always() && ", "${{ ",
+			[]string{"merge-check.yml", "job merge-check", "if:", "always()"}},
+		{"name kept on a draft", "    name: " + mergeCheckName + "\n", "    name: Merge check\n",
+			[]string{"merge-check.yml", "job merge-check", `is named "Merge check"`}},
+		{"name kept while awaiting", "    name: " + mergeCheckName + "\n", "    name: ${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || 'Merge check' }}\n",
+			[]string{"merge-check.yml", "job merge-check", `is named "${{ github.event.pull_request.draft && 'Merge check (draft, skipped)' || 'Merge check' }}"`}},
+		{"merge-check does not need the probe", "    needs: awaiting\n", "",
+			[]string{"merge-check.yml", "job merge-check", "needs", "awaiting"}},
+		{"probe removed", "  awaiting:\n    name: Merge check probe\n", "  probe:\n    name: Merge check probe\n",
+			[]string{"merge-check.yml", "no job awaiting", "Merge check probe"}},
+		{"probe named Merge check", "    name: Merge check probe\n", "    name: Merge check\n",
+			[]string{"merge-check.yml", "job awaiting", "named", "Merge check probe"}},
+		{"probe runs on a draft", "    if: ${{ !github.event.pull_request.draft }}\n", "",
+			[]string{"merge-check.yml", "job awaiting", "if:", "draft"}},
+		{"probe checks out the head", "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.base.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n      - name: Probe\n",
+			"    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n      - name: Probe\n",
+			[]string{"merge-check.yml", "job awaiting", "head.sha", "base commit"}},
+		{"probe installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n      - name: Probe\n", "      - name: Probe\n",
+			[]string{"merge-check.yml", "job awaiting", "no ateam install line"}},
+		{"probe output unwired", "awaiting: ${{ steps.probe.outputs.awaiting }}", "awaiting: ${{ steps.probe.outputs.result }}",
+			[]string{"merge-check.yml", "job awaiting", "outputs.awaiting", "steps.probe.outputs.awaiting"}},
+		{"probe step renamed", "        id: probe\n", "        id: check\n",
+			[]string{"merge-check.yml", "job awaiting", "no step with id probe"}},
+		{"probe runs the full gate", "review gate --awaiting", "review gate",
+			[]string{"merge-check.yml", "job awaiting", "--awaiting"}},
+		{"probe answer not written", ` >> "$GITHUB_OUTPUT"`, "",
+			[]string{"merge-check.yml", "job awaiting", "GITHUB_OUTPUT"}},
 		{"runs cancelled", "cancel-in-progress: false", "cancel-in-progress: true",
 			[]string{"merge-check.yml", "cancel-in-progress", "never cancelled"}},
 		{"one group for every pull request", "group: merge-check-${{ github.event.pull_request.number }}", "group: merge-check",
@@ -506,10 +575,12 @@ jobs:
 
 type ciJob struct {
 	RunsOn          any            `yaml:"runs-on"`
+	Name            string         `yaml:"name"`
 	Needs           any            `yaml:"needs"`
 	If              any            `yaml:"if"`
 	ContinueOnError any            `yaml:"continue-on-error"`
 	Permissions     any            `yaml:"permissions"`
+	Outputs         map[string]any `yaml:"outputs"`
 	TimeoutMinutes  any            `yaml:"timeout-minutes"`
 	Env             map[string]any `yaml:"env"`
 	Defaults        ciDefaults     `yaml:"defaults"`
@@ -524,6 +595,7 @@ type ciDefaults struct {
 
 type ciStep struct {
 	Name            string         `yaml:"name"`
+	ID              string         `yaml:"id"`
 	If              any            `yaml:"if"`
 	ContinueOnError any            `yaml:"continue-on-error"`
 	Uses            string         `yaml:"uses"`
@@ -609,9 +681,12 @@ func jobsGrantAndRunnerViolations(file string, perms any, jobs map[string]ciJob)
 // spec, "The merge-check workflow": the pull_request trigger alone, with exactly five activity
 // types, edited among them; one queued run per pull request (concurrency grouped by its number,
 // cancel-in-progress false); no write anywhere and every job on the one runner label; a job
-// merge-check skipped on a draft, limited to 5 minutes, under exactly three read permissions,
-// checking out the base commit without credentials, and running scripts/merge-check.sh with
-// ATEAM_REQUIRED_CHECKS naming Required and Merge check. The pin is checked by ateamPins.
+// merge-check that needs the probe, is renamed when skipped, runs under always() and is skipped only on a draft or on the
+// probe's awaiting=true, and runs scripts/merge-check.sh with ATEAM_REQUIRED_CHECKS naming Required
+// and Merge check; a probe job awaiting, named Merge check probe and skipped on a draft, whose step
+// probe runs ateam review gate --awaiting and writes its answer as the job's output. Both jobs are
+// limited to 5 minutes under exactly three read permissions, check out the base commit without
+// credentials and install ateam (gateJobViolations). The pin is checked by ateamPins.
 func mergeCheckWorkflowViolations(data []byte) []string {
 	const file = "merge-check.yml"
 	var wf struct {
@@ -639,23 +714,74 @@ func mergeCheckWorkflowViolations(data []byte) []string {
 
 	job, ok := wf.Jobs["merge-check"]
 	if !ok {
-		return append(violations, file+": no job merge-check; the merge-gate spec requires it")
+		violations = append(violations, file+": no job merge-check; the merge-gate spec requires it")
+	} else {
+		violations = append(violations, gateJobViolations(file, "merge-check", job, mergeCheckCondition)...)
+		if strings.TrimSpace(job.Name) != mergeCheckName {
+			violations = append(violations, fmt.Sprintf("%s: job merge-check is named %q; the merge-gate spec requires %s, so a job skipped on a draft or while awaiting leaves no run named Merge check", file, job.Name, mergeCheckName))
+		}
+		if !slices.Contains(jobNeeds(job), mergeCheckProbeJob) {
+			violations = append(violations, fmt.Sprintf("%s: job merge-check needs %v; the merge-gate spec requires it to need %s, the probe whose answer its if: reads", file, job.Needs, mergeCheckProbeJob))
+		}
+		gates := 0
+		for i, st := range job.Steps {
+			if strings.Contains(st.Run, "scripts/merge-check.sh") {
+				gates++
+				if got := fmt.Sprint(st.Env["ATEAM_REQUIRED_CHECKS"]); got != mergeCheckRequiredChecks {
+					violations = append(violations, fmt.Sprintf("%s: job merge-check, step %d (%s) sets ATEAM_REQUIRED_CHECKS %v; the merge-gate spec requires %q", file, i+1, cmp.Or(st.Name, st.Uses, st.Run), st.Env["ATEAM_REQUIRED_CHECKS"], mergeCheckRequiredChecks))
+				}
+			}
+		}
+		if gates == 0 {
+			violations = append(violations, file+": job merge-check has no step running scripts/merge-check.sh; the merge-gate spec requires one")
+		}
 	}
+
+	probe, ok := wf.Jobs[mergeCheckProbeJob]
+	if !ok {
+		return append(violations, fmt.Sprintf("%s: no job %s; the merge-gate spec requires the %s job, which the merge-check job needs", file, mergeCheckProbeJob, mergeCheckProbeName))
+	}
+	where := file + ": job " + mergeCheckProbeJob
+	if probe.Name != mergeCheckProbeName {
+		violations = append(violations, fmt.Sprintf("%s is named %q; the merge-gate spec requires %q, so the main ruleset's Merge check never names it", where, probe.Name, mergeCheckProbeName))
+	}
+	violations = append(violations, gateJobViolations(file, mergeCheckProbeJob, probe, mergeCheckDraftCondition)...)
+	if got := fmt.Sprint(probe.Outputs["awaiting"]); got != mergeCheckProbeOutput {
+		violations = append(violations, fmt.Sprintf("%s sets outputs.awaiting %v; the merge-gate spec requires %s, the answer the merge-check job reads", where, probe.Outputs["awaiting"], mergeCheckProbeOutput))
+	}
+	i := slices.IndexFunc(probe.Steps, func(st ciStep) bool { return st.ID == "probe" })
+	if i < 0 {
+		return append(violations, where+" has no step with id probe; the merge-gate spec requires one running ateam review gate --awaiting")
+	}
+	if !strings.Contains(probe.Steps[i].Run, mergeCheckProbeRun) {
+		violations = append(violations, fmt.Sprintf("%s, step probe does not run ateam %s; the merge-gate spec requires the --awaiting probe, not the full gate", where, mergeCheckProbeRun))
+	}
+	if !strings.Contains(probe.Steps[i].Run, mergeCheckProbeAnswer) {
+		violations = append(violations, fmt.Sprintf("%s, step probe does not write its answer with %s; the merge-gate spec requires awaiting=true or awaiting=false in GITHUB_OUTPUT, or no answer", where, mergeCheckProbeAnswer))
+	}
+	return violations
+}
+
+// gateJobViolations holds one job of merge-check.yml to what the merge check and its probe share:
+// the if: condition wantIf, a 5-minute limit, exactly three read permissions of its own, a checkout
+// of the base commit without credentials, and an ateam install line (ateamPins checks the release).
+func gateJobViolations(file, name string, job ciJob, wantIf string) []string {
+	var violations []string
 	cond := strings.TrimSpace(fmt.Sprint(job.If))
 	if inner, found := strings.CutPrefix(cond, "${{"); found {
 		cond = strings.TrimSpace(strings.TrimSuffix(inner, "}}"))
 	}
-	if job.If == nil || cond != mergeCheckDraftCondition {
-		violations = append(violations, fmt.Sprintf("%s: job merge-check runs under if: %v; the merge-gate spec requires ${{ %s }}, so a draft is skipped", file, job.If, mergeCheckDraftCondition))
+	if job.If == nil || cond != wantIf {
+		violations = append(violations, fmt.Sprintf("%s: job %s runs under if: %v; the merge-gate spec requires ${{ %s }}", file, name, job.If, wantIf))
 	}
 	if limit, ok := job.TimeoutMinutes.(int); !ok || limit != mergeCheckTimeoutMinutes {
-		violations = append(violations, fmt.Sprintf("%s: job merge-check has timeout-minutes %v; the merge-gate spec requires %d minutes", file, job.TimeoutMinutes, mergeCheckTimeoutMinutes))
+		violations = append(violations, fmt.Sprintf("%s: job %s has timeout-minutes %v; the merge-gate spec requires %d minutes", file, name, job.TimeoutMinutes, mergeCheckTimeoutMinutes))
 	}
-	violations = append(violations, mergeCheckPermissionViolations(file, job.Permissions)...)
+	violations = append(violations, mergeCheckPermissionViolations(file, name, job.Permissions)...)
 
-	checkouts, gates := 0, 0
+	checkouts, installs := 0, 0
 	for i, st := range job.Steps {
-		where := fmt.Sprintf("%s: job merge-check, step %d (%s)", file, i+1, cmp.Or(st.Name, st.Uses, st.Run))
+		where := fmt.Sprintf("%s: job %s, step %d (%s)", file, name, i+1, cmp.Or(st.Name, st.Uses, st.Run))
 		if strings.HasPrefix(st.Uses, "actions/checkout@") {
 			checkouts++
 			if ref := fmt.Sprint(st.With["ref"]); ref != mergeCheckBaseRef {
@@ -665,20 +791,32 @@ func mergeCheckWorkflowViolations(data []byte) []string {
 				violations = append(violations, fmt.Sprintf("%s sets persist-credentials %v; the merge-gate spec requires false", where, st.With["persist-credentials"]))
 			}
 		}
-		if strings.Contains(st.Run, "scripts/merge-check.sh") {
-			gates++
-			if got := fmt.Sprint(st.Env["ATEAM_REQUIRED_CHECKS"]); got != mergeCheckRequiredChecks {
-				violations = append(violations, fmt.Sprintf("%s sets ATEAM_REQUIRED_CHECKS %v; the merge-gate spec requires %q", where, st.Env["ATEAM_REQUIRED_CHECKS"], mergeCheckRequiredChecks))
-			}
+		if ateamPin.MatchString(st.Run) {
+			installs++
 		}
 	}
 	if checkouts == 0 {
-		violations = append(violations, file+": job merge-check has no actions/checkout step; the merge-gate spec requires one of the base commit")
+		violations = append(violations, fmt.Sprintf("%s: job %s has no actions/checkout step; the merge-gate spec requires one of the base commit", file, name))
 	}
-	if gates == 0 {
-		violations = append(violations, file+": job merge-check has no step running scripts/merge-check.sh; the merge-gate spec requires one")
+	if installs == 0 {
+		violations = append(violations, fmt.Sprintf("%s: job %s has no ateam install line; the merge-gate spec requires it to install the pinned release", file, name))
 	}
 	return violations
+}
+
+// jobNeeds returns a job's needs, written as one name or a list.
+func jobNeeds(job ciJob) []string {
+	switch n := job.Needs.(type) {
+	case string:
+		return []string{n}
+	case []any:
+		var out []string
+		for _, v := range n {
+			out = append(out, fmt.Sprint(v))
+		}
+		return out
+	}
+	return nil
 }
 
 // pullRequestTriggerViolations names each activity type the workflow's pull_request trigger does
@@ -742,23 +880,23 @@ func writeGrants(file, where string, perms any) []string {
 	return nil
 }
 
-// mergeCheckPermissionViolations requires the merge-check job's own grant to be exactly the three
+// mergeCheckPermissionViolations requires a merge-check.yml job's own grant to be exactly the three
 // reads. Inheriting the workflow's default does not count: the job's token is pinned where the job is.
-func mergeCheckPermissionViolations(file string, perms any) []string {
+func mergeCheckPermissionViolations(file, name string, perms any) []string {
 	p, ok := perms.(map[string]any)
 	if !ok {
-		return []string{fmt.Sprintf("%s: job merge-check has no permissions of its own (%v); the merge-gate spec requires exactly %v", file, perms, mergeCheckPermissions)}
+		return []string{fmt.Sprintf("%s: job %s has no permissions of its own (%v); the merge-gate spec requires exactly %v", file, name, perms, mergeCheckPermissions)}
 	}
 	var out []string
 	for _, scope := range slices.Sorted(maps.Keys(p)) {
 		level := fmt.Sprint(p[scope])
 		if mergeCheckPermissions[scope] != level {
-			out = append(out, fmt.Sprintf("%s: job merge-check is granted %s: %s; the merge-gate spec allows only %v", file, scope, level, mergeCheckPermissions))
+			out = append(out, fmt.Sprintf("%s: job %s is granted %s: %s; the merge-gate spec allows only %v", file, name, scope, level, mergeCheckPermissions))
 		}
 	}
 	for _, scope := range slices.Sorted(maps.Keys(mergeCheckPermissions)) {
 		if _, ok := p[scope]; !ok {
-			out = append(out, fmt.Sprintf("%s: job merge-check is missing %s: %s; the merge-gate spec requires exactly %v", file, scope, mergeCheckPermissions[scope], mergeCheckPermissions))
+			out = append(out, fmt.Sprintf("%s: job %s is missing %s: %s; the merge-gate spec requires exactly %v", file, name, scope, mergeCheckPermissions[scope], mergeCheckPermissions))
 		}
 	}
 	return out

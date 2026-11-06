@@ -5,7 +5,7 @@ cutover. The port breaks old shapes where that gives a better result (owner, PR 
 sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here was run against your code: it
 comes from reading it.
 
-`processor/graph-query` is ported in five steps, and this file grows with them. Steps 1 and 2 are in the tree today; a
+`processor/graph-query` is ported in five steps, and this file grows with them. Steps 1 to 3 are in the tree today; a
 change marked with a later step describes what that step will bring and does not apply yet. Each later step appends
 what it changes here.
 
@@ -13,7 +13,7 @@ what it changes here.
 | --- | --- |
 | 1 | The six lookups: `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`; `min_revision`; the check for a second responder on a declared subject |
 | 2 | Path search and counts (`pathSearch`, `hierarchyStats`, `summary`), and the `semantic`, `similar`, `spatial` and `temporal` forwards |
-| 3 | Community reads and local search (`localSearch`) |
+| 3 | Local search inside one community (`localSearch`), read from a view of `COMMUNITY_INDEX` |
 | 4 | The `globalSearch` coordinator and its structured strategies |
 | 5 | The text tier and `searchGraph`; the package is whole |
 
@@ -41,7 +41,8 @@ Read these first. Nothing errors.
   `total_entities`, so the old field reads 0. It also means something new: the whole group as listed, where the old
   value was the rows on one page, stopping at 1,000. Children count one page only, so on a prefix with children they add
   up to `entities_scanned`, not `total_entities`; a prefix that is itself a full six-part entity ID has no children, and
-  `entities_scanned` is 1 (`TestHierarchyStatsOfAnExactID`). `truncated` false says only that this is the last page;
+  on the first page of an ID that exists `entities_scanned` is 1 (`TestHierarchyStatsOfAnExactID`), for an absent ID, or
+  a cursor past it, 0. `truncated` false says only that this is the last page;
   send `next_cursor` as `cursor` for the next page. The counts are live and as listed, not a snapshot, so a group that
   is written to while you page can repeat or miss an entity (#512). A child's `name` reads empty, since the key is
   gone.
@@ -59,6 +60,17 @@ Read these first. Nothing errors.
 - **A bare `entityByAlias` decoder (the `entityByAlias` verb, step 1).** It reads no entity from the wrapper and gets nil.
 - **A `kvRevision` decoder with no zero check (the `entity` verb, step 1).** It gets revision 0. SemConnect's has the
   check, so its failure is loud; see its section.
+- **A bare `localSearch` decoder (the `localSearch` verb, step 3).** The reply is now wrapped: the answer is in `data`.
+  An old decoder reads no entities, no community and no answer, and no error.
+- **A `localSearch` decoder that reads `communityId` (step 3).** The key is now `community_id`, so the old field reads
+  empty. `count`, `durationMs`, `entity_digests`, `answer_model`, `degraded` and `degraded_reason` are gone and read
+  as zero values. Use the length of `entities` for the count.
+- **A `localSearch` caller that sends `min_revision` from a write outside the group it searches (step 3).** The reply's
+  `indexed_revision` is the latest entity write the group's record took in. A write to another group does not move
+  it, so the request is refused `revision_not_reached` until something in the searched group changes. A large group
+  (level 2, the whole deployment) catches up at its next publish; a quiet level-0 group may never. A retry loop on that
+  refusal can spin for ever. Send the `kv_revision` of a write to an entity in the group you search, or no
+  `min_revision` at all.
 
 ## SemSource
 
@@ -70,6 +82,10 @@ does not reserve.
 **What you change:**
 
 - The search decode above.
+- Nothing for `localSearch`: no SemSource code at `e4febc0d` calls it (the whole tree checked; the only mentions are
+  subject-ownership lists in tests and docs, and its ADR-0010 keeps `localSearch` unexposed), so nothing reads its
+  reply. If you add one, decode `data` by the verb's table row, read `community_id` (not `communityId`), and send a
+  `min_revision` only from a write to an entity in the group you search (see "The changes that fail silently").
 - Your collision guard. graph-query's second-responder check sees declared ports only. Your graph requests subscribe
   with no port (`processor/source-manifest/component.go:176`, `InputPorts` empty at `:613`), so your old
   `graph.query.summary` collision (`:34-41`) would still pass it. Change
@@ -133,13 +149,14 @@ documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no own
 | `similar` (step 2) | Forwards to `graph.embedding.query.similar`, bytes unchanged. Reply enveloped by the responder. `data.similar` is now `data.results`; the echoed `entity_id` and `duration` are gone. Refused transient `internal` until change 5 |
 | `spatial` (step 2) | Forwards to `graph.spatial.query.bounds`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`, with `lat`, `lon`, `alt`; `type` is gone. Refused transient `internal` until change 7 |
 | `temporal` (step 2) | Forwards to `graph.temporal.query.range`, bytes unchanged. Reply enveloped by the responder, was a bare list: `data` holds `results` and `truncated`. Rows name `entity_id`, was `id`; `type` is gone. Request keys become `start_time` and `end_time`, were `startTime` and `endTime`, at change 7, with the responder; until then it is refused transient `internal` |
+| `localSearch` (step 3) | Request keys: `entity_id`, `query`, `level`, `min_revision`; any unknown key is refused. `entity_id` must be a full six-part ID; `level` is 0 (the default), 1 or 2; `query` is lowercased and split on white space, repeats removed, and must leave 1 to 16 terms. Each failure is `invalid_request`, before any read. Reply enveloped, was bare: `data` holds `community_id` (was `communityId`), `level`, `member_count`, `community_summary`, `keywords`, `entities`, `entities_scanned`, `entities_truncated` and `answer`; `count`, `durationMs`, `entity_digests`, `answer_model`, `degraded` and `degraded_reason` are gone. `indexed_revision` is the group record's latest entity write. Nothing in the framework writes `COMMUNITY_INDEX` yet, so it is refused transient `index_not_ready` until change 7 brings graph-clustering's writer. It reads the group's record, then one page of the group (at most 1,000 entities); `entities_truncated` is true when the group had more than that page, or matches were left out to fit `max_payload`. Matches pass as graph-ingest sent them. `answer` is a plain sentence built from the counts and the record's summary; the pin's text ended `(7 entities, 0% match)`, and the pin's fallbacks to a semantic search when the group had no record, and to the clustering query that logged and swallowed every failure, are not carried. Refusals: transient `index_not_ready` while `COMMUNITY_INDEX` is missing, catching up or lost, or the entity exists but its group has no record yet; the entity verb's own refusal, such as `entity_not_found`, when the entity does not exist; transient `internal` naming the key for an unreadable record, or for a broken page or no responder; transient `revision_not_reached` with `indexed_revision` in detail. See "The changes that fail silently" |
 | Enveloped verbs | May send `min_revision`; an index behind it refuses transient `revision_not_reached`, with the reached revision in detail. Bare verbs ignore it |
 
 A stream capturing a declared `graph.query.*` subject refuses boot (#16), and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
 `QueryVerb.Enveloped` and `QueryVerb.Reply`.
 
-**New names steps 1 and 2 export** (later steps add theirs after these). Step 1, in `graph`: `ResponderGraphQuery`,
+**New names steps 1 to 3 export** (later steps add theirs after these). Step 1, in `graph`: `ResponderGraphQuery`,
 `QueryVerb.Enveloped`, `QueryVerb.Reply`, `MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In
 `composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
 `DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2, in `graph`: `ResponderGraphEmbedding`,
@@ -147,4 +164,6 @@ port overlapping one, unless it belongs to graph-query. An undeclared subscriber
 `PathEntity`, `MaxPathSearchDepth`, `MaxPathSearchNodes`, `DefaultPathSearchNodes`; for counts `HierarchyStatsRequest`,
 `HierarchyStatsData`, `HierarchyChild`, and `PrefixQueryResponse.Total`; for the forwards `SemanticData`, `SimilarData`,
 `SimilarityHit`, `SpatialData`, `SpatialHit`, `TemporalData`, `TemporalHit`. `SummaryRequest` and `SummaryData` change
-as the `summary` row says. Package `graphquery` exports nothing new.
+as the `summary` row says. Package `graphquery` exports nothing new in steps 1 and 2. Step 3, in `graph`:
+`LocalSearchRequest`, `LocalSearchData` and `MaxSearchTerms`. In `graph/clustering`: `Community.EntityRevision`,
+`GroupKey` and `DecodeCommunity`. Package `graphquery` exports nothing new.

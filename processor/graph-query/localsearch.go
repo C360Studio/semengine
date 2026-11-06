@@ -227,7 +227,7 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 		}
 		record, err := c.communityRecord(key)
 		if errors.Is(err, graphview.ErrKeyNotFound) {
-			return nil, c.ungrouped(ctx, entitySubject, request.EntityID, key)
+			return nil, c.ungrouped(ctx, entitySubject, request.EntityID)
 		}
 		if err != nil {
 			return nil, err
@@ -296,7 +296,7 @@ func (c *Component) communityRecord(key string) (clustering.Community, error) {
 
 // ungrouped answers a group with no record: entityID's own read decides. A refusal, or no answer,
 // reaches the caller as ask returns it; an entity that exists is in a group not yet published.
-func (c *Component) ungrouped(ctx context.Context, entitySubject, entityID, key string) error {
+func (c *Component) ungrouped(ctx context.Context, entitySubject, entityID string) error {
 	request, err := json.Marshal(graph.EntityRequest{ID: entityID})
 	if err != nil {
 		return internalError(err)

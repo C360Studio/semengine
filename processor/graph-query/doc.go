@@ -1,6 +1,7 @@
 // Package graphquery provides graph-query, the component that answers the graph.query.* verbs
 // declared for it in graph.QueryVerbs. It is a thin layer over graph-ingest and graph-index: they
-// hold the answers, and graph-query keeps no state of its own.
+// hold the answers. It writes nothing; its one piece of state is a read-only view of the COMMUNITY_INDEX
+// bucket, which localSearch reads.
 //
 // The table in graph decides what it serves. Start subscribes a handler to each verb the table
 // declares for graph-query and fails if one has no handler.
@@ -25,6 +26,17 @@
 // exclude_predicates is set. semantic, similar, spatial and temporal forward to the embedding, spatial
 // and temporal verbs, whose responders are not in the tree; until they are, each is refused transient
 // internal, naming the subject.
+//
+// localSearch searches one group of entities, the entities that share the first 4, 3 or 2 parts of an ID
+// (level 0, 1 or 2). It reads the group's record from the view of COMMUNITY_INDEX, then one page of at most
+// 1,000 entities of the group from graph-ingest's prefix verb, and ranks that page by how well each entity
+// matches the words of the query. The page is in ID order, so on a larger group the matches come from the
+// lexically smallest IDs, and entities_truncated says so. The reply's indexed_revision is the record's
+// entity_revision, and a min_revision above it is refused revision_not_reached before the page is read.
+// Start does not wait for the bucket and does not fail when it is missing: one goroutine opens it, runs
+// the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost, and
+// localSearch is refused transient index_not_ready until a view has caught up. Stop ends the view.
+// semengine_graph_query_search_truncated_total counts localSearch and pathSearch answers that were cut short.
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

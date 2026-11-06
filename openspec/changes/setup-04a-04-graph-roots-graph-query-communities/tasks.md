@@ -66,7 +66,7 @@ and at most one `CountError`.
   reader is graph-query's community view, not `summary_view.go`; the `processor/graph-query` row's contract,
   dependencies, risks and tests name this step and `community_cache.go` as not carried. Check: `task ledger:diff --
   docs/adr/087-community-summary-store-ownership.md`, `task docs:check`.
-- [ ] 4.2 `.agents/skills/query-pattern/SKILL.md` (`localSearch` arrives; the sample is the lexically smallest IDs; send
+- [x] 4.2 `.agents/skills/query-pattern/SKILL.md` (`localSearch` arrives; the sample is the lexically smallest IDs; send
   a revision of a write to the group searched), `processor/graph-query/README.md`, `doc.go`, `graph/README.md`,
   `MIGRATION.md`'s table and SemSource section, and the three corrections of #522. Check: `task ateam:doctor`,
   `task docs:check`.

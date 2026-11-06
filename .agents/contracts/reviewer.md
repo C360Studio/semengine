@@ -20,3 +20,5 @@ Verdict: APPROVE | REQUEST CHANGES
 ```
 
 On GitHub, a later commit that is neither a clean merge of `main` nor docs-only needs a new record naming the new commit. On Gitea, every later commit needs one, since the gate cannot yet prove a Gitea commit's file list complete.
+
+The record alone does not clear the gate. After `Verdict: APPROVE`, the pull request description also needs your `reviewed-by: <agent> (<model>, <effort>)` line. After either verdict, refresh `Merge check` and confirm its result at the commit you reviewed: a comment starts no run, so a rejection after an earlier approval at the same head needs a rerun of the whole check, observed failing. If you cannot edit the description or rerun the check, report that instead of claiming it changed. The `review-pr` skill § 5 gives the commands.

@@ -26,6 +26,21 @@ members that have words). It never lists the members, so its size does not grow 
 capped, and the encoded record stays under `MaxRecordBytes` (8 KiB). The key is `{level}.{prefix}`, for example
 `1.acme.dep1.gcs1`.
 
+A record also carries `EntityRevision` (`entity_revision`), the latest entity write it reflects: the highest
+`ENTITY_STATES` revision among the `Upsert` and `Delete` calls the maintainer applied for entities whose IDs fall in
+the group. That counts every applied call: a delete of an entity the maintainer never held (such as a delete marker
+replayed after a restart) and a refused value both raise it. A delivery at or below the revision already applied for
+its key is not applied and does not raise it. The mark ends with the group: when the last member goes, the records
+go, and the entity that recreates the group gives it that entity's revision. A raised record differs from the one
+last written, so the next tick writes it. What it promises, and only when the caller feeds revisions in ascending
+order across keys (below): every `ENTITY_STATES` write at or below `entity_revision` is reflected in the record. A
+written record never carries 0.
+
+To read one record, a reader finds its key with `GroupKey(entityID, level)`, which refuses a level outside 0 to 2 and an
+ID the canonical parser refuses, and checks the value with `DecodeCommunity(key, value)`, which refuses a value that is
+not JSON, a record whose level is not 0, 1 or 2, a record whose level and ID do not give that key, and `entity_revision`
+0. `GetAllCommunities` checks each entry the same way.
+
 A *word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in a string value, ignoring case and a short
 list of stop words. A longer run is not a word, and nothing is cut. IDs, predicate names and the objects of
 relationships (other entity IDs) add no words. Each entity adds at most its `MaxEntityTerms` (32) most frequent words
@@ -73,6 +88,13 @@ What the caller owes the maintainer:
   ordered watch. The maintainer ignores a delivery at or below the revision it already holds for that key, and that
   is its only defence; it cannot reorder. This is the caller's precondition, not something the package checks across
   keys or tests against a real watch.
+- **Ascending revisions across keys, for `entity_revision` to hold.** `entity_revision`'s promise needs every
+  delivery, whatever its key, to arrive in increasing revision order. Fed out of order across keys, the records'
+  counts and words still come out right, but a record can name a revision above a write it does not yet reflect.
+  That a KV watch delivers this order is not promised here:
+  [ADR-066](../../docs/adr/066-honest-graph-index-readiness.md) states it, unprobed at the pinned nats.go and
+  nats-server versions ([ADR-112](../../docs/adr/112-natsclient-contract.md)), and `processor/graph-clustering`
+  (change 7), which wires the watch, probes it.
 - **Revision 0 is refused.** A KV entry's first revision is 1 (`TestKVRevisionStartsAtOne` probes it on the pinned
   nats.go and nats-server; it is not promised beyond that), so 0 means the caller passed none.
 - **`BootstrapDone` once, after the replay.** `Tick` before it returns `ErrBootstrapIncomplete` and writes nothing,
@@ -89,9 +111,10 @@ watch's replay, so the first tick after a start publishes every group once.
 
 A `Tick` recomputes only the groups touched since their last publication, and writes a record only when it differs
 from the one last written. After the first tick it reads nothing from `COMMUNITY_INDEX` and holds no handle on
-`ENTITY_STATES`. The cost of a group is in proportion to its distinct words (a top-k selection, not a full sort), and
-it is paid while `Upsert` and `Delete` wait on the same lock. `TestTickCost` counts the storage calls: k changed
-entities cause writes only to their groups, and an unchanged graph writes nothing.
+`ENTITY_STATES`. A write that changes no count, word or representative still raises `entity_revision`, so it writes
+its entity's three records once. The cost of a group is in proportion to its distinct words (a top-k selection, not
+a full sort), and it is paid while `Upsert` and `Delete` wait on the same lock. `TestTickCost` counts the storage
+calls: k changed entities cause writes only to their groups, and an unchanged graph writes nothing.
 
 The first tick lists the bucket's keys once. After every changed record is written it removes the records of groups
 that no longer exist (the groups that became empty, and keys left from an earlier run). If any write fails nothing is
@@ -109,8 +132,8 @@ removed, so the old records stay readable ([ADR-085](../../docs/adr/085-gate-on-
 - A refusal from `Upsert`, an invalid error naming the entity: a nil state, an ID that is not a valid 6-part entity
   ID, or a state whose ID differs from `entityID`. A refused entity contributes nothing and stays in the refused set
   until a valid `Upsert` or a `Delete` for it.
-- `GetAllCommunities` fails, naming the key, on an entry it cannot read or that is not the record its key names (the
-  pin skipped such entries), and returns the context's error if the context ends. An empty bucket is no records and
+- `GetAllCommunities` fails, naming the key, on an entry it cannot read or that `DecodeCommunity` refuses (the pin
+  skipped such entries), and returns the context's error if the context ends. An empty bucket is no records and
   no error.
 
 ## What is not here

@@ -5,13 +5,14 @@ The component that answers the graph's read requests on `graph.query.*`.
 ## Overview
 
 `graph-query` sits in front of graph-ingest, which holds entities, and graph-index, which holds the relationship and
-name indexes. It keeps no state of its own and writes nothing.
+name indexes. It writes nothing. Its one piece of state is a read-only view of the `COMMUNITY_INDEX` bucket, which
+holds a record per group of entities and which `localSearch` reads (see below).
 
 `graph.QueryVerbs()` (`graph/query_verbs.go`) decides what it serves: at start it subscribes a handler to each verb
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
-graph-query is ported in steps; steps 1 and 2 are in the tree, and the table below is what they serve.
+graph-query is ported in steps; steps 1 to 3 are in the tree, and the table below is what they serve.
 `MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
 
 ## Verbs
@@ -25,6 +26,7 @@ graph-query is ported in steps; steps 1 and 2 are in the tree, and the table bel
 | `pathSearch` | `graph.ingest.query.entity` for the start, then `graph.index.query.outgoing` and `incoming` | enveloped by `graph-query`, `data` a `graph.PathSearchData` |
 | `hierarchyStats` | `graph.ingest.query.prefix`, one page | bare, a `graph.HierarchyStatsData` |
 | `summary` | `graph.index.query.predicateList`, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.SummaryData` |
+| `localSearch` | the `COMMUNITY_INDEX` view, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -74,8 +76,10 @@ means `entities` is everything in reach. `indexed_revision` is the smallest of t
 
 A hop that fails ends the walk with no partial answer; the refusal keeps its class, code and detail, and its message
 names the entity being read. That includes a hub: an entity whose edge list in one direction is too large for one
-reply is refused `response_too_large`, class invalid, naming that entity, so a caller can find it and narrow
-`predicates` or `direction`.
+reply is refused `response_too_large`, class invalid, naming that entity, so a caller can find it.
+Narrowing `predicates` does not shrink that reply: a hop sends only `entity_id` and `min_revision`, and `predicates`
+filters after the hop. Narrowing can only avoid reaching the hub in the first place, and changing `direction` helps
+only when it avoids the oversized direction.
 
 Cost is counted in requests: at most one plus `max_nodes`, and twice that for `both`. Nothing bounds the elapsed time of
 a walk: the handler's context ends a wait for a reply, but not a wait to write behind a broker that has stopped reading
@@ -95,7 +99,8 @@ and a caller who wants more pays per page. A count covers that page and no more.
 
 `hierarchyStats` takes `{"prefix": "...", "cursor": "..."}`; an empty prefix counts the whole graph. Its reply is bare.
 `children` are `{prefix, count}` for the prefix one segment longer, by count then prefix. A prefix that is itself a
-full entity ID has no children and an `entities_scanned` of 1. `min_revision` is accepted and ignored, since no index is
+full entity ID has no children; on the first page of an ID that exists, `entities_scanned` is 1, and for an absent ID,
+or a cursor past it, 0. `min_revision` is accepted and ignored, since no index is
 read.
 
 `summary` takes `prefix`, `cursor`, `examples_per_type` (default 2; negative is refused), `exclude_predicates` and
@@ -110,6 +115,45 @@ compare it with a write's `kv_revision`: it never catches up.
 
 A page graph-query cannot count is refused transient `internal`, naming the subject: one with no `entities` or `total`
 key, or a row whose ID does not parse or is not under the prefix. An empty group is an answer, not that refusal.
+
+### `localSearch`
+
+Searches one group of entities, such as everything under `acme.ops.src.docs`, for the words of a query. A *group* is
+every entity sharing the first 4 (level 0), 3 (level 1) or 2 (level 2) parts of an ID; `graph/clustering` keeps one
+record per group in `COMMUNITY_INDEX`: its member count, keywords, a summary and a few sample IDs.
+
+The request is `{"entity_id": "...", "query": "...", "level": 0, "min_revision": ...}`. `entity_id` is a full six-part
+ID, and the group searched is the one it belongs to at `level` (0 to 2, absent means 0). `query` is lowercased and
+split on white space with repeats removed, and must leave 1 to 16 terms. A bad field is `invalid_request`, naming it,
+before anything is read. An unknown key is refused.
+
+It reads the group's record from the view, then one page of at most 1,000 entity IDs under the group's prefix from
+graph-ingest, in ID order. Each entity on the page is scored on the terms: a term that equals the entity's type (the
+fifth ID part) counts 1.0; otherwise 0.5 if it is a substring of a predicate name or a string value; the sum is divided
+by the number of terms. An entity scoring 0.3 or more matches. Matches come best first, ties by entity ID, so the same
+graph answers the same way.
+
+`data` (a `graph.LocalSearchData`) has the record's `community_id`, `level`, `member_count`, `community_summary` and
+`keywords`; `entities`, the matches exactly as graph-ingest sent them; `entities_scanned`, the entities read;
+`entities_truncated`; and `answer`, a sentence such as `Found 3 matching entities among 40 read from
+acme.ops.src.docs.` followed by the record's summary. `entities_truncated` is true when the group had more than the one
+page, or when matches were left out so the reply fits the connection's `max_payload`. The matches kept are then the
+best of what was read, not of the whole group, and a match further down the page order can be missed.
+`indexed_revision` is the record's `entity_revision`, the latest entity write the record reflects.
+
+A request with `min_revision` above the record's `entity_revision` is refused transient `revision_not_reached` before
+the page is read. The revision must come from a write to an entity in the group searched: a write elsewhere does not
+move the record, so the refusal can last until something in the group changes.
+
+Other refusals:
+
+- Transient `index_not_ready` while `COMMUNITY_INDEX` does not exist, its view is catching up, or its watch is lost,
+  and when the entity exists but its group has no record yet. Nothing in the framework writes `COMMUNITY_INDEX` until
+  `processor/graph-clustering` arrives in change 7, so until then every `localSearch` on an existing entity is refused
+  this way.
+- When the group has no record and the entity does not exist, the entity verb's own refusal, such as `entity_not_found`.
+- Transient `internal`, counted in `ErrorCount`, for a record that cannot be read (the message names its key), for a
+  page that is broken or has no responder, and for a reply that cannot fit `max_payload` even with no entities.
 
 ### A reply `graph-query` cannot use
 
@@ -184,15 +228,38 @@ on one of these verbs, is the `request_subject_conflict` error that refuses boot
 replies' bytes are not counted. `ErrorCount`, and `DataFlow`'s `ErrorRate` with it, counts the requests `graph-query`
 refuses because no usable answer arrived, once per request: a downstream request got no answer, so an outage of
 graph-ingest or graph-index shows here, or a reply `entityByAlias` or `relationships` reads was broken, so a broken
-responder shows here too. A refusal the responder sent is an answer and is not counted: "no such entity" is ordinary
-traffic. Neither is a caller's `invalid_request`.
+responder shows here too. So does a `localSearch` that cannot read its record or its page, or fit its reply. A
+refusal the responder sent is an answer and is not counted: "no such entity" is ordinary traffic. Neither is a
+caller's `invalid_request`.
+
+## Metrics
+
+Collectors register on the injected `metric.MetricsRegistry`, never on Prometheus' global registry; with none, they
+count and register nowhere. A second `graph-query` on one registry counts into the collector the first registered.
+
+| Name | Type | Meaning |
+| --- | --- | --- |
+| `semengine_graph_query_search_truncated_total` | counter vec | `localSearch` answers cut short, by `verb` |
+
+A `localSearch` answer is cut short when its group had more entities than the one page read (at most 1,000), or
+matches were left out to fit `max_payload`: both set `entities_truncated`, and each adds one to the counter. A search
+over a large community can miss a match further down the page order, so this count is how many answers were cut short;
+it says when a keyword index per community (#506) is due. A refused request, and an answer that is whole, count nothing.
 
 ## Starting and stopping
 
-`Start` needs a NATS client, and its context bounds the subscribing only. `Stop`
-drains each verb's subscription, and returns once every running handler has returned. If its context ends first, it
-returns that error and keeps the rest for the next `Stop`. If a failed `Start` cannot clean up after itself, `Start`
-reports both errors and a later `Stop` finishes the job.
+`Start` needs a NATS client, and its context bounds the subscribing only. It starts one goroutine that keeps a view of
+`COMMUNITY_INDEX`, under a run context that `Stop` ends, not `Start`'s context. `Start` neither waits for the bucket nor
+fails when it does not exist: until it does, `localSearch` is refused `index_not_ready` and every other verb answers.
+While the bucket is missing or its watch is lost, the goroutine tries again every 5 seconds, and the view refuses until
+a new one has caught up. Each failure is logged at `Warn` when it is the first, differs from the last, or follows a
+view that had opened, and at `Debug` otherwise.
+
+`Stop` drains each verb's subscription, ends the view and returns once every running handler and the view have
+returned. If its context ends first, it returns that error and keeps the rest for the next `Stop`. If the view could not
+stop its watch cleanly, the `Stop` that waited for it returns that failure, and a later `Stop` returns nil, since there
+is nothing left to retry (`TestShutdownFailureKeepsAWatchCleanupFailure`). If a failed `Start` cannot clean up after
+itself, `Start` reports both errors and a later `Stop` finishes the job.
 
 ## Dependencies
 

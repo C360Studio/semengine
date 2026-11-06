@@ -66,7 +66,7 @@ func TestLongLiteralIsNotAWord(t *testing.T) {
 		reps = append(reps, id)
 	}
 
-	record := newCommunity(0, "acme.dep1.src.docs", 10, typeCounts, wordCounts, reps)
+	record := newCommunity(0, "acme.dep1.src.docs", 10, 1, typeCounts, wordCounts, reps)
 	if !slices.Equal(record.Keywords, []string{"notes", "release"}) {
 		t.Fatalf("keywords = %q, want [notes release]", record.Keywords)
 	}
@@ -82,8 +82,8 @@ func TestLongLiteralIsNotAWord(t *testing.T) {
 // TestRecordIsBounded builds the worst-case record design D4 names: more than MaxKeywords
 // types whose type positions are 246 bytes (the longest a 256-byte ID allows), more than
 // MaxKeywords 32-byte words, more than MaxRepEntities 256-byte representatives, a
-// 254-byte group ID and the largest member count. Its encoding stays within
-// MaxRecordBytes and every list stays at its bound.
+// 254-byte group ID, the largest member count and the largest entity revision. Its
+// encoding stays within MaxRecordBytes and every list stays at its bound.
 func TestRecordIsBounded(t *testing.T) {
 	groupID := strings.Repeat("o", 248) + ".p.s.d" // a level-0 prefix of a 256-byte ID
 	typeCounts := map[string]int{}
@@ -100,7 +100,10 @@ func TestRecordIsBounded(t *testing.T) {
 		reps = append(reps, id+strings.Repeat("x", 256-len(id))) // a 256-byte entity ID
 	}
 
-	record := newCommunity(0, groupID, math.MaxInt, typeCounts, wordCounts, reps)
+	record := newCommunity(0, groupID, math.MaxInt, math.MaxUint64, typeCounts, wordCounts, reps)
+	if record.EntityRevision != math.MaxUint64 {
+		t.Fatalf("record carries entity revision %d, want %d", record.EntityRevision, uint64(math.MaxUint64))
+	}
 	if len(record.TypeCounts) != MaxKeywords {
 		t.Fatalf("record keeps %d types, want %d", len(record.TypeCounts), MaxKeywords)
 	}
@@ -141,7 +144,7 @@ func TestKeywordsIgnoreIDAndPredicates(t *testing.T) {
 		}
 	}
 	want := []string{"hovering", "steady"}
-	record := newCommunity(0, "acme.dep1.src.robotics", 3, map[string]int{"drone": 3}, wordCounts, nil)
+	record := newCommunity(0, "acme.dep1.src.robotics", 3, 1, map[string]int{"drone": 3}, wordCounts, nil)
 	if !slices.Equal(record.Keywords, want) {
 		t.Fatalf("keywords = %q, want %q", record.Keywords, want)
 	}
@@ -202,7 +205,7 @@ func TestEntityContributionIsCapped(t *testing.T) {
 // (summarizer_test.go:142) with the exact text the pin's template gives
 // (summarizer.go:388-461) and lexical tie-breaks.
 func TestSummaryTemplate(t *testing.T) {
-	record := newCommunity(0, "c360.platform.robotics.system", 5,
+	record := newCommunity(0, "c360.platform.robotics.system", 5, 1,
 		map[string]int{"drone": 3, "sensor": 2},
 		map[string]int{"robotics": 3, "autonomous": 2, "navigation": 1}, nil)
 	want := "Community of 5 entities including 3 drones, 2 sensors. Key themes: robotics, autonomous, navigation."
@@ -210,7 +213,7 @@ func TestSummaryTemplate(t *testing.T) {
 		t.Fatalf("summary = %q, want %q", record.StatisticalSummary, want)
 	}
 
-	tied := newCommunity(1, "c360.platform.robotics", 4,
+	tied := newCommunity(1, "c360.platform.robotics", 4, 1,
 		map[string]int{"wheel": 1, "arm": 1, "base": 1, "cam": 1},
 		map[string]int{"f": 1, "e": 1, "d": 1, "c": 1, "b": 1, "a": 1}, nil)
 	want = "Community of 4 entities including 1 arm, 1 base, 1 cam. Key themes: a, b, c, d, e."
@@ -221,7 +224,7 @@ func TestSummaryTemplate(t *testing.T) {
 		t.Fatalf("type counts = %v, want %v", tied.TypeCounts, want)
 	}
 
-	bare := newCommunity(2, "c360.platform", 1, nil, nil, nil)
+	bare := newCommunity(2, "c360.platform", 1, 1, nil, nil, nil)
 	if want := "Community of 1 entities."; bare.StatisticalSummary != want {
 		t.Fatalf("bare summary = %q, want %q", bare.StatisticalSummary, want)
 	}

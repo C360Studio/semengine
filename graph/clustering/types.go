@@ -33,6 +33,14 @@ type Community struct {
 	// MemberCount is the number of entities in the group.
 	MemberCount int `json:"member_count"`
 
+	// EntityRevision is the highest ENTITY_STATES revision among the Upsert and Delete
+	// calls the maintainer applied for entities whose IDs parse into the group, held,
+	// refused or not; a delivery at or below an entity's last-applied revision is not
+	// applied. The mark ends with the group: a recreated group starts at the write that
+	// recreated it. With the caller feeding ascending revisions across keys, every write at
+	// or below it is reflected in the record. It is never 0 (DecodeCommunity).
+	EntityRevision uint64 `json:"entity_revision"`
+
 	// TypeCounts counts members by entity type (the ID's fifth position), for the
 	// MaxKeywords most common types, ties broken lexically.
 	TypeCounts map[string]int `json:"type_counts"`

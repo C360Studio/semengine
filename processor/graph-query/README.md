@@ -239,13 +239,12 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 
 | Name | Type | Meaning |
 | --- | --- | --- |
-| `semengine_graph_query_search_truncated_total` | counter vec | search answers cut short, by `verb` (`localSearch`, `pathSearch`) |
+| `semengine_graph_query_search_truncated_total` | counter vec | `localSearch` answers cut short, by `verb` |
 
-For `localSearch`, an answer is cut short when its group had more entities than the one page read (at most 1,000), or
-matches were left out to fit `max_payload`: both set `entities_truncated`. A search over a large community can miss a
-match further down the page order, so the count of cut-short `localSearch` answers against all of them is the number
-that says when a keyword index per community (#506) is due. For `pathSearch` it counts the answers with `truncated`
-set, which the request's `max_nodes` caused. A refused request, and an answer that is whole, count nothing.
+A `localSearch` answer is cut short when its group had more entities than the one page read (at most 1,000), or
+matches were left out to fit `max_payload`: both set `entities_truncated`, and each adds one to the counter. A search
+over a large community can miss a match further down the page order, so this count is how many answers were cut short;
+it says when a keyword index per community (#506) is due. A refused request, and an answer that is whole, count nothing.
 
 ## Starting and stopping
 

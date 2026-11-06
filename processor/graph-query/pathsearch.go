@@ -40,11 +40,7 @@ func (c *Component) pathSearch(entitySubject, outgoingSubject, incomingSubject s
 		if err != nil {
 			return nil, err
 		}
-		reply, err := envelope(c, outgoingSubject, revision, found)
-		if err == nil && found.Truncated {
-			c.metrics.searchTruncated.WithLabelValues("pathSearch").Inc()
-		}
-		return reply, err
+		return envelope(c, outgoingSubject, revision, found)
 	}
 }
 

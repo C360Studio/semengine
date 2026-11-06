@@ -22,6 +22,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -538,7 +539,8 @@ func TestLocalSearchFitsMaxPayload(t *testing.T) {
 	client := natsfixture.Open(t, f.URL(), openClient)
 	_, m := communityRecords(t, client)
 	publishDrones(t, m, 1, drone1)
-	startComponent(t, client, `{}`)
+	registry := metric.NewMetricsRegistry()
+	startMetered(t, client, registry)
 	awaitCommunityView(t, client, drone1, 1)
 
 	// Rows until the page is just under the limit; every row matches, by its type.
@@ -570,6 +572,10 @@ func TestLocalSearchFitsMaxPayload(t *testing.T) {
 		if string(entity) != rows[i] { // the rows' IDs ascend, and the scores tie
 			t.Fatalf("entities[%d] = %s, want %s", i, entity, rows[i])
 		}
+	}
+	// The page had no continuation, so only the fit cut the answer; the reply returned after the handler counted.
+	if got := truncatedCount(t, registry.PrometheusRegistry(), "localSearch"); got != 1 {
+		t.Errorf("localSearch truncated count = %v, want 1", got)
 	}
 	want := fmt.Sprintf("Found %d matching entities among %d read from c360.test.query.system. Community of 1 entities including 1 drone. Key themes: drone.", kept, len(rows))
 	if data.Answer != want {

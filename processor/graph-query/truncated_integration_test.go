@@ -40,8 +40,8 @@ func stubPrefix(t *testing.T, client *natsclient.Client, more *atomic.Bool) {
 	})
 }
 
-// TestTruncatedSearchIsCounted: each search answer cut short adds one to
-// semengine_graph_query_search_truncated_total{verb="<verb>"}, read as a literal value from the
+// TestTruncatedSearchIsCounted: each localSearch answer cut short adds one to
+// semengine_graph_query_search_truncated_total{verb="localSearch"}, read as a literal value from the
 // injected registry, and an answer that is whole, or a request refused, adds none (design D6). A nil
 // registry registers nothing on Prometheus' global registry, and the searches still answer.
 func TestTruncatedSearchIsCounted(t *testing.T) {
@@ -75,38 +75,6 @@ func TestTruncatedSearchIsCounted(t *testing.T) {
 			_, _ = search(t, client, tc.request)
 			if got := truncatedCount(t, gatherer, "localSearch"); got != tc.want {
 				t.Errorf("%s: localSearch = %v, want %v", tc.name, got, tc.want)
-			}
-		}
-		if got := truncatedCount(t, gatherer, "pathSearch"); got != 0 {
-			t.Errorf("pathSearch = %v, want 0: it was never asked", got)
-		}
-	})
-
-	t.Run("pathSearch", func(t *testing.T) {
-		stack := startIngestAndIndex(t)
-		registry := metric.NewMetricsRegistry()
-		startMetered(t, stack.client, registry)
-		// drone1 -> drone2, drone3.
-		stack.create(t, drone1, [2]string{linkTo, drone2}, [2]string{linkTo, drone3})
-		stack.create(t, drone2)
-		stack.awaitIndexed(t, stack.create(t, drone3))
-		gatherer := registry.PrometheusRegistry()
-
-		for _, tc := range []struct {
-			name  string
-			nodes int
-			want  float64
-		}{
-			{"the limit meets the graph", 3, 0},
-			{"the limit one lower", 2, 1},
-			{"the limit is the start", 1, 2},
-		} {
-			if _, err := askPathSearch(t, stack.client,
-				fmt.Sprintf(`{"start_entity":%q,"direction":"outgoing","max_depth":1,"max_nodes":%d}`, drone1, tc.nodes)); err != nil {
-				t.Fatalf("%s: %v", tc.name, err)
-			}
-			if got := truncatedCount(t, gatherer, "pathSearch"); got != tc.want {
-				t.Errorf("%s: pathSearch = %v, want %v", tc.name, got, tc.want)
 			}
 		}
 	})

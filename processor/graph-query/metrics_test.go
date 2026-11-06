@@ -41,7 +41,7 @@ func labelOf(series *dto.Metric, name string) string {
 }
 
 // TestSearchTruncatedSharesItsCollector: a second graph-query on one registry counts into the
-// collector the first registered, so the registry gathers both (metric.RegisterOrGet returns the
+// collector the first registered, so the registry gathers both counts (metric.RegisterOrGet returns the
 // canonical collector; a caller's own candidate is not gathered).
 func TestSearchTruncatedSharesItsCollector(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
@@ -55,12 +55,8 @@ func TestSearchTruncatedSharesItsCollector(t *testing.T) {
 	}
 	first.searchTruncated.WithLabelValues("localSearch").Inc()
 	second.searchTruncated.WithLabelValues("localSearch").Inc()
-	second.searchTruncated.WithLabelValues("pathSearch").Inc()
 	gatherer := registry.PrometheusRegistry()
 	if got := truncatedCount(t, gatherer, "localSearch"); got != 2 {
 		t.Errorf("localSearch = %v, want 2", got)
-	}
-	if got := truncatedCount(t, gatherer, "pathSearch"); got != 1 {
-		t.Errorf("pathSearch = %v, want 1", got)
 	}
 }

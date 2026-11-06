@@ -27,6 +27,7 @@ type Component struct {
 
 	natsClient *natsclient.Client
 	logger     *slog.Logger
+	metrics    *queryMetrics
 
 	// lifecycle is the lifecycle state, Health and DataFlow (component.Lifecycle, ADR-108).
 	lifecycle component.Lifecycle
@@ -97,11 +98,16 @@ func CreateGraphQuery(rawConfig json.RawMessage, deps component.Dependencies) (c
 	if err != nil {
 		return nil, err
 	}
+	metrics, err := newQueryMetrics(deps.MetricsRegistry)
+	if err != nil {
+		return nil, errs.Wrap(err, "CreateGraphQuery", "factory", "register metrics")
+	}
 	return &Component{
 		config:     config,
 		inputs:     inputs,
 		natsClient: deps.NATSClient,
 		logger:     deps.GetLoggerWithComponent(key),
+		metrics:    metrics,
 	}, nil
 }
 

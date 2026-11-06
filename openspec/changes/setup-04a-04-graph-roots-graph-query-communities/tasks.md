@@ -54,7 +54,7 @@ and at most one `CountError`.
   `localSearch`'s case in `TestMinRevisionRefusalThroughGraphQuery` and `TestComposedVerbsCountAsForwardsDo`, the
   lifecycle suite. `entities_truncated` and the poison refusal shown to fail. MIGRATION: the reply, the dropped keys,
   `communityId` to `community_id`, the wrapper, `min_revision`'s stuck case under "The changes that fail silently".
-- [ ] 3.3 The truncation counter `semengine_graph_query_search_truncated_total{verb}`, through
+- [x] 3.3 The truncation counter `semengine_graph_query_search_truncated_total{verb}`, through
   `metric.RegisterOrGet` on the injected registry, using the collector it returns (D6). Check:
   `TestTruncatedSearchIsCounted`, a nil registry registering nothing. README: the metric and what it measures for #506.
 

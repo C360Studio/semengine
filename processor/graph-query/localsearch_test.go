@@ -294,16 +294,16 @@ func TestLocalSearchFitKeepsTheBestThatFit(t *testing.T) {
 		one = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"}],"entities_scanned":3,"entities_truncated":true,"answer":"Found 1 matching entities among 3 read from acme.ops.src.docs. It has 3 members."}`
 	)
 	for limit, want := range map[int]string{len(all): all, len(two): two, len(two) - 1: one} {
-		got, err := fitLocalSearch(data, limit, encode)
-		if err != nil || string(got) != want {
-			t.Errorf("fit at %d = %s, %v\nwant %s", limit, got, err, want)
+		got, truncated, err := fitLocalSearch(data, limit, encode)
+		if err != nil || string(got) != want || truncated != (limit < len(all)) {
+			t.Errorf("fit at %d = %s, %t, %v\nwant %s, %t", limit, got, truncated, err, want, limit < len(all))
 		}
 	}
 	data.EntitiesTruncated = true // the page had a continuation
-	if got, err := fitLocalSearch(data, len(all), encode); err != nil || !strings.Contains(string(got), `"entities_truncated":true`) {
-		t.Errorf("fit of a truncated page = %s, %v; want it still truncated", got, err)
+	if got, truncated, err := fitLocalSearch(data, len(all), encode); err != nil || !truncated || !strings.Contains(string(got), `"entities_truncated":true`) {
+		t.Errorf("fit of a truncated page = %s, %t, %v; want it still truncated", got, truncated, err)
 	}
-	if got, err := fitLocalSearch(data, 10, encode); err == nil {
+	if got, _, err := fitLocalSearch(data, 10, encode); err == nil {
 		t.Errorf("fit at 10 bytes = %s, want an error", got)
 	}
 }

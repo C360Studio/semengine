@@ -167,8 +167,9 @@ func localSearchAnswer(data graph.LocalSearchData) string {
 
 // fitLocalSearch encodes data, with its answer, keeping the most of its best entities whose encoding is at
 // most limit bytes; leaving any out sets EntitiesTruncated (design D5). An encoding shrinks as entities
-// are left out, so the count kept is found by bisection. It refuses when even no entities do not fit.
-func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.LocalSearchData) ([]byte, error)) ([]byte, error) {
+// are left out, so the count kept is found by bisection. It also reports whether the encoded answer is
+// truncated. It refuses when even no entities do not fit.
+func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.LocalSearchData) ([]byte, error)) ([]byte, bool, error) {
 	all := data.Entities
 	encodeFirst := func(n int) ([]byte, error) {
 		cut := data
@@ -179,10 +180,10 @@ func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.Loc
 	}
 	encoded, err := encodeFirst(len(all))
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	if len(encoded) <= limit {
-		return encoded, nil
+		return encoded, data.EntitiesTruncated, nil
 	}
 	// The largest count in lo to hi that fits; all of them do not.
 	lo, hi := 0, len(all)-1
@@ -191,7 +192,7 @@ func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.Loc
 		mid := lo + (hi-lo)/2
 		candidate, err := encodeFirst(mid)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		if len(candidate) <= limit {
 			best, lo = candidate, mid+1
@@ -200,9 +201,9 @@ func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.Loc
 		}
 	}
 	if best == nil {
-		return nil, fmt.Errorf("a reply with no entities is over the %d-byte limit", limit)
+		return nil, false, fmt.Errorf("a reply with no entities is over the %d-byte limit", limit)
 	}
-	return best, nil
+	return best, true, nil
 }
 
 // localSearch answers from the record of entity_id's group at level, then one page of the group
@@ -249,7 +250,7 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 		if err != nil {
 			return nil, c.unanswered(err)
 		}
-		encoded, err := fitLocalSearch(graph.LocalSearchData{
+		encoded, truncated, err := fitLocalSearch(graph.LocalSearchData{
 			CommunityID:       record.ID,
 			Level:             record.Level,
 			MemberCount:       record.MemberCount,
@@ -267,6 +268,9 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 		})
 		if err != nil {
 			return nil, c.unanswered(err)
+		}
+		if truncated {
+			c.metrics.searchTruncated.WithLabelValues("localSearch").Inc()
 		}
 		return encoded, nil
 	}

@@ -1,6 +1,6 @@
 # Proposal: fix-521-empty-prefix-page-size
 
-Approved-by:
+Approved-by: owner, 2026-11-06 in Enjoy, proposal at `2cc8390` approved as drafted; recorded on #521 (comment 6692333737)
 
 ## Why
 

@@ -5,8 +5,8 @@ code. Each step ends when `task verify` passes on a clean tree at its commit (#1
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and tasks committed; Claude inventory review of the proposal; owner approval. Gate:
-  `task spec:check` and `task docs:check`. Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Proposal and tasks committed; Claude inventory review of the proposal (INVENTORY PASS at `2cc8390`); owner
+  approval. Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Code
 

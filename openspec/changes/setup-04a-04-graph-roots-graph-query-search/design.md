@@ -25,18 +25,21 @@ D2's refusal. Every other question is classified, and the table applies.
 | Path intent with a start node, nothing else | `path` | `pathrag`; a time range or count was ignored |
 | Time range, nothing else | `temporal` | same; a count or similarity was ignored |
 | Area, nothing else | `spatial` | same |
-| Two of path, time, area, with or without other hints (checked first: the caller can fix it) | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
+| Two of path, time, area, with or without other hints (checked first: the caller can fix it); a path start and a zone or area phrase, refused by the classifier | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
 | Any aggregation, ranking or similarity hint, with or without others; no hint and several tokens; path words with no start | text-tier refusal (D2) | `pathrag`, `temporal` or `graphrag` |
 
 The classifier's impossible-number error reaches the caller as `invalid_request` naming the phrase (owner, #479). A
 nil result with a nil error (an ended context, `graph/query/classifier_chain.go:91-93`) is transient `internal`, one
 error in `Health`, never "no hints"; so are hints that cannot be read and a classifier error that is not class
 invalid, each one error. **The classifier's limits stay its own:** "no answer drops a hint" holds for the hints the
-classifier reports; phrases it drops (a second start, "what is connected to sensor-001 near zone-b" walks from
-sensor-001; "from A to B" walks from A) are tracked in #535 for `graph/query`. A start in a question is
+classifier reports, because the classifier refuses, class invalid, a question naming a path start and a zone or area
+phrase ("the question names two places, sensor-001 and zone-b; ask about one"; `graph/query/classifier.go:164` used to
+skip the zone), and global search passes that refusal as `invalid_request` with its text. "From A to B" walking from A
+stays the classifier's documented limit, #535. A start in a question is
 whatever the keyword classifier extracts: a hyphenated segment of a full ID ("connected to
 acme.plant.robotics.gcs.drone-x.001" walks from alias `drone-x`), never the whole ID. *Proof:*
-`TestGlobalSearchOneWordIsAReference` (the IDs and aliases above); `TestGlobalSearchRoutesByHints`, one row per table
+`TestGlobalSearchOneWordIsAReference` (the IDs and aliases above); `TestGlobalSearchRefusesADroppedPlace` ("what is
+connected to sensor-001 in zone-b", "... near zone-b"); `TestGlobalSearchRoutesByHints`, one row per table
 line, plus "how many sensors are connected to pump-42", "top 5 sensors connected to pump-42", "find sensors similar to
 pump-42 in the last 2 hours" and "how many pumps changed in the last 2 hours", each D2's refusal, and "how many pumps
 connected to pump-42 in the last 2 hours", `invalid_request` (two filters win); `TestGlobalSearchRefusesTwoFilters`;
@@ -50,7 +53,7 @@ connected to pump-42 in the last 2 hours", `invalid_request` (two filters win); 
 | (b) a new code, class transient | Retry-on-transient callers loop until step 5 merges, a code change, not a wait |
 | **(c) `text_search_unsupported`, class invalid** | Says "retrying unchanged will not help"; one code to delete in step 5 |
 | (d) do nothing: no `globalSearch` until step 5 | Entity and path questions wait a step for nothing |
-| (e) answer empty, as the pin's zone path did | The silent wrong answer #479 item 3 reports |
+| (e) answer empty (the pin's branch for a nil community cache, `pin:graphrag.go:475-489`, unreachable after a successful `Start`, which builds the cache first, `pin:component.go:556`) | A silent wrong answer |
 
 **(c).** Message: "this question needs the text search, which this build of graph-query does not have". It reads no
 `COMMUNITY_INDEX`, so it is the same with or without records, and `index_not_ready` keeps its meaning. Unexported in

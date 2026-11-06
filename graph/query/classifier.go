@@ -114,7 +114,8 @@ var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 // range gives no hint and other hints stand: "last N hours" or "last N days" with N below 1
 // (negative N included) or a span past a time.Duration (about 292 years), and "within R of
 // lat,lon" with lat outside [-90, 90], lon outside [-180, 180] or R not finite.
-// ClassifierChain.ClassifyQuery refuses such a question instead. A box is clamped to the poles,
+// ClassifierChain.ClassifyQuery refuses such a question instead, and a question naming a path
+// start beside a zone or area phrase, of which this answers a path from one. A box is clamped to the poles,
 // spans every longitude when it reaches one, and is not wrapped across the antimeridian (East can exceed 180, West fall below -180).
 func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *SearchOptions {
 	opts, _ := k.classify(query, time.Now())
@@ -226,6 +227,31 @@ func numbersOutOfRange(query string) error {
 		}
 	}
 	return errors.Join(outOfRange...)
+}
+
+// twoPlaces returns an error naming both places when query has path words, a zone or area phrase
+// and an entity reference outside that phrase, or nil. classify answers a path from only one of
+// them (the first entity reference), so the other place would be dropped without a word; the
+// chain refuses such a question instead (PR #530 review, #535). An entity reference inside the
+// phrase ("zone-b" itself, "sensor-zone-1") is the same place.
+func twoPlaces(query string) error {
+	if !pathPattern.MatchString(query) {
+		return nil
+	}
+	zone := inZonePattern.FindStringSubmatchIndex(query)
+	if zone == nil {
+		zone = zonePattern.FindStringSubmatchIndex(query)
+	}
+	if zone == nil {
+		return nil
+	}
+	for _, m := range entityPattern.FindAllStringSubmatchIndex(query, -1) {
+		if m[1] <= zone[0] || m[0] >= zone[1] {
+			return fmt.Errorf("the question names two places, %s and %s-%s; ask about one",
+				query[m[2]:m[3]], query[zone[2]:zone[3]], query[zone[4]:zone[5]])
+		}
+	}
+	return nil
 }
 
 // extractTemporal attempts to extract temporal range from query text, computed from now in

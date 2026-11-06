@@ -340,3 +340,39 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 	require.Less(t, wantScore, 1.0, "the question must not match an example exactly")
 	assert.Equal(t, wantScore, got.Confidence)
 }
+
+// TestChainRefusesAPathStartBesideAZone: a question naming a path start and a zone or area phrase
+// names two places, and the keyword tier answers a path from only one of them, so the chain
+// refuses it naming both (PR #530 review). A zone alone and a start alone classify as before, and
+// a start that holds a zone word ("sensor-zone-1", "zone-b" itself) is one place.
+func TestChainRefusesAPathStartBesideAZone(t *testing.T) {
+	chain := NewClassifierChain(NewKeywordClassifier(), nil)
+	for _, tt := range []struct{ query, start, zone string }{
+		{"what is connected to sensor-001 in zone-b", "sensor-001", "zone-b"},
+		{"what is connected to sensor-001 near zone-b", "sensor-001", "zone-b"},
+		{"what in zone-b is connected to sensor-001", "sensor-001", "zone-b"},
+		{"show the path from pump-42 in area north", "pump-42", "area-north"},
+	} {
+		t.Run("refused/"+tt.query, func(t *testing.T) {
+			got, err := chain.ClassifyQuery(t.Context(), tt.query)
+			assert.Nil(t, got, "no result")
+			require.Error(t, err)
+			assert.True(t, errs.IsInvalid(err), "want an invalid-input error, got %v", err)
+			assert.ErrorContains(t, err, "the question names two places, "+tt.start+" and "+tt.zone+"; ask about one")
+		})
+	}
+	for _, tt := range []struct{ query, start string }{
+		{"what is in zone-b", "zone-b"},
+		{"pumps near area north", "area-north"},
+		{"what is connected to sensor-001", "sensor-001"},
+		{"what is connected to zone-b", "zone-b"},
+		{"what is connected to sensor-zone-1", "sensor-zone-1"},
+	} {
+		t.Run("one place/"+tt.query, func(t *testing.T) {
+			got, err := chain.ClassifyQuery(t.Context(), tt.query)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, map[string]any{"path_intent": true, "path_start_node": tt.start}, got.Options)
+		})
+	}
+}

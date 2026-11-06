@@ -73,7 +73,10 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // years), so a negative N is refused; "within R of lat,lon" needs lat in [-90, 90], lon in
 // [-180, 180] and R finite. The refusal holds whichever tiers are composed, the keyword tier
 // included or not, and no tier is asked: answering without the phrase's filter would answer a
-// wider question than the one asked. Every other outcome comes with a nil error.
+// wider question than the one asked. When the keyword tier is composed, a question with path words,
+// an entity reference and a zone or area phrase naming another place ("what is connected to
+// sensor-001 in zone-b") is refused the same way, naming both places: the keyword tier would answer
+// a path from one of them. Every other outcome comes with a nil error.
 //
 // The keyword tier reads the clock once per question; "today", "yesterday", "this week" and the
 // other calendar ranges are in that instant's zone, the server's time.Local.
@@ -99,6 +102,10 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) (*Cla
 
 	// T0: Try keyword classifier first (if available)
 	if c.keyword != nil {
+		// The keyword tier reads one place; a question naming two is refused, not narrowed.
+		if err := twoPlaces(query); err != nil {
+			return nil, errs.WrapInvalid(err, "ClassifierChain", "ClassifyQuery", "read the question's places")
+		}
 		opts, excluded := c.keyword.classify(query, time.Now())
 		if hasExplicitIntent(opts) {
 			return &ClassificationResult{

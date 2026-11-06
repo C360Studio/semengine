@@ -45,9 +45,8 @@ classification and answered by `entity`, reading no hint. A reference that names
 
 `globalSearch` SHALL decode `query` and `min_revision` strictly, refusing a blank `query` and any other key with
 `invalid_request` naming it. Two of path, time range and area together SHALL be refused `invalid_request` naming both,
-whatever other hints the question carries, before any other routing, and a question the classifier refuses for an
-impossible number SHALL be refused `invalid_request` naming the phrase. Each refusal SHALL come before any downstream
-request.
+before any other routing, and a question the classifier refuses (an impossible number, a path start beside a zone or
+area) SHALL be refused `invalid_request` with its text. Each refusal SHALL come before any downstream request.
 
 #### Scenario: Two filters
 
@@ -61,6 +60,12 @@ request.
 - **WHEN** a question asks for "the last 0 hours"
 - **THEN** it is refused class invalid, code `invalid_request`, naming the phrase
   (`TestGlobalSearchRefusesImpossibleNumbers`)
+
+#### Scenario: A start and a place
+
+- **WHEN** "what is connected to sensor-001 in zone-b" or "what is connected to sensor-001 near zone-b" is asked
+- **THEN** it is refused class invalid, code `invalid_request`, naming both places, and no downstream request is made
+  (`TestGlobalSearchRefusesADroppedPlace`)
 
 ### Requirement: Questions needing the text search are refused until it exists
 

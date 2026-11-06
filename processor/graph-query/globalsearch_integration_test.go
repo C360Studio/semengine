@@ -401,12 +401,44 @@ func TestGlobalSearchUnknownReferenceFallsThrough(t *testing.T) {
 
 // TestZoneQuestionNeverAnswersEmpty: #479 item 3. The keyword tier reads "the area of the plant" as a
 // path from area-of (notes/probes/step4-tree-probe.log); no entity holds that alias, so the question
-// is refused as the text tier's, where the pin answered an empty path (pin:graphrag.go:476-487).
+// is refused as the text tier's. A started pin component fell through to its community search: it built
+// the cache before the responders (pin:component.go:556), so the empty pathrag answer
+// (pin:graphrag.go:475-489) ran only without a cache, outside a successful Start.
 func TestZoneQuestionNeverAnswersEmpty(t *testing.T) {
 	stack := startStack(t)
 	stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
 	raw, err := stack.askGlobal(t, `{"query":"the area of the plant"}`)
 	requireTextTierRefusal(t, "the area of the plant", raw, err)
+}
+
+// TestGlobalSearchRefusesADroppedPlace: a path question that also names a zone ("what is connected to
+// sensor-001 in zone-b") names two places, and the keyword tier reads one start, so the question is
+// refused invalid_request naming both, never answered as the walk from one (PR #530 review, #535).
+// The zone alone is still answered, from its own holder. Real ingest, index and query.
+func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
+	stack := startStack(t)
+	stack.create(t, drone2)
+	stack.create(t, drone3, aliased("zone-b"))
+	stack.awaitIndexed(t, stack.create(t, drone1, aliased("sensor-001"), linked(drone2)))
+
+	zone, err := stack.askGlobal(t, `{"query":"what is in zone-b"}`)
+	if err != nil {
+		t.Fatalf("the zone alone: %v", err)
+	}
+	if data := decodeEnvelope(t, zone).Data; !bytes.Contains(data, []byte(drone3)) || bytes.Contains(data, []byte(drone1)) {
+		t.Fatalf("the zone alone answered %s, want the walk from %s", data, drone3)
+	}
+
+	for _, phrase := range []string{"in zone-b", "near zone-b"} {
+		t.Run(phrase, func(t *testing.T) {
+			raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, "what is connected to sensor-001 "+phrase))
+			requireRefusal(t, raw, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
+			const want = "the question names two places, sensor-001 and zone-b; ask about one"
+			if msg := err.Error(); !strings.HasPrefix(msg, "invalid request: ") || !strings.HasSuffix(msg, want) {
+				t.Errorf("message = %q, want invalid request ending %q", msg, want)
+			}
+		})
+	}
 }
 
 // TestGlobalSearchTextTierRefusal: a question only the text search could answer is refused class

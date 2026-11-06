@@ -12,9 +12,10 @@ gives `graph.query.globalSearch` the questions that need no text search: one ent
 time range, an area. The owner: "our job when we port is to create a pragamtic, idiomatic solution while noting what
 consumer use cses we need to support." The pin's coordinator cannot be carried as it is: it routes by bare strings,
 drops the time range from a path question and both filters from a time-and-area question, swallows alias refusals in
-its resolver and asks a suffix verb change 2 removed (#405), answers an unresolvable "area of" start node with nothing
-(#479), and two of its strategies are reachable only from a language model's output (probe P1). The owner also put
-graph-index's silent completion of an entity it cannot index here (#428).
+its resolver and asks a suffix verb change 2 removed (#405), reads "the area of the plant" as a path from `area-of`
+(#479) and, when that names nothing, falls through to its general search rather than saying so, and two of its
+strategies are reachable only from a language model's output (probe P1). The owner also put graph-index's silent
+completion of an entity it cannot index here (#428).
 
 ## What Changes
 

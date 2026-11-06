@@ -395,7 +395,7 @@ func requireClosed[T any](ch <-chan T) {
 // context (measured 25 s for five watches on the Codex review of PR #329). Stop must still return
 // its context's error once its context ends, and a later Stop must join the teardown and return nil.
 //
-// The server is an embedded nats-server (the module's pinned v2.15.1) on an ephemeral port, not the
+// The server is an embedded nats-server (the version go.mod pins) on an ephemeral port, not the
 // shared Docker fixture: the fixture cannot deny one subject to one user (notes/2.2.md).
 //
 // spec: config-manager / Stop(ctx) stops the Manager

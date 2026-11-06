@@ -33,7 +33,7 @@ and at most one `CountError`.
 
 ## 3. Local search
 
-- [ ] 3.1 The request and the ranking, no NATS: decoding and validation, terms, the score, order, the fit and the
+- [x] 3.1 The request and the ranking, no NATS: decoding and validation, terms, the score, order, the fit and the
   answer, in `processor/graph-query/localsearch.go`; `graph.LocalSearchRequest`, `graph.LocalSearchData`,
   `graph.MaxSearchTerms` in `graph/query_local_search_types.go`. Premise: `pin:graphrag.go:2319-2397` (D4, D5). Check:
   `TestLocalSearchScoresAsThePin`, `TestLocalSearchTermsAreDistinctAndBounded`, `TestLocalSearchOrderIsDeterministic`,

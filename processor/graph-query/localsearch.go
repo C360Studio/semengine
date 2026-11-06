@@ -1,0 +1,196 @@
+package graphquery
+
+import (
+	"cmp"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"strings"
+
+	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/graph/clustering"
+	semtypes "github.com/c360studio/semengine/pkg/types"
+)
+
+// minLocalSearchScore is the score an entity needs to match: the pin's 0.3 (graphrag.go), a constant
+// here, since min_text_relevance stays refused (design D5).
+const minLocalSearchScore = 0.3
+
+// decodeLocalSearchRequest decodes strictly and checks every field, before any read (design D4). It
+// returns the query's terms: lowercased, split on white space, each once, in the order first typed.
+func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, []string, error) {
+	var request graph.LocalSearchRequest
+	if err := decodeStrict(data, &request); err != nil {
+		return request, nil, err
+	}
+	if err := semtypes.ValidateEntityID(request.EntityID); err != nil {
+		return request, nil, fmt.Errorf("entity_id: %w", err)
+	}
+	// GroupKey owns which levels exist; the key itself is read with the record.
+	if _, err := clustering.GroupKey(request.EntityID, request.Level); err != nil {
+		return request, nil, fmt.Errorf("level: %w", err)
+	}
+	terms := searchTerms(request.Query)
+	if len(terms) == 0 {
+		return request, nil, errors.New("query holds no terms")
+	}
+	if len(terms) > graph.MaxSearchTerms {
+		return request, nil, fmt.Errorf("query holds %d distinct terms, more than %d", len(terms), graph.MaxSearchTerms)
+	}
+	return request, terms, nil
+}
+
+// searchTerms splits query as the pin did (graphrag.go:2327), then removes repeats: at the pin a repeated
+// term weighed twice, so how a query was typed changed who matched (design D4).
+func searchTerms(query string) []string {
+	var terms []string
+	for _, term := range strings.Fields(strings.ToLower(query)) {
+		if !slices.Contains(terms, term) {
+			terms = append(terms, term)
+		}
+	}
+	return terms
+}
+
+// searchEntity is what the score reads of a page's entity. An object is kept as its JSON, so a value
+// the score does not read, such as a large integer, is never converted.
+type searchEntity struct {
+	ID      string `json:"id"`
+	Triples []struct {
+		Predicate string          `json:"predicate"`
+		Object    json.RawMessage `json:"object"`
+	} `json:"triples"`
+}
+
+func decodeSearchEntity(raw json.RawMessage) (searchEntity, error) {
+	var entity searchEntity
+	if err := json.Unmarshal(raw, &entity); err != nil {
+		return entity, fmt.Errorf("entity does not decode: %w", err)
+	}
+	return entity, nil
+}
+
+// score is the pin's text score (graphrag.go:2360-2397): per term, 1.0 when it equals the ID's type
+// position, else 0.5 when it is within a predicate or a string value, all lowercased; the sum over the
+// term count. An ID that does not parse has no type, as at the pin.
+func (e searchEntity) score(terms []string) float64 {
+	if len(terms) == 0 {
+		return 0
+	}
+	var entityType string
+	if eid, err := semtypes.ParseEntityID(e.ID); err == nil {
+		entityType = strings.ToLower(eid.Type)
+	}
+	var text strings.Builder
+	for _, triple := range e.Triples {
+		text.WriteString(strings.ToLower(triple.Predicate))
+		text.WriteString(" ")
+		var value string
+		if json.Unmarshal(triple.Object, &value) == nil {
+			text.WriteString(strings.ToLower(value))
+			text.WriteString(" ")
+		}
+	}
+	searchable := text.String()
+	total := 0.0
+	for _, term := range terms {
+		switch {
+		case term == entityType:
+			total += 1.0
+		case strings.Contains(searchable, term):
+			total += 0.5
+		}
+	}
+	return total / float64(len(terms))
+}
+
+// rankEntities returns the page's entities scoring at least minLocalSearchScore, best first, ties by
+// entity ID, each as the page sent it, and the number of distinct entities read. An ID the page repeats
+// (#512) is read once, its first copy. An entity that does not decode is refused, not skipped.
+func rankEntities(page []json.RawMessage, terms []string) ([]json.RawMessage, int, error) {
+	type match struct {
+		id    string
+		score float64
+		raw   json.RawMessage
+	}
+	seen := make(map[string]bool, len(page))
+	var matches []match
+	for _, raw := range page {
+		entity, err := decodeSearchEntity(raw)
+		if err != nil {
+			return nil, 0, err
+		}
+		if seen[entity.ID] {
+			continue
+		}
+		seen[entity.ID] = true
+		if score := entity.score(terms); score >= minLocalSearchScore {
+			matches = append(matches, match{id: entity.ID, score: score, raw: raw})
+		}
+	}
+	slices.SortFunc(matches, func(a, b match) int {
+		if c := cmp.Compare(b.score, a.score); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.id, b.id)
+	})
+	ranked := make([]json.RawMessage, 0, len(matches))
+	for _, m := range matches {
+		ranked = append(ranked, m.raw)
+	}
+	return ranked, len(seen), nil
+}
+
+// localSearchAnswer is the answer text (design D5), {n} being the entities in the reply.
+func localSearchAnswer(data graph.LocalSearchData) string {
+	answer := fmt.Sprintf("Found %d matching entities among %d read from %s, which has %d members.",
+		len(data.Entities), data.EntitiesScanned, data.CommunityID, data.MemberCount)
+	if data.CommunitySummary != "" {
+		answer += " " + data.CommunitySummary
+	}
+	if len(data.Keywords) > 0 {
+		answer += " Key themes: " + strings.Join(data.Keywords[:min(len(data.Keywords), 5)], ", ") + "."
+	}
+	return answer
+}
+
+// fitLocalSearch encodes data, with its answer, keeping the most of its best entities whose encoding is at
+// most limit bytes; leaving any out sets EntitiesTruncated (design D5). An encoding shrinks as entities
+// are left out, so the count kept is found by bisection. It refuses when even no entities do not fit.
+func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.LocalSearchData) ([]byte, error)) ([]byte, error) {
+	all := data.Entities
+	encodeFirst := func(n int) ([]byte, error) {
+		cut := data
+		cut.Entities = all[:n]
+		cut.EntitiesTruncated = data.EntitiesTruncated || n < len(all)
+		cut.Answer = localSearchAnswer(cut)
+		return encode(cut)
+	}
+	encoded, err := encodeFirst(len(all))
+	if err != nil {
+		return nil, err
+	}
+	if len(encoded) <= limit {
+		return encoded, nil
+	}
+	// The largest count in lo to hi that fits; all of them do not.
+	lo, hi := 0, len(all)-1
+	var best []byte
+	for lo <= hi {
+		mid := lo + (hi-lo)/2
+		candidate, err := encodeFirst(mid)
+		if err != nil {
+			return nil, err
+		}
+		if len(candidate) <= limit {
+			best, lo = candidate, mid+1
+		} else {
+			hi = mid - 1
+		}
+	}
+	if best == nil {
+		return nil, fmt.Errorf("a reply with no entities is over the %d-byte limit", limit)
+	}
+	return best, nil
+}

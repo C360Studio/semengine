@@ -2,8 +2,8 @@
 name: ponytail
 description: >-
   Lazy senior dev discipline: take the smallest complete change that solves the task, protect trust
-  boundaries and tests, track // shortcut: debt, and end conclusions and handoffs with skipped/risk lines. Levels: lite, full, ultra, off.
-argument-hint: "[lite|full|ultra|off|review|audit|debt]"
+  boundaries and tests, track // shortcut: debt, and end conclusions and handoffs with skipped/risk lines. Levels: on, off.
+argument-hint: "[on|off|review|audit|debt]"
 ---
 
 # Ponytail Discipline Ladder

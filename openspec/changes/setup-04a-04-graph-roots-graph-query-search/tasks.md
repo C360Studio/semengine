@@ -27,7 +27,7 @@ handler).
 
 ## 3. Global search
 
-- [ ] 3.1 Hints and routing, no NATS: the typed read of `query.ClassificationResult.Options`, the D1 table, the
+- [x] 3.1 Hints and routing, no NATS: the typed read of `query.ClassificationResult.Options`, the D1 table, the
   two-filter refusal, the classifier error as `invalid_request`, the temporary refusal's code and class (D1, D2, D5);
   `graph.GlobalSearchRequest` and `graph.GlobalSearchData` in a new `graph/query_global_search_types.go`. Premise:
   `graph/query/classifier_chain.go:90-146`, `:182-222`, `pin:graphrag.go:633-679`. Check:

@@ -14,11 +14,10 @@ Design track. Tests come first.
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review of record by Codex on `proposal.md`, `design.md` and both spec deltas, with no
+- [x] 1.1 Pre-owner design review of record by Codex on `proposal.md`, `design.md` and both spec deltas, with no
   `BLOCKING` finding. Then owner approval of the design and of the two exported changes (`CatalogReader`,
   `ReportStore`). Owner chose 2026-11-06: `CatalogReader` drops `ListKeys*` (D2); #534 stays separate.
-  - Hold: Codex design review of record.
-  - Hold: OPEN-Q proposal awaits owner approval.
+  - Done: Codex design review of record APPROVE at `32e2e14` (PR #532); owner approval recorded on #496.
   - Gate: `task spec:check`, `task docs:check`.
 
 ## 2. Code

@@ -1,6 +1,7 @@
 # Proposal: fix-496-key-lister-strands
 
-Approved-by:
+Approved-by: owner, 2026-11-06 in Enjoy, design at `32e2e14` approved after Codex's design review;
+recorded on #496 (comment 6694405203)
 
 Track: `design` (adds a spec requirement in two capabilities, `storage-report` and a new `lifecycle-query`).
 

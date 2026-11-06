@@ -20,14 +20,15 @@ similarity hint would answer a different question.
 | Time range, nothing else | `temporal` | same; a count or similarity was ignored |
 | Area, nothing else | `spatial` | same |
 | No hint, the question one token (no white space after trimming) | `entity` | `graphrag` (`entity_lookup` needed the LLM) |
-| Two of path, time, area | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
+| Two of path, time, area, with or without other hints (checked first: the caller can fix it) | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
 | Any aggregation, ranking or similarity hint, with or without others; no hint and several tokens; path words with no start | text-tier refusal (D2) | `pathrag`, `temporal` or `graphrag` |
 
 The classifier's impossible-number error reaches the caller as `invalid_request` naming the phrase (owner, #479). A
 nil result with a nil error (an ended context, `graph/query/classifier_chain.go:91-93`) is transient `internal`, one
 error in `Health`, never "no hints". *Proof:* `TestGlobalSearchRoutesByHints`, one row per table line, plus "how many
 sensors are connected to pump-42", "top 5 sensors connected to pump-42", "find sensors similar to pump-42 in the last
-2 hours" and "how many pumps changed in the last 2 hours", each D2's refusal; `TestGlobalSearchRefusesTwoFilters`;
+2 hours" and "how many pumps changed in the last 2 hours", each D2's refusal, and "how many pumps connected to
+pump-42 in the last 2 hours", `invalid_request` (two filters win); `TestGlobalSearchRefusesTwoFilters`;
 `TestGlobalSearchRefusesImpossibleNumbers`; `TestGlobalSearchEndedClassification`.
 
 ## D2. The temporary refusal
@@ -107,8 +108,11 @@ drives the branch and no test can without a hook (#186). **Departures, recorded:
 drives a refused plan without a hook, and the repository asks for failing-first tests; neither is possible for the
 mark. The mark is one line mirroring the write-failure path (`index.go:442`), shown by reading and named uncovered in
 the PR. *Proof:* `TestContractValidStateAlwaysPlans`, a generated check at the bounds (seed recorded) that what the
-contract accepts plans, shown able to fail by a mutant tightening a bound in `buildEntityIndexPlan` (a byte budget one
-below its constant).
+contract accepts plans. The generator reaches the longest planned key, the 902-byte incoming key (two 256-byte IDs, a
+194-byte predicate), and the test asserts it did. Shown able to fail by a mutant only the plan sees: inside
+`buildEntityIndexPlan`, refuse a predicate of exactly `vocabulary.MaxPredicateBytes`, which `UnmarshalEntityState`
+still accepts. (Tightening the KV limit to 1,023 survives, since 902 fits; `MaxPredicateBytes-1` would make the
+contract refuse the state, detecting the generator, not the law.)
 
 ## D7. Not carried, ADRs, issues
 

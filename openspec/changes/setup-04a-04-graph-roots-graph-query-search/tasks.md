@@ -22,9 +22,9 @@ handler).
   `index.go:207-213`, `:243-250`. Check: `TestContractValidStateAlwaysPlans`, a generated check at the byte bounds
   (six-part IDs of 256 bytes, predicates of 194, aliases and names), seed and completed checks recorded; the mark
   recorded as uncovered in the PR, with the reachability reading of D6 and its departures from #428's test sentence
-  and failing-first. `TestContractValidStateAlwaysPlans` shown to fail by a mutant tightening one byte budget in
-  `buildEntityIndexPlan`. Ledger: the `processor/graph-index` row's
-  risks and tests. Closes #428.
+  and failing-first. The generator reaches the 902-byte incoming key and the test asserts it did. Shown to fail by
+  D6's mutant: `buildEntityIndexPlan` refusing a predicate of exactly `vocabulary.MaxPredicateBytes`. Ledger: the
+  `processor/graph-index` row's risks and tests. Closes #428.
 
 ## 3. Global search
 
@@ -32,7 +32,7 @@ handler).
   two-filter refusal, the classifier error as `invalid_request`, the temporary refusal's code and class (D1, D2, D5);
   `graph.GlobalSearchRequest` and `graph.GlobalSearchData` in a new `graph/query_global_search_types.go`. Premise:
   `graph/query/classifier_chain.go:90-146`, `:182-222`, `pin:graphrag.go:633-679`. Check:
-  `TestGlobalSearchRoutesByHints` (with D1's four mixed-hint rows), `TestGlobalSearchRefusesTwoFilters`,
+  `TestGlobalSearchRoutesByHints` (with D1's five mixed-hint rows), `TestGlobalSearchRefusesTwoFilters`,
   `TestGlobalSearchRefusesImpossibleNumbers`, `TestGlobalSearchEndedClassification`, strict decoding (`level` refused
   by name); the path-plus-count and path-plus-time rows shown to fail. Carries the behaviours of
   `slice_e_contract_test`'s strategy reports, renamed.

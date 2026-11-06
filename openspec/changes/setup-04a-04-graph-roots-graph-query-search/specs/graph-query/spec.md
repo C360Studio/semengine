@@ -32,12 +32,14 @@ carried. A classifier answer of no result and no error SHALL be refused transien
 
 `globalSearch` SHALL decode `query` and `min_revision` strictly, refusing a blank `query` and any other key with
 `invalid_request` naming it. Two of path, time range and area together SHALL be refused `invalid_request` naming both,
-and a question the classifier refuses for an impossible number SHALL be refused `invalid_request` naming the phrase.
-Each refusal SHALL come before any downstream request.
+whatever other hints the question carries, before any other routing, and a question the classifier refuses for an
+impossible number SHALL be refused `invalid_request` naming the phrase. Each refusal SHALL come before any downstream
+request.
 
 #### Scenario: Two filters
 
-- **WHEN** a question carries a path start and a time range, or a time range and an area
+- **WHEN** a question carries a path start and a time range, or a time range and an area, or "how many pumps
+  connected to pump-42 in the last 2 hours" adds a count to a path and a time range
 - **THEN** it is refused class invalid, code `invalid_request`, naming both, and no downstream request is made
   (`TestGlobalSearchRefusesTwoFilters`)
 
@@ -125,9 +127,10 @@ responder envelope's for `temporal` and `spatial`, and `min_revision` SHALL reac
 
 Each request SHALL count once in `DataFlow` on entry, and one error in `Health` when `graph-query` refuses: no
 downstream answer; a composed verb's reply that does not decode, names no `producer` or is not JSON; a broken prefix
-page; an unreadable community record; or a `localSearch` that cannot read `max_payload` or fit its reply even with no
-entities. A responder's classified refusal, a caller's `invalid_request`, an unusable community view and global
-search's `text_search_unsupported` SHALL NOT count as an error.
+page; an unreadable community record; a `localSearch` that cannot read `max_payload` or fit its reply even with no
+entities; or a global search whose classification ended with the request. A responder's classified refusal, a
+caller's `invalid_request`, an unusable community view and global search's `text_search_unsupported` SHALL NOT count as
+an error.
 
 #### Scenario: An unanswered forward and a refusal
 
@@ -151,6 +154,7 @@ search's `text_search_unsupported` SHALL NOT count as an error.
 - **WHEN** an alias or index reply does not decode or names no `producer`, an entity reply is not JSON, a prefix page
   is broken, or a community record is unreadable
 - **THEN** the request is one error in `Health`, while a responder's refusal, a caller's `invalid_request` and a view
+  not yet caught up add none (`TestComposedVerbsCountAsForwardsDo`)
 
 #### Scenario: A question this build cannot answer
 

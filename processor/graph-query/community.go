@@ -31,12 +31,15 @@ const communityUnavailable = "community view unavailable; localSearch refuses in
 // Each failure is logged, at Warn when it is the first, differs from the last one logged, or follows a
 // view that opened, and at Debug otherwise. The pin warned on every retry; until change 7 brings
 // COMMUNITY_INDEX's writer, that is one Warn every 5 s in every deployment, for ever.
-func (c *Component) superviseCommunities(ctx context.Context) {
+//
+// Once ctx ends it returns nil, or the error of the view's Run when that says more than the
+// cancellation (shutdownFailure), which cleanup hands to Stop's caller (#527).
+func (c *Component) superviseCommunities(ctx context.Context) error {
 	var last string
 	for {
 		opened, err := c.runCommunityView(ctx)
 		if ctx.Err() != nil {
-			return
+			return shutdownFailure(ctx, opened, err)
 		}
 		if err == nil { // Run ends a live view only with an error; this keeps the log honest if not
 			err = errors.New("the community view returned")
@@ -51,10 +54,22 @@ func (c *Component) superviseCommunities(ctx context.Context) {
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return
+			return nil
 		case <-timer.C:
 		}
 	}
+}
+
+// shutdownFailure is what a view's Run returned once ctx, the run context, has ended: nil for a view
+// that never opened, or one Run ended with the cancellation alone, and Run's error otherwise. Run
+// returns ctx.Err() itself when it ends cleanly, and joins to it a failure to stop its watch
+// (graphview.View.Run, kvwatch.Stop), so errors.Is still finds both. A blanket errors.Is on
+// context.Canceled would drop that joined failure.
+func shutdownFailure(ctx context.Context, opened bool, err error) error {
+	if !opened || err == nil || err == ctx.Err() {
+		return nil
+	}
+	return err
 }
 
 // runCommunityView opens COMMUNITY_INDEX, publishes a view of it for the handlers and runs the view

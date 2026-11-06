@@ -95,14 +95,19 @@ func (o suiteOwner) Stop(ctx context.Context) error { return o.c.Stop(ctx) }
 
 // Observe reads the component's handles without a lock: the suite observes after a Start or Stop
 // has returned to it, and only a call that overran its bound is observed while it runs, a check
-// that has already failed.
+// that has already failed. The community view is held while its supervisor runs: supervised stays
+// set after the supervisor has returned, until cleanup clears it, so its being closed is read too.
 func (o suiteOwner) Observe() lifecycletest.Observation {
 	var held []string
 	if len(o.c.subscriptions) > 0 {
 		held = append(held, "query subscriptions")
 	}
 	if o.c.supervised != nil {
-		held = append(held, "community view")
+		select {
+		case <-o.c.supervised:
+		default:
+			held = append(held, "community view")
+		}
 	}
 	return lifecycletest.Observation{Unresolved: held}
 }

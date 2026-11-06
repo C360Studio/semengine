@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"slices"
@@ -39,10 +40,11 @@ type Component struct {
 	communities atomic.Pointer[communityView]
 
 	// runCancel ends the run context the community supervisor runs under, and supervised is closed
-	// once the supervisor has returned. start sets both and cleanup clears them; the shell runs the two
-	// one at a time.
-	runCancel  context.CancelFunc
-	supervised chan struct{}
+	// once the supervisor has returned, after it has set supervisorErr to what it returned. start
+	// sets them and cleanup clears them; the shell runs the two one at a time.
+	runCancel     context.CancelFunc
+	supervised    chan struct{}
+	supervisorErr error
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-query: the ports CreateGraphQuery will
@@ -171,7 +173,7 @@ func (c *Component) start(ctx context.Context) error {
 	c.runCancel, c.supervised = runCancel, supervised
 	go func() {
 		defer close(supervised)
-		c.superviseCommunities(runCtx)
+		c.supervisorErr = c.superviseCommunities(runCtx)
 	}()
 	return c.subscribeQueries(ctx)
 }
@@ -188,8 +190,9 @@ func (c *Component) Stop(ctx context.Context) error {
 // subscription has returned. One handler that outlasts ctx does not keep the other verbs serving:
 // each drain is begun whatever the one before returned. Then it ends the run context and waits for
 // the supervisor, which returns after the view's Run has. A ctx that ends first returns its error
-// with the handles kept; the handles are cleared only once all of them are released, and a repeated
-// Drain rejoins the first.
+// with the handles kept, as does a supervisor whose view could not stop its watch, returning that
+// failure (#527); the handles are cleared only once all of them are released, and a repeated Drain
+// rejoins the first.
 func (c *Component) cleanup(ctx context.Context) error {
 	var failures []error
 	for _, sub := range c.subscriptions {
@@ -206,6 +209,11 @@ func (c *Component) cleanup(ctx context.Context) error {
 		case <-c.supervised:
 		case <-ctx.Done():
 			return ctx.Err()
+		}
+		// Read after supervised closed. A view that could not stop its watch is not released, so the
+		// handles stay and every later Stop reports it again.
+		if c.supervisorErr != nil {
+			return fmt.Errorf("graph-query: stop the community view: %w", c.supervisorErr)
 		}
 	}
 	c.subscriptions, c.runCancel, c.supervised = nil, nil, nil

@@ -44,7 +44,7 @@ Design track. Tests come first.
     "exact union".
   - Gate: `go test -race -count=1 -tags integration ./pkg/lifecycle/ ./graph/kvcatalog/`; `task mutate:check` for
     2(i) and 2(ii); `task verify`.
-- [ ] 2.3 `natsclient/storagereport` (D1, D2, tests 3 and 4).
+- [x] 2.3 `natsclient/storagereport` (D1, D2, tests 3 and 4).
   - Write `TestPublishStoppedMidReclaimLeavesNoDelivery`, 10 cycles, in a new `storage_report_integration_test.go`,
     with its test-side store overriding `ListKeys`. Show it failing on base: at least one stranded cycle in each run
     of a stated `-count` (D3 test 3); record it, or stop for review.

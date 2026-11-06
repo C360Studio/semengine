@@ -9,7 +9,8 @@ Design track. Tests come first.
 - No `time.Sleep`, no `Skip`, no deadline of a test's own. A test waits on `natsfixture.AwaitNativeDeliveryBlocked`
   or `AwaitNoStacks`.
 - No production hook, and no rebuild of nats.go faults (#301).
-- One task is one developer's unit. Tasks 2.2 and 2.3 depend on 2.1.
+- One task is one developer's unit. Tasks 2.2 and 2.3 depend on 2.1. Every task's tree compiles: an interface
+  method is removed only in the task that migrates its last caller.
 
 ## 1. Design
 
@@ -25,27 +26,29 @@ Design track. Tests come first.
 - [ ] 2.1 `graph/kvcatalog` (design D2, test 5).
   - `kvcatalog_integration_test.go:98-104` lists through `natsclient.FilteredKeys(ctx, reader, …)`. This fails to
     compile on base, because `CatalogReader` has no `WatchFiltered`; record it.
-  - Then `CatalogReader` gains `WatchFiltered` and drops `ListKeys` and `ListKeysFiltered` (owner, 2026-11-06).
-  - `TestCatalogReader_ExportedSurfaceIsReadOnly` lists the new set.
-  - The doc comment keeps "exact union".
+  - Then `CatalogReader` gains `WatchFiltered`. It keeps `ListKeys` and `ListKeysFiltered` here, because
+    `pkg/lifecycle` still returns it as `entityStatesReader` (`manager.go:213-214`); task 2.2 drops them.
+  - `TestCatalogReader_ExportedSurfaceIsReadOnly` adds `WatchFiltered`.
   - Gate: `go test -race -count=1 ./graph/kvcatalog/` and with `-tags integration`; `task verify`.
 - [ ] 2.2 `pkg/lifecycle` (D1, D2, tests 1 and 2).
-  - Write `TestListLeavesNoListerAfterAReadError` (graph-ingest started first, D3 test 1) and show it failing on
-    base; record the failure count over a stated `-count`. Premises to confirm in the note:
-    - DeliverLastPerSubject delivers in stream order, so the undecodable entity is read first;
-    - `getEntity`'s error is not skipped at `manager_query.go:64-70`.
+  - Write `TestListLeavesNoListerAfterAReadError` (graph-ingest started first, every entity undecodable, D3
+    test 1) and show it failing on base in every run of a stated `-count`; record it, and that `getEntity`'s error
+    is not skipped at `manager_query.go:64-70`. If base does not fail every run, stop for review (D3).
   - Then `List` reads `natsclient.FilteredKeys(ctx, bucket, ">")`, and `entityStatesReader` swaps `ListKeys` for
     `WatchFiltered`.
   - `fakeBucket` (`manager_test.go:276-292`) gains a scripted `WatchFiltered` that closes `Updates` once, after
     `Stop`, as nats.go does.
   - Unit cases 2(i) and 2(ii).
   - `List`'s doc states the error.
-  - Gate: `go test -race -count=1 -tags integration ./pkg/lifecycle/`; `task mutate:check` for 2(i) and 2(ii);
-    `task verify`.
+  - `CatalogReader` drops `ListKeys` and `ListKeysFiltered` (owner, 2026-11-06), with
+    `TestCatalogReader_ExportedSurfaceIsReadOnly` and `reader_capabilities_test.go` updated; the doc comment keeps
+    "exact union".
+  - Gate: `go test -race -count=1 -tags integration ./pkg/lifecycle/ ./graph/kvcatalog/`; `task mutate:check` for
+    2(i) and 2(ii); `task verify`.
 - [ ] 2.3 `natsclient/storagereport` (D1, D2, tests 3 and 4).
   - Write `TestPublishStoppedMidReclaimLeavesNoDelivery`, 10 cycles, in a new `storage_report_integration_test.go`,
-    with its test-side store overriding `ListKeys`. Show it failing on base (at least one cycle strands; record the
-    count).
+    with its test-side store overriding `ListKeys`. Show it failing on base: at least one stranded cycle in each run
+    of a stated `-count` (D3 test 3); record it, or stop for review.
   - Then `reclaim` reads `natsclient.FilteredKeys(ctx, p.store, ">")`. `ReportStore` swaps `ListKeys` for
     `WatchFiltered`, the `ErrNoKeysFound` branch (`storage_report.go:702-704`) goes, and the test's override moves
     to `WatchFiltered`.

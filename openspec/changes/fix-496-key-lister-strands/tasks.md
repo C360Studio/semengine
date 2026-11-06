@@ -15,7 +15,7 @@ Design track. Tests come first.
 
 - [ ] 1.1 Pre-owner design review of record by Codex on `proposal.md`, `design.md` and both spec deltas, with no
   `BLOCKING` finding. Then owner approval of the design and of the two exported changes (`CatalogReader`,
-  `ReportStore`), including whether `CatalogReader` drops `ListKeys*` (D2) and whether #534 folds in.
+  `ReportStore`). Owner chose 2026-11-06: `CatalogReader` drops `ListKeys*` (D2); #534 stays separate.
   - Hold: Codex design review of record.
   - Hold: OPEN-Q proposal awaits owner approval.
   - Gate: `task spec:check`, `task docs:check`.
@@ -25,8 +25,7 @@ Design track. Tests come first.
 - [ ] 2.1 `graph/kvcatalog` (design D2, test 5).
   - `kvcatalog_integration_test.go:98-104` lists through `natsclient.FilteredKeys(ctx, reader, …)`. This fails to
     compile on base, because `CatalogReader` has no `WatchFiltered`; record it.
-  - Then `CatalogReader` gains `WatchFiltered`, and drops `ListKeys` and `ListKeysFiltered` if the owner agreed in
-    task 1.1.
+  - Then `CatalogReader` gains `WatchFiltered` and drops `ListKeys` and `ListKeysFiltered` (owner, 2026-11-06).
   - `TestCatalogReader_ExportedSurfaceIsReadOnly` lists the new set.
   - The doc comment keeps "exact union".
   - Gate: `go test -race -count=1 ./graph/kvcatalog/` and with `-tags integration`; `task verify`.

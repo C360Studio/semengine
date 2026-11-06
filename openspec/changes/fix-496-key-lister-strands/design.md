@@ -42,8 +42,8 @@ Each new method's reader is a production caller in this change, so it is plumbin
     new code.
   - Drops `ListKeys` and `ListKeysFiltered`. Basis: a `KeyLister` handed out by an exported reader is the #496
     strand for any consumer that stops reading early, and after this change no framework code reads it.
-    Optional cleanup, not required by #496: the owner rules on it in task 1.1. If kept, only `WatchFiltered` is
-    added. (The doc's "exact union" (`:272-273`) is already false on base: `ListKeysFiltered` has no reader.)
+    Not required by #496; the owner chose the drop on 2026-11-06 (PR #532 comment). (The doc's "exact union"
+    (`:272-273`) is already false on base: `ListKeysFiltered` has no reader.)
   - `TestCatalogReader_ExportedSurfaceIsReadOnly` (`kvcatalog_test.go:20-37`) changes with it.
   - Reader: `pkg/lifecycle.List`.
   - Migration: a consumer calling `ListKeys` on a `CatalogReader` calls `natsclient.FilteredKeys(ctx, r, ">")`
@@ -126,8 +126,8 @@ Generated checks (`docs/testing.md` § Decide): not used.
   test 1, and after the fix no read starts before the listing ends.
 - **R4 (MEDIUM, filed as #534).** nats.go may report a key twice on a busy bucket (`kv.go:1431-1432`), and `List`
   pages with `Offset`/`Limit` over an unsorted, undeduplicated list (`manager_query.go:84-92`), against "sort/dedup
-  before limit" (`AGENTS.md` § 2). It predates this change and `FilteredKeys` keeps it; #534 stays open unless the
-  owner folds it into task 2.2.
+  before limit" (`AGENTS.md` § 2). It predates this change and `FilteredKeys` keeps it; #534 stays open (owner,
+  2026-11-06: kept separate).
 
 ## Merge order
 

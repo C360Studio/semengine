@@ -81,6 +81,7 @@ type contribution struct {
 
 type group struct {
 	members     int
+	revision    uint64 // the mark: Community.EntityRevision
 	types       map[string]int
 	words       map[string]int
 	textMembers sortedSet // members with at least one word, for representatives
@@ -116,7 +117,8 @@ func NewMaintainer(storage *NATSCommunityStorage) (*Maintainer, error) {
 // stream sequence, which starts at 1 (TestKVRevisionStartsAtOne), so 0 is a caller that
 // passed no revision. It refuses, with an invalid error naming the entity, a nil state, an ID the
 // canonical parser refuses, or a state whose ID is not entityID; a refused entity
-// contributes nothing until a valid Upsert or a Delete for it.
+// contributes nothing until a valid Upsert or a Delete for it. An applied Upsert, refused
+// or not, raises its groups' Community.EntityRevision to revision.
 func (m *Maintainer) Upsert(entityID string, revision uint64, state *graph.EntityState) error {
 	if revision == 0 {
 		return errRevisionZero(entityID, "Upsert")
@@ -134,16 +136,18 @@ func (m *Maintainer) Upsert(entityID string, revision uint64, state *graph.Entit
 	m.members[entityID] = &member{revision: revision, contribution: next}
 	if refusal != nil {
 		m.refused[entityID] = struct{}{}
-		return refusal
+	} else {
+		delete(m.refused, entityID)
+		m.add(next)
 	}
-	delete(m.refused, entityID)
-	m.add(next)
-	return nil
+	m.raise(entityID, revision)
+	return refusal
 }
 
 // Delete removes entityID's contribution at revision. A revision at or below the one last
-// applied changes nothing, and an entity it does not hold has nothing to remove. Revision
-// 0 is refused, as in Upsert.
+// applied changes nothing. An entity it does not hold has nothing to remove, but the
+// Delete is applied all the same: like any applied Delete it raises its groups'
+// Community.EntityRevision to revision. Revision 0 is refused, as in Upsert.
 func (m *Maintainer) Delete(entityID string, revision uint64) error {
 	if revision == 0 {
 		return errRevisionZero(entityID, "Delete")
@@ -151,13 +155,32 @@ func (m *Maintainer) Delete(entityID string, revision uint64) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	old, ok := m.members[entityID]
-	if !ok || revision <= old.revision {
+	if ok && revision <= old.revision {
 		return nil
 	}
-	m.subtract(old.contribution)
-	delete(m.members, entityID)
-	delete(m.refused, entityID)
+	if ok {
+		m.subtract(old.contribution)
+		delete(m.members, entityID)
+		delete(m.refused, entityID)
+	}
+	m.raise(entityID, revision)
 	return nil
+}
+
+// raise lifts the mark of entityID's groups to revision after an applied delivery. A
+// group with no members has no mark (it starts again at the write that recreates it), and
+// an ID the parser refuses has no group. The caller holds mu.
+func (m *Maintainer) raise(entityID string, revision uint64) {
+	eid, err := types.ParseEntityID(entityID)
+	if err != nil {
+		return
+	}
+	for level, id := range groupIDs(eid) {
+		if g := m.groups[level][id]; g != nil && revision > g.revision {
+			g.revision = revision
+			m.dirty[groupRef{level, id}] = struct{}{}
+		}
+	}
 }
 
 func errRevisionZero(entityID, method string) error {
@@ -251,7 +274,7 @@ func (m *Maintainer) plan() (writes []*Community, removals []string, taken []gro
 			}
 			continue
 		}
-		record := newCommunity(ref.level, ref.id, g.members, g.types, g.words, g.textMembers.first(MaxRepEntities))
+		record := newCommunity(ref.level, ref.id, g.members, g.revision, g.types, g.words, g.textMembers.first(MaxRepEntities))
 		if reflect.DeepEqual(record, m.published[key]) {
 			continue
 		}
@@ -387,10 +410,15 @@ func newContribution(entityID string, state *graph.EntityState) (*contribution, 
 	}
 	return &contribution{
 		id:     entityID,
-		groups: [levels]string{eid.TaxonomyPrefix(), eid.SourcePrefix(), eid.DeploymentPrefix()},
+		groups: groupIDs(eid),
 		typ:    eid.Type,
 		words:  entityWords(state),
 	}, nil
+}
+
+// groupIDs are eid's group IDs by level: its four-, three- and two-position prefixes.
+func groupIDs(eid types.EntityID) [levels]string {
+	return [levels]string{eid.TaxonomyPrefix(), eid.SourcePrefix(), eid.DeploymentPrefix()}
 }
 
 // sortedSet is an ordered set of strings kept as sorted chunks of at most 2*chunkSize, so

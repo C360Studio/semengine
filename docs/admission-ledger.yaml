@@ -2101,7 +2101,10 @@
     SimilarityHit, SpatialData, SpatialHit, TemporalData and TemporalHit; (26) SummaryRequest gains prefix and
     exclude_predicates in place of include_predicates, and SummaryData gains entities_scanned, truncated and
     next_cursor in place of entity_sample_truncated, and drops predicate_total; with predicates excluded its
-    indexed_revision is 0, which claims nothing (graph/query_response.go)
+    indexed_revision is 0, which claims nothing (graph/query_response.go); and, in
+    setup-04a-04-graph-roots-graph-query-communities: (27) LocalSearchRequest, LocalSearchData and MaxSearchTerms
+    (graph/query_local_search_types.go), and the localSearch row of QueryVerbs on graph.query.localSearch, enveloped,
+    its reply LocalSearchData
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -3902,7 +3905,9 @@
     the view layer of change observation (SETUP 03B design D14, tier 0): one in-memory copy of a KV bucket built
     from one WatchAll, decoded once per write and served to many local readers as an atomic snapshot followed by
     coalesced deltas. semboids drives it at 8c03cc53 (internal/api/graphstream*.go); processor/graph-query's
-    COMMUNITY_SUMMARIES serving view reads Get at the pin (summary_view.go:137, :296)
+    COMMUNITY_SUMMARIES serving view reads Get at the pin (summary_view.go:137, :296). In this tree its reader is
+    graph-query's community view over COMMUNITY_INDEX (processor/graph-query/community.go), not summary_view.go,
+    which is not carried
   destination: pkg/graphview
   contract: >-
     Surface as at the pin (design D3) with these adaptations (spec graph-view-subscription; design D2-D4): (1) Run(ctx)
@@ -3997,35 +4002,43 @@
     entity contributes nothing and Tick then returns *IncompleteError naming it, Tick returns ErrBootstrapIncomplete
     before BootstrapDone, writes only records that differ from the last published, removes nothing until every write
     succeeded, lists COMMUNITY_INDEX keys once (first tick) and reads nothing else from it, and a failure or an ended
-    context leaves the work pending; Upsert and Delete never wait on a Tick write; (3) Community is bounded by
-    construction (no member list, no membership hash, MaxKeywords 10 types and keywords, MaxRepEntities 5,
+    context leaves the work pending; Upsert and Delete never wait on a Tick write; every applied Upsert or Delete, held,
+    refused or not, raises its groups' Community.EntityRevision (entity_revision, no omitempty), a removed group taking
+    its mark with it, so the next tick writes them; with the caller feeding ascending revisions across keys every
+    ENTITY_STATES write at or below it is reflected (setup-04a-04-graph-roots-graph-query-communities D1); (3) Community
+    is bounded by construction (no member list, no membership hash, MaxKeywords 10 types and keywords, MaxRepEntities 5,
     MaxEntityTerms 32, MaxWordBytes 32, encoded under MaxRecordBytes 8 KiB); words come only from string values, never
-    from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word;
-    kept words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records
-    {level}.{group ID}, lists keys through KVStore.Keys, and GetAllCommunities refuses a nil context, fails naming the
-    key on an unreadable entry or one that is not its key's record, and returns an ended context's error (pin skipped
-    unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not carried:
-    lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own row);
-    summarizer.go outside :388-490 (own row); enhancement_worker.go, summary_store.go, metrics.go (own rows, #485);
-    MembershipHash (storage.go:42-48, tier 2, #485), storage's triples, GetCommunity and the other unread storage
-    methods, NewNATSCommunityStorageWithConfig, CommunityStorageConfig (design D3, inventory § 8); the pin's doc.go
-    and README.md are rewritten for the package, and TRIPLE_TESTS_SUMMARY.md is not carried
+    from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word; kept
+    words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
+    ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
+    and an ID the canonical parser refuses; DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0
+    to 2 or whose level and ID do not give key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
+    naming the key on an unreadable entry or one DecodeCommunity refuses, and returns an ended context's error (pin
+    skipped unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not
+    carried: lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own
+    row); summarizer.go outside :388-490 (own row); enhancement_worker.go, summary_store.go, metrics.go (own rows,
+    #485); MembershipHash (storage.go:42-48, tier 2, #485), storage's triples, GetCommunity and the other unread storage
+    methods, NewNATSCommunityStorageWithConfig, CommunityStorageConfig (design D3, inventory § 8); the pin's doc.go and
+    README.md are rewritten for the package, and TRIPLE_TESTS_SUMMARY.md is not carried
   dependencies_and_side_effects: >-
     graph, natsclient, pkg/errs, pkg/types (in-set); nats.go/jetstream through natsclient. No goroutine, no
     Prometheus, no provider module. Writes, removes and lists keys of COMMUNITY_INDEX through the injected KVStore;
     creates no bucket, stream or consumer; holds no ENTITY_STATES handle
   known_risks: >-
     The precondition that each key's deliveries arrive in increasing revision order is change 7's, from one ordered
-    watch, not a library promise. Keywords are the top words over capped per-entity contributions: a word outside
-    every member's top 32 cannot be a keyword. Tick's cost per changed group is paid while Upsert and Delete wait.
-    Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the fixture's server image
-    (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's consistency contract
-    during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config keys. semboids'
-    member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #32, #68, #141, #477
+    watch, not a library promise; entity_revision's promise needs ascending order across keys too, which ADR-066 states
+    unprobed (ADR-112) and change 7 probes on the watch it wires. Keywords are the top words over capped per-entity
+    contributions: a word outside every member's top 32 cannot be a keyword. Tick's cost per changed group is paid while
+    Upsert and Delete wait. Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the
+    fixture's server image (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's
+    consistency contract during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config
+    keys. semboids' member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #32, #68,
+    #141, #477
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
-    TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go;
-    maintainer_test.go (TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
+    TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go
+    (TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
+    (TestRecordNamesItsLatestWrite, TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
     TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,
     TestFirstTickFailedPublicationKeepsOldRecords, TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick,
     TestRetainedWordsDoNotPinInput, TestUpsertDuringBlockedWrite, TestTickReportsCancel,
@@ -4033,7 +4046,8 @@
     TestHistoryOrderIrrelevant); storage_integration_test.go (TestGetAllCommunitiesFailsOnCorruptEntry,
     TestGetAllReportsCancel); maintainer_integration_test.go (TestUnchangedRecordAddsNoRevision,
     TestKVRevisionStartsAtOne); maintainer_product_integration_test.go (TestMaintainerAsAProduct); notes/2.2.md, 2.3.md
-    and 3.4.md of the change record the mutation checks
+    and 3.4.md of the change record the mutation checks, and notes/2.1.md of
+    setup-04a-04-graph-roots-graph-query-communities those of entity_revision
   owner: setup-04a-04-graph-roots-clustering developer; docs by setup-04a-04-graph-roots-clustering technical writer
   disposition: adapt
 
@@ -4202,25 +4216,45 @@
     page that cannot be counted is refused transient internal; summary refuses when its predicate index cannot answer,
     exclude_predicates asks without it and reports indexed_revision 0); and semantic, similar, spatial and temporal
     as forwards to graph.embedding.query.search and similar, graph.spatial.query.bounds and graph.temporal.query.range,
-    refused transient internal until changes 5 and 7 bring the responders. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    refused transient internal until changes 5 and 7 bring the responders. Step 3
+    (setup-04a-04-graph-roots-graph-query-communities, graphrag.go:2218-2397) adds localSearch: a community view
+    over COMMUNITY_INDEX opened through kvcatalog.OpenCatalogReader and graphview, reopened every 5 s when the bucket
+    is missing or the watch is lost (Start neither waits for nor fails on a missing bucket; Stop ends the view and
+    reports a watch-cleanup failure once), then, for entity_id at level 0 to 2, the group's record, one prefix page
+    of at most 1,000 entities, a score as the pin's (1.0 for the type position, else 0.5 for a substring of a
+    predicate or string value, over the distinct term count, kept at 0.3 or above), order by score then entity ID,
+    and a plain-text answer; reply enveloped, indexed_revision the record's entity_revision, min_revision above it
+    refused revision_not_reached before the page is read, matches left out to fit max_payload set entities_truncated,
+    and semengine_graph_query_search_truncated_total{verb} counts cut-short localSearch answers. Not
+    carried at step 3: community_cache.go (generation, lease, fence and the cache), the graph.clustering.query.entity
+    fallback, the semantic fallback when no record exists, the answer interface, and the poison-counting List.
+    Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
     requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
     key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
     revision_not_reached instead of swallowing them (ADR-114); relationships requires direction and names the
     predicate where the pin named edge_type; the entity reply names kv_revision
   dependencies_and_side_effects: >-
-    production: component, graph, natsclient, pkg/errs, pkg/types, vocabulary (in-set); tests also use metric and
-    nats.go; one request subscription per served verb; zero to two downstream requests per call (a refused request
-    makes none, entityByAlias up to two), except pathSearch, at most 1 plus max_nodes, doubled for direction both, and
-    summary, two (predicateList, then one prefix page); no bucket access, no state of its own
+    production: component, graph, graph/clustering, graph/kvcatalog, internal/kvwatch, metric, natsclient, pkg/errs,
+    pkg/graphview, pkg/types, vocabulary (in-set); tests also use nats.go; one request subscription per served verb;
+    zero to two downstream requests per call (a refused request makes none, entityByAlias up to two), except
+    pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
+    page), and localSearch, one prefix page, or one entity read when the group has no record; since step 3 one goroutine
+    (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
+    registry; no write to any bucket
   known_risks: >-
     a package in steps: later verbs are not in the verb table until their step, so a request for one reports no
     responders; the second-responder check sees declared ports only (composition request_subject_conflict); a
     consumer reading a pin shape changes at its cutover (processor/graph-query/MIGRATION.md). Not carried at step 1:
     router.go, the relay validators (pin query.go:299-345) and the files in the rows below. Request counts bound
     the work of pathSearch, hierarchyStats and summary; nothing bounds their elapsed time (ADR-112, "Time"), and a count
-    covers one page, live and as listed, not a snapshot (#512). Later steps carry graphrag.go, searchgraph.go,
-    entity_resolver.go and their tests
+    covers one page, live and as listed, not a snapshot (#512). localSearch reads one page of at most 1,000 entities
+    in ID order, so a large group's matches further down are missed; entities_truncated says so and the counter is
+    the number that decides whether a keyword index per community (#506) is due. Nothing in the framework writes
+    COMMUNITY_INDEX until change 7, so localSearch is refused index_not_ready until then. A min_revision from a write
+    outside the searched group is refused until that group next changes. The nats.go time a lost watch takes to be seen
+    is observed, not promised (pkg/graphview row). Later steps carry searchgraph.go, entity_resolver.go and their
+    tests
   proving_tests: >-
     processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
@@ -4231,7 +4265,13 @@
     TestPathSearchTruncatedIsExact, TestPathSearchRequestsAreBounded, TestCountsReadOnePage,
     TestCountsAddUpAcrossPages, TestCountsRefuseABrokenPage, TestHierarchyStatsDeclaresAPartialPage,
     TestHierarchyStatsOfAnExactID, TestSummaryRefusesWhenPredicatesCannot, TestAuthorityOnlyAnswerClaimsNoRevision,
-    TestSummaryPrefixReadsOneGroup, and the lifecycle suite
+    TestSummaryPrefixReadsOneGroup, and, for step 3, TestLocalSearchScoresAsThePin,
+    TestLocalSearchTermsAreDistinctAndBounded, TestLocalSearchOrderIsDeterministic, TestLocalSearchAnswerTemplate,
+    TestLocalSearchReadsOnePage, TestLocalSearchReadsTheAskedLevel, TestLocalSearchReadsItsWriteBack,
+    TestLocalSearchRefusals, TestLocalSearchRefusesBadRequests, TestLocalSearchEntitiesPassUnchanged,
+    TestLocalSearchFitsMaxPayload, TestLocalSearchBeforeCommunityIndexExists,
+    TestLocalSearchAfterCommunityIndexAppears, TestLocalSearchRefusesAfterWatchLoss, TestLocalSearchDuringBlockedTick,
+    TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 
@@ -4264,6 +4304,24 @@
     that pkg/fusion and graph-embedding, which it describes, arrive in change 5 and are not in the tree
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query-reads technical writer
+  disposition: adapt
+
+- source_path: docs/adr/087-community-summary-store-ownership.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record that COMMUNITY_INDEX has one writer and that readiness is gated on it alone, which
+    graph-query's localSearch applies; carried with step 3 of processor/graph-query
+  destination: docs/adr/087-community-summary-store-ownership.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's decision text; a port note under the title names the pin path and SHA, says Decisions 2
+    and 5 are kept (graph-query reads COMMUNITY_INDEX through a view and never touches GRAPH_STATUS or
+    COMMUNITY_SUMMARIES) and that the summary store's decisions are not ported (issue #485, tier 2)
+  proving_tests: >-
+    n/a (task docs:check lints it); Decision 5 is shown by TestLocalSearchBeforeCommunityIndexExists and
+    TestLocalSearchAfterCommunityIndexAppears
+  owner: setup-04a-04-graph-roots-graph-query-communities technical writer
   disposition: adapt
 
 - source_path: processor/graph-query/answer.go

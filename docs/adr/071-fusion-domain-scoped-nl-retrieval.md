@@ -8,8 +8,9 @@
 > apart from markdownlint fixes. Read it with these facts about this repository:
 >
 > - `pkg/fusion` and the `graph-embedding` component are not in this tree. Both arrive in change 5; until then
->   `semantic` is refused as transient `internal`, naming the subject, because nothing answers it. The `Scope` field,
->   the helper `graph.MatchesAnyIDPrefix` and the follow-on change the record describes are not present.
+>   `semantic` is refused as transient `internal`, naming the subject, because nothing answers it. The `Scope` field
+>   and the follow-on change the record describes are not present. The helper `graph.MatchesAnyIDPrefix` is
+>   (`graph/id_prefix.go`, `TestMatchesAnyIDPrefix`); the fusion wiring that would call it is not.
 > - Issue numbers (`gh#463` and the like), the "openspec change" it names, and file paths with line numbers are
 >   SemStreams', at that commit.
 

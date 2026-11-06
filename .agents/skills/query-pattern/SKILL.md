@@ -15,7 +15,7 @@ Start from the reader the user names. In this tree the graph is read five ways, 
 | --- | --- | --- |
 | `graph.NewExactEntityReader` | One entity by ID, from embedded code | The validated entity and its `ENTITY_STATES` revision (`graph.ExactEntity`) |
 | graph-ingest's `batch` and `prefix` verbs | Several entities by ID, or a page of entities under an ID prefix | `graph.EntityBatchResponse`, `graph.PrefixQueryResponse` |
-| graph-query's verbs | One front door for application code: an entity, a batch, a prefix page, a name, an alias, the links of an entity, the entities within reach of one, counts of a group, a summary of the graph | The answer of the component behind the verb; every verb but `entity`, `batch`, `prefix` and `hierarchyStats` is a `graph.QueryResponse` |
+| graph-query's verbs | One front door for application code: an entity, a batch, a prefix page, a name, an alias, the links of an entity, the entities within reach of one, counts of a group, a summary of the graph, a keyword search inside one community | The answer of the component behind the verb; every verb but `entity`, `batch`, `prefix` and `hierarchyStats` is a `graph.QueryResponse` |
 | graph-index's eight verbs | Relationships in or out of an entity, an alias, the entities with a predicate or a name | A `graph.QueryResponse`: the result in `data`, the revision it reflects in `indexed_revision`, and `producer` |
 | Direct bucket access | The bucket's declared owner, and operator diagnostics | Raw entries; no query contract |
 
@@ -24,8 +24,9 @@ with its subject and its responder; the function's doc comment names each verb's
 component serves exactly its own verbs. graph-index's are `outgoing`, `incoming`, `alias`, `predicate`,
 `predicateList`, `predicateStats`, `predicateCompound` and `byName`, on `graph.index.query.*`. graph-query's, on
 `graph.query.*`, are `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`, `pathSearch`,
-`hierarchyStats`, `summary`, `semantic`, `similar`, `spatial` and `temporal`; the first four forward to the verb of the
-same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding, spatial and
+`hierarchyStats`, `summary`, `localSearch`, `semantic`, `similar`, `spatial` and `temporal`; the first four forward to
+the verb of the same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding,
+spatial and
 temporal verbs. Those four have no responder in the tree yet and are refused transient `internal` until changes 5 and 7.
 graph-query lands in steps (`processor/graph-query/README.md` lists what it
 serves now), so a verb not in the table has no responder yet.
@@ -58,13 +59,24 @@ serves now), so a verb not in the table has no responder yet.
   required, and optionally `max_nodes` (1 to 500, default 100) and `predicates`. A value outside a limit is refused
   before any request. Its cost is requests, at most one plus `max_nodes`, twice that for `both`; nothing bounds elapsed
   time (ADR-112, "Time"). `truncated` is exact: true means an entity was left out. A hub whose edge list does not fit
-  one reply refuses the whole walk with `response_too_large`, naming the entity; narrow `predicates` or `direction`.
+  one reply refuses the whole walk with `response_too_large`, naming the entity. Narrowing `predicates` cannot shrink
+  that reply, since a hop sends only `entity_id` and `min_revision` and `predicates` filters after it; narrowing can
+  only avoid reaching the hub, and changing `direction` helps only if it avoids the oversized direction.
 - **`hierarchyStats` and `summary`** each read one prefix page, so each request costs one key scan of the group, and a
   count covers that page and no more. `total_entities` is the whole group as listed, live and not a snapshot (#512).
   `truncated` false says only that this is the last page. On a first page with `truncated` true, the counts and examples
   are of the lexically smallest IDs: a sample. Send `next_cursor` as `cursor` for the next page. `hierarchyStats` is
   bare. `summary` refuses when the predicate index cannot answer; `exclude_predicates` asks without it, and `prefix`
   needs it.
+- **`localSearch`** searches one community: the group of entities that share the first 4, 3 or 2 parts of an ID
+  (`level` 0, 1 or 2, default 0). It takes `entity_id` (a full ID in the group), `query` (1 to 16 distinct words) and
+  optionally `level`. It reads the group's record from `COMMUNITY_INDEX`, then one page of the group's entities, and
+  ranks that page by how well the words match. The page is at most 1,000 entities in ID order, so on a larger group the
+  sample is the lexically smallest IDs, `entities_truncated` is true, and a match later in the order is missed. Until
+  `processor/graph-clustering` (change 7) writes `COMMUNITY_INDEX` it refuses transient `index_not_ready`; retry it.
+  Its `indexed_revision` is the group record's latest entity write, so to read your own write send the `kv_revision` of
+  a write to an entity in the group you search. A revision from a write to another group can stay above the record, and
+  the request is then refused `revision_not_reached` until the searched group next changes.
 - **`indexed_revision` of 0** on a `summary` with predicates excluded claims nothing. Do not compare it with a write's
   `kv_revision` or retry on it.
 
@@ -83,7 +95,8 @@ Every enveloped verb takes an optional `min_revision`, the `kv_revision` of your
 the index has not reached it, the verb refuses with transient `revision_not_reached`, the revision reached in the
 detail, and never waits; retry it. A bare verb (`entity`, `batch`, `prefix`, and `hierarchyStats` on `graph.query.*`)
 ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `entityByAlias`,
-`relationships`, `pathSearch` and `summary` (unless it excludes predicates) honour it.
+`relationships`, `pathSearch`, `localSearch` and `summary` (unless it excludes predicates) honour it. `localSearch`
+compares it with the searched group's record, not the whole index (see above).
 
 ## Points that hold
 
@@ -94,6 +107,6 @@ ignores the field: graph-ingest, which answers it, is the authority. On `graph.q
   the table row for each verb.
 - A refusal is a classified error and carries no envelope. `graph-query` passes a refusal from the verb behind it on
   with its class, code and detail; a request that gets no answer is transient `internal`.
-- The HTTP gateway, an MCP surface, and the community, `localSearch`, `globalSearch` and `searchGraph` verbs of the
-  pin's graph-query are not in this tree yet. They arrive in later steps of graph-query (change 4); until a verb is
-  in the table, do not design against it.
+- The HTTP gateway, an MCP surface, and the `globalSearch` and `searchGraph` verbs of the pin's graph-query are not in
+  this tree yet. `globalSearch` and `searchGraph` arrive in later steps of graph-query (change 4); until a verb is in
+  the table, do not design against it.

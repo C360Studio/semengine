@@ -58,6 +58,14 @@ type graphStack struct {
 // startStack starts all three on client; each stops at the end of the test, graph-query first.
 func startStack(t *testing.T) graphStack {
 	t.Helper()
+	stack := startIngestAndIndex(t)
+	startComponent(t, stack.client, `{}`)
+	return stack
+}
+
+// startIngestAndIndex starts graph-ingest and graph-index on a fresh client, without graph-query.
+func startIngestAndIndex(t *testing.T) graphStack {
+	t.Helper()
 	client := fixtureClient(t)
 	js, err := client.JetStream()
 	if err != nil {
@@ -88,7 +96,6 @@ func startStack(t *testing.T) graphStack {
 		t.Fatalf("CreateGraphIndex: %v", err)
 	}
 	startLifecycle(t, "graph-index", index)
-	startComponent(t, client, `{}`)
 
 	mutations, err := graphmutation.NewClient(client, requestTimeout)
 	if err != nil {
@@ -774,4 +781,36 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	step("summary: predicates answered, the page refused", summary, `{}`, 21)
 	prefix.Store(replying(`{"entities":null,"total":0}`))
 	step("summary: both requests, one input", summary, `{}`, 21)
+
+	searchRequest := `{"entity_id":"` + drone1 + `","query":"drone"}`
+	aheadRequest := fmt.Sprintf(`{"entity_id":%q,"query":"drone","min_revision":%d}`, drone1, farAhead)
+	step("localSearch: a request it refuses", localSearchSubject, `{"entity_id":"`+drone1+`"}`, 21)
+	step("localSearch: no view", localSearchSubject, searchRequest, 21)
+	kv, m := communityRecords(t, client)
+	publishDrones(t, m, 1, drone1)
+	if _, err := kv.Put(t.Context(), "0.c360.test.query.poison", []byte(`{}`)); err != nil {
+		t.Fatal(err)
+	}
+	// The view opens within one reopen interval and replays both keys before it serves. Each request
+	// until it serves is one input and no error.
+	if _, err := probe.Await(t.Context(), func(ctx context.Context) (bool, error) {
+		_, err := client.RequestClassified(ctx, localSearchSubject, []byte(aheadRequest), requestTimeout)
+		wantMessages++
+		wantBytes += int64(len(aheadRequest))
+		return codeOf(err) == graph.ErrorCodeRevisionNotReached, nil
+	}, func(served bool) bool { return served }); err != nil {
+		t.Fatal(err)
+	}
+	step("localSearch: min_revision above the record", localSearchSubject, aheadRequest, 21)
+	step("localSearch: an unreadable record", localSearchSubject, `{"entity_id":"c360.test.query.poison.drone.001","query":"drone"}`, 22)
+	unpublished := `{"entity_id":"c360.test.query.unpublished.drone.001","query":"drone"}`
+	step("localSearch: no record, the entity exists", localSearchSubject, unpublished, 22)
+	entity.Store(refusing)
+	step("localSearch: no record, the entity refused by the responder", localSearchSubject, unpublished, 22)
+	prefix.Store(replying(`{}`))
+	step("localSearch: a broken page", localSearchSubject, searchRequest, 23)
+	prefix.Store(refusing)
+	step("localSearch: the page refused by the responder", localSearchSubject, searchRequest, 23)
+	prefix.Store(replying(`{"entities":null,"total":0}`))
+	step("localSearch: answered", localSearchSubject, searchRequest, 23)
 }

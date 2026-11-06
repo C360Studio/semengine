@@ -98,17 +98,19 @@ func TestReadYourWrites(t *testing.T) {
 }
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
-// index's passes on the index's refusal with class, code and detail, while the same request without
-// the field, or at the revision reached, succeeds, so it is the field that was refused. The index has
-// reached the only write and nothing else writes, so the detail is that write's revision.
+// index's passes on the index's refusal with class, code and detail, and localSearch refuses on its
+// group record's revision, while the same request without the field, or at the revision reached,
+// succeeds, so it is the field that was refused. The index and the record have reached the only write
+// and nothing else writes, so the detail is that write's revision.
 func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
-	const farAhead = uint64(1) << 40
-	stack := startStack(t)
-	written := stack.create(t, drone1,
+	stack := startCommunityStack(t)
+	written := stack.write(t, drone1,
 		[2]string{vocabulary.DCTermsTitle, "Alpha"},
 		[2]string{vocabulary.CoreIdentityAlias, "held-1"},
 		[2]string{linkTo, drone2})
+	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
+	awaitCommunityView(t, stack.client, drone1, written)
 
 	for _, tc := range []struct{ name, verb, body string }{
 		{"byName", "byName", `"name":"Alpha"`},
@@ -118,6 +120,8 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"pathSearch outgoing", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"outgoing","max_depth":1`, drone1)},
 		{"pathSearch incoming", "pathSearch", fmt.Sprintf(`"start_entity":%q,"direction":"incoming","max_depth":1`, drone1)},
 		{"summary", "summary", `"examples_per_type":1`},
+		// The record's entity_revision is the write's: the one write to its group.
+		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"drone"`, drone1)},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			subject := verbRow(t, graph.ResponderGraphQuery, tc.verb).Subject
@@ -186,13 +190,15 @@ func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
 // responders changes 5 and 7 bring: there a stub sends the literal JSON the row declares.
 // relationships is read both ways, its two reply paths.
 func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
-	stack := startStack(t)
-	stack.create(t, drone1,
+	stack := startCommunityStack(t)
+	stack.write(t, drone1,
 		[2]string{vocabulary.DCTermsTitle, "Alpha"},
 		[2]string{vocabulary.CoreIdentityAlias, "held-1"},
 		[2]string{linkTo, drone2})
-	written := stack.create(t, drone3)
+	written := stack.write(t, drone3)
+	tick(t, stack.maintainer)
 	stack.awaitIndexed(t, written)
+	awaitCommunityView(t, stack.client, drone1, written)
 
 	for _, stub := range []struct{ responder, name, reply string }{
 		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25"},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
@@ -222,6 +228,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"pathSearch":     {fmt.Sprintf(`{"start_entity":%q,"direction":"outgoing","max_depth":2,"predicates":[%q]}`, drone1, linkTo)},
 		"hierarchyStats": {`{"prefix":"c360.test.query.system.drone"}`},
 		"summary":        {`{}`, `{"prefix":"c360.test.query.system.drone","exclude_predicates":true}`},
+		"localSearch":    {fmt.Sprintf(`{"entity_id":%q,"query":"alpha"}`, drone1)},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

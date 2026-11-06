@@ -22,7 +22,7 @@ Design track. Tests come first.
 
 ## 2. Code
 
-- [ ] 2.1 `graph/kvcatalog` (design D2, test 5).
+- [x] 2.1 `graph/kvcatalog` (design D2, test 5).
   - `kvcatalog_integration_test.go:98-104` lists through `natsclient.FilteredKeys(ctx, reader, …)`. This fails to
     compile on base, because `CatalogReader` has no `WatchFiltered`; record it.
   - Then `CatalogReader` gains `WatchFiltered`. It keeps `ListKeys` and `ListKeysFiltered` here, because

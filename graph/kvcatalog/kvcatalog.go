@@ -275,6 +275,7 @@ type CatalogReader interface {
 	Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error)
 	Watch(ctx context.Context, keys string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 	WatchAll(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
+	WatchFiltered(ctx context.Context, keys []string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 	Keys(ctx context.Context, opts ...jetstream.WatchOpt) ([]string, error)
 	ListKeys(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyLister, error)
 	ListKeysFiltered(ctx context.Context, filters ...string) (jetstream.KeyLister, error)

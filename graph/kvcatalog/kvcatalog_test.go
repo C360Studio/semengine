@@ -33,6 +33,7 @@ func TestCatalogReader_ExportedSurfaceIsReadOnly(t *testing.T) {
 		"Status",
 		"Watch",
 		"WatchAll",
+		"WatchFiltered",
 	}, methods)
 }
 

@@ -12,9 +12,8 @@ handler).
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner accepts the new exports and fills `Approved-by:`. Gate:
+- [x] 1.1 Pre-owner design review passes; the owner accepts the new exports and fills `Approved-by:`. Gate:
   `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. graph-index
 

@@ -1,6 +1,7 @@
 # Proposal: setup-04a-04-graph-roots-graph-query-search
 
-Approved-by:
+Approved-by: owner, 2026-11-06 in Enjoy: design at `3823861` approved, with the four new exports accepted
+("Codex approved the step 4 design; I accept the four exports, start the code").
 
 Track: `design` (adds spec requirements and touches three capabilities).
 

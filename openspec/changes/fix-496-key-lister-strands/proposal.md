@@ -33,9 +33,9 @@ the watch and waits for its delivery to close (`openspec/specs/transport-client/
 - **`reclaim`** reads its keys the same way.
   - The exported `ReportStore` trades `ListKeys` for `WatchFiltered`; `jetstream.KeyValue` still satisfies it.
   - The unreachable `ErrNoKeysFound` branch goes.
-- **`kvcatalog.CatalogReader`** gains `WatchFiltered` and drops `ListKeys` and `ListKeysFiltered`.
-  - Its doc defines the set as "the exact union consumed by current framework catalog readers", and after this
-    change nothing reads the lister methods.
+- **`kvcatalog.CatalogReader`** gains `WatchFiltered`. It also drops `ListKeys` and `ListKeysFiltered` if the
+  owner agrees (optional, `design.md` D2): an exported `KeyLister` is the #496 strand for any consumer that stops
+  reading early, and after this change no framework code reads it.
   - Consumer migration: `natsclient.FilteredKeys(ctx, reader, pattern)`.
 - **Tests first** (`tasks.md`):
   - Real-server tests for the `List` and `reclaim` strands, each failing on the base commit.
@@ -46,8 +46,8 @@ the watch and waits for its delivery to close (`openspec/specs/transport-client/
 
 - The callers of nats.go `Keys()` (#533).
 - `List`'s whole-bucket scan (ADR-049's deferred index).
-- Duplicate keys nats.go may report on a busy bucket (`kv.go:1431-1432`): unchanged. Filed separately if confirmed
-  (`design.md`, residual R4).
+- Duplicate keys nats.go may report on a busy bucket, and `List` paging before sort/dedup: unchanged, filed as
+  #534 (`design.md`, residual R4).
 
 ## Capabilities
 

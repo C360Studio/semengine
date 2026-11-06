@@ -40,7 +40,10 @@ Each new method's reader is a production caller in this change, so it is plumbin
 - **`kvcatalog.CatalogReader`** (`graph/kvcatalog/kvcatalog.go:274-282`):
   - Adds `WatchFiltered`. The private `catalogReader` embeds the interface (`:287-289`), so it delegates with no
     new code.
-  - Drops `ListKeys` and `ListKeysFiltered`, because the doc's "exact union" (`:272-273`) would otherwise be false.
+  - Drops `ListKeys` and `ListKeysFiltered`. Basis: a `KeyLister` handed out by an exported reader is the #496
+    strand for any consumer that stops reading early, and after this change no framework code reads it.
+    Optional cleanup, not required by #496: the owner rules on it in task 1.1. If kept, only `WatchFiltered` is
+    added. (The doc's "exact union" (`:272-273`) is already false on base: `ListKeysFiltered` has no reader.)
   - `TestCatalogReader_ExportedSurfaceIsReadOnly` (`kvcatalog_test.go:20-37`) changes with it.
   - Reader: `pkg/lifecycle.List`.
   - Migration: a consumer calling `ListKeys` on a `CatalogReader` calls `natsclient.FilteredKeys(ctx, r, ">")`
@@ -52,6 +55,12 @@ Each new method's reader is a production caller in this change, so it is plumbin
 - **`pkg/lifecycle`**: the private `entityStatesReader` (`manager.go:24-27`) makes the same swap. No exported
   signature changes. `List`'s doc says it returns an error when the listing does not complete.
 
+## D2a. Why a new capability
+
+No spec owns `Manager.List`. `graph-entity-writes` binds `pkg/lifecycle`'s `Watch`/`WatchEvents` only to the
+entity decode rule (`openspec/specs/graph-entity-writes/spec.md:397`); a listing's completeness is not a write or
+decode rule, so it goes in its own `lifecycle-query` capability.
+
 ## D3. Behaviour and proving tests
 
 Each test passes `-race`. Shown able to fail means: real-server tests fail on the base commit, recorded in
@@ -59,13 +68,17 @@ Each test passes `-race`. Shown able to fail means: real-server tests fail on th
 
 1. **`List` with a read error leaves nothing running.**
    - `TestListLeavesNoListerAfterAReadError` in `pkg/lifecycle/manager_integration_test.go`.
+   - `ReadExactEntity` is an RPC to graph-ingest (`graph/exact_entity.go:80`), so the test starts graph-ingest
+     first (`startGraphIngest`, `harness_gate_integration_test.go:86-116`), then puts the entities raw.
    - 600 entities of the workflow are put raw into `ENTITY_STATES`. The first by stream order holds bytes that do
-     not decode.
+     not decode (last-per-subject delivery goes lowest sequence first).
    - `List` returns an error carrying `unreadable_entity_state` (`getEntity`, `manager.go:224-230`; the decode
      rule in `graph-entity-writes`).
    - Afterwards `natsfixture.AwaitNoStacks` finds no `jetstream.(*kvs).ListKeys.func1` and no
      `NativeDeliveryStacks`.
-   - On base it fails every run: more than 256 keys are left, so the lister is blocked at `kv.go:1450`.
+   - On base it should fail: more than 256 keys are left, so the lister blocks at `kv.go:1450`. Not measured; the
+     lister must have forwarded about 258 keys before the RPC returns. Task 2.2's note records the base failure
+     count over a stated `-count`; below 100%, put the bad entity after a few dozen good ones.
 2. **`List` cut short is an error, never a short list.**
    - Unit cases in `pkg/lifecycle/manager_test.go` over a scripted `fakeBucket.WatchFiltered`: one matching key,
      then (i) the context is cancelled, or (ii) the channel closes before the end marker with the context live.
@@ -111,8 +124,10 @@ Generated checks (`docs/testing.md` § Decide): not used.
   (transport-client "stops its watcher before returning"). It fails closed, inherited as specified.
 - **R3 (LOW).** `List`'s deadline ending mid-read has no separate real-server test. It is the same early return as
   test 1, and after the fix no read starts before the listing ends.
-- **R4.** nats.go may report a key twice on a busy bucket (`kv.go:1431-1432`), so `List` can list a participant
-  twice. This is unchanged; to be filed as its own issue if the reviewer agrees it is real.
+- **R4 (MEDIUM, filed as #534).** nats.go may report a key twice on a busy bucket (`kv.go:1431-1432`), and `List`
+  pages with `Offset`/`Limit` over an unsorted, undeduplicated list (`manager_query.go:84-92`), against "sort/dedup
+  before limit" (`AGENTS.md` § 2). It predates this change and `FilteredKeys` keeps it; #534 stays open unless the
+  owner folds it into task 2.2.
 
 ## Merge order
 

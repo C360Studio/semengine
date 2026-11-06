@@ -25,12 +25,14 @@ Design track. Tests come first.
 - [ ] 2.1 `graph/kvcatalog` (design D2, test 5).
   - `kvcatalog_integration_test.go:98-104` lists through `natsclient.FilteredKeys(ctx, reader, …)`. This fails to
     compile on base, because `CatalogReader` has no `WatchFiltered`; record it.
-  - Then `CatalogReader` gains `WatchFiltered` and drops `ListKeys` and `ListKeysFiltered`.
+  - Then `CatalogReader` gains `WatchFiltered`, and drops `ListKeys` and `ListKeysFiltered` if the owner agreed in
+    task 1.1.
   - `TestCatalogReader_ExportedSurfaceIsReadOnly` lists the new set.
   - The doc comment keeps "exact union".
   - Gate: `go test -race -count=1 ./graph/kvcatalog/` and with `-tags integration`; `task verify`.
 - [ ] 2.2 `pkg/lifecycle` (D1, D2, tests 1 and 2).
-  - Write `TestListLeavesNoListerAfterAReadError` and show it failing on base. Premises to confirm in the note:
+  - Write `TestListLeavesNoListerAfterAReadError` (graph-ingest started first, D3 test 1) and show it failing on
+    base; record the failure count over a stated `-count`. Premises to confirm in the note:
     - DeliverLastPerSubject delivers in stream order, so the undecodable entity is read first;
     - `getEntity`'s error is not skipped at `manager_query.go:64-70`.
   - Then `List` reads `natsclient.FilteredKeys(ctx, bucket, ">")`, and `entityStatesReader` swaps `ListKeys` for
@@ -54,8 +56,7 @@ Design track. Tests come first.
   - `ReportStore`'s doc names the migration.
   - Gate: `go test -race -count=1 -tags integration ./natsclient/storagereport/ ./service/ ./graph/kvcatalog/`;
     `task mutate:check` for test 4; `task verify`.
-- [ ] 2.4 Migration notes in the PR body for `CatalogReader` and `ReportStore` (D2), and the R4 issue filed if
-  the reviewer confirms it.
+- [ ] 2.4 Migration notes in the PR body for `CatalogReader` and `ReportStore` (D2).
   - Gate: `gh pr view` and `gh issue view` read back.
 
 ## 3. Code review

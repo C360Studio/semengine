@@ -4,16 +4,16 @@
 
 ### Requirement: Global search answers by its hints
 
-`globalSearch` SHALL classify the question once with the keyword classifier and answer only when one hint is the
-question's only hint: a path intent with a start node, `path`; a time range, `temporal`; an area, `spatial`; no hint
-and a question of one token, no white space after trimming, `entity`. No answer SHALL drop a hint the question
-carried. A classifier answer of no result and no error SHALL be refused transient `internal`.
+`globalSearch` SHALL classify a question of more than one token once with the keyword classifier and answer only when
+one hint is the question's only hint: a path intent with a start node, `path`; a time range, `temporal`; an area,
+`spatial`. No answer SHALL drop a hint the classifier reported. No result and no error, hints that cannot be read, and
+a classifier error not of class invalid SHALL be refused transient `internal`.
 
 #### Scenario: Routing
 
-- **WHEN** `globalSearch` is asked "what is connected to sensor-001", "what changed in the last 2 hours", "what is
-  within 5km of 40.7,-74.0" and "sensor-001"
-- **THEN** the replies' `strategy` is `path`, `temporal`, `spatial` and `entity` (`TestGlobalSearchRoutesByHints`)
+- **WHEN** `globalSearch` is asked "what is connected to sensor-001", "what changed in the last 2 hours" and "what is
+  within 5km of 40.7,-74.0"
+- **THEN** the replies' `strategy` is `path`, `temporal` and `spatial` (`TestGlobalSearchRoutesByHints`)
 
 #### Scenario: A hint no strategy honours
 
@@ -27,6 +27,19 @@ carried. A classifier answer of no result and no error SHALL be refused transien
 - **WHEN** the classifier returns no result and no error because the request's context has ended
 - **THEN** the caller receives transient `internal` and `Health` counts one error
   (`TestGlobalSearchEndedClassification`)
+
+### Requirement: A one-word question is an entity reference
+
+A question of one token, no white space after trimming, SHALL be resolved as an entity reference before any
+classification and answered by `entity`, reading no hint. A reference that names no entity SHALL be refused as
+"Questions needing the text search are refused until it exists" says.
+
+#### Scenario: Trigger words inside a reference
+
+- **WHEN** an entity holds the ID `acme.plant.today.sensor.temp.001`, `acme.plant.zone-a.sensor.temp.001`,
+  `acme.plant.link.sensor.temp.001` or `acme.plant.most.sensor.temp.001`, or the alias `connector-7`, `max-pump` or
+  `total-flow`, and that one word is asked
+- **THEN** each reply's `strategy` is `entity` and names that entity (`TestGlobalSearchOneWordIsAReference`)
 
 ### Requirement: Global search refuses what no strategy can honour
 
@@ -73,8 +86,8 @@ entity (no alias holder and no valid ID, or a valid ID with no record), SHALL be
 `entityByAlias` and global search SHALL resolve a reference the same way: the alias verb's holder; else the reference
 itself when it is a valid entity ID; else not found, with no second request. `entityByAlias` SHALL answer not found as
 `entity_not_found`; global search SHALL answer it as "Questions needing the text search are refused until it exists"
-says. A refusal from the alias or entity verb
-SHALL reach the caller with its class, code and detail. No suffix lookup SHALL be made.
+says. A refusal from the alias or entity verb SHALL
+reach the caller with its class, code and detail. No suffix lookup SHALL be made.
 
 #### Scenario: An ambiguous alias
 
@@ -128,8 +141,9 @@ responder envelope's for `temporal` and `spatial`, and `min_revision` SHALL reac
 Each request SHALL count once in `DataFlow` on entry, and one error in `Health` when `graph-query` refuses: no
 downstream answer; a composed verb's reply that does not decode, names no `producer` or is not JSON; a broken prefix
 page; an unreadable community record; a `localSearch` that cannot read `max_payload` or fit its reply even with no
-entities; or a global search whose classification ended with the request. A responder's classified refusal, a
-caller's `invalid_request`, an unusable community view and global search's `text_search_unsupported` SHALL NOT count as
+entities; a global search whose classification ended with the request, whose hints cannot be read, or whose
+classifier failed other than for invalid input. A responder's classified refusal, a caller's
+`invalid_request`, an unusable community view and global search's `text_search_unsupported` SHALL NOT count as
 an error.
 
 #### Scenario: An unanswered forward and a refusal

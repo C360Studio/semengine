@@ -14,21 +14,32 @@ read once into a small typed value; dispatch is a switch over it, not bare strin
 only when its hint is the question's only hint**: a strategy that answered past a count, a ranking limit or a
 similarity hint would answer a different question.
 
+**A one-word question is a reference, read before any hint.** A question of one token (no white space after trimming)
+goes to the resolver and the `entity` strategy without being classified: the keyword patterns find trigger words
+inside IDs and aliases (`acme.plant.today.sensor.temp.001` reads as a time range, `acme.plant.zone-a.sensor.temp.001`
+and `connector-7` as paths, `max-pump` and `total-flow` as counts, `....most.001` as a ranking). Nothing resolves:
+D2's refusal. Every other question is classified, and the table applies.
+
 | Hints | Strategy | At the pin (P1, P2) |
 | --- | --- | --- |
 | Path intent with a start node, nothing else | `path` | `pathrag`; a time range or count was ignored |
 | Time range, nothing else | `temporal` | same; a count or similarity was ignored |
 | Area, nothing else | `spatial` | same |
-| No hint, the question one token (no white space after trimming) | `entity` | `graphrag` (`entity_lookup` needed the LLM) |
 | Two of path, time, area, with or without other hints (checked first: the caller can fix it) | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
 | Any aggregation, ranking or similarity hint, with or without others; no hint and several tokens; path words with no start | text-tier refusal (D2) | `pathrag`, `temporal` or `graphrag` |
 
 The classifier's impossible-number error reaches the caller as `invalid_request` naming the phrase (owner, #479). A
 nil result with a nil error (an ended context, `graph/query/classifier_chain.go:91-93`) is transient `internal`, one
-error in `Health`, never "no hints". *Proof:* `TestGlobalSearchRoutesByHints`, one row per table line, plus "how many
-sensors are connected to pump-42", "top 5 sensors connected to pump-42", "find sensors similar to pump-42 in the last
-2 hours" and "how many pumps changed in the last 2 hours", each D2's refusal, and "how many pumps connected to
-pump-42 in the last 2 hours", `invalid_request` (two filters win); `TestGlobalSearchRefusesTwoFilters`;
+error in `Health`, never "no hints"; so are hints that cannot be read and a classifier error that is not class
+invalid, each one error. **The classifier's limits stay its own:** "no answer drops a hint" holds for the hints the
+classifier reports; phrases it drops (a second start, "what is connected to sensor-001 near zone-b" walks from
+sensor-001; "from A to B" walks from A) are tracked in #535 for `graph/query`. A start in a question is
+whatever the keyword classifier extracts: a hyphenated segment of a full ID ("connected to
+acme.plant.robotics.gcs.drone-x.001" walks from alias `drone-x`), never the whole ID. *Proof:*
+`TestGlobalSearchOneWordIsAReference` (the IDs and aliases above); `TestGlobalSearchRoutesByHints`, one row per table
+line, plus "how many sensors are connected to pump-42", "top 5 sensors connected to pump-42", "find sensors similar to
+pump-42 in the last 2 hours" and "how many pumps changed in the last 2 hours", each D2's refusal, and "how many pumps
+connected to pump-42 in the last 2 hours", `invalid_request` (two filters win); `TestGlobalSearchRefusesTwoFilters`;
 `TestGlobalSearchRefusesImpossibleNumbers`; `TestGlobalSearchEndedClassification`.
 
 ## D2. The temporary refusal

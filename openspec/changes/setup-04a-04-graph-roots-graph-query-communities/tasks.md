@@ -60,7 +60,7 @@ and at most one `CountError`.
 
 ## 4. Records and guidance
 
-- [ ] 4.1 Port ADR-087 with a note under its title: pin path and SHA, Decisions 2 and 5 kept and how (D7), the store's
+- [x] 4.1 Port ADR-087 with a note under its title: pin path and SHA, Decisions 2 and 5 kept and how (D7), the store's
   decisions not ported (#485), its ledger row. ADR-099's port note: "shape-for-shape" yields to PR #504 comment
   6588079803 for graph-query's verbs. Ledger: new ADR-087 row; `graph` row names the new exports; `pkg/graphview`'s
   reader is graph-query's community view, not `summary_view.go`; the `processor/graph-query` row's contract,

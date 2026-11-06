@@ -22,9 +22,13 @@
 > - Not carried: label propagation, the entity-ID and semantic-edge providers that fed it, and PageRank (their
 >   ledger rows name this record). The detection overlay this record allows stays a later change with its own gate
 >   (a fixture that can fail, off by default, never a readiness input).
-> - Tier 2 is not here. The LLM summaries and the content-addressed `COMMUNITY_SUMMARIES` store (ADR-087, not
->   ported) belong to issue #485. The owner dropped `CommunitySummarizer` and `StatisticalSummarizer` from tier 0
->   (2026-10-31); a record's `statistical_summary` is a one-line template over its counts.
+> - Tier 2 is not here. The LLM summaries and the content-addressed `COMMUNITY_SUMMARIES` store (ADR-087, ported
+>   as a record only; its store is not built) belong to issue #485. The owner dropped `CommunitySummarizer` and
+>   `StatisticalSummarizer` from tier 0 (2026-10-31); a record's `statistical_summary` is a one-line template over its
+>   counts.
+> - "GraphRAG and PathRAG advertised surfaces hold shape-for-shape" (the paragraph of unchanged decisions) yields, for
+>   graph-query's verbs, to the owner's ruling of 2026-11-02 (PR #504 comment 6588079803): a port makes the pragmatic,
+>   idiomatic shape and records a consumer's break as a migration note in `processor/graph-query/MIGRATION.md`.
 > - Not decided here: how `processor/graph-query` reads these records during a tick, and the watch wiring in
 >   `processor/graph-clustering` (change 7). The statement "zero shipped deployments consume the community index" is
 >   the pin's measurement, not this repository's.

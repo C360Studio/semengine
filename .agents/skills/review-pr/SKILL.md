@@ -32,7 +32,7 @@ Verdict: APPROVE | REQUEST CHANGES
 <findings, checks run, unavailable evidence, limitations>
 ```
 
-Name your provider, model as `.agents/review-policy.json` lists it (for example `opus`), and reasoning effort. Remove the review checkout (`git worktree remove .worktrees/<agent>-review-pr-<n>`) once the comment is posted. End your conclusion with 1–2 lines naming what you skipped or did not check and any residual risk.
+Name your provider, model as `.agents/review-policy.json` lists it (for example `opus`), and reasoning effort. Remove the review checkout (`git worktree remove .worktrees/<agent>-review-pr-<n>`) once the comment is posted. No sync of yours delivers the record: each checkout keeps its own `.ateam/state.json`, and the record reaches the developer when their checkout runs `ateam state sync`. When the launch spec gave you a `return_to`, run `ateam review notify --record <file> --return-to <id> <n>`: it sends only `review record for PR #<n> landed at <sha>; run ateam state sync, then ateam state pickup`, or prints the host tool to call, never your findings. End your conclusion with 1–2 lines naming what you skipped or did not check and any residual risk.
 
 ## 5. Clear the Merge Check
 

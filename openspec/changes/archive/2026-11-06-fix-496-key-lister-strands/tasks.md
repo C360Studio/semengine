@@ -62,11 +62,12 @@ Design track. Tests come first.
 
 ## 3. Code review
 
-- [ ] 3.1 Code review of record by another agent at the head, with no actionable findings. The PR body carries
+- [x] 3.1 Code review of record by another agent at the head, with no actionable findings. The PR body carries
   `implemented-by:` and `reviewed-by:`.
+  - Done: Codex APPROVE at `5d74aa3` (PR #532 comment), its own `task verify` exit 0.
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive fix-496-key-lister-strands`). This syncs
+- [x] 4.1 Archive as the last content commit (`openspec archive fix-496-key-lister-strands`). This syncs
   `storage-report` and creates `lifecycle-query`; its Purpose is written then.
   - Gate: `task spec:check`, `task docs:check`.

@@ -2,6 +2,7 @@ package graphquery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -24,6 +25,123 @@ const (
 // graph-query does not have (design D2). Its class is invalid: asking again unchanged will not help.
 // It is unexported, since no consumer should build on it: step 5 brings the text search and removes it.
 const codeTextSearchUnsupported = "text_search_unsupported"
+
+// The path strategy's walk (design D4): the pin's depth and node limit, both directions, every
+// predicate, since the keyword tier names none.
+const (
+	globalPathDepth = 3
+	globalPathNodes = 100
+)
+
+// globalSearchSubjects are the verbs global search reads: the alias and entity verbs through the
+// resolver, and the index's edge verbs for the walk.
+type globalSearchSubjects struct {
+	alias, entity, outgoing, incoming string
+}
+
+// globalSearch answers a question with the one strategy its hints choose (design D1, D4). A request
+// is one input however many requests it makes, and at most one error: ask and brokenReply count
+// theirs, and a classification that could not be read counts here. A caller's invalid_request, a
+// responder's refusal and codeTextSearchUnsupported count none.
+func (c *Component) globalSearch(subjects globalSearchSubjects) queryHandler {
+	return func(ctx context.Context, data []byte) ([]byte, error) {
+		c.lifecycle.CountInput(len(data))
+		request, err := decodeGlobalSearchRequest(data)
+		if err != nil {
+			return nil, invalidRequest(err)
+		}
+		route, err := routeGlobalSearch(ctx, request.Query)
+		if err != nil {
+			var refusal *errs.ClassifiedError
+			if errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeInternal {
+				c.lifecycle.CountError()
+			}
+			return nil, err
+		}
+		switch route.strategy {
+		case strategyEntity:
+			return c.globalEntity(ctx, subjects, route.reference, request.MinRevision)
+		case strategyPath:
+			return c.globalPath(ctx, subjects, route.reference, request.MinRevision)
+		default:
+			// shortcut: temporal and spatial refuse until task 3.3 of this change adds their strategies.
+			c.lifecycle.CountError()
+			return nil, internalError(fmt.Errorf("the %s strategy is not built yet", route.strategy))
+		}
+	}
+}
+
+// resolveGlobal reads a question's reference through the shared resolver, asking the alias verb with
+// the request's min_revision. A reference that names no entity is codeTextSearchUnsupported: it is no
+// answer to the question, which the text search would read as words (design D3).
+func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) (string, uint64, error) {
+	aliasRequest, err := json.Marshal(struct {
+		Alias string `json:"alias"`
+		graph.MinRevisionField
+	}{reference, graph.MinRevisionField{MinRevision: minRevision}})
+	if err != nil {
+		return "", 0, internalError(err)
+	}
+	id, revision, err := c.resolveReference(ctx, subjects.alias, aliasRequest, reference)
+	if err != nil {
+		return "", 0, err
+	}
+	if id == "" {
+		return "", 0, textSearchUnsupported()
+	}
+	return id, revision, nil
+}
+
+// globalEntity answers with the entity verb's reply bytes for the resolved reference, under the alias
+// reply's revision. An entity_not_found from the entity verb (a valid ID with no record, or a holder
+// since deleted) falls through as resolveGlobal's miss does; any other refusal reaches the caller.
+func (c *Component) globalEntity(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) ([]byte, error) {
+	id, revision, err := c.resolveGlobal(ctx, subjects, reference, minRevision)
+	if err != nil {
+		return nil, err
+	}
+	entity, err := c.readEntity(ctx, subjects.entity, id)
+	if err != nil {
+		return nil, fallThroughNotFound(err)
+	}
+	if len(entity) == 0 {
+		// Entity is omitted when empty, so an empty reply would answer with no entity at all.
+		return nil, c.brokenReply(subjects.entity, errors.New("is empty"))
+	}
+	return envelope(c, subjects.entity, revision, graph.GlobalSearchData{Strategy: strategyEntity, Entity: json.RawMessage(entity)})
+}
+
+// globalPath answers with step 2's walk from the resolved start, as pathSearch answers it for the
+// same request, under the walk's revision. A start with no record falls through as globalEntity's
+// does.
+func (c *Component) globalPath(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) ([]byte, error) {
+	id, _, err := c.resolveGlobal(ctx, subjects, reference, minRevision)
+	if err != nil {
+		return nil, err
+	}
+	if err := c.readPathStart(ctx, subjects.entity, id); err != nil {
+		return nil, fallThroughNotFound(err)
+	}
+	walk := graph.PathSearchRequest{
+		StartEntity: id, Direction: directionBoth, MaxDepth: globalPathDepth, MaxNodes: globalPathNodes,
+		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
+	}
+	found, revision, err := walkPaths(ctx, walk, c.indexHop(subjects.outgoing, subjects.incoming, minRevision))
+	if err != nil {
+		return nil, err
+	}
+	return envelope(c, subjects.outgoing, revision, graph.GlobalSearchData{Strategy: strategyPath, Path: &found})
+}
+
+// fallThroughNotFound turns the entity verb's entity_not_found into codeTextSearchUnsupported and
+// returns any other error unchanged.
+func fallThroughNotFound(err error) error {
+	var refusal *errs.ClassifiedError
+	if errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeEntityNotFound {
+		return textSearchUnsupported()
+	}
+	return err
+}
 
 // globalRoute is the strategy that answers a question and what that strategy reads: the reference
 // for entity and path (the question, or the path's start), the time range for temporal and the area

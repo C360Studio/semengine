@@ -188,6 +188,29 @@ func TestGlobalSearchEndedClassification(t *testing.T) {
 	if err.Error() != want {
 		t.Errorf("refusal = %q, want %q", err.Error(), want)
 	}
+
+	// Through the handler, as natsclient calls it once the handler's budget has ended its context: one
+	// input and one error, and nothing is asked downstream, since the component holds no connection.
+	c, err := createFromJSON(t, `{}`)
+	if err != nil {
+		t.Fatalf("CreateGraphQuery: %v", err)
+	}
+	const request = `{"query":"sensor-001"}`
+	reply, err := c.queryHandlers()["globalSearch"](ctx, []byte(request))
+	if err == nil {
+		t.Fatalf("globalSearch under an ended context = %q, want refused", reply)
+	}
+	refusalOfRoute(t, "sensor-001", err, errs.ErrorTransient, graph.ErrorCodeInternal)
+	if err.Error() != want {
+		t.Errorf("handler refusal = %q, want %q", err.Error(), want)
+	}
+	// The handler counts before it returns.
+	if flow := c.DataFlow(); flow.Messages != 1 || flow.Bytes != int64(len(request)) {
+		t.Errorf("DataFlow = %+v, want one message of %d bytes", flow, len(request))
+	}
+	if got := c.Health().ErrorCount; got != 1 {
+		t.Errorf("ErrorCount = %d, want 1", got)
+	}
 }
 
 // TestGlobalSearchRefusesHintsItCannotRead proves the typed read fails closed (design D1): a hint

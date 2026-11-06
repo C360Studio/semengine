@@ -35,7 +35,7 @@ handler).
   `TestGlobalSearchRefusesImpossibleNumbers`, `TestGlobalSearchEndedClassification`, strict decoding (`level` refused
   by name); the path-plus-count and path-plus-time rows shown to fail. Carries the behaviours of
   `slice_e_contract_test`'s strategy reports, renamed.
-- [ ] 3.2 The resolver and the `entity` and `path` strategies, the `globalSearch` row and handler (D3, D4):
+- [x] 3.2 The resolver and the `entity` and `path` strategies, the `globalSearch` row and handler (D3, D4):
   `entityByAlias` calls the shared resolver; `path` calls step 2's walk in process. Premise:
   `processor/graph-query/query.go:161-197`, `pathsearch.go:29-178`, `pin:entity_resolver.go`,
   `pin:graphrag.go:402-490`, `:1001-1066`, `:2562-2609`. Check: `TestGlobalSearchEntity`, `TestGlobalSearchPath`,

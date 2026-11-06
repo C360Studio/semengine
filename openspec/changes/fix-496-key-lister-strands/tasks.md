@@ -57,7 +57,7 @@ Design track. Tests come first.
   - `ReportStore`'s doc names the migration.
   - Gate: `go test -race -count=1 -tags integration ./natsclient/storagereport/ ./service/ ./graph/kvcatalog/`;
     `task mutate:check` for test 4; `task verify`.
-- [ ] 2.4 Migration notes in the PR body for `CatalogReader` and `ReportStore` (D2).
+- [x] 2.4 Migration notes in the PR body for `CatalogReader` and `ReportStore` (D2).
   - Gate: `gh pr view` and `gh issue view` read back.
 
 ## 3. Code review

@@ -2,6 +2,7 @@ package graphquery
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,8 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/clustering"
+	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/graphview"
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
@@ -200,4 +203,116 @@ func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.Loc
 		return nil, fmt.Errorf("a reply with no entities is over the %d-byte limit", limit)
 	}
 	return best, nil
+}
+
+// localSearch answers from the record of entity_id's group at level, then one page of the group
+// (design D2, D5, D6). Every check of the request comes before any read. A view that is missing,
+// catching up, lost or stopped refuses index_not_ready, transient, without an error in Health. With no
+// record, the entity is read: when it exists, the group is not yet indexed; when it does not, the
+// entity verb's refusal is the answer, since no index state makes it exist. An unreadable record is
+// refused transient internal naming its key, and counts as an error. min_revision is compared with the
+// record's entity_revision, the reply's indexed_revision, before the page is read, so the page reflects
+// at least as much as the revision claimed. A request is one input and at most one error, as for the
+// other composed verbs.
+func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandler {
+	return func(ctx context.Context, data []byte) ([]byte, error) {
+		c.lifecycle.CountInput(len(data))
+		request, terms, err := decodeLocalSearchRequest(data)
+		if err != nil {
+			return nil, invalidRequest(err)
+		}
+		key, err := clustering.GroupKey(request.EntityID, request.Level)
+		if err != nil {
+			return nil, invalidRequest(err) // decodeLocalSearchRequest has already checked both
+		}
+		record, err := c.communityRecord(key)
+		if errors.Is(err, graphview.ErrKeyNotFound) {
+			return nil, c.ungrouped(ctx, entitySubject, request.EntityID, key)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if request.MinRevision > record.EntityRevision {
+			return nil, errs.ClassifiedCodeDetail(errs.ErrorTransient, graph.ErrorCodeRevisionNotReached,
+				map[string]any{"indexed_revision": record.EntityRevision},
+				fmt.Errorf("min_revision %d is above %s's entity_revision %d", request.MinRevision, key, record.EntityRevision))
+		}
+		page, err := c.readCountPage(ctx, prefixSubject, record.ID, "")
+		if err != nil {
+			return nil, err
+		}
+		matches, scanned, err := rankEntities(page.rows, terms)
+		if err != nil {
+			return nil, c.brokenReply(prefixSubject, err)
+		}
+		limit, err := c.natsClient.MaxPayload()
+		if err != nil {
+			return nil, c.unanswered(err)
+		}
+		encoded, err := fitLocalSearch(graph.LocalSearchData{
+			CommunityID:       record.ID,
+			Level:             record.Level,
+			MemberCount:       record.MemberCount,
+			CommunitySummary:  record.StatisticalSummary,
+			Keywords:          record.Keywords,
+			Entities:          matches,
+			EntitiesScanned:   scanned,
+			EntitiesTruncated: page.nextCursor != "",
+		}, int(limit), func(data graph.LocalSearchData) ([]byte, error) {
+			response, err := graph.NewQueryResponse(graph.ResponderGraphQuery, record.EntityRevision, data)
+			if err != nil {
+				return nil, err
+			}
+			return json.Marshal(response)
+		})
+		if err != nil {
+			return nil, c.unanswered(err)
+		}
+		return encoded, nil
+	}
+}
+
+// communityRecord reads key's record from the current community view. No view, or one not caught up,
+// lost or stopped, is index_not_ready; a poisoned key is graph-query's own internal refusal, counted;
+// an absent key returns graphview.ErrKeyNotFound for the caller to read the entity.
+func (c *Component) communityRecord(key string) (clustering.Community, error) {
+	view := c.communities.Load()
+	if view == nil {
+		return clustering.Community{}, communityNotReady(errors.New("no view of " + graph.BucketCommunityIndex))
+	}
+	record, _, err := view.Get(key)
+	var poison *graphview.PoisonError
+	switch {
+	case err == nil:
+		return record, nil
+	case errors.Is(err, graphview.ErrKeyNotFound):
+		return clustering.Community{}, err
+	case errors.As(err, &poison):
+		return clustering.Community{}, c.unanswered(fmt.Errorf("community record %s is unreadable: %w", key, err))
+	default:
+		return clustering.Community{}, communityNotReady(err)
+	}
+}
+
+// ungrouped answers a group with no record: entityID's own read decides. A refusal, or no answer,
+// reaches the caller as ask returns it; an entity that exists is in a group not yet published.
+func (c *Component) ungrouped(ctx context.Context, entitySubject, entityID, key string) error {
+	request, err := json.Marshal(graph.EntityRequest{ID: entityID})
+	if err != nil {
+		return internalError(err)
+	}
+	if _, err := c.ask(ctx, entitySubject, request); err != nil {
+		return err
+	}
+	return communityNotReady(fmt.Errorf("%s holds no record of %s's group", graph.BucketCommunityIndex, entityID))
+}
+
+func communityNotReady(err error) error {
+	return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady, fmt.Errorf("community index not ready: %w", err))
+}
+
+// unanswered is graph-query's own refusal of a request it could not answer, counted as an error.
+func (c *Component) unanswered(err error) error {
+	c.lifecycle.CountError()
+	return internalError(err)
 }

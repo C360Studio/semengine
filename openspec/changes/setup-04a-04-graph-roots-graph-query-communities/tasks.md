@@ -39,7 +39,7 @@ and at most one `CountError`.
   `TestLocalSearchScoresAsThePin`, `TestLocalSearchTermsAreDistinctAndBounded`, `TestLocalSearchOrderIsDeterministic`,
   `TestLocalSearchAnswerTemplate`; the tie break and the repeat removal shown to fail. Carries the behaviours of
   `graphrag_test`'s `TestScoreEntityQuery` and `TestFilterEntitiesByQuery_*` (`inventory.md` § 9).
-- [ ] 3.2 The community view and the verb: the run context, the view over `COMMUNITY_INDEX` through
+- [x] 3.2 The community view and the verb: the run context, the view over `COMMUNITY_INDEX` through
   `kvcatalog.OpenCatalogReader` and `DecodeCommunity`, its reopen every 5 s; the `localSearch` row; the handler with the
   record
   read, the entity read when it is missing, the page read and `min_revision`. Concurrency, readiness and lifecycle: an

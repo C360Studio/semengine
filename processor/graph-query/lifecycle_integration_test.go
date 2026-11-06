@@ -101,12 +101,16 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if len(o.c.subscriptions) > 0 {
 		held = append(held, "query subscriptions")
 	}
+	if o.c.supervised != nil {
+		held = append(held, "community view")
+	}
 	return lifecycletest.Observation{Unresolved: held}
 }
 
 // TestGraphQueryLifecycleSuite runs the lifecycle suite on the production Start. The failing owner
-// has the shape of graph-ingest's: its start function subscribes every declared verb through the
-// component's own subscribeQueries and then fails, so its rollback has real subscriptions to release.
+// has the shape of graph-ingest's: its start function runs the component's own start, which begins
+// the community view's supervisor and subscribes every declared verb, and then fails, so its rollback
+// has real subscriptions and a real supervisor to release.
 func TestGraphQueryLifecycleSuite(t *testing.T) {
 	client := fixtureClient(t)
 	factory := func() lifecycletest.Owner {
@@ -117,7 +121,7 @@ func TestGraphQueryLifecycleSuite(t *testing.T) {
 		c := newComponent(t, client)
 		return suiteOwner{c, func(ctx context.Context) error {
 			return c.lifecycle.Start(ctx, func(ctx context.Context) error {
-				if err := c.subscribeQueries(ctx); err != nil {
+				if err := c.start(ctx); err != nil {
 					return err
 				}
 				return errors.New("start fails after acquiring")
@@ -133,7 +137,7 @@ func TestGraphQueryLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"query subscriptions"}
+		want := []string{"query subscriptions", "community view"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}

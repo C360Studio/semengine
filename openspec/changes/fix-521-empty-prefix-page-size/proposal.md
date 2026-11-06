@@ -36,6 +36,9 @@ Quick track: proposal and tasks. No spec delta, because the code is brought in l
   encoding and one byte under it. The oracle is `json.Marshal` of the reply. At one byte under, it expects class
   invalid, `response_too_large`, with `response_bytes` equal to the reply's length. It fails on the base commit for
   the nil page: the reply is 27 bytes, the fit counted 25, the maximum was 26, so the refusal was fatal `internal`.
+- Examples suffice, no generated checks (`docs/testing.md`): the change has two inputs, the two empty-slice
+  representations, and one fit-or-refuse boundary, and the test covers each at exactly the boundary and one byte
+  under it. Existing tests cover cursor overhead and multi-digit totals.
 
 ## Capabilities
 

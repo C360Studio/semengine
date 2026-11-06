@@ -82,7 +82,8 @@ does not reserve.
 **What you change:**
 
 - The search decode above.
-- Nothing for `localSearch`: `query_tools.go` at `e4febc0d` has no tool that calls it, so no SemSource code reads its
+- Nothing for `localSearch`: no SemSource code at `e4febc0d` calls it (the whole tree checked; the only mentions are
+  subject-ownership lists in tests and docs, and its ADR-0010 keeps `localSearch` unexposed), so nothing reads its
   reply. If you add one, decode `data` by the verb's table row, read `community_id` (not `communityId`), and send a
   `min_revision` only from a write to an entity in the group you search (see "The changes that fail silently").
 - Your collision guard. graph-query's second-responder check sees declared ports only. Your graph requests subscribe

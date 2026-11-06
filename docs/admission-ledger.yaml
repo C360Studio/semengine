@@ -4225,7 +4225,7 @@
     predicate or string value, over the distinct term count, kept at 0.3 or above), order by score then entity ID,
     and a plain-text answer; reply enveloped, indexed_revision the record's entity_revision, min_revision above it
     refused revision_not_reached before the page is read, matches left out to fit max_payload set entities_truncated,
-    and semengine_graph_query_search_truncated_total{verb} counts cut-short localSearch and pathSearch answers. Not
+    and semengine_graph_query_search_truncated_total{verb} counts cut-short localSearch answers. Not
     carried at step 3: community_cache.go (generation, lease, fence and the cache), the graph.clustering.query.entity
     fallback, the semantic fallback when no record exists, the answer interface, and the poison-counting List.
     Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and

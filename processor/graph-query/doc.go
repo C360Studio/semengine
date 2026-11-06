@@ -36,7 +36,7 @@
 // Start does not wait for the bucket and does not fail when it is missing: one goroutine opens it, runs
 // the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost, and
 // localSearch is refused transient index_not_ready until a view has caught up. Stop ends the view.
-// semengine_graph_query_search_truncated_total counts localSearch and pathSearch answers that were cut short.
+// semengine_graph_query_search_truncated_total counts localSearch answers that were cut short.
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

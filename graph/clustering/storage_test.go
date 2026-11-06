@@ -72,7 +72,8 @@ func TestGroupKey(t *testing.T) {
 
 // TestDecodeCommunity: the value a real Maintainer stores at an entity's level-1 group
 // key decodes to that group's record; a value that is not JSON, whose level or ID does not
-// give its key, or whose entity_revision is 0 or missing is refused naming the key.
+// give its key, whose level is not 0 to 2 even at its own key, or whose entity_revision is
+// 0 or missing is refused naming the key.
 func TestDecodeCommunity(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	id := "acme.dep1.src.docs.note.n1"
@@ -107,10 +108,15 @@ func TestDecodeCommunity(t *testing.T) {
 		{"not JSON", `not a record`},
 		{"wrong level", `{"id":"acme.dep1.src","level":0,"member_count":1,"entity_revision":7}`},
 		{"wrong ID", `{"id":"acme.dep1.other","level":1,"member_count":1,"entity_revision":7}`},
+		{"level 5", `{"id":"acme.dep1.src","level":5,"member_count":1,"entity_revision":7}`},
 		{"revision 0", `{"id":"acme.dep1.src","level":1,"member_count":1,"entity_revision":0}`},
 		{"no revision", `{"id":"acme.dep1.src","level":1,"member_count":1}`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
+			key := key
+			if tt.name == "level 5" {
+				key = "5.acme.dep1.src" // the record's own key: only the level is wrong
+			}
 			got, err := DecodeCommunity(key, []byte(tt.value))
 			if got != nil || !errs.IsInvalid(err) {
 				t.Fatalf("DecodeCommunity = %+v, %v; want nil and an invalid error", got, err)
@@ -154,8 +160,8 @@ func FuzzGroupKey(f *testing.F) {
 	})
 }
 
-// FuzzDecodeCommunity: never panics; an accepted record's level and ID give its key and
-// its entity_revision is not 0; a refusal is an invalid error naming the key.
+// FuzzDecodeCommunity: never panics; an accepted record's level is 0 to 2, its level and
+// ID give its key and its entity_revision is not 0; a refusal is an invalid error naming the key.
 func FuzzDecodeCommunity(f *testing.F) {
 	for _, seed := range [][2]string{
 		{"1.acme.dep1.src", `{"id":"acme.dep1.src","level":1,"member_count":1,"entity_revision":7}`},
@@ -163,6 +169,7 @@ func FuzzDecodeCommunity(f *testing.F) {
 		{"1.acme.dep1.src", `{"id":"acme.dep1.src","level":1,"entity_revision":0}`},
 		{"1.acme.dep1.src", `{"id":"acme.dep1.src","level":1,"entity_revision":-1}`},
 		{"2.acme.dep1", `{"id":"acme.dep1","level":2,"entity_revision":18446744073709551615}`},
+		{"5.x", `{"id":"x","level":5,"entity_revision":1}`}, {"-1.x", `{"id":"x","level":-1,"entity_revision":1}`},
 		{"0.a.b.c.d", `null`}, {"0.a.b.c.d", `[]`}, {"", `{}`}, {"x", `not json`},
 	} {
 		f.Add(seed[0], []byte(seed[1]))
@@ -175,7 +182,7 @@ func FuzzDecodeCommunity(f *testing.F) {
 			}
 			return
 		}
-		if own := strconv.Itoa(c.Level) + "." + c.ID; own != key || c.EntityRevision == 0 {
+		if own := strconv.Itoa(c.Level) + "." + c.ID; own != key || c.EntityRevision == 0 || c.Level < 0 || c.Level > 2 {
 			t.Fatalf("DecodeCommunity(%q) accepted %+v, whose key is %q", key, c, own)
 		}
 	})

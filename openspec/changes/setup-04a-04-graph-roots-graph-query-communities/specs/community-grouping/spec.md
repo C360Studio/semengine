@@ -35,8 +35,8 @@ SHALL, every `ENTITY_STATES` write at or below `entity_revision` SHALL be reflec
 
 `clustering.GroupKey` SHALL return the key of an entity's group at a level and SHALL refuse a level outside 0 to 2 and
 an ID the canonical parser refuses. `clustering.DecodeCommunity` SHALL decode the value at a key and SHALL refuse one
-that is not JSON, whose level and ID do not give that key, or whose `entity_revision` is 0. `GetAllCommunities` SHALL
-check each entry through it.
+that is not JSON, whose level is outside 0 to 2, whose level and ID do not give that key, or whose `entity_revision`
+is 0. `GetAllCommunities` SHALL check each entry through it.
 
 #### Scenario: A key and a record
 

@@ -4000,35 +4000,35 @@
     context leaves the work pending; Upsert and Delete never wait on a Tick write; every applied Upsert or Delete, held,
     refused or not, raises its groups' Community.EntityRevision (entity_revision, no omitempty), a removed group taking
     its mark with it, so the next tick writes them; with the caller feeding ascending revisions across keys every
-    ENTITY_STATES write at or below it is reflected (setup-04a-04-graph-roots-graph-query-communities D1); (3)
-    Community is bounded by
-    construction (no member list, no membership hash, MaxKeywords 10 types and keywords, MaxRepEntities 5,
+    ENTITY_STATES write at or below it is reflected (setup-04a-04-graph-roots-graph-query-communities D1); (3) Community
+    is bounded by construction (no member list, no membership hash, MaxKeywords 10 types and keywords, MaxRepEntities 5,
     MaxEntityTerms 32, MaxWordBytes 32, encoded under MaxRecordBytes 8 KiB); words come only from string values, never
-    from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word;
-    kept words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records
-    {level}.{group ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a
-    level outside 0 to 2 and an ID the canonical parser refuses; DecodeCommunity(key, value) refuses bad JSON, a record
-    whose level and ID do not give key, and entity_revision 0; GetAllCommunities refuses a nil context, fails naming the
-    key on an unreadable entry or one DecodeCommunity refuses, and returns an ended context's error (pin skipped
-    unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not carried:
-    lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own row);
-    summarizer.go outside :388-490 (own row); enhancement_worker.go, summary_store.go, metrics.go (own rows, #485);
-    MembershipHash (storage.go:42-48, tier 2, #485), storage's triples, GetCommunity and the other unread storage
-    methods, NewNATSCommunityStorageWithConfig, CommunityStorageConfig (design D3, inventory § 8); the pin's doc.go
-    and README.md are rewritten for the package, and TRIPLE_TESTS_SUMMARY.md is not carried
+    from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word; kept
+    words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
+    ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
+    and an ID the canonical parser refuses; DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0
+    to 2 or whose level and ID do not give key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
+    naming the key on an unreadable entry or one DecodeCommunity refuses, and returns an ended context's error (pin
+    skipped unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not
+    carried: lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own
+    row); summarizer.go outside :388-490 (own row); enhancement_worker.go, summary_store.go, metrics.go (own rows,
+    #485); MembershipHash (storage.go:42-48, tier 2, #485), storage's triples, GetCommunity and the other unread storage
+    methods, NewNATSCommunityStorageWithConfig, CommunityStorageConfig (design D3, inventory § 8); the pin's doc.go and
+    README.md are rewritten for the package, and TRIPLE_TESTS_SUMMARY.md is not carried
   dependencies_and_side_effects: >-
     graph, natsclient, pkg/errs, pkg/types (in-set); nats.go/jetstream through natsclient. No goroutine, no
     Prometheus, no provider module. Writes, removes and lists keys of COMMUNITY_INDEX through the injected KVStore;
     creates no bucket, stream or consumer; holds no ENTITY_STATES handle
   known_risks: >-
     The precondition that each key's deliveries arrive in increasing revision order is change 7's, from one ordered
-    watch, not a library promise; entity_revision's promise needs ascending order across keys too, which ADR-066
-    states unprobed (ADR-112) and change 7 probes on the watch it wires. Keywords are the top words over capped per-entity contributions: a word outside
-    every member's top 32 cannot be a keyword. Tick's cost per changed group is paid while Upsert and Delete wait.
-    Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the fixture's server image
-    (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's consistency contract
-    during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config keys. semboids'
-    member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #32, #68, #141, #477
+    watch, not a library promise; entity_revision's promise needs ascending order across keys too, which ADR-066 states
+    unprobed (ADR-112) and change 7 probes on the watch it wires. Keywords are the top words over capped per-entity
+    contributions: a word outside every member's top 32 cannot be a keyword. Tick's cost per changed group is paid while
+    Upsert and Delete wait. Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the
+    fixture's server image (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's
+    consistency contract during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config
+    keys. semboids' member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #32, #68,
+    #141, #477
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
     TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go

@@ -113,8 +113,8 @@ func GroupKey(entityID string, level int) (string, error) {
 
 // DecodeCommunity decodes value, the COMMUNITY_INDEX entry at key, as storage does. It
 // refuses, with an invalid error naming key, a value that is not JSON, a record whose
-// level and ID do not give key, and a record whose EntityRevision is 0, which no
-// maintainer writes.
+// level is not 0, 1 or 2, a record whose level and ID do not give key, and a record whose
+// EntityRevision is 0, which no maintainer writes.
 func DecodeCommunity(key string, value []byte) (*Community, error) {
 	refuse := func(err error) (*Community, error) {
 		return nil, errs.WrapInvalid(err, "clustering", "DecodeCommunity", "decode community")
@@ -122,6 +122,9 @@ func DecodeCommunity(key string, value []byte) (*Community, error) {
 	var community Community
 	if err := json.Unmarshal(value, &community); err != nil {
 		return refuse(fmt.Errorf("decode %s: %w", key, err))
+	}
+	if community.Level < 0 || community.Level >= levels {
+		return refuse(fmt.Errorf("%s holds a record at level %d, not 0, 1 or 2", key, community.Level))
 	}
 	if own := communityKey(community.Level, community.ID); own != key {
 		return refuse(fmt.Errorf("%s holds the record of %q", key, own))

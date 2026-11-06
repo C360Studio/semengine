@@ -19,16 +19,17 @@ and at most one `CountError`.
 ## 2. The record's revision
 
 - [x] 2.1 `Community.EntityRevision` (`entity_revision`, no `omitempty`), the group's latest applied write, held or not;
-  `GroupKey(entityID, level)` and `DecodeCommunity(key, value)`, which refuses bad JSON, a record whose level and ID
-  do not give its key, and revision 0; `GetAllCommunities` and the maintainer use them. Premise:
-  `graph/clustering/maintainer.go:120-161`, `:240-272`, `:390`; `storage.go:55-68`, `:107-110` (D1). Check:
-  `TestRecordNamesItsLatestWrite` (held and unheld deletes, a recreated group); `TestMaintainerMatchesModel` on its
-  ascending histories, its model extended from the spec, not from `maintainer.go`; `TestHistoryOrderIrrelevant`,
-  comparing records apart from `entity_revision`; `TestUnchangedRecordAddsNoRevision`, split into nothing applied
-  (no write) and a same-content upsert (three writes, once); `TestGroupKey`; `TestDecodeCommunity`;
-  `TestRecordIsBounded` with the field. A mutant that skips a delete's revision shown to fail. Ledger: the
-  `graph/clustering` row's contract and tests. `graph/clustering/README.md`: the field, what it promises, and that the
-  caller must feed ascending revisions across keys, which change 7 probes on the watch it wires (ADR-112).
+  `GroupKey(entityID, level)` and `DecodeCommunity(key, value)`, which refuses bad JSON, a record whose level and ID do
+  not give its key, and revision 0; `GetAllCommunities` uses `DecodeCommunity`; the maintainer and `GroupKey` share
+  `groupIDs` and `communityKey`. Premise: `graph/clustering/maintainer.go:120-161`, `:240-272`, `:390`;
+  `storage.go:55-68`, `:107-110` (D1). Check: `TestRecordNamesItsLatestWrite` (held and unheld deletes, a recreated
+  group); `TestMaintainerMatchesModel` on its ascending histories, its model extended from the spec, not from
+  `maintainer.go`; `TestHistoryOrderIrrelevant`, comparing records apart from `entity_revision`;
+  `TestUnchangedRecordAddsNoRevision`, split into nothing applied (no write) and a same-content upsert (three writes,
+  once); `TestGroupKey`; `TestDecodeCommunity`; `TestRecordIsBounded` with the field. A mutant that skips a delete's
+  revision shown to fail. Ledger: the `graph/clustering` row's contract and tests. `graph/clustering/README.md`: the
+  field, what it promises, and that the caller must feed ascending revisions across keys, which change 7 probes on the
+  watch it wires (ADR-112).
 
 ## 3. Local search
 

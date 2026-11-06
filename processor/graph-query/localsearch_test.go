@@ -2,6 +2,7 @@ package graphquery
 
 import (
 	"encoding/json"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -150,6 +151,22 @@ func TestLocalSearchTermsAreDistinctAndBounded(t *testing.T) {
 			t.Errorf("decodeLocalSearchRequest(%s) = %q, %v; want an error naming query", request, terms, err)
 		}
 	}
+
+	// A query of about 1 MB, every term distinct: the split stops at the first term over the bound.
+	var long strings.Builder
+	for i := 0; long.Len() < 1<<20; i++ {
+		fmt.Fprintf(&long, "t%d ", i)
+	}
+	request, err := json.Marshal(graph.LocalSearchRequest{EntityID: "acme.ops.src.docs.note.n00", Query: long.String()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := decodeLocalSearchRequest(request); err == nil || !strings.Contains(err.Error(), "query") {
+		t.Errorf("a 1 MB query: %v, want an error naming query", err)
+	}
+	if got := len(searchTerms(long.String())); got != 17 {
+		t.Errorf("searchTerms of a 1 MB query returned %d terms, want 17", got)
+	}
 }
 
 func TestLocalSearchRequestDecoding(t *testing.T) {
@@ -248,24 +265,18 @@ func TestLocalSearchAnswerTemplate(t *testing.T) {
 		Entities:         rawEntities(`{}`, `{}`, `{}`),
 		EntitiesScanned:  40,
 	}
-	const found = "Found 3 matching entities among 40 read from acme.ops.src.docs, which has 7000 members."
-	if got, want := localSearchAnswer(data), found+" "+summary+" Key themes: alpha, beta, gamma, delta, epsilon."; got != want {
+	const found = "Found 3 matching entities among 40 read from acme.ops.src.docs."
+	if got, want := localSearchAnswer(data), found+" "+summary; got != want {
 		t.Errorf("answer = %q\nwant     %q", got, want)
 	}
 
-	data.Keywords = []string{"alpha", "beta"}
 	data.CommunitySummary = ""
-	if got, want := localSearchAnswer(data), found+" Key themes: alpha, beta."; got != want {
+	if got, want := localSearchAnswer(data), found+" It has 7000 members. Key themes: alpha, beta, gamma, delta, epsilon."; got != want {
 		t.Errorf("answer without a summary = %q, want %q", got, want)
 	}
 	data.Keywords = nil
-	data.CommunitySummary = summary
-	if got, want := localSearchAnswer(data), found+" "+summary; got != want {
-		t.Errorf("answer without keywords = %q, want %q", got, want)
-	}
-	data.CommunitySummary = ""
-	if got := localSearchAnswer(data); got != found {
-		t.Errorf("answer with neither = %q, want %q", got, found)
+	if got, want := localSearchAnswer(data), found+" It has 7000 members."; got != want {
+		t.Errorf("answer with neither = %q, want %q", got, want)
 	}
 }
 
@@ -278,9 +289,9 @@ func TestLocalSearchFitKeepsTheBestThatFit(t *testing.T) {
 	}
 	encode := func(d graph.LocalSearchData) ([]byte, error) { return json.Marshal(d) }
 	const (
-		all = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"},{"id":"b"},{"id":"c"}],"entities_scanned":3,"entities_truncated":false,"answer":"Found 3 matching entities among 3 read from acme.ops.src.docs, which has 3 members."}`
-		two = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"},{"id":"b"}],"entities_scanned":3,"entities_truncated":true,"answer":"Found 2 matching entities among 3 read from acme.ops.src.docs, which has 3 members."}`
-		one = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"}],"entities_scanned":3,"entities_truncated":true,"answer":"Found 1 matching entities among 3 read from acme.ops.src.docs, which has 3 members."}`
+		all = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"},{"id":"b"},{"id":"c"}],"entities_scanned":3,"entities_truncated":false,"answer":"Found 3 matching entities among 3 read from acme.ops.src.docs. It has 3 members."}`
+		two = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"},{"id":"b"}],"entities_scanned":3,"entities_truncated":true,"answer":"Found 2 matching entities among 3 read from acme.ops.src.docs. It has 3 members."}`
+		one = `{"community_id":"acme.ops.src.docs","level":0,"member_count":3,"entities":[{"id":"a"}],"entities_scanned":3,"entities_truncated":true,"answer":"Found 1 matching entities among 3 read from acme.ops.src.docs. It has 3 members."}`
 	)
 	for limit, want := range map[int]string{len(all): all, len(two): two, len(two) - 1: one} {
 		got, err := fitLocalSearch(data, limit, encode)

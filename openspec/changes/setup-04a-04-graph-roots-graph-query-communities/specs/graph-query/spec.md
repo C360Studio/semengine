@@ -69,14 +69,22 @@ ordered by score descending, then entity ID.
 
 ### Requirement: Local search answers in a fixed template
 
-The answer SHALL be `Found {n} matching entities among {entities_scanned} read from {community_id}, which has
-{member_count} members.`, followed by the record's summary when it has one, and then by `Key themes:` and its first
-five keywords, separated by a comma and a space and ending in a period, when it has keywords.
+The answer SHALL be `Found {n} matching entities among {entities_scanned} read from {community_id}.`, followed by a
+space and the record's summary when it has one. When it has none, it SHALL be followed by `It has {member_count}
+members.` and, when it has keywords, by `Key themes:` and its first five keywords, separated by a comma and a space
+and ending in a period.
 
 #### Scenario: The answer text
 
 - **WHEN** three of 40 read entities match in a group of 7,000 members with a summary and keywords
-- **THEN** the answer is the literal template filled with those values (`TestLocalSearchAnswerTemplate`)
+- **THEN** the answer is the first sentence and the summary, the summary already stating the member count and themes
+  (`TestLocalSearchAnswerTemplate`)
+
+#### Scenario: A record with no summary
+
+- **WHEN** the group's record has no summary
+- **THEN** the answer states the member count and, when the record has keywords, its first five
+  (`TestLocalSearchAnswerTemplate`)
 
 ### Requirement: Local search refuses what it cannot answer
 

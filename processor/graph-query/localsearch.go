@@ -42,12 +42,17 @@ func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, []string, 
 }
 
 // searchTerms splits query as the pin did (graphrag.go:2327), then removes repeats: at the pin a repeated
-// term weighed twice, so how a query was typed changed who matched (design D4).
+// term weighed twice, so how a query was typed changed who matched (design D4). It stops at the first
+// distinct term over graph.MaxSearchTerms, so a long query costs a bounded scan, never a quadratic one.
 func searchTerms(query string) []string {
 	var terms []string
-	for _, term := range strings.Fields(strings.ToLower(query)) {
-		if !slices.Contains(terms, term) {
-			terms = append(terms, term)
+	for term := range strings.FieldsSeq(strings.ToLower(query)) {
+		if slices.Contains(terms, term) {
+			continue
+		}
+		terms = append(terms, term)
+		if len(terms) > graph.MaxSearchTerms {
+			break
 		}
 	}
 	return terms
@@ -142,13 +147,15 @@ func rankEntities(page []json.RawMessage, terms []string) ([]json.RawMessage, in
 	return ranked, len(seen), nil
 }
 
-// localSearchAnswer is the answer text (design D5), {n} being the entities in the reply.
+// localSearchAnswer is the answer text (design D5), {n} being the entities in the reply. A record's
+// summary already states its member count and themes, so they are written only when it has none.
 func localSearchAnswer(data graph.LocalSearchData) string {
-	answer := fmt.Sprintf("Found %d matching entities among %d read from %s, which has %d members.",
-		len(data.Entities), data.EntitiesScanned, data.CommunityID, data.MemberCount)
+	answer := fmt.Sprintf("Found %d matching entities among %d read from %s.",
+		len(data.Entities), data.EntitiesScanned, data.CommunityID)
 	if data.CommunitySummary != "" {
-		answer += " " + data.CommunitySummary
+		return answer + " " + data.CommunitySummary
 	}
+	answer += fmt.Sprintf(" It has %d members.", data.MemberCount)
 	if len(data.Keywords) > 0 {
 		answer += " Key themes: " + strings.Join(data.Keywords[:min(len(data.Keywords), 5)], ", ") + "."
 	}

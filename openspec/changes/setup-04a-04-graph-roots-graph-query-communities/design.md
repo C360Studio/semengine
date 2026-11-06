@@ -86,11 +86,11 @@ score 0.25 and are dropped; a repeated term counted twice (0.33), now once; a pr
 score, then entity ID; the pin's `sort.Slice` is not stable (40 ties kept input order once; not promised). A reply over
 `max_payload` (`natsclient.Client.MaxPayload`) leaves out the lowest-ranked matches until it fits and sets
 `entities_truncated`. The answer is a plain function (owner, Q6), literally `Found {n} matching entities among
-{entities_scanned} read from {community_id}, which has {member_count} members.`, `{n}` counting the entities in the
-reply, after any cut; then the record's summary if set, then `Key themes:` and the first five keywords. The pin printed
-"(7 entities, 0% match)" (probe), a relevance local search never computes. *Proof:* `TestLocalSearchReadsOnePage`
-(ruling 2's: one prefix request; a later match absent, truncated; a fitting group equals an independent filter), the
-scoring, terms, order and answer tests, `TestLocalSearchEntitiesPassUnchanged`, `TestLocalSearchFitsMaxPayload`.
+{entities_scanned} read from {community_id}.`, `{n}` counting the entities in the reply, after any cut; then the
+record's summary if set (it holds both), else `It has {member_count} members.` and `Key themes:` with the first five
+keywords. The pin printed "(7 entities, 0% match)" (probe). *Proof:* `TestLocalSearchReadsOnePage` (ruling 2's: one
+prefix request; a later match absent, truncated; a fitting group equals an independent filter), the scoring, terms,
+order and answer tests, `TestLocalSearchEntitiesPassUnchanged`, `TestLocalSearchFitsMaxPayload`.
 
 ## D6. Refusals and counting
 

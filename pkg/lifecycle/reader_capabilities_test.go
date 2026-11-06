@@ -8,7 +8,7 @@ import (
 
 type minimalEntityStatesReader struct{}
 
-func (minimalEntityStatesReader) ListKeys(context.Context, ...jetstream.WatchOpt) (jetstream.KeyLister, error) {
+func (minimalEntityStatesReader) WatchFiltered(context.Context, []string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
 	return nil, nil
 }
 
@@ -19,7 +19,7 @@ func (minimalEntityStatesReader) Watch(context.Context, string, ...jetstream.Wat
 var (
 	_ entityStatesReader = minimalEntityStatesReader{}
 	_ interface {
-		ListKeys(context.Context, ...jetstream.WatchOpt) (jetstream.KeyLister, error)
+		WatchFiltered(context.Context, []string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 		Watch(context.Context, string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 	} = (entityStatesReader)(nil)
 )

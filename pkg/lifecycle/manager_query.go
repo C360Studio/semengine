@@ -30,6 +30,12 @@ import (
 // the filter chain (Phase / Active / Match), and paginates with
 // Limit + Offset.
 //
+// The key listing completes before any entity is read. When it does not
+// (ctx ends, or the watch closes before its initial snapshot ends), List
+// returns no participants and an error, which matches ctx's error when ctx
+// ended. A read error other than a missing or non-lifecycle entity also
+// returns no participants and that error.
+//
 // Complexity is O(N) per call where N is the bucket size; consumers
 // hitting the cliff (~10K active instances) trigger the v2
 // secondary-index work documented in ADR-049's deferred section.
@@ -49,14 +55,13 @@ func (m *Manager) List(ctx context.Context, workflow string, opts ListOptions) (
 	if err != nil {
 		return nil, err
 	}
-	lister, err := bucket.ListKeys(ctx)
+	keys, err := natsclient.FilteredKeys(ctx, bucket, ">")
 	if err != nil {
-		return nil, fmt.Errorf("lifecycle: List ListKeys for workflow %q: %w", reg.workflow.Name, err)
+		return nil, fmt.Errorf("lifecycle: List keys for workflow %q: %w", reg.workflow.Name, err)
 	}
-	defer lister.Stop()
 
 	out := make([]Participant, 0)
-	for key := range lister.Keys() {
+	for _, key := range keys {
 		if !matchesWorkflow(reg, key) {
 			continue
 		}

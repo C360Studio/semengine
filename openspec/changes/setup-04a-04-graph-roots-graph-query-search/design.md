@@ -25,14 +25,14 @@ D2's refusal. Every other question is classified, and the table applies.
 | Path intent with a start node, nothing else | `path` | `pathrag`; a time range or count was ignored |
 | Time range, nothing else | `temporal` | same; a count or similarity was ignored |
 | Area, nothing else | `spatial` | same |
-| Two of path, time, area, with or without other hints (checked first: the caller can fix it); a path start and a zone or area phrase, refused by the classifier | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
+| Two of path, time, area, with or without other hints (checked first: the caller can fix it); an entity and a zone or area phrase, refused by the classifier | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
 | Any aggregation, ranking or similarity hint, with or without others; no hint and several tokens; path words with no start | text-tier refusal (D2) | `pathrag`, `temporal` or `graphrag` |
 
 The classifier's impossible-number error reaches the caller as `invalid_request` naming the phrase (owner, #479). A
 nil result with a nil error (an ended context, `graph/query/classifier_chain.go:91-93`) is transient `internal`, one
 error in `Health`, never "no hints"; so are hints that cannot be read and a classifier error that is not class
 invalid, each one error. **The classifier's limits stay its own:** "no answer drops a hint" holds for the hints the
-classifier reports, because the classifier refuses, class invalid, a question naming a path start and a zone or area
+classifier reports, because the classifier refuses, class invalid, a question naming an entity and a zone or area
 phrase ("the question names two places, sensor-001 and zone-b; ask about one"; `graph/query/classifier.go:164` used to
 skip the zone), and global search passes that refusal as `invalid_request` with its text. "From A to B" walking from A
 stays the classifier's documented limit, #535. A start in a question is

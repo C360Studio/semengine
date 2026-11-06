@@ -73,9 +73,9 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // years), so a negative N is refused; "within R of lat,lon" needs lat in [-90, 90], lon in
 // [-180, 180] and R finite. The refusal holds whichever tiers are composed, the keyword tier
 // included or not, and no tier is asked: answering without the phrase's filter would answer a
-// wider question than the one asked. When the keyword tier is composed, a question with path words,
-// an entity reference and a zone or area phrase naming another place ("what is connected to
-// sensor-001 in zone-b") is refused the same way, naming both places: the keyword tier would answer
+// wider question than the one asked. When the keyword tier is composed, a question with an entity
+// reference and a zone or area phrase naming another place ("what is connected to sensor-001 in
+// zone-b", "show sensor-001 in zone-b") is refused the same way, naming both places: the keyword tier would answer
 // a path from one of them. Every other outcome comes with a nil error.
 //
 // The keyword tier reads the clock once per question; "today", "yesterday", "this week" and the

@@ -15,8 +15,8 @@
 //
 // A question holding an impossible number ("last 0 hours", a latitude of 95) is refused:
 // ClassifierChain.ClassifyQuery returns no result and an invalid-input error naming the phrase,
-// whichever tiers are composed. With the keyword tier composed, a question naming a path start
-// and a zone or area phrase for another place ("connected to sensor-001 in zone-b") is refused the
+// whichever tiers are composed. With the keyword tier composed, a question naming an entity
+// reference and a zone or area phrase for another place ("sensor-001 in zone-b") is refused the
 // same way, naming both places. "Today" and the other calendar ranges follow the server's zone
 // (time.Local).
 //

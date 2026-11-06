@@ -111,12 +111,14 @@ own it gives no hint for such a phrase and keeps the others.
 With the keyword tier composed, a question with an entity reference and a zone or area phrase naming another
 place is refused too, before any tier is asked, with or without path words: "what is connected to sensor-001
 in zone-b" and "show sensor-001 in zone-b" get an invalid-input error saying `the question names two places,
-sensor-001 and zone-b; ask about one`. The keyword tier reads one path start, so it would answer a path from
-one place and drop the other. A phrase that only looks like a zone ("in the zone of the plant" reads
-`zone-of`) is refused the same way when the question also names an entity. An entity reference inside the zone
-phrase ("zone-b" itself, "sensor-zone-1") is the same place. `KeywordClassifier.ClassifyQuery` on its own
-still answers a path from one of them. Two entity references with no zone phrase ("from pump-1 to pump-2") are
-not refused; the keyword tier reads the first.
+sensor-001 and zone-b; ask about one`. Two zone or area phrases naming different places are refused the same
+way, whether a name is written with a hyphen or a space: "what is connected to zone a in zone b" names `zone-a`
+and `zone-b`. One place written twice ("zone a, zone-a", case aside) is one place. The keyword tier reads one
+path start, so it would answer a path from one place and drop the other. A phrase that only looks like a zone
+("in the zone of the plant" reads `zone-of`) is refused the same way when the question also names an entity or
+another zone. An entity reference inside the zone phrase ("zone-b" itself, "sensor-zone-1") is the same place.
+`KeywordClassifier.ClassifyQuery` on its own still answers a path from one of them. Two entity references with
+no zone phrase ("from pump-1 to pump-2") are not refused; the keyword tier reads the first.
 
 Not refused, because it is geometry: a box that reaches a pole is clamped to 90 or -90 and spans
 longitude -180 to 180. A box across the 180 degree line is not wrapped: its East can exceed 180 or

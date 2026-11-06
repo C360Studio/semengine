@@ -355,6 +355,9 @@ func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
 		{"show the path from pump-42 in area north", "pump-42", "area-north"},
 		{"show sensor-001 in zone-b", "sensor-001", "zone-b"},
 		{"status of sensor-001 in zone-b", "sensor-001", "zone-b"},
+		// Zone names written with a space are places too (PR #530 re-review).
+		{"what is connected to zone a in zone b", "zone-a", "zone-b"},
+		{"what is in zone a near area b", "area-b", "zone-a"},
 	} {
 		t.Run("refused/"+tt.query, func(t *testing.T) {
 			got, err := chain.ClassifyQuery(t.Context(), tt.query)
@@ -372,6 +375,11 @@ func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
 		{"what is connected to sensor-zone-1", "sensor-zone-1"},
 		{"what is connected to area-north-pump", "area-north-pump"},
 		{"what is connected to pump-zone-1", "pump-zone-1"},
+		{"what is connected to zone a", "zone-a"},
+		{"what is in zone b", "zone-b"},
+		// One place spelled twice is one place, whatever the separator or case.
+		{"what is in zone a, zone-a", "zone-a"},
+		{"what is in Zone A near zone a", "Zone-A"},
 	} {
 		t.Run("one place/"+tt.query, func(t *testing.T) {
 			got, err := chain.ClassifyQuery(t.Context(), tt.query)

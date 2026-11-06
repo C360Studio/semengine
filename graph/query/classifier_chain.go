@@ -75,7 +75,8 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // included or not, and no tier is asked: answering without the phrase's filter would answer a
 // wider question than the one asked. When the keyword tier is composed, a question with an entity
 // reference and a zone or area phrase naming another place ("what is connected to sensor-001 in
-// zone-b", "show sensor-001 in zone-b") is refused the same way, naming both places: the keyword tier would answer
+// zone-b", "show sensor-001 in zone-b"), or two zone or area phrases naming different places
+// ("zone a in zone b"), is refused the same way, naming both places: the keyword tier would answer
 // a path from one of them. Every other outcome comes with a nil error.
 //
 // The keyword tier reads the clock once per question; "today", "yesterday", "this week" and the

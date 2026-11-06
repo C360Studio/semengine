@@ -414,11 +414,14 @@ func TestZoneQuestionNeverAnswersEmpty(t *testing.T) {
 // TestGlobalSearchRefusesADroppedPlace: a path question that also names a zone ("what is connected to
 // sensor-001 in zone-b") names two places, and the keyword tier reads one start, so the question is
 // refused invalid_request naming both, never answered as the walk from one (PR #530 review, #535).
-// The zone alone is still answered, from its own holder. Real ingest, index and query.
+// Two zones written with spaces ("zone a in zone b") are refused the same way, each clause alone
+// answered first (PR #530 re-review). The zone alone is still answered, from its own holder. Real
+// ingest, index and query.
 func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, drone2)
 	stack.create(t, drone3, aliased("zone-b"))
+	stack.create(t, drone4, aliased("zone-a"), linked(drone2))
 	stack.awaitIndexed(t, stack.create(t, drone1, aliased("sensor-001"), linked(drone2)))
 
 	zone, err := stack.askGlobal(t, `{"query":"what is in zone-b"}`)
@@ -427,6 +430,19 @@ func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 	}
 	if data := decodeEnvelope(t, zone).Data; !bytes.Contains(data, []byte(drone3)) || bytes.Contains(data, []byte(drone1)) {
 		t.Fatalf("the zone alone answered %s, want the walk from %s", data, drone3)
+	}
+	// Each spaced clause alone is answered, so a refusal of the pair below is not an unread name.
+	for _, tc := range []struct{ question, holder, other string }{
+		{"what is connected to zone a", drone4, drone3},
+		{"what is in zone b", drone3, drone4},
+	} {
+		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, tc.question))
+		if err != nil {
+			t.Fatalf("%q alone: %v", tc.question, err)
+		}
+		if data := decodeEnvelope(t, raw).Data; !bytes.Contains(data, []byte(tc.holder)) || bytes.Contains(data, []byte(tc.other)) {
+			t.Fatalf("%q alone answered %s, want the walk from %s", tc.question, data, tc.holder)
+		}
 	}
 
 	for _, phrase := range []string{"in zone-b", "near zone-b"} {
@@ -439,6 +455,15 @@ func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 			}
 		})
 	}
+	// PR #530 re-review: two zones written with spaces, each answered alone above.
+	t.Run("zone a in zone b", func(t *testing.T) {
+		raw, err := stack.askGlobal(t, `{"query":"what is connected to zone a in zone b"}`)
+		requireRefusal(t, raw, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
+		const want = "the question names two places, zone-a and zone-b; ask about one"
+		if msg := err.Error(); !strings.HasPrefix(msg, "invalid request: ") || !strings.HasSuffix(msg, want) {
+			t.Errorf("message = %q, want invalid request ending %q", msg, want)
+		}
+	})
 }
 
 // TestGlobalSearchTextTierRefusal: a question only the text search could answer is refused class

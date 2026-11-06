@@ -29,7 +29,7 @@ Design track. Tests come first.
     `pkg/lifecycle` still returns it as `entityStatesReader` (`manager.go:213-214`); task 2.2 drops them.
   - `TestCatalogReader_ExportedSurfaceIsReadOnly` adds `WatchFiltered`.
   - Gate: `go test -race -count=1 ./graph/kvcatalog/` and with `-tags integration`; `task verify`.
-- [ ] 2.2 `pkg/lifecycle` (D1, D2, tests 1 and 2).
+- [x] 2.2 `pkg/lifecycle` (D1, D2, tests 1 and 2).
   - Write `TestListLeavesNoListerAfterAReadError` (graph-ingest started first, every entity undecodable, D3
     test 1) and show it failing on base in every run of a stated `-count`; record it, and that `getEntity`'s error
     is not skipped at `manager_query.go:64-70`. If base does not fail every run, stop for review (D3).

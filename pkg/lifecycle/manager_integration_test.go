@@ -15,6 +15,8 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,6 +24,7 @@ import (
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/nats-io/nats.go/jetstream"
@@ -488,6 +491,54 @@ func TestIntegration_WatchEventsContextEndLeavesNoWatchDelivery(t *testing.T) {
 		if err := natsfixture.AwaitNoStacks(t.Context(), watchBound, natsfixture.NativeDeliveryStacks); err != nil {
 			t.Fatalf("cycle %d: nats.go's watch delivery is still running after WatchEvents returned: %v", cycle, err)
 		}
+	}
+}
+
+// listingStacks returns the stacks of nats.go's key lister goroutine and of its watch delivery,
+// or "".
+func listingStacks() string {
+	buf := make([]byte, 1<<20)
+	var found []string
+	for _, stack := range strings.Split(string(buf[:runtime.Stack(buf, true)]), "\n\n") {
+		if strings.Contains(stack, "jetstream.(*kvs).ListKeys.func1") {
+			found = append(found, stack)
+		}
+	}
+	if delivery := natsfixture.NativeDeliveryStacks(); delivery != "" {
+		found = append(found, delivery)
+	}
+	return strings.Join(found, "\n\n")
+}
+
+// TestListLeavesNoListerAfterAReadError: a List that meets an entity it cannot read, with more
+// keys left than nats.go's 256-entry buffers hold, returns that read's error and leaves no key
+// lister or watch delivery running. Every one of the 600 matching entities holds bytes that do
+// not decode, so whichever key List reads first fails; the test needs no delivery order.
+func TestListLeavesNoListerAfterAReadError(t *testing.T) {
+	client := ingestClient(t)
+	// List reads each entity through graph-ingest's exact-read verb, so graph-ingest runs first.
+	stop := startGraphIngest(t.Context(), t, client, metric.NewMetricsRegistry())
+	defer stop()
+	mgr := NewManager(client, nil)
+	require.NoError(t, mgr.Register(gateWorkflow()))
+
+	js, err := client.JetStream()
+	require.NoError(t, err)
+	kv, err := js.KeyValue(t.Context(), graph.BucketEntityStates)
+	require.NoError(t, err)
+	for n := range 600 {
+		id := fmt.Sprintf("c360.platform1.lifecycle.gcs.mission.unreadable-%03d", n)
+		_, err := kv.Put(t.Context(), id, []byte("not an entity state"))
+		require.NoError(t, err)
+	}
+
+	got, err := mgr.List(t.Context(), "gate-fixture", ListOptions{})
+	require.ErrorContains(t, err, string(graph.GraphStateReasonUnreadableEntity))
+	require.Empty(t, got)
+	// List has returned; a lister or delivery it left behind is still in the dump when the bound
+	// ends.
+	if err := natsfixture.AwaitNoStacks(t.Context(), watchBound, listingStacks); err != nil {
+		t.Fatalf("nats.go's key lister or watch delivery is still running after List returned: %v", err)
 	}
 }
 

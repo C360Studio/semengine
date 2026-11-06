@@ -147,7 +147,10 @@ type fakeBucket struct {
 	history      map[string][]jetstream.KeyValueEntry
 	nextRev      uint64
 	watchFactory func(string) (jetstream.KeyWatcher, error)
-	listKeys     []string
+	// listKeys is the snapshot WatchFiltered delivers, ended by nats.go's nil marker, unless
+	// listing is set: then WatchFiltered returns listing, which the test feeds itself.
+	listKeys []string
+	listing  *fakeListing
 }
 
 type fakeBucketEntry struct {
@@ -267,27 +270,40 @@ func (b *fakeBucket) Watch(_ context.Context, pattern string, _ ...jetstream.Wat
 func (b *fakeBucket) WatchAll(context.Context, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
 	panic("fakeBucket.WatchAll exists only for jetstream.KeyValue fixture conformance")
 }
-func (b *fakeBucket) WatchFiltered(context.Context, []string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
-	panic("fakeBucket.WatchFiltered not implemented")
+func (b *fakeBucket) WatchFiltered(_ context.Context, keys []string, _ ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	if len(keys) != 1 || keys[0] != ">" {
+		return nil, fmt.Errorf("fakeBucket.WatchFiltered(%q): List lists every key", keys)
+	}
+	if b.listing != nil {
+		return b.listing, nil
+	}
+	listing := &fakeListing{updates: make(chan jetstream.KeyValueEntry, len(b.listKeys)+1)}
+	for _, key := range b.listKeys {
+		listing.updates <- &fakeKVEntry{key: key}
+	}
+	listing.updates <- nil
+	return listing, nil
 }
+
+// fakeListing is a scripted key watch. Like nats.go's, it closes Updates once: after Stop, or
+// earlier when the test closes it with end.
+type fakeListing struct {
+	updates   chan jetstream.KeyValueEntry
+	closeOnce sync.Once
+}
+
+func (l *fakeListing) Updates() <-chan jetstream.KeyValueEntry { return l.updates }
+func (l *fakeListing) Stop() error {
+	l.end()
+	return nil
+}
+func (l *fakeListing) end() { l.closeOnce.Do(func() { close(l.updates) }) }
 func (b *fakeBucket) Keys(context.Context, ...jetstream.WatchOpt) ([]string, error) {
 	panic("fakeBucket.Keys not implemented")
 }
 func (b *fakeBucket) ListKeys(context.Context, ...jetstream.WatchOpt) (jetstream.KeyLister, error) {
-	keys := make(chan string, len(b.listKeys))
-	for _, key := range b.listKeys {
-		keys <- key
-	}
-	close(keys)
-	return &fakeKeyLister{keys: keys}, nil
+	panic("fakeBucket.ListKeys not implemented")
 }
-
-type fakeKeyLister struct {
-	keys <-chan string
-}
-
-func (l *fakeKeyLister) Keys() <-chan string { return l.keys }
-func (l *fakeKeyLister) Stop() error         { return nil }
 func (b *fakeBucket) ListKeysFiltered(context.Context, ...string) (jetstream.KeyLister, error) {
 	panic("fakeBucket.ListKeysFiltered not implemented")
 }
@@ -1888,4 +1904,60 @@ func TestUpdateRetriesExhaustedIsTransient(t *testing.T) {
 			}
 		}
 	})
+}
+
+// listCutShort runs List over a scripted listing that delivers one matching, readable entity's key
+// and is then cut short by cut. A listing that completed would return that entity.
+func listCutShort(t *testing.T, cut func(cancel context.CancelFunc, listing *fakeListing)) ([]Participant, error) {
+	t.Helper()
+	mgr, _, bucket := newTestManager(t)
+	const id = "acme.ops.gcs.lifecycle.mission.listed"
+	bucket.put(id, validLifecycleState(id))
+	listing := &fakeListing{updates: make(chan jetstream.KeyValueEntry)}
+	bucket.listing = listing
+
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	type result struct {
+		participants []Participant
+		err          error
+	}
+	done := make(chan result, 1)
+	go func() {
+		participants, err := mgr.List(ctx, "fixture", ListOptions{})
+		done <- result{participants, err}
+	}()
+	// Updates is unbuffered, so this send returns once List's listing has taken the key.
+	listing.updates <- &fakeKVEntry{key: id}
+	cut(cancel, listing)
+	r := <-done
+	return r.participants, r.err
+}
+
+// TestListContextCancelledMidListingIsAnError: a List whose context is cancelled after one key and
+// before the listing's end marker returns no participants and an error matching context.Canceled
+// (design D3 test 2(i)).
+func TestListContextCancelledMidListingIsAnError(t *testing.T) {
+	t.Parallel()
+	participants, err := listCutShort(t, func(cancel context.CancelFunc, _ *fakeListing) { cancel() })
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("List error = %v, want context.Canceled", err)
+	}
+	if len(participants) != 0 {
+		t.Fatalf("List returned %d participants from a cut-short listing, want none", len(participants))
+	}
+}
+
+// TestListWatchClosedBeforeEndMarkerIsAnError: a List whose listing closes after one key and before
+// its end marker, with the context live, returns no participants and an error (design D3 test
+// 2(ii)).
+func TestListWatchClosedBeforeEndMarkerIsAnError(t *testing.T) {
+	t.Parallel()
+	participants, err := listCutShort(t, func(_ context.CancelFunc, listing *fakeListing) { listing.end() })
+	if err == nil {
+		t.Fatalf("List over a listing closed before its end marker returned %d participants and no error", len(participants))
+	}
+	if len(participants) != 0 {
+		t.Fatalf("List returned %d participants from a cut-short listing, want none", len(participants))
+	}
 }

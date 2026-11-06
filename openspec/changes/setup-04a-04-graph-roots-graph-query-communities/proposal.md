@@ -53,4 +53,4 @@ Not here: the poison-counting list, labels and digests (step 5, with the text ti
   `inventory-delta.md`. New subject `graph.query.localSearch`. No new bucket and no new config key.
 - One owner question (`owner-questions.md`): a revision check on local search can keep refusing for a group nobody
   writes to.
-- Retires #406 and #522. No code before the owner approves.
+- Retires #406, #522 and #527 (from Codex's task 3.2 review). No code before the owner approves.

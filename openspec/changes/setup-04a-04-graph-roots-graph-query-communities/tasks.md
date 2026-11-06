@@ -77,4 +77,4 @@ and at most one `CountError`.
   `implemented-by:` and `Closes #406`, `Closes #522`, and no other closing keyword; `inventory-delta.md`, "Open issues",
   lists what stays open. Comments, each read back: #477 (graph-query's site adopts the view), #32 (the owner's Q6
   removed the answer interface), #68 (graph-query's `sync.Once` site is not carried). Check: read
-  `closingIssuesReferences` back: #406 and #522 only.
+  `closingIssuesReferences` back: #406, #522 and #527 only.

@@ -18,19 +18,22 @@ graph-index's silent completion of an entity it cannot index here (#428).
 ## What Changes
 
 - **`globalSearch`:** request `query`, `min_revision`, decoded strictly. The keyword classifier's hints pick one
-  strategy: `entity` (a one-token question resolved to an entity), `path` (step 2's walk from the resolved start,
-  both directions, depth 3, 100 nodes), `temporal`, `spatial`. The reply is enveloped `graph.GlobalSearchData`: the
-  strategy and its result as the downstream verb gave it, an explicit chain, no summary.
+  strategy, and only when that strategy's hint is the question's only hint: `entity` (a one-token question resolved to
+  an entity), `path` (step 2's walk from the resolved start, both directions, depth 3, 100 nodes), `temporal`,
+  `spatial`. The reply is enveloped `graph.GlobalSearchData`: the strategy and its result as the downstream verb gave
+  it, an explicit chain, no summary.
 - **Refusals:** two of path, time and area together are `invalid_request`; so is an impossible number (#479 ruling).
-  Every other question, and a reference that resolves to nothing, gets `text_search_unsupported`, class invalid, a code
-  that lives only until step 5. Alias refusals reach the caller (ADR-114).
+  Every other question (a count, a ranking, a similarity, free text), and a reference that names no entity, gets
+  `text_search_unsupported`, class invalid, a code that lives only until step 5. Alias refusals reach the caller (ADR-114).
 - **One resolver**, shared with `entityByAlias`: alias, then a valid ID as itself, else not found; no suffix step.
 - **`graph.TemporalRangeRequest`, `graph.SpatialBoundsRequest`:** what the two strategies send; change 7's responders
   decode them. Until then those strategies refuse transient `internal` (no responders), as step 2's forwards do.
 - **graph-index:** an entity whose index plan is refused is marked failed, so readiness holds until it is rewritten.
 - Consumer breaks in `processor/graph-query/MIGRATION.md`.
 
-Not here: the text tier, the semantic strategy and `searchGraph` (step 5); LLM-only routes (#486).
+Not here: the text tier and `searchGraph` (step 5); LLM-only routes (#486). **Departure from `split.md:13`:** its
+step 4 list named a semantic strategy. Tier 0 never reaches it (probe P1, `pin:graphrag.go:638-656`) and it would
+refuse until change 5, so step 5 decides it with the text tier's semantic-first default.
 
 ## Capabilities
 
@@ -45,5 +48,5 @@ Not here: the text tier, the semantic strategy and `searchGraph` (step 5); LLM-o
 - **New exported surface, for the owner to accept:** in `graph`, `GlobalSearchRequest`, `GlobalSearchData`,
   `TemporalRangeRequest`, `SpatialBoundsRequest`. New subject `graph.query.globalSearch`. No new bucket, metric or
   config key.
-- One owner question (`owner-questions.md`): leave the semantic strategy to step 5.
+- No owner question; the new exports are for the owner to accept.
 - Retires #405, #428, #479. No code before the owner approves.

@@ -50,7 +50,8 @@ the same way, `step4-tree-probe.*`. Neither copy was changed.
 
 - P1. At tier 0 the pin reaches four strategies: `pathrag` (path words with a start), `temporal` (time only),
   `spatial` (area only), `graphrag` (everything else). `entity_lookup` and `semantic` are reached only through an
-  explicit `strategy` option (`pin:graphrag.go:640-656`), which only the LLM tier sets: "show me sensor-001", a full ID
+  explicit `strategy` option (`pin:graphrag.go:640-656`), which only the LLM tier or a tier-1 example's options set
+  (`graph/query/classifier_embedding.go:209`; tier 1 is not composed by graph-query): "show me sensor-001", a full ID
   alone, "forklift", "similar to", "how many", "top 5" all went `graphrag`.
 - P2. Time and area together went `graphrag` (`:669-670`), which drops both filters (`:818`). Path plus time went
   `pathrag` with the time range unused (`:402-490` reads no `time_range`).
@@ -82,8 +83,8 @@ globalSearch; bodies and comments read.
 | #105, #32 | relay/NL split; provider seam | Stay (#105 folded into #32) |
 | #16 | the new row widens reserved subjects | Stays, no code here |
 
-Names the word, not step 4 code: #9, #24, #68, #108, #109, #110, #141, #155, #195, #196, #300, #350, #477,
-and #482, #484, #485, #506, #512, #521, #525.
+Checked, naming no step 4 code: #7, #20, #408. Names the word, not step 4 code: #9, #24, #68, #108, #109, #110,
+and #141, #155, #195, #196, #300, #350, #477, #482, #484, #485, #506, #512, #521, #525.
 
 ## 5. Overlapping open PRs (`gh pr list --state open --json number,title,changedFiles,files`)
 

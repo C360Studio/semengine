@@ -12,8 +12,8 @@ handler).
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner answers `owner-questions.md`, accepts the new exports and fills
-  `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
+- [ ] 1.1 Pre-owner design review passes; the owner accepts the new exports and fills `Approved-by:`. Gate:
+  `task spec:check`, `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. graph-index
@@ -21,7 +21,9 @@ handler).
 - [ ] 2.1 A refused index plan marks the entity failed (D6): `processor/graph-index/index.go:429-432`. Premise:
   `index.go:207-213`, `:243-250`. Check: `TestContractValidStateAlwaysPlans`, a generated check at the byte bounds
   (six-part IDs of 256 bytes, predicates of 194, aliases and names), seed and completed checks recorded; the mark
-  recorded as uncovered in the PR, with the reachability reading of D6. Ledger: the `processor/graph-index` row's
+  recorded as uncovered in the PR, with the reachability reading of D6 and its departures from #428's test sentence
+  and failing-first. `TestContractValidStateAlwaysPlans` shown to fail by a mutant tightening one byte budget in
+  `buildEntityIndexPlan`. Ledger: the `processor/graph-index` row's
   risks and tests. Closes #428.
 
 ## 3. Global search
@@ -30,8 +32,9 @@ handler).
   two-filter refusal, the classifier error as `invalid_request`, the temporary refusal's code and class (D1, D2, D5);
   `graph.GlobalSearchRequest` and `graph.GlobalSearchData` in a new `graph/query_global_search_types.go`. Premise:
   `graph/query/classifier_chain.go:90-146`, `:182-222`, `pin:graphrag.go:633-679`. Check:
-  `TestGlobalSearchRoutesByHints`, `TestGlobalSearchRefusesTwoFilters`, `TestGlobalSearchRefusesImpossibleNumbers`,
-  strict decoding (`level` refused by name); the path-plus-time row shown to fail. Carries the behaviours of
+  `TestGlobalSearchRoutesByHints` (with D1's four mixed-hint rows), `TestGlobalSearchRefusesTwoFilters`,
+  `TestGlobalSearchRefusesImpossibleNumbers`, `TestGlobalSearchEndedClassification`, strict decoding (`level` refused
+  by name); the path-plus-count and path-plus-time rows shown to fail. Carries the behaviours of
   `slice_e_contract_test`'s strategy reports, renamed.
 - [ ] 3.2 The resolver and the `entity` and `path` strategies, the `globalSearch` row and handler (D3, D4):
   `entityByAlias` calls the shared resolver; `path` calls step 2's walk in process. Premise:
@@ -50,9 +53,9 @@ handler).
 
 ## 4. Records and guidance
 
-- [ ] 4.1 Ledger: `graph` row names the four exports; `graph/query` row names its first production reader;
-  `processor/graph-query` row's contract, dependencies (`graph/query`), risks and tests name this step and what is
-  not carried (D7). Check: `task docs:check`.
+- [ ] 4.1 ADR-114 Consequences: D3's one sentence on global search. Ledger: `graph` row names the four exports;
+  `graph/query` row names its first production reader; `processor/graph-query` row's contract, dependencies
+  (`graph/query`), risks and tests name this step and what is not carried (D7). Check: `task docs:check`.
 - [ ] 4.2 `.agents/skills/query-pattern/SKILL.md` (`globalSearch` arrives; which questions it answers),
   `processor/graph-query/README.md`, `doc.go`, `graph/README.md`, `MIGRATION.md`'s table and step row. Check:
   `task ateam:doctor`, `task docs:check`.

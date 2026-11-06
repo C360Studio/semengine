@@ -10,21 +10,25 @@ about 730 + 390 lines; this about 450 + 1,000 (estimate), one PR.
 ## D1. Which strategy answers, read from typed hints
 
 The keyword chain (`query.NewClassifierChain(query.NewKeywordClassifier(), nil)`) classifies once. Its `Options` are
-read once into a small typed value; dispatch is a switch over it, not bare strings (Q5(b)).
+read once into a small typed value; dispatch is a switch over it, not bare strings (Q5(b)). **A strategy answers
+only when its hint is the question's only hint**: a strategy that answered past a count, a ranking limit or a
+similarity hint would answer a different question.
 
 | Hints | Strategy | At the pin (P1, P2) |
 | --- | --- | --- |
-| Path intent with a start node, no time, no area | `path` | `pathrag`; a time range was ignored |
-| Time range only | `temporal` | same |
-| Area only | `spatial` | same |
-| No hint, the question one token | `entity` | `graphrag` (`entity_lookup` needed the LLM) |
+| Path intent with a start node, nothing else | `path` | `pathrag`; a time range or count was ignored |
+| Time range, nothing else | `temporal` | same; a count or similarity was ignored |
+| Area, nothing else | `spatial` | same |
+| No hint, the question one token (no white space after trimming) | `entity` | `graphrag` (`entity_lookup` needed the LLM) |
 | Two of path, time, area | refused `invalid_request`, naming both | `graphrag`, both filters dropped |
-| Anything else: no hint, path words with no start, similarity, count, ranking | text-tier refusal (D2) | `graphrag` |
+| Any aggregation, ranking or similarity hint, with or without others; no hint and several tokens; path words with no start | text-tier refusal (D2) | `pathrag`, `temporal` or `graphrag` |
 
-An `entity` or `path` reference that resolves to nothing falls through to the text tier, so it gets D2's refusal
-(ADR-114: not found falls through). The classifier's impossible-number error reaches the caller as `invalid_request`
-naming the phrase (owner, #479). *Proof:* `TestGlobalSearchRoutesByHints`, one row per table line, questions from
-P1's log; `TestGlobalSearchRefusesTwoFilters`; `TestGlobalSearchRefusesImpossibleNumbers`.
+The classifier's impossible-number error reaches the caller as `invalid_request` naming the phrase (owner, #479). A
+nil result with a nil error (an ended context, `graph/query/classifier_chain.go:91-93`) is transient `internal`, one
+error in `Health`, never "no hints". *Proof:* `TestGlobalSearchRoutesByHints`, one row per table line, plus "how many
+sensors are connected to pump-42", "top 5 sensors connected to pump-42", "find sensors similar to pump-42 in the last
+2 hours" and "how many pumps changed in the last 2 hours", each D2's refusal; `TestGlobalSearchRefusesTwoFilters`;
+`TestGlobalSearchRefusesImpossibleNumbers`; `TestGlobalSearchEndedClassification`.
 
 ## D2. The temporary refusal
 
@@ -47,8 +51,17 @@ Not an error in `Health` (a declared limit, like a caller's `invalid_request`). 
 `entityByAlias`'s rule becomes one function both use: ask the alias verb with the reference; a holder wins; else a
 valid six-part ID is itself; else not found, with no second request. `alias_ambiguous`, `index_not_ready`, `internal`,
 `revision_not_reached` reach the caller as they arrived (ADR-114). The suffix step goes (#405 option 1): a partial ID
-such as `sensor-001` resolves only as an alias, a migration note. *Proof:* `TestGlobalSearchPassesAliasRefusals` (each
-code), `TestGlobalSearchUnknownReferenceFallsThrough`, step 1's `TestEntityByAlias` unchanged; #479 item 3:
+such as `sensor-001` resolves only as an alias, and a six-part ID is now asked of the alias verb first (the pin
+returned it as itself, `pin:entity_resolver.go:22-24`); both migration notes.
+
+**No entity, one answer.** `entityByAlias` is a lookup and keeps `entity_not_found`. In global search a reference that
+names no entity, an unknown alias that is no ID or a valid ID with no record (the entity verb's `entity_not_found`, as
+`readPathStart` relays it, `pathsearch.go:78-96`), is not an answer to the question: it falls through to the text
+tier, D2's refusal now, step 5's search later, as the pin's unresolved `entity_lookup` and empty `pathrag` fell
+through to `graphrag` (`pin:graphrag.go:765-778`). ADR-114's Consequences speak of the lookup; task 4.1 adds one
+sentence there, as step 1 amended it: "In global search a reference naming no entity falls through to the text tier
+(change `setup-04a-04-graph-roots-graph-query-search`, design D3)." *Proof:* `TestGlobalSearchPassesAliasRefusals`
+(each code), `TestGlobalSearchUnknownReferenceFallsThrough`, step 1's `TestEntityByAlias` unchanged; #479 item 3:
 `TestZoneQuestionNeverAnswersEmpty` ("the area of the plant", P3, gets D2's refusal).
 
 ## D4. Strategies and the reply
@@ -57,12 +70,19 @@ Enveloped `graph.GlobalSearchData`: `strategy` and exactly one of `entity` (the 
 `path` (`graph.PathSearchData`), `temporal` (`graph.TemporalData`), `spatial` (`graph.SpatialData`). Each is the
 explicit result, one hop per edge (#487 note 1); nothing is re-derived or summarised, and no entity is loaded beside
 it (a caller wanting states calls `batch`). `path` runs step 2's walk in process from the resolved start, direction
-`both`, depth 3 and 100 nodes (the pin's), predicates from the hints; no tier-0 hint names a depth, so none is refused
+`both`, depth 3 and 100 nodes (the pin's), all predicates (tier 0 never produces `path_predicates`,
+`graph/query/README.md:74`); no tier-0 hint names a depth, so none is refused
 for depth (a later tier's depth hint over `MaxPathSearchDepth` is `invalid_request`). `temporal` and `spatial` request
 `graph.temporal.query.range` and `graph.spatial.query.bounds` with new `graph.TemporalRangeRequest` (`start_time`,
-`end_time`, `limit` 100) and `graph.SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit` 100), the
-declaration change 7's responders decode; their `truncated` passes through. Until change 7 they refuse transient
-`internal` naming the subject, as step 2's forwards. `indexed_revision`: the alias reply's (entity), the walk's (path),
+`end_time` as `time.Time`, RFC 3339 on the wire; `limit` 100) and `graph.SpatialBoundsRequest` (`north`, `south`,
+`east`, `west`, `limit` 100); their `truncated` passes through. These declare what change 7's responders decode, as
+`graph/query_search_types.go:3-6` does for their replies. **Rename for change 7:** the pin sent and its responder
+decoded `startTime`, `endTime` (`pin:graphrag.go:1210-1214`, `pin:processor/graph-index-temporal/query.go:49-51`,
+`time.Parse` RFC 3339); change 7's port reads `start_time`, `end_time`. Until change 7 both strategies refuse transient
+`internal` naming the subject and count one error in `Health`, as step 2's forwards. That cost is accepted rather than
+moving them: the responder is another component, possibly another process, so `ask` cannot tell "not in this build"
+from "responder down", and a "not in build" code would lie once change 7 deploys; moving them would leave time and
+area questions with no honest code at all. `indexed_revision`: the alias reply's (entity), the walk's (path),
 the responder envelope's (temporal, spatial); `min_revision` reaches each. *Proof:* `TestGlobalSearchEntity`,
 `TestGlobalSearchPath` (a real index; the reply equals `pathSearch`'s for the same request), `TestGlobalSearchTemporal`
 and `TestGlobalSearchSpatial` (a test responder on the real broker checks the request JSON literally),
@@ -83,14 +103,19 @@ the failed set count it and graph-index refuses `index_not_ready` until the enti
 index that drops rows and reports caught up). Completing would leave its old rows answering silently. *Reachability,
 read not probed:* every check in `buildEntityIndexPlan` is implied by `UnmarshalEntityState`'s contract and the byte
 budgets (incoming key at most 902 of 1,024 bytes; predicate alphabet inside the KV alphabet), so no stored value
-drives the branch and no test can without a hook (#186). *Proof:* `TestContractValidStateAlwaysPlans`, a generated
-check at the bounds (seed recorded) that what the contract accepts plans; the mark itself is shown by reading and
-recorded as uncovered.
+drives the branch and no test can without a hook (#186). **Departures, recorded:** #428's body asks for a test that
+drives a refused plan without a hook, and the repository asks for failing-first tests; neither is possible for the
+mark. The mark is one line mirroring the write-failure path (`index.go:442`), shown by reading and named uncovered in
+the PR. *Proof:* `TestContractValidStateAlwaysPlans`, a generated check at the bounds (seed recorded) that what the
+contract accepts plans, shown able to fail by a mutant tightening a bound in `buildEntityIndexPlan` (a byte budget one
+below its constant).
 
 ## D7. Not carried, ADRs, issues
 
 Not carried: `extractSearchRefinements`, `filterClassifierTemplates` and the semantic strategy with its type-filter
-fallback (`pin:graphrag.go:523-571`, `:1068-1191`), reached only from LLM output (P1; owner question 1); the
+fallback (`pin:graphrag.go:523-571`, `:1068-1191`), reached only from an explicit `strategy` (P1), which tier 0 never
+sets; it would refuse until change 5 anyway. Step 5 decides it with the `graphrag` default, a departure from
+`split.md:13`'s step 4 list; the
 `graphrag` default (step 5); pin `Count`, `DurationMs`, `Degraded*`; strategy names `pathrag`, `entity_lookup` become
 `path`, `entity`. ADR-060, -109, -112, -113, -114 applied; ADR-066 for D6; ADR-071's site leaves with the semantic
 strategy. Retires #405, #428, #479; #111 stays (step 5's site, item 4). New exports for the owner: `graph.

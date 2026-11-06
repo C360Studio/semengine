@@ -6,8 +6,8 @@
 
 When graph-index cannot build an entity's index rows from a stored value it accepted, it SHALL mark the entity failed,
 counting it once in `ErrorCount` and in `semengine_graph_index_write_failures_total`, and hold readiness until the
-entity is rewritten or deleted. It SHALL NOT complete the revision with the entity's earlier rows standing. Every value
-`graph.UnmarshalEntityState` accepts SHALL be plannable.
+entity is rewritten or deleted. The revision still completes, as after a failed write (ADR-066 §1); the failed set,
+not a pending revision, withholds readiness. Every value `graph.UnmarshalEntityState` accepts SHALL be plannable.
 
 #### Scenario: Accepted values plan
 

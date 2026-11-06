@@ -17,7 +17,7 @@ handler).
 
 ## 2. graph-index
 
-- [ ] 2.1 A refused index plan marks the entity failed (D6): `processor/graph-index/index.go:429-432`. Premise:
+- [x] 2.1 A refused index plan marks the entity failed (D6): `processor/graph-index/index.go:429-432`. Premise:
   `index.go:207-213`, `:243-250`. Check: `TestContractValidStateAlwaysPlans`, a generated check at the byte bounds
   (six-part IDs of 256 bytes, predicates of 194, aliases and names), seed and completed checks recorded; the mark
   recorded as uncovered in the PR, with the reachability reading of D6 and its departures from #428's test sentence

@@ -114,7 +114,8 @@ allows dots, so its arity varies (`natsclient/kv_key_contract.go:15-17`), and `"
   holder, graph-query reads the input as an ID when it passes `ValidateEntityID`, and answers `entity_not_found` (class
   invalid) for an input that does not, without a second request, since graph-ingest would refuse such a non-ID as
   `invalid_request` and an unknown alias would read as malformed. Amended by change
-  `setup-04a-04-graph-roots-graph-query` (design D4).
+  `setup-04a-04-graph-roots-graph-query` (design D4). In global search a reference naming no entity falls through to
+  the text tier (change `setup-04a-04-graph-roots-graph-query-search`, design D3).
 - **Limit, not changed here:** graph-index reads the alias predicate set once, in `startIndexPool`
   (`index.go:85-87`); a predicate registered after Start is not indexed until restart. No rule or test orders
   vocabulary registration before Start (AGENTS.md § 1's registration rule covers payloads and components, not

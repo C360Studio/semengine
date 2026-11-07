@@ -12,7 +12,8 @@ holds a record per group of entities and which `localSearch` reads (see below).
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
-graph-query is ported in steps; steps 1 to 3 are in the tree, and the table below is what they serve.
+graph-query is ported in steps; steps 1 to 4 are in the tree, and the table below is what they serve. Step 5 adds the
+text search (`searchGraph`).
 `MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
 
 ## Verbs
@@ -27,6 +28,7 @@ graph-query is ported in steps; steps 1 to 3 are in the tree, and the table belo
 | `hierarchyStats` | `graph.ingest.query.prefix`, one page | bare, a `graph.HierarchyStatsData` |
 | `summary` | `graph.index.query.predicateList`, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.SummaryData` |
 | `localSearch` | the `COMMUNITY_INDEX` view, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
+| `globalSearch` | one strategy chosen from the question: the alias and entity verbs, the index's edge verbs, or the time-range or bounds verb | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -154,6 +156,60 @@ Other refusals:
 - When the group has no record and the entity does not exist, the entity verb's own refusal, such as `entity_not_found`.
 - Transient `internal`, counted in `ErrorCount`, for a record that cannot be read (the message names its key), for a
   page that is broken or has no responder, and for a reply that cannot fit `max_payload` even with no entities.
+
+### `globalSearch`
+
+Answers a free-text question by choosing one strategy from what the question says and running it. This build answers
+only the questions that have an exact answer without a text index; it refuses the rest, and says so, rather than
+return an empty or partial answer.
+
+The request is `{"query": "...", "min_revision": ...}`. `query` is required and not blank. An unknown key is refused,
+and so are the pin's `level`, `max_communities`, `summarize_threshold` and `include_*` keys, by name.
+
+How the question is read:
+
+- **One word is a name.** A question with no white space is looked up as an entity reference, before anything else
+  reads it, so an ID or alias that holds a word such as `today`, `zone-a`, `link` or `max` is not mistaken for a time
+  range, a path or a count. The lookup is `entityByAlias`'s: the alias index first (a holder wins), else the word as a
+  six-part entity ID. A partial ID such as `sensor-001` resolves only as an alias.
+- **Any longer question is classified once** by `graph/query`'s keyword classifier (no language model), which reports
+  hints: a path from a start entity, a time range, an area, a count or ranking, a similarity. A strategy answers only
+  when its hint is the only hint in the question.
+
+| The question | Strategy | `data` holds |
+| --- | --- | --- |
+| One word, or a path question whose start is found ("what is connected to pump-42") | `entity` for a word; `path` for a path | `entity`: the entity verb's reply as it came. `path`: the `pathSearch` result from the start, both directions, depth 3, 100 entities, all predicates, with no entity states (call `batch` for those) |
+| A time range alone ("what changed in the last 2 hours") | `temporal` | the time-range verb's `results` and `truncated`, `limit` 100 |
+| An area alone ("what is within 5km of 40.7,-74.0") | `spatial` | the bounds verb's `results` and `truncated`, `limit` 100 |
+
+`indexed_revision` is the one the strategy's own read reported: the alias reply's for `entity`, the walk's for `path`,
+the responder's for `temporal` and `spatial`. `min_revision` reaches each of them. The reply never loads an entity
+beside the result.
+
+What it refuses:
+
+| The question | Refusal |
+| --- | --- |
+| Two of path, time range and area; an entity beside a zone or area ("what is connected to sensor-001 in zone-b"); two different zones; an impossible number ("the last 0 hours") | class invalid, code `invalid_request`, naming both places or the phrase |
+| A count ("how many"), ranking ("top 5") or similarity ("similar to") hint, with or without others; no hint at all; path words with no start; a name or ID that names no entity | class invalid, code `text_search_unsupported`: this build has no text search, step 5 adds it, and asking again unchanged will not help |
+| A refusal from the alias or entity verb behind a lookup (`alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`, and the entity verb's others) | the same refusal, as it arrived. `entity_not_found` from the entity verb is the exception: it becomes `text_search_unsupported` |
+| A time-range or area question, until change 7 | transient `internal`, naming the subject, counted as an error in `Health`: their responders are not in the tree |
+
+`text_search_unsupported` counts no error in `Health`, like a caller's `invalid_request`. A classification that ends
+with the request, or a hint the route cannot read, is transient `internal` and counts one.
+
+Known limits of the keyword classifier, accepted by the owner and tracked in #535:
+
+- "From A to B" reads one start. The walk begins at A and B is dropped without a word.
+- A path start is the hyphenated word the classifier finds, never a whole ID: "what is connected to
+  acme.plant.robotics.gcs.drone-x.001" walks from the alias `drone-x`. Name the start by alias.
+- The refusal of an entity beside a zone or area is loud and can be wrong. An ordinary hyphenated word ("in
+  real-time", "non-zero") or "zone" or "area" plus a word ("the area with pumps") beside a place can be read as a
+  second place and refused `invalid_request`. The failure is a refusal, never a wrong answer.
+
+Not carried from the pin: the semantic strategy and its type-filter fallback, the `graphrag` community search, the
+pin's `count`, `duration_ms`, `answer`, `community_summaries` and `degraded` reply fields. `MIGRATION.md` has the
+decoder changes.
 
 ### A reply `graph-query` cannot use
 

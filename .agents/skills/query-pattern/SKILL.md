@@ -77,6 +77,20 @@ serves now), so a verb not in the table has no responder yet.
   Its `indexed_revision` is the group record's latest entity write, so to read your own write send the `kv_revision` of
   a write to an entity in the group you search. A revision from a write to another group can stay above the record, and
   the request is then refused `revision_not_reached` until the searched group next changes.
+- **`globalSearch`** takes a free-text `query` and picks one strategy from the question's words, with no language
+  model. It answers only the questions that have an exact answer without a text index, and refuses the rest:
+  - A question of one word is an entity reference (an alias, else a full six-part ID): `strategy` `entity`.
+  - "What is connected to pump-42": a path from `pump-42`, both directions, 3 hops, 100 entities: `path`, IDs and
+    edges only (call `batch` for states).
+  - "What changed in the last 2 hours": `temporal`. "What is within 5km of 40.7,-74.0": `spatial`. Until change 7 both
+    are refused transient `internal`, since their responders are not in the tree.
+  - Two of path, time and area, an entity beside a zone or area, or an impossible number is `invalid_request`. A
+    count ("how many"), ranking ("top 5"), similarity, a question with no hint, and a name that names no entity are
+    refused class invalid, code `text_search_unsupported`: do not retry; the text search arrives in step 5.
+  - Known limits of the keyword classifier (owner-accepted, #535): "from A to B" walks from A; "in real-time" beside a
+    place can be refused as a second place. Both are loud or documented, never a silent wrong answer.
+  - To read a known entity, prefer `entity` or `entityByAlias`; `globalSearch` is for a question you cannot route
+    yourself.
 - **`indexed_revision` of 0** on a `summary` with predicates excluded claims nothing. Do not compare it with a write's
   `kv_revision` or retry on it.
 
@@ -95,7 +109,7 @@ Every enveloped verb takes an optional `min_revision`, the `kv_revision` of your
 the index has not reached it, the verb refuses with transient `revision_not_reached`, the revision reached in the
 detail, and never waits; retry it. A bare verb (`entity`, `batch`, `prefix`, and `hierarchyStats` on `graph.query.*`)
 ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `entityByAlias`,
-`relationships`, `pathSearch`, `localSearch` and `summary` (unless it excludes predicates) honour it. `localSearch`
+`relationships`, `pathSearch`, `localSearch`, `globalSearch` and `summary` (unless it excludes predicates) honour it. `localSearch`
 compares it with the searched group's record, not the whole index (see above).
 
 ## Points that hold
@@ -107,6 +121,5 @@ compares it with the searched group's record, not the whole index (see above).
   the table row for each verb.
 - A refusal is a classified error and carries no envelope. `graph-query` passes a refusal from the verb behind it on
   with its class, code and detail; a request that gets no answer is transient `internal`.
-- The HTTP gateway, an MCP surface, and the `globalSearch` and `searchGraph` verbs of the pin's graph-query are not in
-  this tree yet. `globalSearch` and `searchGraph` arrive in later steps of graph-query (change 4); until a verb is in
-  the table, do not design against it.
+- The HTTP gateway, an MCP surface, and the `searchGraph` verb of the pin's graph-query are not in this tree yet.
+  `searchGraph` arrives in step 5 of graph-query (change 4); until a verb is in the table, do not design against it.

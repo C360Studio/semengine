@@ -5,7 +5,7 @@ cutover. The port breaks old shapes where that gives a better result (owner, PR 
 sister repositories are at SemSource `e4febc0d` and SemConnect `d0d06e00`. Nothing here was run against your code: it
 comes from reading it.
 
-`processor/graph-query` is ported in five steps, and this file grows with them. Steps 1 to 3 are in the tree today; a
+`processor/graph-query` is ported in five steps, and this file grows with them. Steps 1 to 4 are in the tree today; a
 change marked with a later step describes what that step will bring and does not apply yet. Each later step appends
 what it changes here.
 
@@ -14,7 +14,7 @@ what it changes here.
 | 1 | The six lookups: `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`; `min_revision`; the check for a second responder on a declared subject |
 | 2 | Path search and counts (`pathSearch`, `hierarchyStats`, `summary`), and the `semantic`, `similar`, `spatial` and `temporal` forwards |
 | 3 | Local search inside one community (`localSearch`), read from a view of `COMMUNITY_INDEX` |
-| 4 | The `globalSearch` coordinator and its structured strategies |
+| 4 | The `globalSearch` coordinator: entity, path, time-range and area strategies; every other question is refused until step 5 |
 | 5 | The text tier and `searchGraph`; the package is whole |
 
 ## The changes that fail silently
@@ -157,7 +157,7 @@ A stream capturing a declared `graph.query.*` subject refuses boot (#16), and so
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
 `QueryVerb.Enveloped` and `QueryVerb.Reply`.
 
-**New names steps 1 to 3 export** (later steps add theirs after these). Step 1, in `graph`: `ResponderGraphQuery`,
+**New names steps 1 to 4 export** (step 5 adds its own after these). Step 1, in `graph`: `ResponderGraphQuery`,
 `QueryVerb.Enveloped`, `QueryVerb.Reply`, `MinRevisionField`, `ErrorCodeRevisionNotReached`, `RelationshipEdge`. In
 `composition`: `TypeRequestSubjectConflict`. In the new `graphquery` package, the old version's names: `Register`,
 `DeclarePorts`, `CreateGraphQuery`, `DefaultConfig`, `Config`, `Component`. Step 2, in `graph`: `ResponderGraphEmbedding`,

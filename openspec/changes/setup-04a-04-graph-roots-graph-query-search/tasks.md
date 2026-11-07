@@ -52,10 +52,10 @@ handler).
 
 ## 4. Records and guidance
 
-- [ ] 4.1 ADR-114 Consequences: D3's one sentence on global search. Ledger: `graph` row names the four exports;
+- [x] 4.1 ADR-114 Consequences: D3's one sentence on global search. Ledger: `graph` row names the four exports;
   `graph/query` row names its first production reader; `processor/graph-query` row's contract, dependencies
   (`graph/query`), risks and tests name this step and what is not carried (D7). Check: `task docs:check`.
-- [ ] 4.2 `.agents/skills/query-pattern/SKILL.md` (`globalSearch` arrives; which questions it answers),
+- [x] 4.2 `.agents/skills/query-pattern/SKILL.md` (`globalSearch` arrives; which questions it answers),
   `processor/graph-query/README.md`, `doc.go`, `graph/README.md`, `MIGRATION.md`'s table and step row. Check:
   `task ateam:doctor`, `task docs:check`.
 

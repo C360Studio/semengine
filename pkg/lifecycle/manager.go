@@ -22,7 +22,7 @@ import (
 )
 
 type entityStatesReader interface {
-	ListKeys(context.Context, ...jetstream.WatchOpt) (jetstream.KeyLister, error)
+	WatchFiltered(context.Context, []string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 	Watch(context.Context, string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 }
 

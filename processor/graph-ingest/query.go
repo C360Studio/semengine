@@ -385,6 +385,10 @@ func marshalFittingPrefixPage(
 
 	encodedSize := func(count int, cursor string) (int64, error) {
 		size := int64(len(`{"entities":[`) + len(`],"total":`) + len(strconv.Itoa(total)) + len(`}`))
+		if entities == nil {
+			// A group with no keys encodes its page as null, not [] (#521).
+			size += int64(len(`null`) - len(`[]`))
+		}
 		for i := 0; i < count; i++ {
 			size += int64(len(entityBytes[i]))
 			if i > 0 {

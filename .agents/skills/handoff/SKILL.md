@@ -32,3 +32,5 @@ Constraints: <Decision/hold pointers, local access limits, ownership transfer st
 Done when: <Acceptance criteria and remaining boundary>
 Checks to run: <Reconciliation commands and remaining validation>
 ```
+
+At a code PR's ready-for-review under the review policy's `review_launch: manual` (the default), this handoff is the stop: name the PR and the reviewer runs `ateam review request <n>` prints in `Done when`, so a person or a scheduled workflow can start the reviewer.

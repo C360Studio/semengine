@@ -93,7 +93,7 @@ Write the reason on the line above the call: `// Own server: restarts the server
 A test that needs server permissions the fixture cannot set, such as denying one subject to one user, starts an
 embedded server with `natsserver.NewServer` instead, as natsclient's embedded-server tests do
 (`natsclient/client_lifecycle_test.go`), and writes the same `// Own server:` line above that call. It runs
-nats-server v2.15.1, the Go module `go.mod` pins, not the Docker image pin.
+the nats-server version the Go module `go.mod` pins, not the Docker image pin.
 
 ## The rules, and what enforces each
 

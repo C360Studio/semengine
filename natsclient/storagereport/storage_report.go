@@ -56,6 +56,12 @@ import (
 // ReportStore is the narrow KV capability the report publisher needs.
 // jetstream.KeyValue satisfies it.
 //
+// Reclamation lists the bucket's keys through natsclient.FilteredKeys, which
+// reads WatchFiltered and leaves no watch delivery running when the listing
+// ends early (TestPublishStoppedMidReclaimLeavesNoDelivery). Migration: a
+// custom store implements WatchFiltered in place of the ListKeys it
+// implemented before (#496).
+//
 // History rather than Get: the seed read has to be able to walk PAST an
 // observation too close to the current one to measure (several processes may
 // publish account-wide, so the newest revisions can all land inside one
@@ -64,7 +70,7 @@ type ReportStore interface {
 	Put(ctx context.Context, key string, value []byte) (uint64, error)
 	Delete(ctx context.Context, key string, opts ...jetstream.KVDeleteOpt) error
 	History(ctx context.Context, key string, opts ...jetstream.WatchOpt) ([]jetstream.KeyValueEntry, error)
-	ListKeys(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyLister, error)
+	WatchFiltered(ctx context.Context, keys []string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 }
 
 // ThresholdSource yields the pressure thresholds for ONE evaluation.
@@ -698,26 +704,19 @@ func (p *Publisher) seedTiersFromHistory(ctx context.Context) map[StorageTier][]
 // which is the same eventually-consistent trade the inventory's two listings
 // already make.
 func (p *Publisher) reclaim(ctx context.Context, published map[string]struct{}) (int, error) {
-	lister, err := p.store.ListKeys(ctx)
+	// Listed completely before deleting: a listing cut short, by the context or
+	// by its watch closing, is an error and deletes nothing. An empty bucket is
+	// an empty listing, not an error.
+	keys, err := natsclient.FilteredKeys(ctx, p.store, ">")
 	if err != nil {
-		if errors.Is(err, jetstream.ErrNoKeysFound) {
-			return 0, nil
-		}
 		return 0, fmt.Errorf("list published report keys: %w", err)
 	}
-	defer func() { _ = lister.Stop() }()
-
-	// Drained fully before deleting: the lister is a live watch, and deleting
-	// underneath it would publish into the stream it is reading.
 	var stale []string
-	for key := range lister.Keys() {
+	for _, key := range keys {
 		if _, ok := published[key]; ok {
 			continue
 		}
 		stale = append(stale, key)
-	}
-	if err := ctx.Err(); err != nil {
-		return 0, fmt.Errorf("list published report keys: %w", err)
 	}
 
 	deleted := 0

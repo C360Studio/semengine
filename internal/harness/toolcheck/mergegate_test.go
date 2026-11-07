@@ -314,7 +314,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
       - run: task verify
   required:
     runs-on: ubuntu-24.04
@@ -355,7 +355,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
       - name: Check
         env:
           ATEAM_REQUIRED_CHECKS: Required,Merge check
@@ -376,7 +376,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
       - name: Probe
         id: probe
         run: |
@@ -476,9 +476,9 @@ jobs:
 		{"fetch-depth dropped", "        with:\n          fetch-depth: 0\n", "",
 			[]string{"job verify", "fetch-depth: 0"}},
 		// "Pins differ", from the ci.yml side.
-		{"ci.yml on another release", "ateam@v0.3.7", "ateam@v0.3.4",
-			[]string{"v0.3.4", "v0.3.7", "one version"}},
-		{"ci.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n", "",
+		{"ci.yml on another release", "ateam@v0.3.9", "ateam@v0.3.4",
+			[]string{"v0.3.4", "v0.3.9", "one version"}},
+		{"ci.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n", "",
 			[]string{"ci.yml", "no ateam install line"}},
 	} {
 		t.Run("ci.yml/"+tc.name, func(t *testing.T) {
@@ -496,9 +496,9 @@ jobs:
 			[]string{"merge-check.yml", "step 1", "base commit"}},
 		{"head sha named", "pull_request.base.sha", "pull_request.head.sha",
 			[]string{"merge-check.yml", "step 1", "head.sha", "base commit"}},
-		{"pins differ", "ateam@v0.3.7", "ateam@v0.3.4",
-			[]string{"v0.3.4", "v0.3.7", "one version"}},
-		{"merge-check.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n", "",
+		{"pins differ", "ateam@v0.3.9", "ateam@v0.3.4",
+			[]string{"v0.3.4", "v0.3.9", "one version"}},
+		{"merge-check.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n", "",
 			[]string{"merge-check.yml", "no ateam install line"}},
 		{"credentials persisted", "          persist-credentials: false\n", "",
 			[]string{"merge-check.yml", "persist-credentials", "false"}},
@@ -527,10 +527,10 @@ jobs:
 			[]string{"merge-check.yml", "job awaiting", "named", "Merge check probe"}},
 		{"probe runs on a draft", "    if: ${{ !github.event.pull_request.draft }}\n", "",
 			[]string{"merge-check.yml", "job awaiting", "if:", "draft"}},
-		{"probe checks out the head", "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.base.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n      - name: Probe\n",
-			"    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n      - name: Probe\n",
+		{"probe checks out the head", "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.base.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n      - name: Probe\n",
+			"    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n      - name: Probe\n",
 			[]string{"merge-check.yml", "job awaiting", "head.sha", "base commit"}},
-		{"probe installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.7\n      - name: Probe\n", "      - name: Probe\n",
+		{"probe installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n      - name: Probe\n", "      - name: Probe\n",
 			[]string{"merge-check.yml", "job awaiting", "no ateam install line"}},
 		{"probe output unwired", "awaiting: ${{ steps.probe.outputs.awaiting }}", "awaiting: ${{ steps.probe.outputs.result }}",
 			[]string{"merge-check.yml", "job awaiting", "outputs.awaiting", "steps.probe.outputs.awaiting"}},

@@ -87,8 +87,9 @@ serves now), so a verb not in the table has no responder yet.
   - Two of path, time and area, an entity beside a zone or area, or an impossible number is `invalid_request`. A
     count ("how many"), ranking ("top 5"), similarity, a question with no hint, and a name that names no entity are
     refused class invalid, code `text_search_unsupported`: do not retry; the text search arrives in step 5.
-  - Known limits of the keyword classifier (owner-accepted, #535): "from A to B" walks from A; "in real-time" beside a
-    place can be refused as a second place. Both are loud or documented, never a silent wrong answer.
+  - Known limits of the keyword classifier (owner-accepted, #535): "from A to B" walks from A and drops B with no
+    signal, so a successful reply does not mean both ends were honoured; "in real-time" beside a place can be refused
+    as a second place, a loud refusal of an answerable question.
   - To read a known entity, prefer `entity` or `entityByAlias`; `globalSearch` is for a question you cannot route
     yourself.
 - **`indexed_revision` of 0** on a `summary` with predicates excluded claims nothing. Do not compare it with a write's

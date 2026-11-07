@@ -75,7 +75,7 @@ in `notes/<task>.md`.
 
 ## 6. Land
 
-- [ ] 6.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #544's body carries
+- [x] 6.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #544's body carries
   `implemented-by:` and `Closes #31`, `Closes #103`, `Closes #106`, and no other closing keyword. Comments, each read
   back: #15 (#103 closed; the generation marker is this issue's), #111 (item 3's last site not carried), #506 (the
   counter gains `globalSearch` and `searchGraph`), #487 (note 2 applied). Check: `closingIssuesReferences` reads #31,

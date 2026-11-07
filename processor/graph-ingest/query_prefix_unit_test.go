@@ -571,3 +571,40 @@ func TestDecodeCursorInvalid(t *testing.T) {
 	_, err := decodeCursor("!!!not-base64!!!")
 	require.Error(t, err, "malformed cursor must return error")
 }
+
+// spec: graph-transport-boundary / A prefix page names its total
+//
+// nats.go key listings can repeat a key under concurrent overwrites (#512). The listing here names
+// the middle entity twice; the page serves it once and total counts it once. The oracle is the set
+// of IDs the test stored.
+func TestHandleQueryPrefix_RepeatedListedKeyServedOnce(t *testing.T) {
+	comp, bucket := createTestComponentWithMockKVBucket(t, withAuthority("org", "ops"))
+
+	stored := []string{
+		"org.ops.dom.sys.type.entity-001",
+		"org.ops.dom.sys.type.entity-002",
+		"org.ops.dom.sys.type.entity-003",
+	}
+	for _, id := range stored {
+		storePrefixEntity(t, comp, id)
+	}
+
+	listed := []string{stored[0], stored[1], stored[1], stored[2]}
+	bucket.listFilteredFunc = func(context.Context, ...string) (jetstream.KeyLister, error) {
+		ch := make(chan string, len(listed))
+		for _, key := range listed {
+			ch <- key
+		}
+		close(ch)
+		return &mockKeyLister{ch: ch}, nil
+	}
+
+	resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{Prefix: "org"})
+
+	var served []string
+	for _, entity := range resp.Entities {
+		served = append(served, entity.ID)
+	}
+	assert.Equal(t, stored, served, "each stored entity is served exactly once, in key order")
+	assert.Equal(t, len(stored), resp.Total, "total counts the distinct keys")
+}

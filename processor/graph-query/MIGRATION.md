@@ -44,7 +44,7 @@ Read these first. Nothing errors.
   on the first page of an ID that exists `entities_scanned` is 1 (`TestHierarchyStatsOfAnExactID`), for an absent ID, or
   a cursor past it, 0. `truncated` false says only that this is the last page;
   send `next_cursor` as `cursor` for the next page. The counts are live and as listed, not a snapshot, so a group that
-  is written to while you page can repeat or miss an entity (#512). A child's `name` reads empty, since the key is
+  is written to while you page can miss an entity (#512). A child's `name` reads empty, since the key is
   gone.
 - **A `summary` decoder that reads `entity_sample_truncated` (the `summary` verb, step 2).** The key is now `truncated`,
   so an old decoder reads false, which says "complete", on an answer that is a sample.

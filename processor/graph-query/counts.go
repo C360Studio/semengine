@@ -14,7 +14,7 @@ import (
 )
 
 // countPage is one prefix page: its IDs, which the count verbs read (design D5), and its rows as sent,
-// which local search ranks. total is the group as listed, and an ID may repeat or be missing from it
+// which local search ranks. total is the group as listed, each ID once, and an ID may be missing from it
 // under concurrent overwrites (#512).
 type countPage struct {
 	ids        []string

@@ -52,8 +52,8 @@ package lifecycle
 //   - Offset is a pagination cursor — skip the first Offset matching
 //     entries. Combine with Limit for paged operator-API responses.
 //
-// v1 implementation is linear scan over the bucket; complexity is
-// O(N) per List call where N is the total instance count. Operators
+// v1 implementation sorts every bucket key and scans them; complexity is
+// O(N log N) per List call where N is the total instance count. Operators
 // hitting this cliff (~10K active instances is a reasonable guideline
 // — file when an operator demonstrates the bottleneck) trigger the
 // v2 secondary index work; the API stays stable across the migration.
@@ -91,7 +91,7 @@ type ListOptions struct {
 	// Limit caps the returned slice size. 0 (default) means unlimited.
 	Limit int
 
-	// Offset skips the first Offset matching entries before applying
-	// Limit. Use for paged operator-API responses.
+	// Offset skips the first Offset matching entries, in entity-ID
+	// order, before applying Limit. Use for paged operator-API responses.
 	Offset int
 }

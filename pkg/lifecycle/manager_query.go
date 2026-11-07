@@ -42,7 +42,8 @@ import (
 // ended. A read error other than a missing or non-lifecycle entity also
 // returns no participants and that error.
 //
-// Complexity is O(N) per call where N is the bucket size; consumers
+// Complexity is O(N log N) per call (the key sort) where N is the bucket
+// size, with one entity read per matching key; consumers
 // hitting the cliff (~10K active instances) trigger the v2
 // secondary-index work documented in ADR-049's deferred section.
 // The API stays stable across that migration.

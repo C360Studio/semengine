@@ -73,6 +73,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: true, Reply: reflect.TypeFor[SummaryData]()},
 		{Name: "localSearch", Subject: "graph.query.localSearch", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[LocalSearchData]()},
+		{Name: "globalSearch", Subject: "graph.query.globalSearch", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[GlobalSearchData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
 		{Name: "similar", Subject: "graph.query.similar", Responder: "graph-query",

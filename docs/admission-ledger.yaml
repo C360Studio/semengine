@@ -3496,7 +3496,10 @@
     []graph.OutgoingEntry. Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
     at boot until the line is deleted; semteams' published schema lists it. Removed (design D8): the dead exported and
     test-only writers, subscribeForRequests (#186), batch_size, reindexTotal and reindexUnchanged, the raceEnabled
-    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree
+    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree. A
+    refused index plan marks the entity failed and withholds readiness, as a failed write does (#428; design D6 of
+    setup-04a-04-graph-roots-graph-query-search); no state the contract accepts is known to reach it, so the mark is
+    shown by reading and has no test, and TestContractValidStateAlwaysPlans proves the premise
   proving_tests: >-
     processor/graph-index/config_test.go (TestUnknownConfigKeyIsRefused, TestConfigWorkersZeroMeansOneLane,
     TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
@@ -3510,7 +3513,8 @@
     TestQueryResponseCarriesIndexedRevisionAndProducer, TestQueriesAreRefusedWhileTheFeedIsLost,
     TestQueryReadsImplementReplacement, TestMaximumLengthIDsAndPredicatesThroughPublicReads,
     TestMalformedIndexRowsAreSkippedLoggedAndCounted, TestAliasReadImplementsReplacement,
-    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase); the pin tests dropped, each with its reason, are listed in
+    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase), plan_prop_test.go
+    (TestContractValidStateAlwaysPlans); the pin tests dropped, each with its reason, are listed in
     openspec/changes/setup-04a-04-graph-roots-graph-index/notes/2.3.md
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt

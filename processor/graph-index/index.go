@@ -205,9 +205,9 @@ func (c *Component) reconcileEntity(ctx context.Context, entityID string) bool {
 		return true
 	}
 	if err := c.indexEntity(ctx, entityID, entry.Value()); err != nil {
-		// A failed write still completes: readiness is gated on the failed set, and a
-		// revision left pending would pin the watermark for ever (ADR-066 §1).
-		c.logger.Warn("entity index write failed; readiness withheld until re-index",
+		// A refused plan or a failed write still completes: readiness is gated on the failed
+		// set, and a revision left pending would pin the watermark for ever (ADR-066 §1).
+		c.logger.Warn("entity index failed; readiness withheld until re-index",
 			slog.String("entity", entityID), slog.Any("error", err))
 		return !errors.Is(err, errAuthoritativeIdentityMismatch)
 	}
@@ -406,9 +406,9 @@ func (c *Component) applyEntityIndexPlan(ctx context.Context, plan entityIndexPl
 }
 
 // indexEntity indexes entityID from its stored value data. It returns an error for
-// incompatible authoritative state, which latches reset, and when required writes still
-// fail after retry, which marks the entity failed and withholds readiness until it
-// re-indexes.
+// incompatible authoritative state, which latches reset. It also returns one for a
+// refused index plan and for required writes that still fail after retry; both mark the
+// entity failed and withhold readiness until it re-indexes.
 func (c *Component) indexEntity(ctx context.Context, entityID string, data []byte) error {
 	var state graph.EntityState
 	if err := graph.UnmarshalEntityState(entityID, data, &state); err != nil {
@@ -428,6 +428,10 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 	}
 	plan, err := c.buildEntityIndexPlan(state, entityID)
 	if err != nil {
+		// Held like a failed write, so readiness is withheld rather than the old rows
+		// answering. A state the contract accepts always plans (design D6), so no
+		// stored value is known to reach this.
+		c.markEntityFailed(entityID)
 		return err
 	}
 

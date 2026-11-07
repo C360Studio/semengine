@@ -56,7 +56,7 @@ type globalSearchSubjects struct {
 func (c *Component) globalSearch(subjects globalSearchSubjects) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
-		request, err := decodeGlobalSearchRequest(data)
+		request, levelPrefix, err := decodeGlobalSearchRequest(data)
 		if err != nil {
 			return nil, invalidRequest(err)
 		}
@@ -70,11 +70,11 @@ func (c *Component) globalSearch(subjects globalSearchSubjects) queryHandler {
 		}
 		switch route.strategy {
 		case strategyEntity:
-			return c.globalEntity(ctx, subjects, route.reference, request)
+			return c.globalEntity(ctx, subjects, route.reference, request.MinRevision, levelPrefix)
 		case strategyPath:
 			return c.globalPath(ctx, subjects, route.reference, request.MinRevision)
 		case strategyText:
-			return c.globalText(request.Level)
+			return c.globalText(levelPrefix)
 		case strategyTemporal:
 			return c.globalTemporal(ctx, subjects.temporal, *route.timeRange, request.MinRevision)
 		case strategySpatial:
@@ -104,17 +104,17 @@ func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubj
 // reply's revision. A reference that names no entity, or an entity_not_found from the entity verb (a
 // valid ID with no record, or a holder since deleted), is searched as text (design D1); any other
 // refusal reaches the caller.
-func (c *Component) globalEntity(ctx context.Context, subjects globalSearchSubjects, reference string, request graph.GlobalSearchRequest) ([]byte, error) {
-	id, revision, err := c.resolveGlobal(ctx, subjects, reference, request.MinRevision)
+func (c *Component) globalEntity(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64, levelPrefix string) ([]byte, error) {
+	id, revision, err := c.resolveGlobal(ctx, subjects, reference, minRevision)
 	if err != nil {
 		return nil, err
 	}
 	if id == "" {
-		return c.globalText(request.Level)
+		return c.globalText(levelPrefix)
 	}
 	entity, err := c.readEntity(ctx, subjects.entity, id)
 	if isEntityNotFound(err) {
-		return c.globalText(request.Level)
+		return c.globalText(levelPrefix)
 	}
 	if err != nil {
 		return nil, err
@@ -225,21 +225,18 @@ func truncatedAbsent(raw []byte) bool {
 
 // globalText is the text tier (design D2-D6), here only its refusal of a community view it cannot
 // read: missing, catching up, lost or stopped is transient index_not_ready, counting no error.
-func (c *Component) globalText(level int) ([]byte, error) {
+// levelPrefix is the asked level's key prefix, from decodeGlobalSearchRequest.
+func (c *Component) globalText(levelPrefix string) ([]byte, error) {
 	view := c.communities.Load()
 	if view == nil {
 		return nil, communityNotReady(errors.New("no view of " + graph.BucketCommunityIndex))
 	}
-	prefix, err := clustering.LevelPrefix(level)
-	if err != nil {
-		return nil, invalidRequest(err) // decodeGlobalSearchRequest has already checked the level
-	}
-	if _, _, err := view.ListCounted(prefix); err != nil {
+	if _, _, err := view.ListCounted(levelPrefix); err != nil {
 		return nil, communityNotReady(err)
 	}
 	// shortcut: a readable view is refused transient internal, counting no error, since nothing failed;
 	// task 3.2 replaces this with the answer from the level's groups.
-	return nil, internalError(fmt.Errorf("the text tier does not answer yet (level %d)", level))
+	return nil, internalError(fmt.Errorf("the text tier does not answer yet (records %q)", levelPrefix))
 }
 
 // isEntityNotFound reports whether err is the entity verb's entity_not_found.
@@ -274,20 +271,21 @@ type questionHints struct {
 }
 
 // decodeGlobalSearchRequest decodes strictly, refusing any key but query, min_revision and level by
-// name (design D2), a blank query and a level outside 0 to 2.
-func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, error) {
+// name (design D2), a blank query and a level outside 0 to 2. It returns the level's key prefix,
+// which only the text tier reads; LevelPrefix owns which levels exist.
+func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, string, error) {
 	var request graph.GlobalSearchRequest
 	if err := decodeStrict(data, &request); err != nil {
-		return request, err
+		return request, "", err
 	}
 	if strings.TrimSpace(request.Query) == "" {
-		return request, errors.New("query is blank")
+		return request, "", errors.New("query is blank")
 	}
-	// LevelPrefix owns which levels exist; only the text tier reads the level.
-	if _, err := clustering.LevelPrefix(request.Level); err != nil {
-		return request, fmt.Errorf("level: %w", err)
+	levelPrefix, err := clustering.LevelPrefix(request.Level)
+	if err != nil {
+		return request, "", fmt.Errorf("level: %w", err)
 	}
-	return request, nil
+	return request, levelPrefix, nil
 }
 
 // routeGlobalSearch chooses the strategy that answers question (design D1). A one-word question is an

@@ -216,9 +216,11 @@ func TestGlobalSearchHintBesideAFilter(t *testing.T) {
 	if err.Error() != want {
 		t.Errorf("chooseRoute(%+v) refusal = %q, want %q", start, err.Error(), want)
 	}
-	route, err := chooseRoute(questionHints{path: true, pathPredicates: true})
-	if err != nil || route.strategy != "text" || !slices.Equal(route.unhonoured, []string{"path"}) {
-		t.Errorf("chooseRoute(path predicates, no start) = %+v, %v, want text naming path", route, err)
+	for _, hints := range []questionHints{{path: true, pathPredicates: true}, {pathPredicates: true}} {
+		route, err := chooseRoute(hints)
+		if err != nil || route.strategy != "text" || !slices.Equal(route.unhonoured, []string{"path"}) {
+			t.Errorf("chooseRoute(%+v) = %+v, %v, want text naming path", hints, route, err)
+		}
 	}
 }
 
@@ -330,6 +332,12 @@ func TestGlobalSearchRefusesHintsItCannotRead(t *testing.T) {
 		{map[string]any{"geo_bounds": query.SpatialBounds{}}, `classification hint "geo_bounds" holds query.SpatialBounds`},
 		{map[string]any{"path_intent": "true"}, `classification hint "path_intent" holds string`},
 		{map[string]any{"path_intent": true, "path_start_node": 42}, `classification hint "path_start_node" holds int`},
+		{map[string]any{"aggregation_type": 1}, `classification hint "aggregation_type" holds int`},
+		{map[string]any{"aggregation_type": "max", "aggregation_field": true}, `classification hint "aggregation_field" holds bool`},
+		{map[string]any{"use_embeddings": "true"}, `classification hint "use_embeddings" holds string`},
+		{map[string]any{"ranking_intent": 1}, `classification hint "ranking_intent" holds int`},
+		{map[string]any{"ranking_intent": true, "limit": "5"}, `classification hint "limit" holds string`},
+		{map[string]any{"path_predicates": "link.to.entity"}, `classification hint "path_predicates" holds string`},
 	}
 	for _, tc := range cases {
 		_, err := readHints(tc.options)
@@ -344,19 +352,20 @@ func TestGlobalSearchRefusesHintsItCannotRead(t *testing.T) {
 // summarize_threshold, include_*) by name, and bytes after the request are refused.
 func TestGlobalSearchRequestKeys(t *testing.T) {
 	for _, tc := range []struct {
-		data  string
-		level int
+		data   string
+		level  int
+		prefix string
 	}{
-		{`{"query":"what is connected to sensor-001","min_revision":7}`, 0},
-		{`{"query":"what is connected to sensor-001","min_revision":7,"level":0}`, 0},
-		{`{"query":"what is connected to sensor-001","min_revision":7,"level":2}`, 2},
+		{`{"query":"what is connected to sensor-001","min_revision":7}`, 0, "0."},
+		{`{"query":"what is connected to sensor-001","min_revision":7,"level":0}`, 0, "0."},
+		{`{"query":"what is connected to sensor-001","min_revision":7,"level":2}`, 2, "2."},
 	} {
-		request, err := decodeGlobalSearchRequest([]byte(tc.data))
+		request, prefix, err := decodeGlobalSearchRequest([]byte(tc.data))
 		if err != nil {
 			t.Fatalf("decode(%s) = %v", tc.data, err)
 		}
-		if request.Query != "what is connected to sensor-001" || request.MinRevision != 7 || request.Level != tc.level {
-			t.Errorf("decode(%s) = %+v, want level %d", tc.data, request, tc.level)
+		if request.Query != "what is connected to sensor-001" || request.MinRevision != 7 || request.Level != tc.level || prefix != tc.prefix {
+			t.Errorf("decode(%s) = %+v, %q, want level %d, prefix %q", tc.data, request, prefix, tc.level, tc.prefix)
 		}
 	}
 
@@ -376,7 +385,7 @@ func TestGlobalSearchRequestKeys(t *testing.T) {
 		{`{"query":"sensor-001"}x`, "bytes after the request"},
 	}
 	for _, tc := range refused {
-		_, err := decodeGlobalSearchRequest([]byte(tc.data))
+		_, _, err := decodeGlobalSearchRequest([]byte(tc.data))
 		if err == nil || err.Error() != tc.want {
 			t.Errorf("decode(%s) error = %v, want %q", tc.data, err, tc.want)
 		}
@@ -403,7 +412,7 @@ func FuzzDecodeGlobalSearchRequest(f *testing.F) {
 		f.Add([]byte(seed))
 	}
 	f.Fuzz(func(t *testing.T, data []byte) {
-		request, err := decodeGlobalSearchRequest(data)
+		request, _, err := decodeGlobalSearchRequest(data)
 		if err != nil {
 			return
 		}

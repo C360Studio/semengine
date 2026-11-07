@@ -437,8 +437,9 @@ func (v *View[T]) List(prefix string, limit int) ([]KeyedEntry[T], error) {
 
 // ListCounted returns what List(prefix, 0) returns and the number of poisoned keys with
 // the prefix, both read under one hold of the projection, so the count describes exactly
-// the listing beside it: a key is either listed or counted, never both or neither. It
-// honors the same readiness gate as Get. The entries' values are the stored ones, which an
+// the listing beside it: every key the view holds under the prefix is either listed or
+// counted, never both; a key the decode skips is held as neither. It honors the same
+// readiness gate as Get. The entries' values are the stored ones, which an
 // apply replaces whole and never edits; callers read them only.
 func (v *View[T]) ListCounted(prefix string) ([]KeyedEntry[T], int, error) {
 	v.mu.Lock()

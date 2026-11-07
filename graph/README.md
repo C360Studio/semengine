@@ -64,12 +64,12 @@ transport"; `TestGraphImportsNoTransport`).
   `entities_truncated` and an `answer` sentence. The matches come from one page of at most 1,000 entities in ID order,
   so on a larger group they are the best of the lexically smallest IDs. `EntitiesTruncated` is true when the page had
   more to read or matches were left out to fit `max_payload`.
-- **Counts.** `PrefixQueryResponse.Total` is the length of the key listing before the cursor and any limit, as listed and
-  not a snapshot (#512). `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities` is the whole
-  group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type counts or
-  children cover that page and no more. `Truncated` false says only that it is the last page. When `summary` leaves
-  predicates out (`ExcludePredicates`), its `indexed_revision` is 0, which claims nothing: do not compare it with a
-  `kv_revision`.
+- **Counts.** `PrefixQueryResponse.Total` is the number of distinct keys in the listing before the cursor and any limit,
+  as listed and not a snapshot (#512). `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
+  is the whole group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type
+  counts or children cover that page and no more. `Truncated` false says only that it is the last page. When `summary`
+  leaves predicates out (`ExcludePredicates`), its `indexed_revision` is 0, which claims nothing: do not compare it with
+  a `kv_revision`.
 
 ### Entity Identification
 

@@ -91,7 +91,7 @@ Both read one page of entity IDs under a prefix from graph-ingest, so each reque
 and a caller who wants more pays per page. A count covers that page and no more.
 
 - `total_entities` is the whole group as listed, before the cursor and any limit. It is live and as listed, not a
-  snapshot: under concurrent overwrites a listing can repeat a key and omit another (#512).
+  snapshot: under concurrent overwrites a listing can omit a key (#512). A repeated key counts once.
 - `entities_scanned` is the rows on this page. `truncated` is true exactly when `next_cursor` is set, so false says only
   that this is the last page, not that the counts are the whole group. Send `next_cursor` as `cursor` for the next page.
 - On a first page with `truncated` true, the type counts, children and examples are of the lexically smallest IDs, a

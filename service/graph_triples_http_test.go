@@ -11,7 +11,9 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/nats-io/nats.go/jetstream"
@@ -689,4 +691,147 @@ func TestScanGraphTriplesMatchesSortedOracle(t *testing.T) {
 			}
 		})
 	})
+}
+
+// cutShortEntityReader is a stubEntityReader whose ENTITY_STATES listing is a watch that one test
+// drives: it delivers the first key, then either closes before the end-of-snapshot marker
+// (closeEarly) or blocks until Stop, which closes it. Keys answers as nats.go v1.55.0 does over
+// that watch (jetstream/kv.go:1403-1423: range Updates to the nil marker or the close, keys so
+// far, ErrNoKeysFound for none, sorted and compacted; js.go:2073-2077: the watch is unsubscribed
+// when its context ends), so a handler that still lists through Keys meets the library's cut-short
+// answer rather than a panic through the nil embedded reader.
+type cutShortEntityReader struct {
+	stubEntityReader
+	closeEarly bool
+	delivered  chan struct{} // closed once the first key is handed to the listing
+	stopped    chan struct{}
+	stopOnce   sync.Once
+	done       chan struct{} // closed when the watch's sender has finished
+}
+
+func newCutShortEntityReader(closeEarly bool, key string, value []byte) *cutShortEntityReader {
+	return &cutShortEntityReader{
+		stubEntityReader: stubEntityReader{keys: []string{key}, values: map[string][]byte{key: value}},
+		closeEarly:       closeEarly,
+		delivered:        make(chan struct{}),
+		stopped:          make(chan struct{}),
+		done:             make(chan struct{}),
+	}
+}
+
+func (r *cutShortEntityReader) WatchFiltered(context.Context, []string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	updates := make(chan jetstream.KeyValueEntry)
+	go func() {
+		defer close(r.done)
+		defer close(updates)
+		updates <- stubEntry{key: r.keys[0]}
+		close(r.delivered)
+		if !r.closeEarly {
+			<-r.stopped
+		}
+	}()
+	return cutShortWatcher{reader: r, updates: updates}, nil
+}
+
+func (r *cutShortEntityReader) Keys(ctx context.Context, opts ...jetstream.WatchOpt) ([]string, error) {
+	opts = append(opts, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
+	watcher, err := r.WatchFiltered(ctx, []string{">"}, opts...)
+	if err != nil {
+		return nil, err
+	}
+	returned := make(chan struct{})
+	var unsubscribeOnDone sync.WaitGroup
+	unsubscribeOnDone.Go(func() {
+		select {
+		case <-ctx.Done():
+			_ = watcher.Stop()
+		case <-returned:
+		}
+	})
+	defer func() {
+		close(returned)
+		unsubscribeOnDone.Wait()
+		_ = watcher.Stop()
+	}()
+	var keys []string
+	for entry := range watcher.Updates() {
+		if entry == nil {
+			break
+		}
+		keys = append(keys, entry.Key())
+	}
+	if len(keys) == 0 {
+		return nil, jetstream.ErrNoKeysFound
+	}
+	slices.Sort(keys)
+	return slices.Compact(keys), nil
+}
+
+type cutShortWatcher struct {
+	reader  *cutShortEntityReader
+	updates chan jetstream.KeyValueEntry
+}
+
+func (w cutShortWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
+func (w cutShortWatcher) Stop() error {
+	w.reader.stopOnce.Do(func() { close(w.reader.stopped) })
+	return nil
+}
+
+// TestGraphTriplesListingCutShortFails: a listing of ENTITY_STATES cut short after its first key,
+// by the watch closing before its end-of-snapshot marker or by the request being cancelled, fails
+// the query with a 500 and no triples, never a 200 over the entities listed so far (#533). The
+// oracle is the literal answer: the one listed entity has a matching triple, so a partial listing
+// would return it.
+//
+// spec: transport-client / A filtered listing cut short returns no keys
+func TestGraphTriplesListingCutShortFails(t *testing.T) {
+	listed := semantictest.EntityID(t, "acme", "ops", "test", "service", "entity", "1")
+	predicate := semantictest.Predicate(t, "test", "state", "value")
+	value := storedEntity(t, listed, []message.Triple{entityTriple(listed, predicate, "v")})
+
+	for _, tt := range []struct {
+		name       string
+		closeEarly bool
+		want       error
+	}{
+		{name: "the watch closes before the marker", closeEarly: true},
+		{name: "the request is cancelled after the first key", want: context.Canceled},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// The listing arms a 5 s store timeout and, once fixed, a 5 s drain window; on the
+			// bubble's clock neither can expire before the assertions, however slow the host.
+			synctest.Test(t, func(t *testing.T) {
+				reader := newCutShortEntityReader(tt.closeEarly, listed, value)
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var got []message.Triple
+				var scanErr error
+				querier := func(ctx context.Context, p tripleQueryParams) ([]message.Triple, error) {
+					got, scanErr = scanGraphTriples(ctx, reader, p, discardLogger)
+					return got, scanErr
+				}
+				w := httptest.NewRecorder()
+				served := make(chan struct{})
+				go func() {
+					defer close(served)
+					req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/graph/triples", nil)
+					serveGraphTriples(w, req, querier, discardLogger)
+				}()
+				if !tt.closeEarly {
+					<-reader.delivered
+					cancel()
+				}
+				<-served // orders the reads of got, scanErr and w after the handler wrote them
+				<-reader.done
+
+				require.Error(t, scanErr)
+				if tt.want != nil {
+					require.ErrorIs(t, scanErr, tt.want)
+				}
+				require.Nil(t, got, "a cut-short listing returned triples")
+				require.Equal(t, http.StatusInternalServerError, w.Code)
+			})
+		})
+	}
 }

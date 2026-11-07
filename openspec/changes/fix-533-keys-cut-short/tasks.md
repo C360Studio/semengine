@@ -26,7 +26,9 @@ the code. Each step ends when `task verify` passes on a clean tree at its commit
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record approves the head, with no BLOCKING or HIGH open. The PR body carries
+- [x] 3.1 Codex code review of record approves the head, with no BLOCKING or HIGH open: approve at `75d69d6` (PR #541
+  comment 6709991351); its one MEDIUM (proposal test prose overstated the failing-first evidence) is fixed in the
+  proposal. The PR body carries
   `implemented-by:` and `reviewed-by: codex`.
 
 ## 4. Archive

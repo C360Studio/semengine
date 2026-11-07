@@ -42,8 +42,12 @@ Issue #512 (repeats and omissions under concurrent overwrites) stays open: this 
 - Test fakes that answer `Keys` over a nil embedded interface (clustering `fakeKV`, the two `service` readers) answer
   `WatchFiltered` instead. Stale comments (`inventory.md` § 9) are corrected; dead fake methods go.
 - Tests, first: a cut-short `KVStore.Keys` (context cancelled after the first key; watcher channel closed before the
-  marker) returns no keys and an error; a snapshot that repeats a key out of order lists each key once, sorted; the
-  two `service` handlers reply with an error, not a partial list, when the listing is cut short. Each fails on base.
+  marker) returns no keys and an error, and the graph-triples handler replies with an error, not a partial list,
+  when its listing is cut short; both fail on base. A snapshot that repeats a key out of order lists each key once,
+  sorted: it passes on base, where nats.go removes repeats, and a mutation check shows it fails if the fix drops
+  `slices.Compact`. The message-logger handler has no test of its own (`notes/2.1.md`): its listing is the shared
+  `natsclient.FilteredKeys`, covered by the `natsclient` cut-short tests, and a regression of that call site back to
+  nats.go `Keys` is uncovered.
 - Examples suffice, no generated checks (`docs/testing.md`): the change has two input shapes (a listing cut short, a
   listing with repeats) and no interacting inputs; one fixed snapshot per shape covers them.
 

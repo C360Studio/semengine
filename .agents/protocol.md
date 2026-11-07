@@ -199,10 +199,17 @@ on optional maintenance.
   rule does not give. For a code pull request this replaces the owner-run round; the owner need not ask. A
   documents-only pull request keeps SemEngine's own reviewer. The rule applies to every pull request not yet merged, one
   already open included. The implementing session may run its own reviewer as it works; those reviews find defects early
-  and are not the gate. An agent does not start another platform's agent, so the pull request carries both halves:
+  and are not the gate. The pull request carries both halves of the review:
   - The implementer asks with a PR comment headed `Review request`. It names the kind of review (the lane), the commit
     SHA to read, the diff range, the implementer's `task verify` result on that commit (run on a clean tree), and the
     issue or ruling the change answers. It does not say what the reviewer should conclude.
+  - The implementer then starts the reviewer: `.agents/review-policy.json` sets `review_launch: agent` (owner,
+    2026-11-06). `ateam review request <n>` prints the reviewer runs the merge gate accepts, the prompt `/review-pr <n>`
+    and the head SHA. Pass `--return-to <conversation id>` in Enjoy, which puts no conversation id in the environment.
+    The host manifest (`.agents/hosts/enjoy.toml`) says how its host starts the reviewer. On a host with no manifest,
+    the command only prints, and the owner starts the reviewer. The reviewer ends with `ateam review notify`, which
+    tells the implementer the record landed but never carries its text; the implementer runs `ateam state sync`, then
+    `ateam state pickup`, and reads the record on the pull request.
   - The reviewing session posts one PR comment, the review record, in ateam's grammar
     ([`contracts/reviewer.md`](contracts/reviewer.md) § Record; [review-pr](skills/review-pr/SKILL.md)):
 

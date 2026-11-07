@@ -43,7 +43,7 @@ type failingGraphTripleReader struct {
 	deadline time.Time
 }
 
-func (r *failingGraphTripleReader) Keys(ctx context.Context, _ ...jetstream.WatchOpt) ([]string, error) {
+func (r *failingGraphTripleReader) WatchFiltered(ctx context.Context, _ []string, _ ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
 	r.deadline, _ = ctx.Deadline()
 	return nil, r.err
 }
@@ -449,8 +449,8 @@ func TestGraphTriplesRefusesMalformedSubjectAndPredicate(t *testing.T) {
 	}
 }
 
-// stubEntityReader is a CatalogReader over an in-memory ENTITY_STATES: Keys lists keys in the
-// order given, which need not be sorted, and Get answers the error set for a key, else its stored
+// stubEntityReader is a CatalogReader over an in-memory ENTITY_STATES: WatchFiltered lists keys in
+// the order given, then the end-of-snapshot marker, which need not be sorted, and Get answers the error set for a key, else its stored
 // bytes, else jetstream.ErrKeyNotFound. Any other method panics through the nil embedded reader.
 type stubEntityReader struct {
 	kvcatalog.CatalogReader
@@ -459,8 +459,13 @@ type stubEntityReader struct {
 	errs   map[string]error
 }
 
-func (r *stubEntityReader) Keys(context.Context, ...jetstream.WatchOpt) ([]string, error) {
-	return slices.Clone(r.keys), nil
+func (r *stubEntityReader) WatchFiltered(context.Context, []string, ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	updates := make(chan jetstream.KeyValueEntry, len(r.keys)+1)
+	for _, key := range r.keys {
+		updates <- stubEntry{key: key}
+	}
+	updates <- nil
+	return &scriptedEntityWatcher{updates: updates}, nil
 }
 
 func (r *stubEntityReader) Get(_ context.Context, key string) (jetstream.KeyValueEntry, error) {
@@ -695,17 +700,12 @@ func TestScanGraphTriplesMatchesSortedOracle(t *testing.T) {
 
 // cutShortEntityReader is a stubEntityReader whose ENTITY_STATES listing is a watch that one test
 // drives: it delivers the first key, then either closes before the end-of-snapshot marker
-// (closeEarly) or blocks until Stop, which closes it. Keys answers as nats.go v1.55.0 does over
-// that watch (jetstream/kv.go:1403-1423: range Updates to the nil marker or the close, keys so
-// far, ErrNoKeysFound for none, sorted and compacted; js.go:2073-2077: the watch is unsubscribed
-// when its context ends), so a handler that still lists through Keys meets the library's cut-short
-// answer rather than a panic through the nil embedded reader.
+// (closeEarly) or blocks until Stop, which closes it.
 type cutShortEntityReader struct {
 	stubEntityReader
 	closeEarly bool
 	delivered  chan struct{} // closed once the first key is handed to the listing
 	stopped    chan struct{}
-	stopOnce   sync.Once
 	done       chan struct{} // closed when the watch's sender has finished
 }
 
@@ -730,51 +730,26 @@ func (r *cutShortEntityReader) WatchFiltered(context.Context, []string, ...jetst
 			<-r.stopped
 		}
 	}()
-	return cutShortWatcher{reader: r, updates: updates}, nil
+	return &scriptedEntityWatcher{updates: updates, stop: func() { close(r.stopped) }}, nil
 }
 
-func (r *cutShortEntityReader) Keys(ctx context.Context, opts ...jetstream.WatchOpt) ([]string, error) {
-	opts = append(opts, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
-	watcher, err := r.WatchFiltered(ctx, []string{">"}, opts...)
-	if err != nil {
-		return nil, err
-	}
-	returned := make(chan struct{})
-	var unsubscribeOnDone sync.WaitGroup
-	unsubscribeOnDone.Go(func() {
-		select {
-		case <-ctx.Done():
-			_ = watcher.Stop()
-		case <-returned:
-		}
-	})
-	defer func() {
-		close(returned)
-		unsubscribeOnDone.Wait()
-		_ = watcher.Stop()
-	}()
-	var keys []string
-	for entry := range watcher.Updates() {
-		if entry == nil {
-			break
-		}
-		keys = append(keys, entry.Key())
-	}
-	if len(keys) == 0 {
-		return nil, jetstream.ErrNoKeysFound
-	}
-	slices.Sort(keys)
-	return slices.Compact(keys), nil
-}
-
-type cutShortWatcher struct {
-	reader  *cutShortEntityReader
+// scriptedEntityWatcher hands out updates. Stop runs stop once, or closes a filled snapshot's updates
+// when stop is nil, as nats.go's Stop closes Updates.
+type scriptedEntityWatcher struct {
 	updates chan jetstream.KeyValueEntry
+	stop    func()
+	once    sync.Once
 }
 
-func (w cutShortWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
-func (w cutShortWatcher) Stop() error {
-	w.reader.stopOnce.Do(func() { close(w.reader.stopped) })
+func (w *scriptedEntityWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
+func (w *scriptedEntityWatcher) Stop() error {
+	w.once.Do(func() {
+		if w.stop != nil {
+			w.stop()
+			return
+		}
+		close(w.updates)
+	})
 	return nil
 }
 
@@ -799,7 +774,7 @@ func TestGraphTriplesListingCutShortFails(t *testing.T) {
 		{name: "the request is cancelled after the first key", want: context.Canceled},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			// The listing arms a 5 s store timeout and, once fixed, a 5 s drain window; on the
+			// The listing arms a 5 s store timeout and a 5 s drain window; on the
 			// bubble's clock neither can expire before the assertions, however slow the host.
 			synctest.Test(t, func(t *testing.T) {
 				reader := newCutShortEntityReader(tt.closeEarly, listed, value)

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -100,58 +99,11 @@ var filteredListings = []filteredListing{
 	}},
 	// KVStore.Keys lists the whole bucket, the filter ">" (#533).
 	{"Keys", ">", func(ctx context.Context, bucket jetstream.KeyValue, _ string) ([]string, error) {
-		return (&Client{}).NewKVStore(nativeKeysBucket{bucket}).Keys(ctx)
+		return (&Client{}).NewKVStore(bucket).Keys(ctx)
 	}},
 }
 
-// nativeKeysBucket answers Keys as nats.go v1.55.0 does, over the bucket's own
-// WatchFiltered, so a KVStore.Keys that still delegates to bucket.Keys meets the
-// library's behaviour, not a panic through a nil interface. Its source:
-// jetstream/kv.go:1403-1423 adds IgnoreDeletes and MetaOnly, watches ">",
-// ranges Updates until the nil marker or the channel's close, returns
-// ErrNoKeysFound for no keys and otherwise the keys sorted and compacted, and
-// ignores Stop's error; js.go:2073-2077 unsubscribes the watch when its context
-// ends, which closes Updates. One stop stands for both, as a second
-// Unsubscribe does nothing.
-type nativeKeysBucket struct{ jetstream.KeyValue }
-
-func (b nativeKeysBucket) Keys(ctx context.Context, opts ...jetstream.WatchOpt) ([]string, error) {
-	opts = append(opts, jetstream.IgnoreDeletes(), jetstream.MetaOnly())
-	watcher, err := b.WatchFiltered(ctx, []string{">"}, opts...)
-	if err != nil {
-		return nil, err
-	}
-	stop := sync.OnceValue(watcher.Stop)
-	returned := make(chan struct{})
-	var unsubscribeOnDone sync.WaitGroup
-	unsubscribeOnDone.Go(func() {
-		select {
-		case <-ctx.Done():
-			_ = stop()
-		case <-returned:
-		}
-	})
-	defer func() {
-		close(returned)
-		unsubscribeOnDone.Wait()
-		_ = stop()
-	}()
-
-	var keys []string
-	for entry := range watcher.Updates() {
-		if entry == nil {
-			break
-		}
-		keys = append(keys, entry.Key())
-	}
-	if len(keys) == 0 {
-		return nil, jetstream.ErrNoKeysFound
-	}
-	slices.Sort(keys)
-	return slices.Compact(keys), nil
-}
-
-// spec: transport-client / Both filtered key listings complete the same way
+// spec: transport-client / The key listings complete the same way
 func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 	for _, listing := range filteredListings {
 		t.Run(listing.name, func(t *testing.T) { testFilteredCancellationFinishesNativeDelivery(t, listing) })
@@ -314,7 +266,7 @@ func closedOnStopWatcher(entries ...jetstream.KeyValueEntry) *scriptedWatcher {
 }
 
 // spec: nats-kv-keys / Filtered KVStore listings finalize native watcher delivery
-// spec: transport-client / Both filtered key listings complete the same way
+// spec: transport-client / The key listings complete the same way
 func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 	for _, listing := range filteredListings {
 		t.Run(listing.name, func(t *testing.T) { testFilteredWatcherSnapshotAndStopErrors(t, listing) })
@@ -388,9 +340,8 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 
 // TestKVStoreKeysListsEachKeyOnceSorted: a snapshot that delivers a key twice,
 // out of key order, lists each key once in sorted order. The oracle is the
-// literal answer. nats.go's Keys sorts and compacts (jetstream/kv.go:1421-1422)
-// and the filtered listing does not (it appends in delivery order), so this
-// fails when KVStore.Keys lists through the filtered listing without both.
+// literal answer. The filtered listing appends in delivery order, so this fails
+// when KVStore.Keys drops its sort or its repeat removal.
 //
 // spec: transport-client / The key listings complete the same way
 func TestKVStoreKeysListsEachKeyOnceSorted(t *testing.T) {
@@ -403,7 +354,7 @@ func TestKVStoreKeysListsEachKeyOnceSorted(t *testing.T) {
 			assert.Equal(t, []string{">"}, filters)
 			return watcher, nil
 		}}
-		keys, err := (&Client{}).NewKVStore(nativeKeysBucket{bucket}).Keys(t.Context())
+		keys, err := (&Client{}).NewKVStore(bucket).Keys(t.Context())
 		require.NoError(t, err)
 		assert.Equal(t, []string{"a.one", "b.two"}, keys)
 		assert.EqualValues(t, 1, watcher.calls.Load())

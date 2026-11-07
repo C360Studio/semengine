@@ -118,7 +118,7 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	}
 }
 
-// spec: transport-client / Both filtered key listings complete the same way
+// spec: transport-client / The key listings complete the same way
 func TestIntegration_FilteredKeyListingsNoMatch(t *testing.T) {
 	testClient := newFixtureClient(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)

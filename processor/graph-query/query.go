@@ -176,7 +176,7 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 			return nil, err
 		}
 		if id == "" {
-			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", request.Alias))
+			return nil, entityNotFound(request.Alias)
 		}
 		entity, err := c.readEntity(ctx, entitySubject, id)
 		if err != nil {
@@ -184,6 +184,12 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 		}
 		return envelope(c, entitySubject, revision, json.RawMessage(entity))
 	}
+}
+
+// entityNotFound is the answer to a reference that names no entity, for entityByAlias and a global
+// search named start alike (design D7).
+func entityNotFound(reference string) error {
+	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", reference))
 }
 
 // resolveReference is the one rule an entity reference is read by, for entityByAlias and global

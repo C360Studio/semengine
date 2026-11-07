@@ -4,9 +4,11 @@ import "encoding/json"
 
 // GlobalSearchRequest is the globalSearch verb's request, decoded strictly: an unknown key is refused,
 // naming it. Query is the question, required and not blank. The question is classified by its words
-// alone; no other key steers which strategy answers.
+// alone; no other key steers which strategy answers. Level is the community level the text strategy
+// searches, 0 to 2, omitted 0; it is checked on every request and read by no other strategy.
 type GlobalSearchRequest struct {
 	Query string `json:"query"`
+	Level int    `json:"level,omitempty"`
 	MinRevisionField
 }
 

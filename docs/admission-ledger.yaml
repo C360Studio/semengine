@@ -4314,10 +4314,11 @@
     TestLocalSearchAfterCommunityIndexAppears, TestLocalSearchRefusesAfterWatchLoss, TestLocalSearchDuringBlockedTick,
     TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, for step 4 TestGlobalSearchRoutesByHints,
     TestGlobalSearchRefusesTwoFilters, TestGlobalSearchRefusesImpossibleNumbers, TestGlobalSearchEndedClassification,
-    TestGlobalSearchRefusesHintsItCannotRead, TestGlobalSearchDecodesStrictly, TestGlobalSearchEntity,
+    TestGlobalSearchRefusesHintsItCannotRead, TestGlobalSearchRequestKeys, TestGlobalSearchEntity,
     TestGlobalSearchOneWordIsAReference, TestGlobalSearchPath, TestGlobalSearchPassesAliasRefusals,
-    TestGlobalSearchUnknownReferenceFallsThrough, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
-    TestGlobalSearchTextTierRefusal, TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders,
+    TestGlobalSearchUnknownWordIsSearched, TestGlobalSearchUnknownIDIsSearched, TestGlobalSearchUnknownPathStart,
+    TestGlobalSearchHintBesideAFilter, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
+    TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders,
     and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt

@@ -817,8 +817,8 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	// globalSearch: the alias stub still refuses and the entity stub too; the edge stubs answer empty.
 	const globalSearch = "graph.query.globalSearch"
 	const entityQuestion, pathQuestion = `{"query":"held-1"}`, `{"query":"what is connected to held-1"}`
-	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":1}`, 23)
-	step("globalSearch: a question for the text search", globalSearch, `{"query":"how many pumps are there"}`, 23)
+	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":3}`, 23)
+	step("globalSearch: a count", globalSearch, `{"query":"how many pumps are there"}`, 23)
 	step("globalSearch: the alias refused by the responder", globalSearch, entityQuestion, 23)
 	alias.Store(replying(`not json`))
 	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 24)

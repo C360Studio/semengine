@@ -28,7 +28,7 @@ in `notes/<task>.md`.
 
 ## 3. The text tier
 
-- [ ] 3.1 Routing (D1, the option the owner rules): `chooseRoute` and the resolver's miss; `text_search_unsupported`
+- [x] 3.1 Routing (D1, the option the owner rules): `chooseRoute` and the resolver's miss; `text_search_unsupported`
   removed; `level` on `graph.GlobalSearchRequest` (0 to 2) and its doc comment (`graph/query_global_search_types.go:5-7`).
   Premise: `processor/graph-query/globalsearch.go:27`, `:97`, `:219`, `:323-356`; `graph/query/classifier.go:48-94`.
   Check: `TestGlobalSearchRoutesByHints` (each row's code and text, with "http connection pool", "file path

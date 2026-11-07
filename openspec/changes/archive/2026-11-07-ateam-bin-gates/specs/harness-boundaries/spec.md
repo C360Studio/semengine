@@ -5,10 +5,10 @@
 ### Requirement: ateam doctor gates verify
 
 `scripts/verify.sh` SHALL run `task ateam:doctor` as its first step, and `task ateam:doctor` SHALL run `.bin/ateam
-doctor --check` (the pinned release, which its dependency `task ateam:bin` builds) with the session identity variables
-(`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`, `GEMINI_SESSION_ID`) unset, so that the check never takes
-the writer lease. The ateam release is pinned as `v0.3.9` in `.github/workflows/ci.yml` and
-`.github/workflows/merge-check.yml`, every install line naming the same version, compared by `scripts/doctor.sh`.
+doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`,
+`GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is pinned as `v0.3.9` in
+`.github/workflows/ci.yml` and `.github/workflows/merge-check.yml`, every install line naming the same version, compared
+by `scripts/doctor.sh`.
 
 #### Scenario: Doctor violation fails verify
 
@@ -28,8 +28,7 @@ the writer lease. The ateam release is pinned as `v0.3.9` in `.github/workflows/
 Every file `ateam init` writes into an empty directory at the pinned release SHALL be byte-identical in this repository,
 except the files SemEngine writes itself and the five client configurations an adopter may edit (both listed with
 reasons in `semengineOwned`). The tool test `TestAteamTemplatesUnchanged` (`internal/harness/toolcheck`) SHALL check it,
-failing and never skipping when `.bin/ateam` (built by `task ateam:bin`) is missing or is not the pinned release. It
-never runs the `ateam` on `PATH`.
+failing and never skipping when `.bin/ateam` (built by `task ateam:bin`) is missing or is not the pinned release.
 
 #### Scenario: A line is added to a base contract
 

@@ -11,4 +11,4 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 2. Spec
 
-- [ ] 2.1 The spec deltas applied to `openspec/specs/` and the change archived.
+- [x] 2.1 The spec deltas applied to `openspec/specs/` and the change archived.

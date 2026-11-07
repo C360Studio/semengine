@@ -4,11 +4,11 @@
 
 ### Requirement: The spec queue is ateam state spec-queue at the pin
 
-`task spec:queue` SHALL run `.bin/ateam state spec-queue` (the pinned release, built by `task ateam:bin`) and nothing
-else. At the pinned release the queue reads each `openspec/changes/<name>/tasks.md` but `archive`'s, with no `openspec`
-CLI, and prints per change its ticked/total count, a line per open task whose first line carries a label (`WONTDO`,
-`HALT`, `RED`, `BLOCKED`, `OPEN-Q`), a line per hold from `Hold:` on, `ok` for neither, or `done, not archived` when all
-are ticked; it exits 0, or 2 when a file cannot be read.
+`task spec:queue` SHALL run `.bin/ateam state spec-queue` and nothing else. At the pinned release the queue reads each
+`openspec/changes/<name>/tasks.md` but `archive`'s, with no `openspec` CLI, and prints per change its ticked/total
+count, a line per open task whose first line carries a label (`WONTDO`, `HALT`, `RED`, `BLOCKED`, `OPEN-Q`), a line per
+hold from `Hold:` on, `ok` for neither, or `done, not archived` when all are ticked; it exits 0, or 2 when a file cannot
+be read.
 
 #### Scenario: Hold on a continuation line
 
@@ -31,10 +31,10 @@ are ticked; it exits 0, or 2 when a file cannot be read.
 ### Requirement: spec:check runs validate then ateam state spec-check
 
 `task spec:check` SHALL run `npx --no-install openspec validate --all --strict --no-interactive`, then `.bin/ateam state
-spec-check`, and nothing else, each a plain string under `cmds`; besides `desc` and `summary` the only other key either
-task may set is `deps: [ateam:bin]`, which builds `.bin/ateam`, and no key can skip a command or discard its exit
-status; `task spec:queue` SHALL run `.bin/ateam state spec-queue` alone, the same way. A contract test SHALL fail naming
-the task and the command when either entry differs.
+spec-check`, and nothing else, each a plain string under `cmds`; besides `desc` and `summary` the only key allowed is
+`deps: [ateam:bin]`, and none can skip a command or discard its exit status; `task spec:queue` SHALL run `.bin/ateam
+state spec-queue` alone, the same way. A contract test SHALL fail naming the task and the command when either entry
+differs.
 
 #### Scenario: The validate line is the fail-closed one
 

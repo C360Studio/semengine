@@ -92,7 +92,8 @@ a sample when `entities_truncated` is true. An answer with `unreadable_groups` a
 
 The text tier SHALL refuse transient `index_not_ready` when the community view is missing, catching up, lost or
 stopped, or the level holds no record, readable or not, and transient `internal` naming the count, one error, when
-every record at the level is unreadable. Each refusal SHALL come before any prefix read.
+every record at the level is unreadable. Each refusal SHALL come before any prefix read, and a caller's
+`invalid_request` SHALL come before any of them.
 
 #### Scenario: An empty level
 
@@ -147,7 +148,9 @@ entry.
 `globalSearch` SHALL classify a question of more than one token once with the keyword classifier and answer: a path
 intent with a start node and no other hint, `path`; a time range alone, `temporal`; an area alone, `spatial`; no
 hint, or only path words with no start, similarity or ranking, `text`, each such hint named in `unhonoured_hints`. A
-count or other aggregation hint, with or without others, SHALL be refused `invalid_request` naming it. No answer
+count or other aggregation hint, with or without others, SHALL be refused `invalid_request` naming it, and so SHALL a
+text-routed hint beside a filter (a start, a time range or an area) or a start carrying path predicates, naming
+both. No answer
 SHALL drop a hint the classifier reported without naming it. No result and no error, hints that cannot be read, and
 a classifier error not of class invalid SHALL be refused transient `internal`.
 
@@ -162,6 +165,13 @@ a classifier error not of class invalid SHALL be refused transient `internal`.
 - **WHEN** "find sensors similar to pump-42" or "top 5 sensors" is asked
 - **THEN** the reply's `strategy` is `text` and `unhonoured_hints` names `similarity` or `ranking`
   (`TestGlobalSearchRoutesByHints`)
+
+#### Scenario: A text-routed hint beside a filter
+
+- **WHEN** "top 5 sensors connected to pump-42", "find sensors similar to pump-42 in the last 2 hours" or "what is
+  related to it in the last 2 hours" is asked
+- **THEN** each is refused `invalid_request` naming both, and no downstream request is made
+  (`TestGlobalSearchHintBesideAFilter`)
 
 #### Scenario: A count
 
@@ -238,7 +248,8 @@ lookup SHALL be made.
 #### Scenario: An unknown reference
 
 - **WHEN** a one-token question is no alias and no entity ID, or a valid entity ID with no record
-- **THEN** it is answered by the text tier, never `entity_not_found` (`TestGlobalSearchUnknownWordIsSearched`)
+- **THEN** it is answered by the text tier, never `entity_not_found` (`TestGlobalSearchUnknownWordIsSearched`,
+  `TestGlobalSearchUnknownIDIsSearched` for the valid ID with no record)
 
 #### Scenario: An unknown named start
 

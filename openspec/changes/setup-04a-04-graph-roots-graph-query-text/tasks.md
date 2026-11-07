@@ -16,7 +16,9 @@ Every task that moves a consumer's shape appends to `processor/graph-query/MIGRA
 ## 2. The counting enumeration
 
 - [ ] 2.1 `View.ListCounted` (D8): `pkg/graphview/view.go`; `clustering.LevelPrefix` (D2) beside `GroupKey`.
-  Premise: `view.go:403-450`, `:611`; `graph/clustering/storage.go:101-110`, `:137`, `maintainer.go:20`. Check:
+  Premise: `view.go:403-450`, `:611`; `graph/clustering/storage.go:101-110`, `:137`, `maintainer.go:20`. Adopters,
+  each onto `LevelPrefix` and one range check: `storage.go:102` (`GroupKey`), `:124` (`DecodeCommunity`), `:138`
+  (`communityKey`), `maintainer.go:329` (`exists`); clustering's tests unchanged. Check:
   `TestLevelPrefix` (0 to 2; -1 and 3 refused invalid),
   `TestListCountedCountsPoison` (poison, heal by a valid write, delete, `ErrNotReady`, lost, stopped), `-race`; a
   count taken outside the lock shown to fail under `-race`, or the mutant that skips the count. Ledger: `pkg/graphview`
@@ -30,7 +32,12 @@ Every task that moves a consumer's shape appends to `processor/graph-query/MIGRA
   Check: `TestGlobalSearchRoutesByHints` (each row's code and text, with "http connection pool", "file path
   handling", "max retries"), `TestGlobalSearchUnknownPathStart`, `TestGlobalSearchUnknownWordIsSearched`,
   `TestZoneQuestionNeverAnswersEmpty` (expects `entity_not_found`, was `text_search_unsupported`),
-  `TestGlobalSearchTextTierRefusal` removed; the count refusal shown to fail. ADR-114 sentence (D7).
+  `TestGlobalSearchHintBesideAFilter`, `TestGlobalSearchUnknownIDIsSearched`, `TestGlobalSearchRequestKeys`;
+  `TestGlobalSearchTextTierRefusal` removed. Step 4 tests that expect `text_search_unsupported` and change:
+  `TestGlobalSearchUnknownReferenceFallsThrough` (`globalsearch_integration_test.go:348`, a valid ID with no record:
+  now text), the assertion at `globalsearch_integration_test.go:48`, and the ten rows of
+  `TestGlobalSearchRoutesByHints` at `globalsearch_test.go:97-111`, each to its D1 outcome; the count refusal shown
+  to fail. ADR-114 sentence (D7).
 - [ ] 3.2 Groups and matches (D2, D3, D5): enumeration, group score with ties by key, five above zero, one page each,
   `rankEntities`, the revision mark. Premise: `pin:graphrag.go:1374-1499`, `:2416-2470`; `localsearch.go:50`, `:119`;
   `counts.go:32`; `graph/clustering/maintainer.go:173-184`. Check: `TestTextTierReadsAtMostFiveGroups` (counting

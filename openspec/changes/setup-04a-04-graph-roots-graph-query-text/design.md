@@ -20,10 +20,14 @@ The ruling on #535 accepted only the loud "two places" refusals, so how the text
 Fixed either way: several words and no hint, and a one-word reference naming no entity, go to the text tier; two
 filters and the classifier's own refusals stay `invalid_request` (step 4).
 
-| Option | Path words, no start; similarity; ranking | Count or other aggregation | Named start that names no entity | Cost |
-| --- | --- | --- | --- | --- |
-| **(a) recommended** | text tier; the reply's `unhonoured_hints` names each (`path`, `similarity`, `ranking`) | `invalid_request` naming it | `entity_not_found` | "max retries" and "total memory usage" are still refused; "pumps in area 51" is not found (a zone named as a start). One new reply field |
-| (b) refuse | `invalid_request` naming the hint | `invalid_request` | `entity_not_found` | Common words refuse answerable free text on SemSource's call; `MIGRATION.md` lists every trigger word |
+| Option | Path words, no start; similarity; ranking (alone) | Any of those beside a filter (start, time range, area), or a start with path predicates | Count or other aggregation | Named start that names no entity | Cost |
+| --- | --- | --- | --- | --- | --- |
+| **(a) recommended** | text tier; the reply's `unhonoured_hints` names each (`path`, `similarity`, `ranking`) | `invalid_request` naming both, as step 4 refused two filters | `invalid_request` naming it | `entity_not_found` | "max retries" and "total memory usage" are still refused; "pumps in area 51" is not found (a zone named as a start). One new reply field |
+| (b) refuse | `invalid_request` naming the hint | `invalid_request` naming both | `invalid_request` | `entity_not_found` | Common words refuse answerable free text on SemSource's call; `MIGRATION.md` lists every trigger word |
+
+A filter is never dropped for a text answer: "top 5 sensors connected to pump-42" (ranking and a start), "find sensors
+similar to pump-42 in the last 2 hours" (similarity and a time range) and "what is related to it in the last 2 hours"
+(path words with no start, and a time range) are refused `invalid_request` naming both, under either option.
 
 A count stays refused under both: a list of matches over sampled pages (ruling 2) invites the reader to count a
 sample. The pin (everything to `graphrag`, silently, R3) and keeping the temporary code (the package never whole) are
@@ -32,15 +36,20 @@ not offered. A named start that names nothing (`what is connected to pump-99`) i
 replaces #479's scenario: "the area of the plant" (start `area-of`) is `entity_not_found`, never empty.
 *Proof:* `TestGlobalSearchRoutesByHints` (each row, with "http connection pool", "file path handling", "max retries"),
 `TestGlobalSearchTextQuestion`, `TestGlobalSearchUnknownWordIsSearched`, `TestGlobalSearchUnknownPathStart`,
-`TestZoneQuestionNeverAnswersEmpty` (now `entity_not_found`).
+`TestZoneQuestionNeverAnswersEmpty` (now `entity_not_found`), `TestGlobalSearchHintBesideAFilter`.
 
 ## D2. Which groups are read
 
 **Request keys:** `query`, `min_revision`, and `level`, 0 to 2, omitted 0, read only by the text tier and checked for
 every request before routing. `max_communities`, `summarize_threshold` and the three `include_*` keys stay refused by
-name (D4). One enumeration per request (ruling 3): `View.ListCounted` (D8) over `clustering.LevelPrefix(level)`, a new
+name (D4). A caller's error (a bad key or level, more than `graph.MaxSearchTerms` distinct terms) is refused
+before the view is read, so it wins over `index_not_ready`. One enumeration per request (ruling 3):
+`View.ListCounted` (D8) over `clustering.LevelPrefix(level)`, a new
 `graph/clustering` function returning `{level}.` and refusing a level outside 0 to 2: the one home of both, beside
-`GroupKey`, so graph-query never spells `levels` or `communityKey` again (inventory § 5). A view missing, catching up,
+`GroupKey`, so graph-query never spells `levels` or `communityKey` again (inventory § 5). Inside clustering the
+prefix is spelled at `storage.go:138` (`communityKey`) and `maintainer.go:329` (`exists`), the range at
+`storage.go:102` (`GroupKey`) and `:124` (`DecodeCommunity`); task 2.1 moves each onto `LevelPrefix` and one range
+check. A view missing, catching up,
 lost or stopped, and a level with no records, readable or not, refuse transient `index_not_ready` (ruling 3;
 ADR-109 D4). **Score** (the pin's, R6): over the question's terms, lowercased and de-duplicated as `searchTerms` does,
 a record gains 2.0 for each term contained in its statistical summary and 1.5 for each pair of keyword and term where

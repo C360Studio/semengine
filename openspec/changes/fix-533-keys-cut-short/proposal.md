@@ -1,6 +1,6 @@
 # Proposal: fix-533-keys-cut-short
 
-Approved-by: OPEN-Q (the owner fills this line)
+Approved-by: owner, 2026-11-07 in Enjoy, proposal at `9f4710f` approved as drafted; recorded on #533 (comment 6709379944)
 
 ## Why
 

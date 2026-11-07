@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log/slog"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -407,6 +408,54 @@ func TestManager_RoundTripCreateGetTransition(t *testing.T) {
 	}
 	if got2.Phase() != "flying" {
 		t.Errorf("after Transition: phase=%q, want flying", got2.Phase())
+	}
+}
+
+// TestManager_ListPagesEntityIDOrderEachOnce lists over a key snapshot that repeats a key and
+// is out of key order, as nats.go's listing may be on a busy bucket (#534).
+func TestManager_ListPagesEntityIDOrderEachOnce(t *testing.T) {
+	t.Parallel()
+	mgr, _, bucket := newTestManager(t)
+	ctx := context.Background()
+
+	const prefix = "c360.platform1.gcs.lifecycle.mission."
+	put := []string{prefix + "d", prefix + "b", prefix + "a", prefix + "c"}
+	for _, id := range put {
+		if err := mgr.Create(ctx, &fixtureMission{ID: id, PhaseF: "planning"}); err != nil {
+			t.Fatalf("Create %s: %v", id, err)
+		}
+	}
+	bucket.listKeys = []string{prefix + "d", prefix + "b", prefix + "a", prefix + "b", prefix + "c"}
+
+	// Oracle: the sorted set of IDs the test put, independent of the listing.
+	want := append([]string(nil), put...)
+	sort.Strings(want)
+
+	ids := func(opts ListOptions) []string {
+		t.Helper()
+		got, err := mgr.List(ctx, "fixture", opts)
+		if err != nil {
+			t.Fatalf("List(%+v): %v", opts, err)
+		}
+		out := make([]string, 0, len(got))
+		for _, p := range got {
+			out = append(out, p.EntityID())
+		}
+		return out
+	}
+
+	for _, tt := range []struct {
+		name string
+		opts ListOptions
+		want []string
+	}{
+		{"every participant", ListOptions{}, want},
+		{"first page", ListOptions{Limit: 2}, want[:2]},
+		{"next page", ListOptions{Offset: 2, Limit: 2}, want[2:]},
+	} {
+		if got := ids(tt.opts); !reflect.DeepEqual(got, tt.want) {
+			t.Errorf("%s: List(%+v) = %q, want %q", tt.name, tt.opts, got, tt.want)
+		}
 	}
 }
 

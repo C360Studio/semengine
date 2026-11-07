@@ -61,7 +61,7 @@ handler).
 
 ## 5. Land
 
-- [ ] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #530's body carries
+- [x] 5.1 Cross-agent review of record passes at the last code commit (`reviewed-by:`). PR #530's body carries
   `implemented-by:` and `Closes #405`, `Closes #428`, `Closes #479`, and no other closing keyword;
   `inventory-delta.md` § 4 lists what stays open. Comments, each read back: #111 (step 4 removed the semantic
   site; the `graphrag` site is step 5's), #487 (note 1 applied: explicit chains; no depth hint at tier 0), #486 (the

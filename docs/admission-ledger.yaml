@@ -2104,7 +2104,13 @@
     indexed_revision is 0, which claims nothing (graph/query_response.go); and, in
     setup-04a-04-graph-roots-graph-query-communities: (27) LocalSearchRequest, LocalSearchData and MaxSearchTerms
     (graph/query_local_search_types.go), and the localSearch row of QueryVerbs on graph.query.localSearch, enveloped,
-    its reply LocalSearchData
+    its reply LocalSearchData; and, in setup-04a-04-graph-roots-graph-query-search: (28) GlobalSearchRequest (query,
+    min_revision; strict) and GlobalSearchData (strategy and exactly one of entity, path, temporal, spatial)
+    (graph/query_global_search_types.go), the globalSearch row of QueryVerbs on graph.query.globalSearch, enveloped,
+    and the requests graph-query sends to the time-range and bounds verbs, TemporalRangeRequest (start_time and
+    end_time in RFC 3339, limit, min_revision) and SpatialBoundsRequest (north, south, east, west, limit,
+    min_revision) (graph/query_search_types.go), which change 7's responders decode; the pin sent startTime and
+    endTime
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
@@ -2120,7 +2126,9 @@
     graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
     graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
     graph/query_response_test.go (TestQueryResponseCarriesIndexedRevisionAndProducer,
-    TestNewQueryResponseRefusesEmptyProducer), internal/harness/contract/graphtransport_test.go
+    TestNewQueryResponseRefusesEmptyProducer), graph/query_global_search_types_test.go (TestGlobalSearchTypesWire),
+    graph/query_search_types_test.go (TestSearchRequestTypesWire),
+    internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -3496,7 +3504,10 @@
     []graph.OutgoingEntry. Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
     at boot until the line is deleted; semteams' published schema lists it. Removed (design D8): the dead exported and
     test-only writers, subscribeForRequests (#186), batch_size, reindexTotal and reindexUnchanged, the raceEnabled
-    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree
+    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree. A
+    refused index plan marks the entity failed and withholds readiness, as a failed write does (#428; design D6 of
+    setup-04a-04-graph-roots-graph-query-search); no state the contract accepts is known to reach it, so the mark is
+    shown by reading and has no test, and TestContractValidStateAlwaysPlans proves the premise
   proving_tests: >-
     processor/graph-index/config_test.go (TestUnknownConfigKeyIsRefused, TestConfigWorkersZeroMeansOneLane,
     TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
@@ -3510,7 +3521,8 @@
     TestQueryResponseCarriesIndexedRevisionAndProducer, TestQueriesAreRefusedWhileTheFeedIsLost,
     TestQueryReadsImplementReplacement, TestMaximumLengthIDsAndPredicatesThroughPublicReads,
     TestMalformedIndexRowsAreSkippedLoggedAndCounted, TestAliasReadImplementsReplacement,
-    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase); the pin tests dropped, each with its reason, are listed in
+    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase), plan_prop_test.go
+    (TestContractValidStateAlwaysPlans); the pin tests dropped, each with its reason, are listed in
     openspec/changes/setup-04a-04-graph-roots-graph-index/notes/2.3.md
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt
@@ -3812,7 +3824,8 @@
     an aggregation or a ranking) with no graph reads and no store. A ClassifierChain asks tier 0 (keyword patterns),
     tier 1 (the most similar example, as BM25 vectors from graph/embedding) and tier 3 (a language model through a
     caller-supplied LLMClient), and answers from the first tier that produces a hint. processor/graph-query (item 9)
-    calls it
+    calls it; its first production reader is processor/graph-query's globalSearch (step 4), which classifies each
+    question of more than one word with the keyword tier alone
   destination: graph/query
   contract: >-
     Surface as at the pin, less the dead surface below, with these adaptations (spec query-classification; design
@@ -4228,18 +4241,34 @@
     and semengine_graph_query_search_truncated_total{verb} counts cut-short localSearch answers. Not
     carried at step 3: community_cache.go (generation, lease, fence and the cache), the graph.clustering.query.entity
     fallback, the semantic fallback when no record exists, the answer interface, and the poison-counting List.
-    Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    Step 4 (setup-04a-04-graph-roots-graph-query-search, graphrag.go and entity_resolver.go) adds globalSearch, which
+    answers the questions tier 0 can answer exactly and refuses the rest. A question of one word is an entity
+    reference, read before any hint; any other is classified once by the keyword tier of graph/query, and a strategy
+    answers only when its hint is the question's only hint: a path from a start (path), a time range (temporal,
+    graph.temporal.query.range) or an area (spatial, graph.spatial.query.bounds). One resolver (entityByAlias's rule:
+    the alias verb, then a valid six-part ID as itself; the suffix step is not carried, #405) serves entityByAlias and
+    global search; an alias refusal reaches the caller as it arrived, and in global search a reference naming no entity
+    falls through to the text tier. Two of path, time and area, an entity beside a zone or area, and an impossible
+    number are refused invalid_request, naming the phrase or both places; a count, ranking or similarity hint, a
+    question with no hint, and a name that names no entity are refused class invalid, code text_search_unsupported
+    (unexported, removed at step 5), which counts no error; the reply (graph.GlobalSearchData) is the strategy and its
+    result as read, no entity states loaded. Not carried at step 4 (design D7): extractSearchRefinements,
+    filterClassifierTemplates and the semantic strategy with its type-filter fallback (step 5 decides them with the
+    graphrag default), pin strategy names pathrag and entity_lookup (now path and entity), the pin's level, max_communities, summarize_threshold and
+    include_* request keys (refused by name), and the reply's Count, DurationMs and Degraded fields. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
     requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
     key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
     revision_not_reached instead of swallowing them (ADR-114); relationships requires direction and names the
     predicate where the pin named edge_type; the entity reply names kv_revision
   dependencies_and_side_effects: >-
-    production: component, graph, graph/clustering, graph/kvcatalog, internal/kvwatch, metric, natsclient, pkg/errs,
-    pkg/graphview, pkg/types, vocabulary (in-set); tests also use nats.go; one request subscription per served verb;
+    production: component, graph, graph/clustering, graph/kvcatalog, graph/query, internal/kvwatch, metric, natsclient,
+    pkg/errs, pkg/graphview, pkg/types, vocabulary (in-set); tests also use nats.go; one request subscription per served verb;
     zero to two downstream requests per call (a refused request makes none, entityByAlias up to two), except
     pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
-    page), and localSearch, one prefix page, or one entity read when the group has no record; since step 3 one goroutine
+    page), localSearch, one prefix page, or one entity read when the group has no record, and globalSearch, which
+    makes none for a refused question and otherwise the requests of its one strategy (an alias request and an entity
+    read; the walk of pathSearch; one time-range or bounds request); since step 3 one goroutine
     (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
     registry; no write to any bucket
   known_risks: >-
@@ -4253,8 +4282,13 @@
     the number that decides whether a keyword index per community (#506) is due. Nothing in the framework writes
     COMMUNITY_INDEX until change 7, so localSearch is refused index_not_ready until then. A min_revision from a write
     outside the searched group is refused until that group next changes. The nats.go time a lost watch takes to be seen
-    is observed, not promised (pkg/graphview row). Later steps carry searchgraph.go, entity_resolver.go and their
-    tests
+    is observed, not promised (pkg/graphview row). globalSearch classifies with the keyword tier alone, whose limits
+    the owner accepted (tracked in #535): "from A to B" walks from A and drops B; the refusal of an entity beside a
+    zone or area is loud and can be wrong ("in real-time", "non-zero" or "the area with pumps" beside a place can be
+    refused as a second place); a path start is the hyphenated word the classifier finds, never a whole ID. Until
+    change 7 brings the responders, temporal and spatial are refused transient internal, which counts an error in
+    Health, and until step 5 every other question is refused text_search_unsupported. Later steps carry searchgraph.go
+    and its tests
   proving_tests: >-
     processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
@@ -4271,7 +4305,13 @@
     TestLocalSearchRefusals, TestLocalSearchRefusesBadRequests, TestLocalSearchEntitiesPassUnchanged,
     TestLocalSearchFitsMaxPayload, TestLocalSearchBeforeCommunityIndexExists,
     TestLocalSearchAfterCommunityIndexAppears, TestLocalSearchRefusesAfterWatchLoss, TestLocalSearchDuringBlockedTick,
-    TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, and the lifecycle suite
+    TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, for step 4 TestGlobalSearchRoutesByHints,
+    TestGlobalSearchRefusesTwoFilters, TestGlobalSearchRefusesImpossibleNumbers, TestGlobalSearchEndedClassification,
+    TestGlobalSearchRefusesHintsItCannotRead, TestGlobalSearchDecodesStrictly, TestGlobalSearchEntity,
+    TestGlobalSearchOneWordIsAReference, TestGlobalSearchPath, TestGlobalSearchPassesAliasRefusals,
+    TestGlobalSearchUnknownReferenceFallsThrough, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
+    TestGlobalSearchTextTierRefusal, TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders,
+    and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 

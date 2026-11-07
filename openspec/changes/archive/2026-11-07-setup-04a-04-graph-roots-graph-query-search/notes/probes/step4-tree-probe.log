@@ -1,0 +1,12 @@
+=== RUN   TestStep4TreeProbe
+"what is connected to sensor-001"                            tier=0 options=map[path_intent:true path_start_node:sensor-001]
+"the area of the plant"                                      tier=0 options=map[path_intent:true path_start_node:area-of]
+"entities in zone-A"                                         tier=0 options=map[path_intent:true path_start_node:zone-A]
+"what changed in the last 2 hours within 5km of 40.7,-74.0"  tier=0 options=map[geo_bounds:0x5d3658d76e20 time_range:0x5d3658df7290]
+"what is connected to pump-42 in the last 2 hours"           tier=0 options=map[path_intent:true path_start_node:pump-42 time_range:0x5d3658df7380]
+"what changed in the last 0 hours"                           err=ClassifierChain.ClassifyQuery: read the question's numbers failed: "last 0 hours": the number must be at least 1
+"find sensors similar to pump-42"                            tier=0 options=map[use_embeddings:true]
+"forklift"                                                   tier=0 options=map[]
+--- PASS: TestStep4TreeProbe (0.00s)
+PASS
+ok  	github.com/c360studio/semengine/graph/query	0.263s

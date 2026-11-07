@@ -14,6 +14,7 @@
 //
 // entityByAlias asks graph-index's alias verb, then reads the holder from graph-ingest's entity verb,
 // or the input as an entity ID when nobody holds it and it is a valid one; other input is not found.
+// globalSearch resolves a reference by the same rule.
 // relationships asks graph-index's outgoing or incoming verb, as direction says, and turns the rows
 // into graph.RelationshipEdge. Both answer in a graph.QueryResponse from graph-query carrying the index
 // reply's revision, and return any refusal unchanged.
@@ -37,6 +38,20 @@
 // the view, and opens it again every 5 seconds when the bucket is missing or its watch is lost, and
 // localSearch is refused transient index_not_ready until a view has caught up. Stop ends the view.
 // semengine_graph_query_search_truncated_total counts localSearch answers that were cut short.
+//
+// globalSearch chooses one strategy from the question and answers with it. A question of one word is an
+// entity reference, resolved as entityByAlias resolves it (the alias verb, else a valid entity ID) and
+// answered with the entity verb's reply. Any longer question is classified once by the keyword tier of
+// graph/query, and a strategy answers only when its hint is the question's only hint: a path from a
+// start (the pathSearch walk, both directions, depth 3, 100 entities), a time range (the time-range verb)
+// or an area (the bounds verb). Two of those, an entity beside a zone or area, and an impossible number
+// are refused invalid_request. A count, a ranking, a similarity, no hint at all, and a name that names
+// no entity are refused class invalid with code text_search_unsupported, since this build has no text
+// search; asking again unchanged will not help. A refusal from the alias or entity verb reaches the
+// caller as it arrived. Until change 7 brings their responders, the time-range and bounds strategies are
+// refused transient internal, naming the subject. The keyword classifier's limits stay its own and are
+// tracked in #535: "from A to B" walks from A, and the refusal of a second place can be wrong for a
+// hyphenated word such as "real-time".
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

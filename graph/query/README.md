@@ -26,7 +26,8 @@ A hint from the keyword tier ends the chain, so tiers 1 and 3 never run for that
 holds for every hint the keyword tier produces, including hints a caller does not read.
 
 `ClassifyQuery` returns `(*ClassificationResult, error)`. The error is set only when the question
-holds an impossible number (see "Bounds and refusals"); every other outcome has a nil error.
+holds an impossible number or, with the keyword tier composed, names two places (see "Bounds and
+refusals"); every other outcome has a nil error.
 
 ## Use
 
@@ -39,7 +40,7 @@ if err != nil {
 chain := query.NewClassifierChain(query.NewKeywordClassifier(), embed)
 result, err := chain.ClassifyQuery(ctx, "sensors in zone A last 3 hours")
 if err != nil {
-    return err // the question holds an impossible number; see "Bounds and refusals"
+    return err // an impossible number or two places; see "Bounds and refusals"
 }
 if result == nil {
     return ctx.Err() // a nil chain, a nil context or an ended context
@@ -106,6 +107,22 @@ These are refused:
 Every such phrase in the question is checked, and the refusal happens whichever tiers are composed
 and before any tier is asked. `KeywordClassifier.ClassifyQuery` has no error to return, so on its
 own it gives no hint for such a phrase and keeps the others.
+
+With the keyword tier composed, a question with an entity reference and a zone or area phrase naming another
+place is refused too, before any tier is asked, with or without path words: "what is connected to sensor-001
+in zone-b" and "show sensor-001 in zone-b" get an invalid-input error saying `the question names two places,
+sensor-001 and zone-b; ask about one`. Two zone or area phrases naming different places are refused the same
+way, whether a name is written with a hyphen or a space: "what is connected to zone a in zone b" names `zone-a`
+and `zone-b`. One place written twice ("zone a, zone-a", case aside) is one place. The keyword tier reads one
+path start, so it would answer a path from one place and drop the other. A phrase that only looks like a zone
+("in the zone of the plant" reads `zone-of`) is refused the same way when the question also names an entity or
+another zone. A full entity ID is an entity reference whether or not a segment has a hyphen: "what is connected
+to c360.test.x.y.z.001 in zone b" names `c360.test.x.y.z.001` and `zone-b`. An entity reference inside the zone
+phrase ("zone-b" itself, "sensor-zone-1") is the same place. These refusals are loud and can be wrong: an
+ordinary hyphenated word ("in real-time", "non-zero") or "zone or area" plus a word ("the area with pumps") beside a
+place is refused as a second place, a known limit tracked in #535.
+`KeywordClassifier.ClassifyQuery` on its own still answers a path from one of them. Two entity references with
+no zone phrase ("from pump-1 to pump-2") are not refused; the keyword tier reads the first.
 
 Not refused, because it is geometry: a box that reaches a pole is clamped to 90 or -90 and spans
 longitude -180 to 180. A box across the 180 degree line is not wrapped: its East can exceed 180 or

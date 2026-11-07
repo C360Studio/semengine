@@ -122,6 +122,9 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"summary", "summary", `"examples_per_type":1`},
 		// The record's entity_revision is the write's: the one write to its group.
 		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"drone"`, drone1)},
+		// The alias verb refuses for both strategies, before the entity read or the walk.
+		{"globalSearch entity", "globalSearch", `"query":"held-1"`},
+		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			subject := verbRow(t, graph.ResponderGraphQuery, tc.verb).Subject
@@ -229,6 +232,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"hierarchyStats": {`{"prefix":"c360.test.query.system.drone"}`},
 		"summary":        {`{}`, `{"prefix":"c360.test.query.system.drone","exclude_predicates":true}`},
 		"localSearch":    {fmt.Sprintf(`{"entity_id":%q,"query":"alpha"}`, drone1)},
+		"globalSearch":   {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

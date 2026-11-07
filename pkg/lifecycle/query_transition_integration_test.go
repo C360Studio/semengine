@@ -106,7 +106,8 @@ func TestIntegration_ListFiltersAndPagesOneWorkflow(t *testing.T) {
 	putRawEntity(t, kv, subtaskPrefix+"raw")
 
 	// ids checks every listed participant is a subtask equal to the one created
-	// under its ID, and returns the IDs sorted: List promises no order.
+	// under its ID, and returns the IDs sorted so each want reads as a set. List's
+	// entity-ID order is TestManager_ListPagesEntityIDOrderEachOnce's to prove.
 	ids := func(t *testing.T, got []Participant) []string {
 		t.Helper()
 		out := make([]string, 0, len(got))

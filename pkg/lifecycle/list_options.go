@@ -91,7 +91,7 @@ type ListOptions struct {
 	// Limit caps the returned slice size. 0 (default) means unlimited.
 	Limit int
 
-	// Offset skips the first Offset matching entries before applying
-	// Limit. Use for paged operator-API responses.
+	// Offset skips the first Offset matching entries, in entity-ID
+	// order, before applying Limit. Use for paged operator-API responses.
 	Offset int
 }

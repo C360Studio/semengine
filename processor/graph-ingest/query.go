@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -296,8 +297,11 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	}
 
 	// MANDATORY: sort before cursor application — cursor is meaningless
-	// without a deterministic key order.
+	// without a deterministic key order. Compact then drops repeated keys (a nats.go
+	// listing can repeat one under concurrent overwrites, #512), so an entity is served
+	// at most once and total counts distinct keys.
 	sort.Strings(keys)
+	keys = slices.Compact(keys)
 
 	// The reply's total is the listing as listed, whichever page this request reads.
 	total := len(keys)

@@ -58,11 +58,11 @@ type PrefixQueryRequest struct {
 // included. SemOps depends on full values being present so that downstream
 // consumers do not need additional N+1 fetches.
 //
-// Total is the length of the request's key listing, before the cursor and before
-// any limit, so a later or byte-trimmed page names the same group size as the
-// first. It is true as listed, not a snapshot: under concurrent overwrites a
-// listing can repeat some keys and omit as many, so Total keeps its length and
-// the pages can repeat one entity and miss another (#512).
+// Total is the number of distinct keys in the request's key listing, before the
+// cursor and before any limit, so a later or byte-trimmed page names the same
+// group size as the first. A key the listing repeats is counted and served once.
+// It is true as listed, not a snapshot: under concurrent overwrites a listing can
+// omit keys, so Total and the pages can miss an entity (#512).
 //
 // NextCursor is the opaque token to pass as PrefixQueryRequest.Cursor on the
 // next call. An empty NextCursor means the result set is exhausted, and the

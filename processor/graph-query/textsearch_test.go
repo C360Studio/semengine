@@ -2,6 +2,7 @@ package graphquery
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -15,6 +16,7 @@ import (
 	"github.com/c360studio/semengine/graph/clustering"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/graphview"
+	"github.com/c360studio/semengine/vocabulary"
 )
 
 // records keys each group record as COMMUNITY_INDEX does, {level}.{id}, in the order given.
@@ -190,4 +192,160 @@ func TestTextTierRefusesAViewCatchingUp(t *testing.T) {
 		_, _, err = levelRecords(view, "0.")
 		requireNotReady(t, "stopped", err, graphview.ErrViewStopped)
 	})
+}
+
+// TestMatchLabel: a match's label is the first non-empty string value, in triple order, of its most
+// salient label predicate, the lowest priority number, ties by predicate name; with none it has no
+// label (design D4; spec, "A match's label is its most salient label predicate"). It carries the
+// pin's label cases that survive D4 (entity_digest_labels_test.go at 8b99efe9): a title is the label;
+// an entity with no title had its ID's instance there, and has no label here.
+func TestMatchLabel(t *testing.T) {
+	const (
+		title     = "dc.terms.title"
+		preferred = "acme.label.preferred"
+		alpha     = "acme.label.alpha"
+		zeta      = "acme.label.zeta"
+		// display is the pin's agentic display-name predicate (#31), which no label set here holds.
+		display = "agent.identity.display-name"
+	)
+	order := labelOrder(map[string]int{title: 1, preferred: 0, zeta: 2, alpha: 2})
+	if want := []string{preferred, title, alpha, zeta}; !slices.Equal(order, want) {
+		t.Fatalf("labelOrder = %q, want %q", order, want)
+	}
+	registered := labelOrder(vocabulary.DiscoverLabelPredicates())
+	if !slices.Contains(registered, title) || slices.Contains(registered, display) {
+		t.Fatalf("the registry's label set %q: want %s and not %s", registered, title, display)
+	}
+
+	entity := func(statements ...string) string {
+		// Its type is the term, so it matches whatever its facts.
+		return `{"id":"acme.ops.src.docs.pump.a","triples":[` + strings.Join(statements, ",") + `]}`
+	}
+	fact := func(predicate, object string) string {
+		return fmt.Sprintf(`{"predicate":%q,"object":%s}`, predicate, object)
+	}
+	for _, tc := range []struct {
+		name   string
+		order  []string
+		entity string
+		want   string
+	}{
+		{"a title", registered, entity(fact(title, `"Pump 7"`)), "Pump 7"},
+		{"a title beside an unregistered display name", registered, entity(fact(display, `"Agent 7"`), fact(title, `"Pump 7"`)), "Pump 7"},
+		{"an unregistered display name alone", registered, entity(fact(display, `"Agent 7"`)), ""},
+		{"a more salient label after the title", order, entity(fact(title, `"Pump 7"`), fact(preferred, `"P7"`)), "P7"},
+		{"two values of one predicate", order, entity(fact(title, `"First"`), fact(title, `"Second"`)), "First"},
+		{"an empty value is passed over", order, entity(fact(title, `""`), fact(title, `"Second"`)), "Second"},
+		{"a value that is not a string", order, entity(fact(title, `7`), fact(title, `"Second"`)), "Second"},
+		{"a less salient label when the more salient is empty", order, entity(fact(preferred, `""`), fact(title, `"Pump 7"`)), "Pump 7"},
+		{"a tie of priorities, by name", order, entity(fact(zeta, `"Z"`), fact(alpha, `"A"`)), "A"},
+		{"none", order, entity(fact("acme.note.text", `"Pump 7"`)), ""},
+		{"no label set", nil, entity(fact(title, `"Pump 7"`)), ""},
+	} {
+		matches, _, err := rankEntities(rawEntities(tc.entity), []string{"pump"}, tc.order)
+		if err != nil || len(matches) != 1 {
+			t.Fatalf("%s: rankEntities = %v, %v; want one match", tc.name, matches, err)
+		}
+		if got := matches[0].label; got != tc.want {
+			t.Errorf("%s: label = %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// TestTextTierAnswer: the answer is a plain text built from the reply's fields, one sentence per
+// condition, each a literal here (design D4; spec, "A cut answer says so").
+func TestTextTierAnswer(t *testing.T) {
+	match := graph.TextSearchMatch{ID: "acme.ops.src.docs.note.a", Score: 0.5, Entity: []byte(`{}`)}
+	data := graph.TextSearchData{
+		Level: 1,
+		Groups: []graph.TextSearchGroup{
+			{CommunityID: "acme.ops.src", MemberCount: 7, CommunitySummary: "Community of 7 entities including 7 notes."},
+			{CommunityID: "acme.ops.dev", MemberCount: 3, Keywords: []string{"alpha", "beta", "gamma", "delta", "epsilon", "zeta"}},
+			{CommunityID: "acme.ops.lab", MemberCount: 2},
+		},
+		Matches:         []graph.TextSearchMatch{match, match},
+		EntitiesScanned: 10,
+	}
+	const (
+		found  = "Found 2 matching entities among 10 read from 3 groups at level 1."
+		groups = " acme.ops.src: Community of 7 entities including 7 notes." +
+			" acme.ops.dev: It has 3 members. Key themes: alpha, beta, gamma, delta, epsilon." +
+			" acme.ops.lab: It has 2 members."
+		sample     = " This is a sample: a group had more than one page, or matches were left out to fit."
+		unhonoured = " Not honoured: path, ranking."
+		unreadable = " 2 group records at this level could not be read."
+	)
+	if got, want := textSearchAnswer(data), found+groups; got != want {
+		t.Errorf("answer =\n%q\nwant\n%q", got, want)
+	}
+	data.EntitiesTruncated = true
+	data.UnhonouredHints = []string{"path", "ranking"}
+	data.UnreadableGroups = 2
+	if got, want := textSearchAnswer(data), found+sample+groups+unhonoured+unreadable; got != want {
+		t.Errorf("answer with every condition =\n%q\nwant\n%q", got, want)
+	}
+	if got, want := textSearchAnswer(graph.TextSearchData{Level: 2, Groups: []graph.TextSearchGroup{}, Matches: []graph.TextSearchMatch{}, UnreadableGroups: 1}),
+		"No group at level 2 matched the question. 1 group records at this level could not be read."; got != want {
+		t.Errorf("answer with no group = %q, want %q", got, want)
+	}
+}
+
+// TestTextTierFitKeepsTheBestThatFit: over max_payload the lowest-ranked matches are left out and
+// entities_truncated set, as localSearch fits (design D4). Every limit from the reply with no match
+// to the whole reply is checked against a scan written here: the most matches, first to last, whose
+// encoding fits.
+func TestTextTierFitKeepsTheBestThatFit(t *testing.T) {
+	// Each entity is longer than the sample sentence a cut adds, so leaving one out shrinks the reply.
+	pad := strings.Repeat("x", 100)
+	entity := func(id string) json.RawMessage { return json.RawMessage(`{"id":"` + id + `","text":"` + pad + `"}`) }
+	data := graph.TextSearchData{
+		Groups:          []graph.TextSearchGroup{{CommunityID: "acme.ops.src", MemberCount: 3}},
+		Matches:         []graph.TextSearchMatch{{ID: "a", Score: 1, Entity: entity("a")}, {ID: "b", Score: 0.5, Entity: entity("b")}, {ID: "c", Score: 0.5, Entity: entity("c")}},
+		EntitiesScanned: 3,
+		UnhonouredHints: []string{},
+	}
+	encode := func(d graph.TextSearchData) ([]byte, error) { return json.Marshal(d) }
+	all, err := json.Marshal(func() graph.TextSearchData { d := data; d.Answer = textSearchAnswer(d); return d }())
+	if err != nil {
+		t.Fatal(err)
+	}
+	two := `{"level":0,"groups":[{"community_id":"acme.ops.src","member_count":3}],` +
+		`"matches":[{"id":"a","score":1,"entity":{"id":"a","text":"` + pad + `"}},{"id":"b","score":0.5,"entity":{"id":"b","text":"` + pad + `"}}],` +
+		`"entities_scanned":3,"entities_truncated":true,"unreadable_groups":0,"unhonoured_hints":[],` +
+		`"answer":"Found 2 matching entities among 3 read from 1 groups at level 0. This is a sample: a group had more than one page, or matches were left out to fit. acme.ops.src: It has 3 members."}`
+	got, truncated, err := fitTextSearch(data, len(all)-1, encode)
+	if err != nil || string(got) != two || !truncated {
+		t.Errorf("fit at %d = %s, %t, %v\nwant %s, true", len(all)-1, got, truncated, err, two)
+	}
+
+	// The scan: each count's reply, as the reply states it, from the whole list down.
+	replyOf := func(kept int) []byte {
+		cut := data
+		cut.Matches = data.Matches[:kept]
+		cut.EntitiesTruncated = kept < len(data.Matches)
+		cut.Answer = textSearchAnswer(cut)
+		encoded, err := json.Marshal(cut)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return encoded
+	}
+	for limit := len(replyOf(0)); limit <= len(replyOf(len(data.Matches))); limit++ {
+		kept := len(data.Matches)
+		for len(replyOf(kept)) > limit {
+			kept--
+		}
+		got, truncated, err := fitTextSearch(data, limit, encode)
+		if err != nil || string(got) != string(replyOf(kept)) || truncated != (kept < len(data.Matches)) {
+			t.Errorf("fit at %d = %s, %t, %v\nwant %s", limit, got, truncated, err, replyOf(kept))
+		}
+	}
+
+	data.EntitiesTruncated = true // a page had a continuation
+	if got, truncated, err := fitTextSearch(data, 1<<20, encode); err != nil || !truncated || !strings.Contains(string(got), `"entities_truncated":true`) {
+		t.Errorf("fit of a cut page = %s, %t, %v; want it still truncated", got, truncated, err)
+	}
+	if got, _, err := fitTextSearch(data, 10, encode); err == nil {
+		t.Errorf("fit at 10 bytes = %s, want an error", got)
+	}
 }

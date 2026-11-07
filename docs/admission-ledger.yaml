@@ -4322,7 +4322,9 @@
     TestTextTierTermLimit, TestTextTierRefusesAViewCatchingUp, TestTextTierReadsAtMostFiveGroups,
     TestTextTierSkipsUnmatchedGroups, TestTextTierRefusesAnEmptyLevel, TestTextTierReadsTheAskedLevel,
     TestTextTierMatchesEqualAFilter, TestTextTierMarksACutPage, TestTextTierRevision,
-    TestTextTierRevisionIgnoresUnreadable, TestTextTierAllUnreadable, and the lifecycle suite
+    TestTextTierRevisionIgnoresUnreadable, TestTextTierAllUnreadable, TestTextTierReply, TestGlobalSearchTextQuestion,
+    TestMatchLabel, TestTextTierAnswer, TestTextTierFitKeepsTheBestThatFit, TestTextTierFitsMaxPayload,
+    TestTextTierPoisonIsDeclared, and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 

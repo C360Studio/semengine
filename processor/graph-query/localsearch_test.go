@@ -88,7 +88,7 @@ func TestLocalSearchScoresAsThePin(t *testing.T) {
 			if got := entity.score(terms); got != tc.score {
 				t.Errorf("score(%s, %q) = %v, want %v", tc.entity, tc.query, got, tc.score)
 			}
-			matches, _, err := rankEntities(rawEntities(tc.entity), terms)
+			matches, _, err := rankEntities(rawEntities(tc.entity), terms, nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -105,7 +105,7 @@ func TestLocalSearchScoresAsThePin(t *testing.T) {
 			`{"id":"a.b.c.d.sensor.002","triples":[{"predicate":"sensor.identity.location","object":"hangar"}]}`,
 			`{"id":"a.b.c.d.worker.003","triples":[{"predicate":"worker.identity.role","object":"logistics"}]}`,
 		)
-		matches, scanned, err := rankEntities(page, searchTermsOf(t, "drone survey"))
+		matches, scanned, err := rankEntities(page, searchTermsOf(t, "drone survey"), nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -126,7 +126,7 @@ func TestLocalSearchScoresAsThePin(t *testing.T) {
 			"drone temperature":  {drone},
 			"temperature sensor": {sensor, drone},
 		} {
-			matches, _, err := rankEntities(rawEntities(sensor, drone), searchTermsOf(t, query))
+			matches, _, err := rankEntities(rawEntities(sensor, drone), searchTermsOf(t, query), nil)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -243,7 +243,7 @@ func TestLocalSearchOrderIsDeterministic(t *testing.T) {
 		c = `{"id":"acme.ops.src.docs.note.c","triples":[{"predicate":"dc.terms.title","object":"alpha"}]}`
 	)
 	// a scores 1.0 by its type; b, c and d tie at 0.5, read out of ID order, and b repeats (#512).
-	matches, scanned, err := rankEntities(rawEntities(d, b, a, c, b), searchTermsOf(t, "alpha"))
+	matches, scanned, err := rankEntities(rawEntities(d, b, a, c, b), searchTermsOf(t, "alpha"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -251,7 +251,7 @@ func TestLocalSearchOrderIsDeterministic(t *testing.T) {
 		t.Errorf("rankEntities = %q, %d; want %q, 4", got, scanned, want)
 	}
 
-	if _, _, err := rankEntities(rawEntities(`{"id":"acme.ops.src.docs.note.e","triples":{}}`), []string{"alpha"}); err == nil {
+	if _, _, err := rankEntities(rawEntities(`{"id":"acme.ops.src.docs.note.e","triples":{}}`), []string{"alpha"}, nil); err == nil {
 		t.Error("rankEntities read an entity whose triples are not a list")
 	}
 }

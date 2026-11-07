@@ -15,6 +15,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/vocabulary"
 )
 
 // key names graph-query once: its registration, its logger and its rows in the verb table.
@@ -35,6 +36,10 @@ type Component struct {
 	// subscriptions are the query request subscriptions, one per verb the table in graph declares
 	// for graph-query. Start records them and cleanup clears them once it has drained them all.
 	subscriptions []*natsclient.Subscription
+
+	// labelPredicates is the label set, most salient first, from which the text search labels its
+	// matches (design D4). start sets it, before any handler is subscribed; handlers only read it.
+	labelPredicates []string
 
 	// communities is the view of COMMUNITY_INDEX localSearch reads, nil while there is none. Only the
 	// community supervisor stores it; handlers load it.
@@ -173,6 +178,9 @@ func (c *Component) Start(ctx context.Context) error {
 // start creates the run context, starts the community supervisor under it, and subscribes the verbs
 // last, as graph-index does, so a failed subscription's rollback ends the supervisor too.
 func (c *Component) start(ctx context.Context) error {
+	// Read once, as graph-index reads it (processor/graph-index/index.go:88): the composition has
+	// registered its predicates before Start.
+	c.labelPredicates = labelOrder(vocabulary.DiscoverLabelPredicates())
 	// The one run context: Start's values without its cancellation, ended only by cleanup.
 	runCtx, runCancel := context.WithCancel(context.WithoutCancel(ctx))
 	supervised := make(chan struct{})

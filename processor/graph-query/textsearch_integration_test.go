@@ -3,18 +3,25 @@
 package graphquery
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
+	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/nats-io/nats.go/jetstream"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 )
@@ -44,15 +51,46 @@ func literalRecord(t *testing.T, id string, revision uint64, summary string, key
 		textGroup+id, revision, summary, encoded)
 }
 
-// askText answers request as globalSearch's text tier does, through the request decode globalSearch
-// runs, and returns what the tier read. Task 3.3 makes it the globalSearch reply.
-func askText(t *testing.T, c *Component, request string) (textResult, error) {
+// textAnswer is a text strategy reply as the wire carries it: the envelope's revision and the data.
+type textAnswer struct {
+	revision uint64
+	data     graph.TextSearchData
+}
+
+// askText asks globalSearch request and reads its text answer strictly; a refusal returns as it came.
+func askText(t *testing.T, client *natsclient.Client, request string) (textAnswer, error) {
 	t.Helper()
-	decoded, levelPrefix, err := decodeGlobalSearchRequest([]byte(request))
+	raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(request), requestTimeout)
 	if err != nil {
-		t.Fatalf("decode %s: %v", request, err)
+		return textAnswer{}, err
 	}
-	return c.searchText(t.Context(), verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, decoded, levelPrefix)
+	return decodeTextAnswer(t, raw), nil
+}
+
+// decodeTextAnswer decodes a globalSearch success strictly, the envelope and then its data, and fails
+// unless the strategy is text and text is its one result.
+func decodeTextAnswer(t *testing.T, raw []byte) textAnswer {
+	t.Helper()
+	envelope := decodeEnvelope(t, raw)
+	var data graph.GlobalSearchData
+	decoder := json.NewDecoder(bytes.NewReader(envelope.Data))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&data); err != nil {
+		t.Fatalf("decode data %s: %v", envelope.Data, err)
+	}
+	if data.Strategy != strategyText || data.Text == nil || data.Entity != nil || data.Path != nil || data.Temporal != nil || data.Spatial != nil {
+		t.Fatalf("data = %s, want strategy text and text alone", envelope.Data)
+	}
+	return textAnswer{revision: envelope.IndexedRevision, data: *data.Text}
+}
+
+// textGroupIDs is each group's community_id, in order.
+func textGroupIDs(groups []graph.TextSearchGroup) []string {
+	ids := make([]string, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.CommunityID)
+	}
+	return ids
 }
 
 // awaitTextMark waits until the text tier reads level at mark: a question far ahead of it is refused
@@ -115,19 +153,16 @@ func TestTextTierReadsAtMostFiveGroups(t *testing.T) {
 	prefixRequests := spyOnPrefixVerb(t, stack.client)
 	want := []string{textGroup + "e", textGroup + "c", textGroup + "g", textGroup + "a", textGroup + "b"}
 
-	// The reply is task 3.3's; the requests are made before it.
-	_, _ = stack.askGlobal(t, `{"query":"pump valve"}`)
-	if got := prefixesOf(t, prefixRequests()); !slices.Equal(got, want) {
-		t.Errorf("prefix requests = %q, want %q", got, want)
-	}
-	result, err := askText(t, stack.component, `{"query":"pump valve"}`)
+	answer, err := askText(t, stack.client, `{"query":"pump valve"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := groupIDs(result.groups); !slices.Equal(got, want) {
+	if got := prefixesOf(t, prefixRequests()); !slices.Equal(got, want) {
+		t.Errorf("prefix requests = %q, want %q", got, want)
+	}
+	if got := textGroupIDs(answer.data.Groups); !slices.Equal(got, want) {
 		t.Errorf("groups = %q, want %q", got, want)
 	}
-	prefixRequests()
 }
 
 // TestTextTierSkipsUnmatchedGroups: P1's seven records, none matching "pump": no group, no match, no
@@ -140,12 +175,15 @@ func TestTextTierSkipsUnmatchedGroups(t *testing.T) {
 	}
 	awaitTextMark(t, stack.client, 0, 7)
 	prefixRequests := spyOnPrefixVerb(t, stack.client)
-	result, err := askText(t, stack.component, `{"query":"pump"}`)
+	answer, err := askText(t, stack.client, `{"query":"pump"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.groups) != 0 || len(result.matches) != 0 || result.scanned != 0 || result.revision != 7 {
-		t.Errorf("result = %+v, want no groups, no matches, nothing scanned, revision 7", result)
+	if len(answer.data.Groups) != 0 || len(answer.data.Matches) != 0 || answer.data.EntitiesScanned != 0 || answer.revision != 7 {
+		t.Errorf("answer = %+v, want no groups, no matches, nothing scanned, revision 7", answer)
+	}
+	if want := "No group at level 0 matched the question."; answer.data.Answer != want {
+		t.Errorf("answer text = %q, want %q", answer.data.Answer, want)
 	}
 	if got := prefixRequests(); len(got) != 0 {
 		t.Errorf("prefix requests = %q, want none", got)
@@ -180,12 +218,12 @@ func TestTextTierRefusesAnEmptyLevel(t *testing.T) {
 
 	putRecord(t, stack.records, "1.c360.test", `{"id":"c360.test","level":1,"member_count":1,"entity_revision":4,"keywords":["pump"]}`)
 	awaitTextMark(t, stack.client, 1, 4)
-	result, err := askText(t, stack.component, request)
+	answer, err := askText(t, stack.client, request)
 	if err != nil {
 		t.Fatalf("after a level-1 write: %v", err)
 	}
-	if got := groupIDs(result.groups); !slices.Equal(got, []string{"c360.test"}) || result.revision != 4 {
-		t.Errorf("groups %q at revision %d, want [c360.test] at 4", got, result.revision)
+	if got := textGroupIDs(answer.data.Groups); !slices.Equal(got, []string{"c360.test"}) || answer.revision != 4 {
+		t.Errorf("groups %q at revision %d, want [c360.test] at 4", got, answer.revision)
 	}
 }
 
@@ -202,24 +240,24 @@ func TestTextTierReadsTheAskedLevel(t *testing.T) {
 
 	for level, group := range []string{systemGroup, "c360.test.query", "c360.test"} {
 		awaitTextMark(t, stack.client, level, last)
-		result, err := askText(t, stack.component, fmt.Sprintf(`{"query":"zeta","level":%d}`, level))
+		answer, err := askText(t, stack.client, fmt.Sprintf(`{"query":"zeta","level":%d}`, level))
 		if err != nil {
 			t.Fatalf("level %d: %v", level, err)
 		}
-		if len(result.groups) != 1 || result.groups[0].ID != group || result.groups[0].Level != level {
-			t.Errorf("level %d: groups %+v, want only %s at level %d", level, result.groups, group, level)
+		if got := textGroupIDs(answer.data.Groups); !slices.Equal(got, []string{group}) || answer.data.Level != level {
+			t.Errorf("level %d: groups %q at level %d, want only %s", level, got, answer.data.Level, group)
 		}
-		if got := matchesOf(result); !slices.Equal(got, []string{fmt.Sprintf("%s 0.5 %s", drone1, rows[drone1])}) {
+		if got := matchesOf(answer.data); !slices.Equal(got, []string{fmt.Sprintf("%s 0.5 %s", drone1, rows[drone1])}) {
 			t.Errorf("level %d: matches %q, want %s alone", level, got, drone1)
 		}
 	}
 }
 
 // matchesOf is each match as "id score bytes", in order.
-func matchesOf(result textResult) []string {
-	out := make([]string, 0, len(result.matches))
-	for _, match := range result.matches {
-		out = append(out, fmt.Sprintf("%s %v %s", match.id, match.score, match.raw))
+func matchesOf(data graph.TextSearchData) []string {
+	out := make([]string, 0, len(data.Matches))
+	for _, match := range data.Matches {
+		out = append(out, fmt.Sprintf("%s %v %s", match.ID, match.Score, match.Entity))
 	}
 	return out
 }
@@ -250,7 +288,7 @@ func TestTextTierMatchesEqualAFilter(t *testing.T) {
 	}
 	prefixRequests := spyOnPrefixVerb(t, stack.client)
 
-	result, err := askText(t, stack.component, `{"query":"zeta"}`)
+	answer, err := askText(t, stack.client, `{"query":"zeta"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -262,11 +300,11 @@ func TestTextTierMatchesEqualAFilter(t *testing.T) {
 		fmt.Sprintf("%s 0.5 %s", drone1, rows[drone1]),
 		fmt.Sprintf("%s 0.5 %s", drone2, rows[drone2]),
 	}
-	if got := matchesOf(result); !slices.Equal(got, want) {
+	if got := matchesOf(answer.data); !slices.Equal(got, want) {
 		t.Errorf("matches =\n%s\nwant\n%s", strings.Join(got, "\n"), strings.Join(want, "\n"))
 	}
-	if result.scanned != 5 || result.pageCut {
-		t.Errorf("scanned %d, cut %v; want 5, false", result.scanned, result.pageCut)
+	if answer.data.EntitiesScanned != 5 || answer.data.EntitiesTruncated {
+		t.Errorf("scanned %d, truncated %v; want 5, false", answer.data.EntitiesScanned, answer.data.EntitiesTruncated)
 	}
 	// The system group's record holds zeta and zetas, so it is read first.
 	if got, want := prefixesOf(t, prefixRequests()), []string{systemGroup, "c360.test.query.other"}; !slices.Equal(got, want) {
@@ -286,12 +324,13 @@ func TestTextTierMarksACutPage(t *testing.T) {
 	}
 	tick(t, stack.maintainer)
 	awaitTextMark(t, stack.client, 0, last)
-	result, err := askText(t, stack.component, `{"query":"zeta"}`)
+	answer, err := askText(t, stack.client, `{"query":"zeta"}`)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !result.pageCut || result.scanned != graph.MaxPrefixQueryLimit || len(result.matches) != 1 || result.matches[0].id != bulk+".drone.0000" {
-		t.Errorf("cut %v, scanned %d, matches %q; want true, %d, the one zeta", result.pageCut, result.scanned, matchesOf(result), graph.MaxPrefixQueryLimit)
+	data := answer.data
+	if !data.EntitiesTruncated || data.EntitiesScanned != graph.MaxPrefixQueryLimit || len(data.Matches) != 1 || data.Matches[0].ID != bulk+".drone.0000" {
+		t.Errorf("truncated %v, scanned %d, matches %q; want true, %d, the one zeta", data.EntitiesTruncated, data.EntitiesScanned, matchesOf(data), graph.MaxPrefixQueryLimit)
 	}
 }
 
@@ -317,9 +356,10 @@ func TestTextTierRevision(t *testing.T) {
 	if got := stack.component.Health().ErrorCount; got != 0 {
 		t.Errorf("ErrorCount = %d, want 0", got)
 	}
-	result, err := askText(t, stack.component, fmt.Sprintf(`{"query":"zeta","min_revision":%d}`, last))
-	if err != nil || result.revision != last || len(result.groups) != 2 {
-		t.Errorf("at the mark: %+v, %v; want two groups at revision %d", result, err, last)
+	// Two words, so the question is not first read as an alias at that revision.
+	answer, err := askText(t, stack.client, fmt.Sprintf(`{"query":"zeta survey","min_revision":%d}`, last))
+	if err != nil || answer.revision != last || len(answer.data.Groups) != 2 {
+		t.Errorf("at the mark: %+v, %v; want two groups at revision %d", answer, err, last)
 	}
 }
 
@@ -343,9 +383,9 @@ func TestTextTierRevisionIgnoresUnreadable(t *testing.T) {
 	if got := prefixRequests(); len(got) != 0 {
 		t.Errorf("prefix requests = %q, want none", got)
 	}
-	result, err := askText(t, stack.component, `{"query":"pump station","min_revision":5}`)
-	if err != nil || result.revision != 5 || result.unreadable != 1 || len(result.groups) != 1 {
-		t.Errorf("at the mark: %+v, %v; want one group, one unreadable, revision 5", result, err)
+	answer, err := askText(t, stack.client, `{"query":"pump station","min_revision":5}`)
+	if err != nil || answer.revision != 5 || answer.data.UnreadableGroups != 1 || len(answer.data.Groups) != 1 {
+		t.Errorf("at the mark: %+v, %v; want one group, one unreadable, revision 5", answer, err)
 	}
 }
 
@@ -372,5 +412,278 @@ func TestTextTierAllUnreadable(t *testing.T) {
 	}
 	if got := prefixRequests(); len(got) != 0 {
 		t.Errorf("prefix requests = %q, want none", got)
+	}
+}
+
+// servePages stands in for graph-ingest's prefix verb, answering each prefix with its page in pages,
+// and an empty page for any other. It returns the prefixes asked, in order, read after the reply
+// they led to: the handler records before it replies.
+func servePages(t *testing.T, client *natsclient.Client, pages map[string]string) func() []string {
+	t.Helper()
+	var mu sync.Mutex
+	var asked []string
+	serve(t, client, verbRow(t, graph.ResponderGraphIngest, "prefix").Subject, func(_ context.Context, data []byte) ([]byte, error) {
+		var request graph.PrefixQueryRequest
+		if err := json.Unmarshal(data, &request); err != nil {
+			return nil, err
+		}
+		mu.Lock()
+		asked = append(asked, request.Prefix)
+		mu.Unlock()
+		if page, ok := pages[request.Prefix]; ok {
+			return []byte(page), nil
+		}
+		return []byte(`{"entities":null,"total":0}`), nil
+	})
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(asked)
+	}
+}
+
+// The text reply tests' records and pages: group a matches "forklift leak" by its summary and a
+// keyword (3.5), group b by a keyword (1.5), group c not at all; c holds the level's highest revision.
+const (
+	replyRecordA = `{"id":"c360.test.text.a","level":0,"member_count":3,"entity_revision":3,"statistical_summary":"Forklift fleet.","keywords":["forklift","hydraulic"]}`
+	replyRecordB = `{"id":"c360.test.text.b","level":0,"member_count":1,"entity_revision":4,"keywords":["leak"]}`
+	replyRecordC = `{"id":"c360.test.text.c","level":0,"member_count":1,"entity_revision":5,"statistical_summary":"Gear box.","keywords":["gear"]}`
+	// A1 scores (1.0 for its type + 0.5 for leak) / 2, A2 1.0 / 2, B1 1.0 / 2; A3 0, but it is read.
+	replyRowA1 = `{"id":"c360.test.text.a.forklift.001","triples":[{"predicate":"dc.terms.title","object":"Leak report"}]}`
+	replyRowA2 = `{"id":"c360.test.text.a.forklift.002","triples":[]}`
+	replyRowA3 = `{"id":"c360.test.text.a.drone.003","triples":[{"predicate":"dc.terms.title","object":"gear"}]}`
+	replyRowB1 = `{"id":"c360.test.text.b.leak.001","triples":[{"predicate":"dc.terms.title","object":"Hose leak"}]}`
+)
+
+// startTextReply writes the reply tests' records, starts graph-query, waits until it reads them, and
+// serves their pages; it returns the component and the prefixes asked.
+func startTextReply(t *testing.T, client *natsclient.Client) (*Component, func() []string) {
+	t.Helper()
+	kv, _ := communityRecords(t, client)
+	putRecord(t, kv, "0.c360.test.text.a", replyRecordA)
+	putRecord(t, kv, "0.c360.test.text.b", replyRecordB)
+	putRecord(t, kv, "0.c360.test.text.c", replyRecordC)
+	c := startComponent(t, client, `{}`)
+	awaitTextMark(t, client, 0, 5)
+	asked := servePages(t, client, map[string]string{
+		"c360.test.text.a": `{"entities":[` + replyRowA1 + `,` + replyRowA2 + `,` + replyRowA3 + `],"total":3}`,
+		"c360.test.text.b": `{"entities":[` + replyRowB1 + `],"total":1}`,
+	})
+	return c, asked
+}
+
+// TestTextTierReply: a free-text question's reply, as literal JSON: strategy text and text alone; the
+// groups read, best first, with their record fields; the matches best first, ties by ID, each with its
+// label (none for an entity with no label predicate), score and bytes as the page sent them; the counts
+// and the answer, under the level's highest revision, counting no error (design D4; spec, "A text
+// answer", "The text reply declares what it could not read").
+func TestTextTierReply(t *testing.T) {
+	client := fixtureClient(t)
+	c, asked := startTextReply(t, client)
+
+	raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(`{"query":"forklift leak"}`), requestTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := decodeEnvelope(t, raw)
+	want := `{"strategy":"text","text":{"level":0,"groups":[` +
+		`{"community_id":"c360.test.text.a","member_count":3,"community_summary":"Forklift fleet.","keywords":["forklift","hydraulic"]},` +
+		`{"community_id":"c360.test.text.b","member_count":1,"keywords":["leak"]}],` +
+		`"matches":[{"id":"c360.test.text.a.forklift.001","label":"Leak report","score":0.75,"entity":` + replyRowA1 + `},` +
+		`{"id":"c360.test.text.a.forklift.002","score":0.5,"entity":` + replyRowA2 + `},` +
+		`{"id":"c360.test.text.b.leak.001","label":"Hose leak","score":0.5,"entity":` + replyRowB1 + `}],` +
+		`"entities_scanned":4,"entities_truncated":false,"unreadable_groups":0,"unhonoured_hints":[],` +
+		`"answer":"Found 3 matching entities among 4 read from 2 groups at level 0. c360.test.text.a: Forklift fleet. c360.test.text.b: It has 1 members. Key themes: leak."}}`
+	if string(envelope.Data) != want {
+		t.Errorf("data =\n%s\nwant\n%s", envelope.Data, want)
+	}
+	if envelope.IndexedRevision != 5 {
+		t.Errorf("indexed_revision = %d, want 5, record c's", envelope.IndexedRevision)
+	}
+	if got, want := asked(), []string{"c360.test.text.a", "c360.test.text.b"}; !slices.Equal(got, want) {
+		t.Errorf("prefixes asked = %q, want %q", got, want)
+	}
+	if got := c.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0", got)
+	}
+}
+
+// TestGlobalSearchTextQuestion: a free-text question is answered by the text tier naming no hint, and
+// one whose only hint is path words with no start names it, in unhonoured_hints and in the answer
+// (design D1, option (a); spec, "A free-text question", "Trigger words in free text").
+func TestGlobalSearchTextQuestion(t *testing.T) {
+	client := fixtureClient(t)
+	startTextReply(t, client)
+	for _, tc := range []struct {
+		question string
+		hints    []string
+		answer   string
+	}{
+		{"forklift hydraulic leak", []string{}, "Found 3 matching entities among 4 read from 2 groups at level 0. c360.test.text.a: Forklift fleet. c360.test.text.b: It has 1 members. Key themes: leak."},
+		{"http connection pool", []string{"path"}, "No group at level 0 matched the question. Not honoured: path."},
+		{"top 5 file path handling", []string{"path", "ranking"}, "No group at level 0 matched the question. Not honoured: path, ranking."},
+	} {
+		answer, err := askText(t, client, fmt.Sprintf(`{"query":%q}`, tc.question))
+		if err != nil {
+			t.Fatalf("%q: %v", tc.question, err)
+		}
+		if !slices.Equal(answer.data.UnhonouredHints, tc.hints) || answer.data.UnhonouredHints == nil {
+			t.Errorf("%q: unhonoured_hints = %q, want %q", tc.question, answer.data.UnhonouredHints, tc.hints)
+		}
+		if answer.data.Answer != tc.answer {
+			t.Errorf("%q: answer = %q, want %q", tc.question, answer.data.Answer, tc.answer)
+		}
+	}
+}
+
+// TestTextTierFitsMaxPayload: a text reply over the connection's max_payload keeps the most of its
+// best matches that fit, sets entities_truncated, says it is a sample and counts one truncated
+// globalSearch (design D4; spec, "Text matches are the pages' entities as stored, best first").
+func TestTextTierFitsMaxPayload(t *testing.T) {
+	const limit = 8192
+	// Own server: a small max_payload, which the shared server does not have.
+	f := natsfixture.New(t, natsfixture.WithMaxPayload(limit))
+	if err := f.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	client := natsfixture.Open(t, f.URL(), openClient)
+	kv, _ := communityRecords(t, client)
+	key, value := literalRecord(t, "a", 1, "", "drone")
+	putRecord(t, kv, key, value)
+	registry := metric.NewMetricsRegistry()
+	startMetered(t, client, registry)
+	awaitTextMark(t, client, 0, 1)
+
+	// Rows until the page is just under the limit; every row matches, by its type, at 0.5.
+	var rows []string
+	page := func(rows []string) string {
+		return `{"entities":[` + strings.Join(rows, ",") + `],"total":` + fmt.Sprint(len(rows)) + `}`
+	}
+	for i := 0; ; i++ {
+		row := fmt.Sprintf(`{"id":"c360.test.text.a.drone.%03d","triples":[{"predicate":"acme.note.text","object":%q}]}`, i, strings.Repeat("x", 150))
+		if len(page(append(rows, row))) > limit-64 {
+			break
+		}
+		rows = append(rows, row)
+	}
+	servePages(t, client, map[string]string{"c360.test.text.a": page(rows)})
+
+	raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(`{"query":"drone fleet"}`), requestTimeout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(raw) > limit {
+		t.Errorf("reply of %d bytes, over max_payload %d", len(raw), limit)
+	}
+	data := decodeTextAnswer(t, raw).data
+	kept := len(data.Matches)
+	if !data.EntitiesTruncated || kept == 0 || kept >= len(rows) {
+		t.Fatalf("kept %d of %d matches, truncated %v; want some left out and the flag set", kept, len(rows), data.EntitiesTruncated)
+	}
+	for i, match := range data.Matches {
+		if string(match.Entity) != rows[i] { // the rows' IDs ascend, and the scores tie
+			t.Fatalf("matches[%d] = %s, want %s", i, match.Entity, rows[i])
+		}
+	}
+	// The page had no continuation, so only the fit cut the answer; the reply returned after the handler counted.
+	if got := truncatedCount(t, registry.PrometheusRegistry(), "globalSearch"); got != 1 {
+		t.Errorf("globalSearch truncated count = %v, want 1", got)
+	}
+	want := fmt.Sprintf("Found %d matching entities among %d read from 1 groups at level 0. This is a sample: a group had more than one page, or matches were left out to fit. c360.test.text.a: It has 1 members. Key themes: drone.", kept, len(rows))
+	if data.Answer != want {
+		t.Errorf("answer = %q, want %q", data.Answer, want)
+	}
+}
+
+// warnRecord is one Warn the text tier logged past unreadable records, with its attributes as text.
+type warnRecord struct {
+	level slog.Level
+	attrs map[string]string
+}
+
+// warnCapture is a slog.Handler keeping the records logged with the text tier's unreadable message.
+type warnCapture struct {
+	mu      sync.Mutex
+	records []warnRecord
+}
+
+func (w *warnCapture) Enabled(context.Context, slog.Level) bool { return true }
+func (w *warnCapture) WithAttrs([]slog.Attr) slog.Handler       { return w }
+func (w *warnCapture) WithGroup(string) slog.Handler            { return w }
+
+func (w *warnCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Message != "text search answered past unreadable community records" {
+		return nil
+	}
+	record := warnRecord{level: r.Level, attrs: map[string]string{}}
+	r.Attrs(func(a slog.Attr) bool {
+		record.attrs[a.Key] = a.Value.String()
+		return true
+	})
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.records = append(w.records, record)
+	return nil
+}
+
+func (w *warnCapture) snapshot() []warnRecord {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return slices.Clone(w.records)
+}
+
+// TestTextTierPoisonIsDeclared: an answer past an unreadable record at the level says so in
+// unreadable_groups, counts one error in Health and logs one Warn naming the verb, the level, the
+// count and why answering is safe; after a valid write to that key the answer counts none and logs
+// nothing (design D6; spec, "A corrupt record"). The handler logs and counts before it replies, so
+// each read below is ordered after the reply it follows.
+func TestTextTierPoisonIsDeclared(t *testing.T) {
+	client := fixtureClient(t)
+	kv, _ := communityRecords(t, client)
+	putRecord(t, kv, "0."+textGroup+"p", `{}`)
+	key, value := literalRecord(t, "a", 5, "Pump station.", "pump")
+	putRecord(t, kv, key, value)
+	logs := &warnCapture{}
+	built, err := CreateGraphQuery(json.RawMessage(`{}`), component.Dependencies{NATSClient: client, Logger: slog.New(logs)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	startLifecycle(t, "graph-query", built)
+	c := built.(*Component)
+	awaitTextMark(t, client, 0, 5) // after the unreadable write, which comes first
+	servePages(t, client, nil)
+
+	answer, err := askText(t, client, `{"query":"pump station"}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if answer.data.UnreadableGroups != 1 || len(answer.data.Groups) != 1 {
+		t.Errorf("answer = %+v, want one group and one unreadable", answer.data)
+	}
+	if want := "Found 0 matching entities among 0 read from 1 groups at level 0. c360.test.text.a: Pump station. 1 group records at this level could not be read."; answer.data.Answer != want {
+		t.Errorf("answer text = %q, want %q", answer.data.Answer, want)
+	}
+	if got := c.Health().ErrorCount; got != 1 {
+		t.Errorf("ErrorCount = %d, want 1", got)
+	}
+	wantWarn := warnRecord{level: slog.LevelWarn, attrs: map[string]string{
+		"verb": "globalSearch", "level": "0", "unreadable": "1",
+		"reason": "community records are independent, and the answer reads only the readable ones",
+	}}
+	if got := logs.snapshot(); len(got) != 1 || !reflect.DeepEqual(got[0], wantWarn) {
+		t.Errorf("warnings = %+v, want one %+v", got, wantWarn)
+	}
+
+	putRecord(t, kv, "0."+textGroup+"p", `{"id":"c360.test.text.p","level":0,"member_count":1,"entity_revision":6,"keywords":["valve"]}`)
+	awaitTextMark(t, client, 0, 6)
+	answer, err = askText(t, client, `{"query":"pump station"}`)
+	if err != nil || answer.data.UnreadableGroups != 0 {
+		t.Errorf("after a valid write: %+v, %v; want unreadable_groups 0", answer.data, err)
+	}
+	if got := c.Health().ErrorCount; got != 1 {
+		t.Errorf("after a valid write: ErrorCount = %d, want 1", got)
+	}
+	if got := logs.snapshot(); len(got) != 1 {
+		t.Errorf("after a valid write: %d warnings, want the first alone", len(got))
 	}
 }

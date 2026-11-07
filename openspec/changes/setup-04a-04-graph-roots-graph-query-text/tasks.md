@@ -48,7 +48,7 @@ in `notes/<task>.md`.
   `TestTextTierRevisionIgnoresUnreadable`, `TestTextTierAllUnreadable`; `localSearch` tests unchanged after
   `rankEntities` returns ID and score. Carries `graphrag_test`'s
   scoring cases with the pin's order corrected (P1, P2).
-- [ ] 3.3 Reply (D4, D6): `graph.TextSearchData`, `TextSearchGroup`, `TextSearchMatch` in
+- [x] 3.3 Reply (D4, D6): `graph.TextSearchData`, `TextSearchGroup`, `TextSearchMatch` in
   `graph/query_global_search_types.go`, and the `GlobalSearchData` comment (`:13-18`) naming five strategies; label
   set read at `Start`, answer, fit, poison count with its Warn (D6), truncation counter. Premise:
   `vocabulary/registry.go:477`, `localsearch.go:172`, `metrics.go:15`. Check: `TestTextTierReply`, `TestMatchLabel`,

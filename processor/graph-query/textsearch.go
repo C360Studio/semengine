@@ -24,7 +24,14 @@ const (
 	keywordTermScore = 1.5
 )
 
-// textResult is what the text tier read for one question (design D2, D3, D5), from which task 3.3
+// textPastUnreadable is the Warn an answer past unreadable community records logs (design D6), and
+// textPastUnreadableReason why answering is safe.
+const (
+	textPastUnreadable       = "text search answered past unreadable community records"
+	textPastUnreadableReason = "community records are independent, and the answer reads only the readable ones"
+)
+
+// textResult is what the text tier read for one question (design D2, D3, D5), from which globalText
 // builds the reply. Its records and bytes are the view's and the pages', read only, and live as long
 // as the request.
 type textResult struct {
@@ -70,7 +77,7 @@ func (c *Component) searchText(ctx context.Context, prefixSubject string, reques
 		if err != nil {
 			return textResult{}, err
 		}
-		matches, scanned, err := rankEntities(page.rows, terms)
+		matches, scanned, err := rankEntities(page.rows, terms, c.labelPredicates)
 		if err != nil {
 			return textResult{}, c.brokenReply(prefixSubject, err)
 		}
@@ -143,4 +150,94 @@ func groupScore(record clustering.Community, terms []string) float64 {
 		}
 	}
 	return score
+}
+
+// labelOrder is the label set DiscoverLabelPredicates returns, most salient first: the lowest
+// priority number, ties by predicate name (design D4).
+func labelOrder(priorities map[string]int) []string {
+	order := make([]string, 0, len(priorities))
+	for predicate := range priorities {
+		order = append(order, predicate)
+	}
+	slices.SortFunc(order, func(a, b string) int {
+		return cmp.Or(cmp.Compare(priorities[a], priorities[b]), cmp.Compare(a, b))
+	})
+	return order
+}
+
+// textSearchData is the reply's result for what the text tier read at level, with the hints the
+// question carried that it did not honour (design D4), before the fit and the answer. Groups,
+// matches and hints are never null: an empty list says none.
+func textSearchData(result textResult, level int, unhonoured []string) graph.TextSearchData {
+	groups := make([]graph.TextSearchGroup, 0, len(result.groups))
+	for _, group := range result.groups {
+		groups = append(groups, graph.TextSearchGroup{
+			CommunityID:      group.ID,
+			MemberCount:      group.MemberCount,
+			CommunitySummary: group.StatisticalSummary,
+			Keywords:         group.Keywords,
+		})
+	}
+	matches := make([]graph.TextSearchMatch, 0, len(result.matches))
+	for _, match := range result.matches {
+		matches = append(matches, graph.TextSearchMatch{ID: match.id, Label: match.label, Score: match.score, Entity: match.raw})
+	}
+	return graph.TextSearchData{
+		Level:             level,
+		Groups:            groups,
+		Matches:           matches,
+		EntitiesScanned:   result.scanned,
+		EntitiesTruncated: result.pageCut,
+		UnreadableGroups:  result.unreadable,
+		UnhonouredHints:   append([]string{}, unhonoured...),
+	}
+}
+
+// textSearchAnswer is the answer text (design D4), {n} being the matches in the reply: the counts, or
+// that no group matched; that it is a sample when it is; each group's summary, or its member count and
+// first five keywords when it has none; the hints not honoured; the records that could not be read.
+func textSearchAnswer(data graph.TextSearchData) string {
+	var sentences []string
+	if len(data.Groups) == 0 {
+		sentences = append(sentences, fmt.Sprintf("No group at level %d matched the question.", data.Level))
+	} else {
+		sentences = append(sentences, fmt.Sprintf("Found %d matching entities among %d read from %d groups at level %d.",
+			len(data.Matches), data.EntitiesScanned, len(data.Groups), data.Level))
+	}
+	if data.EntitiesTruncated {
+		sentences = append(sentences, "This is a sample: a group had more than one page, or matches were left out to fit.")
+	}
+	for _, group := range data.Groups {
+		if group.CommunitySummary != "" {
+			sentences = append(sentences, group.CommunityID+": "+group.CommunitySummary)
+			continue
+		}
+		sentence := fmt.Sprintf("%s: It has %d members.", group.CommunityID, group.MemberCount)
+		if len(group.Keywords) > 0 {
+			sentence += " Key themes: " + strings.Join(group.Keywords[:min(len(group.Keywords), 5)], ", ") + "."
+		}
+		sentences = append(sentences, sentence)
+	}
+	if len(data.UnhonouredHints) > 0 {
+		sentences = append(sentences, "Not honoured: "+strings.Join(data.UnhonouredHints, ", ")+".")
+	}
+	if data.UnreadableGroups > 0 {
+		sentences = append(sentences, fmt.Sprintf("%d group records at this level could not be read.", data.UnreadableGroups))
+	}
+	return strings.Join(sentences, " ")
+}
+
+// fitTextSearch encodes data, with its answer, keeping the most of its best matches whose encoding is
+// at most limit bytes; leaving any out sets EntitiesTruncated, as fitLocalSearch does (design D4). It
+// also reports whether the encoded answer is truncated, and refuses when even no matches do not fit.
+func fitTextSearch(data graph.TextSearchData, limit int, encode func(graph.TextSearchData) ([]byte, error)) ([]byte, bool, error) {
+	all := data.Matches
+	encoded, cut, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {
+		kept := data
+		kept.Matches = all[:n]
+		kept.EntitiesTruncated = data.EntitiesTruncated || n < len(all)
+		kept.Answer = textSearchAnswer(kept)
+		return encode(kept)
+	})
+	return encoded, data.EntitiesTruncated || cut, err
 }

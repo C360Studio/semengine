@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/vocabulary"
 )
@@ -42,14 +44,24 @@ func aliased(alias string) [2]string { return [2]string{vocabulary.CoreIdentityA
 
 func linked(to string) [2]string { return [2]string{linkTo, to} }
 
-// requireTextTierReached holds that question was routed to the text tier: with no view of
-// COMMUNITY_INDEX it is refused transient index_not_ready naming the missing view, which no other
-// strategy sends. Task 3.3 replaces this with the text tier's reply.
-func requireTextTierReached(t *testing.T, question string, reply []byte, err error) {
+// seedWordRecord writes, before graph-query starts, a level-0 record whose one keyword is word, so a
+// text search of word reads that group and no other.
+func seedWordRecord(t *testing.T, client *natsclient.Client, word string) {
 	t.Helper()
-	requireRefusal(t, reply, err, errs.ErrorTransient, graph.ErrorCodeIndexNotReady)
-	if err.Error() != noCommunityView {
-		t.Errorf("%q: message = %q, want %q", question, err.Error(), noCommunityView)
+	kv, _ := communityRecords(t, client)
+	key, value := literalRecord(t, "w", 1, "", word)
+	putRecord(t, kv, key, value)
+}
+
+// requireTextSearched holds that question was searched as text: strategy text, and the one group read
+// is seedWordRecord's, which only that word scores.
+func requireTextSearched(t *testing.T, question string, reply []byte, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%q: %v, want a text answer", question, err)
+	}
+	if got := textGroupIDs(decodeTextAnswer(t, reply).data.Groups); !slices.Equal(got, []string{textGroup + "w"}) {
+		t.Errorf("%q: groups = %q, want the word's record alone", question, got)
 	}
 }
 
@@ -358,11 +370,13 @@ func TestGlobalSearchPassesAliasRefusals(t *testing.T) {
 // counts no error (design D1; spec, "An unknown reference").
 func TestGlobalSearchUnknownWordIsSearched(t *testing.T) {
 	stack := startIngestAndIndex(t)
+	seedWordRecord(t, stack.client, "forklift")
 	c := startComponent(t, stack.client, `{}`)
 	stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
+	awaitTextMark(t, stack.client, 0, 1)
 	check := spyOnEntityVerb(t, stack.client)
 	raw, err := stack.askGlobal(t, `{"query":"forklift"}`)
-	requireTextTierReached(t, "forklift", raw, err)
+	requireTextSearched(t, "forklift", raw, err)
 	check()
 	if got := c.Health().ErrorCount; got != 0 {
 		t.Errorf("ErrorCount = %d, want 0", got)
@@ -375,25 +389,30 @@ func TestGlobalSearchUnknownWordIsSearched(t *testing.T) {
 func TestGlobalSearchUnknownIDIsSearched(t *testing.T) {
 	t.Run("real ingest and index", func(t *testing.T) {
 		stack := startIngestAndIndex(t)
+		seedWordRecord(t, stack.client, absentDrone)
 		c := startComponent(t, stack.client, `{}`)
 		stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
+		awaitTextMark(t, stack.client, 0, 1)
 		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, absentDrone))
-		requireTextTierReached(t, absentDrone, raw, err)
+		requireTextSearched(t, absentDrone, raw, err)
 		if got := c.Health().ErrorCount; got != 0 {
 			t.Errorf("ErrorCount = %d, want 0", got)
 		}
 	})
 	t.Run("a holder whose entity is gone", func(t *testing.T) {
 		client := fixtureClient(t)
+		seedWordRecord(t, client, "held-1")
 		c := startComponent(t, client, `{}`)
+		awaitTextMark(t, client, 0, 1)
 		serve(t, client, verbRow(t, graph.ResponderGraphIndex, "alias").Subject, func(context.Context, []byte) ([]byte, error) {
 			return aliasReply(drone1).answer()
 		})
 		serve(t, client, verbRow(t, graph.ResponderGraphIngest, "entity").Subject, func(context.Context, []byte) ([]byte, error) {
 			return nil, errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("not found: "+drone1))
 		})
+		servePages(t, client, nil)
 		raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(`{"query":"held-1"}`), requestTimeout)
-		requireTextTierReached(t, "held-1", raw, err)
+		requireTextSearched(t, "held-1", raw, err)
 		if got := c.Health().ErrorCount; got != 0 {
 			t.Errorf("ErrorCount = %d, want 0", got)
 		}

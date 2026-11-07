@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/c360studio/semengine/graph"
@@ -30,13 +31,19 @@ import (
 // the filter chain (Phase / Active / Match), and paginates with
 // Limit + Offset.
 //
+// Participants come back in entity-ID order, each at most once, so
+// Offset and Limit page a stable order. nats.go promises neither the
+// order nor the uniqueness of a key listing (#534), so List sorts the
+// keys and removes repeats before it reads any entity.
+//
 // The key listing completes before any entity is read. When it does not
 // (ctx ends, or the watch closes before its initial snapshot ends), List
 // returns no participants and an error, which matches ctx's error when ctx
 // ended. A read error other than a missing or non-lifecycle entity also
 // returns no participants and that error.
 //
-// Complexity is O(N) per call where N is the bucket size; consumers
+// Complexity is O(N log N) per call (the key sort) where N is the bucket
+// size, with one entity read per matching key; consumers
 // hitting the cliff (~10K active instances) trigger the v2
 // secondary-index work documented in ADR-049's deferred section.
 // The API stays stable across that migration.
@@ -59,6 +66,8 @@ func (m *Manager) List(ctx context.Context, workflow string, opts ListOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("lifecycle: List keys for workflow %q: %w", reg.workflow.Name, err)
 	}
+	sort.Strings(keys)
+	keys = slices.Compact(keys)
 
 	out := make([]Participant, 0)
 	for _, key := range keys {

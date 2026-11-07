@@ -340,3 +340,67 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 	require.Less(t, wantScore, 1.0, "the question must not match an example exactly")
 	assert.Equal(t, wantScore, got.Confidence)
 }
+
+// TestChainRefusesAnEntityBesideAZone: a question naming an entity reference and a zone or area
+// phrase names two places, and the keyword tier answers a path from only one of them, so the chain
+// refuses it naming both, with or without path words (PR #530 review). A zone alone and a start
+// alone classify as before, and a reference that holds a zone word ("sensor-zone-1", "zone-b"
+// itself) is one place.
+func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
+	chain := NewClassifierChain(NewKeywordClassifier(), nil)
+	for _, tt := range []struct{ query, start, zone string }{
+		{"what is connected to sensor-001 in zone-b", "sensor-001", "zone-b"},
+		{"what is connected to sensor-001 near zone-b", "sensor-001", "zone-b"},
+		{"what in zone-b is connected to sensor-001", "sensor-001", "zone-b"},
+		{"show the path from pump-42 in area north", "pump-42", "area-north"},
+		{"show sensor-001 in zone-b", "sensor-001", "zone-b"},
+		{"status of sensor-001 in zone-b", "sensor-001", "zone-b"},
+		// Zone names written with a space are places too (PR #530 re-review).
+		{"what is connected to zone a in zone b", "zone-a", "zone-b"},
+		{"what is in zone a near area b", "area-b", "zone-a"},
+		// A full ID with no hyphenated segment is a place too (owner ruling 2026-11-07).
+		{"what is connected to c360.test.x.y.z.001 in zone b", "c360.test.x.y.z.001", "zone-b"},
+		{"show c360.test.x.y.z.001 in zone-b", "c360.test.x.y.z.001", "zone-b"},
+		{"in zone b, what is connected to c360.test.x.y.z.001?", "c360.test.x.y.z.001", "zone-b"},
+	} {
+		t.Run("refused/"+tt.query, func(t *testing.T) {
+			got, err := chain.ClassifyQuery(t.Context(), tt.query)
+			assert.Nil(t, got, "no result")
+			require.Error(t, err)
+			assert.True(t, errs.IsInvalid(err), "want an invalid-input error, got %v", err)
+			assert.ErrorContains(t, err, "the question names two places, "+tt.start+" and "+tt.zone+"; ask about one")
+		})
+	}
+	for _, tt := range []struct{ query, start string }{
+		{"what is in zone-b", "zone-b"},
+		{"pumps near area north", "area-north"},
+		{"what is connected to sensor-001", "sensor-001"},
+		{"what is connected to zone-b", "zone-b"},
+		{"what is connected to sensor-zone-1", "sensor-zone-1"},
+		{"what is connected to area-north-pump", "area-north-pump"},
+		{"what is connected to pump-zone-1", "pump-zone-1"},
+		{"what is connected to zone a", "zone-a"},
+		{"what is in zone b", "zone-b"},
+		// One place spelled twice is one place, whatever the separator or case.
+		{"what is in zone a, zone-a", "zone-a"},
+		{"what is in Zone A near zone a", "Zone-A"},
+		// A full ID holding the zone phrase is that one place.
+		{"what is connected to c360.test.x.y.zone-b.001", "zone-b"},
+	} {
+		t.Run("one place/"+tt.query, func(t *testing.T) {
+			got, err := chain.ClassifyQuery(t.Context(), tt.query)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, map[string]any{"path_intent": true, "path_start_node": tt.start}, got.Options)
+		})
+	}
+	// A zone beside other hints and no entity reference is one place; the hints stand.
+	for _, q := range []string{"what changed in zone-b today", "how many sensors in zone-b"} {
+		t.Run("one place with hints/"+q, func(t *testing.T) {
+			got, err := chain.ClassifyQuery(t.Context(), q)
+			require.NoError(t, err)
+			require.NotNil(t, got)
+			assert.Equal(t, "zone-b", got.Options["path_start_node"])
+		})
+	}
+}

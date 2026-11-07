@@ -1,0 +1,28 @@
+package query
+
+import (
+	"context"
+	"fmt"
+	"testing"
+)
+
+func TestStep4TreeProbe(t *testing.T) {
+	chain := NewClassifierChain(NewKeywordClassifier(), nil)
+	for _, q := range []string{
+		"what is connected to sensor-001",
+		"the area of the plant",
+		"entities in zone-A",
+		"what changed in the last 2 hours within 5km of 40.7,-74.0",
+		"what is connected to pump-42 in the last 2 hours",
+		"what changed in the last 0 hours",
+		"find sensors similar to pump-42",
+		"forklift",
+	} {
+		cr, err := chain.ClassifyQuery(context.Background(), q)
+		if err != nil {
+			fmt.Printf("%-60q err=%v\n", q, err)
+			continue
+		}
+		fmt.Printf("%-60q tier=%d options=%v\n", q, cr.Tier, cr.Options)
+	}
+}

@@ -813,4 +813,31 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	step("localSearch: the page refused by the responder", localSearchSubject, searchRequest, 23)
 	prefix.Store(replying(`{"entities":null,"total":0}`))
 	step("localSearch: answered", localSearchSubject, searchRequest, 23)
+
+	// globalSearch: the alias stub still refuses and the entity stub too; the edge stubs answer empty.
+	const globalSearch = "graph.query.globalSearch"
+	const entityQuestion, pathQuestion = `{"query":"held-1"}`, `{"query":"what is connected to held-1"}`
+	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":1}`, 23)
+	step("globalSearch: a question for the text search", globalSearch, `{"query":"how many pumps are there"}`, 23)
+	step("globalSearch: the alias refused by the responder", globalSearch, entityQuestion, 23)
+	alias.Store(replying(`not json`))
+	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 24)
+	alias.Store(ptr(aliasReply("")))
+	step("globalSearch: a reference naming no entity", globalSearch, entityQuestion, 24)
+	alias.Store(ptr(aliasReply(drone1)))
+	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 24)
+	entity.Store(&stubAnswer{refusal: errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("gone"))})
+	step("globalSearch: the holder's entity gone", globalSearch, entityQuestion, 24)
+	step("globalSearch: the path start gone", globalSearch, pathQuestion, 24)
+	entity.Store(replying(`not json`))
+	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 25)
+	entity.Store(replying(``))
+	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 26)
+	entity.Store(replying(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`))
+	step("globalSearch: entity answered, two requests, one input", globalSearch, entityQuestion, 26)
+	step("globalSearch: path answered", globalSearch, pathQuestion, 26)
+	outgoing.Store(replying(`not json`))
+	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 27)
+	outgoing.Store(refusing)
+	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 27)
 }

@@ -1,0 +1,17 @@
+=== RUN   TestStep4PinProbe
+"what is connected to sensor-001"                              strategy=pathrag   start="sensor-001" time=false geo=false explicit=<nil> options=[path_intent path_start_node]
+"show me sensor-001"                                           strategy=graphrag  start=%!q(<nil>) time=false geo=false explicit=<nil> options=[]
+"acme.ops.robotics.gcs.drone.001"                              strategy=graphrag  start=%!q(<nil>) time=false geo=false explicit=<nil> options=[]
+"the area of the plant"                                        strategy=pathrag   start="area-of" time=false geo=false explicit=<nil> options=[path_predicates path_intent path_start_node]
+"entities in zone-A"                                           strategy=pathrag   start="zone-A" time=false geo=false explicit=<nil> options=[path_predicates path_intent path_start_node]
+"what changed in the last 2 hours"                             strategy=temporal  start=%!q(<nil>) time=true geo=false explicit=<nil> options=[time_range]
+"what is within 5km of 40.7,-74.0"                             strategy=spatial   start=%!q(<nil>) time=false geo=true explicit=<nil> options=[geo_bounds]
+"what changed in the last 2 hours within 5km of 40.7,-74.0"    strategy=graphrag  start=%!q(<nil>) time=true geo=true explicit=<nil> options=[time_range geo_bounds]
+"what is connected to pump-42 in the last 2 hours"             strategy=pathrag   start="pump-42" time=true geo=false explicit=<nil> options=[time_range path_intent path_start_node]
+"how many pumps are there"                                     strategy=graphrag  start=%!q(<nil>) time=false geo=false explicit=<nil> options=[aggregation_type]
+"top 5 sensors"                                                strategy=graphrag  start=%!q(<nil>) time=false geo=false explicit=<nil> options=[ranking_intent limit]
+"find sensors similar to pump-42"                              strategy=graphrag  start=%!q(<nil>) time=false geo=false explicit=<nil> options=[use_embeddings]
+"forklift"                                                     strategy=graphrag  start=%!q(<nil>) time=false geo=false explicit=<nil> options=[]
+--- PASS: TestStep4PinProbe (0.00s)
+PASS
+ok  	github.com/c360studio/semstreams/processor/graph-query	0.390s

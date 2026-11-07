@@ -55,11 +55,12 @@ var entityVerb = QueryVerb{
 // QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
 // (search, similar, bounds, range), whose responders are not in the tree yet. On
 // graph.query.*, graph-query's forwards answer as the verb they forward to does, and
-// entityByAlias, relationships, pathSearch, summary and localSearch, which read index replies or
-// a community record, are enveloped from graph-query, and hierarchyStats, which reads graph-ingest
+// entityByAlias, relationships, pathSearch, summary, localSearch and globalSearch, which read index
+// replies or a community record, are enveloped from graph-query, and hierarchyStats, which reads graph-ingest
 // alone, is bare; a verb a consumer serves under graph.query.* is not in this table. A Name is
 // unique only within its Responder. pathSearch takes a PathSearchRequest, hierarchyStats a
-// HierarchyStatsRequest, summary a SummaryRequest and localSearch a LocalSearchRequest.
+// HierarchyStatsRequest, summary a SummaryRequest, localSearch a LocalSearchRequest and globalSearch a
+// GlobalSearchRequest; bounds takes a SpatialBoundsRequest and range a TemporalRangeRequest.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
@@ -111,6 +112,8 @@ func QueryVerbs() []QueryVerb {
 			Enveloped: true, Reply: reflect.TypeFor[SummaryData]()},
 		{Name: "localSearch", Subject: "graph.query.localSearch", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[LocalSearchData]()},
+		{Name: "globalSearch", Subject: "graph.query.globalSearch", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[GlobalSearchData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
 		{Name: "similar", Subject: "graph.query.similar", Responder: ResponderGraphQuery,

@@ -28,8 +28,9 @@ reserved.
 
 - **WHEN** `graph.QueryVerbs()` is read
 - **THEN** it holds `entity`, `batch`, `prefix`, `entityByAlias`, `relationships`, `byName`, `pathSearch`,
-  `hierarchyStats`, `summary`, `semantic`, `similar`, `spatial`, `temporal` and `localSearch` on `graph.query.*`, each
-  with responder `graph-query`, `localSearch` enveloped with a `graph.LocalSearchData`
+  `hierarchyStats`, `summary`, `semantic`, `similar`, `spatial`, `temporal`, `localSearch` and `globalSearch` on
+  `graph.query.*`, each with responder `graph-query`, `localSearch` enveloped with a `graph.LocalSearchData` and
+  `globalSearch` with a `graph.GlobalSearchData`
 
 #### Scenario: The forwarded derived-index verbs are in the table
 

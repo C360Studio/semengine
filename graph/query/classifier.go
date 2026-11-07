@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/c360studio/semengine/pkg/types"
 )
 
 // Classifier analyzes natural language queries to extract search intent.
@@ -97,6 +99,9 @@ var (
 // Entity extraction pattern - matches patterns like "sensor-001", "pump-42", "device-abc"
 var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 
+// wordPattern finds the whitespace-delimited words twoPlaces reads as full entity IDs.
+var wordPattern = regexp.MustCompile(`\S+`)
+
 // ClassifyQuery analyzes a natural language query and populates SearchOptions.
 // Detects temporal, spatial, similarity, path, and aggregation intents.
 // Always returns non-nil SearchOptions with the original query preserved.
@@ -114,7 +119,8 @@ var entityPattern = regexp.MustCompile(`\b([a-zA-Z]+[-][a-zA-Z0-9-]+)\b`)
 // range gives no hint and other hints stand: "last N hours" or "last N days" with N below 1
 // (negative N included) or a span past a time.Duration (about 292 years), and "within R of
 // lat,lon" with lat outside [-90, 90], lon outside [-180, 180] or R not finite.
-// ClassifierChain.ClassifyQuery refuses such a question instead. A box is clamped to the poles,
+// ClassifierChain.ClassifyQuery refuses such a question instead, and a question naming an entity
+// reference or a second place beside a zone or area phrase, of which this answers a path from one. A box is clamped to the poles,
 // spans every longitude when it reaches one, and is not wrapped across the antimeridian (East can exceed 180, West fall below -180).
 func (k *KeywordClassifier) ClassifyQuery(_ context.Context, query string) *SearchOptions {
 	opts, _ := k.classify(query, time.Now())
@@ -226,6 +232,45 @@ func numbersOutOfRange(query string) error {
 		}
 	}
 	return errors.Join(outOfRange...)
+}
+
+// twoPlaces returns an error naming both places when query has a zone or area phrase and, outside
+// that phrase, an entity reference or a second zone or area phrase naming a different place, or
+// nil. classify answers a path from only one of them (the first entity reference with path words,
+// else the zone), so the other place would be dropped without a word; the chain refuses such a
+// question instead (PR #530 review, #535). A zone is named "zone-b" or "zone b", so places compare
+// as "<zone|area>-<name>", case folded: "zone b ... zone-b" is one place. An entity reference
+// inside the phrase ("zone-b" itself, "sensor-zone-1") is the same place. A word that is a valid
+// six-part entity ID once surrounding punctuation is trimmed is an entity reference too, so a full
+// ID with no hyphenated segment ("c360.test.x.y.z.001") is not dropped (owner ruling 2026-11-07).
+func twoPlaces(query string) error {
+	zone := inZonePattern.FindStringSubmatchIndex(query)
+	if zone == nil {
+		zone = zonePattern.FindStringSubmatchIndex(query)
+	}
+	if zone == nil {
+		return nil
+	}
+	place := query[zone[2]:zone[3]] + "-" + query[zone[4]:zone[5]]
+	elsewhere := func(m []int, other string) bool {
+		return (m[1] <= zone[0] || m[0] >= zone[1]) && !strings.EqualFold(other, place)
+	}
+	for _, m := range wordPattern.FindAllStringIndex(query, -1) {
+		if other := strings.Trim(query[m[0]:m[1]], `?,.;:!"'()`); types.IsValidEntityID(other) && elsewhere(m, other) {
+			return fmt.Errorf("the question names two places, %s and %s; ask about one", other, place)
+		}
+	}
+	for _, m := range entityPattern.FindAllStringSubmatchIndex(query, -1) {
+		if other := query[m[2]:m[3]]; elsewhere(m, other) {
+			return fmt.Errorf("the question names two places, %s and %s; ask about one", other, place)
+		}
+	}
+	for _, m := range zonePattern.FindAllStringSubmatchIndex(query, -1) {
+		if other := query[m[2]:m[3]] + "-" + query[m[4]:m[5]]; elsewhere(m, other) {
+			return fmt.Errorf("the question names two places, %s and %s; ask about one", other, place)
+		}
+	}
+	return nil
 }
 
 // extractTemporal attempts to extract temporal range from query text, computed from now in

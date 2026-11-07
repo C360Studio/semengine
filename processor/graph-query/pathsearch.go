@@ -76,11 +76,7 @@ func decodePathSearchRequest(data []byte) (graph.PathSearchRequest, error) {
 // entity_not_found and not an empty answer. Its refusal reaches the caller as it arrived. Only whether
 // the reply holds an entity is read here: its stored value is not this verb's to judge.
 func (c *Component) readPathStart(ctx context.Context, subject, entityID string) error {
-	request, err := json.Marshal(graph.EntityRequest{ID: entityID})
-	if err != nil {
-		return internalError(err)
-	}
-	raw, err := c.ask(ctx, subject, request)
+	raw, err := c.readEntity(ctx, subject, entityID)
 	if err != nil {
 		return err
 	}

@@ -1,6 +1,7 @@
 package graphindex
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -16,13 +17,57 @@ import (
 // two 256-byte IDs, two dots and the hex of a 194-byte predicate (design D6).
 const maxIncomingKeyBytes = 2*semtypes.MaxEntityIDBytes + 2 + 2*vocabulary.MaxPredicateBytes
 
-// planCase is one generated entity with the rows the requirement says it plans, counted
-// by the generator as it draws each statement, never read back from the plan builder.
+// planCase is one entity with the rows the requirement says it plans: written by hand for
+// the named cases, counted by rowRoles.count for generated ones, never read back from the
+// plan builder.
 type planCase struct {
 	state         graph.EntityState
 	relationships int // statements whose object is an entity reference
 	aliases       int // alias-predicate statements whose value is non-empty after trimming (ADR-114 §5)
 	names         int // label-predicate statements whose value is non-empty
+}
+
+// entityIDShape is the canonical entity-ID grammar, written here from the rule: six
+// dot-separated segments, each an ASCII letter or digit then letters, digits, '_' or '-'.
+var entityIDShape = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*(\.[a-zA-Z0-9][a-zA-Z0-9_-]*){5}$`)
+
+// rowRoles is the test's own record of which predicates it registered as alias and as
+// label predicates.
+type rowRoles struct {
+	aliases, names map[string]bool
+}
+
+func newRowRoles(aliasPredicates, labelPredicates []string) rowRoles {
+	r := rowRoles{aliases: make(map[string]bool), names: make(map[string]bool)}
+	for _, p := range aliasPredicates {
+		r.aliases[p] = true
+	}
+	for _, p := range labelPredicates {
+		r.names[p] = true
+	}
+	return r
+}
+
+// count adds the rows one statement plans. Each role is decided on its own rule and they
+// are summed, so a statement holding several roles (a registered predicate with an
+// entity-reference value, #540 and #542) counts every row it plans:
+//   - outgoing: the object is a string of entity-ID shape, at most 256 bytes, and the
+//     datatype is empty or "@id" (the rule message.Triple.IsRelationship documents);
+//   - alias: the predicate is a registered alias predicate and the value is non-empty
+//     after trimming (ADR-114 §5);
+//   - name: the predicate is a registered label predicate and the value is non-empty.
+func (r rowRoles) count(pc *planCase, triple message.Triple) {
+	value, _ := triple.Object.(string)
+	if (triple.Datatype == "" || triple.Datatype == message.EntityReferenceDatatype) &&
+		len(value) <= semtypes.MaxEntityIDBytes && entityIDShape.MatchString(value) {
+		pc.relationships++
+	}
+	if r.aliases[triple.Predicate] && strings.TrimSpace(value) != "" {
+		pc.aliases++
+	}
+	if r.names[triple.Predicate] && value != "" {
+		pc.names++
+	}
 }
 
 // fatalf is what the witness (*testing.T) and the generated run (*rapid.T) share.
@@ -34,10 +79,12 @@ type fatalf interface {
 // an index plan (design D6, #428), so the failed mark on a refused plan is reached by no
 // stored value. The generator draws six-part IDs and predicates up to and, by a drawn
 // flag, exactly at their byte bounds (256 and 194), relationships under both reference
-// spellings, literals, and alias and name values of any bytes, including blank ones, under
-// an explicit literal datatype. The named witness runs first and plans the longest incoming
-// key, 902 bytes, every time; named cases then cover an ID-shaped alias and name, literal
-// and inferred reference.
+// spellings, ID-shaped and plain literals, and alias and name values of any bytes,
+// including blank ones, each under a generic or a registered alias or label predicate;
+// rowRoles.count counts each row role on its own rule. The named witness runs first and
+// plans the longest incoming key, 902 bytes, every time; named cases then cover every
+// overlap of a registered predicate with a reference, a plain literal and an ID-shaped
+// literal (#540, #542).
 func TestContractValidStateAlwaysPlans(t *testing.T) {
 	defer vocabulary.SnapshotRegistry()()
 	longAlias := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("c", 64)
@@ -57,6 +104,7 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 	// What startIndexPool reads at Start.
 	c.aliasPredicates = vocabulary.DiscoverAliasPredicates()
 	c.namePredicates = vocabulary.DiscoverLabelPredicates()
+	roles := newRowRoles(aliasPredicates, labelPredicates)
 
 	t.Run("witness at every bound", func(t *testing.T) {
 		source := padEntityID("a.b.c.d.e.", 's')
@@ -73,29 +121,48 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 		}
 	})
 
-	// An ID-shaped alias or name value is also a relationship unless an explicit
-	// non-reference datatype makes it a literal (message.Triple.IsRelationship, #540).
+	// A registered predicate's statement plans its alias or name row and, when its value
+	// is an entity reference, an outgoing row as well (message.Triple.IsRelationship): an
+	// ID-shaped value is a reference unless an explicit non-reference datatype makes it a
+	// literal (#540), and a predicate a generic draw can produce may be registered (#542).
+	// The six cases of #542's reproduction are the four #540 cases (a reference without a
+	// datatype, an ID-shaped literal) and the two plain literals. The counts are written by
+	// hand; each case also checks rowRoles.count against them.
 	for _, tc := range []struct {
-		name, predicate, datatype     string
-		relationships, aliases, names int
+		name, predicate, object, datatype string
+		relationships, aliases, names     int
 	}{
-		{"ID-shaped alias, literal", "test.alias.serial", "xsd:string", 0, 1, 0},
-		{"ID-shaped alias, inferred reference", "test.alias.serial", "", 1, 1, 0},
-		{"ID-shaped name, literal", "test.name.label", "xsd:string", 0, 0, 1},
-		{"ID-shaped name, inferred reference", "test.name.label", "", 1, 0, 1},
+		{"ID-shaped alias, literal", "test.alias.serial", "a.b.c.d.e.target", "xsd:string", 0, 1, 0},
+		{"ID-shaped alias, inferred reference", "test.alias.serial", "a.b.c.d.e.target", "", 1, 1, 0},
+		{"ID-shaped name, literal", "test.name.label", "a.b.c.d.e.target", "xsd:string", 0, 0, 1},
+		{"ID-shaped name, inferred reference", "test.name.label", "a.b.c.d.e.target", "", 1, 0, 1},
+		{"alias predicate, reference", "test.alias.serial", "a.b.c.d.e.target", "@id", 1, 1, 0},
+		{"alias predicate, plain literal", "test.alias.serial", "literal value", "", 0, 1, 0},
+		{"name predicate, reference", "test.name.label", "a.b.c.d.e.target", "@id", 1, 0, 1},
+		{"name predicate, plain literal", "test.name.label", "literal value", "", 0, 0, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			pc := planCase{state: graph.EntityState{ID: "a.b.c.d.e.source", Triples: []message.Triple{{
-				Subject: "a.b.c.d.e.source", Predicate: tc.predicate, Object: "a.b.c.d.e.target",
+			triple := message.Triple{
+				Subject: "a.b.c.d.e.source", Predicate: tc.predicate, Object: tc.object,
 				Datatype: tc.datatype, Source: "test", Timestamp: time.Unix(1, 0).UTC(),
-			}}}, relationships: tc.relationships, aliases: tc.aliases, names: tc.names}
+			}
+			pc := planCase{state: graph.EntityState{ID: "a.b.c.d.e.source", Triples: []message.Triple{triple}},
+				relationships: tc.relationships, aliases: tc.aliases, names: tc.names}
+			var counted planCase
+			roles.count(&counted, triple)
+			if counted.relationships != pc.relationships || counted.aliases != pc.aliases ||
+				counted.names != pc.names {
+				t.Fatalf("rowRoles.count: %d outgoing, %d alias, %d name; want %d, %d, %d",
+					counted.relationships, counted.aliases, counted.names,
+					pc.relationships, pc.aliases, pc.names)
+			}
 			checkStatePlans(t, c, pc)
 		})
 	}
 
 	var checks, atMaxKey int
 	rapid.Check(t, func(rt *rapid.T) {
-		pc := drawPlanCase(rt, aliasPredicates, labelPredicates)
+		pc := drawPlanCase(rt, roles, aliasPredicates, labelPredicates)
 		if checkStatePlans(rt, c, pc) == maxIncomingKeyBytes {
 			atMaxKey++
 		}
@@ -187,47 +254,38 @@ func drawValue(t *rapid.T) string {
 	).Draw(t, "value")
 }
 
-// drawPlanCase draws one entity: up to eight statements, each a relationship, a literal,
-// an alias or a name, counting the rows each must plan.
-func drawPlanCase(t *rapid.T, aliasPredicates, labelPredicates []string) planCase {
+// drawPlanCase draws one entity: up to eight statements, each under a generic or a
+// registered alias or label predicate, with an entity-ID object (a reference under "" or
+// "@id", a literal under "xsd:string"), a plain literal, or an alias or name value. roles
+// counts the rows each statement must plan.
+func drawPlanCase(t *rapid.T, roles rowRoles, aliasPredicates, labelPredicates []string) planCase {
 	id := drawEntityID(t, "entity")
 	when := time.Unix(rapid.Int64Range(1, 1<<37).Draw(t, "timestamp"), 0).UTC()
+	predicate := rapid.OneOf(
+		rapid.Custom(drawPredicate),
+		rapid.SampledFrom(aliasPredicates),
+		rapid.SampledFrom(labelPredicates),
+	)
 	pc := planCase{state: graph.EntityState{ID: id}}
 	for range rapid.IntRange(0, 8).Draw(t, "statements") {
 		triple := message.Triple{Subject: id, Source: "test", Timestamp: when}
 		if rapid.Bool().Draw(t, "foreign-subject") {
 			triple.Subject = drawEntityID(t, "subject")
 		}
-		switch rapid.IntRange(0, 4).Draw(t, "kind") {
-		case 0: // relationship; "" and "@id" both make an ID object a reference
-			triple.Predicate = drawPredicate(t)
-			triple.Object = drawEntityID(t, "target")
-			triple.Datatype = rapid.SampledFrom([]string{"", message.EntityReferenceDatatype}).Draw(t, "datatype")
-			pc.relationships++
-		case 1: // literal string: a space is outside the ID alphabet, so it is never a reference
-			triple.Predicate = drawPredicate(t)
+		triple.Predicate = predicate.Draw(t, "predicate")
+		switch rapid.IntRange(0, 2).Draw(t, "object-kind") {
+		case 0:
+			triple.Object = drawEntityID(t, "object-id")
+			triple.Datatype = rapid.SampledFrom([]string{"", message.EntityReferenceDatatype, "xsd:string"}).
+				Draw(t, "datatype")
+		case 1: // a space is outside the ID alphabet
 			triple.Object = "literal " + rapid.String().Draw(t, "literal")
-		case 2: // ID-shaped text under an explicit non-reference datatype is a literal
-			triple.Predicate = drawPredicate(t)
-			triple.Object = drawEntityID(t, "literal-id")
-			triple.Datatype = "xsd:string"
-		case 3: // an explicit literal datatype: a drawn value of entity-ID shape is not also a relationship (#540)
-			triple.Predicate = rapid.SampledFrom(aliasPredicates).Draw(t, "alias-predicate")
-			value := drawValue(t)
-			triple.Object = value
-			triple.Datatype = "xsd:string"
-			if strings.TrimSpace(value) != "" {
-				pc.aliases++
-			}
-		case 4: // literal datatype, as in case 3
-			triple.Predicate = rapid.SampledFrom(labelPredicates).Draw(t, "label-predicate")
-			value := drawValue(t)
-			triple.Object = value
-			triple.Datatype = "xsd:string"
-			if value != "" {
-				pc.names++
-			}
+			triple.Datatype = rapid.SampledFrom([]string{"", "xsd:string"}).Draw(t, "datatype")
+		case 2: // "@id" is left out: the codec refuses it on a value that is not an ID
+			triple.Object = drawValue(t)
+			triple.Datatype = rapid.SampledFrom([]string{"", "xsd:string"}).Draw(t, "datatype")
 		}
+		roles.count(&pc, triple)
 		pc.state.Triples = append(pc.state.Triples, triple)
 	}
 	return pc

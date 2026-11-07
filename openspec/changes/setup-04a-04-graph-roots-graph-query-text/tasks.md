@@ -66,7 +66,7 @@ in `notes/<task>.md`.
 
 ## 5. Records and guidance
 
-- [ ] 5.1 Ledger: `graph` row (the new exports), `processor/graph-query` row's contract, dependencies (`vocabulary`
+- [x] 5.1 Ledger: `graph` row (the new exports), `processor/graph-query` row's contract, dependencies (`vocabulary`
   label set), risks (D2's keyword miss, D5's empty-group exception, #525) and tests; what is not carried (D4, D7).
   `.agents/skills/query-pattern/SKILL.md:89`, `:125-126`, `docs/repository-map.md:90`,
   `processor/graph-query/README.md`, `doc.go:49`, `graph/README.md`, `MIGRATION.md`'s table, step row and "silent"

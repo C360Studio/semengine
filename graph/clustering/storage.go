@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 
 	"github.com/c360studio/semengine/natsclient"
@@ -66,7 +65,6 @@ func (s *NATSCommunityStorage) keys(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, errs.WrapTransient(err, "NATSCommunityStorage", "keys", "list keys")
 	}
-	slices.Sort(keys)
 	return keys, nil
 }
 

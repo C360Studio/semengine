@@ -154,7 +154,7 @@ func TestKVQueryMissingBucketIs404AndCreatesNothing(t *testing.T) {
 }
 
 // TestKVQueryEmptyBucketReturnsNoEntries: a bucket that exists with no keys answers 200 with no
-// entries, not an error; nats.go reports that listing as jetstream.ErrNoKeysFound (D4, S7).
+// entries, not an error; natsclient.FilteredKeys lists it as nil and no error (D4, S7).
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQueryEmptyBucketReturnsNoEntries(t *testing.T) {
@@ -235,9 +235,9 @@ func TestKVQueryLookupFailureIs500(t *testing.T) {
 }
 
 // TestKVQuerySortsKeysBeforeLimit: the query answers keys in byte order and applies limit to that
-// order, whatever order the keys were written in (D4, M23; AGENTS.md § 2). nats.go v1.55.0 sorts
-// Keys itself (jetstream/kv.go:1421) without promising it, so the mutant that drops the logger's
-// sort survives at this version; the test is the guard for a nats.go that stops sorting.
+// order, whatever order the keys were written in (D4, M23; AGENTS.md § 2). The listing,
+// natsclient.FilteredKeys, answers keys in delivery order, so the logger's own sort is the one
+// that orders them.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestKVQuerySortsKeysBeforeLimit(t *testing.T) {

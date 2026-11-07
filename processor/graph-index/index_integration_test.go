@@ -230,15 +230,12 @@ func (h *harness) keys(t *testing.T, bucket string) []string {
 	if err != nil {
 		t.Fatalf("open %s: %v", bucket, err)
 	}
-	keys, err := reader.Keys(t.Context())
-	if errors.Is(err, jetstream.ErrNoKeysFound) {
-		return []string{}
-	}
+	keys, err := natsclient.FilteredKeys(t.Context(), reader, ">")
 	if err != nil {
 		t.Fatalf("keys of %s: %v", bucket, err)
 	}
 	slices.Sort(keys)
-	return keys
+	return append([]string{}, slices.Compact(keys)...)
 }
 
 func (h *harness) value(t *testing.T, bucket, k string) string {

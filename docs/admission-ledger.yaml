@@ -3943,7 +3943,11 @@
     nothing), and the four unread sentinels as the typed errors the methods return; pkg/graphview/README.md is the
     package's product contract line. Not carried (unread, no contract line, inventory 4): AppliedRevision, CaughtUp,
     View.Poisoned, Snapshot.Sequence, EntryMeta.Revision; Hooks.OnTick (a test back door, #186);
-    DefaultTickInterval is unexported (defaultTickInterval, 250 ms)
+    DefaultTickInterval is unexported (defaultTickInterval, 250 ms). (5) Added, new
+    (setup-04a-04-graph-roots-graph-query-text D8): ListCounted(prefix) returns what List(prefix, 0) returns and the
+    number of poisoned keys under prefix, under one hold of the view's lock, with List's readiness errors; its one
+    reader is processor/graph-query's text tier, which reads one level of COMMUNITY_INDEX through it and declares the
+    unreadable records it counts
   dependencies_and_side_effects: >-
     internal/kvwatch (in-set; no exported signature names it); nats.go/jetstream; standard library only otherwise. No
     natsclient, no message, no metric. Opens one WatchAll on the injected WatcherSource (jetstream.KeyValue and
@@ -3961,12 +3965,12 @@
     pin's NewTestClient site is natsfixture.Open here), stays open
   proving_tests: >-
     pkg/graphview: view_test.go (TestRunRefusesNilContext, TestRunOnce, TestContextBoundariesRejectNil,
-    TestGetAndListSurface, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go (TestRunLeavesNothingBehind,
-    TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite, TestDetachedReasonSurvivesStop,
-    TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach, TestWatcherLossFailsClosed,
-    TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition, TestRunJoinsSubscriberCallback);
-    history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6); product_test.go
-    (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
+    TestGetAndListSurface, TestListCountedCountsPoison, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go
+    (TestRunLeavesNothingBehind, TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite,
+    TestDetachedReasonSurvivesStop, TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach,
+    TestWatcherLossFailsClosed, TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition,
+    TestRunJoinsSubscriberCallback); history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6);
+    product_test.go (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
     coherence_test.go, delta_test.go, hooks_test.go, meta_test.go (the pin's tests, ported onto Run in synctest);
     integration_test.go (TestIntegration_GraphViewOverRealBucket, TestRunLeavesNoWatchDelivery,
     TestRunReportsLostWatch, on natsfixture.Open); notes/2.1.md, 2.2.md, 2.3.md, 2.4.md and 3.3.md of the change
@@ -4024,8 +4028,11 @@
     from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word; kept
     words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
     ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
-    and an ID the canonical parser refuses; DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0
-    to 2 or whose level and ID do not give key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
+    and an ID the canonical parser refuses; LevelPrefix(level) gives the prefix {level}. of every key at a level,
+    refusing a level outside 0 to 2, the one range check GroupKey and DecodeCommunity use (new,
+    setup-04a-04-graph-roots-graph-query-text D2; its reader is processor/graph-query's text tier);
+    DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0 to 2 or whose level and ID do not give
+    key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
     naming the key on an unreadable entry or one DecodeCommunity refuses, and returns an ended context's error (pin
     skipped unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not
     carried: lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own
@@ -4050,7 +4057,7 @@
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
     TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go
-    (TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
+    (TestLevelPrefix, TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
     (TestRecordNamesItsLatestWrite, TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
     TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,
     TestFirstTickFailedPublicationKeepsOldRecords, TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick,

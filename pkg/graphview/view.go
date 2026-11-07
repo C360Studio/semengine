@@ -428,18 +428,45 @@ func (v *View[T]) List(prefix string, limit int) ([]KeyedEntry[T], error) {
 	if err := v.usableLocked(); err != nil {
 		return nil, err
 	}
+	out := v.listLocked(prefix)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ListCounted returns what List(prefix, 0) returns and the number of poisoned keys with
+// the prefix, both read under one hold of the projection, so the count describes exactly
+// the listing beside it: a key is either listed or counted, never both or neither. It
+// honors the same readiness gate as Get. The entries' values are the stored ones, which an
+// apply replaces whole and never edits; callers read them only.
+func (v *View[T]) ListCounted(prefix string) ([]KeyedEntry[T], int, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err := v.usableLocked(); err != nil {
+		return nil, 0, err
+	}
+	poisoned := 0
+	for k := range v.poisoned {
+		if strings.HasPrefix(k, prefix) {
+			poisoned++
+		}
+	}
+	return v.listLocked(prefix), poisoned, nil
+}
+
+// listLocked returns every entry whose key has prefix (empty matches all), sorted by key.
+// The caller holds v.mu.
+func (v *View[T]) listLocked(prefix string) []KeyedEntry[T] {
 	out := make([]KeyedEntry[T], 0, len(v.entries))
 	for k, e := range v.entries {
-		if prefix != "" && !strings.HasPrefix(k, prefix) {
+		if !strings.HasPrefix(k, prefix) {
 			continue
 		}
 		out = append(out, KeyedEntry[T]{Key: k, Value: e.value, Revision: e.revision})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	return out
 }
 
 // SnapshotAndSubscribe atomically captures a snapshot and registers the

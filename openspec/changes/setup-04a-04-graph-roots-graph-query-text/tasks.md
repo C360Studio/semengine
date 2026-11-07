@@ -17,7 +17,7 @@ in `notes/<task>.md`.
 
 ## 2. The counting enumeration
 
-- [ ] 2.1 `View.ListCounted` (D8): `pkg/graphview/view.go`; `clustering.LevelPrefix` (D2) beside `GroupKey`.
+- [x] 2.1 `View.ListCounted` (D8): `pkg/graphview/view.go`; `clustering.LevelPrefix` (D2) beside `GroupKey`.
   Premise: `view.go:403-450`, `:611`; `graph/clustering/storage.go:101-110`, `:137`, `maintainer.go:20`. Adopters,
   each onto `LevelPrefix` and one range check: `storage.go:102` (`GroupKey`), `:124` (`DecodeCommunity`), `:138`
   (`communityKey`), `maintainer.go:329` (`exists`); clustering's tests unchanged. Check:

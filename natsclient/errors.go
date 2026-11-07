@@ -190,6 +190,10 @@ func RespondError(msg *nats.Msg, err error) error {
 // errors.As(err, &ce) reaches ce.Code/ce.Detail and errors.Is(err,
 // errs.ErrRevisionMismatch) round-trips. The legacy "error: " body fallback is
 // gone (every producer header-stamps via RespondError).
+//
+// Numbers in Detail decode as float64 (ADR-060): every integer up to 2^53
+// survives the wire exactly, and a larger revision may come back rounded. No
+// known workload reaches that range, so the limit is the contract (#509).
 func ClassifyReply(msg *nats.Msg) ([]byte, error) {
 	if msg == nil {
 		return nil, nil

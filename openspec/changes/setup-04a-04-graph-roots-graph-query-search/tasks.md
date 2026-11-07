@@ -45,7 +45,7 @@ handler).
   `TestComposedVerbsCountAsForwardsDo`, the lifecycle suite. A resolver that swallows `alias_ambiguous` shown to fail.
   Carries `query_error_class_test`'s global-search cases (`:152-220`). MIGRATION: request keys, reply, strategy names,
   partial IDs only as aliases, the temporary code. Closes #405, #479.
-- [ ] 3.3 The `temporal` and `spatial` strategies (D4): `graph.TemporalRangeRequest`, `graph.SpatialBoundsRequest`.
+- [x] 3.3 The `temporal` and `spatial` strategies (D4): `graph.TemporalRangeRequest`, `graph.SpatialBoundsRequest`.
   Premise: `pin:graphrag.go:1196-1358`, `graph/query_search_types.go:37-52`. Check: `TestGlobalSearchTemporal`,
   `TestGlobalSearchSpatial` (a test responder on the real broker; request JSON literal; `truncated` passed),
   `TestGlobalSearchNoResponders`. Carries `query_error_class_test.go:570-621`.

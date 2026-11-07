@@ -33,10 +33,14 @@ const (
 	globalPathNodes = 100
 )
 
+// globalIndexLimit is the most results the temporal and spatial strategies ask for (design D4): the
+// pin's.
+const globalIndexLimit = 100
+
 // globalSearchSubjects are the verbs global search reads: the alias and entity verbs through the
-// resolver, and the index's edge verbs for the walk.
+// resolver, the index's edge verbs for the walk, and the time-range and bounds verbs.
 type globalSearchSubjects struct {
-	alias, entity, outgoing, incoming string
+	alias, entity, outgoing, incoming, temporal, spatial string
 }
 
 // globalSearch answers a question with the one strategy its hints choose (design D1, D4). A request
@@ -63,10 +67,13 @@ func (c *Component) globalSearch(subjects globalSearchSubjects) queryHandler {
 			return c.globalEntity(ctx, subjects, route.reference, request.MinRevision)
 		case strategyPath:
 			return c.globalPath(ctx, subjects, route.reference, request.MinRevision)
+		case strategyTemporal:
+			return c.globalTemporal(ctx, subjects.temporal, *route.timeRange, request.MinRevision)
+		case strategySpatial:
+			return c.globalSpatial(ctx, subjects.spatial, *route.area, request.MinRevision)
 		default:
-			// shortcut: temporal and spatial refuse until task 3.3 of this change adds their strategies.
 			c.lifecycle.CountError()
-			return nil, internalError(fmt.Errorf("the %s strategy is not built yet", route.strategy))
+			return nil, internalError(fmt.Errorf("the question was routed to %q, which global search does not answer", route.strategy))
 		}
 	}
 }
@@ -131,6 +138,58 @@ func (c *Component) globalPath(ctx context.Context, subjects globalSearchSubject
 		return nil, err
 	}
 	return envelope(c, subjects.outgoing, revision, graph.GlobalSearchData{Strategy: strategyPath, Path: &found})
+}
+
+// globalTemporal answers with what the time-range verb returns for the question's range, truncated
+// included, under that reply's revision (design D4). Until a responder serves the verb (change 7),
+// ask refuses transient internal naming it and counts the error.
+func (c *Component) globalTemporal(ctx context.Context, subject string, span query.TimeRange, minRevision uint64) ([]byte, error) {
+	request, err := json.Marshal(graph.TemporalRangeRequest{
+		StartTime: span.Start, EndTime: span.End, Limit: globalIndexLimit,
+		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
+	})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	raw, err := c.ask(ctx, subject, request)
+	if err != nil {
+		return nil, err
+	}
+	reply, err := decodeIndexReply[graph.TemporalData](c, subject, raw)
+	if err != nil {
+		return nil, err
+	}
+	if reply.Data.Results == nil {
+		// Results absent would read as nothing changed.
+		return nil, c.brokenReply(subject, errors.New("holds no results"))
+	}
+	return envelope(c, subject, reply.IndexedRevision, graph.GlobalSearchData{Strategy: strategyTemporal, Temporal: &reply.Data})
+}
+
+// globalSpatial answers with what the bounds verb returns for the question's area, truncated
+// included, under that reply's revision (design D4). Until a responder serves the verb (change 7),
+// ask refuses transient internal naming it and counts the error.
+func (c *Component) globalSpatial(ctx context.Context, subject string, area query.SpatialBounds, minRevision uint64) ([]byte, error) {
+	request, err := json.Marshal(graph.SpatialBoundsRequest{
+		North: area.North, South: area.South, East: area.East, West: area.West, Limit: globalIndexLimit,
+		MinRevisionField: graph.MinRevisionField{MinRevision: minRevision},
+	})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	raw, err := c.ask(ctx, subject, request)
+	if err != nil {
+		return nil, err
+	}
+	reply, err := decodeIndexReply[graph.SpatialData](c, subject, raw)
+	if err != nil {
+		return nil, err
+	}
+	if reply.Data.Results == nil {
+		// Results absent would read as nothing there.
+		return nil, c.brokenReply(subject, errors.New("holds no results"))
+	}
+	return envelope(c, subject, reply.IndexedRevision, graph.GlobalSearchData{Strategy: strategySpatial, Spatial: &reply.Data})
 }
 
 // fallThroughNotFound turns the entity verb's entity_not_found into codeTextSearchUnsupported and

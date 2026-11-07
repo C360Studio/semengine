@@ -5,12 +5,14 @@ package graphquery
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -521,4 +523,183 @@ func TestGlobalSearchTextTierRefusal(t *testing.T) {
 		awaitCommunityView(t, stack.client, drone1, written)
 		check(t, stack.graphStack, stack.component)
 	})
+}
+
+// indexStub stands in for a derived-index verb that answers reply and records each request it
+// receives. Each request is stored before the reply is sent, so before the caller's reply arrives.
+func indexStub(t *testing.T, s graphStack, subject string, reply func() ([]byte, error)) *atomic.Pointer[[]byte] {
+	t.Helper()
+	var received atomic.Pointer[[]byte]
+	serve(t, s.client, subject, func(_ context.Context, data []byte) ([]byte, error) {
+		received.Store(&data)
+		return reply()
+	})
+	return &received
+}
+
+// answers returns a stub reply of exactly raw.
+func answers(raw string) func() ([]byte, error) {
+	return func() ([]byte, error) { return []byte(raw), nil }
+}
+
+// requireStrategyReply holds a strategy's answer: data exactly want, under the responder envelope's
+// revision.
+func requireStrategyReply(t *testing.T, raw []byte, err error, want string, revision uint64) {
+	t.Helper()
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope := decodeEnvelope(t, raw)
+	if string(envelope.Data) != want {
+		t.Errorf("data = %s, want %s", envelope.Data, want)
+	}
+	if envelope.IndexedRevision != revision {
+		t.Errorf("indexed_revision = %d, want %d, the responder's", envelope.IndexedRevision, revision)
+	}
+}
+
+// requireCounts holds what one global search request leaves in DataFlow and Health. Each handler
+// counts before it returns, so before its reply.
+func requireCounts(t *testing.T, c *Component, messages, errorCount int64) {
+	t.Helper()
+	if got := c.DataFlow().Messages; got != messages {
+		t.Errorf("DataFlow counted %d requests, want %d", got, messages)
+	}
+	if got := c.Health().ErrorCount; int64(got) != errorCount {
+		t.Errorf("ErrorCount = %d, want %d", got, errorCount)
+	}
+}
+
+// TestGlobalSearchTemporal: a time-range question asks graph.temporal.query.range with a
+// graph.TemporalRangeRequest, start_time and end_time in RFC 3339, limit 100 and the request's
+// min_revision, and answers with the responder's TemporalData as it came, truncated included, under
+// the responder's revision (design D4). A responder's refusal reaches the caller with its class, as
+// at the pin (query_error_class_test.go:570-594), and is no error of graph-query's; a reply with no
+// results is.
+func TestGlobalSearchTemporal(t *testing.T) {
+	const reply = `{"data":{"results":[{"entity_id":"` + drone1 + `"}],"truncated":true},"indexed_revision":42,` +
+		`"producer":"graph-index-temporal","timestamp":"2026-11-07T00:00:00Z"}`
+	subject := verbRow(t, graph.ResponderGraphIndexTemporal, "range").Subject
+
+	t.Run("answer", func(t *testing.T) {
+		stack := graphStack{client: fixtureClient(t)}
+		c := startComponent(t, stack.client, `{}`)
+		received := indexStub(t, stack, subject, answers(reply))
+
+		before := time.Now().Round(0)
+		raw, err := stack.askGlobal(t, `{"query":"what changed in the last 2 hours","min_revision":3}`)
+		after := time.Now().Round(0)
+		requireStrategyReply(t, raw, err,
+			`{"strategy":"temporal","temporal":{"results":[{"entity_id":"`+drone1+`"}],"truncated":true}}`, 42)
+
+		got := received.Load() // stored before the stub replied
+		if got == nil {
+			t.Fatal("the range verb received nothing")
+		}
+		var sent graph.TemporalRangeRequest
+		decoder := json.NewDecoder(bytes.NewReader(*got))
+		decoder.DisallowUnknownFields()
+		if err := decoder.Decode(&sent); err != nil {
+			t.Fatalf("the range verb received %s: %v", *got, err)
+		}
+		// The classifier reads the clock between before and after; the range ends there and is two hours.
+		if sent.EndTime.Before(before) || sent.EndTime.After(after) {
+			t.Errorf("end_time %v is outside the request, [%v, %v]", sent.EndTime, before, after)
+		}
+		if !sent.StartTime.Equal(sent.EndTime.Add(-2 * time.Hour)) {
+			t.Errorf("start_time %v is not two hours before end_time %v", sent.StartTime, sent.EndTime)
+		}
+		want := fmt.Sprintf(`{"start_time":%q,"end_time":%q,"limit":100,"min_revision":3}`,
+			sent.StartTime.Format(time.RFC3339Nano), sent.EndTime.Format(time.RFC3339Nano))
+		if string(*got) != want {
+			t.Errorf("the range verb received %s, want %s", *got, want)
+		}
+		requireCounts(t, c, 1, 0)
+	})
+
+	t.Run("refused", func(t *testing.T) {
+		stack := graphStack{client: fixtureClient(t)}
+		c := startComponent(t, stack.client, `{}`)
+		indexStub(t, stack, subject, func() ([]byte, error) {
+			return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, errors.New("temporal index unavailable"))
+		})
+		raw, err := stack.askGlobal(t, `{"query":"what changed in the last 2 hours"}`)
+		requireRefusal(t, raw, err, errs.ErrorTransient, graph.ErrorCodeInternal)
+		if !strings.Contains(err.Error(), "temporal index unavailable") {
+			t.Errorf("refusal %q lost the responder's message", err)
+		}
+		requireCounts(t, c, 1, 0)
+	})
+
+	t.Run("no results", func(t *testing.T) {
+		stack := graphStack{client: fixtureClient(t)}
+		c := startComponent(t, stack.client, `{}`)
+		indexStub(t, stack, subject, answers(`{"data":{"truncated":false},"indexed_revision":42,`+
+			`"producer":"graph-index-temporal","timestamp":"2026-11-07T00:00:00Z"}`))
+		raw, err := stack.askGlobal(t, `{"query":"what changed in the last 2 hours"}`)
+		requireRefusal(t, raw, err, errs.ErrorTransient, graph.ErrorCodeInternal)
+		if !strings.Contains(err.Error(), subject) {
+			t.Errorf("refusal %q does not name %s", err, subject)
+		}
+		requireCounts(t, c, 1, 1)
+	})
+}
+
+// TestGlobalSearchSpatial: an area question asks graph.spatial.query.bounds with a
+// graph.SpatialBoundsRequest, the classifier's box and limit 100, and answers with the responder's
+// SpatialData as it came, truncated included, under the responder's revision (design D4). 111 km of
+// 0,0 is one degree each way, exactly, so the request is a literal. A responder's refusal reaches the
+// caller with its class, as at the pin (query_error_class_test.go:596-621).
+func TestGlobalSearchSpatial(t *testing.T) {
+	const reply = `{"data":{"results":[{"entity_id":"` + drone1 + `","lat":0.5,"lon":-0.25}],"truncated":true},` +
+		`"indexed_revision":42,"producer":"graph-index-spatial","timestamp":"2026-11-07T00:00:00Z"}`
+	subject := verbRow(t, graph.ResponderGraphIndexSpatial, "bounds").Subject
+
+	t.Run("answer", func(t *testing.T) {
+		stack := graphStack{client: fixtureClient(t)}
+		c := startComponent(t, stack.client, `{}`)
+		received := indexStub(t, stack, subject, answers(reply))
+
+		raw, err := stack.askGlobal(t, `{"query":"what is within 111km of 0,0","min_revision":3}`)
+		requireStrategyReply(t, raw, err,
+			`{"strategy":"spatial","spatial":{"results":[{"entity_id":"`+drone1+`","lat":0.5,"lon":-0.25}],"truncated":true}}`, 42)
+		// Stored before the stub replied.
+		if got, want := received.Load(), `{"north":1,"south":-1,"east":1,"west":-1,"limit":100,"min_revision":3}`; got == nil || string(*got) != want {
+			t.Errorf("the bounds verb received %s, want %s", printable(got), want)
+		}
+		requireCounts(t, c, 1, 0)
+	})
+
+	t.Run("refused", func(t *testing.T) {
+		stack := graphStack{client: fixtureClient(t)}
+		c := startComponent(t, stack.client, `{}`)
+		indexStub(t, stack, subject, func() ([]byte, error) {
+			return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, errors.New("spatial index unavailable"))
+		})
+		raw, err := stack.askGlobal(t, `{"query":"what is within 111km of 0,0"}`)
+		requireRefusal(t, raw, err, errs.ErrorTransient, graph.ErrorCodeInternal)
+		if !strings.Contains(err.Error(), "spatial index unavailable") {
+			t.Errorf("refusal %q lost the responder's message", err)
+		}
+		requireCounts(t, c, 1, 0)
+	})
+}
+
+// TestGlobalSearchNoResponders: with no responder on the time-range or bounds verb, as in this tree
+// until change 7, each question is refused transient internal naming that verb's subject, and counts
+// one request and one error (design D4; spec "Requests are counted for operators").
+func TestGlobalSearchNoResponders(t *testing.T) {
+	stack := graphStack{client: fixtureClient(t)}
+	c := startComponent(t, stack.client, `{}`)
+	for i, tc := range []struct{ question, subject string }{
+		{"what changed in the last 2 hours", verbRow(t, graph.ResponderGraphIndexTemporal, "range").Subject},
+		{"what is within 5km of 40.7,-74.0", verbRow(t, graph.ResponderGraphIndexSpatial, "bounds").Subject},
+	} {
+		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, tc.question))
+		requireRefusal(t, raw, err, errs.ErrorTransient, graph.ErrorCodeInternal)
+		if !strings.Contains(err.Error(), tc.subject) {
+			t.Errorf("%q: refusal %q does not name %s", tc.question, err, tc.subject)
+		}
+		requireCounts(t, c, int64(i+1), int64(i+1))
+	}
 }

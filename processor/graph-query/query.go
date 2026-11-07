@@ -50,8 +50,11 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	}
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
-		if alias != "" {
-			handlers["globalSearch"] = c.globalSearch(globalSearchSubjects{alias: alias, entity: entity, outgoing: outgoing, incoming: incoming})
+		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
+		if alias != "" && temporal != "" && spatial != "" {
+			handlers["globalSearch"] = c.globalSearch(globalSearchSubjects{
+				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
+			})
 		}
 	}
 	if prefix := subjectOf(graph.ResponderGraphIngest, "prefix"); prefix != "" {

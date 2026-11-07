@@ -60,7 +60,7 @@ var entityVerb = QueryVerb{
 // alone, is bare; a verb a consumer serves under graph.query.* is not in this table. A Name is
 // unique only within its Responder. pathSearch takes a PathSearchRequest, hierarchyStats a
 // HierarchyStatsRequest, summary a SummaryRequest, localSearch a LocalSearchRequest and globalSearch a
-// GlobalSearchRequest.
+// GlobalSearchRequest; bounds takes a SpatialBoundsRequest and range a TemporalRangeRequest.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,

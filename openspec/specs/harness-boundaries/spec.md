@@ -1066,11 +1066,11 @@ method value) a policy entry point (`ConsumeInternalStreamWithConfig`, `ConsumeS
 
 ### Requirement: ateam doctor gates verify
 
-`scripts/verify.sh` SHALL run `task ateam:doctor` as its first step, and `task ateam:doctor` SHALL run
-`ateam doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`,
-`CODEX_SESSION_ID`, `GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is
-pinned as `v0.3.9` in `.github/workflows/ci.yml` and `.github/workflows/merge-check.yml`, every install line naming
-the same version, compared by `scripts/doctor.sh`.
+`scripts/verify.sh` SHALL run `task ateam:doctor` as its first step, and `task ateam:doctor` SHALL run `.bin/ateam
+doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`,
+`GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is pinned as `v0.3.9` in
+`.github/workflows/ci.yml` and `.github/workflows/merge-check.yml`, every install line naming the same version, compared
+by `scripts/doctor.sh`.
 
 #### Scenario: Doctor violation fails verify
 
@@ -1087,11 +1087,10 @@ the same version, compared by `scripts/doctor.sh`.
 
 ### Requirement: ateam template files are the pin's
 
-Every file `ateam init` writes into an empty directory at the pinned release SHALL be byte-identical in this
-repository, except the files SemEngine writes itself and the five client configurations an adopter may edit (both
-listed with reasons in `semengineOwned`). The tool test
-`TestAteamTemplatesUnchanged` (`internal/harness/toolcheck`) SHALL check it, failing and never skipping when `ateam`
-is missing or is not the pinned release.
+Every file `ateam init` writes into an empty directory at the pinned release SHALL be byte-identical in this repository,
+except the files SemEngine writes itself and the five client configurations an adopter may edit (both listed with
+reasons in `semengineOwned`). The tool test `TestAteamTemplatesUnchanged` (`internal/harness/toolcheck`) SHALL check it,
+failing and never skipping when `.bin/ateam` (built by `task ateam:bin`) is missing or is not the pinned release.
 
 #### Scenario: A line is added to a base contract
 
@@ -1120,8 +1119,8 @@ is missing or is not the pinned release.
 
 #### Scenario: ateam is not installed
 
-- **WHEN** `ateam` is not on `PATH`
-- **THEN** `TestAteamTemplatesUnchanged` fails naming the pinned install line
+- **WHEN** `.bin/ateam` does not exist, whatever `ateam` is on `PATH`
+- **THEN** `TestAteamTemplatesUnchanged` fails naming `task ateam:bin`
 
 ### Requirement: SemEngine contracts sit on the base contracts
 

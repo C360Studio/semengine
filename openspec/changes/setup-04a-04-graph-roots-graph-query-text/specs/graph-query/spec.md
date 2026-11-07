@@ -74,19 +74,24 @@ be omitted when the entity has none.
 `graph.TextSearchData` SHALL carry `level`, `groups` (each record's `community_id`, `member_count`,
 `community_summary` and `keywords`), `matches`, `entities_scanned`, `entities_truncated`, `unreadable_groups` (the
 poisoned records at the level), `unhonoured_hints` and `answer`, a plain text built from these fields that says it is
-a sample when `entities_truncated` is true. An answer with `unreadable_groups` above 0 SHALL count one error in
-`Health`.
-
-#### Scenario: A corrupt record
-
-- **WHEN** one record at the level is unreadable and another matches
-- **THEN** the reply answers with `unreadable_groups` 1 and `Health` counts one error; after a valid write to that key
-  `unreadable_groups` is 0 (`TestTextTierPoisonIsDeclared`)
+a sample when `entities_truncated` is true.
 
 #### Scenario: A cut answer says so
 
 - **WHEN** a selected group has more than one page
 - **THEN** `entities_truncated` is true and the answer says it is a sample (`TestTextTierAnswer`)
+
+### Requirement: An answer past unreadable records is signalled
+
+An answer with `unreadable_groups` above 0 SHALL count one error in `Health` and log one Warn naming the verb, the
+level, the count and why answering is safe.
+
+#### Scenario: A corrupt record
+
+- **WHEN** one record at the level is unreadable and another matches
+- **THEN** the reply answers with `unreadable_groups` 1, `Health` counts one error, and one Warn names the verb, the
+  level and the count; after a valid write to that key `unreadable_groups` is 0 and nothing is logged
+  (`TestTextTierPoisonIsDeclared`)
 
 ### Requirement: The text tier refuses an index it cannot read
 

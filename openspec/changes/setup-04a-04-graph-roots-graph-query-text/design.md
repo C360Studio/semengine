@@ -124,9 +124,14 @@ writes in revision order (#525). *Proof:* `TestTextTierRevision`, `TestTextTierR
 | Some records unreadable | an answer, `unreadable_groups` set | yes, one |
 | Every record unreadable; page broken; no responder; no fit | transient `internal` | yes, one |
 
-Until change 7 writes `COMMUNITY_INDEX`, every text question is `index_not_ready` (`split.md`). *Proof:*
+Until change 7 writes `COMMUNITY_INDEX`, every text question is `index_not_ready` (`split.md`). **Operator signal for
+an answer past unreadable records:** besides the one `Health` error (`component/lifecycle_type.go:155`, generic), the
+handler logs one Warn per such request, "text search answered past unreadable community records", with `verb`,
+`level`, `unreadable` (the count) and the reason continuing is safe: records are independent and the answer reads
+only the readable ones (ruling 3). The log is the attribution; no collector is added, the view keeps no `OnPoison`
+hook (`processor/graph-query/community.go:87`), and a key is named by `localSearch`'s keyed refusal. *Proof:*
 `TestComposedVerbsCountAsForwardsDo`, `TestTextTierPoisonIsDeclared` (an answer with `unreadable_groups` 1, one
-error; healed after a valid write).
+error, one Warn with those attributes, read from a captured `slog` handler; healed after a valid write: no Warn).
 
 ## D7. `searchGraph`, the semantic fallback, ADR-114
 

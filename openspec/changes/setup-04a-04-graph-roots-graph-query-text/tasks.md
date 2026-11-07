@@ -5,7 +5,9 @@ commit (#171); integration tests run under `task test:integration -- ./processor
 "Shown to fail" means `task mutate:check`, or the failing-first output, recorded in `notes/<task>.md`. One task is one
 developer's unit. Test oracles are literal JSON. No `time.Sleep`, no `Skip`, no test deadline of its own. Each request
 stays one `CountInput` and at most one `CountError`. No `context.WithValue`; no new goroutine or run context (ADR-113).
-Every task that moves a consumer's shape appends to `processor/graph-query/MIGRATION.md`.
+Every task that moves a consumer's shape appends to `processor/graph-query/MIGRATION.md`. Implementation note, not a
+design prerequisite: before writing a task's tests, record the generated-check decision (`docs/testing.md:436-439`)
+in `notes/<task>.md`.
 
 ## 1. Design
 
@@ -48,7 +50,7 @@ Every task that moves a consumer's shape appends to `processor/graph-query/MIGRA
   scoring cases with the pin's order corrected (P1, P2).
 - [ ] 3.3 Reply (D4, D6): `graph.TextSearchData`, `TextSearchGroup`, `TextSearchMatch` in
   `graph/query_global_search_types.go`, and the `GlobalSearchData` comment (`:13-18`) naming five strategies; label
-  set read at `Start`, answer, fit, poison count, truncation counter. Premise:
+  set read at `Start`, answer, fit, poison count with its Warn (D6), truncation counter. Premise:
   `vocabulary/registry.go:477`, `localsearch.go:172`, `metrics.go:15`. Check: `TestTextTierReply`, `TestMatchLabel`,
   `TestTextTierAnswer`, `TestTextTierFitsMaxPayload`, `TestTextTierPoisonIsDeclared`, `TestTruncatedSearchIsCounted`,
   `TestComposedVerbsCountAsForwardsDo`, the lifecycle suite. Carries `entity_digest_labels_test`'s label cases that

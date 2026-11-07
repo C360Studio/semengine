@@ -568,7 +568,10 @@ func (kv *KVStore) DeleteAtRevision(ctx context.Context, key string, revision ui
 	return nil
 }
 
-// Keys returns all keys in the bucket
+// Keys returns every key in the bucket, sorted, each once, or no keys and an
+// error. It applies the store's operation timeout, then lists the filter ">"
+// as keysByFilter does, so a listing cut short is an error, never a partial
+// list (#533). An empty bucket gives nil and no error.
 func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
 	if ctx == nil {
 		return nil, nilContextErrorOf("KVStore", "Keys")
@@ -576,16 +579,14 @@ func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
 	ctx, cancel := kv.applyTimeout(ctx)
 	defer cancel()
 
-	keys, err := kv.bucket.Keys(ctx)
+	keys, err := keysByFilter(ctx, kv.bucket, ">")
 	if err != nil {
-		// Handle empty bucket case
-		if err == jetstream.ErrNoKeysFound {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("kv keys: %w", err)
+		return nil, err
 	}
-
-	return keys, nil
+	// nats.go's Keys sorted and removed repeats; keep both (#512 measured repeats
+	// under concurrent overwrites; TestKVStoreKeysListsEachKeyOnceSorted).
+	slices.Sort(keys)
+	return slices.Compact(keys), nil
 }
 
 // KeysByPrefix returns all keys matching the given prefix.
@@ -641,12 +642,14 @@ type filteredWatchReader interface {
 	WatchFiltered(ctx context.Context, keys []string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 }
 
-// keysByFilter is the one filtered key listing behind KeysByFilter and
+// keysByFilter is the one key listing behind Keys, KeysByFilter and
 // FilteredKeys. It returns the watcher's initial snapshot, ended by its nil
 // marker, or no keys and an error. A returned native watcher owns delivery
 // until its Updates channel closes
 // (TestIntegration_KVStoreFilteredNativeDeliveryClosure); cancellation must not
-// turn a partial owner snapshot into successful keys. A match set that is
+// turn a partial owner snapshot into successful keys. Once the snapshot is
+// complete and Updates has closed, an error from Stop does not fail the
+// listing; while Updates stays open it still does. A match set that is
 // empty arrives as the marker alone, so it needs no error mapping
 // (TestIntegration_FilteredKeyListingsNoMatch).
 func keysByFilter(ctx context.Context, reader filteredWatchReader, pattern string) ([]string, error) {
@@ -711,7 +714,10 @@ drain:
 			break drain
 		}
 	}
-	if stopErr != nil && (!closed || (!errors.Is(stopErr, nats.ErrBadSubscription) && !errors.Is(stopErr, nats.ErrConnectionClosed))) {
+	// A Stop error after a complete snapshot whose delivery closed is ignored,
+	// as nats.go's Keys ignores it (owner, #533): a denied consumer delete must
+	// not fail a listing that has every key.
+	if stopErr != nil && (!closed || (primaryErr != nil && !errors.Is(stopErr, nats.ErrBadSubscription) && !errors.Is(stopErr, nats.ErrConnectionClosed))) {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("filtered watcher Stop: %w", stopErr))
 	}
 	if err := errors.Join(primaryErr, cleanupErr); err != nil {

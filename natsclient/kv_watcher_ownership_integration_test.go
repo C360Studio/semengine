@@ -118,7 +118,7 @@ func TestIntegration_KVStoreFilteredNativeDeliveryClosure(t *testing.T) {
 	}
 }
 
-// spec: transport-client / Both filtered key listings complete the same way
+// spec: transport-client / The key listings complete the same way
 func TestIntegration_FilteredKeyListingsNoMatch(t *testing.T) {
 	testClient := newFixtureClient(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 40*time.Second)
@@ -127,17 +127,21 @@ func TestIntegration_FilteredKeyListingsNoMatch(t *testing.T) {
 	require.NoError(t, err)
 
 	// An empty bucket first, then one whose only key the filter does not match:
-	// both listings give nil and no error on the pinned server and SDK.
-	assertNoMatch := func(state string) {
+	// every listing gives nil and no error on the pinned server and SDK. Keys
+	// lists the whole bucket, so only the empty bucket is a no-match for it.
+	assertNoMatch := func(state string, empty bool) {
 		t.Helper()
 		for _, listing := range filteredListings {
-			keys, listErr := listing.list(ctx, bucket, "diag.>")
+			if listing.pattern == ">" && !empty {
+				continue
+			}
+			keys, listErr := listing.list(ctx, bucket, listing.pattern)
 			require.NoError(t, listErr, "%s on %s", listing.name, state)
 			assert.Nil(t, keys, "%s on %s", listing.name, state)
 		}
 	}
-	assertNoMatch("an empty bucket")
+	assertNoMatch("an empty bucket", true)
 	_, err = bucket.Put(ctx, "other.one", []byte("v"))
 	require.NoError(t, err)
-	assertNoMatch("a bucket with no matching key")
+	assertNoMatch("a bucket with no matching key", false)
 }

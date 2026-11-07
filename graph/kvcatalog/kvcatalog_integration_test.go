@@ -90,10 +90,6 @@ func TestIntegration_OpenCatalogReader_DelegatesOnlyReadCapabilities(t *testing.
 	require.NoError(t, err)
 	assert.Equal(t, []byte("value"), entry.Value())
 
-	keys, err := reader.Keys(ctx)
-	require.NoError(t, err)
-	assert.Equal(t, []string{"acme.ops.robotics.gcs.drone.001"}, keys)
-
 	// A product lists a catalog bucket through natsclient.FilteredKeys, which
 	// reads the reader's WatchFiltered (design D3 test 5).
 	all, err := natsclient.FilteredKeys(ctx, reader, ">")

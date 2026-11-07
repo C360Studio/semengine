@@ -69,7 +69,9 @@ func (f *fakeKV) Delete(ctx context.Context, key string, _ ...jetstream.KVDelete
 	return nil
 }
 
-func (f *fakeKV) Keys(ctx context.Context, _ ...jetstream.WatchOpt) ([]string, error) {
+// WatchFiltered answers the whole-bucket listing KVStore.Keys makes: every stored key, in map
+// order, then the end-of-snapshot marker. beforeKeys and keysCalls apply to it.
+func (f *fakeKV) WatchFiltered(ctx context.Context, _ []string, _ ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
 	f.mu.Lock()
 	h := f.beforeKeys
 	f.keysCalls++
@@ -81,10 +83,32 @@ func (f *fakeKV) Keys(ctx context.Context, _ ...jetstream.WatchOpt) ([]string, e
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if len(f.data) == 0 {
-		return nil, jetstream.ErrNoKeysFound
+	updates := make(chan jetstream.KeyValueEntry, len(f.data)+1)
+	for key := range f.data {
+		updates <- listedKey{key: key}
 	}
-	return slices.Sorted(maps.Keys(f.data)), nil
+	updates <- nil
+	return &snapshotWatcher{updates: updates}, nil
+}
+
+// listedKey is one key of a listing snapshot; any other method panics through the nil interface.
+type listedKey struct {
+	jetstream.KeyValueEntry
+	key string
+}
+
+func (k listedKey) Key() string { return k.key }
+
+// snapshotWatcher delivers a filled snapshot; Stop closes it, as nats.go's closes Updates.
+type snapshotWatcher struct {
+	updates chan jetstream.KeyValueEntry
+	once    sync.Once
+}
+
+func (w *snapshotWatcher) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
+func (w *snapshotWatcher) Stop() error {
+	w.once.Do(func() { close(w.updates) })
+	return nil
 }
 
 func (f *fakeKV) Get(context.Context, string) (jetstream.KeyValueEntry, error) {

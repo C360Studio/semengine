@@ -81,24 +81,29 @@ type ownershipEntry struct {
 
 func (e ownershipEntry) Key() string { return e.key }
 
-// filteredListing is one public entry point to the filtered key listing. The
-// cancellation and snapshot tables run every row through each, because both
-// entry points must complete the same way.
+// filteredListing is one public entry point to the key listing, with the
+// filter it watches. The cancellation and snapshot tables run every row
+// through each, because every entry point must complete the same way.
 type filteredListing struct {
-	name string
-	list func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error)
+	name    string
+	pattern string
+	list    func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error)
 }
 
 var filteredListings = []filteredListing{
-	{"KeysByFilter", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
+	{"KeysByFilter", "diag.>", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
 		return (&Client{}).NewKVStore(bucket).KeysByFilter(ctx, pattern)
 	}},
-	{"FilteredKeys", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
+	{"FilteredKeys", "diag.>", func(ctx context.Context, bucket jetstream.KeyValue, pattern string) ([]string, error) {
 		return FilteredKeys(ctx, bucket, pattern)
+	}},
+	// KVStore.Keys lists the whole bucket, the filter ">" (#533).
+	{"Keys", ">", func(ctx context.Context, bucket jetstream.KeyValue, _ string) ([]string, error) {
+		return (&Client{}).NewKVStore(bucket).Keys(ctx)
 	}},
 }
 
-// spec: transport-client / Both filtered key listings complete the same way
+// spec: transport-client / The key listings complete the same way
 func TestKVStoreFilteredCancellationFinishesNativeDelivery(t *testing.T) {
 	for _, listing := range filteredListings {
 		t.Run(listing.name, func(t *testing.T) { testFilteredCancellationFinishesNativeDelivery(t, listing) })
@@ -161,7 +166,7 @@ func testFilteredCancellationFinishesNativeDelivery(t *testing.T, listing filter
 
 		go func() {
 			defer close(callDone)
-			keys, err := listing.list(ctx, bucket, "diag.>")
+			keys, err := listing.list(ctx, bucket, listing.pattern)
 			result <- struct {
 				keys []string
 				err  error
@@ -261,7 +266,7 @@ func closedOnStopWatcher(entries ...jetstream.KeyValueEntry) *scriptedWatcher {
 }
 
 // spec: nats-kv-keys / Filtered KVStore listings finalize native watcher delivery
-// spec: transport-client / Both filtered key listings complete the same way
+// spec: transport-client / The key listings complete the same way
 func TestKVStoreFilteredWatcherSnapshotAndStopErrors(t *testing.T) {
 	for _, listing := range filteredListings {
 		t.Run(listing.name, func(t *testing.T) { testFilteredWatcherSnapshotAndStopErrors(t, listing) })
@@ -275,10 +280,10 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 		synctest.Test(t, func(t *testing.T) {
 			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil, ownershipEntry{key: "diag.later"})
 			bucket := scriptedWatchBucket{watch: func(_ context.Context, filters []string) (jetstream.KeyWatcher, error) {
-				assert.Equal(t, []string{"diag.>"}, filters)
+				assert.Equal(t, []string{listing.pattern}, filters)
 				return watcher, nil
 			}}
-			keys, err := listing.list(t.Context(), bucket, "diag.>")
+			keys, err := listing.list(t.Context(), bucket, listing.pattern)
 			require.NoError(t, err)
 			assert.Equal(t, []string{"diag.one"}, keys)
 			assert.EqualValues(t, 1, watcher.calls.Load())
@@ -294,25 +299,28 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
-			keys, err := listing.list(t.Context(), bucket, "diag.>")
+			keys, err := listing.list(t.Context(), bucket, listing.pattern)
 			assert.Nil(t, keys)
 			assert.ErrorIs(t, err, errFilteredWatcherSnapshotIncomplete)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})
-	t.Run("nonbenign_stop_after_closure", func(t *testing.T) {
+	// spec: transport-client / A filtered listing stops its watcher before returning
+	t.Run("stop_error_after_complete_snapshot", func(t *testing.T) {
 		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
+			// A denied consumer delete fails Stop after a complete snapshot; nats.go's Keys
+			// ignores that error, and so do the listings (owner, #533).
 			stopFailure := errors.New("native unsubscribe failed")
-			watcher := closedOnStopWatcher(nil)
+			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil)
 			watcher.stopFn = func() error { close(watcher.updates); return stopFailure }
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
-			keys, err := listing.list(t.Context(), bucket, "diag.>")
-			assert.Nil(t, keys)
-			assert.ErrorIs(t, err, stopFailure)
+			keys, err := listing.list(t.Context(), bucket, listing.pattern)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"diag.one"}, keys)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})
@@ -325,11 +333,34 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
-			keys, err := listing.list(t.Context(), bucket, "diag.>")
+			keys, err := listing.list(t.Context(), bucket, listing.pattern)
 			require.NoError(t, err)
 			assert.Nil(t, keys)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
+	})
+}
+
+// TestKVStoreKeysListsEachKeyOnceSorted: a snapshot that delivers a key twice,
+// out of key order, lists each key once in sorted order. The oracle is the
+// literal answer. The filtered listing appends in delivery order, so this fails
+// when KVStore.Keys drops its sort or its repeat removal.
+//
+// spec: transport-client / The key listings complete the same way
+func TestKVStoreKeysListsEachKeyOnceSorted(t *testing.T) {
+	// R1a: the listing arms the 5 s terminal drain window and the store's 5 s deadline; on the
+	// bubble's clock neither can expire before the assertions, however slow the host.
+	synctest.Test(t, func(t *testing.T) {
+		watcher := closedOnStopWatcher(
+			ownershipEntry{key: "b.two"}, ownershipEntry{key: "a.one"}, ownershipEntry{key: "b.two"}, nil)
+		bucket := scriptedWatchBucket{watch: func(_ context.Context, filters []string) (jetstream.KeyWatcher, error) {
+			assert.Equal(t, []string{">"}, filters)
+			return watcher, nil
+		}}
+		keys, err := (&Client{}).NewKVStore(bucket).Keys(t.Context())
+		require.NoError(t, err)
+		assert.Equal(t, []string{"a.one", "b.two"}, keys)
+		assert.EqualValues(t, 1, watcher.calls.Load())
 	})
 }
 

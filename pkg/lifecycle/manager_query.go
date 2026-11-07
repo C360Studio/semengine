@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"sort"
 
 	"github.com/c360studio/semengine/graph"
@@ -29,6 +30,11 @@ import (
 // workflow's EntityIDPattern, loads + projects each match, applies
 // the filter chain (Phase / Active / Match), and paginates with
 // Limit + Offset.
+//
+// Participants come back in entity-ID order, each at most once, so
+// Offset and Limit page a stable order. nats.go promises neither the
+// order nor the uniqueness of a key listing (#534), so List sorts the
+// keys and removes repeats before it reads any entity.
 //
 // The key listing completes before any entity is read. When it does not
 // (ctx ends, or the watch closes before its initial snapshot ends), List
@@ -59,6 +65,8 @@ func (m *Manager) List(ctx context.Context, workflow string, opts ListOptions) (
 	if err != nil {
 		return nil, fmt.Errorf("lifecycle: List keys for workflow %q: %w", reg.workflow.Name, err)
 	}
+	sort.Strings(keys)
+	keys = slices.Compact(keys)
 
 	out := make([]Participant, 0)
 	for _, key := range keys {

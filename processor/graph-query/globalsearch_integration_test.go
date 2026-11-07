@@ -415,8 +415,9 @@ func TestZoneQuestionNeverAnswersEmpty(t *testing.T) {
 // sensor-001 in zone-b") names two places, and the keyword tier reads one start, so the question is
 // refused invalid_request naming both, never answered as the walk from one (PR #530 review, #535).
 // Two zones written with spaces ("zone a in zone b") are refused the same way, each clause alone
-// answered first (PR #530 re-review). The zone alone is still answered, from its own holder. Real
-// ingest, index and query.
+// answered first (PR #530 re-review), and so is a full ID with no hyphenated segment beside a zone
+// (owner ruling 2026-11-07). The zone alone is still answered, from its own holder. Real ingest,
+// index and query.
 func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, drone2)
@@ -462,6 +463,25 @@ func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 		const want = "the question names two places, zone-a and zone-b; ask about one"
 		if msg := err.Error(); !strings.HasPrefix(msg, "invalid request: ") || !strings.HasSuffix(msg, want) {
 			t.Errorf("message = %q, want invalid request ending %q", msg, want)
+		}
+	})
+	// Owner ruling 2026-11-07: a full ID with no hyphenated segment beside a zone is a second place.
+	// The ID alone is answered as its entity and "what is in zone b" alone above, so the refusal is
+	// not an unread name.
+	t.Run("full ID in zone b", func(t *testing.T) {
+		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, drone1))
+		if err != nil {
+			t.Fatalf("%s alone: %v", drone1, err)
+		}
+		want := `{"strategy":"entity","entity":` + string(stack.entityBytes(t, drone1)) + `}`
+		if got := string(decodeEnvelope(t, raw).Data); got != want {
+			t.Fatalf("%s alone: data = %s, want %s", drone1, got, want)
+		}
+		raw, err = stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, "what is connected to "+drone1+" in zone b"))
+		requireRefusal(t, raw, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
+		wantMsg := "the question names two places, " + drone1 + " and zone-b; ask about one"
+		if msg := err.Error(); !strings.HasPrefix(msg, "invalid request: ") || !strings.HasSuffix(msg, wantMsg) {
+			t.Errorf("message = %q, want invalid request ending %q", msg, wantMsg)
 		}
 	})
 }

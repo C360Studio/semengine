@@ -358,6 +358,10 @@ func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
 		// Zone names written with a space are places too (PR #530 re-review).
 		{"what is connected to zone a in zone b", "zone-a", "zone-b"},
 		{"what is in zone a near area b", "area-b", "zone-a"},
+		// A full ID with no hyphenated segment is a place too (owner ruling 2026-11-07).
+		{"what is connected to c360.test.x.y.z.001 in zone b", "c360.test.x.y.z.001", "zone-b"},
+		{"show c360.test.x.y.z.001 in zone-b", "c360.test.x.y.z.001", "zone-b"},
+		{"in zone b, what is connected to c360.test.x.y.z.001?", "c360.test.x.y.z.001", "zone-b"},
 	} {
 		t.Run("refused/"+tt.query, func(t *testing.T) {
 			got, err := chain.ClassifyQuery(t.Context(), tt.query)
@@ -380,6 +384,8 @@ func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
 		// One place spelled twice is one place, whatever the separator or case.
 		{"what is in zone a, zone-a", "zone-a"},
 		{"what is in Zone A near zone a", "Zone-A"},
+		// A full ID holding the zone phrase is that one place.
+		{"what is connected to c360.test.x.y.zone-b.001", "zone-b"},
 	} {
 		t.Run("one place/"+tt.query, func(t *testing.T) {
 			got, err := chain.ClassifyQuery(t.Context(), tt.query)

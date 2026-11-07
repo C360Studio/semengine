@@ -24,4 +24,5 @@ node_modules
 .worktrees/
 .enjoy-logs/
 .ateam/
+.bin/
 benchmarks/runs/

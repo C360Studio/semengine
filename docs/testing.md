@@ -156,12 +156,12 @@ against the base and says so when it skips them. An edit under `.agents/`, `.cla
 `.mcp.json` runs them too (about two minutes), because `TestAteamTemplatesUnchanged` checks the files `ateam init`
 writes there. Nothing but review checks which package a test belongs in.
 
-`TestAteamTemplatesUnchanged`, `task ateam:doctor`, `task doctor` and `task merge:check` run the `ateam` on your
-`PATH`; the test and `task doctor` fail unless it is the release pinned in `.github/workflows/ci.yml` and
-`merge-check.yml`.
-If your `ateam` is a development build (its `ateam version` names a commit after a tag), install the pin with
-`GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@<pin>` and run those gates, `task verify`
-included, with `PATH="$(go env GOPATH)/bin:$PATH"`, so `ateam version` reports the pin.
+`task doctor` and `task merge:check` run `.bin/ateam`, the release pinned in `.github/workflows/ci.yml` and
+`merge-check.yml`, which `task ateam:bin` builds into the worktree (git-ignored) the first time either runs and again
+whenever the pin changes; `task doctor` fails unless it reports the pin. `TestAteamTemplatesUnchanged` and
+`task ateam:doctor` still run the `ateam` on your `PATH`, and the test fails unless it is the pin. If your `ateam` is
+a development build (its `ateam version` names a commit after a tag), run those two, `task verify` included, with
+`PATH="$PWD/.bin:$PATH"` after `task ateam:bin`, so `ateam version` reports the pin.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;

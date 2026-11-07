@@ -12,7 +12,8 @@ tasks:
       - task --list
 
   doctor:
-    desc: Report tool versions and Docker reachability against their pins; starts no workloads
+    deps: [ateam:bin]
+    desc: Report tool versions and Docker reachability against their pins, ateam as .bin/ateam (built first by ateam:bin); starts no workloads
     cmds:
       - scripts/doctor.sh
 
@@ -133,10 +134,23 @@ tasks:
     cmds:
       - scripts/tools-changed.sh
 
-  merge:check:
-    desc: Run ateam review gate on PR <n> (-- <n>), the pinned release first on PATH; fails while main's rules lack Required with the up-to-date setting, a code PR that is not a draft lacks its attestation lines or an approving review record at its head, or a class:flake issue it does not close is open. Reads GitHub, so not in verify
+  # .bin/ateam is the release ci.yml pins, so local gates run the version CI runs whatever ateam
+  # is on PATH. A bare tag check: a development build of the same tag (v0.3.9-4-g...) is rebuilt.
+  ateam:bin:
+    desc: Build the ateam release pinned in .github/workflows/ci.yml into .bin/ateam; skipped when .bin/ateam already reports the pin
+    vars:
+      PIN:
+        sh: grep -Eo 'ateam/cmd/ateam@v[0-9][^[:space:]]*' .github/workflows/ci.yml | head -n1 | sed 's/.*@//'
     cmds:
-      - scripts/merge-check.sh {{.CLI_ARGS}}
+      - GOBIN="{{.ROOT_DIR}}/.bin" GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@{{.PIN}}
+    status:
+      - '.bin/ateam version 2>/dev/null | grep -Eq "(^| ){{.PIN}}( |$)"'
+
+  merge:check:
+    deps: [ateam:bin]
+    desc: Run ateam review gate on PR <n> (-- <n>) with .bin/ateam, the pinned release (task ateam:bin); fails while main's rules lack Required with the up-to-date setting, a code PR that is not a draft lacks its attestation lines or an approving review record at its head, or a class:flake issue it does not close is open. Reads GitHub, so not in verify
+    cmds:
+      - ATEAM="{{.ROOT_DIR}}/.bin/ateam" scripts/merge-check.sh {{.CLI_ARGS}}
 
   cover:check:
     desc: Fail below 80% coverage on each target listed in scripts/cover-check.sh, each measured from the unit run, the last integration run (natsfixture), or both merged

@@ -43,16 +43,17 @@ const (
 const globalIndexLimit = 100
 
 // globalSearchSubjects are the verbs global search reads: the alias and entity verbs through the
-// resolver, the index's edge verbs for the walk, and the time-range and bounds verbs.
+// resolver, the index's edge verbs for the walk, the time-range and bounds verbs, and the prefix verb
+// for the text tier's pages.
 type globalSearchSubjects struct {
-	alias, entity, outgoing, incoming, temporal, spatial string
+	alias, entity, outgoing, incoming, temporal, spatial, prefix string
 }
 
 // globalSearch answers a question with the one strategy its hints choose (design D1, D4). A request
 // is one input however many requests it makes, and at most one error: ask and brokenReply count
-// theirs, and a classification that could not be read counts here. A caller's invalid_request, a
-// responder's refusal, a named start's entity_not_found and the text tier's index_not_ready count
-// none.
+// theirs, the text tier counts a level whose every record is unreadable, and a classification that
+// could not be read counts here. A caller's invalid_request, a responder's refusal, a named start's
+// entity_not_found and the text tier's index_not_ready and revision_not_reached count none.
 func (c *Component) globalSearch(subjects globalSearchSubjects) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
@@ -70,11 +71,11 @@ func (c *Component) globalSearch(subjects globalSearchSubjects) queryHandler {
 		}
 		switch route.strategy {
 		case strategyEntity:
-			return c.globalEntity(ctx, subjects, route.reference, request.MinRevision, levelPrefix)
+			return c.globalEntity(ctx, subjects, route.reference, request, levelPrefix)
 		case strategyPath:
 			return c.globalPath(ctx, subjects, route.reference, request.MinRevision)
 		case strategyText:
-			return c.globalText(levelPrefix)
+			return c.globalText(ctx, subjects.prefix, request, levelPrefix)
 		case strategyTemporal:
 			return c.globalTemporal(ctx, subjects.temporal, *route.timeRange, request.MinRevision)
 		case strategySpatial:
@@ -104,17 +105,17 @@ func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubj
 // reply's revision. A reference that names no entity, or an entity_not_found from the entity verb (a
 // valid ID with no record, or a holder since deleted), is searched as text (design D1); any other
 // refusal reaches the caller.
-func (c *Component) globalEntity(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64, levelPrefix string) ([]byte, error) {
-	id, revision, err := c.resolveGlobal(ctx, subjects, reference, minRevision)
+func (c *Component) globalEntity(ctx context.Context, subjects globalSearchSubjects, reference string, request graph.GlobalSearchRequest, levelPrefix string) ([]byte, error) {
+	id, revision, err := c.resolveGlobal(ctx, subjects, reference, request.MinRevision)
 	if err != nil {
 		return nil, err
 	}
 	if id == "" {
-		return c.globalText(levelPrefix)
+		return c.globalText(ctx, subjects.prefix, request, levelPrefix)
 	}
 	entity, err := c.readEntity(ctx, subjects.entity, id)
 	if isEntityNotFound(err) {
-		return c.globalText(levelPrefix)
+		return c.globalText(ctx, subjects.prefix, request, levelPrefix)
 	}
 	if err != nil {
 		return nil, err
@@ -223,20 +224,16 @@ func truncatedAbsent(raw []byte) bool {
 	return json.Unmarshal(raw, &keys) != nil || keys.Data.Truncated == nil
 }
 
-// globalText is the text tier (design D2-D6), here only its refusal of a community view it cannot
-// read: missing, catching up, lost or stopped is transient index_not_ready, counting no error.
-// levelPrefix is the asked level's key prefix, from decodeGlobalSearchRequest.
-func (c *Component) globalText(levelPrefix string) ([]byte, error) {
-	view := c.communities.Load()
-	if view == nil {
-		return nil, communityNotReady(errors.New("no view of " + graph.BucketCommunityIndex))
+// globalText is the text tier (design D2-D6): searchText's refusals reach the caller as it returns
+// them. levelPrefix is the asked level's key prefix, from decodeGlobalSearchRequest.
+func (c *Component) globalText(ctx context.Context, prefixSubject string, request graph.GlobalSearchRequest, levelPrefix string) ([]byte, error) {
+	result, err := c.searchText(ctx, prefixSubject, request, levelPrefix)
+	if err != nil {
+		return nil, err
 	}
-	if _, _, err := view.ListCounted(levelPrefix); err != nil {
-		return nil, communityNotReady(err)
-	}
-	// shortcut: a readable view is refused transient internal, counting no error, since nothing failed;
-	// task 3.2 replaces this with the answer from the level's groups.
-	return nil, internalError(fmt.Errorf("the text tier does not answer yet (records %q)", levelPrefix))
+	// shortcut: a question the text tier answered is refused transient internal, counting no error,
+	// since nothing failed; task 3.3 replaces this with the reply (graph.TextSearchData, design D4).
+	return nil, internalError(fmt.Errorf("the text tier does not reply yet (%d groups, %d matches)", len(result.groups), len(result.matches)))
 }
 
 // isEntityNotFound reports whether err is the entity verb's entity_not_found.

@@ -44,7 +44,7 @@ func linked(to string) [2]string { return [2]string{linkTo, to} }
 
 // requireTextTierReached holds that question was routed to the text tier: with no view of
 // COMMUNITY_INDEX it is refused transient index_not_ready naming the missing view, which no other
-// strategy sends. Task 3.2 replaces this with the text tier's answer.
+// strategy sends. Task 3.3 replaces this with the text tier's reply.
 func requireTextTierReached(t *testing.T, question string, reply []byte, err error) {
 	t.Helper()
 	requireRefusal(t, reply, err, errs.ErrorTransient, graph.ErrorCodeIndexNotReady)

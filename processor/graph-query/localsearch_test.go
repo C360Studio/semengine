@@ -20,10 +20,11 @@ func rawEntities(entities ...string) []json.RawMessage {
 	return raws
 }
 
-func rawStrings(raws []json.RawMessage) []string {
-	out := make([]string, 0, len(raws))
-	for _, raw := range raws {
-		out = append(out, string(raw))
+// rawStrings is each match's bytes, in order.
+func rawStrings(matches []rankedEntity) []string {
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		out = append(out, string(match.raw))
 	}
 	return out
 }

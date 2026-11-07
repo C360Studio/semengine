@@ -34,14 +34,24 @@ func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, []string, 
 	if _, err := clustering.GroupKey(request.EntityID, request.Level); err != nil {
 		return request, nil, fmt.Errorf("level: %w", err)
 	}
-	terms := searchTerms(request.Query)
-	if len(terms) == 0 {
-		return request, nil, errors.New("query holds no terms")
-	}
-	if len(terms) > graph.MaxSearchTerms {
-		return request, nil, fmt.Errorf("query holds %d distinct terms, more than %d", len(terms), graph.MaxSearchTerms)
+	terms, err := checkedSearchTerms(request.Query)
+	if err != nil {
+		return request, nil, err
 	}
 	return request, terms, nil
+}
+
+// checkedSearchTerms is searchTerms, refusing a query that holds no term or more than
+// graph.MaxSearchTerms: the check localSearch and the text tier share (design D3).
+func checkedSearchTerms(query string) ([]string, error) {
+	terms := searchTerms(query)
+	if len(terms) == 0 {
+		return nil, errors.New("query holds no terms")
+	}
+	if len(terms) > graph.MaxSearchTerms {
+		return nil, fmt.Errorf("query holds %d distinct terms, more than %d", len(terms), graph.MaxSearchTerms)
+	}
+	return terms, nil
 }
 
 // searchTerms splits query as the pin did (graphrag.go:2327), then removes repeats: at the pin a repeated
@@ -113,17 +123,24 @@ func (e searchEntity) score(terms []string) float64 {
 	return total / float64(len(terms))
 }
 
+// rankedEntity is a page's entity that matched: its ID, its score and its bytes as the page sent them.
+type rankedEntity struct {
+	id    string
+	score float64
+	raw   json.RawMessage
+}
+
+// compareRanked orders matches best first, ties by entity ID.
+func compareRanked(a, b rankedEntity) int {
+	return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.id, b.id))
+}
+
 // rankEntities returns the page's entities scoring at least minLocalSearchScore, best first, ties by
-// entity ID, each as the page sent it, and the number of distinct entities read. An ID the page repeats
-// (#512) is read once, its first copy. An entity that does not decode is refused, not skipped.
-func rankEntities(page []json.RawMessage, terms []string) ([]json.RawMessage, int, error) {
-	type match struct {
-		id    string
-		score float64
-		raw   json.RawMessage
-	}
+// entity ID, and the number of distinct entities read. An ID the page repeats (#512) is read once, its
+// first copy. An entity that does not decode is refused, not skipped.
+func rankEntities(page []json.RawMessage, terms []string) ([]rankedEntity, int, error) {
 	seen := make(map[string]bool, len(page))
-	var matches []match
+	var matches []rankedEntity
 	for _, raw := range page {
 		entity, err := decodeSearchEntity(raw)
 		if err != nil {
@@ -134,20 +151,11 @@ func rankEntities(page []json.RawMessage, terms []string) ([]json.RawMessage, in
 		}
 		seen[entity.ID] = true
 		if score := entity.score(terms); score >= minLocalSearchScore {
-			matches = append(matches, match{id: entity.ID, score: score, raw: raw})
+			matches = append(matches, rankedEntity{id: entity.ID, score: score, raw: raw})
 		}
 	}
-	slices.SortFunc(matches, func(a, b match) int {
-		if c := cmp.Compare(b.score, a.score); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.id, b.id)
-	})
-	ranked := make([]json.RawMessage, 0, len(matches))
-	for _, m := range matches {
-		ranked = append(ranked, m.raw)
-	}
-	return ranked, len(seen), nil
+	slices.SortFunc(matches, compareRanked)
+	return matches, len(seen), nil
 }
 
 // localSearchAnswer is the answer text (design D5), {n} being the entities in the reply. A record's
@@ -246,6 +254,10 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 		if err != nil {
 			return nil, c.brokenReply(prefixSubject, err)
 		}
+		entities := make([]json.RawMessage, 0, len(matches))
+		for _, match := range matches {
+			entities = append(entities, match.raw)
+		}
 		limit, err := c.natsClient.MaxPayload()
 		if err != nil {
 			return nil, c.unanswered(err)
@@ -256,7 +268,7 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 			MemberCount:       record.MemberCount,
 			CommunitySummary:  record.StatisticalSummary,
 			Keywords:          record.Keywords,
-			Entities:          matches,
+			Entities:          entities,
 			EntitiesScanned:   scanned,
 			EntitiesTruncated: page.nextCursor != "",
 		}, int(limit), func(data graph.LocalSearchData) ([]byte, error) {

@@ -4318,8 +4318,11 @@
     TestGlobalSearchOneWordIsAReference, TestGlobalSearchPath, TestGlobalSearchPassesAliasRefusals,
     TestGlobalSearchUnknownWordIsSearched, TestGlobalSearchUnknownIDIsSearched, TestGlobalSearchUnknownPathStart,
     TestGlobalSearchHintBesideAFilter, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
-    TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders,
-    and the lifecycle suite
+    TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders, for step 5 TestTextTierScore,
+    TestTextTierTermLimit, TestTextTierRefusesAViewCatchingUp, TestTextTierReadsAtMostFiveGroups,
+    TestTextTierSkipsUnmatchedGroups, TestTextTierRefusesAnEmptyLevel, TestTextTierReadsTheAskedLevel,
+    TestTextTierMatchesEqualAFilter, TestTextTierMarksACutPage, TestTextTierRevision,
+    TestTextTierRevisionIgnoresUnreadable, TestTextTierAllUnreadable, and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 

@@ -40,7 +40,7 @@ in `notes/<task>.md`.
   now text), the assertion at `globalsearch_integration_test.go:48`, and the ten rows of
   `TestGlobalSearchRoutesByHints` at `globalsearch_test.go:97-111`, each to its D1 outcome; the count refusal shown
   to fail. ADR-114 sentence (D7).
-- [ ] 3.2 Groups and matches (D2, D3, D5): enumeration, group score with ties by key, five above zero, one page each,
+- [x] 3.2 Groups and matches (D2, D3, D5): enumeration, group score with ties by key, five above zero, one page each,
   `rankEntities`, the revision mark. Premise: `pin:graphrag.go:1374-1499`, `:2416-2470`; `localsearch.go:50`, `:119`;
   `counts.go:32`; `graph/clustering/maintainer.go:173-184`. Check: `TestTextTierReadsAtMostFiveGroups` (counting
   subscriber), `TestTextTierSkipsUnmatchedGroups`, `TestTextTierRefusesAnEmptyLevel`, `TestTextTierReadsTheAskedLevel`,

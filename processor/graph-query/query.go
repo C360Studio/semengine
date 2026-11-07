@@ -48,16 +48,18 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	if outgoing != "" && incoming != "" {
 		handlers["relationships"] = c.relationships(outgoing, incoming)
 	}
+	prefix := subjectOf(graph.ResponderGraphIngest, "prefix")
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
 		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
-		if alias != "" && temporal != "" && spatial != "" {
+		if alias != "" && temporal != "" && spatial != "" && prefix != "" {
 			handlers["globalSearch"] = c.globalSearch(globalSearchSubjects{
 				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
+				prefix: prefix,
 			})
 		}
 	}
-	if prefix := subjectOf(graph.ResponderGraphIngest, "prefix"); prefix != "" {
+	if prefix != "" {
 		handlers["hierarchyStats"] = c.hierarchyStats(prefix)
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)

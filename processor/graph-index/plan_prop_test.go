@@ -34,8 +34,10 @@ type fatalf interface {
 // an index plan (design D6, #428), so the failed mark on a refused plan is reached by no
 // stored value. The generator draws six-part IDs and predicates up to and, by a drawn
 // flag, exactly at their byte bounds (256 and 194), relationships under both reference
-// spellings, literals, and alias and name values of any bytes, including blank ones. The
-// named witness runs first and plans the longest incoming key, 902 bytes, every time.
+// spellings, literals, and alias and name values of any bytes, including blank ones, under
+// an explicit literal datatype. The named witness runs first and plans the longest incoming
+// key, 902 bytes, every time; named cases then cover an ID-shaped alias and name, literal
+// and inferred reference.
 func TestContractValidStateAlwaysPlans(t *testing.T) {
 	defer vocabulary.SnapshotRegistry()()
 	longAlias := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("c", 64)
@@ -70,6 +72,26 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 			t.Fatalf("longest incoming key planned = %d bytes, want 902", got)
 		}
 	})
+
+	// An ID-shaped alias or name value is also a relationship unless an explicit
+	// non-reference datatype makes it a literal (message.Triple.IsRelationship, #540).
+	for _, tc := range []struct {
+		name, predicate, datatype     string
+		relationships, aliases, names int
+	}{
+		{"ID-shaped alias, literal", "test.alias.serial", "xsd:string", 0, 1, 0},
+		{"ID-shaped alias, inferred reference", "test.alias.serial", "", 1, 1, 0},
+		{"ID-shaped name, literal", "test.name.label", "xsd:string", 0, 0, 1},
+		{"ID-shaped name, inferred reference", "test.name.label", "", 1, 0, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			pc := planCase{state: graph.EntityState{ID: "a.b.c.d.e.source", Triples: []message.Triple{{
+				Subject: "a.b.c.d.e.source", Predicate: tc.predicate, Object: "a.b.c.d.e.target",
+				Datatype: tc.datatype, Source: "test", Timestamp: time.Unix(1, 0).UTC(),
+			}}}, relationships: tc.relationships, aliases: tc.aliases, names: tc.names}
+			checkStatePlans(t, c, pc)
+		})
+	}
 
 	var checks, atMaxKey int
 	rapid.Check(t, func(rt *rapid.T) {
@@ -189,17 +211,19 @@ func drawPlanCase(t *rapid.T, aliasPredicates, labelPredicates []string) planCas
 			triple.Predicate = drawPredicate(t)
 			triple.Object = drawEntityID(t, "literal-id")
 			triple.Datatype = "xsd:string"
-		case 3:
+		case 3: // an explicit literal datatype: a drawn value of entity-ID shape is not also a relationship (#540)
 			triple.Predicate = rapid.SampledFrom(aliasPredicates).Draw(t, "alias-predicate")
 			value := drawValue(t)
 			triple.Object = value
+			triple.Datatype = "xsd:string"
 			if strings.TrimSpace(value) != "" {
 				pc.aliases++
 			}
-		case 4:
+		case 4: // literal datatype, as in case 3
 			triple.Predicate = rapid.SampledFrom(labelPredicates).Draw(t, "label-predicate")
 			value := drawValue(t)
 			triple.Object = value
+			triple.Datatype = "xsd:string"
 			if value != "" {
 				pc.names++
 			}

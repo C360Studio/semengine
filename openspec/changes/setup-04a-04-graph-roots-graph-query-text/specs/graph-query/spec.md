@@ -60,8 +60,8 @@ unchanged. `entities_truncated` SHALL be true exactly when a page had more to re
 
 ### Requirement: A match's label is its most salient label predicate
 
-`label` SHALL be the first non-empty string value, in triple order, of the entity's most salient label predicate: the
-lowest priority number in `vocabulary.DiscoverLabelPredicates()`, read at `Start`, ties by predicate name. It SHALL
+`label` SHALL be the first non-empty string value, in triple order, of the entity's most salient label predicate holding
+one: the lowest priority number in `vocabulary.DiscoverLabelPredicates()`, read at `Start`, ties by predicate name. It SHALL
 be omitted when the entity has none.
 
 #### Scenario: The label

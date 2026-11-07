@@ -1,6 +1,6 @@
 # Proposal: fix-534-list-sort-dedup
 
-Approved-by: OPEN-Q
+Approved-by: owner, 2026-11-07 in Enjoy, proposal at `4f4a850` approved as drafted; recorded on #534 (comment 6707061949)
 
 ## Why
 

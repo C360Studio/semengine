@@ -5,8 +5,8 @@ reviews the code. Each step ends when `task verify` passes on a clean tree at it
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and tasks committed; owner approval. Gate: `task spec:check` and `task docs:check`.
-  OPEN-Q: owner approval of the proposal.
+- [x] 1.1 Proposal and tasks committed; owner approval (2026-11-07, #534 comment 6707061949). Gate: `task spec:check`
+  and `task docs:check`.
 
 ## 2. Code
 

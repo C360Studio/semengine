@@ -11,9 +11,9 @@ in `notes/<task>.md`.
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner rules on D1's option, accepts the new exports and the ADR-114
+- [x] 1.1 Pre-owner design review passes; the owner rules on D1's option, accepts the new exports and the ADR-114
   sentence, and fills
-  `Approved-by:`. Hold: OPEN-Q proposal awaits owner approval. Gate: `task spec:check`, `task docs:check`.
+  `Approved-by:` (PR #544 comment 6711659719: option (a)). Gate: `task spec:check`, `task docs:check`.
 
 ## 2. The counting enumeration
 

@@ -1,6 +1,6 @@
 # graph-query
 
-Written for design D1 option (a), recommended; if the owner rules (b), the "unhonoured" clauses become refusals.
+Written for design D1 option (a), which the owner chose (PR #544 comment 6711659719).
 
 ## ADDED Requirements
 

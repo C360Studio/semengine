@@ -1,6 +1,7 @@
 # Proposal: setup-04a-04-graph-roots-graph-query-text
 
-Approved-by:
+Approved-by: Coby Leuschke (owner), 2026-11-07, PR #544 comment 6711659719:
+D1 option (a), D7 accepted, all new exports accepted.
 
 Track: `design` (adds spec requirements and touches three capabilities).
 

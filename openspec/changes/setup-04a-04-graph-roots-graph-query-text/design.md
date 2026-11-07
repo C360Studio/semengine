@@ -9,7 +9,7 @@ summaries beside them, and every cut declared; `searchGraph` answers as `globalS
 **Non-goals:** a semantic tier or fallback (change 5), LLM answers or summaries (#485-#487), a keyword index (#506).
 Pin read about 715 + 890 lines (inventory § 9); this about 420 + 1,050 (estimate), one PR.
 
-## D1. Which questions reach the text tier (owner question)
+## D1. Which questions reach the text tier (owner ruled option (a), 2026-11-07)
 
 The keyword classifier finds hints by trigger words (`graph/query/classifier.go:48-49`, `:56`, `:64-73`, `:89-94`):
 `connect*`, `relat*`, `path*`, `link*`, `between` (path); `similar*`, `like`, `resembl*`, `compar*`; `how many`,
@@ -22,7 +22,7 @@ filters and the classifier's own refusals stay `invalid_request` (step 4).
 
 | Option | Path words, no start; similarity; ranking (alone) | Any of those beside a filter (start, time range, area), or a start with path predicates | Count or other aggregation | Named start that names no entity | Cost |
 | --- | --- | --- | --- | --- | --- |
-| **(a) recommended** | text tier; the reply's `unhonoured_hints` names each (`path`, `similarity`, `ranking`) | `invalid_request` naming both, as step 4 refused two filters | `invalid_request` naming it | `entity_not_found` | "max retries" and "total memory usage" are still refused; "pumps in area 51" is not found (a zone named as a start). One new reply field |
+| **(a) chosen** | text tier; the reply's `unhonoured_hints` names each (`path`, `similarity`, `ranking`) | `invalid_request` naming both, as step 4 refused two filters | `invalid_request` naming it | `entity_not_found` | "max retries" and "total memory usage" are still refused; "pumps in area 51" is not found (a zone named as a start). One new reply field |
 | (b) refuse | `invalid_request` naming the hint | `invalid_request` naming both | `invalid_request` | `entity_not_found` | Common words refuse answerable free text on SemSource's call; `MIGRATION.md` lists every trigger word |
 
 A filter is never dropped for a text answer: "top 5 sensors connected to pump-42" (ranking and a start), "find sensors

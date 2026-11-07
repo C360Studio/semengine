@@ -1,6 +1,6 @@
 # Proposal: fix-512-prefix-dedup
 
-Approved-by: OPEN-Q (the owner fills this line)
+Approved-by: owner, 2026-11-07 in Enjoy, proposal at `6b74121` approved as drafted; recorded on #512 (comment 6710261026)
 
 ## Why
 

@@ -5,7 +5,7 @@ step ends when `task verify` passes on a clean tree at its commit (#171).
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal, tasks and spec delta committed. Hold: OPEN-Q owner approval of the proposal. Gate:
+- [x] 1.1 Proposal, tasks and spec delta committed; owner approval (2026-11-07, #512 comment 6710261026). Gate:
   `task spec:check` and `task docs:check`.
 
 ## 2. Code

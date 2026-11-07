@@ -69,7 +69,9 @@ type TemporalRangeRequest struct {
 // SpatialBoundsRequest is the bounds verb's request (graph.spatial.query.bounds): the entities inside
 // the box from South to North in latitude and West to East in longitude, in degrees, at most Limit of
 // them. A responder decodes it strictly, refusing an unknown key by name, and reads min_revision as
-// every derived-index verb does.
+// every derived-index verb does. The keyword classifier does not wrap a box across the antimeridian
+// (graph/query/classifier.go:455-457, 520-522), so East can exceed 180 and West fall below -180; a
+// responder must accept such a box, not refuse it.
 type SpatialBoundsRequest struct {
 	North float64 `json:"north"`
 	South float64 `json:"south"`

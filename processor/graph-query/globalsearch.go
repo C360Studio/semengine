@@ -141,8 +141,9 @@ func (c *Component) globalPath(ctx context.Context, subjects globalSearchSubject
 }
 
 // globalTemporal answers with what the time-range verb returns for the question's range, truncated
-// included, under that reply's revision (design D4). Until a responder serves the verb (change 7),
-// ask refuses transient internal naming it and counts the error.
+// included, under that reply's revision (design D4); a reply missing results or truncated is
+// refused, one error. Until a responder serves the verb (change 7), ask refuses transient internal
+// naming it and counts the error.
 func (c *Component) globalTemporal(ctx context.Context, subject string, span query.TimeRange, minRevision uint64) ([]byte, error) {
 	request, err := json.Marshal(graph.TemporalRangeRequest{
 		StartTime: span.Start, EndTime: span.End, Limit: globalIndexLimit,
@@ -163,12 +164,16 @@ func (c *Component) globalTemporal(ctx context.Context, subject string, span que
 		// Results absent would read as nothing changed.
 		return nil, c.brokenReply(subject, errors.New("holds no results"))
 	}
+	if truncatedAbsent(raw) {
+		return nil, c.brokenReply(subject, errors.New("holds no truncated"))
+	}
 	return envelope(c, subject, reply.IndexedRevision, graph.GlobalSearchData{Strategy: strategyTemporal, Temporal: &reply.Data})
 }
 
 // globalSpatial answers with what the bounds verb returns for the question's area, truncated
-// included, under that reply's revision (design D4). Until a responder serves the verb (change 7),
-// ask refuses transient internal naming it and counts the error.
+// included, under that reply's revision (design D4); a reply missing results or truncated is
+// refused, one error. Until a responder serves the verb (change 7), ask refuses transient internal
+// naming it and counts the error.
 func (c *Component) globalSpatial(ctx context.Context, subject string, area query.SpatialBounds, minRevision uint64) ([]byte, error) {
 	request, err := json.Marshal(graph.SpatialBoundsRequest{
 		North: area.North, South: area.South, East: area.East, West: area.West, Limit: globalIndexLimit,
@@ -189,7 +194,21 @@ func (c *Component) globalSpatial(ctx context.Context, subject string, area quer
 		// Results absent would read as nothing there.
 		return nil, c.brokenReply(subject, errors.New("holds no results"))
 	}
+	if truncatedAbsent(raw) {
+		return nil, c.brokenReply(subject, errors.New("holds no truncated"))
+	}
 	return envelope(c, subject, reply.IndexedRevision, graph.GlobalSearchData{Strategy: strategySpatial, Spatial: &reply.Data})
+}
+
+// truncatedAbsent reports whether a time-range or bounds reply's data holds no truncated, or a null
+// one, which the bool reads as false: a cut-off answer would look complete.
+func truncatedAbsent(raw []byte) bool {
+	var keys struct {
+		Data struct {
+			Truncated *bool `json:"truncated"`
+		} `json:"data"`
+	}
+	return json.Unmarshal(raw, &keys) != nil || keys.Data.Truncated == nil
 }
 
 // fallThroughNotFound turns the entity verb's entity_not_found into codeTextSearchUnsupported and

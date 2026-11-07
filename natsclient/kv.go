@@ -647,7 +647,9 @@ type filteredWatchReader interface {
 // marker, or no keys and an error. A returned native watcher owns delivery
 // until its Updates channel closes
 // (TestIntegration_KVStoreFilteredNativeDeliveryClosure); cancellation must not
-// turn a partial owner snapshot into successful keys. A match set that is
+// turn a partial owner snapshot into successful keys. Once the snapshot is
+// complete and Updates has closed, an error from Stop does not fail the
+// listing; while Updates stays open it still does. A match set that is
 // empty arrives as the marker alone, so it needs no error mapping
 // (TestIntegration_FilteredKeyListingsNoMatch).
 func keysByFilter(ctx context.Context, reader filteredWatchReader, pattern string) ([]string, error) {
@@ -712,7 +714,10 @@ drain:
 			break drain
 		}
 	}
-	if stopErr != nil && (!closed || (!errors.Is(stopErr, nats.ErrBadSubscription) && !errors.Is(stopErr, nats.ErrConnectionClosed))) {
+	// A Stop error after a complete snapshot whose delivery closed is ignored,
+	// as nats.go's Keys ignores it (owner, #533): a denied consumer delete must
+	// not fail a listing that has every key.
+	if stopErr != nil && (!closed || (primaryErr != nil && !errors.Is(stopErr, nats.ErrBadSubscription) && !errors.Is(stopErr, nats.ErrConnectionClosed))) {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("filtered watcher Stop: %w", stopErr))
 	}
 	if err := errors.Join(primaryErr, cleanupErr); err != nil {

@@ -305,19 +305,22 @@ func testFilteredWatcherSnapshotAndStopErrors(t *testing.T, listing filteredList
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})
-	t.Run("nonbenign_stop_after_closure", func(t *testing.T) {
+	// spec: transport-client / A filtered listing stops its watcher before returning
+	t.Run("stop_error_after_complete_snapshot", func(t *testing.T) {
 		// R1a: the listing arms the 5 s terminal drain window, KeysByFilter also the store's 5 s deadline.
 		// On the bubble's clock neither can expire before this case's assertions, however slow the host.
 		synctest.Test(t, func(t *testing.T) {
+			// A denied consumer delete fails Stop after a complete snapshot; nats.go's Keys
+			// ignores that error, and so do the listings (owner, #533).
 			stopFailure := errors.New("native unsubscribe failed")
-			watcher := closedOnStopWatcher(nil)
+			watcher := closedOnStopWatcher(ownershipEntry{key: "diag.one"}, nil)
 			watcher.stopFn = func() error { close(watcher.updates); return stopFailure }
 			bucket := scriptedWatchBucket{watch: func(context.Context, []string) (jetstream.KeyWatcher, error) {
 				return watcher, nil
 			}}
 			keys, err := listing.list(t.Context(), bucket, listing.pattern)
-			assert.Nil(t, keys)
-			assert.ErrorIs(t, err, stopFailure)
+			require.NoError(t, err)
+			assert.Equal(t, []string{"diag.one"}, keys)
 			assert.EqualValues(t, 1, watcher.calls.Load())
 		})
 	})

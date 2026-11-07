@@ -31,14 +31,23 @@ type planCase struct {
 // dot-separated segments, each an ASCII letter or digit then letters, digits, '_' or '-'.
 var entityIDShape = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_-]*(\.[a-zA-Z0-9][a-zA-Z0-9_-]*){5}$`)
 
-// rowRoles is the test's own record of which predicates it registered as alias and as
-// label predicates.
+// genericPredicatePrefix opens the first segment of every generic predicate the test
+// draws. No registered alias or label predicate starts with it (checked before the
+// generated run), so a generic statement holds no alias or name role by construction.
+const genericPredicatePrefix = "gen-"
+
+// builtInTitleLabel is the label predicate the framework registers at initialization
+// (vocabulary/labels.go), spelled here rather than read from the vocabulary.
+const builtInTitleLabel = "dc.terms.title"
+
+// rowRoles is the test's own record of which predicates are alias and label predicates:
+// the ones it registered, plus the framework's built-in title label.
 type rowRoles struct {
 	aliases, names map[string]bool
 }
 
 func newRowRoles(aliasPredicates, labelPredicates []string) rowRoles {
-	r := rowRoles{aliases: make(map[string]bool), names: make(map[string]bool)}
+	r := rowRoles{aliases: make(map[string]bool), names: map[string]bool{builtInTitleLabel: true}}
 	for _, p := range aliasPredicates {
 		r.aliases[p] = true
 	}
@@ -80,7 +89,8 @@ type fatalf interface {
 // stored value. The generator draws six-part IDs and predicates up to and, by a drawn
 // flag, exactly at their byte bounds (256 and 194), relationships under both reference
 // spellings, ID-shaped and plain literals, and alias and name values of any bytes,
-// including blank ones, each under a generic or a registered alias or label predicate;
+// including blank ones, each under a generic predicate (in the test's own gen- namespace)
+// or a registered alias or label predicate;
 // rowRoles.count counts each row role on its own rule. The named witness runs first and
 // plans the longest incoming key, 902 bytes, every time; named cases then cover every
 // overlap of a registered predicate with a reference, a plain literal and an ID-shaped
@@ -105,6 +115,14 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 	c.aliasPredicates = vocabulary.DiscoverAliasPredicates()
 	c.namePredicates = vocabulary.DiscoverLabelPredicates()
 	roles := newRowRoles(aliasPredicates, labelPredicates)
+	// Generic draws stay out of every registered role, the framework's own included (#542).
+	for _, discovered := range []map[string]int{vocabulary.DiscoverAliasPredicates(), vocabulary.DiscoverLabelPredicates()} {
+		for p := range discovered {
+			if strings.HasPrefix(p, genericPredicatePrefix) {
+				t.Fatalf("registered predicate %q is in the generic namespace %q", p, genericPredicatePrefix)
+			}
+		}
+	}
 
 	t.Run("witness at every bound", func(t *testing.T) {
 		source := padEntityID("a.b.c.d.e.", 's')
@@ -124,9 +142,10 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 	// A registered predicate's statement plans its alias or name row and, when its value
 	// is an entity reference, an outgoing row as well (message.Triple.IsRelationship): an
 	// ID-shaped value is a reference unless an explicit non-reference datatype makes it a
-	// literal (#540), and a predicate a generic draw can produce may be registered (#542).
+	// literal (#540), and a registered predicate's statement can hold either value (#542).
 	// The six cases of #542's reproduction are the four #540 cases (a reference without a
-	// datatype, an ID-shaped literal) and the two plain literals. The counts are written by
+	// datatype, an ID-shaped literal) and the two plain literals; the last two cases are the
+	// framework's built-in title label (vocabulary/labels.go). The counts are written by
 	// hand; each case also checks rowRoles.count against them.
 	for _, tc := range []struct {
 		name, predicate, object, datatype string
@@ -140,6 +159,8 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 		{"alias predicate, plain literal", "test.alias.serial", "literal value", "", 0, 1, 0},
 		{"name predicate, reference", "test.name.label", "a.b.c.d.e.target", "@id", 1, 0, 1},
 		{"name predicate, plain literal", "test.name.label", "literal value", "", 0, 0, 1},
+		{"built-in title, plain literal", builtInTitleLabel, "literal value", "", 0, 0, 1},
+		{"built-in title, reference", builtInTitleLabel, "a.b.c.d.e.target", "@id", 1, 0, 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			triple := message.Triple{
@@ -227,14 +248,18 @@ func drawEntityID(t *rapid.T, label string) string {
 }
 
 // drawPredicate draws a three-part predicate from the lower-kebab grammar,
-// [a-z][a-z0-9]*(-[a-z0-9]+)*, each segment padded with letters to 64 bytes (making the
-// predicate 194) by a drawn flag, otherwise to a drawn length up to 64.
+// [a-z][a-z0-9]*(-[a-z0-9]+)*, its first segment opening with genericPredicatePrefix, each
+// segment padded with letters to 64 bytes (making the predicate 194) by a drawn flag,
+// otherwise to a drawn length up to 64. The prefix counts inside the first segment's 64.
 func drawPredicate(t *rapid.T) string {
 	segment := rapid.StringMatching(`[a-z][a-z0-9]{0,5}(-[a-z0-9]{1,5}){0,2}`)
 	atBound := rapid.Bool().Draw(t, "predicate-at-bound")
 	parts := make([]string, 3)
 	for i := range parts {
 		s := segment.Draw(t, "predicate-segment")
+		if i == 0 {
+			s = genericPredicatePrefix + s
+		}
 		length := vocabulary.MaxPredicateSegmentBytes
 		if !atBound {
 			length = rapid.IntRange(len(s), vocabulary.MaxPredicateSegmentBytes).Draw(t, "predicate-segment-length")

@@ -10,9 +10,11 @@ step ends when `task verify` passes on a clean tree at its commit (#171).
 
 ## 2. Code
 
-- [ ] 2.1 A unit test over `mockKVBucket` with a listing repeating one key expects the entity once and `total`
-  counting it once. Gate: it fails on the base commit, failure recorded.
-- [ ] 2.2 The prefix query calls `slices.Compact` after the sort. Gate: the test in 2.1 and the existing graph-ingest
+- [x] 2.1 `TestHandleQueryPrefix_RepeatedListedKeyServedOnce` (`e852e85`) lists one key twice through
+  `mockKVBucket.listFilteredFunc` and expects the entity once and `total` counting it once. On base it failed: the
+  page held `...002` twice and `total` was 4, not 3. Gate: it fails on the base commit, failure recorded.
+- [x] 2.2 The prefix query calls `slices.Compact` after the sort (`7cb76bb`); `task verify` passed on a clean tree at
+  `7cb76bb`. Gate: the test in 2.1 and the existing graph-ingest
   tests pass; `task verify` passes on a clean tree.
 
 ## 3. Code review

@@ -45,12 +45,18 @@ and an error, matching the context's error when it ended.
 ### Requirement: A filtered listing stops its watcher before returning
 
 Before returning, they SHALL stop the watcher and wait at most 5 s, past the call's context, for its update channel to
-close.
+close. Once the snapshot is complete and the channel has closed, an error from Stop SHALL NOT fail the listing, as
+nats.go `Keys` ignores it. Changed: such an error failed the listing (owner, 2026-11-07, #533).
 
 #### Scenario: The watcher is stopped
 
 - **WHEN** a listing returns
 - **THEN** the watcher is stopped, and the call waited at most 5 s, past its context, for the update channel to close
+
+#### Scenario: Stop fails after a complete snapshot
+
+- **WHEN** the snapshot completes, Stop returns an error such as a denied consumer delete, and the channel closes
+- **THEN** the listing returns its keys and no error
 
 ### Requirement: The key listings differ in their time bound
 

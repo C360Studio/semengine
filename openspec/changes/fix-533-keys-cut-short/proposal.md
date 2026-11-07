@@ -34,6 +34,11 @@ Issue #512 (repeats and omissions under concurrent overwrites) stays open: this 
   method set is exactly what readers use. Migration note: list a catalog bucket through `natsclient.FilteredKeys`
   (`kvcatalog_integration_test.go:96-98` already does). `TestCatalogReader_ExportedSurfaceIsReadOnly` and the two
   integration callers (`inventory.md` § 4) move with it.
+- Amendment (owner ruling, 2026-11-07, #533 comment 6709709257): once the snapshot is complete and the watcher's
+  update channel has closed, an error from the watcher's `Stop` no longer fails any of the three listings, as nats.go
+  `Keys` ignores it. Without this, config boot failed under credentials that deny consumer deletes
+  (`TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied`). The `nonbenign_stop_after_closure` case changes to
+  expect the keys and no error. A listing cut short still fails.
 - Test fakes that answer `Keys` over a nil embedded interface (clustering `fakeKV`, the two `service` readers) answer
   `WatchFiltered` instead. Stale comments (`inventory.md` § 9) are corrected; dead fake methods go.
 - Tests, first: a cut-short `KVStore.Keys` (context cancelled after the first key; watcher channel closed before the
@@ -47,5 +52,6 @@ Issue #512 (repeats and omissions under concurrent overwrites) stays open: this 
 ### Modified Capabilities
 
 - `transport-client`: `KVStore.Keys` joins the key listings that complete the same way, cut short returns no keys,
-  and the store timeout applies; it returns keys sorted, each once. Two requirement headers are renamed to drop
+  and the store timeout applies; it returns keys sorted, each once. A Stop error after a complete snapshot no
+  longer fails any listing. Two requirement headers are renamed to drop
   "Both" and "The two".

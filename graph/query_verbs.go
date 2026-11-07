@@ -59,8 +59,8 @@ var entityVerb = QueryVerb{
 // replies or a community record, are enveloped from graph-query, and hierarchyStats, which reads graph-ingest
 // alone, is bare; a verb a consumer serves under graph.query.* is not in this table. A Name is
 // unique only within its Responder. pathSearch takes a PathSearchRequest, hierarchyStats a
-// HierarchyStatsRequest, summary a SummaryRequest, localSearch a LocalSearchRequest and globalSearch a
-// GlobalSearchRequest; bounds takes a SpatialBoundsRequest and range a TemporalRangeRequest.
+// HierarchyStatsRequest, summary a SummaryRequest, localSearch a LocalSearchRequest, and globalSearch and
+// searchGraph a GlobalSearchRequest; bounds takes a SpatialBoundsRequest and range a TemporalRangeRequest.
 func QueryVerbs() []QueryVerb {
 	return []QueryVerb{
 		entityVerb,
@@ -113,6 +113,8 @@ func QueryVerbs() []QueryVerb {
 		{Name: "localSearch", Subject: "graph.query.localSearch", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[LocalSearchData]()},
 		{Name: "globalSearch", Subject: "graph.query.globalSearch", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[GlobalSearchData]()},
+		{Name: "searchGraph", Subject: "graph.query.searchGraph", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[GlobalSearchData]()},
 		{Name: "semantic", Subject: "graph.query.semantic", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},

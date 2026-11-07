@@ -99,7 +99,7 @@ func TestReadYourWrites(t *testing.T) {
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
 // index's passes on the index's refusal with class, code and detail, localSearch refuses on its
-// group record's revision and global search's text tier on its level's highest, while the same
+// group record's revision and the text tier of globalSearch and searchGraph on its level's highest, while the same
 // request without the field, or at the revision reached, succeeds, so it is the field that was refused. The index and the record have reached the only write
 // and nothing else writes, so the detail is that write's revision.
 func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
@@ -127,6 +127,9 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
 		// The text tier's mark is the highest entity_revision at level 0: drone1's group's, the write's.
 		{"globalSearch text", "globalSearch", `"query":"alpha drone"`},
+		{"searchGraph entity", "searchGraph", `"query":"held-1"`},
+		{"searchGraph path", "searchGraph", `"query":"what is connected to held-1"`},
+		{"searchGraph text", "searchGraph", `"query":"alpha drone"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			subject := verbRow(t, graph.ResponderGraphQuery, tc.verb).Subject
@@ -235,6 +238,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"summary":        {`{}`, `{"prefix":"c360.test.query.system.drone","exclude_predicates":true}`},
 		"localSearch":    {fmt.Sprintf(`{"entity_id":%q,"query":"alpha"}`, drone1)},
 		"globalSearch":   {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
+		"searchGraph":    {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

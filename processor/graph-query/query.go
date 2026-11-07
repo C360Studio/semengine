@@ -53,10 +53,14 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
 		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
 		if alias != "" && temporal != "" && spatial != "" && prefix != "" {
-			handlers["globalSearch"] = c.globalSearch("globalSearch", globalSearchSubjects{
+			subjects := globalSearchSubjects{
 				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
 				prefix: prefix,
-			})
+			}
+			// searchGraph answers as globalSearch, counted and logged under its own name; the pin's
+			// semantic fallback is not carried (design D7).
+			handlers["globalSearch"] = c.globalSearch("globalSearch", subjects)
+			handlers["searchGraph"] = c.globalSearch("searchGraph", subjects)
 		}
 	}
 	if prefix != "" {

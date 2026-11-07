@@ -58,7 +58,7 @@ in `notes/<task>.md`.
 
 ## 4. `searchGraph`
 
-- [ ] 4.1 The row and handler (D7). Premise: `graph/query_verbs.go:115`, `pin:searchgraph.go`. Check:
+- [x] 4.1 The row and handler (D7). Premise: `graph/query_verbs.go:115`, `pin:searchgraph.go`. Check:
   `TestSearchGraphAnswersAsGlobalSearch`, `TestQueryVerbsDeclareEachRespondersVerbs`,
   `TestGraphQueryRepliesDecodeByTheTable`, `TestGraphQueryServesExactlyTheDeclaredVerbs`, `searchGraph` in
   `TestMinRevisionRefusalThroughGraphQuery`. Carries `searchgraph_test`'s non-fallback cases. MIGRATION: SemSource's

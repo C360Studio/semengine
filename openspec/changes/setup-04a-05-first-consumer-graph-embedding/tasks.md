@@ -12,7 +12,7 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
 
 ## 2. Component
 
-- [ ] 2.1 Config and factory (D4), with `Register` and the ledger row. Check: `TestConfigRefusesUnknownKey`,
+- [x] 2.1 Config and factory (D4), with `Register` and the ledger row. Check: `TestConfigRefusesUnknownKey`,
   `TestConfigRefusesHTTPEmbedder`, one test per kept key.
 - [ ] 2.2 Shell, follower plug-in and hop 1 (D1, D5). Check: `TestReadinessWaitsForHopTwo`,
   `TestCoalescedRevisionsComplete`, `TestStorageRefLaneEmbedsIdentityThenBody`, `TestHeldLowRevisionWithProgress`,

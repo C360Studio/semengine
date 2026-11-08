@@ -48,8 +48,8 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record approves the head, with no BLOCKING or HIGH open; the PR body carries
-  `implemented-by:`, `reviewed-by: codex` and `Closes #408`. Hold: Codex code review
+- [x] 3.1 Codex code review of record approves the head, with no BLOCKING or HIGH open; the PR body carries
+  `implemented-by:`, `reviewed-by: codex` and `Closes #408` (record at 6420d15a, PR comment 6716654384).
 
 ## 4. Docs, ADR and ledger
 
@@ -64,5 +64,5 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 
 ## 5. Archive
 
-- [ ] 5.1 Archive as the last content commit (`openspec archive`), specs synced. Gate: `task spec:check` and
+- [x] 5.1 Archive as the last content commit (`openspec archive`), specs synced. Gate: `task spec:check` and
   `task docs:check`.

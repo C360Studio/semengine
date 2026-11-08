@@ -22,7 +22,9 @@ if the owner's answer needs new `vocabulary` surface, it splits out as its own P
 and is where the no-embedder proof lands, because it is the first caller that crosses graph-query to the embedding
 verbs.
 
-Order: #548 merges first (it changes `Watermark.Observe` and the follower A plugs into). A, then B. C may run beside
+Accepted by the owner (PR #550 comment 6716972354); C and D read not-ready from the reply (ADR-109), changing
+pin ADR-066 and ADR-082. Order: #548 (merged, `9e3246f`) first (it changes `Watermark.Observe` and the follower A plugs
+into). A, then B. C may run beside
 A and B in a second lane. D last. Each later PR merges `origin/main` before review.
 
 Outside this split, for the owner: `output/websocket` and `pkg/buffer` (04A D2 change 5) are not in the 2026-11-08

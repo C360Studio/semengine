@@ -18,7 +18,9 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
   and `readiness.go` are not carried.
 - `embedding.Worker.Run` runs under the component's one run context (ADR-113). A lost watch while the component runs
   is a named stuck state in `Health` until restart, as the follower's lost feed is (ledger `graph/embedding`).
-- The failed map never takes back a failure older than the entity's latest terminal outcome.
+- The failed map never takes back a failure older than the entity's latest terminal outcome. Its per-reason counts
+  reach the envelope through `follower.Config.Failed`, which now returns the count and the reasons together;
+  `first_failure_at` is not set (owner, PR #550 comment 6716972354).
 - Config refuses unknown keys. `batch_size` (read by nothing at the pin) is dropped; `embedder_type` accepts only
   `bm25`.
 - `Health` drops the pin's error-count term (ADR-109 D2).
@@ -28,18 +30,20 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
 ## Capabilities
 
 - New `graph-embedding`.
-- `embedding-index`, `entity-state-follower`: unchanged requirements, new adopter.
+- Modified `entity-state-follower`: the envelope carries the plug-in's failure reasons.
+- `embedding-index`: unchanged requirements, new adopter.
 
 ## Impact
 
 - Pin lines: 3,253 production, 5,701 test for the package (this PR about 1,500 + 2,300, hand estimate).
-- No new subject, bucket or exported symbol beyond the pin's `Register`, `Config`, `DefaultConfig`. The two embedding
+- No new subject or bucket. Exported change: `follower.Config.Failed` signature (graph-index adapts, envelope
+  unchanged); otherwise the pin's `Register`, `Config`, `DefaultConfig`. The two embedding
   buckets are already in `graph/kvcatalog`.
 - Consumer migration (`processor/graph-embedding/MIGRATION.md`): SemSource's `batch_size` is refused at boot;
+  `first_failure_at` is gone from the status entry;
   `embedder_type: http` is refused at tier 0; `graph.embedding.query.status` is gone (read the `GRAPH_STATUS` key).
 - Merge order: #548 first.
 - Retires none. Stays: #109, #196, #195 (this package's 12 sites adopt), #110 (PR C), #477 (PR B), #489, #32, #155,
   #482, #11, #484.
-- **For the owner:** the split, and the questions in the handoff (failure breakdown on the status entry, fusion
-  readiness and ADR-082, ontology depth signal,
-  `searchGraph`, websocket). No code before `Approved-by:` is filled.
+- Owner rulings (PR #550 comment 6716972354): four-PR split; probes; G10; fusion reads not-ready from the
+  reply (PRs C, D; changes pin ADR-066 and ADR-082). Remaining: `Approved-by:`.

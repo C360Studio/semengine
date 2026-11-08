@@ -11,15 +11,15 @@ Question: what must change 5 carry, change and drop to port `processor/graph-emb
 the pin snapshot, semsource (symbol level, local checkout read with grep only, HEAD not verified against `e4febc0d`),
 and a zero-hit grep of semteams, semconnect, semboids. Labels: **measured** (command run here), **read** (code read).
 
-## 0. Pin probes: NOT RUN
+## 0. Pin probes
 
-The three runs the contract asks for (lifecycle suite, unit tests 5x shuffled at one CPU and once under `-race`,
-test-text rule list) were attempted for the first two and **denied by the session's permission classifier** (running
-downloaded code). Owed before design review: the caller or owner runs
-`go test -count=1 -race ./processor/graph-embedding/ ./pkg/fusion/...` and
-`go test -count=5 -cpu=1 -shuffle=on` on the same set, on a pin copy. The lifecycle suite was not run by any change-4
-port either (`archive/2026-11-03-...-graph-query/inventory.md:124`: the pin does not build against this tree's
-harness). Every pin-behaviour statement below is **read**, not probed.
+Run by the owner (PR #550 comment 6716972354) on `/tmp/c5pin/src`, go1.26.4, local results
+`/tmp/c5probe/race.txt` and `repeat.txt`: `go test -count=1 -race` and `go test -count=5 -cpu=1 -shuffle=on` over
+`./processor/graph-embedding/ ./pkg/fusion/...`, all five packages ok, rc=0 both. Unit tests only: the eight
+`//go:build integration` files of graph-embedding (`content_store_start`, `derived_state_convergence`, `integration`,
+`lifecycle`, `offloaded_identity`, `scope`, `similar_determinism`, `status_publish`) and fusionnats'
+`client_integration_test.go` did not run. The lifecycle suite was not run, as for every change-4 port
+(`archive/2026-11-03-...-graph-query/inventory.md:124`). design.md cites the pin test behind each pin statement.
 
 Test-text rules, **measured** by grep on the pin copy:
 
@@ -92,7 +92,8 @@ vocabulary vocabulary/cco`. All present except `vocabulary/cco`.
 
 ## 4. Category 3, adjacent claims
 
-- **Open PR #548** (ready, not draft; `claude/revlag-simplify-408`, Closes #408): edits `internal/revlag/watermark.go`
+- **PR #548**, merged 2026-11-08 as `9e3246f` (branch merged `origin/main` at `73a25e1`; was
+  `claude/revlag-simplify-408`, Closes #408): edits `internal/revlag/watermark.go`
   (`Observe` now returns an error and refuses a revision at or below `Observed`), `graph/follower/follower.go`,
   `graph/index_status.go`, `graph/readiness/index_status.go`, `pkg/graphview/view.go`, ADR-083, ADR-109, specs
   `entity-state-follower`, `revision-watermark`. Overlaps every graph-embedding readiness path and the graphview the
@@ -160,7 +161,7 @@ graph-embedding:
 | G6 | fixed timeout | handlers `context.WithTimeout(requestCtx, 30*time.Second)` (`query.go:106`, `:183`), status 5 s (`readiness.go:57`) | required with the verbs (natsclient budget, ADR-112) |
 | G7 | inline subjects | `query.go:24,31,39` | required (verify rule) |
 | G8 | error-count health term | `Healthy: c.running && errorCount == 0 && ...` (`component.go:567`) | required (ADR-109 D2) |
-| G10 | failure breakdown with no tree home | `failed_reasons`, `first_failure_at` (`readiness.go:152-171`); follower carries a count only | required decision (owner): carry via the follower, or drop with #110's ruling; a silent drop is not allowed |
+| G10 | failure breakdown with no tree home | `failed_reasons`, `first_failure_at` (`readiness.go:152-171`); follower carries a count only | required; ruled (owner, PR #550 comment 6716972354): keep per-reason counts through the follower's `Failed`, drop `first_failure_at`, migration note |
 | G9 | tier-1 code | `embedder_type: http`, `model.ResolveEndpointWithConfig` (`:918-953`) | required out (#32, #489) |
 
 pkg/fusion: F1 second spelling `IndexStatus` copy (`contract.go:99`) required (#110 item 2); F2 deferred `Fuse` path
@@ -181,10 +182,11 @@ the package: #9, #10, #134, #141 (its graph/embedding part is done, `comment 202
 Who: SemSource's composition author and its fusion lens author.
 
 1. Must know: `batch_size` is gone (boot refusal names it); `embedder_type` accepts only `bm25` at tier 0; the
-   embedding verbs reply enveloped `results`; if fusion's gate is dropped (owner question; ADR-082 says it gates),
+   embedding verbs reply enveloped `results`; fusion's gate is dropped (owner ruling; changes pin ADR-066 and ADR-082;
+   PRs C, D),
    "not ready" comes back on the answer. SemSource's MCP gateway passes the `graph-embedding` status entry through
    to agents (`semsource:processor/mcp-gateway/tools.go:142`): `failed_reasons` and `first_failure_at` vanish from it
-   unless G10 carries them (silent; found nowhere).
+   `failed_reasons` stays (G10 ruling); `first_failure_at` vanishes, named in `MIGRATION.md`.
 2. Do nothing: boot fails naming `batch_size` (loud). Old reply decoders read empty `similar` (silent); only a
    direct caller of `graph.embedding.query.*` is exposed, and none was found in semsource (grep, 0 hits).
 3. Find out: boot error for config; `MIGRATION.md` for the reply shape (doc level: the finding).

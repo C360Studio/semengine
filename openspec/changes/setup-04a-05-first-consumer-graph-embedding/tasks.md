@@ -7,8 +7,8 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
 
 ## 1. Design
 
-- [ ] 1.1 Inventory review passes; pin probes (`inventory.md` § 0) are run and recorded; pre-owner design review
-  passes; the owner accepts the split and fills `Approved-by:`.
+- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:` (rulings already given: PR #550 comment
+  6716972354). Gate: `task spec:check`, `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Component
@@ -19,11 +19,13 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
   `TestCoalescedRevisionsComplete`, `TestStorageRefLaneEmbedsIdentityThenBody`, lifecycle suite, `-race`.
 - [ ] 2.3 Worker under the run context and its lost watch (D2). Check: `TestHealthNamesLostWorkerWatch`,
   `TestStopJoinsWorker`.
-- [ ] 2.4 Failed map and repair lane (D3). Check: `TestFailedMapHistoryMatchesModel`, `TestRepairConvergesStranded`.
+- [ ] 2.4 Failed map, follower `Failed` with reasons, repair lane (D3). Check: `TestFailedMapHistoryMatchesModel`,
+  `TestEnvelopeCarriesFailedReasons`, `TestGraphIndexEnvelopeUnchanged`, `TestRepairConvergesStranded`.
 - [ ] 2.5 Health and tier 0 (D6, D7). Check: `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`,
   `TestGraphEmbeddingImportsNoProviderModule`.
 
 ## 3. Close-out
 
-- [ ] 3.1 `processor/graph-embedding/MIGRATION.md` (batch_size, http, status verb); `README.md`; ledger row;
+- [ ] 3.1 `processor/graph-embedding/MIGRATION.md` (batch_size, http, status verb, first_failure_at); `README.md`;
+  ledger row;
   ADR-083 port note for graph-embedding (advances #482); spec sync and archive as the last content commit.

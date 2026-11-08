@@ -10,12 +10,19 @@ reviews the code. Each step ends when `task verify` passes on a clean tree at it
 
 ## 2. Code
 
-- [ ] 2.1 Failing tests: a refused tag at the top level, in a nested object and in an array's item struct panics
-  naming the field and the tag (`component`); `StoragePressureThresholds`' schema has its three headroom fields typed
-  `float` (`natsclient/storagereport`). Gate: each fails on the base commit.
-- [ ] 2.2 The three skip sites panic; the doc comment says so; the three `storagereport` tags use `type:float`.
-  `task mutate:check` detects putting back the skip at each site. Gate: the tests in 2.1 pass; `task verify` passes on
-  a clean tree.
+- [x] 2.1 `TestGenerateConfigSchemaPanicsOnRefusedTag` in `component/schema_tags_refusal_test.go` and
+  `TestStoragePressureThresholdsSchemaTypesHeadroomFloat` in `natsclient/storagereport/storage_pressure_schema_test.go`
+  (`2fae3e0`). On the base commit `GenerateConfigSchema` returns without panicking at the top level, in a nested object
+  and in an array's item struct, and the schema of `StoragePressureThresholds` has no `warning_headroom`,
+  `high_headroom` or `critical_headroom`. Gate: each fails on the base commit.
+- [x] 2.2 The three skip sites panic through `mustParseSchemaTag`, naming the struct type, the field, the tag and the
+  parse error; the doc comments say so; the three `storagereport` tags use `type:float`; the nested-schema test's
+  `type:nonsense` field, which relied on the skip, is removed (`964e6b7`). `task mutate:check` detects putting back the
+  skip in `GenerateConfigSchema` (subtest `top_level`) and in `generateNestedSchema` (subtests `nested_object` and
+  `array_item_struct`). Putting it back in `GenerateCacheFieldSchema` survives: that function reads only
+  `cache.Config`, whose tags are all accepted, so no test input reaches the refusal without a back door; a refused tag
+  added to `cache.Config` would still fail `TestGenerateConfigSchemaExpandsNestedStructsAndArrays`, which expects
+  every cache field. Gate: the tests in 2.1 pass; `task verify` passed on a clean tree at `964e6b7`.
 
 ## 3. Code review
 

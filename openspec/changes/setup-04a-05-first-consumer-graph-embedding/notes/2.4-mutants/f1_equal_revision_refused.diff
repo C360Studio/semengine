@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -69,7 +69,7 @@
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+ 	held, ok := m.entries[key]
+-	if ok && (held.stranded || o.revision < held.revision) {
++	if ok && (held.stranded || o.revision <= held.revision) {
+ 		return
+ 	}
+ 	m.store(key, o)

@@ -68,21 +68,20 @@ type IndexStatusResponse struct {
 	TargetRevision uint64 `json:"target_revision,omitempty"`
 	// Lag is TargetRevision - IndexedRevision; 0 means caught up.
 	Lag uint64 `json:"lag,omitempty"`
-	// FailedCount / FailedReasons / FirstFailureAt are the bounded failure detail a
-	// producer that tracks per-entity failures carries on a DEGRADED envelope so an
-	// operator can tell a whole-dependency outage from a few persistently-failing
-	// entities WITHOUT any unbounded per-entity list on the watched key (SemStreams #613).
+	// FailedCount / FailedReasons are the bounded failure detail a producer that
+	// tracks per-entity failures carries on a DEGRADED envelope so an operator can
+	// tell a whole-dependency outage from a few persistently-failing entities
+	// WITHOUT any unbounded per-entity list on the watched key (SemStreams #613).
 	//
-	// All three are additive and omitempty: a producer with no failures — including
-	// graph-index, which enforces the same rule caller-side via its watermark hole —
-	// emits none, so the wire is byte-unchanged. FailedReasons is bounded to a fixed
-	// reason enum (a handful of keys), keeping the watched key compact on the hot KV
-	// path. FirstFailureAt is RFC3339. FailedCount is echoed from the projection input
-	// (in graph-index's revision-lag projection it also drives State=degraded); the
-	// other two are set by the producer after the projection.
-	FailedCount    uint64            `json:"failed_count,omitempty"`
-	FailedReasons  map[string]uint64 `json:"failed_reasons,omitempty"`
-	FirstFailureAt string            `json:"first_failure_at,omitempty"`
+	// Both are additive and omitempty: a producer with no failures emits neither,
+	// and graph-index, which counts failures without reasons, emits FailedCount
+	// only. FailedReasons is bounded to a fixed reason enum (a handful of keys),
+	// keeping the watched key compact on the hot KV path. FailedCount is echoed from
+	// the projection input (it also drives State=degraded); FailedReasons is set by
+	// the producer after the projection. There is no first-failure time (owner, PR
+	// #550 comment 6716972354).
+	FailedCount   uint64            `json:"failed_count,omitempty"`
+	FailedReasons map[string]uint64 `json:"failed_reasons,omitempty"`
 	// StalenessMs is the AGE OF THE VIEW in milliseconds (ADR-083): now minus the
 	// KV commit time of the oldest delivered ENTITY_STATES revision the index has
 	// not yet applied, or of the newest delivered one when none is in flight. It is

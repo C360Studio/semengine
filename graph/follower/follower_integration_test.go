@@ -106,7 +106,7 @@ func put(t *testing.T, kv jetstream.KeyValue, key string, value []byte) uint64 {
 	return rev
 }
 
-func open(t *testing.T, client *natsclient.Client, deliver func(context.Context, Entry), failed func() int64) *Follower {
+func open(t *testing.T, client *natsclient.Client, deliver func(context.Context, Entry), failed func() (int64, map[string]uint64)) *Follower {
 	t.Helper()
 	f, err := Open(t.Context(), Config{
 		Client:          client,
@@ -123,7 +123,7 @@ func open(t *testing.T, client *natsclient.Client, deliver func(context.Context,
 	return f
 }
 
-func noFailures() int64 { return 0 }
+func noFailures() (int64, map[string]uint64) { return 0, nil }
 
 // completing is a Deliver that completes each entry at once, as a plug-in whose apply is synchronous.
 func completing(f **Follower) func(context.Context, Entry) {

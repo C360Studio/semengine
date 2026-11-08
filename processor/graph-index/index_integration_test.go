@@ -409,6 +409,14 @@ func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	if err := h.f.QueryReady(t.Context()); err == nil {
 		t.Errorf("QueryReady = nil while a required write is unresolved")
 	}
+	// graph-index counts failures without reasons: its envelope carries failed_count only
+	// (design D3 of setup-04a-05-first-consumer-graph-embedding, TestGraphIndexEnvelopeUnchanged).
+	published := await(t, "the unresolved write published",
+		func(ctx context.Context) (graph.IndexStatusResponse, error) { return publishedEnvelope(ctx, h.client) },
+		func(s graph.IndexStatusResponse) bool { return s.FailedCount == 1 })
+	if published.FailedReasons != nil {
+		t.Errorf("published envelope %+v carries failed_reasons; want none", published)
+	}
 
 	if _, err := kvcatalog.EnsureCatalogBucket(t.Context(), h.client, graph.BucketIncomingIndex); err != nil {
 		t.Fatalf("recreate %s: %v", graph.BucketIncomingIndex, err)

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
@@ -16,12 +17,12 @@ import (
 // Worker (hop 2) embeds. A revision completes in the follower when the Worker reports its
 // terminal outcome (onTerminal), or at once when hop 1 ends it: no text, deleted, a generated
 // record already standing (design D1; ADR-066 § 3). Every hop-1 mutation holds hop1Mu, so the
-// follower's deliveries and the coalescer's batches never interleave on one entity (pin #629).
+// follower's deliveries, the coalescer's batches and the repair lane never interleave on one
+// entity (pin #629).
 //
-// shortcut: no failed map yet. Where the pin marks or clears a stranded entity (a failed
-// delete, a failed pending write, a failed entity read), task 2.4 of
-// setup-04a-05-first-consumer-graph-embedding adds the mark; until then such a failure only
-// logs, and a failed pending write leaves its revision uncompleted.
+// Hop 1's own failures (a failed record delete, pending write or entity read) go to the failed
+// map before the revision completes, so readiness never reads ready over them, and the repair
+// lane retries them; each convergence of an entity clears them (design D3).
 
 // deliver is the follower's Deliver, on its Run goroutine. It counts the entry before any
 // coalescing. A delete goes through at once and drops the key's pending coalesced update;
@@ -71,8 +72,9 @@ func (c *Component) reconcileEntity(ctx context.Context, key string) {
 
 // readFailed handles a failed read of key's current value, under hop1Mu. An absent key
 // converges to no record and drains every revision of it (^uint64(0): the delivered
-// revisions are not in hand). Any other failure drains too, so a transient read failure
-// does not pin the floor (pin component.go:1628-1670).
+// revisions are not in hand); a failed delete of its record is stranded in the failed map.
+// Any other failure is stranded too and drains, so a transient read failure does not pin the
+// floor (pin component.go:1628-1670).
 //
 // Known limit, as at the pin: on the coalesced lane the follower keeps delivering while the
 // coalescer's goroutine reads, so completing at ^uint64(0) also drains a re-create of key the
@@ -83,25 +85,39 @@ func (c *Component) reconcileEntity(ctx context.Context, key string) {
 func (c *Component) readFailed(ctx context.Context, key string, err error) {
 	if natsclient.IsKVNotFoundError(err) {
 		if delErr := c.storage.DeleteEmbedding(ctx, key); delErr != nil {
-			c.logger.Warn("embedding record delete failed for an absent entity",
+			c.logger.Warn("embedding record delete failed for an absent entity; the repair lane retries it",
 				slog.String("entity", key), slog.Any("error", delErr))
+			c.failed.mark(key, strandedRevision, embedding.ReasonDeleteFailed)
+		} else {
+			c.failed.absent(key)
 		}
 		c.complete(key, ^uint64(0))
 		return
 	}
-	c.logger.Warn("entity read failed; revision drained", slog.String("entity", key), slog.Any("error", err))
+	c.logger.Warn("entity read failed; revision drained, the repair lane retries the read",
+		slog.String("entity", key), slog.Any("error", err))
+	c.failed.mark(key, strandedRevision, embedding.ReasonEntityReadFailed)
 	c.complete(key, ^uint64(0))
 }
 
 // applyTombstone removes a deleted entity's record and completes the tombstone's revision,
-// which drains every earlier revision of the key. A failed delete still completes: a
-// revision left pending would pin the floor (ADR-066 § 3, pin #624).
+// which drains every earlier revision of the key. A failed delete is marked at the
+// tombstone's revision and still completes: a revision left pending would pin the floor
+// (ADR-066 § 3, pin #624).
 func (c *Component) applyTombstone(ctx context.Context, key string, revision uint64) {
 	c.hop1Mu.Lock()
 	defer c.hop1Mu.Unlock()
+	c.removeRecord(ctx, key, revision, "embedding record delete failed for a deleted entity; the repair lane retries it")
+}
+
+// removeRecord deletes key's record for revision and completes revision, under hop1Mu. A
+// failed delete is marked at revision for the repair lane, and logged as warning.
+func (c *Component) removeRecord(ctx context.Context, key string, revision uint64, warning string) {
 	if err := c.storage.DeleteEmbedding(ctx, key); err != nil {
-		c.logger.Warn("embedding record delete failed for a deleted entity",
-			slog.String("entity", key), slog.Any("error", err))
+		c.logger.Warn(warning, slog.String("entity", key), slog.Any("error", err))
+		c.failed.mark(key, revision, embedding.ReasonDeleteFailed)
+	} else {
+		c.failed.ended(key, revision)
 	}
 	c.complete(key, revision)
 }
@@ -148,28 +164,29 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 	saved, err := c.storage.SavePendingGuarded(ctx, record)
 	if err != nil {
 		// No durable record was written, so the revision is not done: it stays pending
-		// until a later write of the entity is delivered (pin #613 F2).
-		c.logger.Error("pending embedding write failed; revision left uncompleted",
+		// until the repair lane or a later write of the entity writes one (pin #613 F2).
+		c.logger.Error("pending embedding write failed; revision left uncompleted, the repair lane retries it",
 			slog.String("entity", key), slog.Any("error", err))
+		c.failed.mark(key, revision, embedding.ReasonPendingWriteFailed)
 		return
 	}
 	if !saved {
 		// A generated record at this revision or a newer one already stands: nothing is
 		// left to do for this revision (pin #722 B2).
+		c.failed.ended(key, revision)
 		c.complete(key, revision)
+		return
 	}
-	// Saved: the Worker owns the terminal outcome, reported through onTerminal.
+	// Saved: hop 1 has converged, and the Worker owns the terminal outcome, reported through
+	// onTerminal.
+	c.failed.queued(key, revision)
 }
 
 // removeTextless ends a revision with no text to embed: it removes any record the entity
 // held, so search stops returning an earlier vector, and completes the revision. A failed
-// delete still completes (ADR-066 § 3).
+// delete is marked and still completes (ADR-066 § 3).
 func (c *Component) removeTextless(ctx context.Context, key string, revision uint64) {
-	if err := c.storage.DeleteEmbedding(ctx, key); err != nil {
-		c.logger.Warn("embedding record delete failed for an entity with no text",
-			slog.String("entity", key), slog.Any("error", err))
-	}
-	c.complete(key, revision)
+	c.removeRecord(ctx, key, revision, "embedding record delete failed for an entity with no text; the repair lane retries it")
 }
 
 // storeRegistered reports whether instance is a store the component may read offloaded
@@ -222,15 +239,53 @@ func (c *Component) extractText(state *graph.EntityState) string {
 
 // onTerminal is the Worker's terminal callback (embedding.TerminalCallback): the pending
 // record for sourceRevision reached a terminal outcome, so that revision, with every lower
-// one of the entity, is complete. Every outcome completes (ADR-066 § 3).
-//
-// shortcut: outcome and reason are dropped until task 2.4 of
-// setup-04a-05-first-consumer-graph-embedding routes them to the failed map.
-func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevision uint64, _ embedding.TerminalOutcome, _ string) {
+// one of the entity, is complete. Every outcome completes (ADR-066 § 3); a failure is in the
+// failed map first, so readiness never reads ready over it.
+func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevision uint64, outcome embedding.TerminalOutcome, reason string) {
+	if outcome == embedding.OutcomeFailed {
+		c.failed.failed(entityID, sourceRevision, reason)
+	} else {
+		c.failed.succeeded(entityID, sourceRevision)
+	}
 	c.complete(entityID, sourceRevision)
 }
 
 // complete reports revision of key complete to the follower.
 func (c *Component) complete(key string, revision uint64) {
 	c.follower.Load().Complete(key, revision)
+}
+
+// repairInterval is how often the repair lane retries hop 1's failures (pin component.go:1248,
+// as graph-index's indexRepairInterval).
+const repairInterval = 30 * time.Second
+
+// repairLoop is the repair lane (design D3; pin component.go:1266-1278): every repairInterval
+// it retries hop 1's failures, on a goroutine of its own so its reads and writes never delay
+// the follower's heartbeat, until ctx, the run context, ends. Retry is flat and unbounded: the
+// lane re-drives only failures of the component's own reads and writes, never the Worker's, so
+// no entity fails there for good, and while one is failed readiness reads degraded.
+func (c *Component) repairLoop(ctx context.Context) {
+	ticker := time.NewTicker(repairInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			c.repair(ctx)
+		}
+	}
+}
+
+// repair is one pass of the repair lane: each entity whose failure is hop 1's own converges on
+// the ENTITY_STATES value read now, through the same reconcileEntity as a delivery; a failure
+// on the way marks it again for the next pass. The targets are read before hop1Mu is taken
+// (lock order hop1Mu, then the map's).
+func (c *Component) repair(ctx context.Context) {
+	for _, key := range c.failed.repairTargets() {
+		if ctx.Err() != nil {
+			return
+		}
+		c.reconcileEntity(ctx, key)
+	}
 }

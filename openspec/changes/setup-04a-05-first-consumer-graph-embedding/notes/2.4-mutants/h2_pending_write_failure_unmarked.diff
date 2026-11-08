@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -168,7 +168,6 @@
+ 		// until the repair lane or a later write of the entity writes one (pin #613 F2).
+ 		c.logger.Error("pending embedding write failed; revision left uncompleted, the repair lane retries it",
+ 			slog.String("entity", key), slog.Any("error", err))
+-		c.failed.mark(key, revision, embedding.ReasonPendingWriteFailed)
+ 		return
+ 	}
+ 	if !saved {

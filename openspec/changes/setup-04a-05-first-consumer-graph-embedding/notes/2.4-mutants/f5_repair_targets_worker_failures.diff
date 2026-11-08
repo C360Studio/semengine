@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -157,7 +157,7 @@
+ 	defer m.mu.Unlock()
+ 	var keys []string
+ 	for key, o := range m.entries {
+-		if o.hopOne() {
++		if o.reason != "" {
+ 			keys = append(keys, key)
+ 		}
+ 	}

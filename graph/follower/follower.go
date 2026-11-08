@@ -67,8 +67,11 @@ type Config struct {
 	// Deliver takes one entry, in delivery order, on Run's goroutine. It is called after the
 	// revision is in the watermark; the plug-in calls Complete once it is applied.
 	Deliver func(ctx context.Context, e Entry)
-	// Failed returns the plug-in's count of unresolved required writes.
-	Failed func() int64
+	// Failed returns the plug-in's count of unresolved required writes and, when it tracks them,
+	// the count per bounded reason; nil reasons when it does not. The follower calls it once per
+	// envelope, so count and reasons come from one moment, and owns the map it returns: the
+	// plug-in returns a fresh one and keeps no reference to it.
+	Failed func() (count int64, reasons map[string]uint64)
 }
 
 // degradedStuckAfter is how long the follower may go without a Complete call while behind before
@@ -86,7 +89,7 @@ type Follower struct {
 	key       string
 	logger    *slog.Logger
 	deliver   func(context.Context, Entry)
-	failed    func() int64
+	failed    func() (int64, map[string]uint64)
 	reader    kvcatalog.CatalogReader // the watch
 	status    kvcatalog.CatalogReader // target and generation reads, a handle of its own
 	publisher *readiness.Publisher
@@ -359,7 +362,7 @@ func (f *Follower) Stuck() []string {
 	if r := f.reset.Load(); r != nil {
 		stuck = append(stuck, fmt.Sprintf("graph state reset required: %s", *r))
 	}
-	if n := f.failed(); n > 0 {
+	if n, _ := f.failed(); n > 0 {
 		stuck = append(stuck, fmt.Sprintf("%d index writes unresolved", n))
 	}
 	if f.feedLost.Load() {
@@ -382,7 +385,7 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 	if f.feedLost.Load() {
 		return notReady("the ENTITY_STATES feed is lost")
 	}
-	if f.failed() > 0 {
+	if n, _ := f.failed(); n > 0 {
 		return notReady("unresolved index write failures")
 	}
 	if f.bootstrapped.Load() {
@@ -437,7 +440,8 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 // envelope is compute's projection once the target is read: ComputeIndexStatus over the floor
 // and the target, then the overrides only this producer can see, then the bootstrap latch.
 func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
-	failed := f.failed()
+	// One Failed call, so the count and its reasons are from one moment (design D3).
+	failed, reasons := f.failed()
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
 		Indexed:           indexed,
 		Target:            target,
@@ -445,6 +449,9 @@ func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) 
 		OldestUnappliedAt: indexedAt,
 		FailedCount:       uint64(max(failed, 0)),
 	})
+	if failed > 0 {
+		status.FailedReasons = reasons
+	}
 	// An authoritatively empty graph is ready once the snapshot is delivered, though ready needs a
 	// target above zero (pin gh#474).
 	if !status.Ready && target == 0 && f.snapshotDone.Load() {

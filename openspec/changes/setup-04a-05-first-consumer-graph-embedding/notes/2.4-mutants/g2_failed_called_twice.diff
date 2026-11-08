@@ -1,0 +1,12 @@
+--- a/graph/follower/follower.go
++++ b/graph/follower/follower.go
+@@ -441,7 +441,8 @@
+ // and the target, then the overrides only this producer can see, then the bootstrap latch.
+ func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
+ 	// One Failed call, so the count and its reasons are from one moment (design D3).
+-	failed, reasons := f.failed()
++	failed, _ := f.failed()
++	_, reasons := f.failed()
+ 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
+ 		Indexed:           indexed,
+ 		Target:            target,

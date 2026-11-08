@@ -67,12 +67,17 @@ type Component struct {
 	// rebinds the watch, as for the follower's lost feed (design D2).
 	workerLost atomic.Bool
 
+	// failed is the failed map (failed.go, design D3): seeded at Start, changed by the Worker's
+	// terminal outcomes and hop 1, read by the follower through Failed and by the repair lane.
+	failed failedMap
+
 	// The handles start records for cleanup, which clears them once it has released them
-	// all. runCancel ends the one run context (ADR-113) the follower's Run, the Worker's Run
-	// and the coalescer run under; feeds closes once the follower's Run has returned, worked
-	// once the Worker's has.
+	// all. runCancel ends the one run context (ADR-113) the follower's Run, the repair lane,
+	// the Worker's Run and the coalescer run under; feeds closes once the follower's Run has
+	// returned, repairs once the repair lane has, worked once the Worker's Run has.
 	runCancel context.CancelFunc
 	feeds     chan struct{}
+	repairs   chan struct{}
 	worked    chan struct{}
 }
 
@@ -209,9 +214,10 @@ func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 // second Start are refused, the second with errs.ErrAlreadyStarted, and a Start that fails is
 // rolled back through cleanup. A component with no NATS client is refused first.
 //
-// ctx bounds Start only: the wait for ENTITY_STATES and opening the buckets run under it.
-// The follower's watch, the Worker (hop 2) and the coalescer run under a run context start
-// creates and cleanup ends, so ending ctx after Start returned stops nothing (ADR-113).
+// ctx bounds Start only: the wait for ENTITY_STATES, opening the buckets and seeding the failed
+// map run under it. The follower's watch, the repair lane, the Worker (hop 2) and the coalescer
+// run under a run context start creates and cleanup ends, so ending ctx after Start returned
+// stops nothing (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")
@@ -230,7 +236,7 @@ func (c *Component) start(ctx context.Context) error {
 		StartupAttempts: c.config.StartupAttempts,
 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
 		Deliver:         c.deliver,
-		Failed:          c.failedTotal,
+		Failed:          c.failed.counts,
 	})
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "open the ENTITY_STATES follower")
@@ -238,6 +244,14 @@ func (c *Component) start(ctx context.Context) error {
 	if err := c.openBuckets(ctx); err != nil {
 		return err
 	}
+	// The failed records EMBEDDING_INDEX holds seed the failed map before the follower publishes,
+	// so the first envelope counts them (pin component.go:1063-1099). A seed that cannot be read
+	// fails Start: a map left short would let readiness read ready over failed records.
+	failedRecords, err := c.storage.ScanFailed(ctx)
+	if err != nil {
+		return errs.Wrap(err, "Component", "Start", "seed the failed map from "+graph.BucketEmbeddingIndex)
+	}
+	c.failed.seed(failedRecords)
 	// A Start context that ended during setup fails Start here, before anything is held
 	// (ADR-113).
 	if err := ctx.Err(); err != nil {
@@ -264,6 +278,12 @@ func (c *Component) start(ctx context.Context) error {
 		if err := f.Run(runCtx); err != nil {
 			c.logger.Warn("ENTITY_STATES watch did not stop cleanly", slog.Any("error", err))
 		}
+	}()
+	repairs := make(chan struct{})
+	c.repairs = repairs
+	go func() {
+		defer close(repairs)
+		c.repairLoop(runCtx)
 	}()
 
 	// Hop 2: the Worker embeds each pending record and reports its terminal outcome to
@@ -318,12 +338,6 @@ func (c *Component) openBuckets(ctx context.Context) error {
 	return nil
 }
 
-// failedTotal is the follower's Failed.
-//
-// shortcut: always 0 until task 2.4 of setup-04a-05-first-consumer-graph-embedding adds the
-// failed map; until then a failure hop 1 meets is logged and not counted.
-func (c *Component) failedTotal() int64 { return 0 }
-
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does
 // nothing, and a Stop whose context ends first returns that context's error and keeps what is
 // left for the next Stop.
@@ -331,14 +345,14 @@ func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ct
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
 // partial start: it ends the run context, joins the follower's Run, so nothing more is
-// delivered, and the Worker's Run, so no terminal outcome follows, then shuts the coalescer
-// down, which waits for a batch in progress. A ctx that ends first returns its error with the
+// delivered, the repair lane, so no repair pass is in flight, and the Worker's Run, so no
+// terminal outcome follows, then shuts the coalescer down, which waits for a batch in progress. A ctx that ends first returns its error with the
 // handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
 	if c.runCancel != nil {
 		c.runCancel()
 	}
-	for _, done := range []chan struct{}{c.feeds, c.worked} {
+	for _, done := range []chan struct{}{c.feeds, c.repairs, c.worked} {
 		if done == nil {
 			continue
 		}
@@ -356,6 +370,6 @@ func (c *Component) cleanup(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.runCancel, c.feeds, c.worked, c.coalescer = nil, nil, nil, nil
+	c.runCancel, c.feeds, c.repairs, c.worked, c.coalescer = nil, nil, nil, nil, nil
 	return nil
 }

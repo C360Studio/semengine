@@ -2,9 +2,11 @@ package follower
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -31,7 +33,7 @@ func TestOpenRefusesMissingInputs(t *testing.T) {
 			Client:  &natsclient.Client{},
 			Key:     "graph-index",
 			Deliver: func(context.Context, Entry) {},
-			Failed:  func() int64 { return 0 },
+			Failed:  func() (int64, map[string]uint64) { return 0, nil },
 		}
 	}
 	cases := []struct {
@@ -155,7 +157,7 @@ func TestFollowerDeclaresLostFeedOnOutOfOrderDelivery(t *testing.T) {
 				cancel() // both writes are delivered: follow stops the watch and returns
 			}
 		},
-		failed:    func() int64 { return 0 },
+		failed:    func() (int64, map[string]uint64) { return 0, nil },
 		reader:    watchOnlyReader{watcher: &closingWatcher{updates: updates}},
 		watermark: revlag.New(),
 	}
@@ -184,7 +186,7 @@ func TestFollowerDeclaresLostFeedOnOutOfOrderDelivery(t *testing.T) {
 // failed count and the progress record. The tests below observe revisions straight into the
 // watermark, as observe does for a live write.
 func progressFollower(key string) *Follower {
-	return &Follower{key: key, logger: slog.New(slog.DiscardHandler), failed: func() int64 { return 0 },
+	return &Follower{key: key, logger: slog.New(slog.DiscardHandler), failed: func() (int64, map[string]uint64) { return 0, nil },
 		watermark: revlag.New()}
 }
 
@@ -320,4 +322,103 @@ func TestFirstWriteAfterIdleEmptyGraph(t *testing.T) {
 func read(f *Follower, target uint64) graph.IndexStatusResponse {
 	indexed, indexedAt := f.watermark.IndexedAt()
 	return f.envelope(indexed, indexedAt, target)
+}
+
+// TestEnvelopeCarriesFailedReasons: the envelope carries the plug-in's per-reason counts from the
+// same Failed call as failed_count (entity-state-follower spec, "Failures with reasons"; design
+// D3). The plug-in's failures change on every call while revisions complete on other goroutines,
+// so an envelope built from two calls would pair a count with reasons from another moment; each
+// envelope is read once Failed has returned to it, on this goroutine. Run under -race: the
+// envelope's map is marshalled here while the plug-in keeps changing its own state.
+func TestEnvelopeCarriesFailedReasons(t *testing.T) {
+	var mu sync.Mutex
+	calls := 0
+	f := progressFollower("graph-embedding")
+	f.failed = func() (int64, map[string]uint64) {
+		mu.Lock()
+		defer mu.Unlock()
+		calls++
+		n := uint64(calls)
+		// A fresh map per call, as the plug-in contract requires: count 3n, of which 2n timeouts.
+		return int64(3 * n), map[string]uint64{"timeout": 2 * n, "delete_failed": n}
+	}
+	const target = 100
+	observeAll(t, f, target)
+
+	var completing sync.WaitGroup
+	for g := range 4 {
+		completing.Go(func() {
+			for rev := uint64(g + 1); rev <= target; rev += 4 {
+				f.Complete(fmt.Sprintf("k%d", rev), rev)
+			}
+		})
+	}
+	for range 50 {
+		mu.Lock()
+		before := calls
+		mu.Unlock()
+		status := read(f, target)
+		mu.Lock()
+		after := calls
+		mu.Unlock()
+		if after != before+1 {
+			t.Fatalf("one envelope called Failed %d times; want once", after-before)
+		}
+		n := uint64(after)
+		want := map[string]uint64{"timeout": 2 * n, "delete_failed": n}
+		if status.FailedCount != 3*n || !maps.Equal(status.FailedReasons, want) {
+			t.Fatalf("envelope failed_count %d, failed_reasons %v; want %d and %v from one call",
+				status.FailedCount, status.FailedReasons, 3*n, want)
+		}
+		if status.Ready || status.State != graph.IndexStateDegraded {
+			t.Fatalf("envelope with failures: ready %v, state %s; want not ready, degraded", status.Ready, status.State)
+		}
+		data, err := json.Marshal(status)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), `"failed_reasons":{"delete_failed":`) {
+			t.Fatalf("published envelope %s carries no failed_reasons", data)
+		}
+	}
+	completing.Wait()
+}
+
+// TestGraphIndexEnvelopeUnchanged: a plug-in that returns nil reasons, as graph-index does, gets
+// the envelope it had before reasons existed: failed_count only (spec, "A plug-in with no
+// reasons"). Reasons beside a zero count are not published, and neither key is written for no
+// failures, whether the plug-in returns nil or an empty map. first_failure_at is never written.
+func TestGraphIndexEnvelopeUnchanged(t *testing.T) {
+	cases := []struct {
+		name    string
+		count   int64
+		reasons map[string]uint64
+		want    string // the failure keys of the marshalled envelope
+	}{
+		{"graph-index's failures", 2, nil, `"failed_count":2`},
+		{"failures with an empty map", 2, map[string]uint64{}, `"failed_count":2`},
+		{"no failures, nil reasons", 0, nil, ``},
+		{"no failures, empty map", 0, map[string]uint64{}, ``},
+		{"no failures, stray reasons", 0, map[string]uint64{"timeout": 1}, ``},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := progressFollower(readiness.KeyGraphIndex)
+			f.failed = func() (int64, map[string]uint64) { return tc.count, tc.reasons }
+			data, err := json.Marshal(read(f, 0))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, key := range []string{"failed_count", "failed_reasons", "first_failure_at"} {
+				if i := strings.Index(string(data), `"`+key+`":`); i >= 0 {
+					end := strings.IndexAny(string(data[i:]), ",}")
+					got = append(got, string(data[i:i+end]))
+				}
+			}
+			if strings.Join(got, ",") != tc.want {
+				t.Errorf("envelope %s: failure keys %q; want %q", data, strings.Join(got, ","), tc.want)
+			}
+		})
+	}
 }

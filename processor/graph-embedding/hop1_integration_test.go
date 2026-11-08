@@ -466,6 +466,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.feeds != nil {
 		held = append(held, "feeds")
 	}
+	if o.c.repairs != nil {
+		held = append(held, "repair lane")
+	}
 	if o.c.worked != nil {
 		held = append(held, "worker")
 	}
@@ -501,7 +504,7 @@ func TestGraphEmbeddingLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "coalescer", "feeds", "worker"}
+		want := []string{"run cancel", "coalescer", "feeds", "repair lane", "worker"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}

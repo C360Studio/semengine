@@ -1,0 +1,13 @@
+--- a/graph/follower/follower.go
++++ b/graph/follower/follower.go
+@@ -449,9 +449,7 @@
+ 		OldestUnappliedAt: indexedAt,
+ 		FailedCount:       uint64(max(failed, 0)),
+ 	})
+-	if failed > 0 {
+-		status.FailedReasons = reasons
+-	}
++	status.FailedReasons = reasons
+ 	// An authoritatively empty graph is ready once the snapshot is delivered, though ready needs a
+ 	// target above zero (pin gh#474).
+ 	if !status.Ready && target == 0 && f.snapshotDone.Load() {

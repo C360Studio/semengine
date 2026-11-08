@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -283,7 +283,7 @@
+ // on the way marks it again for the next pass. The targets are read before hop1Mu is taken
+ // (lock order hop1Mu, then the map's).
+ func (c *Component) repair(ctx context.Context) {
+-	for _, key := range c.failed.repairTargets() {
++	for _, key := range c.failed.repairTargets()[:0] {
+ 		if ctx.Err() != nil {
+ 			return
+ 		}

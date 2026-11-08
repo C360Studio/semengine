@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -72,6 +72,10 @@
+ 	if ok && (held.stranded || o.revision < held.revision) {
+ 		return
+ 	}
++	if o.reason == "" {
++		delete(m.entries, key) // forgets the success, as the pin does
++		return
++	}
+ 	m.store(key, o)
+ }
+ 

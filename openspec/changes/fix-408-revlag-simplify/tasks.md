@@ -11,7 +11,7 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 
 ## 2. Code
 
-- [ ] 2.1 `internal/revlag`, tests first (design D1-D6; premises `internal/revlag/watermark.go:58-71`, `:101-131`,
+- [x] 2.1 `internal/revlag`, tests first (design D1-D6; premises `internal/revlag/watermark.go:58-71`, `:101-131`,
   `:174-206`, `internal/revlag/watermark_test.go:290-325`, `:458-561`, `:563-749`).
   - First commit: the tests, failing on behaviour. `Observe` may gain its `error` result returning nil in that
     commit, so the tests compile. The tests:
@@ -32,7 +32,7 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
     - `task mutate:check` trips N1-N6 at the assertions D6 names;
     - `notes/2.1.md` records the benchmark at 10,000 and 40,000 in flight, and the prop seed and check counts;
     - `task verify` passes on a clean tree.
-- [ ] 2.2 `graph/follower`, test first (design D2; premise `graph/follower/follower.go:206-241`, `:262-264`, `:287-292`).
+- [x] 2.2 `graph/follower`, test first (design D2; premise `graph/follower/follower.go:206-241`, `:262-264`, `:287-292`).
   - The test: `TestFollowerDeclaresLostFeedOnOutOfOrderDelivery` is an in-package unit test. It builds a `Follower`
     with a fake `kvcatalog.CatalogReader` (only `WatchAll` implemented, returning a watcher whose channel delivers
     revision 5 then revision 3) and drives `follow`. After the second delivery, `Stuck` names the lost feed and

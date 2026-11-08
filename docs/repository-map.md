@@ -10,14 +10,16 @@ not a task tracker and not a description of the tree.
   (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **Four of the seven Slice 04A implementation changes are unfinished.** SETUP 02, SETUP 03B, the Slice 04A design,
-  `flake-defense` and the first three implementation changes, `setup-04a-01-floor`, `setup-04a-02-ingest-kernel`
-  (PR #93) and `setup-04a-03-boot` (all seven of its packages, the last being `service` in seven lifecycle-owner pull
-  requests ending with PR #393), are archived; the capability specs under `openspec/specs/` are the current truth, and
-  `docs/contract.md` states the tier-0 contract 03B approved. Of the seven implementation changes in the Slice 04A
-  design (`setup-04a-01-floor` to `setup-04a-07-substrate-seam`), change 4 (`setup-04a-04-graph-roots`) has started
-  with one of its eight packages, `internal/revlag` (`setup-04a-04-graph-roots-revlag`); `vocabulary/export` was
-  ported ahead of change 7 (#234), and `setup-04a-05` to `setup-04a-07` are otherwise not started.
+- **Three of the seven Slice 04A implementation changes are unfinished.** SETUP 02, SETUP 03B, the Slice 04A design,
+  `flake-defense` and the first four implementation changes are archived: `setup-04a-01-floor`,
+  `setup-04a-02-ingest-kernel` (PR #93), `setup-04a-03-boot` (seven packages, ending with PR #393) and
+  `setup-04a-04-graph-roots`. Change 4 landed its nine packages one pull request at a time, each with its own OpenSpec
+  change (archived as `setup-04a-04-graph-roots-*`, the last PR #544): `internal/revlag`, the shared component
+  lifecycle `component.Lifecycle`, `processor/graph-index` with `graph/follower` (the shared reader of entity
+  changes), `storage/objectstore`, `graph/embedding`, `graph/query`, `pkg/graphview`, `graph/clustering` (no LLM
+  summaries yet; they wait for tier 2) and `processor/graph-query`. The capability specs under `openspec/specs/` are
+  the current truth, and `docs/contract.md` states the tier-0 contract 03B approved. `vocabulary/export` was ported
+  ahead of change 7 (#234); `setup-04a-05` to `setup-04a-07` are otherwise not started.
 
 ## Present
 

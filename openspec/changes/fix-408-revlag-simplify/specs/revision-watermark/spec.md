@@ -34,18 +34,37 @@ unobserved. The floor SHALL never decrease from one call to the next.
 - **WHEN** revision 10 is observed and completed, and then revision 50 is observed
 - **THEN** the floor rises from 10 to 49, and the time `IndexedAt` returns becomes revision 50's
 
+### Requirement: Retained state tracks in-flight work
+
+The `Watermark` SHALL keep per-revision state only for revisions in flight: once every observed revision has
+completed it SHALL hold none, however many revisions it has seen, and a revision stuck in flight SHALL be the only
+per-revision state it keeps while others complete above it.
+
+#### Scenario: Completions do not accumulate
+
+- **WHEN** 1,000,000 revisions are observed and completed one after another
+- **THEN** the live heap grows by less than 1 MiB, and `IndexedAt` returns floor 1,000,000 and its commit time
+- **AND** the test that verifies this is `TestWatermark_RetentionTracksInFlight`, which reads no field of the watermark
+
+#### Scenario: One stuck revision
+
+- **WHEN** revision 1 stays in flight while revisions 2 to 1,000,001 are observed and completed
+- **THEN** the live heap grows by less than 1 MiB, the floor is 0 and the time is revision 1's
+- **AND** the test that verifies this is `TestWatermark_RetentionTracksInFlight`
+
 ### Requirement: The Watermark is safe for concurrent use
 
 Every method of `Watermark` SHALL be safe to call from many goroutines at once. A read SHALL reflect every `Observe`
 and `Complete` that returned before it began, and the floor a reader sees SHALL never be lower than one it saw before.
 After concurrent `Complete` calls drain every observed revision, `IndexedAt` SHALL return `Observed` and its commit
-time.
+time, whatever order the completions ran in.
 
 #### Scenario: Reads alongside observation and completion
 
 - **WHEN** one goroutine observes revisions 1 to 1,000 and workers complete each, a reader reads at checkpoint A once
-  all have returned, then revisions 1,001 to 2,000 are observed and all but 1,500 and 2,000 complete, the reader reads
-  at checkpoint B, then 1,500 and 2,000 complete, and a reader also calls `IndexedAt` and `Observed` throughout
+  all have returned, then revisions 1,001 to 2,000 are observed, 1,500 and 2,000 each under a key no other revision
+  uses, and all but 1,500 and 2,000 complete, the reader reads at checkpoint B, then 1,500 and 2,000 complete, and a
+  reader also calls `IndexedAt` and `Observed` throughout
 - **THEN** checkpoint A reads floor 1,000 with revision 1,000's commit time, checkpoint B reads floor 1,499 with
   revision 1,500's commit time, no floor read is lower than an earlier one, and after all have returned `IndexedAt`
   returns floor 2,000 and revision 2,000's commit time

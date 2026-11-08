@@ -29,9 +29,9 @@ Design track: two capabilities (`revision-watermark`, `entity-state-follower`) a
 - `TestWatermark_ConcurrentReadersAndWriters` reads at explicit checkpoints, with exact expected floors and times.
   It uses no sleeps and no read counts. It is shown able to fail.
 - `TestPropWatermarkHistory` checks against the test's own reference model. `pinref_test.go`, the pin's code, is
-  deleted.
-- ADR-083 gets a SemEngine amendment to decision 3, appended to the record. Staleness stays reported, never gating
-  (ADR-085 D2).
+  deleted. Retention is proved by live-heap growth, not by reading private fields.
+- ADR-083 gets a SemEngine amendment to decision 3, appended to the record; its port note, its SemEngine disposition
+  and ADR-109's kept-row are updated in place. Staleness stays reported, never gating (ADR-085 D2).
 - Doc comments in `graph/readiness`, `graph` and `graph/follower`, the admission-ledger rows and the repository map
   are updated to the new rule.
 
@@ -42,6 +42,7 @@ Design track: two capabilities (`revision-watermark`, `entity-state-follower`) a
   (0 when ready). Nothing in this repository gates on it. Readers outside the repository see the new meaning; this
   is a migration note, not a question.
 - Breaking for `internal/revlag` callers: `Observe` returns an error. There is one caller, in this change.
-- Overlap: draft PR #544 touches `pkg/graphview/view.go` and the ledger, but not the lines this change edits. Merge
-  order is free; whichever lands second merges `origin/main`.
+- Overlap: PR #544 touches `pkg/graphview/view.go` and the ledger, but not the lines this change edits; #482
+  (open, unclaimed) edits another bullet of ADR-083's port note. Merge order is free; whichever lands second merges
+  `origin/main`.
 - Retires #408 (`Closes #408`).

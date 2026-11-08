@@ -13,25 +13,36 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 ## 2. Code
 
 - [ ] 2.1 `internal/revlag`, tests first (design D1-D6; premises `internal/revlag/watermark.go:58-71`, `:101-131`,
-  `:174-206`, `internal/revlag/watermark_test.go:458-525`, `:563-749`). First commit: the tests, failing on behaviour.
-  `Observe` may gain its `error` result returning nil in that commit so the tests compile. The tests are: the
-  time-rule tests (`TestWatermark_TimeIsOldestInFlight`, `TestWatermark_CompletionAboveInFlightKeepsTime`, updated
-  expectations in the existing tests per inventory § 2); `TestWatermark_ObserveRefusesNonAscending`; the checkpointed
-  `TestWatermark_ConcurrentReadersAndWriters` (D4); and `TestPropWatermarkHistory` over the test's own model, with
-  `pinref_test.go` and the `len(w.pending)` reads removed (D5). Second commit: the implementation. Refusal, the time
-  rule, in-flight bookkeeping meeting D3's four claims, covered estimate removed, doc comments rewritten. Gate: each
-  new or changed assertion fails on the base commit (recorded); the #408 commands pass
-  (`go test -race -count=1 -cpu=1 ./internal/revlag`, `go test -count=5 -cpu=1 -shuffle=on ./internal/revlag`);
-  `task mutate:check` detects N1-N6; benchmark at 10,000 and 40,000 in flight and the prop seed and check counts in
-  `notes/2.1.md`; `task verify` passes on a clean tree.
-- [ ] 2.2 `graph/follower`, test first (design D2; premise `graph/follower/follower.go:262-264`, `:287-292`).
-  `TestFollowerDeclaresLostFeedOnOutOfOrderDelivery`, a unit test over a fake `kvcatalog.CatalogReader` delivering
-  revision 5 then 3: `Stuck` names the lost feed, `QueryReady` returns `index_not_ready`. It fails on the base commit.
-  Then `observe` declares the feed lost on a refused `Observe`. Doc comments updated: `follower.go:263`,
-  `graph/readiness/index_status.go:23-26`, `graph/index_status.go:86-88`, `:106-108`, and
-  `pkg/graphview/view.go:356-360` (after merging `origin/main` if #544 has landed). Gate: the test fails on base and
-  passes after; `task mutate:check` detects F1; `go test -tags integration ./graph/follower ./processor/graph-index`
-  passes; `task verify` passes on a clean tree.
+  `:174-206`, `internal/revlag/watermark_test.go:290-325`, `:458-561`, `:563-749`).
+  - First commit: the tests, failing on behaviour. `Observe` may gain its `error` result returning nil in that
+    commit, so the tests compile. The tests:
+    - the time-rule tests: `TestWatermark_TimeIsOldestInFlight`, `TestWatermark_CompletionAboveInFlightKeepsTime`, and
+      updated expectations in the existing tests (inventory § 2);
+    - `TestWatermark_ObserveRefusesNonAscending`;
+    - the checkpointed `TestWatermark_ConcurrentReadersAndWriters`, with keys of their own for 1,500 and 2,000 (D4);
+    - `TestWatermark_RetentionTracksInFlight` with a no-stuck case added. `TestWatermark_MemoryDoesNotGrowWithCompletions`
+      and its `len(w.pending)` reads go (D5);
+    - `TestPropWatermarkHistory` over the test's own model, with `pinref_test.go` deleted (D5).
+  - Second commit: the implementation: the refusal, the time rule, in-flight bookkeeping meeting D3's four claims, the
+    covered estimate removed, and the package's doc comments rewritten.
+  - Gate:
+    - each new or changed assertion fails on the base commit (recorded);
+    - the #408 commands pass: `go test -race -count=1 -cpu=1 ./internal/revlag` and
+      `go test -count=5 -cpu=1 -shuffle=on ./internal/revlag`;
+    - `task mutate:check` trips N1-N6 at the assertions D6 names;
+    - `notes/2.1.md` records the benchmark at 10,000 and 40,000 in flight, and the prop seed and check counts;
+    - `task verify` passes on a clean tree.
+- [ ] 2.2 `graph/follower`, test first (design D2; premise `graph/follower/follower.go:206-241`, `:262-264`, `:287-292`).
+  - The test: `TestFollowerDeclaresLostFeedOnOutOfOrderDelivery` is an in-package unit test. It builds a `Follower`
+    with a fake `kvcatalog.CatalogReader` (only `WatchAll` implemented, returning a watcher whose channel delivers
+    revision 5 then revision 3) and drives `follow`. After the second delivery, `Stuck` names the lost feed and
+    `QueryReady` returns `index_not_ready`. It fails on the base commit.
+  - The fix: `observe` declares the feed lost on a refused `Observe`.
+  - Doc comments: `follower.go:263`, `graph/readiness/index_status.go:23-26` and `:38`,
+    `graph/index_status.go:86-88`, `:94-96` and `:106-108`, and `pkg/graphview/view.go:356-360` (after merging
+    `origin/main` if #544 has landed).
+  - Gate: the test fails on base and passes after; `task mutate:check` trips F1;
+    `go test -tags integration ./graph/follower ./processor/graph-index` passes; `task verify` passes on a clean tree.
 
 ## 3. Code review
 
@@ -40,9 +51,14 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 
 ## 4. Docs, ADR and ledger
 
-- [ ] 4.1 ADR-083 amendment appended at the end of the record (design D7; ADR-109's line citations re-checked);
-  ledger rows `pkg/revlag` and ADR-083 updated (D8); `docs/repository-map.md:98` updated; `revision-watermark` Purpose
-  updated. Gate: `task docs:check`, `task spec:check`.
+- [ ] 4.1 ADR and docs edits (design D7, D8):
+  - ADR-083 amendment appended at the end of the record;
+  - ADR-083 `:7`, ADR-083 `:200` and ADR-109 `:200` updated in place, each keeping its line count;
+  - ADR-109's citations into ADR-083 re-checked; if #482 landed first, merge `origin/main` and recheck D7's lines;
+  - ledger rows `pkg/revlag` and ADR-083 updated;
+  - `docs/repository-map.md:98` and the `revision-watermark` Purpose updated.
+
+  Gate: `task docs:check`, `task spec:check`.
 
 ## 5. Archive
 

@@ -1,8 +1,13 @@
 # Delta: entity-state-follower
 
+## RENAMED Requirements
+
+- FROM: `### Requirement: Every delivered revision is observed before it is delivered`
+- TO: `### Requirement: Every delivered revision reaches the watermark first`
+
 ## MODIFIED Requirements
 
-### Requirement: Every delivered revision is observed before it is delivered
+### Requirement: Every delivered revision reaches the watermark first
 
 The follower SHALL pass each delivered revision, update or delete, to its watermark before it calls `Deliver` with it,
 and its floor SHALL advance only through `Complete`. `Indexed` SHALL return the floor.

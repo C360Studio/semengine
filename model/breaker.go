@@ -70,9 +70,14 @@ func (c *BreakerConfig) applyDefaults() {
 //	HalfOpen --probe fails-------------------------------->   Open
 //	         (cooldown timer restarts on each Open transition)
 //
-// HalfOpen lets exactly one probe through; concurrent IsHealthy calls
-// while a probe is in flight return false, preventing thundering-herd
-// reopening of a sick endpoint.
+// HalfOpen lets exactly one probe through: the first IsHealthy caller
+// past the cooldown takes the probe slot, and every other IsHealthy
+// call returns false until RecordResult reports, preventing
+// thundering-herd reopening of a sick endpoint. A probe that has not
+// reported within one Cooldown of being admitted counts as lost, and
+// the next IsHealthy caller takes the slot, so a dropped request
+// cannot hold the endpoint half-open for ever (#114). EndpointStatus
+// and EndpointStats reserve nothing.
 //
 // Safe for concurrent use across many goroutines targeting the same
 // or different endpoints. Per-endpoint state is locked independently.
@@ -96,10 +101,12 @@ type endpointState struct {
 	lastFailure    time.Time
 	lastTransition time.Time
 
-	// probeInFlight is true while a HalfOpen probe is outstanding.
-	// IsHealthy returns false while set so we don't admit a thundering
-	// herd into the half-open state.
-	probeInFlight bool
+	// probeInFlight is true while a HalfOpen probe is outstanding,
+	// admitted by IsHealthy at probeAdmittedAt. IsHealthy returns false
+	// while it is set and younger than one Cooldown, so we don't admit
+	// a thundering herd into the half-open state.
+	probeInFlight   bool
+	probeAdmittedAt time.Time
 }
 
 // NewRollingWindowBreaker builds a breaker with the given config.
@@ -113,14 +120,41 @@ func NewRollingWindowBreaker(cfg BreakerConfig) *RollingWindowBreaker {
 	}
 }
 
-// IsHealthy implements HealthPolicy.
+// IsHealthy implements HealthPolicy. Past the cooldown it admits one
+// probe: the caller that gets true while the endpoint is half-open
+// holds the probe slot until RecordResult reports or one Cooldown
+// passes.
 func (b *RollingWindowBreaker) IsHealthy(endpoint string) bool {
-	return b.EndpointStatus(endpoint) != StatusOpen
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	st := b.endpoints[endpoint]
+	if st == nil {
+		return true
+	}
+	now := b.cfg.Now()
+	b.halfOpenIfCooled(st, now)
+
+	switch st.status {
+	case StatusClosed:
+		return true
+	case StatusHalfOpen:
+		// A probe older than one Cooldown counts as lost (#114).
+		if st.probeInFlight && now.Sub(st.probeAdmittedAt) < b.cfg.Cooldown {
+			return false
+		}
+		st.probeInFlight = true
+		st.probeAdmittedAt = now
+		return true
+	default:
+		return false
+	}
 }
 
 // EndpointStatus implements HealthPolicy. Drives the cooldown→half-open
-// transition lazily on read so we don't need a background goroutine.
-// Returns StatusClosed for endpoints with no observations yet.
+// transition lazily on read so we don't need a background goroutine;
+// it reserves no probe slot. Returns StatusClosed for endpoints with
+// no observations yet.
 func (b *RollingWindowBreaker) EndpointStatus(endpoint string) EndpointStatus {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -129,24 +163,17 @@ func (b *RollingWindowBreaker) EndpointStatus(endpoint string) EndpointStatus {
 	if st == nil {
 		return StatusClosed
 	}
-
-	// Lazy Open → HalfOpen transition: check whether the cooldown has
-	// elapsed since this endpoint was opened. The first reader past
-	// the cooldown moves it to HalfOpen and reserves the probe slot.
-	if st.status == StatusOpen && b.cfg.Now().Sub(st.openedAt) >= b.cfg.Cooldown {
-		st.status = StatusHalfOpen
-		st.lastTransition = b.cfg.Now()
-		st.probeInFlight = true
-		return StatusHalfOpen
-	}
-
-	// HalfOpen with an in-flight probe: the *first* reader after the
-	// cooldown won the probe slot via the transition above and saw
-	// HalfOpen. Subsequent concurrent readers see HalfOpen too, but
-	// since we can't distinguish probe-holder from non-holder without
-	// extra plumbing we accept best-effort serialization. RecordResult
-	// will close the probe slot when the first response lands.
+	b.halfOpenIfCooled(st, b.cfg.Now())
 	return st.status
+}
+
+// halfOpenIfCooled moves an Open endpoint to HalfOpen once the cooldown
+// since it opened has elapsed. The caller holds b.mu.
+func (b *RollingWindowBreaker) halfOpenIfCooled(st *endpointState, now time.Time) {
+	if st.status == StatusOpen && now.Sub(st.openedAt) >= b.cfg.Cooldown {
+		st.status = StatusHalfOpen
+		st.lastTransition = now
+	}
 }
 
 // EndpointStats implements HealthPolicy.
@@ -237,6 +264,6 @@ func (b *RollingWindowBreaker) RecordResult(endpoint string, result Result) {
 	}
 
 	// Open: a stray RecordResult while open shouldn't change state —
-	// the cooldown drives the transition. Only the EndpointStatus
-	// reader observes the elapsed cooldown.
+	// the cooldown drives the transition. Only IsHealthy and
+	// EndpointStatus observe the elapsed cooldown.
 }

@@ -38,10 +38,11 @@
 //
 // # Error Handling
 //
-// Invalid tags result in graceful degradation:
-//   - Fields with invalid tags are skipped
-//   - Errors are wrapped with context using pkg/errors
-//   - Missing descriptions use field names as fallback
+// ParseSchemaTag returns an error for an invalid tag. The schema generators
+// panic on one, naming the struct type, the field and the tag: every schema is
+// built once from constant struct tags, so a bad tag is a programming error, as
+// a bad pattern is to regexp.MustCompile. Missing descriptions use field names
+// as fallback.
 //
 // See docs/architecture/SCHEMA_TAG_SPEC.md for complete specification.
 package component
@@ -343,7 +344,7 @@ func isValidType(t string) bool {
 //   - Only exported fields with both 'json' and 'schema' tags are included
 //   - json:"-" fields are skipped
 //   - Fields without schema tags are skipped
-//   - Invalid schema tags result in skipped fields (graceful degradation)
+//   - An invalid schema tag panics, naming the struct type, the field and the tag
 //
 // Special Handling:
 //   - Fields with type "ports" automatically include PortFieldSchema metadata
@@ -401,12 +402,7 @@ func GenerateConfigSchema(configType reflect.Type) ConfigSchema {
 			continue // No schema tag - skip field
 		}
 
-		directives, err := ParseSchemaTag(schemaTag)
-		if err != nil {
-			// Log error and skip field - graceful degradation
-			// In production, could use a logger here
-			continue
-		}
+		directives := mustParseSchemaTag(configType, field)
 
 		// Use field name as description fallback if not provided
 		description := directives.Description
@@ -470,6 +466,18 @@ func GenerateConfigSchema(configType reflect.Type) ConfigSchema {
 	return schema
 }
 
+// mustParseSchemaTag parses field's schema tag and panics, naming the struct
+// type, the field, the tag and the parse error, when ParseSchemaTag refuses it
+// (#281): a field dropped from the schema without a word is a silent failure.
+func mustParseSchemaTag(structType reflect.Type, field reflect.StructField) SchemaDirectives {
+	tag := field.Tag.Get("schema")
+	directives, err := ParseSchemaTag(tag)
+	if err != nil {
+		panic(fmt.Sprintf("component: %s field %s: schema tag %q: %v", structType, field.Name, tag, err))
+	}
+	return directives
+}
+
 // generateNestedSchema generates a ConfigSchema from a nested struct type.
 // This supports both `schema:` tags (preferred) and `description:` tags (fallback).
 // Type is inferred from Go field types when using `description:` tags.
@@ -510,47 +518,43 @@ func generateNestedSchema(structType reflect.Type) ConfigSchema {
 		// Try schema: tag first (full directive parsing)
 		schemaTag := field.Tag.Get("schema")
 		if schemaTag != "" {
-			directives, err := ParseSchemaTag(schemaTag)
-			if err == nil {
-				propSchema = PropertySchema{
-					Type:        directives.Type,
-					Description: directives.Description,
-					Category:    directives.Category,
-					Default:     convertDefault(directives.Default, directives.Type),
-					Minimum:     directives.Min,
-					Maximum:     directives.Max,
-					Enum:        directives.Enum,
-				}
+			directives := mustParseSchemaTag(structType, field)
+			propSchema = PropertySchema{
+				Type:        directives.Type,
+				Description: directives.Description,
+				Category:    directives.Category,
+				Default:     convertDefault(directives.Default, directives.Type),
+				Minimum:     directives.Min,
+				Maximum:     directives.Max,
+				Enum:        directives.Enum,
+			}
 
-				// Recursively handle nested objects
-				if directives.Type == "object" {
-					fieldType := field.Type
-					if fieldType.Kind() == reflect.Ptr {
-						fieldType = fieldType.Elem()
-					}
-					if fieldType.Kind() == reflect.Struct {
-						nestedSchema := generateNestedSchema(fieldType)
-						propSchema.Properties = nestedSchema.Properties
-						propSchema.Required = nestedSchema.Required
-					}
+			// Recursively handle nested objects
+			if directives.Type == "object" {
+				fieldType := field.Type
+				if fieldType.Kind() == reflect.Ptr {
+					fieldType = fieldType.Elem()
 				}
+				if fieldType.Kind() == reflect.Struct {
+					nestedSchema := generateNestedSchema(fieldType)
+					propSchema.Properties = nestedSchema.Properties
+					propSchema.Required = nestedSchema.Required
+				}
+			}
 
-				// Generate items schema for arrays
-				if directives.Type == "array" {
-					fieldType := field.Type
-					if fieldType.Kind() == reflect.Ptr {
-						fieldType = fieldType.Elem()
-					}
-					if fieldType.Kind() == reflect.Slice || fieldType.Kind() == reflect.Array {
-						propSchema.Items = generateItemSchema(fieldType.Elem())
-					}
+			// Generate items schema for arrays
+			if directives.Type == "array" {
+				fieldType := field.Type
+				if fieldType.Kind() == reflect.Ptr {
+					fieldType = fieldType.Elem()
 				}
+				if fieldType.Kind() == reflect.Slice || fieldType.Kind() == reflect.Array {
+					propSchema.Items = generateItemSchema(fieldType.Elem())
+				}
+			}
 
-				if directives.Required {
-					schema.Required = append(schema.Required, fieldName)
-				}
-			} else {
-				continue // Skip fields with invalid schema tags
+			if directives.Required {
+				schema.Required = append(schema.Required, fieldName)
 			}
 		} else {
 			// Fallback: infer type from Go type, use description: tag
@@ -856,11 +860,7 @@ func GenerateCacheFieldSchema() map[string]CacheFieldInfo {
 			continue
 		}
 
-		directives, err := ParseSchemaTag(schemaTag)
-		if err != nil {
-			// Skip fields with invalid tags
-			continue
-		}
+		directives := mustParseSchemaTag(cacheType, field)
 
 		info := CacheFieldInfo{
 			Type:     directives.Type,

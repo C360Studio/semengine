@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -86,7 +86,7 @@
+ 	if ok && !held.stranded && revision < held.revision {
+ 		return
+ 	}
+-	m.store(key, outcome{revision: revision, reason: reason, stranded: revision == strandedRevision})
++	m.store(key, outcome{revision: revision, reason: reason, stranded: false})
+ }
+ 
+ // queued records, under hop1Mu, that hop 1 wrote key's pending record for revision: hop 1 has

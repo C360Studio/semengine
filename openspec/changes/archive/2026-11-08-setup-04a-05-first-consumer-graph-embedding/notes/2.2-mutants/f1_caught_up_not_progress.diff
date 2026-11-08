@@ -1,0 +1,11 @@
+--- a/graph/follower/follower.go
++++ b/graph/follower/follower.go
+@@ -488,7 +488,7 @@
+ 	caughtUp := target > 0 && indexed >= target
+ 	f.mu.Lock()
+ 	defer f.mu.Unlock()
+-	if caughtUp || completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
++	if completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
+ 		f.lastCompletionsSeen, f.lastProgressAt = completions, now
+ 	}
+ 	return !caughtUp && now.Sub(f.lastProgressAt) > degradedStuckAfter

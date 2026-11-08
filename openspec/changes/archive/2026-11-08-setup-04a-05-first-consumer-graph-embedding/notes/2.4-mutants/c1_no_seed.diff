@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/component.go
++++ b/processor/graph-embedding/component.go
+@@ -251,7 +251,7 @@
+ 	if err != nil {
+ 		return errs.Wrap(err, "Component", "Start", "seed the failed map from "+graph.BucketEmbeddingIndex)
+ 	}
+-	c.failed.seed(failedRecords)
++	_ = failedRecords
+ 	// A Start context that ended during setup fails Start here, before anything is held
+ 	// (ADR-113).
+ 	if err := ctx.Err(); err != nil {

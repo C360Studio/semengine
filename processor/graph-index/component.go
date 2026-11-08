@@ -241,7 +241,8 @@ func (c *Component) start(ctx context.Context) error {
 		StartupAttempts: c.config.StartupAttempts,
 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
 		Deliver:         c.deliver,
-		Failed:          c.failedTotal,
+		// graph-index counts unresolved writes without reasons, so its envelope carries none.
+		Failed: func() (int64, map[string]uint64) { return c.failedTotal(), nil },
 	})
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "open the ENTITY_STATES follower")

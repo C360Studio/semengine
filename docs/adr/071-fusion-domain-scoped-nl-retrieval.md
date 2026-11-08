@@ -7,7 +7,8 @@
 > `docs/adr/071-fusion-domain-scoped-nl-retrieval.md` in `docs/admission-ledger.yaml`. The decision text is unchanged
 > apart from markdownlint fixes. Read it with these facts about this repository:
 >
-> - `pkg/fusion` and the `graph-embedding` component are not in this tree. Both arrive in change 5; until then
+> - The `graph-embedding` component is in this tree (`processor/graph-embedding`, change 5), but its query responder
+>   is not: it arrives in change 5's PR B, and `pkg/fusion` in its PRs C and D. Until the responder lands
 >   `semantic` is refused as transient `internal`, naming the subject, because nothing answers it. The `Scope` field
 >   and the follow-on change the record describes are not present. The helper `graph.MatchesAnyIDPrefix` is
 >   (`graph/id_prefix.go`, `TestMatchesAnyIDPrefix`); the fusion wiring that would call it is not.

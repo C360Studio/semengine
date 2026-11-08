@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -136,7 +136,6 @@
+ 		}
+ 		c.logger.Error("entity state refused; graph reset required",
+ 			slog.String("entity", key), slog.Any("error", err))
+-		c.lifecycle.CountError() // the reset, as graph-index counts one (design D6)
+ 		c.follower.Load().Reset(reason)
+ 		return
+ 	}

@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -208,7 +208,7 @@
+ 			continue
+ 		}
+ 		predicate := strings.ToLower(triple.Predicate)
+-		for _, suffix := range c.config.TextSuffixes {
++		for _, suffix := range defaultTextSuffixes {
+ 			if strings.HasSuffix(predicate, suffix) {
+ 				if text, ok := triple.Object.(string); ok && text != "" {
+ 					parts = append(parts, text)

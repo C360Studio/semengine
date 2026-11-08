@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -261,9 +261,7 @@
+ // D6; ADR-109 Decision 2): the failed map's count, through the follower's stuck states, is what
+ // Health reads.
+ func (c *Component) markFailed(key string, revision uint64, reason string) {
+-	if c.failed.mark(key, revision, reason) {
+-		c.lifecycle.CountError()
+-	}
++	c.failed.mark(key, revision, reason)
+ }
+ 
+ // complete reports revision of key complete to the follower.

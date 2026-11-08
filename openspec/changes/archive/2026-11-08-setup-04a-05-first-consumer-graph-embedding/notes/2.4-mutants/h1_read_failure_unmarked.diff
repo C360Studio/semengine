@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -96,7 +96,6 @@
+ 	}
+ 	c.logger.Warn("entity read failed; revision drained, the repair lane retries the read",
+ 		slog.String("entity", key), slog.Any("error", err))
+-	c.failed.mark(key, strandedRevision, embedding.ReasonEntityReadFailed)
+ 	c.complete(key, ^uint64(0))
+ }
+ 

@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -156,7 +156,6 @@
+ 	if !saved {
+ 		// A generated record at this revision or a newer one already stands: nothing is
+ 		// left to do for this revision (pin #722 B2).
+-		c.complete(key, revision)
+ 	}
+ 	// Saved: the Worker owns the terminal outcome, reported through onTerminal.
+ }

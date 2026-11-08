@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -89,7 +89,7 @@
+ 				slog.String("entity", key), slog.Any("error", delErr))
+ 			c.failed.mark(key, strandedRevision, embedding.ReasonDeleteFailed)
+ 		} else {
+-			c.failed.absent(key)
++			_ = 0
+ 		}
+ 		c.complete(key, ^uint64(0))
+ 		return

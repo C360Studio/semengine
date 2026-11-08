@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -134,7 +134,7 @@
+ func (m *failedMap) counts() (int64, map[string]uint64) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+-	var reasons map[string]uint64
++	reasons := map[string]uint64{}
+ 	var n int64
+ 	for _, o := range m.entries {
+ 		if o.reason == "" {

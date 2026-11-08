@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/component.go
++++ b/processor/graph-embedding/component.go
+@@ -297,6 +297,10 @@
+ 	// A nil *storeregistry.Registry in the interface would be a non-nil resolver that panics.
+ 	if c.storeRegistry != nil {
+ 		worker = worker.WithStoreResolver(c.storeRegistry)
++	}
++	if _, err := c.natsClient.SubscribeForRequests(runCtx, "graph.embedding.query.status",
++		func(context.Context, []byte) ([]byte, error) { return []byte(`{}`), nil }); err != nil {
++		return err
+ 	}
+ 	worked := make(chan struct{})
+ 	c.worked = worked

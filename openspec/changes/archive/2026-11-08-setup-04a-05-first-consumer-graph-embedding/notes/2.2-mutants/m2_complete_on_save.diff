@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -153,7 +153,7 @@
+ 			slog.String("entity", key), slog.Any("error", err))
+ 		return
+ 	}
+-	if !saved {
++	if !saved || saved {
+ 		// A generated record at this revision or a newer one already stands: nothing is
+ 		// left to do for this revision (pin #722 B2).
+ 		c.complete(key, revision)

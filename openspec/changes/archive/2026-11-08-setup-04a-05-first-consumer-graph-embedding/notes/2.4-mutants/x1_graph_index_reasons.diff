@@ -1,0 +1,11 @@
+--- a/processor/graph-index/component.go
++++ b/processor/graph-index/component.go
+@@ -242,7 +242,7 @@
+ 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
+ 		Deliver:         c.deliver,
+ 		// graph-index counts unresolved writes without reasons, so its envelope carries none.
+-		Failed: func() (int64, map[string]uint64) { return c.failedTotal(), nil },
++		Failed: func() (int64, map[string]uint64) { return c.failedTotal(), map[string]uint64{"x": 1} },
+ 	})
+ 	if err != nil {
+ 		return errs.Wrap(err, "Component", "Start", "open the ENTITY_STATES follower")

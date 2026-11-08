@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -245,9 +245,7 @@
+ // when the entity enters the failed set, as markFailed's does.
+ func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevision uint64, outcome embedding.TerminalOutcome, reason string) {
+ 	if outcome == embedding.OutcomeFailed {
+-		if c.failed.failed(entityID, sourceRevision, reason) {
+-			c.lifecycle.CountError()
+-		}
++		c.failed.failed(entityID, sourceRevision, reason)
+ 	} else {
+ 		c.failed.succeeded(entityID, sourceRevision)
+ 	}

@@ -1,0 +1,12 @@
+--- processor/graph-embedding/hop1.go	2026-11-08 15:03:55
++++ processor/graph-embedding/hop1.go	2026-11-08 15:05:15
+@@ -65,8 +65,8 @@
+ func (c *Component) reconcileEntity(ctx context.Context, key string) {
+ 	c.hop1Mu.Lock()
+ 	defer c.hop1Mu.Unlock()
+-	delivered := c.delivered.Load()
+ 	entry, err := c.entities.Get(ctx, key)
++	delivered := c.delivered.Load()
+ 	if err != nil {
+ 		c.readFailed(ctx, key, delivered, err)
+ 		return

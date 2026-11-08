@@ -1,0 +1,16 @@
+--- processor/graph-embedding/component.go	2026-11-08 10:39:35
++++ processor/graph-embedding/component.go	2026-11-08 10:39:45
+@@ -278,10 +278,11 @@
+ 		worker = worker.WithStoreResolver(c.storeRegistry)
+ 	}
+ 	worked := make(chan struct{})
+-	c.worked = worked
++	_ = worker
+ 	go func() {
+ 		defer close(worked)
+-		err := worker.Run(runCtx)
++		var err error
++		<-runCtx.Done()
+ 		// The run context decides, not Run's error: any return while it is live is a lost
+ 		// watch. The latch precedes the log line, so a reader of the line reads the latch.
+ 		if runCtx.Err() == nil {

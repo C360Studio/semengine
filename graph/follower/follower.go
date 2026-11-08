@@ -67,13 +67,18 @@ type Config struct {
 	// Deliver takes one entry, in delivery order, on Run's goroutine. It is called after the
 	// revision is in the watermark; the plug-in calls Complete once it is applied.
 	Deliver func(ctx context.Context, e Entry)
-	// Failed returns the plug-in's count of unresolved required writes.
-	Failed func() int64
+	// Failed returns the plug-in's count of unresolved required writes and, when it tracks them,
+	// the count per bounded reason; nil reasons when it does not. The follower calls it once per
+	// envelope, so count and reasons come from one moment, and owns the map it returns: the
+	// plug-in returns a fresh one and keeps no reference to it.
+	Failed func() (count int64, reasons map[string]uint64)
 }
 
-// degradedStuckAfter is how long the floor may stand still while behind before the envelope reads
-// degraded (ADR-066 §4). It is a property of the envelope, not a Stuck state: a slow replay is
-// catch-up (ADR-109 D4).
+// degradedStuckAfter is how long the follower may go without a Complete call while behind before
+// the envelope reads degraded (ADR-066 §3 and §4, at 30 s for every plug-in by owner ruling (a1),
+// PR #550 comment 6721867279). Any completion counts, so one revision held while later ones finish
+// reads not ready but not degraded. It is a property of the envelope, not a Stuck state: a slow
+// replay is catch-up (ADR-109 D4).
 const degradedStuckAfter = 30 * time.Second
 
 // resetRemedy is what an operator does about a latched reset, as graph-index said at the pin.
@@ -84,7 +89,7 @@ type Follower struct {
 	key       string
 	logger    *slog.Logger
 	deliver   func(context.Context, Entry)
-	failed    func() int64
+	failed    func() (int64, map[string]uint64)
 	reader    kvcatalog.CatalogReader // the watch
 	status    kvcatalog.CatalogReader // target and generation reads, a handle of its own
 	publisher *readiness.Publisher
@@ -105,9 +110,11 @@ type Follower struct {
 	// not promised.
 	statusMu sync.Mutex
 
-	mu              sync.Mutex // guards the stuck detector's progress record
-	lastIndexedSeen uint64
-	lastProgressAt  time.Time
+	completions atomic.Uint64 // Complete calls, the stuck detector's progress signal
+
+	mu                  sync.Mutex // guards the stuck detector's progress record
+	lastCompletionsSeen uint64
+	lastProgressAt      time.Time
 }
 
 // Open waits for ENTITY_STATES up to Config.StartupAttempts times Config.StartupInterval, opens
@@ -329,9 +336,11 @@ func (f *Follower) publish(ctx context.Context) {
 	}
 }
 
-// Complete records that revision of key is applied, with every earlier revision of it.
+// Complete records that revision of key is applied, with every earlier revision of it. Each call
+// counts as progress for the stuck detector, whether or not it raises the floor.
 func (f *Follower) Complete(key string, revision uint64) {
 	f.watermark.Complete(key, revision)
+	f.completions.Add(1)
 }
 
 // Reset latches reason for the life of the process. The first reason holds; later calls change
@@ -353,7 +362,7 @@ func (f *Follower) Stuck() []string {
 	if r := f.reset.Load(); r != nil {
 		stuck = append(stuck, fmt.Sprintf("graph state reset required: %s", *r))
 	}
-	if n := f.failed(); n > 0 {
+	if n, _ := f.failed(); n > 0 {
 		stuck = append(stuck, fmt.Sprintf("%d index writes unresolved", n))
 	}
 	if f.feedLost.Load() {
@@ -376,7 +385,7 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 	if f.feedLost.Load() {
 		return notReady("the ENTITY_STATES feed is lost")
 	}
-	if f.failed() > 0 {
+	if n, _ := f.failed(); n > 0 {
 		return notReady("unresolved index write failures")
 	}
 	if f.bootstrapped.Load() {
@@ -425,7 +434,14 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 			BootstrapComplete: f.bootstrapped.Load(),
 		}
 	}
-	failed := f.failed()
+	return f.envelope(indexed, indexedAt, target)
+}
+
+// envelope is compute's projection once the target is read: ComputeIndexStatus over the floor
+// and the target, then the overrides only this producer can see, then the bootstrap latch.
+func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
+	// One Failed call, so the count and its reasons are from one moment (design D3).
+	failed, reasons := f.failed()
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
 		Indexed:           indexed,
 		Target:            target,
@@ -433,6 +449,9 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 		OldestUnappliedAt: indexedAt,
 		FailedCount:       uint64(max(failed, 0)),
 	})
+	if failed > 0 {
+		status.FailedReasons = reasons
+	}
 	// An authoritatively empty graph is ready once the snapshot is delivered, though ready needs a
 	// target above zero (pin gh#474).
 	if !status.Ready && target == 0 && f.snapshotDone.Load() {
@@ -466,14 +485,19 @@ func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq ui
 	return info.State.LastSeq, info.Created, nil
 }
 
-// stalled is the stuck-watermark detector: the floor has not advanced for degradedStuckAfter while
-// behind the target.
+// stalled is the stuck detector: the follower has been behind the target for degradedStuckAfter
+// with no Complete call (pin processor/graph-embedding/readiness.go:192-212). A caught-up reading
+// counts as progress too, so the 30 s start when the follower falls behind, not at the last
+// completion before it: the heartbeat reads at least every readiness.DefaultHeartbeat. An empty
+// graph is caught up only once the snapshot is delivered; before it, target 0 says nothing.
 func (f *Follower) stalled(indexed, target uint64) bool {
 	now := time.Now()
+	completions := f.completions.Load()
+	caughtUp := indexed >= target && (target > 0 || f.snapshotDone.Load())
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if indexed > f.lastIndexedSeen || f.lastProgressAt.IsZero() {
-		f.lastIndexedSeen, f.lastProgressAt = indexed, now
+	if caughtUp || completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
+		f.lastCompletionsSeen, f.lastProgressAt = completions, now
 	}
-	return !(target > 0 && indexed >= target) && now.Sub(f.lastProgressAt) > degradedStuckAfter
+	return !caughtUp && now.Sub(f.lastProgressAt) > degradedStuckAfter
 }

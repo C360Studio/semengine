@@ -31,6 +31,9 @@ func (o outcome) hopOne() bool { return repaired(o.reason) }
 type failedMap struct {
 	mu      sync.Mutex
 	entries map[string]outcome
+	// failures holds the entries that are failures, so counts and repairTargets walk only those
+	// and never every entity embedded. store and forget keep it in step with entries.
+	failures map[string]outcome
 }
 
 // repaired reports whether reason is one of hop 1's own failures, the three the repair lane
@@ -54,20 +57,31 @@ func (m *failedMap) seed(entries []embedding.FailedEntry) {
 
 // failed records the Worker's failure of key at revision.
 func (m *failedMap) failed(key string, revision uint64, reason string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.worker(key, outcome{revision: revision, reason: reason})
 }
 
-// succeeded records the Worker's success of key at revision.
+// succeeded records the Worker's success of key at revision. A success at strandedRevision is
+// the Worker's drain of a record it cannot decode (graph/embedding worker.go), which names no
+// source revision: it forgets an entity that is not stranded, as the pin does (pin
+// component.go:1152), so it never stands as a latest outcome no later failure can pass.
 func (m *failedMap) succeeded(key string, revision uint64) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if revision == strandedRevision {
+		if !m.entries[key].stranded {
+			m.forget(key)
+		}
+		return
+	}
 	m.worker(key, outcome{revision: revision})
 }
 
-// worker records the Worker's outcome o when it is at or above the entity's latest one: a
-// failure below it is not counted, and a success clears a failure at or below it. A stranded
-// failure stays: no Worker outcome names the revision it lacks.
+// worker records, with mu held, the Worker's outcome o when it is at or above the entity's
+// latest one: a failure below it is not counted, and a success clears a failure at or below it.
+// A stranded failure stays: no Worker outcome names the revision it lacks.
 func (m *failedMap) worker(key string, o outcome) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
 	held, ok := m.entries[key]
 	if ok && (held.stranded || o.revision < held.revision) {
 		return
@@ -101,17 +115,15 @@ func (m *failedMap) queued(key string, revision uint64) {
 
 // ended records, under hop1Mu, that hop 1 ended key at revision: its record removed, or a
 // generated one found standing. Hop 1's own failure clears, stranded or not; otherwise it is a
-// success at revision, as the Worker's.
+// success at revision, as the Worker's at a revision.
 func (m *failedMap) ended(key string, revision uint64) {
 	m.mu.Lock()
-	held, ok := m.entries[key]
-	if ok && held.hopOne() {
+	defer m.mu.Unlock()
+	if held, ok := m.entries[key]; ok && held.hopOne() {
 		m.store(key, outcome{revision: revision})
-		m.mu.Unlock()
 		return
 	}
-	m.mu.Unlock()
-	m.succeeded(key, revision)
+	m.worker(key, outcome{revision: revision})
 }
 
 // absent records, under hop1Mu, that key is absent from ENTITY_STATES and its record is
@@ -119,14 +131,25 @@ func (m *failedMap) ended(key string, revision uint64) {
 func (m *failedMap) absent(key string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	delete(m.entries, key)
+	m.forget(key)
 }
 
 func (m *failedMap) store(key string, o outcome) {
 	if m.entries == nil {
 		m.entries = make(map[string]outcome)
+		m.failures = make(map[string]outcome)
 	}
 	m.entries[key] = o
+	if o.reason == "" {
+		delete(m.failures, key)
+	} else {
+		m.failures[key] = o
+	}
+}
+
+func (m *failedMap) forget(key string) {
+	delete(m.entries, key)
+	delete(m.failures, key)
 }
 
 // counts is the follower's Failed: the number of failed entities and a fresh map of them per
@@ -136,10 +159,7 @@ func (m *failedMap) counts() (int64, map[string]uint64) {
 	defer m.mu.Unlock()
 	var reasons map[string]uint64
 	var n int64
-	for _, o := range m.entries {
-		if o.reason == "" {
-			continue
-		}
+	for _, o := range m.failures {
 		if reasons == nil {
 			reasons = make(map[string]uint64)
 		}
@@ -156,7 +176,7 @@ func (m *failedMap) repairTargets() []string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	var keys []string
-	for key, o := range m.entries {
+	for key, o := range m.failures {
 		if o.hopOne() {
 			keys = append(keys, key)
 		}

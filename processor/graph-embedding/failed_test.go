@@ -18,6 +18,9 @@ import (
 //
 //   - A Worker outcome at r is kept only when r is at or above the latest outcome's revision; a
 //     stranded failure is never replaced or cleared by the Worker.
+//   - The Worker's drain of an unreadable record (a success at ^uint64(0), graph/embedding
+//     worker.go) names no source revision, so it is no latest outcome: the entity is forgotten,
+//     as the pin deletes it (pin component.go:1152), unless its failure is stranded.
 //   - Hop 1's own failure (delete_failed, pending_write_failed, entity_read_failed) with no
 //     revision is stranded; with one it is kept at or above the latest outcome, and it replaces a
 //     stranded one ("a read that succeeds while the following pending write fails re-marks").
@@ -43,6 +46,13 @@ func (m failedModel) worker(key string, e modelEntry) {
 		return
 	}
 	m[key] = e
+}
+
+func (m failedModel) drained(key string) {
+	if m[key].stranded {
+		return
+	}
+	delete(m, key)
 }
 
 func (m failedModel) hopOneFailed(key string, revision uint64, reason string) {
@@ -98,7 +108,11 @@ func (op failedOp) apply(m *failedMap, model failedModel) {
 		model.worker(op.key, modelEntry{revision: op.revision, failed: true, reason: op.reason})
 	case "succeeded":
 		m.succeeded(op.key, op.revision)
-		model.worker(op.key, modelEntry{revision: op.revision})
+		if op.revision == strandedRevision {
+			model.drained(op.key)
+		} else {
+			model.worker(op.key, modelEntry{revision: op.revision})
+		}
 	case "hop 1 failed":
 		m.mark(op.key, op.revision, op.reason)
 		model.hopOneFailed(op.key, op.revision, op.reason)
@@ -212,6 +226,16 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "worker failed", key: "a", revision: strandedRevision, reason: "timeout"},
 		{kind: "hop 1 failed", key: "a", revision: 0, reason: embedding.ReasonDeleteFailed},
 		{kind: "succeeded", key: "a", revision: strandedRevision},
+	},
+	// Review finding H1 at stop 2 (notes/2.4.md): a drain stored as a success at the highest
+	// revision hid every later failure of the entity.
+	"a drain forgets an entity that is not stranded": {
+		{kind: "worker failed", key: "a", revision: 3, reason: "timeout"},
+		{kind: "succeeded", key: "a", revision: strandedRevision}, // the Worker's drain of an unreadable record
+		{kind: "hop 1 failed", key: "a", revision: 5, reason: embedding.ReasonPendingWriteFailed},
+		{kind: "worker failed", key: "a", revision: 9, reason: "timeout"},
+		{kind: "succeeded", key: "b", revision: strandedRevision},
+		{kind: "worker failed", key: "b", revision: 2, reason: "timeout"},
 	},
 	"hop 1's failure at a revision follows revision order": {
 		{kind: "worker failed", key: "a", revision: 6, reason: "timeout"},

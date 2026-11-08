@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -140,9 +140,7 @@
+ 		m.failures = make(map[string]outcome)
+ 	}
+ 	m.entries[key] = o
+-	if o.reason == "" {
+-		delete(m.failures, key)
+-	} else {
++	if o.reason != "" {
+ 		m.failures[key] = o
+ 	}
+ }

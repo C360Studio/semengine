@@ -98,9 +98,11 @@ can leave a stale vector in the index and so a wrong hit; a Worker failure leave
 answer reads the rest and reports `failed_records`, the count of such entities, as D2 reports unreadable records. Cost:
 one optional field on `follower.Config`, `Withhold func() int64`, the count of failures that withhold queries, nil
 meaning `Failed`'s count (graph-index unchanged), plus an `entity-state-follower` spec delta. `Health` and the envelope
-keep counting every failure, as PR A shipped. A `VectorCache.Run` that returns while the run context is live latches
-`vector cache watch lost; restart the process` in `Health`, as the Worker's loss does (PR A D2); nothing reopens it,
-since the bucket is the component's own. Before `Start` and after `Stop` returns there is no responder. *Proof:*
+keep counting every failure, as PR A shipped, so under F2 a Worker failure still marks the published status degraded; if
+fusion gates on that status (ADR-082; PR A inventory § 7), one bad document would stop SemSource's fusion path again,
+which PR C's inventory decides. A `VectorCache.Run` that returns while the run context is live latches `vector cache
+watch lost; restart the process` in `Health`, as the Worker's loss does (PR A D2); nothing reopens it, since the bucket
+is the component's own. Before `Start` and after `Stop` returns there is no responder. *Proof:*
 `TestQueriesWithheldUntilReady` (before the first build, after a reset, with a hop-1 failure),
 `TestWorkerFailureAnswersAndCounts` (F2: a `content_error` entity, `failed_records` 1, other hits served),
 `TestGraphIndexWithholdUnchanged`, `TestHealthNamesLostCacheWatch` (integration), `TestNoResponderAfterStop`, lifecycle

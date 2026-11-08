@@ -4,8 +4,9 @@
 
 ### Requirement: A plug-in may narrow which failures withhold queries
 
-`follower.Config` SHALL have an optional `Withhold func() int64`. When it is set, `QueryReady` SHALL refuse transient
-`index_not_ready` for failures only while `Withhold` returns above 0; when it is nil, `QueryReady` SHALL use the count
+`follower.Config` SHALL have an optional `Withhold func() int64`. When it is set, after the first build `QueryReady`
+SHALL refuse transient `index_not_ready` for failures only while `Withhold` returns above 0; before the first build
+the gate SHALL keep reading the envelope, which reads `Failed`. When it is nil, `QueryReady` SHALL use the count
 `Failed` returns, as before. The envelope and `Stuck` SHALL keep reading `Failed`.
 
 #### Scenario: A failure the plug-in does not withhold on

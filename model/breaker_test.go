@@ -184,6 +184,160 @@ func TestBreaker_FailedProbeReopens(t *testing.T) {
 	}
 }
 
+// openBreaker returns a breaker whose endpoint "ep" has just opened,
+// with a 30s cooldown on a fake clock.
+func openBreaker(t *testing.T) (*RollingWindowBreaker, *fakeClock) {
+	t.Helper()
+	clock := newFakeClock(time.Date(2026, 4, 1, 0, 0, 0, 0, time.UTC))
+	b := NewRollingWindowBreaker(BreakerConfig{
+		MinRequests:        3,
+		ErrorRateThreshold: 0.5,
+		Cooldown:           30 * time.Second,
+		Now:                clock.Now,
+	})
+	for i := 0; i < 4; i++ {
+		b.RecordResult("ep", fail())
+	}
+	if b.IsHealthy("ep") {
+		t.Fatal("setup: expected the breaker to be open")
+	}
+	return b, clock
+}
+
+// Past the cooldown, half-open admits one probe; every other caller is
+// refused while that probe has not reported (#114).
+func TestBreaker_HalfOpenAdmitsOneProbe(t *testing.T) {
+	b, clock := openBreaker(t)
+	clock.Advance(30 * time.Second)
+
+	if !b.IsHealthy("ep") {
+		t.Fatal("first caller past the cooldown was refused; it should take the probe slot")
+	}
+	for i := 0; i < 3; i++ {
+		if b.IsHealthy("ep") {
+			t.Fatalf("caller %d admitted while the probe is outstanding", i+2)
+		}
+	}
+	if got := b.EndpointStatus("ep"); got != StatusHalfOpen {
+		t.Errorf("status while the probe is outstanding = %s, want half_open", got)
+	}
+}
+
+// A failed probe reopens the breaker; once the new cooldown passes the
+// slot is free again for one caller, and a passing probe closes the
+// breaker so every caller is admitted.
+func TestBreaker_ProbeSlotAfterFailedAndPassingProbe(t *testing.T) {
+	b, clock := openBreaker(t)
+	clock.Advance(30 * time.Second)
+	if !b.IsHealthy("ep") {
+		t.Fatal("setup: first probe refused")
+	}
+
+	b.RecordResult("ep", fail())
+	if b.IsHealthy("ep") {
+		t.Fatal("caller admitted right after a failed probe; the breaker should be open")
+	}
+
+	clock.Advance(30 * time.Second)
+	if !b.IsHealthy("ep") {
+		t.Fatal("caller refused after the failed probe's cooldown; the slot should be free")
+	}
+	if b.IsHealthy("ep") {
+		t.Fatal("second caller admitted while the new probe is outstanding")
+	}
+
+	b.RecordResult("ep", pass())
+	for i := 0; i < 3; i++ {
+		if !b.IsHealthy("ep") {
+			t.Fatalf("caller %d refused after a passing probe; the breaker should be closed", i+1)
+		}
+	}
+	if got := b.EndpointStatus("ep"); got != StatusClosed {
+		t.Errorf("status after a passing probe = %s, want closed", got)
+	}
+}
+
+// A probe that has not reported within one Cooldown of being admitted
+// counts as lost: the next caller takes the slot, and not before
+// (owner ruling, #114 comment 6722829046).
+func TestBreaker_LostProbeFreesSlotAfterOneCooldown(t *testing.T) {
+	b, clock := openBreaker(t)
+	clock.Advance(30 * time.Second)
+	if !b.IsHealthy("ep") {
+		t.Fatal("setup: first probe refused")
+	}
+
+	clock.Advance(30*time.Second - time.Nanosecond)
+	if b.IsHealthy("ep") {
+		t.Fatal("caller admitted before the outstanding probe was one Cooldown old")
+	}
+
+	clock.Advance(time.Nanosecond)
+	if !b.IsHealthy("ep") {
+		t.Fatal("caller refused one Cooldown after the probe was admitted; the probe should count as lost")
+	}
+	if b.IsHealthy("ep") {
+		t.Fatal("second caller admitted while the replacement probe is outstanding")
+	}
+}
+
+// Reading the status or the stats past the cooldown reserves nothing:
+// the next IsHealthy caller still takes the probe slot, and only it.
+func TestBreaker_StatusReadsReserveNothing(t *testing.T) {
+	reads := map[string]func(b *RollingWindowBreaker){
+		"EndpointStatus": func(b *RollingWindowBreaker) {
+			if got := b.EndpointStatus("ep"); got != StatusHalfOpen {
+				t.Errorf("status past the cooldown = %s, want half_open", got)
+			}
+		},
+		"EndpointStats": func(b *RollingWindowBreaker) { _ = b.EndpointStats("ep") },
+	}
+	for name, read := range reads {
+		t.Run(name, func(t *testing.T) {
+			b, clock := openBreaker(t)
+			clock.Advance(30 * time.Second)
+
+			read(b)
+			read(b)
+			if !b.IsHealthy("ep") {
+				t.Fatalf("IsHealthy refused after %s reads; a read must not take the probe slot", name)
+			}
+			if b.IsHealthy("ep") {
+				t.Fatal("second caller admitted while the probe is outstanding")
+			}
+		})
+	}
+}
+
+// Concurrent IsHealthy callers past the cooldown: exactly one is
+// admitted. Run under -race.
+func TestBreaker_ConcurrentProbeAdmitsExactlyOne(t *testing.T) {
+	b, clock := openBreaker(t)
+	clock.Advance(30 * time.Second)
+
+	const callers = 32
+	var admitted atomic.Int64
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			if b.IsHealthy("ep") {
+				admitted.Add(1)
+			}
+		}()
+	}
+	close(start)
+	// wg.Wait orders the read of admitted after every caller's write.
+	wg.Wait()
+
+	if got := admitted.Load(); got != 1 {
+		t.Errorf("admitted %d of %d concurrent callers past the cooldown, want exactly 1", got, callers)
+	}
+}
+
 // The window slides — old failures fall out, allowing recovery as
 // fresh successes accumulate.
 func TestBreaker_WindowSlides(t *testing.T) {

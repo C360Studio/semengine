@@ -224,8 +224,8 @@ func (c *Component) extractText(state *graph.EntityState) string {
 // record for sourceRevision reached a terminal outcome, so that revision, with every lower
 // one of the entity, is complete. Every outcome completes (ADR-066 § 3).
 //
-// shortcut: called by tests only until task 2.3 of setup-04a-05-first-consumer-graph-embedding
-// hands it to the Worker (WithOnTerminal); task 2.4 routes outcome and reason to the failed map.
+// shortcut: outcome and reason are dropped until task 2.4 of
+// setup-04a-05-first-consumer-graph-embedding routes them to the failed map.
 func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevision uint64, _ embedding.TerminalOutcome, _ string) {
 	c.complete(entityID, sourceRevision)
 }

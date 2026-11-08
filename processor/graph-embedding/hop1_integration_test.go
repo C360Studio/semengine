@@ -28,7 +28,6 @@ import (
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
-	"github.com/c360studio/semengine/storage"
 	"github.com/c360studio/semengine/storage/storeregistry"
 )
 
@@ -234,42 +233,55 @@ func (h *harness) awaitPending(t *testing.T, id string, rev uint64) *embedding.R
 
 // TestReadinessWaitsForHopTwo: a revision whose pending record is written is not caught up until
 // the Worker reports its terminal outcome (graph-embedding spec, "A pending record is not caught
-// up"; design D1). Hop 1 runs serially on the follower's goroutine, so B's record being stored
-// means hop 1 has returned for A: whatever it would complete for A is completed by then.
+// up"; design D1). A's body is offloaded to a store that holds the Worker's read until the test
+// releases it, so A stays pending at hop 2 while B, inline, is embedded. Hop 1 runs serially on
+// the follower's goroutine, so B's record being generated means hop 1 has returned for A:
+// whatever it would complete for A is completed by then.
 func TestReadinessWaitsForHopTwo(t *testing.T) {
-	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
+	store := newGatedStore()
+	h := startEmbedding(t, fixtureClient(t), `{}`, store.stores(t))
 	a, b := entityID(1), entityID(2)
-	revA := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "first document"))
+	revA := h.put(t, a, entityValue(t, a, bodyRef("a"), "doc.meta.title", "first document"))
 	revB := h.put(t, b, entityValue(t, b, nil, "doc.meta.title", "second document"))
-	h.awaitPending(t, b, revB)
-	if record := h.awaitPending(t, a, revA); record.SourceText != "first document" {
-		t.Errorf("A's pending text = %q, want the title", record.SourceText)
+	if record := h.awaitPending(t, a, revA); record.IdentityText != "first document" {
+		t.Errorf("A's pending identity text = %q, want the title", record.IdentityText)
 	}
+	h.awaitGenerated(t, b, revB)
 	if got := h.f.Indexed(); got >= revA {
 		t.Fatalf("indexed %d with A's record pending at %d; want below it", got, revA)
 	}
 
-	// The Worker's terminal outcome for A completes it; B still holds the floor.
-	h.c.onTerminal(t.Context(), a, revA, embedding.OutcomeGenerated, "")
-	if got := h.f.Indexed(); got < revA || got >= revB {
-		t.Fatalf("indexed %d after A's terminal outcome; want at least %d and below %d", got, revA, revB)
-	}
-	h.c.onTerminal(t.Context(), b, revB, embedding.OutcomeFailed, "timeout")
-	if got := h.f.Indexed(); got < revB {
-		t.Errorf("indexed %d after B's terminal outcome; want at least %d", got, revB)
-	}
+	// The Worker's terminal outcome for A completes it, and B's already has.
+	store.release("a")
+	h.awaitIndexed(t, "A's and B's revisions indexed", revB)
+	h.awaitGenerated(t, a, revA)
 }
 
 // TestConfiguredTextSuffixesSelectText: hop 1 embeds the values of the predicates text_suffixes
 // names, and only those: a predicate only the defaults name (".title") is left out (design D4;
-// Codex review C2 on PR #550).
+// Codex review C2 on PR #550). The Worker has one lane, held on an earlier entity's body read, so
+// the record stays pending for the test to read.
 func TestConfiguredTextSuffixesSelectText(t *testing.T) {
-	h := startEmbedding(t, fixtureClient(t), `{"text_suffixes": [".signature"]}`, nil)
+	store := newGatedStore()
+	h := startEmbedding(t, fixtureClient(t), `{"text_suffixes": [".signature"], "workers": 1}`, store.stores(t))
+	holdWorker(t, h, store)
 	a := entityID(1)
 	rev := h.put(t, a, entityValue(t, a, nil,
 		"code.function.signature", "func main()", "doc.meta.title", "default-only title"))
 	if record := h.awaitPending(t, a, rev); record.SourceText != "func main()" {
 		t.Errorf("pending text = %q, want only the .signature value", record.SourceText)
+	}
+}
+
+// holdWorker holds a one-lane Worker inside hop 2: it writes an entity whose offloaded body the
+// gated store never releases and waits for the Worker to open it, so every pending record written
+// after stays pending until Stop.
+func holdWorker(t *testing.T, h *harness, store *gatedStore) {
+	t.Helper()
+	const id = "acme.ops.test.system.doc.hold"
+	h.put(t, id, entityValue(t, id, bodyRef("hold"), "doc.meta.title", "holds the lane"))
+	if key := <-store.opened; key != "hold" {
+		t.Fatalf("the Worker opened %q; want hold", key)
 	}
 }
 
@@ -279,9 +291,7 @@ func TestConfiguredTextSuffixesSelectText(t *testing.T) {
 func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	a := entityID(1)
-	rev := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "first document"))
-	h.awaitPending(t, a, rev)
-	h.c.onTerminal(t.Context(), a, rev, embedding.OutcomeGenerated, "")
+	h.awaitIndexed(t, "the first revision indexed", h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "first document")))
 
 	textless := h.put(t, a, entityValue(t, a, nil, "doc.meta.count", "7"))
 	await(t, "the text-less revision indexed",
@@ -292,7 +302,9 @@ func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 	}
 
 	again := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "first document again"))
-	h.awaitPending(t, a, again)
+	await(t, "a record at the revision before the tombstone",
+		func(ctx context.Context) (*embedding.Record, error) { return h.record(ctx, a) },
+		func(r *embedding.Record) bool { return r != nil && r.SourceRevision == again })
 	if err := h.states.Delete(t.Context(), a); err != nil {
 		t.Fatalf("delete %s: %v", a, err)
 	}
@@ -312,20 +324,18 @@ func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 // Worker; otherwise the replayed revision would hold the floor, and bootstrap, below it for good.
 // Hop 1 runs serially on the follower's goroutine and the watch delivers in revision order, so
 // B's record, written after the restart, being stored means hop 1 has returned for A's replay.
+// B's body is offloaded to a store that never releases it, so B holds the floor at hop 2.
 func TestRestartCompletesGeneratedRevision(t *testing.T) {
 	client := fixtureClient(t)
-	first := startEmbedding(t, client, `{}`, nil)
+	store := newGatedStore()
+	first := startEmbedding(t, client, `{}`, store.stores(t))
 	a, b := entityID(1), entityID(2)
 	rev := first.put(t, a, entityValue(t, a, nil, "doc.meta.title", "first document"))
-	first.awaitPending(t, a, rev)
-	// Hop 2's write of the vector, through the storage it writes with.
-	if err := first.c.storage.SaveGenerated(t.Context(), a, []float32{1, 0}, "test-model", 2, "hash", rev); err != nil {
-		t.Fatalf("SaveGenerated: %v", err)
-	}
+	first.awaitGenerated(t, a, rev)
 	stopComponent(t, first.c)
 
-	second := startEmbedding(t, client, `{}`, nil)
-	revB := second.put(t, b, entityValue(t, b, nil, "doc.meta.title", "second document"))
+	second := startEmbedding(t, client, `{}`, store.stores(t))
+	revB := second.put(t, b, entityValue(t, b, bodyRef("b"), "doc.meta.title", "second document"))
 	second.awaitPending(t, b, revB)
 	if got := second.f.Indexed(); got < rev || got >= revB {
 		t.Errorf("indexed %d after the restart; want A's replayed generated revision %d complete, B's %d pending",
@@ -343,32 +353,33 @@ func TestRestartCompletesGeneratedRevision(t *testing.T) {
 // derived_state_convergence_integration_test.go:TestIntegration_CoalescedLane_TombstoneConverges).
 // The coalescer applies batches one after another, so B's record, written after A's last
 // revision was read, orders the floor read after A's batch. A watch that opens after both of A's
-// writes delivers only the second, so a first entity's record is awaited before them: the watch
-// is then live and delivers each of A's revisions.
+// writes delivers only the second, so a first entity's revision is awaited before them: the
+// watch is then live and delivers each of A's revisions. A's and B's bodies are offloaded to a
+// store that holds the Worker's read of each until the test releases it.
 func TestCoalescedRevisionsComplete(t *testing.T) {
-	h := startEmbedding(t, fixtureClient(t), `{"coalesce_ms": 20}`, nil)
+	store := newGatedStore()
+	h := startEmbedding(t, fixtureClient(t), `{"coalesce_ms": 20}`, store.stores(t))
 	a, b, live := entityID(1), entityID(2), entityID(3)
-	revLive := h.put(t, live, entityValue(t, live, nil, "doc.meta.title", "the watch is live"))
-	h.awaitPending(t, live, revLive)
-	h.c.onTerminal(t.Context(), live, revLive, embedding.OutcomeGenerated, "")
-	first := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "version one"))
-	second := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "version two"))
-	if record := h.awaitPending(t, a, second); record.SourceText != "version two" {
-		t.Errorf("A's pending text = %q, want the second version", record.SourceText)
+	h.awaitIndexed(t, "the first entity indexed", h.put(t, live, entityValue(t, live, nil, "doc.meta.title", "the watch is live")))
+	first := h.put(t, a, entityValue(t, a, bodyRef("a"), "doc.meta.title", "version one"))
+	second := h.put(t, a, entityValue(t, a, bodyRef("a"), "doc.meta.title", "version two"))
+	if record := h.awaitPending(t, a, second); record.IdentityText != "version two" {
+		t.Errorf("A's pending identity text = %q, want the second version", record.IdentityText)
 	}
-	revB := h.put(t, b, entityValue(t, b, nil, "doc.meta.title", "other"))
+	revB := h.put(t, b, entityValue(t, b, bodyRef("b"), "doc.meta.title", "other"))
 	h.awaitPending(t, b, revB)
 	if got := h.f.Indexed(); got >= first {
 		t.Fatalf("indexed %d before any terminal outcome; want below %d", got, first)
 	}
 
-	h.c.onTerminal(t.Context(), a, second, embedding.OutcomeGenerated, "")
-	if got := h.f.Indexed(); got < second || got >= revB {
+	store.release("a")
+	if got := h.awaitIndexed(t, "A's revisions indexed", second); got >= revB {
 		t.Fatalf("indexed %d after A's outcome at %d; want both of A's revisions drained, B pending", got, second)
 	}
 
 	t.Run("a tombstone drops the pending update and converges", func(t *testing.T) {
-		h.c.onTerminal(t.Context(), b, revB, embedding.OutcomeGenerated, "")
+		store.release("b")
+		h.awaitIndexed(t, "B indexed", revB)
 		update := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "version three"))
 		if err := h.states.Delete(t.Context(), a); err != nil {
 			t.Fatalf("delete %s: %v", a, err)
@@ -382,23 +393,18 @@ func TestCoalescedRevisionsComplete(t *testing.T) {
 	})
 }
 
-// bodyStore is a storage.StreamableStore registered only so its instance resolves; hop 1 never
-// reads it.
-type bodyStore struct{ storage.StreamableStore }
-
 // TestStorageRefLaneEmbedsIdentityThenBody: an entity whose body is offloaded to a registered
 // store is queued on the offloaded lane, its inline identity text in the record for hop 2 to embed
 // ahead of the fetched body and no source text (design D5; ADR-063; pin
 // offloaded_identity_integration_test.go:TestIntegration_OffloadedEntityEmbedsIdentityAlongsideBody).
 // Hop 2's join of the two is graph/embedding's (offloaded_identity_test.go). An entity whose store
 // is not registered is embedded from its inline text, and the excluded body is declared: counted
-// for each entity and warned about once.
+// for each entity and warned about once. The Worker has one lane, held on an earlier entity's
+// body read, so every record stays pending for the test to read.
 func TestStorageRefLaneEmbedsIdentityThenBody(t *testing.T) {
-	stores := storeregistry.New()
-	if err := stores.Register("objstore", bodyStore{}); err != nil {
-		t.Fatal(err)
-	}
-	h := startEmbedding(t, fixtureClient(t), `{}`, stores)
+	store := newGatedStore()
+	h := startEmbedding(t, fixtureClient(t), `{"workers": 1}`, store.stores(t))
+	holdWorker(t, h, store)
 
 	offloaded, bodyOnly := entityID(1), entityID(2)
 	rev := h.put(t, offloaded, entityValue(t, offloaded, map[string]string{"storage_instance": "objstore", "key": "body/1"},
@@ -460,6 +466,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.feeds != nil {
 		held = append(held, "feeds")
 	}
+	if o.c.worked != nil {
+		held = append(held, "worker")
+	}
 	return lifecycletest.Observation{Unresolved: held}
 }
 
@@ -492,7 +501,7 @@ func TestGraphEmbeddingLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "coalescer", "feeds"}
+		want := []string{"run cancel", "coalescer", "feeds", "worker"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}
@@ -504,7 +513,7 @@ func TestGraphEmbeddingLifecycleSuite(t *testing.T) {
 }
 
 // TestStartContextEndStopsNothing: ending the context given to Start after Start returned stops
-// nothing; hop 1 still writes what is stored (ADR-113).
+// nothing; hop 1 still writes what is stored and the Worker embeds it (ADR-113).
 func TestStartContextEndStopsNothing(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -517,7 +526,7 @@ func TestStartContextEndStopsNothing(t *testing.T) {
 	cancelStart()
 	h.states = states
 	id := entityID(1)
-	h.awaitPending(t, id, h.put(t, id, entityValue(t, id, nil, "doc.meta.title", "after the start context ended")))
+	h.awaitGenerated(t, id, h.put(t, id, entityValue(t, id, nil, "doc.meta.title", "after the start context ended")))
 	if health := h.c.Health(); !health.Healthy || health.Status != "running" {
 		t.Errorf("Health = %+v, want running and healthy", health)
 	}

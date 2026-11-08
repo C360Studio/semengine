@@ -30,10 +30,11 @@ const key = readiness.KeyGraphEmbedding
 
 var _ component.Discoverable = (*Component)(nil)
 
+// workerWatchLost is the stuck state Health names once the Worker's Run has returned while the
+// run context was live (design D2): nothing embeds a pending record until the process restarts.
+const workerWatchLost = "embedding worker watch lost; restart the process"
+
 // Component implements the graph-embedding processor.
-//
-// shortcut: no Worker yet, so nothing embeds a pending record; task 2.3 of
-// setup-04a-05-first-consumer-graph-embedding runs it under the run context.
 type Component struct {
 	config  Config
 	inputs  []component.Port
@@ -62,11 +63,17 @@ type Component struct {
 	// offloadExcludedWarn logs the first offloaded body left out for want of its store.
 	offloadExcludedWarn sync.Once
 
+	// workerLost latches when the Worker's Run returns while the run context is live; nothing
+	// rebinds the watch, as for the follower's lost feed (design D2).
+	workerLost atomic.Bool
+
 	// The handles start records for cleanup, which clears them once it has released them
-	// all. runCancel ends the one run context (ADR-113) the follower's Run and the coalescer
-	// run under; feeds closes once Run has returned.
+	// all. runCancel ends the one run context (ADR-113) the follower's Run, the Worker's Run
+	// and the coalescer run under; feeds closes once the follower's Run has returned, worked
+	// once the Worker's has.
 	runCancel context.CancelFunc
 	feeds     chan struct{}
+	worked    chan struct{}
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-embedding: the ports
@@ -177,11 +184,14 @@ func (c *Component) InputPorts() []component.Port { return slices.Clone(c.inputs
 func (c *Component) OutputPorts() []component.Port { return slices.Clone(c.outputs) }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over the follower's stuck
-// states: a latched reset, unresolved writes, a lost feed.
+// states (a latched reset, unresolved writes, a lost feed) and a lost Worker watch.
 func (c *Component) Health() component.HealthStatus {
 	var stuck []string
 	if f := c.follower.Load(); f != nil {
 		stuck = f.Stuck()
+	}
+	if c.workerLost.Load() {
+		stuck = append(stuck, workerWatchLost)
 	}
 	return c.lifecycle.Health(stuck...)
 }
@@ -200,8 +210,8 @@ func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 // rolled back through cleanup. A component with no NATS client is refused first.
 //
 // ctx bounds Start only: the wait for ENTITY_STATES and opening the buckets run under it.
-// The follower's watch and the coalescer run under a run context start creates and cleanup
-// ends, so ending ctx after Start returned stops nothing (ADR-113).
+// The follower's watch, the Worker (hop 2) and the coalescer run under a run context start
+// creates and cleanup ends, so ending ctx after Start returned stops nothing (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")
@@ -255,6 +265,36 @@ func (c *Component) start(ctx context.Context) error {
 			c.logger.Warn("ENTITY_STATES watch did not stop cleanly", slog.Any("error", err))
 		}
 	}()
+
+	// Hop 2: the Worker embeds each pending record and reports its terminal outcome to
+	// onTerminal. It is launched last, so no failure in start follows it.
+	worker := embedding.NewWorker(c.storage, embedding.NewBM25Embedder(embedding.BM25Config{}), c.logger).
+		WithWorkers(c.config.Workers).
+		WithMaxSourceTextLen(c.config.MaxTextLen).
+		WithEmbedderType(c.config.EmbedderType).
+		WithOnTerminal(c.onTerminal)
+	// A nil *storeregistry.Registry in the interface would be a non-nil resolver that panics.
+	if c.storeRegistry != nil {
+		worker = worker.WithStoreResolver(c.storeRegistry)
+	}
+	worked := make(chan struct{})
+	c.worked = worked
+	go func() {
+		defer close(worked)
+		err := worker.Run(runCtx)
+		// The run context decides, not Run's error: any return while it is live is a lost
+		// watch. The latch precedes the log line, so a reader of the line reads the latch.
+		if runCtx.Err() == nil {
+			c.workerLost.Store(true)
+			c.logger.Error("embedding worker watch lost; pending records are not embedded until the process restarts",
+				slog.Any("error", err))
+			return
+		}
+		// A clean stop returns exactly the run context's error.
+		if err != nil && err != runCtx.Err() {
+			c.logger.Warn("EMBEDDING_INDEX watch did not stop cleanly", slog.Any("error", err))
+		}
+	}()
 	return nil
 }
 
@@ -291,15 +331,19 @@ func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ct
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
 // partial start: it ends the run context, joins the follower's Run, so nothing more is
-// delivered, then shuts the coalescer down, which waits for a batch in progress. A ctx that
-// ends first returns its error with the handles kept, and the next Stop resumes.
+// delivered, and the Worker's Run, so no terminal outcome follows, then shuts the coalescer
+// down, which waits for a batch in progress. A ctx that ends first returns its error with the
+// handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
 	if c.runCancel != nil {
 		c.runCancel()
 	}
-	if c.feeds != nil {
+	for _, done := range []chan struct{}{c.feeds, c.worked} {
+		if done == nil {
+			continue
+		}
 		select {
-		case <-c.feeds:
+		case <-done:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
@@ -312,6 +356,6 @@ func (c *Component) cleanup(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.runCancel, c.feeds, c.coalescer = nil, nil, nil
+	c.runCancel, c.feeds, c.worked, c.coalescer = nil, nil, nil, nil
 	return nil
 }

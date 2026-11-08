@@ -29,8 +29,9 @@ reviews the code. Each step ends when `task verify` passes on a clean tree at it
 
 ## 3. Code review
 
-- [ ] 3.1 Codex code review of record approves the head, with no BLOCKING or HIGH open. The PR body carries
-  `implemented-by:` and `reviewed-by: codex`.
+- [x] 3.1 Codex code review of record approves the head, with no BLOCKING or HIGH open: approve at `797e6d1` (PR #556
+  comment 6723152105), one NIT (stale pending-approval wording in `proposal.md` and the PR body), fixed. The PR body
+  carries `implemented-by:` and `reviewed-by: codex`.
 
 ## 4. Archive
 

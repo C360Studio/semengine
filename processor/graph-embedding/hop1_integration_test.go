@@ -48,9 +48,6 @@ func run(m *testing.M) int {
 	return code
 }
 
-// waitBound is the real-clock failure bound of every wait on the server.
-const waitBound = 60 * time.Second
-
 func fixtureClient(t *testing.T) *natsclient.Client {
 	t.Helper()
 	return natsfixture.Open(t, shared.Reset(t), openClient)
@@ -195,12 +192,10 @@ func (h *harness) put(t *testing.T, id string, value []byte) uint64 {
 	return rev
 }
 
-// await waits, bounded by waitBound, until done accepts what observe returns.
+// await waits until done accepts what observe returns; go test -timeout is the one deadline.
 func await[T any](t *testing.T, what string, observe func(context.Context) (T, error), done func(T) bool) T {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(t.Context(), waitBound)
-	defer cancel()
-	v, err := probe.Await(ctx, observe, done)
+	v, err := probe.Await(t.Context(), observe, done)
 	if err != nil {
 		t.Fatalf("%s: %v", what, err)
 	}
@@ -288,11 +283,44 @@ func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 	if err := h.states.Delete(t.Context(), a); err != nil {
 		t.Fatalf("delete %s: %v", a, err)
 	}
-	await(t, "the tombstone removes the record",
-		func(ctx context.Context) (*embedding.Record, error) { return h.record(ctx, a) },
-		func(r *embedding.Record) bool { return r == nil })
-	if got := h.f.Indexed(); got <= again {
-		t.Errorf("indexed %d after the tombstone; want above the pending revision %d", got, again)
+	// applyTombstone deletes the record before it completes the tombstone's revision, so the
+	// floor passing the pending revision orders the record read after the delete.
+	await(t, "the tombstone indexed",
+		func(context.Context) (uint64, error) { return h.f.Indexed(), nil },
+		func(got uint64) bool { return got > again })
+	if record, err := h.record(t.Context(), a); err != nil || record != nil {
+		t.Errorf("record after the tombstone = %+v, %v; want none", record, err)
+	}
+}
+
+// TestRestartCompletesGeneratedRevision: after a restart the follower replays ENTITY_STATES, and a
+// revision whose generated record already stands ends at hop 1, since SavePendingGuarded keeps
+// the generated record (pin #722 B2), so the floor reaches it with no terminal outcome from the
+// Worker; otherwise the replayed revision would hold the floor, and bootstrap, below it for good.
+// Hop 1 runs serially on the follower's goroutine and the watch delivers in revision order, so
+// B's record, written after the restart, being stored means hop 1 has returned for A's replay.
+func TestRestartCompletesGeneratedRevision(t *testing.T) {
+	client := fixtureClient(t)
+	first := startEmbedding(t, client, `{}`, nil)
+	a, b := entityID(1), entityID(2)
+	rev := first.put(t, a, entityValue(t, a, nil, "doc.meta.title", "first document"))
+	first.awaitPending(t, a, rev)
+	// Hop 2's write of the vector, through the storage it writes with.
+	if err := first.c.storage.SaveGenerated(t.Context(), a, []float32{1, 0}, "test-model", 2, "hash", rev); err != nil {
+		t.Fatalf("SaveGenerated: %v", err)
+	}
+	stopComponent(t, first.c)
+
+	second := startEmbedding(t, client, `{}`, nil)
+	revB := second.put(t, b, entityValue(t, b, nil, "doc.meta.title", "second document"))
+	second.awaitPending(t, b, revB)
+	if got := second.f.Indexed(); got < rev || got >= revB {
+		t.Errorf("indexed %d after the restart; want A's replayed generated revision %d complete, B's %d pending",
+			got, rev, revB)
+	}
+	if record, err := second.record(t.Context(), a); err != nil || record == nil ||
+		record.Status != embedding.StatusGenerated || record.SourceRevision != rev {
+		t.Errorf("A's record after the replay = %+v, %v; want generated at revision %d", record, err, rev)
 	}
 }
 
@@ -301,10 +329,15 @@ func TestHopOneEndsTextlessAndDeletedRevisions(t *testing.T) {
 // revision of the entity (design D1; pin
 // derived_state_convergence_integration_test.go:TestIntegration_CoalescedLane_TombstoneConverges).
 // The coalescer applies batches one after another, so B's record, written after A's last
-// revision was read, orders the floor read after A's batch.
+// revision was read, orders the floor read after A's batch. A watch that opens after both of A's
+// writes delivers only the second, so a first entity's record is awaited before them: the watch
+// is then live and delivers each of A's revisions.
 func TestCoalescedRevisionsComplete(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{"coalesce_ms": 20}`, nil)
-	a, b := entityID(1), entityID(2)
+	a, b, live := entityID(1), entityID(2), entityID(3)
+	revLive := h.put(t, live, entityValue(t, live, nil, "doc.meta.title", "the watch is live"))
+	h.awaitPending(t, live, revLive)
+	h.c.onTerminal(t.Context(), live, revLive, embedding.OutcomeGenerated, "")
 	first := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "version one"))
 	second := h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "version two"))
 	if record := h.awaitPending(t, a, second); record.SourceText != "version two" {

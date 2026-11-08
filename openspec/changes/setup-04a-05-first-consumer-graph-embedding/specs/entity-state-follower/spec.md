@@ -8,8 +8,9 @@ The follower's envelope SHALL be `ComputeIndexStatus` over the floor, the commit
 the bucket's last sequence, with these overrides: a target of 0 after the snapshot marker reads ready; a `Failed()`
 count above zero reads not ready, `degraded`, and is carried in `failed_count`, with the per-reason counts the same
 `Failed()` call returned in `failed_reasons`; a failed target read reads `degraded`; a latched reset reads
-`reset_required` with its reason; while the floor is behind the target and no `Complete` call has arrived for 30 s,
-the envelope reads `degraded`, and a held low revision with later completions within 30 s does not. `Failed()` SHALL
+`reset_required` with its reason; when the floor has been behind the target for 30 s with no `Complete` call, the
+envelope reads `degraded` (time spent caught up does not count), and a held low revision with later completions
+within 30 s does not. `Failed()` SHALL
 return a map the follower owns (the plug-in keeps no reference to
 it). The envelope SHALL NOT carry `first_failure_at`.
 
@@ -39,3 +40,8 @@ it). The envelope SHALL NOT carry `first_failure_at`.
 
 - **WHEN** the floor is behind and no revision completes for more than 30 s
 - **THEN** the envelope reads `degraded` (`TestNoCompletionsReadsDegraded`)
+
+#### Scenario: Falling behind after a long time caught up
+
+- **WHEN** the floor has been at the target for more than 30 s with no completion and a new write arrives
+- **THEN** the first reading behind is `building`, not `degraded` (`TestNoCompletionsReadsDegraded`)

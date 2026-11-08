@@ -240,7 +240,8 @@ func (c *Component) start(ctx context.Context) error {
 	c.runCancel = runCancel
 	if c.config.CoalesceMs > 0 {
 		coalescer, err := cache.NewCoalescingSet(runCtx, time.Duration(c.config.CoalesceMs)*time.Millisecond,
-			func(keys []string) { c.reconcileBatch(runCtx, keys) }, cache.WithPanicLogger(c.logger))
+			func(keys []string) { c.reconcileBatch(runCtx, keys) }, cache.WithPanicLogger(c.logger),
+			cache.WithCoalescingMetrics(c.metricsRegistry, key))
 		if err != nil {
 			return errs.Wrap(err, "Component", "Start", "build the coalescer")
 		}

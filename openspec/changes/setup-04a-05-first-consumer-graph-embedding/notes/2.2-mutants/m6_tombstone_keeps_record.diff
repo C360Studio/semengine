@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -99,7 +99,7 @@
+ func (c *Component) applyTombstone(ctx context.Context, key string, revision uint64) {
+ 	c.hop1Mu.Lock()
+ 	defer c.hop1Mu.Unlock()
+-	if err := c.storage.DeleteEmbedding(ctx, key); err != nil {
++	if err := error(nil); err != nil {
+ 		c.logger.Warn("embedding record delete failed for a deleted entity",
+ 			slog.String("entity", key), slog.Any("error", err))
+ 	}

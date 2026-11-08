@@ -248,7 +248,8 @@ func TestGraphIndexHeldRevisionNotDegraded(t *testing.T) {
 // TestNoCompletionsReadsDegraded: while the floor is behind and no Complete call arrives for more
 // than 30 s, the envelope reads degraded (spec, "Nothing completes"); 30 s exactly does not. A
 // completion afterwards, even one that does not raise the floor, ends it; caught up is never
-// degraded, whatever the age of the last completion.
+// degraded, whatever the age of the last completion, and the 30 s count from the moment the
+// follower falls behind, not from the last completion before it.
 func TestNoCompletionsReadsDegraded(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		f := progressFollower("graph-embedding")
@@ -272,7 +273,20 @@ func TestNoCompletionsReadsDegraded(t *testing.T) {
 		f.Complete("k2", 2)
 		<-time.After(time.Hour)
 		if status := read(f, target); !status.Ready || status.State != graph.IndexStateReady {
-			t.Errorf("caught up an hour after the last completion: envelope %+v; want ready", status)
+			t.Fatalf("caught up an hour after the last completion: envelope %+v; want ready", status)
+		}
+		// That reading saw the last completions; another hour passes caught up, read by the
+		// heartbeat, with none. A write then arrives: the follower is behind, but has not been
+		// behind for 30 s, so the reading is building, not degraded.
+		<-time.After(time.Hour)
+		if status := read(f, target); !status.Ready {
+			t.Fatalf("caught up two hours after the last completion: envelope %+v; want ready", status)
+		}
+		if err := f.watermark.Observe(4, "k4", time.Now()); err != nil {
+			t.Fatalf("Observe(4): %v", err)
+		}
+		if status := read(f, 4); status.State != graph.IndexStateBuilding {
+			t.Errorf("first reading behind after two hours caught up: state %s; want building", status.State)
 		}
 	})
 }

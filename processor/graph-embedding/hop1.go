@@ -73,6 +73,13 @@ func (c *Component) reconcileEntity(ctx context.Context, key string) {
 // converges to no record and drains every revision of it (^uint64(0): the delivered
 // revisions are not in hand). Any other failure drains too, so a transient read failure
 // does not pin the floor (pin component.go:1628-1670).
+//
+// Known limit, as at the pin: on the coalesced lane the follower keeps delivering while the
+// coalescer's goroutine reads, so completing at ^uint64(0) also drains a re-create of key the
+// follower observed during that read. The re-create's update still reaches a later batch, which
+// writes its pending record, but the floor has already passed it: readiness reads caught up
+// while that record waits for hop 2. On the inline lane the follower is blocked in Deliver for
+// the read, so only revisions delivered before it are drained.
 func (c *Component) readFailed(ctx context.Context, key string, err error) {
 	if natsclient.IsKVNotFoundError(err) {
 		if delErr := c.storage.DeleteEmbedding(ctx, key); delErr != nil {

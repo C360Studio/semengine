@@ -4508,7 +4508,8 @@
     is declared (ADR-063), as at the pin
   dependencies_and_side_effects: >-
     component, graph, graph/embedding, graph/readiness, natsclient, pkg/errs, storage/storeregistry (in-set);
-    construction opens no connection and registers nothing
+    construction opens no connection and registers only semengine_graph_embedding_content_unresolved_total on the
+    injected metrics registry (metrics.go)
   known_risks: >-
     task 2.1 of the change: the component is construction only (InputPorts, OutputPorts, Health, DataFlow over
     component.Lifecycle); Initialize, Start, Stop, the follower plug-in, the Worker and their tests enter with tasks

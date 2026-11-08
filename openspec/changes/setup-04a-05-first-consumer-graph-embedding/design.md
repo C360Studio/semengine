@@ -28,7 +28,7 @@ the plug-in sees no change. *Proof:* `TestReadinessWaitsForHopTwo`, `TestCoalesc
 
 **When the envelope reads degraded (owner, (a1), PR #550 comment 6721867279).** The follower counts its own
 `Complete` calls; while behind, it reads degraded only after 30 s with no completion, for every plug-in, instead of
-30 s without the floor rising (`graph/follower/follower.go:77`, `:471-479`). This is the pin embedding producer's
+30 s without the floor rising (`graph/follower/follower.go:77`, `:481-495`). This is the pin embedding producer's
 completion rule (pin `readiness.go:192-212`, ADR-066 § 3; pin test
 `readiness_test.go:TestTrackEmbeddingProgress_CompletionsBasedStuckDetector`, unit) at the tree's 30 s, so one low
 revision held on a slow offloaded-body read while later entities finish reads not ready, with `staleness_ms` rising,

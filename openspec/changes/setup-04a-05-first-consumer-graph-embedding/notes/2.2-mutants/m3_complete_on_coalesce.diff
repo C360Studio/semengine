@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -38,6 +38,7 @@
+ 	}
+ 	if c.coalescer != nil {
+ 		c.coalescer.Add(e.Key)
++		c.complete(e.Key, e.Revision)
+ 		return
+ 	}
+ 	c.reconcileEntity(ctx, e.Key)

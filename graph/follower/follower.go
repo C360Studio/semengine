@@ -478,15 +478,18 @@ func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq ui
 	return info.State.LastSeq, info.Created, nil
 }
 
-// stalled is the stuck detector: no Complete call has arrived for degradedStuckAfter while behind
-// the target (pin processor/graph-embedding/readiness.go:192-212).
+// stalled is the stuck detector: the follower has been behind the target for degradedStuckAfter
+// with no Complete call (pin processor/graph-embedding/readiness.go:192-212). A caught-up reading
+// counts as progress too, so the 30 s start when the follower falls behind, not at the last
+// completion before it: the heartbeat reads at least every readiness.DefaultHeartbeat.
 func (f *Follower) stalled(indexed, target uint64) bool {
 	now := time.Now()
 	completions := f.completions.Load()
+	caughtUp := target > 0 && indexed >= target
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
+	if caughtUp || completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
 		f.lastCompletionsSeen, f.lastProgressAt = completions, now
 	}
-	return !(target > 0 && indexed >= target) && now.Sub(f.lastProgressAt) > degradedStuckAfter
+	return !caughtUp && now.Sub(f.lastProgressAt) > degradedStuckAfter
 }

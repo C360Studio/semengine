@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -188,7 +188,6 @@
+ // Continuing is safe because the inline text is still the entity's; the counter counts each
+ // such entity and the warning is logged once, so the log is one actionable line.
+ func (c *Component) reportOffloadedBodyExcluded(key, instance string) {
+-	c.metrics.contentUnresolved.Inc()
+ 	c.offloadExcludedWarn.Do(func() {
+ 		c.logger.Warn("offloaded body excluded from embeddings: no store is registered for its "+
+ 			"storage instance; start or restore that storage component (inline text is still embedded)",

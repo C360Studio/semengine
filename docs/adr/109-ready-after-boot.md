@@ -189,12 +189,12 @@ revision comparison. Both return with graph-index in change 4.
 | --- | --- | --- |
 | ADR-066 :128-134 (the "ready at ~30 s" bug); ADR-088 :36-38 | Kept as the reason a boot window exists; the reply in that window is `index_not_ready` | Context, D1 |
 | ADR-066 :89-92 (`ready` is coverage); ADR-088 D4 :69-73 (caught-up is backlog), :95-98 (coverage predicate) | Kept as reported numbers in the envelope; information, never a gate | D3, D4 |
-| ADR-066 :85, ADR-083 :141 (`allow_ungated_reads`) | Dropped: no consumer reads a sign before it asks, so there is no unknown case to escape | D1, D3 |
+| ADR-066 :85, ADR-083 :142 (`allow_ungated_reads`) | Dropped: no consumer reads a sign before it asks, so there is no unknown case to escape | D1, D3 |
 | ADR-066 :338-339 (fusion's copy of the envelope) | Not decided here; fusion's port (#135 (g)) | — |
 | ADR-066 :408-409 (superseded revisions never delivered) against ADR-110 :192 | Not decided here; #103 | D4 |
 | pin ADR-074 :69-71 (readiness false under a reset, for the life of the process); :78-80 (a transport failure degrades without latching) | Kept through health: a sticky reset is a named stuck state and lowers `Healthy`, and the responder answers it fatal; the envelope's `Ready` under it is information; a transport failure that persists is stuck while it lasts and still latches nothing | D1, D2, D3 |
 | pin ADR-079 D3 :38-46 (poison lowers `Health()` only; the read surface refuses only poisoned entities) | Kept: the poison inventory is a named stuck state, and the refusal stays per entity | D1, D2 |
-| ADR-083 D1 :70-75 (published as state, not answered as a query; a key per producer) | Changed: the state stays published, as information, one key per producer; what a consumer acts on is the reply, whose classified-transient retry contract ADR-083 left untouched (:80-81) | D1, D3 |
+| ADR-083 D1 :70-75 (published as state, not answered as a query; a key per producer) | Changed: the state stays published, as information, one key per producer; what a consumer acts on is the reply, whose classified-transient retry contract ADR-083 left untouched (:80-82) | D1, D3 |
 | ADR-088 D1 :46-54, D3 :64-67 (no aggregate, no mandatory list) | Kept as #93 built it, as information; nothing waits on a key | D3 |
 | ADR-083 D2 :87-91 (freshness on arrival) | Dropped from the contract; #93's `Watcher` ships with no SemEngine reader | D3 |
 | ADR-083 D3 :99-103; ADR-085 D2 :94-99 (staleness reported, never gating) | Kept: reported, never gating; time amended (#408) | D3, D4 |

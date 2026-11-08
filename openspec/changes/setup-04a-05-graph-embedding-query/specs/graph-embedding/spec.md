@@ -16,7 +16,8 @@ other subject, from `Start` until `Stop` returns.
 
 Each answer SHALL be a `graph.QueryResponse` with producer `graph-embedding` and `indexed_revision` 0, whose `data` is
 a `graph.SemanticData` (with `embedder_type` `bm25`) or a `graph.SimilarData`. Its `results` SHALL be a JSON array,
-and its `unreadable_records` SHALL be the number of `EMBEDDING_INDEX` records the cache could not decode.
+its `unreadable_records` SHALL be the number of `EMBEDDING_INDEX` records the cache could not decode, and its
+`failed_records` the number of entities whose latest embedding failed in the Worker.
 
 #### Scenario: An empty index
 
@@ -26,12 +27,23 @@ and its `unreadable_records` SHALL be the number of `EMBEDDING_INDEX` records th
 ### Requirement: Requests are decoded strictly
 
 A `search` or `similar` request holding a key its type does not define, or data after the JSON object, SHALL be
-refused `invalid_request` naming what was refused. The request types SHALL NOT define `min_revision`.
+refused `invalid_request` naming what was refused.
 
-#### Scenario: A request naming min_revision
+#### Scenario: An unknown key
 
-- **WHEN** a `search` or `similar` request holds `min_revision`
+- **WHEN** a `search` request holds a key `SemanticRequest` does not define
 - **THEN** it is refused `invalid_request` naming the key (`TestRequestsDecodeStrictly`)
+
+### Requirement: The embedding verbs claim no revision
+
+Both request types SHALL accept `min_revision`. A `min_revision` of 0 SHALL be answered with `indexed_revision` 0; a
+`min_revision` above 0 SHALL be refused class invalid, `invalid_request`, never answered.
+
+#### Scenario: A caller asks for its write
+
+- **WHEN** a `search` request, sent directly or through graph-query's `semantic` forward, holds `min_revision` 7
+- **THEN** it is refused class invalid, `invalid_request` (`TestMinRevisionAboveZeroRefused`,
+  `TestSemanticForwardsMinRevision`)
 
 ### Requirement: The limit is bounded
 
@@ -79,8 +91,8 @@ match every entity, and `scope` SHALL filter candidates before they are ranked.
 ### Requirement: Similar needs a generated source vector
 
 `similar` SHALL refuse a malformed `entity_id` with `invalid_request`. It SHALL refuse class invalid, code
-`embedding_unavailable`, when the entity has no record, its record is not generated, its record has no vector, or
-its record cannot be decoded.
+`embedding_unavailable`, when the entity has no record, its record is not generated, or its record has no vector. A
+source record that cannot be decoded SHALL be refused class invalid with no code.
 
 #### Scenario: Similar to an unknown entity
 
@@ -90,8 +102,9 @@ its record cannot be decoded.
 ### Requirement: The embedding verbs are withheld until they can answer
 
 Before answering, each verb SHALL ask the follower's `QueryReady`: a latched reset SHALL be refused fatal
-`graph_state_reset_required`, and a lost feed, any failed-map entry or an incomplete first build SHALL be refused
-transient `index_not_ready`. A vector cache that has not applied its initial snapshot, or whose watch is lost, SHALL
+`graph_state_reset_required`, and a lost feed, an incomplete first build or a held hop-1 failure (`delete_failed`,
+`pending_write_failed`, `entity_read_failed`) SHALL be refused transient `index_not_ready`. A Worker failure SHALL NOT
+withhold an answer. A vector cache that has not applied its initial snapshot, or whose watch is lost, SHALL
 be refused transient `index_not_ready`.
 
 #### Scenario: Before the first build
@@ -100,11 +113,16 @@ be refused transient `index_not_ready`.
 - **THEN** it is refused transient `index_not_ready`, and the same request answers once the build completes
   (`TestQueriesWithheldUntilReady`)
 
-#### Scenario: One failed entity
+#### Scenario: A hop-1 failure
 
-- **WHEN** the failed map holds one entry after the first build
+- **WHEN** the failed map holds one `delete_failed` entry after the first build
 - **THEN** both verbs are refused transient `index_not_ready` until that entity converges
   (`TestQueriesWithheldUntilReady`)
+
+#### Scenario: A document whose text cannot be extracted
+
+- **WHEN** the failed map holds one `content_error` entry and no hop-1 failure
+- **THEN** `search` answers from the other vectors with `failed_records` 1 (`TestWorkerFailureAnswersAndCounts`)
 
 ### Requirement: A lost cache watch is a stuck state
 

@@ -33,7 +33,7 @@ how a library times, orders or fails: the cache inherits `pkg/graphview`'s probe
 - The pin's reply shapes: `pin:query.go:58` `SimilarResponse{EntityID, Similar, Duration}`, `:85`
   `SearchResponse{Query, Results, Duration, EmbedderType}`, `:65`/`:93` two hit types; the tree has one,
   `graph.SimilarityHit` (`graph/query_search_types.go:14`).
-- Ranking spelled twice at the pin: warm cache `pin:graph/embedding/storage.go` (`FindSimilarFromCache`, :147-198)
+- Ranking spelled twice at the pin: warm cache `pin:graph/embedding/storage.go` (`FindSimilarFromCache`, `:893-930`)
   and cold scan `pin:query.go:289-356`; ADR-071's BLOCKING defect was a drift between them
   (`docs/adr/071-fusion-domain-scoped-nl-retrieval.md:111-118`). Tree: one, `graph/embedding/vector_cache.go:150`.
 - Readiness check spelled at the pin as `ensureBootstrapReady` (`pin:component.go:1723-1737`: reset, watch
@@ -54,6 +54,13 @@ how a library times, orders or fails: the cache inherits `pkg/graphview`'s probe
 - Specs: `embedding-index` "The vector cache answers only while authoritative" (`embedding-index/spec.md:61-97`)
   changes; `graph-query` "searchGraph answers as global search" (`spec.md:846-849`, "SHALL make no semantic
   request") and the forward requirement (`:220-226`) stay; `graph-transport-boundary` `:38` already lists the rows.
+- `graph-query` spec `:121-125`: "Every verb SHALL accept `min_revision`. On an enveloped verb it SHALL reach every
+  derived-index read unchanged", and a success for M carries `indexed_revision` at least M; `semantic` and `similar`
+  forward the bytes unchanged (`processor/graph-query/query.go:32-33`). This binds the embedding requests (design D4).
+- Failure withholding: `graph/follower/follower.go:388-390` withholds on any `Failed` count; tier-0 trigger
+  `content_error` (`graph/embedding/storage.go:493`), not re-driven by the repair lane
+  (`processor/graph-embedding/failed.go:44-50`); the pin withheld on none
+  (`pin:processor/graph-embedding/component.go:1723-1737`).
 - Accepted design commitment: 03B D5, `archive/2026-10-01-setup-03b-contract-boundary/design.md:358` — searchGraph
   "keep at tier 0/1 under its degraded contract (exact or semantic fallback ...)"; change 4 text design D7 deferred
   the fallback to change 5 (`archive/2026-11-07-...-graph-query-text/design.md:136-146`).
@@ -87,8 +94,10 @@ Queries (`gh issue list --state open --search <term>`): `graph-embedding`, `embe
 | #557 smoke test | stays: its own PR (merge order above) |
 | #10 BM25 restart-stable ranking | stays (04B): query statistics are process-local and restart from documents embedded since start |
 | #110 fusion envelope copy | stays (PR C) |
+| #141 `UpdateWithRetryRead` adoption | stays: names `graph/embedding/storage.go:308,367,438`; those loops are not touched by this PR, only `ListGeneratedEntityIDs` goes; its graph/embedding part is done (2026-10-28 comment) |
 
-Names the word, not the package: #9, #134, #141, #15, #16, #24, #26, #27, #68, #81, #84, #284, #294, #484, #506, #554.
+Names the word, not the package: #9, #134, #15, #16, #24, #26, #27, #68, #81, #84, #284, #294, #484, #487 (tier-2 LLM
+answer in graph-query, a `searchGraph` hit), #506, #554.
 
 ## 6. Shape sweep of the read path (pin copy)
 
@@ -122,8 +131,8 @@ Run; no status key or catalog entry added.
 
 Who: a fusion lens author (PR D's client), graph-clustering's port, SemSource's `graph_search` tool.
 
-1. Must know: replies are `data.results` in an envelope; `limit` 0 to 100; `min_revision` is refused; a transient
-   `index_not_ready` is retried, `embedding_unavailable` is not.
+1. Must know: replies are `data.results` in an envelope; `limit` 0 to 100; `min_revision` above 0 is refused; a
+   transient `index_not_ready` is retried, `embedding_unavailable` is not.
 2. Do nothing: an old decoder reads empty `similar` (silent) — only graph-clustering's pin client, which is ported,
    not adopted; a `limit` of 500 is refused (loud); an unscoped caller is unchanged.
 3. Find out: typed runtime error for limit, keys and readiness; `MIGRATION.md` for the reply shape (doc level, the

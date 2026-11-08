@@ -3,6 +3,7 @@ package follower
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/internal/revlag"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -176,4 +178,107 @@ func TestFollowerDeclaresLostFeedOnOutOfOrderDelivery(t *testing.T) {
 		!strings.Contains(err.Error(), "feed is lost") {
 		t.Errorf("QueryReady = %v; want transient %s for the lost feed", err, graph.ErrorCodeIndexNotReady)
 	}
+}
+
+// progressFollower is a Follower with only what envelope and Complete read: the watermark, the
+// failed count and the progress record. The tests below observe revisions straight into the
+// watermark, as observe does for a live write.
+func progressFollower(key string) *Follower {
+	return &Follower{key: key, logger: slog.New(slog.DiscardHandler), failed: func() int64 { return 0 },
+		watermark: revlag.New()}
+}
+
+// observeAll records revisions 1..n, key k<rev> committed at the bubble's now.
+func observeAll(t *testing.T, f *Follower, n uint64) {
+	t.Helper()
+	for rev := uint64(1); rev <= n; rev++ {
+		if err := f.watermark.Observe(rev, fmt.Sprintf("k%d", rev), time.Now()); err != nil {
+			t.Fatalf("Observe(%d): %v", rev, err)
+		}
+	}
+}
+
+// heldLowRevision is the history both held-revision tests run: revisions 1..6 are delivered, and
+// revision 1 is never completed while revisions 2..6 complete one every 10 s, so the floor stays
+// at 0 for 50 s. The envelope is read after each completion and once more 10 s after the last.
+// Inside a synctest bubble a wait on time.After advances the fake clock exactly, so each reading is taken
+// at a known age (docs/testing.md: the bubble's clock is the ordering event).
+func heldLowRevision(t *testing.T, key string) {
+	t.Helper()
+	synctest.Test(t, func(t *testing.T) {
+		f := progressFollower(key)
+		observeAll(t, f, 6)
+		const target = 6
+		read(f, target) // the first reading starts the progress clock
+		for rev := uint64(2); rev <= target; rev++ {
+			<-time.After(10 * time.Second)
+			f.Complete(fmt.Sprintf("k%d", rev), rev)
+			status := read(f, target)
+			if status.Ready || status.State != graph.IndexStateBuilding || status.IndexedRevision != 0 {
+				t.Fatalf("after revision %d completed at %v: envelope %+v; want not ready, building, indexed 0",
+					rev, time.Duration(rev-1)*10*time.Second, status)
+			}
+			// staleness_ms is the age of revision 1, the oldest one not applied: it rises.
+			if want := (rev - 1) * 10_000; status.StalenessMs != want {
+				t.Errorf("after revision %d: staleness_ms %d; want %d", rev, status.StalenessMs, want)
+			}
+		}
+		// 10 s after the last completion: still inside the 30 s window.
+		<-time.After(10 * time.Second)
+		if status := read(f, target); status.State != graph.IndexStateBuilding {
+			t.Errorf("10 s after the last completion: state %s; want building", status.State)
+		}
+	})
+}
+
+// TestHeldLowRevisionWithProgress: one revision not completed for more than 30 s while later
+// revisions keep completing reads not ready and not degraded (entity-state-follower spec, "A held
+// low revision while later revisions complete"; owner ruling (a1), PR #550 comment 6721867279).
+func TestHeldLowRevisionWithProgress(t *testing.T) {
+	heldLowRevision(t, "graph-embedding")
+}
+
+// TestGraphIndexHeldRevisionNotDegraded: graph-index reads the same rule, since the rule is the
+// follower's and graph-index has no option of its own (design D1: "graph-index changes the same
+// way"). The history is the one above under graph-index's status key.
+func TestGraphIndexHeldRevisionNotDegraded(t *testing.T) {
+	heldLowRevision(t, readiness.KeyGraphIndex)
+}
+
+// TestNoCompletionsReadsDegraded: while the floor is behind and no Complete call arrives for more
+// than 30 s, the envelope reads degraded (spec, "Nothing completes"); 30 s exactly does not. A
+// completion afterwards, even one that does not raise the floor, ends it; caught up is never
+// degraded, whatever the age of the last completion.
+func TestNoCompletionsReadsDegraded(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := progressFollower("graph-embedding")
+		observeAll(t, f, 3)
+		const target = 3
+		read(f, target)
+		<-time.After(degradedStuckAfter)
+		if status := read(f, target); status.State != graph.IndexStateBuilding {
+			t.Fatalf("at exactly %v with no completion: state %s; want building", degradedStuckAfter, status.State)
+		}
+		<-time.After(time.Millisecond)
+		if status := read(f, target); status.State != graph.IndexStateDegraded || status.Ready {
+			t.Fatalf("past %v with no completion: envelope %+v; want degraded, not ready", degradedStuckAfter, status)
+		}
+		f.Complete("k3", 3) // revision 1 still holds the floor at 0
+		if status := read(f, target); status.State != graph.IndexStateBuilding ||
+			status.IndexedRevision != 0 {
+			t.Fatalf("after a completion that leaves the floor: envelope %+v; want building at indexed 0", status)
+		}
+		f.Complete("k1", 1)
+		f.Complete("k2", 2)
+		<-time.After(time.Hour)
+		if status := read(f, target); !status.Ready || status.State != graph.IndexStateReady {
+			t.Errorf("caught up an hour after the last completion: envelope %+v; want ready", status)
+		}
+	})
+}
+
+// read is the envelope compute builds once it has read target from the stream.
+func read(f *Follower, target uint64) graph.IndexStatusResponse {
+	indexed, indexedAt := f.watermark.IndexedAt()
+	return f.envelope(indexed, indexedAt, target)
 }

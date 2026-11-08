@@ -71,9 +71,11 @@ type Config struct {
 	Failed func() int64
 }
 
-// degradedStuckAfter is how long the floor may stand still while behind before the envelope reads
-// degraded (ADR-066 §4). It is a property of the envelope, not a Stuck state: a slow replay is
-// catch-up (ADR-109 D4).
+// degradedStuckAfter is how long the follower may go without a Complete call while behind before
+// the envelope reads degraded (ADR-066 §3 and §4, at 30 s for every plug-in by owner ruling (a1),
+// PR #550 comment 6721867279). Any completion counts, so one revision held while later ones finish
+// reads not ready but not degraded. It is a property of the envelope, not a Stuck state: a slow
+// replay is catch-up (ADR-109 D4).
 const degradedStuckAfter = 30 * time.Second
 
 // resetRemedy is what an operator does about a latched reset, as graph-index said at the pin.
@@ -105,9 +107,11 @@ type Follower struct {
 	// not promised.
 	statusMu sync.Mutex
 
-	mu              sync.Mutex // guards the stuck detector's progress record
-	lastIndexedSeen uint64
-	lastProgressAt  time.Time
+	completions atomic.Uint64 // Complete calls, the stuck detector's progress signal
+
+	mu                  sync.Mutex // guards the stuck detector's progress record
+	lastCompletionsSeen uint64
+	lastProgressAt      time.Time
 }
 
 // Open waits for ENTITY_STATES up to Config.StartupAttempts times Config.StartupInterval, opens
@@ -329,9 +333,11 @@ func (f *Follower) publish(ctx context.Context) {
 	}
 }
 
-// Complete records that revision of key is applied, with every earlier revision of it.
+// Complete records that revision of key is applied, with every earlier revision of it. Each call
+// counts as progress for the stuck detector, whether or not it raises the floor.
 func (f *Follower) Complete(key string, revision uint64) {
 	f.watermark.Complete(key, revision)
+	f.completions.Add(1)
 }
 
 // Reset latches reason for the life of the process. The first reason holds; later calls change
@@ -425,6 +431,12 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 			BootstrapComplete: f.bootstrapped.Load(),
 		}
 	}
+	return f.envelope(indexed, indexedAt, target)
+}
+
+// envelope is compute's projection once the target is read: ComputeIndexStatus over the floor
+// and the target, then the overrides only this producer can see, then the bootstrap latch.
+func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
 	failed := f.failed()
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
 		Indexed:           indexed,
@@ -466,14 +478,15 @@ func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq ui
 	return info.State.LastSeq, info.Created, nil
 }
 
-// stalled is the stuck-watermark detector: the floor has not advanced for degradedStuckAfter while
-// behind the target.
+// stalled is the stuck detector: no Complete call has arrived for degradedStuckAfter while behind
+// the target (pin processor/graph-embedding/readiness.go:192-212).
 func (f *Follower) stalled(indexed, target uint64) bool {
 	now := time.Now()
+	completions := f.completions.Load()
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if indexed > f.lastIndexedSeen || f.lastProgressAt.IsZero() {
-		f.lastIndexedSeen, f.lastProgressAt = indexed, now
+	if completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
+		f.lastCompletionsSeen, f.lastProgressAt = completions, now
 	}
 	return !(target > 0 && indexed >= target) && now.Sub(f.lastProgressAt) > degradedStuckAfter
 }

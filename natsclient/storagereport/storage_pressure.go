@@ -79,16 +79,16 @@ const (
 type StoragePressureThresholds struct {
 	// WarningHeadroom is the free fraction (0..1) at or below which a resource
 	// reports warning.
-	WarningHeadroom float64 `json:"warning_headroom,omitempty" schema:"type:number,description:Free fraction at or below which a resource reports warning pressure,default:0.25,category:advanced"`
+	WarningHeadroom float64 `json:"warning_headroom,omitempty" schema:"type:float,description:Free fraction at or below which a resource reports warning pressure,default:0.25,category:advanced"`
 
 	// HighHeadroom is the free fraction at or below which a resource reports
 	// high.
-	HighHeadroom float64 `json:"high_headroom,omitempty" schema:"type:number,description:Free fraction at or below which a resource reports high pressure,default:0.15,category:advanced"`
+	HighHeadroom float64 `json:"high_headroom,omitempty" schema:"type:float,description:Free fraction at or below which a resource reports high pressure,default:0.15,category:advanced"`
 
 	// CriticalHeadroom is the free fraction at or below which a resource
 	// reports critical. It is also the level the time projection targets, so
 	// "time to threshold" means "time until this fraction is all that is left".
-	CriticalHeadroom float64 `json:"critical_headroom,omitempty" schema:"type:number,description:Free fraction at or below which a resource reports critical pressure (also the level time-to-threshold targets),default:0.05,category:advanced"`
+	CriticalHeadroom float64 `json:"critical_headroom,omitempty" schema:"type:float,description:Free fraction at or below which a resource reports critical pressure (also the level time-to-threshold targets),default:0.05,category:advanced"`
 
 	// WarningHorizon is the projected time-to-threshold at or below which a
 	// resource reports warning.

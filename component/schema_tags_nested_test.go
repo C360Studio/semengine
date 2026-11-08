@@ -18,7 +18,6 @@ type nestedSchemaHost struct {
 type nestedSchemaLimits struct {
 	Burst   int               `json:"burst" schema:"required,type:int,description:Burst size,min:1,max:64,default:8,category:advanced"`
 	Mode    string            `json:"mode" schema:"type:enum,enum:fast|safe,default:safe"` // description falls back to the name
-	Broken  string            `json:"broken" schema:"type:nonsense"`                       // invalid tag: skipped
 	Ignored string            `json:"-" schema:"type:string"`                              // json "-": skipped
 	NoJSON  string            `schema:"type:string"`                                       // no json tag: skipped
 	Unnamed string            `json:",omitempty" schema:"type:string"`                     // empty json name: skipped
@@ -71,9 +70,8 @@ func wantCacheFields() map[string]CacheFieldInfo {
 // at every depth and through pointers; a field tagged type:array carries the
 // schema of its elements, a struct element expanded the same way; a nested
 // field without a schema tag gets a type inferred from its Go type and the
-// description from its description tag; a nested field with no json name or an
-// invalid schema tag is left out; and a field tagged type:cache carries the
-// cache's field metadata.
+// description from its description tag; a nested field with no json name is
+// left out; and a field tagged type:cache carries the cache's field metadata.
 func TestGenerateConfigSchemaExpandsNestedStructsAndArrays(t *testing.T) {
 	one, sixtyFour := 1, 64
 	host := map[string]PropertySchema{

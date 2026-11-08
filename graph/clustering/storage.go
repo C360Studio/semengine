@@ -99,14 +99,30 @@ func (s *NATSCommunityStorage) remove(ctx context.Context, key string) error {
 // dot, and the ID's first four (level 0), three (1) or two (2) positions. It refuses, with
 // an invalid error, a level outside 0 to 2 and an ID the canonical parser refuses.
 func GroupKey(entityID string, level int) (string, error) {
-	if level < 0 || level >= levels {
-		return "", errs.WrapInvalid(fmt.Errorf("level %d is not 0, 1 or 2", level), "clustering", "GroupKey", "check level")
+	prefix, err := LevelPrefix(level)
+	if err != nil {
+		return "", err
 	}
 	eid, err := types.ParseEntityID(entityID)
 	if err != nil {
 		return "", errs.WrapInvalid(fmt.Errorf("entity %q: %w", entityID, err), "clustering", "GroupKey", "parse entity ID")
 	}
-	return communityKey(level, groupIDs(eid)[level]), nil
+	return prefix + groupIDs(eid)[level], nil
+}
+
+// LevelPrefix returns the prefix every COMMUNITY_INDEX key at level starts with: the
+// level and a dot. It refuses, with an invalid error, a level outside 0 to 2.
+func LevelPrefix(level int) (string, error) {
+	if level < 0 || level >= levels {
+		return "", errs.WrapInvalid(fmt.Errorf("level %d is not 0, 1 or 2", level), "clustering", "LevelPrefix", "check level")
+	}
+	return levelPrefix(level), nil
+}
+
+// levelPrefix is LevelPrefix for a level the caller knows is 0 to 2, such as a record's
+// own or an index into a [levels] array.
+func levelPrefix(level int) string {
+	return strconv.Itoa(level) + "."
 }
 
 // DecodeCommunity decodes value, the COMMUNITY_INDEX entry at key, as storage does. It
@@ -121,10 +137,11 @@ func DecodeCommunity(key string, value []byte) (*Community, error) {
 	if err := json.Unmarshal(value, &community); err != nil {
 		return refuse(fmt.Errorf("decode %s: %w", key, err))
 	}
-	if community.Level < 0 || community.Level >= levels {
-		return refuse(fmt.Errorf("%s holds a record at level %d, not 0, 1 or 2", key, community.Level))
+	prefix, err := LevelPrefix(community.Level)
+	if err != nil {
+		return refuse(fmt.Errorf("record at %s: %w", key, err))
 	}
-	if own := communityKey(community.Level, community.ID); own != key {
+	if own := prefix + community.ID; own != key {
 		return refuse(fmt.Errorf("%s holds the record of %q", key, own))
 	}
 	if community.EntityRevision == 0 {
@@ -134,6 +151,7 @@ func DecodeCommunity(key string, value []byte) (*Community, error) {
 }
 
 // communityKey is a group record's key, {level}.{group ID} (pin storage.go:518-520).
+// The caller knows level is 0 to 2.
 func communityKey(level int, id string) string {
-	return strconv.Itoa(level) + "." + id
+	return levelPrefix(level) + id
 }

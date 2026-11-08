@@ -37,8 +37,8 @@ transport"; `TestGraphImportsNoTransport`).
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
   and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
   depends on the verb: `entity`, `batch`, `prefix` and `hierarchyStats` are bare, and `byName`, `entityByAlias`,
-  `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `semantic`, `similar`, `spatial` and
-  `temporal` are enveloped. A caller
+  `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`,
+  `spatial` and `temporal` are enveloped. A caller
   decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the body or of `data`),
   never by the reply's content.
 - **Reading at a revision.** A request on an enveloped verb may carry `min_revision` (`MinRevisionField`), the
@@ -51,13 +51,12 @@ transport"; `TestGraphImportsNoTransport`).
   `graph.index.query.*`, the four verbs of the embedding, spatial and temporal responders (`search` and `similar` on
   `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), and graph-query's
   `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`, `summary`,
-  `localSearch`, `globalSearch`, `semantic`, `similar`, `spatial` and `temporal` on `graph.query.*`. A name is unique
-  only within its responder: `entity` is declared for graph-ingest and for graph-query. Each row also marks `Enveloped`
-  and gives the `Reply` type.
+  `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on `graph.query.*`. A
+  name is unique only within its responder: `entity` is declared for graph-ingest and for graph-query. Each row also
+  marks `Enveloped` and gives the `Reply` type.
   The embedding, spatial and temporal responders are not in the tree yet, so those four rows name a responder that does
   not exist, and graph-query's four forwards to them, and its `globalSearch` time-range and area strategies, are refused
-  transient `internal`. graph-query lands in steps, so its remaining verb, `searchGraph`, is not in the table yet; a
-  verb a consumer serves under `graph.query.*` is not in it either.
+  transient `internal`. A verb a consumer serves under `graph.query.*` is not in the table.
   `QueryVerbs`' doc comment names each verb's request and reply types.
 - **Local search.** `LocalSearchRequest` names an entity (`entity_id`), a `level` from 0 to 2 and a `query` of 1 to
   `MaxSearchTerms` (16) distinct words, and the search runs in that entity's community: the group of entities that share
@@ -66,14 +65,19 @@ transport"; `TestGraphImportsNoTransport`).
   `entities_truncated` and an `answer` sentence. The matches come from one page of at most 1,000 entities in ID order,
   so on a larger group they are the best of the lexically smallest IDs. `EntitiesTruncated` is true when the page had
   more to read or matches were left out to fit `max_payload`.
-- **Global search.** `GlobalSearchRequest` is a `query` (required, not blank) and `min_revision`; any other key is
-  refused. `GlobalSearchData` is the reply: `strategy` (`entity`, `path`, `temporal` or `spatial`) and exactly one
-  field holding that strategy's result as read: `entity` (the entity verb's reply bytes), `path` (a `PathSearchData`),
-  `temporal` (a `TemporalData`) or `spatial` (a `SpatialData`). `TemporalRangeRequest` (`start_time` and `end_time`, RFC
-  3339, `limit`, `min_revision`) and `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`)
-  are what graph-query sends to the time-range and bounds verbs, and so what change 7's responders decode; the pin spelled
-  the times `startTime` and `endTime`. Which questions each strategy answers, and what is refused, is in
-  `processor/graph-query/README.md`.
+- **Global search.** `GlobalSearchRequest` is a `query` (required, not blank), a `level` (0 to 2, omitted means 0, read
+  only by the text strategy) and `min_revision`; any other key is refused. The verbs `globalSearch` and `searchGraph`
+  take it and reply with the same `GlobalSearchData`: `strategy` (`entity`, `path`, `temporal`, `spatial` or `text`)
+  and exactly one field holding that strategy's result as read: `entity` (the entity verb's reply bytes), `path` (a
+  `PathSearchData`), `temporal` (a `TemporalData`), `spatial` (a `SpatialData`) or `text` (a `TextSearchData`).
+  `TextSearchData` holds the `groups` read (`TextSearchGroup`: `community_id`, `member_count`, `community_summary`,
+  `keywords`), the `matches` (`TextSearchMatch`: `id`, `label`, `score` and the `entity` as the page sent it),
+  `entities_scanned`, `entities_truncated` (true when the matches are a sample), `unreadable_groups`,
+  `unhonoured_hints` (the hints the text search could not apply: `path`, `similarity`, `ranking`) and an `answer`
+  sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
+  `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`) are what graph-query sends to the
+  time-range and bounds verbs, and so what change 7's responders decode; the pin spelled the times `startTime` and
+  `endTime`. Which questions each strategy answers, and what is refused, is in `processor/graph-query/README.md`.
 - **Counts.** `PrefixQueryResponse.Total` is the number of distinct keys in the listing before the cursor and any limit,
   as listed and not a snapshot (#512). `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
   is the whole group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type

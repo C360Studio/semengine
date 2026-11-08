@@ -6,15 +6,15 @@ The component that answers the graph's read requests on `graph.query.*`.
 
 `graph-query` sits in front of graph-ingest, which holds entities, and graph-index, which holds the relationship and
 name indexes. It writes nothing. Its one piece of state is a read-only view of the `COMMUNITY_INDEX` bucket, which
-holds a record per group of entities and which `localSearch` reads (see below).
+holds a record per group of entities and which `localSearch` and the text search of `globalSearch` read (see below).
 
 `graph.QueryVerbs()` (`graph/query_verbs.go`) decides what it serves: at start it subscribes a handler to each verb
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
-graph-query is ported in steps; steps 1 to 4 are in the tree, and the table below is what they serve. Step 5 adds the
-text search (`searchGraph`).
-`MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
+graph-query was ported in five steps, and all five are in the tree: the table below is what it serves. The semantic
+search (`semantic`, `similar`) waits for its responder in change 5, and the time-range and area searches for theirs in
+change 7. `MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
 
 ## Verbs
 
@@ -28,7 +28,8 @@ text search (`searchGraph`).
 | `hierarchyStats` | `graph.ingest.query.prefix`, one page | bare, a `graph.HierarchyStatsData` |
 | `summary` | `graph.index.query.predicateList`, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.SummaryData` |
 | `localSearch` | the `COMMUNITY_INDEX` view, then `graph.ingest.query.prefix`, one page | enveloped by `graph-query`, `data` a `graph.LocalSearchData` |
-| `globalSearch` | one strategy chosen from the question: the alias and entity verbs, the index's edge verbs, or the time-range or bounds verb | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
+| `globalSearch` | one strategy chosen from the question: the alias and entity verbs, the index's edge verbs, the time-range or bounds verb, or the `COMMUNITY_INDEX` view then `graph.ingest.query.prefix` pages | enveloped by `graph-query`, `data` a `graph.GlobalSearchData` |
+| `searchGraph` | the same handler as `globalSearch` | the same, `data` equal to `globalSearch`'s for the same request |
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
@@ -157,46 +158,99 @@ Other refusals:
 - Transient `internal`, counted in `ErrorCount`, for a record that cannot be read (the message names its key), for a
   page that is broken or has no responder, and for a reply that cannot fit `max_payload` even with no entities.
 
-### `globalSearch`
+### `globalSearch` and `searchGraph`
 
-Answers a free-text question by choosing one strategy from what the question says and running it. This build answers
-only the questions that have an exact answer without a text index; it refuses the rest, and says so, rather than
-return an empty or partial answer.
+Answers a free-text question by choosing one strategy from what the question says and running it. `searchGraph` is
+the same handler under a second name, the verb SemSource calls; its `data` equals `globalSearch`'s for the same
+request. The strategies that need a text index or a community record read `COMMUNITY_INDEX`; the others answer exactly
+from the entity, edge, time and area verbs. A question no strategy can answer together with its filters is refused and
+says so, rather than answered in part.
 
-The request is `{"query": "...", "min_revision": ...}`. `query` is required and not blank. An unknown key is refused,
-and so are the pin's `level`, `max_communities`, `summarize_threshold` and `include_*` keys, by name.
+The request is `{"query": "...", "level": 0, "min_revision": ...}`. `query` is required and not blank. `level`, 0 to
+2 and omitted meaning 0, picks the group size the text search reads (see `localSearch`) and is checked on every
+request, whichever strategy answers. An unknown key is refused, and so are the pin's `max_communities`,
+`summarize_threshold` and `include_summaries`, `include_relationships` and `include_sources` keys, by name.
 
 How the question is read:
 
 - **One word is a name.** A question with no white space is looked up as an entity reference, before anything else
   reads it, so an ID or alias that holds a word such as `today`, `zone-a`, `link` or `max` is not mistaken for a time
   range, a path or a count. The lookup is `entityByAlias`'s: the alias index first (a holder wins), else the word as a
-  six-part entity ID. A partial ID such as `sensor-001` resolves only as an alias.
+  six-part entity ID. A partial ID such as `sensor-001` resolves only as an alias. A word that names no entity is
+  searched as text.
 - **Any longer question is classified once** by `graph/query`'s keyword classifier (no language model), which reports
-  hints: a path from a start entity, a time range, an area, a count or ranking, a similarity. A strategy answers only
-  when its hint is the only hint in the question.
+  hints: a path from a start entity, path words, a time range, an area, a count or other aggregation, a ranking, a
+  similarity. The classifier reads ordinary words as hints ("connection", "path", "like", "max", "total"), so the
+  route is by the hints, not by the meaning of the question.
 
 | The question | Strategy | `data` holds |
 | --- | --- | --- |
 | One word, or a path question whose start is found ("what is connected to pump-42") | `entity` for a word; `path` for a path | `entity`: the entity verb's reply as it came. `path`: the `pathSearch` result from the start, both directions, depth 3, 100 entities, all predicates, with no entity states (call `batch` for those) |
 | A time range alone ("what changed in the last 2 hours") | `temporal` | the time-range verb's `results` and `truncated`, `limit` 100 |
 | An area alone ("what is within 5km of 40.7,-74.0") | `spatial` | the bounds verb's `results` and `truncated`, `limit` 100 |
+| No hint ("pumps with high vibration"); path words with no start ("http connection pool"); a similarity or ranking alone ("similar to a pump"); a one-word name that names no entity | `text` | a `graph.TextSearchData`, described below |
 
 `indexed_revision` is the one the strategy's own read reported: the alias reply's for `entity`, the walk's for `path`,
-the responder's for `temporal` and `spatial`. `min_revision` reaches each of them. The reply never loads an entity
-beside the result.
+the responder's for `temporal` and `spatial`, and for `text` the highest `entity_revision` among the level's readable
+group records. `min_revision` reaches each of them. `path`, `temporal` and `spatial` never load an entity beside the
+result; `text` carries the entities of its matches, as the pages gave them.
+
+#### The text search
+
+It reads every group record at `level` from the `COMMUNITY_INDEX` view once, and scores each against the question's
+terms (lowercased, repeats removed, at most 16). A record gains 2.0 for each term its summary contains, and 1.5 for
+each keyword and term where one contains the other. Up to five records scoring above 0 are read, best first, ties by
+group prefix. From each it reads one page of at most 1,000 entity IDs, and ranks the entities as `localSearch` does
+(score of 0.3 or more matches). Matches from all groups are merged, best first, ties by entity ID.
+
+`data.text` has `level`; `groups`, each record read, with `community_id`, `member_count`, `community_summary` and
+`keywords`; `matches`, each with `id`, `label` (the entity's name, omitted when it has none), `score` and `entity`, the
+entity exactly as graph-ingest sent it; `entities_scanned`; `entities_truncated`; `unreadable_groups`;
+`unhonoured_hints`; and `answer`, a plain sentence naming the counts, each group's summary, and what was not honoured.
+The label is the first non-empty string value of the entity's most salient label predicate, the ones
+`vocabulary.DiscoverLabelPredicates` lists, read once at `Start`.
+
+`unhonoured_hints` names each hint the question carried that the text search cannot honour, from `path`,
+`similarity` and `ranking`, so "sensors similar to vibration alarms" returns text matches and says similarity was not
+applied. The same
+words appear in `answer` as `Not honoured: ...`.
+
+The matches are a sample. `entities_truncated` is true when a group had more than the one page, or matches were left
+out so the reply fits the connection's `max_payload`; a match further down a group's ID order can be missed. A group
+whose summary and ten keywords contain none of the question's words scores 0 and is not read, so a match in it is not
+found; #506 is the keyword index that would remove this limit.
+
+What `min_revision` means here differs from `localSearch`: the mark is the highest `entity_revision` among the level's
+readable records, and a write raises its groups' records at every level, so a revision from a write anywhere is reached
+once the clustering tick that publishes it has run. One exception: a delete that empties its group removes the record
+and raises nothing, so a `min_revision` from that delete is refused until another write. The rule relies on the
+maintainer applying writes in revision order (#525). A request above the mark is refused transient
+`revision_not_reached` with `indexed_revision` in detail, before any page is read.
 
 What it refuses:
 
 | The question | Refusal |
 | --- | --- |
-| Two of path, time range and area; an entity beside a zone or area ("what is connected to sensor-001 in zone-b"); two different zones; an impossible number ("the last 0 hours") | class invalid, code `invalid_request`, naming both places or the phrase |
-| A count ("how many"), ranking ("top 5") or similarity ("similar to") hint, with or without others; no hint at all; path words with no start; a name or ID that names no entity | class invalid, code `text_search_unsupported`: this build has no text search, step 5 adds it, and asking again unchanged will not help |
-| A refusal from the alias or entity verb behind a lookup (`alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`, and the entity verb's others) | the same refusal, as it arrived. `entity_not_found` from the entity verb is the exception: it becomes `text_search_unsupported` |
+| Two of path, time range and area; an entity beside a zone or area ("what is connected to sensor-001 in zone-b"); two different zones; an impossible number ("the last 0 hours"); a `level` outside 0 to 2 | class invalid, code `invalid_request`, naming both places, the phrase or the key |
+| A count or other aggregation ("how many", "total memory usage", "max retries"), with or without other hints | class invalid, code `invalid_request`, naming the operation. A list over sampled pages would invite counting a sample. The classifier reads "max", "min", "total", "sum" and "count" anywhere, so answerable free text is refused too |
+| Path words with no start, a similarity or a ranking, beside a start, a time range or an area ("top 5 sensors connected to pump-42", "what is related to it in the last 2 hours") | class invalid, code `invalid_request`, naming both: a filter is never dropped for a text answer |
+| A named path start that names no entity ("what is connected to pump-99"; "the area of the plant", whose start is `area-of`) | class invalid, code `entity_not_found`, as `entityByAlias` answers it. A start whose entity is gone passes the entity verb's refusal as it came |
+| More than 16 distinct terms in a text question | class invalid, code `invalid_request`, before any read |
+| A refusal from the alias or entity verb behind a lookup (`alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`, and the entity verb's others) | the same refusal, as it arrived. For a one-word question `entity_not_found` from the entity verb is the exception: the word is searched as text |
+| A text question while `COMMUNITY_INDEX` is missing, catching up, lost or stopped, or when `level` holds no record | transient `index_not_ready`, counting no error. Nothing in the framework writes `COMMUNITY_INDEX` until change 7, so until then every text question is refused this way, `searchGraph` included |
+| A text question with `min_revision` above the mark | transient `revision_not_reached`, `indexed_revision` in detail |
+| Every record at `level` unreadable; a page that is broken or has no responder; a reply that cannot fit `max_payload` | transient `internal`, counted as an error in `Health` |
 | A time-range or area question, until change 7 | transient `internal`, naming the subject, counted as an error in `Health`: their responders are not in the tree |
 
-`text_search_unsupported` counts no error in `Health`, like a caller's `invalid_request`. A classification that ends
-with the request, or a hint the route cannot read, is transient `internal` and counts one.
+Some records unreadable is an answer, not a refusal: `unreadable_groups` is their count, `answer` says so, `Health`
+counts one error, and `graph-query` logs one `Warn`, "text search answered past unreadable community records", with
+`verb`, `level`, `unreadable` and the reason. Group records are independent, so the answer reads only the readable
+ones. During a clustering tick another group may still lag behind; the matches themselves come from graph-ingest and
+are current.
+
+A caller's `invalid_request`, a named start's `entity_not_found`, and the text search's `index_not_ready` and
+`revision_not_reached` count no error in `Health`. A classification that ends with the request, or a hint the route
+cannot read, is transient `internal` and counts one.
 
 Known limits of the keyword classifier, accepted by the owner and tracked in #535:
 
@@ -206,10 +260,14 @@ Known limits of the keyword classifier, accepted by the owner and tracked in #53
 - The refusal of an entity beside a zone or area is loud and can be wrong. An ordinary hyphenated word ("in
   real-time", "non-zero") or "zone" or "area" plus a word ("the area with pumps") beside a place can be read as a
   second place and refused `invalid_request`. The failure is a refusal, never a wrong answer.
+- Ordinary words are hints. "max retries" is refused as an aggregation, and "pumps in area 51" is read as a start
+  `area-51` and refused `entity_not_found`.
 
-Not carried from the pin: the semantic strategy and its type-filter fallback, the `graphrag` community search, the
-pin's `count`, `duration_ms`, `answer`, `community_summaries` and `degraded` reply fields. `MIGRATION.md` has the
-decoder changes.
+Not carried from the pin: the semantic strategy and its fallback, which on a missing community index answered
+`searchGraph` from embeddings (a deployment without clustering gets `index_not_ready` instead until change 5 decides the
+semantic tier); `max_communities` (five groups, always); summarising an answer with a model; the pin's `count`,
+`duration_ms`, `community_summaries`, `answer_model` and `degraded` reply fields. `MIGRATION.md` has the decoder
+changes.
 
 ### A reply `graph-query` cannot use
 
@@ -284,7 +342,8 @@ on one of these verbs, is the `request_subject_conflict` error that refuses boot
 replies' bytes are not counted. `ErrorCount`, and `DataFlow`'s `ErrorRate` with it, counts the requests `graph-query`
 refuses because no usable answer arrived, once per request: a downstream request got no answer, so an outage of
 graph-ingest or graph-index shows here, or a reply `entityByAlias` or `relationships` reads was broken, so a broken
-responder shows here too. So does a `localSearch` that cannot read its record or its page, or fit its reply. A
+responder shows here too. So does a `localSearch` that cannot read its record or its page, or fit its reply, and a
+text search that cannot read any record or page, or fit its reply, or that answered past unreadable records. A
 refusal the responder sent is an answer and is not counted: "no such entity" is ordinary traffic. Neither is a
 caller's `invalid_request`.
 
@@ -295,18 +354,20 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 
 | Name | Type | Meaning |
 | --- | --- | --- |
-| `semengine_graph_query_search_truncated_total` | counter vec | `localSearch` answers cut short, by `verb` |
+| `semengine_graph_query_search_truncated_total` | counter vec | `localSearch` and text search answers cut short, by `verb` (`localSearch`, `globalSearch`, `searchGraph`) |
 
-A `localSearch` answer is cut short when its group had more entities than the one page read (at most 1,000), or
-matches were left out to fit `max_payload`: both set `entities_truncated`, and each adds one to the counter. A search
-over a large community can miss a match further down the page order, so this count is how many answers were cut short;
-it says when a keyword index per community (#506) is due. A refused request, and an answer that is whole, count nothing.
+A `localSearch` or text search answer is cut short when a group had more entities than the one page read (at most
+1,000), or matches were left out to fit `max_payload`: both set `entities_truncated`, and each adds one to the
+counter. A search over a large community can miss a match further down the page order, so this count is how many
+answers were cut short; it says when a keyword index per community (#506) is due. A refused request, and an
+answer that is whole, count nothing.
 
 ## Starting and stopping
 
 `Start` needs a NATS client, and its context bounds the subscribing only. It starts one goroutine that keeps a view of
 `COMMUNITY_INDEX`, under a run context that `Stop` ends, not `Start`'s context. `Start` neither waits for the bucket nor
-fails when it does not exist: until it does, `localSearch` is refused `index_not_ready` and every other verb answers.
+fails when it does not exist: until it does, `localSearch` and the text search are refused `index_not_ready` and every
+other verb or strategy answers.
 While the bucket is missing or its watch is lost, the goroutine tries again every 5 seconds, and the view refuses until
 a new one has caught up. Each failure is logged at `Warn` when it is the first, differs from the last, or follows a
 view that had opened, and at `Debug` otherwise.

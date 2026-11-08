@@ -66,6 +66,7 @@ never a stale value, and other keys keep flowing.
 | `SnapshotAndSubscribe` | Copies the current values and attaches a reader in one step: the snapshot holds every change the view had applied, the subscription delivers every change after it, with no gap and no repeat |
 | `Subscribe` | Attaches without a snapshot, for a reader that only reacts to changes |
 | `Get`, `List` | Point reads of the same copy; `List` filters by key prefix, sorts by key, then applies the limit |
+| `ListCounted` | `List` with no limit, plus the number of keys under the prefix whose value the decode refused (poisoned), both read at once, so a reader can say what it could not serve |
 | `Applied` | The highest revision applied and the server write time of that write; zero time until something is applied. It reports currency and gates nothing (ADR-085 decision 5) |
 | `Subscription` | `Deltas()` delivers batches with at most one change per key, sorted by revision; `Err()` says why it closed; `Unsubscribe()` detaches |
 | `Hooks` | Optional callbacks: `OnApply`, `OnCaughtUp`, `OnWatcherLost`, `OnPoison`, `OnSubscribers`, `OnFanOut` |

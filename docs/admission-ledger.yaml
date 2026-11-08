@@ -2110,13 +2110,18 @@
     and the requests graph-query sends to the time-range and bounds verbs, TemporalRangeRequest (start_time and
     end_time in RFC 3339, limit, min_revision) and SpatialBoundsRequest (north, south, east, west, limit,
     min_revision) (graph/query_search_types.go), which change 7's responders decode; the pin sent startTime and
-    endTime
+    endTime; and, in setup-04a-04-graph-roots-graph-query-text: (29) GlobalSearchRequest gains level (0 to 2, omitted
+    0, read only by the text strategy); GlobalSearchData gains the strategy "text" and its field text, a
+    TextSearchData (level, groups, matches, entities_scanned, entities_truncated, unreadable_groups,
+    unhonoured_hints, answer) with TextSearchGroup and TextSearchMatch (id, label, score and the entity as the page
+    sent it) (graph/query_global_search_types.go); and the searchGraph row of QueryVerbs on graph.query.searchGraph,
+    enveloped, its reply GlobalSearchData, the same type as globalSearch
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
   known_risks: >-
     no context roots. Still deferred: the generation marker beside indexed_revision so a revision
-    from a recreated bucket is detectable (#103 stays open; ADR-109). pkg/fusion (change 5)
+    from a recreated bucket is detectable (#103 is retired by the text change and the marker is tracked in #15; ADR-109). pkg/fusion (change 5)
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
@@ -2126,7 +2131,8 @@
     graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
     graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
     graph/query_response_test.go (TestQueryResponseCarriesIndexedRevisionAndProducer,
-    TestNewQueryResponseRefusesEmptyProducer), graph/query_global_search_types_test.go (TestGlobalSearchTypesWire),
+    TestNewQueryResponseRefusesEmptyProducer), graph/query_global_search_types_test.go (TestGlobalSearchTypesWire), graph/query_verbs_test.go
+    (TestQueryVerbsDeclareEachRespondersVerbs),
     graph/query_search_types_test.go (TestSearchRequestTypesWire),
     internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
@@ -3943,7 +3949,11 @@
     nothing), and the four unread sentinels as the typed errors the methods return; pkg/graphview/README.md is the
     package's product contract line. Not carried (unread, no contract line, inventory 4): AppliedRevision, CaughtUp,
     View.Poisoned, Snapshot.Sequence, EntryMeta.Revision; Hooks.OnTick (a test back door, #186);
-    DefaultTickInterval is unexported (defaultTickInterval, 250 ms)
+    DefaultTickInterval is unexported (defaultTickInterval, 250 ms). (5) Added, new
+    (setup-04a-04-graph-roots-graph-query-text D8): ListCounted(prefix) returns what List(prefix, 0) returns and the
+    number of poisoned keys under prefix, under one hold of the view's lock, with List's readiness errors; its one
+    reader is processor/graph-query's text tier, which reads one level of COMMUNITY_INDEX through it and declares the
+    unreadable records it counts
   dependencies_and_side_effects: >-
     internal/kvwatch (in-set; no exported signature names it); nats.go/jetstream; standard library only otherwise. No
     natsclient, no message, no metric. Opens one WatchAll on the injected WatcherSource (jetstream.KeyValue and
@@ -3961,12 +3971,12 @@
     pin's NewTestClient site is natsfixture.Open here), stays open
   proving_tests: >-
     pkg/graphview: view_test.go (TestRunRefusesNilContext, TestRunOnce, TestContextBoundariesRejectNil,
-    TestGetAndListSurface, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go (TestRunLeavesNothingBehind,
-    TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite, TestDetachedReasonSurvivesStop,
-    TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach, TestWatcherLossFailsClosed,
-    TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition, TestRunJoinsSubscriberCallback);
-    history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6); product_test.go
-    (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
+    TestGetAndListSurface, TestListCountedCountsPoison, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go
+    (TestRunLeavesNothingBehind, TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite,
+    TestDetachedReasonSurvivesStop, TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach,
+    TestWatcherLossFailsClosed, TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition,
+    TestRunJoinsSubscriberCallback); history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6);
+    product_test.go (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
     coherence_test.go, delta_test.go, hooks_test.go, meta_test.go (the pin's tests, ported onto Run in synctest);
     integration_test.go (TestIntegration_GraphViewOverRealBucket, TestRunLeavesNoWatchDelivery,
     TestRunReportsLostWatch, on natsfixture.Open); notes/2.1.md, 2.2.md, 2.3.md, 2.4.md and 3.3.md of the change
@@ -4024,8 +4034,11 @@
     from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word; kept
     words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
     ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
-    and an ID the canonical parser refuses; DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0
-    to 2 or whose level and ID do not give key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
+    and an ID the canonical parser refuses; LevelPrefix(level) gives the prefix {level}. of every key at a level,
+    refusing a level outside 0 to 2, the one range check GroupKey and DecodeCommunity use (new,
+    setup-04a-04-graph-roots-graph-query-text D2; its reader is processor/graph-query's text tier);
+    DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0 to 2 or whose level and ID do not give
+    key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
     naming the key on an unreadable entry or one DecodeCommunity refuses, and returns an ended context's error (pin
     skipped unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not
     carried: lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own
@@ -4050,7 +4063,7 @@
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
     TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go
-    (TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
+    (TestLevelPrefix, TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
     (TestRecordNamesItsLatestWrite, TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
     TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,
     TestFirstTickFailedPublicationKeepsOldRecords, TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick,
@@ -4218,7 +4231,7 @@
   contract: >-
     graph.QueryVerbs() decides what it serves: Start subscribes a handler to each verb declared for graph-query and
     fails on a declared verb with no handler. Ported in steps (split.md of change
-    setup-04a-04-graph-roots-graph-query); the package is whole only at step 5. Step 1 serves entity, batch, prefix
+    setup-04a-04-graph-roots-graph-query); the package is whole at step 5. Step 1 serves entity, batch, prefix
     and byName as forwards, request and reply bytes unchanged, a refusal behind them reaching the caller with class,
     code and detail, and entityByAlias and relationships as enveloped replies (graph.QueryResponse) built from
     graph-index replies. Step 2 (setup-04a-04-graph-roots-graph-query-reads, pathrag.go and summary.go) adds
@@ -4250,12 +4263,36 @@
     global search; an alias refusal reaches the caller as it arrived, and in global search a reference naming no entity
     falls through to the text tier. Two of path, time and area, an entity beside a zone or area, and an impossible
     number are refused invalid_request, naming the phrase or both places; a count, ranking or similarity hint, a
-    question with no hint, and a name that names no entity are refused class invalid, code text_search_unsupported
-    (unexported, removed at step 5), which counts no error; the reply (graph.GlobalSearchData) is the strategy and its
+    question with no hint, and a name that names no entity were refused class invalid with a
+    code of their own, which counted no error (step 5 removes that refusal); the reply (graph.GlobalSearchData) is the strategy and its
     result as read, no entity states loaded. Not carried at step 4 (design D7): extractSearchRefinements,
     filterClassifierTemplates and the semantic strategy with its type-filter fallback (step 5 decides them with the
     graphrag default), pin strategy names pathrag and entity_lookup (now path and entity), the pin's level, max_communities, summarize_threshold and
-    include_* request keys (refused by name), and the reply's Count, DurationMs and Degraded fields. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    include_* request keys (refused by name), and the reply's Count, DurationMs and Degraded fields. Step 5
+    (setup-04a-04-graph-roots-graph-query-text, graphrag.go, searchgraph.go) makes the package whole. A question
+    with no hint, path words with no start, a similarity or a ranking alone, and a one-word reference naming no entity
+    are answered by the text tier (strategy text); the reply names each hint it did not honour (path, similarity,
+    ranking) in unhonoured_hints and in answer. The keyword classifier takes ordinary words as hints ("http connection
+    pool", "file path handling"), which is why they are answered, not refused, and no trigger-word list is kept. A
+    count or other aggregation ("how many", "max retries", "total memory usage") is refused invalid_request naming it;
+    path words, a similarity or a ranking beside a start, a time range or an area is refused invalid_request naming
+    both; a named start that names no entity is entity_not_found, never empty (this narrows ADR-114's step 4
+    sentence). The text tier reads the records of COMMUNITY_INDEX at the request's level (new key level, 0 to 2,
+    omitted 0, checked on every request) once, through View.ListCounted, scores each record against the question's
+    distinct terms (2.0 for a term in the statistical summary, 1.5 for each keyword and term where one contains the
+    other, the pin's), reads one prefix page (at most 1,000 entities) of each of the best five groups scoring above 0,
+    ranks their entities as localSearch does, and replies with the matches best first (id, label, score, the entity
+    as the page sent it), the groups' records beside them, entities_scanned, entities_truncated, unreadable_groups
+    and a plain answer. A label is the first non-empty string value of an entity's most salient predicate in
+    vocabulary.DiscoverLabelPredicates, read once at Start. indexed_revision is the highest entity_revision among the
+    level's readable records, so a min_revision above it is refused revision_not_reached before any page is read. A
+    view that is missing, catching up, lost or stopped, and a level with no record, are transient index_not_ready;
+    every record unreadable is transient internal; some unreadable is an answer with unreadable_groups set, one
+    Health error and one Warn. More than graph.MaxSearchTerms distinct terms is invalid_request. searchGraph is its
+    own row served by the same handler, its data equal to globalSearch's for the same request; the pin's semantic
+    fallback is not carried (design D7), nor are max_communities, summarize_threshold, include_summaries,
+    include_relationships, include_sources, auto-summary, entity digests and the reply's count, duration_ms,
+    degraded and answer_model fields (design D4). The semantic tier of the text strategy is change 5's. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
     requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
     key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
@@ -4263,12 +4300,13 @@
     predicate where the pin named edge_type; the entity reply names kv_revision
   dependencies_and_side_effects: >-
     production: component, graph, graph/clustering, graph/kvcatalog, graph/query, internal/kvwatch, metric, natsclient,
-    pkg/errs, pkg/graphview, pkg/types, vocabulary (in-set); tests also use nats.go; one request subscription per served verb;
+    pkg/errs, pkg/graphview, pkg/types, vocabulary (in-set; step 5 reads its label predicate set once at Start); tests also use nats.go; one request subscription per served verb;
     zero to two downstream requests per call (a refused request makes none, entityByAlias up to two), except
     pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
-    page), localSearch, one prefix page, or one entity read when the group has no record, and globalSearch, which
-    makes none for a refused question and otherwise the requests of its one strategy (an alias request and an entity
-    read; the walk of pathSearch; one time-range or bounds request); since step 3 one goroutine
+    page), localSearch, one prefix page, or one entity read when the group has no record, and globalSearch and
+    searchGraph, which make none for a refused question and otherwise the requests of one strategy (an alias request
+    and an entity read; the walk of pathSearch; one time-range or bounds request; for text, one prefix page for each
+    of at most five groups); since step 3 one goroutine
     (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
     registry; no write to any bucket
   known_risks: >-
@@ -4287,8 +4325,17 @@
     zone or area is loud and can be wrong ("in real-time", "non-zero" or "the area with pumps" beside a place can be
     refused as a second place); a path start is the hyphenated word the classifier finds, never a whole ID. Until
     change 7 brings the responders, temporal and spatial are refused transient internal, which counts an error in
-    Health, and until step 5 every other question is refused text_search_unsupported. Later steps carry searchgraph.go
-    and its tests
+    Health. The text tier is a sample: it reads at most five groups, one page of each, so a match further down a
+    group's ID order is missed and entities_truncated says so (the counter now counts globalSearch and searchGraph
+    answers too; #506 is the keyword index that would end the sample). A group whose ten keywords miss the question's
+    words is not read (design D2): a match in it is not found. Its revision mark is the maximum over the level's
+    records, and a delete that empties its group removes the record without raising the mark, so a min_revision from
+    that delete can be refused until another write at the level (design D5); the rule also leans on the maintainer
+    taking writes in revision order (#525). Until change 7 writes COMMUNITY_INDEX every text question is refused
+    transient index_not_ready, so a tier-1 deployment's searchGraph, answered by embeddings at the pin, is refused
+    until change 5 decides the semantic tier (design D7; MIGRATION.md). The keyword classifier's limits (#535) now
+    shape which questions reach the text tier: a word it reads as a count ("max", "total", "min") refuses answerable
+    free text invalid_request. Not carried: the pin's searchgraph.go fallback
   proving_tests: >-
     processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
@@ -4307,11 +4354,19 @@
     TestLocalSearchAfterCommunityIndexAppears, TestLocalSearchRefusesAfterWatchLoss, TestLocalSearchDuringBlockedTick,
     TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, for step 4 TestGlobalSearchRoutesByHints,
     TestGlobalSearchRefusesTwoFilters, TestGlobalSearchRefusesImpossibleNumbers, TestGlobalSearchEndedClassification,
-    TestGlobalSearchRefusesHintsItCannotRead, TestGlobalSearchDecodesStrictly, TestGlobalSearchEntity,
+    TestGlobalSearchRefusesHintsItCannotRead, TestGlobalSearchRequestKeys, TestGlobalSearchEntity,
     TestGlobalSearchOneWordIsAReference, TestGlobalSearchPath, TestGlobalSearchPassesAliasRefusals,
-    TestGlobalSearchUnknownReferenceFallsThrough, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
-    TestGlobalSearchTextTierRefusal, TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders,
-    and the lifecycle suite
+    TestGlobalSearchUnknownWordIsSearched, TestGlobalSearchUnknownIDIsSearched, TestGlobalSearchUnknownPathStart,
+    TestGlobalSearchHintBesideAFilter, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
+    TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders, for step 5 TestTextTierScore,
+    TestTextTierTermLimit, TestTextTierRefusesAViewCatchingUp, TestTextTierReadsAtMostFiveGroups,
+    TestTextTierSkipsUnmatchedGroups, TestTextTierRefusesAnEmptyLevel, TestTextTierReadsTheAskedLevel,
+    TestTextTierMatchesEqualAFilter, TestTextTierMarksACutPage, TestTextTierRevision,
+    TestTextTierRevisionIgnoresUnreadable, TestTextTierAllUnreadable, TestTextTierReply, TestGlobalSearchTextQuestion,
+    TestMatchLabel, TestTextTierAnswer, TestTextTierFitKeepsTheBestThatFit, TestTextTierFitsMaxPayload,
+    TestTextTierPoisonIsDeclared, TestTruncatedSearchIsCounted over globalSearch and searchGraph, for searchGraph
+    TestSearchGraphAnswersAsGlobalSearch, TestQueryVerbsDeclareEachRespondersVerbs and
+    TestGraphQueryServesExactlyTheDeclaredVerbs, and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 

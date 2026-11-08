@@ -9,12 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/vocabulary"
 )
@@ -42,12 +44,34 @@ func aliased(alias string) [2]string { return [2]string{vocabulary.CoreIdentityA
 
 func linked(to string) [2]string { return [2]string{linkTo, to} }
 
-// requireTextTierRefusal holds design D2's refusal: class invalid, its code and its message.
-func requireTextTierRefusal(t *testing.T, question string, reply []byte, err error) {
+// seedWordRecord writes, before graph-query starts, a level-0 record whose one keyword is word, so a
+// text search of word reads that group and no other.
+func seedWordRecord(t *testing.T, client *natsclient.Client, word string) {
 	t.Helper()
-	requireRefusal(t, reply, err, errs.ErrorInvalid, "text_search_unsupported")
-	if err.Error() != textTierRefusal {
-		t.Errorf("%q: message = %q, want %q", question, err.Error(), textTierRefusal)
+	kv, _ := communityRecords(t, client)
+	key, value := literalRecord(t, "w", 1, "", word)
+	putRecord(t, kv, key, value)
+}
+
+// requireTextSearched holds that question was searched as text: strategy text, and the one group read
+// is seedWordRecord's, which only that word scores.
+func requireTextSearched(t *testing.T, question string, reply []byte, err error) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%q: %v, want a text answer", question, err)
+	}
+	if got := textGroupIDs(decodeTextAnswer(t, reply).data.Groups); !slices.Equal(got, []string{textGroup + "w"}) {
+		t.Errorf("%q: groups = %q, want the word's record alone", question, got)
+	}
+}
+
+// requireNotFound holds a named start's miss (design D1, D7): entity_not_found, class invalid, as
+// entityByAlias answers it.
+func requireNotFound(t *testing.T, question string, reply []byte, err error, want string) {
+	t.Helper()
+	requireRefusal(t, reply, err, errs.ErrorInvalid, graph.ErrorCodeEntityNotFound)
+	if err.Error() != want {
+		t.Errorf("%q: message = %q, want %q", question, err.Error(), want)
 	}
 }
 
@@ -341,36 +365,79 @@ func TestGlobalSearchPassesAliasRefusals(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchUnknownReferenceFallsThrough: a reference that names no entity, an unknown alias
-// that is no ID or a valid ID with no record, is not an answer to the question: it is refused as the
-// text tier's, never entity_not_found, and counts no error (design D3). A non-ID nobody holds asks
-// nothing of the entity verb.
-func TestGlobalSearchUnknownReferenceFallsThrough(t *testing.T) {
+// TestGlobalSearchUnknownWordIsSearched: a one-word reference that names no entity, no alias holder
+// and no valid ID, is searched as text, never entity_not_found, asks nothing of the entity verb and
+// counts no error (design D1; spec, "An unknown reference").
+func TestGlobalSearchUnknownWordIsSearched(t *testing.T) {
+	stack := startIngestAndIndex(t)
+	seedWordRecord(t, stack.client, "forklift")
+	c := startComponent(t, stack.client, `{}`)
+	stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
+	awaitTextMark(t, stack.client, 0, 1)
+	check := spyOnEntityVerb(t, stack.client)
+	raw, err := stack.askGlobal(t, `{"query":"forklift"}`)
+	requireTextSearched(t, "forklift", raw, err)
+	check()
+	if got := c.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0", got)
+	}
+}
+
+// TestGlobalSearchUnknownIDIsSearched: a one-word reference that is a valid ID with no record, or an
+// alias whose holder is gone, is searched as text once the entity verb answers entity_not_found, and
+// counts no error (design D1; spec, "An unknown reference").
+func TestGlobalSearchUnknownIDIsSearched(t *testing.T) {
 	t.Run("real ingest and index", func(t *testing.T) {
 		stack := startIngestAndIndex(t)
+		seedWordRecord(t, stack.client, absentDrone)
 		c := startComponent(t, stack.client, `{}`)
 		stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
-		for _, tc := range []struct {
-			question      string
-			readsAnEntity bool
-		}{
-			{"forklift", false},
-			{"what is connected to nobody-1", false},
-			{absentDrone, true},
-		} {
-			check := func() {}
-			if !tc.readsAnEntity {
-				check = spyOnEntityVerb(t, stack.client)
-			}
-			raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, tc.question))
-			requireTextTierRefusal(t, tc.question, raw, err)
-			check()
-		}
+		awaitTextMark(t, stack.client, 0, 1)
+		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, absentDrone))
+		requireTextSearched(t, absentDrone, raw, err)
 		if got := c.Health().ErrorCount; got != 0 {
 			t.Errorf("ErrorCount = %d, want 0", got)
 		}
 	})
+	t.Run("a holder whose entity is gone", func(t *testing.T) {
+		client := fixtureClient(t)
+		seedWordRecord(t, client, "held-1")
+		c := startComponent(t, client, `{}`)
+		awaitTextMark(t, client, 0, 1)
+		serve(t, client, verbRow(t, graph.ResponderGraphIndex, "alias").Subject, func(context.Context, []byte) ([]byte, error) {
+			return aliasReply(drone1).answer()
+		})
+		serve(t, client, verbRow(t, graph.ResponderGraphIngest, "entity").Subject, func(context.Context, []byte) ([]byte, error) {
+			return nil, errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("not found: "+drone1))
+		})
+		servePages(t, client, nil)
+		raw, err := client.RequestClassified(t.Context(), globalSearchSubject, []byte(`{"query":"held-1"}`), requestTimeout)
+		requireTextSearched(t, "held-1", raw, err)
+		if got := c.Health().ErrorCount; got != 0 {
+			t.Errorf("ErrorCount = %d, want 0", got)
+		}
+	})
+}
 
+// TestGlobalSearchUnknownPathStart: a path question whose named start names no entity is
+// entity_not_found, as entityByAlias answers it, never an empty walk and never a text search, which
+// would drop the walk (design D1, D7). A start that is no alias and no ID asks nothing of the entity
+// verb; a holder whose entity is gone passes the entity verb's refusal as it was sent, with no hop
+// asked. Neither counts an error.
+func TestGlobalSearchUnknownPathStart(t *testing.T) {
+	t.Run("real ingest and index", func(t *testing.T) {
+		stack := startIngestAndIndex(t)
+		c := startComponent(t, stack.client, `{}`)
+		stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
+		check := spyOnEntityVerb(t, stack.client)
+		const question = "what is connected to pump-99"
+		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, question))
+		requireNotFound(t, question, raw, err, "not found: pump-99")
+		check()
+		if got := c.Health().ErrorCount; got != 0 {
+			t.Errorf("ErrorCount = %d, want 0", got)
+		}
+	})
 	t.Run("a holder whose entity is gone", func(t *testing.T) {
 		client := fixtureClient(t)
 		c := startComponent(t, client, `{}`)
@@ -387,11 +454,10 @@ func TestGlobalSearchUnknownReferenceFallsThrough(t *testing.T) {
 				return []byte(`{"data":{"relationships":[]},"producer":"graph-index"}`), nil
 			})
 		}
-		for _, question := range []string{"held-1", "what is connected to held-1"} {
-			raw, err := client.RequestClassified(t.Context(), globalSearchSubject, fmt.Appendf(nil, `{"query":%q}`, question), requestTimeout)
-			requireTextTierRefusal(t, question, raw, err)
-		}
-		// Each stub counts before it replies, so before the refusals above.
+		const question = "what is connected to held-1"
+		raw, err := client.RequestClassified(t.Context(), globalSearchSubject, fmt.Appendf(nil, `{"query":%q}`, question), requestTimeout)
+		requireNotFound(t, question, raw, err, "not found: "+drone1)
+		// Each stub counts before it replies, so before the refusal above.
 		if n := hops.Load(); n != 0 {
 			t.Errorf("the index's edge verbs received %d requests, want none", n)
 		}
@@ -402,15 +468,15 @@ func TestGlobalSearchUnknownReferenceFallsThrough(t *testing.T) {
 }
 
 // TestZoneQuestionNeverAnswersEmpty: #479 item 3. The keyword tier reads "the area of the plant" as a
-// path from area-of (notes/probes/step4-tree-probe.log); no entity holds that alias, so the question
-// is refused as the text tier's. A started pin component fell through to its community search: it built
-// the cache before the responders (pin:component.go:556), so the empty pathrag answer
+// path from area-of (notes/probes/step4-tree-probe.log); no entity holds that alias, so the named start
+// is entity_not_found (design D1, D7). A started pin component fell through to its community search: it
+// built the cache before the responders (pin:component.go:556), so the empty pathrag answer
 // (pin:graphrag.go:475-489) ran only without a cache, outside a successful Start.
 func TestZoneQuestionNeverAnswersEmpty(t *testing.T) {
 	stack := startStack(t)
 	stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
 	raw, err := stack.askGlobal(t, `{"query":"the area of the plant"}`)
-	requireTextTierRefusal(t, "the area of the plant", raw, err)
+	requireNotFound(t, "the area of the plant", raw, err, "not found: area-of")
 }
 
 // TestGlobalSearchRefusesADroppedPlace: a path question that also names a zone ("what is connected to
@@ -485,43 +551,6 @@ func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 		if msg := err.Error(); !strings.HasPrefix(msg, "invalid request: ") || !strings.HasSuffix(msg, wantMsg) {
 			t.Errorf("message = %q, want invalid request ending %q", msg, wantMsg)
 		}
-	})
-}
-
-// TestGlobalSearchTextTierRefusal: a question only the text search could answer is refused class
-// invalid, code text_search_unsupported, whether or not COMMUNITY_INDEX holds records, and counts one
-// input and no error (design D2; spec, "A question this build cannot answer").
-func TestGlobalSearchTextTierRefusal(t *testing.T) {
-	questions := []string{"forklift", "how many pumps are there", "find sensors similar to pump-42"}
-	check := func(t *testing.T, stack graphStack, c *Component) {
-		t.Helper()
-		before, errorsBefore := c.DataFlow().Messages, c.Health().ErrorCount
-		for _, question := range questions {
-			raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, question))
-			requireTextTierRefusal(t, question, raw, err)
-		}
-		// Each handler counts before it returns, so before its reply.
-		if got := c.DataFlow().Messages - before; got != int64(len(questions)) {
-			t.Errorf("DataFlow counted %d requests, want %d", got, len(questions))
-		}
-		if got := c.Health().ErrorCount; got != errorsBefore {
-			t.Errorf("ErrorCount = %d, want %d", got, errorsBefore)
-		}
-	}
-
-	t.Run("no community records", func(t *testing.T) {
-		stack := startIngestAndIndex(t)
-		c := startComponent(t, stack.client, `{}`)
-		stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
-		check(t, stack, c)
-	})
-	t.Run("community records", func(t *testing.T) {
-		stack := startCommunityStack(t)
-		written := stack.write(t, drone1, aliased("held-1"))
-		tick(t, stack.maintainer)
-		stack.awaitIndexed(t, written)
-		awaitCommunityView(t, stack.client, drone1, written)
-		check(t, stack.graphStack, stack.component)
 	})
 }
 

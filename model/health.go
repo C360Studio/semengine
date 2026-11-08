@@ -116,8 +116,9 @@ type HealthStats struct {
 // across processes) by implementing the same surface.
 type HealthPolicy interface {
 	// IsHealthy returns true iff the endpoint is eligible to receive
-	// new requests. Equivalent to EndpointStatus(name) != StatusOpen
-	// (the half-open state allows one probe through).
+	// new requests. A true answer while the endpoint is half-open
+	// admits the caller as its one probe, so a caller that gets true
+	// should send the request and report it via RecordResult.
 	IsHealthy(endpoint string) bool
 
 	// EndpointStatus returns the current circuit-breaker state for

@@ -1996,7 +1996,10 @@
   destination: model
   contract: >-
     as at the pin, except: (1) Registry.Validate visits endpoints and capabilities in name order, so the first
-    error for a registry is the same on every call (port-composition, #348); every other .go file matches the pin
+    error for a registry is the same on every call (port-composition, #348); (2) RollingWindowBreaker.IsHealthy
+    admits one half-open probe and refuses other callers until it reports or one Cooldown passes, and
+    EndpointStatus reserves no probe slot (breaker.go, #114); health.go's IsHealthy doc comment says so; every
+    other .go file matches the pin
   dependencies_and_side_effects: >-
     golang.org/x/net (model/httpclient.go:7), entered at v0.59.0, the base's version (design P-2, task 3.1),
     now v0.60.0 for five HTTP/2 advisories govulncheck reports (074c800, task 5.3); stdlib; no in-module
@@ -2006,11 +2009,17 @@
     carried whole until #32 (change 7) decides the seam (design D6, K2): its agentic-only surface stays,
     because cutting it before #32 is the blind cut #8 Q4 forbids. model/wire is not ported (its own row).
     Changed from the pin: the first error Registry.Validate returns for several invalid entries is the first in
-    name order, where the pin's depended on map order
+    name order, where the pin's depended on map order; half-open admits one probe (the pin admitted every caller
+    past the cooldown), and a probe that has not reported within one Cooldown of being admitted counts as lost so
+    the next IsHealthy caller takes the slot (#114)
   proving_tests: >-
     model/breaker_test.go, model/health_test.go, model/httpclient_test.go, model/registry_test.go
-    (TestRegistryValidateNamesFirstInvalidEndpointByName), model/watch_test.go
-  owner: setup-04a-02-ingest-kernel developer; port-composition developer (Registry.Validate order)
+    (TestRegistryValidateNamesFirstInvalidEndpointByName), model/watch_test.go;
+    TestBreaker_HalfOpenAdmitsOneProbe, TestBreaker_LostProbeFreesSlotAfterOneCooldown,
+    TestBreaker_StatusReadsReserveNothing, TestBreaker_ConcurrentProbeAdmitsExactlyOne (#114)
+  owner: >-
+    setup-04a-02-ingest-kernel developer; port-composition developer (Registry.Validate order);
+    fix-114-breaker-half-open-probe developer (half-open probe)
   disposition: adapt
 
 - source_path: storage

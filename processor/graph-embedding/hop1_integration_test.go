@@ -260,6 +260,19 @@ func TestReadinessWaitsForHopTwo(t *testing.T) {
 	}
 }
 
+// TestConfiguredTextSuffixesSelectText: hop 1 embeds the values of the predicates text_suffixes
+// names, and only those: a predicate only the defaults name (".title") is left out (design D4;
+// Codex review C2 on PR #550).
+func TestConfiguredTextSuffixesSelectText(t *testing.T) {
+	h := startEmbedding(t, fixtureClient(t), `{"text_suffixes": [".signature"]}`, nil)
+	a := entityID(1)
+	rev := h.put(t, a, entityValue(t, a, nil,
+		"code.function.signature", "func main()", "doc.meta.title", "default-only title"))
+	if record := h.awaitPending(t, a, rev); record.SourceText != "func main()" {
+		t.Errorf("pending text = %q, want only the .signature value", record.SourceText)
+	}
+}
+
 // TestHopOneEndsTextlessAndDeletedRevisions: a revision with no text and a tombstone end at hop 1,
 // each removing the entity's record, so the floor reaches them with no terminal outcome from the
 // Worker (design D1).

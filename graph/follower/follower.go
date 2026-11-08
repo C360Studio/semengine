@@ -481,11 +481,12 @@ func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq ui
 // stalled is the stuck detector: the follower has been behind the target for degradedStuckAfter
 // with no Complete call (pin processor/graph-embedding/readiness.go:192-212). A caught-up reading
 // counts as progress too, so the 30 s start when the follower falls behind, not at the last
-// completion before it: the heartbeat reads at least every readiness.DefaultHeartbeat.
+// completion before it: the heartbeat reads at least every readiness.DefaultHeartbeat. An empty
+// graph is caught up only once the snapshot is delivered; before it, target 0 says nothing.
 func (f *Follower) stalled(indexed, target uint64) bool {
 	now := time.Now()
 	completions := f.completions.Load()
-	caughtUp := target > 0 && indexed >= target
+	caughtUp := indexed >= target && (target > 0 || f.snapshotDone.Load())
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if caughtUp || completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {

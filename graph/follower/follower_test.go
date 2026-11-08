@@ -291,6 +291,31 @@ func TestNoCompletionsReadsDegraded(t *testing.T) {
 	})
 }
 
+// TestFirstWriteAfterIdleEmptyGraph: an authoritatively empty graph, read by the heartbeat for
+// more than 30 s, counts as caught up, so the first write after it reads building, not degraded
+// (spec, "Falling behind after a long time caught up"; Codex review C1 on PR #550).
+func TestFirstWriteAfterIdleEmptyGraph(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := progressFollower("graph-embedding")
+		f.snapshotDone.Store(true)
+		if status := read(f, 0); !status.Ready {
+			t.Fatalf("empty graph after the snapshot: envelope %+v; want ready", status)
+		}
+		for range 40 {
+			<-time.After(time.Second)
+			if status := read(f, 0); !status.Ready {
+				t.Fatalf("idle empty graph: envelope %+v; want ready", status)
+			}
+		}
+		if err := f.watermark.Observe(1, "k1", time.Now()); err != nil {
+			t.Fatalf("Observe(1): %v", err)
+		}
+		if status := read(f, 1); status.State != graph.IndexStateBuilding {
+			t.Fatalf("first write after an idle empty graph: state %s; want building", status.State)
+		}
+	})
+}
+
 // read is the envelope compute builds once it has read target from the stream.
 func read(f *Follower, target uint64) graph.IndexStatusResponse {
 	indexed, indexedAt := f.watermark.IndexedAt()

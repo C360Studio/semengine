@@ -26,7 +26,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 			name: "caught up reports zero staleness",
 			in: IndexStatusInputs{
 				Indexed: 100, Target: 100,
-				IndexedAt: computeBase.Add(-90 * time.Second), Now: computeBase,
+				OldestUnappliedAt: computeBase.Add(-90 * time.Second), Now: computeBase,
 			},
 			want: 0, // Ready: there is no staleness to report, however old the floor is
 		},
@@ -34,7 +34,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 			name: "building reports the age of the covered floor",
 			in: IndexStatusInputs{
 				Indexed: 40, Target: 100,
-				IndexedAt: computeBase.Add(-1500 * time.Millisecond), Now: computeBase,
+				OldestUnappliedAt: computeBase.Add(-1500 * time.Millisecond), Now: computeBase,
 			},
 			want: 1500,
 		},
@@ -42,7 +42,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 			name: "unknown floor commit time stays absent, never zero-as-fresh",
 			in: IndexStatusInputs{
 				Indexed: 40, Target: 100,
-				IndexedAt: time.Time{}, Now: computeBase,
+				OldestUnappliedAt: time.Time{}, Now: computeBase,
 			},
 			want: 0,
 		},
@@ -50,7 +50,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 			name: "sub-millisecond age is clamped to the 1ms presence floor",
 			in: IndexStatusInputs{
 				Indexed: 40, Target: 100,
-				IndexedAt: computeBase.Add(-200 * time.Microsecond), Now: computeBase,
+				OldestUnappliedAt: computeBase.Add(-200 * time.Microsecond), Now: computeBase,
 			},
 			want: 1,
 		},
@@ -58,7 +58,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 			name: "a floor committed in the future (clock skew) still reports 1ms, not absent",
 			in: IndexStatusInputs{
 				Indexed: 40, Target: 100,
-				IndexedAt: computeBase.Add(2 * time.Second), Now: computeBase,
+				OldestUnappliedAt: computeBase.Add(2 * time.Second), Now: computeBase,
 			},
 			want: 1,
 		},
@@ -66,7 +66,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 			name: "degraded still carries the age of what it has covered",
 			in: IndexStatusInputs{
 				Indexed: 40, Target: 100, Stuck: true,
-				IndexedAt: computeBase.Add(-45 * time.Second), Now: computeBase,
+				OldestUnappliedAt: computeBase.Add(-45 * time.Second), Now: computeBase,
 			},
 			want: 45000,
 		},

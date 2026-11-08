@@ -8,9 +8,9 @@
 //
 // Limits, declared rather than promised:
 //
-//   - A lost feed is never repaired. When the watch cannot start, closes, or reads a stream other
-//     than the one Open bound, the follower says so (Stuck, a degraded envelope, QueryReady refusing)
-//     until the process restarts; nothing rebinds the watch.
+//   - A lost feed is never repaired. When the watch cannot start, closes, delivers a revision out
+//     of order, or reads a stream other than the one Open bound, the follower says so (Stuck, a
+//     degraded envelope, QueryReady refusing) until the process restarts; nothing rebinds the watch.
 //   - A restored stream can go unnoticed. The third trigger compares the backing stream's creation
 //     time with the one Open read; a stream deleted and restored with that creation time inside one
 //     stall of the watch reads as the same stream, and the revisions it skipped are not declared.
@@ -258,10 +258,18 @@ func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 }
 
 // observe records one delivered revision in the watermark, validates a stored entity during the
-// replay, and hands the entry to the plug-in.
+// replay, and hands the entry to the plug-in. A revision the watermark refuses declares the feed
+// lost; the entry is still delivered.
 func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, validating bool) {
-	// entry.Created() is the KV commit time, which makes staleness_ms the age of the view (ADR-083 D3).
-	f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created())
+	// entry.Created() is the KV commit time. staleness_ms is now minus the commit time of the oldest
+	// delivered write not yet applied, or of the newest delivered one when none is in flight (ADR-083
+	// D3, amended by #408).
+	if err := f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created()); err != nil {
+		// The watch broke the ascending order the floor rests on, so the floor can no longer be
+		// trusted. Delivering the entry anyway keeps the plug-in's view of the write; the lost feed
+		// is what refuses queries.
+		f.loseFeed(fmt.Sprintf("the watch delivered a revision out of order: %v", err))
+	}
 	e := Entry{Key: entry.Key(), Revision: entry.Revision(), Deleted: natsclient.IsKVTombstone(entry.Operation())}
 	if !e.Deleted {
 		e.Bytes = len(entry.Value())
@@ -419,11 +427,11 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 	}
 	failed := f.failed()
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
-		Indexed:     indexed,
-		Target:      target,
-		Stuck:       f.stalled(indexed, target),
-		IndexedAt:   indexedAt,
-		FailedCount: uint64(max(failed, 0)),
+		Indexed:           indexed,
+		Target:            target,
+		Stuck:             f.stalled(indexed, target),
+		OldestUnappliedAt: indexedAt,
+		FailedCount:       uint64(max(failed, 0)),
 	})
 	// An authoritatively empty graph is ready once the snapshot is delivered, though ready needs a
 	// target above zero (pin gh#474).

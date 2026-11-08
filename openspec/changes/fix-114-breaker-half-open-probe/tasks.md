@@ -5,8 +5,8 @@ reviews the code. Each step ends when `task verify` passes on a clean tree at it
 
 ## 1. Proposal
 
-- [ ] 1.1 Proposal and tasks committed; owner approval of the lost-probe rule. Hold: OPEN-Q, owner approval in
-  `proposal.md`. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.1 Proposal and tasks committed (`26b5c0e`); owner approval of the lost-probe rule (2026-11-08, #114 comment
+  6722829046). Gate: `task spec:check` and `task docs:check`.
 
 ## 2. Code
 

@@ -1,6 +1,6 @@
 # Proposal: fix-114-breaker-half-open-probe
 
-Approved-by: OPEN-Q, the owner fills this in
+Approved-by: owner, 2026-11-08 in Enjoy, approved the lost-probe rule (one `Cooldown`); recorded on #114 (comment 6722829046)
 
 ## Why
 

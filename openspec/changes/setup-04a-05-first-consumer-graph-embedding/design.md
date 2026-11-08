@@ -117,8 +117,8 @@ tests are not carried.
 
 ## D8. ADRs, issues, order
 
-Applied: ADR-063, 066 § 3 (two-hop completion; its stuck criterion is the owner question in D1), 083 (D3 as amended by
-#548), 108, 109 D2/D3, 113. Not ported: ADR-054 (D5), 055 (comment
+Applied: ADR-063, 066 § 3 (two-hop completion; its stuck criterion is the owner question in D1), 083 (D3 as
+amended by #548), 108, 109 D2/D3, 113. Not ported: ADR-054 (D5), 055 (comment
 only). Changed by owner ruling: the envelope's failure breakdown keeps reasons and loses `first_failure_at` (G10,
 beside #110's 2026-11-08 ruling). Issues: inventory § 9 and `proposal.md`. Order: #548 is merged; this PR next.
 Guidance: SemStreams' "semantic identity and graph" and "storage and retention" contract sections and the

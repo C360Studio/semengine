@@ -12,7 +12,10 @@ Pin evidence: "unit" ran in the owner's probes (`-race` once and 5x shuffled, rc
 
 The component composes `component.Lifecycle` and opens `follower.Open` with `Key: readiness.KeyGraphEmbedding`, as
 graph-index does (`processor/graph-index/component.go:236-245`). Hop 1 is `Deliver`: it reads the entity, decoded
-with `graph.UnmarshalEntityState`, and writes a pending record. A revision is `Complete`d when the Worker reports its
+with `graph.UnmarshalEntityState`, and writes a pending record. Hop 1 runs serially on the follower's `Run`
+goroutine (`graph/follower/follower.go:67`), not on the pin's worker pool: simpler, and enough at tier 0; a slow
+pending write delays delivery of every entry behind it (throughput, not correctness), while the heartbeat, on its own
+goroutine, keeps publishing not ready with `staleness_ms` rising. A revision is `Complete`d when the Worker reports its
 terminal outcome for that source revision, or at once when hop 1 ends it (no text, deleted, refused): the pin's
 two-hop rule (`readiness.go:38-55`, ADR-066 § 3; pin test
 `readiness_test.go:TestCompleteEmbedding_TerminalOutcomesAdvanceWatermark`,

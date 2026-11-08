@@ -7,9 +7,8 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:` (rulings already given: PR #550 comment
+- [x] 1.1 Pre-owner design review passes; the owner fills `Approved-by:` (rulings already given: PR #550 comment
   6716972354). Gate: `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Component
 

@@ -1,6 +1,6 @@
 # Proposal: setup-04a-05-first-consumer-graph-embedding
 
-Approved-by:
+Approved-by: owner (Coby Leuschke), 2026-11-08, Enjoy session; recorded on PR #550
 
 Track: `design` (adds spec requirements; touches `graph-embedding` (new), `embedding-index`, `entity-state-follower`).
 

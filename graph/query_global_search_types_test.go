@@ -36,6 +36,18 @@ func TestGlobalSearchTypesWire(t *testing.T) {
 			GlobalSearchData{Strategy: "spatial", Spatial: &SpatialData{Results: []SpatialHit{}}},
 			`{"strategy":"spatial","spatial":{"results":[],"truncated":false}}`,
 		},
+		{
+			"text",
+			GlobalSearchData{Strategy: "text", Text: &TextSearchData{
+				Level:           1,
+				Groups:          []TextSearchGroup{{CommunityID: "a.b.c", MemberCount: 2, Keywords: []string{"pump"}}},
+				Matches:         []TextSearchMatch{{ID: "a.b.c.d.e.f", Label: "Pump 7", Score: 0.5, Entity: json.RawMessage(`{"id":"a.b.c.d.e.f"}`)}, {ID: "a.b.c.d.e.g", Score: 0.5, Entity: json.RawMessage(`{}`)}},
+				EntitiesScanned: 3, EntitiesTruncated: true, UnreadableGroups: 1, UnhonouredHints: []string{"path"}, Answer: "Found 2.",
+			}},
+			`{"strategy":"text","text":{"level":1,"groups":[{"community_id":"a.b.c","member_count":2,"keywords":["pump"]}],` +
+				`"matches":[{"id":"a.b.c.d.e.f","label":"Pump 7","score":0.5,"entity":{"id":"a.b.c.d.e.f"}},{"id":"a.b.c.d.e.g","score":0.5,"entity":{}}],` +
+				`"entities_scanned":3,"entities_truncated":true,"unreadable_groups":1,"unhonoured_hints":["path"],"answer":"Found 2."}}`,
+		},
 	}
 	for _, tc := range cases {
 		got, err := json.Marshal(tc.value)

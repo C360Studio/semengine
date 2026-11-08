@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -326,7 +325,7 @@ func (m *Maintainer) remove(ctx context.Context, key string) error {
 // exists reports whether key is the key of a group with members. The caller holds mu.
 func (m *Maintainer) exists(key string) bool {
 	for level, groups := range m.groups {
-		if id, ok := strings.CutPrefix(key, strconv.Itoa(level)+"."); ok && groups[id] != nil {
+		if id, ok := strings.CutPrefix(key, levelPrefix(level)); ok && groups[id] != nil {
 			return true
 		}
 	}

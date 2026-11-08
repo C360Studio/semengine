@@ -1,0 +1,10 @@
+go version go1.26.4 darwin/arm64
+RESULT P1 run=0 returned=7 order=[g0 g1 g2 g3 g4 g5 g6]
+RESULT P1 run=1 returned=7 order=[g0 g1 g2 g3 g4 g5 g6]
+RESULT P1 run=2 returned=7 order=[g0 g1 g2 g3 g4 g5 g6]
+RESULT P2/P3 query="pump" order=[a c b]
+RESULT P2/P3 query="pump pump" order=[a c b]
+RESULT P2/P3 query="pumps" order=[c b a]
+RESULT P4 answer="Found 3 entities across 2 knowledge clusters.\n\n(12 entities, 100% match) 12 entities: 8 sensor, 4 pump. Representatives: Inlet temp [sensor] {tags: thermal}. Key themes: temp, flow.\n\n\n"
+RESULT P4 empty=""
+ok  	github.com/c360studio/semstreams/processor/graph-query	0.323s

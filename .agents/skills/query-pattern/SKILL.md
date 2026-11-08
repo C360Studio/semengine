@@ -24,7 +24,8 @@ with its subject and its responder; the function's doc comment names each verb's
 component serves exactly its own verbs. graph-index's are `outgoing`, `incoming`, `alias`, `predicate`,
 `predicateList`, `predicateStats`, `predicateCompound` and `byName`, on `graph.index.query.*`. graph-query's, on
 `graph.query.*`, are `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`, `pathSearch`,
-`hierarchyStats`, `summary`, `localSearch`, `semantic`, `similar`, `spatial` and `temporal`; the first four forward to
+`hierarchyStats`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and
+`temporal`; the first four forward to
 the verb of the same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding,
 spatial and
 temporal verbs. Those four have no responder in the tree yet and are refused transient `internal` until changes 5 and 7.
@@ -78,15 +79,24 @@ serves now), so a verb not in the table has no responder yet.
   a write to an entity in the group you search. A revision from a write to another group can stay above the record, and
   the request is then refused `revision_not_reached` until the searched group next changes.
 - **`globalSearch`** takes a free-text `query` and picks one strategy from the question's words, with no language
-  model. It answers only the questions that have an exact answer without a text index, and refuses the rest:
+  model. `searchGraph` is the same handler under a second name, with the same request and `data`. It answers the
+  questions that have an exact answer, searches the rest as text over `COMMUNITY_INDEX`, and refuses a question it
+  cannot answer whole:
   - A question of one word is an entity reference (an alias, else a full six-part ID): `strategy` `entity`.
   - "What is connected to pump-42": a path from `pump-42`, both directions, 3 hops, 100 entities: `path`, IDs and
     edges only (call `batch` for states).
   - "What changed in the last 2 hours": `temporal`. "What is within 5km of 40.7,-74.0": `spatial`. Until change 7 both
     are refused transient `internal`, since their responders are not in the tree.
   - Two of path, time and area, an entity beside a zone or area, or an impossible number is `invalid_request`. A
-    count ("how many"), ranking ("top 5"), similarity, a question with no hint, and a name that names no entity are
-    refused class invalid, code `text_search_unsupported`: do not retry; the text search arrives in step 5.
+    count or other aggregation ("how many", "max retries"), and path words, a similarity or a ranking beside a start,
+    time range or area, are `invalid_request` naming what it cannot do. A named path start that names no entity is
+    `entity_not_found`.
+  - Everything else is the `text` strategy: a question with no hint, path words with no start ("http connection
+    pool"), a similarity or ranking alone, a one-word name that names no entity. It reads up to five groups'
+    records at `level` (0 to 2, default 0) that score above 0 for the words, one page of each, and replies with
+    `matches` (`id`, `label`, `score`, `entity`), the `groups` read, `entities_truncated` and `answer`. Matches are
+    a sample of at most one page per group. Hints it could not apply are named in `unhonoured_hints`. Until change 7
+    writes `COMMUNITY_INDEX` it is refused transient `index_not_ready`; retry it.
   - Known limits of the keyword classifier (owner-accepted, #535): "from A to B" walks from A and drops B with no
     signal, so a successful reply does not mean both ends were honoured; "in real-time" beside a place can be refused
     as a second place, a loud refusal of an answerable question.
@@ -110,8 +120,10 @@ Every enveloped verb takes an optional `min_revision`, the `kv_revision` of your
 the index has not reached it, the verb refuses with transient `revision_not_reached`, the revision reached in the
 detail, and never waits; retry it. A bare verb (`entity`, `batch`, `prefix`, and `hierarchyStats` on `graph.query.*`)
 ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `entityByAlias`,
-`relationships`, `pathSearch`, `localSearch`, `globalSearch` and `summary` (unless it excludes predicates) honour it. `localSearch`
-compares it with the searched group's record, not the whole index (see above).
+`relationships`, `pathSearch`, `localSearch`, `globalSearch`, `searchGraph` and `summary` (unless it excludes
+predicates) honour it. `localSearch` compares it with the searched group's record, not the whole index (see above);
+the text strategy of `globalSearch` compares it with the highest revision among the records at its `level`, which a
+write anywhere reaches once clustering has published it.
 
 ## Points that hold
 
@@ -122,5 +134,5 @@ compares it with the searched group's record, not the whole index (see above).
   the table row for each verb.
 - A refusal is a classified error and carries no envelope. `graph-query` passes a refusal from the verb behind it on
   with its class, code and detail; a request that gets no answer is transient `internal`.
-- The HTTP gateway, an MCP surface, and the `searchGraph` verb of the pin's graph-query are not in this tree yet.
-  `searchGraph` arrives in step 5 of graph-query (change 4); until a verb is in the table, do not design against it.
+- The HTTP gateway and an MCP surface are not in this tree yet. `searchGraph` is in graph-query's table (step 5);
+  until a verb is in the table, do not design against it.

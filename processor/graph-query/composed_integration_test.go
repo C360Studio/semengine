@@ -817,27 +817,40 @@ func TestComposedVerbsCountAsForwardsDo(t *testing.T) {
 	// globalSearch: the alias stub still refuses and the entity stub too; the edge stubs answer empty.
 	const globalSearch = "graph.query.globalSearch"
 	const entityQuestion, pathQuestion = `{"query":"held-1"}`, `{"query":"what is connected to held-1"}`
-	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":1}`, 23)
-	step("globalSearch: a question for the text search", globalSearch, `{"query":"how many pumps are there"}`, 23)
+	step("globalSearch: a request it refuses", globalSearch, `{"query":"held-1","level":3}`, 23)
+	step("globalSearch: a count", globalSearch, `{"query":"how many pumps are there"}`, 23)
 	step("globalSearch: the alias refused by the responder", globalSearch, entityQuestion, 23)
 	alias.Store(replying(`not json`))
 	step("globalSearch: an alias reply that does not decode", globalSearch, entityQuestion, 24)
 	alias.Store(ptr(aliasReply("")))
-	step("globalSearch: a reference naming no entity", globalSearch, entityQuestion, 24)
+	// A reference naming no entity is searched as text, whose level 0 holds the unreadable record
+	// localSearch read above: an answer past it counts one error.
+	step("globalSearch: a reference naming no entity, searched as text", globalSearch, entityQuestion, 25)
 	alias.Store(ptr(aliasReply(drone1)))
-	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 24)
+	step("globalSearch: the entity refused by the responder", globalSearch, entityQuestion, 25)
 	entity.Store(&stubAnswer{refusal: errs.ClassifiedCode(errs.ErrorInvalid, "entity_not_found", errors.New("gone"))})
-	step("globalSearch: the holder's entity gone", globalSearch, entityQuestion, 24)
-	step("globalSearch: the path start gone", globalSearch, pathQuestion, 24)
+	step("globalSearch: the holder's entity gone, searched as text", globalSearch, entityQuestion, 26)
+	step("globalSearch: the path start gone", globalSearch, pathQuestion, 26)
 	entity.Store(replying(`not json`))
-	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 25)
+	step("globalSearch: an entity reply that is not JSON", globalSearch, entityQuestion, 27)
 	entity.Store(replying(``))
-	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 26)
+	step("globalSearch: an empty entity reply", globalSearch, entityQuestion, 28)
 	entity.Store(replying(`{"entity":{"id":"` + drone1 + `"},"kv_revision":5}`))
-	step("globalSearch: entity answered, two requests, one input", globalSearch, entityQuestion, 26)
-	step("globalSearch: path answered", globalSearch, pathQuestion, 26)
+	step("globalSearch: entity answered, two requests, one input", globalSearch, entityQuestion, 28)
+	step("globalSearch: path answered", globalSearch, pathQuestion, 28)
 	outgoing.Store(replying(`not json`))
-	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 27)
+	step("globalSearch: a path hop reply that does not decode", globalSearch, pathQuestion, 29)
 	outgoing.Store(refusing)
-	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 27)
+	step("globalSearch: a path hop refused by the responder", globalSearch, pathQuestion, 29)
+
+	// The text tier: level 0 holds drone1's group's record, which "drone fleet" matches, and the
+	// unreadable one; level 1 drone1's group's record alone. The prefix stub answers empty.
+	const textQuestion = `{"query":"drone fleet"}`
+	step("globalSearch: a text answer past an unreadable record", globalSearch, textQuestion, 30)
+	step("globalSearch: a text answer", globalSearch, `{"query":"drone fleet","level":1}`, 30)
+	step("globalSearch: a text min_revision above the mark", globalSearch, fmt.Sprintf(`{"query":"drone fleet","min_revision":%d}`, farAhead), 30)
+	prefix.Store(replying(`{}`))
+	step("globalSearch: a broken text page, one error past an unreadable record", globalSearch, textQuestion, 31)
+	prefix.Store(refusing)
+	step("globalSearch: a text page refused by the responder", globalSearch, textQuestion, 31)
 }

@@ -46,6 +46,23 @@ func TestCommunityKey(t *testing.T) {
 	}
 }
 
+// TestLevelPrefix: a level's key prefix is the level and a dot, the prefix every record
+// key at that level starts with; a level outside 0 to 2 is refused with an invalid error.
+func TestLevelPrefix(t *testing.T) {
+	for level, want := range []string{"0.", "1.", "2."} {
+		got, err := LevelPrefix(level)
+		if err != nil || got != want {
+			t.Fatalf("LevelPrefix(%d) = %q, %v; want %q", level, got, err, want)
+		}
+	}
+	for _, level := range []int{-1, 3} {
+		got, err := LevelPrefix(level)
+		if got != "" || !errs.IsInvalid(err) {
+			t.Fatalf("LevelPrefix(%d) = %q, %v; want an invalid error", level, got, err)
+		}
+	}
+}
+
 // TestGroupKey: an entity's group key at a level is the level, a dot, and the ID's first
 // four, three or two positions; a level outside 0 to 2 and an ID the canonical parser
 // refuses are refused.

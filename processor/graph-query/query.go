@@ -48,16 +48,22 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	if outgoing != "" && incoming != "" {
 		handlers["relationships"] = c.relationships(outgoing, incoming)
 	}
+	prefix := subjectOf(graph.ResponderGraphIngest, "prefix")
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
 		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
-		if alias != "" && temporal != "" && spatial != "" {
-			handlers["globalSearch"] = c.globalSearch(globalSearchSubjects{
+		if alias != "" && temporal != "" && spatial != "" && prefix != "" {
+			subjects := globalSearchSubjects{
 				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
-			})
+				prefix: prefix,
+			}
+			// searchGraph answers as globalSearch, counted and logged under its own name; the pin's
+			// semantic fallback is not carried (design D7).
+			handlers["globalSearch"] = c.globalSearch("globalSearch", subjects)
+			handlers["searchGraph"] = c.globalSearch("searchGraph", subjects)
 		}
 	}
-	if prefix := subjectOf(graph.ResponderGraphIngest, "prefix"); prefix != "" {
+	if prefix != "" {
 		handlers["hierarchyStats"] = c.hierarchyStats(prefix)
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)
@@ -176,7 +182,7 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 			return nil, err
 		}
 		if id == "" {
-			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", request.Alias))
+			return nil, entityNotFound(request.Alias)
 		}
 		entity, err := c.readEntity(ctx, entitySubject, id)
 		if err != nil {
@@ -184,6 +190,12 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 		}
 		return envelope(c, entitySubject, revision, json.RawMessage(entity))
 	}
+}
+
+// entityNotFound is the answer to a reference that names no entity, for entityByAlias and a global
+// search named start alike (design D7).
+func entityNotFound(reference string) error {
+	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", reference))
 }
 
 // resolveReference is the one rule an entity reference is read by, for entityByAlias and global

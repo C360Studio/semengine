@@ -98,9 +98,9 @@ func New() *Watermark {
 // sequences start at 1. A revision observed again while in flight takes the newer
 // key and commit time. Ascending delivery appends in constant time; a lower revision
 // walks back from the highest in-flight revision to its place.
-func (w *Watermark) Observe(r uint64, key string, commitAt time.Time) {
+func (w *Watermark) Observe(r uint64, key string, commitAt time.Time) error {
 	if r == 0 {
-		return
+		return nil
 	}
 	w.mu.Lock()
 	defer w.mu.Unlock()
@@ -117,6 +117,7 @@ func (w *Watermark) Observe(r uint64, key string, commitAt time.Time) {
 	}
 	in.key, in.commitAt = key, commitAt
 	w.byKey[key] = append(w.byKey[key], r)
+	return nil
 }
 
 // insertLocked places in among the in-flight revisions in ascending order and

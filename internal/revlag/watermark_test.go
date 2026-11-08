@@ -11,10 +11,11 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The thirteen tests from here to TestWatermark_Concurrent are SemStreams'
-// pkg/revlag/watermark_test.go at the pin 8b99efe9c66a4faa4fa509f9f62cc6bad8392128, unchanged
-// except that each read of the dropped Indexed() takes the floor from IndexedAt() (design D7)
-// and each carries the spec requirement it proves. Their messages still say Indexed.
+// The tests from here to TestWatermark_Concurrent began as SemStreams'
+// pkg/revlag/watermark_test.go at the pin 8b99efe9c66a4faa4fa509f9f62cc6bad8392128. Their time
+// expectations follow the #408 rule (design D1 of the OpenSpec change fix-408-revlag-simplify):
+// IndexedAt's time is the commit time of the lowest in-flight revision, or of Observed's revision
+// when none is in flight. Each carries the spec requirement it proves.
 
 // The watermark's whole reason to exist is honesty under SPARSE, out-of-order,
 // multi-path completion. These tests feed sparse ascending revision streams (e.g.
@@ -27,238 +28,213 @@ import (
 // revision that carried it and no test depends on the wall clock.
 var base = time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC)
 
-// commitAt is the synthetic commit time for revision r (ascending with revision, as
-// real KV commit times are).
+// commitAt is the synthetic commit time for revision r.
 func commitAt(r uint64) time.Time { return base.Add(time.Duration(r) * time.Second) }
 
-// spec: revision-watermark / The floor is the low-water mark of in-flight revisions
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
-func TestWatermark_ColdStart(t *testing.T) {
-	w := New()
-	if got, _ := w.IndexedAt(); got != 0 {
-		t.Fatalf("cold start Indexed = %d, want 0", got)
-	}
-	// Nothing observed → no covered revision → the commit time is ZERO, which the
-	// contract says callers must read as "staleness not computable", never as
-	// "zero staleness" (a fabricated 0 would read as a perfectly fresh view).
-	indexed, at := w.IndexedAt()
-	if indexed != 0 || !at.IsZero() {
-		t.Fatalf("cold start IndexedAt = (%d, %v), want (0, zero time)", indexed, at)
+// observe calls Observe on the test goroutine and fails the test if it refuses r.
+func observe(t *testing.T, w *Watermark, r uint64, key string, at time.Time) {
+	t.Helper()
+	if err := w.Observe(r, key, at); err != nil {
+		t.Fatalf("Observe(%d, %q) refused: %v", r, key, err)
 	}
 }
 
-// spec: revision-watermark / The floor is the low-water mark of in-flight revisions
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
+// wantIndexedAt fails the test unless IndexedAt returns floor and the commit time at.
+func wantIndexedAt(t *testing.T, w *Watermark, floor uint64, at time.Time, why string) {
+	t.Helper()
+	gotFloor, gotAt := w.IndexedAt()
+	if gotFloor != floor || !gotAt.Equal(at) {
+		t.Fatalf("%s: IndexedAt = (%d, %v), want (%d, %v)", why, gotFloor, gotAt, floor, at)
+	}
+}
+
+// spec: revision-watermark / The floor is one below the lowest in-flight revision
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
+func TestWatermark_ColdStart(t *testing.T) {
+	// Nothing observed: the commit time is ZERO, which the contract says callers must read as
+	// "staleness not computable", never as "zero staleness".
+	wantIndexedAt(t, New(), 0, time.Time{}, "cold start")
+}
+
+// spec: revision-watermark / The floor is one below the lowest in-flight revision
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
 func TestWatermark_SparseMidBuild_LowWaterOfPending(t *testing.T) {
 	w := New()
 	// Sparse ascending delivery: distinct keys at purged-gap revisions.
-	w.Observe(50, "A", commitAt(50))
-	w.Observe(72, "B", commitAt(72))
-	w.Observe(100, "C", commitAt(100))
+	observe(t, w, 50, "A", commitAt(50))
+	observe(t, w, 72, "B", commitAt(72))
+	observe(t, w, 100, "C", commitAt(100))
 
-	// Nothing completed: Indexed is minPending-1, NOT stuck at 0 waiting for rev 1.
-	if got, _ := w.IndexedAt(); got != 49 {
-		t.Fatalf("all pending: Indexed = %d, want 49 (minPending-1)", got)
-	}
-	// Floor 49 covers no DELIVERED revision (50 is the lowest ever delivered), so the
-	// covered commit time is still unknown.
-	if _, at := w.IndexedAt(); !at.IsZero() {
-		t.Fatalf("floor below every delivered revision: commit time = %v, want zero", at)
-	}
+	// Nothing completed: the floor is minPending-1, NOT stuck at 0 waiting for rev 1, and the
+	// time is that of 50, the oldest delivered write the index lacks.
+	wantIndexedAt(t, w, 49, commitAt(50), "all pending")
 
-	// Out-of-order completion: a fast LATE worker (rev 72) cannot report the gap done.
+	// Out-of-order completion: a fast LATE worker (rev 72) cannot report the gap done, nor
+	// move the time while 50 is still unapplied.
 	w.Complete("B", 72)
-	if got, _ := w.IndexedAt(); got != 49 {
-		t.Fatalf("after completing 72 (50 still pending): Indexed = %d, want 49", got)
-	}
+	wantIndexedAt(t, w, 49, commitAt(50), "after completing 72 (50 still pending)")
 
-	// Complete the low revision: watermark advances past it to the next gap.
+	// Complete the low revision: the floor advances past it to the next gap, and the time
+	// becomes that of 100, now the oldest unapplied write.
 	w.Complete("A", 50)
-	if got, _ := w.IndexedAt(); got != 99 {
-		t.Fatalf("after completing 50 (100 still pending): Indexed = %d, want 99", got)
-	}
-	// Documented conservatism: 72 completed while it sat ABOVE the then-floor (49),
-	// so its timestamp was dropped rather than retained. The covered time is 50's —
-	// OLDER than the true newest-covered (72), i.e. staleness over-reports, never
-	// under-reports. Retaining it would mean a map that grows with completions.
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(50)) {
-		t.Fatalf("covered commit time = %v, want %v (conservative: 72's was dropped)", at, commitAt(50))
-	}
+	wantIndexedAt(t, w, 99, commitAt(100), "after completing 50 (100 still pending)")
 
-	// Complete the last: pending empties → Indexed jumps to observedHigh (=100),
-	// honestly skipping the purged 51..71, 73..99 that were never delivered.
+	// Complete the last: pending empties, so the floor jumps to Observed (100), honestly
+	// skipping the purged 51..71, 73..99 that were never delivered, with 100's own time.
 	w.Complete("C", 100)
-	if got, _ := w.IndexedAt(); got != 100 {
-		t.Fatalf("caught up: Indexed = %d, want 100 (observedHigh)", got)
-	}
-	// Caught up is the EXACT case: the floor is observedHigh, which was itself
-	// observed, so its own commit time is the answer.
-	indexed, at := w.IndexedAt()
-	if indexed != 100 || !at.Equal(commitAt(100)) {
-		t.Fatalf("caught up IndexedAt = (%d, %v), want (100, %v)", indexed, at, commitAt(100))
-	}
+	wantIndexedAt(t, w, 100, commitAt(100), "caught up")
 }
 
 // spec: revision-watermark / Completion is key-scoped and drains lower revisions
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
 func TestWatermark_CoalescerCollapse_KeyScopedDrainsLowerRevisions(t *testing.T) {
 	w := New()
 	// One key delivered three times (the coalescer will re-Get only the latest, 30).
-	w.Observe(10, "K", commitAt(10))
-	w.Observe(20, "K", commitAt(20))
-	w.Observe(30, "K", commitAt(30))
-	if got, _ := w.IndexedAt(); got != 9 {
-		t.Fatalf("three pending revs of K: Indexed = %d, want 9", got)
-	}
+	observe(t, w, 10, "K", commitAt(10))
+	observe(t, w, 20, "K", commitAt(20))
+	observe(t, w, 30, "K", commitAt(30))
+	wantIndexedAt(t, w, 9, commitAt(10), "three pending revs of K")
 
 	// The single completion at the re-Got latest revision drains ALL collapsed lower
 	// revisions of K that no worker ever sees individually. Exact-revision completion
-	// would strand 10 and 20 forever.
+	// would strand 10 and 20 forever. Caught up, the time is 30's.
 	w.Complete("K", 30)
-	if got, _ := w.IndexedAt(); got != 30 {
-		t.Fatalf("after key-scoped Complete(K,30): Indexed = %d, want 30", got)
-	}
-	// A collapsed multi-revision drain must carry the NEWEST collapsed revision's
-	// commit time — the view really does reflect the world as of rev 30, and taking
-	// 10's time here would over-report staleness by the whole coalesce window.
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(30)) {
-		t.Fatalf("coalesced drain commit time = %v, want %v", at, commitAt(30))
-	}
+	wantIndexedAt(t, w, 30, commitAt(30), "after key-scoped Complete(K,30)")
 }
 
-// TestWatermark_CoalescerCollapse_MidBuildTakesNewestCovered pins the collapsed-drain
-// timestamp while the pipeline is NOT caught up (a higher key is still pending), so
-// the answer comes from the drained set rather than from the pending-empty shortcut.
+// TestWatermark_CoalescerCollapse_MidBuildTakesOldestInFlight drains a collapsed key while
+// the pipeline is NOT caught up (a higher key is still pending): the drained revisions do not
+// set the time; the oldest still in flight does.
 //
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
-func TestWatermark_CoalescerCollapse_MidBuildTakesNewestCovered(t *testing.T) {
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
+func TestWatermark_CoalescerCollapse_MidBuildTakesOldestInFlight(t *testing.T) {
 	w := New()
-	w.Observe(10, "K", commitAt(10))
-	w.Observe(20, "K", commitAt(20))
-	w.Observe(30, "K", commitAt(30))
-	w.Observe(40, "J", commitAt(40)) // still in flight; pins the floor at 39
+	observe(t, w, 10, "K", commitAt(10))
+	observe(t, w, 20, "K", commitAt(20))
+	observe(t, w, 30, "K", commitAt(30))
+	observe(t, w, 40, "J", commitAt(40)) // still in flight; pins the floor at 39
 
 	w.Complete("K", 30)
-	if got, _ := w.IndexedAt(); got != 39 {
-		t.Fatalf("Indexed = %d, want 39 (J@40 pending)", got)
-	}
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(30)) {
-		t.Fatalf("commit time = %v, want %v (newest drained revision <= floor)", at, commitAt(30))
-	}
+	wantIndexedAt(t, w, 39, commitAt(40), "J@40 pending")
 }
 
 // spec: revision-watermark / Completion is key-scoped and drains lower revisions
 func TestWatermark_DeleteSupersedesPendingUpdate(t *testing.T) {
 	w := New()
 	// Update K@10 is delivered and in flight...
-	w.Observe(10, "K", commitAt(10))
+	observe(t, w, 10, "K", commitAt(10))
 	// ...then a delete K@11 arrives. The delete's key-scoped completion drains the
 	// tombstone AND the earlier still-pending update it supersedes.
-	w.Observe(11, "K", commitAt(11))
+	observe(t, w, 11, "K", commitAt(11))
 	w.Complete("K", 11)
-	if got, _ := w.IndexedAt(); got != 11 {
-		t.Fatalf("after delete supersedes pending update: Indexed = %d, want 11", got)
-	}
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(11)) {
-		t.Fatalf("commit time = %v, want %v (the tombstone's own commit)", at, commitAt(11))
-	}
+	wantIndexedAt(t, w, 11, commitAt(11), "after delete supersedes pending update")
 }
 
 // spec: revision-watermark / Completion is key-scoped and drains lower revisions
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
 func TestWatermark_CompletionIsKeyScoped(t *testing.T) {
 	w := New()
-	w.Observe(10, "A", commitAt(10))
-	w.Observe(11, "B", commitAt(11)) // a delete of a DIFFERENT key
+	observe(t, w, 10, "A", commitAt(10))
+	observe(t, w, 11, "B", commitAt(11)) // a delete of a DIFFERENT key
 	// Completing B must NOT drain A's pending revision even though 10 <= 11.
 	w.Complete("B", 11)
-	if got, _ := w.IndexedAt(); got != 9 {
-		t.Fatalf("key-scoped: completing B left A@10 pending, Indexed = %d, want 9", got)
-	}
+	wantIndexedAt(t, w, 9, commitAt(10), "key-scoped: completing B left A@10 pending")
 	w.Complete("A", 10)
-	if got, _ := w.IndexedAt(); got != 11 {
-		t.Fatalf("after A completes too: Indexed = %d, want 11 (observedHigh)", got)
-	}
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(11)) {
-		t.Fatalf("commit time = %v, want %v (caught up → observedHigh's commit)", at, commitAt(11))
-	}
+	wantIndexedAt(t, w, 11, commitAt(11), "after A completes too")
 }
 
-// spec: revision-watermark / The floor is the low-water mark of in-flight revisions
+// spec: revision-watermark / The floor is one below the lowest in-flight revision
 func TestWatermark_TrailingDeleteOnlyTail(t *testing.T) {
 	w := New()
-	w.Observe(10, "A", commitAt(10))
+	observe(t, w, 10, "A", commitAt(10))
 	w.Complete("A", 10)
-	if got, _ := w.IndexedAt(); got != 10 {
-		t.Fatalf("after A: Indexed = %d, want 10", got)
-	}
+	wantIndexedAt(t, w, 10, commitAt(10), "after A")
 	// A tail of pure deletes must still advance the watermark — their sequences
 	// participate, or lag wedges forever.
-	w.Observe(11, "B", commitAt(11))
+	observe(t, w, 11, "B", commitAt(11))
 	w.Complete("B", 11)
-	if got, _ := w.IndexedAt(); got != 11 {
-		t.Fatalf("trailing delete: Indexed = %d, want 11", got)
-	}
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(11)) {
-		t.Fatalf("commit time = %v, want %v", at, commitAt(11))
-	}
+	wantIndexedAt(t, w, 11, commitAt(11), "trailing delete")
 }
 
-// TestWatermark_ObserveDoesNotRegressCoveredTime pins the seam between a caught-up
-// view and the next delivery: observing a NEW revision moves the floor from
-// observedHigh down to r-1, which still covers the previously-covered revision, so
-// the covered commit time must stay put (it must not reset to zero and read as
-// "staleness not computable" on every single write).
+// TestWatermark_NewDeliveryAfterCatchUp is the seam between a caught-up view and the next
+// delivery: the floor rises from Observed to the new revision minus one, and the time becomes
+// the new revision's, the write the index now lacks.
 //
-// spec: revision-watermark / The floor never falls under ascending observation
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
-func TestWatermark_ObserveDoesNotRegressCoveredTime(t *testing.T) {
+// spec: revision-watermark / Observe accepts only a revision above Observed
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
+func TestWatermark_NewDeliveryAfterCatchUp(t *testing.T) {
 	w := New()
-	w.Observe(10, "A", commitAt(10))
+	observe(t, w, 10, "A", commitAt(10))
 	w.Complete("A", 10)
+	wantIndexedAt(t, w, 10, commitAt(10), "caught up at 10")
 
-	w.Observe(50, "B", commitAt(50)) // in flight; floor drops to 49
-	indexed, at := w.IndexedAt()
-	if indexed != 49 {
-		t.Fatalf("Indexed = %d, want 49", indexed)
-	}
-	if !at.Equal(commitAt(10)) {
-		t.Fatalf("commit time = %v, want %v (rev 10 is still covered by floor 49)", at, commitAt(10))
-	}
+	observe(t, w, 50, "B", commitAt(50))
+	wantIndexedAt(t, w, 49, commitAt(50), "50 in flight")
 }
 
-// spec: revision-watermark / Observed is the highest revision delivered
-func TestWatermark_RevisionZeroIgnored(t *testing.T) {
-	w := New()
-	w.Observe(0, "X", commitAt(1)) // "no revision" — stream sequences start at 1
-	if got, _ := w.IndexedAt(); got != 0 {
-		t.Fatalf("Observe(0) should be a no-op, Indexed = %d, want 0", got)
-	}
-	if _, at := w.IndexedAt(); !at.IsZero() {
-		t.Fatalf("Observe(0) must not record a commit time, got %v", at)
-	}
-	w.Observe(5, "A", commitAt(5))
-	if got, _ := w.IndexedAt(); got != 4 {
-		t.Fatalf("after Observe(5): Indexed = %d, want 4", got)
-	}
-}
-
-// TestWatermark_ZeroCommitTimeStaysUnknown covers the legacy/no-timestamp path: a
-// caller that cannot supply a commit time leaves the covered time zero rather than
-// fabricating one, so downstream reports "not computable" instead of "0 ms stale".
+// TestWatermark_ObserveRefusesNonAscending: a revision at or below Observed, revision 0
+// included, is refused with an error and changes no result. Each case completes under the key
+// the refused call named, to show the refused revision was not filed under it.
 //
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
+// spec: revision-watermark / Observe accepts only a revision above Observed
+func TestWatermark_ObserveRefusesNonAscending(t *testing.T) {
+	refuse := func(t *testing.T, w *Watermark, r uint64, key string, at time.Time) {
+		t.Helper()
+		if err := w.Observe(r, key, at); err == nil {
+			t.Fatalf("Observe(%d, %q) returned no error, want a refusal (Observed is %d)", r, key, w.Observed())
+		}
+	}
+	wantObserved := func(t *testing.T, w *Watermark, want uint64) {
+		t.Helper()
+		if got := w.Observed(); got != want {
+			t.Fatalf("Observed = %d, want %d", got, want)
+		}
+	}
+
+	t.Run("observed again", func(t *testing.T) {
+		w := New()
+		observe(t, w, 10, "A", commitAt(10))
+		refuse(t, w, 10, "B", commitAt(10).Add(time.Millisecond))
+		wantIndexedAt(t, w, 9, commitAt(10), "after the refused re-observation")
+		wantObserved(t, w, 10)
+		w.Complete("B", 10)
+		wantIndexedAt(t, w, 9, commitAt(10), "Complete(B, 10): 10 stays A's")
+		w.Complete("A", 10)
+		wantIndexedAt(t, w, 10, commitAt(10), "Complete(A, 10)")
+	})
+	t.Run("lower", func(t *testing.T) {
+		w := New()
+		observe(t, w, 50, "A", commitAt(50))
+		refuse(t, w, 20, "B", commitAt(20))
+		wantIndexedAt(t, w, 49, commitAt(50), "after the refused lower revision")
+		wantObserved(t, w, 50)
+		w.Complete("A", 50)
+		wantIndexedAt(t, w, 50, commitAt(50), "Complete(A, 50): 20 never went in flight")
+	})
+	t.Run("zero", func(t *testing.T) {
+		w := New()
+		refuse(t, w, 0, "X", commitAt(1))
+		wantIndexedAt(t, w, 0, time.Time{}, "after the refused revision 0")
+		wantObserved(t, w, 0)
+	})
+}
+
+// TestWatermark_ZeroCommitTimeStaysUnknown covers the no-timestamp path: a caller that
+// cannot supply a commit time leaves the time zero rather than fabricating one, so downstream
+// reports "not computable" instead of "0 ms stale" — caught up, and while the oldest in-flight
+// revision is the one without a time.
+//
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
 func TestWatermark_ZeroCommitTimeStaysUnknown(t *testing.T) {
 	w := New()
-	w.Observe(7, "A", time.Time{})
+	observe(t, w, 7, "A", time.Time{})
 	w.Complete("A", 7)
-	indexed, at := w.IndexedAt()
-	if indexed != 7 {
-		t.Fatalf("Indexed = %d, want 7", indexed)
-	}
-	if !at.IsZero() {
-		t.Fatalf("commit time = %v, want zero (unknown, not fabricated)", at)
-	}
+	wantIndexedAt(t, w, 7, time.Time{}, "caught up at a revision observed with no time")
+
+	w = New()
+	observe(t, w, 7, "A", time.Time{})
+	observe(t, w, 8, "B", commitAt(8))
+	wantIndexedAt(t, w, 6, time.Time{}, "oldest in flight observed with no time")
 }
 
 // spec: revision-watermark / Completion is key-scoped and drains lower revisions
@@ -266,68 +242,18 @@ func TestWatermark_CompleteUnobservedRevisionDrainsLower(t *testing.T) {
 	// A coalescer re-Get can return a revision NEWER than any yet delivered to the
 	// watch (a write between snapshot and Get). Completing at that not-yet-observed
 	// revision must still drain the key's lower pending, and must NOT advance
-	// observedHigh (only Observe does that).
+	// Observed (only Observe does that).
 	w := New()
-	w.Observe(10, "K", commitAt(10))
+	observe(t, w, 10, "K", commitAt(10))
 	w.Complete("K", 40) // 40 never observed
-	if got, _ := w.IndexedAt(); got != 10 {
-		t.Fatalf("Indexed = %d, want 10 (observedHigh unchanged; 10 drained)", got)
-	}
 	// The commit time is 10's — never 40's, whose entry was never delivered and whose
 	// commit time the watermark has never seen.
-	if _, at := w.IndexedAt(); !at.Equal(commitAt(10)) {
-		t.Fatalf("commit time = %v, want %v", at, commitAt(10))
-	}
-}
-
-// TestWatermark_MemoryDoesNotGrowWithCompletions is the structural guard behind the
-// "carry forward one scalar, not a map of completed revisions" decision: after N
-// observe/complete cycles the ONLY per-revision map must be empty, so retained
-// memory tracks in-flight work rather than cumulative throughput. It asserts on the
-// internal map directly (same package) because that is the thing that would grow.
-//
-// spec: revision-watermark / Retained state tracks in-flight work
-func TestWatermark_MemoryDoesNotGrowWithCompletions(t *testing.T) {
-	w := New()
-	const n = 20000
-	for i := uint64(1); i <= n; i++ {
-		w.Observe(i, "K", commitAt(i))
-		w.Complete("K", i)
-	}
-	w.mu.Lock()
-	pendingLen := len(w.pending)
-	w.mu.Unlock()
-	if pendingLen != 0 {
-		t.Fatalf("pending retained %d entries after draining every revision, want 0", pendingLen)
-	}
-	indexed, at := w.IndexedAt()
-	if indexed != n || !at.Equal(commitAt(n)) {
-		t.Fatalf("IndexedAt = (%d, %v), want (%d, %v)", indexed, at, n, commitAt(n))
-	}
-
-	// Same guard with a slow key pinning the floor: the completions that pile up
-	// ABOVE it must not be retained either (that is the case a "completed revisions"
-	// map would grow without bound).
-	w2 := New()
-	w2.Observe(1, "SLOW", commitAt(1))
-	for i := uint64(2); i <= n; i++ {
-		w2.Observe(i, "K", commitAt(i))
-		w2.Complete("K", i)
-	}
-	w2.mu.Lock()
-	pendingLen = len(w2.pending)
-	w2.mu.Unlock()
-	if pendingLen != 1 {
-		t.Fatalf("pending retained %d entries with one key stuck, want 1 (the stuck key only)", pendingLen)
-	}
-	if got, _ := w2.IndexedAt(); got != 0 {
-		t.Fatalf("Indexed = %d, want 0 (SLOW@1 pins the floor)", got)
-	}
+	wantIndexedAt(t, w, 10, commitAt(10), "Observed unchanged; 10 drained")
 }
 
 // TestWatermark_Concurrent runs Observe/Complete across many goroutines to prove the
-// mutex holds and that draining every observed revision leaves Indexed at
-// observedHigh (run under -race). Mirrors the real wiring: the watch goroutine
+// mutex holds and that draining every observed revision leaves the floor at
+// Observed (run under -race). Mirrors the real wiring: the watch goroutine
 // Observes ascending; N workers Complete out of order.
 //
 // spec: revision-watermark / The Watermark is safe for concurrent use
@@ -338,7 +264,7 @@ func TestWatermark_Concurrent(t *testing.T) {
 	keys := make([]string, n)
 	for i := 0; i < n; i++ {
 		keys[i] = string(rune('a'+i%26)) + "-" + time.Duration(i).String()
-		w.Observe(uint64(i+1), keys[i], commitAt(uint64(i+1)))
+		observe(t, w, uint64(i+1), keys[i], commitAt(uint64(i+1)))
 	}
 
 	var wg sync.WaitGroup
@@ -351,31 +277,25 @@ func TestWatermark_Concurrent(t *testing.T) {
 	}
 	wg.Wait()
 
-	indexed, at := w.IndexedAt()
-	if indexed != uint64(n) {
-		t.Fatalf("after draining all: Indexed = %d, want %d", indexed, n)
-	}
 	// Fully drained → the exact caught-up answer, regardless of completion order.
-	if !at.Equal(commitAt(n)) {
-		t.Fatalf("after draining all: commit time = %v, want %v", at, commitAt(n))
-	}
+	wantIndexedAt(t, w, n, commitAt(n), "after draining all")
 }
 
-// The tests below are new in SemEngine (design D7 and D8 of the OpenSpec change
-// setup-04a-04-graph-roots-revlag); the ones above are the SemStreams pin's.
+// The tests below are new in SemEngine (OpenSpec changes setup-04a-04-graph-roots-revlag and
+// fix-408-revlag-simplify); the ones above began as the SemStreams pin's.
 
-// TestWatermark_ObservedIsHighestDelivered pins Observed apart from the floor: it is the
-// highest revision delivered whether or not that revision has completed, and a completion
+// TestWatermark_ObservedIsHighestAccepted pins Observed apart from the floor: it is the
+// highest revision accepted whether or not that revision has completed, and a completion
 // at a revision never delivered does not move it.
 //
-// spec: revision-watermark / Observed is the highest revision delivered
-func TestWatermark_ObservedIsHighestDelivered(t *testing.T) {
+// spec: revision-watermark / Observed is the highest revision accepted
+func TestWatermark_ObservedIsHighestAccepted(t *testing.T) {
 	w := New()
 	if got := w.Observed(); got != 0 {
 		t.Fatalf("new watermark: Observed = %d, want 0", got)
 	}
-	w.Observe(50, "A", commitAt(50))
-	w.Observe(72, "B", commitAt(72))
+	observe(t, w, 50, "A", commitAt(50))
+	observe(t, w, 72, "B", commitAt(72))
 	if got := w.Observed(); got != 72 {
 		t.Fatalf("50 and 72 in flight: Observed = %d, want 72", got)
 	}
@@ -395,20 +315,50 @@ func TestWatermark_ObservedIsHighestDelivered(t *testing.T) {
 	}
 }
 
-// TestWatermark_DrainAtFloorIsCovered is the boundary the pin's tests miss: the drained
-// revision 10 sits exactly at the new floor (11 is still in flight), so the floor covers it
-// and IndexedAt carries its commit time rather than the zero time.
+// TestWatermark_DrainAtFloor: the drained revision 10 sits exactly at the new floor while 11
+// is still in flight, so the floor is 10 and the time is 11's, the oldest unapplied write.
 //
-// spec: revision-watermark / IndexedAt pairs the floor with a covered commit time
-func TestWatermark_DrainAtFloorIsCovered(t *testing.T) {
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
+func TestWatermark_DrainAtFloor(t *testing.T) {
 	w := New()
-	w.Observe(10, "A", commitAt(10))
-	w.Observe(11, "B", commitAt(11))
+	observe(t, w, 10, "A", commitAt(10))
+	observe(t, w, 11, "B", commitAt(11))
 	w.Complete("A", 10)
-	floor, at := w.IndexedAt()
-	if floor != 10 || !at.Equal(commitAt(10)) {
-		t.Fatalf("IndexedAt = (%d, %v), want (10, %v): a drain at the floor is covered", floor, at, commitAt(10))
-	}
+	wantIndexedAt(t, w, 10, commitAt(11), "a drain at the floor")
+}
+
+// TestWatermark_TimeIsOldestInFlight: while behind, the time is that of the lowest in-flight
+// revision — chosen by revision, not by commit time, since commit times are not promised to
+// rise with revision.
+//
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
+func TestWatermark_TimeIsOldestInFlight(t *testing.T) {
+	w := New()
+	observe(t, w, 50, "A", commitAt(50))
+	observe(t, w, 72, "B", commitAt(72))
+	observe(t, w, 100, "C", commitAt(100))
+	wantIndexedAt(t, w, 49, commitAt(50), "none complete")
+
+	w = New()
+	observe(t, w, 1, "A", commitAt(9))
+	observe(t, w, 2, "B", commitAt(3))
+	wantIndexedAt(t, w, 0, commitAt(9), "commit times falling with revision")
+}
+
+// TestWatermark_CompletionAboveInFlightKeepsTime: a completion that leaves the lowest
+// in-flight revision in flight changes neither floor nor time; the time moves when the
+// lowest drains.
+//
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
+func TestWatermark_CompletionAboveInFlightKeepsTime(t *testing.T) {
+	w := New()
+	observe(t, w, 50, "A", commitAt(50))
+	observe(t, w, 72, "B", commitAt(72))
+	observe(t, w, 100, "C", commitAt(100))
+	w.Complete("B", 72)
+	wantIndexedAt(t, w, 49, commitAt(50), "72 completes above 50")
+	w.Complete("A", 50)
+	wantIndexedAt(t, w, 99, commitAt(100), "then 50 completes")
 }
 
 // TestWatermark_CompleteWithNothingInFlight: a Complete that drains nothing changes no
@@ -431,14 +381,12 @@ func TestWatermark_CompleteWithNothingInFlight(t *testing.T) {
 	w := New()
 	assertUnchanged(t, w, "A", 5)
 
-	w.Observe(10, "A", commitAt(10))
-	w.Observe(20, "B", commitAt(20))
+	observe(t, w, 10, "A", commitAt(10))
+	observe(t, w, 20, "B", commitAt(20))
 	w.Complete("A", 10)
-	// B@20 holds the floor at 19 and the covered time at 10's. Neither A nor Z has
-	// anything in flight, below or above the floor.
-	if floor, at := w.IndexedAt(); floor != 19 || !at.Equal(commitAt(10)) {
-		t.Fatalf("setup: IndexedAt = (%d, %v), want (19, %v)", floor, at, commitAt(10))
-	}
+	// B@20 holds the floor at 19 and the time at 20's. Neither A nor Z has anything in
+	// flight, below or above the floor.
+	wantIndexedAt(t, w, 19, commitAt(20), "setup")
 	assertUnchanged(t, w, "A", 30)
 	assertUnchanged(t, w, "Z", 5)
 	assertUnchanged(t, w, "B", 19) // B is in flight only above 19
@@ -448,19 +396,43 @@ func TestWatermark_CompleteWithNothingInFlight(t *testing.T) {
 	assertUnchanged(t, w, "A", 1000)
 }
 
-// TestWatermark_ConcurrentReadersAndWriters is the real wiring: one goroutine observes
-// revisions in ascending order and hands each to a pool of workers that complete it, while a
-// reader calls IndexedAt and Observed throughout. Keys repeat, so one completion can drain a
-// lower revision of its key that another worker is about to complete. Run under -race.
+// reading is one read of a watermark: IndexedAt's floor and time, then Observed.
+type reading struct {
+	floor    uint64
+	at       time.Time
+	observed uint64
+}
+
+func (r reading) equal(o reading) bool {
+	return r.floor == o.floor && r.at.Equal(o.at) && r.observed == o.observed
+}
+
+// TestWatermark_ConcurrentReadersAndWriters is the real wiring and the #408 proof: one
+// goroutine observes revisions in ascending order and hands each to a pool of workers that
+// complete it, while a reader calls IndexedAt and Observed throughout. Keys repeat (r%16), so
+// one completion can drain a lower revision of its key that another worker is about to
+// complete; 1,500 and 2,000 have keys of their own, so only their own completions drain them.
+// At checkpoints A and B the test asks the reader for a read begun after the writes it waited
+// for, and the exact value read is the proof that a read reflects every call that returned
+// before it. Run under -race.
 //
 // spec: revision-watermark / The Watermark is safe for concurrent use
-// spec: revision-watermark / The floor never falls under ascending observation
+// spec: revision-watermark / Observe accepts only a revision above Observed
 func TestWatermark_ConcurrentReadersAndWriters(t *testing.T) {
-	const n = 2000
 	const workers = 8
-	key := func(r uint64) string { return fmt.Sprintf("k%d", r%16) }
+	withheld := map[uint64]string{1500: "solo-1500", 2000: "solo-2000"}
+	key := func(r uint64) string {
+		if k, ok := withheld[r]; ok {
+			return k
+		}
+		return fmt.Sprintf("r%d", r%16)
+	}
 	w := New()
 
+	// completed counts the current phase's Complete calls; its Wait returns once each has
+	// returned, and each worker completes a revision only after the observer's Observe of it
+	// returned (the send on revs orders the two).
+	var completed sync.WaitGroup
 	revs := make(chan uint64)
 	var writers sync.WaitGroup
 	for range workers {
@@ -469,125 +441,219 @@ func TestWatermark_ConcurrentReadersAndWriters(t *testing.T) {
 			defer writers.Done()
 			for r := range revs {
 				w.Complete(key(r), r)
+				completed.Done()
 			}
 		}()
 	}
+
+	toB := make(chan struct{})       // the test lets the observer go on to 1,001..2,000
+	observedB := make(chan struct{}) // the observer has observed 2,000
+	release := make(chan struct{})   // the test releases the completions of 1,500 and 2,000
+	completed.Add(1000)
 	writers.Add(1)
 	go func() {
 		defer writers.Done()
 		defer close(revs)
-		for r := uint64(1); r <= n; r++ {
-			w.Observe(r, key(r), commitAt(r))
-			revs <- r
+		observeRange := func(from, to uint64) {
+			for r := from; r <= to; r++ {
+				if err := w.Observe(r, key(r), commitAt(r)); err != nil {
+					t.Errorf("Observe(%d) refused: %v", r, err)
+				}
+				if _, ok := withheld[r]; !ok {
+					revs <- r
+				}
+			}
 		}
+		observeRange(1, 1000)
+		<-toB
+		observeRange(1001, 2000)
+		close(observedB)
+		<-release
+		revs <- 1500
+		revs <- 2000
 	}()
 
-	stop := make(chan struct{})
-	var reader sync.WaitGroup
-	var fell []string // written only by the reader goroutine
-	reads := 0
-	reader.Add(1)
+	reader, readAt, reads, fell := startReader(w)
+
+	completed.Wait() // every Observe and Complete of 1..1,000 has returned
+	if got, want := readAt(), (reading{1000, commitAt(1000), 1000}); !got.equal(want) {
+		t.Errorf("checkpoint A: read %+v, want %+v", got, want)
+	}
+
+	completed.Add(998)
+	close(toB)
+	<-observedB      // every Observe of 1,001..2,000 has returned
+	completed.Wait() // every Complete but 1,500's and 2,000's has returned
+	if got, want := readAt(), (reading{1499, commitAt(1500), 2000}); !got.equal(want) {
+		t.Errorf("checkpoint B: read %+v, want %+v", got, want)
+	}
+
+	completed.Add(2)
+	close(release)
+	writers.Wait()
+	reader.stop()
+	t.Logf("the reader read %d times", *reads)
+	if len(*fell) > 0 {
+		t.Fatalf("the floor fell %d times: %v", len(*fell), *fell)
+	}
+	// writers.Wait above ordered this read after every Observe and Complete.
+	wantIndexedAt(t, w, 2000, commitAt(2000), "after all writers returned")
+	if got := w.Observed(); got != 2000 {
+		t.Fatalf("Observed = %d, want 2000", got)
+	}
+}
+
+// freeReader is a goroutine reading a watermark in a loop until stopped.
+type freeReader struct {
+	done chan struct{}
+	wg   sync.WaitGroup
+}
+
+// stop ends the reader and returns once it has returned, which orders the test's reads of the
+// reader's counters after its last write.
+func (r *freeReader) stop() {
+	close(r.done)
+	r.wg.Wait()
+}
+
+// startReader starts a goroutine that reads w in a loop and records every floor lower than the
+// one it read before. readAt asks it for a read begun after the ask and returns that read. The
+// counters it returns are written only by the reader; read them after stop.
+func startReader(w *Watermark) (r *freeReader, readAt func() reading, reads *int, fell *[]string) {
+	r = &freeReader{done: make(chan struct{})}
+	ask := make(chan chan reading)
+	reads, fell = new(int), new([]string)
+	r.wg.Add(1)
 	go func() {
-		defer reader.Done()
+		defer r.wg.Done()
 		var last uint64
-		for {
-			floor, _ := w.IndexedAt()
-			_ = w.Observed()
-			reads++
+		read := func() reading {
+			floor, at := w.IndexedAt()
+			got := reading{floor: floor, at: at, observed: w.Observed()}
+			*reads++
 			if floor < last {
-				fell = append(fell, fmt.Sprintf("%d after %d", floor, last))
+				*fell = append(*fell, fmt.Sprintf("%d after %d", floor, last))
 			}
 			last = floor
+			return got
+		}
+		for {
+			read()
 			select {
-			case <-stop:
+			case reply := <-ask:
+				reply <- read()
+			case <-r.done:
 				return
 			default:
 			}
 		}
 	}()
-
-	writers.Wait()
-	close(stop)
-	// reader.Wait orders the reads of fell and reads below after the reader's last write.
-	reader.Wait()
-	if len(fell) > 0 {
-		t.Fatalf("the floor fell %d times in %d reads under ascending observation: %v", len(fell), reads, fell)
+	readAt = func() reading {
+		reply := make(chan reading)
+		ask <- reply
+		return <-reply
 	}
-	// writers.Wait above ordered this read after every Observe and Complete.
-	floor, at := w.IndexedAt()
-	if floor != n || !at.Equal(commitAt(n)) {
-		t.Fatalf("after all writers returned: IndexedAt = (%d, %v), want (%d, %v)", floor, at, n, commitAt(n))
-	}
-	if got := w.Observed(); got != n {
-		t.Fatalf("Observed = %d, want %d", got, n)
-	}
+	return r, readAt, reads, fell
 }
 
 // TestWatermark_RetentionTracksInFlight checks retention without reading any field of the
-// watermark: with one revision stuck in flight, a million others observed and completed above
-// it must not grow the live heap. One retained 8-byte entry per completion would grow it by
-// about 8 MB; the bound is 1 MiB (PR #407 probe, issuecomment-6388227813: the pin's code grows
-// it by about 0 bytes, 1,864 under -race).
+// watermark: a million revisions observed and completed must not grow the live heap, with
+// nothing else in flight and with one revision stuck below them. One retained 8-byte entry per
+// completion would grow it by about 8 MB; the bound is 1 MiB (PR #407 probe,
+// issuecomment-6388227813: the pin's code grows it by about 0 bytes, 1,864 under -race).
 //
 // spec: revision-watermark / Retained state tracks in-flight work
 func TestWatermark_RetentionTracksInFlight(t *testing.T) {
 	const n = 1_000_000
-	const bound = 1 << 20
-	w := New()
-	w.Observe(1, "STUCK", commitAt(1))
+	// observeAndComplete observes and completes from..to one after another under one key.
+	observeAndComplete := func(t *testing.T, w *Watermark, from, to uint64) {
+		for r := from; r <= to; r++ {
+			if err := w.Observe(r, "K", commitAt(r)); err != nil {
+				t.Fatalf("Observe(%d) refused: %v", r, err)
+			}
+			w.Complete("K", r)
+		}
+	}
 
+	t.Run("none stuck", func(t *testing.T) {
+		w := New()
+		grew := liveHeapGrowth(func() { observeAndComplete(t, w, 1, n) })
+		// These reads also keep w reachable past the second measurement.
+		wantIndexedAt(t, w, n, commitAt(n), "caught up")
+		wantHeapBound(t, grew, n, "nothing else in flight")
+	})
+	t.Run("one stuck", func(t *testing.T) {
+		w := New()
+		observe(t, w, 1, "STUCK", commitAt(1))
+		grew := liveHeapGrowth(func() { observeAndComplete(t, w, 2, n+1) })
+		// These reads also keep w reachable past the second measurement.
+		wantIndexedAt(t, w, 0, commitAt(1), "STUCK@1 pins the floor and the time")
+		if got := w.Observed(); got != n+1 {
+			t.Fatalf("Observed = %d, want %d", got, n+1)
+		}
+		wantHeapBound(t, grew, n, "one revision stuck in flight")
+	})
+}
+
+// liveHeapGrowth returns how far the live heap grew across fill, measured after a collection
+// on each side.
+func liveHeapGrowth(fill func()) int64 {
 	var before, after runtime.MemStats
 	runtime.GC()
 	runtime.ReadMemStats(&before)
-	for r := uint64(2); r <= n+1; r++ {
-		w.Observe(r, "K", commitAt(r))
-		w.Complete("K", r)
-	}
+	fill()
 	runtime.GC()
 	runtime.ReadMemStats(&after)
+	return int64(after.HeapAlloc) - int64(before.HeapAlloc)
+}
 
-	// These reads also keep w reachable past the second measurement.
-	if floor, at := w.IndexedAt(); floor != 0 || !at.IsZero() {
-		t.Fatalf("IndexedAt = (%d, %v), want (0, zero time): STUCK@1 pins the floor", floor, at)
-	}
-	if got := w.Observed(); got != n+1 {
-		t.Fatalf("Observed = %d, want %d", got, n+1)
-	}
-	grew := int64(after.HeapAlloc) - int64(before.HeapAlloc)
-	t.Logf("live heap grew by %d bytes over %d completions with one revision in flight", grew, n)
+func wantHeapBound(t *testing.T, grew int64, n int, what string) {
+	t.Helper()
+	const bound = 1 << 20
+	t.Logf("live heap grew by %d bytes over %d completions, %s", grew, n, what)
 	if grew >= bound {
-		t.Fatalf("live heap grew by %d bytes over %d completions, want under %d: completed revisions are retained",
-			grew, n, bound)
+		t.Fatalf("live heap grew by %d bytes over %d completions (%s), want under %d: completed revisions are retained",
+			grew, n, what, bound)
 	}
 }
 
-// TestPropWatermarkHistory is the generated check of design D8: a history of Observe and
-// Complete calls goes to the port and to the pin's code (pinref_test.go) alike, and after every
-// step their IndexedAt (floor and time) and Observed must be equal. Two checks come from the
-// spec, not from either implementation, through a record the test keeps of what is in flight:
+// TestPropWatermarkHistory is the generated check of design D5: a history of Observe and
+// Complete calls goes to the watermark and to the test's own model of the requirements, and
+// after every call the watermark's result must equal the model's. The model keeps each
+// in-flight revision with its key and commit time, and the highest accepted revision with its
+// time. From the spec, it predicts:
 //
-//   - the floor is the highest observed revision when nothing is in flight, else the lowest
-//     in-flight revision minus 1 ("The floor is the low-water mark of in-flight revisions";
-//     the record drains as "Completion is key-scoped and drains lower revisions" says);
-//   - while the history has only observed revisions higher than any before, the floor never
-//     falls ("The floor never falls under ascending observation").
+//   - every refusal: Observe accepts only a revision above Observed, and a refused call changes
+//     no result ("Observe accepts only a revision above Observed");
+//   - the floor: Observed when nothing is in flight, else the lowest in-flight revision minus 1
+//     ("The floor is one below the lowest in-flight revision"; the model drains as "Completion
+//     is key-scoped and drains lower revisions" says);
+//   - the time: the commit time accepted with the lowest in-flight revision, else with Observed's
+//     revision ("IndexedAt pairs the floor with the oldest unapplied commit time");
+//   - that the floor never decreases from one call to the next.
 //
-// Each history starts with the fixed prefix Observe(10, A), Observe(11, B), Complete(A, 10), so
-// the drain exactly at the floor runs in every case, and ends by completing every key at the
-// highest revision, so the caught-up path runs in every case: both must then report nothing in
-// flight (floor equals Observed) with equal times. The model is sequential; the two concurrent
-// tests cover concurrency under -race.
+// Commit times are drawn apart from revisions, so they need not rise with them. Each history
+// starts with the fixed prefix Observe(10, A), Observe(11, B), Complete(A, 10), which must read
+// (10, 11's time), then a refused Observe(11, C), so the drain at the floor and the refusal of a
+// re-observation run in every case; it ends by completing every key at the highest revision,
+// so the caught-up row runs in every case. The model is sequential; the two concurrent tests
+// cover concurrency under -race.
 //
-// spec: revision-watermark / The floor is the low-water mark of in-flight revisions
+// spec: revision-watermark / Observe accepts only a revision above Observed
+// spec: revision-watermark / The floor is one below the lowest in-flight revision
 // spec: revision-watermark / Completion is key-scoped and drains lower revisions
-// spec: revision-watermark / The floor never falls under ascending observation
+// spec: revision-watermark / IndexedAt pairs the floor with the oldest unapplied commit time
 func TestPropWatermarkHistory(t *testing.T) {
-	var c propCounts
+	c := propCounts{ops: map[string]int{}}
 	rapid.Check(t, func(rt *rapid.T) {
 		h := newPropHistory(&c)
 		h.observe(rt, 10, "A", commitAt(10))
 		h.observe(rt, 11, "B", commitAt(11))
 		h.complete(rt, "A", 10)
+		if floor, at := h.w.IndexedAt(); floor != 10 || !at.Equal(commitAt(11)) {
+			rt.Fatalf("prefix: IndexedAt = (%d, %v), want (10, %v)", floor, at, commitAt(11))
+		}
+		h.observe(rt, 11, "C", commitAt(11).Add(time.Millisecond))
 		steps := rapid.IntRange(0, 60).Draw(rt, "steps")
 		for range steps {
 			h.step(rt)
@@ -595,64 +661,60 @@ func TestPropWatermarkHistory(t *testing.T) {
 		for _, k := range propKeys {
 			h.complete(rt, k, h.high)
 		}
-		h.checkCaughtUp(rt)
-		c.histories++
-		if !h.ascending {
-			c.nonAscending++
+		if len(h.inFlight) != 0 {
+			rt.Fatalf("model still has %v in flight after the final drain", h.inFlight)
 		}
+		h.c.drains++
+		c.histories++
 	})
-	t.Logf("rapid.seed flag %s (0: Rapid drew a fresh seed, printed only on failure); histories completed %d "+
-		"(%d not ascending); step checks %d (in flight %d, caught up %d); floor-never-falls checks %d; "+
-		"final drains %d; observe next %d, observe zero time %d, observe lower %d, re-observe %d, complete %d",
-		flag.Lookup("rapid.seed").Value.String(), c.histories, c.nonAscending, c.checks, c.inFlight,
-		c.caughtUp, c.monotonic, c.drains, c.ops["next"], c.ops["zeroTime"], c.ops["lower"],
-		c.ops["reobserve"], c.ops["complete"])
+	t.Logf("rapid.seed flag %s (0: Rapid drew a fresh seed, printed only on failure); histories completed %d; "+
+		"step checks %d (in flight %d, caught up %d); refusals %d; final drains %d; "+
+		"ops: next %d, zero time %d, lower %d, re-observe %d, zero %d, complete %d",
+		flag.Lookup("rapid.seed").Value.String(), c.histories, c.checks, c.inFlight, c.caughtUp, c.refusals,
+		c.drains, c.ops["next"], c.ops["zeroTime"], c.ops["lower"], c.ops["reobserve"], c.ops["zero"],
+		c.ops["complete"])
 }
 
 var propKeys = []string{"A", "B", "C"}
 
 type propCounts struct {
-	histories, nonAscending, checks, inFlight, caughtUp, monotonic, drains int
-	ops                                                                    map[string]int
+	histories, checks, inFlight, caughtUp, refusals, drains int
+	ops                                                     map[string]int
 }
 
-// propHistory runs one history against the port and the pin's code, and keeps the test's own
-// record of it: the highest observed revision, each in-flight revision's key, and every
-// revision observed (in first-observed order, so draws from it replay).
+// propEntry is the model's record of one in-flight revision.
+type propEntry struct {
+	key string
+	at  time.Time
+}
+
+// propHistory runs one history against the watermark and keeps the model of it.
 type propHistory struct {
-	port      *Watermark
-	ref       *pinWatermark
-	high      uint64
-	inFlight  map[uint64]string
-	observed  []uint64
-	seen      map[uint64]bool
-	ascending bool
+	w         *Watermark
+	high      uint64    // highest accepted revision
+	highAt    time.Time // commit time accepted with high
+	inFlight  map[uint64]propEntry
+	accepted  []uint64 // every accepted revision, in order, so draws from it replay
 	lastFloor uint64
 	c         *propCounts
 }
 
 func newPropHistory(c *propCounts) *propHistory {
-	if c.ops == nil {
-		c.ops = map[string]int{}
-	}
-	return &propHistory{
-		port: New(), ref: newPinWatermark(), inFlight: map[uint64]string{}, seen: map[uint64]bool{},
-		ascending: true, c: c,
-	}
+	return &propHistory{w: New(), inFlight: map[uint64]propEntry{}, c: c}
 }
 
-// step draws one operation of design D8 and applies it.
+// step draws one operation of design D5 and applies it.
 func (h *propHistory) step(rt *rapid.T) {
 	key := rapid.SampledFrom(propKeys).Draw(rt, "key")
-	op := rapid.SampledFrom([]string{"next", "next", "zeroTime", "lower", "reobserve", "complete", "complete"}).
+	op := rapid.SampledFrom([]string{"next", "next", "zeroTime", "lower", "reobserve", "zero", "complete", "complete"}).
 		Draw(rt, "op")
 	h.c.ops[op]++
 	switch op {
 	case "next", "zeroTime":
 		r := h.high + rapid.Uint64Range(1, 3).Draw(rt, "gap")
-		at := commitAt(r)
-		if op == "zeroTime" {
-			at = time.Time{}
+		at := time.Time{}
+		if op == "next" {
+			at = base.Add(time.Duration(rapid.IntRange(0, 10_000).Draw(rt, "atMs")) * time.Millisecond)
 		}
 		h.observe(rt, r, key, at)
 	case "lower":
@@ -660,90 +722,113 @@ func (h *propHistory) step(rt *rapid.T) {
 		h.observe(rt, r, key, commitAt(r))
 	case "reobserve":
 		// Under any key, and with a commit time not given before, so a time kept from the
-		// earlier observation is told apart from the one last given.
-		r := rapid.SampledFrom(h.observed).Draw(rt, "reobserveRev")
+		// earlier observation is told apart from the one the refused call gave.
+		r := rapid.SampledFrom(h.accepted).Draw(rt, "reobserveRev")
 		offset := time.Duration(rapid.IntRange(1, 999).Draw(rt, "offsetMs")) * time.Millisecond
 		h.observe(rt, r, key, commitAt(r).Add(offset))
+	case "zero":
+		h.observe(rt, 0, key, commitAt(1))
 	case "complete":
-		r := rapid.OneOf(rapid.SampledFrom(h.observed), rapid.Uint64Range(0, h.high+3)).Draw(rt, "completeRev")
+		r := rapid.OneOf(rapid.SampledFrom(h.accepted), rapid.Uint64Range(0, h.high+3)).Draw(rt, "completeRev")
 		h.complete(rt, key, r)
 	}
 }
 
 func (h *propHistory) observe(rt *rapid.T, r uint64, key string, at time.Time) {
+	op := fmt.Sprintf("Observe(%d, %q, %v)", r, key, at)
+	err := h.w.Observe(r, key, at)
 	if r <= h.high {
-		h.ascending = false
+		h.c.refusals++
+		if err == nil {
+			rt.Fatalf("%s returned no error, want a refusal (highest accepted %d)", op, h.high)
+		}
 	} else {
-		h.high = r
+		if err != nil {
+			rt.Fatalf("%s refused: %v", op, err)
+		}
+		h.high, h.highAt = r, at
+		h.inFlight[r] = propEntry{key: key, at: at}
+		h.accepted = append(h.accepted, r)
 	}
-	if !h.seen[r] {
-		h.seen[r] = true
-		h.observed = append(h.observed, r)
-	}
-	h.inFlight[r] = key
-	h.port.Observe(r, key, at)
-	h.ref.Observe(r, key, at)
-	h.check(rt, fmt.Sprintf("Observe(%d, %q, %v)", r, key, at))
+	h.check(rt, op)
 }
 
 func (h *propHistory) complete(rt *rapid.T, key string, rev uint64) {
-	for r, k := range h.inFlight {
-		if k == key && r <= rev {
+	for r, e := range h.inFlight {
+		if e.key == key && r <= rev {
 			delete(h.inFlight, r)
 		}
 	}
-	h.port.Complete(key, rev)
-	h.ref.Complete(key, rev)
+	h.w.Complete(key, rev)
 	h.check(rt, fmt.Sprintf("Complete(%q, %d)", key, rev))
 }
 
-// check compares the port with the pin's code and with the record after the operation op.
+// check compares the watermark with the model after the operation op.
 func (h *propHistory) check(rt *rapid.T, op string) {
-	floor, at := h.port.IndexedAt()
-	refFloor, refAt := h.ref.IndexedAt()
-	if floor != refFloor || !at.Equal(refAt) {
-		rt.Fatalf("after %s: port IndexedAt = (%d, %v), pin's code = (%d, %v)", op, floor, at, refFloor, refAt)
-	}
-	if got, want := h.port.Observed(), h.ref.Observed(); got != want {
-		rt.Fatalf("after %s: port Observed = %d, pin's code = %d", op, got, want)
-	}
-	want := h.high
+	wantFloor, wantAt := h.high, h.highAt
 	if len(h.inFlight) > 0 {
 		h.c.inFlight++
 		low := ^uint64(0)
 		for r := range h.inFlight {
 			low = min(low, r)
 		}
-		want = low - 1
+		wantFloor, wantAt = low-1, h.inFlight[low].at
 	} else {
 		h.c.caughtUp++
 	}
-	if floor != want {
-		rt.Fatalf("after %s: floor = %d, want %d (in flight: %v, highest observed %d)", op, floor, want, h.inFlight, h.high)
+	floor, at := h.w.IndexedAt()
+	if floor != wantFloor || !at.Equal(wantAt) {
+		rt.Fatalf("after %s: IndexedAt = (%d, %v), want (%d, %v) (in flight: %v, highest accepted %d)",
+			op, floor, at, wantFloor, wantAt, h.inFlight, h.high)
 	}
-	if h.ascending {
-		h.c.monotonic++
-		if floor < h.lastFloor {
-			rt.Fatalf("after %s: floor fell from %d to %d under ascending observation", op, h.lastFloor, floor)
-		}
+	if got := h.w.Observed(); got != h.high {
+		rt.Fatalf("after %s: Observed = %d, want %d", op, got, h.high)
+	}
+	if floor < h.lastFloor {
+		rt.Fatalf("after %s: floor fell from %d to %d", op, h.lastFloor, floor)
 	}
 	h.lastFloor = floor
 	h.c.checks++
 }
 
-// checkCaughtUp runs after every key has completed at the highest revision.
-func (h *propHistory) checkCaughtUp(rt *rapid.T) {
-	if len(h.inFlight) != 0 {
-		rt.Fatalf("record still has %v in flight after the final drain", h.inFlight)
+// BenchmarkWatermarkInFlight is the evidence for design D3's claims 1-3 (notes/2.1.md): with n
+// revisions in flight under keys of their own, each iteration observes one new revision and
+// completes the oldest, so the set stays at n and every completion drains the lowest in-flight
+// revision; the read benchmark reads with n in flight. Per-call cost that does not grow from
+// 10,000 to 40,000 shows no call scans the in-flight set.
+func BenchmarkWatermarkInFlight(b *testing.B) {
+	for _, n := range []uint64{10_000, 40_000} {
+		// keys[r%(n+1)] is distinct for any n+1 consecutive revisions.
+		keys := make([]string, n+1)
+		for i := range keys {
+			keys[i] = fmt.Sprintf("k%d", i)
+		}
+		fill := func(b *testing.B) *Watermark {
+			w := New()
+			for r := uint64(1); r <= n; r++ {
+				if err := w.Observe(r, keys[r%(n+1)], commitAt(r)); err != nil {
+					b.Fatal(err)
+				}
+			}
+			return w
+		}
+		b.Run(fmt.Sprintf("observe+complete/inflight=%d", n), func(b *testing.B) {
+			w := fill(b)
+			b.ResetTimer()
+			for i := uint64(1); i <= uint64(b.N); i++ {
+				r := n + i
+				if err := w.Observe(r, keys[r%(n+1)], commitAt(r)); err != nil {
+					b.Fatal(err)
+				}
+				w.Complete(keys[i%(n+1)], i)
+			}
+		})
+		b.Run(fmt.Sprintf("indexedAt/inflight=%d", n), func(b *testing.B) {
+			w := fill(b)
+			b.ResetTimer()
+			for range b.N {
+				w.IndexedAt()
+			}
+		})
 	}
-	floor, at := h.port.IndexedAt()
-	refFloor, refAt := h.ref.IndexedAt()
-	if floor != h.port.Observed() || refFloor != h.ref.Observed() {
-		rt.Fatalf("after the final drain: floors (%d, pin %d) differ from Observed (%d, pin %d)",
-			floor, refFloor, h.port.Observed(), h.ref.Observed())
-	}
-	if !at.Equal(refAt) {
-		rt.Fatalf("after the final drain: port time %v, pin's code %v", at, refAt)
-	}
-	h.c.drains++
 }

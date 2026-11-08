@@ -261,6 +261,7 @@ func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 // replay, and hands the entry to the plug-in.
 func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, validating bool) {
 	// entry.Created() is the KV commit time, which makes staleness_ms the age of the view (ADR-083 D3).
+	// Observe's error is not read yet: task 2.2 declares the feed lost on a refusal.
 	f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created())
 	e := Entry{Key: entry.Key(), Revision: entry.Revision(), Deleted: natsclient.IsKVTombstone(entry.Operation())}
 	if !e.Deleted {

@@ -87,7 +87,7 @@ func (c *Component) readFailed(ctx context.Context, key string, err error) {
 		if delErr := c.storage.DeleteEmbedding(ctx, key); delErr != nil {
 			c.logger.Warn("embedding record delete failed for an absent entity; the repair lane retries it",
 				slog.String("entity", key), slog.Any("error", delErr))
-			c.failed.mark(key, strandedRevision, embedding.ReasonDeleteFailed)
+			c.markFailed(key, strandedRevision, embedding.ReasonDeleteFailed)
 		} else {
 			c.failed.absent(key)
 		}
@@ -96,7 +96,7 @@ func (c *Component) readFailed(ctx context.Context, key string, err error) {
 	}
 	c.logger.Warn("entity read failed; revision drained, the repair lane retries the read",
 		slog.String("entity", key), slog.Any("error", err))
-	c.failed.mark(key, strandedRevision, embedding.ReasonEntityReadFailed)
+	c.markFailed(key, strandedRevision, embedding.ReasonEntityReadFailed)
 	c.complete(key, ^uint64(0))
 }
 
@@ -115,7 +115,7 @@ func (c *Component) applyTombstone(ctx context.Context, key string, revision uin
 func (c *Component) removeRecord(ctx context.Context, key string, revision uint64, warning string) {
 	if err := c.storage.DeleteEmbedding(ctx, key); err != nil {
 		c.logger.Warn(warning, slog.String("entity", key), slog.Any("error", err))
-		c.failed.mark(key, revision, embedding.ReasonDeleteFailed)
+		c.markFailed(key, revision, embedding.ReasonDeleteFailed)
 	} else {
 		c.failed.ended(key, revision)
 	}
@@ -167,7 +167,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 		// until the repair lane or a later write of the entity writes one (pin #613 F2).
 		c.logger.Error("pending embedding write failed; revision left uncompleted, the repair lane retries it",
 			slog.String("entity", key), slog.Any("error", err))
-		c.failed.mark(key, revision, embedding.ReasonPendingWriteFailed)
+		c.markFailed(key, revision, embedding.ReasonPendingWriteFailed)
 		return
 	}
 	if !saved {
@@ -244,10 +244,19 @@ func (c *Component) extractText(state *graph.EntityState) string {
 func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevision uint64, outcome embedding.TerminalOutcome, reason string) {
 	if outcome == embedding.OutcomeFailed {
 		c.failed.failed(entityID, sourceRevision, reason)
+		c.lifecycle.CountError()
 	} else {
 		c.failed.succeeded(entityID, sourceRevision)
 	}
 	c.complete(entityID, sourceRevision)
+}
+
+// markFailed records hop 1's own failure of key at revision in the failed map and counts it in
+// ErrorCount, which never lowers Healthy (design D6; ADR-109 Decision 2): the failed map's count,
+// through the follower's stuck states, is what Health reads.
+func (c *Component) markFailed(key string, revision uint64, reason string) {
+	c.failed.mark(key, revision, reason)
+	c.lifecycle.CountError()
 }
 
 // complete reports revision of key complete to the follower.

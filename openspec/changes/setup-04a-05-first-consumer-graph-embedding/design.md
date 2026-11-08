@@ -97,7 +97,8 @@ The indexing-profile check is not carried: every path returns true (`component.g
 ## D6. Health, readiness, tier 0
 
 `Health` is `Lifecycle.Health(stuck...)` with the follower's `Stuck()` and D2's state; no error-count term (ADR-109
-D2; pin `component.go:567`). No status verb (ADR-083, ADR-109 D3; pin `query.go:39`). No `model`, no `go-openai`.
+D2; pin `component.go:567`). No status verb (ADR-083, ADR-109 D3; pin `query.go:39`). No direct `model`
+import (`component` reaches it for `Dependencies.ModelRegistry`); `go-openai` is unreachable.
 *Proof:* `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`, `TestGraphEmbeddingImportsNoProviderModule`.
 
 ## D7. Tests carried

@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -256,7 +256,6 @@
+ // through the follower's stuck states, is what Health reads.
+ func (c *Component) markFailed(key string, revision uint64, reason string) {
+ 	c.failed.mark(key, revision, reason)
+-	c.lifecycle.CountError()
+ }
+ 
+ // complete reports revision of key complete to the follower.

@@ -48,4 +48,6 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
 - Retires none. Stays: #109, #196, #195 (this package's 12 sites adopt), #110 (PR C), #477 (PR B), #489, #32, #155,
   #482, #11, #484.
 - Owner rulings (PR #550 comment 6716972354): four-PR split; probes; G10; fusion reads not-ready from the
-  reply (PRs C, D; changes pin ADR-066 and ADR-082). Remaining: `Approved-by:`.
+  reply (PRs C, D; changes pin ADR-066 and ADR-082). Remaining: when the embedding
+  key reads degraded (design D1; options (a1) recommended, (a2), (b); (a1) keeps ADR-066 § 3's completion rule at 30 s
+  and moves graph-index to it; (b) is a named ADR-066 § 3 deviation); `Approved-by:`.

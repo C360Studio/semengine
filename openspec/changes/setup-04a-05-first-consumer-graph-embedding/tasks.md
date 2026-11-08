@@ -16,12 +16,14 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
 - [ ] 2.1 Config and factory (D4), with `Register` and the ledger row. Check: `TestConfigRefusesUnknownKey`,
   `TestConfigRefusesHTTPEmbedder`, one test per kept key.
 - [ ] 2.2 Shell, follower plug-in and hop 1 (D1, D5). Check: `TestReadinessWaitsForHopTwo`,
-  `TestCoalescedRevisionsComplete`, `TestStorageRefLaneEmbedsIdentityThenBody`, lifecycle suite, `-race`.
+  `TestCoalescedRevisionsComplete`, `TestStorageRefLaneEmbedsIdentityThenBody`, `TestHeldLowRevisionWithProgress`,
+  `TestNoCompletionsReadsDegraded` (per the owner's D1 option), lifecycle suite, `-race`.
 - [ ] 2.3 Worker under the run context and its lost watch (D2). Check: `TestHealthNamesLostWorkerWatch`,
   `TestStopJoinsWorker`.
 - [ ] 2.4 Failed map, follower `Failed` with reasons, repair lane (D3). Check: `TestFailedMapHistoryMatchesModel`,
   `TestEnvelopeCarriesFailedReasons` (`-race`), `TestGraphIndexEnvelopeUnchanged`,
-  `TestStrandedWithoutRevisionClearsOnlyOnRepair`, `TestRepairConvergesStranded`; remove `FirstFailureAt`
+  `TestStrandedWithoutRevisionClearsOnlyOnRepair`, `TestRepairConvergesStranded` (including read success with write
+  failure); remove `FirstFailureAt`
   (`graph/index_status.go:85`, `index_status_test.go:59`).
 - [ ] 2.5 Health and tier 0 (D6, D7). Check: `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`,
   `TestGraphEmbeddingImportsNoProviderModule`.

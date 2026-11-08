@@ -27,7 +27,8 @@ the stuck state `embedding worker watch lost` until the process restarts.
 
 graph-embedding SHALL count an entity as failed only for a failure whose source revision is at or above the entity's
 latest terminal outcome. A failure with no source revision (a failed entity read, or a failed delete of an
-absent entity) SHALL be cleared only by a later successful repair of that entity.
+absent entity) SHALL be cleared only by a later successful hop-1 convergence of that entity: a pending record
+written, a guarded result that finds it already generated, or the record removed.
 
 #### Scenario: A late failure for an older revision
 
@@ -37,8 +38,13 @@ absent entity) SHALL be cleared only by a later successful repair of that entity
 #### Scenario: A failure with no source revision
 
 - **WHEN** an entity read fails during repair, and the Worker then reports a generated outcome for that entity
-- **THEN** the entity is still counted failed, with reason `entity_read_failed`, until a repair read of the entity
-  succeeds (`TestStrandedWithoutRevisionClearsOnlyOnRepair`)
+- **THEN** the entity is still counted failed, with reason `entity_read_failed`, until a repair converges the entity
+  (`TestStrandedWithoutRevisionClearsOnlyOnRepair`)
+
+#### Scenario: A repair whose read succeeds but whose write fails
+
+- **WHEN** a stranded entity's repair reads it successfully and the pending write then fails
+- **THEN** the entity is still counted failed (`TestRepairConvergesStranded`)
 
 ### Requirement: Tier-0 config
 

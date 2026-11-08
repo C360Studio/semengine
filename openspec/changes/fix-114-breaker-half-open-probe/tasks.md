@@ -10,10 +10,22 @@ reviews the code. Each step ends when `task verify` passes on a clean tree at it
 
 ## 2. Code
 
-- [ ] 2.1 Failing tests in `model/breaker_test.go` for each case the proposal lists. Gate: each fails on the base
-  commit.
-- [ ] 2.2 `IsHealthy` reserves the probe, `EndpointStatus` reserves nothing, the lost-probe rule, doc comments, ledger
-  row. Gate: the tests in 2.1 pass under `-race`; `task verify` passes on a clean tree.
+- [x] 2.1 `TestBreaker_HalfOpenAdmitsOneProbe`, `TestBreaker_ProbeSlotAfterFailedAndPassingProbe`,
+  `TestBreaker_LostProbeFreesSlotAfterOneCooldown`, `TestBreaker_StatusReadsReserveNothing` (subtests
+  `EndpointStatus`, `EndpointStats`) and `TestBreaker_ConcurrentProbeAdmitsExactlyOne` in `model/breaker_test.go`
+  (`c2b3436`). On the base commit `63f9317` each fails under `go test -race`: a second caller is admitted while the
+  probe is outstanding (the first four), and 32 of 32 concurrent callers are admitted past the cooldown, where one is
+  wanted. Examples suffice, no generated checks: the proposal gives the reason. Gate: each fails on the base commit.
+- [x] 2.2 `IsHealthy` takes the probe slot and refuses other callers until `RecordResult` reports or one `Cooldown`
+  has passed since the probe was admitted; `EndpointStatus` keeps the lazy Open to HalfOpen move and reserves nothing;
+  the struct, `probeInFlight` and `HealthPolicy.IsHealthy` doc comments say so and the "best-effort serialization"
+  comment is gone; the `model` ledger row names the change (`da8a524`). The existing breaker tests needed no change:
+  they observe half-open through `EndpointStatus` and decide the probe with `RecordResult`, which still holds.
+  `task mutate:check` detects dropping the probe-slot guard (`TestBreaker_HalfOpenAdmitsOneProbe` and
+  `TestBreaker_ConcurrentProbeAdmitsExactlyOne`), `<` to `<=` in the lost-probe comparison and not recording when the
+  probe was admitted (`TestBreaker_LostProbeFreesSlotAfterOneCooldown`), and a status read that reserves the slot
+  (`TestBreaker_StatusReadsReserveNothing`); no survivors. Gate: the tests in 2.1 pass under `-race`; `task verify`
+  passed on a clean tree at `da8a524`.
 
 ## 3. Code review
 

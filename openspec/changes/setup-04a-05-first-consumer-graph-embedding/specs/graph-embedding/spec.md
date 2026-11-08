@@ -26,12 +26,19 @@ the stuck state `embedding worker watch lost` until the process restarts.
 ### Requirement: The failed map never moves backwards
 
 graph-embedding SHALL count an entity as failed only for a failure whose source revision is at or above the entity's
-latest terminal outcome.
+latest terminal outcome. A failure with no source revision (a failed entity read, or a failed delete of an
+absent entity) SHALL be cleared only by a later successful repair of that entity.
 
 #### Scenario: A late failure for an older revision
 
 - **WHEN** revision 7 is generated and then a failure for revision 5 is reported
 - **THEN** the entity is not counted failed (`TestFailedMapHistoryMatchesModel`)
+
+#### Scenario: A failure with no source revision
+
+- **WHEN** an entity read fails during repair, and the Worker then reports a generated outcome for that entity
+- **THEN** the entity is still counted failed, with reason `entity_read_failed`, until a repair read of the entity
+  succeeds (`TestStrandedWithoutRevisionClearsOnlyOnRepair`)
 
 ### Requirement: Tier-0 config
 
@@ -42,3 +49,8 @@ graph-embedding SHALL refuse at construction an unknown config key, naming it, a
 
 - **WHEN** the config holds `batch_size`
 - **THEN** construction fails naming `batch_size` (`TestConfigRefusesUnknownKey`)
+
+#### Scenario: The HTTP embedder at tier 0
+
+- **WHEN** the config holds `embedder_type: http`
+- **THEN** construction fails naming the value and tier 0 (`TestConfigRefusesHTTPEmbedder`)

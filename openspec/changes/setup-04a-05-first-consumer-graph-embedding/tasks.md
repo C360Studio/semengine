@@ -20,7 +20,9 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
 - [ ] 2.3 Worker under the run context and its lost watch (D2). Check: `TestHealthNamesLostWorkerWatch`,
   `TestStopJoinsWorker`.
 - [ ] 2.4 Failed map, follower `Failed` with reasons, repair lane (D3). Check: `TestFailedMapHistoryMatchesModel`,
-  `TestEnvelopeCarriesFailedReasons`, `TestGraphIndexEnvelopeUnchanged`, `TestRepairConvergesStranded`.
+  `TestEnvelopeCarriesFailedReasons` (`-race`), `TestGraphIndexEnvelopeUnchanged`,
+  `TestStrandedWithoutRevisionClearsOnlyOnRepair`, `TestRepairConvergesStranded`; remove `FirstFailureAt`
+  (`graph/index_status.go:85`, `index_status_test.go:59`).
 - [ ] 2.5 Health and tier 0 (D6, D7). Check: `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`,
   `TestGraphEmbeddingImportsNoProviderModule`.
 

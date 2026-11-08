@@ -14,7 +14,8 @@ The component composes `component.Lifecycle` and opens `follower.Open` with `Key
 graph-index does (`processor/graph-index/component.go:236-245`). Hop 1 is `Deliver`: it reads the entity, decoded
 with `graph.UnmarshalEntityState`, and writes a pending record. A revision is `Complete`d when the Worker reports its
 terminal outcome for that source revision, or at once when hop 1 ends it (no text, deleted, refused): the pin's
-two-hop rule (`readiness.go:38-55`, ADR-066 § 3; pin test `readiness_test.go:TestCompleteEmbedding_TerminalOutcomesAdvanceWatermark`,
+two-hop rule (`readiness.go:38-55`, ADR-066 § 3; pin test
+`readiness_test.go:TestCompleteEmbedding_TerminalOutcomesAdvanceWatermark`,
 unit; `embedding_lifecycle_test.go:TestEntityTombstoneCompletesWatermarkWhenDeleteFails`, unit). With
 `coalesce_ms > 0`, completing a coalesced entity at the revision read drains every lower revision of that key
 (`internal/revlag/watermark.go:100-110` on main; pin `component.go:1619`; pin test
@@ -33,17 +34,28 @@ is false until the process restarts; nothing rebinds the watch, as for the follo
 ## D3. The failed map and its breakdown (owner, G10)
 
 Per entity it holds the latest terminal outcome's source revision and its reason. A failure for revision r is stored
-only when r is at or above it; a success at r clears any failure at or below r. Seeded from `Storage.ScanFailed`.
+only when r is at or above it; a success at r clears any failure at or below r. A failed delete of an absent
+entity and a failed entity read have no source revision, so they are stranded at the highest revision
+(`^uint64(0)`): no terminal outcome from the Worker clears them, only the repair lane's later read of the entity
+(pin `component.go:1628-1650`, SemStreams #722 B1). Seeded from `Storage.ScanFailed`.
 `follower.Config.Failed` becomes `func() (count int64, reasons map[string]uint64)`, read once per envelope so count
-and reasons agree (pin `readiness.go:149-152`); the follower sets `FailedReasons` when count > 0. graph-index returns
-`nil` reasons, so its envelope is unchanged. `first_failure_at` is not set (owner; `MIGRATION.md`). Pin tests:
+and reasons agree (pin `readiness.go:149-152`). `Failed` returns a fresh map the follower owns; the plug-in keeps
+no reference to it, since the follower reads it on its heartbeat while Worker callbacks change the failed map. A
+second optional `FailedReasons` field would leave existing adopters untouched but could pair a count with reasons
+from a different moment; the signature change costs each adopter one line returning `nil` reasons (graph-index here,
+spatial and temporal when they port, #109); the follower sets `FailedReasons` when count > 0. graph-index returns
+`nil` reasons, so its envelope is unchanged. `first_failure_at` is not set, and this PR removes the field:
+`graph/index_status.go:85` and its test fill at
+`index_status_test.go:59` (owner, #110 2026-11-08 and PR #550 comment 6716972354; `MIGRATION.md`). Pin tests:
 `failed_map_test.go:TestCurrentFailedMap_TracksReasonsAndGauge` (unit);
 `integration_test.go:TestIntegration_EmbeddingReadiness_DependencyDownDegradesThenRecovers` (integration). The repair
 lane (`component.go:1266-1340`) retries `delete_failed`, `pending_write_failed`, `entity_read_failed` every 30 s and
 stops with `Stop` (pin tests `derived_state_convergence_test.go:TestFailedDelete_MarksStrandedAndRepairs`,
 `TestRepairScope_EmbedderSideReasonNotReDriven`, `TestObsoleteTerminal_CannotClearStranding_PendingWriteSite`, unit).
 *Proof:* `TestFailedMapHistoryMatchesModel` (generated histories against a reference model, seed recorded),
-`TestEnvelopeCarriesFailedReasons`, `TestGraphIndexEnvelopeUnchanged`, `TestRepairConvergesStranded`.
+`TestEnvelopeCarriesFailedReasons` (under `-race`, with outcomes reported concurrently with heartbeats),
+`TestGraphIndexEnvelopeUnchanged`, `TestStrandedWithoutRevisionClearsOnlyOnRepair` (ported from
+`TestObsoleteTerminal_CannotClearStranding_PendingWriteSite` and `_TombstoneSite`), `TestRepairConvergesStranded`.
 
 ## D4. Config
 

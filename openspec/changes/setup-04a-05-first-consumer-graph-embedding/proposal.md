@@ -36,8 +36,10 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
 ## Impact
 
 - Pin lines: 3,253 production, 5,701 test for the package (this PR about 1,500 + 2,300, hand estimate).
-- No new subject or bucket. Exported change: `follower.Config.Failed` signature (graph-index adapts, envelope
-  unchanged); otherwise the pin's `Register`, `Config`, `DefaultConfig`. The two embedding
+- No new subject or bucket. Exported change: `follower.Config.Failed` returns the count and a fresh reasons map
+  together, so they always agree (graph-index now, spatial and temporal at their ports return `nil` reasons; envelope
+  unchanged for them); `graph.IndexStatusResponse.FirstFailureAt` removed; otherwise the pin's `Register`, `Config`,
+  `DefaultConfig`. The two embedding
   buckets are already in `graph/kvcatalog`.
 - Consumer migration (`processor/graph-embedding/MIGRATION.md`): SemSource's `batch_size` is refused at boot;
   `first_failure_at` is gone from the status entry;

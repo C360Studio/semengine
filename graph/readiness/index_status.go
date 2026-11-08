@@ -9,7 +9,7 @@ import (
 // IndexStatusInputs are the observations ComputeIndexStatus projects into the
 // readiness envelope of a revision-lag producer (graph-index's follower). It is a
 // struct rather than positional arguments because two inputs are time.Time
-// (IndexedAt, Now), and adjacent same-typed parameters swap silently.
+// (OldestUnappliedAt, Now), and adjacent same-typed parameters swap silently.
 type IndexStatusInputs struct {
 	// Indexed is the watermark's floor: every delivered ENTITY_STATES revision at
 	// or below it has been applied.
@@ -20,10 +20,11 @@ type IndexStatusInputs struct {
 	// Stuck is the producer's own stuck-watermark verdict; it projects to degraded
 	// when not ready.
 	Stuck bool
-	// IndexedAt is the KV commit time of the newest revision Indexed covers. ZERO
-	// means "not computable": the projection then leaves StalenessMs at 0 rather
-	// than reporting a fresh-looking view.
-	IndexedAt time.Time
+	// OldestUnappliedAt is the KV commit time of the oldest delivered revision not
+	// yet applied, or of the newest delivered one when none is in flight
+	// (revlag.Watermark.IndexedAt). ZERO means "not computable": the projection then
+	// leaves StalenessMs at 0 rather than reporting a fresh-looking view.
+	OldestUnappliedAt time.Time
 	// Now is the compute instant; the zero value means time.Now().
 	Now time.Time
 	// FailedCount is the number of entries the producer currently holds in a failed
@@ -35,14 +36,15 @@ type IndexStatusInputs struct {
 
 // ComputeIndexStatus builds the readiness envelope of a revision-lag producer
 // (ADR-066, with ADR-083's age-of-view staleness) from its watermark floor, the
-// target revision, its stuck verdict, the floor's commit time and its failed count.
+// target revision, its stuck verdict, the oldest unapplied write's commit time and
+// its failed count.
 //
 //   - Ready = Target > 0 && Indexed >= Target.
 //   - Lag = Target - Indexed, never below zero.
 //   - State = degraded when FailedCount > 0, else ready when Ready, else degraded
 //     when Stuck, else building.
-//   - StalenessMs = 0 when Ready or IndexedAt is unknown, else now-IndexedAt with
-//     a 1ms floor.
+//   - StalenessMs = 0 when Ready or OldestUnappliedAt is unknown, else
+//     now-OldestUnappliedAt with a 1ms floor.
 //
 // The staleness subtraction is the one place a NATS server commit time meets the
 // local clock; under skew it is off by the skew, which ADR-083 D3 accepts.
@@ -69,7 +71,7 @@ func ComputeIndexStatus(in IndexStatusInputs) graph.IndexStatusResponse {
 		IndexedRevision: in.Indexed,
 		TargetRevision:  in.Target,
 		Lag:             lag,
-		StalenessMs:     stalenessMs(ready, in.IndexedAt, in.Now),
+		StalenessMs:     stalenessMs(ready, in.OldestUnappliedAt, in.Now),
 		FailedCount:     in.FailedCount,
 	}
 }

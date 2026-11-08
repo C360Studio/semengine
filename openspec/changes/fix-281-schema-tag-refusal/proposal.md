@@ -1,6 +1,6 @@
 # Proposal: fix-281-schema-tag-refusal
 
-Approved-by: OPEN-Q
+Approved-by: owner, 2026-11-08 in Enjoy, chose the panic option; recorded on #281 (comment 6722207550)
 
 ## Why
 

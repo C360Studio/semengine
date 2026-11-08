@@ -12,13 +12,13 @@ import (
 )
 
 // spec-queue › "spec:check runs validate then ateam state spec-check": spec:check runs openspec
-// validate, then ateam's check; spec:queue runs ateam's queue alone; nothing in either can skip a
-// command or discard its exit status. The command lines are the spec's, written here, not read from
+// validate, then ateam's check; spec:queue runs ateam's queue alone; each may depend on ateam:bin,
+// which builds .bin/ateam, and nothing in either can skip a command or discard its exit status. The command lines are the spec's, written here, not read from
 // the file under test. The queue and the check themselves are tested in ateam at the pinned release.
 const (
 	specValidateCmd = `npx --no-install openspec validate --all --strict --no-interactive`
-	specCheckCmd    = `ateam state spec-check`
-	specQueueCmd    = `ateam state spec-queue`
+	specCheckCmd    = `.bin/ateam state spec-check`
+	specQueueCmd    = `.bin/ateam state spec-queue`
 )
 
 // specTasks names each Task entry this test guards and the commands it must run, in order.
@@ -53,6 +53,8 @@ func TestSpecTaskWiring(t *testing.T) {
 	t.Run("clean fixtures", func(t *testing.T) {
 		requireNoViolations(t, "spec:check fixture",
 			taskWiringViolations(taskfile("spec:check", "", specValidateCmd, specCheckCmd), "spec:check", checkWants))
+		requireNoViolations(t, "spec:check fixture with deps",
+			taskWiringViolations(taskfile("spec:check", "    deps: [ateam:bin]\n", specValidateCmd, specCheckCmd), "spec:check", checkWants))
 		requireNoViolations(t, "spec:queue fixture",
 			taskWiringViolations(taskfile("spec:queue", "", specQueueCmd), "spec:queue", queueWants))
 	})
@@ -78,6 +80,9 @@ func TestSpecTaskWiring(t *testing.T) {
 			[]string{"spec:check", "command 2 is <not a plain command string>", `want "` + specCheckCmd + `"`}},
 		{"the retired queue script", "spec:queue", taskfile("spec:queue", "", "scripts/openspec-queue.sh"), queueWants,
 			[]string{"spec:queue", `command 1 is "scripts/openspec-queue.sh"`, `want "` + specQueueCmd + `"`}},
+		{"a dependency other than ateam:bin", "spec:queue",
+			taskfile("spec:queue", "    deps: [ateam:bin, cleanup]\n", specQueueCmd), queueWants,
+			[]string{"spec:queue", `deps`, `want [ateam:bin]`}},
 		{"no such task", "spec:queue", taskfile("spec:check", "", specValidateCmd, specCheckCmd), queueWants,
 			[]string{"spec:queue", "no such task"}},
 	} {
@@ -87,8 +92,8 @@ func TestSpecTaskWiring(t *testing.T) {
 	}
 }
 
-// taskWiringViolations checks one task of a Taskfile: a mapping with only desc, summary and cmds,
-// whose commands are exactly want, in order, each a plain string.
+// taskWiringViolations checks one task of a Taskfile: a mapping with only desc, summary, cmds and
+// an optional deps of ateam:bin alone, whose commands are exactly want, in order, each a plain string.
 func taskWiringViolations(taskfile []byte, task string, want []string) []string {
 	var tf struct {
 		Tasks map[string]yaml.Node `yaml:"tasks"`
@@ -105,6 +110,10 @@ func taskWiringViolations(taskfile []byte, task string, want []string) []string 
 	for i := 0; i+1 < len(node.Content); i += 2 {
 		switch key, value := node.Content[i].Value, node.Content[i+1]; key {
 		case "desc", "summary":
+		case "deps":
+			if value.Kind != yaml.SequenceNode || len(value.Content) != 1 || value.Content[0].Value != "ateam:bin" {
+				violations = append(violations, fmt.Sprintf("Taskfile.yml: %s: key \"deps\" names other tasks than ateam:bin; want [ateam:bin]", task))
+			}
 		case "cmds":
 			for _, c := range value.Content {
 				if c.Kind != yaml.ScalarNode {

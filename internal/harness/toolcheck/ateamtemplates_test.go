@@ -125,9 +125,9 @@ func TestAteamTemplatesUnchangedSensitivity(t *testing.T) {
 	}
 }
 
-// ateamTemplates runs the pinned ateam init into an empty directory and returns every file it
-// wrote that SemEngine does not own, by slash path. It fails, never skips, when ateam is missing
-// or is not the pinned release.
+// ateamTemplates runs the pinned ateam init (.bin/ateam, built by task ateam:bin) into an empty
+// directory and returns every file it wrote that SemEngine does not own, by slash path. It fails,
+// never skips, when .bin/ateam is missing or is not the pinned release.
 func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	t.Helper()
 	workflows := map[string][]byte{}
@@ -140,16 +140,16 @@ func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	}
 	pin, violations := ateamPins(workflows)
 	requireNoViolations(t, "ateam pin", violations)
-	install := "GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@" + pin
-	if _, err := exec.LookPath("ateam"); err != nil {
-		t.Fatalf("ateam is not on PATH; install the pinned release: %s", install)
+	ateam := filepath.Join(root, ".bin", "ateam")
+	if _, err := os.Stat(ateam); err != nil {
+		t.Fatalf("%s is missing; build the pinned release %s with task ateam:bin", ateam, pin)
 	}
-	out, err := exec.CommandContext(t.Context(), "ateam", "version").CombinedOutput()
+	out, err := exec.CommandContext(t.Context(), ateam, "version").CombinedOutput()
 	if err != nil {
 		t.Fatalf("ateam version: %v\n%s", err, out)
 	}
 	if !slices.Contains(strings.Fields(string(out)), pin) {
-		t.Fatalf("ateam version reports %q, want the workflows' pin %s; install it and put $(go env GOPATH)/bin first on PATH: %s", strings.TrimSpace(string(out)), pin, install)
+		t.Fatalf("ateam version reports %q, want the workflows' pin %s; rebuild it with task ateam:bin", strings.TrimSpace(string(out)), pin)
 	}
 
 	// init reads the review policy (review_record: aip writes a different reviewer.md and
@@ -165,7 +165,7 @@ func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	if err := os.WriteFile(filepath.Join(dir, ".agents", "review-policy.json"), policy, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if out, err := exec.CommandContext(t.Context(), "ateam", "init", "-dir", dir).CombinedOutput(); err != nil {
+	if out, err := exec.CommandContext(t.Context(), ateam, "init", "-dir", dir).CombinedOutput(); err != nil {
 		t.Fatalf("ateam init: %v\n%s", err, out)
 	}
 	templates := map[string][]byte{}

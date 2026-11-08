@@ -35,5 +35,5 @@ reviews the code. Each step ends when `task verify` passes on a clean tree at it
 
 ## 4. Archive
 
-- [ ] 4.1 Archive as the last content commit (`openspec archive --skip-specs`). Gate: `task spec:check` and
+- [x] 4.1 Archive as the last content commit (`openspec archive --skip-specs`). Gate: `task spec:check` and
   `task docs:check`.

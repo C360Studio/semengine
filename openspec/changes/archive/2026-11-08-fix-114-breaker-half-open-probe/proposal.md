@@ -24,10 +24,10 @@ comment. Codex reviews the code.
 
 - `IsHealthy` admits one probe per half-open period: past the cooldown, the first caller moves the endpoint to
   half-open and takes the probe slot (true); every other caller gets false until `RecordResult` closes the slot.
-- **Lost-probe rule (the one new rule, owner-approved 2026-11-08, #114 comment 6722829046):** a probe that has not reported within one
-  `Cooldown` of being admitted counts as lost, and the next `IsHealthy` caller takes the slot. Without a rule, a probe
-  whose caller crashed or dropped the request would hold the endpoint half-open, refusing everyone, for ever.
-  `Cooldown` is reused so there is no new config field.
+- **Lost-probe rule (the one new rule, owner-approved 2026-11-08, #114 comment 6722829046):** a probe that has not
+  reported within one `Cooldown` of being admitted counts as lost, and the next `IsHealthy` caller takes the slot.
+  Without a rule, a probe whose caller crashed or dropped the request would hold the endpoint half-open, refusing
+  everyone, for ever. `Cooldown` is reused so there is no new config field.
 - `EndpointStatus` and `EndpointStats` read the state and reserve nothing. `EndpointStatus` still reports half-open
   once the cooldown has passed.
 - The `HealthPolicy.IsHealthy` doc comment (`model/health.go:118-120`) drops "Equivalent to EndpointStatus(name) !=

@@ -59,6 +59,9 @@ type Component struct {
 	entities  kvcatalog.CatalogReader
 	coalescer *cache.CoalescingSet
 	hop1Mu    sync.Mutex
+	// delivered is the highest revision the follower has handed deliver; a read that finds no
+	// value completes the key only up to it (readFailed). start zeroes it for each watch.
+	delivered atomic.Uint64
 
 	// offloadExcludedWarn logs the first offloaded body left out for want of its store.
 	offloadExcludedWarn sync.Once
@@ -257,6 +260,7 @@ func (c *Component) start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return errs.Wrap(err, "Component", "Start", "context ended during startup")
 	}
+	c.delivered.Store(0)
 	c.follower.Store(f)
 
 	// The one run context: Start's values without its cancellation, ended only by cleanup.

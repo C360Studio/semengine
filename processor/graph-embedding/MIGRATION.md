@@ -35,7 +35,7 @@ start.
 Read these. Nothing errors.
 
 - **The status card loses `first_failure_at`.** The readiness record on `GRAPH_STATUS` under `graph-embedding` no
-  longer has that field, and `graph.IndexStatus` no longer has the Go field `FirstFailureAt` (owner, PR #550 comment
+  longer has that field, and `graph.IndexStatusResponse` no longer has the Go field `FirstFailureAt` (owner, PR #550 comment
   6716972354). SemSource's MCP gateway passes this entry through to agents (`processor/mcp-gateway/tools.go:142`),
   so its status card stops showing the time. *Do:* stop reading the field; a decoder that requires it fails, one
   that ignores a missing key does not notice. `failed_count` and `failed_reasons` stay: the reasons are the

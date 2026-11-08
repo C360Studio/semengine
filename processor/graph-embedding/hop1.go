@@ -29,6 +29,7 @@ import (
 // an update is coalesced when coalesce_ms is above zero and reconciled at once otherwise.
 // The entry carries no value, so hop 1 reads the entity's current one.
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
+	c.delivered.Store(e.Revision)
 	c.lifecycle.CountInput(e.Bytes)
 	if e.Deleted {
 		if c.coalescer != nil {
@@ -57,32 +58,36 @@ func (c *Component) reconcileBatch(ctx context.Context, keys []string) {
 
 // reconcileEntity converges key's pending record on the value ENTITY_STATES holds now, at
 // the revision read; completing that revision drains every lower revision of the key the
-// watch delivered (revlag.Watermark.Complete). Reading inside hop1Mu means a tombstone delivered meanwhile either ran first (the read
-// finds the key absent) or runs after and wins (pin #629).
+// watch delivered (revlag.Watermark.Complete). Reading inside hop1Mu means a tombstone delivered
+// meanwhile either ran first (the read finds the key absent) or runs after and wins (pin #629).
+// A read that finds no value ends only the revisions delivered before it began, so the highest
+// delivered revision is taken before the read (#555).
 func (c *Component) reconcileEntity(ctx context.Context, key string) {
 	c.hop1Mu.Lock()
 	defer c.hop1Mu.Unlock()
+	delivered := c.delivered.Load()
 	entry, err := c.entities.Get(ctx, key)
 	if err != nil {
-		c.readFailed(ctx, key, err)
+		c.readFailed(ctx, key, delivered, err)
 		return
 	}
 	c.queueEntity(ctx, key, entry.Revision(), entry.Value())
 }
 
-// readFailed handles a failed read of key's current value, under hop1Mu. An absent key
-// converges to no record and drains every revision of it (^uint64(0): the delivered
-// revisions are not in hand); a failed delete of its record is stranded in the failed map.
-// Any other failure is stranded too and drains, so a transient read failure does not pin the
-// floor (pin component.go:1628-1670).
+// readFailed handles a failed read of key's current value, under hop1Mu. delivered is the
+// highest revision the follower had delivered when the read began: the read ends key's revisions
+// at or below it and no later one. An absent key converges to no record and completes delivered;
+// a failed delete of its record is stranded in the failed map. Any other failure is stranded too
+// and completes delivered, so a transient read failure does not pin the floor (pin
+// component.go:1628-1670).
 //
-// Known limit, as at the pin: on the coalesced lane the follower keeps delivering while the
-// coalescer's goroutine reads, so completing at ^uint64(0) also drains a re-create of key the
-// follower observed during that read. The re-create's update still reaches a later batch, which
-// writes its pending record, but the floor has already passed it: readiness reads caught up
-// while that record waits for hop 2. On the inline lane the follower is blocked in Deliver for
-// the read, so only revisions delivered before it are drained.
-func (c *Component) readFailed(ctx context.Context, key string, err error) {
+// The pin completed at ^uint64(0) instead (#555). On the coalesced lane the follower keeps
+// delivering while the coalescer's goroutine reads, so that also drained a re-creation of key
+// observed during the read, and readiness read caught up while its record waited for hop 2. A
+// revision delivered after the read began reaches a batch of its own (or is a tombstone, which
+// completes itself), so it stays outstanding until its own outcome. On the inline lane the
+// follower is blocked in Deliver for the read, so delivered is the revision being reconciled.
+func (c *Component) readFailed(ctx context.Context, key string, delivered uint64, err error) {
 	if natsclient.IsKVNotFoundError(err) {
 		if delErr := c.storage.DeleteEmbedding(ctx, key); delErr != nil {
 			c.logger.Warn("embedding record delete failed for an absent entity; the repair lane retries it",
@@ -91,13 +96,13 @@ func (c *Component) readFailed(ctx context.Context, key string, err error) {
 		} else {
 			c.failed.absent(key)
 		}
-		c.complete(key, ^uint64(0))
+		c.complete(key, delivered)
 		return
 	}
-	c.logger.Warn("entity read failed; revision drained, the repair lane retries the read",
+	c.logger.Warn("entity read failed; delivered revisions drained, the repair lane retries the read",
 		slog.String("entity", key), slog.Any("error", err))
 	c.markFailed(key, strandedRevision, embedding.ReasonEntityReadFailed)
-	c.complete(key, ^uint64(0))
+	c.complete(key, delivered)
 }
 
 // applyTombstone removes a deleted entity's record and completes the tombstone's revision,

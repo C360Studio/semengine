@@ -141,7 +141,8 @@ count above zero reads not ready, `degraded`, and is carried in `failed_count`; 
 
 ### Requirement: Failure reasons
 
-The envelope SHALL carry in `failed_reasons` the per-reason counts the same `Failed()` call returned with the count.
+When the `Failed()` count is above zero, the envelope SHALL carry in `failed_reasons` the per-reason counts the same
+`Failed()` call returned with the count; at zero it SHALL carry no reasons.
 `Failed()` SHALL return a map the follower owns (the plug-in keeps no reference to it). The envelope SHALL NOT carry
 `first_failure_at`.
 

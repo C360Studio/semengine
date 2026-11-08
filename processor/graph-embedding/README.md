@@ -70,14 +70,14 @@ text is embedded and `content_unresolved_total` counts the exclusion.
 | `ports` | object | the ports above | Inputs only. A `ports` block that is present is used as written; one that is absent takes the defaults |
 | `embedder_type` | string | `bm25` | The only value accepted at tier 0; any other, `http` included, is refused |
 | `workers` | int | 5 | Concurrent Worker goroutines; negative is refused |
-| `max_text_len` | int | 4000 | Characters of text embedded per entity, 0 to 1,000,000. It is part of the dedup key, so changing it re-embeds the entities it affects |
+| `max_text_len` | int | 4000 | Characters of text embedded per entity, 0 to 1,000,000. A change applies to records generated after it; a record already generated keeps its text until the entity has a new revision, such as a re-ingest |
 | `text_suffixes` | array | `.title .content .description .summary .text .name .body .abstract .subject` | Predicate suffixes whose string values are embedded |
 | `startup_attempts` | int | 30 | Tries to find `ENTITY_STATES` at startup |
 | `startup_interval_ms` | int | 500 | Pause between those tries |
 | `coalesce_ms` | int | 0 | Window in milliseconds for merging updates to one entity; 0 applies each at once |
 
 The configuration is decoded strictly: a key not listed here is refused at construction, naming it. This includes
-`batch_size` and `cache_ttl`. The inputs must be a `kv-watch` of every `ENTITY_STATES` key with no history (exactly
+`batch_size` and `cache_ttl`. The inputs must be a `kv-watch` of every `ENTITY_STATES` key with no history (at least
 one is required) and, optionally, `store-read` inputs; the store registry is used only when a `store-read` input is
 declared. The component declares no outputs and refuses a configuration that does. Registering the factory asks boot
 for no model registry. `MIGRATION.md` lists what a SemStreams configuration changes.
@@ -94,9 +94,10 @@ The component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself and declares
 ## Health and readiness
 
 `Health` is `Healthy` once started, and unhealthy while any of these holds: a stored `ENTITY_STATES` value could not
-be decoded (Health reads `graph state reset required: <reason>`, and queries are refused with the error code
-`graph_state_reset_required`), failed entities are unresolved, the `ENTITY_STATES` feed is lost, or the Worker's watch
-on `EMBEDDING_INDEX` ended while the component ran. The error count (`ErrorCount`) rises by one when an entity becomes
+be decoded (Health reads `graph state reset required: <reason>`; no query verbs are served yet, and the refusal with
+the error code `graph_state_reset_required` arrives with the `graph.embedding.query.*` verbs in PR B), failed
+entities are unresolved, the `ENTITY_STATES` feed is lost, or the Worker's watch on `EMBEDDING_INDEX` ended while the
+component ran. The error count (`ErrorCount`) rises by one when an entity becomes
 failed (it was not failed before; see "Failed entities and the repair lane" below) and by one for each stored value
 refused this way; a repeated failure of an entity already failed, such as a repair pass failing again, and a failure
 older than the entity's latest outcome add nothing. graph-index counts the same way. The count never lowers `Healthy`
@@ -132,10 +133,6 @@ under the same prefix.
 
 - **Offloaded-body fetch has no deadline.** A store that hangs holds one Worker lane until the process stops
   (#551).
-- **Coalesced lane drain.** With `coalesce_ms` above 0, a key that is absent or unreadable when the window ends is
-  completed at the highest revision, which also drains a re-create the follower delivered during that read. The
-  re-create's pending record is still written by a later batch, but readiness can read caught up while it waits
-  (#555; the same limit as the pin).
 - **Double count after a restart without the store.** If the process restarts with no store registered for an
   offloaded body, the Worker's replay of the old pending record and hop 1's re-read of the entity are two
   exclusions, and `content_unresolved_total` counts both.

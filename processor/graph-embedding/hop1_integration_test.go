@@ -534,3 +534,70 @@ func TestStartContextEndStopsNothing(t *testing.T) {
 		t.Errorf("Health = %+v, want running and healthy", health)
 	}
 }
+
+// TestRecreatedRevisionWaitsForWorker (#555; Codex's final review of PR #550, F1): on the
+// coalesced lane a batch that reads an entity absent completes only the revisions delivered before
+// its read, so a re-creation the follower observes during that read stays outstanding until its
+// own terminal outcome. The test runs a batch's reconcileEntity with its ENTITY_STATES read held
+// once the read has found the entity absent, and re-creates the entity meanwhile: the await on
+// DataFlow's message count, which deliver counts after the watermark observes the revision,
+// orders the release, and so the completion, after that observation. The Worker is held on the
+// re-created entity's body, so its record stays pending and the floor must stay below it.
+func TestRecreatedRevisionWaitsForWorker(t *testing.T) {
+	store := newGatedStore()
+	// The coalescer never fires within the test, so the reconciles below are the only readers.
+	h := startEmbedding(t, fixtureClient(t), `{"coalesce_ms":3600000}`, store.stores(t))
+	a := entityID(99)
+	h.put(t, a, entityValue(t, a, nil, "doc.meta.title", "before delete"))
+	await(t, "old delivery", func(context.Context) (int64, error) {
+		return h.c.DataFlow().Messages, nil
+	}, func(n int64) bool { return n >= 1 })
+	if err := h.states.Delete(t.Context(), a); err != nil {
+		t.Fatal(err)
+	}
+	h.awaitIndexed(t, "tombstone", lastRevision(t, h.client, graph.BucketEntityStates))
+
+	read := &heldReader{CatalogReader: h.c.entities, read: make(chan error, 1), release: make(chan struct{})}
+	h.c.entities = read // no reader runs yet: the coalescer has not fired and nothing is failed
+	reconciled := make(chan struct{})
+	go func() {
+		defer close(reconciled)
+		h.c.reconcileEntity(t.Context(), a)
+	}()
+	if err := <-read.read; !natsclient.IsKVNotFoundError(err) {
+		close(read.release)
+		<-reconciled
+		t.Fatalf("held read = %v, want the entity absent", err)
+	}
+	before := h.c.DataFlow().Messages
+	rev := h.put(t, a, entityValue(t, a, bodyRef("held"), "doc.meta.title", "recreated"))
+	await(t, "recreation observed", func(context.Context) (int64, error) {
+		return h.c.DataFlow().Messages, nil
+	}, func(n int64) bool { return n > before })
+	close(read.release)
+	<-reconciled // the absent read's completion has run
+
+	h.c.reconcileEntity(t.Context(), a) // the re-creation's own batch
+	h.awaitPending(t, a, rev)
+	if got := h.f.Indexed(); got >= rev {
+		t.Fatalf("recreated revision %d is still pending, but indexed revision is %d", rev, got)
+	}
+}
+
+// heldReader holds its first Get after the read, reporting the read's error on read until
+// release closes; later Gets pass through.
+type heldReader struct {
+	kvcatalog.CatalogReader
+	once    sync.Once
+	read    chan error
+	release chan struct{}
+}
+
+func (r *heldReader) Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error) {
+	entry, err := r.CatalogReader.Get(ctx, key)
+	r.once.Do(func() {
+		r.read <- err
+		<-r.release
+	})
+	return entry, err
+}

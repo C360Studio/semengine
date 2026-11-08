@@ -12,9 +12,10 @@
 >   SemStreams'.
 > - Of the records named here, ADR-066, ADR-083 and ADR-085 are ported with this one. ADR-081 is ported with
 >   `pkg/graphview`. ADR-082 is not yet ported.
-> - None of the code named here is ported: `pkg/fusion` and its `fusionnats` client,
->   `graph/query`'s client (retired before the pin), `graph` (`graph/mutation_responses.go`), `processor/graph-index`
->   and `processor/graph-ingest`. File paths and line numbers in the text are those at that commit.
+> - Of the code named here, `graph` (with `graph/mutation_responses.go`) and `processor/graph-ingest` were ported in
+>   change 2 (PR #93) and `processor/graph-index` in change 4 (PR #414). `pkg/fusion` and its `fusionnats` client are
+>   change 5's (PR #550). `graph/query`'s client was retired before the pin and is not carried. File paths and line
+>   numbers in the text are those at that commit.
 
 ## Status
 

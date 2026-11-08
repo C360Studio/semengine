@@ -354,10 +354,10 @@ func (v *View[T]) WaitCaughtUp(ctx context.Context) error {
 
 // Applied returns the applied-revision watermark together with the KV SERVER
 // WRITE TIME (entry.Created()) of the newest revision the view has applied —
-// the "this view reflects the bucket as of T" pair. The time mirrors
-// readiness.IndexStatusInputs.IndexedAt
-// (graph/readiness), the write time graph-index projects into the ADR-083
-// staleness_ms field.
+// the "this view reflects the bucket as of T" pair. It is not the time
+// graph-index projects into the ADR-083 staleness_ms field: that is
+// readiness.IndexStatusInputs.OldestUnappliedAt (graph/readiness), the commit
+// time of the oldest delivered write graph-index has not yet applied.
 //
 // Both values are read in ONE critical section, so the revision and the
 // timestamp always name the same write; reading them through two accessors
@@ -380,7 +380,7 @@ func (v *View[T]) WaitCaughtUp(ctx context.Context) error {
 // appliedAt is the ZERO time until something has been applied, and stays zero
 // rather than being fabricated as time.Now(). A caller computing an age MUST
 // check IsZero and treat it as "currency not computable" — the contract
-// readiness.IndexStatusInputs.IndexedAt uses, where the projection deliberately
+// readiness.IndexStatusInputs.OldestUnappliedAt uses, where the projection deliberately
 // declines to make an uncomputable view look fresh. It is zero for the same
 // reason when the newest applied write carried no server timestamp (real KV
 // entries always do; fakes and synthetic replays need not).

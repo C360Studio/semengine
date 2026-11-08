@@ -3,8 +3,8 @@
 > **Ported from SemStreams.** This record is `docs/adr/083-readiness-as-distributed-state.md` at SemStreams commit
 > `8b99efe9c66a4faa4fa509f9f62cc6bad8392128`. It was carried without code for SemEngine issue #157 (owner ruling,
 > comment 6085722578), with ADR-066, ADR-084, ADR-085 and ADR-088, so that SemEngine's readiness ADR (ADR-109, issue
-> #110) can cite it. Its admission-ledger row is `docs/adr/083-readiness-as-distributed-state.md` in
-> `docs/admission-ledger.yaml`. The decision text is unchanged. Read it with these facts about this repository:
+> #110) can cite it. Its ledger row is `docs/adr/083-readiness-as-distributed-state.md` in `docs/admission-ledger.yaml`.
+> The decision text is unchanged except decision 3's time, amended at the end (#408). Facts about this repository:
 >
 > - Issue numbers in the text below (`#590`, `#592`) are SemStreams' or a sister repository's, not SemEngine's; the
 >   OpenSpec change it names, `readiness-distribution-and-staleness-contract`, is SemStreams'.
@@ -197,5 +197,20 @@ cadence.
 ADR-109 (`docs/adr/109-ready-after-boot.md`, its table "The pin's records: kept, changed or dropped") changes D1: the
 state stays published, one key per producer, as information, and what a consumer acts on is the reply (:80-81). It
 drops D2's arrival-time freshness from SemEngine's contract (the `Watcher` ships on PR #93 with no SemEngine reader),
-changes D4 (the one evaluator stays, read in process by graph-index only), keeps D3 and the rule against a producer
-timestamp compared with the consumer's clock (:124-125), and drops the one shared consumer code path (:136-137).
+changes D4 (the one evaluator stays, read in process by graph-index only), keeps D3 (its time amended at the end, #408)
+and the rule against a producer timestamp compared with the consumer's clock (:124-125), and drops the one shared
+consumer code path (:136-137).
+
+## SemEngine amendment to decision 3 (2026-11-07, #408)
+
+For SemEngine's revision-lag producers (`internal/revlag`, held by `graph/follower` for graph-index), `staleness_ms` is
+`0` when `Ready` or when the commit time is unknown. Otherwise it is `now −` the commit time of the oldest delivered
+write not yet applied (the lowest in-flight revision), or, when none is in flight, `now −` the commit time of the
+newest delivered write. It replaces "the newest fully-covered revision". The code reads that time from
+`Watermark.IndexedAt` and passes it to the readiness projection as `readiness.IndexStatusInputs.OldestUnappliedAt`.
+
+The pin carried that time forward as an estimate that dropped the times of completions above the floor, so while
+behind it read older than its own definition and needed a second bookkeeping path. The oldest unapplied write is
+already held for the floor; its time is exact for delivered writes and is the quantity `OldestOutstandingAt` names
+for backlog producers. That commit times rise with revision is not promised, so the rule is stated by revision.
+Staleness stays reported, never gating (ADR-085 D2). Owner ruling: #408 comment 6714095087.

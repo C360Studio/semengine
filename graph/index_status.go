@@ -84,15 +84,16 @@ type IndexStatusResponse struct {
 	FailedReasons  map[string]uint64 `json:"failed_reasons,omitempty"`
 	FirstFailureAt string            `json:"first_failure_at,omitempty"`
 	// StalenessMs is the AGE OF THE VIEW in milliseconds (ADR-083): now minus the
-	// KV commit time of the newest ENTITY_STATES revision the index has fully
-	// covered. It is the view-rate consumer's tolerance unit because it is
-	// invariant to write rate and coalesce_ms, where a revision count is not
+	// KV commit time of the oldest delivered ENTITY_STATES revision the index has
+	// not yet applied, or of the newest delivered one when none is in flight. It is
+	// the view-rate consumer's tolerance unit because it is invariant to write rate
+	// and coalesce_ms, where a revision count is not
 	// (SemStreams gh#590: the correct revision bound shifted 2-4x with the coalesce dial
 	// alone).
 	//
 	// PRESENCE ENCODING — 0 does NOT mean "zero staleness". It means the value
 	// carries no information: either Ready is true (no staleness to report) or the
-	// producer could not compute it (nothing covered yet / an early-return hard
+	// producer could not compute it (nothing observed yet / an early-return hard
 	// stop). Any COMPUTED staleness is reported as at least 1ms, so a consumer can
 	// treat `StalenessMs > 0` as the presence bit and never read an absent age as
 	// "0ms fresh".
@@ -104,9 +105,9 @@ type IndexStatusResponse struct {
 	// encoding with it — publishing a bare 0 as "caught up" is the one way to turn an
 	// unknown age back into a false claim.
 	//
-	// It is a FLOOR, not an oracle: a revision still undelivered server-side cannot
-	// age it. Total stalls surface through the wall-clock stuck detector
-	// (State=degraded), not through this field.
+	// It is a FLOOR, not an oracle: it is exact for delivered writes, but a revision
+	// still undelivered server-side cannot age it. Total stalls surface through the
+	// wall-clock stuck detector (State=degraded), not through this field.
 	StalenessMs uint64 `json:"staleness_ms,omitempty"`
 	// BootstrapScope is the SIZE OF THE INITIAL BUILD this producer started with,
 	// expressed in THE PRODUCER'S OWN UNIT — entities for an enumerating producer,

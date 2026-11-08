@@ -39,7 +39,10 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
 - No new subject or bucket. Exported change: `follower.Config.Failed` returns the count and a fresh reasons map
   together, so they always agree (graph-index now, spatial and temporal at their ports return `nil` reasons; envelope
   unchanged for them); `graph.IndexStatusResponse.FirstFailureAt` removed; otherwise the pin's `Register`, `Config`,
-  `DefaultConfig`. The two embedding
+  `DefaultConfig`.
+- Behaviour change in graph-index (owner, (a1), PR #550 comment 6721867279): the follower reads degraded after 30 s
+  with no completion, not 30 s without the floor rising; a held low revision with later completions reads not ready,
+  not degraded. The two embedding
   buckets are already in `graph/kvcatalog`.
 - Consumer migration (`processor/graph-embedding/MIGRATION.md`): SemSource's `batch_size` is refused at boot;
   `first_failure_at` is gone from the status entry;
@@ -47,7 +50,6 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
 - Merge order: #548 first.
 - Retires none. Stays: #109, #196, #195 (this package's 12 sites adopt), #110 (PR C), #477 (PR B), #489, #32, #155,
   #482, #11, #484.
-- Owner rulings (PR #550 comment 6716972354): four-PR split; probes; G10; fusion reads not-ready from the
-  reply (PRs C, D; changes pin ADR-066 and ADR-082). Remaining: when the embedding
-  key reads degraded (design D1; options (a1) recommended, (a2), (b); (a1) keeps ADR-066 § 3's completion rule at 30 s
-  and moves graph-index to it; (b) is a named ADR-066 § 3 deviation); `Approved-by:`.
+- Owner rulings (PR #550 comments 6716972354, 6721867279): four-PR split; degraded rule (a1); probes; G10; fusion reads
+  not-ready from the
+  reply (PRs C, D; changes pin ADR-066 and ADR-082). Remaining: `Approved-by:`.

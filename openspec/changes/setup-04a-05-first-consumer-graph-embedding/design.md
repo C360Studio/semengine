@@ -23,28 +23,15 @@ unit; `embedding_lifecycle_test.go:TestEntityTombstoneCompletesWatermarkWhenDele
 After #548 the follower refuses a non-ascending revision and declares the feed lost (`graph/follower/follower.go:267`);
 the plug-in sees no change. *Proof:* `TestReadinessWaitsForHopTwo`, `TestCoalescedRevisionsComplete`, `-race`.
 
-**When the envelope reads degraded (owner question).** The follower reads degraded when the floor has not risen for
-30 s while behind (`graph/follower/follower.go:77`, `:471-479`). The pin's embedding producer instead read degraded
-only after 120 s with no terminal completion at all (pin `readiness.go:23-27`, `:192-212`; ADR-066 § 3,
-`docs/adr/066-honest-graph-index-readiness.md:312-315`; pin test
-`readiness_test.go:TestTrackEmbeddingProgress_CompletionsBasedStuckDetector`, unit). The difference shows when one
-low revision waits, say on a slow offloaded-body read, while later entities keep finishing: the floor stands still,
-work does not. Options:
-
-- **(a1) recommended:** the follower counts its own `Complete` calls and treats any completion in the window as
-  progress, for every plug-in; no new config field, threshold stays 30 s (the pin's 120 s was for the external model
-  hop, which tier 0 does not have; tier 1 revisits it, #489). Cost: graph-index changes the same way; a held low
-  revision there reads not ready with `staleness_ms` rising (the oldest unapplied write's age since #548), but not
-  degraded.
-- **(a2):** an optional plug-in progress signal in `follower.Config`; graph-embedding passes its completion count,
-  graph-index keeps the floor rule. Cost: one more field and two meanings of "stuck".
-- **(b):** keep the floor rule for graph-embedding, a named ADR-066 § 3 deviation. Cost: during an ingest with
-  offloaded bodies, one read slower than 30 s marks the embedding key degraded while work flows, and SemSource's MCP
-  gateway shows that to agents.
-
-*Proof (any option):* `TestHeldLowRevisionWithProgress` (one revision held, later ones completing past the threshold:
-not ready; degraded under (b) only) and `TestNoCompletionsReadsDegraded` (nothing completes past the threshold:
-degraded).
+**When the envelope reads degraded (owner, (a1), PR #550 comment 6721867279).** The follower counts its own
+`Complete` calls; while behind, it reads degraded only after 30 s with no completion, for every plug-in, instead of
+30 s without the floor rising (`graph/follower/follower.go:77`, `:471-479`). This is the pin embedding producer's
+completion rule (pin `readiness.go:192-212`, ADR-066 § 3; pin test
+`readiness_test.go:TestTrackEmbeddingProgress_CompletionsBasedStuckDetector`, unit) at the tree's 30 s, so one low
+revision held on a slow offloaded-body read while later entities finish reads not ready, with `staleness_ms` rising,
+but not degraded. graph-index changes the same way. Rejected: a per-plug-in progress field (two meanings of
+"stuck"); the floor rule for embedding (degraded while work flows). *Proof:* `TestHeldLowRevisionWithProgress` and
+`TestNoCompletionsReadsDegraded` (follower), `TestGraphIndexHeldRevisionNotDegraded`.
 
 ## D2. The Worker under the run context; a lost watch
 
@@ -117,9 +104,11 @@ tests are not carried.
 
 ## D8. ADRs, issues, order
 
-Applied: ADR-063, 066 § 3 (two-hop completion; its stuck criterion is the owner question in D1), 083 (D3 as
+Applied: ADR-063, 066 § 3 (two-hop completion), 083 (D3 as
 amended by #548), 108, 109 D2/D3, 113. Not ported: ADR-054 (D5), 055 (comment
-only). Changed by owner ruling: the envelope's failure breakdown keeps reasons and loses `first_failure_at` (G10,
+only). Changed by owner ruling: ADR-066 § 3's stuck criterion is
+completion-based in the follower at 30 s for every plug-in, not 120 s (D1; the 120 s was for the external model hop
+and is revisited at tier 1, #489); the envelope's failure breakdown keeps reasons and loses `first_failure_at` (G10,
 beside #110's 2026-11-08 ruling). Issues: inventory § 9 and `proposal.md`. Order: #548 is merged; this PR next.
 Guidance: SemStreams' "semantic identity and graph" and "storage and retention" contract sections and the
 `entity-or-bucket` skill apply.

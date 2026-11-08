@@ -17,7 +17,8 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
   `TestConfigRefusesHTTPEmbedder`, one test per kept key.
 - [ ] 2.2 Shell, follower plug-in and hop 1 (D1, D5). Check: `TestReadinessWaitsForHopTwo`,
   `TestCoalescedRevisionsComplete`, `TestStorageRefLaneEmbedsIdentityThenBody`, `TestHeldLowRevisionWithProgress`,
-  `TestNoCompletionsReadsDegraded` (per the owner's D1 option), lifecycle suite, `-race`.
+  `TestNoCompletionsReadsDegraded` (follower), `TestGraphIndexHeldRevisionNotDegraded` (held low revision, later
+  completions: not ready, not degraded), lifecycle suite, `-race`.
 - [ ] 2.3 Worker under the run context and its lost watch (D2). Check: `TestHealthNamesLostWorkerWatch`,
   `TestStopJoinsWorker`.
 - [ ] 2.4 Failed map, follower `Failed` with reasons, repair lane (D3). Check: `TestFailedMapHistoryMatchesModel`,

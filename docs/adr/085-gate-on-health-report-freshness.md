@@ -10,21 +10,23 @@
 > - Issue numbers in the text below (`gh#590`, `gh#605`) are SemStreams' or a sister repository's, not SemEngine's; the
 >   OpenSpec change it names, `fusion-consistency-simplification`, is SemStreams'.
 > - Of the records named here, ADR-066, ADR-083 and ADR-084 are ported with this one. ADR-081 is ported with
->   `pkg/graphview` (change `setup-04a-04-graph-roots-graphview`, draft PR #476); ADR-082 is not yet ported.
+>   `pkg/graphview` (change `setup-04a-04-graph-roots-graphview`, PR #476); ADR-082 is not yet ported.
 > - Decision 5 is kept: `pkg/graphview` has `Applied()` and the snapshot pair `Snapshot.Revision` and
 >   `Snapshot.AppliedAt`, and no `graphview` API gates on them. The package changed two things Decision 5 does not
 >   mention: `Start` and `Stop` became `Run(ctx)`, and ending `Run`'s context is a stop, not a watcher loss.
-> - Decision 7 is kept in `graph/clustering` (change `setup-04a-04-graph-roots-clustering`, draft PR #483):
+> - Decision 7 is kept in `graph/clustering` (change `setup-04a-04-graph-roots-clustering`, PR #483):
 >   `Maintainer.Tick` writes every changed group record first and removes records (groups that became empty, and on
 >   the first tick the keys of groups that do not exist) only after every write succeeded, so a reader of the bucket
 >   sees old records, never an empty index. One difference: a failed removal makes `Tick` return an error and the
 >   removal stays pending for the next `Tick`; it does not end the run with the superset standing as the pin's
->   prune did. The cache keyed by `(level, ID)` is `processor/graph-query`'s and is not ported yet. The bucket key
->   `{level}.{prefix}` already carries the level.
-> - Apart from `pkg/graphview` and `graph/clustering`, none of the code named here is ported: `processor/graph-clustering`,
->   `processor/graph-index`, `processor/graph-query`, `graph/query`'s client (retired before the pin), `pkg/fusion`,
->   and the types and functions named with them (`EvaluateReadinessGate`, `IndexStatusResponse`,
->   `readiness.MinBoundedStaleness`, `LPADetector`, `CommunityCache`).
+>   prune did. `processor/graph-query` (change 4, PR #504) has no cache keyed by `(level, ID)`: it reads
+>   communities through a `pkg/graphview` view of `COMMUNITY_INDEX`, whose key `{level}.{prefix}` already carries the
+>   level.
+> - Of the rest of the code named here, `IndexStatusResponse` (`graph`) and `EvaluateReadinessGate` (now
+>   `graph/readiness`) were ported in change 2 (PR #93), `processor/graph-index` in change 4 (PR #414) and
+>   `processor/graph-query` in change 4 (PR #504). `pkg/fusion` is change 5's (PR #550) and `processor/graph-clustering`
+>   change 7's. Not carried: `graph/query`'s client (retired before the pin), `readiness.MinBoundedStaleness`,
+>   `LPADetector` (no label propagation, owner ruling on PR #483) and `CommunityCache`.
 
 ## Status
 

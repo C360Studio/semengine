@@ -39,3 +39,20 @@ func newEmbeddingMetrics(registry *metric.MetricsRegistry) (*embeddingMetrics, e
 	}
 	return m, nil
 }
+
+// embeddingMetrics is the Worker's metrics receiver (embedding.WorkerMetrics), so a body the
+// Worker excludes, on a record whose store is gone since hop 1 wrote it (a restart without that
+// storage component), is counted on the same collector as hop 1's exclusions. The Worker's
+// other counts have no collector here yet; they are dropped, and the failed map carries its
+// failures.
+func (m *embeddingMetrics) IncContentUnresolved() { m.contentUnresolved.Inc() }
+
+func (*embeddingMetrics) IncDedupHits()                 {}
+func (*embeddingMetrics) IncDedupSkipped(string)        {}
+func (*embeddingMetrics) IncTruncated()                 {}
+func (*embeddingMetrics) IncOffloadedIdentityIncluded() {}
+func (*embeddingMetrics) IncOffloadedIdentityAbsent()   {}
+func (*embeddingMetrics) IncFailed()                    {}
+func (*embeddingMetrics) IncFailedReason(string)        {}
+func (*embeddingMetrics) IncContentResolveError()       {}
+func (*embeddingMetrics) IncContentResolved()           {}

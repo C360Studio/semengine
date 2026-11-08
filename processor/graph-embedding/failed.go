@@ -15,6 +15,8 @@ const strandedRevision = ^uint64(0)
 // outcome is one entity's entry in the failed map: the source revision of its latest terminal
 // outcome and, for a failure, its bounded reason; stranded when hop 1 had no revision for it.
 type outcome struct {
+	// revision is the fence below which a Worker outcome is not counted. A stranded failure
+	// names no revision of its own and keeps the one of the outcome it replaced.
 	revision uint64
 	reason   string // empty for a success
 	stranded bool
@@ -97,10 +99,14 @@ func (m *failedMap) mark(key string, revision uint64, reason string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	held, ok := m.entries[key]
+	if revision == strandedRevision {
+		m.store(key, outcome{revision: held.revision, reason: reason, stranded: true})
+		return
+	}
 	if ok && !held.stranded && revision < held.revision {
 		return
 	}
-	m.store(key, outcome{revision: revision, reason: reason, stranded: revision == strandedRevision})
+	m.store(key, outcome{revision: revision, reason: reason})
 }
 
 // queued records, under hop1Mu, that hop 1 wrote key's pending record for revision: hop 1 has
@@ -127,11 +133,21 @@ func (m *failedMap) ended(key string, revision uint64) {
 }
 
 // absent records, under hop1Mu, that key is absent from ENTITY_STATES and its record is
-// removed: nothing is left to count, and with no revision read there is no outcome to keep.
+// removed: nothing is left to count, but the entity's revision stays as a success. A Worker
+// failure stored before the deletion can still have its callback to come (review R1 at stop
+// 2); it is older than the tombstone that ended the entity, so it is not counted. A re-created
+// entity's revisions are above the tombstone's (KV revisions are the stream's sequence), so the
+// fence never hides them. With no outcome, or one at strandedRevision, which names no revision,
+// the entity is forgotten.
 func (m *failedMap) absent(key string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.forget(key)
+	held, ok := m.entries[key]
+	if !ok || held.revision == strandedRevision {
+		m.forget(key)
+		return
+	}
+	m.store(key, outcome{revision: held.revision})
 }
 
 func (m *failedMap) store(key string, o outcome) {

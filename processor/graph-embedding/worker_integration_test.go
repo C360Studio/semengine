@@ -12,6 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus/testutil"
+
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/graph/kvcatalog"
@@ -251,4 +253,45 @@ func TestPendingRecordBeforeStartIsEmbedded(t *testing.T) {
 	h := startEmbedding(t, client, `{}`, nil)
 	h.awaitGenerated(t, a, rev)
 	h.awaitIndexed(t, "the pre-Start revision indexed", rev)
+}
+
+// TestWorkerExclusionCountedAfterRestart: review finding R2 at stop 2. A pending record an
+// earlier process left on the offloaded lane names a store this process has not registered, as
+// after a restart without that storage component. The Worker embeds the identity text alone and
+// counts the excluded body on the component's content_unresolved_total, as hop 1 counts its own.
+// A coalescing window longer than the test keeps hop 1 from reading the entity, so the only
+// exclusion is the Worker's.
+func TestWorkerExclusionCountedAfterRestart(t *testing.T) {
+	client := fixtureClient(t)
+	states := ensureEntityStates(t, client)
+	a := entityID(1)
+	rev, err := states.Put(t.Context(), a, entityValue(t, a, bodyRef("old-body"), "doc.meta.title", "retained title"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	index, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEmbeddingIndex)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dedup, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEmbeddingDedup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	earlier := embedding.NewStorage(client.NewKVStore(index), client.NewKVStore(dedup))
+	if _, err := earlier.SavePendingGuarded(t.Context(), &embedding.Record{
+		EntityID: a, SourceRevision: rev, IdentityText: "retained title",
+		StorageRef: &embedding.StorageRef{StorageInstance: bodyInstance, Key: "old-body"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	h := startEmbedding(t, client, `{"coalesce_ms":3600000}`, nil)
+	// The Worker counts the exclusion before it writes the generated record awaited here.
+	h.awaitGenerated(t, a, rev)
+	if logs := h.logs.String(); !strings.Contains(logs, "no live store is registered") {
+		t.Fatalf("the Worker logged no exclusion; logs:\n%s", logs)
+	}
+	if n := testutil.ToFloat64(h.c.metrics.contentUnresolved); n != 1 {
+		t.Errorf("content_unresolved_total = %v after the Worker excluded the body, want 1", n)
+	}
 }

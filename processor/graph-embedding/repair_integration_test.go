@@ -222,7 +222,9 @@ func TestRepairConvergesStranded(t *testing.T) {
 // TestStartSeedsFailedMap: the failed records EMBEDDING_INDEX holds at Start are counted once
 // Start returns, with their reasons, and the first envelope carries them (design D3, "Seeded from
 // Storage.ScanFailed"); with none, nothing is counted. The seeded entity is not in ENTITY_STATES,
-// so nothing delivered changes its record.
+// so nothing delivered changes its record. The Worker retries a failed record it finds at Start;
+// the record's body is in the gated store, so the retry waits there while the seed is checked
+// (review R3 at stop 2), and once let go it clears the failure.
 func TestStartSeedsFailedMap(t *testing.T) {
 	t.Run("failed records", func(t *testing.T) {
 		client := fixtureClient(t)
@@ -237,7 +239,8 @@ func TestStartSeedsFailedMap(t *testing.T) {
 		earlier := embedding.NewStorage(client.NewKVStore(index), client.NewKVStore(dedup))
 		a := entityID(1)
 		if _, err := earlier.SavePendingGuarded(t.Context(), &embedding.Record{
-			EntityID: a, SourceText: "failed before Start", SourceRevision: 4,
+			EntityID: a, IdentityText: "failed before Start", SourceRevision: 4,
+			StorageRef: &embedding.StorageRef{StorageInstance: bodyInstance, Key: "seeded"},
 		}); err != nil {
 			t.Fatal(err)
 		}
@@ -245,7 +248,8 @@ func TestStartSeedsFailedMap(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		h := startEmbedding(t, client, `{}`, nil)
+		store := newGatedStore()
+		h := startEmbedding(t, client, `{}`, store.stores(t))
 		h.assertFailed(t, "once Start returned", map[string]uint64{"timeout": 1})
 		s := await(t, "the first envelope",
 			func(ctx context.Context) (status, error) { return publishedStatus(ctx, client) },
@@ -254,6 +258,15 @@ func TestStartSeedsFailedMap(t *testing.T) {
 			!maps.Equal(s.envelope.FailedReasons, map[string]uint64{"timeout": 1}) {
 			t.Errorf("first envelope %+v; want not ready, one failure, reasons {timeout: 1}", s.envelope)
 		}
+		if key := <-store.opened; key != "seeded" {
+			t.Fatalf("the Worker opened %q; want seeded", key)
+		}
+		store.release("seeded")
+		h.awaitGenerated(t, a, 4)
+		// The Worker's callback records the success after the generated record is written.
+		await(t, "the retry clears the failure",
+			func(context.Context) (int64, error) { n, _ := h.c.failed.counts(); return n, nil },
+			func(n int64) bool { return n == 0 })
 	})
 	t.Run("none", func(t *testing.T) {
 		h := startEmbedding(t, fixtureClient(t), `{}`, nil)
@@ -261,4 +274,32 @@ func TestStartSeedsFailedMap(t *testing.T) {
 			t.Errorf("failed once Start returned = %d %v; want 0 and nil", count, reasons)
 		}
 	})
+}
+
+// TestLateFailureAfterAbsenceNotCounted: review finding R1 at stop 2. The Worker's failure of an
+// entity is stored, and its callback has not run when the tombstone ends the entity and a batch
+// extracted before the tombstone reads it absent. The callback then arrives: it is older than
+// the tombstone, so it is not counted, and nothing is left that could clear it. The calls are
+// the production ones, made in an order the lanes allow; the Worker is held on another entity
+// so it does not touch this one.
+func TestLateFailureAfterAbsenceNotCounted(t *testing.T) {
+	store := newGatedStore()
+	h := startEmbedding(t, fixtureClient(t), `{"workers":1}`, store.stores(t))
+	holdWorker(t, h, store)
+	a := entityID(99)
+	if _, err := h.c.storage.SavePendingGuarded(t.Context(), &embedding.Record{
+		EntityID: a, SourceRevision: 4, SourceText: "older work",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.c.storage.SaveFailed(t.Context(), a, "embedder timed out", "content_error", 4); err != nil {
+		t.Fatal(err)
+	}
+	h.c.applyTombstone(t.Context(), a, 5)
+	h.c.reconcileEntity(t.Context(), a)
+	if record, err := h.record(t.Context(), a); err != nil || record != nil {
+		t.Fatalf("record after the absent read = %+v, %v; want none", record, err)
+	}
+	h.c.onTerminal(t.Context(), a, 4, embedding.OutcomeFailed, "content_error")
+	h.assertFailed(t, "after the late callback", nil)
 }

@@ -27,7 +27,12 @@ import (
 //   - Hop 1's convergence clears hop 1's own failure, stranded or not: a pending record written
 //     or a revision ended (record removed, generated record found) is then the latest outcome. An
 //     ended revision otherwise counts as a success, as the Worker's; a written pending record
-//     changes nothing else. An absent entity whose record is removed is forgotten.
+//     changes nothing else.
+//   - An absent entity whose record is removed has no failure, but its latest outcome's revision
+//     stays (review R1 at stop 2): a Worker failure for an older revision can still arrive after
+//     the absence, and it is not counted. A stranded failure keeps the revision of the outcome it
+//     replaced, so the fence survives it too. A fence at ^uint64(0) names no revision, and an
+//     entity with no outcome has none: either is forgotten.
 //   - Count and reasons are over the failures held; the repair lane retries exactly hop 1's own.
 type modelEntry struct {
 	revision uint64
@@ -57,13 +62,22 @@ func (m failedModel) drained(key string) {
 
 func (m failedModel) hopOneFailed(key string, revision uint64, reason string) {
 	if revision == strandedRevision {
-		m[key] = modelEntry{failed: true, reason: reason, stranded: true, ownFail: true}
+		m[key] = modelEntry{revision: m[key].revision, failed: true, reason: reason, stranded: true, ownFail: true}
 		return
 	}
 	if held, ok := m[key]; ok && !held.stranded && revision < held.revision {
 		return
 	}
 	m[key] = modelEntry{revision: revision, failed: true, reason: reason, ownFail: true}
+}
+
+func (m failedModel) absent(key string) {
+	held, ok := m[key]
+	if !ok || held.revision == strandedRevision {
+		delete(m, key)
+		return
+	}
+	m[key] = modelEntry{revision: held.revision}
 }
 
 func (m failedModel) hopOneConverged(key string, revision uint64, ended bool) {
@@ -124,7 +138,7 @@ func (op failedOp) apply(m *failedMap, model failedModel) {
 		model.hopOneConverged(op.key, op.revision, true)
 	case "absent":
 		m.absent(op.key)
-		delete(model, op.key)
+		model.absent(op.key)
 	}
 }
 
@@ -236,6 +250,30 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "worker failed", key: "a", revision: 9, reason: "timeout"},
 		{kind: "succeeded", key: "b", revision: strandedRevision},
 		{kind: "worker failed", key: "b", revision: 2, reason: "timeout"},
+	},
+	// Review finding R1 at stop 2 (notes/2.4.md): the Worker's failure at 4 is stored, its
+	// callback still to come; the tombstone at 5 ends the entity, a batch extracted before it
+	// reads the entity absent, and then the failure's callback arrives.
+	"an absence keeps the fence against an older failure": {
+		{kind: "ended", key: "a", revision: 5},
+		{kind: "absent", key: "a"},
+		{kind: "worker failed", key: "a", revision: 4, reason: "content_error"},
+		{kind: "hop 1 failed", key: "b", revision: 5, reason: embedding.ReasonDeleteFailed},
+		{kind: "absent", key: "b"},
+		{kind: "worker failed", key: "b", revision: 4, reason: "timeout"},
+		{kind: "worker failed", key: "b", revision: 6, reason: "timeout"}, // a re-created entity's failure counts
+	},
+	"a stranded failure keeps the fence it replaced": {
+		{kind: "ended", key: "a", revision: 5},
+		{kind: "hop 1 failed", key: "a", revision: strandedRevision, reason: embedding.ReasonEntityReadFailed},
+		{kind: "absent", key: "a"},
+		{kind: "worker failed", key: "a", revision: 4, reason: "timeout"},
+		{kind: "hop 1 failed", key: "b", revision: strandedRevision, reason: embedding.ReasonDeleteFailed},
+		{kind: "absent", key: "b"},
+		{kind: "worker failed", key: "b", revision: 0, reason: "timeout"},
+		{kind: "worker failed", key: "c", revision: strandedRevision, reason: "timeout"},
+		{kind: "absent", key: "c"},
+		{kind: "worker failed", key: "c", revision: 2, reason: "timeout"},
 	},
 	"hop 1's failure at a revision follows revision order": {
 		{kind: "worker failed", key: "a", revision: 6, reason: "timeout"},

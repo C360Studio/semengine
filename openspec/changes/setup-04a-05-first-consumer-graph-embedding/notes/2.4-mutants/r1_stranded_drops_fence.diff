@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -100,7 +100,7 @@
+ 	defer m.mu.Unlock()
+ 	held, ok := m.entries[key]
+ 	if revision == strandedRevision {
+-		m.store(key, outcome{revision: held.revision, reason: reason, stranded: true})
++		m.store(key, outcome{revision: strandedRevision, reason: reason, stranded: true})
+ 		return
+ 	}
+ 	if ok && !held.stranded && revision < held.revision {

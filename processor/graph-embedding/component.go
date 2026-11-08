@@ -292,6 +292,7 @@ func (c *Component) start(ctx context.Context) error {
 		WithWorkers(c.config.Workers).
 		WithMaxSourceTextLen(c.config.MaxTextLen).
 		WithEmbedderType(c.config.EmbedderType).
+		WithMetrics(c.metrics).
 		WithOnTerminal(c.onTerminal)
 	// A nil *storeregistry.Registry in the interface would be a non-nil resolver that panics.
 	if c.storeRegistry != nil {

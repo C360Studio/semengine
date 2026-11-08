@@ -3,9 +3,10 @@
 ## Purpose
 
 `internal/revlag.Watermark` tracks how far a pipeline fed by a NATS KV watch has caught up: the floor at or below
-which every delivered revision has completed, the highest revision delivered, and the commit time of a covered
-revision. graph-index and graph-embedding feed their readiness envelopes from it (pin ADR-066 section 1, ADR-083
-decision 3); the envelope is `graph`'s.
+which every delivered revision has completed, the highest revision delivered, and the commit time of the oldest
+delivered write not yet applied (or of the newest delivered write when none is in flight). It accepts revisions only
+in ascending order and refuses any other. graph-index and graph-embedding feed their readiness envelopes from it
+(pin ADR-066 section 1, ADR-083 decision 3 as amended for #408); the envelope is `graph`'s.
 
 ## Requirements
 

@@ -197,7 +197,7 @@ revision comparison. Both return with graph-index in change 4.
 | ADR-083 D1 :70-75 (published as state, not answered as a query; a key per producer) | Changed: the state stays published, as information, one key per producer; what a consumer acts on is the reply, whose classified-transient retry contract ADR-083 left untouched (:80-81) | D1, D3 |
 | ADR-088 D1 :46-54, D3 :64-67 (no aggregate, no mandatory list) | Kept as #93 built it, as information; nothing waits on a key | D3 |
 | ADR-083 D2 :87-91 (freshness on arrival) | Dropped from the contract; #93's `Watcher` ships with no SemEngine reader | D3 |
-| ADR-083 D3 :99-103; ADR-085 D2 :94-99 (staleness reported, never gating) | Kept | D3, D4 |
+| ADR-083 D3 :99-103; ADR-085 D2 :94-99 (staleness reported, never gating) | Kept: reported, never gating; time amended (#408) | D3, D4 |
 | ADR-083 D4 :105-106 (one evaluator in `graph`) | Changed: one evaluator stays, in `graph/readiness` on #93, with one SemEngine reader, graph-index in process (change 4); no SemEngine consumer across a process reads it | D3 |
 | ADR-083 :124-125 (no producer timestamp against the consumer's clock) | Kept; it is why Q1 removes `published_at` | Q1 |
 | ADR-083 :136-137 (one shared code path) | Dropped: there is no consumer gate path to share; the reply carries readiness | D1 |

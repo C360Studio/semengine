@@ -53,7 +53,7 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 
 ## 4. Docs, ADR and ledger
 
-- [ ] 4.1 ADR and docs edits (design D7, D8):
+- [x] 4.1 ADR and docs edits (design D7, D8):
   - ADR-083 amendment appended at the end of the record;
   - ADR-083 `:7`, ADR-083 `:200` and ADR-109 `:200` updated in place, each keeping its line count;
   - ADR-109's citations into ADR-083 re-checked; if #482 landed first, merge `origin/main` and recheck D7's lines;

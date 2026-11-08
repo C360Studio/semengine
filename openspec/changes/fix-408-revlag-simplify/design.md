@@ -19,7 +19,8 @@ Track: design. Owner ruling #408 comment 6714095087 (all three). Inventory: `inv
 
 - Goals: the three ruled items; one definition of the time; a refusal where the watermark used to trust its caller.
 - Non-goals: graph-ingest's staleness proxy (`processor/graph-ingest/readiness.go:332-345`); `pkg/graphview`
-  `Applied`; renaming the method `Watermark.IndexedAt`, which returns the floor first; staleness readers outside the repository; #482.
+  `Applied`; renaming the method `Watermark.IndexedAt`, which returns the floor first; staleness readers outside the
+  repository; #482.
 
 ## D1. The time rule
 

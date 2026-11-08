@@ -39,7 +39,7 @@ written, a guarded result that finds it already generated, or the record removed
 
 - **WHEN** an entity read fails during repair, and the Worker then reports a generated outcome for that entity
 - **THEN** the entity is still counted failed, with reason `entity_read_failed`, until a repair converges the entity
-  (`TestStrandedWithoutRevisionClearsOnlyOnRepair`)
+  (`TestStrandedWithoutRevisionClearsOnlyOnConvergence`)
 
 #### Scenario: A repair whose read succeeds but whose write fails
 

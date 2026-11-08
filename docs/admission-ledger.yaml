@@ -3449,7 +3449,7 @@
     covered revision's), which also retires the second bookkeeping path; the pin's code is no longer kept as a test
     oracle, so the history test checks against a reference model in the test file; "gh#590" in the package comment is
     SemStreams' issue; no class:port-refactor issue exists for the package; importers: graph/follower holds the
-    watermark in setup-04a-04-graph-roots-graph-index and graph-embedding is not ported yet; #408 (a proving test
+    watermark for graph-index and graph-embedding (setup-04a-05-first-consumer-graph-embedding); #408 (a proving test
     that could pass without the reader seeing writer progress) is retired by fix-408-revlag-simplify
   proving_tests: >-
     internal/revlag/watermark_test.go (TestWatermark_ColdStart, TestWatermark_SparseMidBuild_LowWaterOfPending,
@@ -3560,8 +3560,11 @@
     WatchAll fails, when Updates() closes under a live Run context, or when the backing stream's creation time
     differs from the one Open read, and holds until the process restarts (owner ruling item 2); QueryReady answers
     nil or a classified refusal (reset: fatal graph_state_reset_required; lost feed, unresolved writes, incomplete
-    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0); the stuck-watermark
-    detector reads degraded in the envelope only
+    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0) and, when the plug-in's
+    Failed returns them, failed_reasons, and no first_failure_at; the stuck detector counts the plug-in's Complete
+    calls and reads degraded in the envelope only, once the follower has been behind for 30 s with no completion,
+    for every plug-in (owner ruling (a1), PR #550 comment 6721867279); an empty graph counts as caught up once the
+    snapshot is delivered
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, graph/readiness, internal/resource, internal/revlag, metric, natsclient, pkg/errs
     (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
@@ -3578,7 +3581,9 @@
     graph/follower/follower_test.go (TestOpenRefusesMissingInputs), follower_integration_test.go
     (TestFollowerOpenRefusesAbsentBucket, TestFollowerRunReturnsAndLeavesNothing, TestFollowerConcurrentQueryReady,
     TestFollowerPublishesOnEveryHeartbeat, TestFollowerSnapshotEndSetsBootstrapTarget,
-    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed)
+    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed), follower_test.go
+    (TestHeldLowRevisionWithProgress, TestGraphIndexHeldRevisionNotDegraded, TestNoCompletionsReadsDegraded,
+    TestEnvelopeCarriesFailedReasons, TestGraphIndexEnvelopeUnchanged)
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt
 
@@ -4483,8 +4488,8 @@
   disposition: defer-exclude
 
 # Change setup-04a-05-first-consumer-graph-embedding (PR #550, epic #9): processor/graph-embedding ported as adapt,
-# PR A of the change's split (the write path). Task 2.1 enters the configuration, the factory and Register; tasks
-# 2.2-2.5 add the shell, the follower plug-in, the Worker, the failed map and the repair lane, and extend this row.
+# PR A of the change's split (the write path): the configuration and factory, the shell, the follower plug-in, the
+# Worker, the failed map and the repair lane. The query verbs are PR B; fusion is PRs C and D.
 
 - source_path: processor/graph-embedding
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -4494,8 +4499,8 @@
     semsource composes it with coalesce_ms, embedder_type, batch_size and text_suffixes (inventory § 5)
   destination: processor/graph-embedding
   contract: >-
-    configuration and construction as at the pin, with these adaptations (spec graph-embedding, "Tier-0 config";
-    design D4): (1) strict configuration: an unknown key is refused naming it, batch_size (read nowhere at the pin)
+    the write path as at the pin, with these adaptations (spec graph-embedding; design D1-D6). Configuration (D4):
+    (1) strict configuration: an unknown key is refused naming it, batch_size (read nowhere at the pin)
     and cache_ttl among them, which replaces the pin's targeted cache_ttl probe; (2) embedder_type is bm25 only, an
     empty value means bm25, and any other value, http included, is refused naming the value and tier 0; the
     registration asks boot for no model registry; (3) max_text_len 0 resolves at construction to BM25's 4,000 and
@@ -4505,24 +4510,46 @@
     K; the pin filled an empty input list); (5) an input other than a kv-watch of every ENTITY_STATES key with no
     history or a store read is refused naming the port, and one such watch is required (#424, as graph-index); a
     declared output is refused, as at the pin; (6) the injected store registry is kept only when a store-read input
-    is declared (ADR-063), as at the pin
+    is declared (ADR-063), as at the pin. Behaviour: (7) the lifecycle is component.Lifecycle and the ENTITY_STATES
+    watch, snapshot replay, watermark and readiness envelope are graph/follower's, with the pin's own watch, reset
+    latch, status bucket, heartbeat and readiness.go not carried (D1; ADR-108, #109); (8) a revision completes when
+    the Worker reports its terminal outcome or hop 1 ends it, and with coalesce_ms above zero completing a coalesced
+    entity drains its lower revisions (ADR-066 section 3); (9) embedding.Worker.Run runs under the one run context
+    and a Run that returns while it is live is a stuck state in Health until restart (D2; ADR-113); (10) the failed
+    map keeps the latest terminal outcome per entity, never takes back a failure older than it, and reaches the
+    envelope as per-reason counts through follower.Config.Failed (D3; owner, G10); first_failure_at is not set
+    (D3); (11) a repair lane retries hop 1's three failures (delete_failed, pending_write_failed,
+    entity_read_failed) every 30 s until Stop; (12) Health has no error-count term (D6; ADR-109 D2) and no status
+    verb is served (ADR-083, ADR-109 D3); (13) graph-embedding's own imports include no model package
   dependencies_and_side_effects: >-
-    component, graph, graph/embedding, graph/readiness, natsclient, pkg/errs, storage/storeregistry (in-set);
-    construction opens no connection and registers only semengine_graph_embedding_content_unresolved_total on the
-    injected metrics registry (metrics.go)
+    component, graph, graph/embedding, graph/follower, graph/kvcatalog, graph/readiness, internal/cache,
+    natsclient, metric, pkg/errs, storage/storeregistry (in-set); nats.go/jetstream; the follower's watch on
+    ENTITY_STATES, reads and writes on EMBEDDING_INDEX and EMBEDDING_DEDUP, the Worker's watch on EMBEDDING_INDEX, a
+    repair lane and a coalescer, started in Start and joined in Stop; registers semengine_graph_embedding_
+    content_unresolved_total on the injected metrics registry (metrics.go)
   known_risks: >-
-    task 2.1 of the change: the component is construction only (InputPorts, OutputPorts, Health, DataFlow over
-    component.Lifecycle); Initialize, Start, Stop, the follower plug-in, the Worker and their tests enter with tasks
-    2.2-2.5, and the live readers of workers, max_text_len, text_suffixes, startup_attempts, startup_interval_ms
-    and coalesce_ms with them; until then each key's test proves the value the factory resolves. Config break for
-    consumers: semsource's configuration sets batch_size under graph-embedding and fails at boot until the line is
-    deleted; an embedder_type of http fails at boot (MIGRATION.md, task 3.1). Not carried: the http embedder and
-    the model import (#32, #489), BatchSize, the cache_ttl probe
+    Config break for consumers: semsource's configuration sets batch_size under graph-embedding and fails at boot
+    until the line is deleted; an embedder_type of http fails at boot; the status card loses first_failure_at;
+    graph.embedding.query.status has no responder; the degraded rule is completion-based at 30 s for every plug-in
+    (MIGRATION.md). Hop 1 runs serially on the follower's goroutine, so a slow pending write delays delivery
+    (throughput, not correctness). Open: an offloaded body's fetch has no deadline and a hanging store pins a Worker
+    lane (#551); on the coalesced lane an absent or unreadable key completes at ^uint64(0) and drains a re-create
+    observed during the read, as at the pin (#555); after a restart without the body's store the Worker's replay
+    and hop 1's re-read count two exclusions in content_unresolved_total. The Worker's other metrics are dropped
+    until their collectors are ported. Not carried: the http embedder and the model import (#32, #489), BatchSize,
+    the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the query verbs and the vector cache (PR B)
   proving_tests: >-
     processor/graph-embedding/config_test.go (TestConfigRefusesUnknownKey, TestConfigRefusesHTTPEmbedder,
     TestConfigEmbedderType, TestConfigWorkers, TestConfigMaxTextLen, TestConfigTextSuffixes, TestConfigStartupWait,
     TestConfigCoalesceMs, TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
     TestConfigRefusesOutputs, TestConfigRefusesInputsTheFollowerDoesNotRead, TestStoreReadInputAdmitsStoreRegistry,
-    FuzzResolveConfig), factory_test.go (TestCreateGraphEmbeddingRequiresNATSClient, TestRegisterAddsGraphEmbedding)
+    FuzzResolveConfig), factory_test.go (TestCreateGraphEmbeddingRequiresNATSClient, TestRegisterAddsGraphEmbedding),
+    failed_test.go (TestFailedMapHistoryMatchesModel), the integration-tagged files (TestReadinessWaitsForHopTwo,
+    TestRestartCompletesGeneratedRevision, TestCoalescedRevisionsComplete, TestStorageRefLaneEmbedsIdentityThenBody,
+    TestStopJoinsWorker, TestHealthNamesLostWorkerWatch, TestStrandedWithoutRevisionClearsOnlyOnConvergence,
+    TestRepairConvergesStranded, TestStartSeedsFailedMap, TestLateFailureAfterAbsenceNotCounted,
+    TestHealthIgnoresErrorCount, TestNoStatusVerb, TestWorkerExclusionCountedAfterRestart,
+    TestGraphEmbeddingLifecycleSuite), internal/harness/contract/embeddingprovider_test.go
+    (TestGraphEmbeddingImportsNoProviderModule)
   owner: setup-04a-05-first-consumer-graph-embedding developer
   disposition: adapt

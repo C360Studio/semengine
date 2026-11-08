@@ -10,9 +10,16 @@
 >   OpenSpec change it names, `readiness-distribution-and-staleness-contract`, is SemStreams'.
 > - Of the records named here, ADR-066, ADR-084 and ADR-085 are ported with this one. ADR-081 is ported with
 >   `pkg/graphview`. ADR-055 and ADR-082 are not yet ported.
-> - None of the code named here is ported: the graph-index, graph-embedding, graph-ingest and graph-clustering
->   processors, the `graph` package and `pkg/fusion`. `pkg/graphview` is ported (ADR-081). No code here creates the
->   `GRAPH_STATUS` bucket.
+> - Of the code named here, the `graph` package and the graph-ingest processor were ported in change 2 (PR #93), the
+>   graph-index processor in change 4 (PR #414), and `pkg/graphview` in change 4 (PR #476, ADR-081). `graph/follower`,
+>   ported with graph-index, creates the `GRAPH_STATUS` bucket and publishes the producer's readiness to it. The
+>   graph-embedding processor's write path was ported in change 5 (PR #550, PR A; `processor/graph-embedding`), on
+>   `graph/follower`, which writes its `graph-embedding` readiness key and drops the pin's own status bucket and
+>   heartbeat. Its query verbs and `pkg/fusion` follow in that change's PRs B to D; the graph-clustering processor
+>   is change 7's. The stuck rule of ADR-066 section 3 is completion-based at 30 s in the follower
+>   for every plug-in, by owner ruling (PR #550 comment 6721867279). The pin's `graph.embedding.query.status` is not
+>   carried (ADR-109 Decision 3).
+>   Issue #482 (closed by PR #552) tracked these port notes; this line is the graph-embedding update.
 
 ## Status
 

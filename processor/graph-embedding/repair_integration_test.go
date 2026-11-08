@@ -112,13 +112,13 @@ type status struct {
 	raw      map[string]json.RawMessage
 }
 
-// TestStrandedWithoutRevisionClearsOnlyOnRepair: a failed entity read has no source revision, so
+// TestStrandedWithoutRevisionClearsOnlyOnConvergence: a failed entity read has no source revision, so
 // the entity is stranded: its revision drains, it is counted failed, and no terminal outcome from
 // the Worker clears it, at a revision above every delivered one or at the highest revision (the
-// Worker's drain of an unreadable record). The repair lane's convergence clears it once the read
-// answers (design D3; pin TestObsoleteTerminal_CannotClearStranding_PendingWriteSite and
+// Worker's drain of an unreadable record). A hop-1 convergence (the repair lane, a new delivery or a
+// coalesced batch) clears it once the read answers (design D3; pin TestObsoleteTerminal_CannotClearStranding_PendingWriteSite and
 // _TombstoneSite).
-func TestStrandedWithoutRevisionClearsOnlyOnRepair(t *testing.T) {
+func TestStrandedWithoutRevisionClearsOnlyOnConvergence(t *testing.T) {
 	client := fixtureClient(t)
 	h := startEmbedding(t, client, `{}`, nil)
 	a := entityID(1)

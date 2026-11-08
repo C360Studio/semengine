@@ -50,11 +50,10 @@ Per entity it holds the latest terminal outcome's source revision and its reason
 only when r is at or above it; a success at r clears any failure at or below r. A failed delete of an absent
 entity and a failed entity read have no source revision, so they are stranded at the highest revision
 (`^uint64(0)`): no terminal outcome from the Worker clears them, only a later successful hop-1 convergence of that
-entity
-by the repair lane: a pending record written, a guarded result that finds it already generated, or the record
-removed (pin `component.go:1628-1650`, `:1694-1701`, SemStreams #722 B1). A read that succeeds while the following
-pending write or stale-vector delete fails re-marks the failure (pin `:1864-1884`, `:1911-1941`). Seeded from
-`Storage.ScanFailed`.
+entity, by any path (the repair lane, a new delivery, a coalesced batch): a pending record written, a guarded
+result that finds it already generated, or the record removed (pin `component.go:1628-1650`, `:1694-1701`,
+SemStreams #722 B1). A read that succeeds while the following pending write or stale-vector delete fails re-marks
+the failure (pin `:1864-1884`, `:1911-1941`). Seeded from `Storage.ScanFailed`.
 `follower.Config.Failed` becomes `func() (count int64, reasons map[string]uint64)`, read once per envelope so count
 and reasons agree (pin `readiness.go:149-152`). `Failed` returns a fresh map the follower owns; the plug-in keeps
 no reference to it, since the follower reads it on its heartbeat while Worker callbacks change the failed map. A
@@ -72,7 +71,7 @@ stops with `Stop` (pin tests `derived_state_convergence_test.go:TestFailedDelete
 *Proof:* `TestFailedMapHistoryMatchesModel` (generated histories against a reference model, seed recorded),
 `TestEnvelopeCarriesFailedReasons` (under `-race`, with outcomes reported concurrently with heartbeats),
 `TestGraphIndexEnvelopeUnchanged`, `TestRepairConvergesStranded` including read success with write failure,
-`TestStrandedWithoutRevisionClearsOnlyOnRepair` (ported from
+`TestStrandedWithoutRevisionClearsOnlyOnConvergence` (ported from
 `TestObsoleteTerminal_CannotClearStranding_PendingWriteSite` and `_TombstoneSite`), `TestRepairConvergesStranded`.
 
 ## D4. Config

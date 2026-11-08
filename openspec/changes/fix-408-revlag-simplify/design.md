@@ -32,7 +32,8 @@ Track: design. Owner ruling #408 comment 6714095087 (all three). Inventory: `inv
 Edge cases:
 
 - If the chosen revision was observed with the zero time, `at` is zero (unknown).
-- Completing a revision above an in-flight one, of any key, changes nothing.
+- A completion that leaves the lowest in-flight revision in flight changes neither floor nor time. A same-key
+  completion above it drains it, and the table then applies.
 - A delete is a revision like any other. Its `Complete(key, rev)` drains the key's lower revisions.
 - `Complete` ahead of delivery never yields the time of a revision that was never observed.
 - Under accepted observation, the revision whose time is reported never decreases.

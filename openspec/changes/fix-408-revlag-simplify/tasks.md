@@ -26,7 +26,8 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
   - Second commit: the implementation: the refusal, the time rule, in-flight bookkeeping meeting D3's four claims, the
     covered estimate removed, and the package's doc comments rewritten.
   - Gate:
-    - each new or changed assertion fails on the base commit (recorded);
+    - each assertion of changed behaviour (the time rule, the refusal) fails on the base commit (recorded); retained
+      guarantees (checkpoint A, the floor, retention) are shown by the D6 mutants instead;
     - the #408 commands pass: `go test -race -count=1 -cpu=1 ./internal/revlag` and
       `go test -count=5 -cpu=1 -shuffle=on ./internal/revlag`;
     - `task mutate:check` trips N1-N6 at the assertions D6 names;

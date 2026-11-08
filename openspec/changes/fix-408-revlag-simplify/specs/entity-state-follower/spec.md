@@ -9,12 +9,12 @@
 
 ### Requirement: Every delivered revision reaches the watermark first
 
-The follower SHALL pass each delivered revision, update or delete, to its watermark before it calls `Deliver` with it,
-and its floor SHALL advance only through `Complete`. `Indexed` SHALL return the floor.
+The follower SHALL pass each delivered revision, update or delete, to its watermark before it calls `Deliver` with it.
+`Indexed` SHALL return the watermark's floor, which follows the watermark's rules for accepted revisions.
 
 #### Scenario: A delivered revision not yet completed
 
-- **WHEN** revision R of key K is delivered and `Complete(K, R)` has not been called
+- **WHEN** revision R of key K is delivered and accepted, and no `Complete(K, R2)` with R2 at or above R has been called
 - **THEN** `Indexed` is below R
 
 ### Requirement: A lost feed is declared

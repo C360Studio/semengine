@@ -111,8 +111,8 @@ any.
 
 `IndexedAt` SHALL return with the floor, read together, the commit time `Observe` accepted for the lowest in-flight
 revision, or, when none is in flight, for the revision `Observed` returns. The time SHALL be zero when nothing has been
-observed or that revision was observed with the zero time; zero means unknown. Completing a revision above one still in
-flight SHALL NOT change the time.
+observed or that revision was observed with the zero time; zero means unknown. A completion that leaves the lowest
+in-flight revision in flight SHALL NOT change the time.
 
 #### Scenario: Exact when caught up
 
@@ -126,7 +126,7 @@ flight SHALL NOT change the time.
 
 #### Scenario: A completion above an in-flight revision
 
-- **WHEN** revisions 50, 72 and 100 are observed and 72 completes
+- **WHEN** revisions 50, 72 and 100 are observed for three distinct keys and 72 completes
 - **THEN** `IndexedAt` returns floor 49 and revision 50's commit time
 
 #### Scenario: The time moves when the lowest drains

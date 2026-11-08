@@ -1,0 +1,29 @@
+# Tasks: setup-04a-05-first-consumer-graph-embedding
+
+PR A of `split.md`. Tests come first. Each code task ends at a clean-tree local `task verify` (#171); integration
+tests run under `task test:integration -- ./processor/graph-embedding/`. "Shown to fail" is `task mutate:check` or
+failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test deadline of its own, no
+`context.WithValue`.
+
+## 1. Design
+
+- [ ] 1.1 Inventory review passes; pin probes (`inventory.md` § 0) are run and recorded; pre-owner design review
+  passes; the owner accepts the split and fills `Approved-by:`.
+  Hold: OPEN-Q proposal awaits owner approval
+
+## 2. Component
+
+- [ ] 2.1 Config and factory (D4), with `Register` and the ledger row. Check: `TestConfigRefusesUnknownKey`,
+  `TestConfigRefusesHTTPEmbedder`, one test per kept key.
+- [ ] 2.2 Shell, follower plug-in and hop 1 (D1, D5). Check: `TestReadinessWaitsForHopTwo`,
+  `TestCoalescedRevisionsComplete`, `TestStorageRefLaneEmbedsIdentityThenBody`, lifecycle suite, `-race`.
+- [ ] 2.3 Worker under the run context and its lost watch (D2). Check: `TestHealthNamesLostWorkerWatch`,
+  `TestStopJoinsWorker`.
+- [ ] 2.4 Failed map and repair lane (D3). Check: `TestFailedMapHistoryMatchesModel`, `TestRepairConvergesStranded`.
+- [ ] 2.5 Health and tier 0 (D6, D7). Check: `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`,
+  `TestGraphEmbeddingImportsNoProviderModule`.
+
+## 3. Close-out
+
+- [ ] 3.1 `processor/graph-embedding/MIGRATION.md` (batch_size, http, status verb); `README.md`; ledger row;
+  ADR-083 port note for graph-embedding (advances #482); spec sync and archive as the last content commit.

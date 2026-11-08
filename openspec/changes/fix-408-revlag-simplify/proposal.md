@@ -1,6 +1,7 @@
 # Proposal: fix-408-revlag-simplify
 
-Approved-by:
+Approved-by: owner (2026-11-07), in Enjoy, proposal at `9854bcc7` approved as drafted; recorded on #408
+(comment 6716215308).
 
 ## Why
 
@@ -32,6 +33,8 @@ Design track: two capabilities (`revision-watermark`, `entity-state-follower`) a
   deleted. Retention is proved by live-heap growth, not by reading private fields.
 - ADR-083 gets a SemEngine amendment to decision 3, appended to the record; its port note, its SemEngine disposition
   and ADR-109's kept-row are updated in place. Staleness stays reported, never gating (ADR-085 D2).
+- `readiness.IndexStatusInputs.IndexedAt` is renamed `OldestUnappliedAt` (owner ruling, #408 comment 6716215308).
+  `Watermark.IndexedAt` keeps its name: it returns the floor first.
 - Doc comments in `graph/readiness`, `graph` and `graph/follower`, the admission-ledger rows and the repository map
   are updated to the new rule.
 

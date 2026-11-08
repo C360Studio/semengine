@@ -19,7 +19,7 @@ Track: design. Owner ruling #408 comment 6714095087 (all three). Inventory: `inv
 
 - Goals: the three ruled items; one definition of the time; a refusal where the watermark used to trust its caller.
 - Non-goals: graph-ingest's staleness proxy (`processor/graph-ingest/readiness.go:332-345`); `pkg/graphview`
-  `Applied`; renaming `IndexedAt` (owner question 2); staleness readers outside the repository; #482.
+  `Applied`; renaming the method `Watermark.IndexedAt`, which returns the floor first; staleness readers outside the repository; #482.
 
 ## D1. The time rule
 
@@ -182,9 +182,10 @@ Edits in place, each keeping its line count, so ADR-109's line citations stay va
 
 No state migration. `staleness_ms` takes the meaning in D7.
 
-## Open Questions
+## Owner rulings (#408 comment 6716215308)
 
-1. **Owner:** did "drop the `container/list` walk-back" mean the walk-back only (D3 (a), recommended), or the list
-   too (D3 (b))?
-2. **Owner:** keep the name `IndexedAt` (method and readiness input), or rename the input to `OldestUnappliedAt`?
-   Recommended: keep it; a rename widens the change to `graph-readiness`.
+1. D3 (a): `container/list`, append-only.
+2. `readiness.IndexStatusInputs.IndexedAt` is renamed `OldestUnappliedAt`; its callers (`graph/follower/follower.go:425`,
+   `graph/readiness/index_status.go:72`, `index_status_test.go`) and the doc mentions (`index_status.go:12`, `:44`,
+   `pkg/graphview/view.go:358`, `:383`, `applied_test.go:28`) follow. No spec names the field, so no `graph-readiness`
+   delta. `Watermark.IndexedAt` keeps its name.

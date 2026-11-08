@@ -5,10 +5,9 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
 
 ## 1. Proposal and design
 
-- [ ] 1.1 Inventory, proposal, design and spec deltas committed. Gate: `task spec:check` and `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
-- [ ] 1.2 Independent review of `inventory.md` (INVENTORY PASS), then of `design.md` and the spec deltas (no BLOCKING
-  or HIGH open), recorded on PR #548. Hold: Codex design review
+- [x] 1.1 Inventory, proposal, design and spec deltas committed. Gate: `task spec:check` and `task docs:check`.
+- [x] 1.2 Independent review of `inventory.md` (INVENTORY PASS), then of `design.md` and the spec deltas (no BLOCKING
+  or HIGH open), recorded on PR #548.
 
 ## 2. Code
 
@@ -39,6 +38,8 @@ reviews the design and the code. Each step ends when `task verify` passes on a c
     revision 5 then revision 3) and drives `follow`. After the second delivery, `Stuck` names the lost feed and
     `QueryReady` returns `index_not_ready`. It fails on the base commit.
   - The fix: `observe` declares the feed lost on a refused `Observe`.
+  - The rename: `readiness.IndexStatusInputs.IndexedAt` becomes `OldestUnappliedAt` with its callers and doc mentions
+    (design, owner rulings).
   - Doc comments: `follower.go:263`, `graph/readiness/index_status.go:23-26` and `:38`,
     `graph/index_status.go:86-88`, `:94-96` and `:106-108`, and `pkg/graphview/view.go:356-360` (after merging
     `origin/main` if #544 has landed).

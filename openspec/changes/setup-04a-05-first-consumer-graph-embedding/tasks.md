@@ -25,7 +25,7 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
   `TestStrandedWithoutRevisionClearsOnlyOnRepair`, `TestRepairConvergesStranded` (including read success with write
   failure); remove `FirstFailureAt`
   (`graph/index_status.go:85`, `index_status_test.go:59`).
-- [ ] 2.5 Health and tier 0 (D6, D7). Check: `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`,
+- [x] 2.5 Health and tier 0 (D6, D7). Check: `TestHealthIgnoresErrorCount`, `TestNoStatusVerb`,
   `TestGraphEmbeddingImportsNoProviderModule`.
 
 ## 3. Close-out

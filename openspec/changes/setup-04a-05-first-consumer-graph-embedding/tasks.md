@@ -32,4 +32,4 @@ failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no test d
 
 - [ ] 3.1 `processor/graph-embedding/MIGRATION.md` (batch_size, http, status verb, first_failure_at); `README.md`;
   ledger row;
-  ADR-083 port note for graph-embedding (advances #482); spec sync and archive as the last content commit.
+  ADR-083 port note for graph-embedding (#482 closed by PR #552); spec sync and archive as the last content commit.

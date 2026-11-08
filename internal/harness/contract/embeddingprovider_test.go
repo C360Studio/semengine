@@ -71,6 +71,7 @@ func TestGraphEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 		append(component, openAIModule+"/jsonschema")), openAIModule+"/jsonschema")
 	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/component"}, nil),
 		"listed no package")
+	requireViolation(t, graphEmbeddingProviderPaths(module, nil, component), "direct .Imports listing was empty")
 }
 
 // graphEmbeddingProviderPaths names each provider path in processor/graph-embedding's listings:
@@ -78,7 +79,13 @@ func TestGraphEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 // or anything under it, among deps, everything it reaches. An empty listing is a violation.
 func graphEmbeddingProviderPaths(module string, direct, deps []string) []string {
 	const pkg = "./processor/graph-embedding"
-	violations := providerPathsFor(module, pkg, graphEmbeddingProviderRule, direct)
+	var violations []string
+	if len(direct) == 0 {
+		violations = append(violations, "go list's direct .Imports listing was empty; a check that saw nothing is not a pass "+
+			graphEmbeddingProviderRule)
+	} else {
+		violations = providerPathsFor(module, pkg, graphEmbeddingProviderRule, direct)
+	}
 	if len(deps) == 0 {
 		return append(violations, "go list -deps listed no package; a check that saw nothing is not a pass "+
 			graphEmbeddingProviderRule)

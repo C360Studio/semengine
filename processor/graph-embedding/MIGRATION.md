@@ -53,10 +53,15 @@ Read these. Nothing errors.
   `degraded` when one revision is held while later ones complete, only not ready with `staleness_ms` rising. An
   alert on `degraded` for graph-index fires less often; one on graph-embedding fires after 30 seconds, not 120.
   *Do:* check any alert threshold built on the old timing.
-- **`Healthy` ignores the error count.** The pin lowered it when its error count rose. Here a failure raises the
-  count (`ErrorCount`) and nothing else; `Healthy` is false only while a stuck state holds: a latched reset, unresolved
-  failed entities, a lost `ENTITY_STATES` feed, or a lost embedding watch (ADR-109 Decision 2). *Do:* read the
-  failed count from the readiness record, not from the error count.
+- **The error count now rises, and `Healthy` ignores it.** At the pin `error_count` and `error_rate` were always 0:
+  nothing wrote the count, though `Healthy` would have dropped had it risen. Here the count (`ErrorCount`) rises by one
+  when an entity becomes failed (it was not failed before) and by one per latched reset (a stored `ENTITY_STATES`
+  value the component cannot decode; `Health` then reads "graph state reset required" until the process restarts);
+  a repeated failure of an entity already failed adds nothing.
+  `Healthy` is false only while a stuck state holds: a latched reset, unresolved failed entities, a lost
+  `ENTITY_STATES` feed, or a lost embedding watch (ADR-109 Decision 2). An alert on `error_count > 0` or
+  `error_rate > 0` never fired before and will fire now. *Do:* read the failed count from the readiness record, not
+  from the error count, and review any alert on the error count.
 - **A lost embedding watch stays lost.** If the Worker's watch on `EMBEDDING_INDEX` ends while the component runs,
   `Health` names it and stays unhealthy until the process restarts. The pin had no such state. *Do:* alert on
   unhealthy components and restart.

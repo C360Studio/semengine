@@ -136,6 +136,7 @@ func (c *Component) queueEntity(ctx context.Context, key string, revision uint64
 		}
 		c.logger.Error("entity state refused; graph reset required",
 			slog.String("entity", key), slog.Any("error", err))
+		c.lifecycle.CountError() // the reset, as graph-index counts one (design D6)
 		c.follower.Load().Reset(reason)
 		return
 	}
@@ -240,23 +241,29 @@ func (c *Component) extractText(state *graph.EntityState) string {
 // onTerminal is the Worker's terminal callback (embedding.TerminalCallback): the pending
 // record for sourceRevision reached a terminal outcome, so that revision, with every lower
 // one of the entity, is complete. Every outcome completes (ADR-066 § 3); a failure is in the
-// failed map first, so readiness never reads ready over it.
+// failed map first, so readiness never reads ready over it. A failure counts in ErrorCount only
+// when the entity enters the failed set, as markFailed's does.
 func (c *Component) onTerminal(_ context.Context, entityID string, sourceRevision uint64, outcome embedding.TerminalOutcome, reason string) {
 	if outcome == embedding.OutcomeFailed {
-		c.failed.failed(entityID, sourceRevision, reason)
-		c.lifecycle.CountError()
+		if c.failed.failed(entityID, sourceRevision, reason) {
+			c.lifecycle.CountError()
+		}
 	} else {
 		c.failed.succeeded(entityID, sourceRevision)
 	}
 	c.complete(entityID, sourceRevision)
 }
 
-// markFailed records hop 1's own failure of key at revision in the failed map and counts it in
-// ErrorCount, which never lowers Healthy (design D6; ADR-109 Decision 2): the failed map's count,
-// through the follower's stuck states, is what Health reads.
+// markFailed records hop 1's own failure of key at revision in the failed map. ErrorCount counts
+// once per entity entering the failed set, as graph-index counts (index.go markEntityFailed): a
+// failure of an entity already failed, such as a repair pass failing again, and a failure refused
+// as older than the entity's latest outcome count nothing. ErrorCount never lowers Healthy (design
+// D6; ADR-109 Decision 2): the failed map's count, through the follower's stuck states, is what
+// Health reads.
 func (c *Component) markFailed(key string, revision uint64, reason string) {
-	c.failed.mark(key, revision, reason)
-	c.lifecycle.CountError()
+	if c.failed.mark(key, revision, reason) {
+		c.lifecycle.CountError()
+	}
 }
 
 // complete reports revision of key complete to the follower.

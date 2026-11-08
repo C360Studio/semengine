@@ -3,20 +3,25 @@
 package graphembedding
 
 import (
+	"context"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// TestHealthIgnoresErrorCount: each failure the failed map records is counted in ErrorCount, and
-// ErrorCount never lowers Healthy (design D6; ADR-109 Decision 2). The pin's Health was not
-// healthy while its error count was above zero (pin component.go:567). Here a failed entity read
-// lowers Healthy, naming the unresolved write, and once the repair lane converges the entity Health
-// reads running and healthy with the failure still counted. A Worker failure is counted too.
+// TestHealthIgnoresErrorCount: ErrorCount counts once per entity entering the failed set and once
+// per latched reset, as graph-index counts (processor/graph-index/index.go:240-249), and never
+// lowers Healthy (design D6; ADR-109 Decision 2). The pin's Health was not healthy while its error
+// count was above zero (pin component.go:567). Here a failed entity read lowers Healthy, naming the
+// unresolved write, and counts once however often the repair lane fails it again; once the repair
+// lane converges the entity Health reads running and healthy with the failure still counted. A
+// Worker failure counts once on entry, not again while the entity is failed, not when it is older
+// than the entity's latest outcome, and once more when the entity fails again after a success.
 func TestHealthIgnoresErrorCount(t *testing.T) {
 	client := fixtureClient(t)
 	h := startEmbedding(t, client, `{}`, nil)
@@ -32,26 +37,53 @@ func TestHealthIgnoresErrorCount(t *testing.T) {
 	// rev orders the Health read after both.
 	h.awaitIndexed(t, "the unread revision drained", rev)
 	failing := h.c.Health()
-	// At least one: the repair lane's own pass, every repairInterval, may fail the read again.
-	if failing.Healthy || failing.Status != "degraded" || failing.ErrorCount < 1 ||
+	if failing.Healthy || failing.Status != "degraded" || failing.ErrorCount != 1 ||
 		!strings.Contains(failing.LastError, "1 index writes unresolved") {
-		t.Fatalf("Health with a failed read = %+v, want degraded naming 1 unresolved write, ErrorCount >= 1",
+		t.Fatalf("Health with a failed read = %+v, want degraded naming 1 unresolved write, ErrorCount 1",
 			failing)
+	}
+	h.c.repair(t.Context()) // the read fails again: the entity is already failed
+	if health := h.c.Health(); health.ErrorCount != 1 {
+		t.Fatalf("ErrorCount after a repair pass that fails again = %d, want 1", health.ErrorCount)
 	}
 
 	editStream(t, client, graph.BucketEntityStates, directGets(true))
 	h.c.repair(t.Context()) // the read answers: the pending record is written at rev
 	h.assertFailed(t, "after the repair pass", nil)
 	repaired := h.c.Health()
-	if !repaired.Healthy || repaired.Status != "running" || repaired.ErrorCount < failing.ErrorCount {
-		t.Fatalf("Health after the repair = %+v, want running and healthy with ErrorCount >= %d",
-			repaired, failing.ErrorCount)
+	if !repaired.Healthy || repaired.Status != "running" || repaired.ErrorCount != 1 {
+		t.Fatalf("Health after the repair = %+v, want running and healthy with ErrorCount 1", repaired)
 	}
 
-	// The Worker's failure, through its production callback: counted once more.
-	h.c.onTerminal(t.Context(), gone, 5, embedding.OutcomeFailed, "timeout")
-	if health := h.c.Health(); health.ErrorCount != repaired.ErrorCount+1 {
-		t.Errorf("ErrorCount after the Worker's failure = %d, want %d", health.ErrorCount, repaired.ErrorCount+1)
+	// The Worker's outcomes, through its production callback, each with the count it leaves.
+	for _, step := range []struct {
+		what     string
+		revision uint64
+		outcome  embedding.TerminalOutcome
+		want     int
+	}{
+		{"a failure enters the failed set", 5, embedding.OutcomeFailed, 2},
+		{"a newer failure of the failed entity", 6, embedding.OutcomeFailed, 2},
+		{"a success clears it", 7, embedding.OutcomeGenerated, 2},
+		{"a failure older than the success is refused", 6, embedding.OutcomeFailed, 2},
+		{"a newer failure enters again", 8, embedding.OutcomeFailed, 3},
+	} {
+		h.c.onTerminal(t.Context(), gone, step.revision, step.outcome, "timeout")
+		if health := h.c.Health(); health.ErrorCount != step.want {
+			t.Fatalf("ErrorCount after %s = %d, want %d", step.what, health.ErrorCount, step.want)
+		}
+	}
+
+	// A latched reset counts once: authoritative state the reader refuses. The count comes before
+	// the latch, so Health naming the reset orders the read after it.
+	h.put(t, entityID(3), []byte("not an entity state"))
+	reset := await(t, "the reset latched", func(context.Context) (component.HealthStatus, error) {
+		return h.c.Health(), nil
+	}, func(health component.HealthStatus) bool {
+		return strings.Contains(health.LastError, "graph state reset required")
+	})
+	if reset.ErrorCount != 4 {
+		t.Errorf("ErrorCount after the latched reset = %d, want 4", reset.ErrorCount)
 	}
 }
 

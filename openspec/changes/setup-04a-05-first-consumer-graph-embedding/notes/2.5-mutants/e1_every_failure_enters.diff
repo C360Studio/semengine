@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -164,9 +164,8 @@
+ 		delete(m.failures, key)
+ 		return false
+ 	}
+-	_, held := m.failures[key]
+ 	m.failures[key] = o
+-	return !held
++	return true
+ }
+ 
+ func (m *failedMap) forget(key string) {

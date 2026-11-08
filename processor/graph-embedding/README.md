@@ -94,10 +94,14 @@ The component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself and declares
 ## Health and readiness
 
 `Health` is `Healthy` once started, and unhealthy while any of these holds: a stored `ENTITY_STATES` value could not
-be decoded (`graph_state_reset_required`), failed entities are unresolved, the `ENTITY_STATES` feed is lost, or the
-Worker's watch on `EMBEDDING_INDEX` ended while the component ran. The error count is reported and never lowers
-`Healthy` by itself (ADR-109). A lost Worker watch and a lost feed hold until the process restarts; nothing rebinds
-them. `DataFlow` counts one input per delivered `ENTITY_STATES` entry, update or delete, before merging.
+be decoded (Health reads `graph state reset required: <reason>`, and queries are refused with the error code
+`graph_state_reset_required`), failed entities are unresolved, the `ENTITY_STATES` feed is lost, or the Worker's watch
+on `EMBEDDING_INDEX` ended while the component ran. The error count (`ErrorCount`) rises by one when an entity becomes
+failed (it was not failed before; see "Failed entities and the repair lane" below) and by one for each stored value
+refused this way; a repeated failure of an entity already failed, such as a repair pass failing again, and a failure
+older than the entity's latest outcome add nothing. graph-index counts the same way. The count never lowers `Healthy`
+by itself (ADR-109). A lost Worker watch and a lost feed hold until the process restarts; nothing rebinds them.
+`DataFlow` counts one input per delivered `ENTITY_STATES` entry, update or delete, before merging.
 
 The follower publishes the readiness record to `GRAPH_STATUS` at once and then every heartbeat, with
 `indexed_revision`, `target_revision`, `failed_count` and `failed_reasons` (the count of failed entities per bounded
@@ -112,8 +116,9 @@ The component keeps, per entity, the source revision and result of its latest te
 older revision is not counted, and a success at a revision clears a failure at or below it. The map is filled from
 the failed records `EMBEDDING_INDEX` holds at start. Three failures are hop 1's own: a failed record delete, a failed
 pending write and a failed entity read. Every 30 seconds the repair lane retries them against the entity's current
-value; any later successful hop-1 convergence of the entity clears the failure. The Worker's failures are not
-retried: they wait for a new revision of the entity or a restart.
+value; any later convergence of the entity in hop 1 (hop 1 writes its pending record, removes its record, or finds a
+generated record already standing) clears the failure. The Worker's failures are not retried: they wait for a new
+revision of the entity or a restart.
 
 ## Metrics
 

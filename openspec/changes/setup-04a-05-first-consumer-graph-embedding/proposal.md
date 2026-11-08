@@ -49,7 +49,7 @@ provider, and its readiness is honest. The query verbs come in PR B; fusion in C
   `embedder_type: http` is refused at tier 0; `graph.embedding.query.status` is gone (read the `GRAPH_STATUS` key).
 - Merge order: #548 first.
 - Retires none. Stays: #109, #196, #195 (this package's 12 sites adopt), #110 (PR C), #477 (PR B), #489, #32, #155,
-  #482, #11, #484.
+  #11, #484. #482 was closed by PR #552.
 - Owner rulings (PR #550 comments 6716972354, 6721867279): four-PR split; degraded rule (a1); probes; G10; fusion reads
   not-ready from the
-  reply (PRs C, D; changes pin ADR-066 and ADR-082). Remaining: `Approved-by:`.
+  reply (PRs C, D; changes pin ADR-066 and ADR-082). Nothing remains but the archive.

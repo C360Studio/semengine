@@ -110,7 +110,16 @@ func (op failedOp) String() string {
 	return fmt.Sprintf("%s %s@%s %s", op.kind, op.key, rev, op.reason)
 }
 
-func (op failedOp) apply(m *failedMap, model failedModel) {
+// apply applies op to m and model. For a failure (the Worker's or hop 1's) it returns whether m
+// reported that op.key entered the failed set and whether the model says it did: it held no
+// failure before op and holds one after. graph-embedding counts an error on exactly that report.
+func (op failedOp) apply(m *failedMap, model failedModel) (entered, wantEntered, failure bool) {
+	wasFailed := model[op.key].failed
+	defer func() {
+		if failure {
+			wantEntered = !wasFailed && model[op.key].failed
+		}
+	}()
 	switch op.kind {
 	case "seed":
 		m.seed(op.seed)
@@ -118,7 +127,7 @@ func (op failedOp) apply(m *failedMap, model failedModel) {
 			model.worker(e.EntityID, modelEntry{revision: e.SourceRevision, failed: true, reason: e.Reason})
 		}
 	case "worker failed":
-		m.failed(op.key, op.revision, op.reason)
+		entered, failure = m.failed(op.key, op.revision, op.reason), true
 		model.worker(op.key, modelEntry{revision: op.revision, failed: true, reason: op.reason})
 	case "succeeded":
 		m.succeeded(op.key, op.revision)
@@ -128,7 +137,7 @@ func (op failedOp) apply(m *failedMap, model failedModel) {
 			model.worker(op.key, modelEntry{revision: op.revision})
 		}
 	case "hop 1 failed":
-		m.mark(op.key, op.revision, op.reason)
+		entered, failure = m.mark(op.key, op.revision, op.reason), true
 		model.hopOneFailed(op.key, op.revision, op.reason)
 	case "queued":
 		m.queued(op.key, op.revision)
@@ -140,10 +149,12 @@ func (op failedOp) apply(m *failedMap, model failedModel) {
 		m.absent(op.key)
 		model.absent(op.key)
 	}
+	return entered, wantEntered, failure
 }
 
 // checkHistory applies ops in order and, after each, compares what the failed map shows (the
-// follower's count and reasons, the repair lane's targets) with the model. It also edits the
+// follower's count and reasons, the repair lane's targets, and for a failure whether the entity
+// entered the failed set) with the model. It also edits the
 // reasons map counts returned, as the follower may, and requires the next read to be unchanged.
 func checkHistory(t interface {
 	Helper()
@@ -153,7 +164,11 @@ func checkHistory(t interface {
 	var m failedMap
 	model := failedModel{}
 	for i, op := range ops {
-		op.apply(&m, model)
+		entered, wantEntered, failure := op.apply(&m, model)
+		if failure && entered != wantEntered {
+			t.Fatalf("after step %d (%v) of %v: entered the failed set = %t; want %t",
+				i, op, ops, entered, wantEntered)
+		}
 		count, reasons := m.counts()
 		wantReasons := map[string]uint64{}
 		var wantTargets []string
@@ -289,6 +304,18 @@ var failedWitnesses = map[string][]failedOp{
 		{kind: "succeeded", key: "b", revision: 0},
 		{kind: "succeeded", key: "a", revision: 2},
 		{kind: "seed"},
+	},
+	// Review finding M1 at stop 3 (notes/2.5.md): an entity is counted once when it enters the
+	// failed set, not on each failure while it is failed, and not on a failure that is refused.
+	"an entity enters the failed set once": {
+		{kind: "hop 1 failed", key: "a", revision: strandedRevision, reason: embedding.ReasonEntityReadFailed},
+		{kind: "hop 1 failed", key: "a", revision: strandedRevision, reason: embedding.ReasonEntityReadFailed},
+		{kind: "hop 1 failed", key: "a", revision: 4, reason: embedding.ReasonPendingWriteFailed},
+		{kind: "worker failed", key: "a", revision: 5, reason: "timeout"},
+		{kind: "succeeded", key: "a", revision: 6},
+		{kind: "worker failed", key: "a", revision: 5, reason: "timeout"},
+		{kind: "hop 1 failed", key: "a", revision: 5, reason: embedding.ReasonDeleteFailed},
+		{kind: "worker failed", key: "a", revision: 6, reason: "timeout"},
 	},
 	"repair targets leave the Worker's failures out": {
 		{kind: "worker failed", key: "a", revision: 1, reason: "connection_refused"},

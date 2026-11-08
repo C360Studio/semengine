@@ -57,11 +57,12 @@ func (m *failedMap) seed(entries []embedding.FailedEntry) {
 	}
 }
 
-// failed records the Worker's failure of key at revision.
-func (m *failedMap) failed(key string, revision uint64, reason string) {
+// failed records the Worker's failure of key at revision and reports whether key entered the
+// failed set: it was not failed before, and the failure is not below its latest outcome.
+func (m *failedMap) failed(key string, revision uint64, reason string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.worker(key, outcome{revision: revision, reason: reason})
+	return m.worker(key, outcome{revision: revision, reason: reason})
 }
 
 // succeeded records the Worker's success of key at revision. A success at strandedRevision is
@@ -82,31 +83,32 @@ func (m *failedMap) succeeded(key string, revision uint64) {
 
 // worker records, with mu held, the Worker's outcome o when it is at or above the entity's
 // latest one: a failure below it is not counted, and a success clears a failure at or below it.
-// A stranded failure stays: no Worker outcome names the revision it lacks.
-func (m *failedMap) worker(key string, o outcome) {
+// A stranded failure stays: no Worker outcome names the revision it lacks. It reports whether
+// key entered the failed set.
+func (m *failedMap) worker(key string, o outcome) bool {
 	held, ok := m.entries[key]
 	if ok && (held.stranded || o.revision < held.revision) {
-		return
+		return false
 	}
-	m.store(key, o)
+	return m.store(key, o)
 }
 
 // mark records hop 1's own failure of key, under hop1Mu: at the revision hop 1 read or was
 // delivered, or stranded at strandedRevision when it has none. It replaces a stranded failure, so
 // a read that succeeds before a write that fails re-marks the entity at the revision read (pin
 // component.go:1864-1884, :1911-1941), and otherwise is not stored below the latest outcome.
-func (m *failedMap) mark(key string, revision uint64, reason string) {
+// It reports whether key entered the failed set.
+func (m *failedMap) mark(key string, revision uint64, reason string) bool {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	held, ok := m.entries[key]
 	if revision == strandedRevision {
-		m.store(key, outcome{revision: held.revision, reason: reason, stranded: true})
-		return
+		return m.store(key, outcome{revision: held.revision, reason: reason, stranded: true})
 	}
 	if ok && !held.stranded && revision < held.revision {
-		return
+		return false
 	}
-	m.store(key, outcome{revision: revision, reason: reason})
+	return m.store(key, outcome{revision: revision, reason: reason})
 }
 
 // queued records, under hop1Mu, that hop 1 wrote key's pending record for revision: hop 1 has
@@ -150,7 +152,9 @@ func (m *failedMap) absent(key string) {
 	m.store(key, outcome{revision: held.revision})
 }
 
-func (m *failedMap) store(key string, o outcome) {
+// store keeps o as key's latest outcome and reports whether key entered the failed set: o is a
+// failure and key held none.
+func (m *failedMap) store(key string, o outcome) bool {
 	if m.entries == nil {
 		m.entries = make(map[string]outcome)
 		m.failures = make(map[string]outcome)
@@ -158,9 +162,11 @@ func (m *failedMap) store(key string, o outcome) {
 	m.entries[key] = o
 	if o.reason == "" {
 		delete(m.failures, key)
-	} else {
-		m.failures[key] = o
+		return false
 	}
+	_, held := m.failures[key]
+	m.failures[key] = o
+	return !held
 }
 
 func (m *failedMap) forget(key string) {

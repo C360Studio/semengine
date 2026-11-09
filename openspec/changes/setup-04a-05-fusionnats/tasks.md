@@ -35,11 +35,12 @@ after 3.1, and before the archive.
 
 ## 3. Proof and close-out
 
-- [ ] 3.1 No-embedder proof (D5; the owner chose Q-B, so no other PR comes first):
+- [x] 3.1 No-embedder proof (D5; the owner chose Q-B, so no other PR comes first):
   `TestSmoke_NoEmbedderAnswers`
   in `internal/smoke`;
   `TestFusionNATSImportsNoEmbedding`
   and its sensitivity case in `internal/harness/contract`. **Review stop.**
+  Done: commit 2b19ff8a; second composition, waits and mutants in `notes/3.1.md`.
 - [ ] 3.2 Readiness leftovers (D4): `Reading.Raw` removed with its tests' assertions; `graph/readiness/watcher.go`
   package doc (the fusionnats sentence goes, graph-clustering stays); ledger `graph/readiness` known_risks.
 - [ ] 3.3 Records (D6): ledger row `pkg/fusion/fusionnats`; `scripts/cover-check.sh` gains `pkg/fusion/fusionnats`;

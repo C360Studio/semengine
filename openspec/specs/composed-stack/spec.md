@@ -3,8 +3,8 @@
 ## Purpose
 The tier-0 graph stack (graph-ingest, graph-index, graph-embedding and graph-query) boots from one JSON configuration
 through the real startup path, answers fixed questions through the paths a consumer uses, and keeps those answers
-across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and NATS restarted
-under the running stack. The tests live in `internal/smoke`.
+across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and a quick NATS restart
+(about 0.2 s down) under the running stack. A longer outage is not yet covered (#574). The tests live in `internal/smoke`.
 
 ## Requirements
 

@@ -124,7 +124,7 @@ connection from an earlier test is still open. Look for the first failure.
 `internal/smoke` is the one test that starts the graph components the way a product's own `main` would. One JSON
 configuration starts graph-ingest, graph-index, graph-embedding and graph-query together, in a child process, through
 the real startup path: `config.Manager`, then `ServiceManager`, then `ComponentManager`. The test then publishes a
-fixed set of entities and checks every answer a consumer can read: the `graph.query.*` verbs (search among them), the
+fixed set of entities and checks the answers a consumer reads: the `graph.query.*` verbs (search among them), the
 readiness keys in `GRAPH_STATUS`, component health over HTTP, and the embedding records.
 
 Four tests restart something, and after each the stack must give the same answers and apply new writes:

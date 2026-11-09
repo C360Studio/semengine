@@ -32,7 +32,7 @@ refused `invalid_request` naming what was refused.
 #### Scenario: An unknown key
 
 - **WHEN** a `search` request holds a key `SemanticRequest` does not define
-- **THEN** it is refused `invalid_request` naming the key (`TestRequestsDecodeStrictly`)
+- **THEN** it is refused `invalid_request` naming the key (`TestHandlersDecodeStrictly`)
 
 ### Requirement: The embedding verbs claim no revision
 
@@ -115,7 +115,7 @@ be refused transient `index_not_ready`.
 
 #### Scenario: A hop-1 failure
 
-- **WHEN** the failed map holds one `delete_failed` entry after the first build
+- **WHEN** the failed map holds one `entity_read_failed` entry after the first build
 - **THEN** both verbs are refused transient `index_not_ready` until that entity converges
   (`TestQueriesWithheldUntilReady`)
 

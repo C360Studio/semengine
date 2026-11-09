@@ -86,12 +86,15 @@ func TestHandlersDecodeStrictly(t *testing.T) {
 // TestSearchAnswersEnveloped's.
 func TestMinRevisionAboveZeroRefused(t *testing.T) {
 	handlers := unstartedHandlers(t)
-	for verb, body := range map[string]string{
-		"search":  `{"query":"widget","min_revision":7}`,
-		"similar": `{"entity_id":"acme.ops.test.system.doc.001","min_revision":7}`,
-	} {
-		reply, err := call(t, handlers[verb], body)
-		requireInvalidRequest(t, verb+" "+body, reply, err, "min_revision", "claim no")
+	// 1 is the realistic value: the first ENTITY_STATES write is revision 1.
+	for _, revision := range []string{"1", "7"} {
+		for verb, body := range map[string]string{
+			"search":  `{"query":"widget","min_revision":` + revision + `}`,
+			"similar": `{"entity_id":"acme.ops.test.system.doc.001","min_revision":` + revision + `}`,
+		} {
+			reply, err := call(t, handlers[verb], body)
+			requireInvalidRequest(t, verb+" "+body, reply, err, "min_revision", "claim no")
+		}
 	}
 }
 

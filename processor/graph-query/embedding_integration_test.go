@@ -62,12 +62,14 @@ func TestSemanticForwardsMinRevision(t *testing.T) {
 		t.Errorf("semantic reply = %s, want producer graph-embedding and indexed_revision 0", got.raw)
 	}
 
-	raw, err := client.RequestClassified(t.Context(), semantic, []byte(`{"query":"widget","min_revision":7}`), requestTimeout)
-	if err == nil {
-		t.Fatalf("semantic with min_revision 7 answered %s; want a refusal", raw)
-	}
-	if refusal := refusalOf(t, err); refusal.Class != errs.ErrorInvalid || refusal.Code != graph.ErrorCodeInvalidRequest {
-		t.Errorf("semantic with min_revision 7: class %v code %q (%v), want invalid %s", refusal.Class, refusal.Code,
-			err, graph.ErrorCodeInvalidRequest)
+	for _, revision := range []string{"1", "7"} {
+		raw, err := client.RequestClassified(t.Context(), semantic, []byte(`{"query":"widget","min_revision":`+revision+`}`), requestTimeout)
+		if err == nil {
+			t.Fatalf("semantic with min_revision %s answered %s; want a refusal", revision, raw)
+		}
+		if refusal := refusalOf(t, err); refusal.Class != errs.ErrorInvalid || refusal.Code != graph.ErrorCodeInvalidRequest {
+			t.Errorf("semantic with min_revision %s: class %v code %q (%v), want invalid %s", revision, refusal.Class,
+				refusal.Code, err, graph.ErrorCodeInvalidRequest)
+		}
 	}
 }

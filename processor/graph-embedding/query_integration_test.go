@@ -326,6 +326,10 @@ func TestSimilarEdges(t *testing.T) {
 	if got := ids(self.reply.Data.Results); !slices.Equal(got, []string{b}) {
 		t.Errorf("similar to %s = %v, want only %s", a, got, b)
 	}
+	// search counts the same poisoned record: the reply above orders this read after it.
+	if search := answerNow[graph.SemanticData](t, h, "search", `{"query":"widget"}`); search.reply.Data.UnreadableRecords != 1 {
+		t.Errorf("search with one undecodable record = %s, want unreadable_records 1", search.raw)
+	}
 
 	for _, tc := range []struct {
 		id    string

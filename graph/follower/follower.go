@@ -401,6 +401,11 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 		return nil
 	}
 	status := f.compute(ctx)
+	if f.bootstrapped.Load() {
+		// This envelope latched the build. It still reads degraded over a failure Withhold leaves
+		// out, which no longer refuses: ask again, as every later call does.
+		return f.QueryReady(ctx)
+	}
 	reason := readiness.EvaluateReadinessGate(readiness.Reading{Status: status, Fresh: true})
 	if reason == readiness.DeferNone {
 		return nil

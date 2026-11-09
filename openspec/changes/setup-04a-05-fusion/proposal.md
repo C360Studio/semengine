@@ -1,6 +1,6 @@
 # Proposal: setup-04a-05-fusion
 
-Approved-by:
+Approved-by: Coby Leuschke (owner), 2026-11-09, in the Enjoy session; answers on PR #565 comment 6741563345
 
 Track: `design` (adds a new capability, `fusion`; adds spec requirements).
 
@@ -46,7 +46,7 @@ New `fusion`.
 - Merge order: no open PR shares a file (#560 touches `internal/smoke` only). PR D follows this one.
 - Retires none. Advances #110 (item 2 done; stays for item 3, temporal's port).
 
-## Owner questions (plain words, answer first)
+## Owner questions (answered 2026-11-09: 1 yes, 2 as recommended, 3 these names)
 
 1. **Should a word-search answer say how many records it could not search?** Recommended: yes, two counts copied
    from the search reply (unreadable, failed), on every answer after a word search, a "found nothing" answer most of

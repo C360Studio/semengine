@@ -196,6 +196,84 @@ func TestSkippedReadLoggedAndCounted(t *testing.T) {
 	}
 }
 
+// TestBodyFailureLogged: each body-failure path writes exactly one Warn line
+// naming the node's handle, the bounded reason and the error (design D5: "A body
+// failure also logs"); a hydrated body and a body-less entity write none.
+func TestBodyFailureLogged(t *testing.T) {
+	const id = "acme.ops.code.repo.symbol.Doc"
+	req := fusion.Request{Query: "q", Want: []fusion.Want{fusion.WantBody}}
+	resolver := func(s *fakeStore) *fusion.BodyResolver {
+		return fusion.NewBodyResolver(fusion.MapStoreResolver{"objectstore": s})
+	}
+	cases := []struct {
+		name    string
+		ent     *fusion.Entity
+		body    *fusion.BodyResolver
+		lens    fusion.Lens
+		reason  string // "" means no Warn line at all
+		errText string // text the logged error must contain
+	}{
+		{"absent object", withBodyEntity(id, "Doc"), resolver(&fakeStore{getErr: storage.ErrObjectNotFound}),
+			refLens{}, "not_found", storage.ErrObjectNotFound.Error()},
+		{"store read fault", withBodyEntity(id, "Doc"), resolver(&fakeStore{getErr: errors.New("backend down")}),
+			refLens{}, "error", "backend down"},
+		{"hydrate fault", withBodyEntity(id, "Doc"), resolver(&fakeStore{}),
+			errHydrateLens{}, "error", "hydrate backend fault"},
+		{"no body resolver", withBodyEntity(id, "Doc"), nil,
+			refLens{}, "error", "no body resolver configured"},
+		{"hydrated body", withBodyEntity(id, "Doc"), resolver(&fakeStore{data: map[string][]byte{"k/Doc": []byte("x")}}),
+			refLens{}, "", ""},
+		{"body-less entity", entity(id, "Doc", "h/Doc.go"), resolver(&fakeStore{}),
+			refLens{}, "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			g := &fakeGraph{seeds: map[string][]string{"q": {id}}, entities: map[string]*fusion.Entity{id: tc.ent}}
+			var logs bytes.Buffer
+			eng, err := fusion.NewEngine(g, tc.body, slog.New(slog.NewJSONHandler(&logs, nil)))
+			if err != nil {
+				t.Fatalf("NewEngine: %v", err)
+			}
+			if _, err := eng.Fuse(t.Context(), req, tc.lens); err != nil {
+				t.Fatalf("Fuse: %v", err)
+			}
+
+			type record struct {
+				Level  string `json:"level"`
+				Msg    string `json:"msg"`
+				Handle string `json:"handle"`
+				Reason string `json:"reason"`
+				Error  string `json:"error"`
+			}
+			var warns []record
+			for line := range strings.SplitSeq(strings.TrimSpace(logs.String()), "\n") {
+				if line == "" {
+					continue // no log output at all
+				}
+				var r record
+				if err := json.Unmarshal([]byte(line), &r); err != nil {
+					t.Fatalf("log line %q: %v", line, err)
+				}
+				if r.Level == "WARN" {
+					warns = append(warns, r)
+				}
+			}
+			if tc.reason == "" {
+				if len(warns) != 0 {
+					t.Errorf("warn lines = %+v, want none", warns)
+				}
+				return
+			}
+			const msg = "fusion could not load a node body; the node ships without it"
+			if len(warns) != 1 || warns[0].Msg != msg || warns[0].Handle != id || warns[0].Reason != tc.reason ||
+				!strings.Contains(warns[0].Error, tc.errText) {
+				t.Errorf("warn lines = %+v, want one {msg %q handle %q reason %q error containing %q}",
+					warns, msg, id, tc.reason, tc.errText)
+			}
+		})
+	}
+}
+
 // TestFuseRefusesNilContext: a nil context is refused before any read.
 func TestFuseRefusesNilContext(t *testing.T) {
 	g := &fakeGraph{}

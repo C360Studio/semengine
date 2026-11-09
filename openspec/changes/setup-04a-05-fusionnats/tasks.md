@@ -12,7 +12,7 @@ after 3.1, and before the archive.
 
 ## 2. Package
 
-- [ ] 2.1 Client and wire (D1, D2): port `client.go` and `doc.go` without the readiness watch, `Status` and `Close`;
+- [x] 2.1 Client and wire (D1, D2): port `client.go` and `doc.go` without the readiness watch, `Status` and `Close`;
   `New` with its refusals and the verb-table lookup; replies decoded by row; `graph` request types; `predicate`;
   the search counts; `UnmarshalEntityState`; the pin's unit tests on the tree's wire, its exact-entity tests
   (`slice_e_contract_test.go:16-53`) carried, `TestStatus_*` and `slice_e_contract_test.go:55-105` not. Check:
@@ -21,6 +21,7 @@ after 3.1, and before the archive.
   `TestNeighborsReadsPredicate`,
   `TestSemanticCountsReachResolution`, `TestReconcileTotal` (generated, seed recorded, reference model), the pin's
   `TestReconcileHydration` and `TestEntities_EmptyShortCircuits`; the transport-boundary contract test passes.
+  Done: commit 5bc7fe9e; run, seed and mutation checks in `notes/2.1.md`.
 - [ ] 2.2 Poisoned seeds (D3, as the owner answers question 1): the per-seed read after a batch refusal coded
   `graph_state_reset_required`; `UnhydratedError`'s doc. Check: `TestPoisonedSeedUnhydrated`,
   `TestAllSeedsPoisonedDefer`, `TestPoisonedDuplicateReadOnce`, `TestPoisonFallbackReturnsOtherError`,

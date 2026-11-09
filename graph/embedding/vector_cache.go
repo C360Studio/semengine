@@ -97,8 +97,8 @@ func decodeVector(_ string, value []byte, _ graphview.EntryMeta) ([]float32, boo
 // count are read at one moment (graphview.View.ListCounted); scoring runs after the read, so a
 // write applied meanwhile shows in the next call. The count is every unreadable record, whether
 // or not keep accepts its key. excludeID is never scored ("" excludes nothing). keep, when
-// non-nil, is applied before scoring: only the entity IDs it accepts are scored, so a scoped
-// search (ADR-071) filters as the bucket scan does. A limit of 0 or less returns no entities.
+// non-nil, is applied before scoring and before the limit: only the entity IDs it accepts are
+// scored, so a scoped search (ADR-071) returns the best in-scope entities. A limit of 0 or less returns no entities.
 //
 // It returns an error matching graphview.ErrNotReady, and no entities, before Run has applied
 // the watch's initial snapshot, after the watch was lost, and after Run returned.

@@ -263,8 +263,8 @@ func TestVectorCachePoisonCountedAndHeals(t *testing.T) {
 }
 
 // TestVectorCacheFollowsRecordStatus: a record that stops being generated (pending, failed,
-// deleted or purged) leaves the cache, and one without a vector never enters it; none of them
-// is counted unreadable.
+// deleted or purged) leaves the cache even when it still carries a vector, and one without a
+// vector never enters it; none of them is counted unreadable.
 func TestVectorCacheFollowsRecordStatus(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		kv := newFeedKV()
@@ -274,11 +274,11 @@ func TestVectorCacheFollowsRecordStatus(t *testing.T) {
 		}
 		kv.send(generatedEntry(t, "o.p.s.d.t.f")) // generated, but no vector
 		kv.send(nil)
-		pending, err := json.Marshal(&Record{EntityID: "o.p.s.d.t.a", Status: StatusPending})
+		pending, err := json.Marshal(&Record{EntityID: "o.p.s.d.t.a", Vector: []float32{1, 0}, Status: StatusPending})
 		if err != nil {
 			t.Fatal(err)
 		}
-		failedRec, err := json.Marshal(&Record{EntityID: "o.p.s.d.t.b", Status: StatusFailed})
+		failedRec, err := json.Marshal(&Record{EntityID: "o.p.s.d.t.b", Vector: []float32{1, 0}, Status: StatusFailed})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -426,6 +426,13 @@ func TestFindSimilarFromCache_ScopeFilter(t *testing.T) {
 		}
 		if got, _, err := cache.FindSimilar("", query, nil, 10); err != nil || len(got) != 4 {
 			t.Fatalf("unscoped FindSimilar = %v, %v; want 4 entities", ids(got), err)
+		}
+		// Scope before the limit: against (1,0,0) the out-of-scope parse scores 1, above every
+		// in-scope vector (guide 1/sqrt(2), readme 0), so a limit of 1 must still answer guide.
+		inDocs := func(id string) bool { return strings.HasPrefix(id, "acme.web.docs.") }
+		if got, _, err := cache.FindSimilar("", []float32{1, 0, 0}, inDocs, 1); err != nil ||
+			!slices.Equal(ids(got), []string{"acme.web.docs.site.doc.guide"}) {
+			t.Fatalf("scoped FindSimilar, limit 1 = %v, %v; want [acme.web.docs.site.doc.guide]", ids(got), err)
 		}
 		if err := stop(); !errors.Is(err, context.Canceled) {
 			t.Fatalf("Run returned %v; want context.Canceled", err)

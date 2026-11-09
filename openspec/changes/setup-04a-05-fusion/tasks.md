@@ -15,7 +15,8 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
 - [ ] 2.1 Contract and readiness (D1, D2, D8): port `contract.go`, `lens.go`, `retrieval.go`, `rank_signals.go`,
   `engine_lens.go`, `engine_facets.go`, `engine_graph.go`, `doc.go` without the status read, `IndexStatus`,
   `IndexState`, `ErrReadinessUnknown`, `Response.Index`, `ViewRevision` and the `Fuse` path; D1's error table;
-  `ContractVersion` "2"; the pin's lens, facet, graph, rank, score and unhydrated tests ported. Check:
+  `ContractVersion` "2"; `UnhydratedReason`'s doc stops claiming it mirrors `graph.MissingReason` (F19); the pin's lens,
+  facet, graph, rank, score and unhydrated tests ported. Check:
   `TestDeferredOnIndexNotReady`, `TestFatalReplyReturnsError`, `TestFatalWalkReadSkipped`,
   `TestEndedContextReturnsError`, `TestAllSeedsUnhydratedDefersWithoutMiss`, `TestContractVersionIsTwo`,
   `TestGraphProjectionRoundTrip`, `TestRankIsStablePermutation` (generated, seed recorded: the output is the input's
@@ -43,7 +44,8 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
 - [ ] 3.1 `pkg/fusion/README.md` and `pkg/fusion/MIGRATION.md` (`NewEngine` logger, options and error; `RetrievalClient`
   without `Status` and with `Resolution`; `index` and `view_revision` gone; `contract_version` "2"; `defer_reason`
   `hard_stop`, `status_unknown`, `bootstrap_incomplete`, `unrecognized_state` gone; a reset that the pin deferred is now
-  an error; a node's refs list by predicate, then target; the new labels, counts and skipped-read counter;
+  an error on a seed read and a truncated facet on a walk read; a node's refs list by predicate, then target; the new
+  labels, counts and skipped-read counter;
   `fusionvocab.New(cco.Parents)` from semvocab); `Response.DeferReason`'s doc rewritten (pin `contract.go:288-289`);
   `scripts/cover-check.sh` gains `pkg/fusion unit`; ADR-062 ported with its port note and ledger row; ledger rows
   `pkg/fusion`, `pkg/fusion/fusionvocab`; ledger edits: `vocabulary/cco` known_risks

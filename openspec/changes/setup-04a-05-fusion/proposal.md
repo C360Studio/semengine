@@ -41,7 +41,7 @@ New `fusion`.
   this PR about 2,000 + 2,800 (hand estimate). No subject, bucket, goroutine or NATS import.
 - Consumers migrate (`pkg/fusion/MIGRATION.md`, owner ruling of 2026-11-02 on PR #504): SemSource's `NewEngine`,
   `fusionvocab.New` and its `RetrievalClient` fake fail to compile until changed. On the wire, `index` and
-  `view_revision` leave, the gate's four `defer_reason` values go, and a reset that deferred becomes an error.
+  `view_revision` leave, the gate's four `defer_reason` values go; a reset errors a seed read, truncates a walk.
 - ADR-062 ported; ADR-066 (tree :343-344, :394), pin ADR-082 :65, ADR-085 D1 change under the owner's ruling.
 - Merge order: no open PR shares a file (#560 touches `internal/smoke` only). PR D follows this one.
 - Retires none. Advances #110 (item 2 done; stays for item 3, temporal's port).

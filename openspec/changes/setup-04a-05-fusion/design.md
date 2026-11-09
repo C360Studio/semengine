@@ -26,8 +26,8 @@ A fatal error from a walk read is skipped, not returned: graph-ingest refuses a 
 poisoned entities" (`docs/adr/109-ready-after-boot.md:77`); fusion cannot tell that refusal from a graph-index reset
 over the reply, and the pin skipped these reads too (`engine_lens.go:491`, `:508`; `engine_facets.go:188-211`). A
 fatal `Resolve` or `Entities` fails the call: graph-ingest's batch refuses the whole batch when any entity in it is
-poisoned (`:617-619`), so one poisoned seed fails the answer; mapping its named IDs to `unhydrated` is PR D's
-question (fusionnats owns the batch call). At the pin a reset deferred `hard_stop` through the gate (pin
+poisoned (`:617-619`), so one poisoned seed fails the answer; PR D decides how fusionnats, which owns the batch
+call, handles it (never by parsing error text, #146). At the pin a reset deferred `hard_stop` through the gate (pin
 `engine_lens.go:147-150`), now gone. `defer_reason` keeps only `index_not_ready` and `all_seeds_unhydrated`; the gate's
 `hard_stop`, `status_unknown`, `bootstrap_incomplete` and `unrecognized_state` leave the wire, and
 `Response.DeferReason`'s doc (pin `contract.go:288-289`) is rewritten. All seeds unhydrated stays deferred with no

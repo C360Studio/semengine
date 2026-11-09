@@ -13,7 +13,7 @@ port, no `t.Parallel`, no `context.WithValue`.
 
 ## 2. Tests
 
-- [ ] 2.1 `internal/smoke` package, composition root, child helper, fixed inputs, `checkAnswers` and
+- [x] 2.1 `internal/smoke` package, composition root, child helper, fixed inputs, `checkAnswers` and
   `TestSmoke_OneConfigAnswers` (D1 to D5), with every wait ordered after its write and `localSearch` checked as its
   refusal. Shown to fail: graph-embedding disabled in the configuration, and the graph-index edge mutant (D7).
 - [ ] 2.2 `TestSmoke_StackRestartKeepsAnswers` (case 1), with a new entity and an edit after the restart;

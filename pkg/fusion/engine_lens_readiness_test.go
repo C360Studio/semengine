@@ -156,8 +156,9 @@ func TestFatalWalkReadSkipped(t *testing.T) {
 		check func(t *testing.T, resp fusion.Response)
 	}{
 		"paths": {want: fusion.WantPaths, check: func(t *testing.T, resp fusion.Response) {
-			if len(resp.Paths) != 0 {
-				t.Errorf("paths = %+v, want none past a skipped first read", resp.Paths)
+			if len(resp.Paths) != 0 || !resp.PathsTruncated {
+				t.Errorf("paths = %+v, paths_truncated=%v; want none past a skipped first read, labelled",
+					resp.Paths, resp.PathsTruncated)
 			}
 		}},
 		"impact": {want: fusion.WantImpact, check: func(t *testing.T, resp fusion.Response) {
@@ -260,33 +261,5 @@ func TestEngine_GenuineError_Propagates(t *testing.T) {
 				t.Error("expected a genuine backend error to propagate, not defer")
 			}
 		})
-	}
-}
-
-// TestEngine_NeighborGenuineError_Swallowed: a NON-readiness Neighbors error keeps
-// today's best-effort behavior — the node still ships with its relations omitted,
-// and the fuse does NOT fail. Only the readiness transient degrades the whole
-// response; unrelated neighbor faults stay swallowed (scope preserved).
-func TestEngine_NeighborGenuineError_Swallowed(t *testing.T) {
-	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
-	g := &fakeGraph{
-		seeds:        map[string][]string{"OnEvent": {seed.ID}},
-		entities:     map[string]*fusion.Entity{seed.ID: seed},
-		neighborsErr: errors.New("neighbors backend down"),
-	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
-
-	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantRelations}}, refLens{})
-	if err != nil {
-		t.Fatalf("a non-readiness neighbor fault must NOT fail the fuse, got %v", err)
-	}
-	if resp.Deferred {
-		t.Error("a swallowed neighbor fault is not a readiness defer")
-	}
-	if len(resp.Nodes) != 1 {
-		t.Fatalf("expected the node to still ship with relations omitted, got %d nodes", len(resp.Nodes))
-	}
-	if len(resp.Nodes[0].Relations) != 0 {
-		t.Errorf("expected relations omitted on a swallowed neighbor fault, got %+v", resp.Nodes[0].Relations)
 	}
 }

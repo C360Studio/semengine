@@ -1,8 +1,10 @@
 package fusion
 
 import (
+	"cmp"
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 
@@ -91,10 +93,25 @@ func (e *Engine) WithSignals(s RankSignals) *Engine {
 // resolved but could not be read yield Unhydrated, deferred, and NO miss.
 func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, error) {
 	mode := lens.ResolveMode(req.Query)
-	seeds, err := e.graph.Resolve(ctx, ResolveQuery{Query: req.Query, Mode: mode, Scope: req.Scope, Limit: resolveLimit})
+	resolution, err := e.graph.Resolve(ctx, ResolveQuery{Query: req.Query, Mode: mode, Scope: req.Scope, Limit: resolveLimit})
 	if err != nil {
 		return seedReadFailure(ctx, err)
 	}
+	resp, err := e.fuseSeeds(ctx, req, lens, mode, resolution.Seeds)
+	if err != nil {
+		return Response{}, err
+	}
+	// Every response built after a natural-language search answered carries what
+	// the search could not read (design D3); symbol and prefix resolves count
+	// nothing, so their responses carry neither count.
+	if mode == ResolveModeNL {
+		resp.UnreadableRecords, resp.FailedRecords = resolution.UnreadableRecords, resolution.FailedRecords
+	}
+	return resp, nil
+}
+
+// fuseSeeds hydrates, ranks and expands the resolved seeds into the response.
+func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode ResolveMode, seeds []Seed) (Response, error) {
 	hydration, err := e.graph.Entities(ctx, SeedIDs(seeds))
 	if err != nil {
 		return seedReadFailure(ctx, err)
@@ -149,7 +166,7 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 		}
 	}
 	if wants[WantPaths] {
-		if resp.Paths, err = e.computePaths(ctx, ranked, lens); err != nil {
+		if resp.Paths, resp.PathsTruncated, err = e.computePaths(ctx, ranked, lens); err != nil {
 			return Response{}, err
 		}
 	}
@@ -361,9 +378,10 @@ func (e *Engine) reportBodyFailure(node *Node, reason BodyReason) {
 }
 
 // relations expands a node's forward and reverse edges into role → refs, and
-// reports whether a ref was left out because its target's read was skipped. It
-// returns the context's error or the readiness transient a Neighbors read hit, so
-// Fuse fails or defers; any other Neighbors fault skips that direction.
+// reports whether a ref was left out: a role passed its cap, a Neighbors read was
+// skipped, or a target's read was skipped or found nothing. It returns the
+// context's error or the readiness transient a Neighbors read hit, so Fuse fails
+// or defers.
 func (e *Engine) relations(ctx context.Context, ent *Entity, lens Lens) (map[string][]Ref, bool, error) {
 	preds, fwd, rev := edgePredicates(lens.Edges(), FacetRelations)
 	if len(preds) == 0 {
@@ -385,11 +403,12 @@ func (e *Engine) relations(ctx context.Context, ent *Entity, lens Lens) (map[str
 	return rels, truncated, nil
 }
 
-// collectEdges appends refs for one direction's edges, capped per role, and
-// reports whether a target read was skipped. It returns the context's error, or
-// the readiness transient (graph.ErrorCodeIndexNotReady) so Fuse defers the whole
-// response instead of serving partial-as-ready; any OTHER Neighbors fault, fatal
-// included, skips this direction.
+// collectEdges appends refs for one direction's edges, in (predicate, target)
+// order and capped per role, and reports whether a ref was left out. It returns
+// the context's error, or the readiness transient (graph.ErrorCodeIndexNotReady)
+// so Fuse defers the whole response instead of serving partial-as-ready; any
+// OTHER Neighbors fault, fatal included, skips this direction and is reported as
+// a left-out ref.
 func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, dir Direction, roleByPred map[string]string, lens Lens, rels map[string][]Ref) (bool, error) {
 	edges, err := e.graph.Neighbors(ctx, id, preds, dir)
 	if err != nil {
@@ -399,26 +418,46 @@ func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, di
 		if isIndexNotReady(err) {
 			return false, err
 		}
-		return false, nil
+		return true, nil
 	}
-	skipped := false
-	for _, ed := range edges {
+	truncated := false
+	for _, ed := range orderedEdges(edges) {
 		role := roleByPred[ed.Predicate]
-		if role == "" || len(rels[role]) >= maxRelationsPerNode {
+		if role == "" {
+			continue
+		}
+		if len(rels[role]) >= maxRelationsPerNode {
+			truncated = true
 			continue
 		}
 		ref, ok, err := e.refFor(ctx, ed.Target, lens)
-		switch {
-		case err != nil:
+		if err != nil {
 			if cerr := ctx.Err(); cerr != nil {
 				return false, cerr
 			}
-			skipped = true
-		case ok:
-			rels[role] = append(rels[role], ref)
 		}
+		if !ok {
+			// Skipped or found nothing: either way the ref is left out.
+			truncated = true
+			continue
+		}
+		rels[role] = append(rels[role], ref)
 	}
-	return skipped, nil
+	return truncated, nil
+}
+
+// orderedEdges returns a copy of edges sorted by predicate, then target, with
+// duplicates removed, so a cap keeps the same edges whatever order the reply
+// listed them in (sort before limit).
+func orderedEdges(edges []Edge) []Edge {
+	out := slices.Clone(edges)
+	slices.SortFunc(out, func(a, b Edge) int {
+		if c := cmp.Compare(a.Predicate, b.Predicate); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Target, b.Target)
+	})
+	return slices.Compact(out)
 }
 
 // refFor resolves a target entity ID to a human Ref. ok is false when the read

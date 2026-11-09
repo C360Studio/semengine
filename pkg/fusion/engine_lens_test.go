@@ -38,6 +38,8 @@ type fakeGraph struct {
 	// cannot exercise what happens when a transport breaks the promise, and the
 	// engine's ranking is position-based (see the resolve-order pin).
 	entitiesFn func(ids []string) ([]*fusion.Entity, error)
+	// unreadable and failed are the search counts Resolve reports.
+	unreadable, failed int
 	// unhydrated, when set, is reported alongside whatever entitiesFn returns.
 	unhydrated []fusion.Unhydrated
 	// seedsFn, when set, overrides seed resolution so a test can attach similarity
@@ -45,10 +47,13 @@ type fakeGraph struct {
 	seedsFn func(q fusion.ResolveQuery) []fusion.Seed
 }
 
-func (g *fakeGraph) Resolve(_ context.Context, q fusion.ResolveQuery) ([]fusion.Seed, error) {
+func (g *fakeGraph) Resolve(_ context.Context, q fusion.ResolveQuery) (fusion.Resolution, error) {
 	g.lastResolve = q
+	counted := func(seeds []fusion.Seed) fusion.Resolution {
+		return fusion.Resolution{Seeds: seeds, UnreadableRecords: g.unreadable, FailedRecords: g.failed}
+	}
 	if g.seedsFn != nil {
-		return g.seedsFn(q), g.resolveErr
+		return counted(g.seedsFn(q)), g.resolveErr
 	}
 	// Seeds default to unscored, matching the symbol/prefix wires. A test that needs
 	// similarity sets seedsFn — modelling every mode as scored would let a positional
@@ -57,7 +62,7 @@ func (g *fakeGraph) Resolve(_ context.Context, q fusion.ResolveQuery) ([]fusion.
 	for _, id := range g.seeds[q.Query] {
 		out = append(out, fusion.Seed{ID: id})
 	}
-	return out, g.resolveErr
+	return counted(out), g.resolveErr
 }
 func (g *fakeGraph) Entity(_ context.Context, id string) (*fusion.Entity, error) {
 	if g.entityHook != nil {

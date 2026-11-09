@@ -100,8 +100,9 @@ type Node struct {
 	// byte-unchanged for existing consumers.
 	BodyReason BodyReason       `json:"body_reason,omitempty"`
 	Relations  map[string][]Ref `json:"relations,omitempty"`
-	// RelationsTruncated reports that Relations is missing a ref because the read
-	// of that relation's target failed and was skipped. Omitted otherwise.
+	// RelationsTruncated reports that Relations is missing a ref: a role had more
+	// relations than its cap, a relations Neighbors read failed and was skipped,
+	// or a relation's target read failed or found nothing. Omitted otherwise.
 	RelationsTruncated bool `json:"relations_truncated,omitempty"`
 	// Class is the BFO/CCO class IRI (provenance/debug; the agent ignores it).
 	Class string `json:"class,omitempty"`
@@ -147,7 +148,11 @@ type Response struct {
 	Provenance Provenance `json:"provenance"`
 	Nodes      []Node     `json:"nodes,omitempty"`
 	Paths      []Path     `json:"paths,omitempty"`
-	Impact     *Impact    `json:"impact,omitempty"`
+	// PathsTruncated reports that Paths is missing a path: more paths existed than
+	// the cap, or a path was not emitted because a node on it could not be read.
+	// Omitted otherwise.
+	PathsTruncated bool    `json:"paths_truncated,omitempty"`
+	Impact         *Impact `json:"impact,omitempty"`
 	// Graph is the structured graph projection (WantGraph): typed property
 	// facts, explicit directed edges, and verbatim evidence, with its own caps
 	// (its reads are independent, not one snapshot). Its truncation metadata is self-contained —
@@ -172,9 +177,16 @@ type Response struct {
 	// DeferReason is why: graph.ErrorCodeIndexNotReady when a read's reply said the
 	// index was not ready, or DeferReasonAllSeedsUnhydrated when seeds resolved and
 	// none could be read. Empty when not deferred.
-	DeferReason     string `json:"defer_reason,omitempty"`
-	Truncated       bool   `json:"truncated"`
-	ContractVersion string `json:"contract_version"`
+	DeferReason string `json:"defer_reason,omitempty"`
+	// UnreadableRecords and FailedRecords are the natural-language search's counts
+	// of records it could not read and records whose embedding failed, copied from
+	// its reply onto every response built after it answered: nodes, a miss, or a
+	// later deferral. A miss beside a non-zero count is not "nothing there". Each is
+	// omitted when 0, and both always are after a symbol or prefix resolve.
+	UnreadableRecords int    `json:"unreadable_records,omitempty"`
+	FailedRecords     int    `json:"failed_records,omitempty"`
+	Truncated         bool   `json:"truncated"`
+	ContractVersion   string `json:"contract_version"`
 }
 
 const (

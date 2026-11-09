@@ -64,8 +64,9 @@ type GraphProjection struct {
 	Nodes []GraphNode `json:"nodes"`
 	Edges []GraphEdge `json:"edges,omitempty"`
 	// Truncated reports that ANY node- or edge-level cap below cut content
-	// (facts, edges, or evidence), or that an edge walk faulted and left the
-	// edge set incomplete — a partial projection never reads as exact.
+	// (facts, edges, or evidence), that an edge walk faulted and left the edge
+	// set incomplete, or that an incoming counterpart's read failed and its
+	// edge carries no evidence — a partial projection never reads as exact.
 	Truncated bool `json:"truncated"`
 }
 
@@ -184,8 +185,10 @@ func (e *Engine) computeGraph(ctx context.Context, seeds []*Entity, lens Lens) (
 // restricted to the lens-declared predicates. Each edge's evidence comes from
 // the counterpart entity the walk fetches anyway — the counterpart's own
 // matching triple(s). Degrade-don't-fail: a Neighbors fault marks the
-// projection truncated (its edge set is incomplete); a missing counterpart
-// still projects the edge with no evidence (absent, never fabricated). It
+// projection truncated (its edge set is incomplete), and so does a counterpart
+// read that failed, whose edge is kept with no evidence; a counterpart that reads
+// as absent still projects the edge with no evidence (absent, never fabricated)
+// and is not truncation. It
 // returns an error only when the context ended.
 func (e *Engine) collectIncomingGraphEdges(ctx context.Context, seed *Entity, preds []string, declared map[string]bool, acc *graphEdgeAcc, proj *GraphProjection) error {
 	edges, ok, err := e.neighbors(ctx, seed.ID, preds, Incoming)
@@ -204,8 +207,13 @@ func (e *Engine) collectIncomingGraphEdges(ctx context.Context, seed *Entity, pr
 			continue
 		}
 		counterpart, err := e.graph.Entity(ctx, ed.Target)
-		if err != nil && ctx.Err() != nil {
-			return ctx.Err()
+		if err != nil {
+			if cerr := ctx.Err(); cerr != nil {
+				return cerr
+			}
+			// The read was skipped: keep the edge the index reported, without
+			// evidence, and say the projection is incomplete.
+			proj.Truncated = true
 		}
 		if err != nil || counterpart == nil {
 			acc.add(ed.Target, ed.Predicate, seed.ID, GraphDirectionIncoming, nil)

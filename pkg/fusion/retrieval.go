@@ -13,12 +13,12 @@ import "context"
 // error with code graph.ErrorCodeIndexNotReady, and the engine reads readiness from
 // that reply (ADR-109 D1).
 type RetrievalClient interface {
-	// Resolve maps a query to seeds, most relevant first. Both its argument and its
-	// result are structs rather than bare values, for the same reason: the NL-only
-	// Scope must not force symbol/prefix callers to pass an ignored value, and a
-	// future resolve dimension should add a field instead of re-breaking every impl
-	// and fake (ADR-071).
-	Resolve(ctx context.Context, q ResolveQuery) ([]Seed, error)
+	// Resolve maps a query to seeds, most relevant first, and reports what the
+	// search could not read. Both its argument and its result are structs rather
+	// than bare values, for the same reason: the NL-only Scope must not force
+	// symbol/prefix callers to pass an ignored value, and a resolve dimension adds
+	// a field instead of re-breaking every impl and fake (ADR-071).
+	Resolve(ctx context.Context, q ResolveQuery) (Resolution, error)
 	// Entity returns an entity by ID, or (nil, nil) if the read found nothing.
 	// "Found nothing" is not proof of absence — see Hydration.
 	Entity(ctx context.Context, id string) (*Entity, error)
@@ -59,6 +59,17 @@ type Seed struct {
 	// score". Without it a prefix seed would surface as a perfect zero-relevance
 	// match, which is a claim the prefix wire never made.
 	HasSimilarity bool
+}
+
+// Resolution is what Resolve found: the seeds, most relevant first, and, for a
+// natural-language (semantic) search, the counts its reply reports of records it
+// could not search: UnreadableRecords (a record it could not read) and
+// FailedRecords (a record whose embedding failed). Symbol and prefix resolves
+// leave both 0.
+type Resolution struct {
+	Seeds             []Seed
+	UnreadableRecords int
+	FailedRecords     int
 }
 
 // SeedIDs projects seeds to their IDs, for the batch-hydration call and anywhere else

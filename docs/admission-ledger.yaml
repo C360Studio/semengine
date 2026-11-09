@@ -576,7 +576,8 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     markdownlint fixes and a port note under the title recording that the ADR is carried without
-    code for #157
+    code for #157; the note also records that fusion's mirror (decision 5) and its per-request Ready gate are not
+    carried (pkg/fusion reads no status: owner ruling on PR #550 comment 6716972354; ADR-109 D1)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -607,7 +608,9 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    no edits to the pin's decision text; port note added under the title for #157
+    no edits to the pin's decision text; port note added under the title for #157, and a bullet that fusion's
+    top gate on !Ready is not carried (pkg/fusion defers only on an index_not_ready reply: owner ruling on PR #550
+    comment 6716972354; ADR-109 D1)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -621,7 +624,9 @@
   contract: the decision text as at the pin
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    markdownlint disable comment on numbered list item 7 and a port note under the title for #157
+    markdownlint disable comment on numbered list item 7 and a port note under the title for #157, with a bullet
+    that fusion as a gate reader is not carried (pkg/fusion has no gate: owner ruling on PR #550 comment
+    6716972354; ADR-109 D1)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -4671,4 +4676,22 @@
     TestPredicateSalience); pkg/fusion engine_lens_test.go TestEngine_Signals_* drive it through the engine;
     notes/2.4.md of the change records the mutation checks
   owner: setup-04a-05-fusion developer
+  disposition: adapt
+
+- source_path: docs/adr/062-deterministic-graph-fusion.md
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the pin's decision record for the deterministic fusion engine (the Lens SPI, hydration by handle through a
+    storage.Store, ontology ranking inputs), which pkg/fusion and pkg/fusion/fusionvocab implement; carried with them
+  destination: docs/adr/062-deterministic-graph-fusion.md
+  contract: the decision text as at the pin
+  dependencies_and_side_effects: none; a document
+  known_risks: >-
+    no edits to the pin's decision text; a port note under the title names the pin path and SHA, what is in the tree
+    (the engine, Lens SPI, hydration and ranking inputs), what is not carried (the research-graph-execute extraction,
+    lensregistry, fusionnats) and what SemEngine changed (fusion reads no readiness status: ADR-109 D1, owner ruling
+    on PR #550 comment 6716972354; a Resolution carrying search counts; declared truncation; NewEngine with a logger
+    and an error; fusionvocab.New takes the ancestor function)
+  proving_tests: n/a (task docs:check lints it)
+  owner: setup-04a-05-fusion technical writer
   disposition: adapt

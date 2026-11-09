@@ -24,9 +24,14 @@
 >   level.
 > - Of the rest of the code named here, `IndexStatusResponse` (`graph`) and `EvaluateReadinessGate` (now
 >   `graph/readiness`) were ported in change 2 (PR #93), `processor/graph-index` in change 4 (PR #414) and
->   `processor/graph-query` in change 4 (PR #504). `pkg/fusion` is change 5's (PR #550) and `processor/graph-clustering`
->   change 7's. Not carried: `graph/query`'s client (retired before the pin), `readiness.MinBoundedStaleness`,
->   `LPADetector` (no label propagation, owner ruling on PR #483) and `CommunityCache`.
+>   `processor/graph-query` in change 4 (PR #504). `pkg/fusion` is ported (change 5, PR C) and
+>   `processor/graph-clustering` is change 7's. Not carried: `graph/query`'s client (retired before the pin),
+>   `readiness.MinBoundedStaleness`, `LPADetector` (no label propagation, owner ruling on PR #483) and
+>   `CommunityCache`.
+> - Fusion as a gate reader is not carried (owner ruling 4, PR #550 comment 6716972354; ADR-109 D1). The Context's
+>   list of consumers that ask `FreshnessNone` includes `pkg/fusion/engine_lens.go`, which called the readiness gate
+>   once per request. `pkg/fusion` in this tree has no gate and no freshness parameter: `Engine.Fuse` reads no status
+>   and defers only on an `index_not_ready` reply.
 
 ## Status
 

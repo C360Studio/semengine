@@ -16,7 +16,7 @@ deadline of its own, no `context.WithValue`. Review stops: after 2.2, after 2.4,
   `DefaultSimilarityLimit`, `MaxSimilarityLimit`, `UnreadableRecords` and `FailedRecords` on `SemanticData` and
   `SimilarData`; the `QueryResponse` doc names the embedding verbs among replies reporting 0. Check:
   `TestRequestsDecodeStrictly`.
-- [ ] 2.2 The vector cache on `graphview.View` (D2); remove `Storage.ListGeneratedEntityIDs` and its tests' uses.
+- [x] 2.2 The vector cache on `graphview.View` (D2); remove `Storage.ListGeneratedEntityIDs` and its tests' uses.
   Check: `TestVectorCacheNotAuthoritative`, `TestVectorCachePoisonCountedAndHeals`, `TestFindSimilarOrderAndLimit`,
   `TestVectorCacheRunReportsLostWatch`, the bubble and backlog stop tests, `-race`; benchmark at 50,000
   records posted on the PR, with call time and lock hold time. **Review stop.**

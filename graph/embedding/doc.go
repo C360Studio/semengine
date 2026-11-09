@@ -27,10 +27,10 @@
 // still at the KV revision the Worker read; if newer work has moved the key, nothing is removed
 // and the outcome is OutcomeDeleted.
 //
-// VectorCache keeps the generated vectors in memory by watching EMBEDDING_INDEX, and FindSimilar
-// ranks them by cosine similarity. It answers only while it is authoritative: before it has read
-// the bucket's initial contents, after a record failed to decode, after the watch was lost, and
-// after Run returned, it answers false and the caller reads the bucket.
+// VectorCache keeps the generated vectors in memory on a graphview.View of EMBEDDING_INDEX, and
+// FindSimilar ranks them by cosine similarity and counts the records it could not decode, which
+// it does not score. Before the view has read the bucket's initial contents, after the watch was
+// lost, and after Run returned, FindSimilar returns an error matching graphview.ErrNotReady.
 //
 // # Running
 //

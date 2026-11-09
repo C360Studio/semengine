@@ -12,9 +12,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/graphview"
 )
 
 // cacheWaitBound bounds each wait on the server or on nats.go's goroutines in these tests.
@@ -29,27 +32,29 @@ const cacheBucket = "EMBEDDING_INDEX"
 // (notes/3.3.md); the lost-watch test fails if it stops matching a live watch.
 const unsubscribeFrame = "github.com/nats-io/nats%2ego.(*js).subscribe.func3("
 
-// newCache returns a VectorCache over a fresh EMBEDDING_INDEX holding n generated records, the
-// client it reached the shared server through, and a function that writes the n records again.
-func newCache(t *testing.T, n int) (*VectorCache, *natsclient.Client, func()) {
+// putRecords writes n generated records to bucket.
+func putRecords(t *testing.T, bucket jetstream.KeyValue, n int) {
+	t.Helper()
+	for i := 1; i <= n; i++ {
+		id := fmt.Sprintf("acme.ops.robotics.gcs.drone.c%d", i)
+		data, err := json.Marshal(&Record{EntityID: id, Vector: []float32{1, float32(i)}, Status: StatusGenerated})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bucket.Put(t.Context(), id, data); err != nil {
+			t.Fatalf("put %s: %v", id, err)
+		}
+	}
+}
+
+// newCache returns a VectorCache over a fresh EMBEDDING_INDEX holding n generated records, and
+// the client it reached the shared server through.
+func newCache(t *testing.T, n int) (*VectorCache, *natsclient.Client) {
 	t.Helper()
 	client := fixtureClient(t)
 	bucket := createBucket(t, client, cacheBucket)
-	rewrite := func() {
-		t.Helper()
-		for i := 1; i <= n; i++ {
-			id := fmt.Sprintf("acme.ops.robotics.gcs.drone.c%d", i)
-			data, err := json.Marshal(&Record{EntityID: id, Vector: []float32{1, float32(i)}, Status: StatusGenerated})
-			if err != nil {
-				t.Fatal(err)
-			}
-			if _, err := bucket.Put(t.Context(), id, data); err != nil {
-				t.Fatalf("put %s: %v", id, err)
-			}
-		}
-	}
-	rewrite()
-	return NewVectorCache(NewStorage(client.NewKVStore(bucket), nil)), client, rewrite
+	putRecords(t, bucket, n)
+	return NewVectorCache(NewStorage(client.NewKVStore(bucket), nil)), client
 }
 
 // startWarm starts cache.Run on its own goroutine under a context it returns the cancel of, and
@@ -61,12 +66,12 @@ func startWarm(t *testing.T, cache *VectorCache) (<-chan error, context.CancelFu
 	go func() { done <- cache.Run(ctx) }()
 	wait, cancelWait := context.WithTimeout(t.Context(), cacheWaitBound)
 	defer cancelWait()
-	if _, err := probe.Await(wait, func(context.Context) (bool, error) {
-		_, ok := cache.FindSimilar("", []float32{1, 0}, nil, 1)
-		return ok, nil
-	}, func(ok bool) bool { return ok }); err != nil {
+	if _, err := probe.Await(wait, func(context.Context) (error, error) {
+		_, _, err := cache.FindSimilar("", []float32{1, 0}, nil, 1)
+		return err, nil
+	}, func(err error) bool { return err == nil }); err != nil {
 		cancel()
-		t.Fatalf("the cache never became authoritative: %v; Run: %v", err, <-done)
+		t.Fatalf("the cache never answered: %v; Run: %v", err, <-done)
 	}
 	return done, cancel
 }
@@ -83,49 +88,56 @@ func stacksIn(frame string) string {
 	return strings.Join(found, "\n\n")
 }
 
+// backloggedBucket is a bucket whose Watch opens the real watch, waits until nats.go's delivery
+// is blocked on the full updates buffer, tells the test so on blocked, and hands the watcher over
+// only once the watch's context has ended. The cache therefore reads the watch only after the
+// test's cancel, as a cache whose context ends while the watch is backlogged does (the shape of
+// natsclient/storagereport's backloggedWatchStore).
+type backloggedBucket struct {
+	jetstream.KeyValue
+	blocked chan error
+}
+
+func (b *backloggedBucket) Watch(ctx context.Context, keys string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
+	watcher, err := b.KeyValue.Watch(ctx, keys, opts...)
+	if err != nil {
+		b.blocked <- err
+		return nil, err
+	}
+	b.blocked <- natsfixture.AwaitNativeDeliveryBlocked(ctx, cacheWaitBound)
+	<-ctx.Done()
+	return watcher, nil
+}
+
 // TestVectorCacheRunLeavesNoWatchDelivery: after Run's context ends while nats.go's watch
 // delivery is blocked on its full updates buffer, Run returns context.Canceled only after that
-// delivery has ended, and no goroutine is left in a VectorCache method. A FindSimilar whose keep
-// blocks until the cycle's context ends holds the cache's read lock, so Run's loop waits to
-// apply the first of 600 rewritten records (above the 256-entry buffer, jetstream/kv.go
-// WatchFiltered) and the delivery backs up behind it. Once the context ends, Run's loop picks at
-// random between it and a ready update, so only some cycles leave the delivery blocked at Stop;
-// ten cycles make missing the drain on code without it unlikely, as in graph/follower's
-// TestFollowerRunReturnsAndLeavesNothing.
+// delivery has ended, and no goroutine is left in a VectorCache method. The bucket holds 600
+// records, above the 256-entry buffer (jetstream/kv.go WatchFiltered), and backloggedBucket
+// keeps Run from reading the watch until the cycle's context has ended. Once it has, Run's loop
+// picks at random between it and a ready update, so only some cycles leave the delivery blocked
+// at the stop; ten cycles on one cache, each a new Run, make missing the drain on code without
+// it unlikely, as in graph/follower's TestFollowerRunReturnsAndLeavesNothing.
 func TestVectorCacheRunLeavesNoWatchDelivery(t *testing.T) {
-	cache, _, rewrite := newCache(t, 600)
+	client := fixtureClient(t)
+	index := createBucket(t, client, cacheBucket)
+	putRecords(t, index, 600)
+	bucket := &backloggedBucket{KeyValue: index, blocked: make(chan error, 1)}
+	cache := NewVectorCache(NewStorage(client.NewKVStore(bucket), nil))
 	if err := cache.Run(nil); err == nil {
 		t.Fatal("Run(nil) = nil; want a refusal")
 	}
 	for cycle := range 10 {
 		ctx, cancel := context.WithCancel(t.Context())
-		done, stopRun := startWarm(t, cache)
-		entered := make(chan struct{}, 1)
-		read := make(chan struct{})
-		go func() {
-			defer close(read)
-			cache.FindSimilar("", []float32{1, 0}, func(string) bool {
-				select {
-				case entered <- struct{}{}:
-				default:
-				}
-				<-ctx.Done()
-				return true
-			}, 1)
-		}()
-		<-entered
-		rewrite()
-		// The stack dump showing the native delivery blocked on its full buffer orders the
-		// cancellation after the backlog, not elapsed time.
-		if err := natsfixture.AwaitNativeDeliveryBlocked(t.Context(), cacheWaitBound); err != nil {
-			t.Fatal(err)
+		done := make(chan error, 1)
+		go func() { done <- cache.Run(ctx) }()
+		if err := <-bucket.blocked; err != nil {
+			cancel()
+			t.Fatalf("cycle %d: %v", cycle, err)
 		}
-		cancel() // releases the read
-		stopRun()
+		cancel()
 		if err := <-done; !errors.Is(err, context.Canceled) {
 			t.Fatalf("cycle %d: Run returned %v; want context.Canceled", cycle, err)
 		}
-		<-read // joins the test's own FindSimilar, so only Run could be left in a VectorCache method
 		if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, func() string {
 			return stacksIn("embedding.(*VectorCache)")
 		}); err != nil {
@@ -139,14 +151,15 @@ func TestVectorCacheRunLeavesNoWatchDelivery(t *testing.T) {
 }
 
 // TestVectorCacheRunReportsLostWatch: when the bucket is deleted under a live Run, nats.go
-// closes the watch's update channel; Run returns an error saying the watch was lost (not the
-// context's), the cache stops answering, and the delivery has ended. nats.go's unsubscribe
+// closes the watch's update channel; Run returns an error matching graphview.ErrWatcherLost (not
+// the context's), FindSimilar returns an error matching graphview.ErrNotReady, and the delivery
+// has ended. nats.go's unsubscribe
 // goroutine for the watch (js.go:2072-2077 at v1.55.0) waits on a child of the watch's context
 // that nats.go also ends when the subscription is unsubscribed (js.go:1920-1922,
 // nats.go:5639-5650); Run ends the watch's context and stops the watch, so it is released, not
 // joined, and the test waits for its stack to go.
 func TestVectorCacheRunReportsLostWatch(t *testing.T) {
-	cache, client, _ := newCache(t, 3)
+	cache, client := newCache(t, 3)
 	done, stop := startWarm(t, cache)
 	defer stop()
 	if stacks := stacksIn(unsubscribeFrame); stacks == "" {
@@ -161,11 +174,11 @@ func TestVectorCacheRunReportsLostWatch(t *testing.T) {
 	}
 	// Run returns on its own, its context still live, once the update channel closes.
 	err = <-done
-	if err == nil || errors.Is(err, context.Canceled) || !errors.Is(err, errWatchLost) {
-		t.Fatalf("Run returned %v; want the lost-watch error", err)
+	if errors.Is(err, context.Canceled) || !errors.Is(err, graphview.ErrWatcherLost) {
+		t.Fatalf("Run returned %v; want an error matching ErrWatcherLost", err)
 	}
-	if _, ok := cache.FindSimilar("", []float32{1, 0}, nil, 1); ok {
-		t.Fatal("the cache answered after its watch was lost")
+	if _, _, err := cache.FindSimilar("", []float32{1, 0}, nil, 1); !errors.Is(err, graphview.ErrNotReady) {
+		t.Fatalf("FindSimilar after the watch was lost = %v; want an error matching ErrNotReady", err)
 	}
 	if err := natsfixture.AwaitNoStacks(t.Context(), cacheWaitBound, natsfixture.NativeDeliveryStacks); err != nil {
 		t.Fatalf("nats.go's watch delivery is still running after Run returned: %v", err)

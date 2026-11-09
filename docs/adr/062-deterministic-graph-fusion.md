@@ -7,15 +7,16 @@
 >
 > - Issue numbers (`gh#376`, `gh#380`, `gh#396`, `gh#441`, `gh#264`), semsource ADR numbers and file paths are
 >   SemStreams' or semsource's, at that commit. ADR-045, ADR-046, ADR-055 and ADR-056 are not carried.
-> - In the tree: the engine, the Lens SPI and the hydration contract (increments 3 and 4, in `pkg/fusion`), and the
+> - In the tree: the engine, the Lens SPI and the hydration contract (increments 3 and 4, in `pkg/fusion`), the
 >   ontology ranking inputs of increments 5 and 7 (`pkg/fusion/fusionvocab` and `vocabulary`'s signed predicate
->   weights). Read `pkg/fusion/README.md` for what the package does now.
+>   weights), and the NATS `RetrievalClient`, `pkg/fusion/fusionnats` (change `setup-04a-05-fusionnats`), which
+>   sends each engine call to one of graph-query's public `graph.query.*` verbs. Read `pkg/fusion/README.md` for what
+>   the packages do now.
 > - Not carried: the extraction from `research-graph-execute` (increment 2: `executeAll`, `GraphQueryClient`, the
 >   `Evidence` types, `execute_subqueries`), because that component and ADR-045 are not in this tree, and
 >   `lensregistry` (the "Registration" paragraph of "The Lens SPI"): a product builds its lens and passes it to
 >   `Engine.Fuse`. The convergence of semsource's `source/fusion` (increment 6) is semsource's work; its migration
->   guide is `pkg/fusion/MIGRATION.md`. The NATS `RetrievalClient` (`fusionnats`) is change 5, PR D, and is not in
->   the tree yet.
+>   guide is `pkg/fusion/MIGRATION.md`.
 > - Changed by SemEngine, and the text below is the pin's: fusion reads no readiness status. The "Readiness" bullet
 >   of "Resolve / expand / hydrate substrate" and the first bullet of "Honesty envelope" (`IndexStatus{ready, state}`,
 >   "only `ready` permits a not-found conclusion") describe the pin. ADR-083 removed the status request, ADR-084
@@ -27,7 +28,9 @@
 > - Also changed: `Resolve` returns the search's unreadable and failed record counts, every piece the engine leaves out
 >   is declared on the response (`relations_truncated`, `paths_truncated` and the facets' `truncated`), and
 >   `NewEngine` takes a logger and returns an error. `ClassSpecificity` counts the ancestors of a function passed to
->   `fusionvocab.New`, because the BFO/CCO hierarchy lives in semvocab.
+>   `fusionvocab.New`, because the BFO/CCO hierarchy lives in semvocab. `fusionnats` starts nothing and watches no
+>   key, and a *poisoned* seed (one whose stored value graph-ingest refuses to read) is listed in `unhydrated` with
+>   reason `error` instead of failing the answer (ADR-109 D1).
 > - "Increments" lists work by number; increments 1 (`graph.query.byName`, in `graph/query_verbs.go`), 3, 4, 5 and 7
 >   are in the tree in the forms above.
 

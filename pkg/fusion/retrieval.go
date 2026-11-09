@@ -33,8 +33,9 @@ type RetrievalClient interface {
 	// IMPLEMENTATIONS MUST return Entities in the REQUESTED ORDER. The engine's
 	// resolve-rank base is position-derived, so hydration order is the ranking prior,
 	// not a presentation detail — a transport that returns "whatever order was
-	// convenient" silently reorders results by cache residency (see
-	// fusionnats.Client.Entities, which restores order for exactly this reason).
+	// convenient" silently reorders results by cache residency (graph-ingest's
+	// batch verb answers cache hits first; Client.Entities in pkg/fusion/fusionnats
+	// restores request order for exactly this reason).
 	Entities(ctx context.Context, ids []string) (Hydration, error)
 	// Neighbors returns edges from id along the given predicates in a direction.
 	Neighbors(ctx context.Context, id string, predicates []string, dir Direction) ([]Edge, error)

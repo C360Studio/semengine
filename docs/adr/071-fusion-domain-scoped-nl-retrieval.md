@@ -7,11 +7,12 @@
 > `docs/adr/071-fusion-domain-scoped-nl-retrieval.md` in `docs/admission-ledger.yaml`. The decision text is unchanged
 > apart from markdownlint fixes. Read it with these facts about this repository:
 >
-> - The `graph-embedding` component is in this tree (`processor/graph-embedding`, change 5), but its query responder
->   now answers `graph.embedding.query.search` and `similar` (change 5, PR B), and `pkg/fusion` arrives in its PRs C
->   and D. `graph.SemanticRequest` has the `Scope` field, and the responder filters candidates by it before ranking,
->   with `graph.MatchesAnyIDPrefix` (`graph/id_prefix.go`); `semantic` forwards the request bytes unchanged. The
->   fusion wiring that would send a scope is not present.
+> - The `graph-embedding` component is in this tree (`processor/graph-embedding`, change 5); its query responder answers
+>   `graph.embedding.query.search` and `similar` (change 5, PR B). `graph.SemanticRequest` has the `Scope` field, and
+>   the responder filters candidates by it before ranking, with `graph.MatchesAnyIDPrefix` (`graph/id_prefix.go`);
+>   `semantic` forwards the request bytes unchanged. The fusion wiring is in the tree: `fusion.Request.Scope` reaches
+>   `RetrievalClient.Resolve` (`pkg/fusion`, change 5 PR C), and `pkg/fusion/fusionnats` sends it as the `semantic`
+>   request's `scope` on an `nl` resolve, left out when empty (change 5 PR D).
 > - The compatibility note below ("an un-migrated server silently ignores `scope`") no longer holds here: the
 >   responder decodes strictly, so a request with a key it does not define is refused `invalid_request`, and a
 >   malformed `scope` prefix is refused the same way (`processor/graph-embedding/MIGRATION.md`).

@@ -579,7 +579,8 @@
   known_risks: >-
     markdownlint fixes and a port note under the title recording that the ADR is carried without
     code for #157; the note also records that fusion's mirror (decision 5) and its per-request Ready gate are not
-    carried (pkg/fusion reads no status: owner ruling on PR #550 comment 6716972354; ADR-109 D1)
+    carried (pkg/fusion reads no status: owner ruling on PR #550 comment 6716972354; ADR-109 D1), nor the fusionnats
+    client fix of its migration path's step 3 (pkg/fusion/fusionnats reads no status; setup-04a-05-fusionnats)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -596,7 +597,9 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     no edits to the pin's decision text; port note added under the title for #157; the appended amendment changes
-    decision 3's staleness time for SemEngine's revision-lag producers (#408, owner ruling comment 6714095087)
+    decision 3's staleness time for SemEngine's revision-lag producers (#408, owner ruling comment 6714095087); a
+    port-note bullet records that pkg/fusion/fusionnats watches no GRAPH_STATUS key, so the first-call wait the
+    pin's costs name is gone (owner ruling 4, PR #550 comment 6716972354; setup-04a-05-fusionnats)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -612,7 +615,8 @@
   known_risks: >-
     no edits to the pin's decision text; port note added under the title for #157, and a bullet that fusion's
     top gate on !Ready is not carried (pkg/fusion defers only on an index_not_ready reply: owner ruling on PR #550
-    comment 6716972354; ADR-109 D1)
+    comment 6716972354; ADR-109 D1), and that pkg/fusion/fusionnats lists a poisoned seed unhydrated error where a
+    seed read's reset would otherwise fail Fuse (setup-04a-05-fusionnats)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -4431,7 +4435,9 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     one markdownlint disable comment (a long line) and a port note under the title naming the pin path and SHA, and
-    that graph-embedding, which it describes, is in the tree (change 5, PR B) and pkg/fusion is not (change 5, PRs C and D)
+    that graph-embedding, which it describes, is in the tree (change 5, PR B), and that fusion sends the scope:
+    pkg/fusion passes Request.Scope to Resolve (PR C) and pkg/fusion/fusionnats sends it on the semantic request
+    when it is not empty (PR D)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query-reads technical writer
   disposition: adapt
@@ -4589,7 +4595,7 @@
   disposition: adapt
 
 # Change setup-04a-05-fusion (PR #565, epic #9): pkg/fusion's lens engine and pkg/fusion/fusionvocab, PR C of change
-# 5's split. fusionnats, the NATS RetrievalClient, is PR D.
+# 5's split. fusionnats, the NATS RetrievalClient, is PR D (change setup-04a-05-fusionnats), its row after ADR-062's.
 
 - source_path: pkg/fusion
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
@@ -4597,7 +4603,7 @@
     the deterministic fusion engine (SETUP 03B design D5, lens path kept): a product composes it over any
     RetrievalClient and a Lens and gets one answer per query (nodes, relations, paths, impact, a graph projection
     and hydrated bodies) that declares what it left out. semsource's code-context and its fusion lens call NewEngine,
-    Fuse, Lens and BodyResolver (inventory § 10); fusionnats (change 5 PR D) is its RetrievalClient over NATS
+    Fuse, Lens and BodyResolver (inventory § 10); pkg/fusion/fusionnats is its RetrievalClient over NATS
   destination: pkg/fusion
   contract: >-
     the lens path as at the pin with these adaptations (spec fusion; design D1-D7). (1) Readiness rides the reply
@@ -4624,11 +4630,13 @@
     Consumer break (migration note, owner 2026-11-02 on PR #504): NewEngine's signature, RetrievalClient without
     Status and with Resolution, the wire's index and view_revision gone, four defer_reason values gone, a reset the
     pin deferred is an error on a seed read and a truncated facet on a walk read, refs listed by predicate then
-    target. A fatal Resolve or Entities fails the call, so one poisoned seed fails the answer (D1; fusionnats, PR D,
-    decides the batch handling). Not carried (03B D5, inventory § 8): the Fuse path (engine.go, subquery.go,
-    evidence.go, client.go and their tests), lensregistry (pin callers: its own test and a storeregistry test),
+    target. A fatal Resolve or Entities fails the call (D1); fusionnats lists a poisoned seed unhydrated error
+    instead of failing Entities (its row, setup-04a-05-fusionnats design D3), and a poisoned entity in a prefix
+    resolve's page still fails the call (#578). Not carried (03B D5, inventory § 8): the Fuse path (engine.go,
+    subquery.go, evidence.go, client.go and their tests), lensregistry (pin callers: its own test and a storeregistry
+    test),
     engine_health_gate_test.go (the removed gate), metrics_internal_test.go (the removed default-registerer
-    fallback), export_test.go; fusionnats is PR D. Kept as at the pin, optional under Bounded port scope: F15
+    fallback), export_test.go; fusionnats has its own row. Kept as at the pin, optional under Bounded port scope: F15
     (unserializable object skipped), F16 (Names error swallowed for suggestions), F17 (ontology class predicate in
     the engine), F21 (no not_configured body reason), F22 (deterministic provenance on a deferral), F23 (relations
     defer, other facets truncate, on index_not_ready from a walk). Issues: #110 stays open for item 3 (item 2 done
@@ -4690,10 +4698,91 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     no edits to the pin's decision text; a port note under the title names the pin path and SHA, what is in the tree
-    (the engine, Lens SPI, hydration and ranking inputs), what is not carried (the research-graph-execute extraction,
-    lensregistry, fusionnats) and what SemEngine changed (fusion reads no readiness status: ADR-109 D1, owner ruling
-    on PR #550 comment 6716972354; a Resolution carrying search counts; declared truncation; NewEngine with a logger
-    and an error; fusionvocab.New takes the ancestor function)
+    (the engine, Lens SPI, hydration and ranking inputs, and the NATS RetrievalClient pkg/fusion/fusionnats over the
+    public graph.query.* verbs), what is not carried (the research-graph-execute extraction, lensregistry) and what
+    SemEngine changed (fusion reads no readiness status: ADR-109 D1, owner ruling on PR #550 comment 6716972354; a
+    Resolution carrying search counts; declared truncation; NewEngine with a logger and an error; fusionvocab.New
+    takes the ancestor function; fusionnats watches no key and lists a poisoned seed unhydrated error).
+    setup-04a-05-fusionnats edited the note for fusionnats
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-05-fusion technical writer
+  disposition: adapt
+
+# Change setup-04a-05-fusionnats (change 5, PR D, epic #9): pkg/fusion/fusionnats, the NATS RetrievalClient the
+# fusion engine composes over.
+
+- source_path: pkg/fusion/fusionnats
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the RetrievalClient over NATS (ADR-062): a product passes fusionnats.New(natsClient, timeout) to
+    fusion.NewEngine and gets its answers from graph-query's public graph.query.* verbs. semsource's code-context
+    calls fusionnats.New (processor/code-context/component.go:136) and its governance tests call Client.Neighbors
+    (internal/governance/fusion_gateway_integration_test.go:304) (inventory § 5)
+  destination: pkg/fusion/fusionnats
+  contract: >-
+    the pin's client with these adaptations (spec fusion; design D1-D3). (1) New(requester, timeout) (*Client,
+    error) refuses a nil requester and a negative timeout; a zero timeout is passed to the requester
+    (natsclient's DefaultRequestTimeout). New reads the six graph-query rows it uses (entity, batch, prefix, byName,
+    relationships, semantic) from graph.QueryVerbs() and refuses, naming the verb, when one is missing; the package
+    spells no subject. (2) The client holds no goroutine, watch, context or lock and has no Status and no Close; it
+    reads no readiness status: index_not_ready arrives on the reply (owner ruling 4, PR #550 comment 6716972354;
+    ADR-109 D1, D3). (3) Each reply is decoded as its row declares: an enveloped row (byName, relationships,
+    semantic) as a graph.QueryResponse, refused when it names no producer; a bare row (entity, batch, prefix) as the
+    row's type, unknown keys ignored. (4) Requests use graph.EntityRequest, EntityBatchRequest, PrefixQueryRequest
+    and SemanticRequest, whose scope is left out when empty (ADR-071); Neighbors reads the edge's predicate; an nl
+    Resolve copies unreadable_records and failed_records into fusion.Resolution; Entity decodes through
+    graph.UnmarshalEntityState and reads entity_not_found, and only that code, as (nil, nil). (5) Entities
+    reconciles each batch reply with the request (reconcileHydration, ADR-084 D6): every distinct requested ID once,
+    Entities in request order, an ID the reply lists nowhere unhydrated unknown. (6) A poisoned seed (one whose
+    stored value graph-ingest refuses) is listed, not fatal (design D3, owner question 1 on PR #577 comment
+    6749007774): when the batch request itself is refused with graph_state_reset_required (graph.IsStateContractError,
+    before any decode), each distinct ID is read with its own entity request; a hydrated reply is kept,
+    entity_not_found is unhydrated not_found, the reset code is unhydrated error, an empty ID is unhydrated error
+    with no request, and any other error, the client's own decode refusal included, is returned. The client's own
+    validation refusal of a batch reply is returned and never starts that read. (7) Context (#580, fixed here):
+    Entities refuses a nil context, zero IDs included; the per-ID read checks the context before each request and
+    after each refused one, and returns the ended context's error instead of listing the seed. The other methods
+    pass the context to the requester, and natsclient refuses a nil one. Kept as at the pin: the decoded-ID and
+    decoded-state validators, Names deduplicated in rank order and capped, the client-side prefix and scope checks,
+    zero IDs sending no request
+  dependencies_and_side_effects: >-
+    graph, pkg/errs, pkg/fusion, pkg/types (in-set); standard library otherwise. No NATS import: the requester is a
+    local interface with one method, RequestClassified, which *natsclient.Client has; its import closure reaches no
+    graph/readiness, graph/embedding or processor/graph-embedding (TestFusionNATSImportsNoEmbedding). No goroutine,
+    no retained context. One request per call, plus one per distinct requested ID while a batch is refused for poison
+  known_risks: >-
+    Consumer break (migration note, pkg/fusion/MIGRATION.md): New returns an error and refuses a nil requester; no
+    Status, no Close; a poisoned seed is listed in unhydrated. Not carried (design D4; notes/2.1.md): Status, Close,
+    statusWatcher, awaitFirstStatus, unknownCause and the defaultTimeout constant, with TestStatus_* and the status
+    fakes, slice_e_contract_test.go:55-105 (replaced by TestEnvelopedRowNeedsProducer), TestNew_DefaultsTimeout
+    (replaced by TestNewZeroTimeoutUsesDefault) and TestUnhydratedReasonsMirrorGraph (the tree has no
+    graph.MissingUnknown). Stated cost (design D2): an envelope sent on a bare row is not detected by shape. Not
+    adopted: decodeEntity (client.go:223-239) repeats the reply checks of graph.ExactEntityReader.ReadExactEntity
+    (graph/exact_entity.go:83-101: an entity present, a non-zero kv_revision, the stored-value rule), because that
+    reader's subject is graph-ingest's graph.ingest.query.entity row and ADR-062 routes fusionnats through graph-query's
+    graph.query.* verbs; graph.UnmarshalEntityState, the decoder both call, is shared. A hydrated per-ID reply that
+    arrives after the context ended is kept, as a completed read. Filed by this change, status:blocked, linked
+    without a closing keyword: #578 (graph-ingest's prefix read refuses a whole page for one poisoned entity, so a
+    prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
+    questions outright when the composition offers no embedder; until then a word question on such a stack is a
+    transient internal refusal naming graph.embedding.query.search, design D5 Q-B). Issues: #195 adopted here (the
+    integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for
+    item 3; #563 stays open (fusionnats never calls searchGraph)
+  proving_tests: >-
+    pkg/fusion/fusionnats: client_test.go (TestNewRefusesNilRequester, TestNewRefusesNegativeTimeout,
+    TestNewZeroTimeoutUsesDefault, TestSubjectsComeFromVerbTable, TestVerbLookupNamesMissingRow,
+    TestEnvelopedRowNeedsProducer, TestNeighborsReadsPredicate, TestSemanticCountsReachResolution,
+    TestEntitiesRefusesNilContext and the pin's resolve, entity, batch, neighbors and names tests);
+    exact_entity_test.go (TestSliceEFusionEntityUsesExactEntityWire,
+    TestSliceEFusionEntityRejectsInvalidExactEvidence); reconcile_test.go (TestReconcileHydration);
+    reconcile_prop_test.go (TestReconcileTotal, generated, against a reference model); poison_test.go
+    (TestPoisonedSeedUnhydrated, TestPoisonFallbackNotFound, TestAllSeedsPoisonedDefer, TestPoisonedDuplicateReadOnce,
+    TestPoisonFallbackReturnsOtherError, TestPoisonFallbackEndedContext, TestPoisonFallbackEmptyID,
+    TestOwnValidationNotRetried, TestBatchFaultNotReadAlone, TestPoisonFallbackOneSeedCancelled,
+    TestPoisonFallbackFinalSeedCancelled); the integration-tagged client_integration_test.go
+    (TestRealRespondersAnswer, TestPoisonedSeedOverRealResponders); internal/harness/contract/fusionnats_test.go
+    (TestFusionNATSImportsNoEmbedding and its sensitivity case); internal/harness/contract/reservedsubjects_test.go
+    (TestReservedSubjectsDeclaredOnce); internal/smoke/noembedder_integration_test.go (TestSmoke_NoEmbedderAnswers);
+    notes/2.1.md-3.1.md of the change record seeds and mutation checks
+  owner: setup-04a-05-fusionnats developer
   disposition: adapt

@@ -61,6 +61,9 @@ readonly targets=(
   # setup-04a-05-fusion task 3.1 (inventory § 7, 03B critical list): pkg/fusion has no integration test; its
   # fusionvocab subpackage is not on the list.
   "pkg/fusion unit"
+  # setup-04a-05-fusionnats design D6 (03B critical list): the unit lane (a fake requester) holds the floor alone;
+  # the integration lane drives the same methods against real responders.
+  "pkg/fusion/fusionnats unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

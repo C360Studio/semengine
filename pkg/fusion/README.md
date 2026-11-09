@@ -26,8 +26,8 @@ req := fusion.Request{Query: "ParseConfig", Want: []fusion.Want{fusion.WantBody,
 resp, err := engine.Fuse(ctx, req, lens)
 ```
 
-`client` is any `fusion.RetrievalClient` (in this repository, a fake in tests; the NATS client is not in the tree
-yet). `lens` is your `fusion.Lens`. `NewBodyResolver` may be given `nil` if you never ask for bodies; a node whose
+`client` is any `fusion.RetrievalClient`: over NATS, the one `fusionnats.New` builds (below); in tests, a fake.
+`lens` is your `fusion.Lens`. `NewBodyResolver` may be given `nil` if you never ask for bodies; a node whose
 lens names a body then reports `body_reason` `error`.
 
 ## What a response holds
@@ -53,6 +53,8 @@ or false:
 - `deferred` with `defer_reason`: the engine withheld the answer. `index_not_ready` means a read replied that the
   index is still catching up; `all_seeds_unhydrated` means seeds resolved but none could be read (`unhydrated` lists
   them). A deferred response has no nodes and no `misses`: it is not "nothing found".
+- `unhydrated`: seeds that resolved but could not be read, each with a reason (`not_found`, `error` or `unknown`).
+  The seeds that were read still answer.
 - `misses`: the graph answered and found nothing, with near-matches in `did_you_mean`. A miss does not prove the
   entity is absent.
 - `unreadable_records` and `failed_records`: a word search (`nl` resolve) counts the records it could not read and the
@@ -68,10 +70,11 @@ or false:
 - `truncated` (top level): the budget cut nodes off.
 
 `contract_version` is `"2"`. When a `Fuse` call returns an error instead, either the context ended, or `Resolve` or
-`Entities` failed with something other than `index_not_ready` (a graph reset included). A seed read or a relations
-neighbour read that replies `index_not_ready` makes the whole response `deferred`. Every other failed read after the
-seeds (relations neighbours with any other error, relation targets, paths, impact, graph) never fails the call: it is
-skipped and shown as one of the labels above.
+`Entities` failed with something other than `index_not_ready` (a graph reset included). Over `fusionnats`, a seed whose
+stored value graph-ingest refuses does not fail `Entities`: it is listed in `unhydrated` (below). A seed read or a
+relations neighbour read that replies `index_not_ready` makes the whole response `deferred`. Every other failed read
+after the seeds (relations neighbours with any other error, relation targets, paths, impact, graph) never fails the
+call: it is skipped and shown as one of the labels above.
 
 ## Logs and counters
 
@@ -81,10 +84,55 @@ A body that cannot be loaded logs a Warn line and adds one to
 `semengine_fusion_body_hydration_failures_total{reason}`. Both counters exist only on the registry passed to
 `WithMetrics`; without it there are no counters and the logs and response labels remain.
 
+## Over NATS: `fusionnats`
+
+```go
+client, err := fusionnats.New(natsClient, 0) // *natsclient.Client; 0 takes natsclient's DefaultRequestTimeout
+if err != nil {
+    return err // a nil requester or a negative timeout
+}
+```
+
+`New` refuses a nil requester and a negative timeout. It starts nothing: the client holds no goroutine, no watch and
+no lock, so it has no `Close`, and it reads no readiness status. A read whose index is still catching up is refused
+with code `index_not_ready`, and the engine reads that reply. Each method sends one request to one of graph-query's
+`graph.query.*` verbs, with the subject read from `graph.QueryVerbs()`:
+
+| Method | Verb |
+| --- | --- |
+| `Resolve`, `symbol` | `byName` |
+| `Resolve`, `prefix` | `prefix` |
+| `Resolve`, `nl` | `semantic` (with the request's `scope` when it is not empty) |
+| `Entity` | `entity` |
+| `Entities` | `batch` |
+| `Neighbors` | `relationships` |
+| `Names` | `byName` |
+
+A *poisoned* entity is one whose stored value graph-ingest refuses to read (code `graph_state_reset_required`).
+graph-ingest refuses a whole batch when one entity in it is poisoned, so on that refusal `Entities` reads each
+distinct requested ID with its own `entity` request: a poisoned seed is listed in `unhydrated` with reason `error`, the
+others hydrate, and the answer goes on. If every seed is poisoned the response is `deferred` with
+`all_seeds_unhydrated`. This costs one request per distinct ID, only while poison is present. Any other error from
+those reads fails the call, and so does an ended context, checked before each read and after each refused one.
+`Entities` refuses a nil context.
+
+Two gaps remain, each a filed issue:
+
+- A `prefix` resolve whose page holds a poisoned entity is refused whole by graph-ingest, so that `Fuse` call fails
+  (#578).
+- A stack with no graph-embedding still offers `semantic`: an `nl` question there fails with a transient `internal`
+  refusal naming `graph.embedding.query.search`, which a caller may retry without success. Issue #579 asks graph-query
+  to refuse it outright when the composition offers no embedder.
+
+`symbol` and `prefix` questions need no graph-embedding: `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers them
+over a stack of graph-ingest, graph-index and graph-query alone.
+
 ## Packages
 
 - `pkg/fusion`: the engine, `Lens`, `RetrievalClient`, `BodyResolver`, the response types. It imports no NATS client
   and no ontology package.
+- `pkg/fusion/fusionnats`: `New(requester, timeout)` returns the `RetrievalClient` over NATS. It imports no NATS
+  client itself: it takes anything with `RequestClassified`, which `*natsclient.Client` has.
 - `pkg/fusion/fusionvocab`: `New(parents)` returns the ranking signals. `parents` is a function from a class IRI to
   its ancestors; the BFO/CCO hierarchy lives in the semvocab module, which depends on SemEngine, so the caller passes
   semvocab's `cco.Parents`. Pass `nil` to rank with no ontology signal. Predicate weights come from this
@@ -92,6 +140,5 @@ A body that cannot be loaded logs a Warn line and adds one to
 
 ## Not in this package
 
-- A `RetrievalClient` over NATS (`fusionnats`) is not in the tree.
 - The SemStreams sub-query engine (`engine.go`, `subquery.go`, `evidence.go`, `client.go`) and `lensregistry` are not
   carried. A product creates its lens and passes it to `Fuse`.

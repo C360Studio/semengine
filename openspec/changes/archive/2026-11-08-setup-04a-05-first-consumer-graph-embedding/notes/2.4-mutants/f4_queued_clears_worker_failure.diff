@@ -1,0 +1,13 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -94,9 +94,7 @@
+ func (m *failedMap) queued(key string, revision uint64) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+-	if held, ok := m.entries[key]; ok && held.hopOne() {
+-		m.store(key, outcome{revision: revision})
+-	}
++	m.store(key, outcome{revision: revision})
+ }
+ 
+ // ended records, under hop1Mu, that hop 1 ended key at revision: its record removed, or a

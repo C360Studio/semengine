@@ -1,0 +1,11 @@
+--- processor/graph-embedding/component.go	2026-11-08 10:39:35
++++ processor/graph-embedding/component.go	2026-11-08 10:39:45
+@@ -190,7 +190,7 @@
+ 	if f := c.follower.Load(); f != nil {
+ 		stuck = f.Stuck()
+ 	}
+-	if c.workerLost.Load() {
++	if false {
+ 		stuck = append(stuck, workerWatchLost)
+ 	}
+ 	return c.lifecycle.Health(stuck...)

@@ -25,7 +25,7 @@ func (h *harness) putAt(key, val string, rev uint64, created time.Time) {
 // TestAppliedIsZeroBeforeFirstApply: currency is UNKNOWN, not fresh, before
 // anything has been applied. The accessor reports the zero time rather than
 // fabricating time.Now() — the same "not computable" contract as
-// readiness.IndexStatusInputs.IndexedAt, whose projection declines to make an
+// readiness.IndexStatusInputs.OldestUnappliedAt, whose projection declines to make an
 // uncomputable view look current.
 func TestAppliedIsZeroBeforeFirstApply(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

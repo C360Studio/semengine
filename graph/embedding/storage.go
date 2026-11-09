@@ -457,17 +457,6 @@ func (s *Storage) DeleteEmbedding(ctx context.Context, entityID string) error {
 	return nil
 }
 
-// ListGeneratedEntityIDs returns every key in EMBEDDING_INDEX: pending and failed
-// records are listed too, so the caller filters by status. The listing is bounded by
-// the index KVStore's Timeout option, not by ctx alone.
-func (s *Storage) ListGeneratedEntityIDs(ctx context.Context) ([]string, error) {
-	keys, err := s.index.Keys(ctx)
-	if err != nil {
-		return nil, errs.WrapTransient(err, "Storage", "ListGeneratedEntityIDs", "list keys")
-	}
-	return keys, nil
-}
-
 // FailedEntry is one entity currently in a failed embedding terminal state, as read
 // by the current-failed bootstrap scan: the entity ID, its bounded reason, and the
 // source revision the failure was recorded at.

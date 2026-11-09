@@ -590,10 +590,12 @@
     time; carried without code so the readiness ADR (ADR-109, issue #110) can cite it (#157 owner ruling,
     comment 6085722578)
   destination: docs/adr/083-readiness-as-distributed-state.md
-  contract: the decision text as at the pin
+  contract: >-
+    the decision text as at the pin, with decision 3's time amended in a section appended at the end (#408)
   dependencies_and_side_effects: none; a document
   known_risks: >-
-    no edits to the pin's decision text; port note added under the title for #157
+    no edits to the pin's decision text; port note added under the title for #157; the appended amendment changes
+    decision 3's staleness time for SemEngine's revision-lag producers (#408, owner ruling comment 6714095087)
   proving_tests: n/a (task docs:check lints it)
   owner: "#157 carry-in technical writer"
   disposition: adapt
@@ -1996,7 +1998,10 @@
   destination: model
   contract: >-
     as at the pin, except: (1) Registry.Validate visits endpoints and capabilities in name order, so the first
-    error for a registry is the same on every call (port-composition, #348); every other .go file matches the pin
+    error for a registry is the same on every call (port-composition, #348); (2) RollingWindowBreaker.IsHealthy
+    admits one half-open probe and refuses other callers until it reports or one Cooldown passes, and
+    EndpointStatus reserves no probe slot (breaker.go, #114); health.go's IsHealthy doc comment says so; every
+    other .go file matches the pin
   dependencies_and_side_effects: >-
     golang.org/x/net (model/httpclient.go:7), entered at v0.59.0, the base's version (design P-2, task 3.1),
     now v0.60.0 for five HTTP/2 advisories govulncheck reports (074c800, task 5.3); stdlib; no in-module
@@ -2006,11 +2011,17 @@
     carried whole until #32 (change 7) decides the seam (design D6, K2): its agentic-only surface stays,
     because cutting it before #32 is the blind cut #8 Q4 forbids. model/wire is not ported (its own row).
     Changed from the pin: the first error Registry.Validate returns for several invalid entries is the first in
-    name order, where the pin's depended on map order
+    name order, where the pin's depended on map order; half-open admits one probe (the pin admitted every caller
+    past the cooldown), and a probe that has not reported within one Cooldown of being admitted counts as lost so
+    the next IsHealthy caller takes the slot (#114)
   proving_tests: >-
     model/breaker_test.go, model/health_test.go, model/httpclient_test.go, model/registry_test.go
-    (TestRegistryValidateNamesFirstInvalidEndpointByName), model/watch_test.go
-  owner: setup-04a-02-ingest-kernel developer; port-composition developer (Registry.Validate order)
+    (TestRegistryValidateNamesFirstInvalidEndpointByName), model/watch_test.go;
+    TestBreaker_HalfOpenAdmitsOneProbe, TestBreaker_LostProbeFreesSlotAfterOneCooldown,
+    TestBreaker_StatusReadsReserveNothing, TestBreaker_ConcurrentProbeAdmitsExactlyOne (#114)
+  owner: >-
+    setup-04a-02-ingest-kernel developer; port-composition developer (Registry.Validate order);
+    fix-114-breaker-half-open-probe developer (half-open probe)
   disposition: adapt
 
 - source_path: storage
@@ -2106,13 +2117,24 @@
     indexed_revision is 0, which claims nothing (graph/query_response.go); and, in
     setup-04a-04-graph-roots-graph-query-communities: (27) LocalSearchRequest, LocalSearchData and MaxSearchTerms
     (graph/query_local_search_types.go), and the localSearch row of QueryVerbs on graph.query.localSearch, enveloped,
-    its reply LocalSearchData
+    its reply LocalSearchData; and, in setup-04a-04-graph-roots-graph-query-search: (28) GlobalSearchRequest (query,
+    min_revision; strict) and GlobalSearchData (strategy and exactly one of entity, path, temporal, spatial)
+    (graph/query_global_search_types.go), the globalSearch row of QueryVerbs on graph.query.globalSearch, enveloped,
+    and the requests graph-query sends to the time-range and bounds verbs, TemporalRangeRequest (start_time and
+    end_time in RFC 3339, limit, min_revision) and SpatialBoundsRequest (north, south, east, west, limit,
+    min_revision) (graph/query_search_types.go), which change 7's responders decode; the pin sent startTime and
+    endTime; and, in setup-04a-04-graph-roots-graph-query-text: (29) GlobalSearchRequest gains level (0 to 2, omitted
+    0, read only by the text strategy); GlobalSearchData gains the strategy "text" and its field text, a
+    TextSearchData (level, groups, matches, entities_scanned, entities_truncated, unreadable_groups,
+    unhonoured_hints, answer) with TextSearchGroup and TextSearchMatch (id, label, score and the entity as the page
+    sent it) (graph/query_global_search_types.go); and the searchGraph row of QueryVerbs on graph.query.searchGraph,
+    enveloped, its reply GlobalSearchData, the same type as globalSearch
   dependencies_and_side_effects: >-
     message, pkg/errs, pkg/types, vocabulary (in-set); stdlib; no NATS import in graph root;
     graph/kvcatalog imports natsclient and nats.go/jetstream
   known_risks: >-
     no context roots. Still deferred: the generation marker beside indexed_revision so a revision
-    from a recreated bucket is detectable (#103 stays open; ADR-109). pkg/fusion (change 5)
+    from a recreated bucket is detectable (#103 is retired by the text change and the marker is tracked in #15; ADR-109). pkg/fusion (change 5)
     carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
     (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
@@ -2122,7 +2144,10 @@
     graph/query_verbs_test.go, graph/query_prefix_types_test.go, graph/mutation_protocol_test.go,
     graph/stored_entity_rule_test.go, graph/index_status_test.go, graph/kvcatalog/*_test.go,
     graph/query_response_test.go (TestQueryResponseCarriesIndexedRevisionAndProducer,
-    TestNewQueryResponseRefusesEmptyProducer), internal/harness/contract/graphtransport_test.go
+    TestNewQueryResponseRefusesEmptyProducer), graph/query_global_search_types_test.go (TestGlobalSearchTypesWire), graph/query_verbs_test.go
+    (TestQueryVerbsDeclareEachRespondersVerbs),
+    graph/query_search_types_test.go (TestSearchRequestTypesWire),
+    internal/harness/contract/graphtransport_test.go
   owner: setup-04a-02-ingest-kernel developer
   disposition: adapt
 
@@ -3418,31 +3443,35 @@
     the revision-lag input to it. openspec/specs/revision-watermark/spec.md: the floor is the highest observed
     revision when none is in flight, else the lowest in-flight revision minus 1; Complete(key, rev) drains that
     key's in-flight revisions at or below rev and no other key's; Observed is the highest revision observed;
-    Observe ignores revision 0; under ascending observation the floor never falls, and IndexedAt pairs it with the
-    commit time of a completed observed revision at or below it (zero means unknown), exact when none is in flight
-    (pin ADR-066 section 1, ADR-083 decision 3)
+    Observe accepts only a revision above Observed and returns an error for any other (revision 0 included), changing
+    nothing, so the floor never falls; IndexedAt pairs the floor with the commit time of the oldest delivered write
+    not yet applied (the lowest in-flight revision), or of the newest delivered write when none is in flight (zero
+    means unknown; ADR-083 decision 3 as amended for #408)
   dependencies_and_side_effects: >-
     stdlib only (container/list, slices, sync, time); no goroutine, no I/O; per-revision state only while a
-    revision is in flight
+    revision is in flight; graph/follower declares the feed lost when Observe refuses a revision
   known_risks: >-
     Indexed() dropped as unread (no production reader at the pin; 30 test call sites in graph-index and
     graph-embedding read the IndexedAt floor when they port; its doc mentions reworded); the in-flight scan in
     Complete and the floor read replaced (owner, Q1, PR #407 comment 6388065578; at the pin, draining 40,000 took
-    16.8 s, against 5.6 ms here, one local run, notes/3.2.md), every result equal to the pin's
-    (TestPropWatermarkHistory against the pin's code); Observe of a revision below one in flight now costs time
-    proportional to the in-flight revisions above it (40,000 observed in descending order took 1.6 s, against 2 ms
-    at the pin; ascending observation, the caller's precondition, is constant per call); the caller keeps Observe
-    ascending and the watermark does not check it: a lower revision observed after catch-up lowers the floor and
-    pairs it with a newer commit time, as at the pin; the covered commit time may be older than the newest covered
-    revision's, never newer; "gh#590" in the package comment is SemStreams' issue; no class:port-refactor issue
-    exists for the package; importers: graph/follower holds the watermark in setup-04a-04-graph-roots-graph-index and graph-embedding
-    is not ported yet; a known gap in the proving tests, tracked as #408:
-    TestWatermark_ConcurrentReadersAndWriters can pass without the reader observing writer progress
+    16.8 s, against 5.6 ms here, one local run, notes/3.2.md); changed from the pin by fix-408-revlag-simplify: Observe
+    refuses a revision at or below Observed (the pin accepted it and could lower the floor), and the time IndexedAt
+    returns is the oldest unapplied write's commit time (the pin carried a possibly older estimate of the newest
+    covered revision's), which also retires the second bookkeeping path; the pin's code is no longer kept as a test
+    oracle, so the history test checks against a reference model in the test file; "gh#590" in the package comment is
+    SemStreams' issue; no class:port-refactor issue exists for the package; importers: graph/follower holds the
+    watermark for graph-index and graph-embedding (setup-04a-05-first-consumer-graph-embedding); #408 (a proving test
+    that could pass without the reader seeing writer progress) is retired by fix-408-revlag-simplify
   proving_tests: >-
-    internal/revlag/watermark_test.go (the pin's 13 tests, TestWatermark_ObservedIsHighestDelivered,
-    TestWatermark_DrainAtFloorIsCovered, TestWatermark_CompleteWithNothingInFlight,
-    TestWatermark_ConcurrentReadersAndWriters, TestWatermark_RetentionTracksInFlight, TestPropWatermarkHistory
-    against internal/revlag/pinref_test.go, the pin's code)
+    internal/revlag/watermark_test.go (TestWatermark_ColdStart, TestWatermark_SparseMidBuild_LowWaterOfPending,
+    TestWatermark_CoalescerCollapse_KeyScopedDrainsLowerRevisions,
+    TestWatermark_CoalescerCollapse_MidBuildTakesOldestInFlight, TestWatermark_DeleteSupersedesPendingUpdate,
+    TestWatermark_CompletionIsKeyScoped, TestWatermark_TrailingDeleteOnlyTail, TestWatermark_NewDeliveryAfterCatchUp,
+    TestWatermark_ObserveRefusesNonAscending, TestWatermark_ZeroCommitTimeStaysUnknown,
+    TestWatermark_CompleteUnobservedRevisionDrainsLower, TestWatermark_Concurrent,
+    TestWatermark_ObservedIsHighestAccepted, TestWatermark_DrainAtFloor, TestWatermark_TimeIsOldestInFlight,
+    TestWatermark_CompletionAboveInFlightKeepsTime, TestWatermark_CompleteWithNothingInFlight,
+    TestWatermark_ConcurrentReadersAndWriters, TestWatermark_RetentionTracksInFlight, TestPropWatermarkHistory)
   owner: setup-04a-04-graph-roots-revlag developer
   disposition: adapt
 
@@ -3498,7 +3527,10 @@
     []graph.OutgoingEntry. Config break for consumers: semconnect's two configs set batch_size under graph-index and fail
     at boot until the line is deleted; semteams' published schema lists it. Removed (design D8): the dead exported and
     test-only writers, subscribeForRequests (#186), batch_size, reindexTotal and reindexUnchanged, the raceEnabled
-    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree
+    files, and the load-test and benchmark files. README.md and doc.go are new and written for this tree. A
+    refused index plan marks the entity failed and withholds readiness, as a failed write does (#428; design D6 of
+    setup-04a-04-graph-roots-graph-query-search); no state the contract accepts is known to reach it, so the mark is
+    shown by reading and has no test, and TestContractValidStateAlwaysPlans proves the premise
   proving_tests: >-
     processor/graph-index/config_test.go (TestUnknownConfigKeyIsRefused, TestConfigWorkersZeroMeansOneLane,
     TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
@@ -3512,7 +3544,8 @@
     TestQueryResponseCarriesIndexedRevisionAndProducer, TestQueriesAreRefusedWhileTheFeedIsLost,
     TestQueryReadsImplementReplacement, TestMaximumLengthIDsAndPredicatesThroughPublicReads,
     TestMalformedIndexRowsAreSkippedLoggedAndCounted, TestAliasReadImplementsReplacement,
-    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase); the pin tests dropped, each with its reason, are listed in
+    TestSharedAliasIsRefusedAsAmbiguous, TestAliasMatchFoldsCase), plan_prop_test.go
+    (TestContractValidStateAlwaysPlans); the pin tests dropped, each with its reason, are listed in
     openspec/changes/setup-04a-04-graph-roots-graph-index/notes/2.3.md
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt
@@ -3538,8 +3571,11 @@
     WatchAll fails, when Updates() closes under a live Run context, or when the backing stream's creation time
     differs from the one Open read, and holds until the process restarts (owner ruling item 2); QueryReady answers
     nil or a classified refusal (reset: fatal graph_state_reset_required; lost feed, unresolved writes, incomplete
-    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0); the stuck-watermark
-    detector reads degraded in the envelope only
+    build: transient index_not_ready); the envelope carries failed_count (the pin wrote 0) and, when the plug-in's
+    Failed returns them, failed_reasons, and no first_failure_at; the stuck detector counts the plug-in's Complete
+    calls and reads degraded in the envelope only, once the follower has been behind for 30 s with no completion,
+    for every plug-in (owner ruling (a1), PR #550 comment 6721867279); an empty graph counts as caught up once the
+    snapshot is delivered
   dependencies_and_side_effects: >-
     graph, graph/kvcatalog, graph/readiness, internal/resource, internal/revlag, metric, natsclient, pkg/errs
     (in-set); nats.go/jetstream; one KV watch on ENTITY_STATES, status reads on its stream, writes to GRAPH_STATUS,
@@ -3556,7 +3592,9 @@
     graph/follower/follower_test.go (TestOpenRefusesMissingInputs), follower_integration_test.go
     (TestFollowerOpenRefusesAbsentBucket, TestFollowerRunReturnsAndLeavesNothing, TestFollowerConcurrentQueryReady,
     TestFollowerPublishesOnEveryHeartbeat, TestFollowerSnapshotEndSetsBootstrapTarget,
-    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed)
+    TestFollowerLatchesResetOnUnreadableSnapshotValue, TestFollowerDeclaresLostFeed), follower_test.go
+    (TestHeldLowRevisionWithProgress, TestGraphIndexHeldRevisionNotDegraded, TestNoCompletionsReadsDegraded,
+    TestEnvelopeCarriesFailedReasons, TestGraphIndexEnvelopeUnchanged)
   owner: setup-04a-04-graph-roots-graph-index developer
   disposition: adapt
 
@@ -3746,9 +3784,11 @@
     error; (6) the Worker hands each watch entry to internal/dispatch.KeyedPool under the entity ID, so one entity's
     entries are processed one at a time in delivery order, through the store write and both callbacks, while different
     entities run in parallel; callbacks for different entities are unordered; (7) VectorCache replaces StartVectorCache
-    with its own Run(ctx), and FindSimilar answers false before the snapshot, after a decode error, after a lost
-    watch and after Run returned, sorts by ScoredEntityLess before the limit, and returns an empty result for a limit
-    of 0 or less; (8) both Run methods stop their watch through internal/kvwatch.Stop; (9) a failure counts as
+    with its own Run(ctx) and keeps a graphview.View of EMBEDDING_INDEX per Run; FindSimilar returns an error matching
+    graphview.ErrNotReady before the snapshot, after a lost watch and after Run returned, counts a record it cannot
+    decode without withdrawing the cache (the pin answered false), sorts by ScoredEntityLess before the limit, and
+    returns no entities for a limit of 0 or less; Storage.ListGeneratedEntityIDs, the pin's bucket-scan fallback, is
+    not carried; (8) both Run methods stop their watch through internal/kvwatch.Stop; (9) a failure counts as
     shutdown only when its error matches context.Canceled and the Worker's context has ended, not by message text; (10)
     a text cap of 0 means 8,000 runes on both lanes; (11) WorkerMetrics gains IncContentUnresolved and loses
     SetPending. Not carried: http_embedder.go (own row), ContentHash, SavePending, SavePendingWithStorageRef,
@@ -3767,9 +3807,11 @@
     newer pending or failed record, as at the pin; only a generated record blocks an older write. A callback that
     blocks holds Run, which has no bound of its own. The nats.go behaviours behind the Run shutdown order are probed
     at v1.54.0 (PR #458 comment 6472856197) and not promised. BM25 is a lexical embedder, not a correct lexical
-    index. ListGeneratedEntityIDs is bounded by the index KVStore's Timeout, where the pin streamed under the caller's
-    context. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays open), #195 (advanced;
-    stays open); #35 retired (http_embedder.go excluded)
+    index. Storage.ListGeneratedEntityIDs is removed (processor/graph-embedding withholds the window the scan
+    covered). FindSimilar sorts the whole view under its lock, about 37 ms a call and 9 ms of lock at 50,000 records
+    (openspec/changes/archive/2026-11-08-setup-04a-05-graph-embedding-query/notes/2.2.md);
+    graph-clustering plans around it. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays
+    open), #195 (advanced; stays open); #35 retired (http_embedder.go excluded)
   proving_tests: >-
     graph/embedding: storage_test.go, storage_integration_test.go (TestRevisionGuardHistoryMatchesModel,
     TestSaveDedupKeepsSameSpaceReplacesOther); worker_test.go (TestWorkerRunRefusesNilContext,
@@ -3779,8 +3821,8 @@
     TestWorkerSaveRefusedWhenNewerPendingArrives); worker_resilience_test.go (TestPanickingEntryStaysPending);
     worker_integration_test.go (TestWorkerRunLeavesNoWatchDelivery, TestWorkerRunReportsLostWatch,
     TestNoTextDeleteKeepsNewerPending, TestNoTextDeleteKeepsNewerGenerated); vector_cache_test.go
-    (TestVectorCacheSecondRunRefused, TestVectorCacheNotAuthoritative, TestFindSimilarOrderAndLimit,
-    TestVectorCacheRunLeavesNothingBehind); vector_cache_integration_test.go (TestVectorCacheRunLeavesNoWatchDelivery,
+    (TestVectorCacheSecondRunRefused, TestVectorCacheNotAuthoritative, TestVectorCachePoisonCountedAndHeals,
+    TestFindSimilarOrderAndLimit, TestFindSimilarReadsOneMoment, TestVectorCacheRunLeavesNothingBehind); vector_cache_integration_test.go (TestVectorCacheRunLeavesNoWatchDelivery,
     TestVectorCacheRunReportsLostWatch); worker_storeresolver_integration_test.go
     (TestWorkerResolvesLiveRegistryStatePerFetch); bm25_embedder_test.go; internal/harness/contract
     (TestEmbeddingImportsNoProviderModule); notes/2.1.md, 2.2.md, 3.3.md and 3.4.md of the change record each changed
@@ -3814,7 +3856,8 @@
     an aggregation or a ranking) with no graph reads and no store. A ClassifierChain asks tier 0 (keyword patterns),
     tier 1 (the most similar example, as BM25 vectors from graph/embedding) and tier 3 (a language model through a
     caller-supplied LLMClient), and answers from the first tier that produces a hint. processor/graph-query (item 9)
-    calls it
+    calls it; its first production reader is processor/graph-query's globalSearch (step 4), which classifies each
+    question of more than one word with the keyword tier alone
   destination: graph/query
   contract: >-
     Surface as at the pin, less the dead surface below, with these adaptations (spec query-classification; design
@@ -3932,7 +3975,11 @@
     nothing), and the four unread sentinels as the typed errors the methods return; pkg/graphview/README.md is the
     package's product contract line. Not carried (unread, no contract line, inventory 4): AppliedRevision, CaughtUp,
     View.Poisoned, Snapshot.Sequence, EntryMeta.Revision; Hooks.OnTick (a test back door, #186);
-    DefaultTickInterval is unexported (defaultTickInterval, 250 ms)
+    DefaultTickInterval is unexported (defaultTickInterval, 250 ms). (5) Added, new
+    (setup-04a-04-graph-roots-graph-query-text D8): ListCounted(prefix) returns what List(prefix, 0) returns and the
+    number of poisoned keys under prefix, under one hold of the view's lock, with List's readiness errors; its one
+    reader is processor/graph-query's text tier, which reads one level of COMMUNITY_INDEX through it and declares the
+    unreadable records it counts
   dependencies_and_side_effects: >-
     internal/kvwatch (in-set; no exported signature names it); nats.go/jetstream; standard library only otherwise. No
     natsclient, no message, no metric. Opens one WatchAll on the injected WatcherSource (jetstream.KeyValue and
@@ -3950,12 +3997,12 @@
     pin's NewTestClient site is natsfixture.Open here), stays open
   proving_tests: >-
     pkg/graphview: view_test.go (TestRunRefusesNilContext, TestRunOnce, TestContextBoundariesRejectNil,
-    TestGetAndListSurface, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go (TestRunLeavesNothingBehind,
-    TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite, TestDetachedReasonSurvivesStop,
-    TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach, TestWatcherLossFailsClosed,
-    TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition, TestRunJoinsSubscriberCallback);
-    history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6); product_test.go
-    (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
+    TestGetAndListSurface, TestListCountedCountsPoison, TestDeltaOnlySubscribeIsTriggerShaped); run_test.go
+    (TestRunLeavesNothingBehind, TestRunContextEndIsAStop, TestRunOpenFailure, TestDecodeOncePerWrite,
+    TestDetachedReasonSurvivesStop, TestDetachReasonIsTheFirst); degraded_test.go (TestBootstrapGatesAttach,
+    TestWatcherLossFailsClosed, TestRunLostWatchFailsClosed); stop_join_test.go (TestRunJoinsWatcherAcquisition,
+    TestRunJoinsSubscriberCallback); history_prop_test.go (TestViewHistoryMatchesModel, ADR-081 G1, G2, G4, G6);
+    product_test.go (TestProductSubscribeTriggersOnChange, TestProductListPagesByKey, TestProductCurrencyReport); applied_test.go,
     coherence_test.go, delta_test.go, hooks_test.go, meta_test.go (the pin's tests, ported onto Run in synctest);
     integration_test.go (TestIntegration_GraphViewOverRealBucket, TestRunLeavesNoWatchDelivery,
     TestRunReportsLostWatch, on natsfixture.Open); notes/2.1.md, 2.2.md, 2.3.md, 2.4.md and 3.3.md of the change
@@ -4013,8 +4060,11 @@
     from ID positions, predicate names or relationship objects, and a run longer than MaxWordBytes is not a word; kept
     words own their bytes; (4) NATSCommunityStorage takes a non-nil *natsclient.KVStore, keys records {level}.{group
     ID}, lists keys through KVStore.Keys; GroupKey(entityID, level) gives a group's key, refusing a level outside 0 to 2
-    and an ID the canonical parser refuses; DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0
-    to 2 or whose level and ID do not give key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
+    and an ID the canonical parser refuses; LevelPrefix(level) gives the prefix {level}. of every key at a level,
+    refusing a level outside 0 to 2, the one range check GroupKey and DecodeCommunity use (new,
+    setup-04a-04-graph-roots-graph-query-text D2; its reader is processor/graph-query's text tier);
+    DecodeCommunity(key, value) refuses bad JSON, a record whose level is not 0 to 2 or whose level and ID do not give
+    key, and entity_revision 0; GetAllCommunities refuses a nil context, fails
     naming the key on an unreadable entry or one DecodeCommunity refuses, and returns an ended context's error (pin
     skipped unreadable entries, storage.go:291-299, and returned nothing for a cancelled listing, :276-279). Not
     carried: lpa.go, entityid_provider.go, semantic_edge_provider.go, pagerank.go (own rows, ADR-099); provider.go (own
@@ -4039,7 +4089,7 @@
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
     TestKeywordsIgnoreIDAndPredicates, TestEntityContributionIsCapped, TestSummaryTemplate); storage_test.go
-    (TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
+    (TestLevelPrefix, TestGroupKey, TestDecodeCommunity, FuzzGroupKey, FuzzDecodeCommunity); maintainer_test.go
     (TestRecordNamesItsLatestWrite, TestObsoleteDeliveryIgnored, TestRefusedEntityMakesTickIncomplete, TestDeleteUnknownID,
     TestRevisionZeroRefused, TestTickBeforeBootstrap, TestFailedWriteRetried,
     TestFirstTickFailedPublicationKeepsOldRecords, TestStaleKeyOfLiveGroupRemovedAfterFailedFirstTick,
@@ -4207,7 +4257,7 @@
   contract: >-
     graph.QueryVerbs() decides what it serves: Start subscribes a handler to each verb declared for graph-query and
     fails on a declared verb with no handler. Ported in steps (split.md of change
-    setup-04a-04-graph-roots-graph-query); the package is whole only at step 5. Step 1 serves entity, batch, prefix
+    setup-04a-04-graph-roots-graph-query); the package is whole at step 5. Step 1 serves entity, batch, prefix
     and byName as forwards, request and reply bytes unchanged, a refusal behind them reaching the caller with class,
     code and detail, and entityByAlias and relationships as enveloped replies (graph.QueryResponse) built from
     graph-index replies. Step 2 (setup-04a-04-graph-roots-graph-query-reads, pathrag.go and summary.go) adds
@@ -4230,18 +4280,59 @@
     and semengine_graph_query_search_truncated_total{verb} counts cut-short localSearch answers. Not
     carried at step 3: community_cache.go (generation, lease, fence and the cache), the graph.clustering.query.entity
     fallback, the semantic fallback when no record exists, the answer interface, and the poison-counting List.
-    Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    Step 4 (setup-04a-04-graph-roots-graph-query-search, graphrag.go and entity_resolver.go) adds globalSearch, which
+    answers the questions tier 0 can answer exactly and refuses the rest. A question of one word is an entity
+    reference, read before any hint; any other is classified once by the keyword tier of graph/query, and a strategy
+    answers only when its hint is the question's only hint: a path from a start (path), a time range (temporal,
+    graph.temporal.query.range) or an area (spatial, graph.spatial.query.bounds). One resolver (entityByAlias's rule:
+    the alias verb, then a valid six-part ID as itself; the suffix step is not carried, #405) serves entityByAlias and
+    global search; an alias refusal reaches the caller as it arrived, and in global search a reference naming no entity
+    falls through to the text tier. Two of path, time and area, an entity beside a zone or area, and an impossible
+    number are refused invalid_request, naming the phrase or both places; a count, ranking or similarity hint, a
+    question with no hint, and a name that names no entity were refused class invalid with a
+    code of their own, which counted no error (step 5 removes that refusal); the reply (graph.GlobalSearchData) is the strategy and its
+    result as read, no entity states loaded. Not carried at step 4 (design D7): extractSearchRefinements,
+    filterClassifierTemplates and the semantic strategy with its type-filter fallback (step 5 decides them with the
+    graphrag default), pin strategy names pathrag and entity_lookup (now path and entity), the pin's level, max_communities, summarize_threshold and
+    include_* request keys (refused by name), and the reply's Count, DurationMs and Degraded fields. Step 5
+    (setup-04a-04-graph-roots-graph-query-text, graphrag.go, searchgraph.go) makes the package whole. A question
+    with no hint, path words with no start, a similarity or a ranking alone, and a one-word reference naming no entity
+    are answered by the text tier (strategy text); the reply names each hint it did not honour (path, similarity,
+    ranking) in unhonoured_hints and in answer. The keyword classifier takes ordinary words as hints ("http connection
+    pool", "file path handling"), which is why they are answered, not refused, and no trigger-word list is kept. A
+    count or other aggregation ("how many", "max retries", "total memory usage") is refused invalid_request naming it;
+    path words, a similarity or a ranking beside a start, a time range or an area is refused invalid_request naming
+    both; a named start that names no entity is entity_not_found, never empty (this narrows ADR-114's step 4
+    sentence). The text tier reads the records of COMMUNITY_INDEX at the request's level (new key level, 0 to 2,
+    omitted 0, checked on every request) once, through View.ListCounted, scores each record against the question's
+    distinct terms (2.0 for a term in the statistical summary, 1.5 for each keyword and term where one contains the
+    other, the pin's), reads one prefix page (at most 1,000 entities) of each of the best five groups scoring above 0,
+    ranks their entities as localSearch does, and replies with the matches best first (id, label, score, the entity
+    as the page sent it), the groups' records beside them, entities_scanned, entities_truncated, unreadable_groups
+    and a plain answer. A label is the first non-empty string value of an entity's most salient predicate in
+    vocabulary.DiscoverLabelPredicates, read once at Start. indexed_revision is the highest entity_revision among the
+    level's readable records, so a min_revision above it is refused revision_not_reached before any page is read. A
+    view that is missing, catching up, lost or stopped, and a level with no record, are transient index_not_ready;
+    every record unreadable is transient internal; some unreadable is an answer with unreadable_groups set, one
+    Health error and one Warn. More than graph.MaxSearchTerms distinct terms is invalid_request. searchGraph is its
+    own row served by the same handler, its data equal to globalSearch's for the same request; the pin's semantic
+    fallback is not carried (design D7), nor are max_communities, summarize_threshold, include_summaries,
+    include_relationships, include_sources, auto-summary, entity digests and the reply's count, duration_ms,
+    degraded and answer_model fields (design D4). The semantic fallback of the text strategy returns in a follow-up graph-query change (owner ruling S1, #563). Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
     requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
     key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
     revision_not_reached instead of swallowing them (ADR-114); relationships requires direction and names the
     predicate where the pin named edge_type; the entity reply names kv_revision
   dependencies_and_side_effects: >-
-    production: component, graph, graph/clustering, graph/kvcatalog, internal/kvwatch, metric, natsclient, pkg/errs,
-    pkg/graphview, pkg/types, vocabulary (in-set); tests also use nats.go; one request subscription per served verb;
+    production: component, graph, graph/clustering, graph/kvcatalog, graph/query, internal/kvwatch, metric, natsclient,
+    pkg/errs, pkg/graphview, pkg/types, vocabulary (in-set; step 5 reads its label predicate set once at Start); tests also use nats.go; one request subscription per served verb;
     zero to two downstream requests per call (a refused request makes none, entityByAlias up to two), except
     pathSearch, at most 1 plus max_nodes, doubled for direction both, summary, two (predicateList, then one prefix
-    page), and localSearch, one prefix page, or one entity read when the group has no record; since step 3 one goroutine
+    page), localSearch, one prefix page, or one entity read when the group has no record, and globalSearch and
+    searchGraph, which make none for a refused question and otherwise the requests of one strategy (an alias request
+    and an entity read; the walk of pathSearch; one time-range or bounds request; for text, one prefix page for each
+    of at most five groups); since step 3 one goroutine
     (the community supervisor, joined by Stop) watching COMMUNITY_INDEX read-only, and counters on the injected
     registry; no write to any bucket
   known_risks: >-
@@ -4255,8 +4346,22 @@
     the number that decides whether a keyword index per community (#506) is due. Nothing in the framework writes
     COMMUNITY_INDEX until change 7, so localSearch is refused index_not_ready until then. A min_revision from a write
     outside the searched group is refused until that group next changes. The nats.go time a lost watch takes to be seen
-    is observed, not promised (pkg/graphview row). Later steps carry searchgraph.go, entity_resolver.go and their
-    tests
+    is observed, not promised (pkg/graphview row). globalSearch classifies with the keyword tier alone, whose limits
+    the owner accepted (tracked in #535): "from A to B" walks from A and drops B; the refusal of an entity beside a
+    zone or area is loud and can be wrong ("in real-time", "non-zero" or "the area with pumps" beside a place can be
+    refused as a second place); a path start is the hyphenated word the classifier finds, never a whole ID. Until
+    change 7 brings the responders, temporal and spatial are refused transient internal, which counts an error in
+    Health. The text tier is a sample: it reads at most five groups, one page of each, so a match further down a
+    group's ID order is missed and entities_truncated says so (the counter now counts globalSearch and searchGraph
+    answers too; #506 is the keyword index that would end the sample). A group whose ten keywords miss the question's
+    words is not read (design D2): a match in it is not found. Its revision mark is the maximum over the level's
+    records, and a delete that empties its group removes the record without raising the mark, so a min_revision from
+    that delete can be refused until another write at the level (design D5); the rule also leans on the maintainer
+    taking writes in revision order (#525). Until change 7 writes COMMUNITY_INDEX every text question is refused
+    transient index_not_ready, so a tier-1 deployment's searchGraph, answered by embeddings at the pin, is refused
+    until the follow-up graph-query change adds the semantic fallback (owner ruling S1, #563; MIGRATION.md). The keyword classifier's limits (#535) now
+    shape which questions reach the text tier: a word it reads as a count ("max", "total", "min") refuses answerable
+    free text invalid_request. Not carried: the pin's searchgraph.go fallback
   proving_tests: >-
     processor/graph-query tests (TestForwardPassesBytesBothWays, TestForwardedRefusalKeepsClassCodeDetail,
     TestNoRespondersIsTransient, TestQueryTimeoutIsRead, TestGraphQueryServesExactlyTheDeclaredVerbs,
@@ -4273,7 +4378,21 @@
     TestLocalSearchRefusals, TestLocalSearchRefusesBadRequests, TestLocalSearchEntitiesPassUnchanged,
     TestLocalSearchFitsMaxPayload, TestLocalSearchBeforeCommunityIndexExists,
     TestLocalSearchAfterCommunityIndexAppears, TestLocalSearchRefusesAfterWatchLoss, TestLocalSearchDuringBlockedTick,
-    TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, and the lifecycle suite
+    TestStopEndsTheCommunityView, TestTruncatedSearchIsCounted, for step 4 TestGlobalSearchRoutesByHints,
+    TestGlobalSearchRefusesTwoFilters, TestGlobalSearchRefusesImpossibleNumbers, TestGlobalSearchEndedClassification,
+    TestGlobalSearchRefusesHintsItCannotRead, TestGlobalSearchRequestKeys, TestGlobalSearchEntity,
+    TestGlobalSearchOneWordIsAReference, TestGlobalSearchPath, TestGlobalSearchPassesAliasRefusals,
+    TestGlobalSearchUnknownWordIsSearched, TestGlobalSearchUnknownIDIsSearched, TestGlobalSearchUnknownPathStart,
+    TestGlobalSearchHintBesideAFilter, TestZoneQuestionNeverAnswersEmpty, TestGlobalSearchRefusesADroppedPlace,
+    TestGlobalSearchTemporal, TestGlobalSearchSpatial, TestGlobalSearchNoResponders, for step 5 TestTextTierScore,
+    TestTextTierTermLimit, TestTextTierRefusesAViewCatchingUp, TestTextTierReadsAtMostFiveGroups,
+    TestTextTierSkipsUnmatchedGroups, TestTextTierRefusesAnEmptyLevel, TestTextTierReadsTheAskedLevel,
+    TestTextTierMatchesEqualAFilter, TestTextTierMarksACutPage, TestTextTierRevision,
+    TestTextTierRevisionIgnoresUnreadable, TestTextTierAllUnreadable, TestTextTierReply, TestGlobalSearchTextQuestion,
+    TestMatchLabel, TestTextTierAnswer, TestTextTierFitKeepsTheBestThatFit, TestTextTierFitsMaxPayload,
+    TestTextTierPoisonIsDeclared, TestTruncatedSearchIsCounted over globalSearch and searchGraph, for searchGraph
+    TestSearchGraphAnswersAsGlobalSearch, TestQueryVerbsDeclareEachRespondersVerbs and
+    TestGraphQueryServesExactlyTheDeclaredVerbs, and the lifecycle suite
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: adapt
 
@@ -4303,7 +4422,7 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     one markdownlint disable comment (a long line) and a port note under the title naming the pin path and SHA, and
-    that pkg/fusion and graph-embedding, which it describes, arrive in change 5 and are not in the tree
+    that graph-embedding, which it describes, is in the tree (change 5, PR B) and pkg/fusion is not (change 5, PRs C and D)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query-reads technical writer
   disposition: adapt
@@ -4382,3 +4501,80 @@
   proving_tests: n/a (excluded)
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: defer-exclude
+
+# Change setup-04a-05-first-consumer-graph-embedding (PR #550, epic #9): processor/graph-embedding ported as adapt,
+# PR A of the change's split (the write path): the configuration and factory, the shell, the follower plug-in, the
+# Worker, the failed map and the repair lane. PR B adds the query verbs; fusion is PRs C and D.
+
+- source_path: processor/graph-embedding
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the graph's tier-0 embedding records: follows ENTITY_STATES and keeps one BM25 record per entity with text in
+    EMBEDDING_INDEX, with its dedup keys in EMBEDDING_DEDUP, and reports on the graph-embedding readiness key;
+    semsource composes it with coalesce_ms, embedder_type, batch_size and text_suffixes (inventory § 5)
+  destination: processor/graph-embedding
+  contract: >-
+    the write path as at the pin, with these adaptations (spec graph-embedding; design D1-D6). Configuration (D4):
+    (1) strict configuration: an unknown key is refused naming it, batch_size (read nowhere at the pin)
+    and cache_ttl among them, which replaces the pin's targeted cache_ttl probe; (2) embedder_type is bm25 only, an
+    empty value means bm25, and any other value, http included, is refused naming the value and tier 0; the
+    registration asks boot for no model registry; (3) max_text_len 0 resolves at construction to BM25's 4,000 and
+    text_suffixes empty to the pin's nine defaults, so each reader sees one value; workers 0 is 5, negative workers
+    or max_text_len and max_text_len past embedding.MaxSourceTextLenCeiling are refused, as at the pin; (4) a
+    configuration with no ports takes the default ports and a ports block that is present is used as written (ruling
+    K; the pin filled an empty input list); (5) an input other than a kv-watch of every ENTITY_STATES key with no
+    history or a store read is refused naming the port, and one such watch is required (#424, as graph-index); a
+    declared output is refused, as at the pin; (6) the injected store registry is kept only when a store-read input
+    is declared (ADR-063), as at the pin. Behaviour: (7) the lifecycle is component.Lifecycle and the ENTITY_STATES
+    watch, snapshot replay, watermark and readiness envelope are graph/follower's, with the pin's own watch, reset
+    latch, status bucket, heartbeat and readiness.go not carried (D1; ADR-108, #109); (8) a revision completes when
+    the Worker reports its terminal outcome or hop 1 ends it, and with coalesce_ms above zero completing a coalesced
+    entity drains its lower revisions (ADR-066 section 3); (9) embedding.Worker.Run runs under the one run context
+    and a Run that returns while it is live is a stuck state in Health until restart (D2; ADR-113); (10) the failed
+    map keeps the latest terminal outcome per entity, never takes back a failure older than it, and reaches the
+    envelope as per-reason counts through follower.Config.Failed (D3; owner, G10); first_failure_at is not set
+    (D3); (11) a repair lane retries hop 1's three failures (delete_failed, pending_write_failed,
+    entity_read_failed) every 30 s until Stop; (12) Health has no error-count term (D6; ADR-109 D2) and no status
+    verb is served (ADR-083, ADR-109 D3); (13) graph-embedding's own imports include no model package;
+    (14) it serves search and similar on their graph.QueryVerbs subjects from Start until Stop, in a QueryResponse
+    with indexed_revision 0, decoding requests strictly, refusing a limit outside 0 to 100 and a min_revision above 0
+    (invalid_request), dropping score-0 hits, filtering by scope before ranking, and withholding on the follower's
+    QueryReady narrowed by follower.Config.Withhold to hop 1's failures (spec graph-embedding; ADR-071)
+  dependencies_and_side_effects: >-
+    component, graph, graph/embedding, graph/follower, graph/kvcatalog, graph/readiness, internal/cache,
+    natsclient, metric, pkg/errs, storage/storeregistry (in-set); nats.go/jetstream; the follower's watch on
+    ENTITY_STATES, reads and writes on EMBEDDING_INDEX and EMBEDDING_DEDUP, the Worker's watch on EMBEDDING_INDEX, a
+    repair lane and a coalescer, started in Start and joined in Stop; registers semengine_graph_embedding_
+    content_unresolved_total on the injected metrics registry (metrics.go)
+  known_risks: >-
+    Config break for consumers: semsource's configuration sets batch_size under graph-embedding and fails at boot
+    until the line is deleted; an embedder_type of http fails at boot; the status card loses first_failure_at;
+    graph.embedding.query.status has no responder; the query verbs refuse unknown keys, limits outside 0 to 100 and
+    a min_revision above 0, and drop score-0 hits; the degraded rule is completion-based at 30 s for every plug-in
+    (MIGRATION.md). Hop 1 runs serially on the follower's goroutine, so a slow pending write delays delivery
+    (throughput, not correctness). Open: an offloaded body's fetch has no deadline and a hanging store pins a Worker
+    lane (#551); after a restart without the body's store the Worker's replay
+    and hop 1's re-read count two exclusions in content_unresolved_total. The Worker's other metrics are dropped
+    until their collectors are ported. Not carried: the http embedder and the model import (#32, #489), BatchSize,
+    the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
+    test hook subscribeForRequests, and its nil-storage, nil-embedder and empty-vector branches
+  proving_tests: >-
+    processor/graph-embedding/config_test.go (TestConfigRefusesUnknownKey, TestConfigRefusesHTTPEmbedder,
+    TestConfigEmbedderType, TestConfigWorkers, TestConfigMaxTextLen, TestConfigTextSuffixes, TestConfigStartupWait,
+    TestConfigCoalesceMs, TestConfigWithoutPortsTakesDefaultPorts, TestConfigPresentPortsUsedAsWritten,
+    TestConfigRefusesOutputs, TestConfigRefusesInputsTheFollowerDoesNotRead, TestStoreReadInputAdmitsStoreRegistry,
+    FuzzResolveConfig), factory_test.go (TestCreateGraphEmbeddingRequiresNATSClient, TestRegisterAddsGraphEmbedding),
+    failed_test.go (TestFailedMapHistoryMatchesModel), the integration-tagged files (TestReadinessWaitsForHopTwo,
+    TestRestartCompletesGeneratedRevision, TestCoalescedRevisionsComplete, TestRecreatedRevisionWaitsForWorker,
+    TestStorageRefLaneEmbedsIdentityThenBody,
+    TestStopJoinsWorker, TestHealthNamesLostWorkerWatch, TestStrandedWithoutRevisionClearsOnlyOnConvergence,
+    TestRepairConvergesStranded, TestStartSeedsFailedMap, TestLateFailureAfterAbsenceNotCounted,
+    TestHealthIgnoresErrorCount, TestNoStatusVerb, TestWorkerExclusionCountedAfterRestart, TestHandlersDecodeStrictly,
+    TestMinRevisionAboveZeroRefused, TestRefusalsBeforeAnyRead, TestVerbsServeTableSubjects,
+    TestSearchAnswersEnveloped, TestSearchLimitEdges, TestSearchQueryEdges, TestSearchScopeEdges, TestSimilarEdges,
+    TestTopKAtTie, TestScopedSearch, TestQueriesWithheldUntilReady, TestWorkerFailureAnswersAndCounts,
+    TestHealthNamesLostCacheWatch, TestNoResponderAfterStop,
+    TestGraphEmbeddingLifecycleSuite), internal/harness/contract/embeddingprovider_test.go
+    (TestGraphEmbeddingImportsNoProviderModule)
+  owner: setup-04a-05-first-consumer-graph-embedding developer
+  disposition: adapt

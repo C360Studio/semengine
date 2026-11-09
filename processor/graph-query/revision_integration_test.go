@@ -98,9 +98,9 @@ func TestReadYourWrites(t *testing.T) {
 }
 
 // TestMinRevisionRefusalThroughGraphQuery: each enveloped verb asked for a revision far above the
-// index's passes on the index's refusal with class, code and detail, and localSearch refuses on its
-// group record's revision, while the same request without the field, or at the revision reached,
-// succeeds, so it is the field that was refused. The index and the record have reached the only write
+// index's passes on the index's refusal with class, code and detail, localSearch refuses on its
+// group record's revision and the text tier of globalSearch and searchGraph on its level's highest, while the same
+// request without the field, or at the revision reached, succeeds, so it is the field that was refused. The index and the record have reached the only write
 // and nothing else writes, so the detail is that write's revision.
 func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 	stack := startCommunityStack(t)
@@ -122,6 +122,14 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 		{"summary", "summary", `"examples_per_type":1`},
 		// The record's entity_revision is the write's: the one write to its group.
 		{"localSearch", "localSearch", fmt.Sprintf(`"entity_id":%q,"query":"drone"`, drone1)},
+		// The alias verb refuses for both strategies, before the entity read or the walk.
+		{"globalSearch entity", "globalSearch", `"query":"held-1"`},
+		{"globalSearch path", "globalSearch", `"query":"what is connected to held-1"`},
+		// The text tier's mark is the highest entity_revision at level 0: drone1's group's, the write's.
+		{"globalSearch text", "globalSearch", `"query":"alpha drone"`},
+		{"searchGraph entity", "searchGraph", `"query":"held-1"`},
+		{"searchGraph path", "searchGraph", `"query":"what is connected to held-1"`},
+		{"searchGraph text", "searchGraph", `"query":"alpha drone"`},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			subject := verbRow(t, graph.ResponderGraphQuery, tc.verb).Subject
@@ -201,8 +209,8 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	awaitCommunityView(t, stack.client, drone1, written)
 
 	for _, stub := range []struct{ responder, name, reply string }{
-		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25"},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
-		{graph.ResponderGraphEmbedding, "similar", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.5}]},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25","unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphEmbedding, "similar", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.5}],"unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphIndexSpatial, "bounds", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","lat":48.25,"lon":11.5,"alt":310.5}],"truncated":true},"indexed_revision":9,"producer":"graph-index-spatial","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphIndexTemporal, "range", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001"}],"truncated":false},"indexed_revision":9,"producer":"graph-index-temporal","timestamp":"2026-11-04T10:00:00Z"}`},
 	} {
@@ -229,6 +237,8 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"hierarchyStats": {`{"prefix":"c360.test.query.system.drone"}`},
 		"summary":        {`{}`, `{"prefix":"c360.test.query.system.drone","exclude_predicates":true}`},
 		"localSearch":    {fmt.Sprintf(`{"entity_id":%q,"query":"alpha"}`, drone1)},
+		"globalSearch":   {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
+		"searchGraph":    {`{"query":"held-1"}`, `{"query":"what is connected to held-1"}`},
 	}
 	walked := 0
 	for _, verb := range graph.QueryVerbs() {

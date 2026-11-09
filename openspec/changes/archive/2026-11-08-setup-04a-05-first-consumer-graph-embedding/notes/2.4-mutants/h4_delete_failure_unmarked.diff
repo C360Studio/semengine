@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -116,7 +116,6 @@
+ func (c *Component) removeRecord(ctx context.Context, key string, revision uint64, warning string) {
+ 	if err := c.storage.DeleteEmbedding(ctx, key); err != nil {
+ 		c.logger.Warn(warning, slog.String("entity", key), slog.Any("error", err))
+-		c.failed.mark(key, revision, embedding.ReasonDeleteFailed)
+ 	} else {
+ 		c.failed.ended(key, revision)
+ 	}

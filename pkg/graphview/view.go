@@ -354,10 +354,10 @@ func (v *View[T]) WaitCaughtUp(ctx context.Context) error {
 
 // Applied returns the applied-revision watermark together with the KV SERVER
 // WRITE TIME (entry.Created()) of the newest revision the view has applied —
-// the "this view reflects the bucket as of T" pair. The time mirrors
-// readiness.IndexStatusInputs.IndexedAt
-// (graph/readiness), the write time graph-index projects into the ADR-083
-// staleness_ms field.
+// the "this view reflects the bucket as of T" pair. It is not the time
+// graph-index projects into the ADR-083 staleness_ms field: that is
+// readiness.IndexStatusInputs.OldestUnappliedAt (graph/readiness), the commit
+// time of the oldest delivered write graph-index has not yet applied.
 //
 // Both values are read in ONE critical section, so the revision and the
 // timestamp always name the same write; reading them through two accessors
@@ -380,7 +380,7 @@ func (v *View[T]) WaitCaughtUp(ctx context.Context) error {
 // appliedAt is the ZERO time until something has been applied, and stays zero
 // rather than being fabricated as time.Now(). A caller computing an age MUST
 // check IsZero and treat it as "currency not computable" — the contract
-// readiness.IndexStatusInputs.IndexedAt uses, where the projection deliberately
+// readiness.IndexStatusInputs.OldestUnappliedAt uses, where the projection deliberately
 // declines to make an uncomputable view look fresh. It is zero for the same
 // reason when the newest applied write carried no server timestamp (real KV
 // entries always do; fakes and synthetic replays need not).
@@ -428,18 +428,46 @@ func (v *View[T]) List(prefix string, limit int) ([]KeyedEntry[T], error) {
 	if err := v.usableLocked(); err != nil {
 		return nil, err
 	}
+	out := v.listLocked(prefix)
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
+}
+
+// ListCounted returns what List(prefix, 0) returns and the number of poisoned keys with
+// the prefix, both read under one hold of the projection, so the count describes exactly
+// the listing beside it: every key the view holds under the prefix is either listed or
+// counted, never both; a key the decode skips is held as neither. It honors the same
+// readiness gate as Get. The entries' values are the stored ones, which an
+// apply replaces whole and never edits; callers read them only.
+func (v *View[T]) ListCounted(prefix string) ([]KeyedEntry[T], int, error) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	if err := v.usableLocked(); err != nil {
+		return nil, 0, err
+	}
+	poisoned := 0
+	for k := range v.poisoned {
+		if strings.HasPrefix(k, prefix) {
+			poisoned++
+		}
+	}
+	return v.listLocked(prefix), poisoned, nil
+}
+
+// listLocked returns every entry whose key has prefix (empty matches all), sorted by key.
+// The caller holds v.mu.
+func (v *View[T]) listLocked(prefix string) []KeyedEntry[T] {
 	out := make([]KeyedEntry[T], 0, len(v.entries))
 	for k, e := range v.entries {
-		if prefix != "" && !strings.HasPrefix(k, prefix) {
+		if !strings.HasPrefix(k, prefix) {
 			continue
 		}
 		out = append(out, KeyedEntry[T]{Key: k, Value: e.value, Revision: e.revision})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Key < out[j].Key })
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
-	}
-	return out, nil
+	return out
 }
 
 // SnapshotAndSubscribe atomically captures a snapshot and registers the

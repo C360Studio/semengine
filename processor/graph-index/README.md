@@ -165,7 +165,8 @@ entry, update or delete, before merging.
 
 The follower publishes the readiness record to `GRAPH_STATUS` at once and then every heartbeat, with `indexed_revision`,
 `target_revision` and `failed_count`. The state reads `degraded` when index writes are unresolved, the feed is lost, or
-the watermark has not moved for 30 seconds while behind.
+the follower has been behind for 30 seconds with no completed write. Any completed write counts, so one entity held
+while others finish reads not ready, not degraded (owner ruling (a1), PR #550 comment 6721867279).
 
 ### Lost feed
 

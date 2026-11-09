@@ -27,12 +27,10 @@ func TestCatalogReader_ExportedSurfaceIsReadOnly(t *testing.T) {
 
 	assert.Equal(t, []string{
 		"Get",
-		"Keys",
-		"ListKeys",
-		"ListKeysFiltered",
 		"Status",
 		"Watch",
 		"WatchAll",
+		"WatchFiltered",
 	}, methods)
 }
 

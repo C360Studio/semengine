@@ -241,6 +241,77 @@ func TestGetAndListSurface(t *testing.T) {
 	})
 }
 
+// TestListCountedCountsPoison (spec "An enumeration counts what it cannot serve"):
+// ListCounted returns List(prefix, 0)'s entries and the number of poisoned keys under the
+// prefix; a valid write heals a poisoned key and a delete removes it; before the replay
+// ends, after a loss and after a stop it returns List's readiness errors.
+func TestListCountedCountsPoison(t *testing.T) {
+	type counted struct {
+		Entries  []KeyedEntry[string]
+		Poisoned int
+	}
+	listCounted := func(t *testing.T, v *View[string], prefix string) counted {
+		t.Helper()
+		entries, poisoned, err := v.ListCounted(prefix)
+		require.NoError(t, err)
+		return counted{entries, poisoned}
+	}
+
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		h.put("a.2", "v2", 1)
+		_, _, err := h.view.ListCounted("a.")
+		require.ErrorIs(t, err, ErrNotReady, "before the replay ends")
+
+		h.put("a.1", "POISON-a1", 2)
+		h.put("a.3", "v3", 3)
+		h.put("b.1", "POISON-b1", 4) // poison outside the prefix is not counted
+		h.endReplay()
+
+		require.Equal(t, counted{
+			Entries:  []KeyedEntry[string]{{Key: "a.2", Value: "v2", Revision: 1}, {Key: "a.3", Value: "v3", Revision: 3}},
+			Poisoned: 1,
+		}, listCounted(t, h.view, "a."))
+		require.Equal(t, counted{
+			Entries: []KeyedEntry[string]{
+				{Key: "a.2", Value: "v2", Revision: 1}, {Key: "a.3", Value: "v3", Revision: 3},
+			},
+			Poisoned: 2,
+		}, listCounted(t, h.view, ""), "an empty prefix matches every key")
+
+		h.put("a.1", "v1", 5) // a valid write heals the key
+		require.Equal(t, counted{
+			Entries: []KeyedEntry[string]{
+				{Key: "a.1", Value: "v1", Revision: 5}, {Key: "a.2", Value: "v2", Revision: 1},
+				{Key: "a.3", Value: "v3", Revision: 3},
+			},
+			Poisoned: 0,
+		}, listCounted(t, h.view, "a."))
+
+		h.put("a.3", "POISON-a3", 6)
+		h.del("b.1", 7) // a delete removes a poisoned key
+		require.Equal(t, counted{
+			Entries:  []KeyedEntry[string]{{Key: "a.1", Value: "v1", Revision: 5}, {Key: "a.2", Value: "v2", Revision: 1}},
+			Poisoned: 1,
+		}, listCounted(t, h.view, ""))
+
+		require.ErrorIs(t, h.stop(), context.Canceled)
+		_, _, err = h.view.ListCounted("a.")
+		require.ErrorIs(t, err, ErrViewStopped, "after a stop")
+	})
+
+	synctest.Test(t, func(t *testing.T) {
+		h := newHarness(t)
+		h.put("a.1", "POISON-a1", 1)
+		h.endReplay()
+		h.w.lose()
+		require.ErrorIs(t, h.runResult(), ErrWatcherLost)
+		_, _, err := h.view.ListCounted("a.")
+		require.ErrorIs(t, err, ErrWatcherLost, "after a loss")
+		require.ErrorIs(t, err, ErrNotReady, "a loss is a not-ready state")
+	})
+}
+
 // TestSkippedKeyMapsToAbsence: keep=false decodes are not part of the view —
 // a skipped write on a previously-kept key converges subscribers to absence
 // via a tombstone at that revision; a skipped write on an unknown key only

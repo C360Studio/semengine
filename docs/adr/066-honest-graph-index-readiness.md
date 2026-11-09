@@ -507,3 +507,9 @@ diagnosis here (:118-134) as the reason a boot window exists and answers that wi
 `index_not_ready` reply; `ready` (:89-92) is information, never a gate; `allow_ungated_reads` (:85) is dropped;
 fusion's copy of the envelope (:338-339) is fusion's port's question; the sparse-delivery claim (:408-409) against
 ADR-110 :192 goes to #103.
+
+§4's stuck rule changed for graph-index (owner ruling (a1), PR #550 comment 6721867279): the shared follower
+(`graph/follower`) reads `degraded` once it has been behind the target for 30 s with no completed write, for every
+plug-in, instead of "`IndexedRevision` unchanged across `> K` status intervals". Any completion counts, so one revision
+held while later ones complete reads not ready but not `degraded`; this is the embedding producer's completions rule
+(this record, :495) applied to graph-index too.

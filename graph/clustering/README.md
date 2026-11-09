@@ -40,6 +40,8 @@ To read one record, a reader finds its key with `GroupKey(entityID, level)`, whi
 ID the canonical parser refuses, and checks the value with `DecodeCommunity(key, value)`, which refuses a value that is
 not JSON, a record whose level is not 0, 1 or 2, a record whose level and ID do not give that key, and `entity_revision`
 0. `GetAllCommunities` checks each entry the same way.
+To read every record at one level, a reader lists the keys that start with `LevelPrefix(level)`, the level and a dot,
+which refuses a level outside 0 to 2.
 
 A *word* is a run of 3 to `MaxWordBytes` (32) ASCII letters and digits in a string value, ignoring case and a short
 list of stop words. A longer run is not a word, and nothing is cut. IDs, predicate names and the objects of

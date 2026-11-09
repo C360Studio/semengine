@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,24 +37,15 @@ func (e fakeEntry) Created() time.Time              { return e.created }
 func (e fakeEntry) Delta() uint64                   { return 0 }
 func (e fakeEntry) Operation() jetstream.KeyValueOp { return e.op }
 
-type fakeKeyLister struct {
-	keys []string
-	stop chan struct{}
+// fakeWatch is a scripted key watch. Like nats.go's, it closes Updates once, after Stop.
+type fakeWatch struct {
+	updates   chan jetstream.KeyValueEntry
+	closeOnce sync.Once
 }
 
-func (l *fakeKeyLister) Keys() <-chan string {
-	ch := make(chan string, len(l.keys))
-	for _, k := range l.keys {
-		ch <- k
-	}
-	close(ch)
-	return ch
-}
-
-func (l *fakeKeyLister) Stop() error {
-	if l.stop != nil {
-		close(l.stop)
-	}
+func (w *fakeWatch) Updates() <-chan jetstream.KeyValueEntry { return w.updates }
+func (w *fakeWatch) Stop() error {
+	w.closeOnce.Do(func() { close(w.updates) })
 	return nil
 }
 
@@ -75,6 +67,9 @@ type fakeReportStore struct {
 	putErr    error
 	deleteErr error
 	listErr   error
+	// listClosesEarly closes the listing's watch after its keys and before its
+	// end marker, with the context live, as a watch that ends short does.
+	listClosesEarly bool
 	// putErrForKey fails ONE key's write while the rest of the publication
 	// succeeds, which is the shape a transient per-message NATS failure takes.
 	putErrForKey map[string]error
@@ -156,21 +151,26 @@ func (s *fakeReportStore) History(_ context.Context, key string, _ ...jetstream.
 	return out, nil
 }
 
-func (s *fakeReportStore) ListKeys(_ context.Context, _ ...jetstream.WatchOpt) (jetstream.KeyLister, error) {
+func (s *fakeReportStore) WatchFiltered(_ context.Context, keys []string, _ ...jetstream.WatchOpt) (jetstream.KeyWatcher, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if len(keys) != 1 || keys[0] != ">" {
+		return nil, fmt.Errorf("fakeReportStore.WatchFiltered(%q): reclaim lists every key", keys)
+	}
 	if s.listErr != nil {
 		return nil, s.listErr
 	}
-	live := make([]string, 0, len(s.order))
-	for _, key := range s.order {
-		entries := s.history[key]
-		if len(entries) == 0 || entries[len(entries)-1].op != jetstream.KeyValuePut {
-			continue
-		}
-		live = append(live, key)
+	live := s.liveKeysLocked()
+	watch := &fakeWatch{updates: make(chan jetstream.KeyValueEntry, len(live)+1)}
+	for _, key := range live {
+		watch.updates <- fakeEntry{key: key, op: jetstream.KeyValuePut}
 	}
-	return &fakeKeyLister{keys: live}, nil
+	if s.listClosesEarly {
+		_ = watch.Stop()
+		return watch, nil
+	}
+	watch.updates <- nil
+	return watch, nil
 }
 
 // liveRow decodes the current value of a key, as an operator surface would.
@@ -188,12 +188,22 @@ func (s *fakeReportStore) liveRow(t *testing.T, key string) ResourceReport {
 }
 
 func (s *fakeReportStore) liveKeys() []string {
-	lister, _ := s.ListKeys(context.Background())
-	var keys []string
-	for key := range lister.Keys() {
-		keys = append(keys, key)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.liveKeysLocked()
+}
+
+// liveKeysLocked returns the keys whose latest revision is a put, in first-write order. s.mu is held.
+func (s *fakeReportStore) liveKeysLocked() []string {
+	live := make([]string, 0, len(s.order))
+	for _, key := range s.order {
+		entries := s.history[key]
+		if len(entries) == 0 || entries[len(entries)-1].op != jetstream.KeyValuePut {
+			continue
+		}
+		live = append(live, key)
 	}
-	return keys
+	return live
 }
 
 // liveResourceKeys is liveKeys minus the reserved per-tier account row, for the
@@ -956,6 +966,26 @@ func TestStorageReportPublisher_ReclamationFailureIsReportedNotSwallowed(t *test
 		require.Error(t, err)
 		assert.Equal(t, 1, result.Published, "the rows that landed are still reported")
 		assert.Equal(t, 0, result.Deleted)
+	})
+
+	// Design D3 test 4: a listing that ends before its end marker, with the
+	// context live, is not a complete listing, so nothing it read is reclaimed.
+	t.Run("the key listing closes before its end", func(t *testing.T) {
+		store := newFakeReportStore(10)
+		publisher := newTestPublisher(t, store, defaultSource())
+		_, err := publisher.Publish(context.Background(), inventoryAt(first,
+			boundedResource("STAYS", mib(1000), mib(100)),
+			boundedResource("GOES", mib(1000), mib(100)),
+		))
+		require.NoError(t, err)
+
+		store.listClosesEarly = true
+		result, err := publisher.Publish(context.Background(),
+			inventoryAt(first.Add(time.Minute), boundedResource("STAYS", mib(1000), mib(110))))
+		require.Error(t, err, "a listing cut short is reported, never read as complete")
+		assert.Equal(t, 0, result.Deleted)
+		assert.Empty(t, store.deletedKeys(), "no row is deleted from a listing cut short")
+		assert.Contains(t, store.liveKeys(), "GOES", "the row a complete listing would reclaim is still live")
 	})
 
 	t.Run("a delete fails", func(t *testing.T) {

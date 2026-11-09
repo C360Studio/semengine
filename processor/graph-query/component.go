@@ -15,6 +15,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/vocabulary"
 )
 
 // key names graph-query once: its registration, its logger and its rows in the verb table.
@@ -36,7 +37,11 @@ type Component struct {
 	// for graph-query. Start records them and cleanup clears them once it has drained them all.
 	subscriptions []*natsclient.Subscription
 
-	// communities is the view of COMMUNITY_INDEX localSearch reads, nil while there is none. Only the
+	// labelPredicates is the label set, most salient first, from which the text search labels its
+	// matches (design D4). start sets it, before any handler is subscribed; handlers only read it.
+	labelPredicates []string
+
+	// communities is the view of COMMUNITY_INDEX localSearch and the text search read, nil while there is none. Only the
 	// community supervisor stores it; handlers load it.
 	communities atomic.Pointer[communityView]
 
@@ -138,7 +143,7 @@ func (c *Component) OutputPorts() []component.Port {
 }
 
 // Health reports the shell's verdict (component.Lifecycle.Health). A missing or lost community view
-// is not in it: localSearch refuses per request instead (design D3).
+// is not in it: localSearch and the text search refuse per request instead (design D3).
 func (c *Component) Health() component.HealthStatus {
 	return c.lifecycle.Health()
 }
@@ -160,7 +165,7 @@ func (c *Component) Initialize() error {
 // errors and a later Stop tries again. A component with no NATS client is refused first.
 //
 // Start neither waits for nor fails on a missing COMMUNITY_INDEX: until a view of it has caught up,
-// localSearch refuses index_not_ready and the other verbs answer (design D3). ctx bounds the
+// localSearch and the text search refuse index_not_ready and the other verbs answer (design D3). ctx bounds the
 // subscribing only and is not kept; the supervisor runs under the one run context, which Stop ends
 // (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
@@ -173,6 +178,9 @@ func (c *Component) Start(ctx context.Context) error {
 // start creates the run context, starts the community supervisor under it, and subscribes the verbs
 // last, as graph-index does, so a failed subscription's rollback ends the supervisor too.
 func (c *Component) start(ctx context.Context) error {
+	// Read once, as graph-index reads it (processor/graph-index/index.go:88): the composition has
+	// registered its predicates before Start.
+	c.labelPredicates = labelOrder(vocabulary.DiscoverLabelPredicates())
 	// The one run context: Start's values without its cancellation, ended only by cleanup.
 	runCtx, runCancel := context.WithCancel(context.WithoutCancel(ctx))
 	supervised := make(chan struct{})

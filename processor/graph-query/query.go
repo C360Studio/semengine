@@ -20,9 +20,9 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 
 // queryHandlers maps each verb graph-query answers, by its name in graph.QueryVerbs, to its handler.
 // A forward answers from the row it names here by responder and name, since semantic forwards to
-// search (design D1), and entityByAlias, relationships, pathSearch, hierarchyStats, summary and
-// localSearch from the rows they name, so a row that is gone leaves its verb with no handler, and
-// Start fails naming it.
+// search (design D1), and entityByAlias, relationships, pathSearch, hierarchyStats, summary,
+// localSearch and globalSearch from the rows they name, so a row that is gone leaves its verb with no
+// handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
 		"entity":   {graph.ResponderGraphIngest, "entity"},
@@ -48,10 +48,22 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	if outgoing != "" && incoming != "" {
 		handlers["relationships"] = c.relationships(outgoing, incoming)
 	}
+	prefix := subjectOf(graph.ResponderGraphIngest, "prefix")
 	if entity != "" && outgoing != "" && incoming != "" {
 		handlers["pathSearch"] = c.pathSearch(entity, outgoing, incoming)
+		temporal, spatial := subjectOf(graph.ResponderGraphIndexTemporal, "range"), subjectOf(graph.ResponderGraphIndexSpatial, "bounds")
+		if alias != "" && temporal != "" && spatial != "" && prefix != "" {
+			subjects := globalSearchSubjects{
+				alias: alias, entity: entity, outgoing: outgoing, incoming: incoming, temporal: temporal, spatial: spatial,
+				prefix: prefix,
+			}
+			// searchGraph answers as globalSearch, counted and logged under its own name; the pin's
+			// semantic fallback is not carried (design D7).
+			handlers["globalSearch"] = c.globalSearch("globalSearch", subjects)
+			handlers["searchGraph"] = c.globalSearch("searchGraph", subjects)
+		}
 	}
-	if prefix := subjectOf(graph.ResponderGraphIngest, "prefix"); prefix != "" {
+	if prefix != "" {
 		handlers["hierarchyStats"] = c.hierarchyStats(prefix)
 		if predicateList := subjectOf(graph.ResponderGraphIndex, "predicateList"); predicateList != "" {
 			handlers["summary"] = c.summary(predicateList, prefix)
@@ -147,11 +159,9 @@ func (c *Component) ask(ctx context.Context, subject string, data []byte) ([]byt
 	return nil, errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, fmt.Errorf("request to %s: %w", subject, err))
 }
 
-// entityByAlias asks the alias verb, sending the request's bytes unchanged, then reads the holder, or
-// the input as an entity ID when nobody holds it. Any refusal from either reaches the caller as it
-// arrived (ADR-114). The alias verb's one miss that is not a refusal is a success naming no holder
-// (design D4). Input that is no entity ID is then not found: the entity verb would refuse it as
-// malformed, which it is not, so no second request goes out.
+// entityByAlias resolves the alias, sending the request's bytes unchanged to the alias verb, then
+// reads the entity resolveReference names. Any refusal from either verb reaches the caller as it
+// arrived (ADR-114). A reference that names no entity is entity_not_found, with no second request.
 //
 // data is the entity verb's JSON as it came, not re-decoded into a struct. A reply that is not JSON
 // cannot be enveloped, and is refused.
@@ -167,30 +177,59 @@ func (c *Component) entityByAlias(aliasSubject, entitySubject string) queryHandl
 		if err := json.Unmarshal(data, &request); err != nil {
 			return nil, invalidRequest(err)
 		}
-		raw, err := c.ask(ctx, aliasSubject, data)
+		id, revision, err := c.resolveReference(ctx, aliasSubject, data, request.Alias)
 		if err != nil {
 			return nil, err
 		}
-		aliasReply, err := decodeIndexReply[graph.AliasData](c, aliasSubject, raw)
+		if id == "" {
+			return nil, entityNotFound(request.Alias)
+		}
+		entity, err := c.readEntity(ctx, entitySubject, id)
 		if err != nil {
 			return nil, err
 		}
-		id := request.Alias
-		if aliasReply.Data.CanonicalID != nil {
-			id = *aliasReply.Data.CanonicalID
-		} else if semtypes.ValidateEntityID(id) != nil {
-			return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", id))
-		}
-		entityRequest, err := json.Marshal(graph.EntityRequest{ID: id})
-		if err != nil {
-			return nil, internalError(err)
-		}
-		entity, err := c.ask(ctx, entitySubject, entityRequest)
-		if err != nil {
-			return nil, err
-		}
-		return envelope(c, entitySubject, aliasReply.IndexedRevision, json.RawMessage(entity))
+		return envelope(c, entitySubject, revision, json.RawMessage(entity))
 	}
+}
+
+// entityNotFound is the answer to a reference that names no entity, for entityByAlias and a global
+// search named start alike (design D7).
+func entityNotFound(reference string) error {
+	return errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, fmt.Errorf("not found: %s", reference))
+}
+
+// resolveReference is the one rule an entity reference is read by, for entityByAlias and global
+// search (design D3): it asks the alias verb with aliasRequest, whose alias is reference; a holder
+// wins, else a reference that is a valid entity ID is itself, else it names no entity and the ID is
+// "". The revision is the alias reply's. Every refusal of the alias verb returns as it arrived,
+// alias_ambiguous, index_not_ready, internal and revision_not_reached among them (ADR-114): the pin's
+// resolver read each as "no holder" (pin:entity_resolver.go). There is no suffix lookup (#405).
+func (c *Component) resolveReference(ctx context.Context, aliasSubject string, aliasRequest []byte, reference string) (string, uint64, error) {
+	raw, err := c.ask(ctx, aliasSubject, aliasRequest)
+	if err != nil {
+		return "", 0, err
+	}
+	reply, err := decodeIndexReply[graph.AliasData](c, aliasSubject, raw)
+	if err != nil {
+		return "", 0, err
+	}
+	switch {
+	case reply.Data.CanonicalID != nil:
+		return *reply.Data.CanonicalID, reply.IndexedRevision, nil
+	case semtypes.ValidateEntityID(reference) == nil:
+		return reference, reply.IndexedRevision, nil
+	default:
+		return "", reply.IndexedRevision, nil
+	}
+}
+
+// readEntity asks the entity verb for id and returns its reply's bytes as they came.
+func (c *Component) readEntity(ctx context.Context, entitySubject, id string) ([]byte, error) {
+	request, err := json.Marshal(graph.EntityRequest{ID: id})
+	if err != nil {
+		return nil, internalError(err)
+	}
+	return c.ask(ctx, entitySubject, request)
 }
 
 // relationships answers an entity's links in the one direction asked for, sending the request's bytes

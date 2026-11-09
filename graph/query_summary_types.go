@@ -78,9 +78,9 @@ type EntityTypeSummary struct {
 // Do not compare it against a kv_revision on that answer, since it never catches up and a retry loop
 // would spin for ever.
 type SummaryData struct {
-	// TotalEntities is the length of the key listing: the whole group as listed, before the cursor
-	// and any limit. A listing under concurrent overwrites can repeat some keys and omit as many, so
-	// this is its length, not a count of distinct entities (#512).
+	// TotalEntities is the number of distinct keys in the listing: the whole group as listed, before
+	// the cursor and any limit. A listing under concurrent overwrites can omit keys, so it is not a
+	// snapshot count (#512).
 	TotalEntities int `json:"total_entities"`
 
 	// EntitiesScanned is the rows on this page. The type counts count those rows alone.

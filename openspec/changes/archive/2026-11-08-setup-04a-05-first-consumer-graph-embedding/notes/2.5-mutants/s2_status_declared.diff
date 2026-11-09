@@ -1,0 +1,11 @@
+--- a/graph/query_verbs.go
++++ b/graph/query_verbs.go
+@@ -88,6 +88,8 @@
+ 			Enveloped: true, Reply: reflect.TypeFor[SemanticData]()},
+ 		{Name: "similar", Subject: "graph.embedding.query.similar", Responder: ResponderGraphEmbedding,
+ 			Enveloped: true, Reply: reflect.TypeFor[SimilarData]()},
++		{Name: "status", Subject: "graph.embedding.query.status", Responder: ResponderGraphEmbedding,
++			Reply: reflect.TypeFor[IndexStatusResponse]()},
+ 		{Name: "bounds", Subject: "graph.spatial.query.bounds", Responder: ResponderGraphIndexSpatial,
+ 			Enveloped: true, Reply: reflect.TypeFor[SpatialData]()},
+ 		{Name: "range", Subject: "graph.temporal.query.range", Responder: ResponderGraphIndexTemporal,

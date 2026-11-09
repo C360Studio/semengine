@@ -14,6 +14,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 
 	"github.com/c360studio/semengine/internal/flowgraph"
+	"github.com/c360studio/semengine/natsclient"
 )
 
 // Compile-time check that MessageLogger implements HTTPHandler
@@ -389,15 +390,15 @@ func (ml *MessageLogger) queryKVBucket(
 	}
 
 	entries := make([]map[string]any, 0)
-	keys, err := kv.Keys(ctx, jetstream.IgnoreDeletes())
-	if errors.Is(err, jetstream.ErrNoKeysFound) {
-		return entries, nil
-	}
+	// A listing cut short is an error, never the keys so far (#533).
+	keys, err := natsclient.FilteredKeys(ctx, kv, ">")
 	if err != nil {
 		return nil, fmt.Errorf("list keys of %s: %w", bucket, err)
 	}
-	// nats.go promises the keys deduplicated, not ordered, so sort before the limit.
+	// The listing is in delivery order and can repeat a key (#512): sort and
+	// remove repeats before the limit.
 	slices.Sort(keys)
+	keys = slices.Compact(keys)
 
 	for _, key := range keys {
 		if len(entries) >= limit {

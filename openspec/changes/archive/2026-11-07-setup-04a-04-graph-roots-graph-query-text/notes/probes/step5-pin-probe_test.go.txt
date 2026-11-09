@@ -1,0 +1,52 @@
+package graphquery
+
+import (
+	"fmt"
+	"testing"
+
+	"github.com/c360studio/semstreams/graph/clustering"
+)
+
+func stat(c *clustering.Community) string { return c.StatisticalSummary }
+
+// P1: no community matches the query: every community is still returned, and the first five are selected.
+func TestStep5ProbeZeroScoreSelection(t *testing.T) {
+	var comms []*clustering.Community
+	for i := 0; i < 7; i++ {
+		comms = append(comms, &clustering.Community{ID: fmt.Sprintf("g%d", i), StatisticalSummary: "sensors and valves", Keywords: []string{"valve"}})
+	}
+	for run := 0; run < 3; run++ {
+		out := scoreCommunitySummaries(comms, "pump", stat)
+		ids := []string{}
+		for _, c := range out {
+			ids = append(ids, c.ID)
+		}
+		fmt.Printf("RESULT P1 run=%d returned=%d order=%v\n", run, len(out), ids)
+	}
+}
+
+// P2: a repeated term weighs twice; P3: a short keyword contained in a term scores.
+func TestStep5ProbeTermWeights(t *testing.T) {
+	a := &clustering.Community{ID: "a", StatisticalSummary: "pump station", Keywords: []string{"pump"}}
+	b := &clustering.Community{ID: "b", StatisticalSummary: "valve station", Keywords: []string{"pu"}}
+	c := &clustering.Community{ID: "c", StatisticalSummary: "valve", Keywords: []string{"valve", "pumps"}}
+	for _, q := range []string{"pump", "pump pump", "pumps"} {
+		out := scoreCommunitySummaries([]*clustering.Community{c, b, a}, q, stat)
+		ids := []string{}
+		for _, x := range out {
+			ids = append(ids, x.ID)
+		}
+		fmt.Printf("RESULT P2/P3 query=%q order=%v\n", q, ids)
+	}
+}
+
+// P4: the template answer.
+func TestStep5ProbeAnswer(t *testing.T) {
+	s := []CommunitySummary{
+		{CommunityID: "acme.plant.robotics.gcs", Summary: "12 entities: 8 sensor, 4 pump.", Keywords: []string{"temp", "flow"}, Relevance: 1.0, MemberCount: 12,
+			Entities: []EntityDigest{{ID: "acme.plant.robotics.gcs.sensor.001", Type: "sensor", Label: "Inlet temp", Tags: []string{"thermal"}}}},
+		{CommunityID: "acme.plant.robotics.hvac", Summary: "", Keywords: nil, Relevance: 0.5, MemberCount: 0},
+	}
+	fmt.Printf("RESULT P4 answer=%q\n", synthesizeAnswer(s, 3))
+	fmt.Printf("RESULT P4 empty=%q\n", synthesizeAnswer(nil, 0))
+}

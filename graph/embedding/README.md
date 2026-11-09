@@ -76,10 +76,13 @@ it or run again, but do not drop it.
 Each `Run` of the Worker retries failed records once, because a failed record is processed when
 it arrives in the watch's initial contents but not when it is written later.
 
-`FindSimilar` returns `(nil, false)`, and the caller reads `EMBEDDING_INDEX` instead, before the
-cache has read the bucket's initial contents, after a record failed to decode, after the watch
-was lost, and after `Run` returned. Results are sorted by `ScoredEntityLess` (score, then entity
-ID) before the limit applies, and `keep`, when set, filters entity IDs before scoring.
+The cache is a `graphview.View` of `EMBEDDING_INDEX`, rebuilt by each `Run`. `FindSimilar` returns
+an error matching `graphview.ErrNotReady` before the view has read the bucket's initial contents,
+after the watch was lost, and after `Run` returned; there is no fallback read of the bucket. A record
+that cannot be decoded is not scored and does not make the cache unavailable: `FindSimilar` returns
+how many such records it skipped, read at the same moment as the vectors it scored, and a later valid
+write of that key is scored again. Results are sorted by `ScoredEntityLess` (score, then entity ID)
+before the limit applies, and `keep`, when set, filters entity IDs before scoring.
 
 ## Ordering
 

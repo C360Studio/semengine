@@ -8,9 +8,9 @@
 //
 // Limits, declared rather than promised:
 //
-//   - A lost feed is never repaired. When the watch cannot start, closes, or reads a stream other
-//     than the one Open bound, the follower says so (Stuck, a degraded envelope, QueryReady refusing)
-//     until the process restarts; nothing rebinds the watch.
+//   - A lost feed is never repaired. When the watch cannot start, closes, delivers a revision out
+//     of order, or reads a stream other than the one Open bound, the follower says so (Stuck, a
+//     degraded envelope, QueryReady refusing) until the process restarts; nothing rebinds the watch.
 //   - A restored stream can go unnoticed. The third trigger compares the backing stream's creation
 //     time with the one Open read; a stream deleted and restored with that creation time inside one
 //     stall of the watch reads as the same stream, and the revisions it skipped are not declared.
@@ -67,13 +67,23 @@ type Config struct {
 	// Deliver takes one entry, in delivery order, on Run's goroutine. It is called after the
 	// revision is in the watermark; the plug-in calls Complete once it is applied.
 	Deliver func(ctx context.Context, e Entry)
-	// Failed returns the plug-in's count of unresolved required writes.
-	Failed func() int64
+	// Failed returns the plug-in's count of unresolved required writes and, when it tracks them,
+	// the count per bounded reason; nil reasons when it does not. The follower calls it once per
+	// envelope, so count and reasons come from one moment, and owns the map it returns: the
+	// plug-in returns a fresh one and keeps no reference to it.
+	Failed func() (count int64, reasons map[string]uint64)
+	// Withhold, when set, returns the count of the plug-in's failures that withhold queries; nil
+	// means Failed's count. After the first build QueryReady refuses on failures only while it
+	// returns above 0. Before the first build the gate reads the envelope, and the envelope and
+	// Stuck always read Failed, so a failure Withhold leaves out still reads degraded.
+	Withhold func() int64
 }
 
-// degradedStuckAfter is how long the floor may stand still while behind before the envelope reads
-// degraded (ADR-066 §4). It is a property of the envelope, not a Stuck state: a slow replay is
-// catch-up (ADR-109 D4).
+// degradedStuckAfter is how long the follower may go without a Complete call while behind before
+// the envelope reads degraded (ADR-066 §3 and §4, at 30 s for every plug-in by owner ruling (a1),
+// PR #550 comment 6721867279). Any completion counts, so one revision held while later ones finish
+// reads not ready but not degraded. It is a property of the envelope, not a Stuck state: a slow
+// replay is catch-up (ADR-109 D4).
 const degradedStuckAfter = 30 * time.Second
 
 // resetRemedy is what an operator does about a latched reset, as graph-index said at the pin.
@@ -84,7 +94,8 @@ type Follower struct {
 	key       string
 	logger    *slog.Logger
 	deliver   func(context.Context, Entry)
-	failed    func() int64
+	failed    func() (int64, map[string]uint64)
+	withhold  func() int64            // nil: Failed's count withholds
 	reader    kvcatalog.CatalogReader // the watch
 	status    kvcatalog.CatalogReader // target and generation reads, a handle of its own
 	publisher *readiness.Publisher
@@ -105,9 +116,11 @@ type Follower struct {
 	// not promised.
 	statusMu sync.Mutex
 
-	mu              sync.Mutex // guards the stuck detector's progress record
-	lastIndexedSeen uint64
-	lastProgressAt  time.Time
+	completions atomic.Uint64 // Complete calls, the stuck detector's progress signal
+
+	mu                  sync.Mutex // guards the stuck detector's progress record
+	lastCompletionsSeen uint64
+	lastProgressAt      time.Time
 }
 
 // Open waits for ENTITY_STATES up to Config.StartupAttempts times Config.StartupInterval, opens
@@ -169,6 +182,7 @@ func Open(ctx context.Context, cfg Config) (*Follower, error) {
 		logger:    logger,
 		deliver:   cfg.Deliver,
 		failed:    cfg.Failed,
+		withhold:  cfg.Withhold,
 		reader:    reader,
 		status:    status,
 		publisher: publisher,
@@ -258,10 +272,18 @@ func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 }
 
 // observe records one delivered revision in the watermark, validates a stored entity during the
-// replay, and hands the entry to the plug-in.
+// replay, and hands the entry to the plug-in. A revision the watermark refuses declares the feed
+// lost; the entry is still delivered.
 func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, validating bool) {
-	// entry.Created() is the KV commit time, which makes staleness_ms the age of the view (ADR-083 D3).
-	f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created())
+	// entry.Created() is the KV commit time. staleness_ms is now minus the commit time of the oldest
+	// delivered write not yet applied, or of the newest delivered one when none is in flight (ADR-083
+	// D3, amended by #408).
+	if err := f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created()); err != nil {
+		// The watch broke the ascending order the floor rests on, so the floor can no longer be
+		// trusted. Delivering the entry anyway keeps the plug-in's view of the write; the lost feed
+		// is what refuses queries.
+		f.loseFeed(fmt.Sprintf("the watch delivered a revision out of order: %v", err))
+	}
 	e := Entry{Key: entry.Key(), Revision: entry.Revision(), Deleted: natsclient.IsKVTombstone(entry.Operation())}
 	if !e.Deleted {
 		e.Bytes = len(entry.Value())
@@ -321,9 +343,11 @@ func (f *Follower) publish(ctx context.Context) {
 	}
 }
 
-// Complete records that revision of key is applied, with every earlier revision of it.
+// Complete records that revision of key is applied, with every earlier revision of it. Each call
+// counts as progress for the stuck detector, whether or not it raises the floor.
 func (f *Follower) Complete(key string, revision uint64) {
 	f.watermark.Complete(key, revision)
+	f.completions.Add(1)
 }
 
 // Reset latches reason for the life of the process. The first reason holds; later calls change
@@ -345,7 +369,7 @@ func (f *Follower) Stuck() []string {
 	if r := f.reset.Load(); r != nil {
 		stuck = append(stuck, fmt.Sprintf("graph state reset required: %s", *r))
 	}
-	if n := f.failed(); n > 0 {
+	if n, _ := f.failed(); n > 0 {
 		stuck = append(stuck, fmt.Sprintf("%d index writes unresolved", n))
 	}
 	if f.feedLost.Load() {
@@ -355,8 +379,10 @@ func (f *Follower) Stuck() []string {
 }
 
 // QueryReady says whether a query may be answered now (ADR-109 D1): nil, or a classified refusal.
-// A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes and an
-// incomplete initial build are transient index_not_ready. Once the initial build is complete it answers nil at once.
+// A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes that withhold
+// queries (Config.Withhold) and an incomplete initial build are transient index_not_ready. Before
+// the initial build is complete the gate reads the envelope, which counts every unresolved write
+// (Config.Failed); once it is complete it answers nil at once.
 func (f *Follower) QueryReady(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"), "follower", "QueryReady", "check the context")
@@ -368,13 +394,18 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 	if f.feedLost.Load() {
 		return notReady("the ENTITY_STATES feed is lost")
 	}
-	if f.failed() > 0 {
+	if f.withheld() > 0 {
 		return notReady("unresolved index write failures")
 	}
 	if f.bootstrapped.Load() {
 		return nil
 	}
 	status := f.compute(ctx)
+	if f.bootstrapped.Load() {
+		// This envelope latched the build. It still reads degraded over a failure Withhold leaves
+		// out, which no longer refuses: ask again, as every later call does.
+		return f.QueryReady(ctx)
+	}
 	reason := readiness.EvaluateReadinessGate(readiness.Reading{Status: status, Fresh: true})
 	if reason == readiness.DeferNone {
 		return nil
@@ -382,6 +413,16 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 	f.logger.Debug("query deferred", slog.String("reason", string(reason)), slog.String("state", string(status.State)),
 		slog.Uint64("indexed_revision", status.IndexedRevision), slog.Uint64("target_revision", status.TargetRevision))
 	return notReady("initial build has not completed")
+}
+
+// withheld is the count of failures that withhold queries: Config.Withhold's, or Failed's when
+// the plug-in set none.
+func (f *Follower) withheld() int64 {
+	if f.withhold != nil {
+		return f.withhold()
+	}
+	n, _ := f.failed()
+	return n
 }
 
 func notReady(why string) error {
@@ -417,14 +458,24 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 			BootstrapComplete: f.bootstrapped.Load(),
 		}
 	}
-	failed := f.failed()
+	return f.envelope(indexed, indexedAt, target)
+}
+
+// envelope is compute's projection once the target is read: ComputeIndexStatus over the floor
+// and the target, then the overrides only this producer can see, then the bootstrap latch.
+func (f *Follower) envelope(indexed uint64, indexedAt time.Time, target uint64) graph.IndexStatusResponse {
+	// One Failed call, so the count and its reasons are from one moment (design D3).
+	failed, reasons := f.failed()
 	status := readiness.ComputeIndexStatus(readiness.IndexStatusInputs{
-		Indexed:     indexed,
-		Target:      target,
-		Stuck:       f.stalled(indexed, target),
-		IndexedAt:   indexedAt,
-		FailedCount: uint64(max(failed, 0)),
+		Indexed:           indexed,
+		Target:            target,
+		Stuck:             f.stalled(indexed, target),
+		OldestUnappliedAt: indexedAt,
+		FailedCount:       uint64(max(failed, 0)),
 	})
+	if failed > 0 {
+		status.FailedReasons = reasons
+	}
 	// An authoritatively empty graph is ready once the snapshot is delivered, though ready needs a
 	// target above zero (pin gh#474).
 	if !status.Ready && target == 0 && f.snapshotDone.Load() {
@@ -458,14 +509,19 @@ func readStream(ctx context.Context, reader kvcatalog.CatalogReader) (lastSeq ui
 	return info.State.LastSeq, info.Created, nil
 }
 
-// stalled is the stuck-watermark detector: the floor has not advanced for degradedStuckAfter while
-// behind the target.
+// stalled is the stuck detector: the follower has been behind the target for degradedStuckAfter
+// with no Complete call (pin processor/graph-embedding/readiness.go:192-212). A caught-up reading
+// counts as progress too, so the 30 s start when the follower falls behind, not at the last
+// completion before it: the heartbeat reads at least every readiness.DefaultHeartbeat. An empty
+// graph is caught up only once the snapshot is delivered; before it, target 0 says nothing.
 func (f *Follower) stalled(indexed, target uint64) bool {
 	now := time.Now()
+	completions := f.completions.Load()
+	caughtUp := indexed >= target && (target > 0 || f.snapshotDone.Load())
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if indexed > f.lastIndexedSeen || f.lastProgressAt.IsZero() {
-		f.lastIndexedSeen, f.lastProgressAt = indexed, now
+	if caughtUp || completions > f.lastCompletionsSeen || f.lastProgressAt.IsZero() {
+		f.lastCompletionsSeen, f.lastProgressAt = completions, now
 	}
-	return !(target > 0 && indexed >= target) && now.Sub(f.lastProgressAt) > degradedStuckAfter
+	return !caughtUp && now.Sub(f.lastProgressAt) > degradedStuckAfter
 }

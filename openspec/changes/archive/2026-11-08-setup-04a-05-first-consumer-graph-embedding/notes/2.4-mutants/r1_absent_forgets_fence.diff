@@ -1,0 +1,16 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -142,12 +142,7 @@
+ func (m *failedMap) absent(key string) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+-	held, ok := m.entries[key]
+-	if !ok || held.revision == strandedRevision {
+-		m.forget(key)
+-		return
+-	}
+-	m.store(key, outcome{revision: held.revision})
++	m.forget(key)
+ }
+ 
+ func (m *failedMap) store(key string, o outcome) {

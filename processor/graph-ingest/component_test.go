@@ -241,12 +241,9 @@ func (w *mockFilteredWatcher) Stop() error {
 	return nil
 }
 
+// Keys is unused: KVStore.Keys lists through WatchFiltered (#533).
 func (m *mockKVBucket) Keys(_ context.Context, _ ...jetstream.WatchOpt) ([]string, error) {
-	keys := make([]string, 0, len(m.data))
-	for k := range m.data {
-		keys = append(keys, k)
-	}
-	return keys, nil
+	return nil, errors.New("not implemented")
 }
 
 func (m *mockKVBucket) ListKeys(_ context.Context, _ ...jetstream.WatchOpt) (jetstream.KeyLister, error) {

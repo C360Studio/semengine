@@ -1,0 +1,47 @@
+package graphquery
+
+// Step 4 pin probe: which strategy the pin's globalSearch picks for tier-0 questions,
+// and which hints it drops. Added by build overlay to a copy of SemStreams 8b99efe9;
+// nothing in the pin copy is changed.
+
+import (
+	"context"
+	"fmt"
+	"testing"
+
+	"github.com/c360studio/semstreams/graph/query"
+)
+
+func TestStep4PinProbe(t *testing.T) {
+	c := &Component{classifier: query.NewClassifierChain(query.NewKeywordClassifier(), nil, nil)}
+	for _, q := range []string{
+		"what is connected to sensor-001",
+		"show me sensor-001",
+		"acme.ops.robotics.gcs.drone.001",
+		"the area of the plant",
+		"entities in zone-A",
+		"what changed in the last 2 hours",
+		"what is within 5km of 40.7,-74.0",
+		"what changed in the last 2 hours within 5km of 40.7,-74.0",
+		"what is connected to pump-42 in the last 2 hours",
+		"how many pumps are there",
+		"top 5 sensors",
+		"find sensors similar to pump-42",
+		"forklift",
+	} {
+		cr := c.classifyQuery(context.Background(), q)
+		strategy := c.resolveStrategy(cr)
+		_, hasTime := cr.Options["time_range"]
+		_, hasGeo := cr.Options["geo_bounds"]
+		fmt.Printf("%-62q strategy=%-9s start=%q time=%v geo=%v explicit=%v options=%v\n", q, strategy,
+			cr.Options["path_start_node"], hasTime, hasGeo, cr.Options["strategy"], keys(cr.Options))
+	}
+}
+
+func keys(m map[string]any) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}

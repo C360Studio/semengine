@@ -1,0 +1,15 @@
+--- a/processor/graph-embedding/component.go
++++ b/processor/graph-embedding/component.go
+@@ -198,7 +198,11 @@
+ 	if c.workerLost.Load() {
+ 		stuck = append(stuck, workerWatchLost)
+ 	}
+-	return c.lifecycle.Health(stuck...)
++	h := c.lifecycle.Health(stuck...)
++	if h.ErrorCount > 0 {
++		h.Healthy = false
++	}
++	return h
+ }
+ 
+ // DataFlow reports input messages: one per delivered ENTITY_STATES entry, update or delete,

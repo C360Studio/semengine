@@ -51,14 +51,14 @@ an error saying the delivery did not close after `Stop`. Changed: the wait had n
 - **THEN** the wait returns, after 5 s of its clock, an error saying the delivery did not close after `Stop`
 - **AND** the test that verifies this is `TestStopWatchGivesUpOnADeliveryThatNeverCloses`
 
-### Requirement: Every delivered revision is observed before it is delivered
+### Requirement: Every delivered revision reaches the watermark first
 
-The follower SHALL record each delivered revision, update or delete, in its watermark before it calls `Deliver` with
-it, and its floor SHALL advance only through `Complete`. `Indexed` SHALL return the floor.
+The follower SHALL pass each delivered revision, update or delete, to its watermark before it calls `Deliver` with it.
+`Indexed` SHALL return the watermark's floor, which follows the watermark's rules for accepted revisions.
 
 #### Scenario: A delivered revision not yet completed
 
-- **WHEN** revision R of key K is delivered and `Complete(K, R)` has not been called
+- **WHEN** revision R of key K is delivered and accepted, and no `Complete(K, R2)` with R2 at or above R has been called
 - **THEN** `Indexed` is below R
 
 ### Requirement: The startup replay validates each stored entity
@@ -85,10 +85,10 @@ bootstrap latch SHALL set once the floor reaches that target, or the envelope re
 
 ### Requirement: A lost feed is declared
 
-When the watch cannot start, its update channel closes while `Run`'s context is live, or a heartbeat finds
-`ENTITY_STATES`'s backing stream created after the one `Open` bound, the follower SHALL report the lost feed through
-`Stuck`, `degraded` in the next envelope and `index_not_ready` from `QueryReady`, and SHALL keep publishing. The state
-SHALL hold until the process restarts.
+When the watch cannot start, its update channel closes while `Run`'s context is live, the watermark refuses a
+delivered revision, or a heartbeat finds `ENTITY_STATES`'s backing stream created after the one `Open` bound, the
+follower SHALL report the lost feed through `Stuck`, `degraded` in the next envelope and `index_not_ready` from
+`QueryReady`, and SHALL keep publishing. The state SHALL hold until the process restarts.
 
 #### Scenario: The update channel closes
 
@@ -100,6 +100,12 @@ SHALL hold until the process restarts.
 
 - **WHEN** `ENTITY_STATES` is deleted and created again while `Run` runs
 - **THEN** within one heartbeat `Stuck` names the lost feed, although the update channel stays open
+
+#### Scenario: A revision delivered out of order
+
+- **WHEN** the watch delivers revision 5 and then revision 3
+- **THEN** `Stuck` names the lost feed and `QueryReady` returns `index_not_ready`
+- **AND** the test that verifies this is `TestFollowerDeclaresLostFeedOnOutOfOrderDelivery`
 
 ### Requirement: A restored stream is a declared limit
 
@@ -123,12 +129,70 @@ SHALL change nothing.
 
 ### Requirement: The envelope
 
-The follower's envelope SHALL be `ComputeIndexStatus` over the floor, its commit time and the bucket's last sequence,
-with these overrides: a target of 0 after the snapshot marker reads ready; a `Failed()` count above zero reads not
-ready, `degraded`, and is carried in `failed_count`; a failed target read reads `degraded`; a latched reset reads
-`reset_required` with its reason.
+The follower's envelope SHALL be `ComputeIndexStatus` over the floor, the commit time `IndexedAt` returns with it and
+the bucket's last sequence, with these overrides: a target of 0 after the snapshot marker reads ready; a `Failed()`
+count above zero reads not ready, `degraded`, and is carried in `failed_count`; a failed target read reads
+`degraded`; a latched reset reads `reset_required` with its reason.
 
 #### Scenario: Unresolved writes
 
 - **WHEN** `Failed()` returns 2 and the floor has reached the target
 - **THEN** the envelope reads `ready` false, state `degraded`, `failed_count` 2
+
+### Requirement: Failure reasons
+
+When the `Failed()` count is above zero, the envelope SHALL carry in `failed_reasons` the per-reason counts the same
+`Failed()` call returned with the count; at zero it SHALL carry no reasons.
+`Failed()` SHALL return a map the follower owns (the plug-in keeps no reference to it). The envelope SHALL NOT carry
+`first_failure_at`.
+
+#### Scenario: Failures with reasons
+
+- **WHEN** `Failed()` returns count 3 and reasons `{"timeout": 2, "delete_failed": 1}` while outcomes are reported
+  concurrently
+- **THEN** the published envelope has `failed_count` 3 and those `failed_reasons`, under `-race`
+  (`TestEnvelopeCarriesFailedReasons`)
+
+#### Scenario: A plug-in with no reasons
+
+- **WHEN** `Failed()` returns a count and `nil` reasons, as graph-index does
+- **THEN** the envelope has no `failed_reasons` (`TestGraphIndexEnvelopeUnchanged`)
+
+### Requirement: Degraded when nothing completes
+
+The envelope SHALL read `degraded` when the floor has been behind the target for 30 s with no `Complete` call; time
+spent caught up (an empty graph after the snapshot included) SHALL NOT count, and a held low revision with later
+completions within 30 s SHALL NOT read `degraded`.
+
+#### Scenario: A held low revision while later revisions complete
+
+- **WHEN** one revision is not completed for more than 30 s while later revisions keep completing
+- **THEN** the envelope reads `ready` false and is not `degraded` (`TestHeldLowRevisionWithProgress`)
+
+#### Scenario: Nothing completes
+
+- **WHEN** the floor is behind and no revision completes for more than 30 s
+- **THEN** the envelope reads `degraded` (`TestNoCompletionsReadsDegraded`)
+
+#### Scenario: Falling behind after a long time caught up
+
+- **WHEN** the floor has been at the target for more than 30 s with no completion and a new write arrives
+- **THEN** the first reading behind is `building`, not `degraded` (`TestNoCompletionsReadsDegraded`)
+
+### Requirement: A plug-in may narrow which failures withhold queries
+
+`follower.Config` SHALL have an optional `Withhold func() int64`. When it is set, after the first build `QueryReady`
+SHALL refuse transient `index_not_ready` for failures only while `Withhold` returns above 0; before the first build
+the gate SHALL keep reading the envelope, which reads `Failed`. When it is nil, `QueryReady` SHALL use the count
+`Failed` returns, as before. The envelope and `Stuck` SHALL keep reading `Failed`.
+
+#### Scenario: A failure the plug-in does not withhold on
+
+- **WHEN** `Failed` returns count 1 and `Withhold` returns 0 after the first build
+- **THEN** `QueryReady` returns nil, while the envelope reads `failed_count` 1 and `Stuck` names it
+  (`TestWithholdNarrowsQueryReady`)
+
+#### Scenario: No Withhold
+
+- **WHEN** `Withhold` is nil and `Failed` returns count 1
+- **THEN** `QueryReady` refuses transient `index_not_ready`, as for graph-index (`TestGraphIndexWithholdUnchanged`)

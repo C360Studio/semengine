@@ -193,56 +193,64 @@ func eventually(t *testing.T, condition func() bool, msg string) {
 // of this whole file: the operator surfaces read the PUBLISHED report rather
 // than recomputing an inventory, so no two of them can disagree.
 func TestReportConsumer_SnapshotIsBuiltFromTheBucket(t *testing.T) {
-	store := &fakeWatchStore{}
-	observer := &recordingObserver{}
-	consumer := runConsumer(t, store, observer)
+	// The consumer publishes its snapshot before it tells the observer (#559);
+	// synctest.Wait orders every read below after both.
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeWatchStore{}
+		observer := &recordingObserver{}
+		consumer := runConsumer(t, store, observer)
+		synctest.Wait()
+		require.Equal(t, 1, store.watchCount())
+		watcher := store.watchers[0]
 
-	eventually(t, func() bool { return store.watchCount() == 1 }, "the watch is established")
-	watcher := store.watchers[0]
+		watcher.put("LOGS", reportRow("LOGS", TierFile, PressureWarning))
+		watcher.put("EVENTS", reportRow("EVENTS", TierFile, PressureNormal))
+		watcher.put(StorageAccountReportKey, AccountReport{
+			ProducedBy: "unit-test",
+			Tiers:      []TierComparison{{Tier: TierFile, State: OvercommitmentOver}},
+		})
+		watcher.synced()
+		synctest.Wait()
 
-	watcher.put("LOGS", reportRow("LOGS", TierFile, PressureWarning))
-	watcher.put("EVENTS", reportRow("EVENTS", TierFile, PressureNormal))
-	watcher.put(StorageAccountReportKey, AccountReport{
-		ProducedBy: "unit-test",
-		Tiers:      []TierComparison{{Tier: TierFile, State: OvercommitmentOver}},
+		snapshot := consumer.Snapshot()
+		require.True(t, snapshot.Synced)
+		require.Len(t, snapshot.Resources, 2)
+		assert.Equal(t, "EVENTS", snapshot.Resources[0].Resource.Name, "rows are sorted by name")
+		assert.Equal(t, "LOGS", snapshot.Resources[1].Resource.Name)
+		assert.Equal(t, PressureWarning, snapshot.Resources[1].Pressure.State)
+
+		require.True(t, snapshot.AccountKnown)
+		file, ok := snapshot.Account.TierFor(TierFile)
+		require.True(t, ok)
+		assert.Equal(t, OvercommitmentOver, file.State)
+
+		observed, _, accounts := observer.snapshot()
+		assert.ElementsMatch(t, []string{"LOGS", "EVENTS"}, observed)
+		require.Len(t, accounts, 1)
 	})
-	watcher.synced()
-
-	eventually(t, func() bool { return consumer.Snapshot().Synced }, "the initial values complete")
-
-	snapshot := consumer.Snapshot()
-	require.Len(t, snapshot.Resources, 2)
-	assert.Equal(t, "EVENTS", snapshot.Resources[0].Resource.Name, "rows are sorted by name")
-	assert.Equal(t, "LOGS", snapshot.Resources[1].Resource.Name)
-	assert.Equal(t, PressureWarning, snapshot.Resources[1].Pressure.State)
-
-	require.True(t, snapshot.AccountKnown)
-	file, ok := snapshot.Account.TierFor(TierFile)
-	require.True(t, ok)
-	assert.Equal(t, OvercommitmentOver, file.State)
-
-	observed, _, accounts := observer.snapshot()
-	assert.ElementsMatch(t, []string{"LOGS", "EVENTS"}, observed)
-	require.Len(t, accounts, 1)
 }
 
 // TestReportConsumer_AccountRowIsNeverAResourceRow is the key discrimination.
 // Decoding the reserved row as a resource would add a nameless row to every
 // operator surface and, worse, publish metrics under an empty resource label.
 func TestReportConsumer_AccountRowIsNeverAResourceRow(t *testing.T) {
-	store := &fakeWatchStore{}
-	observer := &recordingObserver{}
-	consumer := runConsumer(t, store, observer)
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeWatchStore{}
+		observer := &recordingObserver{}
+		consumer := runConsumer(t, store, observer)
+		synctest.Wait()
+		require.Equal(t, 1, store.watchCount())
+		store.watchers[0].put(StorageAccountReportKey, AccountReport{ProducedBy: "unit-test"})
+		store.watchers[0].synced()
+		synctest.Wait()
 
-	eventually(t, func() bool { return store.watchCount() == 1 }, "the watch is established")
-	store.watchers[0].put(StorageAccountReportKey, AccountReport{ProducedBy: "unit-test"})
-	store.watchers[0].synced()
+		require.True(t, consumer.Snapshot().AccountKnown)
+		assert.Empty(t, consumer.Snapshot().Resources)
 
-	eventually(t, func() bool { return consumer.Snapshot().AccountKnown }, "the account row arrives")
-	assert.Empty(t, consumer.Snapshot().Resources)
-
-	observed, _, _ := observer.snapshot()
-	assert.Empty(t, observed, "the account row is not fanned out as a resource")
+		observed, _, accounts := observer.snapshot()
+		require.Len(t, accounts, 1, "the account fan-out has completed")
+		assert.Empty(t, observed, "the account row is not fanned out as a resource")
+	})
 }
 
 // TestReportConsumer_DeleteForgetsTheRowWithItsIdentity covers series
@@ -250,26 +258,30 @@ func TestReportConsumer_AccountRowIsNeverAResourceRow(t *testing.T) {
 // opaque token, so a bare key cannot identify the labels a metrics surface
 // registered under.
 func TestReportConsumer_DeleteForgetsTheRowWithItsIdentity(t *testing.T) {
-	store := &fakeWatchStore{}
-	observer := &recordingObserver{}
-	consumer := runConsumer(t, store, observer)
+	synctest.Test(t, func(t *testing.T) {
+		store := &fakeWatchStore{}
+		observer := &recordingObserver{}
+		consumer := runConsumer(t, store, observer)
+		synctest.Wait()
+		require.Equal(t, 1, store.watchCount())
+		watcher := store.watchers[0]
 
-	eventually(t, func() bool { return store.watchCount() == 1 }, "the watch is established")
-	watcher := store.watchers[0]
+		key, err := ResourceKey("weird$stream")
+		require.NoError(t, err)
+		watcher.put(key, reportRow("weird$stream", TierFile, PressureNormal))
+		watcher.synced()
+		synctest.Wait()
+		require.Len(t, consumer.Snapshot().Resources, 1)
 
-	key, err := ResourceKey("weird$stream")
-	require.NoError(t, err)
-	watcher.put(key, reportRow("weird$stream", TierFile, PressureNormal))
-	watcher.synced()
-	eventually(t, func() bool { return len(consumer.Snapshot().Resources) == 1 }, "the row arrives")
+		watcher.del(key)
+		synctest.Wait()
+		assert.Empty(t, consumer.Snapshot().Resources)
 
-	watcher.del(key)
-	eventually(t, func() bool { return len(consumer.Snapshot().Resources) == 0 }, "the row is dropped")
-
-	_, forgot, _ := observer.snapshot()
-	require.Len(t, forgot, 1)
-	assert.Equal(t, "weird$stream", forgot[0],
-		"the forgotten row carries the real resource name, not its opaque key")
+		_, forgot, _ := observer.snapshot()
+		require.Len(t, forgot, 1)
+		assert.Equal(t, "weird$stream", forgot[0],
+			"the forgotten row carries the real resource name, not its opaque key")
+	})
 }
 
 // TestReportConsumer_DeleteOfAnUnknownKeyIsNotFannedOut keeps a tombstone for a

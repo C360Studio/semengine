@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -296,8 +297,11 @@ func (c *Component) handleQueryPrefixWithMaxPayload(
 	}
 
 	// MANDATORY: sort before cursor application — cursor is meaningless
-	// without a deterministic key order.
+	// without a deterministic key order. Compact then drops repeated keys (a nats.go
+	// listing can repeat one under concurrent overwrites, #512), so an entity is served
+	// at most once and total counts distinct keys.
 	sort.Strings(keys)
+	keys = slices.Compact(keys)
 
 	// The reply's total is the listing as listed, whichever page this request reads.
 	total := len(keys)
@@ -385,6 +389,10 @@ func marshalFittingPrefixPage(
 
 	encodedSize := func(count int, cursor string) (int64, error) {
 		size := int64(len(`{"entities":[`) + len(`],"total":`) + len(strconv.Itoa(total)) + len(`}`))
+		if entities == nil {
+			// A group with no keys encodes its page as null, not [] (#521).
+			size += int64(len(`null`) - len(`[]`))
+		}
 		for i := 0; i < count; i++ {
 			size += int64(len(entityBytes[i]))
 			if i > 0 {

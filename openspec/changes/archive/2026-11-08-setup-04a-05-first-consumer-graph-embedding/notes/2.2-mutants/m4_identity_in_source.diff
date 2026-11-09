@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -133,7 +133,7 @@
+ 			StorageInstance: state.StorageRef.StorageInstance,
+ 			Key:             state.StorageRef.Key,
+ 		}
+-		record.IdentityText = c.extractText(&state)
++		record.SourceText = c.extractText(&state)
+ 	default:
+ 		if state.StorageRef != nil {
+ 			c.reportOffloadedBodyExcluded(key, state.StorageRef.StorageInstance)

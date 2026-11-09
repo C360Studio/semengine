@@ -1,0 +1,8 @@
+--- a/processor/graph-embedding/doc.go
++++ b/processor/graph-embedding/doc.go
+@@ -6,3 +6,5 @@
+ // A composition registers the factory with Register and creates the component through the
+ // component manager, with a configuration that Config describes.
+ package graphembedding
++
++import _ "github.com/c360studio/semengine/model"

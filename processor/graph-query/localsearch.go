@@ -34,14 +34,24 @@ func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, []string, 
 	if _, err := clustering.GroupKey(request.EntityID, request.Level); err != nil {
 		return request, nil, fmt.Errorf("level: %w", err)
 	}
-	terms := searchTerms(request.Query)
-	if len(terms) == 0 {
-		return request, nil, errors.New("query holds no terms")
-	}
-	if len(terms) > graph.MaxSearchTerms {
-		return request, nil, fmt.Errorf("query holds %d distinct terms, more than %d", len(terms), graph.MaxSearchTerms)
+	terms, err := checkedSearchTerms(request.Query)
+	if err != nil {
+		return request, nil, err
 	}
 	return request, terms, nil
+}
+
+// checkedSearchTerms is searchTerms, refusing a query that holds no term or more than
+// graph.MaxSearchTerms: the check localSearch and the text tier share (design D3).
+func checkedSearchTerms(query string) ([]string, error) {
+	terms := searchTerms(query)
+	if len(terms) == 0 {
+		return nil, errors.New("query holds no terms")
+	}
+	if len(terms) > graph.MaxSearchTerms {
+		return nil, fmt.Errorf("query holds %d distinct terms, more than %d", len(terms), graph.MaxSearchTerms)
+	}
+	return terms, nil
 }
 
 // searchTerms splits query as the pin did (graphrag.go:2327), then removes repeats: at the pin a repeated
@@ -113,17 +123,42 @@ func (e searchEntity) score(terms []string) float64 {
 	return total / float64(len(terms))
 }
 
-// rankEntities returns the page's entities scoring at least minLocalSearchScore, best first, ties by
-// entity ID, each as the page sent it, and the number of distinct entities read. An ID the page repeats
-// (#512) is read once, its first copy. An entity that does not decode is refused, not skipped.
-func rankEntities(page []json.RawMessage, terms []string) ([]json.RawMessage, int, error) {
-	type match struct {
-		id    string
-		score float64
-		raw   json.RawMessage
+// label is the first non-empty string value, in triple order, of the first of predicates the entity
+// holds one for (design D4): predicates is the label set, most salient first (labelOrder). An entity
+// with none has no label.
+func (e searchEntity) label(predicates []string) string {
+	for _, predicate := range predicates {
+		for _, triple := range e.Triples {
+			var value string
+			if triple.Predicate == predicate && json.Unmarshal(triple.Object, &value) == nil && value != "" {
+				return value
+			}
+		}
 	}
+	return ""
+}
+
+// rankedEntity is a page's entity that matched: its ID, its label, its score and its bytes as the page
+// sent them.
+type rankedEntity struct {
+	id    string
+	label string
+	score float64
+	raw   json.RawMessage
+}
+
+// compareRanked orders matches best first, ties by entity ID.
+func compareRanked(a, b rankedEntity) int {
+	return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.id, b.id))
+}
+
+// rankEntities returns the page's entities scoring at least minLocalSearchScore, best first, ties by
+// entity ID, each labelled from labels (nil for no label), and the number of distinct entities read.
+// An ID the page repeats (#512) is read once, its first copy. An entity that does not decode is
+// refused, not skipped.
+func rankEntities(page []json.RawMessage, terms, labels []string) ([]rankedEntity, int, error) {
 	seen := make(map[string]bool, len(page))
-	var matches []match
+	var matches []rankedEntity
 	for _, raw := range page {
 		entity, err := decodeSearchEntity(raw)
 		if err != nil {
@@ -134,20 +169,11 @@ func rankEntities(page []json.RawMessage, terms []string) ([]json.RawMessage, in
 		}
 		seen[entity.ID] = true
 		if score := entity.score(terms); score >= minLocalSearchScore {
-			matches = append(matches, match{id: entity.ID, score: score, raw: raw})
+			matches = append(matches, rankedEntity{id: entity.ID, label: entity.label(labels), score: score, raw: raw})
 		}
 	}
-	slices.SortFunc(matches, func(a, b match) int {
-		if c := cmp.Compare(b.score, a.score); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.id, b.id)
-	})
-	ranked := make([]json.RawMessage, 0, len(matches))
-	for _, m := range matches {
-		ranked = append(ranked, m.raw)
-	}
-	return ranked, len(seen), nil
+	slices.SortFunc(matches, compareRanked)
+	return matches, len(seen), nil
 }
 
 // localSearchAnswer is the answer text (design D5), {n} being the entities in the reply. A record's
@@ -166,27 +192,34 @@ func localSearchAnswer(data graph.LocalSearchData) string {
 }
 
 // fitLocalSearch encodes data, with its answer, keeping the most of its best entities whose encoding is at
-// most limit bytes; leaving any out sets EntitiesTruncated (design D5). An encoding shrinks as entities
-// are left out, so the count kept is found by bisection. It also reports whether the encoded answer is
-// truncated. It refuses when even no entities do not fit.
+// most limit bytes; leaving any out sets EntitiesTruncated (design D5). It also reports whether the
+// encoded answer is truncated. It refuses when even no entities do not fit.
 func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.LocalSearchData) ([]byte, error)) ([]byte, bool, error) {
 	all := data.Entities
-	encodeFirst := func(n int) ([]byte, error) {
-		cut := data
-		cut.Entities = all[:n]
-		cut.EntitiesTruncated = data.EntitiesTruncated || n < len(all)
-		cut.Answer = localSearchAnswer(cut)
-		return encode(cut)
-	}
-	encoded, err := encodeFirst(len(all))
+	encoded, cut, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {
+		kept := data
+		kept.Entities = all[:n]
+		kept.EntitiesTruncated = data.EntitiesTruncated || n < len(all)
+		kept.Answer = localSearchAnswer(kept)
+		return encode(kept)
+	})
+	return encoded, data.EntitiesTruncated || cut, err
+}
+
+// fitFirst returns encodeFirst(n) for the largest n up to count whose encoding is at most limit bytes,
+// and whether that n is below count. An encoding shrinks as items are left out, so n is found by
+// bisection. It refuses when even encodeFirst(0) does not fit. localSearch and the text search share
+// it (design D4).
+func fitFirst(count, limit int, encodeFirst func(n int) ([]byte, error)) ([]byte, bool, error) {
+	encoded, err := encodeFirst(count)
 	if err != nil {
 		return nil, false, err
 	}
 	if len(encoded) <= limit {
-		return encoded, data.EntitiesTruncated, nil
+		return encoded, false, nil
 	}
 	// The largest count in lo to hi that fits; all of them do not.
-	lo, hi := 0, len(all)-1
+	lo, hi := 0, count-1
 	var best []byte
 	for lo <= hi {
 		mid := lo + (hi-lo)/2
@@ -242,9 +275,13 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 		if err != nil {
 			return nil, err
 		}
-		matches, scanned, err := rankEntities(page.rows, terms)
+		matches, scanned, err := rankEntities(page.rows, terms, nil)
 		if err != nil {
 			return nil, c.brokenReply(prefixSubject, err)
+		}
+		entities := make([]json.RawMessage, 0, len(matches))
+		for _, match := range matches {
+			entities = append(entities, match.raw)
 		}
 		limit, err := c.natsClient.MaxPayload()
 		if err != nil {
@@ -256,7 +293,7 @@ func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandle
 			MemberCount:       record.MemberCount,
 			CommunitySummary:  record.StatisticalSummary,
 			Keywords:          record.Keywords,
-			Entities:          matches,
+			Entities:          entities,
 			EntitiesScanned:   scanned,
 			EntitiesTruncated: page.nextCursor != "",
 		}, int(limit), func(data graph.LocalSearchData) ([]byte, error) {

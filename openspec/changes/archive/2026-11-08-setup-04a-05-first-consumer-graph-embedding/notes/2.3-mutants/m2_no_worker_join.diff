@@ -1,0 +1,11 @@
+--- processor/graph-embedding/component.go	2026-11-08 10:39:35
++++ processor/graph-embedding/component.go	2026-11-08 10:39:45
+@@ -338,7 +338,7 @@
+ 	if c.runCancel != nil {
+ 		c.runCancel()
+ 	}
+-	for _, done := range []chan struct{}{c.feeds, c.worked} {
++	for _, done := range []chan struct{}{c.feeds} {
+ 		if done == nil {
+ 			continue
+ 		}

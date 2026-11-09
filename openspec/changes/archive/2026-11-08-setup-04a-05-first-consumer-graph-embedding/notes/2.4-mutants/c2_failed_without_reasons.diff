@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/component.go
++++ b/processor/graph-embedding/component.go
+@@ -236,7 +236,7 @@
+ 		StartupAttempts: c.config.StartupAttempts,
+ 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
+ 		Deliver:         c.deliver,
+-		Failed:          c.failed.counts,
++		Failed:          func() (int64, map[string]uint64) { n, _ := c.failed.counts(); return n, nil },
+ 	})
+ 	if err != nil {
+ 		return errs.Wrap(err, "Component", "Start", "open the ENTITY_STATES follower")

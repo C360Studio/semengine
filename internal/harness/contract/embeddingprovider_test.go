@@ -38,6 +38,79 @@ func TestQueryImportsNoProviderModule(t *testing.T) {
 		providerViolations(t, root, "./graph/query", queryProviderRule))
 }
 
+// graphEmbeddingProviderRule is the requirement every processor/graph-embedding violation names.
+const graphEmbeddingProviderRule = "(graph-embedding › Tier-0 config)"
+
+// TestGraphEmbeddingImportsNoProviderModule holds the rule that processor/graph-embedding builds at
+// tier 0 without the pin's HTTP embedder (design D6): it does not import the module's model
+// package, and it reaches the OpenAI SDK through nothing it imports.
+// model is held to graph-embedding's own imports because component reaches it for every
+// component (component.Dependencies' ModelRegistry), with no provider code behind it at tier 0.
+//
+// Requirement: graph-embedding/Tier-0 config
+func TestGraphEmbeddingImportsNoProviderModule(t *testing.T) {
+	root := repoRoot(t)
+	const pkg = "./processor/graph-embedding"
+	requireNoViolations(t, "processor/graph-embedding provider imports", graphEmbeddingProviderPaths(
+		modulePath(t, root), goList(t, root, pkg, "{{join .Imports \" \"}}"),
+		goList(t, root, pkg, "-deps", "{{.ImportPath}}")))
+}
+
+// Requirement: graph-embedding/Tier-0 config
+func TestGraphEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
+	const module = "example.com/fixture"
+	const self = module + "/processor/graph-embedding"
+	component := []string{module + "/component", module + "/model", self}
+	requireNoViolations(t, "model reached only through component", graphEmbeddingProviderPaths(module,
+		[]string{module + "/component", module + "/modelregistry"}, component))
+	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/model"}, component),
+		module+"/model")
+	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/model/wire"}, component),
+		module+"/model/wire")
+	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/component"},
+		append(component, openAIModule+"/jsonschema")), openAIModule+"/jsonschema")
+	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/component"}, nil),
+		"listed no package")
+	requireViolation(t, graphEmbeddingProviderPaths(module, nil, component), "direct .Imports listing was empty")
+}
+
+// graphEmbeddingProviderPaths names each provider path in processor/graph-embedding's listings:
+// the module's model package, or anything under it, among direct, its own imports; the OpenAI SDK,
+// or anything under it, among deps, everything it reaches. An empty listing is a violation.
+func graphEmbeddingProviderPaths(module string, direct, deps []string) []string {
+	const pkg = "./processor/graph-embedding"
+	var violations []string
+	if len(direct) == 0 {
+		violations = append(violations, "go list's direct .Imports listing was empty; a check that saw nothing is not a pass "+
+			graphEmbeddingProviderRule)
+	} else {
+		violations = providerPathsFor(module, pkg, graphEmbeddingProviderRule, direct)
+	}
+	if len(deps) == 0 {
+		return append(violations, "go list -deps listed no package; a check that saw nothing is not a pass "+
+			graphEmbeddingProviderRule)
+	}
+	for _, dep := range deps {
+		if dep == openAIModule || strings.HasPrefix(dep, openAIModule+"/") {
+			violations = append(violations, "processor/graph-embedding reaches "+dep+" "+graphEmbeddingProviderRule)
+		}
+	}
+	return violations
+}
+
+// goList runs go list in root for pkg with args, the last a -f template, and returns its fields.
+func goList(t *testing.T, root, pkg string, args ...string) []string {
+	t.Helper()
+	format := args[len(args)-1]
+	cmd := exec.Command("go", append(append([]string{"list"}, args[:len(args)-1]...), "-f", format, pkg)...)
+	cmd.Dir = root
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("go list %v %s: %v", args, pkg, err)
+	}
+	return strings.Fields(string(out))
+}
+
 // Requirement: embedding-index/Tier 0 imports no provider code
 func TestEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 	const mod = "go.mod"

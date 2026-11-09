@@ -54,15 +54,15 @@ func TestIndexStatusResponseWire(t *testing.T) {
 			name: "failure detail",
 			envelope: IndexStatusResponse{
 				Ready: true, State: IndexStateDegraded,
-				FailedCount:    5,
-				FailedReasons:  map[string]uint64{"connection_refused": 4, "content_error": 1},
-				FirstFailureAt: "2026-07-22T10:00:00Z",
+				FailedCount:   5,
+				FailedReasons: map[string]uint64{"connection_refused": 4, "content_error": 1},
 			},
 			keys: map[string]any{
-				"failed_count":     float64(5),
-				"failed_reasons":   map[string]any{"connection_refused": float64(4), "content_error": float64(1)},
-				"first_failure_at": "2026-07-22T10:00:00Z",
+				"failed_count":   float64(5),
+				"failed_reasons": map[string]any{"connection_refused": float64(4), "content_error": float64(1)},
 			},
+			// The envelope has no first-failure time (owner, PR #550 comment 6716972354).
+			absent: []string{"first_failure_at"},
 		},
 		{
 			name: "no failure detail when there are no failures",

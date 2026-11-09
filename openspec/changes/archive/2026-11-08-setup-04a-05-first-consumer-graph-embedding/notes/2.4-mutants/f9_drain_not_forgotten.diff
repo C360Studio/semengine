@@ -1,0 +1,15 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -69,12 +69,6 @@
+ func (m *failedMap) succeeded(key string, revision uint64) {
+ 	m.mu.Lock()
+ 	defer m.mu.Unlock()
+-	if revision == strandedRevision {
+-		if !m.entries[key].stranded {
+-			m.forget(key)
+-		}
+-		return
+-	}
+ 	m.worker(key, outcome{revision: revision})
+ }
+ 

@@ -1,0 +1,11 @@
+--- processor/graph-embedding/hop1.go	2026-11-08 15:03:55
++++ processor/graph-embedding/hop1.go	2026-11-08 15:05:15
+@@ -96,7 +96,7 @@
+ 		} else {
+ 			c.failed.absent(key)
+ 		}
+-		c.complete(key, delivered)
++		c.complete(key, ^uint64(0))
+ 		return
+ 	}
+ 	c.logger.Warn("entity read failed; delivered revisions drained, the repair lane retries the read",

@@ -1,0 +1,11 @@
+--- a/processor/graph-embedding/failed.go
++++ b/processor/graph-embedding/failed.go
+@@ -88,7 +88,7 @@
+ func (m *failedMap) worker(key string, o outcome) bool {
+ 	held, ok := m.entries[key]
+ 	if ok && (held.stranded || o.revision < held.revision) {
+-		return false
++		return o.reason != ""
+ 	}
+ 	return m.store(key, o)
+ }

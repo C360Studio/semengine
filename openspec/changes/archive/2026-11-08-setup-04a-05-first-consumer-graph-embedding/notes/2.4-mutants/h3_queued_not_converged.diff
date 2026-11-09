@@ -1,0 +1,10 @@
+--- a/processor/graph-embedding/hop1.go
++++ b/processor/graph-embedding/hop1.go
+@@ -180,7 +180,6 @@
+ 	}
+ 	// Saved: hop 1 has converged, and the Worker owns the terminal outcome, reported through
+ 	// onTerminal.
+-	c.failed.queued(key, revision)
+ }
+ 
+ // removeTextless ends a revision with no text to embed: it removes any record the entity

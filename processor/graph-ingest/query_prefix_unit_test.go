@@ -236,6 +236,41 @@ func TestMarshalFittingPrefixPageRejectsFirstIndivisibleEntity(t *testing.T) {
 	assert.Equal(t, maxPayload, classified.Detail["max_payload"])
 }
 
+// TestMarshalFittingPrefixPageMeasuresAnEmptyPageAsSent: an empty page is fitted at the
+// bytes the reply carries. A group with no keys sends "entities":null, a page whose keys were
+// all deleted mid-read sends "entities":[]; one byte under either reply is refused as
+// response_too_large naming those bytes, never the fatal fitting invariant (#521).
+func TestMarshalFittingPrefixPageMeasuresAnEmptyPageAsSent(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		entities []graph.EntityState
+	}{
+		{name: "no keys", entities: nil},
+		{name: "every key deleted", entities: []graph.EntityState{}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			// The oracle is the reply's own encoding, not the fit's arithmetic.
+			wantBytes, err := json.Marshal(graph.PrefixQueryResponse{Entities: tt.entities, Total: 0})
+			require.NoError(t, err)
+
+			encoded, err := marshalFittingPrefixPage(tt.entities, 0, "", int64(len(wantBytes)))
+			require.NoError(t, err)
+			assert.Equal(t, string(wantBytes), string(encoded))
+
+			maxPayload := int64(len(wantBytes) - 1)
+			encoded, fitErr := marshalFittingPrefixPage(tt.entities, 0, "", maxPayload)
+			require.Error(t, fitErr)
+			assert.Nil(t, encoded)
+			assert.True(t, errs.IsInvalid(fitErr), "want class invalid, got %v", fitErr)
+			var classified *errs.ClassifiedError
+			require.ErrorAs(t, fitErr, &classified)
+			assert.Equal(t, "response_too_large", classified.Code)
+			assert.Equal(t, int64(len(wantBytes)), classified.Detail["response_bytes"])
+			assert.Equal(t, maxPayload, classified.Detail["max_payload"])
+		})
+	}
+}
+
 // TestHandleQueryPrefix_InvalidCursor verifies that a malformed cursor returns
 // a classified error rather than panicking or silently returning wrong data.
 func TestHandleQueryPrefix_InvalidCursor(t *testing.T) {
@@ -535,4 +570,41 @@ func TestDecodeCursorEmpty(t *testing.T) {
 func TestDecodeCursorInvalid(t *testing.T) {
 	_, err := decodeCursor("!!!not-base64!!!")
 	require.Error(t, err, "malformed cursor must return error")
+}
+
+// spec: graph-transport-boundary / A prefix page names its total
+//
+// nats.go key listings can repeat a key under concurrent overwrites (#512). The listing here names
+// the middle entity twice; the page serves it once and total counts it once. The oracle is the set
+// of IDs the test stored.
+func TestHandleQueryPrefix_RepeatedListedKeyServedOnce(t *testing.T) {
+	comp, bucket := createTestComponentWithMockKVBucket(t, withAuthority("org", "ops"))
+
+	stored := []string{
+		"org.ops.dom.sys.type.entity-001",
+		"org.ops.dom.sys.type.entity-002",
+		"org.ops.dom.sys.type.entity-003",
+	}
+	for _, id := range stored {
+		storePrefixEntity(t, comp, id)
+	}
+
+	listed := []string{stored[0], stored[1], stored[1], stored[2]}
+	bucket.listFilteredFunc = func(context.Context, ...string) (jetstream.KeyLister, error) {
+		ch := make(chan string, len(listed))
+		for _, key := range listed {
+			ch <- key
+		}
+		close(ch)
+		return &mockKeyLister{ch: ch}, nil
+	}
+
+	resp := callPrefixHandler(t, comp, graph.PrefixQueryRequest{Prefix: "org"})
+
+	var served []string
+	for _, entity := range resp.Entities {
+		served = append(served, entity.ID)
+	}
+	assert.Equal(t, stored, served, "each stored entity is served exactly once, in key order")
+	assert.Equal(t, len(stored), resp.Total, "total counts the distinct keys")
 }

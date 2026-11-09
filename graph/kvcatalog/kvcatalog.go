@@ -271,13 +271,14 @@ func resolve(name, operation string) (natsclient.BucketSpec, error) {
 // CatalogReader is the read-only capability returned by OpenCatalogReader.
 // Its method set is the exact union consumed by current framework catalog
 // readers. The underlying write-capable JetStream handle is never exposed.
+// It has no Keys: list a catalog bucket with natsclient.FilteredKeys(ctx,
+// reader, ">"), which fails a listing cut short instead of returning the keys
+// so far (#533).
 type CatalogReader interface {
 	Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error)
 	Watch(ctx context.Context, keys string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 	WatchAll(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
-	Keys(ctx context.Context, opts ...jetstream.WatchOpt) ([]string, error)
-	ListKeys(ctx context.Context, opts ...jetstream.WatchOpt) (jetstream.KeyLister, error)
-	ListKeysFiltered(ctx context.Context, filters ...string) (jetstream.KeyLister, error)
+	WatchFiltered(ctx context.Context, keys []string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)
 	Status(ctx context.Context) (jetstream.KeyValueStatus, error)
 }
 

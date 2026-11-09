@@ -1,8 +1,10 @@
 package fusion
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
+	"slices"
 	"strconv"
 	"time"
 
@@ -250,13 +252,21 @@ type edgeAssertion struct {
 
 // graphNodeFor splits a seed's triples into the node's property facts and its
 // outgoing edge assertions. Facts merge per (predicate, datatype, value) with
-// one evidence entry per contributing triple; distinct facts past the cap are
-// counted in FactsDropped, never dropped silently.
+// one evidence entry per contributing triple; the distinct facts are sorted by
+// that key before the cap keeps the first maxGraphFactsPerNode, so the same
+// triples give the same facts whatever order they are stored in, and the rest
+// are counted in FactsDropped, never dropped silently. Outgoing assertions are
+// sorted by (predicate, target), stably, before the projection's edge cap sees
+// them.
 func graphNodeFor(ent *Entity, declared map[string]bool) (GraphNode, []edgeAssertion) {
 	node := GraphNode{Handle: ent.ID}
 	var outgoing []edgeAssertion
-	factIdx := map[string]int{}  // fact key → index into node.Facts
-	dropped := map[string]bool{} // distinct fact keys cut by the cap
+	type factEntry struct {
+		key  string
+		fact GraphFact
+	}
+	var facts []*factEntry
+	byKey := map[string]*factEntry{}
 	for i := range ent.Triples {
 		t := &ent.Triples[i]
 		if target, isEdge := edgeTarget(t, declared); isEdge {
@@ -268,26 +278,31 @@ func graphNodeFor(ent *Entity, declared map[string]bool) (GraphNode, []edgeAsser
 			continue // an unserializable object cannot be projected verbatim
 		}
 		key := t.Predicate + "\x00" + t.Datatype + "\x00" + string(value)
-		if idx, seen := factIdx[key]; seen {
-			appendFactEvidence(&node.Facts[idx], t)
-			continue
+		entry, seen := byKey[key]
+		if !seen {
+			entry = &factEntry{key: key, fact: GraphFact{Predicate: t.Predicate, Value: json.RawMessage(value), Datatype: t.Datatype}}
+			byKey[key] = entry
+			facts = append(facts, entry)
 		}
-		if dropped[key] {
-			continue
-		}
-		if len(node.Facts) >= maxGraphFactsPerNode {
-			dropped[key] = true
-			continue
-		}
-		fact := GraphFact{Predicate: t.Predicate, Value: json.RawMessage(value), Datatype: t.Datatype}
-		appendFactEvidence(&fact, t)
-		factIdx[key] = len(node.Facts)
-		node.Facts = append(node.Facts, fact)
+		appendFactEvidence(&entry.fact, t)
 	}
-	if len(dropped) > 0 {
-		node.FactsTruncated = true
-		node.FactsDropped = len(dropped)
+	// Sort before the limit (AGENTS.md § 2): which facts the cap keeps must not
+	// depend on stored triple order.
+	slices.SortFunc(facts, func(a, b *factEntry) int { return cmp.Compare(a.key, b.key) })
+	for i, entry := range facts {
+		if i >= maxGraphFactsPerNode {
+			node.FactsTruncated = true
+			node.FactsDropped = len(facts) - maxGraphFactsPerNode
+			break
+		}
+		node.Facts = append(node.Facts, entry.fact)
 	}
+	slices.SortStableFunc(outgoing, func(a, b edgeAssertion) int {
+		if c := cmp.Compare(a.predicate, b.predicate); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.target, b.target)
+	})
 	return node, outgoing
 }
 

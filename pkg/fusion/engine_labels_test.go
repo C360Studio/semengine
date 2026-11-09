@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/fusion"
 )
 
@@ -273,4 +274,61 @@ func TestGraphCounterpartFaultTruncates(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestGraphCapsIgnoreTripleOrder: the graph facet's edge cap (256) and fact cap
+// (64) keep the same edges and facts whatever order the seed's triples are
+// stored in: sort before limit. 257 declared edges to t000..t256 keep
+// t000..t255; 67 facts v00..v66 keep v00..v63.
+func TestGraphCapsIgnoreTripleOrder(t *testing.T) {
+	var triples []message.Triple
+	for i := range 257 {
+		triples = append(triples, message.Triple{Predicate: refEdgePred, Object: fmt.Sprintf("t%03d", i)})
+	}
+	for i := range 67 {
+		triples = append(triples, message.Triple{Predicate: "acme.fact.cap", Object: fmt.Sprintf("v%02d", i)})
+	}
+	reversed := slices.Clone(triples)
+	slices.Reverse(reversed)
+
+	wantEdges := make([]string, 256)
+	for i := range wantEdges {
+		wantEdges[i] = fmt.Sprintf("S|%s|t%03d", refEdgePred, i)
+	}
+	wantFacts := make([]string, 64)
+	for i := range wantFacts {
+		wantFacts[i] = fmt.Sprintf("%q", fmt.Sprintf("v%02d", i))
+	}
+	for name, order := range map[string][]message.Triple{"stored order": triples, "reversed": reversed} {
+		t.Run(name, func(t *testing.T) {
+			seed := &fusion.Entity{ID: "S", Triples: order}
+			proj := fuseWant(t, facetGraph(nil, nil, map[string]*fusion.Entity{"S": seed}), fusion.WantGraph).Graph
+			var edges []string
+			for _, e := range proj.Edges {
+				edges = append(edges, e.ID)
+			}
+			slices.Sort(edges)
+			if !slices.Equal(edges, wantEdges) {
+				t.Errorf("edges kept = %d, first missing from want: %v", len(edges), firstDiff(edges, wantEdges))
+			}
+			var facts []string
+			for _, f := range proj.Nodes[0].Facts {
+				facts = append(facts, string(f.Value))
+			}
+			slices.Sort(facts)
+			if !slices.Equal(facts, wantFacts) || proj.Nodes[0].FactsDropped != 3 {
+				t.Errorf("facts kept = %v (dropped %d), want %v (dropped 3)", facts, proj.Nodes[0].FactsDropped, wantFacts)
+			}
+		})
+	}
+}
+
+// firstDiff names the first position where got and want differ.
+func firstDiff(got, want []string) string {
+	for i := range min(len(got), len(want)) {
+		if got[i] != want[i] {
+			return fmt.Sprintf("at %d got %s want %s", i, got[i], want[i])
+		}
+	}
+	return fmt.Sprintf("lengths %d vs %d", len(got), len(want))
 }

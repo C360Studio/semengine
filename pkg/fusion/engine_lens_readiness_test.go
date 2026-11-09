@@ -116,8 +116,11 @@ func TestFatalReplyReturnsError(t *testing.T) {
 
 // TestFatalWalkReadSkipped: a fatal walk read is skipped like any other, because
 // poison refuses only the poisoned entities (ADR-109 D1) and the reply cannot tell
-// that refusal from a reset. The spec's scenario is a relation target; the
-// paths, impact and graph walks are checked the same way.
+// that refusal from a reset. The spec's scenario is a relation target; a
+// relations Neighbors read and the paths, impact and graph walks are checked the
+// same way. In the walks index_not_ready is skipped too (F23); in a relations
+// Neighbors read it defers (TestDeferredOnIndexNotReady), so that case is fatal
+// only.
 func TestFatalWalkReadSkipped(t *testing.T) {
 	seed := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "on_event.go")
 	good := entity("acme.ops.code.repo.symbol.Good", "Good", "good.go")
@@ -152,9 +155,15 @@ func TestFatalWalkReadSkipped(t *testing.T) {
 	})
 
 	walks := map[string]struct {
-		want  fusion.Want
-		check func(t *testing.T, resp fusion.Response)
+		want      fusion.Want
+		fatalOnly bool
+		check     func(t *testing.T, resp fusion.Response)
 	}{
+		"relations neighbors": {want: fusion.WantRelations, fatalOnly: true, check: func(t *testing.T, resp fusion.Response) {
+			if !resp.Nodes[0].RelationsTruncated {
+				t.Error("a skipped relations Neighbors read must set relations_truncated")
+			}
+		}},
 		"paths": {want: fusion.WantPaths, check: func(t *testing.T, resp fusion.Response) {
 			if len(resp.Paths) != 0 || !resp.PathsTruncated {
 				t.Errorf("paths = %+v, paths_truncated=%v; want none past a skipped first read, labelled",
@@ -172,23 +181,29 @@ func TestFatalWalkReadSkipped(t *testing.T) {
 			}
 		}},
 	}
+	replies := map[string]func() error{"fatal": resetRequired, "index_not_ready": indexNotReady}
 	for name, tc := range walks {
-		t.Run(name, func(t *testing.T) {
-			g := &fakeGraph{
-				seeds:        map[string][]string{"OnEvent": {seed.ID}},
-				entities:     map[string]*fusion.Entity{seed.ID: seed},
-				neighborsErr: resetRequired(),
+		for reply, replyErr := range replies {
+			if tc.fatalOnly && reply != "fatal" {
+				continue
 			}
-			eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
-			resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{tc.want}}, refLens{})
-			if err != nil {
-				t.Fatalf("a fatal %s read must be skipped, got err %v", name, err)
-			}
-			if resp.Deferred || len(resp.Nodes) != 1 {
-				t.Fatalf("want one answered node, got Deferred=%v nodes=%d", resp.Deferred, len(resp.Nodes))
-			}
-			tc.check(t, resp)
-		})
+			t.Run(name+"/"+reply, func(t *testing.T) {
+				g := &fakeGraph{
+					seeds:        map[string][]string{"OnEvent": {seed.ID}},
+					entities:     map[string]*fusion.Entity{seed.ID: seed},
+					neighborsErr: replyErr(),
+				}
+				eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+				resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{tc.want}}, refLens{})
+				if err != nil {
+					t.Fatalf("a %s %s read must be skipped, got err %v", reply, name, err)
+				}
+				if resp.Deferred || len(resp.Nodes) != 1 {
+					t.Fatalf("want one answered node, got Deferred=%v nodes=%d", resp.Deferred, len(resp.Nodes))
+				}
+				tc.check(t, resp)
+			})
+		}
 	}
 }
 

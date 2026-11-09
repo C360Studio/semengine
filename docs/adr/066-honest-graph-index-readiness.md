@@ -23,8 +23,9 @@
 > - Fusion's part is not carried (owner ruling 4, PR #550 comment 6716972354; ADR-109 D1). Decision 5's mirror,
 >   `pkg/fusion.IndexStatus`, and the "Ready semantic change" paragraph, which says `Fuse` gates once per request on
 >   `Ready` and returns empty while the index builds, describe the pin. `pkg/fusion` in this tree has no
->   `IndexStatus` and asks for no status: a read that replies `index_not_ready` makes the response `deferred`, and a
->   read that answers serves, whatever `ready` says. `Ready` stays revision coverage, information and not a gate.
+>   `IndexStatus` and asks for no status: a seed read or a relations neighbour read that replies `index_not_ready`
+>   makes the response `deferred` (any other walk read's reply is skipped and labelled), and a read that answers
+>   serves, whatever `ready` says. `Ready` stays revision coverage, information and not a gate.
 
 ## Status
 

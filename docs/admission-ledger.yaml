@@ -4601,8 +4601,8 @@
     the lens path as at the pin with these adaptations (spec fusion; design D1-D7). (1) Readiness rides the reply
     (owner ruling 4 on PR #550; ADR-109 D1, D3): Fuse asks no status; RetrievalClient has no Status; IndexStatus,
     IndexState, ErrReadinessUnknown and Response.Index are not carried; a seed read replying index_not_ready defers
-    with no nodes and no miss, any other seed-read error is returned, a walk read's error other than an ended
-    context is skipped and declared; defer_reason is index_not_ready or all_seeds_unhydrated only; ContractVersion
+    with no nodes and no miss, any other seed-read error is returned, a relations neighbour read replying
+    index_not_ready also defers, any other walk read's error other than an ended context is skipped and declared; defer_reason is index_not_ready or all_seeds_unhydrated only; ContractVersion
     is "2" (D1). (2) The graph facet's view_revision is gone (D2). (3) Resolve returns a Resolution whose
     unreadable_records and failed_records every response built after a natural-language resolve carries (D3). (4)
     Every left-out piece is declared: Neighbors results are sorted by predicate then target and deduplicated before

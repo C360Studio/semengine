@@ -20,8 +20,10 @@
 >   of "Resolve / expand / hydrate substrate" and the first bullet of "Honesty envelope" (`IndexStatus{ready, state}`,
 >   "only `ready` permits a not-found conclusion") describe the pin. ADR-083 removed the status request, ADR-084
 >   retired the absence license, and ADR-109 D1 (owner ruling, PR #550 comment 6716972354) has the engine read "not
->   ready" from the reply: a read that answers `index_not_ready` makes the response `deferred` with `defer_reason`
->   `index_not_ready` and no misses. The response carries no `index` block, and `contract_version` is `"2"`.
+>   ready" from the reply: a seed read or a relations neighbour read that answers `index_not_ready` makes the response
+>   `deferred` with `defer_reason` `index_not_ready` and no misses; the same reply on any other walk read (relation
+>   targets, paths, impact, graph) is skipped and labelled. The response carries no `index` block, and
+>   `contract_version` is `"2"`.
 > - Also changed: `Resolve` returns the search's unreadable and failed record counts, every piece the engine leaves out
 >   is declared on the response (`relations_truncated`, `paths_truncated` and the facets' `truncated`), and
 >   `NewEngine` takes a logger and returns an error. `ClassSpecificity` counts the ancestors of a function passed to

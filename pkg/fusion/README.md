@@ -68,9 +68,10 @@ or false:
 - `truncated` (top level): the budget cut nodes off.
 
 `contract_version` is `"2"`. When a `Fuse` call returns an error instead, either the context ended, or `Resolve` or
-`Entities` failed with something other than `index_not_ready` (a graph reset included). Reads after the seeds
-(relations, relation targets, paths, impact, graph) never fail the call: a failed one is skipped and shown as one of
-the labels above.
+`Entities` failed with something other than `index_not_ready` (a graph reset included). A seed read or a relations
+neighbour read that replies `index_not_ready` makes the whole response `deferred`. Every other failed read after the
+seeds (relations neighbours with any other error, relation targets, paths, impact, graph) never fails the call: it is
+skipped and shown as one of the labels above.
 
 ## Logs and counters
 

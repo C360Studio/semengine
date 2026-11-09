@@ -16,8 +16,9 @@ status check and reads "not ready" from the reply (ADR-109), which removes fusio
 
 ## What Changes
 
-- `Engine.Fuse` asks no status. A reply's `index_not_ready` defers the answer; a fatal reply (such as a graph reset)
-  or an ended context fails the call; other read faults are skipped and declared. `RetrievalClient.Status`,
+- `Engine.Fuse` asks no status. A reply's `index_not_ready` defers the answer; a fatal seed read or an ended context
+  fails the call; a failed walk read, fatal or not, is skipped and declared (ADR-109 D1: poison refuses only the
+  poisoned entities). `RetrievalClient.Status`,
   `IndexStatus`, `IndexState`, `ErrReadinessUnknown` and `Response.Index` go; `contract_version` becomes `"2"` (D1).
 - Decided, not asked: the graph facet's `view_revision` goes with the status read that filled it (D2; ruling 4 and
   the 2026-11-02 ruling that a consumer break is a migration note).
@@ -41,8 +42,7 @@ New `fusion`.
 - Consumers migrate (`pkg/fusion/MIGRATION.md`, owner ruling of 2026-11-02 on PR #504): SemSource's `NewEngine`,
   `fusionvocab.New` and its `RetrievalClient` fake fail to compile until changed. On the wire, `index` and
   `view_revision` leave, the gate's four `defer_reason` values go, and a reset that deferred becomes an error.
-- ADR-062 is ported with a port note; ADR-066 (tree copy :343-344, :394), pin ADR-082 :65 and ADR-085 D1 change
-  under the owner's ruling.
+- ADR-062 ported; ADR-066 (tree :343-344, :394), pin ADR-082 :65, ADR-085 D1 change under the owner's ruling.
 - Merge order: no open PR shares a file (#560 touches `internal/smoke` only). PR D follows this one.
 - Retires none. Advances #110 (item 2 done; stays for item 3, temporal's port).
 

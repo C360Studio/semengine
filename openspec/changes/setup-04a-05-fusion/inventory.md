@@ -121,6 +121,21 @@ framework API whose contract line is a requirement of the new `fusion` spec, cal
   Adopted (D5).
 - Metric registration: `metric.RegisterOrGet`, as `internal/dispatch` and `graph/readiness` gauges do (ledger
   `:2166`, `:2249`). Adopted.
+- Fusion and graph-embedding's degraded status (design D1): at the pin fusion's only status read was graph-index's key
+  (`pin:fusionnats/client.go:139` — `readiness.NewWatcher(src, readiness.KeyGraphIndex)`); under ruling 4 it reads
+  none. The embedding verbs decide once, at the responder: since PR B (F2, `graph/follower/follower.go:75-79`) they
+  withhold `index_not_ready` only on hop-1 failures, which can leave a stale vector, and answer around Worker failures,
+  counting them in `failed_records`. Fusion defers exactly when that reply withholds, so one document that fails to
+  embed never stops fusion; design D3 carries the count.
+- The graph facet's revision span (design D2): `ViewRevision{Start, End}` was the status's `indexed_revision` before
+  and after the facet's reads (`pin:engine_graph.go:198-210`). A replacement threaded out of `Neighbors` (the
+  relationships reply is enveloped) would change the SPI every fake implements and still say nothing about the facts,
+  which come from `entity` and `batch`, bare replies (`graph/query_verbs.go:95-98`). No SemSource reader (§ 5). Proof:
+  `TestGraphProjectionRoundTrip`, ported from `pin:engine_graph_test.go:585` without the field.
+- Poison over the reply (design D1): graph-ingest refuses a poisoned entity as fatal `graph_state_reset_required`
+  (`processor/graph-ingest/query.go:634-649`), and its batch read refuses the whole batch when any entity is poisoned
+  (`:618-619`, in `fetchEntitiesConcurrent`, `:482`). ADR-109 D1: "poison refuses only the poisoned entities"
+  (`docs/adr/109-ready-after-boot.md:77`).
 
 ## 7. Category 6, pin ADRs
 
@@ -143,6 +158,12 @@ framework API whose contract line is a requirement of the new `fusion` spec, cal
 | 045 graph search decomp+fusion via rule chain | the rule-chain fusion `research-graph-execute` uses, the `Fuse` path's origin | no; not binding (path not carried) |
 | 080 push-based agent memory | D5 (pin `:76-84`) defers a lessons facet on the lens engine | no; not binding (no such facet) |
 | 109 (SemEngine) | D1 readiness rides the reply, D3 no consumer reads a sign first | yes |
+
+Applied by the design: ADR-063 (hydration by handle), ADR-071 (`Scope` to `Resolve`), ADR-084 D3 (no absence claim),
+D4 (what `index_not_ready` means), D6 (omission reported), ADR-109 D1 and D3, ADR-112 (no fixed timeout). Guidance:
+SemStreams' "Exported-surface", "Guarantee, signal, and revision" and "Storage and retention" sections are in the
+tree's contracts already (`.agents/contracts/semengine-developer.md:163`, `:177`, `:270`). Coverage: `pkg/fusion` joins
+`scripts/cover-check.sh` at 80% (03B critical list); `fusionvocab` does not.
 
 ## 8. Shape sweep (read on the pin copy, `pin:pkg/fusion/`)
 
@@ -172,6 +193,10 @@ framework API whose contract line is a requirement of the new `fusion` spec, cal
 | F22 | label | `engine_lens.go:332` — `Provenance:      ProvenanceDeterministic,` on every deferral | optional |
 | F24 | cap over an unordered set | `engine_lens.go:493-495` (relations), `engine_facets.go:69-89` (impact BFS), `:149-162`, `:173-181` (paths DFS) cut in the order `Neighbors` listed edges; fusion sorts nothing; tree outgoing replies keep the stored `OUTGOING_INDEX` row order (`processor/graph-index/query.go:145-156`), incoming are sorted (`:191`); fakes any order | required (AGENTS.md § 2 sort before limit; SS#621 nondeterminism) |
 | F23 | two not-ready policies | relations defer (`engine_lens.go:488`), paths/impact/graph truncate (`engine_facets.go:188-193`) | optional: both are declared |
+
+Not carried: `engine.go`, `subquery.go`, `evidence.go`, `client.go` and their tests (F20, 03B D5) and `lensregistry`
+(pin callers: its own test and `storage/storeregistry/storeregistry_test.go`). Everything else carries: ranking,
+budget, scores, facets, `Lens`, `Want`, `Facet`, `Unhydrated`, `BodyReason`, hydration.
 
 Shape 3 (one implementation): `RankSignals` (`rank_signals.go:13`), implemented only by `fusionvocab.Signals` at the
 pin; retained, it keeps `pkg/fusion` free of `vocabulary`. Shape 5 (error text): **measured** `grep -n

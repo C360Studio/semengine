@@ -14,15 +14,15 @@ and no miss. Any other error from `Resolve` or `Entities` SHALL be returned as t
 - **THEN** `Fuse` returns no error and a response with `deferred` true, `defer_reason` `index_not_ready`, no nodes and
   no misses (`TestDeferredOnIndexNotReady`)
 
-### Requirement: A fatal reply or an ended context fails the call
+### Requirement: A fatal seed read or an ended context fails the call
 
-When any read `Fuse` makes returns an error `errs.IsFatal` reports, such as `graph_state_reset_required`, or when the
-request's context has ended, `Fuse` SHALL return that error and no response, whichever facet made the read. `Fuse`
-SHALL refuse a nil context.
+When `Resolve` or `Entities` returns an error `errs.IsFatal` reports, such as `graph_state_reset_required`, or when
+the request's context has ended during any read, `Fuse` SHALL return that error and no response. `Fuse` SHALL refuse
+a nil context.
 
-#### Scenario: A reset during the relations walk
+#### Scenario: A reset while hydrating seeds
 
-- **WHEN** `Resolve` and `Entities` answer and a relations `Neighbors` call returns `graph_state_reset_required`
+- **WHEN** `Resolve` answers and `Entities` returns `graph_state_reset_required`
 - **THEN** `Fuse` returns that error (`TestFatalReplyReturnsError`)
 
 #### Scenario: The caller gives up
@@ -82,11 +82,22 @@ or graph cap is applied, so the same graph gives the same cut whatever order a r
 - **WHEN** one client lists 13 edges in one order and another lists them reversed
 - **THEN** the two nodes hold the same 12 refs (`TestEdgesSortedBeforeCap`)
 
+### Requirement: A walk read that fails is skipped
+
+A skipped read SHALL be any failed relation-target, paths, impact or graph read, and any failed relations `Neighbors`
+read except `index_not_ready`, which defers. A fatal error, `graph_state_reset_required` included, SHALL be skipped
+there like any other; only an ended context SHALL instead fail the call.
+
+#### Scenario: A poisoned relation target
+
+- **WHEN** `Resolve` and `Entities` answer and a relation target's read returns `graph_state_reset_required`
+- **THEN** `Fuse` answers, that ref is left out and the node's `relations_truncated` is true
+  (`TestFatalWalkReadSkipped`)
+
 ### Requirement: A node says when relations were left out
 
 A node's `relations_truncated` SHALL be true when a role had more relations than its cap, a relations `Neighbors`
-read was skipped, or a relation's target could not be read or read as absent. A skipped read is one whose error is
-neither fatal, `index_not_ready`, nor an ended context. Otherwise the key SHALL be omitted.
+read was skipped, or a relation's target read was skipped or read as absent. Otherwise the key SHALL be omitted.
 
 #### Scenario: The relations cap
 
@@ -106,9 +117,10 @@ neither fatal, `index_not_ready`, nor an ended context. Otherwise the key SHALL 
 
 ### Requirement: Paths hold only names and say when one was cut
 
-A path SHALL hold only names a lens produced. When its next node cannot be read it SHALL end at its last readable node
-with `truncated` true, and a path that would hold the seed alone SHALL not be emitted. The response's
-`paths_truncated` SHALL be true when more paths existed than the cap or a path was not emitted for an unread node.
+A path SHALL hold only names a lens produced. When its next node's read is skipped or reads as absent, the path SHALL
+end at its last readable node with `truncated` true, and a path that would hold the seed alone SHALL not be emitted. The
+response's `paths_truncated` SHALL be true when more paths existed than the cap or a path was not emitted for an unread
+node.
 
 #### Scenario: The paths cap
 
@@ -117,7 +129,7 @@ with `truncated` true, and a path that would hold the seed alone SHALL not be em
 
 #### Scenario: An unreadable node on a path
 
-- **WHEN** the third node of a path cannot be read
+- **WHEN** the third node of a path cannot be read, or reads as absent
 - **THEN** the path holds the first two names and is marked `truncated`; when the second node cannot be read, no path
   is emitted and `paths_truncated` is true; no path holds an entity ID (`TestPathStopsAtUnreadNode`)
 
@@ -125,8 +137,7 @@ with `truncated` true, and a path that would hold the seed alone SHALL not be em
 
 `impact.truncated` SHALL be true when the node cap was reached, a walk read was skipped, or an affected node's read
 for its file was skipped. `graph.truncated` SHALL be true when an incoming counterpart's read was skipped; a
-counterpart that reads as absent SHALL keep its edge without evidence and SHALL not set it. In the paths, impact and
-graph walks an `index_not_ready` error counts as a skipped read.
+counterpart that reads as absent SHALL keep its edge without evidence and SHALL not set it.
 
 #### Scenario: An unread file
 
@@ -141,14 +152,15 @@ graph walks an `index_not_ready` error counts as a skipped read.
 
 ### Requirement: A skipped read is logged and counted
 
-Each skipped read SHALL log one Warn line on the engine's logger naming the facet and the read, and SHALL increment
-`fusion_skipped_reads_total` with label `facet` (`relations`, `paths`, `impact`, `graph`) when a metrics registry
-was given.
+Each skipped read SHALL increment `fusion_skipped_reads_total` with label `facet` (`relations`, `paths`, `impact`,
+`graph`) when a metrics registry was given. Each `Fuse` call SHALL log one Warn line per facet that skipped any read,
+naming the facet, the number skipped and the first error.
 
 #### Scenario: One skipped relations read
 
-- **WHEN** one relations `Neighbors` read is skipped on an engine with a registry
-- **THEN** one Warn line names `relations` and the series for `relations` reads 1 (`TestSkippedReadLoggedAndCounted`)
+- **WHEN** three relations reads are skipped in one `Fuse` call on an engine with a registry
+- **THEN** one Warn line names `relations` with count 3 and the series for `relations` reads 3
+  (`TestSkippedReadLoggedAndCounted`)
 
 ### Requirement: Ranking is a stable permutation
 

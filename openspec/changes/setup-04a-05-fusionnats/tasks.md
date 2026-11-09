@@ -14,27 +14,35 @@ after 3.1, and before the archive.
 
 - [ ] 2.1 Client and wire (D1, D2): port `client.go` and `doc.go` without the readiness watch, `Status` and `Close`;
   `New` with its refusals and the verb-table lookup; replies decoded by row; `graph` request types; `predicate`;
-  the search counts; `UnmarshalEntityState`; the pin's unit tests on the tree's wire, `TestStatus_*` and
-  `slice_e_contract_test.go` not carried. Check: `TestNewRefusesNilRequester`, `TestNewRefusesNegativeTimeout`,
-  `TestSubjectsComeFromVerbTable`, `TestReplyShapeDecidedByVerb`, `TestNeighborsReadsPredicate`,
+  the search counts; `UnmarshalEntityState`; the pin's unit tests on the tree's wire, its exact-entity tests
+  (`slice_e_contract_test.go:16-53`) carried, `TestStatus_*` and `slice_e_contract_test.go:55-105` not. Check:
+  `TestNewRefusesNilRequester`, `TestNewRefusesNegativeTimeout`, `TestSubjectsComeFromVerbTable`,
+  `TestVerbLookupNamesMissingRow`, `TestEnvelopedRowNeedsProducer`, `TestNeighborsReadsPredicate`,
   `TestSemanticCountsReachResolution`, `TestReconcileTotal` (generated, seed recorded, reference model), the pin's
   `TestReconcileHydration` and `TestEntities_EmptyShortCircuits`; the transport-boundary contract test passes.
 - [ ] 2.2 Poisoned seeds (D3, as the owner answers question 1): the per-seed read after a batch refusal coded
   `graph_state_reset_required`; `UnhydratedError`'s doc. Check: `TestPoisonedSeedUnhydrated`,
   `TestAllSeedsPoisonedDefer`, `TestPoisonedDuplicateReadOnce`, `TestPoisonFallbackReturnsOtherError`,
-  `TestPoisonFallbackEndedContext`, `TestOwnValidationNotRetried`, each shown to fail by a mutant. **Review stop.**
-- [ ] 2.3 Real wire (D3): `TestPoisonedSeedOverRealResponders` (integration; graph-ingest and graph-query on the
-  package's shared `natsfixture` server through `natsfixture.Open`, #195), and an integration test driving every
-  `RetrievalClient` method against the real responders in place of the pin's fake-handler test.
+  `TestPoisonFallbackEndedContext`, `TestPoisonFallbackEmptyID`, `TestOwnValidationNotRetried` (both paths), each
+  shown to fail by a mutant. **Review stop.**
+- [ ] 2.3 Real wire (D3): graph-ingest, graph-index, graph-query and graph-embedding (bm25) on the package's shared
+  `natsfixture` server through `natsfixture.Open` (#195). Check: `TestRealRespondersAnswer` (every `RetrievalClient`
+  method, NL with a scope; replaces the pin's fake-handler test), `TestPoisonedSeedOverRealResponders` (bad bytes Put
+  after graph-ingest's `Start` returned).
 
 ## 3. Proof and close-out
 
-- [ ] 3.1 No-embedder proof (D5): `TestSmoke_NoEmbedderAnswers` in `internal/smoke`; `TestFusionNATSImportsNoEmbedding`
+- [ ] 3.1 No-embedder proof (D5, as the owner answers question 2; under Q-A the graph-query PR has merged and this
+  branch has merged `origin/main`): `TestSmoke_NoEmbedderAnswers` in `internal/smoke`;
+  `TestFusionNATSImportsNoEmbedding`
   and its sensitivity case in `internal/harness/contract`. **Review stop.**
 - [ ] 3.2 Readiness leftovers (D4): `Reading.Raw` removed with its tests' assertions; `graph/readiness/watcher.go`
-  package doc; ledger `graph/readiness` known_risks.
+  package doc (the fusionnats sentence goes, graph-clustering stays); ledger `graph/readiness` known_risks.
 - [ ] 3.3 Records (D6): ledger row `pkg/fusion/fusionnats`; `scripts/cover-check.sh` gains `pkg/fusion/fusionnats`;
   `pkg/fusion/README.md`, `pkg/fusion/MIGRATION.md` (`New` returns an error; no `Status`, no `Close`; a poisoned seed
-  is listed); `pkg/fusion/retrieval.go:37`; port notes on ADR-066, ADR-071, ADR-083, ADR-084; the prefix-poison issue
-  filed, `status:blocked` on this PR, linked without a closing keyword; a comment on #195 that fusionnats adopted it.
-- [ ] 3.4 Spec sync and archive as the last content commit. **Final review.**
+  is listed); `pkg/fusion/retrieval.go:37`; port notes on ADR-062 (`:17`), ADR-066, ADR-071, ADR-083, ADR-084; ledger
+  `pkg/fusion` row and comment (`:4592`, `:4600`, `:4627`, `:4631`) and the ADR-062 row (`:4694`); the prefix-poison
+  issue filed (and under Q-B the graph-query no-responder issue), `status:blocked` on this PR, linked without a closing
+  keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, stays for item 3).
+- [ ] 3.4 Spec sync and archive as the last content commit; the `composed-stack` Purpose names the no-embedder
+  stack beside the four-component one. **Final review.**

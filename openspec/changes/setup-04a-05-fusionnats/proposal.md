@@ -22,7 +22,7 @@ engine of PR C (#565) runs over, and the plan's proof that the tier-0 stack work
   read, each seed is read alone and the damaged ones are listed as not loaded, reason `error` (D3, owner question 1).
 - `graph/readiness.Reading.Raw` goes: its one reader at the pin was fusionnats' status read (D4).
 - No-embedder proof: a smoke test boots graph-ingest, graph-index and graph-query with no graph-embedding, and fusion
-  answers name and prefix questions; a word question fails with graph-query's refusal, never an empty answer. A
+  answers name and prefix questions; a word question is refused, never answered empty (how: owner question 2). A
   contract test keeps `fusionnats` free of embedding imports (D5).
 
 ## Capabilities
@@ -35,9 +35,12 @@ Modified: `fusion` (the NATS client), `composed-stack` (the no-embedder stack).
 - Consumers migrate (`pkg/fusion/MIGRATION.md`): SemSource's `fusionnats.New(client, 0)` (code-context and 11 tests)
   takes the error; one test's `Status` call goes. On the wire nothing changes for SemSource except that a poisoned
   seed is listed instead of failing.
-- ADR port notes: ADR-066 and ADR-083 (the watch is not carried), ADR-071, ADR-084. Pin ADR-079 D3 is kept under the
-  recommendation.
-- Merge order: no open PR overlaps. Retires none; #195, #110, #563 stay. Files one issue (graph-ingest's prefix read).
+- Stale text rewritten: port notes on ADR-062, ADR-066 and ADR-083 (the watch is not carried), ADR-071, ADR-084; the
+  `pkg/fusion` and ADR-062 ledger rows; the `fusion` spec's fatal-seed-read example (MODIFIED). Pin ADR-079 D3 is kept
+  under the recommendation.
+- Merge order: no open PR overlaps; under question 2's recommendation a small graph-query PR merges before this
+  one's proof task. Retires none; #195, #110, #563 stay. Files the graph-ingest prefix-read issue, and under question
+  2's alternative a graph-query issue.
 
 ## Owner questions
 
@@ -46,7 +49,9 @@ Modified: `fusion` (the NATS client), `composed-stack` (the no-embedder stack).
    result alone and lists the damaged ones as "could not load". It costs extra requests only while damage exists and
    changes no other package. The alternative is to change graph-ingest so its group read lists damaged entities
    itself: one request, but it reverses a SemStreams decision (ADR-079) and touches a second package.
-2. **A word question with no embedder.** Without graph-embedding, a word question gets graph-query's "temporary
-   internal error" naming the missing embedding subject, which reads as "try again" though it never will succeed.
-   Recommended: accept it for this PR (the proof checks that exact refusal) and file a graph-query issue to refuse a
-   question nobody in the composition answers with its own code.
+2. **A word question with no embedder.** The plan asks for "explicitly admitted graph-only interfaces, not
+   unsupported NL verbs" (`docs/setup-plan.md:439-440`). Today graph-query still offers word search with no embedder
+   and answers it with "temporary internal error", which tells a program to retry something that can never succeed.
+   Recommended: a small graph-query change first, so a question nobody in the composition can answer gets a "will not
+   succeed, do not retry" refusal with its own error code (you name it), and the proof checks that. The alternative:
+   keep today's refusal for alpha.3 and file it as an issue.

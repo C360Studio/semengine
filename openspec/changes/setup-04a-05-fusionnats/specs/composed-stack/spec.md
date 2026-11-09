@@ -6,7 +6,7 @@
 
 graph-ingest, graph-index and graph-query SHALL start from one configuration with no graph-embedding, and
 `fusion.Engine` over `fusionnats` SHALL answer symbol and prefix questions from them. A natural-language question SHALL
-fail with graph-query's refusal, never an empty answer. `pkg/fusion/fusionnats` SHALL import neither
+be refused naming `graph.embedding.query.search`, never answered empty. `pkg/fusion/fusionnats` SHALL import neither
 `graph/embedding`, `processor/graph-embedding` nor `graph/readiness`, directly or through a package it imports.
 
 #### Scenario: No embedder
@@ -14,7 +14,8 @@ fail with graph-query's refusal, never an empty answer. `pkg/fusion/fusionnats` 
 - **WHEN** the stack boots without graph-embedding and the producer publishes the fixed entities
 - **THEN** the three components are healthy, `GRAPH_STATUS` holds no `graph-embedding` key, a symbol lens and a prefix
   lens return the expected nodes, relations and paths, an unknown name is a miss, and an NL lens's `Fuse` returns a
-  transient `internal` refusal naming `graph.embedding.query.search` (`TestSmoke_NoEmbedderAnswers`)
+  refusal naming `graph.embedding.query.search`, of the class and code the owner's answer to question 2 sets
+  (`TestSmoke_NoEmbedderAnswers`)
 
 #### Scenario: An embedding import
 

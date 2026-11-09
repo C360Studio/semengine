@@ -117,7 +117,10 @@ tests add `message`, `natsclient`, testify. No `natsclient` import in production
 - Specs: `fusion` (`openspec/specs/fusion/spec.md:22-37`, a fatal seed read fails the call; `:39-48`, all unhydrated
   defers); `composed-stack` (`openspec/specs/composed-stack/spec.md:11-28`, the stack includes graph-embedding);
   `graph-transport-boundary` (subjects).
-- Stale text naming fusionnats (**measured**, `git grep -n fusionnats -- '*.go' '*.md' ':!openspec/changes/archive'`):
+- Stale text naming fusionnats (**measured**, `git grep -n fusionnats -- '*.go' '*.md' '*.yaml'
+  ':!openspec/changes/archive'`): ledger `docs/admission-ledger.yaml:2198`, `:4592`, `:4600`, `:4627`, `:4631`,
+  `:4694`; ADR-062 port note `docs/adr/062-deterministic-graph-fusion.md:17`; `fusion` spec
+  `openspec/specs/fusion/spec.md:22-31` (a reset as the fatal seed-read example);
   `graph/readiness/watcher.go:22-25`, `pkg/fusion/README.md:95`, `pkg/fusion/MIGRATION.md:105-106`,
   `pkg/fusion/retrieval.go:37`, `processor/graph-ingest/query.go:481`, `pkg/fusion/retrieval.go:109-110`
   (`UnhydratedError` "Reserved while the handler's first-error contract stands"), port notes ADR-071 `:9-14`
@@ -141,6 +144,10 @@ New surface: none planned beyond changed signatures (§ 9 of the design lists th
   (`git grep -n -i 'one at a time\|each alone\|fall back' -- '*.go'`: none on entity reads). The tree's only
   production caller of the batch verb is fusionnats (**measured** `git grep -n 'EntityBatchRequest{'`: 0 production
   hits). Not a reusable primitive (one caller), so no adoption sweep.
+- One-entity read: `graph.ExactEntityReader` (`graph/exact_entity.go:64-103`) owns the exact read and its decode.
+  Not adopted as the client: its subject is fixed to `graph.ingest.query.entity` (`:79`), and ADR-062 routes
+  fusionnats through the public `graph.query.*` verbs (`doc.go:12-21`); its decoder, `graph.UnmarshalEntityState`, is
+  adopted (N10).
 - Constructor that refuses bad wiring, zero timeout meaning the transport's default: `graph.NewExactEntityReader`
   (`graph/exact_entity.go:46-59`). Adopted.
 - Subjects from the table with a failure naming a missing row: `processor/graph-query/query.go:79-95`
@@ -167,6 +174,7 @@ New surface: none planned beyond changed signatures (§ 9 of the design lists th
 | 066 honest readiness | item 3 (pin `:413`): fusionnats decodes every envelope field | yes (fusion part not carried, port note) |
 | 071 domain-scoped NL retrieval | `resolveSemantic` sends `scope` only when non-empty (pin `:82`) | yes |
 | 079 per-entity poison | D3: the read surface refuses exactly the poisoned entities; aggregate reads fail naming them (pin `:38-46`) | no (cited by ADR-109) |
+| 082 bounded-lag readiness | exact consumers, "fusion honesty envelope" among them, gate on `Ready` (pin `:65`); changed in PR C under ADR-109 D1, D3 (`split.md:22-23`); nothing left for PR D | no |
 | 083 readiness as distributed state | consumers watch `GRAPH_STATUS`; fusionnats' lazy watch (`client.go:107-147`) | yes |
 | 084 readiness licenses health | D6 / gh#597: `Entities` reconciles against the requested set (pin `:63-65`; `client.go:401-419`) | yes |
 | 109 (SemEngine) | D1 readiness rides the reply, poison refuses only the poisoned entities (`:77`); D3 no consumer reads a sign first | yes |

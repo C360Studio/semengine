@@ -194,6 +194,9 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 	if !reflect.DeepEqual(resp, fusion.Response{}) {
 		t.Fatalf("NL falcon returned %+v beside its refusal, want no response", resp)
 	}
+	// graph-query counted the failed request as an error; health does not read that count, so a
+	// word question leaves the stack healthy.
+	requireComponentsHealthy(t, s)
 
 	stopStack(t, s)
 }

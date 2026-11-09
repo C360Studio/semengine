@@ -61,9 +61,9 @@ func run(m *testing.M) int {
 }
 
 // stackConfig is the one configuration the four-component stack boots from (design D2), as a
-// product would write it. The child fills the three placeholders from its environment: the NATS URL and the two ports
-// the test picked (design D4), and graph-ingest's configuration, {} (its defaults) unless the test
-// passes one. Every other component takes its defaults; graph-embedding runs BM25 only.
+// product would write it. The child fills the three placeholders from its environment: the NATS
+// URL and the two ports the test picked (design D4), and graph-ingest's configuration, {} (its
+// defaults) unless the test passes one. Every other component takes its defaults; graph-embedding runs BM25 only.
 const stackConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -232,8 +232,8 @@ func TestHelperProcess(t *testing.T) {
 }
 
 // runStack is the composition root (design D2): what a product's main does, in order. It boots
-// the composition envComposition names from its configuration, creates the ready file, waits for SIGTERM and stops everything it
-// started, each stop under its own budget.
+// the composition envComposition names from its configuration, creates the ready file, waits for
+// SIGTERM and stops everything it started, each stop under its own budget.
 func runStack(ctx context.Context) (result error) {
 	terminated := make(chan os.Signal, 1)
 	signal.Notify(terminated, syscall.SIGTERM)

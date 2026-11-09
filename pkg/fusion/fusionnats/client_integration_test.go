@@ -228,10 +228,6 @@ func (s stack) seed(t *testing.T) {
 	if _, err := probe.Await(t.Context(), func(ctx context.Context) (int, error) {
 		raw, err := s.client.RequestClassified(ctx, search, []byte(`{"query":"widget"}`), requestTimeout)
 		if err != nil {
-			var refusal *errs.ClassifiedError
-			if errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady {
-				return 0, nil
-			}
 			return 0, err
 		}
 		var reply graph.QueryResponse[graph.SemanticData]

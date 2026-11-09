@@ -221,7 +221,13 @@ func TestReportConsumer_SnapshotIsBuiltFromTheBucket(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, OvercommitmentOver, file.State)
 
-	observed, _, accounts := observer.snapshot()
+	// The fan-out follows the snapshot (#559); wait on the observer's own record.
+	var observed []string
+	var accounts []AccountReport
+	eventually(t, func() bool {
+		observed, _, accounts = observer.snapshot()
+		return len(observed) == 2 && len(accounts) == 1
+	}, "the observer sees both rows and the account")
 	assert.ElementsMatch(t, []string{"LOGS", "EVENTS"}, observed)
 	require.Len(t, accounts, 1)
 }
@@ -266,7 +272,10 @@ func TestReportConsumer_DeleteForgetsTheRowWithItsIdentity(t *testing.T) {
 	watcher.del(key)
 	eventually(t, func() bool { return len(consumer.Snapshot().Resources) == 0 }, "the row is dropped")
 
-	_, forgot, _ := observer.snapshot()
+	// The consumer publishes the snapshot before it tells the observer (#559),
+	// so wait on the observer's own record of the forget.
+	var forgot []string
+	eventually(t, func() bool { _, forgot, _ = observer.snapshot(); return len(forgot) > 0 }, "the observer forgets the row")
 	require.Len(t, forgot, 1)
 	assert.Equal(t, "weird$stream", forgot[0],
 		"the forgotten row carries the real resource name, not its opaque key")

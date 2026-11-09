@@ -419,9 +419,24 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	// An edit on the stream and a delete through graph-ingest's mutation verb.
 	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
 	deleted := f.id(drone8)
-	read, err := o.ask(t, "entity", graph.EntityRequest{ID: deleted})
+	o.deleteEntity(t, deleted)
+	o.awaitIndexed(t, s)
+	requireComponentsHealthy(t, readHealth(t, s))
+	edited := wantOf(inputs...)
+	edited[f.id(drone3)] = f.editedDrone3()
+	delete(edited, deleted)
+	checkAnswers(t, o, f, edited, deleted)
+
+	stopStack(t, s)
+}
+
+// deleteEntity deletes id through graph-ingest's mutation verb, at the revision its entity read
+// reports. The delete's reply comes after its write, so an awaitIndexed after it covers the delete.
+func (o observer) deleteEntity(t *testing.T, id string) {
+	t.Helper()
+	read, err := o.ask(t, "entity", graph.EntityRequest{ID: id})
 	if err != nil {
-		t.Fatalf("entity %s: %v", deleted, err)
+		t.Fatalf("entity %s: %v", id, err)
 	}
 	var held graph.ExactEntity
 	if err := json.Unmarshal(read, &held); err != nil {
@@ -431,19 +446,10 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The delete's reply comes after its write, so awaitIndexed's revision read covers it.
-	if _, err := mutations.Delete(t.Context(), graph.DeleteEntityRequest{EntityID: deleted,
+	if _, err := mutations.Delete(t.Context(), graph.DeleteEntityRequest{EntityID: id,
 		ExpectedRevision: held.KVRevision}); err != nil {
-		t.Fatalf("delete %s: %v", deleted, err)
+		t.Fatalf("delete %s: %v", id, err)
 	}
-	o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, readHealth(t, s))
-	edited := wantOf(inputs...)
-	edited[f.id(drone3)] = f.editedDrone3()
-	delete(edited, deleted)
-	checkAnswers(t, o, f, edited, deleted)
-
-	stopStack(t, s)
 }
 
 // checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
@@ -726,4 +732,67 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 	requireComponentsListed(t, readHealth(t, second))
 	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
+}
+
+// TestSmoke_BrokerRestartUnderRunningStack holds composed-stack, "Restart the broker under the
+// running stack" (design D6, case 4): the NATS server restarts on the same URL with its file
+// storage while the stack keeps running, and the same process, never restarted, applies a new
+// entity, an edit and a delete published after it, answers what it did before plus those writes,
+// and lists its four components healthy, with no envelope reporting a lost feed or reset_required.
+func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
+	// Own server: restarts the NATS server under the running stack, which the shared one must not.
+	broker := natsfixture.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer cancel()
+	if err := broker.Start(ctx); err != nil {
+		t.Fatalf("start the NATS server: %v", err)
+	}
+	url := broker.URL()
+
+	o := newObserver(t, url)
+	s := startStack(t, o, url)
+	f := fixture{platform: s.platform}
+	requireComponentsListed(t, readHealth(t, s))
+
+	inputs := f.fixedEntities()
+	var last uint64
+	for _, e := range inputs {
+		last = o.publish(t, e)
+	}
+	o.awaitAcknowledged(t, s, last)
+	o.awaitIndexed(t, s)
+	requireComponentsHealthy(t, readHealth(t, s))
+	before := wantOf(inputs...)
+	checkAnswers(t, o, f, before)
+
+	// Unlike case 3, nothing is stopped before the restart: the stack and the observer keep their
+	// connections, and both reconnect with natsclient's defaults (unlimited attempts). The observer
+	// waits on its own reconnection, counted by nats.go once the connection is re-established, so
+	// its first publish goes to the restarted server, not into nats.go's reconnect buffer.
+	reconnects := o.client.GetConnection().Stats().Reconnects
+	restartBrokerKeepingURL(t, broker)
+	restarted := time.Now()
+	await(t, s, "the observer's connection to reconnect", func(context.Context) (uint64, error) {
+		return o.client.GetConnection().Stats().Reconnects, nil
+	}, func(n uint64) bool { return n > reconnects && o.client.IsHealthy() })
+	if !s.process.Alive() {
+		t.Fatal("the stack exited across the NATS server restart")
+	}
+
+	// The waits in checkWritesAfterRestart read the ENTITY_STATES revision after the two writes, so
+	// the envelopes the stack wrote before the restart cannot pass them; a latched envelope fails
+	// at once, naming it.
+	after := checkWritesAfterRestart(t, o, s, f, before)
+	t.Logf("the writes published after the restart were indexed and answered %v after Restart returned (recorded, not asserted)",
+		time.Since(restarted).Round(time.Millisecond))
+
+	// A delete through graph-ingest's mutation verb: its request subscription, too, outlived the
+	// restart.
+	deleted := f.id(drone8)
+	o.deleteEntity(t, deleted)
+	o.awaitIndexed(t, s)
+	requireComponentsHealthy(t, readHealth(t, s))
+	delete(after, deleted)
+	checkAnswers(t, o, f, after, deleted)
+	stopStack(t, s)
 }

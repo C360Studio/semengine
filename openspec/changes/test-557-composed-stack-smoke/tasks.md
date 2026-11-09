@@ -23,12 +23,12 @@ port, no `t.Parallel`, no `context.WithValue`.
   exactly one pending, and the absent applied-sequence record, asserted before the kill. Shown to fail: the record
   written before the entity, and the stream lane keeping replaced statements; guard off survives (D7, `notes/2.3.md`).
 - [x] 2.4 `TestSmoke_BrokerRestartBetweenRuns` (case 3), URL unchanged across `Restart`, new writes after.
-- [ ] 2.5 `TestSmoke_BrokerRestartUnderRunningStack` (case 4). Shown to fail: the follower's stream-creation
+- [x] 2.5 `TestSmoke_BrokerRestartUnderRunningStack` (case 4). Shown to fail: the follower's stream-creation
   comparison inverted. If it fails on main, the issue filed with its output is linked here (D8); if the fix is a
   separate PR, this task carries `Hold: #<that PR>` until it merges.
-- [ ] 2.6 Only if 2.5 fails on main and the fix is within one package and smaller than the test (D8): the fix with
+- [x] 2.6 Only if 2.5 fails on main and the fix is within one package and smaller than the test (D8): the fix with
   its failing-first package test; otherwise ticked with the reason (passed on main, or the separate PR that merged
-  first).
+  first). Passed on main: 2.5 passed three runs of three, so there is no fix (`notes/2.5.md`).
 
 ## 3. Follow-ups and docs
 

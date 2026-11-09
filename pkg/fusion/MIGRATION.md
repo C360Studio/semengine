@@ -5,7 +5,10 @@ to SemEngine's. It says what you change at your cutover and what you can leave a
 that gives a better result (owner, 2026-11-02). Nothing here was run against your code: it comes from reading the
 SemEngine package and the SemStreams pin `8b99efe9`. Your call sites at SemSource `8737c7ea` are
 `processor/code-context/component.go` (`NewEngine` with `WithSignals` and `WithMetrics`, `NewBodyResolver`,
-`MapStoreResolver`) and `source/fusion/fusiontest/memgraph.go` (a `RetrievalClient`).
+`MapStoreResolver`), `processor/code-context/exact_seed.go` (a `RetrievalClient` wrapper),
+`source/fusion/fusiontest/memgraph.go` (a `RetrievalClient`), and the test doubles in
+`processor/code-context/http_error_test.go`, `processor/code-context/scope_test.go` and
+`internal/governance/go_callgraph_impact_integration_test.go`.
 
 Carried unchanged: the `Lens` interface and `ResolveMode*`, `Request` and its wants, `Budget`, `Node`, `Ref`, `Miss`,
 `Unhydrated`, `BodyResolver` and `MapStoreResolver`, the facet caps, and ranking. Not carried: the SemStreams
@@ -35,7 +38,8 @@ Each of these is a compile error. Fix them first.
   `Resolution{Seeds, UnreadableRecords, FailedRecords}` where it returned `[]Seed`. *Do:* in `fusiontest.MemGraph`
   delete `Status`, and wrap the seeds: `return fusion.Resolution{Seeds: seeds}, nil`. A client over the graph's
   semantic search copies the reply's `unreadable_records` and `failed_records` into the two counts; any other
-  resolve leaves them 0.
+  resolve leaves them 0. A wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a
+  rebuilt one, or the two counts are lost.
 - **`fusionvocab.New` takes the ontology's ancestor function.** `fusionvocab.New()` imported the BFO/CCO hierarchy; the
   hierarchy now lives in semvocab, which depends on SemEngine, so SemEngine cannot import it. *Do:* import
   semvocab's `catalog/cco` yourself (code-context already does) and call `fusionvocab.New(cco.Parents)`. The score is

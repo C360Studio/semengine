@@ -20,8 +20,9 @@
 // envelope, so a read needs no NATS round trip. It judges freshness by when each value
 // arrived, never by comparing the producer's clock with its own (ADR-083 Decision 2).
 // Nothing in SemEngine reads a Watcher
-// yet: it is kept for the readers at the SemStreams pin, fusion and graph-clustering,
-// when they are ported.
+// yet: it is kept for the readers at the SemStreams pin, graph-clustering and fusion's
+// NATS client (pkg/fusion/fusionnats, which change 5's PR D ports and decides whether it
+// still watches). pkg/fusion itself reads no status (ADR-109 D1).
 //
 // The key names live here, for producers and readers both, so the two cannot drift
 // onto different names. The envelope type stays in graph, so a reader of GRAPH_STATUS
@@ -248,7 +249,7 @@ func (w *Watcher) Read() Reading {
 // ctx.Err() otherwise.
 //
 // It is for a consumer that binds the watch lazily, on its first gate decision, as
-// fusion does at the SemStreams pin: without a bounded wait, that first decision would
+// fusion's NATS client does at the SemStreams pin: without a bounded wait, that first decision would
 // fail closed only because the watch had not delivered yet. Waiting once at bind, with
 // a bounded context, delays only the first gated call; every later call is a local
 // read. Callers must wait AT MOST once: with no producer deployed nothing will

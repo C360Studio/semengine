@@ -43,7 +43,8 @@ func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
 // setup-04a-04-graph-roots-objectstore-store design D9: storage/objectstore;
 // setup-04a-04-graph-roots-embedding design D8: graph/embedding;
 // setup-04a-04-graph-roots-graphview task 4.3: pkg/graphview;
-// setup-04a-04-graph-roots-clustering task 4.4: graph/clustering),
+// setup-04a-04-graph-roots-clustering task 4.4: graph/clustering;
+// setup-04a-05-fusion task 3.1: pkg/fusion),
 // each with the profile scripts/cover-check.sh measures it from.
 var d11Targets = []struct{ dir, kind string }{
 	{"processor/graph-ingest", "merged"},
@@ -64,6 +65,7 @@ var d11Targets = []struct{ dir, kind string }{
 	{"graph/embedding", "merged"},
 	{"pkg/graphview", "unit"},
 	{"graph/clustering", "unit"},
+	{"pkg/fusion", "unit"},
 }
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced

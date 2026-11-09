@@ -2133,8 +2133,8 @@
   known_risks: >-
     no context roots. Still deferred: the generation marker beside indexed_revision so a revision
     from a recreated bucket is detectable (#103 is retired by the text change and the marker is tracked in #15; ADR-109). pkg/fusion (change 5)
-    carries its IndexStatus copy without the three legacy fields removed from IndexStatusResponse
-    (#110, design D16). Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
+    carries no IndexStatus copy and decodes no IndexStatusResponse: it reads not-ready from each query reply
+    (setup-04a-05-fusion design D1, owner ruling 4 on PR #550; ADR-109 D1), so #110 item 2 is done. Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
     ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
     GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry); README updated
   proving_tests: >-
@@ -2187,7 +2187,8 @@
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
     ADR-109 so Health() derives from nothing in the envelope). The pin's GaugeOption
     and WithRevisionGauges are not ported (one option, one caller; design D10). Reading.Raw
-    stays for fusion's port (#110, ADR-109)
+    has no reader: pkg/fusion reads no status (setup-04a-05-fusion design D1); whether fusion's NATS client
+    (pkg/fusion/fusionnats, change 5 PR D) still watches a key and reads it is PR D's question (#110, ADR-109)
   proving_tests: >-
     graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
     backlog_status_test.go; the envelope's JSON in graph/index_status_test.go;
@@ -2268,8 +2269,8 @@
     Register, Deregister, and lookup as at the pin, less dead Registry.Instances (design D6)
   dependencies_and_side_effects: storage (in-set); stdlib; no goroutine, no I/O
   known_risks: >-
-    Registry.Instances removed as dead surface; compile-time fusion.StoreResolver assertion deferred
-    until pkg/fusion is ported in change 5 (design D2); the Registry and Deregister comments no longer say the
+    Registry.Instances removed as dead surface; the compile-time fusion.StoreResolver assertion is in
+    pkg/fusion/hydrate_test.go (setup-04a-05-fusion design D7); the Registry and Deregister comments no longer say the
     owner calls Close on Stop, since objectstore.Store has none (setup-04a-04-graph-roots-objectstore-store, D6)
   proving_tests: >-
     storage/storeregistry/storeregistry_test.go (TestDistinctInstancesResolveTheirOwnStores and pin
@@ -2720,9 +2721,11 @@
   contract: n/a
   dependencies_and_side_effects: n/a
   known_risks: >-
-    moved out of semengine core to semvocab (#234). At the pin, pkg/fusion/fusionvocab/signals.go:16
-    imports vocabulary/cco for two IRI strings; when Change 5 ports pkg/fusion/fusionvocab, it will
-    use standard/local IRI constants without importing vocabulary/cco
+    moved out of semengine core to semvocab (#234). At the pin, pkg/fusion/fusionvocab/signals.go:40
+    calls cco.Parents, a transitive-ancestor walk, not two IRI strings; semvocab requires semengine, so
+    an import back is a module cycle. The port (setup-04a-05-fusion design D6) takes the ancestor function
+    as an argument, fusionvocab.New(parents), and SemSource passes semvocab's cco.Parents; fusionvocab
+    imports no vocabulary/cco
   proving_tests: n/a
   owner: vocab-export-packs developer
   disposition: defer-exclude
@@ -3764,7 +3767,8 @@
   consumer_purpose: >-
     the tier-0 embedding pipeline: the BM25 embedder (no external provider), Storage over EMBEDDING_INDEX and
     EMBEDDING_DEDUP, the VectorCache that answers similarity search from memory, and the Worker that turns pending
-    records into generated or failed ones (hop 2). processor/graph-embedding (change 5) and pkg/fusion call it; graph/query
+    records into generated or failed ones (hop 2). processor/graph-embedding (change 5) calls it (pkg/fusion does
+    not import it at the pin or here); graph/query
     (item 6) cannot build without it
   destination: graph/embedding
   contract: >-
@@ -4575,4 +4579,96 @@
     TestGraphEmbeddingLifecycleSuite), internal/harness/contract/embeddingprovider_test.go
     (TestGraphEmbeddingImportsNoProviderModule)
   owner: setup-04a-05-first-consumer-graph-embedding developer
+  disposition: adapt
+
+# Change setup-04a-05-fusion (PR #565, epic #9): pkg/fusion's lens engine and pkg/fusion/fusionvocab, PR C of change
+# 5's split. fusionnats, the NATS RetrievalClient, is PR D.
+
+- source_path: pkg/fusion
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the deterministic fusion engine (SETUP 03B design D5, lens path kept): a product composes it over any
+    RetrievalClient and a Lens and gets one answer per query (nodes, relations, paths, impact, a graph projection
+    and hydrated bodies) that declares what it left out. semsource's code-context and its fusion lens call NewEngine,
+    Fuse, Lens and BodyResolver (inventory § 10); fusionnats (change 5 PR D) is its RetrievalClient over NATS
+  destination: pkg/fusion
+  contract: >-
+    the lens path as at the pin with these adaptations (spec fusion; design D1-D7). (1) Readiness rides the reply
+    (owner ruling 4 on PR #550; ADR-109 D1, D3): Fuse asks no status; RetrievalClient has no Status; IndexStatus,
+    IndexState, ErrReadinessUnknown and Response.Index are not carried; a seed read replying index_not_ready defers
+    with no nodes and no miss, any other seed-read error is returned, a walk read's error other than an ended
+    context is skipped and declared; defer_reason is index_not_ready or all_seeds_unhydrated only; ContractVersion
+    is "2" (D1). (2) The graph facet's view_revision is gone (D2). (3) Resolve returns a Resolution whose
+    unreadable_records and failed_records every response built after a natural-language resolve carries (D3). (4)
+    Every left-out piece is declared: Neighbors results are sorted by predicate then target and deduplicated before
+    any cap; relations_truncated, paths_truncated, Impact.Truncated and GraphProjection.Truncated mark a cap or a
+    skipped read; a path never names a node by its entity ID; each skip counts on
+    semengine_fusion_skipped_reads_total{facet} and each Fuse logs at most one Warn line per facet (D4). (5)
+    NewEngine(graph, body, logger, opts...) returns an error, refusing a nil client or logger; WithSignals and
+    WithMetrics are options; both counters register through metric.RegisterOrGet on the injected registry and a
+    refusal is returned; a body failure logs and counts on semengine_fusion_body_hydration_failures_total{reason};
+    Fuse and ResolveBody refuse a nil context (D5). (6) Hydration keeps ADR-063's contract, and
+    *storeregistry.Registry is checked at compile time to be a StoreResolver (D7)
+  dependencies_and_side_effects: >-
+    graph, message, metric, pkg/errs, storage (in-set); prometheus client_golang; standard library otherwise. No
+    NATS import, no goroutine, no retained context; reads only through the injected RetrievalClient and
+    StoreResolver; registers two counters on the injected metrics registry when one is given
+  known_risks: >-
+    Consumer break (migration note, owner 2026-11-02 on PR #504): NewEngine's signature, RetrievalClient without
+    Status and with Resolution, the wire's index and view_revision gone, four defer_reason values gone, a reset the
+    pin deferred is an error on a seed read and a truncated facet on a walk read, refs listed by predicate then
+    target. A fatal Resolve or Entities fails the call, so one poisoned seed fails the answer (D1; fusionnats, PR D,
+    decides the batch handling). Not carried (03B D5, inventory § 8): the Fuse path (engine.go, subquery.go,
+    evidence.go, client.go and their tests), lensregistry (pin callers: its own test and a storeregistry test),
+    engine_health_gate_test.go (the removed gate), metrics_internal_test.go (the removed default-registerer
+    fallback), export_test.go; fusionnats is PR D. Kept as at the pin, optional under Bounded port scope: F15
+    (unserializable object skipped), F16 (Names error swallowed for suggestions), F17 (ontology class predicate in
+    the engine), F21 (no not_configured body reason), F22 (deterministic provenance on a deferral), F23 (relations
+    defer, other facets truncate, on index_not_ready from a walk). Issues: #110 stays open for item 3 (item 2 done
+    here); SemStreams #603 (impact names) stays deferred
+  proving_tests: >-
+    pkg/fusion: engine_lens_readiness_test.go (TestDeferredOnIndexNotReady, TestFatalReplyReturnsError,
+    TestFatalWalkReadSkipped, TestEndedContextReturnsError, TestEndedContextDuringBodyRead,
+    TestEngine_GenuineError_Propagates); contract_test.go (TestContractVersionIsTwo,
+    TestFuse_AnsweredResponseIsNotMarkedDeferred); engine_search_counts_test.go (TestNLAnswerCarriesSearchCounts,
+    TestNLMissCarriesSearchCounts, TestSymbolAnswerOmitsCounts); engine_labels_test.go (TestEdgesSortedBeforeCap,
+    TestRelationsCapLabelled, TestRelationsFaultLabelled, TestRelationsUnreadTargetLabelled, TestPathsCapLabelled,
+    TestPathStopsAtUnreadNode, TestImpactUnreadFileTruncates, TestGraphCounterpartFaultTruncates,
+    TestGraphCapsIgnoreTripleOrder, TestGraphEvidenceCapIgnoresTripleOrder); construction_test.go
+    (TestNewEngineRefusesNilClient, TestNewEngineRefusesNilLogger, TestRegistrationRefusalReturned,
+    TestCounterOnlyOnInjectedRegistry, TestEnginesShareOneSeries, TestSkippedReadLoggedAndCounted,
+    TestBodyFailureLogged, TestFuseRefusesNilContext); hydrate_test.go (the StoreResolver assertion,
+    TestResolveBodyRefusesNilContext and the pin's BodyResolver tests); body_reason_test.go, engine_facets_test.go,
+    engine_graph_test.go, engine_lens_test.go, engine_rank_order_test.go, engine_rank_permutation_test.go,
+    engine_scores_test.go, lens_test.go, per_facet_test.go, response_unhydrated_test.go (the pin's tests, adapted to
+    the changes above); notes/2.1.md-2.3.md of the change record the mutation checks
+  owner: setup-04a-05-fusion developer
+  disposition: adapt
+
+- source_path: pkg/fusion/fusionvocab
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the lens engine's ranking signals (ADR-062 increment 5): predicate salience from the vocabulary registry and
+    class specificity from an ontology's ancestor function; semsource composes fusionvocab.New(cco.Parents) with
+    semvocab's function and passes it to fusion.WithSignals (inventory § 10; design D6)
+  destination: pkg/fusion/fusionvocab
+  contract: >-
+    Signals implements fusion.RankSignals as at the pin, with one adaptation (design D6, V1, owner question 2):
+    New(parents func(iri string) []string) Signals takes the ancestor function instead of importing
+    vocabulary/cco; ClassSpecificity is the number of ancestors parents returns, 0 for an empty class (parents is
+    not asked) and for a nil parents; PredicateSalience reads the vocabulary registry's weight as at the pin,
+    negative weights included
+  dependencies_and_side_effects: >-
+    pkg/fusion, vocabulary (in-set); no vocabulary/cco, vocabulary/bfo or semvocab import (a module cycle: semvocab
+    requires semengine); no goroutine, no I/O
+  known_risks: >-
+    Consumer break: New takes the parents function; a caller passing nil gets class specificity 0 for every class,
+    ranking as with no ontology. The pin's TestClassSpecificity read real BFO/CCO depths from vocabulary/cco, which
+    is not in this tree; its replacement uses a hand-built ancestor table. Not on the 03B critical coverage list, so
+    not in scripts/cover-check.sh (inventory § 7)
+  proving_tests: >-
+    pkg/fusion/fusionvocab/signals_test.go (TestClassSpecificityCountsParents, TestClassSpecificityNilParentsIsZero,
+    TestPredicateSalience); pkg/fusion engine_lens_test.go TestEngine_Signals_* drive it through the engine;
+    notes/2.4.md of the change records the mutation checks
+  owner: setup-04a-05-fusion developer
   disposition: adapt

@@ -58,6 +58,9 @@ readonly targets=(
   # setup-04a-04-graph-roots-clustering task 4.4 (design D5, floor 80%): the unit lane (counting fake bucket, Rapid
   # histories) holds the floor alone.
   "graph/clustering unit"
+  # setup-04a-05-fusion task 3.1 (inventory § 7, 03B critical list): pkg/fusion has no integration test; its
+  # fusionvocab subpackage is not on the list.
+  "pkg/fusion unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

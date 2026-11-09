@@ -230,17 +230,20 @@ type connzReply struct {
 			Start        time.Time `json:"start"`
 			LastActivity time.Time `json:"last_activity"`
 			Subs         uint32    `json:"subscriptions"`
+			SubsList     []string  `json:"subscriptions_list"`
 		} `json:"connections"`
 	} `json:"data"`
 }
 
 // openConns describes every client connection on the server but self's, one per line, so a
 // failed connection check says whose connection stayed open and since when, not only how many
-// (#493: a check that saw one extra connection could not say whose it was).
+// (#493: a check that saw one extra connection could not say whose it was). It lists each
+// connection's subscription subjects too, since an unnamed client is told apart by what it
+// subscribed to (#573: an unnamed connection with 9 subscriptions matched no client the test opened).
 func openConns(self *nats.Conn) string {
 	ctx, cancel := context.WithTimeout(context.Background(), connWaitBudget)
 	defer cancel()
-	msg, err := self.RequestWithContext(ctx, connzSubject, nil)
+	msg, err := self.RequestWithContext(ctx, connzSubject, []byte(`{"subscriptions":true}`))
 	if err != nil {
 		return fmt.Sprintf("  (list connections: %v)", err)
 	}
@@ -254,9 +257,9 @@ func openConns(self *nats.Conn) string {
 		if c.CID == selfID {
 			continue
 		}
-		lines = append(lines, fmt.Sprintf("  cid=%d name=%q lang=%s/%s from=%s:%d start=%s last_activity=%s subs=%d",
+		lines = append(lines, fmt.Sprintf("  cid=%d name=%q lang=%s/%s from=%s:%d start=%s last_activity=%s subs=%d %v",
 			c.CID, c.Name, c.Lang, c.Version, c.IP, c.Port, c.Start.Format(time.RFC3339Nano),
-			c.LastActivity.Format(time.RFC3339Nano), c.Subs))
+			c.LastActivity.Format(time.RFC3339Nano), c.Subs, c.SubsList))
 	}
 	if len(lines) == 0 {
 		return "  (no other connection listed now)"

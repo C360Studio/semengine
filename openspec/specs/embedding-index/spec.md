@@ -55,22 +55,29 @@ the watch's delivery has ended. nats.go's unsubscribe goroutine for the watch is
 #### Scenario: The cache's update channel closes
 
 - **WHEN** the `EMBEDDING_INDEX` bucket is deleted while `VectorCache.Run` has a live context
-- **THEN** `Run` returns an error saying the watch was lost, and `FindSimilar` returns `false`
+- **THEN** `Run` returns an error matching `graphview.ErrWatcherLost`, and `FindSimilar` returns an error matching
+  `graphview.ErrNotReady`
 - **AND** the test that verifies this is `TestVectorCacheRunReportsLostWatch`
 
 ### Requirement: The vector cache answers only while authoritative
 
-`VectorCache.Run(ctx)` SHALL refuse a nil context and a second `Run` while one runs, and SHALL stop as `Worker.Run`
-does. `VectorCache.FindSimilar` SHALL return `false` as its second result before the watch's initial snapshot is
-applied, after any record fails to decode, after the watch is lost, and after `Run` returns. Otherwise it SHALL
-score only the entity IDs `keep` accepts, sort by `ScoredEntityLess` before applying the limit, and return no
-entities for a limit of 0 or less.
+`VectorCache.Run(ctx)` SHALL refuse a nil context and a second concurrent `Run`, and keep a new `graphview.View` of
+`EMBEDDING_INDEX` per `Run`. `FindSimilar` SHALL return an error matching `graphview.ErrNotReady` before the snapshot,
+after a lost watch and after `Run` returns. Otherwise it SHALL rank by `ScoredEntityLess` before the limit and return
+the count of records it could not decode. Such a record SHALL NOT withdraw the cache; a later valid write is scored.
 
 #### Scenario: Not authoritative
 
-- **WHEN** `FindSimilar` is called before the snapshot, after an undecodable record, or after `Run` returned
-- **THEN** it returns `false`
+- **WHEN** `FindSimilar` is called before the snapshot, after a lost watch, or after `Run` returned
+- **THEN** it returns an error matching `graphview.ErrNotReady`
 - **AND** the test that verifies this is `TestVectorCacheNotAuthoritative`
+
+#### Scenario: An unreadable record heals
+
+- **WHEN** one record fails to decode, and later a valid generated record is written under the same key
+- **THEN** the first `FindSimilar` scores the other vectors and counts 1, and after the write it scores that key and
+  counts 0
+- **AND** the test that verifies this is `TestVectorCachePoisonCountedAndHeals`
 
 #### Scenario: Order and limit
 

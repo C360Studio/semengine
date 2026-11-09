@@ -24,14 +24,10 @@ the watch's delivery has ended. nats.go's unsubscribe goroutine for the watch is
 
 ### Requirement: The vector cache answers only while authoritative
 
-`VectorCache.Run(ctx)` SHALL refuse a nil context and a second `Run` while one runs, SHALL keep the cache on a new
-`graphview.View` of `EMBEDDING_INDEX` for each `Run`, and SHALL stop as `Worker.Run` does. `VectorCache.FindSimilar`
-SHALL return an error matching `graphview.ErrNotReady` before the watch's initial snapshot is applied, after the
-watch is lost, and after `Run` returns. Otherwise it SHALL score only the generated vectors whose entity IDs `keep`
-accepts, sort by `ScoredEntityLess` before applying the limit, return no entities for a limit of 0 or less, and
-return, read at the same moment as the vectors it scored, the number of records it could not decode. A record that
-cannot be decoded SHALL NOT be scored and SHALL NOT withdraw the cache; a later valid write of that key SHALL be scored
-again and no longer counted.
+`VectorCache.Run(ctx)` SHALL refuse a nil context and a second concurrent `Run`, and keep a new `graphview.View` of
+`EMBEDDING_INDEX` per `Run`. `FindSimilar` SHALL return an error matching `graphview.ErrNotReady` before the snapshot,
+after a lost watch and after `Run` returns. Otherwise it SHALL rank by `ScoredEntityLess` before the limit and return
+the count of records it could not decode. Such a record SHALL NOT withdraw the cache; a later valid write is scored.
 
 #### Scenario: Not authoritative
 

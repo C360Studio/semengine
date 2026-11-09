@@ -32,7 +32,7 @@ deadline of its own, no `context.WithValue`. Review stops: after 2.2, after 2.4,
 
 ## 3. Close-out
 
-- [ ] 3.1 `processor/graph-embedding/MIGRATION.md` (enveloped `data.results`, limit refused not clamped, unknown keys
+- [x] 3.1 `processor/graph-embedding/MIGRATION.md` (enveloped `data.results`, limit refused not clamped, unknown keys
   refused, `min_revision` above 0 refused, score-0 hits dropped, `similar` field renamed `results`); package
   `README.md`s (graph-embedding, graph/embedding, graph-query's "waits for its responder" lines); ADR-071 port note (the
   responder and `Scope` are present; compatibility note changed); ledger rows `graph/embedding` (item 7) and

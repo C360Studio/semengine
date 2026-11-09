@@ -20,7 +20,7 @@ deadline of its own, no `context.WithValue`. Review stops: after 2.2, after 2.4,
   Check: `TestVectorCacheNotAuthoritative`, `TestVectorCachePoisonCountedAndHeals`, `TestFindSimilarOrderAndLimit`,
   `TestVectorCacheRunReportsLostWatch`, the bubble and backlog stop tests, `-race`; benchmark at 50,000
   records posted on the PR, with call time and lock hold time. **Review stop.**
-- [ ] 2.3 Handlers, entry checks and ranking (D1, D3, D6), subscribed from the verb table, drained first on Stop.
+- [x] 2.3 Handlers, entry checks and ranking (D1, D3, D6), subscribed from the verb table, drained first on Stop.
   Check: `TestVerbsServeTableSubjects`, `TestSearchAnswersEnveloped`, `TestSearchLimitEdges`, `TestSearchQueryEdges`,
   `TestSearchScopeEdges`, `TestSimilarEdges`, `TestTopKAtTie`, `TestScopedSearch`; mutants for the score-above-0
   rule, scope before limit, and the limit refusal; `TestMinRevisionAboveZeroRefused`, `TestSemanticForwardsMinRevision`;

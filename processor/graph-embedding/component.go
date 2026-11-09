@@ -70,6 +70,15 @@ type Component struct {
 	// rebinds the watch, as for the follower's lost feed (design D2).
 	workerLost atomic.Bool
 
+	// The query side (query.go). embedder is the Worker's BM25 embedder, whose statistics the
+	// search verb reads without changing (GenerateQuery); cache is the in-memory view of the
+	// generated vectors in EMBEDDING_INDEX the verbs rank (design D2, D3). start sets both.
+	embedder *embedding.BM25Embedder
+	cache    *embedding.VectorCache
+	// subscriptions are the query request subscriptions, one per verb the table in graph declares
+	// for graph-embedding; cleanup drains them first.
+	subscriptions []*natsclient.Subscription
+
 	// failed is the failed map (failed.go, design D3): seeded at Start, changed by the Worker's
 	// terminal outcomes and hop 1, read by the follower through Failed and by the repair lane.
 	failed failedMap
@@ -77,11 +86,13 @@ type Component struct {
 	// The handles start records for cleanup, which clears them once it has released them
 	// all. runCancel ends the one run context (ADR-113) the follower's Run, the repair lane,
 	// the Worker's Run and the coalescer run under; feeds closes once the follower's Run has
-	// returned, repairs once the repair lane has, worked once the Worker's Run has.
+	// returned, repairs once the repair lane has, worked once the Worker's Run has, cached once
+	// the vector cache's Run has.
 	runCancel context.CancelFunc
 	feeds     chan struct{}
 	repairs   chan struct{}
 	worked    chan struct{}
+	cached    chan struct{}
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-embedding: the ports
@@ -291,8 +302,10 @@ func (c *Component) start(ctx context.Context) error {
 	}()
 
 	// Hop 2: the Worker embeds each pending record and reports its terminal outcome to
-	// onTerminal. It is launched last, so no failure in start follows it.
-	worker := embedding.NewWorker(c.storage, embedding.NewBM25Embedder(embedding.BM25Config{}), c.logger).
+	// onTerminal. Its embedder also embeds the search verb's queries: one instance serves both,
+	// as at the pin (design D3).
+	c.embedder = embedding.NewBM25Embedder(embedding.BM25Config{})
+	worker := embedding.NewWorker(c.storage, c.embedder, c.logger).
 		WithWorkers(c.config.Workers).
 		WithMaxSourceTextLen(c.config.MaxTextLen).
 		WithEmbedderType(c.config.EmbedderType).
@@ -320,7 +333,24 @@ func (c *Component) start(ctx context.Context) error {
 			c.logger.Warn("EMBEDDING_INDEX watch did not stop cleanly", slog.Any("error", err))
 		}
 	}()
-	return nil
+
+	// The vector cache the verbs answer from. Until it has applied its watch's first snapshot,
+	// and after its watch is lost, the verbs refuse index_not_ready.
+	c.cache = embedding.NewVectorCache(c.storage)
+	cached := make(chan struct{})
+	c.cached = cached
+	go func() {
+		defer close(cached)
+		if err := c.cache.Run(runCtx); runCtx.Err() == nil {
+			c.logger.Error("vector cache watch lost; the embedding verbs refuse until the process restarts",
+				slog.Any("error", err))
+		} else if err != nil && err != runCtx.Err() {
+			c.logger.Warn("vector cache watch did not stop cleanly", slog.Any("error", err))
+		}
+	}()
+	// Last, so a request is served only once everything a handler reads is set; a failed
+	// subscription is the last step that can fail, and its rollback drains those made.
+	return c.subscribeQueries(ctx)
 }
 
 // openBuckets acquires EMBEDDING_INDEX and EMBEDDING_DEDUP as their owner, and the read handle
@@ -349,15 +379,26 @@ func (c *Component) openBuckets(ctx context.Context) error {
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start: it ends the run context, joins the follower's Run, so nothing more is
-// delivered, the repair lane, so no repair pass is in flight, and the Worker's Run, so no
-// terminal outcome follows, then shuts the coalescer down, which waits for a batch in progress. A ctx that ends first returns its error with the
-// handles kept, and the next Stop resumes.
+// partial start. It drains the query subscriptions first, so no handler is running. Then it ends
+// the run context, joins the follower's Run, so nothing more is delivered, the repair lane, so no
+// repair pass is in flight, the Worker's Run, so no terminal outcome follows, and the vector
+// cache's Run, then shuts the coalescer down, which waits for a batch in progress. A ctx that ends
+// first returns its error with the handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
+	// Stop serving queries first: Drain returns once every running handler has returned. Each
+	// drain is begun whatever the one before returned, so one handler that outlasts ctx does not
+	// keep the other verb serving.
+	var failures []error
+	for _, sub := range c.subscriptions {
+		failures = append(failures, sub.Drain(ctx))
+	}
+	if err := errors.Join(failures...); err != nil {
+		return err
+	}
 	if c.runCancel != nil {
 		c.runCancel()
 	}
-	for _, done := range []chan struct{}{c.feeds, c.repairs, c.worked} {
+	for _, done := range []chan struct{}{c.feeds, c.repairs, c.worked, c.cached} {
 		if done == nil {
 			continue
 		}
@@ -375,6 +416,6 @@ func (c *Component) cleanup(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-	c.runCancel, c.feeds, c.repairs, c.worked, c.coalescer = nil, nil, nil, nil, nil
+	c.runCancel, c.feeds, c.repairs, c.worked, c.cached, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil, nil
 	return nil
 }

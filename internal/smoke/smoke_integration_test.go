@@ -265,7 +265,7 @@ func checkAnswers(t *testing.T, o observer, f fixture, w want, deleted ...string
 					wantEdges = append(wantEdges, e)
 				}
 			}
-			if len(got) != len(wantEdges) || (len(got) > 0 && !reflect.DeepEqual(got, wantEdges)) {
+			if !slices.Equal(got, wantEdges) {
 				t.Errorf("relationships %s %s = %+v, want %+v", id, direction, got, wantEdges)
 			}
 		}
@@ -394,7 +394,7 @@ func checkEmbeddingRecords(t *testing.T, o observer, revisions map[string]uint64
 func TestSmoke_OneConfigAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
-	s := startStack(t, url)
+	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
 	// StartAll has returned, so the composition is fixed: the four components are listed.
 	requireComponentsListed(t, readHealth(t, s))
@@ -464,7 +464,7 @@ func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, befor
 func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
-	first := startStack(t, url)
+	first := startStack(t, o, url)
 	f := fixture{platform: first.platform}
 	requireComponentsListed(t, readHealth(t, first))
 
@@ -481,7 +481,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	t.Logf("first process, %s: %v", reindexMetric, readReindexCounter(t, first))
 	stopStack(t, first)
 
-	second := restartStack(t, url, first)
+	second := restartStack(t, o, url, first)
 	// The configuration bucket holds the minted ID, so the second process adopts it (ADR-104).
 	if second.platform != first.platform {
 		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)

@@ -35,7 +35,9 @@ port, no `t.Parallel`, no `context.WithValue`.
 - [ ] 3.2 If #558 is still open: a comment on #558 asking it to add `semantic` and `similar` to `checkAnswers`; if it
   merged first, those checks are in 2.1.
 - [ ] 3.3 A follow-up issue for the adopter gap: what a product's own `main` must know (inventory, adopter seam),
-  ports (H2) among it.
+  ports (H2) among it, and two facts tasks 2.1 and 2.2 found: a producer outside the process must learn the platform
+  ID `config.Manager` minted (`notes/2.1.md`), and after the first boot `config.Manager` serves the configuration from
+  its bucket, so a port edited in the file has no effect (`notes/2.2.md`).
 - [ ] 3.4 An issue for `config.Manager`'s watch ending silently (`config/manager.go:633-635`), which no check can
   observe.
 

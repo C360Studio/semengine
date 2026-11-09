@@ -99,13 +99,14 @@ const (
 // stackHelper is the prochost helper that runs the composition root.
 const stackHelper = "smoke-stack"
 
-// stopBudget bounds each of the child's three stops, the budget the service tests give a stop
-// (service/base_lifecycle_test.go:18). A stop is terminal work, so it gets its own finite authority.
-const stopBudget = 10 * time.Second
+// stopBudget bounds each of the child's three stops. A stop is terminal work, so it gets its own
+// finite authority; at an hour it is an unreachable fallback, so a stop that hangs ends at go test
+// -timeout instead of passing as an error the test reads (docs/testing.md, #500).
+const stopBudget = time.Hour
 
-// requestTimeout is one request's reply timeout, the value graph-ingest's tests give a request over
-// the broker (processor/graph-ingest/fixture_integration_test.go:45). No wait is bounded by it.
-const requestTimeout = 10 * time.Second
+// requestTimeout is one request's reply timeout, which natsclient requires. At an hour it is an
+// unreachable fallback: a reply that never comes ends at go test -timeout (docs/testing.md, #500).
+const requestTimeout = time.Hour
 
 // ingestConsumer is graph-ingest's durable consumer on the ENTITY stream's entity.> subject.
 const ingestConsumer = "graph-ingest-entity-wildcard"
@@ -158,7 +159,7 @@ func runStack(ctx context.Context) (result error) {
 	signal.Notify(terminated, syscall.SIGTERM)
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	stop := func(what string, fn func(context.Context) error) {
-		stopCtx, cancel := context.WithTimeout(context.Background(), stopBudget)
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopBudget)
 		defer cancel()
 		if err := fn(stopCtx); err != nil {
 			result = errors.Join(result, fmt.Errorf("%s: %w", what, err))
@@ -205,14 +206,17 @@ func runStack(ctx context.Context) (result error) {
 	}
 
 	components := component.NewRegistry()
-	for name, register := range map[string]func(*component.Registry) error{
-		"graph-ingest":    graphingest.Register,
-		"graph-index":     graphindex.Register,
-		"graph-embedding": graphembedding.Register,
-		"graph-query":     graphquery.Register,
+	for _, c := range []struct {
+		name     string
+		register func(*component.Registry) error
+	}{
+		{"graph-ingest", graphingest.Register},
+		{"graph-index", graphindex.Register},
+		{"graph-embedding", graphembedding.Register},
+		{"graph-query", graphquery.Register},
 	} {
-		if err := register(components); err != nil {
-			return fmt.Errorf("register %s: %w", name, err)
+		if err := c.register(components); err != nil {
+			return fmt.Errorf("register %s: %w", c.name, err)
 		}
 	}
 
@@ -272,6 +276,9 @@ type stack struct {
 	httpPort    int
 	metricsPort int
 	platform    string
+	// ingestStatusBefore is the revision of graph-ingest's GRAPH_STATUS entry before this child
+	// started, 0 if absent: an entry above it is one this child wrote.
+	ingestStatusBefore uint64
 }
 
 // freePort picks a port for the ServiceManager or the metrics server and releases it.
@@ -291,26 +298,28 @@ func freePort(t *testing.T) int {
 
 // startStack boots the stack in a child against url, on two ports it picks, and returns once
 // StartAll has returned in it.
-func startStack(t *testing.T, url string) stack {
+func startStack(t *testing.T, o observer, url string) stack {
 	t.Helper()
-	return startStackOn(t, url, freePort(t), freePort(t))
+	return startStackOn(t, o, url, freePort(t), freePort(t))
 }
 
 // restartStack boots a new child against url from the configuration previous booted from, its
 // ports included. The configuration bucket the first boot wrote holds those ports, and a later
 // boot serves on them whatever the file says ("Synced configuration from KV"), so the same
 // configuration is the honest restart. previous must have exited.
-func restartStack(t *testing.T, url string, previous stack) stack {
+func restartStack(t *testing.T, o observer, url string, previous stack) stack {
 	t.Helper()
 	if previous.process.Alive() {
 		t.Fatal("restartStack: the previous stack is still running")
 	}
-	return startStackOn(t, url, previous.httpPort, previous.metricsPort)
+	return startStackOn(t, o, url, previous.httpPort, previous.metricsPort)
 }
 
-func startStackOn(t *testing.T, url string, httpPort, metricsPort int) stack {
+func startStackOn(t *testing.T, o observer, url string, httpPort, metricsPort int) stack {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
+	// Read before the child exists, so an entry above this revision is the child's own write.
+	before := o.statusRevision(t, readiness.KeyGraphIngest)
 	p, err := prochost.Start(t, stackHelper,
 		envNATSURL+"="+url,
 		envHTTPPort+"="+strconv.Itoa(httpPort),
@@ -320,7 +329,7 @@ func startStackOn(t *testing.T, url string, httpPort, metricsPort int) stack {
 	if err != nil {
 		t.Fatalf("start the stack: %v", err)
 	}
-	s := stack{process: p, httpPort: httpPort, metricsPort: metricsPort}
+	s := stack{process: p, httpPort: httpPort, metricsPort: metricsPort, ingestStatusBefore: before}
 	// The child renames the file into place, so a file that exists is whole.
 	s.platform = await(t, s, "the stack's StartAll to return", func(context.Context) (string, error) {
 		data, err := os.ReadFile(ready)
@@ -487,6 +496,27 @@ func (o observer) readStatus(ctx context.Context, key string) (graph.IndexStatus
 	return status, err
 }
 
+// statusRevision returns the revision of key's GRAPH_STATUS entry, or 0 when the bucket or the
+// key does not exist yet.
+func (o observer) statusRevision(t *testing.T, key string) uint64 {
+	t.Helper()
+	kv, err := o.js.KeyValue(t.Context(), graph.BucketGraphStatus)
+	if errors.Is(err, jetstream.ErrBucketNotFound) {
+		return 0
+	}
+	if err != nil {
+		t.Fatalf("open %s: %v", graph.BucketGraphStatus, err)
+	}
+	entry, err := kv.Get(t.Context(), key)
+	if errors.Is(err, jetstream.ErrKeyNotFound) {
+		return 0
+	}
+	if err != nil {
+		t.Fatalf("get %s/%s: %v", graph.BucketGraphStatus, key, err)
+	}
+	return entry.Revision()
+}
+
 // latched reports a state an envelope holds until the process restarts, or "" for none.
 func latched(status graph.IndexStatusResponse) string {
 	if status.State == graph.IndexStateResetRequired || status.Code != "" {
@@ -496,16 +526,33 @@ func latched(status graph.IndexStatusResponse) string {
 }
 
 // awaitIndexed is the rest of design D5's order, after the acknowledgement or a mutation's reply:
-// the ENTITY_STATES revision, read now; graph-ingest's envelope not degraded; then the graph-index
+// the ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one,
+// not degraded; then the graph-index
 // and graph-embedding envelopes at or above that revision. It returns the revision. A latched
 // state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()
 	revision := o.entityRevision(t)
-	ingest, err := o.readStatus(t.Context(), readiness.KeyGraphIngest)
-	if err != nil {
-		t.Fatalf("read %s/%s: %v", graph.BucketGraphStatus, readiness.KeyGraphIngest, err)
-	}
+	// graph-ingest writes its first record from a goroutine Start launches, then on a period, so
+	// the entry may be absent or, after a restart, the earlier process's: wait for one above the
+	// revision read before this child started.
+	ingest := await(t, s, fmt.Sprintf("%s/%s written by this process (revision above %d)",
+		graph.BucketGraphStatus, readiness.KeyGraphIngest, s.ingestStatusBefore),
+		func(ctx context.Context) (graph.IndexStatusResponse, error) {
+			kv, err := o.js.KeyValue(ctx, graph.BucketGraphStatus)
+			if err != nil {
+				return graph.IndexStatusResponse{}, err
+			}
+			entry, err := kv.Get(ctx, readiness.KeyGraphIngest)
+			if err != nil {
+				return graph.IndexStatusResponse{}, err
+			}
+			if entry.Revision() <= s.ingestStatusBefore {
+				return graph.IndexStatusResponse{}, fmt.Errorf("revision %d is not above %d", entry.Revision(), s.ingestStatusBefore)
+			}
+			var status graph.IndexStatusResponse
+			return status, json.Unmarshal(entry.Value(), &status)
+		}, func(graph.IndexStatusResponse) bool { return true })
 	if ingest.State == graph.IndexStateDegraded || latched(ingest) != "" {
 		t.Fatalf("%s/%s reads %+v, want not degraded", graph.BucketGraphStatus, readiness.KeyGraphIngest, ingest)
 	}

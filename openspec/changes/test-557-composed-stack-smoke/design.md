@@ -132,6 +132,8 @@ A D8 fix in `graph/follower` waits for #558 or is coordinated on it.
 
 - Ports: between the pick and the bind the whole child boots, twice per boot (HTTP and metrics), so another program
   can take the port: a loud boot failure naming it. No retry until one is seen (natsfixture's one retry, #345).
+- Restart ports: a restart boots on the first child's two ports, which the configuration bucket holds, so another
+  program can take one between the stop and the next boot: a loud boot failure naming it.
 - `[::1]` needs an IPv6 loopback; a host without one fails the first health read, naming the address.
 - `config.Manager`'s watch ends silently when its channel closes (`config/manager.go:633-635`), so case 4 cannot
   observe it; filed as an issue (task 3.4), not proven here.

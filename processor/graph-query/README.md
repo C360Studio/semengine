@@ -265,7 +265,7 @@ Known limits of the keyword classifier, accepted by the owner and tracked in #53
 
 Not carried from the pin: the semantic strategy and its fallback, which on a missing community index answered
 `searchGraph` from embeddings (a deployment without clustering gets `index_not_ready` instead until a follow-up
-graph-query change adds the semantic fallback, which the owner approved on PR #558); `max_communities` (five groups,
+graph-query change adds the semantic fallback, owner ruling S1, #563); `max_communities` (five groups,
 always); summarising an answer with a model; the pin's `count`, `duration_ms`, `community_summaries`,
 `answer_model` and `degraded` reply fields. `MIGRATION.md` has the decoder changes.
 

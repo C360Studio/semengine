@@ -54,10 +54,10 @@ transport"; `TestGraphImportsNoTransport`).
   `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on `graph.query.*`. A
   name is unique only within its responder: `entity` is declared for graph-ingest and for graph-query. Each row also
   marks `Enveloped` and gives the `Reply` type.
-  The embedding, spatial and temporal responders are not in the tree yet, so those four rows name a responder that does
-  not exist, and graph-query's four forwards to them, and its `globalSearch` time-range and area strategies, are refused
-  transient `internal`. A verb a consumer serves under `graph.query.*` is not in the table.
-  `QueryVerbs`' doc comment names each verb's request and reply types.
+  The embedding responder is in the tree (`processor/graph-embedding`). The spatial and temporal responders are not,
+  so those two rows name a responder that does not exist, and graph-query's `spatial` and `temporal` forwards and its
+  `globalSearch` time-range and area strategies are refused transient `internal`. A verb a consumer serves under
+  `graph.query.*` is not in the table. `QueryVerbs`' doc comment names each verb's request and reply types.
 - **Local search.** `LocalSearchRequest` names an entity (`entity_id`), a `level` from 0 to 2 and a `query` of 1 to
   `MaxSearchTerms` (16) distinct words, and the search runs in that entity's community: the group of entities that share
   the first 4, 3 or 2 parts of its ID. `LocalSearchData` is the reply: the community's record (`community_id`,

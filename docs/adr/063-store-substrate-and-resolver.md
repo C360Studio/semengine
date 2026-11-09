@@ -13,8 +13,9 @@
 > - Ported here: `storage` (the `Store` and `StreamableStore` interfaces), `storage/storeregistry` (the registry
 >   that resolves `StorageReference.StorageInstance`) and `storage/objectstore` (the Store). Also ported: the objectstore
 >   Component (`storage/objectstore`). Also ported: `graph/embedding`, whose Worker reads a stored reference's body
->   through the registry (change `setup-04a-04-graph-roots-embedding`, draft PR #458). Not ported yet: the
->   graph-embedding component and fusion, which the text names as the registry's other users.
+>   through the registry (change `setup-04a-04-graph-roots-embedding`, draft PR #458). The graph-embedding
+>   component is ported too (change 5, `processor/graph-embedding`). Not ported yet: fusion, which the text names as
+>   the registry's other user.
 > - Kept: the instance name stamped as `StorageInstance`, the registry, resolving per fetch and not caching a
 >   resolved handle, and the read contract that opening a reference returns the raw body. `StoreContent` now keeps
 >   that contract too: it stores only the `body` role's text as raw bytes, so the reference opens to exactly that

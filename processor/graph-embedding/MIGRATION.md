@@ -80,8 +80,9 @@ forward the bytes unchanged. Each change below fails or alters an answer without
   `graph.QueryResponse`; `search` also sends `data.embedder_type`. *Do:* read `data.results`.
 - **`similar`'s hit list is renamed.** `similar` (the field holding the hits) is now `results`, and the echoed
   `entity_id` and the `duration` are gone.
-- **Limits are refused, not clamped.** A `limit` above 100 or below 0 was cut down to fit; it is now refused
-  `invalid_request`, naming the bound. 0 still means 10. *Do:* send a limit from 1 to 100.
+- **Limits are refused, not clamped.** At the pin a `limit` of 0 or below meant 10 and one above 100 was cut to 100.
+  Now 0 still means 10, but a negative limit or one above 100 is refused `invalid_request`, naming the bound.
+  *Do:* send a limit from 0 to 100 (0 means 10).
 - **Unknown keys are refused.** The pin ignored them, so a typo or an old key went unnoticed; now the request is
   refused `invalid_request`, naming the key, and so is data after the JSON object. This changes ADR-071's compatibility
   note that an unmigrated server ignores `scope`. *Do:* send only `query`, `limit`, `scope` and `min_revision` to
@@ -98,8 +99,9 @@ forward the bytes unchanged. Each change below fails or alters an answer without
 - **Two counts are always sent.** `unreadable_records` and `failed_records` say how many records could not be
   decoded and how many entities failed to embed. Both 0 does not prove every entity is searchable: an entity whose
   embedding is still pending is counted in neither.
-- **No bucket-scan fallback.** The pin scanned `EMBEDDING_INDEX` when its cache was cold, which hid a stale-cache
-  defect; the verbs are refused `index_not_ready` instead until the cache is ready.
+- **No bucket-scan fallback.** The pin scanned `EMBEDDING_INDEX` when its cache was cold, which hid a defect: a
+  scan could answer from the bucket while the cache held old data, so the two paths disagreed; the verbs are
+  refused `index_not_ready` instead until the cache is ready.
 
 ## Not carried
 

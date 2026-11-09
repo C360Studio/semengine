@@ -146,8 +146,9 @@ in neither.
   `invalid_request`, naming what was refused.
 - **No revision claim.** The verbs do not say how current the cache is. `indexed_revision` is always 0, and a
   `min_revision` above 0 is refused `invalid_request` rather than answered.
-- **`similar` needs a vector.** An entity with no record, a pending record or a failed one with no vector is refused
-  class invalid, code `embedding_unavailable`; a record that cannot be decoded is refused class invalid with no code.
+- **`similar` needs a vector.** An entity with no record, a record that is not generated, or a generated record with no
+  vector is refused class invalid, code `embedding_unavailable`; a record that cannot be decoded is refused class
+  invalid with no code.
 
 ### When a call is withheld
 

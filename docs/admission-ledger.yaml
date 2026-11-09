@@ -3807,8 +3807,9 @@
     at v1.54.0 (PR #458 comment 6472856197) and not promised. BM25 is a lexical embedder, not a correct lexical
     index. Storage.ListGeneratedEntityIDs is removed (processor/graph-embedding withholds the window the scan
     covered). FindSimilar sorts the whole view under its lock, about 37 ms a call and 9 ms of lock at 50,000 records
-    (PR #558 notes/2.2.md); graph-clustering plans around it. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays open), #195 (advanced;
-    stays open); #35 retired (http_embedder.go excluded)
+    (openspec/changes/archive/2026-11-08-setup-04a-05-graph-embedding-query/notes/2.2.md);
+    graph-clustering plans around it. Port refactors: class:port-refactor #107 (retired here), #141 (advanced; stays
+    open), #195 (advanced; stays open); #35 retired (http_embedder.go excluded)
   proving_tests: >-
     graph/embedding: storage_test.go, storage_integration_test.go (TestRevisionGuardHistoryMatchesModel,
     TestSaveDedupKeepsSameSpaceReplacesOther); worker_test.go (TestWorkerRunRefusesNilContext,
@@ -4315,7 +4316,7 @@
     own row served by the same handler, its data equal to globalSearch's for the same request; the pin's semantic
     fallback is not carried (design D7), nor are max_communities, summarize_threshold, include_summaries,
     include_relationships, include_sources, auto-summary, entity digests and the reply's count, duration_ms,
-    degraded and answer_model fields (design D4). The semantic tier of the text strategy is change 5's. Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
+    degraded and answer_model fields (design D4). The semantic fallback of the text strategy returns in a follow-up graph-query change (owner ruling S1, #563). Adaptations: lifecycle through component.Lifecycle; strict configuration (ports and
     query_timeout_ms; the pin's query_timeout, request_timeout and traversal keys are refused); the pin's
     requester interface, test hooks and validators on the forwarded verbs are gone; entityByAlias reads the request
     key alias (the pin read aliasOrID) and propagates alias_ambiguous, index_not_ready, internal and
@@ -4356,7 +4357,7 @@
     that delete can be refused until another write at the level (design D5); the rule also leans on the maintainer
     taking writes in revision order (#525). Until change 7 writes COMMUNITY_INDEX every text question is refused
     transient index_not_ready, so a tier-1 deployment's searchGraph, answered by embeddings at the pin, is refused
-    until change 5 decides the semantic tier (design D7; MIGRATION.md). The keyword classifier's limits (#535) now
+    until the follow-up graph-query change adds the semantic fallback (owner ruling S1, #563; MIGRATION.md). The keyword classifier's limits (#535) now
     shape which questions reach the text tier: a word it reads as a count ("max", "total", "min") refuses answerable
     free text invalid_request. Not carried: the pin's searchgraph.go fallback
   proving_tests: >-
@@ -4419,7 +4420,7 @@
   dependencies_and_side_effects: none; a document
   known_risks: >-
     one markdownlint disable comment (a long line) and a port note under the title naming the pin path and SHA, and
-    that pkg/fusion and graph-embedding, which it describes, arrive in change 5 and are not in the tree
+    that graph-embedding, which it describes, is in the tree (change 5, PR B) and pkg/fusion is not (change 5, PRs C and D)
   proving_tests: n/a (task docs:check lints it)
   owner: setup-04a-04-graph-roots-graph-query-reads technical writer
   disposition: adapt

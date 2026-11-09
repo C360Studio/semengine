@@ -31,11 +31,13 @@ func reconcileModel(tc reconcileCase) (held []string, unhydrated []fusion.Unhydr
 			held = append(held, id)
 			continue
 		}
+		// A reply that lists an ID missing twice is read by its last entry.
 		reason := fusion.UnhydratedUnknown
 		for _, m := range tc.missing {
 			if m.ID != id {
 				continue
 			}
+			reason = fusion.UnhydratedUnknown
 			switch m.Reason {
 			case "not_found":
 				reason = fusion.UnhydratedNotFound
@@ -72,10 +74,10 @@ func checkReconcile(tc reconcileCase) error {
 // TestReconcileTotal is the generated check of the batch accounting law. IDs come
 // from a pool of four, so requests repeat IDs and the reply returns IDs nobody
 // asked for; each pool ID is independently in the reply's entities, its missing
-// list (with a reason in or out of the set), both, or neither, and the entities
+// list (with a reason in or out of the set) once or twice, both, or neither, and the entities
 // arrive in any order. Each case compares the whole result with the model, so
 // the assertion runs on every case. The named witnesses below run first, so the
-// duplicate, both-lists and neither-list cases are checked on every run.
+// duplicate, both-lists, neither-list and missing-twice cases are checked on every run.
 func TestReconcileTotal(t *testing.T) {
 	a, b, c := "acme.ops.d.s.t.a", "acme.ops.d.s.t.b", "acme.ops.d.s.t.c"
 	witnesses := map[string]reconcileCase{
@@ -83,6 +85,9 @@ func TestReconcileTotal(t *testing.T) {
 		"in both lists":        {requested: []string{a}, entities: []string{a}, missing: []graph.MissingEntity{{ID: a, Reason: "not_found"}}},
 		"in neither list":      {requested: []string{a, b}, entities: []string{a}},
 		"reply order reversed": {requested: []string{a, b, c}, entities: []string{c, b, a}},
+		"missing twice, last wins": {requested: []string{a}, missing: []graph.MissingEntity{
+			{ID: a, Reason: "not_found"}, {ID: a, Reason: "later"},
+		}},
 	}
 	for name, tc := range witnesses {
 		t.Run(name, func(t *testing.T) {
@@ -98,7 +103,7 @@ func TestReconcileTotal(t *testing.T) {
 		rapid.Check(t, func(rt *rapid.T) {
 			tc := reconcileCase{requested: rapid.SliceOfN(rapid.SampledFrom(pool), 0, 8).Draw(rt, "requested")}
 			for _, id := range pool {
-				switch rapid.IntRange(0, 3).Draw(rt, "lists "+id) {
+				switch rapid.IntRange(0, 4).Draw(rt, "lists "+id) {
 				case 1:
 					tc.entities = append(tc.entities, id)
 				case 2:
@@ -106,6 +111,10 @@ func TestReconcileTotal(t *testing.T) {
 				case 3:
 					tc.entities = append(tc.entities, id)
 					tc.missing = append(tc.missing, graph.MissingEntity{ID: id, Reason: rapid.SampledFrom(reasons).Draw(rt, "reason "+id)})
+				case 4:
+					tc.missing = append(tc.missing,
+						graph.MissingEntity{ID: id, Reason: rapid.SampledFrom(reasons).Draw(rt, "first reason "+id)},
+						graph.MissingEntity{ID: id, Reason: rapid.SampledFrom(reasons).Draw(rt, "last reason "+id)})
 				}
 			}
 			tc.entities = rapid.Permutation(tc.entities).Draw(rt, "entity order")

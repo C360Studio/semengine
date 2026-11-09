@@ -248,3 +248,20 @@ func TestOwnValidationNotRetried(t *testing.T) {
 		assert.Equal(t, []string{seedA, seedB}, w.entityIDs)
 	})
 }
+
+// TestBatchFaultNotReadAlone holds that a batch error other than the poison
+// refusal is returned and starts no per-ID read.
+func TestBatchFaultNotReadAlone(t *testing.T) {
+	for name, fault := range map[string]error{
+		"transient": errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeInternal, errors.New("boom")),
+		"invalid":   errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeInvalidRequest, errors.New("bad request")),
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := &poisonWire{batchErr: fault}
+			got, err := newPoisonClient(t, w).Entities(t.Context(), []string{seedA, seedB})
+			require.ErrorIs(t, err, fault)
+			assertNoProjection(t, got)
+			assert.Empty(t, w.entityIDs, "only the poison refusal starts the per-ID read")
+		})
+	}
+}

@@ -111,7 +111,7 @@ and any other error from an `entity` request, an ended context included, SHALL b
 
 #### Scenario: Another fault while reading alone
 
-- **WHEN** a seed read alone fails transient, or the context ends
+- **WHEN** a seed read alone fails transient, or the context ends before a further request or a refused reply
 - **THEN** `Entities` returns that error (`TestPoisonFallbackReturnsOtherError`, `TestPoisonFallbackEndedContext`)
 
 ### Requirement: The client's own decode refusal is returned, never retried
@@ -148,6 +148,6 @@ context only after a failed read, not after a successful one.
 
 #### Scenario: The caller gives up
 
-- **WHEN** the context is cancelled before `Entities` returns
+- **WHEN** the context is cancelled before `Entities` returns, and the read fails or every seed is unhydrated
 - **THEN** `Fuse` returns the context's error (`TestEndedContextReturnsError`); a nil context is refused
   (`TestFuseRefusesNilContext`)

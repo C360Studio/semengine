@@ -104,11 +104,14 @@ restarts and writes needs a reference model of the whole stack, which this chang
 ## D7. Shown able to fail
 
 `task mutate:check` runs no integration-tagged test (`mutation-check` spec, "Nothing selected"), and a killed child
-writes no coverage, so each failure is shown by hand: the mutant applied in a scratch copy of the tree, the failing
-`go test -tags integration` run recorded verbatim in `notes/<task>.md` with the patch. A run that would only end at
-the timeout passes a shorter `-timeout` on its command line. Mutants: graph-embedding disabled in the configuration
-(records missing); graph-index dropping an outgoing edge (path); graph-ingest's applied-sequence guard off (case 2: a
-second statement); the follower's stream-creation comparison inverted (case 4: lost feed seen at once).
+writes no coverage, so each failure is shown by hand: the mutant applied in a scratch copy of the tree, the failing `go
+test -tags integration` run recorded verbatim in `notes/<task>.md` with the patch. A run that would only end at the
+timeout passes a shorter `-timeout` on its command line. Mutants: graph-embedding disabled in the configuration (records
+missing); graph-index dropping an outgoing edge (path); graph-ingest writing the applied-sequence record before the
+entity, and its stream lane keeping replaced statements (case 2: record seen before the kill, a doubled statement). The
+guard-off mutant survives case 2 by construction: the hold sits before the record write, as in graph-ingest's own
+settlement test, so the redelivered input has no record and the stream lane's replace keeps it single (`notes/2.3.md`);
+the follower's stream-creation comparison inverted (case 4: lost feed seen at once).
 
 ## D8. If case 4 fails on main
 

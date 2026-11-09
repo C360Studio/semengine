@@ -106,8 +106,9 @@ const (
 	// UnhydratedNotFound is a read that did not find the key. It does NOT license the
 	// conclusion that the entity never existed — see the Response.Unhydrated docs.
 	UnhydratedNotFound UnhydratedReason = "not_found"
-	// UnhydratedError is a per-ID fault that did not fail the whole call. Reserved
-	// while the handler's first-error contract stands.
+	// UnhydratedError is a per-ID fault that did not fail the whole call, such as
+	// an entity whose stored value its responder refuses (fusionnats lists a
+	// poisoned seed this way) or an empty ID.
 	UnhydratedError UnhydratedReason = "error"
 	// UnhydratedUnknown is synthesized when a requested ID appears in neither the
 	// handler's entity list nor its missing list — a handler that under-reported.

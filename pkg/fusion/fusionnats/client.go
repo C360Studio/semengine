@@ -215,6 +215,12 @@ func (c *Client) Entity(ctx context.Context, id string) (*fusion.Entity, error) 
 		}
 		return nil, err
 	}
+	return c.decodeEntity(id, raw)
+}
+
+// decodeEntity decodes and checks an entity reply for id. Its refusals are the
+// client's own, so a caller never reads them as the responder's.
+func (c *Client) decodeEntity(id string, raw []byte) (*fusion.Entity, error) {
 	reply, err := decodeReply[entityReply](c.verbs.entity, raw)
 	if err != nil {
 		return nil, err
@@ -242,12 +248,24 @@ func (c *Client) Entity(ctx context.Context, id string) (*fusion.Entity, error) 
 // position, so request order is restored here, where it is still known; and an
 // ID the reply lists nowhere is unhydrated unknown, never not_found
 // (reconcileHydration).
+//
+// The batch's responder refuses the whole batch with code
+// graph_state_reset_required when one stored entity is poisoned, naming it only
+// in text (pin ADR-079 D3). On that refusal the IDs are read one at a time
+// (entitiesAlone), so a poisoned seed is listed unhydrated error rather than
+// failing every answer it ranks in (ADR-109 D1). A refusal from the client's
+// own check of a reply carries the same code; it is returned and never starts
+// that read.
 func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, error) {
 	if len(ids) == 0 {
 		return fusion.Hydration{}, nil
 	}
 	raw, err := c.request(ctx, c.verbs.batch, graph.EntityBatchRequest{IDs: ids})
 	if err != nil {
+		// Only the responder's refusal, before any decode, means poison here.
+		if graph.IsStateContractError(err) {
+			return c.entitiesAlone(ctx, ids)
+		}
 		return fusion.Hydration{}, err
 	}
 	resp, err := decodeReply[graph.EntityBatchResponse](c.verbs.batch, raw)
@@ -258,6 +276,51 @@ func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, 
 		return fusion.Hydration{}, fmt.Errorf("fusionnats: validate batch: %w", err)
 	}
 	return reconcileHydration(ids, resp), nil
+}
+
+// entitiesAlone reads each distinct ID in ids with its own entity request, in
+// request order, after the batch was refused for poison. An ID the responder
+// refuses with graph_state_reset_required is unhydrated error; one not found is
+// unhydrated not_found. An empty ID is unhydrated error with no request, the
+// reason the batch gives it. Any other error, the client's own refusal of a
+// reply and an ended context included, is returned. It costs one request per
+// distinct ID, and only while poison is present.
+func (c *Client) entitiesAlone(ctx context.Context, ids []string) (fusion.Hydration, error) {
+	out := fusion.Hydration{Entities: make([]*fusion.Entity, 0, len(ids))}
+	seen := make(map[string]bool, len(ids))
+	for _, id := range ids {
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		if id == "" {
+			out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedError})
+			continue
+		}
+		// Stop between requests once the caller has given up.
+		if err := ctx.Err(); err != nil {
+			return fusion.Hydration{}, err
+		}
+		raw, err := c.request(ctx, c.verbs.entity, graph.EntityRequest{ID: id})
+		if err != nil {
+			switch {
+			case isNotFound(err):
+				out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedNotFound})
+				continue
+			case graph.IsStateContractError(err):
+				out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedError})
+				continue
+			default:
+				return fusion.Hydration{}, err
+			}
+		}
+		ent, err := c.decodeEntity(id, raw)
+		if err != nil {
+			return fusion.Hydration{}, err
+		}
+		out.Entities = append(out.Entities, ent)
+	}
+	return out, nil
 }
 
 // unhydratedReason maps a reply's missing reason into fusion's closed set. The

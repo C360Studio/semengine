@@ -22,11 +22,11 @@ after 3.1, and before the archive.
   `TestSemanticCountsReachResolution`, `TestReconcileTotal` (generated, seed recorded, reference model), the pin's
   `TestReconcileHydration` and `TestEntities_EmptyShortCircuits`; the transport-boundary contract test passes.
   Done: commit 5bc7fe9e; run, seed and mutation checks in `notes/2.1.md`.
-- [ ] 2.2 Poisoned seeds (D3, as the owner answers question 1): the per-seed read after a batch refusal coded
+- [x] 2.2 Poisoned seeds (D3, as the owner answers question 1): the per-seed read after a batch refusal coded
   `graph_state_reset_required`; `UnhydratedError`'s doc. Check: `TestPoisonedSeedUnhydrated`,
   `TestAllSeedsPoisonedDefer`, `TestPoisonedDuplicateReadOnce`, `TestPoisonFallbackReturnsOtherError`,
   `TestPoisonFallbackEndedContext`, `TestPoisonFallbackEmptyID`, `TestOwnValidationNotRetried` (both paths), each
-  shown to fail by a mutant. **Review stop.**
+  shown to fail by a mutant. **Review stop.** Done: mutation checks and the not-found test in `notes/2.2.md`.
 - [ ] 2.3 Real wire (D3): graph-ingest, graph-index, graph-query and graph-embedding (bm25) on the package's shared
   `natsfixture` server through `natsfixture.Open` (#195). Check: `TestRealRespondersAnswer` (every `RetrievalClient`
   method, NL with a scope; replaces the pin's fake-handler test), `TestPoisonedSeedOverRealResponders` (bad bytes Put

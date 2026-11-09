@@ -163,11 +163,12 @@ func TestHelperProcess(t *testing.T) {
 func runStack(ctx context.Context) (result error) {
 	terminated := make(chan os.Signal, 1)
 	signal.Notify(terminated, syscall.SIGTERM)
-	hold := &holdOnIngested{inner: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})}
+	var handler slog.Handler = slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})
+	// Only case 2 sets envHold; every other boot runs with the plain logger.
 	if local := os.Getenv(envHold); local != "" {
-		hold.suffix = ".fleet.ops." + local
+		handler = &holdOnIngested{inner: handler, suffix: ".fleet.ops." + local}
 	}
-	logger := slog.New(hold)
+	logger := slog.New(handler)
 	stop := func(what string, fn func(context.Context) error) {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopBudget)
 		defer cancel()

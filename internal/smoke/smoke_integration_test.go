@@ -21,6 +21,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
+	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/pkg/errs"
@@ -778,6 +779,9 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	if !s.process.Alive() {
 		t.Fatal("the stack exited across the NATS server restart")
 	}
+	// graph-ingest's readiness record from before the restart must not pass awaitIndexed's
+	// not-degraded read: only a record written after the reconnect counts.
+	s.ingestStatusBefore = o.statusRevision(t, readiness.KeyGraphIngest)
 
 	// The waits in checkWritesAfterRestart read the ENTITY_STATES revision after the two writes, so
 	// the envelopes the stack wrote before the restart cannot pass them; a latched envelope fails

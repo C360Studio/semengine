@@ -79,8 +79,8 @@ their answers and their embedding records, which no earlier process can have wri
 2. `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`: in the first child, the injected logger holds graph-ingest on
    the "Entity ingested" record of one fixed entity, published last in the batch (a constant, so the hold always
    fires; precedent
-   `settlement_integration_test.go:217-260`). That entity carries an appending statement, so a second application
-   shows as a second statement. Lanes are serial per entity, so publishing it last leaves nothing queued
+   `settlement_integration_test.go:217-260`). The stream lane has no appending statement; a second application
+   still shows, as a doubled statement. Lanes are serial per entity, so publishing it last leaves nothing queued
    behind it. Before the kill the test proves mid-ingest: the consumer's ack floor reaches the held entity's
    sequence minus 1 with exactly one pending, and the held entity's applied-sequence record is absent (as
    `settlement_integration_test.go:243-249`). Kill, new child: every acknowledged publish answers with each
@@ -142,4 +142,7 @@ A D8 fix in `graph/follower` waits for #558 or is coordinated on it.
   observe it; filed as an issue (task 3.4), not proven here.
 - Run time: each broker restart costs about 20 s of watch stall (nats.go's timing, not promised, ADR-112), so the
   package takes minutes inside the integration run's 10 m.
+- Case 4's stall: after a broker restart under the running stack, the writes published after it were indexed and
+  answered about 19.7 s after `Restart` returned (`notes/2.5.md`). Nobody has read whether graph-index or
+  graph-embedding report ready while their watch is down in that window; the test checks only after the writes.
 - A product's own `main` still has to know six things (inventory, adopter seam): a follow-up, not fixed here.

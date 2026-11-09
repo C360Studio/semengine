@@ -265,3 +265,38 @@ func TestBatchFaultNotReadAlone(t *testing.T) {
 		})
 	}
 }
+
+// TestPoisonFallbackOneSeedCancelled holds that a context ended while the only
+// per-ID request is in flight is returned, not hidden by its reset refusal
+// being listed (#580).
+func TestPoisonFallbackOneSeedCancelled(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	w := &poisonWire{batchErr: resetRefusal(), entityErr: map[string]error{seedA: resetRefusal()}, onEntity: func(string) { cancel() }}
+	got, err := newPoisonClient(t, w).Entities(ctx, []string{seedA})
+	require.ErrorIs(t, err, context.Canceled)
+	assertNoProjection(t, got)
+}
+
+// TestPoisonFallbackFinalSeedCancelled holds that a context ended while the
+// last per-ID request is in flight is returned, whether that request is
+// refused for poison or not found (#580).
+func TestPoisonFallbackFinalSeedCancelled(t *testing.T) {
+	notFound := errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("not found"))
+	for name, refusal := range map[string]error{"reset": resetRefusal(), "not found": notFound} {
+		t.Run(name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			w := &poisonWire{batchErr: resetRefusal(), entityErr: map[string]error{seedC: refusal}}
+			w.onEntity = func(id string) {
+				if id == seedC {
+					cancel()
+				}
+			}
+			got, err := newPoisonClient(t, w).Entities(ctx, []string{seedA, seedB, seedC})
+			require.ErrorIs(t, err, context.Canceled)
+			assertNoProjection(t, got)
+			assert.Equal(t, []string{seedA, seedB, seedC}, w.entityIDs)
+		})
+	}
+}

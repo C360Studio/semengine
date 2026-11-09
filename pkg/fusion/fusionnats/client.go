@@ -255,8 +255,11 @@ func (c *Client) decodeEntity(id string, raw []byte) (*fusion.Entity, error) {
 // (entitiesAlone), so a poisoned seed is listed unhydrated error rather than
 // failing every answer it ranks in (ADR-109 D1). A refusal from the client's
 // own check of a reply carries the same code; it is returned and never starts
-// that read.
+// that read. A nil context is refused, even for zero IDs.
 func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, error) {
+	if ctx == nil {
+		return fusion.Hydration{}, errors.New("fusionnats: nil context")
+	}
 	if len(ids) == 0 {
 		return fusion.Hydration{}, nil
 	}
@@ -284,7 +287,8 @@ func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, 
 // unhydrated not_found. An empty ID is unhydrated error with no request, the
 // reason the batch gives it. Any other error, the client's own refusal of a
 // reply and an ended context included, is returned. It costs one request per
-// distinct ID, and only while poison is present.
+// distinct ID, and only while poison is present. The context is checked before
+// each request and after each refused one.
 func (c *Client) entitiesAlone(ctx context.Context, ids []string) (fusion.Hydration, error) {
 	out := fusion.Hydration{Entities: make([]*fusion.Entity, 0, len(ids))}
 	seen := make(map[string]bool, len(ids))
@@ -303,6 +307,11 @@ func (c *Client) entitiesAlone(ctx context.Context, ids []string) (fusion.Hydrat
 		}
 		raw, err := c.request(ctx, c.verbs.entity, graph.EntityRequest{ID: id})
 		if err != nil {
+			// A refusal that arrives after the caller gave up is not listed: the
+			// ended context is the answer (#580).
+			if cerr := ctx.Err(); cerr != nil {
+				return fusion.Hydration{}, cerr
+			}
 			switch {
 			case isNotFound(err):
 				out.Unhydrated = append(out.Unhydrated, fusion.Unhydrated{Handle: id, Reason: fusion.UnhydratedNotFound})

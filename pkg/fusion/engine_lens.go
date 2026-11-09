@@ -144,6 +144,11 @@ func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode Res
 		// graph looked and found nothing, which is exactly the conclusion it cannot
 		// draw. Say what failed to hydrate and leave Misses empty.
 		if len(hydration.Unhydrated) > 0 {
+			// Nothing loaded and the caller gave up: the ended context is the
+			// answer, as for any failed read (#580).
+			if cerr := ctx.Err(); cerr != nil {
+				return Response{}, cerr
+			}
 			// Marked DEFERRED: nothing was read, so this is a withholding, not a
 			// zero-result answer. The contract tells consumers to check Deferred to
 			// answer "did I get an answer?", and leaving it false here would make the

@@ -589,3 +589,14 @@ func TestNames_DedupesAndCaps(t *testing.T) {
 	assert.Equal(t, subjectByName, fake.lastSubject)
 	assert.Equal(t, []string{"Widget", "Gadget"}, names, "deduplicated in rank order, capped at 2")
 }
+
+// TestEntitiesRefusesNilContext holds that a nil context is refused before the
+// empty-batch shortcut, with no request (#580); a valid empty batch still sends
+// none (TestEntities_EmptyShortCircuits).
+func TestEntitiesRefusesNilContext(t *testing.T) {
+	fake := &fakeRequester{err: errors.New("must not be called")}
+	// A nil context is the input under test.
+	_, err := newClient(t, fake).Entities(nil, nil)
+	require.Error(t, err)
+	assert.Zero(t, fake.calls)
+}

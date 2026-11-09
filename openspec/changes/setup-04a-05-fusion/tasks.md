@@ -22,12 +22,13 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
   multiset; equal-score groups are built by construction, entities sharing one name that matches no query and no
   signals, so the expected order is resolve order; the pin's signal tests stay as examples).
   Done in `bb3556d3809b2deac0cbd2e5b2d1693fe272c79c`; choices, seed and mutation checks in `notes/2.1.md`.
-- [ ] 2.2 Labels and counts (D3 under R1, D4): `Resolution`, `Response.UnreadableRecords` and `FailedRecords`, edges
+- [x] 2.2 Labels and counts (D3 under R1, D4): `Resolution`, `Response.UnreadableRecords` and `FailedRecords`, edges
   sorted before caps, `Node.RelationsTruncated`, `Response.PathsTruncated`, the path stop, impact and graph
   truncation. Check: `TestNLAnswerCarriesSearchCounts`, `TestNLMissCarriesSearchCounts`, `TestSymbolAnswerOmitsCounts`,
   `TestEdgesSortedBeforeCap`, `TestRelationsCapLabelled`, `TestRelationsFaultLabelled`,
   `TestRelationsUnreadTargetLabelled`, `TestPathsCapLabelled`, `TestPathStopsAtUnreadNode`,
   `TestImpactUnreadFileTruncates`, `TestGraphCounterpartFaultTruncates`; a mutant per label. **Review stop.**
+  Done in `e6a45550e19aad272875aa3e7953adc396db9c41`; choices and mutation checks in `notes/2.2.md`.
 - [ ] 2.3 Construction, metrics, logging, hydration (D4, D5, D7): `NewEngine` with a logger, options and an error; both
   counters through `metric.RegisterOrGet`; the skipped-read counter and one Warn line per facet per call; nil-context
   refusals; `hydrate.go` and its tests; the `storeregistry.Registry` assertion. Check: `TestNewEngineRefusesNilClient`,

@@ -201,11 +201,18 @@ func TestSearchAnswersEnveloped(t *testing.T) {
 // TestSearchLimitEdges: on both verbs a limit of 0 means 10, 1 and 100 are used as sent, and 101
 // and -1 are refused invalid_request naming limit and the bound, never clamped (design D3). 101
 // entities share one title, so every one is a hit and only the limit bounds the answer.
+//
+// The wait is on similar to the first entity answering 100 neighbours: its source read needs the
+// first entity generated in the bucket, and 100 neighbours other than it are every other entity in
+// the cache, so all 101 vectors are in before the one-shot checks (#561). A search capped at 100
+// answering 100 would not order that: it is satisfied with one vector still outstanding.
 func TestSearchLimitEdges(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	entities := numbered("acme.ops.test.system.doc", 1, 101)
-	h.titled(t, "widget", entities...)
-	awaitAnswer(t, h, "search", `{"query":"widget","limit":100}`, hitCount[graph.SemanticData](100))
+	source := h.put(t, entities[0], entityValue(t, entities[0], nil, "doc.meta.title", "widget"))
+	h.titled(t, "widget", entities[1:]...)
+	h.awaitGenerated(t, entities[0], source)
+	awaitAnswer(t, h, "similar", fmt.Sprintf(`{"entity_id":%q,"limit":100}`, entities[0]), hitCount[graph.SimilarData](100))
 
 	for limit, want := range map[int]int{0: 10, 1: 1, 100: 100} {
 		search := answerNow[graph.SemanticData](t, h, "search", fmt.Sprintf(`{"query":"widget","limit":%d}`, limit))

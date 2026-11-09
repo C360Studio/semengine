@@ -369,7 +369,7 @@ func TestReadingZeroValueFailsClosed(t *testing.T) {
 	}
 
 	// The in-process shape (a producer computing its own envelope, with no transport to
-	// lose) sets only Status and Fresh. Fresh is the whole opt-in; Known, Age, Raw and
+	// lose) sets only Status and Fresh. Fresh is the whole opt-in; Known, Age and
 	// Err are the Watcher's and the gate does not read them.
 	if got := EvaluateReadinessGate(Reading{Status: healthy(false, 250), Fresh: true}); got != DeferNone {
 		t.Errorf("in-process healthy Reading = %q, want proceed (%q)", got, DeferNone)

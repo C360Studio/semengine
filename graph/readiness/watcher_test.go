@@ -430,15 +430,14 @@ func TestWatcher_UndecodableValueRevokesFreshness(t *testing.T) {
 		if !r.Known {
 			t.Error("Known = false; an envelope did arrive, so the defer log must not read as no producer seen")
 		}
-		// Diagnostics: Err carries the decode failure, and Status and Raw are still the last
+		// Diagnostics: Err carries the decode failure, and Status is still the last
 		// good envelope, so the defer log can say what the producer last reported.
 		var syntaxErr *json.SyntaxError
 		if !errors.As(r.Err, &syntaxErr) {
 			t.Errorf("Err = %v, want the JSON decode failure", r.Err)
 		}
-		if !reflect.DeepEqual(r.Status, healthy) || string(r.Raw) != string(good.value) {
-			t.Errorf("held envelope = %+v (raw %q), want the last good one %+v (raw %q)",
-				r.Status, r.Raw, healthy, good.value)
+		if !reflect.DeepEqual(r.Status, healthy) {
+			t.Errorf("held envelope = %+v, want the last good one %+v", r.Status, healthy)
 		}
 
 		// Recovery: the next good update is the current status again.

@@ -41,7 +41,7 @@ after 3.1, and before the archive.
   `TestFusionNATSImportsNoEmbedding`
   and its sensitivity case in `internal/harness/contract`. **Review stop.**
   Done: commit 2b19ff8a; second composition, waits and mutants in `notes/3.1.md`.
-- [ ] 3.2 Readiness leftovers (D4): `Reading.Raw` removed with its tests' assertions; `graph/readiness/watcher.go`
+- [x] 3.2 Readiness leftovers (D4): `Reading.Raw` removed with its tests' assertions; `graph/readiness/watcher.go`
   package doc (the fusionnats sentence goes, graph-clustering stays); ledger `graph/readiness` known_risks.
 - [ ] 3.3 Records (D6): ledger row `pkg/fusion/fusionnats`; `scripts/cover-check.sh` gains `pkg/fusion/fusionnats`;
   `pkg/fusion/README.md`, `pkg/fusion/MIGRATION.md` (`New` returns an error; no `Status`, no `Close`; a poisoned seed

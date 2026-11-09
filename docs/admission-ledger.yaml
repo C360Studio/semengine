@@ -2194,8 +2194,8 @@
     Set/NewSet/Dump/Verdict dropped (no starter consumer caller; ADR-109; #110 rewritten under
     ADR-109 so Health() derives from nothing in the envelope). The pin's GaugeOption
     and WithRevisionGauges are not ported (one option, one caller; design D10). Reading.Raw
-    has no reader: pkg/fusion reads no status (setup-04a-05-fusion design D1); whether fusion's NATS client
-    (pkg/fusion/fusionnats, change 5 PR D) still watches a key and reads it is PR D's question (#110, ADR-109)
+    dropped: its one pin reader was fusionnats' status read, and pkg/fusion/fusionnats watches no key and reads
+    no status (setup-04a-05-fusionnats design D4; #110, ADR-109)
   proving_tests: >-
     graph/readiness/watcher_test.go, publisher_test.go, gauges_test.go, readiness_gate_test.go,
     backlog_status_test.go; the envelope's JSON in graph/index_status_test.go;

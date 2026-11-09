@@ -37,9 +37,10 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
   `TestFuseRefusesNilContext`, `TestResolveBodyRefusesNilContext`, the pin's `hydrate_test.go` and `body_reason_test.go`
   tests, `-race`.
   Done in `8e3308d572dccebf81d12485bb2b7a2094c4ef3c`; choices and mutation checks in `notes/2.3.md`.
-- [ ] 2.4 `fusionvocab` (D6, under V1): `New(parents)`. Check: `TestClassSpecificityCountsParents`,
+- [x] 2.4 `fusionvocab` (D6, under V1): `New(parents)`. Check: `TestClassSpecificityCountsParents`,
   `TestClassSpecificityNilParentsIsZero`, `TestPredicateSalience`; `go list -deps ./pkg/fusion/...` names no
   semvocab and no `vocabulary/cco`. **Review stop.**
+  Done in `722a72831a72956d69f90dcb932cb9829eacb205`; choices and mutation checks in `notes/2.4.md`.
 
 ## 3. Close-out
 

@@ -101,6 +101,12 @@ func (f fixture) editedDrone3() entityInput {
 	return f.named(drone3, "Osprey Two", f.link(nextPredicate, drone4))
 }
 
+// newDrone is the entity published after a restart: one no earlier process can have written, homed
+// at base3, which had no edge until then.
+func (f fixture) newDrone() entityInput {
+	return f.named("drone.009", "Peregrine", f.link(homePredicate, base3))
+}
+
 // leadPath is pathSearch's answer from drone1, outgoing, written from the chain above.
 func (f fixture) leadPath() graph.PathSearchData {
 	return graph.PathSearchData{
@@ -431,4 +437,57 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	checkAnswers(t, o, f, edited, deleted)
 
 	stopStack(t, s)
+}
+
+// checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
+// order design D5 sets after them, and checks the answers: before plus the two writes. It returns
+// what the stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
+// graph-index and graph-embedding envelopes an earlier process left, at a lower revision, cannot
+// pass them; the new entity's record and the edit's record at its new revision are ones no earlier
+// process can have written (design D6).
+func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, before want) want {
+	t.Helper()
+	o.publish(t, f.newDrone())
+	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
+	o.awaitIndexed(t, s)
+	requireComponentsHealthy(t, readHealth(t, s))
+	after := maps.Clone(before)
+	after[f.newDrone().id] = f.newDrone()
+	after[f.id(drone3)] = f.editedDrone3()
+	checkAnswers(t, o, f, after)
+	return after
+}
+
+// TestSmoke_StackRestartKeepsAnswers holds composed-stack, "Stop and start the stack" (design D6,
+// case 1): the stack stops on SIGTERM, a new process boots from the same configuration on the same
+// server, and it answers what the first one did plus what is published after the restart.
+func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
+	url := shared.Reset(t)
+	o := newObserver(t, url)
+	first := startStack(t, url)
+	f := fixture{platform: first.platform}
+	requireComponentsListed(t, readHealth(t, first))
+
+	inputs := f.fixedEntities()
+	var last uint64
+	for _, e := range inputs {
+		last = o.publish(t, e)
+	}
+	o.awaitAcknowledged(t, first, last)
+	o.awaitIndexed(t, first)
+	requireComponentsHealthy(t, readHealth(t, first))
+	before := wantOf(inputs...)
+	checkAnswers(t, o, f, before)
+	t.Logf("first process, %s: %v", reindexMetric, readReindexCounter(t, first))
+	stopStack(t, first)
+
+	second := restartStack(t, url, first)
+	// The configuration bucket holds the minted ID, so the second process adopts it (ADR-104).
+	if second.platform != first.platform {
+		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)
+	}
+	requireComponentsListed(t, readHealth(t, second))
+	checkWritesAfterRestart(t, o, second, f, before)
+	t.Logf("second process, %s: %v", reindexMetric, readReindexCounter(t, second))
+	stopStack(t, second)
 }

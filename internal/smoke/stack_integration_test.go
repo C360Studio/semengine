@@ -265,11 +265,13 @@ func runStack(ctx context.Context) (result error) {
 	return nil
 }
 
-// stack is one running child, the port it serves HTTP on and the platform ID it reported.
+// stack is one running child, the ports it serves HTTP and metrics on and the platform ID it
+// reported.
 type stack struct {
-	process  *prochost.Process
-	httpPort int
-	platform string
+	process     *prochost.Process
+	httpPort    int
+	metricsPort int
+	platform    string
 }
 
 // freePort picks a port for the ServiceManager or the metrics server and releases it.
@@ -287,21 +289,38 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the stack in a child against url and returns once StartAll has returned in it.
+// startStack boots the stack in a child against url, on two ports it picks, and returns once
+// StartAll has returned in it.
 func startStack(t *testing.T, url string) stack {
 	t.Helper()
+	return startStackOn(t, url, freePort(t), freePort(t))
+}
+
+// restartStack boots a new child against url from the configuration previous booted from, its
+// ports included. The configuration bucket the first boot wrote holds those ports, and a later
+// boot serves on them whatever the file says ("Synced configuration from KV"), so the same
+// configuration is the honest restart. previous must have exited.
+func restartStack(t *testing.T, url string, previous stack) stack {
+	t.Helper()
+	if previous.process.Alive() {
+		t.Fatal("restartStack: the previous stack is still running")
+	}
+	return startStackOn(t, url, previous.httpPort, previous.metricsPort)
+}
+
+func startStackOn(t *testing.T, url string, httpPort, metricsPort int) stack {
+	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
-	httpPort := freePort(t)
 	p, err := prochost.Start(t, stackHelper,
 		envNATSURL+"="+url,
 		envHTTPPort+"="+strconv.Itoa(httpPort),
-		envMetricsPort+"="+strconv.Itoa(freePort(t)),
+		envMetricsPort+"="+strconv.Itoa(metricsPort),
 		envReady+"="+ready,
 	)
 	if err != nil {
 		t.Fatalf("start the stack: %v", err)
 	}
-	s := stack{process: p, httpPort: httpPort}
+	s := stack{process: p, httpPort: httpPort, metricsPort: metricsPort}
 	// The child renames the file into place, so a file that exists is whole.
 	s.platform = await(t, s, "the stack's StartAll to return", func(context.Context) (string, error) {
 		data, err := os.ReadFile(ready)
@@ -510,14 +529,14 @@ type componentsHealth struct {
 	Total      int             `json:"total"`
 }
 
-// readHealth reads the component health the stack serves, dialled at the IPv6 loopback: on a Mac,
+// get reads path from the stack's server on port, dialled at the IPv6 loopback: on a Mac,
 // 127.0.0.1:<port> can belong to another program that bound IPv4 only (design D4, #390).
-func readHealth(t *testing.T, s stack) componentsHealth {
+func get(t *testing.T, s stack, port int, path string) (string, int, []byte) {
 	t.Helper()
 	if !s.process.Alive() {
-		t.Fatal("the stack exited before its health was read")
+		t.Fatalf("the stack exited before %s was read", path)
 	}
-	url := "http://" + net.JoinHostPort("::1", strconv.Itoa(s.httpPort)) + "/components/health"
+	url := "http://" + net.JoinHostPort("::1", strconv.Itoa(port)) + path
 	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -531,9 +550,16 @@ func readHealth(t *testing.T, s stack) componentsHealth {
 	if err != nil {
 		t.Fatalf("read %s: %v", url, err)
 	}
+	return url, response.StatusCode, body
+}
+
+// readHealth reads the component health the stack serves.
+func readHealth(t *testing.T, s stack) componentsHealth {
+	t.Helper()
+	url, code, body := get(t, s, s.httpPort, "/components/health")
 	var reply componentsHealth
 	if err := json.Unmarshal(body, &reply); err != nil {
-		t.Fatalf("decode %s (HTTP %d): %v: %s", url, response.StatusCode, err, body)
+		t.Fatalf("decode %s (HTTP %d): %v: %s", url, code, err, body)
 	}
 	return reply
 }
@@ -565,4 +591,24 @@ func requireComponentsHealthy(t *testing.T, reply componentsHealth) {
 	if t.Failed() {
 		t.FailNow()
 	}
+}
+
+// reindexMetric is graph-index's re-index counter (#108's instrument), by result.
+const reindexMetric = "semengine_graph_index_reindex_events_total"
+
+// readReindexCounter returns the reindexMetric series the stack's metrics server reports, one line
+// each. The counter is recorded, never asserted (design D4, #108).
+func readReindexCounter(t *testing.T, s stack) []string {
+	t.Helper()
+	url, code, body := get(t, s, s.metricsPort, "/metrics")
+	if code != http.StatusOK {
+		t.Fatalf("GET %s: HTTP %d: %s", url, code, body)
+	}
+	var series []string
+	for _, line := range strings.Split(string(body), "\n") {
+		if strings.HasPrefix(line, reindexMetric+"{") {
+			series = append(series, line)
+		}
+	}
+	return series
 }

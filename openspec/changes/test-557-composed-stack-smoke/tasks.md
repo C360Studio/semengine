@@ -16,7 +16,7 @@ port, no `t.Parallel`, no `context.WithValue`.
 - [x] 2.1 `internal/smoke` package, composition root, child helper, fixed inputs, `checkAnswers` and
   `TestSmoke_OneConfigAnswers` (D1 to D5), with every wait ordered after its write and `localSearch` checked as its
   refusal. Shown to fail: graph-embedding disabled in the configuration, and the graph-index edge mutant (D7).
-- [ ] 2.2 `TestSmoke_StackRestartKeepsAnswers` (case 1), with a new entity and an edit after the restart;
+- [x] 2.2 `TestSmoke_StackRestartKeepsAnswers` (case 1), with a new entity and an edit after the restart;
   graph-index's reindex counter recorded in the notes (#108).
 - [ ] 2.3 `TestSmoke_KillMidIngestKeepsAcknowledgedWrites` (case 2): hold on one fixed entity, published last, with an
   appending statement; ack floor at its sequence minus 1 with exactly one pending, and the absent applied-sequence

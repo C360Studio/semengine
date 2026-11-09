@@ -146,6 +146,44 @@ A run shares the Docker daemon with every other run and repository on the machin
 The fixture asks the operating system for a free host port for each container, so runs do not collide. Our code
 removes only containers that carry our label, and never runs `docker … prune` or removes anything by name.
 
+## Testing a consumer against a broker
+
+`natsfixture` is internal to this repository. A consumer (SemSource, SemTeams, or any module that imports SemEngine)
+cannot import it, and SemEngine does not ship a test fixture (owner ruling on #568). The client is the part that
+belongs to the framework, and it connects to any broker URL in three calls:
+
+```go
+client, err := natsclient.NewClient(url,
+    natsclient.WithTimeout(10*time.Second), // bound the connect
+    natsclient.WithMaxReconnects(0),        // a test wants a failure, not a retry
+    natsclient.WithHealthInterval(0),       // no background monitor to drain
+)
+if err != nil {
+    return nil, err
+}
+if err := client.Connect(ctx); err != nil {
+    return nil, errors.Join(err, client.Close(ctx))
+}
+t.Cleanup(func() {
+    ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    if err := client.Close(ctx); err != nil {
+        t.Errorf("close: %v", err)
+    }
+})
+```
+
+Where the broker comes from is the consumer's choice. Two ready options:
+
+- a container through testcontainers-go, which ships a NATS module (`modules/nats`); pick the image this repository
+  pins (`internal/harness/natsfixture/nats-image`) so the consumer tests the server version the graph components are
+  proven against;
+- an embedded `nats-server/v2` in the test process, for tests that do not want Docker.
+
+Whichever the consumer picks, the shape above still holds: one server per package emptied between tests costs far less
+than one container per test, and a client closed on `t.Cleanup` before the server stops keeps the run free of leaked
+connections.
+
 ## How cleanup works
 
 1. An own server is removed by the test's cleanup when the test ends.

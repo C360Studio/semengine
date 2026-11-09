@@ -8,5 +8,9 @@
 // observer: graph.query.* answers (semantic and similar among them), the GRAPH_STATUS readiness
 // keys, component health over HTTP and the EMBEDDING_INDEX records. Every wait is ordered after the write it checks.
 //
+// A second composition has no graph-embedding, neither configured nor registered:
+// TestSmoke_NoEmbedderAnswers boots it and asks pkg/fusion, over pkg/fusion/fusionnats, the
+// questions a stack without an embedder answers, and the word question it refuses.
+//
 // The package holds no production code; everything else is in integration-tagged test files.
 package smoke

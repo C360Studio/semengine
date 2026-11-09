@@ -60,8 +60,8 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the stack boots from (design D2), as a product would write
-// it. The child fills the three placeholders from its environment: the NATS URL and the two ports
+// stackConfig is the one configuration the four-component stack boots from (design D2), as a
+// product would write it. The child fills the three placeholders from its environment: the NATS URL and the two ports
 // the test picked (design D4), and graph-ingest's configuration, {} (its defaults) unless the test
 // passes one. Every other component takes its defaults; graph-embedding runs BM25 only.
 const stackConfig = `{
@@ -85,14 +85,88 @@ const stackConfig = `{
   }
 }`
 
-// stackComponents are the component instances stackConfig declares, by name.
-var stackComponents = []string{"graph-embedding", "graph-index", "graph-ingest", "graph-query"}
+// graphOnlyConfig is stackConfig with no graph-embedding: the configuration of a product that
+// answers by name, prefix and structure and runs no embedder (composed-stack, "The graph stack
+// answers fusion without an embedder").
+const graphOnlyConfig = `{
+  "version": "1.0.0",
+  "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
+  "nats": {"urls": ["{{nats_url}}"]},
+  "services": {
+    "service-manager": {"enabled": true, "config": {"http_port": {{http_port}}}},
+    "metrics": {"enabled": true, "config": {"path": "/metrics", "port": {{metrics_port}}}}
+  },
+  "streams": {
+    "ENTITY": {"subjects": ["entity.>"], "storage": "file", "max_age": "24h", "max_bytes": 67108864,
+      "discard": "old"}
+  },
+  "components": {
+    "graph-ingest": {"type": "processor", "name": "graph-ingest", "enabled": true, "config": {{ingest_config}}},
+    "graph-index": {"type": "processor", "name": "graph-index", "enabled": true, "config": {}},
+    "graph-query": {"type": "processor", "name": "graph-query", "enabled": true, "config": {}}
+  }
+}`
+
+// composition is one stack the child can boot: its configuration, and what the composition root
+// and the test know about it.
+type composition struct {
+	// name selects the composition in the child's environment (envComposition).
+	name   string
+	config string
+	// components are the component instances config declares, sorted by name. The child
+	// registers exactly these factories, and the health reply must list exactly these.
+	components []string
+	// indexKeys are the GRAPH_STATUS keys awaitIndexed waits on after graph-ingest's: the
+	// indexes the composition runs.
+	indexKeys []string
+	// labels are predicates the composition root registers as display names before StartAll;
+	// graph-index reads them once when it starts, and its name lookup indexes only them.
+	labels []string
+}
+
+// fullStack is the four-component stack every test but the no-embedder one boots.
+var fullStack = composition{
+	name:       "full",
+	config:     stackConfig,
+	components: []string{"graph-embedding", "graph-index", "graph-ingest", "graph-query"},
+	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding},
+}
+
+// graphOnlyStack is the stack with no embedder: graph-embedding neither configured nor registered.
+// Its consumer resolves by name, so namePredicate is a display name.
+var graphOnlyStack = composition{
+	name:       "graph-only",
+	config:     graphOnlyConfig,
+	components: []string{"graph-index", "graph-ingest", "graph-query"},
+	indexKeys:  []string{readiness.KeyGraphIndex},
+	labels:     []string{namePredicate},
+}
+
+// compositionNamed returns the composition called name; the test always passes one.
+func compositionNamed(name string) (composition, error) {
+	for _, c := range []composition{fullStack, graphOnlyStack} {
+		if c.name == name {
+			return c, nil
+		}
+	}
+	return composition{}, fmt.Errorf("no composition named %q", name)
+}
+
+// componentFactories are the factories a composition can name, by component name.
+var componentFactories = map[string]func(*component.Registry) error{
+	"graph-ingest":    graphingest.Register,
+	"graph-index":     graphindex.Register,
+	"graph-embedding": graphembedding.Register,
+	"graph-query":     graphquery.Register,
+}
 
 // What the test passes the child in its environment.
 const (
 	envNATSURL     = "SMOKE_NATS_URL"
 	envHTTPPort    = "SMOKE_HTTP_PORT"
 	envMetricsPort = "SMOKE_METRICS_PORT"
+	// envComposition is the name of the composition the child boots.
+	envComposition = "SMOKE_COMPOSITION"
 	// envReady is the file the child creates once StartAll returned.
 	envReady = "SMOKE_READY"
 	// envIngestConfig is graph-ingest's configuration, JSON; unset means its defaults.
@@ -158,7 +232,7 @@ func TestHelperProcess(t *testing.T) {
 }
 
 // runStack is the composition root (design D2): what a product's main does, in order. It boots
-// the stack from stackConfig, creates the ready file, waits for SIGTERM and stops everything it
+// the composition envComposition names from its configuration, creates the ready file, waits for SIGTERM and stops everything it
 // started, each stop under its own budget.
 func runStack(ctx context.Context) (result error) {
 	terminated := make(chan os.Signal, 1)
@@ -177,6 +251,10 @@ func runStack(ctx context.Context) (result error) {
 		}
 	}
 
+	stackComposition, err := compositionNamed(os.Getenv(envComposition))
+	if err != nil {
+		return err
+	}
 	ingestConfig := os.Getenv(envIngestConfig)
 	if ingestConfig == "" {
 		ingestConfig = "{}"
@@ -186,7 +264,7 @@ func runStack(ctx context.Context) (result error) {
 		"{{http_port}}", os.Getenv(envHTTPPort),
 		"{{metrics_port}}", os.Getenv(envMetricsPort),
 		"{{ingest_config}}", ingestConfig,
-	).Replace(stackConfig)
+	).Replace(stackComposition.config)
 	cfg, err := config.NewLoader().LoadFromBytes([]byte(raw))
 	if err != nil {
 		return fmt.Errorf("load configuration: %w", err)
@@ -222,18 +300,13 @@ func runStack(ctx context.Context) (result error) {
 	}
 
 	components := component.NewRegistry()
-	for _, c := range []struct {
-		name     string
-		register func(*component.Registry) error
-	}{
-		{"graph-ingest", graphingest.Register},
-		{"graph-index", graphindex.Register},
-		{"graph-embedding", graphembedding.Register},
-		{"graph-query", graphquery.Register},
-	} {
-		if err := c.register(components); err != nil {
-			return fmt.Errorf("register %s: %w", c.name, err)
+	for _, name := range stackComposition.components {
+		if err := componentFactories[name](components); err != nil {
+			return fmt.Errorf("register %s: %w", name, err)
 		}
+	}
+	for _, predicate := range stackComposition.labels {
+		vocabulary.Register(predicate, vocabulary.WithAlias(vocabulary.AliasTypeLabel, 0))
 	}
 
 	payloads := payloadregistry.New()
@@ -333,6 +406,7 @@ func (h *holdOnIngested) WithGroup(name string) slog.Handler {
 // stack is one running child, the ports it serves HTTP and metrics on and the platform ID it
 // reported.
 type stack struct {
+	composition composition
 	process     *prochost.Process
 	httpPort    int
 	metricsPort int
@@ -357,11 +431,17 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the stack in a child against url, on two ports it picks, and returns once
-// StartAll has returned in it.
+// startStack boots the four-component stack in a child against url, on two ports it picks, and
+// returns once StartAll has returned in it.
 func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
-	return startStackOn(t, o, url, freePort(t), freePort(t), env...)
+	return startComposition(t, o, url, fullStack, env...)
+}
+
+// startComposition is startStack for the composition c.
+func startComposition(t *testing.T, o observer, url string, c composition, env ...string) stack {
+	t.Helper()
+	return startStackOn(t, o, url, c, freePort(t), freePort(t), env...)
 }
 
 // restartStack boots a new child against url from the configuration previous booted from, its
@@ -374,17 +454,18 @@ func restartStack(t *testing.T, o observer, url string, previous stack, env ...s
 	if previous.process.Alive() {
 		t.Fatal("restartStack: the previous stack is still running")
 	}
-	return startStackOn(t, o, url, previous.httpPort, previous.metricsPort, env...)
+	return startStackOn(t, o, url, previous.composition, previous.httpPort, previous.metricsPort, env...)
 }
 
-// startStackOn boots a child on the two ports; env adds to what the child is passed, as
+// startStackOn boots a child running c on the two ports; env adds to what the child is passed, as
 // envIngestConfig and envHold.
-func startStackOn(t *testing.T, o observer, url string, httpPort, metricsPort int, env ...string) stack {
+func startStackOn(t *testing.T, o observer, url string, c composition, httpPort, metricsPort int, env ...string) stack {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
 	// Read before the child exists, so an entry above this revision is the child's own write.
 	before := o.statusRevision(t, readiness.KeyGraphIngest)
 	p, err := prochost.Start(t, stackHelper, append([]string{
+		envComposition + "=" + c.name,
 		envNATSURL + "=" + url,
 		envHTTPPort + "=" + strconv.Itoa(httpPort),
 		envMetricsPort + "=" + strconv.Itoa(metricsPort),
@@ -393,7 +474,7 @@ func startStackOn(t *testing.T, o observer, url string, httpPort, metricsPort in
 	if err != nil {
 		t.Fatalf("start the stack: %v", err)
 	}
-	s := stack{process: p, httpPort: httpPort, metricsPort: metricsPort, ingestStatusBefore: before}
+	s := stack{composition: c, process: p, httpPort: httpPort, metricsPort: metricsPort, ingestStatusBefore: before}
 	// The child renames the file into place, so a file that exists is whole.
 	s.platform = await(t, s, "the stack's StartAll to return", func(context.Context) (string, error) {
 		data, err := os.ReadFile(ready)
@@ -597,8 +678,8 @@ func latched(status graph.IndexStatusResponse) string {
 
 // awaitIndexed is the rest of design D5's order, after the acknowledgement or a mutation's reply:
 // the ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one,
-// not degraded; then the graph-index
-// and graph-embedding envelopes at or above that revision. It returns the revision. A latched
+// not degraded; then the envelope of each index the composition runs (graph-index, and
+// graph-embedding where it is configured) at or above that revision. It returns the revision. A latched
 // state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()
@@ -626,7 +707,7 @@ func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	if ingest.State == graph.IndexStateDegraded || latched(ingest) != "" {
 		t.Fatalf("%s/%s reads %+v, want not degraded", graph.BucketGraphStatus, readiness.KeyGraphIngest, ingest)
 	}
-	for _, key := range []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding} {
+	for _, key := range s.composition.indexKeys {
 		status := await(t, s, fmt.Sprintf("%s/%s at revision %d", graph.BucketGraphStatus, key, revision),
 			func(ctx context.Context) (graph.IndexStatusResponse, error) { return o.readStatus(ctx, key) },
 			func(status graph.IndexStatusResponse) bool {
@@ -681,25 +762,29 @@ func readHealth(t *testing.T, s stack) componentsHealth {
 	return reply
 }
 
-// requireComponentsListed fails unless the health reply names exactly the four components. An
-// empty list reads healthy (health/helpers.go:44-45), so the names and the total are checked.
-func requireComponentsListed(t *testing.T, reply componentsHealth) {
+// requireComponentsListed fails unless the stack's health reply names exactly the components its
+// composition declares. An empty list reads healthy (health/helpers.go:44-45), so the names and
+// the total are checked.
+func requireComponentsListed(t *testing.T, s stack) componentsHealth {
 	t.Helper()
+	reply := readHealth(t, s)
+	declared := s.composition.components
 	var names []string
 	for _, c := range reply.Components {
 		names = append(names, c.Component)
 	}
 	slices.Sort(names)
-	if reply.Total != len(stackComponents) || strings.Join(names, ",") != strings.Join(stackComponents, ",") {
+	if reply.Total != len(declared) || strings.Join(names, ",") != strings.Join(declared, ",") {
 		t.Fatalf("/components/health lists %v (total %d), want %v (total %d)",
-			names, reply.Total, stackComponents, len(stackComponents))
+			names, reply.Total, declared, len(declared))
 	}
+	return reply
 }
 
-// requireComponentsHealthy fails unless the four components are listed and each is healthy.
-func requireComponentsHealthy(t *testing.T, reply componentsHealth) {
+// requireComponentsHealthy fails unless the composition's components are listed and each is healthy.
+func requireComponentsHealthy(t *testing.T, s stack) {
 	t.Helper()
-	requireComponentsListed(t, reply)
+	reply := requireComponentsListed(t, s)
 	for _, c := range reply.Components {
 		if !c.Healthy {
 			t.Errorf("component %s reads %s: %s", c.Component, c.Status, c.Message)

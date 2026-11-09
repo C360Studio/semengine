@@ -578,7 +578,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
 	// StartAll has returned, so the composition is fixed: the four components are listed.
-	requireComponentsListed(t, readHealth(t, s))
+	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
 	var last uint64
@@ -587,7 +587,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	}
 	o.awaitAcknowledged(t, s, last)
 	o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, readHealth(t, s))
+	requireComponentsHealthy(t, s)
 	checkAnswers(t, o, s, f, wantOf(inputs...))
 
 	// An edit on the stream and a delete through graph-ingest's mutation verb.
@@ -595,7 +595,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	deleted := f.id(drone8)
 	o.deleteEntity(t, deleted)
 	o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, readHealth(t, s))
+	requireComponentsHealthy(t, s)
 	edited := wantOf(inputs...)
 	edited[f.id(drone3)] = f.editedDrone3()
 	delete(edited, deleted)
@@ -637,7 +637,7 @@ func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, befor
 	o.publish(t, f.newDrone())
 	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
 	o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, readHealth(t, s))
+	requireComponentsHealthy(t, s)
 	after := maps.Clone(before)
 	after[f.newDrone().id] = f.newDrone()
 	after[f.id(drone3)] = f.editedDrone3()
@@ -653,7 +653,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	o := newObserver(t, url)
 	first := startStack(t, o, url)
 	f := fixture{platform: first.platform}
-	requireComponentsListed(t, readHealth(t, first))
+	requireComponentsListed(t, first)
 
 	inputs := f.fixedEntities()
 	var last uint64
@@ -662,7 +662,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	}
 	o.awaitAcknowledged(t, first, last)
 	o.awaitIndexed(t, first)
-	requireComponentsHealthy(t, readHealth(t, first))
+	requireComponentsHealthy(t, first)
 	before := wantOf(inputs...)
 	checkAnswers(t, o, first, f, before)
 	t.Logf("first process, %s: %v", reindexMetric, readReindexCounter(t, first))
@@ -673,7 +673,7 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	if second.platform != first.platform {
 		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)
 	}
-	requireComponentsListed(t, readHealth(t, second))
+	requireComponentsListed(t, second)
 	checkWritesAfterRestart(t, o, second, f, before)
 	t.Logf("second process, %s: %v", reindexMetric, readReindexCounter(t, second))
 	stopStack(t, second)
@@ -746,7 +746,7 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	ingestConfig := envIngestConfig + "=" + killIngestConfig(t)
 	first := startStack(t, o, url, ingestConfig, envHold+"="+heldDrone)
 	f := fixture{platform: first.platform}
-	requireComponentsListed(t, readHealth(t, first))
+	requireComponentsListed(t, first)
 
 	// Each publish below returned the stream's acknowledgement: every one of them must survive.
 	inputs := f.fixedEntities()
@@ -810,7 +810,7 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	if second.platform != first.platform {
 		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)
 	}
-	requireComponentsListed(t, readHealth(t, second))
+	requireComponentsListed(t, second)
 	// The held input comes again after the acknowledgement wait; its acknowledgement follows its
 	// applied-sequence record.
 	redelivered := o.awaitAcknowledged(t, second, heldSeq)
@@ -822,7 +822,7 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 		t.Fatalf("%s is acknowledged without its applied-sequence record", held.id)
 	}
 	o.awaitIndexed(t, second)
-	requireComponentsHealthy(t, readHealth(t, second))
+	requireComponentsHealthy(t, second)
 	before := wantOf(append(inputs, held)...)
 	checkAnswers(t, o, second, f, before)
 
@@ -877,7 +877,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 		o := newObserver(t, url)
 		first = startStack(t, o, url)
 		f = fixture{platform: first.platform}
-		requireComponentsListed(t, readHealth(t, first))
+		requireComponentsListed(t, first)
 
 		inputs := f.fixedEntities()
 		var last uint64
@@ -886,7 +886,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 		}
 		o.awaitAcknowledged(t, first, last)
 		o.awaitIndexed(t, first)
-		requireComponentsHealthy(t, readHealth(t, first))
+		requireComponentsHealthy(t, first)
 		before = wantOf(inputs...)
 		checkAnswers(t, o, first, f, before)
 		stopStack(t, first)
@@ -903,7 +903,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 		t.Fatalf("the stack booted after the broker restart reports platform %q, want the first process's %q",
 			second.platform, first.platform)
 	}
-	requireComponentsListed(t, readHealth(t, second))
+	requireComponentsListed(t, second)
 	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
 }
@@ -926,7 +926,7 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	o := newObserver(t, url)
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
-	requireComponentsListed(t, readHealth(t, s))
+	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
 	var last uint64
@@ -935,7 +935,7 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	}
 	o.awaitAcknowledged(t, s, last)
 	o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, readHealth(t, s))
+	requireComponentsHealthy(t, s)
 	before := wantOf(inputs...)
 	checkAnswers(t, o, s, f, before)
 
@@ -968,7 +968,7 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	deleted := f.id(drone8)
 	o.deleteEntity(t, deleted)
 	o.awaitIndexed(t, s)
-	requireComponentsHealthy(t, readHealth(t, s))
+	requireComponentsHealthy(t, s)
 	delete(after, deleted)
 	checkAnswers(t, o, s, f, after, deleted)
 	stopStack(t, s)

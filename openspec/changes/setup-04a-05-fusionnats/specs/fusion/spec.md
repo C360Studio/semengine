@@ -26,7 +26,8 @@ engine only as a reply's `index_not_ready`.
 #### Scenario: No readiness import
 
 - **WHEN** the import closure of `pkg/fusion/fusionnats` is listed
-- **THEN** it holds no `graph/readiness` (`TestFusionNATSImportsNoEmbedding`)
+- **THEN** it holds no `graph/readiness` (`TestFusionNATSImportsNoEmbedding`), and `TestNoRetainedContext` (the
+  verify guard on retained contexts) passes over the package; that it starts no goroutine or watch is held by review
 
 ### Requirement: Subjects come from the verb table
 
@@ -89,9 +90,9 @@ code as unhydrated `error` and one not found as unhydrated `not_found`. It SHALL
 
 #### Scenario: One poisoned seed
 
-- **WHEN** the batch is refused for poison and one of three seeds is poisoned
-- **THEN** two entities hydrate and the third is unhydrated `error` (`TestPoisonedSeedUnhydrated`,
-  `TestPoisonedSeedOverRealResponders`)
+- **WHEN** the batch is refused for poison and the second of three seeds is poisoned
+- **THEN** the first and third hydrate in request order and the second is unhydrated `error`
+  (`TestPoisonedSeedUnhydrated`, `TestPoisonedSeedOverRealResponders`)
 
 #### Scenario: A poisoned seed requested twice
 

@@ -38,9 +38,9 @@ Modified: `fusion` (the NATS client), `composed-stack` (the no-embedder stack).
 - Stale text rewritten: port notes on ADR-062, ADR-066 and ADR-083 (the watch is not carried), ADR-071, ADR-084; the
   `pkg/fusion` and ADR-062 ledger rows; the `fusion` spec's fatal-seed-read example (MODIFIED). Pin ADR-079 D3 is kept
   under the recommendation.
-- Merge order: no open PR overlaps; under question 2's recommendation a small graph-query PR merges before this
-  one's proof task. Retires none; #195, #110, #563 stay. Files the graph-ingest prefix-read issue, and under question
-  2's alternative a graph-query issue.
+- Merge order: no open PR overlaps; under question 2's recommendation no other PR is needed (under its option C a
+  graph-query PR merges before this one's proof task). Retires none; #195, #110, #563 stay. Files the graph-ingest
+  prefix-read issue and, under the recommendation, a graph-query issue.
 
 ## Owner questions
 
@@ -50,8 +50,13 @@ Modified: `fusion` (the NATS client), `composed-stack` (the no-embedder stack).
    changes no other package. The alternative is to change graph-ingest so its group read lists damaged entities
    itself: one request, but it reverses a SemStreams decision (ADR-079) and touches a second package.
 2. **A word question with no embedder.** The plan asks for "explicitly admitted graph-only interfaces, not
-   unsupported NL verbs" (`docs/setup-plan.md:439-440`). Today graph-query still offers word search with no embedder
-   and answers it with "temporary internal error", which tells a program to retry something that can never succeed.
-   Recommended: a small graph-query change first, so a question nobody in the composition can answer gets a "will not
-   succeed, do not retry" refusal with its own error code (you name it), and the proof checks that. The alternative:
-   keep today's refusal for alpha.3 and file it as an issue.
+   unsupported NL verbs" (`docs/setup-plan.md:439-440`). Today, with no embedder, graph-query still offers word search
+   and answers it "temporary internal error", so a program retries a question that can never succeed. My earlier
+   idea, "do not retry" whenever nobody answers, is withdrawn: it cannot tell "no embedder here" from "the embedder is
+   restarting", and would tell callers to give up during a normal restart.
+   Recommended: keep today's answer for alpha.3. The proof shows the name and prefix questions work and that a word
+   question is refused, never answered empty, and an issue records the fix below. This keeps this PR to one package.
+   The alternative, a separate small PR first: graph-query gets one setting that says whether this composition offers
+   word search. When it does not, word and similar-entity questions are refused at once as "not offered here, do not
+   retry", with an error code you name. You would also pick the setting's default: "offered" changes nothing for
+   existing setups; "not offered" makes the choice explicit but every setup with an embedder must turn it on.

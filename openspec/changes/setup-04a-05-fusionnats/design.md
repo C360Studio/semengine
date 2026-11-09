@@ -5,7 +5,7 @@ split row D and ruling 4 (PR #550 comment 6716972354), tag after PR D (#9 commen
 consumer-owned (#568). **Goal.** A product composes `fusion.Engine` over NATS with one call, gets one answer per query
 in which a poisoned seed is listed, not fatal, and can run the tier-0 stack with no graph-embedding and see which
 answers it has. **Non-goals:** `searchGraph`'s fallback (#563: fusionnats never calls it); graph-ingest's batch or
-prefix wire; a "not served" code in graph-query (owner question 2).
+prefix wire; graph-query code (owner question 2's option C, if chosen, is its own PR).
 
 ## D1. Construction: one call, nothing running (N4, N5, N9)
 
@@ -71,7 +71,8 @@ graph-ingest's batch lists poisoned IDs in `missing` with reason
 
 `UnhydratedError`'s doc (`pkg/fusion/retrieval.go:109-110`) says it now carries a refused entity. *Proof:* unit
 `TestPoisonedSeedUnhydrated`, `TestAllSeedsPoisonedDefer`, `TestPoisonedDuplicateReadOnce`,
-`TestPoisonFallbackReturnsOtherError`, `TestPoisonFallbackEndedContext`, `TestPoisonFallbackEmptyID`,
+`TestPoisonFallbackReturnsOtherError`, `TestPoisonFallbackEndedContext`, `TestPoisonFallbackEmptyID`
+(`TestPoisonedSeedUnhydrated` puts the poisoned seed second of three and checks the other two in request order),
 `TestOwnValidationNotRetried` (a batch reply its own validation refuses sends no `entity` request; a per-ID reply its
 own decode refuses is returned), each shown to fail by a mutant. Real wire, integration, on the package's shared
 `natsfixture` server through `natsfixture.Open` (#195): graph-ingest, graph-index, graph-query and graph-embedding
@@ -101,8 +102,8 @@ and graph-query from one configuration with no graph-embedding entry and no grap
 value selects the second configuration), publishes the fixed entities, waits on graph-ingest's and graph-index's keys,
 and checks: all three components healthy and `GRAPH_STATUS` has no `graph-embedding` key; `fusion.Engine` over
 `fusionnats` answers a symbol lens and a prefix lens with the expected nodes, relations and paths; an unknown name is a
-miss; an NL lens's `Fuse` returns a refusal naming `graph.embedding.query.search`, never an empty answer: as the
-owner answers question 2, non-retryable (recommended) or today's transient `internal`.
+miss; an NL lens's `Fuse` returns a refusal naming `graph.embedding.query.search`, never an empty answer: under the
+recommendation (Q-B) today's transient `internal`; under option C the class and code that graph-query PR defines.
 `TestFusionNATSImportsNoEmbedding` (`internal/harness/contract`)
 fails if `fusionnats`' closure reaches `graph/embedding`, `processor/graph-embedding` or `graph/readiness`, with a
 sensitivity case as `embeddingprovider_test.go` has. The SemSource composition itself stays the SemSource owner's
@@ -112,11 +113,20 @@ on nats.go and the server and is not promised; the test asserts the refusal only
 
 The plan asks for "explicitly admitted graph-only interfaces, not unsupported NL verbs" (`docs/setup-plan.md:439-440`).
 Today graph-query still offers `semantic` with no embedder and, on no answer, refuses transient `internal`
-(`processor/graph-query/query.go:158-159`), which tells a caller to retry a question that can never succeed. **Q-A
-(recommended).** A graph-query PR before task 3.1: a forward whose request gets `natsclient.IsNoResponders`
-(`natsclient/errors.go:340-346`, probed at `natsclient/request_integration_test.go:68`) refuses with a non-retryable
-class and its own code naming the subject; the owner names the code. A false from `IsNoResponders` proves nothing (its
-doc), so a timeout stays transient. **Q-B.** Keep today's refusal for alpha.3 and file the graph-query issue.
+(`processor/graph-query/query.go:158-159`; its spec, "A refusal reaches the caller intact",
+`TestNoRespondersIsTransient`).
+**Q-A (withdrawn, round 2).** Refusing "do not retry" on `natsclient.IsNoResponders` cannot tell a composition with no
+embedder from one whose embedder is briefly unsubscribed, which natsclient calls temporary at startup and after a
+reconnect (`natsclient/errors.go:333-336`; the window `TestSmoke_BrokerRestartUnderRunningStack` exercises), and it
+reverses graph-query's spec. **C (config).** graph-query gains one config key admitting the embedding verbs; when it
+says no, `semantic` and `similar` refuse at once, before any request, with class `invalid` (the composition does not
+offer the verb; not retryable) and a new code in `graph` the owner names, naming the verb. Changes: the two forward
+entries (`processor/graph-query/query.go:32-33`), not `ask`; one requirement added to the graph-query spec, nothing
+reversed; the key's default is the owner's (on keeps every composition as it is; off makes the admission explicit
+and breaks SemSource's and the smoke configs, a migration note). Two packages, so its own PR, issue and change, before
+task 3.1. **Q-B (recommended).** Keep today's refusal for alpha.3 and file C as the issue's shape. PR D stays one
+package; the plan line is met by what the proof covers: the graph-only interfaces are proven, and the NL verb is shown
+refused, never answered empty. Cost: a caller retries a word question that cannot succeed until C lands.
 
 ## D6. ADRs, issues, order, size
 
@@ -127,8 +137,10 @@ ADR-071 (`:13-14`, the scope is now sent), ADR-084 (`:16-17`); ledger `pkg/fusio
 example becomes a prefix resolve, since fusionnats lists a poisoned seed instead. Issues: none retired. #195 stays
 (other packages; this PR adopts it for fusionnats); #110 stays (item 3; a comment that item 2 is done); #563 stays.
 Filed by this PR, `status:blocked` on it: graph-ingest's prefix read refuses a whole page for one poisoned entity,
-which fusionnats cannot scope (§ 2); under Q-B, also graph-query's no-responder refusal. Ledger: new row
+which fusionnats cannot scope (§ 2); under Q-B, also graph-query's word search with no embedder (shape C). Ledger: new
+row
 `pkg/fusion/fusionnats` (adapt); `graph/readiness` edited; `scripts/cover-check.sh` gains `pkg/fusion/fusionnats`
 (03B list). Migration (`pkg/fusion/MIGRATION.md`): `New` returns an error; no `Status`, no `Close`; poison is listed.
 Pin lines 658 + 1,403; this PR about 450 + 1,500 with the smoke test (hand estimate), under the ~3,000 guide, one
-package plus its proof. Order: no overlapping PR; tag v0.1.0-alpha.3 after merge.
+package plus its proof. Order: no overlapping PR. Under Q-B no other PR; under C, the graph-query PR merges, this
+branch merges `origin/main`, then task 3.1. Tag v0.1.0-alpha.3 after this PR merges.

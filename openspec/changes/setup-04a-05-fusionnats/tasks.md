@@ -33,8 +33,9 @@ after 3.1, and before the archive.
 
 ## 3. Proof and close-out
 
-- [ ] 3.1 No-embedder proof (D5, as the owner answers question 2; under Q-A the graph-query PR has merged and this
-  branch has merged `origin/main`): `TestSmoke_NoEmbedderAnswers` in `internal/smoke`;
+- [ ] 3.1 No-embedder proof (D5, as the owner answers question 2; if the owner picks option C, a hold line naming
+  the graph-query PR and its merge is added to this task when that PR's issue is filed): `TestSmoke_NoEmbedderAnswers`
+  in `internal/smoke`;
   `TestFusionNATSImportsNoEmbedding`
   and its sensitivity case in `internal/harness/contract`. **Review stop.**
 - [ ] 3.2 Readiness leftovers (D4): `Reading.Raw` removed with its tests' assertions; `graph/readiness/watcher.go`
@@ -43,7 +44,7 @@ after 3.1, and before the archive.
   `pkg/fusion/README.md`, `pkg/fusion/MIGRATION.md` (`New` returns an error; no `Status`, no `Close`; a poisoned seed
   is listed); `pkg/fusion/retrieval.go:37`; port notes on ADR-062 (`:17`), ADR-066, ADR-071, ADR-083, ADR-084; ledger
   `pkg/fusion` row and comment (`:4592`, `:4600`, `:4627`, `:4631`) and the ADR-062 row (`:4694`); the prefix-poison
-  issue filed (and under Q-B the graph-query no-responder issue), `status:blocked` on this PR, linked without a closing
+  issue filed (and under Q-B the graph-query issue, shape C), `status:blocked` on this PR, linked without a closing
   keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, stays for item 3).
 - [ ] 3.4 Spec sync and archive as the last content commit; the `composed-stack` Purpose names the no-embedder
   stack beside the four-component one. **Final review.**

@@ -14,8 +14,8 @@ be refused naming `graph.embedding.query.search`, never answered empty. `pkg/fus
 - **WHEN** the stack boots without graph-embedding and the producer publishes the fixed entities
 - **THEN** the three components are healthy, `GRAPH_STATUS` holds no `graph-embedding` key, a symbol lens and a prefix
   lens return the expected nodes, relations and paths, an unknown name is a miss, and an NL lens's `Fuse` returns a
-  refusal naming `graph.embedding.query.search`, of the class and code the owner's answer to question 2 sets
-  (`TestSmoke_NoEmbedderAnswers`)
+  refusal naming `graph.embedding.query.search`, transient `internal` as graph-query's "A refusal reaches the caller
+  intact" requires, unless the owner picks option C, whose PR sets the class and code (`TestSmoke_NoEmbedderAnswers`)
 
 #### Scenario: An embedding import
 

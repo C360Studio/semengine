@@ -20,9 +20,9 @@
 // envelope, so a read needs no NATS round trip. It judges freshness by when each value
 // arrived, never by comparing the producer's clock with its own (ADR-083 Decision 2).
 // Nothing in SemEngine reads a Watcher
-// yet: it is kept for the readers at the SemStreams pin, graph-clustering and fusion's
-// NATS client (pkg/fusion/fusionnats, which change 5's PR D ports and decides whether it
-// still watches). pkg/fusion itself reads no status (ADR-109 D1).
+// yet: it is kept for its reader at the SemStreams pin, graph-clustering. Fusion reads
+// no status (ADR-109 D1): pkg/fusion/fusionnats sees readiness as index_not_ready on
+// each reply.
 //
 // The key names live here, for producers and readers both, so the two cannot drift
 // onto different names. The envelope type stays in graph, so a reader of GRAPH_STATUS
@@ -113,11 +113,6 @@ func freshnessWindow(heartbeat time.Duration) time.Duration {
 type Reading struct {
 	// Status is the last envelope decoded from the key.
 	Status graph.IndexStatusResponse
-	// Raw is the untouched wire value the Status field was decoded from, for a caller
-	// that decodes into its OWN struct with the same fields. Decoding the bytes again
-	// keeps every field; copying fields across by hand can drop one, and a dropped
-	// IndexedRevision or Lag reads as caught up. Nil when !Known.
-	Raw []byte
 	// Fresh reports that the held envelope arrived within three
 	// heartbeats, was not already older than that when it arrived, and is still the
 	// key's current value (no undecodable value has replaced it). False means
@@ -149,7 +144,6 @@ type Watcher struct {
 
 	mu          sync.Mutex
 	status      graph.IndexStatusResponse
-	raw         []byte
 	lastArrival time.Time
 	known       bool
 	// revoked marks a held envelope Read must never report fresh, whatever its
@@ -233,7 +227,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 func (w *Watcher) Read() Reading {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	r := Reading{Status: w.status, Raw: w.raw, Known: w.known, Err: w.lastErr}
+	r := Reading{Status: w.status, Known: w.known, Err: w.lastErr}
 	if !w.known {
 		return r
 	}
@@ -315,7 +309,6 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 	if natsclient.IsKVTombstone(entry.Operation()) {
 		w.mu.Lock()
 		w.known = false
-		w.raw = nil
 		w.revoked = false
 		w.lastErr = fmt.Errorf("readiness: status key %s/%s deleted", w.bucket, w.key)
 		w.mu.Unlock()
@@ -371,7 +364,6 @@ func (w *Watcher) apply(entry jetstream.KeyValueEntry) {
 
 	w.mu.Lock()
 	w.status = status
-	w.raw = entry.Value()
 	w.lastArrival = arrival
 	w.known = true
 	w.revoked = staleOnArrival

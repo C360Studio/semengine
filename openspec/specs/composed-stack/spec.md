@@ -4,7 +4,9 @@
 The tier-0 graph stack (graph-ingest, graph-index, graph-embedding and graph-query) boots from one JSON configuration
 through the real startup path, answers fixed questions through the paths a consumer uses, and keeps those answers
 across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and a quick NATS restart
-(about 0.2 s down) under the running stack. A longer outage is not yet covered (#574). The tests live in `internal/smoke`.
+(about 0.2 s down) under the running stack. A second, three-component stack without graph-embedding (the no-embedder
+stack) answers symbol and prefix fusion questions and refuses natural-language ones, naming the embedding search
+subject. A longer outage is not yet covered (#574). The tests live in `internal/smoke`.
 
 ## Requirements
 
@@ -76,3 +78,23 @@ components by name, each healthy (graph-embedding's `embedding worker watch lost
   answers that include them, no envelope reports a lost feed or `reset_required`, and `/components/health` lists
   graph-ingest, graph-index, graph-embedding and graph-query, a total of 4, each healthy
   (`TestSmoke_BrokerRestartUnderRunningStack`)
+
+### Requirement: The graph stack answers fusion without an embedder
+
+graph-ingest, graph-index and graph-query SHALL start from one configuration with no graph-embedding, and
+`fusion.Engine` over `fusionnats` SHALL answer symbol and prefix questions from them. A natural-language question SHALL
+be refused naming `graph.embedding.query.search`, never answered empty. `pkg/fusion/fusionnats` SHALL import neither
+`graph/embedding`, `processor/graph-embedding` nor `graph/readiness`, directly or through a package it imports.
+
+#### Scenario: No embedder
+
+- **WHEN** the stack boots without graph-embedding and the producer publishes the fixed entities
+- **THEN** the three components are healthy, `GRAPH_STATUS` holds no `graph-embedding` key, a symbol lens and a prefix
+  lens return the expected nodes, relations and paths, an unknown name is a miss, and an NL lens's `Fuse` returns a
+  refusal naming `graph.embedding.query.search`, transient `internal` as graph-query's "A refusal reaches the caller
+  intact" requires (`TestSmoke_NoEmbedderAnswers`)
+
+#### Scenario: An embedding import
+
+- **WHEN** a package `fusionnats` imports reaches `graph/embedding`
+- **THEN** `TestFusionNATSImportsNoEmbedding` fails naming the import path

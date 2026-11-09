@@ -224,6 +224,10 @@ func TestEndedContextReturnsError(t *testing.T) {
 		"entities replies index_not_ready": {want: fusion.WantBody, setup: func(g *fakeGraph, cancel context.CancelFunc) {
 			g.entitiesHook = func() error { cancel(); return indexNotReady() }
 		}},
+		"entities answers every seed unhydrated": {want: fusion.WantBody, setup: func(g *fakeGraph, cancel context.CancelFunc) {
+			g.entities = map[string]*fusion.Entity{}
+			g.entitiesHook = func() error { cancel(); return nil }
+		}},
 		"relation target replies fatal": {want: fusion.WantRelations, setup: func(g *fakeGraph, cancel context.CancelFunc) {
 			g.out = edges
 			g.entityHook = func(string) error { cancel(); return resetRequired() }

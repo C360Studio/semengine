@@ -13,16 +13,19 @@
 > - Of the records named here, ADR-066, ADR-083 and ADR-085 are ported with this one. ADR-081 is ported with
 >   `pkg/graphview`. ADR-082 is not yet ported.
 > - Of the code named here, `graph` (with `graph/mutation_responses.go`) and `processor/graph-ingest` were ported in
->   change 2 (PR #93) and `processor/graph-index` in change 4 (PR #414). `pkg/fusion` is ported (change 5, PR C) and
->   its `fusionnats` client is change 5's PR D. `graph/query`'s client was retired before the pin and is not carried.
->   File paths and line numbers in the text are those at that commit.
-> - Fusion's gate is not carried (owner ruling 4, PR #550 comment 6716972354; ADR-109 D1). The bullet "Fusion's top
->   gate defers on `!Ready`" (`pkg/fusion/engine_lens.go:87`) describes the pin. `Engine.Fuse` in this tree reads no
->   status and has no readiness gate: it defers only when a read replies `index_not_ready`, with `defer_reason`
+>   change 2 (PR #93) and `processor/graph-index` in change 4 (PR #414). `pkg/fusion` is ported (change 5, PR C), and
+>   its NATS client `pkg/fusion/fusionnats` in PR D; its `Entities` reconciles each batch reply against the requested
+>   IDs, as D6 asks and as the pin's client already did. `graph/query`'s client was retired before the pin and is not
+>   carried. File paths and line numbers in the text are those at that commit.
+> - Fusion's gate is not carried (owner ruling 4, PR #550 comment 6716972354; ADR-109 D1). The bullet "Fusion's top gate
+>   defers on `!Ready`" (`pkg/fusion/engine_lens.go:87`) describes the pin. `Engine.Fuse` in this tree reads no status
+>   and has no readiness gate: it defers only when a read replies `index_not_ready`, with `defer_reason`
 >   `index_not_ready` (or `all_seeds_unhydrated` when seeds resolved and none could be read). Decision 7's hard stop
->   reaches fusion through the reply: a fatal error on a seed read, such as `graph_state_reset_required`, is returned
->   by `Fuse`, where the pin deferred it. D3 (no absence claim from readiness) and D6 (an omission is reported) are
->   kept: `misses` and `unhydrated` are separate, and every cap or skipped read is declared on the response.
+>   reaches fusion through the reply: a fatal error on a seed read, such as `graph_state_reset_required`, is returned by
+>   `Fuse`, where the pin deferred it. One exception comes from `fusionnats`: when graph-ingest refuses one seed's
+>   stored value with that code (a *poisoned* seed), the client lists that seed in `unhydrated` with reason `error` and
+>   the answer goes on (ADR-109 D1). D3 (no absence claim from readiness) and D6 (an omission is reported) are kept:
+>   `misses` and `unhydrated` are separate, and every cap or skipped read is declared on the response.
 
 ## Status
 

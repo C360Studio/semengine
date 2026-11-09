@@ -5,7 +5,7 @@ to SemEngine's. It says what you change at your cutover and what you can leave a
 that gives a better result (owner, 2026-11-02). Nothing here was run against your code: it comes from reading the
 SemEngine package and the SemStreams pin `8b99efe9`. Your call sites at SemSource `8737c7ea` are
 `processor/code-context/component.go` (`NewEngine` with `WithSignals` and `WithMetrics`, `NewBodyResolver`,
-`MapStoreResolver`), `processor/code-context/exact_seed.go` (a `RetrievalClient` wrapper),
+`MapStoreResolver`, `fusionnats.New`), `processor/code-context/exact_seed.go` (a `RetrievalClient` wrapper),
 `source/fusion/fusiontest/memgraph.go` (a `RetrievalClient`), and the test doubles in
 `processor/code-context/http_error_test.go`, `processor/code-context/scope_test.go` and
 `internal/governance/go_callgraph_impact_integration_test.go`.
@@ -40,6 +40,22 @@ Each of these is a compile error. Fix them first.
   semantic search copies the reply's `unreadable_records` and `failed_records` into the two counts; any other
   resolve leaves them 0. A wrapper such as `exact_seed.go` returns the inner client's `Resolution` unchanged, never a
   rebuilt one, or the two counts are lost.
+- **`fusionnats.New` returns an error, and the client has no `Status` and no `Close`.** It was
+  `fusionnats.New(nats, timeout) *Client`, which accepted a nil client and bound a readiness watch on its first
+  `Status` call. It is now `New(requester, timeout) (*Client, error)`: a nil requester and a negative timeout are
+  refused. A zero timeout is passed to the requester, which for `*natsclient.Client` means its
+  `DefaultRequestTimeout` (5 s, the pin's own default). The client starts nothing and watches no key, so there is
+  nothing to close. *Do:*
+
+  ```go
+  graph, err := fusionnats.New(deps.NATSClient, 0)
+  if err != nil {
+      return err
+  }
+  ```
+
+  and delete any `Status` call (`internal/governance/fusion_gateway_integration_test.go` has one). SemSource calls no
+  `Close`.
 - **`fusionvocab.New` takes the ontology's ancestor function.** `fusionvocab.New()` imported the BFO/CCO hierarchy; the
   hierarchy now lives in semvocab, which depends on SemEngine, so SemEngine cannot import it. *Do:* import
   semvocab's `catalog/cco` yourself (code-context already does) and call `fusionvocab.New(cco.Parents)`. The score is
@@ -63,9 +79,16 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   `graph_state_reset_required` from `Resolve` or `Entities` is returned by `Fuse` as the error and no response. The
   same fatal error from a read after the seeds (relations, a relation target, paths, impact, graph) does not fail the
   call: that read is skipped and the answer is labelled `relations_truncated`, `paths_truncated`, `impact.truncated`
-  or `graph.truncated`. The reason: graph-ingest refuses a poisoned entity with that same fatal error, and a reply
-  cannot tell it from a reset. One poisoned seed therefore fails the whole answer, because graph-ingest refuses the
-  whole batch. *Do:* handle the `Fuse` error in code-context's error path; do not parse its text.
+  or `graph.truncated`. The reason: graph-ingest refuses a *poisoned* entity (one whose stored value it refuses to
+  read) with that same fatal error, and a reply cannot tell it from a reset. *Do:* handle the `Fuse` error in
+  code-context's error path; do not parse its text.
+- **A poisoned seed is listed, not fatal, over `fusionnats`.** graph-ingest refuses the whole batch when one entity in
+  it is poisoned. `fusionnats.Client.Entities` then reads each requested ID alone: the poisoned seed is listed in
+  `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned the response is `deferred`
+  with `all_seeds_unhydrated`. A seed not found when read alone is listed `not_found`; any other error from those
+  reads, including an ended context, still fails the call. A `prefix`
+  resolve whose page holds a poisoned entity still fails the call (#578). *Do:* read `unhydrated` on an
+  answered response, not only on a deferred one.
 - **A relations read that replies `index_not_ready` still defers the whole response**, nodes already built included, as
   at the pin. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.
 - **A node's refs are listed by predicate, then target.** Every edge list is sorted and de-duplicated before the cap
@@ -102,5 +125,8 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 
 ## Still open
 
-- The NATS `RetrievalClient` (`fusionnats`) is not ported yet; a deployment that needs one waits for it. How it
-  handles a fatal error from the batch seed read is decided there.
+- A word question (`nl` lens) on a stack with no graph-embedding fails with a transient `internal` refusal naming
+  `graph.embedding.query.search`, so a caller that retries transient errors retries it without success. Issue #579
+  asks graph-query to refuse it outright when the composition offers no embedder. Symbol and prefix lenses answer on
+  such a stack.
+- A `prefix` resolve whose page holds a poisoned entity fails the call (#578).

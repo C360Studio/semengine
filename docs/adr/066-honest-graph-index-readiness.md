@@ -10,8 +10,8 @@
 > - Issue and pull request numbers in the text below (`#397`, `#420`, `#430`, `#431`, `#435`, `#524`, `#614`, `#628`,
 >   `gh#431`, `semstreams#431`) and release names (`beta.125`, `beta.127`, `beta.128`) are SemStreams' or a sister
 >   repository's, not SemEngine's.
-> - Of the records and specs named here, ADR-083 and ADR-084 are ported with this one. ADR-062, ADR-065 and the
->   `graph-index-readiness` spec are not yet ported.
+> - Of the records and specs named here, ADR-083 and ADR-084 are ported with this one, and ADR-062 with `pkg/fusion`.
+>   ADR-065 and the `graph-index-readiness` spec are not yet ported.
 > - Of the code named here, `natsclient` is ported, with `BucketLastSeq` and `CreateKeyValueBucket`; `graph` and
 >   `processor/graph-ingest` are ported (change 2, PR #93; `graph.ComputeIndexStatus` returns with graph-index); and
 >   `pkg/revlag` is ported as `internal/revlag` (its admission-ledger row is `pkg/revlag`). File paths and line numbers
@@ -25,7 +25,9 @@
 >   `Ready` and returns empty while the index builds, describe the pin. `pkg/fusion` in this tree has no
 >   `IndexStatus` and asks for no status: a seed read or a relations neighbour read that replies `index_not_ready`
 >   makes the response `deferred` (any other walk read's reply is skipped and labelled), and a read that answers
->   serves, whatever `ready` says. `Ready` stays revision coverage, information and not a gate.
+>   serves, whatever `ready` says. `Ready` stays revision coverage, information and not a gate. Step 3 of
+>   "Migration path" (the fusionnats client fix) does not apply either: `pkg/fusion/fusionnats` reads no status, so it
+>   decodes no readiness fields.
 
 ## Status
 

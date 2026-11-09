@@ -11,7 +11,7 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
 
 ## 2. Package
 
-- [ ] 2.1 Contract and readiness (D1, D2, D8): port `contract.go`, `lens.go`, `retrieval.go`, `rank_signals.go`,
+- [x] 2.1 Contract and readiness (D1, D2, D8): port `contract.go`, `lens.go`, `retrieval.go`, `rank_signals.go`,
   `engine_lens.go`, `engine_facets.go`, `engine_graph.go`, `doc.go` without the status read, `IndexStatus`,
   `IndexState`, `ErrReadinessUnknown`, `Response.Index`, `ViewRevision` and the `Fuse` path; D1's error table;
   `ContractVersion` "2"; `UnhydratedReason`'s doc stops claiming it mirrors `graph.MissingReason` (F19); the pin's lens,
@@ -21,6 +21,7 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
   `TestGraphProjectionRoundTrip`, `TestRankIsStablePermutation` (generated, seed recorded: the output is the input's
   multiset; equal-score groups are built by construction, entities sharing one name that matches no query and no
   signals, so the expected order is resolve order; the pin's signal tests stay as examples).
+  Done in `bb3556d3809b2deac0cbd2e5b2d1693fe272c79c`; choices, seed and mutation checks in `notes/2.1.md`.
 - [ ] 2.2 Labels and counts (D3 under R1, D4): `Resolution`, `Response.UnreadableRecords` and `FailedRecords`, edges
   sorted before caps, `Node.RelationsTruncated`, `Response.PathsTruncated`, the path stop, impact and graph
   truncation. Check: `TestNLAnswerCarriesSearchCounts`, `TestNLMissCarriesSearchCounts`, `TestSymbolAnswerOmitsCounts`,

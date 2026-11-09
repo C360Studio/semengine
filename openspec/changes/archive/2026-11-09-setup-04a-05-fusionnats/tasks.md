@@ -50,5 +50,5 @@ after 3.1, and before the archive.
   issue (#578) and the graph-query issue (#579, shape C), both filed `status:blocked`, linked from this PR without a
   closing keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, stays for item 3).
   Done: ledger, coverage, docs and port notes in this task's commit; coverage and corrections in `notes/3.3.md`.
-- [ ] 3.4 Spec sync and archive as the last content commit; the `composed-stack` Purpose names the no-embedder
+- [x] 3.4 Spec sync and archive as the last content commit; the `composed-stack` Purpose names the no-embedder
   stack beside the four-component one. **Final review.**

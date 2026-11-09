@@ -112,8 +112,9 @@ A *poisoned* entity is one whose stored value graph-ingest refuses to read (code
 graph-ingest refuses a whole batch when one entity in it is poisoned, so on that refusal `Entities` reads each
 distinct requested ID with its own `entity` request: a poisoned seed is listed in `unhydrated` with reason `error`, the
 others hydrate, and the answer goes on. If every seed is poisoned the response is `deferred` with
-`all_seeds_unhydrated`. This costs one request per distinct ID, only while poison is present. Any other error from
-those reads fails the call, and so does an ended context, checked before each read and after each refused one.
+`all_seeds_unhydrated`. This costs one request per distinct ID, only while poison is present. A seed not found
+when read alone is listed with reason `not_found`. Any other error from those reads, including an ended context
+(checked before each read and after each refused one), fails the call.
 `Entities` refuses a nil context.
 
 Two gaps remain, each a filed issue:

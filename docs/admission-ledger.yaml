@@ -4640,7 +4640,7 @@
     (unserializable object skipped), F16 (Names error swallowed for suggestions), F17 (ontology class predicate in
     the engine), F21 (no not_configured body reason), F22 (deterministic provenance on a deferral), F23 (relations
     defer, other facets truncate, on index_not_ready from a walk). Issues: #110 stays open for item 3 (item 2 done
-    here); SemStreams #603 (impact names) stays deferred
+    in PR C, Reading.Raw removed in PR D); SemStreams #603 (impact names) stays deferred
   proving_tests: >-
     pkg/fusion: engine_lens_readiness_test.go (TestDeferredOnIndexNotReady, TestFatalReplyReturnsError,
     TestFatalWalkReadSkipped, TestEndedContextReturnsError, TestEndedContextDuringBodyRead,
@@ -4761,7 +4761,8 @@
     (graph/exact_entity.go:83-101: an entity present, a non-zero kv_revision, the stored-value rule), because that
     reader's subject is graph-ingest's graph.ingest.query.entity row and ADR-062 routes fusionnats through graph-query's
     graph.query.* verbs; graph.UnmarshalEntityState, the decoder both call, is shared. A hydrated per-ID reply that
-    arrives after the context ended is kept, as a completed read. Filed by this change, status:blocked, linked
+    arrives after the context ended is kept only when no further request follows; the next request's check returns
+    the ended context. Filed by this change, status:blocked, linked
     without a closing keyword: #578 (graph-ingest's prefix read refuses a whole page for one poisoned entity, so a
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
     questions outright when the composition offers no embedder; until then a word question on such a stack is a

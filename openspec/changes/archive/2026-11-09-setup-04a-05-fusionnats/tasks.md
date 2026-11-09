@@ -43,12 +43,16 @@ after 3.1, and before the archive.
   Done: commit 2b19ff8a; second composition, waits and mutants in `notes/3.1.md`.
 - [x] 3.2 Readiness leftovers (D4): `Reading.Raw` removed with its tests' assertions; `graph/readiness/watcher.go`
   package doc (the fusionnats sentence goes, graph-clustering stays); ledger `graph/readiness` known_risks.
+  Done: d90c885.
 - [x] 3.3 Records (D6): ledger row `pkg/fusion/fusionnats`; `scripts/cover-check.sh` gains `pkg/fusion/fusionnats`;
   `pkg/fusion/README.md`, `pkg/fusion/MIGRATION.md` (`New` returns an error; no `Status`, no `Close`; a poisoned seed
   is listed); `pkg/fusion/retrieval.go:37`; port notes on ADR-062 (`:17`), ADR-066, ADR-071, ADR-083, ADR-084; ledger
   `pkg/fusion` row and comment (`:4592`, `:4600`, `:4627`, `:4631`) and the ADR-062 row (`:4694`); the prefix-poison
   issue (#578) and the graph-query issue (#579, shape C), both filed `status:blocked`, linked from this PR without a
-  closing keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, stays for item 3).
-  Done: ledger, coverage, docs and port notes in this task's commit; coverage and corrections in `notes/3.3.md`.
+  closing keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, `Reading.Raw` removed in
+  PR D; stays for item 3).
+  Done: 8ca4cae, 57bddd4; ledger, coverage, docs and port notes in this task's commit; coverage and corrections
+  in `notes/3.3.md`.
 - [x] 3.4 Spec sync and archive as the last content commit; the `composed-stack` Purpose names the no-embedder
   stack beside the four-component one. **Final review.**
+  Done: 5a1d7cc plus the review-fix commit that follows it; see `notes/3.4.md`.

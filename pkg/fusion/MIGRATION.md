@@ -85,8 +85,9 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **A poisoned seed is listed, not fatal, over `fusionnats`.** graph-ingest refuses the whole batch when one entity in
   it is poisoned. `fusionnats.Client.Entities` then reads each requested ID alone: the poisoned seed is listed in
   `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned the response is `deferred`
-  with `all_seeds_unhydrated`. Any other error from those reads, or an ended context, still fails the call. A
-  `prefix` resolve whose page holds a poisoned entity still fails the call (#578). *Do:* read `unhydrated` on an
+  with `all_seeds_unhydrated`. A seed not found when read alone is listed `not_found`; any other error from those
+  reads, including an ended context, still fails the call. A `prefix`
+  resolve whose page holds a poisoned entity still fails the call (#578). *Do:* read `unhydrated` on an
   answered response, not only on a deferred one.
 - **A relations read that replies `index_not_ready` still defers the whole response**, nodes already built included, as
   at the pin. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.

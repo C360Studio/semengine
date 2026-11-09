@@ -128,17 +128,23 @@ start no `entity` request.
 
 ## MODIFIED Requirements
 
-### Requirement: A fatal seed read or an ended context fails the call
+### Requirement: A fatal seed read fails the call
 
 When `Resolve` or `Entities` returns an error `errs.IsFatal` reports, such as `graph_state_reset_required` from a
-prefix resolve, or when the request's context has ended during any read, `Fuse` SHALL return that error and no
-response. `Fuse` SHALL refuse a nil context. A poisoned seed does not reach `Fuse` as an error from `fusionnats`,
-which lists it as unhydrated (requirement "A poisoned seed is unhydrated, not a failed read").
+prefix resolve, `Fuse` SHALL return that error and no response. `Fuse` SHALL refuse a nil context. A poisoned seed
+does not reach `Fuse` as an error from `fusionnats`, which lists it as unhydrated (requirement "A poisoned seed is
+unhydrated, not a failed read").
 
 #### Scenario: A reset while hydrating seeds
 
 - **WHEN** `Resolve` answers and `Entities` returns `graph_state_reset_required`
 - **THEN** `Fuse` returns that error (`TestFatalReplyReturnsError`)
+
+### Requirement: A failed read under an ended context returns the context's error
+
+When a read fails, or every resolved seed is unhydrated, and the request's context has ended, `Fuse` SHALL return the
+context's error and no response. A read that completed before the context ended is kept: the engine checks the
+context only after a failed read, not after a successful one.
 
 #### Scenario: The caller gives up
 

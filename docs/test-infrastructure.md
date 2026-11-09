@@ -119,6 +119,27 @@ connection from an earlier test is still open. Look for the first failure.
   itself.
 - Two runs at the same time, from two worktrees, are fine. Nothing waits for another run.
 
+## The whole-stack smoke test
+
+`internal/smoke` is the one test that starts the graph components the way a product's own `main` would. One JSON
+configuration starts graph-ingest, graph-index, graph-embedding and graph-query together, in a child process, through
+the real startup path: `config.Manager`, then `ServiceManager`, then `ComponentManager`. The test then publishes a
+fixed set of entities and checks the answers a consumer reads: the `graph.query.*` verbs (search among them), the
+readiness keys in `GRAPH_STATUS`, component health over HTTP, and the embedding records.
+
+Four tests restart something, and after each the stack must give the same answers and apply new writes:
+
+1. stop the stack cleanly and start it again;
+2. kill the stack while it is ingesting, then start it again;
+3. stop the stack, restart the NATS server, start the stack;
+4. restart the NATS server while the stack keeps running.
+
+The NATS restarts are quick: the server is down for about 0.2 s. The tests do not prove the stack survives a longer
+outage; that is issue #574.
+
+Run it with `task test:integration -- ./internal/smoke/`. It takes about two minutes, most of it the stall after
+each NATS restart while the components' watches reconnect.
+
 ## Sharing with other runs and other repositories
 
 A run shares the Docker daemon with every other run and repository on the machine, and coordinates with none of them.

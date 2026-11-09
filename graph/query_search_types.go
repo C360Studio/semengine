@@ -50,7 +50,8 @@ type SimilarRequest struct {
 // SemanticData is the reply to a text search over the embeddings. EmbedderType names the embedder that
 // answered ("bm25" or "http"). UnreadableRecords is the number of EMBEDDING_INDEX records the
 // responder could not decode, and FailedRecords the number of entities whose latest embedding failed;
-// neither entity can be a hit, so a 0 in both says no entity was left out.
+// neither entity can be a hit. A 0 in both says no record was left out for either reason; an entity whose
+// embedding is still pending is left out too and counted in neither, so the counts never prove completeness.
 type SemanticData struct {
 	Results           []SimilarityHit `json:"results"`
 	EmbedderType      string          `json:"embedder_type,omitempty"`

@@ -19,12 +19,13 @@
 // Ownership: the registrant (the storage component that owns the store's
 // lifecycle) owns the store. A store that has a Close, as some future backend may,
 // is closed by its registrant; objectstore.Store has none. Borrowers
-// (graph-embedding, fusion) MUST NOT close a resolved store.
+// (graph-embedding, pkg/fusion's BodyResolver) MUST NOT close a resolved store.
 //
 // The Registry keys on storage.StreamableStore (the superset — objectstore.Store
-// implements it) and also exposes Store(), so it satisfies fusion's
-// StoreResolver (Store(instance) (storage.Store, bool)) structurally while
-// serving graph-embedding's streaming Open() — one registry, both consumers.
+// implements it) and also exposes Store(), so it satisfies pkg/fusion.StoreResolver
+// (Store(instance) (storage.Store, bool)) structurally, checked at compile time in
+// pkg/fusion/hydrate_test.go, while serving graph-embedding's streaming Open() — one
+// registry, both consumers.
 // Kept a leaf: imports only storage.
 package storeregistry
 
@@ -91,9 +92,10 @@ func (r *Registry) Streamable(instance string) (storage.StreamableStore, bool) {
 }
 
 // Store returns the store registered under instance as a storage.Store (Get),
-// and whether one exists. This method makes *Registry satisfy fusion's
-// StoreResolver interface structurally (no fusion import here — keeps this a
-// leaf). Same lazy, no-cache contract as Streamable.
+// and whether one exists. This method makes *Registry satisfy
+// pkg/fusion.StoreResolver structurally (no fusion import here — keeps this a
+// leaf; pkg/fusion/hydrate_test.go checks it). Same lazy, no-cache contract as
+// Streamable.
 func (r *Registry) Store(instance string) (storage.Store, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()

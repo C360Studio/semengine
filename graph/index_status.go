@@ -1,8 +1,9 @@
 package graph
 
 // IndexStatusResponse is the wire shape of the readiness envelope (SemStreams gh#397,
-// enriched by ADR-066, distributed as GRAPH_STATUS KV state by ADR-083): the
-// deterministic-fusion honesty envelope's readiness signal.
+// enriched by ADR-066, distributed as GRAPH_STATUS KV state by ADR-083). At the
+// SemStreams pin pkg/fusion read it before every answer; here fusion reads not-ready
+// from each query reply instead and decodes no envelope (ADR-109 D1).
 //
 // Ready reports COVERAGE: every committed ENTITY_STATES revision <= the query-time
 // target has been applied (revision-lag, ADR-066), not merely "indexing started" (the
@@ -140,8 +141,8 @@ type IndexStatusResponse struct {
 // know, and the readiness gate defers on it.
 type IndexState string
 
-// Index readiness states. The values match pkg/fusion.IndexState at the
-// SemStreams pin.
+// Index readiness states. pkg/fusion's copy of them at the SemStreams pin
+// (IndexState) is not carried: fusion reads no envelope (ADR-109 D1).
 const (
 	IndexStateBuilding      IndexState = "building"
 	IndexStateReady         IndexState = "ready"

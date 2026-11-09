@@ -62,7 +62,8 @@ func run(m *testing.M) int {
 
 // stackConfig is the one configuration the stack boots from (design D2), as a product would write
 // it. The child fills the three placeholders from its environment: the NATS URL and the two ports
-// the test picked (design D4). Every component takes its defaults; graph-embedding runs BM25 only.
+// the test picked (design D4), and graph-ingest's configuration, {} (its defaults) unless the test
+// passes one. Every other component takes its defaults; graph-embedding runs BM25 only.
 const stackConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -76,7 +77,7 @@ const stackConfig = `{
       "discard": "old"}
   },
   "components": {
-    "graph-ingest": {"type": "processor", "name": "graph-ingest", "enabled": true, "config": {}},
+    "graph-ingest": {"type": "processor", "name": "graph-ingest", "enabled": true, "config": {{ingest_config}}},
     "graph-index": {"type": "processor", "name": "graph-index", "enabled": true, "config": {}},
     "graph-embedding": {"type": "processor", "name": "graph-embedding", "enabled": true,
       "config": {"embedder_type": "bm25"}},
@@ -94,6 +95,11 @@ const (
 	envMetricsPort = "SMOKE_METRICS_PORT"
 	// envReady is the file the child creates once StartAll returned.
 	envReady = "SMOKE_READY"
+	// envIngestConfig is graph-ingest's configuration, JSON; unset means its defaults.
+	envIngestConfig = "SMOKE_INGEST_CONFIG"
+	// envHold names, by its last two ID positions, the one entity whose application the child
+	// holds for good (design D6, case 2); unset holds nothing.
+	envHold = "SMOKE_HOLD"
 )
 
 // stackHelper is the prochost helper that runs the composition root.
@@ -157,7 +163,11 @@ func TestHelperProcess(t *testing.T) {
 func runStack(ctx context.Context) (result error) {
 	terminated := make(chan os.Signal, 1)
 	signal.Notify(terminated, syscall.SIGTERM)
-	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	hold := &holdOnIngested{inner: slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelInfo})}
+	if local := os.Getenv(envHold); local != "" {
+		hold.suffix = ".fleet.ops." + local
+	}
+	logger := slog.New(hold)
 	stop := func(what string, fn func(context.Context) error) {
 		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopBudget)
 		defer cancel()
@@ -166,10 +176,15 @@ func runStack(ctx context.Context) (result error) {
 		}
 	}
 
+	ingestConfig := os.Getenv(envIngestConfig)
+	if ingestConfig == "" {
+		ingestConfig = "{}"
+	}
 	raw := strings.NewReplacer(
 		"{{nats_url}}", os.Getenv(envNATSURL),
 		"{{http_port}}", os.Getenv(envHTTPPort),
 		"{{metrics_port}}", os.Getenv(envMetricsPort),
+		"{{ingest_config}}", ingestConfig,
 	).Replace(stackConfig)
 	cfg, err := config.NewLoader().LoadFromBytes([]byte(raw))
 	if err != nil {
@@ -269,6 +284,51 @@ func runStack(ctx context.Context) (result error) {
 	return nil
 }
 
+// holdOnIngested is the child's log handler: it passes every record to inner, except that
+// graph-ingest's "Entity ingested" record for the entity whose ID ends in suffix, which
+// ingestEntity logs after the entity's write and before its applied-sequence record and its
+// acknowledgement (processor/graph-ingest/ingest.go, keyed_ingest.go), never returns. The lane
+// applying that input stays there until the test kills the process: the hold of design D6, case 2,
+// as settlement_integration_test.go's pauseOnRecord, never released. The suffix is the ID's fixed
+// positions 3 to 6; positions 1 and 2 are the deployment's, which config.Manager establishes after
+// the logger exists. An empty suffix holds nothing.
+type holdOnIngested struct {
+	inner  slog.Handler
+	suffix string
+}
+
+// heldRecord is graph-ingest's record the hold waits on.
+const heldRecord = "Entity ingested"
+
+// forever is never closed: the held lane receives from it until the process is killed.
+var forever = make(chan struct{})
+
+// Enabled lets every record through to Handle, so the hold sees the Debug record inner drops.
+func (h *holdOnIngested) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *holdOnIngested) Handle(ctx context.Context, record slog.Record) error {
+	if h.suffix != "" && record.Message == heldRecord {
+		record.Attrs(func(attr slog.Attr) bool {
+			if attr.Key == "entity_id" && strings.HasSuffix(attr.Value.String(), h.suffix) {
+				<-forever
+			}
+			return true
+		})
+	}
+	if !h.inner.Enabled(ctx, record.Level) {
+		return nil
+	}
+	return h.inner.Handle(ctx, record)
+}
+
+func (h *holdOnIngested) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &holdOnIngested{inner: h.inner.WithAttrs(attrs), suffix: h.suffix}
+}
+
+func (h *holdOnIngested) WithGroup(name string) slog.Handler {
+	return &holdOnIngested{inner: h.inner.WithGroup(name), suffix: h.suffix}
+}
+
 // stack is one running child, the ports it serves HTTP and metrics on and the platform ID it
 // reported.
 type stack struct {
@@ -298,34 +358,37 @@ func freePort(t *testing.T) int {
 
 // startStack boots the stack in a child against url, on two ports it picks, and returns once
 // StartAll has returned in it.
-func startStack(t *testing.T, o observer, url string) stack {
+func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
-	return startStackOn(t, o, url, freePort(t), freePort(t))
+	return startStackOn(t, o, url, freePort(t), freePort(t), env...)
 }
 
 // restartStack boots a new child against url from the configuration previous booted from, its
 // ports included. The configuration bucket the first boot wrote holds those ports, and a later
 // boot serves on them whatever the file says ("Synced configuration from KV"), so the same
-// configuration is the honest restart. previous must have exited.
-func restartStack(t *testing.T, o observer, url string, previous stack) stack {
+// configuration is the honest restart. previous must have exited. env is passed to the child as
+// startStack passes it.
+func restartStack(t *testing.T, o observer, url string, previous stack, env ...string) stack {
 	t.Helper()
 	if previous.process.Alive() {
 		t.Fatal("restartStack: the previous stack is still running")
 	}
-	return startStackOn(t, o, url, previous.httpPort, previous.metricsPort)
+	return startStackOn(t, o, url, previous.httpPort, previous.metricsPort, env...)
 }
 
-func startStackOn(t *testing.T, o observer, url string, httpPort, metricsPort int) stack {
+// startStackOn boots a child on the two ports; env adds to what the child is passed, as
+// envIngestConfig and envHold.
+func startStackOn(t *testing.T, o observer, url string, httpPort, metricsPort int, env ...string) stack {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
 	// Read before the child exists, so an entry above this revision is the child's own write.
 	before := o.statusRevision(t, readiness.KeyGraphIngest)
-	p, err := prochost.Start(t, stackHelper,
-		envNATSURL+"="+url,
-		envHTTPPort+"="+strconv.Itoa(httpPort),
-		envMetricsPort+"="+strconv.Itoa(metricsPort),
-		envReady+"="+ready,
-	)
+	p, err := prochost.Start(t, stackHelper, append([]string{
+		envNATSURL + "=" + url,
+		envHTTPPort + "=" + strconv.Itoa(httpPort),
+		envMetricsPort + "=" + strconv.Itoa(metricsPort),
+		envReady + "=" + ready,
+	}, env...)...)
 	if err != nil {
 		t.Fatalf("start the stack: %v", err)
 	}
@@ -440,26 +503,32 @@ func (o observer) publish(t *testing.T, e entityInput) uint64 {
 // consumerState is what the broker reports of graph-ingest's durable consumer, in fields a failed
 // wait prints.
 type consumerState struct {
-	AckFloor   uint64
-	AckPending int
+	AckFloor        uint64 // every input up to this stream sequence is acknowledged
+	AckPending      int    // inputs delivered and not yet acknowledged
+	DeliveredStream uint64 // the highest stream sequence delivered
+	Deliveries      uint64 // deliveries made, redeliveries included (the consumer sequence)
+}
+
+// readConsumer reads graph-ingest's durable consumer from the broker.
+func (o observer) readConsumer(ctx context.Context) (consumerState, error) {
+	consumer, err := o.js.Consumer(ctx, "ENTITY", ingestConsumer)
+	if err != nil {
+		return consumerState{}, err
+	}
+	info, err := consumer.Info(ctx)
+	if err != nil {
+		return consumerState{}, err
+	}
+	return consumerState{AckFloor: info.AckFloor.Stream, AckPending: info.NumAckPending,
+		DeliveredStream: info.Delivered.Stream, Deliveries: info.Delivered.Consumer}, nil
 }
 
 // awaitAcknowledged waits until graph-ingest's consumer has acknowledged every input up to seq:
-// graph-ingest's own ordering event for the batch (design D5).
-func (o observer) awaitAcknowledged(t *testing.T, s stack, seq uint64) {
+// graph-ingest's own ordering event for the batch (design D5). It returns what it read last.
+func (o observer) awaitAcknowledged(t *testing.T, s stack, seq uint64) consumerState {
 	t.Helper()
-	await(t, s, fmt.Sprintf("graph-ingest to acknowledge up to sequence %d", seq),
-		func(ctx context.Context) (consumerState, error) {
-			consumer, err := o.js.Consumer(ctx, "ENTITY", ingestConsumer)
-			if err != nil {
-				return consumerState{}, err
-			}
-			info, err := consumer.Info(ctx)
-			if err != nil {
-				return consumerState{}, err
-			}
-			return consumerState{AckFloor: info.AckFloor.Stream, AckPending: info.NumAckPending}, nil
-		}, func(c consumerState) bool { return c.AckFloor >= seq && c.AckPending == 0 })
+	return await(t, s, fmt.Sprintf("graph-ingest to acknowledge up to sequence %d", seq), o.readConsumer,
+		func(c consumerState) bool { return c.AckFloor >= seq && c.AckPending == 0 })
 }
 
 // entityRevision reads the ENTITY_STATES revision: the last sequence of its stream, every write

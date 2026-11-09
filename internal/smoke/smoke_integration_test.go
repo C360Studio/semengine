@@ -4,6 +4,7 @@ package smoke
 
 import (
 	"cmp"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,13 +12,18 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
+	"github.com/nats-io/nats.go/jetstream"
+
+	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/internal/graphmutation"
 	"github.com/c360studio/semengine/pkg/errs"
+	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
 	"github.com/c360studio/semengine/vocabulary"
 )
 
@@ -489,5 +495,156 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	requireComponentsListed(t, readHealth(t, second))
 	checkWritesAfterRestart(t, o, second, f, before)
 	t.Logf("second process, %s: %v", reindexMetric, readReindexCounter(t, second))
+	stopStack(t, second)
+}
+
+// heldDrone is the input case 2 holds: published last, a new entity homed at base4, which had no
+// edge until then, so the index must catch up on an edge the held input brings.
+const heldDrone = "drone.010"
+
+func (f fixture) heldInput() entityInput {
+	return f.named(heldDrone, "Gyrfalcon", f.link(homePredicate, base4))
+}
+
+// killAckWait is graph-ingest's acknowledgement wait in case 2: the broker delivers the held input
+// again this long after the killed process last signalled it, so the new process gets it soon.
+const killAckWait = "2s"
+
+// killIngestConfig is graph-ingest's configuration in case 2: its defaults, with the entity stream
+// port's ack_wait set to killAckWait. A ports block is used as written (graph-ingest's
+// ApplyDefaults), so it is built from DefaultConfig's, never spelled by hand.
+func killIngestConfig(t *testing.T) string {
+	t.Helper()
+	cfg := graphingest.DefaultConfig()
+	set := 0
+	for i, port := range cfg.Ports.Inputs {
+		if stream, ok := port.Config.(component.JetStreamPort); ok {
+			stream.AckWait = killAckWait
+			cfg.Ports.Inputs[i].Config = stream
+			set++
+		}
+	}
+	if set != 1 {
+		t.Fatalf("graph-ingest's default configuration has %d stream ports, want 1", set)
+	}
+	data, err := json.Marshal(cfg)
+	if err != nil {
+		t.Fatalf("marshal graph-ingest's configuration: %v", err)
+	}
+	return string(data)
+}
+
+// appliedRecord reads graph-ingest's applied-sequence record for id on the ENTITY stream, a declared
+// read beside the public paths (design D5). It reports whether the record exists.
+func (o observer) appliedRecord(t *testing.T, id string) bool {
+	t.Helper()
+	kv, err := o.js.KeyValue(t.Context(), graph.BucketGraphIngestAppliedSeq)
+	if err != nil {
+		t.Fatalf("open %s: %v", graph.BucketGraphIngestAppliedSeq, err)
+	}
+	// The key is the entity ID, "/", the stream name (processor/graph-ingest/keyed_ingest.go, guardKey).
+	_, err = kv.Get(t.Context(), id+"/ENTITY")
+	if errors.Is(err, jetstream.ErrKeyNotFound) {
+		return false
+	}
+	if err != nil {
+		t.Fatalf("get %s/%s/ENTITY: %v", graph.BucketGraphIngestAppliedSeq, id, err)
+	}
+	return true
+}
+
+// TestSmoke_KillMidIngestKeepsAcknowledgedWrites holds composed-stack, "Kill mid-ingest" (design D6,
+// case 2): the first process holds graph-ingest on one input, after its entity write and before its
+// applied-sequence record and acknowledgement, and is killed there; a new process boots from the
+// same configuration. Every input the ENTITY stream acknowledged then answers with each statement
+// once, the held input among them, and the index and embedding records catch up, including the
+// writes published after the new process booted.
+func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
+	url := shared.Reset(t)
+	o := newObserver(t, url)
+	ingestConfig := envIngestConfig + "=" + killIngestConfig(t)
+	first := startStack(t, o, url, ingestConfig, envHold+"="+heldDrone)
+	f := fixture{platform: first.platform}
+	requireComponentsListed(t, readHealth(t, first))
+
+	// Each publish below returned the stream's acknowledgement: every one of them must survive.
+	inputs := f.fixedEntities()
+	for _, e := range inputs {
+		o.publish(t, e)
+	}
+	held := f.heldInput()
+	heldSeq := o.publish(t, held)
+
+	// Mid-ingest, shown by three events rather than a time. Lanes are serial per entity and the held
+	// input was published last, so nothing waits behind it: every other input is acknowledged, the
+	// held one is the one pending, and its entity write has landed.
+	entities, err := o.js.KeyValue(t.Context(), graph.BucketEntityStates)
+	if err != nil {
+		t.Fatalf("open %s: %v", graph.BucketEntityStates, err)
+	}
+	type midIngest struct {
+		Consumer   consumerState
+		HeldStored bool
+	}
+	mid := await(t, first, fmt.Sprintf("the held input (sequence %d) written and all before it acknowledged", heldSeq),
+		func(ctx context.Context) (midIngest, error) {
+			consumer, err := o.readConsumer(ctx)
+			if err != nil {
+				return midIngest{}, err
+			}
+			_, err = entities.Get(ctx, held.id)
+			if errors.Is(err, jetstream.ErrKeyNotFound) {
+				return midIngest{Consumer: consumer}, nil
+			}
+			return midIngest{Consumer: consumer, HeldStored: err == nil}, err
+		}, func(m midIngest) bool { return m.HeldStored && m.Consumer.AckFloor >= heldSeq-1 })
+	if mid.Consumer.AckFloor != heldSeq-1 || mid.Consumer.AckPending != 1 || mid.Consumer.DeliveredStream < heldSeq {
+		t.Fatalf("before the kill graph-ingest's consumer reads %+v, want ack floor %d, 1 pending, delivered through %d",
+			mid.Consumer, heldSeq-1, heldSeq)
+	}
+	// The held application must not have written its applied-sequence record. The record of the
+	// input before it is read first, so an absent read cannot pass on a wrong key or bucket.
+	if last := inputs[len(inputs)-1].id; !o.appliedRecord(t, last) {
+		t.Fatalf("%s has no applied-sequence record, though its input is acknowledged", last)
+	}
+	if o.appliedRecord(t, held.id) {
+		t.Fatalf("%s has an applied-sequence record while its application is held", held.id)
+	}
+
+	if !first.process.Alive() {
+		t.Fatal("the first stack exited before the test killed it")
+	}
+	if err := first.process.Kill(); err != nil {
+		t.Fatalf("kill the first stack: %v", err)
+	}
+	status, err := first.process.Wait(t.Context())
+	if err != nil {
+		t.Fatalf("wait for the first stack: %v", err)
+	}
+	if status.Signal != syscall.SIGKILL {
+		t.Fatalf("the first stack ended %+v, want by SIGKILL", status)
+	}
+
+	second := restartStack(t, o, url, first, ingestConfig)
+	if second.platform != first.platform {
+		t.Fatalf("the restarted stack reports platform %q, want the first process's %q", second.platform, first.platform)
+	}
+	requireComponentsListed(t, readHealth(t, second))
+	// The held input comes again after the acknowledgement wait; its acknowledgement follows its
+	// applied-sequence record.
+	redelivered := o.awaitAcknowledged(t, second, heldSeq)
+	if redelivered.Deliveries <= mid.Consumer.Deliveries {
+		t.Fatalf("graph-ingest's consumer made %d deliveries, want more than the %d before the kill",
+			redelivered.Deliveries, mid.Consumer.Deliveries)
+	}
+	if !o.appliedRecord(t, held.id) {
+		t.Fatalf("%s is acknowledged without its applied-sequence record", held.id)
+	}
+	o.awaitIndexed(t, second)
+	requireComponentsHealthy(t, readHealth(t, second))
+	before := wantOf(append(inputs, held)...)
+	checkAnswers(t, o, f, before)
+
+	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
 }

@@ -32,9 +32,10 @@ port, no `t.Parallel`, no `context.WithValue`.
 
 ## 3. Follow-ups and docs
 
-- [ ] 3.1 `docs/test-infrastructure.md` names `internal/smoke` and what it proves.
-- [ ] 3.2 If #558 is still open: a comment on #558 asking it to add `semantic` and `similar` to `checkAnswers`; if it
-  merged first, those checks are in 2.1.
+- [x] 3.1 `docs/test-infrastructure.md` names `internal/smoke` and what it proves ("The whole-stack smoke test").
+- [x] 3.2 #558 merged first (67a8650), so `semantic` and `similar` are in `checkAnswers` and run in every restart
+  case: membership, never scores (BM25's statistics depend on arrival order), after a wait on the vector cache's
+  own answer. Shown to fail: `embedder_type` dropped, and `similar` not excluding its source (`notes/3.2.md`).
 - [x] 3.3 A follow-up issue for the adopter gap: what a product's own `main` must know (inventory, adopter seam),
   ports (H2) among it, and two facts tasks 2.1 and 2.2 found: a producer outside the process must learn the platform
   ID `config.Manager` minted (`notes/2.1.md`), and after the first boot `config.Manager` serves the configuration from

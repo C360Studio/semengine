@@ -5,8 +5,8 @@
 //
 // The stack is graph-ingest, graph-index, graph-embedding (BM25, no provider) and graph-query on one
 // NATS server. The test is the producer, publishing a fixed set of entities on entity.>, and the
-// observer: graph.query.* answers, the GRAPH_STATUS readiness keys, component health over HTTP and
-// the EMBEDDING_INDEX records. Every wait is ordered after the write it checks.
+// observer: graph.query.* answers (semantic and similar among them), the GRAPH_STATUS readiness
+// keys, component health over HTTP and the EMBEDDING_INDEX records. Every wait is ordered after the write it checks.
 //
 // The package holds no production code; everything else is in integration-tagged test files.
 package smoke

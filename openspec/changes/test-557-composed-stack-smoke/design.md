@@ -56,10 +56,10 @@ not only the overall verdict.
 
 About a dozen entities with known IDs, names, an alias, and relationships forming a known path. `checkAnswers(want)`
 is the one oracle, written from the inputs, never from a reply: `entity` (each statement once), `relationships`,
-`pathSearch` (the known path), `summary`, `entityByAlias`; one `EMBEDDING_INDEX` record per entity with status
-generated. `localSearch` cannot answer in this stack (no production code writes community records, inventory §2):
-its fixed answer is the refusal `index_not_ready` naming `COMMUNITY_INDEX`. `TestSmoke_OneConfigAnswers` boots,
-checks, edits one entity, deletes one, and checks again.
+`pathSearch` (the known path), `summary`, `entityByAlias`, `semantic` and `similar` (D9); one `EMBEDDING_INDEX` record
+per entity with status generated. `localSearch` cannot answer in this stack (no production code writes community
+records, inventory §2): its fixed answer is the refusal `index_not_ready` naming `COMMUNITY_INDEX`.
+`TestSmoke_OneConfigAnswers` boots, checks, edits one entity, deletes one, and checks again.
 
 **Every wait is ordered after the write it checks.** An empty graph reads ready before ingest, and `GRAPH_STATUS`
 envelopes and `EMBEDDING_INDEX` records are file-backed and outlive the process, so "ready" alone can be stale. After
@@ -125,11 +125,11 @@ required: this change does not archive with case 4 red.
 
 ## D9. Search checks and merge order
 
-PR #558 shares no file with this change; it edits `graph/follower/follower.go` and `graph/embedding/worker.go`,
-where a D8 fix would land. Whichever merges second carries the search checks (branches update by merging
-`origin/main`): if this merges first, #558 adds `semantic`/`similar` to `checkAnswers` (comment posted on #558,
-task 3.2); if #558 merges first, task 2.1 adds them.
-A D8 fix in `graph/follower` waits for #558 or is coordinated on it.
+PR #558 merged first (67a8650), so `semantic` and `similar` are in `checkAnswers` and run in every restart case
+(task 3.2, `notes/3.2.md`). BM25's statistics live in memory and depend on arrival order, so the checks assert which
+entities score above 0, never a score: each entity's own name word finds it alone, and `similar` answers the entities
+whose names share a word, as a set. The verbs answer from a vector cache that claims no revision, so the checks first
+wait for one search on every entity's word to answer exactly the live entities. No D8 fix was needed (task 2.6).
 
 ## Residual risk
 

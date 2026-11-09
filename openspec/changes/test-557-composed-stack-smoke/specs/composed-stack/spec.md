@@ -15,6 +15,8 @@ producer published on `entity.>`.
   degraded, the graph-index and graph-embedding keys report an indexed revision at or above the `ENTITY_STATES`
   revision read after it, `entity`, `relationships`, `pathSearch`,
   `summary` and `entityByAlias` return the expected answers, and each entity has one generated embedding record
+- **AND** `semantic` on a word only one entity's name holds answers that entity alone, and `similar` answers the other
+  entities whose names share a word with the entity's, as a set, since BM25's scores depend on arrival order
 - **AND** `localSearch` refuses `index_not_ready` naming `COMMUNITY_INDEX`, since nothing in the stack writes
   community records
 - **AND** after an edit and a delete the answers and records follow (`TestSmoke_OneConfigAnswers`)

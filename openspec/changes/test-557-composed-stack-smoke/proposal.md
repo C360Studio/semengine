@@ -21,16 +21,18 @@ Design track: the change adds a capability spec, `composed-stack`, with one requ
   configuration boots graph-ingest, graph-index, graph-embedding and graph-query on one NATS server.
 - A producer publishes a fixed set of entities on `entity.>`; every check reads only what a consumer can read:
   `graph.query.*` answers (entity, relationships, path, summary, alias), the three `GRAPH_STATUS` readiness keys,
-  component health over HTTP, and embedding records read from `EMBEDDING_INDEX` (no query verb serves them until
-  PR #558). `localSearch` is checked only as its refusal: nothing in this stack writes community records. Every
-  wait is ordered after the write it checks, and each restart is followed by new writes, so stale state cannot pass.
+  component health over HTTP, `semantic` and `similar` (PR #558's verbs), and embedding records read from
+  `EMBEDDING_INDEX` (no verb reports the revision a record was made from). `localSearch` is checked only as its
+  refusal: nothing in this stack writes community records. Every wait is ordered after the write it checks, and
+  each restart is followed by new writes, so stale state cannot pass.
 - Restart safety, each case its own test: (1) stop and start the whole stack; (2) kill the process mid-ingest;
   (3) stop the stack, restart the NATS server, start the stack; (4) restart the NATS server under the running stack.
   After each, the same fixed answers, and every acknowledged publish present exactly once.
 - Case 4 was probed before the design (nats.go v1.55.0): the follower's watch survives a file-storage broker restart
   and stalls about 20 s (inventory, "Probe"). If case 4 still fails on main, the fix is part of this work (design D8).
 - No production code, unless case 4 needs a fix. No binary, Compose, fixed port, sleep, own deadline or skip.
-- `semantic` and `similar` checks are added when PR #558 merges (owner, comment 6730981995).
+- `semantic` and `similar` checks: PR #558 merged first, so they are in the one oracle and run in every restart
+  case (owner, comment 6730981995).
 
 ## Owner decisions this proposal asks for
 

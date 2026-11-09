@@ -1,6 +1,7 @@
 # Proposal: setup-04a-05-fusionnats
 
-Approved-by:
+Approved-by: Coby Leuschke, 2026-11-09 (PR #577 comment 6749007774: question 1 as recommended, question 2
+Q-B)
 
 Track: `design` (adds requirements to two capabilities, `fusion` and `composed-stack`).
 

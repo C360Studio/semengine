@@ -102,8 +102,8 @@ and graph-query from one configuration with no graph-embedding entry and no grap
 value selects the second configuration), publishes the fixed entities, waits on graph-ingest's and graph-index's keys,
 and checks: all three components healthy and `GRAPH_STATUS` has no `graph-embedding` key; `fusion.Engine` over
 `fusionnats` answers a symbol lens and a prefix lens with the expected nodes, relations and paths; an unknown name is a
-miss; an NL lens's `Fuse` returns a refusal naming `graph.embedding.query.search`, never an empty answer: under the
-recommendation (Q-B) today's transient `internal`; under option C the class and code that graph-query PR defines.
+miss; an NL lens's `Fuse` returns a refusal naming `graph.embedding.query.search`, never an empty answer: today's transient
+`internal` (owner chose Q-B, PR #577 comment 6749007774).
 `TestFusionNATSImportsNoEmbedding` (`internal/harness/contract`)
 fails if `fusionnats`' closure reaches `graph/embedding`, `processor/graph-embedding` or `graph/readiness`, with a
 sensitivity case as `embeddingprovider_test.go` has. The SemSource composition itself stays the SemSource owner's
@@ -124,9 +124,10 @@ offer the verb; not retryable) and a new code in `graph` the owner names, naming
 entries (`processor/graph-query/query.go:32-33`), not `ask`; one requirement added to the graph-query spec, nothing
 reversed; the key's default is the owner's (on keeps every composition as it is; off makes the admission explicit
 and breaks SemSource's and the smoke configs, a migration note). Two packages, so its own PR, issue and change, before
-task 3.1. **Q-B (recommended).** Keep today's refusal for alpha.3 and file C as the issue's shape. PR D stays one
-package; the plan line is met by what the proof covers: the graph-only interfaces are proven, and the NL verb is shown
-refused, never answered empty. Cost: a caller retries a word question that cannot succeed until C lands.
+task 3.1.
+**Q-B (owner's choice, PR #577 comment 6749007774).** Keep today's refusal for alpha.3 and file C as the issue's shape.
+PR D stays one package; the plan line is met by what the proof covers: the graph-only interfaces are proven, and the NL
+verb is shown refused, never answered empty. Cost: a caller retries a word question that cannot succeed until C lands.
 
 ## D6. ADRs, issues, order, size
 

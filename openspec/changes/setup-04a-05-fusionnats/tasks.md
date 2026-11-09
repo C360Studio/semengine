@@ -7,8 +7,8 @@ after 3.1, and before the archive.
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner answers the two questions in `proposal.md` and fills
-  `Approved-by:`. Hold: OPEN-Q proposal awaits owner approval. Gate: `task spec:check`, `task docs:check`.
+- [x] 1.1 Pre-owner design review passes; the owner answers the two questions in `proposal.md` and fills
+  `Approved-by:`. Done: PR #577 comment 6749007774. Gate: `task spec:check`, `task docs:check`.
 
 ## 2. Package
 
@@ -33,8 +33,8 @@ after 3.1, and before the archive.
 
 ## 3. Proof and close-out
 
-- [ ] 3.1 No-embedder proof (D5, as the owner answers question 2; if the owner picks option C, a hold line naming
-  the graph-query PR and its merge is added to this task when that PR's issue is filed): `TestSmoke_NoEmbedderAnswers`
+- [ ] 3.1 No-embedder proof (D5; the owner chose Q-B, so no other PR comes first):
+  `TestSmoke_NoEmbedderAnswers`
   in `internal/smoke`;
   `TestFusionNATSImportsNoEmbedding`
   and its sensitivity case in `internal/harness/contract`. **Review stop.**
@@ -44,7 +44,7 @@ after 3.1, and before the archive.
   `pkg/fusion/README.md`, `pkg/fusion/MIGRATION.md` (`New` returns an error; no `Status`, no `Close`; a poisoned seed
   is listed); `pkg/fusion/retrieval.go:37`; port notes on ADR-062 (`:17`), ADR-066, ADR-071, ADR-083, ADR-084; ledger
   `pkg/fusion` row and comment (`:4592`, `:4600`, `:4627`, `:4631`) and the ADR-062 row (`:4694`); the prefix-poison
-  issue filed (and under Q-B the graph-query issue, shape C), `status:blocked` on this PR, linked without a closing
-  keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, stays for item 3).
+  issue (#578) and the graph-query issue (#579, shape C), both filed `status:blocked`, linked from this PR without a
+  closing keyword; comments on #195 (fusionnats adopted it) and #110 (item 2 done in PR C, stays for item 3).
 - [ ] 3.4 Spec sync and archive as the last content commit; the `composed-stack` Purpose names the no-embedder
   stack beside the four-component one. **Final review.**

@@ -22,6 +22,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
 	"github.com/c360studio/semengine/internal/graphmutation"
+	"github.com/c360studio/semengine/internal/harness/natsfixture"
 	"github.com/c360studio/semengine/pkg/errs"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
 	"github.com/c360studio/semengine/vocabulary"
@@ -645,6 +646,84 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	before := wantOf(append(inputs, held)...)
 	checkAnswers(t, o, f, before)
 
+	checkWritesAfterRestart(t, o, second, f, before)
+	stopStack(t, second)
+}
+
+// brokerBudget bounds the own server's Start and Restart, which require a bounded context. At an
+// hour it is an unreachable fallback: a broker that never comes back ends at go test -timeout
+// (docs/testing.md, #500).
+const brokerBudget = time.Hour
+
+// restartBrokerKeepingURL restarts the NATS server and requires its URL unchanged, as
+// graph-ingest's restartKeepingURL does: the restarted stack is booted on the URL the first boot
+// was given, and Docker does not promise the host port (natsfixture/restart.go), so a remapped port
+// fails here as the fixture's failure, not the stack's.
+func restartBrokerKeepingURL(t *testing.T, broker *natsfixture.Fixture) {
+	t.Helper()
+	before := broker.URL()
+	ctx, cancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer cancel()
+	if err := broker.Restart(ctx); err != nil {
+		t.Fatalf("restart the NATS server: %v", err)
+	}
+	if after := broker.URL(); after != before {
+		t.Fatalf("the NATS server's URL changed across Restart, %s to %s: a fixture failure, not the stack's", before, after)
+	}
+}
+
+// TestSmoke_BrokerRestartBetweenRuns holds composed-stack, "Restart the broker while the stack is
+// stopped" (design D6, case 3): the stack stops on SIGTERM, the NATS server restarts on the same
+// URL with its file storage, and a new process boots from the same configuration and answers what
+// the first one did plus what is published after the restart.
+func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
+	// Own server: restarts the NATS server between the two boots, which the shared one must not.
+	broker := natsfixture.New(t)
+	ctx, cancel := context.WithTimeout(t.Context(), brokerBudget)
+	defer cancel()
+	if err := broker.Start(ctx); err != nil {
+		t.Fatalf("start the NATS server: %v", err)
+	}
+	url := broker.URL()
+
+	// The first boot runs in a subtest, so its observer's connection is closed before the restart:
+	// Restart's caller stops what it built on the URL first (natsfixture/restart.go).
+	var (
+		first  stack
+		f      fixture
+		before want
+	)
+	if !t.Run("first boot", func(t *testing.T) {
+		o := newObserver(t, url)
+		first = startStack(t, o, url)
+		f = fixture{platform: first.platform}
+		requireComponentsListed(t, readHealth(t, first))
+
+		inputs := f.fixedEntities()
+		var last uint64
+		for _, e := range inputs {
+			last = o.publish(t, e)
+		}
+		o.awaitAcknowledged(t, first, last)
+		o.awaitIndexed(t, first)
+		requireComponentsHealthy(t, readHealth(t, first))
+		before = wantOf(inputs...)
+		checkAnswers(t, o, f, before)
+		stopStack(t, first)
+	}) {
+		return
+	}
+
+	restartBrokerKeepingURL(t, broker)
+
+	o := newObserver(t, url)
+	second := restartStack(t, o, url, first)
+	// The configuration bucket, file-backed, kept the minted ID across the broker restart (ADR-104).
+	if second.platform != first.platform {
+		t.Fatalf("the stack booted after the broker restart reports platform %q, want the first process's %q",
+			second.platform, first.platform)
+	}
+	requireComponentsListed(t, readHealth(t, second))
 	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
 }

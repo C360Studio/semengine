@@ -8,8 +8,8 @@ port, no `t.Parallel`, no `context.WithValue`.
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner fills `Approved-by:` and rules on the proposal's four decisions.
-  Hold: OPEN-Q proposal awaits owner approval. Gate: `task spec:check`, `task docs:check`.
+- [x] 1.1 Pre-owner design review passes; the owner fills `Approved-by:` and rules on the proposal's five decisions.
+  Gate: `task spec:check`, `task docs:check`.
 
 ## 2. Tests
 

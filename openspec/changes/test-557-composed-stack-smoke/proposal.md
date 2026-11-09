@@ -1,6 +1,7 @@
 # Proposal: test-557-composed-stack-smoke
 
-Approved-by:
+Approved-by: owner (Coby Leuschke), 2026-11-09 in Enjoy, approved as written with all five decisions;
+recorded on PR #560 (comment 6739601324)
 
 ## Why
 

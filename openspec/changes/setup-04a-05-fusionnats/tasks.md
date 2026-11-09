@@ -27,10 +27,11 @@ after 3.1, and before the archive.
   `TestAllSeedsPoisonedDefer`, `TestPoisonedDuplicateReadOnce`, `TestPoisonFallbackReturnsOtherError`,
   `TestPoisonFallbackEndedContext`, `TestPoisonFallbackEmptyID`, `TestOwnValidationNotRetried` (both paths), each
   shown to fail by a mutant. **Review stop.** Done: mutation checks and the not-found test in `notes/2.2.md`.
-- [ ] 2.3 Real wire (D3): graph-ingest, graph-index, graph-query and graph-embedding (bm25) on the package's shared
+- [x] 2.3 Real wire (D3): graph-ingest, graph-index, graph-query and graph-embedding (bm25) on the package's shared
   `natsfixture` server through `natsfixture.Open` (#195). Check: `TestRealRespondersAnswer` (every `RetrievalClient`
   method, NL with a scope; replaces the pin's fake-handler test), `TestPoisonedSeedOverRealResponders` (bad bytes Put
   after graph-ingest's `Start` returned).
+  Done: commit edbbe9ba; waits and mutants in `notes/2.3.md`.
 
 ## 3. Proof and close-out
 

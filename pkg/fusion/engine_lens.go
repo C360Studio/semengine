@@ -4,11 +4,16 @@ import (
 	"cmp"
 	"context"
 	"errors"
+	"fmt"
+	"log/slog"
 	"slices"
 	"sort"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/storage"
 )
@@ -50,26 +55,37 @@ const (
 const ontologyClassPredicate = "entity.ontology.class"
 
 // Engine runs the lens-driven deterministic fusion pipeline over a
-// RetrievalClient, hydrating verbatim bodies through a BodyResolver.
+// RetrievalClient, hydrating verbatim bodies through a BodyResolver. It is safe
+// for concurrent Fuse calls: nothing in it changes after NewEngine.
 type Engine struct {
-	graph   RetrievalClient
-	body    *BodyResolver
-	signals RankSignals // optional; nil → resolve-order + lexical ranking only
+	graph    RetrievalClient
+	body     *BodyResolver
+	logger   *slog.Logger
+	signals  RankSignals             // optional; nil → resolve-order + lexical ranking only
+	registry *metric.MetricsRegistry // optional; nil → no counters
+
+	bodyFailures *prometheus.CounterVec // nil without a registry
+	skippedReads *prometheus.CounterVec // nil without a registry
 }
 
-// NewEngine builds a lens-driven engine. body may be nil — node bodies are then
-// omitted (the response degrades gracefully rather than panicking).
-func NewEngine(graph RetrievalClient, body *BodyResolver) *Engine {
-	return &Engine{graph: graph, body: body}
-}
-
-// WithSignals attaches the framework ranking signals — ontology specificity +
-// predicate salience (ADR-062 increment 5, gh#396) — folded into ranking on top
-// of resolve-order + lexical. Returns the engine for chaining. Passing nil (the
-// default) keeps ranking at resolve-order + lexical.
-func (e *Engine) WithSignals(s RankSignals) *Engine {
-	e.signals = s
-	return e
+// NewEngine builds a lens-driven engine. graph and logger are required. body may
+// be nil — a node whose lens yields a body handle then reports BodyError. A
+// counter registration the registry refuses is returned, and no engine.
+func NewEngine(graph RetrievalClient, body *BodyResolver, logger *slog.Logger, opts ...Option) (*Engine, error) {
+	if graph == nil {
+		return nil, errors.New("fusion: nil retrieval client")
+	}
+	if logger == nil {
+		return nil, errors.New("fusion: nil logger")
+	}
+	e := &Engine{graph: graph, body: body, logger: logger}
+	for _, opt := range opts {
+		opt(e)
+	}
+	if err := e.registerCounters(); err != nil {
+		return nil, fmt.Errorf("fusion: register counters: %w", err)
+	}
+	return e, nil
 }
 
 // Fuse resolves req against the graph through lens and returns the fused response.
@@ -92,12 +108,17 @@ func (e *Engine) WithSignals(s RankSignals) *Engine {
 // A healthy graph that found nothing yields a miss with near-matches; seeds that
 // resolved but could not be read yield Unhydrated, deferred, and NO miss.
 func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, error) {
+	if ctx == nil {
+		return Response{}, errors.New("fusion: nil context")
+	}
+	skips := newSkipLog()
+	defer e.report(skips)
 	mode := lens.ResolveMode(req.Query)
 	resolution, err := e.graph.Resolve(ctx, ResolveQuery{Query: req.Query, Mode: mode, Scope: req.Scope, Limit: resolveLimit})
 	if err != nil {
 		return seedReadFailure(ctx, err)
 	}
-	resp, err := e.fuseSeeds(ctx, req, lens, mode, resolution.Seeds)
+	resp, err := e.fuseSeeds(ctx, req, lens, mode, resolution.Seeds, skips)
 	if err != nil {
 		return Response{}, err
 	}
@@ -111,7 +132,7 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 }
 
 // fuseSeeds hydrates, ranks and expands the resolved seeds into the response.
-func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode ResolveMode, seeds []Seed) (Response, error) {
+func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode ResolveMode, seeds []Seed, skips *skipLog) (Response, error) {
 	hydration, err := e.graph.Entities(ctx, SeedIDs(seeds))
 	if err != nil {
 		return seedReadFailure(ctx, err)
@@ -144,7 +165,7 @@ func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode Res
 	wants := wantSet(req.Want)
 	resp := Response{Provenance: ProvenanceForMode(mode), ContractVersion: ContractVersion}
 	resp.Unhydrated = hydration.Unhydrated
-	nodes, truncated, err := e.buildNodes(ctx, ranked, lens, wants, newBudget(req.Budget))
+	nodes, truncated, err := e.buildNodes(ctx, ranked, lens, wants, newBudget(req.Budget), skips)
 	if err != nil {
 		return seedReadFailure(ctx, err)
 	}
@@ -161,17 +182,17 @@ func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode Res
 	// nodes) so they describe the query's structure, not the page. Each returns an
 	// error only when the context ended.
 	if wants[WantImpact] {
-		if resp.Impact, err = e.computeImpact(ctx, ranked, lens); err != nil {
+		if resp.Impact, err = e.computeImpact(ctx, ranked, lens, skips); err != nil {
 			return Response{}, err
 		}
 	}
 	if wants[WantPaths] {
-		if resp.Paths, resp.PathsTruncated, err = e.computePaths(ctx, ranked, lens); err != nil {
+		if resp.Paths, resp.PathsTruncated, err = e.computePaths(ctx, ranked, lens, skips); err != nil {
 			return Response{}, err
 		}
 	}
 	if wants[WantGraph] {
-		if resp.Graph, err = e.computeGraph(ctx, ranked, lens); err != nil {
+		if resp.Graph, err = e.computeGraph(ctx, ranked, lens, skips); err != nil {
 			return Response{}, err
 		}
 	}
@@ -281,10 +302,10 @@ func (e *Engine) miss(ctx context.Context, mode ResolveMode, query string) (Resp
 // returns the context's error, or the readiness transient a relations Neighbors
 // read hit (via nodeFor → relations → collectEdges), so Fuse fails or defers the
 // whole response rather than serving partial relations as ready.
-func (e *Engine) buildNodes(ctx context.Context, ranked []*Entity, lens Lens, wants map[Want]bool, bg *budgeter) ([]Node, bool, error) {
+func (e *Engine) buildNodes(ctx context.Context, ranked []*Entity, lens Lens, wants map[Want]bool, bg *budgeter, skips *skipLog) ([]Node, bool, error) {
 	var nodes []Node
 	for _, ent := range ranked {
-		node, err := e.nodeFor(ctx, ent, lens, wants)
+		node, err := e.nodeFor(ctx, ent, lens, wants, skips)
 		if err != nil {
 			return nil, false, err
 		}
@@ -302,7 +323,7 @@ func (e *Engine) buildNodes(ctx context.Context, ranked []*Entity, lens Lens, wa
 // Hydrate or deref failure omits the body and does NOT fail the node — but it is
 // not SILENT (gh#616, #600): the node ships with a bounded BodyReason. Only an
 // ended context fails it.
-func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[Want]bool) (Node, error) {
+func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[Want]bool, skips *skipLog) (Node, error) {
 	loc := lens.Location(ent)
 	node := Node{
 		Name:     lens.Label(ent),
@@ -315,7 +336,7 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 	}
 	if wants[WantBody] {
 		// Gate on the WANT alone, then always ask the lens for a handle. A nil
-		// BodyResolver (NewEngine(graph, nil)) is documented-valid, but it must not
+		// BodyResolver (NewEngine(graph, nil, logger)) is documented-valid, but it must not
 		// SHORT-CIRCUIT the WantBody path — a node whose lens yields a real handle it
 		// cannot resolve is a reportable config gap, exactly the silent failure #632
 		// set out to kill (gh#616, #600). The ref==nil case below still keeps genuinely
@@ -327,7 +348,7 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 				return Node{}, cerr
 			}
 			// A genuine retrieval fault producing the handle.
-			e.reportBodyFailure(&node, BodyError)
+			e.reportBodyFailure(&node, BodyError, err)
 		case ref == nil:
 			// The entity legitimately has NO verbatim body (lens.go:171,177). This
 			// is a normal condition, not a failure: leave Body empty and stamp no
@@ -341,7 +362,7 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 			// separate "no resolver wired" from "read faulted" (deferred — the Engine
 			// has no production caller yet, so expanding the closed BodyReason
 			// vocabulary for an unwired path is premature).
-			e.reportBodyFailure(&node, BodyError)
+			e.reportBodyFailure(&node, BodyError, errors.New("fusion: no body resolver configured"))
 		default:
 			body, derr := e.body.ResolveBody(ctx, ref)
 			switch {
@@ -353,15 +374,15 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 				// The ref is present on the entity but resolves to no stored object
 				// — the #600 case: content-addressed evidence was reclaimed while the
 				// entity still points at it.
-				e.reportBodyFailure(&node, BodyNotFound)
+				e.reportBodyFailure(&node, BodyNotFound, derr)
 			default:
 				// The reference resolved to a store but the read faulted.
-				e.reportBodyFailure(&node, BodyError)
+				e.reportBodyFailure(&node, BodyError, derr)
 			}
 		}
 	}
 	if wants[WantRelations] {
-		rels, truncated, err := e.relations(ctx, ent, lens)
+		rels, truncated, err := e.relations(ctx, ent, lens, skips)
 		if err != nil {
 			return Node{}, err
 		}
@@ -371,10 +392,16 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 }
 
 // reportBodyFailure stamps a body-hydration failure onto the node (bounded
-// reason, empty body left as-is). It never defers the response or synthesizes a
-// Miss — the node is a partial result that still ships (gh#616, #600).
-func (e *Engine) reportBodyFailure(node *Node, reason BodyReason) {
+// reason, empty body left as-is), logs it and counts it by reason. It never
+// defers the response or synthesizes a Miss — the node is a partial result that
+// still ships (gh#616, #600).
+func (e *Engine) reportBodyFailure(node *Node, reason BodyReason, err error) {
 	node.BodyReason = reason
+	e.logger.Warn("fusion could not load a node body; the node ships without it",
+		slog.String("handle", node.Handle), slog.String("reason", string(reason)), slog.Any("error", err))
+	if e.bodyFailures != nil {
+		e.bodyFailures.WithLabelValues(string(reason)).Inc()
+	}
 }
 
 // relations expands a node's forward and reverse edges into role → refs, and
@@ -382,17 +409,17 @@ func (e *Engine) reportBodyFailure(node *Node, reason BodyReason) {
 // skipped, or a target's read was skipped or found nothing. It returns the
 // context's error or the readiness transient a Neighbors read hit, so Fuse fails
 // or defers.
-func (e *Engine) relations(ctx context.Context, ent *Entity, lens Lens) (map[string][]Ref, bool, error) {
+func (e *Engine) relations(ctx context.Context, ent *Entity, lens Lens, skips *skipLog) (map[string][]Ref, bool, error) {
 	preds, fwd, rev := edgePredicates(lens.Edges(), FacetRelations)
 	if len(preds) == 0 {
 		return nil, false, nil
 	}
 	rels := map[string][]Ref{}
-	fwdTruncated, err := e.collectEdges(ctx, ent.ID, preds, Outgoing, fwd, lens, rels)
+	fwdTruncated, err := e.collectEdges(ctx, ent.ID, preds, Outgoing, fwd, lens, rels, skips)
 	if err != nil {
 		return nil, false, err
 	}
-	revTruncated, err := e.collectEdges(ctx, ent.ID, preds, Incoming, rev, lens, rels)
+	revTruncated, err := e.collectEdges(ctx, ent.ID, preds, Incoming, rev, lens, rels, skips)
 	if err != nil {
 		return nil, false, err
 	}
@@ -409,7 +436,7 @@ func (e *Engine) relations(ctx context.Context, ent *Entity, lens Lens) (map[str
 // so Fuse defers the whole response instead of serving partial-as-ready; any
 // OTHER Neighbors fault, fatal included, skips this direction and is reported as
 // a left-out ref.
-func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, dir Direction, roleByPred map[string]string, lens Lens, rels map[string][]Ref) (bool, error) {
+func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, dir Direction, roleByPred map[string]string, lens Lens, rels map[string][]Ref, skips *skipLog) (bool, error) {
 	edges, err := e.graph.Neighbors(ctx, id, preds, dir)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
@@ -418,6 +445,7 @@ func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, di
 		if isIndexNotReady(err) {
 			return false, err
 		}
+		skips.add(string(WantRelations), err)
 		return true, nil
 	}
 	truncated := false
@@ -435,6 +463,7 @@ func (e *Engine) collectEdges(ctx context.Context, id string, preds []string, di
 			if cerr := ctx.Err(); cerr != nil {
 				return false, cerr
 			}
+			skips.add(string(WantRelations), err)
 		}
 		if !ok {
 			// Skipped or found nothing: either way the ref is left out.

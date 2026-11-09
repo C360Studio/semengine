@@ -38,7 +38,7 @@ func TestFuse_IncludeScores(t *testing.T) {
 
 	fuse := func(t *testing.T, g *fakeGraph, req fusion.Request) fusion.Response {
 		t.Helper()
-		eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+		eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 		resp, err := eng.Fuse(context.Background(), req, refLens{})
 		require.NoError(t, err)
 		return resp
@@ -138,7 +138,7 @@ func TestFuse_ZeroSimilarityIsDistinguishableFromAbsent(t *testing.T) {
 			return []fusion.Seed{{ID: ent.ID, Similarity: 0, HasSimilarity: true}}
 		},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q", IncludeScores: true}, refLens{})
 	require.NoError(t, err)
 	require.Len(t, resp.Nodes, 1)

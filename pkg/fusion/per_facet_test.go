@@ -34,7 +34,7 @@ func containsEdge(target string) fusion.Edge {
 
 func fuseFaceted(t *testing.T, g *fakeGraph, want fusion.Want) fusion.Response {
 	t.Helper()
-	eng := fusion.NewEngine(g, nil)
+	eng := mustEngine(t, g, nil)
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q", Want: []fusion.Want{want}}, facetedLens{})
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)

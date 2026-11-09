@@ -96,9 +96,10 @@ type GraphFact struct {
 	Value     json.RawMessage `json:"value"`
 	Datatype  string          `json:"datatype,omitempty"`
 	Evidence  []GraphEvidence `json:"evidence,omitempty"`
-	// Truncated reports the per-fact evidence cap was hit; surviving entries
-	// are a prefix of the discovered contributions, and the projection-level
-	// Truncated flag is set alongside.
+	// Truncated reports the per-fact evidence cap was hit; the surviving
+	// entries are the first in evidence order (source, timestamp, confidence,
+	// context), whatever order the triples were stored in, and the
+	// projection-level Truncated flag is set alongside.
 	Truncated bool `json:"truncated,omitempty"`
 }
 
@@ -111,7 +112,8 @@ type GraphFact struct {
 // parallel predicates between the same pair are distinct edges, opposite
 // directions are distinct edges with swapped Source/Target, and multiple
 // assertions of the same edge merge into ONE edge with multiple inspectable
-// Evidence entries. Truncated reports the per-edge evidence cap.
+// Evidence entries, listed in evidence order (source, timestamp, confidence,
+// context). Truncated reports the per-edge evidence cap.
 type GraphEdge struct {
 	ID        string          `json:"id"`
 	Source    string          `json:"source"`
@@ -140,7 +142,7 @@ type GraphEvidence struct {
 // extra I/O); incoming edges reuse the relations-style Neighbors walk, whose
 // counterpart fetch also supplies the incoming evidence — no new I/O class.
 // It returns an error only when the context ended.
-func (e *Engine) computeGraph(ctx context.Context, seeds []*Entity, lens Lens) (*GraphProjection, error) {
+func (e *Engine) computeGraph(ctx context.Context, seeds []*Entity, lens Lens, skips *skipLog) (*GraphProjection, error) {
 	preds, declared := allEdgePredicates(lens.Edges())
 	proj := &GraphProjection{}
 	acc := newGraphEdgeAcc()
@@ -171,7 +173,7 @@ func (e *Engine) computeGraph(ctx context.Context, seeds []*Entity, lens Lens) (
 		if acc.full() || len(preds) == 0 {
 			break
 		}
-		if err := e.collectIncomingGraphEdges(ctx, s, preds, declared, acc, proj); err != nil {
+		if err := e.collectIncomingGraphEdges(ctx, s, preds, declared, acc, proj, skips); err != nil {
 			return nil, err
 		}
 	}
@@ -192,8 +194,8 @@ func (e *Engine) computeGraph(ctx context.Context, seeds []*Entity, lens Lens) (
 // as absent still projects the edge with no evidence (absent, never fabricated)
 // and is not truncation. It
 // returns an error only when the context ended.
-func (e *Engine) collectIncomingGraphEdges(ctx context.Context, seed *Entity, preds []string, declared map[string]bool, acc *graphEdgeAcc, proj *GraphProjection) error {
-	edges, ok, err := e.neighbors(ctx, seed.ID, preds, Incoming)
+func (e *Engine) collectIncomingGraphEdges(ctx context.Context, seed *Entity, preds []string, declared map[string]bool, acc *graphEdgeAcc, proj *GraphProjection, skips *skipLog) error {
+	edges, ok, err := e.neighbors(ctx, seed.ID, preds, Incoming, string(WantGraph), skips)
 	if err != nil {
 		return err
 	}
@@ -216,6 +218,7 @@ func (e *Engine) collectIncomingGraphEdges(ctx context.Context, seed *Entity, pr
 			// The read was skipped: keep the edge the index reported, without
 			// evidence, and say the projection is incomplete.
 			proj.Truncated = true
+			skips.add(string(WantGraph), err)
 		}
 		if err != nil || counterpart == nil {
 			acc.add(ed.Target, ed.Predicate, seed.ID, GraphDirectionIncoming, nil)
@@ -290,6 +293,10 @@ func graphNodeFor(ent *Entity, declared map[string]bool) (GraphNode, []edgeAsser
 	// depend on stored triple order.
 	slices.SortFunc(facts, func(a, b *factEntry) int { return cmp.Compare(a.key, b.key) })
 	for i, entry := range facts {
+		var cut bool
+		if entry.fact.Evidence, cut = capEvidence(entry.fact.Evidence, maxGraphEvidencePerFact); cut {
+			entry.fact.Truncated = true
+		}
 		if i >= maxGraphFactsPerNode {
 			node.FactsTruncated = true
 			node.FactsDropped = len(facts) - maxGraphFactsPerNode
@@ -344,24 +351,26 @@ func graphEvidence(t *message.Triple) *GraphEvidence {
 	return &ev
 }
 
-// appendFactEvidence adds t's evidence to a fact, deduplicated by value; a
-// triple carrying no provenance contributes nothing (absent stays absent).
+// appendFactEvidence adds t's evidence to a fact; a triple carrying no
+// provenance contributes nothing (absent stays absent). Repeats and the cap are
+// settled once every contribution is in (capEvidence).
 func appendFactEvidence(f *GraphFact, t *message.Triple) {
-	ev := graphEvidence(t)
-	if ev == nil {
-		return
+	if ev := graphEvidence(t); ev != nil {
+		f.Evidence = append(f.Evidence, *ev)
 	}
-	key := evidenceKey(*ev)
-	for i := range f.Evidence {
-		if evidenceKey(f.Evidence[i]) == key {
-			return
-		}
+}
+
+// capEvidence sorts evidence by evidenceKey, drops repeats, and keeps the first
+// limit entries, reporting whether any were cut. Sorting before the limit
+// (AGENTS.md § 2) makes which entries survive independent of the order the
+// triples were stored or discovered in.
+func capEvidence(evs []GraphEvidence, limit int) ([]GraphEvidence, bool) {
+	slices.SortFunc(evs, func(a, b GraphEvidence) int { return cmp.Compare(evidenceKey(a), evidenceKey(b)) })
+	evs = slices.CompactFunc(evs, func(a, b GraphEvidence) bool { return evidenceKey(a) == evidenceKey(b) })
+	if len(evs) > limit {
+		return evs[:limit], true
 	}
-	if len(f.Evidence) >= maxGraphEvidencePerFact {
-		f.Truncated = true
-		return
-	}
-	f.Evidence = append(f.Evidence, *ev)
+	return evs, false
 }
 
 // evidenceKey renders an evidence entry as a comparable value key, so the same
@@ -421,21 +430,11 @@ func (a *graphEdgeAcc) add(source, predicate, target, direction string, ev *Grap
 		a.byID[id] = edge
 		a.order = append(a.order, id)
 	}
-	if ev == nil {
-		return
+	if ev != nil {
+		// Repeats (the same assertion discovered from both endpoints) and the
+		// per-edge cap are settled in result.
+		edge.Evidence = append(edge.Evidence, *ev)
 	}
-	key := evidenceKey(*ev)
-	for i := range edge.Evidence {
-		if evidenceKey(edge.Evidence[i]) == key {
-			return // the same assertion discovered from both endpoints
-		}
-	}
-	if len(edge.Evidence) >= maxGraphEvidencePerEdge {
-		edge.Truncated = true
-		a.truncated = true
-		return
-	}
-	edge.Evidence = append(edge.Evidence, *ev)
 }
 
 // full reports the projection edge cap has been hit AND an overflow was
@@ -451,7 +450,16 @@ func (a *graphEdgeAcc) result() []GraphEdge {
 	}
 	out := make([]GraphEdge, 0, len(a.order))
 	for _, id := range a.order {
-		out = append(out, *a.byID[id])
+		edge := *a.byID[id]
+		var cut bool
+		if edge.Evidence, cut = capEvidence(edge.Evidence, maxGraphEvidencePerEdge); cut {
+			edge.Truncated = true
+			a.truncated = true
+		}
+		if len(edge.Evidence) == 0 {
+			edge.Evidence = nil
+		}
+		out = append(out, edge)
 	}
 	return out
 }

@@ -18,7 +18,7 @@ const nlQuery = "on event handler"
 // JSON keys.
 func searchCountKeys(t *testing.T, g *fakeGraph, query string) (fusion.Response, map[string]json.RawMessage) {
 	t.Helper()
-	eng := fusion.NewEngine(g, nil)
+	eng := mustEngine(t, g, nil)
 	resp, err := eng.Fuse(t.Context(), fusion.Request{Query: query, Want: []fusion.Want{fusion.WantBody}}, refLens{})
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)

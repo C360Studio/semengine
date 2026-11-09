@@ -23,7 +23,7 @@ func TestContractVersionIsTwo(t *testing.T) {
 	}
 	for name, g := range cases {
 		t.Run(name, func(t *testing.T) {
-			eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+			eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 			resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent"}, refLens{})
 			if err != nil {
 				t.Fatalf("Fuse: %v", err)
@@ -55,7 +55,7 @@ func TestFuse_AnsweredResponseIsNotMarkedDeferred(t *testing.T) {
 		seeds:    map[string][]string{"OnEvent": {ent.ID}},
 		entities: map[string]*fusion.Entity{ent.ID: ent},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 	resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent"}, refLens{})
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)

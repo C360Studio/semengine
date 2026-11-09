@@ -3,6 +3,7 @@ package fusion_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"testing"
 
@@ -54,7 +55,10 @@ func fuseRanked(ctx context.Context, query string, resolved []rankEntity) ([]str
 		depth:    map[string]float64{rankClass: 3},
 		salience: map[string]float64{rankBoostPredicate: 1.5, rankDemotePredicate: -1.5},
 	}
-	eng := fusion.NewEngine(g, nil).WithSignals(signals)
+	eng, err := fusion.NewEngine(g, nil, slog.New(slog.DiscardHandler), fusion.WithSignals(signals))
+	if err != nil {
+		return nil, fmt.Errorf("NewEngine: %w", err)
+	}
 	resp, err := eng.Fuse(ctx, fusion.Request{
 		Query:  query,
 		Want:   []fusion.Want{fusion.WantBody},

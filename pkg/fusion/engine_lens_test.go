@@ -1,12 +1,16 @@
 package fusion_test
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"log/slog"
 	"slices"
 	"testing"
 
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/pkg/fusion"
 )
 
@@ -114,9 +118,19 @@ func (g *fakeGraph) Entities(_ context.Context, ids []string) (fusion.Hydration,
 type fakeStore struct {
 	data   map[string][]byte
 	getErr error
+	// getHook, when set, runs inside Get before it answers, and a non-nil return
+	// is the error Get returns.
+	getHook func() error
+	gets    int
 }
 
 func (f *fakeStore) Get(_ context.Context, key string) ([]byte, error) {
+	f.gets++
+	if f.getHook != nil {
+		if err := f.getHook(); err != nil {
+			return nil, err
+		}
+	}
 	if f.getErr != nil {
 		return nil, f.getErr
 	}
@@ -129,6 +143,24 @@ func (f *fakeStore) Get(_ context.Context, key string) ([]byte, error) {
 func (f *fakeStore) Put(context.Context, string, []byte) error      { return nil }
 func (f *fakeStore) List(context.Context, string) ([]string, error) { return nil, nil }
 func (f *fakeStore) Delete(context.Context, string) error           { return nil }
+func (f *fakeStore) Open(ctx context.Context, key string) (io.ReadCloser, error) {
+	b, err := f.Get(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	return io.NopCloser(bytes.NewReader(b)), nil
+}
+
+// mustEngine builds an engine the way a product does, with a logger that
+// discards, failing the test on a construction error.
+func mustEngine(t testing.TB, g fusion.RetrievalClient, body *fusion.BodyResolver, opts ...fusion.Option) *fusion.Engine {
+	t.Helper()
+	eng, err := fusion.NewEngine(g, body, slog.New(slog.DiscardHandler), opts...)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+	return eng
+}
 
 func hasUnhydrated(list []fusion.Unhydrated, id string) bool {
 	for _, u := range list {
@@ -187,7 +219,7 @@ func TestEngine_ResolveBuildsNodes(t *testing.T) {
 		seeds:    map[string][]string{"OnEvent": {ent.ID}},
 		entities: map[string]*fusion.Entity{ent.ID: ent},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{"objectstore": store}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{"objectstore": store}))
 
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantBody}}, refLens{})
 	if err != nil {
@@ -230,7 +262,7 @@ func TestEngine_ScopeThreadsToResolve(t *testing.T) {
 
 	t.Run("scope threads through to Resolve", func(t *testing.T) {
 		g := newGraph()
-		eng := fusion.NewEngine(g, nil)
+		eng := mustEngine(t, g, nil)
 		scope := []string{"acme.web.docs", "acme.web.md"}
 		if _, err := eng.Fuse(context.Background(), fusion.Request{Query: nlQuery, Scope: scope}, refLens{}); err != nil {
 			t.Fatalf("Fuse: %v", err)
@@ -245,7 +277,7 @@ func TestEngine_ScopeThreadsToResolve(t *testing.T) {
 
 	t.Run("empty scope is a nil no-op", func(t *testing.T) {
 		g := newGraph()
-		eng := fusion.NewEngine(g, nil)
+		eng := mustEngine(t, g, nil)
 		if _, err := eng.Fuse(context.Background(), fusion.Request{Query: nlQuery}, refLens{}); err != nil {
 			t.Fatalf("Fuse: %v", err)
 		}
@@ -267,7 +299,7 @@ func TestEngine_Relations(t *testing.T) {
 			seed.ID: {{Predicate: "ref.relationship.references", Target: target.ID}},
 		},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantRelations}}, refLens{})
 	if err != nil {
@@ -296,7 +328,7 @@ func TestEngine_Miss(t *testing.T) {
 		entities: map[string]*fusion.Entity{},
 		names:    []string{"OnEvent", "OnError"},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "Ghost"}, refLens{})
 	if err != nil {
@@ -322,7 +354,7 @@ func TestEngine_BudgetTruncation(t *testing.T) {
 		seeds:    map[string][]string{"q": {a.ID, b.ID}},
 		entities: map[string]*fusion.Entity{a.ID: a, b.ID: b},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q", Budget: fusion.Budget{MaxNodes: 1}}, refLens{})
 	if err != nil {
@@ -342,7 +374,7 @@ func TestEngine_BackendErrorSurfaced(t *testing.T) {
 	}
 	for name, g := range cases {
 		t.Run(name, func(t *testing.T) {
-			eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+			eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 			if _, err := eng.Fuse(context.Background(), fusion.Request{Query: "q"}, refLens{}); err == nil {
 				t.Error("expected a backend error to surface, not a silent miss")
 			}
@@ -360,7 +392,7 @@ func TestEngine_HydrateError_DegradesBody(t *testing.T) {
 		message.Triple{Predicate: refStorageKeyPr, Object: "missing"},
 	)
 	g := &fakeGraph{seeds: map[string][]string{"OnEvent": {ent.ID}}, entities: map[string]*fusion.Entity{ent.ID: ent}}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{"objectstore": store}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{"objectstore": store}))
 
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantBody}}, refLens{})
 	if err != nil {
@@ -386,7 +418,7 @@ func TestEngine_IncomingRelations(t *testing.T) {
 			seed.ID: {{Predicate: "ref.relationship.references", Target: caller.ID}},
 		},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantRelations}}, refLens{})
 	if err != nil {
@@ -402,7 +434,7 @@ func TestEngine_IncomingRelations(t *testing.T) {
 // documented-valid deployment with no verbatim-body store) omits bodies without
 // panicking — but it must NOT silently drop a real handle. #632's whole point is
 // that a node whose lens yields a resolvable handle it cannot deref is a REPORTED
-// config gap (BodyError), while a genuinely body-less tier stays silent.
+// config gap (BodyError + counter), while a genuinely body-less tier stays silent.
 func TestEngine_NilBodyResolver(t *testing.T) {
 	newGraph := func(ent *fusion.Entity) *fakeGraph {
 		return &fakeGraph{
@@ -412,14 +444,15 @@ func TestEngine_NilBodyResolver(t *testing.T) {
 	}
 	req := fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantBody}}
 
-	t.Run("lens yields a handle but no resolver → BodyError", func(t *testing.T) {
+	t.Run("lens yields a handle but no resolver → BodyError + counter", func(t *testing.T) {
 		// Storage triples present → refLens.Hydrate returns a non-nil handle. With no
 		// BodyResolver wired, that body cannot be loaded: a config gap, not silence.
 		ent := entity("acme.ops.code.repo.symbol.OnEvent", "OnEvent", "h/on_event.go",
 			message.Triple{Predicate: refStorageInstancePr, Object: "objectstore"},
 			message.Triple{Predicate: refStorageKeyPr, Object: "k"},
 		)
-		eng := fusion.NewEngine(newGraph(ent), nil) // no body resolver
+		reg := metric.NewMetricsRegistry()
+		eng := mustEngine(t, newGraph(ent), nil, fusion.WithMetrics(reg)) // no body resolver
 
 		resp, err := eng.Fuse(context.Background(), req, refLens{})
 		if err != nil {
@@ -431,6 +464,9 @@ func TestEngine_NilBodyResolver(t *testing.T) {
 		if resp.Nodes[0].BodyReason != fusion.BodyError {
 			t.Errorf("a real handle with no resolver must report BodyError, got %q", resp.Nodes[0].BodyReason)
 		}
+		if got := bodyFailureCount(t, reg, "error"); got != 1 {
+			t.Errorf("expected the error counter to fire once, got %v", got)
+		}
 	})
 
 	t.Run("body-less entity stays silent even with no resolver", func(t *testing.T) {
@@ -438,7 +474,8 @@ func TestEngine_NilBodyResolver(t *testing.T) {
 		// legitimately has NO verbatim body. The nil-resolver path must NOT spam
 		// BodyError for it — this is the body-less-tier safety the fix preserves.
 		ent := entity("acme.ops.code.repo.symbol.Bodyless", "Bodyless", "h/bodyless.go")
-		eng := fusion.NewEngine(newGraph(ent), nil)
+		reg := metric.NewMetricsRegistry()
+		eng := mustEngine(t, newGraph(ent), nil, fusion.WithMetrics(reg))
 
 		resp, err := eng.Fuse(context.Background(), req, refLens{})
 		if err != nil {
@@ -449,6 +486,9 @@ func TestEngine_NilBodyResolver(t *testing.T) {
 		}
 		if resp.Nodes[0].BodyReason != "" {
 			t.Errorf("a body-less node must carry NO reason, got %q", resp.Nodes[0].BodyReason)
+		}
+		if got := bodyFailureCount(t, reg, "error"); got != 0 {
+			t.Errorf("a body-less node must not increment the failure counter, got %v", got)
 		}
 	})
 }
@@ -492,7 +532,7 @@ func topName(t *testing.T, eng *fusion.Engine) string {
 // exactly resolve-order — the increments 1–4 behavior (A resolved first wins).
 func TestEngine_NilSignals_ResolveOrderUnchanged(t *testing.T) {
 	g := rankingPair("http://x/Vague", "http://x/Specific")
-	eng := fusion.NewEngine(g, nil) // no signals
+	eng := mustEngine(t, g, nil) // no signals
 	if got := topName(t, eng); got != "Apple" {
 		t.Errorf("top = %q, want Apple (resolve order, no signals)", got)
 	}
@@ -504,7 +544,7 @@ func TestEngine_Signals_OntologySpecificityReorders(t *testing.T) {
 	g := rankingPair("http://x/Vague", "http://x/Specific")
 	// resolve gap = resolveScale (4.0). ontologyScale*depth for B = 1.5*4 = 6 > 4.
 	sig := fakeSignals{depth: map[string]float64{"http://x/Vague": 0, "http://x/Specific": 4}}
-	eng := fusion.NewEngine(g, nil).WithSignals(sig)
+	eng := mustEngine(t, g, nil, fusion.WithSignals(sig))
 	if got := topName(t, eng); got != "Banana" {
 		t.Errorf("top = %q, want Banana (deeper ontology class reorders ahead)", got)
 	}
@@ -517,7 +557,7 @@ func TestEngine_Signals_PredicateSalienceReorders(t *testing.T) {
 		message.Triple{Predicate: "acme.identity.serial", Object: "SN-1"})
 	// resolve gap = 4.0. salienceScale*weight for B = 3.0*2.0 = 6 > 4.
 	sig := fakeSignals{salience: map[string]float64{"acme.identity.serial": 2.0}}
-	eng := fusion.NewEngine(g, nil).WithSignals(sig)
+	eng := mustEngine(t, g, nil, fusion.WithSignals(sig))
 	if got := topName(t, eng); got != "Banana" {
 		t.Errorf("top = %q, want Banana (salient predicate reorders ahead)", got)
 	}
@@ -529,7 +569,7 @@ func TestEngine_Signals_TooSmallToReorder(t *testing.T) {
 	g := rankingPair("http://x/Vague", "http://x/Specific")
 	// ontologyScale*1 = 1.5 < resolve gap 4.0 → A (resolved first) stays on top.
 	sig := fakeSignals{depth: map[string]float64{"http://x/Vague": 0, "http://x/Specific": 1}}
-	eng := fusion.NewEngine(g, nil).WithSignals(sig)
+	eng := mustEngine(t, g, nil, fusion.WithSignals(sig))
 	if got := topName(t, eng); got != "Apple" {
 		t.Errorf("top = %q, want Apple (sub-gap signal must not override resolve order)", got)
 	}
@@ -553,7 +593,7 @@ func TestEngine_Signals_NegativeSalienceDemotes(t *testing.T) {
 		entities: map[string]*fusion.Entity{a.ID: a, b.ID: b},
 	}
 	sig := fakeSignals{salience: map[string]float64{"code.artifact.test": -1.5}}
-	eng := fusion.NewEngine(g, nil).WithSignals(sig)
+	eng := mustEngine(t, g, nil, fusion.WithSignals(sig))
 	if got := topName(t, eng); got != "Banana" {
 		t.Errorf("top = %q, want Banana (negatively-weighted predicate demotes A below B)", got)
 	}
@@ -586,7 +626,7 @@ func TestEngine_Signals_BoostAndDemotionCompose(t *testing.T) {
 		"code.symbol.doc":    1.0,
 		"code.artifact.test": -1.5,
 	}}
-	eng := fusion.NewEngine(g, nil).WithSignals(sig)
+	eng := mustEngine(t, g, nil, fusion.WithSignals(sig))
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "zzz"}, refLens{})
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)
@@ -631,7 +671,7 @@ func TestEngine_Signals_MaxNotSum_NoFactCountInflation(t *testing.T) {
 		"acme.label.three":     1.0,
 		"acme.label.four":      1.0,
 	}}
-	eng := fusion.NewEngine(g, nil).WithSignals(sig)
+	eng := mustEngine(t, g, nil, fusion.WithSignals(sig))
 	if got := topName(t, eng); got != "Apple" {
 		t.Errorf("top = %q, want Apple (sharp entity holds; dense fact count must not inflate via sum)", got)
 	}

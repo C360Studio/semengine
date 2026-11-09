@@ -39,7 +39,7 @@ func facetGraph(out, in map[string][]fusion.Edge, entities map[string]*fusion.En
 
 func fuseFacet(t *testing.T, g *fakeGraph, want fusion.Want) fusion.Response {
 	t.Helper()
-	eng := fusion.NewEngine(g, nil)
+	eng := mustEngine(t, g, nil)
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q", Want: []fusion.Want{want}}, refLens{})
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)

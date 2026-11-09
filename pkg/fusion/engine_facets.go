@@ -49,7 +49,7 @@ const (
 // seeds themselves, bounded by maxImpactNodes. Best-effort: a failed Neighbors or
 // Entity read, of any class, is skipped and sets Truncated; it returns an error
 // only when the context ended.
-func (e *Engine) computeImpact(ctx context.Context, seeds []*Entity, lens Lens) (*Impact, error) {
+func (e *Engine) computeImpact(ctx context.Context, seeds []*Entity, lens Lens, skips *skipLog) (*Impact, error) {
 	preds, _, _ := edgePredicates(lens.Edges(), FacetImpact)
 	imp := &Impact{}
 	if len(preds) == 0 {
@@ -69,7 +69,7 @@ func (e *Engine) computeImpact(ctx context.Context, seeds []*Entity, lens Lens) 
 	for len(frontier) > 0 {
 		var next []string
 		for _, id := range frontier {
-			edges, ok, err := e.neighbors(ctx, id, preds, Incoming)
+			edges, ok, err := e.neighbors(ctx, id, preds, Incoming, string(WantImpact), skips)
 			if err != nil {
 				return nil, err
 			}
@@ -93,7 +93,7 @@ func (e *Engine) computeImpact(ctx context.Context, seeds []*Entity, lens Lens) 
 					return imp, nil
 				}
 				affected[dep] = true
-				p, ok, err := e.pathOf(ctx, dep, lens)
+				p, ok, err := e.pathOf(ctx, dep, lens, skips)
 				if err != nil {
 					return nil, err
 				}
@@ -138,7 +138,7 @@ func (ps *pathSet) emit(p Path) {
 // over Neighbors(…, Outgoing) along the lens's edge predicates, in (predicate,
 // target) order, depth-capped; a cycle truncates that branch (kept, not dropped).
 // It returns an error only when the context ended.
-func (e *Engine) computePaths(ctx context.Context, seeds []*Entity, lens Lens) ([]Path, bool, error) {
+func (e *Engine) computePaths(ctx context.Context, seeds []*Entity, lens Lens, skips *skipLog) ([]Path, bool, error) {
 	preds, _, _ := edgePredicates(lens.Edges(), FacetPaths)
 	if len(preds) == 0 {
 		return nil, false, nil
@@ -148,7 +148,7 @@ func (e *Engine) computePaths(ctx context.Context, seeds []*Entity, lens Lens) (
 		if ps.full {
 			break
 		}
-		if err := e.dfsPaths(ctx, s.ID, lens, preds, []string{lens.Label(s)}, map[string]bool{s.ID: true}, ps); err != nil {
+		if err := e.dfsPaths(ctx, s.ID, lens, preds, []string{lens.Label(s)}, map[string]bool{s.ID: true}, ps, skips); err != nil {
 			return nil, false, err
 		}
 	}
@@ -163,7 +163,7 @@ func (e *Engine) computePaths(ctx context.Context, seeds []*Entity, lens Lens) (
 // read, or reads as absent, ends the path at its last readable node, marked
 // Truncated; when that would leave the seed alone, nothing is emitted and the
 // set is marked truncated. It returns an error only when the context ended.
-func (e *Engine) dfsPaths(ctx context.Context, id string, lens Lens, preds []string, path []string, onPath map[string]bool, ps *pathSet) error {
+func (e *Engine) dfsPaths(ctx context.Context, id string, lens Lens, preds []string, path []string, onPath map[string]bool, ps *pathSet, skips *skipLog) error {
 	if ps.full {
 		return nil
 	}
@@ -172,7 +172,7 @@ func (e *Engine) dfsPaths(ctx context.Context, id string, lens Lens, preds []str
 		return nil
 	}
 
-	edges, ok, err := e.neighbors(ctx, id, preds, Outgoing)
+	edges, ok, err := e.neighbors(ctx, id, preds, Outgoing, string(WantPaths), skips)
 	if err != nil {
 		return err
 	}
@@ -213,7 +213,7 @@ func (e *Engine) dfsPaths(ctx context.Context, id string, lens Lens, preds []str
 		if ps.full {
 			return nil
 		}
-		name, ok, err := e.nameOf(ctx, ed.Target, lens)
+		name, ok, err := e.nameOf(ctx, ed.Target, lens, skips)
 		if err != nil {
 			return err
 		}
@@ -222,7 +222,7 @@ func (e *Engine) dfsPaths(ctx context.Context, id string, lens Lens, preds []str
 			continue
 		}
 		onPath[ed.Target] = true
-		if err := e.dfsPaths(ctx, ed.Target, lens, preds, append(clonePath(path), name), onPath, ps); err != nil {
+		if err := e.dfsPaths(ctx, ed.Target, lens, preds, append(clonePath(path), name), onPath, ps, skips); err != nil {
 			return err
 		}
 		onPath[ed.Target] = false
@@ -251,12 +251,13 @@ func (ps *pathSet) cut(path []string) {
 // failing the fuse, but records the incompleteness in the facet's Truncated flag
 // so a partial result is never reported as exact. err is the context's error,
 // and only when the context ended.
-func (e *Engine) neighbors(ctx context.Context, id string, preds []string, dir Direction) ([]Edge, bool, error) {
+func (e *Engine) neighbors(ctx context.Context, id string, preds []string, dir Direction, facet string, skips *skipLog) ([]Edge, bool, error) {
 	edges, err := e.graph.Neighbors(ctx, id, preds, dir)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return nil, false, cerr
 		}
+		skips.add(facet, err)
 		return nil, false, nil
 	}
 	return orderedEdges(edges), true, nil
@@ -265,12 +266,13 @@ func (e *Engine) neighbors(ctx context.Context, id string, preds []string, dir D
 // nameOf resolves an entity ID to its human name via the lens. ok is false when
 // the read failed or found nothing; the caller never shows the ID instead. It
 // returns an error only when the context ended.
-func (e *Engine) nameOf(ctx context.Context, id string, lens Lens) (string, bool, error) {
+func (e *Engine) nameOf(ctx context.Context, id string, lens Lens, skips *skipLog) (string, bool, error) {
 	te, err := e.graph.Entity(ctx, id)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return "", false, cerr
 		}
+		skips.add(string(WantPaths), err)
 		return "", false, nil
 	}
 	if te == nil {
@@ -282,12 +284,13 @@ func (e *Engine) nameOf(ctx context.Context, id string, lens Lens) (string, bool
 // pathOf resolves an entity ID to its lens Location path. ok is false only when
 // the read failed and was skipped; a read that found nothing is ok with no path.
 // It returns an error only when the context ended.
-func (e *Engine) pathOf(ctx context.Context, id string, lens Lens) (string, bool, error) {
+func (e *Engine) pathOf(ctx context.Context, id string, lens Lens, skips *skipLog) (string, bool, error) {
 	te, err := e.graph.Entity(ctx, id)
 	if err != nil {
 		if cerr := ctx.Err(); cerr != nil {
 			return "", false, cerr
 		}
+		skips.add(string(WantImpact), err)
 		return "", false, nil
 	}
 	if te == nil {

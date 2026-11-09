@@ -18,7 +18,7 @@ func TestResponse_Unhydrated(t *testing.T) {
 	lost := "acme.ops.code.repo.symbol.Lost"
 
 	newEngine := func(g *fakeGraph) *fusion.Engine {
-		return fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+		return mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 	}
 
 	t.Run("a partially hydrated response reports what was lost", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestAllSeedsUnhydratedDefersWithoutMiss(t *testing.T) {
 		},
 		names: []string{"Q"},
 	}
-	eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+	eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 	resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "q"}, refLens{})
 	require.NoError(t, err)
 

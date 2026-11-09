@@ -2,6 +2,7 @@ package fusion
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/c360studio/semengine/message"
@@ -85,7 +86,11 @@ func NewBodyResolver(r StoreResolver) *BodyResolver {
 //     caller can degrade the node (the engine omits the body; hydration is
 //     best-effort and does not fail the fuse — see Lens.Hydrate).
 //   - The store's Get error is propagated wrapped.
+//   - A nil context is refused.
 func (b *BodyResolver) ResolveBody(ctx context.Context, ref *message.StorageReference) ([]byte, error) {
+	if ctx == nil {
+		return nil, errors.New("hydrate: nil context")
+	}
 	if ref == nil {
 		return nil, nil
 	}

@@ -25,7 +25,7 @@ func labelEntity(id string) *fusion.Entity {
 // fuseWant runs one Fuse for want over g with the reference lens.
 func fuseWant(t *testing.T, g *fakeGraph, want fusion.Want) fusion.Response {
 	t.Helper()
-	eng := fusion.NewEngine(g, nil)
+	eng := mustEngine(t, g, nil)
 	resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "q", Want: []fusion.Want{want}}, refLens{})
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)
@@ -331,4 +331,44 @@ func firstDiff(got, want []string) string {
 		}
 	}
 	return fmt.Sprintf("lengths %d vs %d", len(got), len(want))
+}
+
+// TestGraphEvidenceCapIgnoresTripleOrder: the per-fact and per-edge evidence caps
+// (8) keep the same entries whatever order the triples are stored in: sort before
+// limit. Ten assertions of one fact and ten of one edge, sources s0..s9, keep
+// s0..s7 (evidence order starts with the source).
+func TestGraphEvidenceCapIgnoresTripleOrder(t *testing.T) {
+	var triples []message.Triple
+	for i := range 10 {
+		src := fmt.Sprintf("s%d", i)
+		triples = append(triples,
+			message.Triple{Predicate: "acme.fact.cap", Object: "v", Source: src},
+			message.Triple{Predicate: refEdgePred, Object: "T", Source: src})
+	}
+	reversed := slices.Clone(triples)
+	slices.Reverse(reversed)
+	want := []string{"s0", "s1", "s2", "s3", "s4", "s5", "s6", "s7"}
+	sources := func(evs []fusion.GraphEvidence) []string {
+		out := make([]string, len(evs))
+		for i, ev := range evs {
+			out[i] = ev.Source
+		}
+		return out
+	}
+	for name, order := range map[string][]message.Triple{"stored order": triples, "reversed": reversed} {
+		t.Run(name, func(t *testing.T) {
+			seed := &fusion.Entity{ID: "S", Triples: order}
+			proj := fuseWant(t, facetGraph(nil, nil, map[string]*fusion.Entity{"S": seed}), fusion.WantGraph).Graph
+			fact := proj.Nodes[0].Facts[0]
+			if got := sources(fact.Evidence); !slices.Equal(got, want) || !fact.Truncated {
+				t.Errorf("fact evidence = %v (truncated %v), want %v (truncated)", got, fact.Truncated, want)
+			}
+			if len(proj.Edges) != 1 {
+				t.Fatalf("edges = %+v, want one", proj.Edges)
+			}
+			if got := sources(proj.Edges[0].Evidence); !slices.Equal(got, want) || !proj.Edges[0].Truncated {
+				t.Errorf("edge evidence = %v (truncated %v), want %v (truncated)", got, proj.Edges[0].Truncated, want)
+			}
+		})
+	}
 }

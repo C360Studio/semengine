@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/pkg/fusion"
 )
@@ -67,7 +68,7 @@ func TestDeferredOnIndexNotReady(t *testing.T) {
 
 	for name, tc := range cases {
 		t.Run(name, func(t *testing.T) {
-			eng := fusion.NewEngine(tc.graph, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+			eng := mustEngine(t, tc.graph, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 
 			resp, err := eng.Fuse(t.Context(), tc.req, refLens{})
 			if err != nil {
@@ -102,7 +103,7 @@ func TestFatalReplyReturnsError(t *testing.T) {
 	}
 	for name, g := range cases {
 		t.Run(name, func(t *testing.T) {
-			eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+			eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 			resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent"}, refLens{})
 			if err == nil {
 				t.Fatalf("a fatal seed read must fail the call, got response %+v", resp)
@@ -136,7 +137,7 @@ func TestFatalWalkReadSkipped(t *testing.T) {
 			}},
 			entityErr: map[string]error{poisoned: resetRequired()},
 		}
-		eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+		eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 		resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{fusion.WantRelations}}, refLens{})
 		if err != nil {
 			t.Fatalf("a fatal relation-target read must be skipped, got err %v", err)
@@ -193,7 +194,7 @@ func TestFatalWalkReadSkipped(t *testing.T) {
 					entities:     map[string]*fusion.Entity{seed.ID: seed},
 					neighborsErr: replyErr(),
 				}
-				eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+				eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 				resp, err := eng.Fuse(t.Context(), fusion.Request{Query: "OnEvent", Want: []fusion.Want{tc.want}}, refLens{})
 				if err != nil {
 					t.Fatalf("a %s %s read must be skipped, got err %v", reply, name, err)
@@ -249,13 +250,59 @@ func TestEndedContextReturnsError(t *testing.T) {
 				entities: map[string]*fusion.Entity{seed.ID: seed, target.ID: target},
 			}
 			tc.setup(g, cancel)
-			eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+			eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 			resp, err := eng.Fuse(ctx, fusion.Request{Query: "OnEvent", Want: []fusion.Want{tc.want}}, refLens{})
 			if !errors.Is(err, context.Canceled) {
 				t.Fatalf("err = %v (response %+v), want context.Canceled", err, resp)
 			}
 		})
 	}
+}
+
+// hydrateHookLens is refLens whose Hydrate runs hook first; a non-nil return is
+// the error Hydrate returns.
+type hydrateHookLens struct {
+	refLens
+	hook func() error
+}
+
+func (l hydrateHookLens) Hydrate(ctx context.Context, e *fusion.Entity) (*message.StorageReference, error) {
+	if err := l.hook(); err != nil {
+		return nil, err
+	}
+	return l.refLens.Hydrate(ctx, e)
+}
+
+// TestEndedContextDuringBodyRead: the body reads are reads too ("during any
+// read"): when the context ends while the lens builds the handle or while the
+// store reads the body, Fuse returns the context's error, not a node with a
+// body_reason.
+func TestEndedContextDuringBodyRead(t *testing.T) {
+	seed := withBodyEntity("acme.ops.code.repo.symbol.OnEvent", "OnEvent")
+	req := fusion.Request{Query: "q", Want: []fusion.Want{fusion.WantBody}}
+	newGraph := func() *fakeGraph {
+		return &fakeGraph{seeds: map[string][]string{"q": {seed.ID}}, entities: map[string]*fusion.Entity{seed.ID: seed}}
+	}
+
+	t.Run("lens hydrate", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		lens := hydrateHookLens{hook: func() error { cancel(); return errors.New("handle lookup failed") }}
+		resp, err := mustEngine(t, newGraph(), fusion.NewBodyResolver(fusion.MapStoreResolver{})).Fuse(ctx, req, lens)
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v (response %+v), want context.Canceled", err, resp)
+		}
+	})
+	t.Run("body store read", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		store := &fakeStore{getHook: func() error { cancel(); return errors.New("store read failed") }}
+		body := fusion.NewBodyResolver(fusion.MapStoreResolver{"objectstore": store})
+		resp, err := mustEngine(t, newGraph(), body).Fuse(ctx, req, refLens{})
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v (response %+v), want context.Canceled", err, resp)
+		}
+	})
 }
 
 // TestEngine_GenuineError_Propagates: a NON-transient (non-IndexNotReady) internal
@@ -271,7 +318,7 @@ func TestEngine_GenuineError_Propagates(t *testing.T) {
 	}
 	for name, g := range cases {
 		t.Run(name, func(t *testing.T) {
-			eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+			eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 			if _, err := eng.Fuse(context.Background(), fusion.Request{Query: "OnEvent"}, refLens{}); err == nil {
 				t.Error("expected a genuine backend error to propagate, not defer")
 			}

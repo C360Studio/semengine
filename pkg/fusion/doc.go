@@ -6,7 +6,8 @@
 //
 // It is a near-leaf package: its domain dependencies are message (Triple in
 // Entity, StorageReference as the Hydrate handle), storage (the body store
-// interface), and graph and pkg/errs (the classified codes it reads from
-// replies). It imports no NATS client and asks no readiness status: a read
+// interface), graph and pkg/errs (the classified codes it reads from replies),
+// and metric (its counters register only on a registry the caller passes). It
+// imports no NATS client and asks no readiness status: a read
 // whose index is not ready says so in its reply (ADR-109 D1).
 package fusion

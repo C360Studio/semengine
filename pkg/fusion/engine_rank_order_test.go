@@ -41,7 +41,7 @@ func TestEngine_RankingFollowsHydrationOrder(t *testing.T) {
 			entities:   byID,
 			entitiesFn: hydrate,
 		}
-		eng := fusion.NewEngine(g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
+		eng := mustEngine(t, g, fusion.NewBodyResolver(fusion.MapStoreResolver{}))
 		resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q"}, refLens{})
 		if err != nil {
 			t.Fatalf("Fuse: %v", err)

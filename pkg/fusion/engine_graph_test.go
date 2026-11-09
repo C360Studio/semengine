@@ -32,7 +32,7 @@ import (
 // fuse error or a missing projection.
 func fuseGraph(t *testing.T, g *fakeGraph, lens fusion.Lens) fusion.Response {
 	t.Helper()
-	eng := fusion.NewEngine(g, nil)
+	eng := mustEngine(t, g, nil)
 	resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q", Want: []fusion.Want{fusion.WantGraph}}, lens)
 	if err != nil {
 		t.Fatalf("Fuse: %v", err)
@@ -365,7 +365,7 @@ func TestGraph_NotRequested_V1ShapeUnchanged(t *testing.T) {
 				{Predicate: refTitlePredicate, Object: "S"},
 			}}
 			g := graphSeed(seed)
-			eng := fusion.NewEngine(g, nil)
+			eng := mustEngine(t, g, nil)
 			resp, err := eng.Fuse(context.Background(), fusion.Request{Query: "q", Want: wants}, refLens{})
 			if err != nil {
 				t.Fatalf("Fuse: %v", err)

@@ -7,9 +7,8 @@ deadline of its own, no `context.WithValue`. Review stops: after 2.2, after 2.4,
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner answers the four questions in `proposal.md` and fills
+- [x] 1.1 Pre-owner design review passes; the owner answers the four questions in `proposal.md` and fills
   `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval.
 
 ## 2. Component
 

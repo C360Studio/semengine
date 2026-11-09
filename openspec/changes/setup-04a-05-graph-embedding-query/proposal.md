@@ -1,6 +1,6 @@
 # Proposal: setup-04a-05-graph-embedding-query
 
-Approved-by:
+Approved-by: Coby Leuschke (owner), 2026-11-08, in the Enjoy session; answers on PR #558 comment 6728991794
 
 Track: `design` (adds spec requirements; touches `graph-embedding`, `embedding-index` and, under option F2,
 `entity-state-follower`).

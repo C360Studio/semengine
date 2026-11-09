@@ -15,11 +15,11 @@
 >   ported with graph-index, creates the `GRAPH_STATUS` bucket and publishes the producer's readiness to it. The
 >   graph-embedding processor's write path was ported in change 5 (PR #550, PR A; `processor/graph-embedding`), on
 >   `graph/follower`, which writes its `graph-embedding` readiness key and drops the pin's own status bucket and
->   heartbeat. Its query verbs and `pkg/fusion` follow in that change's PRs B to D; the graph-clustering processor
->   ports next (owner, #9 comment 6724212898). The stuck rule of ADR-066 sections 3 and 4 is completion-based at
->   30 s in the follower for every plug-in, by owner ruling (PR #550 comment 6721867279). The pin's
->   `graph.embedding.query.status` is not carried (ADR-109 Decision 3).
->   Issue #482 (closed by PR #552) tracked these port notes; this line is the graph-embedding update.
+>   heartbeat. Its query verbs followed in PR B (`graph.embedding.query.search` and `.similar`), and `pkg/fusion`
+>   follows in PRs C and D; the graph-clustering processor ports next (owner, #9 comment 6724212898). The stuck rule
+>   of ADR-066 sections 3 and 4 is completion-based at 30 s in the follower for every plug-in, by owner ruling (PR
+>   #550 comment 6721867279). The pin's `graph.embedding.query.status` is not carried (ADR-109 Decision 3). Issue #482
+>   (closed by PR #552) tracked these port notes; this line is the graph-embedding update.
 
 ## Status
 

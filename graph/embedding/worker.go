@@ -134,6 +134,10 @@ type StoreResolver interface {
 	Streamable(instance string) (storage.StreamableStore, bool)
 }
 
+// errWatchLost says the Worker's EMBEDDING_INDEX watch's update channel closed while Run's
+// context was still live, as nats.go closes it when the bucket is deleted.
+var errWatchLost = errors.New("embedding: the EMBEDDING_INDEX watch was lost")
+
 // errContentUnresolved says no store is registered for a body's StorageInstance, as distinct
 // from a store that resolved and then failed to open or read. The first excludes only the
 // body and keeps the inline identity text; the second is a content failure.

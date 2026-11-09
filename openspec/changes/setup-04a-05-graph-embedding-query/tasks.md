@@ -12,7 +12,7 @@ deadline of its own, no `context.WithValue`. Review stops: after 2.2, after 2.4,
 
 ## 2. Component
 
-- [ ] 2.1 Wire types (D1, D3, D4): `graph.SemanticRequest`, `graph.SimilarRequest` (each with `MinRevisionField`),
+- [x] 2.1 Wire types (D1, D3, D4): `graph.SemanticRequest`, `graph.SimilarRequest` (each with `MinRevisionField`),
   `DefaultSimilarityLimit`, `MaxSimilarityLimit`, `UnreadableRecords` and `FailedRecords` on `SemanticData` and
   `SimilarData`; the `QueryResponse` doc names the embedding verbs among replies reporting 0. Check:
   `TestRequestsDecodeStrictly`.

@@ -35,7 +35,9 @@
     pattern for the owned disposable NATS fixture (phased setup, typed failure, one mapped-port
     replacement, fresh per-operation cleanup deadlines, bounded test streams)
   destination: >-
-    internal/harness/natsfixture (reimplemented over nats.go and testcontainers-go; no natsclient.Client)
+    internal/harness/natsfixture (reimplemented over nats.go and testcontainers-go; no natsclient.Client).
+    Internal only: a consumer's broker fixture is consumer-owned, since natsclient.NewClient connects to any
+    broker URL (owner ruling, #568 comment 6741591691; recipe in docs/test-infrastructure.md)
   contract: >-
     Start phases image→create→ready log→host→mapped 4222→connect→JetStream ready; failure record
     {attempt, phase, container id, parent state, cause, cleanup}; terminate a container returned with

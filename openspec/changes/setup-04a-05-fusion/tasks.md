@@ -19,8 +19,9 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
   `TestDeferredOnIndexNotReady`, `TestFatalReplyReturnsError`, `TestFatalWalkReadSkipped`,
   `TestEndedContextReturnsError`, `TestAllSeedsUnhydratedDefersWithoutMiss`, `TestContractVersionIsTwo`,
   `TestGraphProjectionRoundTrip`, `TestRankIsStablePermutation` (generated, seed recorded: the output is the input's
-  multiset; equal-score groups are built by construction, entities sharing one name that matches no query and no
-  signals, so the expected order is resolve order; the pin's signal tests stay as examples).
+  multiset; groups with equal non-position signals are built by construction, entities sharing one name that matches
+  no query and no signals, so the expected order is resolve order; an exact-tie case is its own witness; the pin's
+  signal tests stay as examples).
   Done in `bb3556d3809b2deac0cbd2e5b2d1693fe272c79c`; choices, seed and mutation checks in `notes/2.1.md`.
 - [x] 2.2 Labels and counts (D3 under R1, D4): `Resolution`, `Response.UnreadableRecords` and `FailedRecords`, edges
   sorted before caps, `Node.RelationsTruncated`, `Response.PathsTruncated`, the path stop, impact and graph

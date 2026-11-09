@@ -1,7 +1,7 @@
 # Inventory: composed smoke test with restart safety (#557)
 
 base: d15e6c4646a3c26ff1af907b5631f4c01def07ab (origin/main; claim worktree `.worktrees/claude-composed-smoke-test`,
-branch `claude/composed-smoke-test`). Revision 2: applies review-1 (INVENTORY CHANGES REQUESTED). Owner rulings read:
+branch `claude/composed-smoke-test`). Revision 3: applies review-1 and the review-2 localSearch fix. Owner rulings read:
 issue #557, comments 6729015840 (use case A, restart safety a main goal) and 6730981995 (four restart cases
 required to pass;
 one-component restart out; search checks after #558). Pin: no package is carried from SemStreams (test code only).
@@ -49,6 +49,12 @@ Verbs served on main with graph-ingest + graph-index + graph-embedding + graph-q
   `"similar":  {graph.ResponderGraphEmbedding, "similar"},` forward to `graph.embedding.query.*`, which has no
   responder on main; draft PR #558 adds them (`processor/graph-embedding/query.go` is new there).
 - `globalSearch`/`searchGraph` (`:52-62`) need the spatial and temporal responders, which are not ported.
+- `localSearch` is registered but cannot answer in this stack: it needs a community record, and no production code
+  writes one (`clustering.NewMaintainer`, `graph/clustering/maintainer.go:95`, has no non-test caller). With no
+  record it refuses `index_not_ready`: `processor/graph-query/localsearch.go:262-264` — `if errors.Is(err,
+  graphview.ErrKeyNotFound) {` then `ungrouped`, whose refusal is `:348` — `"%s holds no record of %s's group"`
+  (`COMMUNITY_INDEX`); `processor/graph-query/component.go:167-169` says so. Its fixed answer here is that refusal.
+
 Subjects are spelled in `graph/query_verbs.go:95-121` (`graph.query.<verb>`).
 
 Readiness: `graph/readiness/watcher.go:50` `KeyGraphIndex = "graph-index"`, `:52` `KeyGraphEmbedding = "graph-embedding"`,
@@ -119,9 +125,8 @@ None: this change carries no package from the pin.
 ## Probe: KV watch across a broker restart (case 4), run 2026-11-08
 
 nats.go v1.55.0, nats-server image nats:2.15.0-alpine (`internal/harness/natsfixture/nats-image`), Docker 29.9.2.
-Source `/tmp/smoke-design/probe/restart_probe_integration_test.go`, run in a scratch copy at package
-`graph/follower`: `go test -tags integration -count=1|2 -run TestProbeWatchAcrossBrokerRestart -v`. Output
-`/tmp/smoke-design/probe/run1.txt`, `run2.txt`. Three runs, all PASS:
+Source and outputs: `notes/probe.md` (run in a scratch copy of the tree, package `graph/follower`:
+`go test -tags integration -count=1|2 -run TestProbeWatchAcrossBrokerRestart -v`). Three runs, all PASS:
 
 - ENTITY_STATES storage=File; stream creation time equal before and after (`sameCreated=true`), so `:421` does not fire.
 - The raw `WatchAll` did not close; puts after the restart arrived 19.53 s, 19.56 s, 19.46 s after it.

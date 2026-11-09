@@ -40,43 +40,68 @@ graph-embedding runs BM25 only (no provider).
 SIGTERM and `Wait`; a kill is `Kill`. The test confirms `Alive` before every signal or inspection. The parent is the
 producer (JetStream publish on `entity.<...>`, PubAck kept as "acknowledged") and the observer.
 
-## D4. Ports
+## D4. Ports and the health read
 
-`net.Listen("tcp", ":0")`, read the port, close, write it as `http_port`; a comment `// Every address: the
-ServiceManager binds ":"+http_port` sits above (rule #390, #391). Metrics gets a second picked port, so case 1 can
-record graph-index's reindex counter (#108: recorded in the notes, not asserted, not timed). A bind clash fails the
-boot loudly naming the port; no retry is added unless it is observed (natsfixture's one retry, #345, is the model).
+The test picks a port with `net.Listen("tcp", ":0")` (the family the ServiceManager binds, `":"+http_port`), with
+`// Every address: the ServiceManager binds ":"+http_port` above it, closes it, and writes it as `http_port`. Metrics
+gets a second picked port, so case 1 can record graph-index's reindex counter (#108: noted, not asserted or timed).
+The observer reads component health over HTTP, `GET /components/health` (`service/service_manager_http.go:30`,
+`service/component_manager_http.go:88`), dialled at `[::1]:<port>`: on a Mac, `127.0.0.1:<port>` can belong to
+another program that bound IPv4 only (#390, port 63150). graph-embedding's `embedding worker watch lost` and the
+follower's lost feed are read there and in the `GRAPH_STATUS` envelopes.
 
 ## D5. The fixed inputs and one round-trip check
 
 About a dozen entities with known IDs, names, an alias, and relationships forming a known path. `checkAnswers(want)`
 is the one oracle, written from the inputs, never from a reply: `entity` (each statement once), `relationships`,
-`pathSearch` (the known path), `summary`, `localSearch`, `entityByAlias`; one `EMBEDDING_INDEX` record per entity
-with status generated. It first waits for all three readiness keys ready and health healthy (events, not time).
-`TestSmoke_OneConfigAnswers` boots, checks, edits one entity (answer and record follow), deletes one (gone from
-answers, record removed), checks again.
+`pathSearch` (the known path), `summary`, `entityByAlias`; one `EMBEDDING_INDEX` record per entity with status
+generated. `localSearch` cannot answer in this stack (no production code writes community records, inventory §2):
+its fixed answer is the refusal `index_not_ready` naming `COMMUNITY_INDEX`. `TestSmoke_OneConfigAnswers` boots,
+checks, edits one entity, deletes one, and checks again.
+
+**Every wait is ordered after the write it checks.** An empty graph reads ready before ingest, and `GRAPH_STATUS`
+envelopes and `EMBEDDING_INDEX` records are file-backed and outlive the process, so "ready" alone can be stale. After
+each batch the observer waits, in order: graph-ingest's durable consumer acknowledged up to the batch's last publish
+sequence; then the `ENTITY_STATES` revision, read after that; then each readiness envelope's indexed revision at or
+above it; only then `checkAnswers`. Declared reads beside the public paths: `EMBEDDING_INDEX`, graph-ingest's
+consumer info, the `ENTITY_STATES` status, and (case 2) graph-ingest's applied-sequence bucket.
 
 ## D6. Restart cases (each must pass)
 
-1. `TestSmoke_StackRestartKeepsAnswers`: SIGTERM, new child, same answers, same record set.
-2. `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`: the child's injected logger holds graph-ingest on the k-th
-   "Entity ingested" record (precedent `settlement_integration_test.go:217-260`). Before the kill the test proves
-   mid-ingest: at least one entity answers and graph-ingest's durable consumer reports an unacknowledged tail (a
-   declared read). Kill, new child: every acknowledged publish answers exactly once; index and records catch up.
-3. `TestSmoke_BrokerRestartBetweenRuns`: SIGTERM, `natsfixture.Restart`, URL unchanged, new child, same answers.
-4. `TestSmoke_BrokerRestartUnderRunningStack`: `Restart` while the child runs; the producer reconnects; a second
-   batch, an edit and a delete are published after; all keys ready again with the extended answers.
+After every restart in cases 1, 2 and 3 the producer publishes one new entity and one edit, and the check requires
+their answers and their embedding records, which no earlier process can have written.
 
-Waits read readiness envelopes and answers; `go test -timeout` is the only deadline. A latched state seen by the
-observer (lost feed, `reset_required`, `embedding worker watch lost`) fails the test at once with the state named,
-so a regression fails fast, not at the timeout.
+1. `TestSmoke_StackRestartKeepsAnswers`: SIGTERM, new child, old answers plus the new writes.
+2. `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`: in the first child, the injected logger holds graph-ingest on
+   the "Entity ingested" record of one fixed entity of the batch (a constant, so the hold always fires; precedent
+   `settlement_integration_test.go:217-260`). That entity carries an appending statement, so a second application
+   shows as a second statement. Before the kill the test proves mid-ingest: the consumer's ack floor is below the
+   held entity's sequence with one pending, and the held entity's applied-sequence record is absent (as
+   `settlement_integration_test.go:243-249`). Kill, new child: every acknowledged publish answers with each
+   statement once; index and records catch up.
+3. `TestSmoke_BrokerRestartBetweenRuns`: SIGTERM, `natsfixture.Restart`, new child, old answers plus the new writes.
+4. `TestSmoke_BrokerRestartUnderRunningStack`: `Restart` while the child runs; a second batch, an edit and a delete
+   are published after; every key ready again with the extended answers; `/components/health` healthy.
+
+In cases 3 and 4 the test requires the fixture's URL unchanged across `Restart`, as `restartKeepingURL` does
+(`processor/graph-ingest/memory_restart_health_integration_test.go:22-27`): Docker does not promise it
+(`natsfixture/restart.go:25-29`), and a remapped port then fails as a fixture failure, not a stack one.
+
+Waits read envelopes and answers; `go test -timeout` is the only deadline. A latched state the observer sees (lost
+feed, `reset_required`, `embedding worker watch lost`) fails the test at once, naming it.
+
+Examples, not generated checks (`docs/testing.md`): restart history is order-dependent, but the owner named the four
+histories that matter; each is a fixed sequence checked against the oracle at every step. A generated history of
+restarts and writes needs a reference model of the whole stack, which this change does not build.
 
 ## D7. Shown able to fail
 
-Each test has a recorded failing run in `notes/<task>.md`: a stopped component (graph-embedding disabled in the
-configuration fails the record check), and `task mutate:check` mutants: graph-ingest acknowledging before its commit
-(case 2 loses a write), the follower's stream-creation comparison inverted (case 4 sees a lost feed), graph-index
-dropping an outgoing edge (path check). Survivors are reported as survivors.
+`task mutate:check` runs no integration-tagged test (`mutation-check` spec, "Nothing selected"), and a killed child
+writes no coverage, so each failure is shown by hand: the mutant applied in a scratch copy of the tree, the failing
+`go test -tags integration` run recorded verbatim in `notes/<task>.md` with the patch. A run that would only end at
+the timeout passes a shorter `-timeout` on its command line. Mutants: graph-embedding disabled in the configuration
+(records missing); graph-index dropping an outgoing edge (path); graph-ingest's applied-sequence guard off (case 2: a
+second statement); the follower's stream-creation comparison inverted (case 4: lost feed seen at once).
 
 ## D8. If case 4 fails on main
 
@@ -85,7 +110,7 @@ expected. If the composed test still fails (graph-embedding's watches, `config.M
 subscriptions were not probed), the failure is filed as an issue with the test output. A fix within one package and
 smaller than the test is task 2.6 of this change, with its own failing-first package test. A larger fix (a new
 mechanism, such as re-binding a lost watch, which the follower spec rules out today, `entity-state-follower` spec
-:86-91) is its own OpenSpec change and PR, merged first; task 2.5 then holds on it. Either way the case stays
+:86-91) is its own OpenSpec change and PR, merged first; task 2.5 then carries `Hold: #<that PR>`. Either way the case stays
 required: this change does not archive with case 4 red.
 
 ## D9. Search checks and merge order
@@ -98,6 +123,11 @@ A D8 fix in `graph/follower` waits for #558 or is coordinated on it.
 
 ## Residual risk
 
-Run time: each broker restart costs about 20 s of watch stall (nats.go's timing, not promised, ADR-112), so the
-package takes minutes inside the integration run's 10 m. A product's own `main` still has to know six things
-(inv, adopter seam): filed as a follow-up, not fixed here.
+- Ports: between the pick and the bind the whole child boots, twice per boot (HTTP and metrics), so another program
+  can take the port: a loud boot failure naming it. No retry until one is seen (natsfixture's one retry, #345).
+- `[::1]` needs an IPv6 loopback; a host without one fails the first health read, naming the address.
+- `config.Manager`'s watch ends silently when its channel closes (`config/manager.go:633-635`), so case 4 cannot
+  observe it; filed as an issue (task 3.4), not proven here.
+- Run time: each broker restart costs about 20 s of watch stall (nats.go's timing, not promised, ADR-112), so the
+  package takes minutes inside the integration run's 10 m.
+- A product's own `main` still has to know six things (inventory, adopter seam): a follow-up, not fixed here.

@@ -11,20 +11,23 @@ producer published on `entity.>`.
 #### Scenario: Answers from one configuration
 
 - **WHEN** the stack boots from the configuration and the producer publishes the fixed entities
-- **THEN** the three readiness keys in `GRAPH_STATUS` read ready, `entity`, `relationships`, `pathSearch`, `summary`,
-  `localSearch` and `entityByAlias` return the expected answers, and each entity has one generated embedding record
+- **THEN** once graph-ingest has acknowledged the last publish, the three readiness keys in `GRAPH_STATUS` report an
+  indexed revision at or above the `ENTITY_STATES` revision read after it, `entity`, `relationships`, `pathSearch`,
+  `summary` and `entityByAlias` return the expected answers, and each entity has one generated embedding record
+- **AND** `localSearch` refuses `index_not_ready` naming `COMMUNITY_INDEX`, since nothing in the stack writes
+  community records
 - **AND** after an edit and a delete the answers and records follow (`TestSmoke_OneConfigAnswers`)
 
 ### Requirement: A whole-stack restart keeps the answers
 
 After the stack stops cleanly and starts again on the same NATS server, it SHALL reach ready with the same answers
-and the same set of embedding records.
+and the same set of embedding records, and SHALL apply what is published after the restart.
 
 #### Scenario: Stop and start the stack
 
 - **WHEN** the stack process stops on SIGTERM and a new process boots from the same configuration
-- **THEN** every readiness key reads ready and the answers and record set equal those before the stop
-  (`TestSmoke_StackRestartKeepsAnswers`)
+- **THEN** after a new entity and an edit are published, every readiness key reaches their revision, and the answers
+  and record set equal those before the stop plus the new writes (`TestSmoke_StackRestartKeepsAnswers`)
 
 ### Requirement: A process killed mid-ingest loses no acknowledged write
 
@@ -36,8 +39,8 @@ up.
 
 - **WHEN** the process is killed with at least one input applied and at least one not acknowledged, and a new process
   boots
-- **THEN** each acknowledged entity answers with each statement once, and readiness and records catch up
-  (`TestSmoke_KillMidIngestKeepsAcknowledgedWrites`)
+- **THEN** each acknowledged entity answers with each statement once, and readiness and records catch up, including
+  a new entity and an edit published after the new process boots (`TestSmoke_KillMidIngestKeepsAcknowledgedWrites`)
 
 ### Requirement: A broker restart between runs keeps the answers
 
@@ -46,16 +49,19 @@ With file storage, a stack started after the NATS server restarted SHALL reach r
 #### Scenario: Restart the broker while the stack is stopped
 
 - **WHEN** the stack stops, the NATS server restarts on the same URL, and the stack boots again
-- **THEN** every readiness key reads ready with the same answers (`TestSmoke_BrokerRestartBetweenRuns`)
+- **THEN** after a new entity and an edit are published, every readiness key reaches their revision with the same
+  answers plus the new writes (`TestSmoke_BrokerRestartBetweenRuns`)
 
 ### Requirement: A running stack recovers from a broker restart
 
 With file storage, a stack that keeps running while the NATS server restarts on the same URL SHALL reach ready again
-without a process restart, and SHALL apply what is published after the restart. No component SHALL declare a lost
-feed or a lost watch because of the restart.
+without a process restart, and SHALL apply what is published after the restart. Because of the restart, no
+`GRAPH_STATUS` envelope SHALL report a lost feed or `reset_required`, and `/components/health` SHALL report every
+component healthy (graph-embedding's `embedding worker watch lost` included).
 
 #### Scenario: Restart the broker under the running stack
 
 - **WHEN** the NATS server restarts while the stack runs, and a second batch, an edit and a delete are published after
-- **THEN** every readiness key reads ready again with answers that include them, and no latched state is reported
+- **THEN** every readiness key reaches their revision with answers that include them, no envelope reports a lost
+  feed or `reset_required`, and `/components/health` reports every component healthy
   (`TestSmoke_BrokerRestartUnderRunningStack`)

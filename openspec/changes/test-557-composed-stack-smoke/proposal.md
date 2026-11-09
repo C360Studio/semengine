@@ -19,9 +19,10 @@ Design track: the change adds a capability spec, `composed-stack`, with one requ
 - A new test-only package, `internal/smoke`, whose integration tests are the composition root: one JSON
   configuration boots graph-ingest, graph-index, graph-embedding and graph-query on one NATS server.
 - A producer publishes a fixed set of entities on `entity.>`; every check reads only what a consumer can read:
-  `graph.query.*` answers (entity, relationships, path, summary, localSearch), the three `GRAPH_STATUS` readiness
-  keys, component health, and embedding records read from `EMBEDDING_INDEX` (declared; no query verb serves them
-  until PR #558). An edit and a delete follow.
+  `graph.query.*` answers (entity, relationships, path, summary, alias), the three `GRAPH_STATUS` readiness keys,
+  component health over HTTP, and embedding records read from `EMBEDDING_INDEX` (no query verb serves them until
+  PR #558). `localSearch` is checked only as its refusal: nothing in this stack writes community records. Every
+  wait is ordered after the write it checks, and each restart is followed by new writes, so stale state cannot pass.
 - Restart safety, each case its own test: (1) stop and start the whole stack; (2) kill the process mid-ingest;
   (3) stop the stack, restart the NATS server, start the stack; (4) restart the NATS server under the running stack.
   After each, the same fixed answers, and every acknowledged publish present exactly once.
@@ -35,9 +36,11 @@ Design track: the change adds a capability spec, `composed-stack`, with one requ
 1. The stack runs in a child process for every boot (D3), not in the test process.
 2. Ports: the test picks a free port and writes `http_port` into the configuration (D4), instead of a production
    change that lets the configuration ask for a kernel-picked port and exposes the bound address.
-3. Two declared reads besides the public paths: `EMBEDDING_INDEX`, and graph-ingest's consumer info to prove the
-   case-2 kill happened mid-ingest (D6).
+3. Four declared reads besides the public paths (D5): `EMBEDDING_INDEX`; graph-ingest's consumer info and the
+   `ENTITY_STATES` status, to order each wait after its write; graph-ingest's applied-sequence bucket, to prove the
+   case-2 kill happened mid-ingest.
 4. The new package's home and name, `internal/smoke` (D1).
+5. `localSearch` checked only as its refusal until community records have a writer.
 
 ## Capabilities
 

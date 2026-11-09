@@ -13,8 +13,8 @@ declared for `graph-query`, and fails to start if a declared verb has no handler
 left alone, so a consumer can serve its own verb there.
 
 graph-query was ported in five steps, and all five are in the tree: the table below is what it serves. The semantic
-search (`semantic`, `similar`) waits for its responder in change 5, and the time-range and area searches for theirs in
-change 7. `MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
+search (`semantic`, `similar`) is answered by graph-embedding, and the time-range and area searches wait for their
+responders in change 7. `MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
 
 ## Verbs
 
@@ -35,9 +35,9 @@ change 7. `MIGRATION.md` lists what a consumer changes at its cutover and grows 
 
 The first four, and `semantic`, `similar`, `spatial` and `temporal`, are forwards: the request and reply bytes pass
 unchanged, neither decoded nor checked, so `min_revision` reaches graph-index on `byName` and an authority read on
-`entity`, `batch` and `prefix` ignores it. The responders of the last four are not in this tree yet: the embedding
-responder arrives in change 5, the spatial and temporal ones in change 7. Until then each of the four is refused
-transient `internal`, naming the subject it forwards to.
+`entity`, `batch` and `prefix` ignores it. The embedding responder is in this tree (graph-embedding); the spatial and
+temporal ones arrive in change 7. Until a responder exists, the verb forwarding to it is refused transient `internal`,
+naming the subject.
 
 A refusal from any verb behind these reaches the caller with its class, code, detail and message. A request that gets
 no answer is refused by `graph-query` itself, class transient, code `internal`, naming the subject: nothing responding,
@@ -264,10 +264,10 @@ Known limits of the keyword classifier, accepted by the owner and tracked in #53
   `area-51` and refused `entity_not_found`.
 
 Not carried from the pin: the semantic strategy and its fallback, which on a missing community index answered
-`searchGraph` from embeddings (a deployment without clustering gets `index_not_ready` instead until change 5 decides the
-semantic tier); `max_communities` (five groups, always); summarising an answer with a model; the pin's `count`,
-`duration_ms`, `community_summaries`, `answer_model` and `degraded` reply fields. `MIGRATION.md` has the decoder
-changes.
+`searchGraph` from embeddings (a deployment without clustering gets `index_not_ready` instead until a follow-up
+graph-query change adds the semantic fallback, owner ruling S1, #563); `max_communities` (five groups,
+always); summarising an answer with a model; the pin's `count`, `duration_ms`, `community_summaries`,
+`answer_model` and `degraded` reply fields. `MIGRATION.md` has the decoder changes.
 
 ### A reply `graph-query` cannot use
 

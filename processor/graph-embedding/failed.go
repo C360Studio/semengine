@@ -191,6 +191,20 @@ func (m *failedMap) counts() (int64, map[string]uint64) {
 	return n, reasons
 }
 
+// withheld is the follower's Withhold: the number of entities whose failure is hop 1's own, the
+// failures that withhold the query verbs (design D5, F2).
+func (m *failedMap) withheld() int64 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var n int64
+	for _, o := range m.failures {
+		if o.hopOne() {
+			n++
+		}
+	}
+	return n
+}
+
 // repairTargets returns, sorted, the entities whose failure is hop 1's own: the repair lane
 // re-drives those, and the Worker's failures wait for a new revision or a restart (pin
 // TestRepairScope_EmbedderSideReasonNotReDriven). It releases mu before the caller takes hop1Mu.

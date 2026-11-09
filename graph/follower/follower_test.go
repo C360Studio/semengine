@@ -10,6 +10,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -420,5 +421,75 @@ func TestGraphIndexEnvelopeUnchanged(t *testing.T) {
 				t.Errorf("envelope %s: failure keys %q; want %q", data, strings.Join(got, ","), tc.want)
 			}
 		})
+	}
+}
+
+// requireNotReady requires err to be the transient index_not_ready refusal.
+func requireNotReady(t *testing.T, what string, err error) {
+	t.Helper()
+	var ce *errs.ClassifiedError
+	if !errors.As(err, &ce) || ce.Class != errs.ErrorTransient || ce.Code != graph.ErrorCodeIndexNotReady {
+		t.Errorf("%s: QueryReady = %v; want transient %s", what, err, graph.ErrorCodeIndexNotReady)
+	}
+}
+
+// builtFollower is a Follower whose first build is complete, so QueryReady never reads the
+// stream, with the plug-in's Failed and Withhold as given.
+func builtFollower(key string, failed func() (int64, map[string]uint64), withhold func() int64) *Follower {
+	f := progressFollower(key)
+	f.failed, f.withhold = failed, withhold
+	f.bootstrapped.Store(true)
+	return f
+}
+
+// TestWithholdNarrowsQueryReady: after the first build a plug-in's Withhold, not Failed, decides
+// whether failures withhold queries (entity-state-follower spec, "A failure the plug-in does not
+// withhold on"), while the envelope and Stuck keep reading Failed. One failure Withhold does not
+// count lets QueryReady answer; counted, it refuses; uncounted again, the refusal clears. A reset
+// and a lost feed refuse whatever Withhold says.
+func TestWithholdNarrowsQueryReady(t *testing.T) {
+	var withheld atomic.Int64
+	failed := func() (int64, map[string]uint64) { return 1, map[string]uint64{"content_error": 1} }
+	f := builtFollower("graph-embedding", failed, withheld.Load)
+
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("one failure Withhold does not count: QueryReady = %v; want nil", err)
+	}
+	if status := read(f, 0); status.FailedCount != 1 || status.State != graph.IndexStateDegraded || status.Ready {
+		t.Errorf("envelope with one failure Withhold does not count = %+v; want failed_count 1, degraded", status)
+	}
+	if !slices.ContainsFunc(f.Stuck(), func(s string) bool { return strings.Contains(s, "1 index writes unresolved") }) {
+		t.Errorf("Stuck = %q; want the unresolved write named", f.Stuck())
+	}
+
+	withheld.Store(1)
+	requireNotReady(t, "Withhold above 0", f.QueryReady(t.Context()))
+	withheld.Store(0)
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("Withhold back at 0: QueryReady = %v; want nil", err)
+	}
+
+	f.feedLost.Store(true)
+	requireNotReady(t, "a lost feed with Withhold at 0", f.QueryReady(t.Context()))
+	f.Reset(graph.StateResetReason("test"))
+	var ce *errs.ClassifiedError
+	if err := f.QueryReady(t.Context()); !errors.As(err, &ce) || ce.Code != graph.ErrorCodeGraphStateResetRequired {
+		t.Errorf("a reset with Withhold at 0: QueryReady = %v; want %s", err, graph.ErrorCodeGraphStateResetRequired)
+	}
+}
+
+// TestGraphIndexWithholdUnchanged: with no Withhold, as graph-index configures its follower,
+// QueryReady withholds on Failed's count as before (entity-state-follower spec, "No Withhold").
+func TestGraphIndexWithholdUnchanged(t *testing.T) {
+	var count atomic.Int64
+	f := builtFollower(readiness.KeyGraphIndex, func() (int64, map[string]uint64) { return count.Load(), nil }, nil)
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Fatalf("no failures: QueryReady = %v; want nil", err)
+	}
+	count.Store(1)
+	requireNotReady(t, "one failure, no Withhold", f.QueryReady(t.Context()))
+	count.Store(0)
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("failure resolved: QueryReady = %v; want nil", err)
 	}
 }

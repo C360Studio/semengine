@@ -518,3 +518,36 @@ func followerStacks() string {
 	}
 	return strings.Join(found, "\n\n")
 }
+
+// TestBuildCompletingCallAnswersPastUnwithheldFailure: a failure Withhold leaves out, held before
+// the first build (a Worker failure seeded at Start), does not refuse the call whose envelope
+// latches the build complete. Before it, the gate reads the envelope, which reads Failed and
+// reads degraded; once that same envelope has latched the build, the call answers as every later
+// one does (stop-2 review, item 4). The follower is not run, so no heartbeat latches the build
+// first: the snapshot is marked delivered over an empty bucket, and this QueryReady's envelope is
+// the one that latches it.
+func TestBuildCompletingCallAnswersPastUnwithheldFailure(t *testing.T) {
+	client := fixtureClient(t)
+	entityStates(t, client)
+	f, err := Open(t.Context(), Config{
+		Client:          client,
+		Key:             readiness.KeyGraphEmbedding,
+		MetricsRegistry: metric.NewMetricsRegistry(),
+		Deliver:         func(context.Context, Entry) {},
+		Failed:          func() (int64, map[string]uint64) { return 1, map[string]uint64{"content_error": 1} },
+		Withhold:        func() int64 { return 0 },
+	})
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	f.snapshotDone.Store(true)
+	if f.bootstrapped.Load() {
+		t.Fatal("the build is latched before any envelope; the test reads nothing")
+	}
+	if err := f.QueryReady(t.Context()); err != nil {
+		t.Errorf("the call that completes the build = %v; want nil", err)
+	}
+	if !f.bootstrapped.Load() {
+		t.Error("QueryReady's envelope did not latch the build")
+	}
+}

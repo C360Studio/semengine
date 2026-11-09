@@ -209,8 +209,8 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 	awaitCommunityView(t, stack.client, drone1, written)
 
 	for _, stub := range []struct{ responder, name, reply string }{
-		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25"},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
-		{graph.ResponderGraphEmbedding, "similar", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.5}]},"indexed_revision":9,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphEmbedding, "search", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.75}],"embedder_type":"bm25","unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
+		{graph.ResponderGraphEmbedding, "similar", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","similarity":0.5}],"unreadable_records":1,"failed_records":2},"indexed_revision":0,"producer":"graph-embedding","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphIndexSpatial, "bounds", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001","lat":48.25,"lon":11.5,"alt":310.5}],"truncated":true},"indexed_revision":9,"producer":"graph-index-spatial","timestamp":"2026-11-04T10:00:00Z"}`},
 		{graph.ResponderGraphIndexTemporal, "range", `{"data":{"results":[{"entity_id":"c360.test.query.system.drone.001"}],"truncated":false},"indexed_revision":9,"producer":"graph-index-temporal","timestamp":"2026-11-04T10:00:00Z"}`},
 	} {

@@ -80,3 +80,98 @@ func TestSearchRequestTypesWire(t *testing.T) {
 		}
 	}
 }
+
+// TestRequestsDecodeStrictly proves the embedding verbs' requests and replies on the wire (design D1,
+// D3, D4). Each request literal decodes strictly into the value it was marshalled from, min_revision
+// included, so a responder that refuses unknown keys still reads the forward graph-query sends. A key
+// one request defines and the other does not is refused by name: scope sent to similar, entity_id sent
+// to search. Both replies always carry the two record counts, 0 included, since a 0 is the answer that
+// nothing was skipped. The limit bounds are the spec's literals: 0 means 10, the largest is 100.
+func TestRequestsDecodeStrictly(t *testing.T) {
+	if DefaultSimilarityLimit != 10 || MaxSimilarityLimit != 100 {
+		t.Errorf("limits = %d, %d; want 10, 100", DefaultSimilarityLimit, MaxSimilarityLimit)
+	}
+
+	requests := []struct {
+		name  string
+		value any
+		into  func() any
+		want  string
+	}{
+		{
+			"search",
+			SemanticRequest{Query: "pump failure", Limit: 5, Scope: []string{"acme.ops", ""}, MinRevisionField: MinRevisionField{MinRevision: 7}},
+			func() any { return &SemanticRequest{} },
+			`{"query":"pump failure","limit":5,"scope":["acme.ops",""],"min_revision":7}`,
+		},
+		{
+			"search unscoped",
+			SemanticRequest{Query: "pump"},
+			func() any { return &SemanticRequest{} },
+			`{"query":"pump","limit":0}`,
+		},
+		{
+			"similar",
+			SimilarRequest{EntityID: "acme.ops.robotics.gcs.drone.001", Limit: 100, MinRevisionField: MinRevisionField{MinRevision: 7}},
+			func() any { return &SimilarRequest{} },
+			`{"entity_id":"acme.ops.robotics.gcs.drone.001","limit":100,"min_revision":7}`,
+		},
+	}
+	for _, tc := range requests {
+		got, err := json.Marshal(tc.value)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", tc.name, err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("%s = %s, want %s", tc.name, got, tc.want)
+		}
+		back := tc.into()
+		if err := decodeStrictly(tc.want, back); err != nil {
+			t.Fatalf("%s: strict decode of %s: %v", tc.name, tc.want, err)
+		}
+		if again, err := json.Marshal(back); err != nil || string(again) != tc.want {
+			t.Errorf("%s: decoded and marshalled again = %s (%v), want %s", tc.name, again, err, tc.want)
+		}
+	}
+
+	refused := []struct {
+		key  string
+		data string
+		into any
+	}{
+		{"entity_id", `{"query":"pump","entity_id":"acme.ops.robotics.gcs.drone.001"}`, &SemanticRequest{}},
+		{"scope", `{"entity_id":"acme.ops.robotics.gcs.drone.001","scope":["acme"]}`, &SimilarRequest{}},
+	}
+	for _, tc := range refused {
+		err := decodeStrictly(tc.data, tc.into)
+		if err == nil || !strings.Contains(err.Error(), `"`+tc.key+`"`) {
+			t.Errorf("strict decode of %s = %v, want a refusal naming %s", tc.data, err, tc.key)
+		}
+	}
+
+	replies := []struct {
+		name  string
+		value any
+		want  string
+	}{
+		{
+			"search reply",
+			SemanticData{Results: []SimilarityHit{}, EmbedderType: "bm25"},
+			`{"results":[],"embedder_type":"bm25","unreadable_records":0,"failed_records":0}`,
+		},
+		{
+			"similar reply",
+			SimilarData{Results: []SimilarityHit{{EntityID: "a.b.c.d.e.f", Similarity: 0.5}}, UnreadableRecords: 2, FailedRecords: 3},
+			`{"results":[{"entity_id":"a.b.c.d.e.f","similarity":0.5}],"unreadable_records":2,"failed_records":3}`,
+		},
+	}
+	for _, tc := range replies {
+		got, err := json.Marshal(tc.value)
+		if err != nil {
+			t.Fatalf("%s: marshal: %v", tc.name, err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("%s = %s, want %s", tc.name, got, tc.want)
+		}
+	}
+}

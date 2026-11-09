@@ -5,10 +5,10 @@ import "time"
 // Reply types of the derived-index verbs graph-query forwards to: graph.embedding.query.search and
 // similar, graph.spatial.query.bounds and graph.temporal.query.range. Each is the Data of a
 // QueryResponse, and the verb table (QueryVerbs) names which verb sends which. Their responders arrive
-// with later changes; these types declare what those responders must send. What IndexedRevision means
-// on the embedding verbs is theirs to settle. TemporalRangeRequest and SpatialBoundsRequest are what
-// graph-query's global search sends to the range and bounds verbs, so what their responders must
-// decode.
+// with later changes, except the embedding verbs', which processor/graph-embedding answers; these
+// types declare what those responders send. The embedding verbs claim no ENTITY_STATES revision and
+// send IndexedRevision 0. TemporalRangeRequest and SpatialBoundsRequest are what graph-query's
+// global search sends to the range and bounds verbs, so what their responders must decode.
 
 // SimilarityHit is one entity a semantic or similar lookup found.
 type SimilarityHit struct {

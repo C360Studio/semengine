@@ -8,10 +8,13 @@
 > apart from markdownlint fixes. Read it with these facts about this repository:
 >
 > - The `graph-embedding` component is in this tree (`processor/graph-embedding`, change 5), but its query responder
->   is not: it arrives in change 5's PR B, and `pkg/fusion` in its PRs C and D. Until the responder lands
->   `semantic` is refused as transient `internal`, naming the subject, because nothing answers it. The `Scope` field
->   and the follow-on change the record describes are not present. The helper `graph.MatchesAnyIDPrefix` is
->   (`graph/id_prefix.go`, `TestMatchesAnyIDPrefix`); the fusion wiring that would call it is not.
+>   now answers `graph.embedding.query.search` and `similar` (change 5, PR B), and `pkg/fusion` arrives in its PRs C
+>   and D. `graph.SemanticRequest` has the `Scope` field, and the responder filters candidates by it before ranking,
+>   with `graph.MatchesAnyIDPrefix` (`graph/id_prefix.go`); `semantic` forwards the request bytes unchanged. The
+>   fusion wiring that would send a scope is not present.
+> - The compatibility note below ("an un-migrated server silently ignores `scope`") no longer holds here: the
+>   responder decodes strictly, so a request with a key it does not define is refused `invalid_request`, and a
+>   malformed `scope` prefix is refused the same way (`processor/graph-embedding/MIGRATION.md`).
 > - Issue numbers (`gh#463` and the like), the "openspec change" it names, and file paths with line numbers are
 >   SemStreams', at that commit.
 

@@ -5,11 +5,9 @@ your cutover and what you can leave alone. The port breaks old shapes where that
 (owner, 2026-11-02). Cites to sister repositories are at SemSource `e4febc0d`. Nothing here was run against
 your code: it comes from reading it.
 
-graph-embedding is ported in four pull requests. This file covers the first, the write path: the component that
-follows `ENTITY_STATES` and keeps one BM25 embedding record per entity with text. The query verbs
-(`graph.embedding.query.*`) arrive in the second pull request, and `pkg/fusion` in the third and fourth. Nothing in
-this tree answers `graph.embedding.query.search` or `.similar` yet; this file gets a section for their reply shape
-when they land.
+graph-embedding is ported in four pull requests. This file covers the first two: the write path (the component that
+follows `ENTITY_STATES` and keeps one BM25 embedding record per entity with text) and the query verbs
+(`graph.embedding.query.search` and `.similar`). `pkg/fusion` arrives in the third and fourth.
 
 ## Changes that stop boot (loud)
 
@@ -43,7 +41,7 @@ Read these. Nothing errors.
 - **The status verb is gone.** `graph.embedding.query.status` has no responder and is not declared in
   `graph.QueryVerbs`; a request to it gets "no responders". Readiness is the `GRAPH_STATUS` record (read the key
   `graph-embedding`); the second pull request is to carry "not ready" on the embedding replies themselves
-  (ADR-083, ADR-109), and is not in the tree yet. *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
+  (ADR-083, ADR-109), and the query verbs now do. *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
   Nothing in SemSource's tree
   calls the status verb (grep, 0 hits at `e4febc0d`).
 - **When the status reads `degraded`.** The follower now reads degraded when the component is behind and no
@@ -64,7 +62,44 @@ Read these. Nothing errors.
   from the error count, and review any alert on the error count.
 - **A lost embedding watch stays lost.** If the Worker's watch on `EMBEDDING_INDEX` ends while the component runs,
   `Health` names it and stays unhealthy until the process restarts. The pin had no such state. *Do:* alert on
-  unhealthy components and restart.
+  unhealthy components and restart. The same holds for the vector cache's watch, which is new here: `Health` reads
+  `vector cache watch lost; restart the process`, and both query verbs are refused `index_not_ready` until you do.
+- **Queries are refused while the graph state is not ready.** The pin answered from a bucket scan when its cache was
+  cold. Here a verb is refused transient `index_not_ready` before the first build completes, while the
+  `ENTITY_STATES` feed is lost, and while a hop-1 failure stands (a failed record delete, pending write or entity
+  read); a latched reset is refused fatal `graph_state_reset_required`. A failure in the Worker (for example a
+  document whose text cannot be extracted) does not refuse anything: the other vectors answer and `failed_records`
+  counts the entity. The published status still reads `degraded` for it. *Do:* retry on `index_not_ready`.
+
+## Query verbs: what changes in a request or reply
+
+Applies to `graph.embedding.query.search` and `.similar`, and so to graph-query's `semantic` and `similar`, which
+forward the bytes unchanged. Each change below fails or alters an answer without a boot error.
+
+- **The reply is enveloped.** The pin sent a bare object. Now `data.results` holds the hits inside a
+  `graph.QueryResponse`; `search` also sends `data.embedder_type`. *Do:* read `data.results`.
+- **`similar`'s hit list is renamed.** `similar` (the field holding the hits) is now `results`, and the echoed
+  `entity_id` and the `duration` are gone.
+- **Limits are refused, not clamped.** A `limit` above 100 or below 0 was cut down to fit; it is now refused
+  `invalid_request`, naming the bound. 0 still means 10. *Do:* send a limit from 1 to 100.
+- **Unknown keys are refused.** The pin ignored them, so a typo or an old key went unnoticed; now the request is
+  refused `invalid_request`, naming the key, and so is data after the JSON object. This changes ADR-071's compatibility
+  note that an unmigrated server ignores `scope`. *Do:* send only `query`, `limit`, `scope` and `min_revision` to
+  `search`, and `entity_id`, `limit` and `min_revision` to `similar`.
+- **A bad `scope` or entity ID is `invalid_request`.** The pin sent the inner code `entity_id_prefix_invalid` for a
+  bad scope prefix; the code is now `invalid_request`, with the validator's message. *Do:* match on
+  `invalid_request`.
+- **`min_revision` above 0 is refused.** These verbs claim no `ENTITY_STATES` revision, so they cannot promise your
+  write is included, and refuse the request class invalid, `invalid_request`, rather than answer without it. 0 is
+  answered, with `indexed_revision` 0. graph-query's `semantic` and `similar` forward `min_revision` to them, so the
+  refusal reaches you through graph-query. *Do:* do not ask for a revision on these verbs.
+- **A hit with a score of 0 is dropped.** A query of only stopwords used to return a list of unrelated entities; it
+  now returns `results: []`.
+- **Two counts are always sent.** `unreadable_records` and `failed_records` say how many records could not be
+  decoded and how many entities failed to embed. Both 0 does not prove every entity is searchable: an entity whose
+  embedding is still pending is counted in neither.
+- **No bucket-scan fallback.** The pin scanned `EMBEDDING_INDEX` when its cache was cold, which hid a stale-cache
+  defect; the verbs are refused `index_not_ready` instead until the cache is ready.
 
 ## Not carried
 

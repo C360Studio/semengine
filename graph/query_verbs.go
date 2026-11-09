@@ -29,8 +29,8 @@ const ResponderGraphIndex = "graph-index"
 // ResponderGraphQuery is the Responder of the verbs graph-query answers.
 const ResponderGraphQuery = "graph-query"
 
-// ResponderGraphEmbedding is the Responder of the embedding verbs, whose
-// component arrives with a later change.
+// ResponderGraphEmbedding is the Responder of the embedding verbs, answered by
+// processor/graph-embedding.
 const ResponderGraphEmbedding = "graph-embedding"
 
 // ResponderGraphIndexSpatial is the Responder of the spatial verb, whose
@@ -53,7 +53,8 @@ var entityVerb = QueryVerb{
 // EntityRequest, batch an EntityBatchRequest and prefix a PrefixQueryRequest.
 // Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
 // QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
-// (search, similar, bounds, range), whose responders are not in the tree yet. On
+// (search, similar, bounds, range), of which only search and similar have a responder in the
+// tree. On
 // graph.query.*, graph-query's forwards answer as the verb they forward to does, and
 // entityByAlias, relationships, pathSearch, summary, localSearch and globalSearch, which read index
 // replies or a community record, are enveloped from graph-query, and hierarchyStats, which reads graph-ingest

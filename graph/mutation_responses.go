@@ -10,9 +10,9 @@ import "github.com/c360studio/semengine/pkg/errs"
 // emit revision_mismatch, entity_not_found, entity_already_exists, invalid_request,
 // structural_invalid (its stream lane only), message_type_unregistered and
 // internal; the exact reader emits invalid_request and internal; index_not_ready
-// comes from natsclient's OpenFrameworkBucket and pkg/lifecycle's queries. Nothing
-// here emits resource_exhausted or embedding_unavailable: their emitters are pin
-// packages not ported yet. graph-ingest counts each refused canonical mutation on
+// comes from natsclient's OpenFrameworkBucket and pkg/lifecycle's queries.
+// embedding_unavailable is emitted by processor/graph-embedding's similar verb. Nothing
+// here emits resource_exhausted: its emitters are pin packages not ported yet. graph-ingest counts each refused canonical mutation on
 // graph_mutation_outcomes_total under its code, or internal when it carries none.
 const (
 	// ErrorCodeRevisionMismatch indicates the request specified an

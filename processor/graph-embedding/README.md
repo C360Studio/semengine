@@ -18,8 +18,9 @@ applied only after both:
 2. **Hop 2**, the Worker (`graph/embedding`), turns each pending record into a *generated* record (the vector) or a
    *failed* one (a bounded reason). Its result is the record's terminal outcome.
 
-This version carries the write path only. The query verbs (`graph.embedding.query.search` and `.similar`) and the
-vector cache they read are not present yet; nothing answers on those subjects.
+The component also answers two query verbs, `graph.embedding.query.search` (rank entities against a text query) and
+`graph.embedding.query.similar` (rank entities against one entity's vector). Both read a vector cache kept in memory
+from `EMBEDDING_INDEX`; "Query verbs" below says what they accept and return.
 
 ## Architecture
 
@@ -94,14 +95,15 @@ The component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself and declares
 ## Health and readiness
 
 `Health` is `Healthy` once started, and unhealthy while any of these holds: a stored `ENTITY_STATES` value could not
-be decoded (Health reads `graph state reset required: <reason>`; no query verbs are served yet, and the refusal with
-the error code `graph_state_reset_required` arrives with the `graph.embedding.query.*` verbs in PR B), failed
-entities are unresolved, the `ENTITY_STATES` feed is lost, or the Worker's watch on `EMBEDDING_INDEX` ended while the
-component ran. The error count (`ErrorCount`) rises by one when an entity becomes
-failed (it was not failed before; see "Failed entities and the repair lane" below) and by one for each stored value
-refused this way; a repeated failure of an entity already failed, such as a repair pass failing again, and a failure
-older than the entity's latest outcome add nothing. graph-index counts the same way. The count never lowers `Healthy`
-by itself (ADR-109). A lost Worker watch and a lost feed hold until the process restarts; nothing rebinds them.
+be decoded (Health reads `graph state reset required: <reason>`, and both query verbs are refused with the error
+code `graph_state_reset_required`), failed entities are unresolved, the `ENTITY_STATES` feed is lost, the Worker's
+watch on `EMBEDDING_INDEX` ended while the component ran, or the vector cache's watch on `EMBEDDING_INDEX` ended
+(Health reads `vector cache watch lost; restart the process`). The error count (`ErrorCount`) rises by one when an
+entity becomes failed (it was not failed before; see "Failed entities and the repair lane" below) and by one for each
+stored value refused this way; a repeated failure of an entity already failed, such as a repair pass failing again,
+and a failure older than the entity's latest outcome add nothing. graph-index counts the same way. The count never
+lowers `Healthy` by itself (ADR-109). A lost Worker watch, a lost cache watch and a lost feed hold until the process
+restarts; nothing rebinds them.
 `DataFlow` counts one input per delivered `ENTITY_STATES` entry, update or delete, before merging.
 
 The follower publishes the readiness record to `GRAPH_STATUS` at once and then every heartbeat, with
@@ -120,6 +122,42 @@ pending write and a failed entity read. Every 30 seconds the repair lane retries
 value; any later convergence of the entity in hop 1 (hop 1 writes its pending record, removes its record, or finds a
 generated record already standing) clears the failure. The Worker's failures are not retried: they wait for a new
 revision of the entity or a restart.
+
+## Query verbs
+
+Both verbs answer a `graph.QueryResponse` with producer `graph-embedding`, from `Start` until `Stop` returns. Each
+reply's `data` holds `results` (a JSON array, `[]` when empty; each hit is an `entity_id` and a `similarity`),
+`unreadable_records` (records in `EMBEDDING_INDEX` that could not be decoded) and `failed_records` (entities whose
+latest embedding failed, so they cannot be hits). `search` also sends `embedder_type`, always `bm25`. A 0 in both
+counts does not prove every entity is searchable: an entity whose embedding is still pending is left out and counted
+in neither.
+
+| Subject | Request keys | Ranks |
+| --- | --- | --- |
+| `graph.embedding.query.search` | `query` (required, not blank), `limit`, `scope`, `min_revision` | entities against the query text |
+| `graph.embedding.query.similar` | `entity_id` (required), `limit`, `min_revision` | entities against that entity's vector; the entity itself is never a hit |
+
+- **Limit.** 0 means 10, 1 to 100 is used as sent, and anything else is refused `invalid_request`, not cut down.
+- **Scope.** `scope` is a list of dot-delimited entity ID prefixes; an entity is a candidate if it matches any of them,
+  and an empty prefix matches every entity. The filter runs before ranking, so a limit of 1 gives the best entity
+  inside the scope. A prefix that fails `types.ValidateEntityIDPrefix` is refused `invalid_request`.
+- **Hits.** Ranked by similarity, ties by entity ID. A hit scoring 0 is dropped.
+- **Strict requests.** A key the request does not define, or data after the JSON object, is refused
+  `invalid_request`, naming what was refused.
+- **No revision claim.** The verbs do not say how current the cache is. `indexed_revision` is always 0, and a
+  `min_revision` above 0 is refused `invalid_request` rather than answered.
+- **`similar` needs a vector.** An entity with no record, a pending record or a failed one with no vector is refused
+  class invalid, code `embedding_unavailable`; a record that cannot be decoded is refused class invalid with no code.
+
+### When a call is withheld
+
+Before answering, each verb asks the follower whether the graph state is ready. It is refused transient
+`index_not_ready` before the first build completes, while the `ENTITY_STATES` feed is lost, while a hop-1 failure
+(`delete_failed`, `pending_write_failed`, `entity_read_failed`) stands, and while the cache has not applied its first
+snapshot or has lost its watch. A latched reset is refused fatal `graph_state_reset_required`. A failure in the Worker
+(hop 2, such as a `content_error` for a document whose text cannot be extracted) does not withhold anything: the
+verbs answer from the other vectors and `failed_records` counts it. The status the component publishes still reads
+degraded while such a failure stands. A malformed request is refused `invalid_request` whatever the readiness.
 
 ## Metrics
 

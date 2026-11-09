@@ -35,8 +35,9 @@ func awaitStreamVisible(ctx context.Context, t *testing.T, client *natsclient.Cl
 	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	_, err = probe.Await(waitCtx, func(ctx context.Context) (bool, error) {
+		// The lookup's error is the observation's, so a wait that runs out names it (#572).
 		_, lookupErr := js.Stream(ctx, entityStream.name)
-		return lookupErr == nil, nil
+		return lookupErr == nil, lookupErr
 	}, func(found bool) bool { return found })
 	require.NoError(t, err, "graph-ingest's client must reach the ENTITY stream after the restart")
 }

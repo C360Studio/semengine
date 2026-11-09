@@ -169,10 +169,10 @@ ordered list SHALL hold each hydrated entity exactly once.
 
 #### Scenario: Generated inputs
 
-- **WHEN** entities, names and queries are generated (seed recorded), with equal-score groups built by giving their
-  entities one shared name that matches no query and no signals
-- **THEN** every ranking is the input's multiset and each equal-score group keeps resolve order
-  (`TestRankIsStablePermutation`)
+- **WHEN** entities, names and queries are generated (seed recorded), with groups whose non-position signals are equal,
+  built by giving their entities one shared name that matches no query and no signals
+- **THEN** every ranking is the input's multiset and each such group keeps resolve order; an exact score tie keeps
+  resolve order too (`TestRankIsStablePermutation`, its exact-tie case)
 
 ### Requirement: The engine is built once with its dependencies
 

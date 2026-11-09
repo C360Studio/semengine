@@ -256,6 +256,9 @@ func TestSharedServerAndReset(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer leaked.Close()
+		if _, err := leaked.SubscribeSync("leaked.by.test"); err != nil {
+			t.Fatal(err)
+		}
 		flushCtx, cancel := context.WithTimeout(t.Context(), stopBound)
 		defer cancel()
 		if err := leaked.FlushWithContext(flushCtx); err != nil {
@@ -267,10 +270,12 @@ func TestSharedServerAndReset(t *testing.T) {
 		}
 
 		rec.runCleanups()
-		// The error names the connection left open, so a failure says whose it was (#493).
+		// The error names the connection left open and what it subscribed to, so a failure says
+		// whose it was (#493, #573).
 		if len(rec.errors) != 1 || !strings.Contains(rec.errors[0], "1 client connection") ||
-			!strings.Contains(rec.errors[0], fmt.Sprintf("cid=%d name=\"leaked-by-test\"", leakedID)) {
-			t.Fatalf("cleanups errors = %q, want one naming \"1 client connection\" and the leaked connection's cid %d and name",
+			!strings.Contains(rec.errors[0], fmt.Sprintf("cid=%d name=\"leaked-by-test\"", leakedID)) ||
+			!strings.Contains(rec.errors[0], "[leaked.by.test]") {
+			t.Fatalf("cleanups errors = %q, want one naming \"1 client connection\" and the leaked connection's cid %d, name and subject",
 				rec.errors, leakedID)
 		}
 		leaked.Close()
@@ -283,6 +288,9 @@ func TestSharedServerAndReset(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer leaked.Close()
+		if _, err := leaked.SubscribeSync("leaked.by.test"); err != nil {
+			t.Fatal(err)
+		}
 		flushCtx, cancel := context.WithTimeout(t.Context(), stopBound)
 		defer cancel()
 		if err := leaked.FlushWithContext(flushCtx); err != nil {

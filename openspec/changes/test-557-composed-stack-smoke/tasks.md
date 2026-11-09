@@ -18,9 +18,9 @@ port, no `t.Parallel`, no `context.WithValue`.
   refusal. Shown to fail: graph-embedding disabled in the configuration, and the graph-index edge mutant (D7).
 - [ ] 2.2 `TestSmoke_StackRestartKeepsAnswers` (case 1), with a new entity and an edit after the restart;
   graph-index's reindex counter recorded in the notes (#108).
-- [ ] 2.3 `TestSmoke_KillMidIngestKeepsAcknowledgedWrites` (case 2): hold on one fixed entity with an appending
-  statement; ack floor, pending count and the absent applied-sequence record asserted before the kill. Shown to
-  fail: graph-ingest's applied-sequence guard off.
+- [ ] 2.3 `TestSmoke_KillMidIngestKeepsAcknowledgedWrites` (case 2): hold on one fixed entity, published last, with an
+  appending statement; ack floor at its sequence minus 1 with exactly one pending, and the absent applied-sequence
+  record, asserted before the kill. Shown to fail: graph-ingest's applied-sequence guard off.
 - [ ] 2.4 `TestSmoke_BrokerRestartBetweenRuns` (case 3), URL unchanged across `Restart`, new writes after.
 - [ ] 2.5 `TestSmoke_BrokerRestartUnderRunningStack` (case 4). Shown to fail: the follower's stream-creation
   comparison inverted. If it fails on main, the issue filed with its output is linked here (D8); if the fix is a

@@ -48,7 +48,9 @@ gets a second picked port, so case 1 can record graph-index's reindex counter (#
 The observer reads component health over HTTP, `GET /components/health` (`service/service_manager_http.go:30`,
 `service/component_manager_http.go:88`), dialled at `[::1]:<port>`: on a Mac, `127.0.0.1:<port>` can belong to
 another program that bound IPv4 only (#390, port 63150). graph-embedding's `embedding worker watch lost` and the
-follower's lost feed are read there and in the `GRAPH_STATUS` envelopes.
+follower's lost feed are read there and in the `GRAPH_STATUS` envelopes. An empty component list reads healthy
+(`health/helpers.go:44-45`), so the check requires all four components by name, a total of 4, each `healthy: true`,
+not only the overall verdict.
 
 ## D5. The fixed inputs and one round-trip check
 
@@ -62,8 +64,10 @@ checks, edits one entity, deletes one, and checks again.
 **Every wait is ordered after the write it checks.** An empty graph reads ready before ingest, and `GRAPH_STATUS`
 envelopes and `EMBEDDING_INDEX` records are file-backed and outlive the process, so "ready" alone can be stale. After
 each batch the observer waits, in order: graph-ingest's durable consumer acknowledged up to the batch's last publish
-sequence; then the `ENTITY_STATES` revision, read after that; then each readiness envelope's indexed revision at or
-above it; only then `checkAnswers`. Declared reads beside the public paths: `EMBEDDING_INDEX`, graph-ingest's
+sequence (graph-ingest's own ordering event; its readiness record carries no indexed revision,
+`processor/graph-ingest/readiness.go:237`, `graph/index_status.go:63`, so it is only required not degraded); then the
+`ENTITY_STATES` revision, read after that; then the graph-index and graph-embedding envelopes' indexed revision at
+or above it; only then `checkAnswers`. Declared reads beside the public paths: `EMBEDDING_INDEX`, graph-ingest's
 consumer info, the `ENTITY_STATES` status, and (case 2) graph-ingest's applied-sequence bucket.
 
 ## D6. Restart cases (each must pass)
@@ -73,15 +77,18 @@ their answers and their embedding records, which no earlier process can have wri
 
 1. `TestSmoke_StackRestartKeepsAnswers`: SIGTERM, new child, old answers plus the new writes.
 2. `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`: in the first child, the injected logger holds graph-ingest on
-   the "Entity ingested" record of one fixed entity of the batch (a constant, so the hold always fires; precedent
+   the "Entity ingested" record of one fixed entity, published last in the batch (a constant, so the hold always
+   fires; precedent
    `settlement_integration_test.go:217-260`). That entity carries an appending statement, so a second application
-   shows as a second statement. Before the kill the test proves mid-ingest: the consumer's ack floor is below the
-   held entity's sequence with one pending, and the held entity's applied-sequence record is absent (as
+   shows as a second statement. Lanes are serial per entity, so publishing it last leaves nothing queued
+   behind it. Before the kill the test proves mid-ingest: the consumer's ack floor reaches the held entity's
+   sequence minus 1 with exactly one pending, and the held entity's applied-sequence record is absent (as
    `settlement_integration_test.go:243-249`). Kill, new child: every acknowledged publish answers with each
    statement once; index and records catch up.
 3. `TestSmoke_BrokerRestartBetweenRuns`: SIGTERM, `natsfixture.Restart`, new child, old answers plus the new writes.
 4. `TestSmoke_BrokerRestartUnderRunningStack`: `Restart` while the child runs; a second batch, an edit and a delete
-   are published after; every key ready again with the extended answers; `/components/health` healthy.
+   are published after; the graph-index and graph-embedding keys reach their revision, graph-ingest's reads not
+   degraded, with the extended answers; `/components/health` lists all four components, each healthy.
 
 In cases 3 and 4 the test requires the fixture's URL unchanged across `Restart`, as `restartKeepingURL` does
 (`processor/graph-ingest/memory_restart_health_integration_test.go:22-27`): Docker does not promise it

@@ -29,13 +29,14 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
   `TestRelationsUnreadTargetLabelled`, `TestPathsCapLabelled`, `TestPathStopsAtUnreadNode`,
   `TestImpactUnreadFileTruncates`, `TestGraphCounterpartFaultTruncates`; a mutant per label. **Review stop.**
   Done in `e6a45550e19aad272875aa3e7953adc396db9c41`; choices and mutation checks in `notes/2.2.md`.
-- [ ] 2.3 Construction, metrics, logging, hydration (D4, D5, D7): `NewEngine` with a logger, options and an error; both
+- [x] 2.3 Construction, metrics, logging, hydration (D4, D5, D7): `NewEngine` with a logger, options and an error; both
   counters through `metric.RegisterOrGet`; the skipped-read counter and one Warn line per facet per call; nil-context
   refusals; `hydrate.go` and its tests; the `storeregistry.Registry` assertion. Check: `TestNewEngineRefusesNilClient`,
   `TestNewEngineRefusesNilLogger`, `TestCounterOnlyOnInjectedRegistry`, `TestEnginesShareOneSeries`,
   `TestRegistrationRefusalReturned`, `TestSkippedReadLoggedAndCounted` (mutants: log removed, counter removed),
   `TestFuseRefusesNilContext`, `TestResolveBodyRefusesNilContext`, the pin's `hydrate_test.go` and `body_reason_test.go`
   tests, `-race`.
+  Done in `8e3308d572dccebf81d12485bb2b7a2094c4ef3c`; choices and mutation checks in `notes/2.3.md`.
 - [ ] 2.4 `fusionvocab` (D6, under V1): `New(parents)`. Check: `TestClassSpecificityCountsParents`,
   `TestClassSpecificityNilParentsIsZero`, `TestPredicateSalience`; `go list -deps ./pkg/fusion/...` names no
   semvocab and no `vocabulary/cco`. **Review stop.**

@@ -45,7 +45,7 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
 
 ## 3. Close-out
 
-- [ ] 3.1 `pkg/fusion/README.md` and `pkg/fusion/MIGRATION.md` (`NewEngine` logger, options and error; `RetrievalClient`
+- [x] 3.1 `pkg/fusion/README.md` and `pkg/fusion/MIGRATION.md` (`NewEngine` logger, options and error; `RetrievalClient`
   without `Status` and with `Resolution`; `index` and `view_revision` gone; `contract_version` "2"; `defer_reason`
   `hard_stop`, `status_unknown`, `bootstrap_incomplete`, `unrecognized_state` gone; a reset that the pin deferred is now
   an error on a seed read and a truncated facet on a walk read; a node's refs list by predicate, then target; graph
@@ -59,3 +59,9 @@ test deadline of its own, no `context.WithValue`. Review stops: after 2.2, after
   `graph/readiness/watcher.go:23` and `:251`, `storage/storeregistry/storeregistry.go:22-25` and `:94-95`; port notes on
   ADR-066, ADR-084 and ADR-085 where they name fusion's gate; comment on #110 (item 2 done, stays for item 3); spec sync
   and archive as the last content commit. **Final review.**
+  Done in `4ac54fd632d0f7ad4d973b1b21c9e7b6dc424c86` (ledger rows and edits, coverage floor, stale comments,
+  `DeferReason` doc) and
+  `0ed2e72dbc69fec9bd5cfb8a3c62a0aca33a1733` (README, MIGRATION, ADR-062 with its ledger row, port notes on ADR-066,
+  ADR-084 and ADR-085); the spec sync and the archive follow in the last content commit. The #110 comment is the
+  claimer's, posted on the issue; it is not a repository change. Spec correction: the change spec named the
+  counter `fusion_skipped_reads_total`; the registered name is `semengine_fusion_skipped_reads_total`.

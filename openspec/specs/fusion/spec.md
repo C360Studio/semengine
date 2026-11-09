@@ -1,6 +1,11 @@
-# fusion
+# fusion Specification
 
-## ADDED Requirements
+## Purpose
+The fusion engine (`pkg/fusion`) turns a query into one response of nodes, relations, paths, impact and a graph
+projection, keyed by what a human reads, and says what it left out. This capability states how it reads readiness from
+a reply, what fails the call and what is skipped, what each label and counter means, and how the engine is built.
+
+## Requirements
 
 ### Requirement: Fusion reads readiness from the reply
 
@@ -152,7 +157,7 @@ counterpart that reads as absent SHALL keep its edge without evidence and SHALL 
 
 ### Requirement: A skipped read is logged and counted
 
-Each skipped read SHALL increment `fusion_skipped_reads_total` with label `facet` (`relations`, `paths`, `impact`,
+Each skipped read SHALL increment `semengine_fusion_skipped_reads_total` with label `facet` (`relations`, `paths`, `impact`,
 `graph`) when a metrics registry was given. Each `Fuse` call SHALL log one Warn line per facet that skipped any read,
 naming the facet, the number skipped and the first error.
 

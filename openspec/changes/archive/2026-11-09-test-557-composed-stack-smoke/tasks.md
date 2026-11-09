@@ -45,5 +45,5 @@ port, no `t.Parallel`, no `context.WithValue`.
 
 ## 4. Archive
 
-- [ ] 4.1 `openspec archive test-557-composed-stack-smoke` and the `composed-stack` spec sync as the last content
+- [x] 4.1 `openspec archive test-557-composed-stack-smoke` and the `composed-stack` spec sync as the last content
   commit. Gate: `task spec:check`, `task docs:check`.

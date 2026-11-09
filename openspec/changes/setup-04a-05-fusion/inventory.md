@@ -91,7 +91,7 @@ tests add `internal/semantictest` (in `engine_graph_test.go`; this tree has no `
 - Rulings: 03B D5 (`archive/2026-10-01-setup-03b-contract-boundary/design.md:347-352`, lens path keep, `Fuse` path
   defer); 03B critical coverage list names `pkg/fusion`, not `fusionvocab` (`:459-463`); split.md row C; ruling 4.
 - Specs: no current spec names fusion (`grep -rn -i fusion openspec/specs/`: 0 hits).
-- Stale comments naming fusion (**measured**, `git grep -n -i fusion -- '*.go'`): `graph/index_status.go:143-144`,
+- Stale comments naming fusion (**measured**, `git grep -n -i fusion -- '*.go'`): `graph/index_status.go:5`, `:143-144`,
   `graph/readiness/watcher.go:23`, `:251`, `storage/storeregistry/storeregistry.go:22-25`, `:94-95`,
   `component/dependencies.go:54`, `processor/graph-ingest/query.go:481` (fusionnats, PR D),
   `vocabulary/registry.go:260`, `:285`.
@@ -105,7 +105,8 @@ Ported framework API with a consumer caller (semsource, **measured** `git grep`)
 `source/fusion/fusiontest/memgraph.go:89` — `func (m *MemGraph) Status(context.Context) (fusion.IndexStatus, error)`.
 No production read of `Response.Index`, `Deferred`, `ViewRevision` or `IndexStatus` fields (same grep: 0 hits outside
 `fusiontest`). New surface this design adds: `Option`, `Resolution`, `Response.UnreadableRecords`,
-`Response.FailedRecords`, `Node.RelationsTruncated`, `Response.PathsTruncated`, `fusionvocab.New(parents)`; each is
+`Response.FailedRecords`, `Node.RelationsTruncated`, `Response.PathsTruncated`, the `NewEngine` logger argument, the
+`fusion_skipped_reads_total` counter, `fusionvocab.New(parents)`; each is
 framework API whose contract line is a requirement of the new `fusion` spec, called by SemSource's code-context.
 
 ## 6. Category 5, problem shapes
@@ -124,19 +125,23 @@ framework API whose contract line is a requirement of the new `fusion` spec, cal
 ## 7. Category 6, pin ADRs
 
 **Measured**: `grep -l -e pkg/fusion -e fusionvocab -e RankSignals -e RetrievalClient -e BodyResolver -e StoreResolver
--e Lens` over the pin's `docs/adr`, then the titles read (ADR-082 and ADR-075 name "fusion" in prose only).
+-e Lens` over the pin's `docs/adr`, then the titles read (ADR-082 and ADR-075 name "fusion" in prose only); a second
+`grep -l -i fusion` added ADR-045 and ADR-080. Each line cite says which copy it is from: "pin" is the pin's
+`docs/adr`, "tree" this repository's port.
 
 | ADR | Decides, for these packages | In tree |
 | --- | --- | --- |
 | 062 deterministic graph fusion | the engine, Lens SPI, `lensregistry`, hydration by handle, increments 1-7 (5: ontology ranking via `vocabulary/bfo,cco` `Parents()`) | no |
 | 063 store substrate and resolver | `StoreResolver`, registry satisfies it (`:282-283`) | yes |
-| 066 honest readiness | fusion's mirror (`:338-344`), `Fuse` gates on `Ready` once per request (`:394`) | yes |
+| 066 honest readiness | fusion's mirror (pin `:320-322`, tree `:343-344`), `Fuse` gates on `Ready` once per request (pin `:372`, tree `:394`) | yes |
 | 071 domain-scoped NL retrieval | `Request.Scope` to resolve | yes |
-| 082 bounded-lag readiness | exact consumers incl. "fusion honesty envelope" MUST gate on `Ready` (`:65`) | no |
+| 082 bounded-lag readiness | exact consumers incl. "fusion honesty envelope" MUST gate on `Ready` (pin `:65`) | no |
 | 083 readiness as distributed state | fusionnats' watch (PR D) | yes |
 | 084 readiness licenses health | D3 no absence, D4 `index_not_ready`, D6 omission reported, D7 hard stops bind envelope consumers | yes |
 | 085 gate on health | fusion as a gate reader | yes |
-| 075 framework package admission | `:76` fusion framework-owned | no; not binding on code |
+| 075 framework package admission | pin `:76` fusion framework-owned | no; not binding on code |
+| 045 graph search decomp+fusion via rule chain | the rule-chain fusion `research-graph-execute` uses, the `Fuse` path's origin | no; not binding (path not carried) |
+| 080 push-based agent memory | D5 (pin `:76-84`) defers a lessons facet on the lens engine | no; not binding (no such facet) |
 | 109 (SemEngine) | D1 readiness rides the reply, D3 no consumer reads a sign first | yes |
 
 ## 8. Shape sweep (read on the pin copy, `pin:pkg/fusion/`)
@@ -165,6 +170,7 @@ framework API whose contract line is a requirement of the new `fusion` spec, cal
 | F20 | deferred path | `engine.go:96` — `func Fuse(ctx context.Context, gq GraphQueryClient, ...` | not carried (03B D5) |
 | F21 | TODO | `engine_lens.go:408` — `// TODO(when lens Engine is wired): distinct not_configured reason` | optional |
 | F22 | label | `engine_lens.go:332` — `Provenance:      ProvenanceDeterministic,` on every deferral | optional |
+| F24 | cap over an unordered set | `engine_lens.go:493-495` (relations), `engine_facets.go:69-89` (impact BFS), `:149-162`, `:173-181` (paths DFS) cut in the order `Neighbors` listed edges; fusion sorts nothing; tree outgoing replies keep the stored `OUTGOING_INDEX` row order (`processor/graph-index/query.go:145-156`), incoming are sorted (`:191`); fakes any order | required (AGENTS.md § 2 sort before limit; SS#621 nondeterminism) |
 | F23 | two not-ready policies | relations defer (`engine_lens.go:488`), paths/impact/graph truncate (`engine_facets.go:188-193`) | optional: both are declared |
 
 Shape 3 (one implementation): `RankSignals` (`rank_signals.go:13`), implemented only by `fusionvocab.Signals` at the
@@ -184,11 +190,13 @@ item 1 is done, `graph/index_status.go:26-27`). Names the word, not these packag
 
 Who: SemSource's code-context author and its fusion lens author.
 
-1. Must know: `NewEngine` takes options and returns an error; `fusionvocab.New` needs semvocab's `cco.Parents`;
-   `RetrievalClient` has no `Status` and `Resolve` returns a `Resolution`; the wire has no `index` (read `deferred`);
-   `view_revision` is gone (under G2).
-2. Do nothing: every item but the wire fails to compile (`fusiontest.MemGraph`, `code-context`). The wire change is
-   silent for an agent reading `index.ready` from code-context's JSON.
+1. Must know: `NewEngine` takes a logger and options and returns an error; `fusionvocab.New` needs semvocab's
+   `cco.Parents`; `RetrievalClient` has no `Status` and `Resolve` returns a `Resolution`; the wire has no `index` (read
+   `deferred`) and no `view_revision`; `defer_reason` loses `hard_stop`, `status_unknown`, `bootstrap_incomplete` and
+   `unrecognized_state`; a graph reset, deferred at the pin, is now an error from `Fuse`.
+2. Do nothing: every Go item fails to compile (`fusiontest.MemGraph`, `code-context`). The wire changes are silent for
+   an agent reading `index.ready` or switching on an old `defer_reason` from code-context's JSON; a reset surfaces as
+   code-context's own error path.
 3. Find out: compile errors; for the wire, `contract_version` "2" and `MIGRATION.md`.
 4. Should know: nothing beyond passing the parent function; the gap is the wire's `index` block, closed by the version
    bump.

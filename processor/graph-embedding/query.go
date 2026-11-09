@@ -78,6 +78,9 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 		}
 	}
 
+	if err := c.queryReady(ctx); err != nil {
+		return nil, err
+	}
 	vectors, err := c.embedder.GenerateQuery(ctx, []string{req.Query})
 	if err != nil {
 		return nil, internalError(fmt.Errorf("embed the query: %w", err))
@@ -116,6 +119,9 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 		return nil, invalidRequest(fmt.Errorf("entity_id: %w", err))
 	}
 
+	if err := c.queryReady(ctx); err != nil {
+		return nil, err
+	}
 	record, err := c.storage.GetEmbedding(ctx, req.EntityID)
 	if err != nil {
 		// An undecodable source record stays class invalid with no code, as at the pin
@@ -135,6 +141,22 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 		return nil, err
 	}
 	return reply(graph.SimilarData{Results: results, UnreadableRecords: unreadable, FailedRecords: c.workerFailures()})
+}
+
+// queryReady refuses a request the verbs cannot answer truthfully now, after its entry checks and
+// before any read (design D5): the follower's QueryReady (a latched reset fatal, a lost feed, an
+// incomplete first build or a held hop-1 failure transient index_not_ready), then a lost vector
+// cache watch, transient index_not_ready. similar reads its source from the bucket before the
+// cache, so the lost watch is refused here rather than left to the cache.
+func (c *Component) queryReady(ctx context.Context) error {
+	if err := c.follower.Load().QueryReady(ctx); err != nil {
+		return err
+	}
+	if c.cacheLost.Load() {
+		return errs.ClassifiedCode(errs.ErrorTransient, graph.ErrorCodeIndexNotReady,
+			errors.New("index not ready: the vector cache watch is lost; restart the process"))
+	}
+	return nil
 }
 
 // workerFailures is a reply's failed_records: the entities in the failed map whose latest outcome

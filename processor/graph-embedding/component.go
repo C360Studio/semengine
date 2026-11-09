@@ -34,6 +34,10 @@ var _ component.Discoverable = (*Component)(nil)
 // run context was live (design D2): nothing embeds a pending record until the process restarts.
 const workerWatchLost = "embedding worker watch lost; restart the process"
 
+// vectorCacheWatchLost is the stuck state Health names once the vector cache's Run has returned
+// while the run context was live (design D5): the verbs refuse until the process restarts.
+const vectorCacheWatchLost = "vector cache watch lost; restart the process"
+
 // Component implements the graph-embedding processor.
 type Component struct {
 	config  Config
@@ -69,6 +73,9 @@ type Component struct {
 	// workerLost latches when the Worker's Run returns while the run context is live; nothing
 	// rebinds the watch, as for the follower's lost feed (design D2).
 	workerLost atomic.Bool
+	// cacheLost latches when the vector cache's Run returns while the run context is live; the
+	// verbs refuse from then on (design D5).
+	cacheLost atomic.Bool
 
 	// The query side (query.go). embedder is the Worker's BM25 embedder, whose statistics the
 	// search verb reads without changing (GenerateQuery); cache is the in-memory view of the
@@ -203,7 +210,8 @@ func (c *Component) InputPorts() []component.Port { return slices.Clone(c.inputs
 func (c *Component) OutputPorts() []component.Port { return slices.Clone(c.outputs) }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over the follower's stuck
-// states (a latched reset, unresolved writes, a lost feed) and a lost Worker watch.
+// states (a latched reset, unresolved writes, a lost feed), a lost Worker watch and a lost vector
+// cache watch.
 func (c *Component) Health() component.HealthStatus {
 	var stuck []string
 	if f := c.follower.Load(); f != nil {
@@ -211,6 +219,9 @@ func (c *Component) Health() component.HealthStatus {
 	}
 	if c.workerLost.Load() {
 		stuck = append(stuck, workerWatchLost)
+	}
+	if c.cacheLost.Load() {
+		stuck = append(stuck, vectorCacheWatchLost)
 	}
 	return c.lifecycle.Health(stuck...)
 }
@@ -251,6 +262,9 @@ func (c *Component) start(ctx context.Context) error {
 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
 		Deliver:         c.deliver,
 		Failed:          c.failed.counts,
+		// Only hop 1's failures, which can leave a stale vector in the index, withhold the verbs;
+		// a Worker failure leaves no vector and is answered past (design D5, F2).
+		Withhold: c.failed.withheld,
 	})
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "open the ENTITY_STATES follower")
@@ -342,6 +356,8 @@ func (c *Component) start(ctx context.Context) error {
 	go func() {
 		defer close(cached)
 		if err := c.cache.Run(runCtx); runCtx.Err() == nil {
+			// The latch precedes the log line, so a reader of the line reads the latch.
+			c.cacheLost.Store(true)
 			c.logger.Error("vector cache watch lost; the embedding verbs refuse until the process restarts",
 				slog.Any("error", err))
 		} else if err != nil && err != runCtx.Err() {

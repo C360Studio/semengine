@@ -72,6 +72,11 @@ type Config struct {
 	// envelope, so count and reasons come from one moment, and owns the map it returns: the
 	// plug-in returns a fresh one and keeps no reference to it.
 	Failed func() (count int64, reasons map[string]uint64)
+	// Withhold, when set, returns the count of the plug-in's failures that withhold queries; nil
+	// means Failed's count. After the first build QueryReady refuses on failures only while it
+	// returns above 0. Before the first build the gate reads the envelope, and the envelope and
+	// Stuck always read Failed, so a failure Withhold leaves out still reads degraded.
+	Withhold func() int64
 }
 
 // degradedStuckAfter is how long the follower may go without a Complete call while behind before
@@ -90,6 +95,7 @@ type Follower struct {
 	logger    *slog.Logger
 	deliver   func(context.Context, Entry)
 	failed    func() (int64, map[string]uint64)
+	withhold  func() int64            // nil: Failed's count withholds
 	reader    kvcatalog.CatalogReader // the watch
 	status    kvcatalog.CatalogReader // target and generation reads, a handle of its own
 	publisher *readiness.Publisher
@@ -176,6 +182,7 @@ func Open(ctx context.Context, cfg Config) (*Follower, error) {
 		logger:    logger,
 		deliver:   cfg.Deliver,
 		failed:    cfg.Failed,
+		withhold:  cfg.Withhold,
 		reader:    reader,
 		status:    status,
 		publisher: publisher,
@@ -372,8 +379,10 @@ func (f *Follower) Stuck() []string {
 }
 
 // QueryReady says whether a query may be answered now (ADR-109 D1): nil, or a classified refusal.
-// A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes and an
-// incomplete initial build are transient index_not_ready. Once the initial build is complete it answers nil at once.
+// A latched reset is fatal graph_state_reset_required; a lost feed, unresolved writes that withhold
+// queries (Config.Withhold) and an incomplete initial build are transient index_not_ready. Before
+// the initial build is complete the gate reads the envelope, which counts every unresolved write
+// (Config.Failed); once it is complete it answers nil at once.
 func (f *Follower) QueryReady(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errors.New("nil context"), "follower", "QueryReady", "check the context")
@@ -385,7 +394,7 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 	if f.feedLost.Load() {
 		return notReady("the ENTITY_STATES feed is lost")
 	}
-	if n, _ := f.failed(); n > 0 {
+	if f.withheld() > 0 {
 		return notReady("unresolved index write failures")
 	}
 	if f.bootstrapped.Load() {
@@ -399,6 +408,16 @@ func (f *Follower) QueryReady(ctx context.Context) error {
 	f.logger.Debug("query deferred", slog.String("reason", string(reason)), slog.String("state", string(status.State)),
 		slog.Uint64("indexed_revision", status.IndexedRevision), slog.Uint64("target_revision", status.TargetRevision))
 	return notReady("initial build has not completed")
+}
+
+// withheld is the count of failures that withhold queries: Config.Withhold's, or Failed's when
+// the plug-in set none.
+func (f *Follower) withheld() int64 {
+	if f.withhold != nil {
+		return f.withhold()
+	}
+	n, _ := f.failed()
+	return n
 }
 
 func notReady(why string) error {

@@ -25,7 +25,7 @@ deadline of its own, no `context.WithValue`. Review stops: after 2.2, after 2.4,
   `TestSearchScopeEdges`, `TestSimilarEdges`, `TestTopKAtTie`, `TestScopedSearch`; mutants for the score-above-0
   rule, scope before limit, and the limit refusal; `TestMinRevisionAboveZeroRefused`, `TestSemanticForwardsMinRevision`;
   trailing data after the object refused (D1, moved from 2.1).
-- [ ] 2.4 Withheld calls and the lost cache watch (D5; under F2, `follower.Config.Withhold`). Check:
+- [x] 2.4 Withheld calls and the lost cache watch (D5; under F2, `follower.Config.Withhold`). Check:
   `TestQueriesWithheldUntilReady`, `TestWorkerFailureAnswersAndCounts`, `TestWithholdNarrowsQueryReady`,
   `TestGraphIndexWithholdUnchanged`, `TestHealthNamesLostCacheWatch`, `TestNoResponderAfterStop`, lifecycle suite,
   `-race`. **Review stop.**

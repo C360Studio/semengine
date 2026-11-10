@@ -21,7 +21,8 @@ after 2.2, before archive.
 - [ ] 2.2 Fix R3 to R6 as the design states them, and add the behaviour pins `TestWriteWithTimeoutAssertable`,
   `TestWriteWithTimeoutExpires`, `TestWriteWithTimeoutSucceedsWhenSpaceFrees`, `TestWriteWithContextLeavesNothing`
   and `TestCapacityBelowOneIsOne`. Show each pin able to fail with `task mutate:check`, recorded in `notes/2.2.md`.
-  Remove the root and add the join in `circular.go`; the review checks them by reading it.
+  Remove the root; no goroutine outlives the call (joined or removed); the review checks both by reading
+  `circular.go`.
   - Rewrite the pin tests at `buffer_test.go:438-449`, `:467`, `:471-482`, `:508` and `:643-703` in `synctest`
     without sleeps or elapsed bounds (R7).
   - Doc comments for R9.

@@ -65,9 +65,10 @@ entities SHALL count under `refused_entity` and SHALL NOT stop publication.
 
 ### Requirement: Removed configuration is refused
 
-graph-clustering SHALL refuse at construction, naming the key and what replaces it, any key it does not define,
-including `batch_size`, `enable_llm`, `enhancement_workers`, `min_community_size`, `max_iterations`,
-`entity_id_edges`, `semantic_edges` and `allow_ungated_reads`, and SHALL refuse declared output ports. Each kept key
+graph-clustering SHALL refuse at construction, naming the key, any key it does not define. For the pin's keys it no
+longer reads, `batch_size`, `enable_llm`, `enhancement_workers`, `min_community_size`, `max_iterations`,
+`entity_id_edges`, `semantic_edges`, `allow_ungated_reads`, `enable_anomaly_detection` and `anomaly_config`, the
+refusal also says what replaces it. It SHALL refuse declared output ports. Each kept key
 SHALL change behaviour when set.
 
 #### Scenario: A pin configuration

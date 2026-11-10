@@ -4370,8 +4370,8 @@
     the work of pathSearch, hierarchyStats and summary; nothing bounds their elapsed time (ADR-112, "Time"), and a count
     covers one page, live and as listed, not a snapshot (#512). localSearch reads one page of at most 1,000 entities
     in ID order, so a large group's matches further down are missed; entities_truncated says so and the counter is
-    the number that decides whether a keyword index per community (#506) is due. Nothing in the framework writes
-    COMMUNITY_INDEX until change 7, so localSearch is refused index_not_ready until then. A min_revision from a write
+    the number that decides whether a keyword index per community (#506) is due. processor/graph-clustering
+    writes COMMUNITY_INDEX, and its first tick decides when localSearch's index_not_ready ends. A min_revision from a write
     outside the searched group is refused until that group next changes. The nats.go time a lost watch takes to be seen
     is observed, not promised (pkg/graphview row). globalSearch classifies with the keyword tier alone, whose limits
     the owner accepted (tracked in #535): "from A to B" walks from A and drops B; the refusal of an entity beside a
@@ -4384,8 +4384,8 @@
     words is not read (design D2): a match in it is not found. Its revision mark is the maximum over the level's
     records, and a delete that empties its group removes the record without raising the mark, so a min_revision from
     that delete can be refused until another write at the level (design D5); the rule also leans on the maintainer
-    taking writes in revision order (#525). Until change 7 writes COMMUNITY_INDEX every text question is refused
-    transient index_not_ready, so a tier-1 deployment's searchGraph, answered by embeddings at the pin, is refused
+    taking writes in revision order (#525). Until graph-clustering's first tick has written COMMUNITY_INDEX every
+    text question is refused transient index_not_ready, so a tier-1 deployment's searchGraph, answered by embeddings at the pin, is refused
     until the follow-up graph-query change adds the semantic fallback (owner ruling S1, #563; MIGRATION.md). The keyword classifier's limits (#535) now
     shape which questions reach the text tier: a word it reads as a count ("max", "total", "min") refuses answerable
     free text invalid_request. Not carried: the pin's searchgraph.go fallback

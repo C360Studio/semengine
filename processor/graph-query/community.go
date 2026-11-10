@@ -30,8 +30,9 @@ const communityUnavailable = "community view unavailable; localSearch and the te
 // lost watch are the same case: the key stays refused until a new view has caught up (design D3).
 //
 // Each failure is logged, at Warn when it is the first, differs from the last one logged, or follows a
-// view that opened, and at Debug otherwise. The pin warned on every retry; until change 7 brings
-// COMMUNITY_INDEX's writer, that is one Warn every 5 s in every deployment, for ever.
+// view that opened, and at Debug otherwise. The pin warned on every retry; before
+// graph-clustering's first tick has written COMMUNITY_INDEX, that is one Warn every 5 s in every
+// deployment.
 //
 // Once ctx ends it returns nil, or the error of the view's Run when that says more than the
 // cancellation (shutdownFailure), which cleanup hands to Stop's caller (#527).

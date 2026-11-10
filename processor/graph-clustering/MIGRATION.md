@@ -59,8 +59,12 @@ Read these. Nothing errors.
 - **Nothing is published before the replay is applied, and a lost feed stops publication.** The pin ran a timer that
   rescanned the bucket. Here a tick starts only while the follower says the graph state is ready; after a lost feed or
   a latched reset no tick starts, and `Health` says so until the process restarts.
-- **No dependency on graph-index or graph-embedding.** The pin waited for their readiness before reading. Here the
-  component follows `ENTITY_STATES` alone, so communities no longer wait for those indexes.
+- **No dependency on graph-index or graph-embedding.** The pin deferred a tick until graph-index was ready; it
+  watched graph-embedding's key only when semantic edges were on, and a cold embedding index only narrowed the cycle.
+  Here the component follows `ENTITY_STATES` alone, so communities wait for neither index.
+- **One bad stored value no longer blocks everything.** The pin latched its reset on any bad value it read and
+  stopped until restart. Here only a bad value in the startup replay latches the reset. A bad value written live is
+  counted as `refused_entity`, left out of its groups, and the other groups keep publishing.
 - **Failures are visible.** A tick that fails to write reads `degraded` on the readiness record and unhealthy in
   `Health` (reason `publication_failed`) until a tick succeeds, and counts on
   `semengine_graph_clustering_publication_failures_total`. A stored entity the Maintainer refuses is left out of its

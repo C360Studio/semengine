@@ -147,7 +147,7 @@ for cname, pkgs in changes:
             c_partial.append(f"service ({svc_done}/7 PRs in tree)")
         elif p == "graph/inference":
             partial += 1
-            c_partial.append("graph/inference (hierarchy slice; rest in change 7)")
+            c_partial.append("graph/inference (hierarchy slice; the rest is never ported)")
         elif p == "processor/graph-query":
             partial += 1
             c_partial.append("processor/graph-query (lands in steps; whole at step 5)")

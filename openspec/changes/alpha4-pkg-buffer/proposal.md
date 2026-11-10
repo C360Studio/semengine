@@ -1,6 +1,6 @@
 # Proposal: alpha4-pkg-buffer
 
-Approved-by:
+Approved-by: owner (Coby Leuschke), 2026-11-10 in Enjoy, Q1 answered yes; recorded on #566 (comment 6782336804) sha256:d38ee8570da6
 
 Track: `quick` (no spec Requirement and no capability under `openspec/specs/` changes). `design.md` is carried
 because a porting PR has a one-page design with its shape sweep, probe and ADR listing (#159).
@@ -15,7 +15,7 @@ SemEngine and #34 cannot start. Issue #566.
 
 - New `pkg/buffer`, ported whole from the pin: `Buffer[T]`, `NewCircularBuffer`, the three overflow policies
   (`DropOldest`, `DropNewest`, `Block`), `WithOverflowPolicy`, `WithMetrics`, `WithDropCallback`, `Statistics` and
-  `StatsSummary`, `WriteWithTimeout` and `WriteWithContext` on the returned buffer.
+  `StatsSummary`, `WriteWithTimeout` and `WriteWithContext`, now on the `Buffer[T]` interface (owner, Q1).
 - Dropped: `WithStats`, `StatsFromContext`, `ContextKeyStats` (state in context values, #91); `UpdateMemoryUsage`,
   `MemoryUsage` and `StatsSummary.MemoryUsage`, which nothing sets (dead surface, as in `internal/cache`).
 - Metrics: on the injected registry through `metric.RegisterOrGet`, named `semengine_buffer_*`.
@@ -33,12 +33,9 @@ small PR, own OpenSpec change, port whole, drop the context-value statistics, ke
 row and `MIGRATION.md` land in this PR; merges before or alongside the websocket port; SemSource keeps `Block` with a
 timeout and changes only its import path.
 
-## Owner question
-
-- Q1. Add `WriteWithTimeout` and `WriteWithContext` to `Buffer[T]`, so SemSource needs no type assertion and cannot
-  fall back silently to an unbounded `Write`? No consumer breaks. The fallback is live today: SemSource's
-  `stop_settlement_test.go` wraps the buffer in a type embedding `buffer.Buffer[T]`, so that test runs plain `Write`.
-  Assumed here: no, as at the pin.
+Owner, 2026-11-10 (#566 comment 6782336804): approves this design and answers Q1 yes: `WriteWithTimeout` and
+`WriteWithContext` join the `Buffer[T]` interface, so callers need no type assertion and a wrapper embedding
+`Buffer[T]` keeps the bounded write (SemSource's `stop_settlement_test.go` wrapper fell back to plain `Write`).
 
 ## Capabilities
 

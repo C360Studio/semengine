@@ -36,9 +36,10 @@ A zero timeout or an already-ended context refuses under Block even when there i
 | R5 | `circular.go:361`, `:373` | `.agents/contracts/semengine-developer.md:229` (exported context-taking boundaries reject nil when they can return an error) | `WriteWithContext(nil, item)` returns an `ErrorInvalid` error under every policy and writes nothing | `TestWriteWithContextRefusesNilContext` (fails first) |
 | R6 | `circular.go:93-96`, `:110-112`, `:296-300` | defects in ported surface are fixed or tracked (#9, 2026-10-03); the comment states it | a drop callback runs after the lock is released, so it may call any buffer method (DropOldest, DropNewest, Clear) | `TestDropCallbackMayUseBuffer` (fails first) |
 | R7 | `buffer_test.go:438-449`, `:467`, `:471-482`, `:508`, `:643-703` | no `time.Sleep` (verify); wait on the ordering event (#392); synctest proof (`background-work`) | no sleeps or elapsed bounds; blocked-writer and timeout tests run in `synctest.Test` and use `synctest.Wait` | `task test:unit`, `task test:repeat` |
-| R8 | `doc.go:46-49`; `README.md:116-128`, `:470-471` | surface audit (c); `docs:check` | the examples compile as written (they assert the method); the README passes markdownlint | `task docs:check`; an example test `ExampleNewCircularBuffer_writeWithTimeout` |
+| R8 | `doc.go:46-49`; `README.md:116-128`, `:470-471` | surface audit (c); `docs:check` | the examples compile as written (R11 puts the method on `Buffer[T]`); the README passes markdownlint | `task docs:check`; an example test `ExampleNewCircularBuffer_writeWithTimeout` |
 | R9 | `circular.go:32-34`; `options.go:39` | AGENTS §1, "any degrade is declared" | doc comments say capacity below 1 becomes 1 and that a nil registry or empty prefix records no metrics | `TestCapacityBelowOneIsOne` (behaviour pin) |
 | R10 | `statistics.go:23`, `:68-73`, `:114-119`, `:215`, `:233` | surface audit (a) and (c): nothing sets it, so it always reads 0; precedent `docs/admission-ledger.yaml:851-853` (#9, #220) | `UpdateMemoryUsage`, `MemoryUsage` and `StatsSummary.MemoryUsage` (`memory_usage`) do not exist | build |
+| R11 | `buffer.go:19` | owner ruling, #566 comment 6782336804 (Q1) | `Buffer[T]` declares `WriteWithTimeout(item T, timeout time.Duration) error` and `WriteWithContext(ctx context.Context, item T) error`; a type embedding `Buffer[T]` gets both; callers call them without a type assertion | `TestWriteWithTimeoutAssertable` (SemSource's local `timeoutWriter` interface still matches a `Buffer[T]` value and a wrapper embedding it); build |
 
 The developer chooses the mechanism. The pin copy does not compile on main (`metrics.go:77` calls `RegisterCounter`),
 so the port lands R1 and R2 first, under the new module path, and the tests run on that copy:
@@ -56,11 +57,8 @@ corrections are in waiting and lock release, which a sequence model does not exe
 
 All of these are under Bounded port scope; none is tied to a binding requirement.
 
-- **O1** `Buffer[T]` has one implementation and hides the bounded writes (shape 3). It is kept, and owner question Q1
-  asks whether to change that. `TestWriteWithTimeoutAssertable` asserts exactly SemSource's local interface on every
-  policy's buffer, so a rename fails here, not silently in SemSource. It cannot protect a wrapper:
-  SemSource's `notifyingBuffer` (`internal/entitypub/stop_settlement_test.go:14-17`, bbfb3c6) embeds `Buffer[T]`, so
-  the assertion at `publisher.go:269` fails and that test runs plain `Write`.
+- **O1** `Buffer[T]` has one implementation (shape 3). It is kept as the package's public type; the bounded writes it
+  hid move onto it as R11 (owner, Q1).
 - **O2** `notEmpty` is signalled and never waited on. It is kept: dead unexported code with no behaviour.
 - **O3** The `Statistics` mutators and `NewStatistics` have no outside reader. They are kept so the package ports whole.
   `*Statistics` is named by SemSource (`publisher.go:307`).

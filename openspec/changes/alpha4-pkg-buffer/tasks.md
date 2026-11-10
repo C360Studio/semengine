@@ -7,9 +7,8 @@ after 2.2, before archive.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory review passes (`INVENTORY PASS`), then pre-owner design review; the owner answers Q1 and
+- [x] 1.1 Inventory review passes (`INVENTORY PASS`), then pre-owner design review; the owner answers Q1 and
   fills `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Port
 
@@ -18,7 +17,8 @@ after 2.2, before archive.
   family), so it builds; `TestMetricsOnInjectedRegistry`. Then the failing-first tests
   `TestWriteWithContextRefusesNilContext` (R5) and `TestDropCallbackMayUseBuffer` (R6, a hang to `go test -timeout`),
   output in `notes/2.1.md`. Gate: `task build`; the two failures are recorded.
-- [ ] 2.2 Fix R3 to R6 as the design states them, and add the behaviour pins `TestWriteWithTimeoutAssertable`,
+- [ ] 2.2 Fix R3 to R6 and add R11 (the two bounded writes on `Buffer[T]`) as the design states them, and add
+  the behaviour pins `TestWriteWithTimeoutAssertable`,
   `TestWriteWithTimeoutExpires`, `TestWriteWithTimeoutSucceedsWhenSpaceFrees`, `TestWriteWithContextLeavesNothing`
   and `TestCapacityBelowOneIsOne`. Show each pin able to fail with `task mutate:check`, recorded in `notes/2.2.md`.
   Remove the root; no goroutine outlives the call (joined or removed); the review checks both by reading
@@ -33,7 +33,8 @@ after 2.2, before archive.
 
 - [ ] 3.1 Ledger row `pkg/buffer` (`adapt`) in `docs/admission-ledger.yaml`. PR body: `Closes #566`. Gate:
   `task ledger:diff -- pkg/buffer`, the ledger contract test.
-- [ ] 3.2 `pkg/buffer/README.md` and `doc.go`: the module path; examples that compile, with the type assertion (R8);
+- [ ] 3.2 `pkg/buffer/README.md` and `doc.go`: the module path; examples that compile, calling the bounded writes
+  on `Buffer[T]` (R8, R11);
   the dropped context helpers removed; markdownlint clean. Also `pkg/buffer/MIGRATION.md`, and a `pkg/buffer/` row in
   `docs/repository-map.md`. Gate: `task docs:check`, `go test -run Example ./pkg/buffer/`.
 - [ ] 3.3 Archive (`openspec archive alpha4-pkg-buffer`) as the last content commit. Gate: `task spec:check`.

@@ -12,7 +12,7 @@ after 2.2, before archive.
 
 ## 2. Port
 
-- [ ] 2.1 Port `pkg/buffer` under the SemEngine module path with R1 (drop `WithStats`, `StatsFromContext`,
+- [x] 2.1 Port `pkg/buffer` under the SemEngine module path with R1 (drop `WithStats`, `StatsFromContext`,
   `ContextKeyStats`), R2 (metrics through `metric.RegisterOrGet` under `semengine`) and R10 (drop the `MemoryUsage`
   family), so it builds; `TestMetricsOnInjectedRegistry`. Then the failing-first tests
   `TestWriteWithContextRefusesNilContext` (R5) and `TestDropCallbackMayUseBuffer` (R6, a hang to `go test -timeout`),

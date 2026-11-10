@@ -7,14 +7,18 @@
 `Entry.Value` SHALL be the value the watch delivered for `Entry.Revision`, and nil for a delete or purge marker. It
 SHALL be valid only for the duration of `Deliver`; a plug-in that keeps it copies it. A plug-in that re-reads current
 truth at apply time SHALL NOT apply `Value` (ADR-108 D4); a plug-in that applies `Value` SHALL ignore a delivery at or
-below the revision it last applied for that key. Delivery order is what the watch delivers: nats.go does not promise
-ascending revisions across keys, so the follower checks each revision against the highest observed and declares the
-feed lost on a revision at or below it, still delivering the entry with its value.
+below the revision it last applied for that key.
 
 #### Scenario: Two writes to one key
 
 - **WHEN** a key is written twice and both revisions are delivered
 - **THEN** each entry's `Value` is the bytes written at its revision (`TestEntryCarriesDeliveredValue`)
+
+### Requirement: The follower checks delivery order
+
+Delivery order is what the watch delivers: nats.go does not promise ascending revisions across keys. The follower
+SHALL check each revision against the highest observed and, on a revision at or below it, declare the feed lost and
+still deliver the entry with its value.
 
 #### Scenario: A revision out of order
 

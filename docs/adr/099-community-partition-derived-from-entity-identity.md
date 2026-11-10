@@ -29,9 +29,15 @@
 > - "GraphRAG and PathRAG advertised surfaces hold shape-for-shape" (the paragraph of unchanged decisions) yields, for
 >   graph-query's verbs, to the owner's ruling of 2026-11-02 (PR #504 comment 6588079803): a port makes the pragmatic,
 >   idiomatic shape and records a consumer's break as a migration note in `processor/graph-query/MIGRATION.md`.
-> - Not decided here: how `processor/graph-query` reads these records during a tick, and the watch wiring in
->   `processor/graph-clustering` (change 7). The statement "zero shipped deployments consume the community index" is
->   the pin's measurement, not this repository's.
+> - Applied by `processor/graph-clustering` (`setup-04a-07-substrate-seam-graph-clustering`, draft PR #582): it
+>   follows `ENTITY_STATES` through `graph/follower`, applies each delivered value to the `Maintainer` in delivery
+>   order, and publishes the changed groups every `detection_interval`, never by rescanning. Config keys that only
+>   label propagation, the edge providers or the readiness gate read (`min_community_size`, `max_iterations`,
+>   `entity_id_edges`, `semantic_edges`, `allow_ungated_reads`) are refused at boot with guidance. The pin's
+>   anomaly detection, which also ran in graph-clustering, is outside this record and is never ported (owner ruling,
+>   PR #582 comment 6768832111).
+> - Not decided here: how `processor/graph-query` reads these records during a tick. The statement
+>   "zero shipped deployments consume the community index" is the pin's measurement, not this repository's.
 
 ## Status
 

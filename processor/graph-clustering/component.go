@@ -1,6 +1,3 @@
-// Package graphclustering is the graph-clustering processor: it keeps COMMUNITY_INDEX current
-// from ENTITY_STATES changes through the graph/clustering maintainer, one record per entity-ID
-// prefix group, at tier 0.
 package graphclustering
 
 import (

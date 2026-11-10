@@ -145,9 +145,10 @@ removed, so the old records stay readable ([ADR-085](../../docs/adr/085-gate-on-
   template over the counts.
 - **Label propagation** and the edge providers that fed it: removed by ADR-099. A detection overlay over chosen
   relationship predicates may return as a later change, off by default, in a namespace nothing reads for serving.
-- **The watch and the ticker.** `processor/graph-clustering` (change 7) opens the `ENTITY_STATES` watch, calls this
-  package, and reads every record through `GetAllCommunities`. `graph/follower` does not hand a caller the value, its
-  revision and the end of the replay together today, so change 7 runs its own watch or extends the follower.
+- **The watch and the ticker.** `processor/graph-clustering` follows `ENTITY_STATES` through `graph/follower`, whose
+  entries carry the delivered value and its revision, calls `Upsert` and `Delete` with them, and runs `Tick` every
+  `detection_interval` once the replay is applied. It does not read records back: `GetAllCommunities` served the
+  pin's anomaly lane, which is never ported, and has no caller in this tree.
 - **A reader's consistency rule.** Which generation of the bucket a reader sees during a tick is for the
   `processor/graph-query` item, not decided here.
 - **A per-group member list and a membership hash.** Members are found through the prefix queries of the graph's

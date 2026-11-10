@@ -4803,3 +4803,66 @@
     notes/2.1.md-3.1.md of the change record seeds and mutation checks
   owner: setup-04a-05-fusionnats developer
   disposition: adapt
+
+# Change setup-04a-07-substrate-seam-graph-clustering (PR #582, epic #9): processor/graph-clustering ported as adapt,
+# the writer of COMMUNITY_INDEX (change 7). Anomaly detection is never ported (owner ruling 1, PR #582 comment
+# 6768832111); the rows that named it were edited in task 4.1.
+
+- source_path: processor/graph-clustering
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the graph's tier-0 community records: follows ENTITY_STATES and keeps COMMUNITY_INDEX current, one bounded record
+    per entity-ID prefix group, so graph-query's localSearch and text tier answer; semsource and semboids compose it
+    (inventory § 10)
+  destination: processor/graph-clustering
+  contract: >-
+    almost none of the pin's code carries (spec graph-clustering; design D1-D5). Configuration (D3): (1) strict
+    configuration: an unknown key is refused naming it; batch_size, enable_llm, enhancement_workers,
+    min_community_size, max_iterations, entity_id_edges, semantic_edges, allow_ungated_reads,
+    enable_anomaly_detection and anomaly_config are refused naming the key and what replaces it; (2)
+    detection_interval stays a string (the pin's JSON shape) and a value that does not parse or is not above zero is
+    refused, where the pin fell back to 30 s silently; a negative startup_attempts or startup_interval_ms is refused,
+    zero is the default; (3) exactly one input, a kv-watch of every ENTITY_STATES key with no history, and a declared
+    output is refused; a configuration with no ports takes the default and a ports block that is present is used as
+    written (ruling K); (4) registration asks boot for no model registry. Behaviour: (5) the lifecycle is
+    component.Lifecycle and the ENTITY_STATES watch, replay, watermark and readiness envelope are graph/follower's
+    (ADR-108), with Entry.Value carrying the delivered bytes (spec entity-state-follower); each delivery is applied to
+    the graph/clustering Maintainer in delivery order and completed at once, so the graph-clustering key's
+    indexed_revision counts what the Maintainer holds and the record's entity_revision is the reader's mark (D1);
+    (6) a ticker publishes the changed groups every detection_interval under the one run context (ADR-113), a tick
+    starts only while follower.QueryReady answers nil, and the first such tick calls BootstrapDone (D2); (7) the
+    last tick's outcome reaches the envelope through follower.Config.Failed as refused_entity and
+    publication_failed, a persistent publication failure is stuck in Health and counts on
+    semengine_graph_clustering_publication_failures_total, and Withhold is 0 (D2; ADR-109 D2); (8) Stop joins the
+    follower's Run and the ticker; (9) the package imports no model package (contract guard) and the tree reaches no
+    LLM plumbing (TestTreeImportsNoProviderPlumbing, #32's exit condition)
+  dependencies_and_side_effects: >-
+    component, graph, graph/clustering, graph/follower, graph/kvcatalog, graph/readiness, metric, natsclient,
+    pkg/errs (in-set); nats.go/jetstream; the follower's watch on ENTITY_STATES, writes and removals on
+    COMMUNITY_INDEX through the Maintainer, a ticker, started in Start and joined in Stop; registers
+    semengine_graph_clustering_publication_failures_total on the injected metrics registry (metrics.go)
+  known_risks: >-
+    Config break for consumers: semsource's enable_llm (and entity_id_edges where set) and semboids' batch_size,
+    min_community_size and entity_id_edges fail at boot until the lines are deleted, and semboids' declared output
+    ports are refused; semboids' two-community spike sees one group per source prefix (MIGRATION.md). The readiness
+    key counts what the Maintainer holds, not what is published. A tick already running when the feed is lost
+    finishes, so a record published just before the loss was noticed may be stale. The replay of a stored value that
+    cannot be decoded latches the follower's reset until restart. Not carried: the four graph.clustering.query.*
+    verbs, the readiness gate on graph-index and graph-embedding (ADR-082, ADR-085), the enhancement and review
+    workers (#485, #488), label propagation and the edge providers (ADR-099), anomaly detection (never ported), the
+    indexing-profile check (ADR-054 not ported), and the pin's Prometheus globals
+  proving_tests: >-
+    processor/graph-clustering/config_test.go (TestConfigRefusesRemovedKeys, TestConfigRefusesDataAfterTheObject,
+    TestConfigRefusesOutputPorts, TestConfigWithoutPortsTakesDefaultPorts, TestConfigRefusesInputsTheFollowerDoesNotRead,
+    TestConfigStartupWait, TestConfigDetectionInterval, FuzzResolveConfig), factory_test.go
+    (TestCreateGraphClusteringRequiresNATSClient, TestRegisterAddsGraphClustering), lifecycle_test.go
+    (TestLifecycleBeforeStart), the integration-tagged files (TestRefusedValueReportedNotWithheld, TestStopLeavesNothing,
+    TestStopWaitsForDelivery, TestRecordsFollowChanges, TestNothingPublishedBeforeReplay, TestLostFeedStopsPublication,
+    TestResetStopsPublication, TestPersistentPublicationFailureIsStuck, TestStopWaitsForTick,
+    TestDetectionIntervalIsRead, TestWatchOrderAcrossKeys); graph/follower (TestEntryCarriesDeliveredValue,
+    TestFollowerDeclaresLostFeedOnOutOfOrderDelivery, TestStuckNamesReasons);
+    internal/harness/contract/embeddingprovider_test.go (TestGraphClusteringImportsNoProviderModule,
+    TestTreeImportsNoProviderPlumbing); internal/smoke (TestSmoke_OneConfigAnswers and the restart tests with five
+    components); notes/2.2.md-4.1.md of the change record seeds and mutation checks
+  owner: setup-04a-07-substrate-seam-graph-clustering developer
+  disposition: adapt

@@ -57,7 +57,7 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
   `graph/inference/storage.go:159` site is gone and spatial and temporal remain. PR body: `Closes #525`, `Closes #32`,
   `Closes #198`; #488 stays open (a tier-2 slot, not ruled here).
   Check: `task ledger:diff`, `task test:unit` (`kvcatalog`), `task docs:check`.
-- [ ] 4.2 `processor/graph-clustering/MIGRATION.md` (including: a bad `detection_interval` or a negative startup
+- [x] 4.2 `processor/graph-clustering/MIGRATION.md` (including: a bad `detection_interval` or a negative startup
   value is refused, where the pin fell back silently), `README.md`, `doc.go`; ledger row (`processor/graph-clustering`
   `adapt`); ADR-108 and ADR-099 port notes; `.agents/skills/query-pattern/SKILL.md:77,99`; `docs/repository-map.md`;
   spec sync (the `composed-stack` Purpose names five components) and archive as the last content commit.

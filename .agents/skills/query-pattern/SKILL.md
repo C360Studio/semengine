@@ -74,7 +74,8 @@ serves now), so a verb not in the table has no responder yet.
   optionally `level`. It reads the group's record from `COMMUNITY_INDEX`, then one page of the group's entities, and
   ranks that page by how well the words match. The page is at most 1,000 entities in ID order, so on a larger group the
   sample is the lexically smallest IDs, `entities_truncated` is true, and a match later in the order is missed. Until
-  `processor/graph-clustering` (change 7) writes `COMMUNITY_INDEX` it refuses transient `index_not_ready`; retry it.
+  `processor/graph-clustering` has published its first records to `COMMUNITY_INDEX` it refuses transient
+  `index_not_ready`; retry it.
   Its `indexed_revision` is the group record's latest entity write, so to read your own write send the `kv_revision` of
   a write to an entity in the group you search. A revision from a write to another group can stay above the record, and
   the request is then refused `revision_not_reached` until the searched group next changes.
@@ -95,8 +96,9 @@ serves now), so a verb not in the table has no responder yet.
     pool"), a similarity or ranking alone, a one-word name that names no entity. It reads up to five groups'
     records at `level` (0 to 2, default 0) that score above 0 for the words, one page of each, and replies with
     `matches` (`id`, `label`, `score`, `entity`), the `groups` read, `entities_truncated` and `answer`. Matches are
-    a sample of at most one page per group. Hints it could not apply are named in `unhonoured_hints`. Until change 7
-    writes `COMMUNITY_INDEX` it is refused transient `index_not_ready`; retry it.
+    a sample of at most one page per group. Hints it could not apply are named in `unhonoured_hints`. Until
+    `processor/graph-clustering` has published its first records to `COMMUNITY_INDEX` it is refused transient
+    `index_not_ready`; retry it.
   - Known limits of the keyword classifier (owner-accepted, #535): "from A to B" walks from A and drops B with no
     signal, so a successful reply does not mean both ends were honoured; "in real-time" beside a place can be refused
     as a second place, a loud refusal of an answerable question.

@@ -2,7 +2,9 @@
 
 Package: `processor/graph-clustering`; with it, the question of `graph/structural` and the rest of `graph/inference`.
 
-base: 999208811956aaed299e8a39d0a8e3788cbb1b04 (claim commit on origin/main 057bc8bfe2f737000a354fd1a38aa60d65cbf9f1)
+base: 4cb8d585a26f6a51d426e486b3d31c618dc08749 (round 2, PR #582). Round 1 read
+999208811956aaed299e8a39d0a8e3788cbb1b04 on origin/main 057bc8bfe2f737000a354fd1a38aa60d65cbf9f1; between them only
+this change's own files were added.
 pin: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128 (tarball via `gh api repos/C360Studio/semstreams/tarball/8b99efe9`,
 extracted to `/tmp/gcpin/src`, local only)
 
@@ -104,10 +106,14 @@ internal/semantictest message metric model natsclient pkg/errs pkg/resource voca
 ## 5. Category 4, who it is for (surface the pin does not have)
 
 - `follower.Entry.Value` (new field): plug-in plumbing; reader graph-clustering's `Deliver` (this change).
+- `internal/harness/contract/embeddingprovider_test.go` already guards provider imports per package
+  (`providerViolations` `:159`, `providerPathsFor` `:178`; `TestGraphEmbeddingImportsNoProviderModule` `:51`).
+  The per-package guards also forbid the module's `model` package, which `component` reaches for every component
+  (`:47-48`), so a tree-wide guard cannot forbid `model` and replaces none of them.
 - `readiness.KeyGraphClustering` and the `graph-clustering` `GRAPH_STATUS` key: the follower requires a key
   (`follower.go:56-58`); contract line ADR-088 decision 1 (`docs/adr/088-readiness-is-per-producer-aggregation-is-the-consumers.md:46`,
   one key per producer, as information) and ADR-109 D3. No in-tree reader; the composed smoke test reads it as an
-  operator would. Owner question (design Q2).
+  operator would.
 - `processor/graph-clustering.Register`, `Config`, `DefaultConfig`: framework API; semsource
   `cmd/semsource/run.go:312` — `"graph-clustering": graphclustering.Register,`; semboids `configs/flock.json:317-345`.
 
@@ -133,6 +139,7 @@ cannot (it would pair a newer value with an older revision across keys and break
 | 061 remove community SemanticProvider | removal pattern; "anomaly engine ... already-disabled" (`:89`) | not ported |
 | 082 bounded-lag readiness for periodic consumers | clustering's gate on graph-index lag | not ported |
 | 085 gate on health, report freshness | `FreshnessWithin` built only in clustering (`:55-62` in tree) | ported |
+| 084 readiness licenses health, D2 `bootstrap_complete` | the producer sets `bootstrap_complete` once its initial build completes in this process; the pin gated clustering on graph-index's bit so detection never read a half-built index (gh#474; `pin:docs/adr/084-readiness-licenses-health-not-absence.md:84-99`). The new `graph-clustering` key inherits it: the follower's latch sets it (`graph/index_status.go:38-61`) | ported |
 | 083 / 088 / 109 readiness | one key per producer; reply carries readiness; Health drops error count (`109:98-107` names clustering `:876`) | ported |
 | 108 processor shell | D5: "graph-clustering and graph-query have no follower" (`108:125-126`) | ported |
 | 054 indexing eligibility | anomaly storm; "Move 1" disables the anomaly engine (`:21-24`); indexing-profile check (`pin:component.go:2540`) | not ported |
@@ -151,16 +158,30 @@ cannot (it would pair a newer value with an older revision across keys and break
    and `graph/follower` (ADR-108, #196).
 3. One-implementation interfaces: `pin:component.go:540-553` — `type entityBucketReader interface {` and two more, test
    seams over one KV type. Not carried (their code does not port).
-4. Exported surface with no reader: `CommunityRequest` .. `LevelResponse` (`pin:query.go:63-108`); `batch_size`
-   (`pin:doc.go:85` — `// is accepted in config but batch-threshold triggering is not implemented.)`); the back door
-   `pin:component.go:664` — `subscribeForRequests func(...)`. Required drop.
+4. Exported surface (surface audit). Pin-wide and consumer callers (**measured**, `grep -rn` over the pin outside the
+   package and over the six consumer checkouts): only `Register` has callers (`pin:componentregistry/register.go`,
+   semsource `cmd/semsource/run.go:312`, semboids `internal/boidgraph/clustering_spike_integration_test.go:162`).
+
+   | Pin symbol | Disposition |
+   | --- | --- |
+   | `Register` (`pin:component.go:801`) | keep, framework API (consumers) |
+   | `CreateGraphClustering` (`:755`), `DeclarePorts` (`:669`) | keep: `component.Registration`'s `Factory` and `Ports` read them (`:810-811`); precedent `processor/graph-embedding/component.go:107`, `:154` |
+   | `Config`, `DefaultConfig` (`:509`), `Config.Validate` (`:318`), `Config.ApplyDefaults` (`:405`) | keep, cut to the kept keys (design D3); `Validate` is `component.Validatable`; precedent `processor/graph-embedding/config.go:56`, `:125`, `:152` |
+   | `Config.DetectionInterval` (`:400`) | unexported: only the component reads it |
+   | `EntityIDEdgesConfig` (`:110`), `SemanticEdgesConfig` (`:149`) | drop: LPA edge synthesis (ADR-099); their keys are refused |
+   | `Component` methods `Meta`, `InputPorts`, `OutputPorts`, `ConfigSchema`, `Health`, `DataFlow`, `Initialize`, `Start`, `Stop` (`:820-1143`) | keep: the `component` interfaces the manager calls; behaviour from `component.Lifecycle` |
+   | `CommunityRequest` .. `LevelResponse` (`pin:query.go:63-108`) | drop with the four verbs (no reader) |
+   | `batch_size` (`pin:doc.go:85` — `// is accepted in config but batch-threshold triggering is not implemented.)`) | drop: phantom config, refused |
+   | `subscribeForRequests` (`pin:component.go:664`) | drop: back door (test hook) |
+
 5. Classification by error text: none (**measured**, `grep -n "strings.Contains\|err.Error()"` over production files:
    zero; `similarity.go:305-356` classify by `errors.As` and codes).
 
 Also: `pin:metrics.go:96` — `metricsOnce sync.Once` and `:168` — `_ = prometheus.DefaultRegisterer.Register(...)`
-(global registry, `metric-registry` spec: required, metrics on the injected registry). Context sweep: one private
-`cancel context.CancelFunc` (`pin:component.go:651`); no `context.Background`/`TODO`/`WithoutCancel` in production
-(**measured**).
+(global registry, `metric-registry` spec): required drop; the one new collector registers on the injected registry
+through `metric.RegisterOrGet`, with no `sync.Once` (#68's shape, though #68 names only `graph/clustering/metrics.go`).
+Context sweep: one private `cancel context.CancelFunc` (`pin:component.go:651`); no
+`context.Background`/`TODO`/`WithoutCancel` in production (**measured**).
 
 ## 9. Open issues naming a carried package
 
@@ -170,7 +191,7 @@ Also: `pin:metrics.go:96` — `metricsOnce sync.Once` and `:168` — `_ = promet
 | Issue | Names | Disposition (design) |
 | --- | --- | --- |
 | #525 watch order across keys | graph-clustering | retire: probe test plus publication stops on a lost feed (task 2.2) |
-| #32 capability seam | graph-clustering, graph/llm, model/wire | retire if owner agrees (Q3): tree-wide seam test (task 3.2) |
+| #32 capability seam | graph-clustering, graph/llm, model/wire | stays unless the owner amends its exit condition (Q2, from the owner's comment of 2026-10-24); the tree-wide seam test (task 3.2) lands either way |
 | #35 http_embedder split | — | already CLOSED (state CLOSED, measured) |
 | #198 graph/inference rest at change 7 | graph/inference, graph-clustering | stays: anomaly lane (Q1) |
 | #485 tier-2 community summaries | graph-clustering `component.go:2268-2330` | stays: tier 2, out of scope (owner, 2026-11-10) |
@@ -178,6 +199,7 @@ Also: `pin:metrics.go:96` — `metricsOnce sync.Once` and `:168` — `_ = promet
 | #141 UpdateWithRetryRead | `graph/inference/storage.go:159` (change 7) | stays: anomaly lane |
 | #196 lifecycleguard adoption | `processor/graph-clustering/component.go:646` | stays open (other rows); this package adopts `component.Lifecycle` |
 | #195 natsfixture.Open adoption | graph-clustering 18 sites | stays open (other packages); new tests use `natsfixture.Open` |
+| #554 own-deadline await helpers | graph-index and follower integration helpers | stays (its own fix); the new follower and clustering integration tests do not copy `context.WithTimeout(waitBound)` and wait on the event that orders the read |
 | #477 graphview adoption | clustering site (tier 2 enhancement worker) | stays: no view in this change |
 | #581 smoke fusion word question | graph-clustering (community answers later) | stays: claimed by #583 |
 
@@ -196,8 +218,12 @@ slice, not carried), #195's other rows, #300, #350, #484, #486, #487, #554.
   ledger `:4100`). Rank: boot error for keys; the spike's expectation is a migration note.
 - **graph-query / products reading COMMUNITY_INDEX** must know nothing new: a record's `entity_revision` is the honest
   mark; before the first publication they get `index_not_ready` (typed runtime error).
-- What they should have to know: nothing beyond the removed keys. The gap is the config migration, carried in
-  `processor/graph-clustering/MIGRATION.md`.
+- **A reader of the `graph-clustering` key** must know that its `indexed_revision` counts revisions the maintainer
+  holds, not revisions published, unlike graph-index's (`graph/index_status.go:62-65`); the record's `entity_revision`
+  is the per-group mark. Where found: the spec and the envelope's doc (design D1). A persistent publication failure
+  reads `degraded` in the envelope and a stuck state in `Health` (design D2), so the default path is not silent.
+- What they should have to know: nothing beyond the removed keys and the meaning of the key. The gap is the
+  config migration, carried in `processor/graph-clustering/MIGRATION.md`.
 
 ## 11. Intent check
 

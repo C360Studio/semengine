@@ -18,12 +18,24 @@ value that does not decode SHALL be applied as a refused entity.
 
 - **WHEN** a live write to `ENTITY_STATES` holds bytes that are not an entity state
 - **THEN** the entity contributes nothing, the tick still publishes the other groups, and `Health` and the envelope's
-  failure reasons name it (`TestRefusedValueReportedNotWithheld`)
+  `failed_reasons` name `refused_entity` (`TestRefusedValueReportedNotWithheld`)
+
+### Requirement: The readiness key counts what the maintainer holds
+
+graph-clustering's `graph-clustering` key SHALL report a revision indexed once the maintainer has applied it, before
+it is published; a reader that needs a group's published state SHALL read the record's `entity_revision`.
+
+#### Scenario: Applied before the tick
+
+- **WHEN** an entity is written and no tick has run since
+- **THEN** the key's `indexed_revision` reaches the write's revision while the group's record still carries the
+  earlier `entity_revision` (`TestRecordsFollowChanges`)
 
 ### Requirement: Publication waits for the replay and stops on a broken feed
 
 graph-clustering SHALL publish nothing to `COMMUNITY_INDEX` until the follower's initial build is complete, and SHALL
-publish nothing while the follower reports a lost feed or a latched reset, leaving the records as last published.
+start no tick once the follower reports a lost feed or a latched reset. A tick already running when the loss is
+detected MAY finish.
 
 #### Scenario: During the replay
 
@@ -33,28 +45,39 @@ publish nothing while the follower reports a lost feed or a latched reset, leavi
 #### Scenario: A revision out of order
 
 - **WHEN** the feed delivers a revision at or below one already observed
-- **THEN** no later tick writes or removes a record, and `Health` names the lost feed (`TestLostFeedStopsPublication`)
+- **THEN** no tick that starts afterwards writes or removes a record, and `Health` names the lost feed
+  (`TestLostFeedStopsPublication`)
+
+### Requirement: A failing publication is a stuck state
+
+While the last tick returned an error other than `*clustering.IncompleteError`, graph-clustering SHALL report
+`Healthy` false naming the failure, count it in `Failed` under `publication_failed`, and count each failed tick on
+`graph_clustering_publication_failures_total`; the next successful tick SHALL clear the state. Refused entities SHALL
+count under `refused_entity` and SHALL NOT stop publication.
+
+#### Scenario: Every write fails
+
+- **WHEN** every tick's write to `COMMUNITY_INDEX` fails, and then one succeeds
+- **THEN** while they fail `Healthy` is false, the envelope reads `degraded` with `publication_failed` 1, and the
+  counter rises once per tick; after the success `Healthy` is true and the record is written
+  (`TestPersistentPublicationFailureIsStuck`)
 
 ### Requirement: Removed configuration is refused
 
 graph-clustering SHALL refuse at construction, naming the key and what replaces it, any key it does not define,
 including `batch_size`, `enable_llm`, `enhancement_workers`, `min_community_size`, `max_iterations`,
-`entity_id_edges`, `semantic_edges` and `allow_ungated_reads`, and SHALL refuse declared output ports.
+`entity_id_edges`, `semantic_edges` and `allow_ungated_reads`, and SHALL refuse declared output ports. Each kept key
+SHALL change behaviour when set.
 
 #### Scenario: A pin configuration
 
 - **WHEN** a configuration carries `entity_id_edges`
 - **THEN** construction fails naming `entity_id_edges` (`TestConfigRefusesRemovedKeys`)
 
-### Requirement: Tick failures are not health
+#### Scenario: Kept keys are read
 
-A failed tick SHALL be retried on the next tick and SHALL NOT lower `Healthy`; only a lost feed, a latched reset, or a
-refused entity are stuck states in `Health`.
-
-#### Scenario: A write fails once
-
-- **WHEN** one tick's write to `COMMUNITY_INDEX` fails and the next succeeds
-- **THEN** `Healthy` stays true and the record is written by the second tick (`TestHealthIgnoresTickFailures`)
+- **WHEN** `detection_interval`, `startup_attempts` or `startup_interval_ms` is set
+- **THEN** the tick interval or the startup wait follows it (`TestDetectionIntervalIsRead`, `TestConfigStartupWait`)
 
 ### Requirement: Stop leaves nothing
 

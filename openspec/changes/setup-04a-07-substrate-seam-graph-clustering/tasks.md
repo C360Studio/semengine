@@ -25,7 +25,7 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
   key, naming it), `TestConfigRefusesOutputPorts`, `TestConfigStartupWait` (defaults and set values, as
   graph-embedding's), `TestRefusedValueReportedNotWithheld`, lifecycle suite (`TestStopLeavesNothing` on the real
   clock: the follower's `Run` needs real NATS, which a `synctest` bubble cannot drive; `notes/2.2.md`).
-- [ ] 2.3 Ticker and publication (D2) and #525 (D4). Check: `TestDetectionIntervalIsRead`, `TestRecordsFollowChanges`,
+- [x] 2.3 Ticker and publication (D2) and #525 (D4). Check: `TestDetectionIntervalIsRead`, `TestRecordsFollowChanges`,
   `TestNothingPublishedBeforeReplay`, `TestLostFeedStopsPublication`, `TestResetStopsPublication`,
   `TestPersistentPublicationFailureIsStuck` (Health, envelope reason, the counter), and the integration probe
   `TestWatchOrderAcrossKeys` at the pinned nats.go and server image, its observed order recorded in `notes/2.3.md` as

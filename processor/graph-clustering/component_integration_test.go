@@ -104,13 +104,17 @@ func newClusteringLogging(t *testing.T, client *natsclient.Client, raw string, h
 	return c
 }
 
-// startClustering ensures ENTITY_STATES, builds graph-clustering with the default configuration
-// and starts it, then waits for the replay of the empty bucket, so every write the test makes
-// after it is a live write (#584); the test's cleanup stops it.
-func startClustering(t *testing.T, client *natsclient.Client) (*Component, jetstream.KeyValue) {
+// tickByHand is a configuration whose ticker never fires within a test, so the test's own tick
+// calls are the only ticks and each runs at a point the test chose.
+const tickByHand = `{"detection_interval": "1h"}`
+
+// startClustering ensures ENTITY_STATES, builds graph-clustering from raw and starts it, then
+// waits for the replay of the empty bucket, so every write the test makes after it is a live write
+// (#584); the test's cleanup stops it.
+func startClustering(t *testing.T, client *natsclient.Client, raw string) (*Component, jetstream.KeyValue) {
 	t.Helper()
 	states := ensureEntityStates(t, client)
-	c := newClustering(t, client, `{}`)
+	c := newClustering(t, client, raw)
 	if err := c.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -221,7 +225,7 @@ func envelope(ctx context.Context, client *natsclient.Client) (status graph.Inde
 // tick (graph-clustering spec, "A value that does not decode"; design D1, D2).
 func TestRefusedValueReportedNotWithheld(t *testing.T) {
 	client := fixtureClient(t)
-	c, states := startClustering(t, client)
+	c, states := startClustering(t, client, tickByHand)
 
 	put(t, states, "acme.ops.test.alpha.doc.a1", storedEntity("acme.ops.test.alpha.doc.a1"))
 	put(t, states, "acme.ops.test.beta.doc.b1", storedEntity("acme.ops.test.beta.doc.b1"))
@@ -279,6 +283,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	}
 	if o.c.feeds != nil {
 		held = append(held, "feeds")
+	}
+	if o.c.ticks != nil {
+		held = append(held, "ticks")
 	}
 	return lifecycletest.Observation{Unresolved: held}
 }
@@ -344,7 +351,7 @@ func TestStopLeavesNothing(t *testing.T) {
 			t.Fatalf("Start: %v", err)
 		}
 		c := owner.(suiteOwner).c
-		if held, want := owner.Observe().Unresolved, []string{"run cancel", "feeds"}; !slices.Equal(held, want) {
+		if held, want := owner.Observe().Unresolved, []string{"run cancel", "feeds", "ticks"}; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}
 		await(t, "the follower's watch on the server",

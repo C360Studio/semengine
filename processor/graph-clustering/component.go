@@ -27,9 +27,13 @@ import (
 // key names graph-clustering once: its registration, its logger and its GRAPH_STATUS key.
 const key = readiness.KeyGraphClustering
 
-// reasonRefusedEntity is the Failed reason for entities the last tick left out of the records
-// (design D2).
-const reasonRefusedEntity = "refused_entity"
+// The Failed reasons graph-clustering names itself (design D2): reasonRefusedEntity for entities
+// the last tick that reported them left out of the records, reasonPublicationFailed while the last
+// tick's publication failed.
+const (
+	reasonRefusedEntity     = "refused_entity"
+	reasonPublicationFailed = "publication_failed"
+)
 
 var _ component.Discoverable = (*Component)(nil)
 
@@ -41,6 +45,10 @@ type Component struct {
 	natsClient      *natsclient.Client
 	logger          *slog.Logger
 	metricsRegistry *metric.MetricsRegistry
+	metrics         *clusteringMetrics
+
+	// interval is the resolved detection_interval: the time between ticks.
+	interval time.Duration
 
 	// lifecycle is the lifecycle state, Health and DataFlow (component.Lifecycle, ADR-108).
 	lifecycle component.Lifecycle
@@ -49,15 +57,18 @@ type Component struct {
 	follower   atomic.Pointer[follower.Follower] // read by Health at any time
 	maintainer *clustering.Maintainer
 
-	// outcomeMu guards refused, the refused-entity count of the last tick that reported one.
-	outcomeMu sync.Mutex
-	refused   int
+	// outcomeMu guards the last outcome: refused, the refused-entity count of the last tick that
+	// reported one, and publicationFailed, whether the last tick's publication failed.
+	outcomeMu         sync.Mutex
+	refused           int
+	publicationFailed bool
 
 	// The handles start records for cleanup, which clears them once it has released them all.
-	// runCancel ends the one run context (ADR-113) the follower's Run runs under; feeds closes
-	// once that Run has returned.
+	// runCancel ends the one run context (ADR-113) the follower's Run and the ticker run under;
+	// feeds closes once that Run has returned, ticks once the ticker has.
 	runCancel context.CancelFunc
 	feeds     chan struct{}
+	ticks     chan struct{}
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-clustering: the ports
@@ -103,12 +114,22 @@ func CreateGraphClustering(rawConfig json.RawMessage, deps component.Dependencie
 	if err != nil {
 		return nil, err
 	}
+	interval, err := config.interval() // Validate has refused a value that does not resolve
+	if err != nil {
+		return nil, err
+	}
+	metrics, err := newClusteringMetrics(deps.MetricsRegistry)
+	if err != nil {
+		return nil, errs.Wrap(err, "CreateGraphClustering", "factory", "register metrics")
+	}
 	return &Component{
 		config:          config,
 		inputs:          inputs,
 		natsClient:      deps.NATSClient,
 		logger:          deps.GetLoggerWithComponent(key),
 		metricsRegistry: deps.MetricsRegistry,
+		metrics:         metrics,
+		interval:        interval,
 	}, nil
 }
 
@@ -135,7 +156,8 @@ func (c *Component) InputPorts() []component.Port { return slices.Clone(c.inputs
 func (c *Component) OutputPorts() []component.Port { return nil }
 
 // Health reports the shell's verdict (component.Lifecycle.Health) over the follower's stuck
-// states: a latched reset, the refused entities the last tick reported, a lost feed.
+// states: a latched reset, the failures the last tick reported (refused entities, a failed
+// publication), a lost feed.
 func (c *Component) Health() component.HealthStatus {
 	var stuck []string
 	if f := c.follower.Load(); f != nil {
@@ -157,8 +179,9 @@ func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 // cleanup. A component with no NATS client is refused first.
 //
 // ctx bounds Start only: the wait for ENTITY_STATES and opening COMMUNITY_INDEX run under it. The
-// follower's watch runs under a run context start creates and cleanup ends, so ending ctx after
-// Start returned stops nothing (ADR-113).
+// follower's watch and the ticker, which publishes every detection_interval, run under a run
+// context start creates and cleanup ends, so ending ctx after Start returned stops nothing
+// (ADR-113).
 func (c *Component) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")
@@ -210,13 +233,34 @@ func (c *Component) start(ctx context.Context) error {
 	c.runCancel = runCancel
 	feeds := make(chan struct{})
 	c.feeds = feeds
+	ticks := make(chan struct{})
+	c.ticks = ticks
 	go func() {
 		defer close(feeds)
 		if err := f.Run(runCtx); err != nil {
 			c.logger.Warn("ENTITY_STATES watch did not stop cleanly", slog.Any("error", err))
 		}
 	}()
+	go func() {
+		defer close(ticks)
+		c.runTicks(runCtx, c.tick)
+	}()
 	return nil
+}
+
+// runTicks calls tick every detection_interval, the first one interval after it starts, until ctx
+// ends. A tick that outlasts the interval delays the next; ticks never overlap.
+func (c *Component) runTicks(ctx context.Context, tick func(context.Context)) {
+	ticker := time.NewTicker(c.interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			tick(ctx)
+		}
+	}
 }
 
 // deliver is the follower's Deliver, on its Run goroutine: it applies the delivered value at its
@@ -248,24 +292,35 @@ func (c *Component) deliver(_ context.Context, e follower.Entry) {
 	c.follower.Load().Complete(e.Key, e.Revision)
 }
 
-// failed is the follower's Failed: the refused entities the last tick that reported them left out
-// of the records, under refused_entity; none before the first tick.
+// failed is the follower's Failed, from the last tick's outcome: the refused entities the last
+// tick that reported them left out of the records, under refused_entity, and 1 under
+// publication_failed while the last tick's publication failed; none before the first tick.
 func (c *Component) failed() (int64, map[string]uint64) {
 	c.outcomeMu.Lock()
-	n := c.refused
+	refused, publicationFailed := c.refused, c.publicationFailed
 	c.outcomeMu.Unlock()
-	if n == 0 {
+	reasons := map[string]uint64{}
+	if refused > 0 {
+		reasons[reasonRefusedEntity] = uint64(refused)
+	}
+	if publicationFailed {
+		reasons[reasonPublicationFailed] = 1
+	}
+	if len(reasons) == 0 {
 		return 0, nil
 	}
-	return int64(n), map[string]uint64{reasonRefusedEntity: uint64(n)}
+	n := int64(refused)
+	if publicationFailed {
+		n++
+	}
+	return n, reasons
 }
 
 // tick runs one publication: none while the follower's QueryReady refuses (the replay not yet
-// applied, a lost feed, a latched reset); otherwise the maintainer's bootstrap is ended, its
-// changed groups are published, and the outcome is kept for Failed.
-//
-// shortcut: task 2.2 runs tick only from its tests; task 2.3 adds the ticker that runs it every
-// detection_interval and the publication_failed outcome, counter and stuck state (design D2).
+// applied, a lost feed, a latched reset), so no record is built from a partial replay or a broken
+// feed; otherwise the maintainer's bootstrap is ended, its changed groups are published, and the
+// outcome is kept for Failed (design D2). A tick the run context ends is not an outcome: Stop is
+// under way, and the work stays pending in the maintainer.
 func (c *Component) tick(ctx context.Context) {
 	if err := c.follower.Load().QueryReady(ctx); err != nil {
 		return
@@ -275,19 +330,26 @@ func (c *Component) tick(ctx context.Context) {
 	var incomplete *clustering.IncompleteError
 	switch {
 	case err == nil:
-		c.setRefused(0)
+		c.setOutcome(0, false)
 	case errors.As(err, &incomplete):
-		c.setRefused(len(incomplete.Refused))
+		c.setOutcome(len(incomplete.Refused), false)
+	case ctx.Err() != nil:
+		// Stop ended the run context mid-tick: not a publication failure.
 	default:
-		// A failed write returns no refusal count, so the last known one is kept.
+		// A failed write returns no refusal count, so the last known one is kept. The failure is
+		// counted and kept before it is logged.
+		c.metrics.publicationFailures.Inc()
+		c.outcomeMu.Lock()
+		c.publicationFailed = true
+		c.outcomeMu.Unlock()
 		c.logger.Warn("community publication failed; the changed groups are retried on the next tick",
 			slog.Any("error", err))
 	}
 }
 
-func (c *Component) setRefused(n int) {
+func (c *Component) setOutcome(refused int, publicationFailed bool) {
 	c.outcomeMu.Lock()
-	c.refused = n
+	c.refused, c.publicationFailed = refused, publicationFailed
 	c.outcomeMu.Unlock()
 }
 
@@ -297,20 +359,23 @@ func (c *Component) setRefused(n int) {
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start: it ends the run context and joins the follower's Run, so nothing more is
-// delivered. A ctx that ends first returns its error with the handles kept, and the next Stop
-// resumes.
+// partial start: it ends the run context and joins the follower's Run and the ticker, so nothing
+// more is delivered or published. A ctx that ends first returns its error with the handles kept,
+// and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
 	if c.runCancel != nil {
 		c.runCancel()
 	}
-	if c.feeds != nil {
+	for _, done := range []chan struct{}{c.feeds, c.ticks} {
+		if done == nil {
+			continue
+		}
 		select {
-		case <-c.feeds:
+		case <-done:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-	c.runCancel, c.feeds = nil, nil
+	c.runCancel, c.feeds, c.ticks = nil, nil, nil
 	return nil
 }

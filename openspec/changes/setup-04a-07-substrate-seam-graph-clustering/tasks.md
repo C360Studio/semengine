@@ -21,7 +21,7 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
   `IndexStatusResponse.IndexedRevision`'s doc (`graph/index_status.go:62-65`) names the graph-clustering meaning. Check:
   `TestEntryCarriesDeliveredValue`, `TestFollowerDeclaresLostFeedOnOutOfOrderDelivery` (extended to the value),
   `TestStuckNamesReasons`, the follower suite, `-race`.
-- [ ] 2.2 Config, factory, `Register`, shell and feed (D1, D3). Check: `TestConfigRefusesRemovedKeys` (one case per
+- [x] 2.2 Config, factory, `Register`, shell and feed (D1, D3). Check: `TestConfigRefusesRemovedKeys` (one case per
   key, naming it), `TestConfigRefusesOutputPorts`, `TestConfigStartupWait` (defaults and set values, as
   graph-embedding's), `TestRefusedValueReportedNotWithheld`, lifecycle suite (`TestStopLeavesNothing`, `synctest`).
 - [ ] 2.3 Ticker and publication (D2) and #525 (D4). Check: `TestDetectionIntervalIsRead`, `TestRecordsFollowChanges`,

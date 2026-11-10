@@ -1068,7 +1068,7 @@ method value) a policy entry point (`ConsumeInternalStreamWithConfig`, `ConsumeS
 
 `scripts/verify.sh` SHALL run `task ateam:doctor` as its first step, and `task ateam:doctor` SHALL run `.bin/ateam
 doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`,
-`GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is pinned as `v0.3.9` in
+`GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is pinned as `v0.4.0` in
 `.github/workflows/ci.yml` and `.github/workflows/merge-check.yml`, every install line naming the same version, compared
 by `scripts/doctor.sh`.
 

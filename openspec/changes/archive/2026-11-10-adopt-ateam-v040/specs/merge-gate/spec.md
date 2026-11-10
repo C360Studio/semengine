@@ -7,9 +7,14 @@
 `.github/workflows/merge-check.yml` SHALL run the merge check as its own workflow on `pull_request` (`opened`,
 `synchronize`, `reopened`, `ready_for_review`, `edited`), one queued run per pull request, skipped on a draft. Each job
 checks out the base commit without credentials and installs the pinned release. A `Merge check probe` job runs
-`ateam review gate --awaiting <n>` with read access to contents, issues, pull requests and check runs; unless it
-answers `awaiting=true`, the `merge-check` job runs `scripts/merge-check.sh <n>` read-only (contents, issues, pull
-requests) in 5 minutes.
+`ateam review gate --awaiting <n>`; unless it answers `awaiting=true`, the `merge-check` job runs
+`scripts/merge-check.sh <n>` read-only in 5 minutes.
+
+#### Scenario: Each job reads only what it judges
+
+- **WHEN** the workflow runs
+- **THEN** the `merge-check` job is granted read on contents, issues and pull requests, and the `Merge check probe`
+  job the same plus read on check runs, which it needs to see a `Merge check` already passing at the head
 
 #### Scenario: Reviewer edits the description
 

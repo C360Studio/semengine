@@ -33,11 +33,11 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
 
 ## 3. Composition and seam
 
-- [ ] 3.1 Composed stack: graph-clustering joins `internal/smoke`'s one-config stack; merge `origin/main` and
-  re-apply the `composed-stack` delta to the spec as #583 left it. Hold: #583 merges first (it edits
-  `internal/smoke` and the `composed-stack` spec). Check: `TestSmoke_OneConfigAnswers` (localSearch and a text
-  question answer), `TestSmoke_StackRestartKeepsAnswers`, `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`,
-  `TestSmoke_BrokerRestartBetweenRuns`, `TestSmoke_BrokerRestartUnderRunningStack` (five components).
+- [x] 3.1 Composed stack: graph-clustering joins `internal/smoke`'s one-config stack; merge `origin/main` and
+  re-apply the `composed-stack` delta to the spec as #583 left it (#583 merged first, `a962b9c`; `notes/3.1.md`).
+  Check: `TestSmoke_OneConfigAnswers` (localSearch and a text question answer), `TestSmoke_StackRestartKeepsAnswers`,
+  `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`, `TestSmoke_BrokerRestartBetweenRuns`,
+  `TestSmoke_BrokerRestartUnderRunningStack` (five components).
 - [ ] 3.2 In `internal/harness/contract/embeddingprovider_test.go`: `TestTreeImportsNoProviderPlumbing` over
   `go list -deps ./...` (no `graph/llm`, `model/wire`, `github.com/sashabaranov/go-openai`), reusing `goList` and
   the provider reader, shown to fail on a fixture listing; and processor/graph-clustering under the direct-`model`

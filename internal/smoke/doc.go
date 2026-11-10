@@ -3,10 +3,12 @@
 // ComponentManager, in a child process, and check what a consumer can read of it (openspec change
 // test-557-composed-stack-smoke, capability composed-stack).
 //
-// The stack is graph-ingest, graph-index, graph-embedding (BM25, no provider) and graph-query on one
-// NATS server. The test is the producer, publishing a fixed set of entities on entity.>, and the
-// observer: graph.query.* answers (semantic and similar among them), the GRAPH_STATUS readiness
-// keys, component health over HTTP and the EMBEDDING_INDEX records. Every wait is ordered after the write it checks.
+// The stack is graph-ingest, graph-index, graph-embedding (BM25, no provider), graph-clustering
+// and graph-query on one NATS server. The test is the producer, publishing a fixed set of entities
+// on entity.>, and the observer: graph.query.* answers (semantic, similar, localSearch and the text
+// search among them), the GRAPH_STATUS readiness keys, component health over HTTP and the
+// EMBEDDING_INDEX records. Every wait is ordered after the write it checks; a community answer
+// waits on its record's entity_revision.
 //
 // A second composition has no graph-embedding, neither configured nor registered:
 // TestSmoke_NoEmbedderAnswers boots it and asks pkg/fusion, over pkg/fusion/fusionnats, the

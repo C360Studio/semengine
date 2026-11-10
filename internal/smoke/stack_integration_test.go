@@ -35,6 +35,7 @@ import (
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/payloadregistry"
+	graphclustering "github.com/c360studio/semengine/processor/graph-clustering"
 	graphembedding "github.com/c360studio/semengine/processor/graph-embedding"
 	graphindex "github.com/c360studio/semengine/processor/graph-index"
 	graphingest "github.com/c360studio/semengine/processor/graph-ingest"
@@ -60,10 +61,12 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the four-component stack boots from (design D2), as a
+// stackConfig is the one configuration the five-component stack boots from (design D2), as a
 // product would write it. The child fills the three placeholders from its environment: the NATS
 // URL and the two ports the test picked (design D4), and graph-ingest's configuration, {} (its
-// defaults) unless the test passes one. Every other component takes its defaults; graph-embedding runs BM25 only.
+// defaults) unless the test passes one. Every other component takes its defaults, except that
+// graph-embedding runs BM25 only and graph-clustering publishes the changed groups every second
+// rather than every 30 s, so a community wait lasts about a second.
 const stackConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -81,6 +84,8 @@ const stackConfig = `{
     "graph-index": {"type": "processor", "name": "graph-index", "enabled": true, "config": {}},
     "graph-embedding": {"type": "processor", "name": "graph-embedding", "enabled": true,
       "config": {"embedder_type": "bm25"}},
+    "graph-clustering": {"type": "processor", "name": "graph-clustering", "enabled": true,
+      "config": {"detection_interval": "1s"}},
     "graph-query": {"type": "processor", "name": "graph-query", "enabled": true, "config": {}}
   }
 }`
@@ -124,12 +129,15 @@ type composition struct {
 	labels []string
 }
 
-// fullStack is the four-component stack every test but the no-embedder one boots.
+// fullStack is the five-component stack every test but the no-embedder one boots. graph-clustering's
+// key counts what its maintainer holds, not what it has published (readiness.KeyGraphClustering), so
+// awaitIndexed's wait on it orders no community read: checkCommunities waits on the record's own
+// entity_revision.
 var fullStack = composition{
 	name:       "full",
 	config:     stackConfig,
-	components: []string{"graph-embedding", "graph-index", "graph-ingest", "graph-query"},
-	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding},
+	components: []string{"graph-clustering", "graph-embedding", "graph-index", "graph-ingest", "graph-query"},
+	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering},
 }
 
 // graphOnlyStack is the stack with no embedder: graph-embedding neither configured nor registered.
@@ -154,10 +162,11 @@ func compositionNamed(name string) (composition, error) {
 
 // componentFactories are the factories a composition can name, by component name.
 var componentFactories = map[string]func(*component.Registry) error{
-	"graph-ingest":    graphingest.Register,
-	"graph-index":     graphindex.Register,
-	"graph-embedding": graphembedding.Register,
-	"graph-query":     graphquery.Register,
+	"graph-ingest":     graphingest.Register,
+	"graph-index":      graphindex.Register,
+	"graph-embedding":  graphembedding.Register,
+	"graph-clustering": graphclustering.Register,
+	"graph-query":      graphquery.Register,
 }
 
 // What the test passes the child in its environment.
@@ -431,7 +440,7 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the four-component stack in a child against url, on two ports it picks, and
+// startStack boots the five-component stack in a child against url, on two ports it picks, and
 // returns once StartAll has returned in it.
 func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
@@ -679,7 +688,7 @@ func latched(status graph.IndexStatusResponse) string {
 // awaitIndexed is the rest of design D5's order, after the acknowledgement or a mutation's reply:
 // the ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one,
 // not degraded; then the envelope of each index the composition runs (graph-index, and
-// graph-embedding where it is configured) at or above that revision. It returns the revision. A latched
+// graph-embedding and graph-clustering where they are configured) at or above that revision. It returns the revision. A latched
 // state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()

@@ -1,6 +1,9 @@
 # composed-stack
 
-This delta is written against the spec on base `4cb8d58`; task 3.1 re-applies it to the spec as #583 leaves it.
+This delta was written against the spec on base `4cb8d58`. Task 3.1 checked it against the spec as #583 left it
+(`a962b9c`): the spec is unchanged since `4cb8d58` (#583 changed only `internal/smoke` test files), so nothing of
+that change needed carrying. Task 3.1 kept the current spec's BM25 clause and named the record the tests wait on, the
+lead's level-0 record (`notes/3.1.md`).
 
 ## MODIFIED Requirements
 
@@ -18,7 +21,7 @@ about entities a producer published on `entity.>`.
   `ENTITY_STATES` revision read after it, `entity`, `relationships`, `pathSearch`, `summary` and `entityByAlias`
   return the expected answers, and each entity has one generated embedding record
 - **AND** `semantic` on a word only one entity's name holds answers that entity alone, and `similar` answers the other
-  entities whose names share a word with the entity's, as a set
+  entities whose names share a word with the entity's, as a set, since BM25's scores depend on arrival order
 - **AND** once the lead's level-0 record's `entity_revision` reaches that revision, `localSearch` on the lead answers
   from that group, and a text question on a word of the fixed names answers that group
 - **AND** after an edit and a delete the answers and records follow (`TestSmoke_OneConfigAnswers`)
@@ -33,7 +36,7 @@ restart.
 
 - **WHEN** the stack process stops on SIGTERM and a new process boots from the same configuration
 - **THEN** after a new entity and an edit are published, the graph-index, graph-embedding and graph-clustering keys
-  reach their revision, the community records' `entity_revision` reaches it, graph-ingest's reads not degraded, and
+  reach their revision, the lead's level-0 record's `entity_revision` reaches it, graph-ingest's reads not degraded, and
   the answers and record set equal those before the stop plus the new writes (`TestSmoke_StackRestartKeepsAnswers`)
 
 ### Requirement: A process killed mid-ingest loses no acknowledged write
@@ -46,9 +49,9 @@ SHALL catch up.
 
 - **WHEN** the process is killed with at least one input applied and at least one not acknowledged, and a new process
   boots
-- **THEN** each acknowledged entity answers with each statement once, and readiness and records catch up, community
-  records included once their `entity_revision` reaches the last revision, with a new entity and an edit published after
-  the new process boots (`TestSmoke_KillMidIngestKeepsAcknowledgedWrites`)
+- **THEN** each acknowledged entity answers with each statement once, and readiness and records catch up, the lead's
+  level-0 community record included once its `entity_revision` reaches the last revision, with a new entity and an
+  edit published after the new process boots (`TestSmoke_KillMidIngestKeepsAcknowledgedWrites`)
 
 ### Requirement: A broker restart between runs keeps the answers
 
@@ -59,8 +62,8 @@ answers included.
 
 - **WHEN** the stack stops, the NATS server restarts on the same URL, and the stack boots again
 - **THEN** after a new entity and an edit are published, the graph-index, graph-embedding and graph-clustering keys
-  reach their revision, the community records' `entity_revision` reaches it, graph-ingest's reads not degraded, with
-  the same answers plus the new writes (`TestSmoke_BrokerRestartBetweenRuns`)
+  reach their revision, the lead's level-0 record's `entity_revision` reaches it, graph-ingest's reads not degraded,
+  with the same answers plus the new writes (`TestSmoke_BrokerRestartBetweenRuns`)
 
 ### Requirement: A running stack recovers from a broker restart
 
@@ -73,7 +76,7 @@ components by name, each healthy (graph-embedding's `embedding worker watch lost
 
 - **WHEN** the NATS server restarts while the stack runs, and a second batch, an edit and a delete are published after
 - **THEN** the graph-index, graph-embedding and graph-clustering keys reach their revision and graph-ingest's reads not
-  degraded, the community records' `entity_revision` reaches it, with answers, `localSearch` included, that include
+  degraded, the lead's level-0 record's `entity_revision` reaches it, with answers, `localSearch` included, that include
   them, no envelope reports a lost feed or `reset_required`, and `/components/health` lists graph-ingest, graph-index,
   graph-embedding, graph-clustering and graph-query, a total of 5, each healthy
   (`TestSmoke_BrokerRestartUnderRunningStack`)

@@ -47,7 +47,7 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
 
 ## 4. Close-out
 
-- [ ] 4.1 Record the anomaly drop (design D5): the ledger's `graph/inference` row
+- [x] 4.1 Record the anomaly drop (design D5): the ledger's `graph/inference` row
   (`docs/admission-ledger.yaml:2292-2320`, consumer purpose and known risks), `graph/structural` row (`:2630-2652`),
   `graph/llm` and `model/wire` rows (`:2596-2629`, #32's new exit condition), and every other row naming change 7's
   anomaly work (`git grep -n -i "anomal\|change 7" docs/admission-ledger.yaml docs/tier1-cross-check.md

@@ -2017,8 +2017,10 @@
     import; the HTTP client does network I/O for its caller; model.Watch runs on the caller's goroutine
     (watch.go:35)
   known_risks: >-
-    carried whole until #32 (change 7) decides the seam (design D6, K2): its agentic-only surface stays,
-    because cutting it before #32 is the blind cut #8 Q4 forbids. model/wire is not ported (its own row).
+    carried whole (design D6, K2): its agentic-only surface stays, because cutting it blind is what #8 Q4
+    forbids. #32 closed without deciding that surface: its exit condition became "tier 0 builds without the LLM
+    plumbing", proven by TestTreeImportsNoProviderPlumbing (owner ruling 2, PR #582 comment 6768832111), and the
+    plumbing is left to the tier-2 issues (epic #484). model/wire is not ported (its own row).
     Changed from the pin: the first error Registry.Validate returns for several invalid entries is the first in
     name order, where the pin's depended on map order; half-open admits one probe (the pin admitted every caller
     past the cooldown), and a probe that has not reported within one Cooldown of being admitted counts as lost so
@@ -2146,7 +2148,8 @@
     from a recreated bucket is detectable (#103 is retired by the text change and the marker is tracked in #15; ADR-109). pkg/fusion (change 5)
     carries no IndexStatus copy and decodes no IndexStatusResponse: it reads not-ready from each query reply
     (setup-04a-05-fusion design D1, owner ruling 4 on PR #550; ADR-109 D1), so #110 item 2 is done. Removed: events.go (#101), UnwrapQueryResponse, TOOL_CALL_OUTCOMES,
-    ENTITY_SUFFIX_INDEX (#104), and dead sentinels/types (errors.go, incoming.go, query_types.go,
+    ENTITY_SUFFIX_INDEX (#104), ANOMALY_INDEX (BucketAnomalyIndex and its kvcatalog row: anomaly detection is never
+    ported, so nothing writes it; owner ruling 1, PR #582 comment 6768832111), and dead sentinels/types (errors.go, incoming.go, query_types.go,
     GetPropertyValue function, MissingUnknown, ContextEntry, NameIndexEntry); README updated
   proving_tests: >-
     graph/write_rules_test.go, graph/write_rules_prop_test.go, graph/exact_entity_test.go,
@@ -2293,8 +2296,9 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     hierarchy inference: graph-ingest creates an entity's absent type, taxonomy, and source
-    containers at birth and writes membership statements; public because graph-clustering names
-    inference.Config in change 7 (#97, design D1, D1a)
+    containers at birth and writes membership statements (#97, design D1, D1a). It was public
+    because the pin's graph-clustering named inference.Config for anomaly detection; that reason is
+    gone, since anomaly detection is never ported (owner ruling 1, PR #582 comment 6768832111)
   destination: >-
     graph/inference (hierarchy slice only: hierarchy.go, container_entity.go, doc.go; #97, design D1a)
   contract: >-
@@ -2310,8 +2314,10 @@
     stdlib; reads/writes through caller-supplied EntityStore; no goroutine
   known_risks: >-
     dead hierarchy surface removed (DefaultHierarchyConfig, HierarchyConfig, OnEntityCreated,
-    ClearCache, GetMetrics, GetCacheStats). Anomaly detectors, review worker, storage, and HTTP
-    handlers deferred to change 7 with graph-clustering (#97, design D1a)
+    ClearCache, GetMetrics, GetCacheStats). The rest of the pin's package (the anomaly detectors,
+    the review worker, the anomaly storage and its HTTP handlers) is never ported, now or later
+    (owner ruling 1, PR #582 comment 6768832111, amending #97 design D1a; setup-04a-07 design D5). A tier-2 LLM review worker is a
+    separate open slot, #488
   proving_tests: >-
     graph/inference/hierarchy_statements_test.go, hierarchy_test.go, hierarchy_container_test.go,
     hierarchy_attack_test.go, and processor/graph-ingest/hierarchy_birth_test.go
@@ -2596,14 +2602,17 @@
 - source_path: model/wire
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    none in this change: nothing ported here reads it (design D1, D1a; probe P-9); its readers port with
-    change 7
+    none: nothing ported reads it (design D1, D1a; probe P-9); graph-clustering (change 7) ports without
+    it
   destination: none
   contract: n/a
   dependencies_and_side_effects: n/a
   known_risks: >-
-    ported by the change that ports its first reader (change 7), following ruling B's reasoning (port what the
-    admitted packages read; #91 comment 6035477895); model is carried without it (model row)
+    ported, if ever, by the change that ports its first reader, following ruling B's reasoning (port what the
+    admitted packages read; #91 comment 6035477895); model is carried without it (model row). #32 closed on
+    the owner's new exit condition, tier 0 builds without the LLM plumbing, proven by
+    TestTreeImportsNoProviderPlumbing (internal/harness/contract; owner ruling 2, PR #582 comment
+    6768832111); the plumbing is left to the tier-2 issues (epic #484)
   proving_tests: n/a
   owner: setup-04a-02-ingest-kernel technical writer
   disposition: defer-exclude
@@ -2613,13 +2622,15 @@
   consumer_purpose: >-
     none in this change: graph/inference's hierarchy slice reads nothing of it (design D1a, P-11), so,
     following ruling B's own reasoning (#91 comment 6035477895: port what the admitted packages read), nothing
-    of it is ported; its next readers are graph/clustering and processor/graph-query (change 4) and
-    processor/graph-clustering (change 7)
+    of it is ported. graph/clustering and processor/graph-query (change 4) and processor/graph-clustering
+    (change 7) were ported without it
   destination: none
   contract: n/a
   dependencies_and_side_effects: n/a
   known_risks: >-
-    returns with changes 4 and 7 and #32 (design D1a). github.com/sashabaranov/go-openai's only importer in
+    returns only with a tier-2 change (epic #484): #32 closed on the owner's new exit condition, tier 0 builds
+    without the LLM plumbing, proven by TestTreeImportsNoProviderPlumbing (internal/harness/contract; owner
+    ruling 2, PR #582 comment 6768832111). github.com/sashabaranov/go-openai's only importer in
     the closure is this package (design D1, P-9), so go-openai is not in go.mod (task 5.3). EntityParts.Org
     and .Platform (prompt_types.go:14-15) are not ported, so TestNoSecondAuthorityField needs no exception
     (design D9). Foundation D8's dormant carriage of graph/llm happens in no form (design D1a)
@@ -2630,8 +2641,9 @@
 - source_path: graph/structural
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    none in this change: its importers at the pin are graph/inference's detectors (four files) and
-    processor/graph-clustering (three files), all ported in change 7 (design D1a, P-11)
+    none: its importers at the pin are graph/inference's anomaly detectors (four files) and
+    processor/graph-clustering's anomaly lane (three files), and anomaly detection is never ported
+    (owner ruling 1, PR #582 comment 6768832111); change 7 ports graph-clustering without it
   destination: none
   contract: n/a
   dependencies_and_side_effects: n/a
@@ -2640,8 +2652,9 @@
     "graph/structural moves to change 7 with its only readers. This changes foundation D2's package list and
     the D10 critical list."). Foundation D2 row 2 loses graph/structural and row 7 gains it; SETUP 03B D10's
     critical list keeps it at the 80% coverage floor, gated from change 7, when it is ported (design D1a,
-    D11). The move changes order, not admission: the package stays in the admitted set and change 7 ports it
-    whole; its six dead-surface appendix rows are judged then (design D6)
+    D11). That move changed order, not admission. The owner then removed it from the admitted set by name:
+    anomaly detection, its only reader, is never ported (owner ruling 1, PR #582 comment 6768832111; setup-04a-07 design D5), so this row
+    stays defer-exclude for good and the coverage floor never applies
   proving_tests: n/a
   owner: setup-04a-02-ingest-kernel technical writer
   disposition: defer-exclude
@@ -4050,9 +4063,10 @@
   consumer_purpose: >-
     tier-0 community grouping: one group per entity-ID prefix at three levels (ADR-099 as amended by ADR-102), kept
     current from entity changes by a Maintainer and published as bounded records to COMMUNITY_INDEX.
-    processor/graph-clustering (change 7) drives the Maintainer from its ENTITY_STATES watch and reads every record
-    through GetAllCommunities (pin processor/graph-clustering/anomaly.go:342); processor/graph-query (item 9) and
-    products decode Community
+    processor/graph-clustering (change 7) drives the Maintainer from its ENTITY_STATES watch; the pin's
+    graph-clustering also read every record through GetAllCommunities for anomaly detection (pin
+    processor/graph-clustering/anomaly.go:342), which is never ported (owner ruling 1, PR #582 comment
+    6768832111); processor/graph-query (item 9) and products decode Community
   destination: graph/clustering
   contract: >-
     The pin's types.go, storage.go and summarizer.go:388-490 (word extraction and the summary template, now terms.go)
@@ -4097,7 +4111,7 @@
     Upsert and Delete wait. Revision 0 is refused because a KV entry's first revision is 1 on nats.go v1.54.0 and the
     fixture's server image (TestKVRevisionStartsAtOne); nothing beyond that is promised. Held for item 9: the reader's
     consistency contract during a tick and prefix-page reads; held for change 7: the watch wiring and its refused config
-    keys. semboids' member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #32, #68,
+    keys. semboids' member decoder breaks under bounded records (owner accepted, 2026-10-31). Stay open: #485, #68,
     #141, #477
   proving_tests: >-
     graph/clustering: terms_test.go (TestExtractTerms, TestLongLiteralIsNotAWord, TestRecordIsBounded,
@@ -4469,7 +4483,8 @@
   contract: n/a
   dependencies_and_side_effects: n/a
   known_risks: >-
-    the language-model half waits for a provider path: issue #487 (tier 2) and #32 (provider plumbing)
+    the language-model half waits for a provider path: issue #487 (tier 2) and the provider plumbing, left to
+    the tier-2 issues (epic #484) when #32 closed (owner ruling 2, PR #582 comment 6768832111)
   proving_tests: n/a (excluded)
   owner: setup-04a-04-graph-roots-graph-query developer
   disposition: defer-exclude
@@ -4483,7 +4498,8 @@
   contract: n/a
   dependencies_and_side_effects: n/a
   known_risks: >-
-    the language-model and summary-view wiring waits for issues #485, #486, #487 and #32; the rest is rewritten on
+    the language-model and summary-view wiring waits for issues #485, #486, #487 and epic #484 (the provider
+    plumbing #32 left to tier 2, owner ruling 2, PR #582 comment 6768832111); the rest is rewritten on
     component.Lifecycle, not carried
   proving_tests: n/a (excluded)
   owner: setup-04a-04-graph-roots-graph-query developer

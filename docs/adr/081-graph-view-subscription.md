@@ -32,6 +32,10 @@
 >   state that Decision 5 asks the view to expose is carried by `WaitCaughtUp`, the `OnCaughtUp` and
 >   `OnWatcherLost` hooks, and `Applied`. The package's `README.md` lists what is kept.
 > - Not ported: ADR-079, whose per-entity poison decision binds projection owners, who are consumers of this package.
+> - Never ported: the two `graph/inference` sites the sweep names, the review worker's `ANOMALY_INDEX` watch
+>   (`review_worker.go:125`) and the dead `storage.go:429` `Watch`. They belong to anomaly detection, which is not
+>   ported now or later (owner ruling 1, PR #582 comment 6768832111), and `ANOMALY_INDEX` is not in this
+>   repository's bucket catalog.
 
 ## Status
 

@@ -36,9 +36,9 @@ transport"; `TestGraphImportsNoTransport`).
 - **The query reply envelope.** Replies on `graph.ingest.query.*` are not enveloped. Replies on `graph.index.query.*`
   are a `QueryResponse`: the verb's result in `data`, the `ENTITY_STATES` revision it reflects in `indexed_revision`,
   and the answering component in `producer`; `NewQueryResponse` refuses an empty producer. On `graph.query.*` the shape
-  depends on the verb: `entity`, `batch`, `prefix` and `hierarchyStats` are bare, and `byName`, `entityByAlias`,
-  `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`,
-  `spatial` and `temporal` are enveloped. A caller
+  depends on the verb: `entity`, `batch`, `prefix` and `hierarchyStats` are bare, and `byName`, `predicate`,
+  `entityByAlias`, `relationships`, `pathSearch`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`,
+  `similar`, `spatial` and `temporal` are enveloped. A caller
   decodes by the verb's table row (`QueryVerb.Enveloped`, and `QueryVerb.Reply` for the type of the body or of `data`),
   never by the reply's content.
 - **Reading at a revision.** A request on an enveloped verb may carry `min_revision` (`MinRevisionField`), the
@@ -50,10 +50,10 @@ transport"; `TestGraphImportsNoTransport`).
   `incoming`, `alias`, `predicate`, `predicateList`, `predicateStats`, `predicateCompound`, `byName`) on
   `graph.index.query.*`, the four verbs of the embedding, spatial and temporal responders (`search` and `similar` on
   `graph.embedding.query.*`, `bounds` on `graph.spatial.query.*`, `range` on `graph.temporal.query.*`), and graph-query's
-  `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`, `summary`,
-  `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on `graph.query.*`. A
-  name is unique only within its responder: `entity` is declared for graph-ingest and for graph-query. Each row also
-  marks `Enveloped` and gives the `Reply` type.
+  `entity`, `batch`, `prefix`, `byName`, `predicate`, `entityByAlias`, `relationships`, `pathSearch`, `hierarchyStats`,
+  `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and `temporal` on
+  `graph.query.*`. A name is unique only within its responder: `entity` is declared for graph-ingest and for
+  graph-query. Each row also marks `Enveloped` and gives the `Reply` type.
   The embedding responder is in the tree (`processor/graph-embedding`). The spatial and temporal responders are not,
   so those two rows name a responder that does not exist, and graph-query's `spatial` and `temporal` forwards and its
   `globalSearch` time-range and area strategies are refused transient `internal`. A verb a consumer serves under

@@ -11,7 +11,7 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
 
 ## 2. Code
 
-- [ ] 2.1 `graph.query.predicate` (design D3). Premises: `graph/query_verbs.go:95-126`,
+- [x] 2.1 `graph.query.predicate` (design D3). Premises: `graph/query_verbs.go:95-126`,
   `processor/graph-query/query.go:27-36`, `processor/graph-index/query.go:285-293`. Add the verb row, the forward and
   `graph.PredicateRequest`; graph-index decodes into it. Check: `TestQueryVerbsDeclareEachRespondersVerbs` (row added),
   `TestForwardPassesBytesBothWays` (predicate case), `TestGraphQueryServesExactlyTheDeclaredVerbs`, the graph-index

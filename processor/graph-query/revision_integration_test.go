@@ -114,6 +114,7 @@ func TestMinRevisionRefusalThroughGraphQuery(t *testing.T) {
 
 	for _, tc := range []struct{ name, verb, body string }{
 		{"byName", "byName", `"name":"Alpha"`},
+		{"predicate", "predicate", fmt.Sprintf(`"predicate":%q`, vocabulary.DCTermsTitle)},
 		{"relationships outgoing", "relationships", fmt.Sprintf(`"entity_id":%q,"direction":"outgoing"`, drone1)},
 		{"relationships incoming", "relationships", fmt.Sprintf(`"entity_id":%q,"direction":"incoming"`, drone2)},
 		{"entityByAlias", "entityByAlias", `"alias":"held-1"`},
@@ -228,6 +229,7 @@ func TestGraphQueryRepliesDecodeByTheTable(t *testing.T) {
 		"batch":         {fmt.Sprintf(`{"ids":[%q,%q]}`, drone1, absentDrone)},
 		"prefix":        {`{"prefix":"c360","limit":1}`},
 		"byName":        {`{"name":"Alpha"}`},
+		"predicate":     {fmt.Sprintf(`{"predicate":%q}`, vocabulary.DCTermsTitle), fmt.Sprintf(`{"predicate":%q,"value":"Alpha"}`, vocabulary.DCTermsTitle)},
 		"entityByAlias": {`{"alias":"held-1"}`},
 		"relationships": {
 			fmt.Sprintf(`{"entity_id":%q,"direction":"outgoing"}`, drone1),

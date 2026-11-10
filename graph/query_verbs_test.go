@@ -61,6 +61,8 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 			Enveloped: false, Reply: reflect.TypeFor[PrefixQueryResponse]()},
 		{Name: "byName", Subject: "graph.query.byName", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "predicate", Subject: "graph.query.predicate", Responder: "graph-query",
+			Enveloped: true, Reply: reflect.TypeFor[PredicateData]()},
 		{Name: "entityByAlias", Subject: "graph.query.entityByAlias", Responder: "graph-query",
 			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "relationships", Subject: "graph.query.relationships", Responder: "graph-query",
@@ -106,6 +108,35 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	got[0].Subject = "graph.ingest.query.changed"
 	if again := QueryVerbs(); !slices.Equal(again, want) {
 		t.Fatalf("editing a returned table changed the declaration: %+v", again)
+	}
+}
+
+// TestPredicateRequestWireNames holds the keys graph-index's predicate verb has always read, and that
+// an empty value still arrives as a value: a nil Value means no value filter.
+func TestPredicateRequestWireNames(t *testing.T) {
+	empty := ""
+	for _, tc := range []struct {
+		request PredicateRequest
+		want    string
+	}{
+		{PredicateRequest{Predicate: "test.rel.knows"}, `{"predicate":"test.rel.knows"}`},
+		{PredicateRequest{Predicate: "test.rel.knows", Value: &empty, Limit: 3, MinRevisionField: MinRevisionField{MinRevision: 4}},
+			`{"predicate":"test.rel.knows","value":"","limit":3,"min_revision":4}`},
+	} {
+		got, err := json.Marshal(tc.request)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("PredicateRequest = %s, want %s", got, tc.want)
+		}
+		var back PredicateRequest
+		if err := json.Unmarshal(got, &back); err != nil {
+			t.Fatal(err)
+		}
+		if (back.Value == nil) != (tc.request.Value == nil) {
+			t.Errorf("%s decodes Value %v, want nil %v", got, back.Value, tc.request.Value == nil)
+		}
 	}
 }
 

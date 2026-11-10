@@ -103,4 +103,3 @@ be refused naming `graph.embedding.query.search`, never answered empty. `pkg/fus
 
 - **WHEN** a package `fusionnats` imports reaches `graph/embedding`
 - **THEN** `TestFusionNATSImportsNoEmbedding` fails naming the import path
-

@@ -122,8 +122,9 @@ registers one, `semengine_graph_clustering_publication_failures_total` (counter)
   (#485) and not present.
 - **Replay-time reset is permanent.** A stored `ENTITY_STATES` value that cannot be decoded during the replay stops
   publication until the process restarts.
-- **Records lag by up to one interval.** A group's record is as current as the last tick; its `entity_revision` says
-  which write it includes.
+- **Records update on successful ticks.** `detection_interval` is how often a tick starts, not a bound on how stale a
+  record can be: a slow or failing publication, or a lost feed, delays updates further. A group's record is as current
+  as the last successful tick; its `entity_revision` says which write it includes.
 
 ## Dependencies
 

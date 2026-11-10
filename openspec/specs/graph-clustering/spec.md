@@ -96,4 +96,3 @@ After `Stop` returns nil, no goroutine of the component, the follower or the tic
 
 - **WHEN** the component has published and `Stop` is called
 - **THEN** it returns nil and the lifecycle suite finds nothing running (`TestStopLeavesNothing`)
-

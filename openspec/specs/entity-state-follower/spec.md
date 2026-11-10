@@ -230,4 +230,3 @@ returns reasons, each reason with its count.
 
 - **WHEN** `Failed` returns 2 with reasons `{"refused_entity": 2}`
 - **THEN** `Stuck` holds one sentence naming 2 unresolved failures and `refused_entity` 2 (`TestStuckNamesReasons`)
-

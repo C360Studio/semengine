@@ -12,8 +12,9 @@ ruling said no agentic dependency.
 
 With the hook, SemTeams' startup code tells the gateway "also answer `trajectory`, here is its GraphQL schema text, ask
 this NATS subject." The gateway checks the request against that schema and returns only the fields asked for. SemTeams'
-UI keeps working, its query unchanged. SemEngine adds one small exported type and one registration function. That is
-new public surface, which is why I am asking.
+UI keeps working, its query unchanged. SemEngine adds one small exported type and one registration function, and each
+added operation shows up as a declared output of the gateway, so startup checks see SemTeams' subject like any other
+wiring. That is new public surface, which is why I am asking.
 
 The other two choices:
 

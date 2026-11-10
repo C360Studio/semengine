@@ -68,7 +68,8 @@ Alternative: a second gateway port on `graph.index.query.*`, as the pin; a secon
 types); the request is the coerced arguments as a JSON object; the reply is projected by name. The factory's port
 declarer reports one required NATS-request output `<field>_queries` on `Subject` per operation beside `graph_queries`,
 so `composition.Analyze` judges it (composition-validation spec :206-215, :311); config never restates it.
-Registration refuses, naming the problem: bad SDL, undeclared `Field`, built-in or duplicate field, a `Subject` that is
+Registration refuses, naming the problem: bad SDL, undeclared `Field`, built-in, duplicate or non-null root field, a
+`Subject` that is
 invalid, wildcarded, in `graph.QueryVerbs()` or under `graph.mutation.`. SemTeams adds `trajectory` →
 `agentic.query.trajectory` with the pin's SDL (`:1906-1950`). (b) Operations declared in config: an operator writing
 SDL into JSON, domain schema owned by deployment text, no compile-time home; rejected. (c) SemEngine owns the

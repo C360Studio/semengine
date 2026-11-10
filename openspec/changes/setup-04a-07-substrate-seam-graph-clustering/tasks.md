@@ -38,11 +38,12 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
   Check: `TestSmoke_OneConfigAnswers` (localSearch and a text question answer), `TestSmoke_StackRestartKeepsAnswers`,
   `TestSmoke_KillMidIngestKeepsAcknowledgedWrites`, `TestSmoke_BrokerRestartBetweenRuns`,
   `TestSmoke_BrokerRestartUnderRunningStack` (five components).
-- [ ] 3.2 In `internal/harness/contract/embeddingprovider_test.go`: `TestTreeImportsNoProviderPlumbing` over
+- [x] 3.2 In `internal/harness/contract/embeddingprovider_test.go`: `TestTreeImportsNoProviderPlumbing` over
   `go list -deps ./...` (no `graph/llm`, `model/wire`, `github.com/sashabaranov/go-openai`), reusing `goList` and
   the provider reader, shown to fail on a fixture listing; and processor/graph-clustering under the direct-`model`
   guard `TestGraphEmbeddingImportsNoProviderModule` has (generalized to take the package and rule). It replaces no
-  per-package guard: those also forbid `model`, which `component` reaches for every component (`:47-48`).
+  per-package guard: those also forbid `model`, which `component` reaches for every component (`:47-48`)
+  (`notes/3.2.md`).
 
 ## 4. Close-out
 

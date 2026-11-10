@@ -49,28 +49,34 @@ selected names, at every level, for every selection and every reply.
 - **WHEN** a client asks `entity(id: $id) { kvRevision }` for a stored entity
 - **THEN** `data.entity` has the one key `kvRevision` (`TestProjectionHoldsExactlySelectedNames`)
 
-### Requirement: Answers follow the gateway's schema, not the verb's wire names
+### Requirement: Answers follow the gateway's schema and are checked
 
-`entity` SHALL answer `{entity {id triples}, kvRevision}`, with `kvRevision` the reply's KV revision (pin ADR-091, §4).
-`entitiesByPrefix` SHALL answer `{entities, total, next_cursor}`, and an empty `prefix` SHALL match every entity.
-`entitiesByPredicate` SHALL answer `{entities}`.
+Every root field SHALL be nullable. `entity` SHALL answer `{entity {id triples}, kvRevision}` from a stored value
+decoded by `graph.UnmarshalEntityState`, refusing a missing entity or a zero KV revision (pin ADR-091, §4).
+`entitiesByPrefix` SHALL answer `{entities, total, next_cursor}` after `graph.ValidateDecodedEntityStates`, an empty
+`prefix` matching every entity. `entitiesByPredicate` SHALL answer `{entities}`.
 
 #### Scenario: A reply that does not fit
 
-- **WHEN** a verb's reply lacks a field the schema declares non-null
-- **THEN** that root field is `null`, with an error naming its path, and no partial value is returned
-  (`TestReplyNotFittingSchemaNamesPath`)
+- **WHEN** a verb's reply lacks a field the schema declares non-null, or the `entity` reply carries `kv_revision` 0
+- **THEN** that root field is `null`, the rest of `data` stands, the error names its path, and no partial value is
+  returned (`TestReplyNotFittingSchemaNamesPath`, `TestEntityZeroRevisionRefused`)
+
+#### Scenario: A prefix page holding an invalid entity
+
+- **WHEN** a `prefix` reply holds an entity that `graph.ValidateDecodedEntityStates` refuses
+- **THEN** `data.entitiesByPrefix` is `null` with an error naming the path, HTTP 200 (`TestPrefixReplyValidated`)
 
 ### Requirement: Path answers name each edge as the graph holds it
 
 `pathSearch` SHALL answer `entities` as `{id, depth}`, `truncated`, and `paths`, where `paths[k]` is the run of edges
-from the start to `entities[k+1]`; each step names the edge as the graph holds it. `direction` SHALL be accepted in any
-letter case.
+from the start to `entities[k]` and `paths[0]` is empty; each step names the edge as the graph holds it. `direction`
+SHALL be accepted in any letter case. `predicates` SHALL accept `[String]`, refusing a null item with HTTP 400.
 
 #### Scenario: A path through an incoming edge
 
 - **WHEN** the graph holds B -p-> A and a client asks `pathSearch` from A with `direction: "INCOMING"`, `maxDepth: 1`
-- **THEN** `entities` is A at 0 and B at 1, and `paths` is `[[{from: B, predicate: p, to: A}]]`
+- **THEN** `entities` is A at 0 and B at 1, and `paths` is `[[], [{from: B, predicate: p, to: A}]]`
   (`TestPathsFollowEdgesBack`, `TestDirectionIsCaseInsensitive`)
 
 ### Requirement: Refusals keep their class and code
@@ -92,8 +98,9 @@ past `query_timeout_ms` SHALL answer HTTP 504. A method other than POST SHALL an
 
 ### Requirement: Requests are served only while running
 
-The gateway SHALL answer HTTP 503 to every request before `Start` and after `Stop`. `Stop` SHALL return once no
-request of the gateway is running, or once its context ends, with that error.
+The gateway SHALL answer HTTP 503 to every request before `Start` and once `Stop` begins, admitting requests through
+`internal/httpadmission.Requests`. `Stop` SHALL return once no admitted request is running, or once its context ends,
+with that error.
 
 #### Scenario: A request in flight at Stop
 
@@ -116,3 +123,22 @@ naming it, and any other port. It SHALL be mounted at `/<instance>/graphql` by t
 
 - **WHEN** `query_timeout_ms` is 50 and the verb never answers
 - **THEN** the answer is HTTP 504 (`TestQueryTimeoutIsRead`)
+
+### Requirement: A composition root can add a read operation
+
+Conditional on owner question 1 choosing design D4 (a); task 2.4 removes this requirement otherwise. `RegisterWith`
+SHALL add each operation: an SDL extension of `Query` with one root field, requested on its subject, its reply projected
+by the selection. Each SHALL be declared as a required NATS-request output `<field>_queries`. Registration SHALL fail,
+naming the problem, for bad SDL, an undeclared, built-in or duplicate field, or a wildcard, reserved or
+`graph.mutation.` subject.
+
+#### Scenario: A consumer operation
+
+- **WHEN** a composition root adds `trajectory(loopId: String!)` on a test subject and a responder answers it
+- **THEN** a `trajectory` query answers with the selected fields of that reply, and the factory's declared ports hold
+  `trajectory_queries` on that subject (`TestRegisterWithAddsOperation`)
+
+#### Scenario: A refused operation
+
+- **WHEN** an operation names a built-in field or a subject in `graph.QueryVerbs()`
+- **THEN** `RegisterWith` fails naming it (`TestRegisterWithRefuses`)

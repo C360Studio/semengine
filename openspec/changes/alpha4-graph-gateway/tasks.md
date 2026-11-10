@@ -17,21 +17,27 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
   `graph.PredicateRequest`; graph-index decodes into it. Check: `TestQueryVerbsDeclareEachRespondersVerbs` (row added),
   `TestForwardPassesBytesBothWays` (predicate case), `TestGraphQueryServesExactlyTheDeclaredVerbs`, the graph-index
   predicate tests unchanged and green.
-- [ ] 2.2 Schema and executor, no NATS (D1, D2, D6 rows 1-2 and the last row). Add `github.com/vektah/gqlparser/v2`. Check:
-  `TestSchemaRefusesUnknownFieldNamingIt`, `TestMutationAndIntrospectionRefused`, `TestOneRootFieldPerRequest`,
-  `TestTypenameAnswers`, `TestReplyNotFittingSchemaNamesPath`, and `TestProjectionHoldsExactlySelectedNames` (rapid:
-  random selections over the schema and random replies; seed and run count recorded; failing mutant shown).
-- [ ] 2.3 Component (D2 resolvers, D5, D6), on real NATS with graph-ingest, graph-index and graph-query composed.
-  Check: `TestGatewayAnswersFourOperations` (the semsource assertion's queries in migrated form against seeded triples),
-  `TestPathsFollowEdgesBack`, `TestDirectionIsCaseInsensitive`, `TestClassifiedRefusalCarriesClassAndCode`,
-  `TestNoResponderNamesSubject`, `TestDeadlineIs504`, `TestConfigRefusesRemovedKeys` (one case per key),
-  `TestConfigRefusesExtraPorts`, `TestQueryTimeoutIsRead`, `TestRefusedOutsideStartStop`,
-  `TestStopWaitsForInFlightRequest`, lifecycle suite.
-- [ ] 2.4 Operation seam (D4), only if owner question 1 picks it. Check: `TestRegisterWithAddsOperation` (a test
-  responder on a consumer subject; its reply projected), `TestRegisterWithRefuses` (one case each: bad SDL, undeclared
-  field, built-in, duplicate, wildcard, reserved subject, `graph.mutation.` subject).
+- [ ] 2.2 Schema and executor, no NATS (D1, D2, D6 rows 1-2 and the last row). Add `github.com/vektah/gqlparser/v2`
+  (with `github.com/agnivade/levenshtein`). Check: `TestSchemaRefusesUnknownFieldNamingIt`,
+  `TestMutationAndIntrospectionRefused`, `TestOneRootFieldPerRequest`, `TestTypenameAnswers`,
+  `TestReplyNotFittingSchemaNamesPath` (a null root field leaves the rest of `data`), and
+  `TestProjectionHoldsExactlySelectedNames` (rapid: random selections and replies; seed and run count recorded;
+  failing mutant shown).
+- [ ] 2.3 Component (D2 resolvers and checks, D5, D6), on real NATS with graph-ingest, graph-index and graph-query
+  composed. Check: `TestGatewayAnswersFourOperations` (the semsource assertion's queries in migrated form),
+  `TestEntityZeroRevisionRefused`, `TestPrefixReplyValidated`, `TestPathsFollowEdgesBack` (pin alignment, `paths[0]`
+  empty), `TestDirectionIsCaseInsensitive`, `TestClassifiedRefusalCarriesClassAndCode`, `TestNoResponderNamesSubject`,
+  `TestDeadlineIs504`, `TestConfigRefusesRemovedKeys` (one case per key), `TestConfigRefusesExtraPorts`,
+  `TestQueryTimeoutIsRead`, `TestRefusedOutsideStartStop`, `TestStopWaitsForInFlightRequest` (through
+  `internal/httpadmission`), lifecycle suite.
+- [ ] 2.4 `trajectory` as owner question 1 rules. If D4 (a): `RegisterWith`, `Operation` and its declared output port;
+  check `TestRegisterWithAddsOperation`, `TestRegisterWithRefuses` (one case each: bad SDL, undeclared field, built-in,
+  duplicate, wildcard, reserved subject, `graph.mutation.` subject). If (c): the trajectory SDL and forward the ruling
+  names, with an integration test against a test responder. If (d): no code. In every case, the spec delta's last
+  requirement and `MIGRATION.md` match the ruling (the requirement is removed for (c) or (d)).
 - [ ] 2.5 Composed smoke (composed-stack delta). Add graph-gateway to the smoke config; POST the four operations through
-  the process's HTTP port at `/graph-gateway/graphql`. Check: `TestSmokeAnswersGraphQL`.
+  the process's HTTP port at `/graph-gateway/graphql`; six components in health. Check: `TestSmoke_OneConfigAnswers`,
+  `TestSmoke_BrokerRestartUnderRunningStack`.
 - [ ] 2.6 Contract text. Ledger row `gateway/graph-gateway` → `adapt` (destination, contract `graph-gateway` spec,
   dependencies, proving tests); package `README.md` and `MIGRATION.md`; `.agents/skills/query-pattern/SKILL.md:139`
   updated with the gateway row adapted from the pin skill (`:25`). Check: `task ledger:diff -- gateway/graph-gateway`,
@@ -39,5 +45,5 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
 
 ## 3. Close-out
 
-- [ ] 3.1 Specs synced and change archived as the last content commit; semsource #251 and semteams #406 told of the
-  migration notes. Check: `task spec:check`.
+- [ ] 3.1 Before the merge: specs synced and change archived as the last content commit; semsource #251, semteams #406
+  and semconnect told of the migration notes. Check: `task spec:check`.

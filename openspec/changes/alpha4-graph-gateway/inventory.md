@@ -9,8 +9,8 @@ pin: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128, copy `/tmp/bufpin.zL1e` (local on
 Question: what must the trimmed gateway carry, change and drop to serve `entity`, `entitiesByPrefix`,
 `entitiesByPredicate`, `pathSearch` and `trajectory` over SemEngine's verbs, with no `agentic`, `gateway` or
 `agentic_queries` (owner ruling on #567, 2026-11-10)? Repositories (`docs/inventory-scope.md`): this tree, the pin,
-semsource (`386c9ea`, `71fea1d8`), semteams (`4df44ae8`), all via `gh api`. Labels: **measured** (command run),
-**read**.
+semsource (`386c9ea`, `71fea1d8`), semteams (`4df44ae8`), semconnect (`d0d06e00`), all via `gh api`. Labels:
+**measured** (command run), **read**.
 
 ## 0. Pin probe
 
@@ -51,11 +51,17 @@ readiness surface (`readiness_surface.go:42-116`), standalone server (`:713-741`
 | `entity` | `graph.query.entity` `:1206-1208` | `graph/query_verbs.go:95` forward `processor/graph-query/query.go:28` | `graph.ExactEntity` `{entity, kv_revision}` `graph/exact_entity.go:17-20` (pin `kvRevision`, pin `graph/exact_entity.go:20-23`) |
 | `entitiesByPrefix` | `graph.query.prefix` `:1113-1115` | `query_verbs.go:99`, forward `query.go:30` | `PrefixQueryResponse` `graph/query_prefix_types.go:70-78`, same as pin |
 | `entitiesByPredicate` | **`graph.index.query.predicate`** `:1189-1191` | **none on `graph.query.*`**; `query_verbs.go:77` (graph-index), handler `processor/graph-index/query.go:285` | enveloped `PredicateData{entities}` `graph/query_index_types.go:43-45` |
-| `pathSearch` | `graph.query.pathSearch` `:1175-1177` | `query_verbs.go:107`, `query.go:53` | enveloped `PathSearchData{entities[{entity_id,depth}], edges, truncated}` `graph/query_path_types.go:43-47`; pin `{entities[{id,type,score}], paths[][{from,predicate,to}]}` (pin `processor/graph-query/pathrag.go:36-54`) |
+| `pathSearch` | `graph.query.pathSearch` `:1175-1177` | `query_verbs.go:107`, `query.go:53` | enveloped `PathSearchData{entities[{entity_id,depth}], edges, truncated}` `graph/query_path_types.go:43-47`; pin `{entities[{id,type,score}], paths[][{from,predicate,to}]}` (pin `processor/graph-query/pathrag.go:36-54`); pin `paths[k]` leads to `entities[k]`, `paths[0]` empty (`:139-140`) |
 | `trajectory` | **`agentic.query.trajectory`** `:1102-1104` | **none**; `git grep -n -i trajectory` (no `.go` hit) | pin `agentic.TrajectoryPage` (pin `agentic/trajectory_query.go:36-44`), decoded at `:2092-2121` |
 
 `trajectory` has no data source on SemEngine. Its responder is the pin's agentic loop, excluded here and absorbed by
 SemTeams (semteams `openspec/changes/archive/2026-11-09-semengine-port-adaptation-design/design.md:10,35`).
+
+Reply checks at the pin and on main: the pin validates prefix replies with `graph.ValidateDecodedEntityStates`
+(`component.go:2064`) and answers 500 when they fail (`:2064-2067`); main does the same in
+`pkg/fusion/fusionnats/client.go:135`; the exact reader refuses a missing entity or a zero `kv_revision` and decodes
+with `graph.UnmarshalEntityState` (`graph/exact_entity.go:88-101`). The pin's no-responder answer is `query failed`,
+naming no subject (`component.go:2229`).
 
 ## 3. Consumer evidence (read)
 
@@ -65,14 +71,18 @@ SemTeams (semteams `openspec/changes/archive/2026-11-09-semengine-port-adaptatio
   `.entities`; `entity{entity{id triples{predicate object}} kvRevision}` with `kvRevision` a Number;
   `entitiesByPrefix{entities{id triples} next_cursor}`; `pathSearch(start, depth, direction "OUTGOING", predicates)`
   reading `entities[].id` and `paths` steps `{from,predicate,to}`. `scripts/core-profile-smoke.sh:415-486` greps the
-  same; `:199-209` wants GET not 404 and <500.
+  same, declaring `$predicates: [String]` (`:474`); `:199-209` wants GET not 404 and <500.
 - semsource `cmd/semsource/run.go:897-939` (`71fea1d8`) configures `ports` (3 outputs incl. `agentic_queries`),
   `bind_address`, `enable_playground`; Caddy rewrites `/graphql` to `/graph-gateway/graphql` (`Caddyfile:24-27`).
-- semteams `ui/src/lib/services/graphApi.ts:174-198` `pathSearch(startEntity,maxDepth,maxNodes){entities{id triples{…}}
-  edges{subject predicate object}}`, never served by the pin (no `edges`, no entity `triples`); `:217-230`
-  `entity{entity{…} kvRevision}`; `:257-271` `entitiesByPrefix(prefix,limit)` (empty prefix, `DataView.svelte:85`);
-  `agentApi.ts:41-61` `trajectory(loopId,limit,cursor)` selecting `TrajectoryPage` fields. `configs/flow-bootstrap.json`
-  sets `graphql_path`, `mcp_path`, `enable_playground`, `query_timeout`.
+- semteams `ui/src/lib/services/graphApi.ts:174-198`
+  `pathSearch(startEntity,maxDepth,maxNodes){entities{id triples{…}} edges{subject predicate object}}`, never served by
+  the pin (no `edges`, no entity `triples`); `:217-230` `entity{entity{…} kvRevision}`; `:257-271`
+  `entitiesByPrefix(prefix,limit)` (empty prefix, `DataView.svelte:85`); `agentApi.ts:41-61`
+  `trajectory(loopId,limit,cursor)` selecting `TrajectoryPage` fields. `configs/flow-bootstrap.json` sets
+  `graphql_path`, `mcp_path`, `enable_playground`, `query_timeout`.
+- semconnect (first-wave, `docs/inventory-scope.md:16`) `ui/src/lib/services/graphGateway.ts`: `globalSearch(query,
+  level, maxCommunities)` (`:49-51`, outside the ruled scope) and `entitiesByPrefix(prefix, limit) { id triples{subject
+  predicate object} }` with no `entities` wrapper (`:107-117`), read as `BackendEntity[]`.
 - Introspection (`__schema`): only `ui/src/lib/server/ai/toolExecutors.attack.test.ts` in semteams, a file #406 deletes
   (`gh api search/code`, semsource/semconnect/semboids empty).
 
@@ -82,7 +92,8 @@ SemTeams (semteams `openspec/changes/archive/2026-11-09-semengine-port-adaptatio
 `/<instance>`, so `/graph-gateway/graphql` needs no `gateway` package. `/openapi.json` paths come only from services
 (`:340-354`); a component spec adds schemas only (`:356-367`); `RegisterOpenAPISpec` is composition-root only
 (`service/openapi_registry.go:11-13`). GraphQL library: none in `go.mod` (**measured**, grep `graphql|gqlparser`).
-`go.yaml.in/yaml/v3` already indirect (`go.mod:92`).
+`gqlparser` v2.5.64 requires `github.com/agnivade/levenshtein` v1.2.2 (MIT; not in go.sum, **measured**) and
+`go.yaml.in/yaml/v3` v3.0.5, already indirect (`go.mod:92`).
 
 ## 5. Open issues naming the package
 
@@ -91,7 +102,8 @@ Issues #563, #350 and #9 name the word, not the package (#350's hit is semconnec
 
 ## 6. Open PRs
 
-`gh pr list --state open`: #588 (this claim, 3 files), #587 `pkg/buffer` (0 files). No file or capability overlap.
+`gh pr list --state open`: #588 (this claim), #587 `pkg/buffer` (files only in its own change directory and package).
+No file or capability overlap; they merge in either order.
 
 ## 7. Pin decision records
 
@@ -117,9 +129,9 @@ Shape: classified-refusal-preserving HTTP→NATS request adapter. Closest instan
 | --- | --- |
 | Semantic class | remote read of the graph over HTTP |
 | Owners | graph-gateway (new); `service/graph_triples_http.go` (operator triples); semsparql `/sparql` (external, inventory-scope row) |
-| Catalogs / status | none; health via `component.Lifecycle` (`component/lifecycle_type.go:14-27`) |
-| Lifecycle / ownership | stateless; no KV, no stream, no lease (`git grep` none planned) |
-| Readers / writers | semsource UI + smoke, semteams UI; writes nothing |
+| Catalogs / status | ports judged by `composition.Analyze` (composition-validation spec :206-215, :311); health via `component.Lifecycle` (`component/lifecycle_type.go:14-27`) |
+| Lifecycle / ownership | stateless; no KV, no stream, no lease; HTTP admission at stop is owned by `internal/httpadmission.Requests` (`admission.go:1-9,28-43`; used `metric/handler.go:143`, `service/service_manager_http.go:88,157`): 503 once stop begins, `Wait` for admitted requests |
+| Readers / writers | semsource UI + smoke, semteams UI, semconnect UI; writes nothing |
 | Recovery | none needed: nothing persisted |
 
 Intent check: the gateway is a consumer adapter outside both halves; it is admitted by owner ruling (#567, 2026-11-10).
@@ -132,5 +144,6 @@ config keys remain, the query edits in § 3 and that graph-query/index/ingest ar
 is refused at boot naming it; an old query gets 400 naming the field or argument; no graph-query gives a transient
 error naming the subject. (3) All loud: boot or typed runtime error. (4) Should know: nothing past composing
 graph-query; the query edits are a one-time migration. SemTeams developer: the `trajectory` source (owner question 1);
-with the seam, a reply that does not fit its
-schema is an error naming the path, never a partial value.
+with the seam, a reply that does not fit its schema is an error naming the path, never a partial value. SemConnect
+developer: the `entitiesByPrefix` selection moves under `entities`, and `globalSearch` is refused with 400 naming it
+(loud).

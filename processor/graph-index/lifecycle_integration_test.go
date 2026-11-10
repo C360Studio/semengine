@@ -373,7 +373,7 @@ func TestHealthIgnoresErrorCountAndTracksStuckStates(t *testing.T) {
 		health := await(t, "Health reports the unresolved write",
 			func(context.Context) (component.HealthStatus, error) { return h.c.Health(), nil },
 			func(got component.HealthStatus) bool { return !got.Healthy })
-		if health.Status != "degraded" || !strings.Contains(health.LastError, "1 index writes unresolved") {
+		if health.Status != "degraded" || !strings.Contains(health.LastError, "1 unresolved failures") {
 			t.Errorf("Health with a failed write = %+v, want degraded naming the unresolved write", health)
 		}
 

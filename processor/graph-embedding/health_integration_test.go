@@ -38,7 +38,7 @@ func TestHealthIgnoresErrorCount(t *testing.T) {
 	h.awaitIndexed(t, "the unread revision drained", rev)
 	failing := h.c.Health()
 	if failing.Healthy || failing.Status != "degraded" || failing.ErrorCount != 1 ||
-		!strings.Contains(failing.LastError, "1 index writes unresolved") {
+		!strings.Contains(failing.LastError, "1 unresolved failures: entity_read_failed 1") {
 		t.Fatalf("Health with a failed read = %+v, want degraded naming 1 unresolved write, ErrorCount 1",
 			failing)
 	}

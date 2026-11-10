@@ -13,7 +13,7 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
 
 ## 2. Follower and component
 
-- [ ] 2.1 Follower (design D1, D2): `Entry.Value`, its doc (valid only during `Deliver`; not applied by a plug-in that
+- [x] 2.1 Follower (design D1, D2): `Entry.Value`, its doc (valid only during `Deliver`; not applied by a plug-in that
   re-reads, ADR-108 D4); `Stuck`'s plug-in-neutral sentence with reasons, updating the five assertions on "index writes
   unresolved" (`graph/follower/follower_test.go:461`, `processor/graph-index/index_integration_test.go:406`,
   `lifecycle_integration_test.go:376`, `processor/graph-embedding/health_integration_test.go:41`,

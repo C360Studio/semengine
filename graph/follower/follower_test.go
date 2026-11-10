@@ -98,18 +98,25 @@ func TestStopWatchGivesUpOnADeliveryThatNeverCloses(t *testing.T) {
 	})
 }
 
-// putEntry is a delivered live write: only what observe reads is implemented.
+// putEntry is a delivered live write: only what observe reads is implemented. A zero value reads
+// as "{}".
 type putEntry struct {
 	jetstream.KeyValueEntry
 	key      string
 	revision uint64
+	value    []byte
 }
 
 func (e putEntry) Key() string                     { return e.key }
 func (e putEntry) Revision() uint64                { return e.revision }
 func (e putEntry) Created() time.Time              { return time.Unix(int64(e.revision), 0) }
 func (e putEntry) Operation() jetstream.KeyValueOp { return jetstream.KeyValuePut }
-func (e putEntry) Value() []byte                   { return []byte("{}") }
+func (e putEntry) Value() []byte {
+	if e.value == nil {
+		return []byte("{}")
+	}
+	return e.value
+}
 
 // closingWatcher delivers what its channel holds and closes the channel on Stop, as nats.go's
 // watcher does once it is stopped.
@@ -137,23 +144,25 @@ func (r watchOnlyReader) WatchAll(context.Context, ...jetstream.WatchOpt) (jetst
 
 // TestFollowerDeclaresLostFeedOnOutOfOrderDelivery: a watch that delivers revision 5 and then
 // revision 3 has broken the ascending order the floor rests on, so the follower declares the feed
-// lost (entity-state-follower spec, "A revision delivered out of order"), and still delivers the
-// entry (design D2). The watch delivers the snapshot marker first, so the two writes are live and
-// no stored entity is validated.
+// lost (entity-state-follower spec, "The follower checks delivery order"), and still delivers the
+// entry with revision 3's value (design D2). The watch delivers the snapshot marker first, so the
+// two writes are live and no stored entity is validated.
 func TestFollowerDeclaresLostFeedOnOutOfOrderDelivery(t *testing.T) {
 	updates := make(chan jetstream.KeyValueEntry, 3)
 	updates <- nil
-	updates <- putEntry{key: "k5", revision: 5}
-	updates <- putEntry{key: "k3", revision: 3}
+	updates <- putEntry{key: "k5", revision: 5, value: []byte("value at 5")}
+	updates <- putEntry{key: "k3", revision: 3, value: []byte("value at 3")}
 
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	var delivered []uint64
+	values := map[uint64]string{}
 	f := &Follower{
 		key:    "graph-index",
 		logger: slog.New(slog.DiscardHandler),
 		deliver: func(_ context.Context, e Entry) {
 			delivered = append(delivered, e.Revision)
+			values[e.Revision] = string(e.Value) // copied: Value is valid only during Deliver
 			if e.Revision == 3 {
 				cancel() // both writes are delivered: follow stops the watch and returns
 			}
@@ -169,6 +178,9 @@ func TestFollowerDeclaresLostFeedOnOutOfOrderDelivery(t *testing.T) {
 	}
 	if !slices.Equal(delivered, []uint64{5, 3}) {
 		t.Errorf("delivered revisions %v; want [5 3]", delivered)
+	}
+	if want := map[uint64]string{5: "value at 5", 3: "value at 3"}; !maps.Equal(values, want) {
+		t.Errorf("delivered values %v; want %v", values, want)
 	}
 	// Fatal: without a lost feed QueryReady would go on to read the stream status, which the fake
 	// reader does not implement.
@@ -458,8 +470,8 @@ func TestWithholdNarrowsQueryReady(t *testing.T) {
 	if status := read(f, 0); status.FailedCount != 1 || status.State != graph.IndexStateDegraded || status.Ready {
 		t.Errorf("envelope with one failure Withhold does not count = %+v; want failed_count 1, degraded", status)
 	}
-	if !slices.ContainsFunc(f.Stuck(), func(s string) bool { return strings.Contains(s, "1 index writes unresolved") }) {
-		t.Errorf("Stuck = %q; want the unresolved write named", f.Stuck())
+	if !slices.ContainsFunc(f.Stuck(), func(s string) bool { return strings.Contains(s, "1 unresolved failures: content_error 1") }) {
+		t.Errorf("Stuck = %q; want the unresolved failure named with its reason", f.Stuck())
 	}
 
 	withheld.Store(1)
@@ -491,5 +503,32 @@ func TestGraphIndexWithholdUnchanged(t *testing.T) {
 	count.Store(0)
 	if err := f.QueryReady(t.Context()); err != nil {
 		t.Errorf("failure resolved: QueryReady = %v; want nil", err)
+	}
+}
+
+// TestStuckNamesReasons: Stuck names Failed's count as unresolved failures, without assuming they
+// are index writes, and each reason with its count when Failed returns reasons (entity-state-follower
+// spec, "Stuck names unresolved failures without assuming their kind"). Reasons are named in sorted
+// order, so the sentence is the same on every call.
+func TestStuckNamesReasons(t *testing.T) {
+	cases := []struct {
+		name    string
+		count   int64
+		reasons map[string]uint64
+		want    []string
+	}{
+		{"one reason", 2, map[string]uint64{"refused_entity": 2}, []string{"2 unresolved failures: refused_entity 2"}},
+		{"two reasons", 3, map[string]uint64{"publication_failed": 1, "refused_entity": 2},
+			[]string{"3 unresolved failures: publication_failed 1, refused_entity 2"}},
+		{"no reasons", 1, nil, []string{"1 unresolved failures"}},
+		{"none", 0, nil, nil},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			f := builtFollower("graph-clustering", func() (int64, map[string]uint64) { return tc.count, tc.reasons }, nil)
+			if got := f.Stuck(); !slices.Equal(got, tc.want) {
+				t.Errorf("Stuck = %q; want %q", got, tc.want)
+			}
+		})
 	}
 }

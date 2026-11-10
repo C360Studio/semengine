@@ -24,6 +24,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,6 +50,12 @@ type Entry struct {
 	Revision uint64
 	Deleted  bool // a delete or purge marker
 	Bytes    int  // the delivered value's length; 0 for a delete or purge marker
+	// Value is the value the watch delivered for Revision; nil for a delete or purge marker. It is
+	// valid only for the duration of Deliver: a plug-in that keeps it copies it. A plug-in that
+	// re-reads current truth at apply time does not apply Value (ADR-108 D4); one that applies it
+	// ignores a delivery at or below the revision it last applied for the key, since the watch's
+	// order across keys is not promised and the follower only declares a revision out of order.
+	Value []byte
 }
 
 // Config is what Open needs. Client, Key, Deliver and Failed are required.
@@ -286,10 +294,11 @@ func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, v
 	}
 	e := Entry{Key: entry.Key(), Revision: entry.Revision(), Deleted: natsclient.IsKVTombstone(entry.Operation())}
 	if !e.Deleted {
-		e.Bytes = len(entry.Value())
+		e.Value = entry.Value()
+		e.Bytes = len(e.Value)
 		if validating {
 			var state graph.EntityState
-			if err := graph.UnmarshalEntityState(e.Key, entry.Value(), &state); err != nil {
+			if err := graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {
 				reason := graph.GraphStateReasonUnreadableEntity
 				var stateErr *graph.StateContractError
 				if errors.As(err, &stateErr) {
@@ -362,20 +371,35 @@ func (f *Follower) Indexed() uint64 {
 	return indexed
 }
 
-// Stuck returns the states that hold now, each a short sentence: a latched reset, unresolved
-// writes, and a lost feed. It is empty when none holds.
+// Stuck returns the states that hold now, each a short sentence: a latched reset, the plug-in's
+// unresolved failures (Config.Failed's count, then each reason with its count in name order when
+// it reports reasons), and a lost feed. It is empty when none holds.
 func (f *Follower) Stuck() []string {
 	var stuck []string
 	if r := f.reset.Load(); r != nil {
 		stuck = append(stuck, fmt.Sprintf("graph state reset required: %s", *r))
 	}
-	if n, _ := f.failed(); n > 0 {
-		stuck = append(stuck, fmt.Sprintf("%d index writes unresolved", n))
+	if n, reasons := f.failed(); n > 0 {
+		stuck = append(stuck, unresolved(n, reasons))
 	}
 	if f.feedLost.Load() {
 		stuck = append(stuck, "ENTITY_STATES feed lost; restart the process")
 	}
 	return stuck
+}
+
+// unresolved is Stuck's sentence for n unresolved failures. It names no kind of failure: the
+// plug-in's reasons, when it reports any, say what failed.
+func unresolved(n int64, reasons map[string]uint64) string {
+	sentence := fmt.Sprintf("%d unresolved failures", n)
+	if len(reasons) == 0 {
+		return sentence
+	}
+	named := make([]string, 0, len(reasons))
+	for _, reason := range slices.Sorted(maps.Keys(reasons)) {
+		named = append(named, fmt.Sprintf("%s %d", reason, reasons[reason]))
+	}
+	return sentence + ": " + strings.Join(named, ", ")
 }
 
 // QueryReady says whether a query may be answered now (ADR-109 D1): nil, or a classified refusal.

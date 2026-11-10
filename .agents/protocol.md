@@ -197,12 +197,14 @@ on optional maintenance.
   Codex's `semengine-reviewer` reviews what Claude sessions implement, that it works both ways (Claude's reviewer for
   what Codex implements), and that the rule is enforced for code and waived for a documents-only pull request. A pull
   request is documents only when every file it changes ends in `.md`, or is a `.yml`, `.yaml` or `.json` file under
-  `openspec/`, and none is a role adapter under `.claude/agents/` or a canonical role contract under
-  `.agents/contracts/`: the classifier of `ateam review gate`, which the merge check runs. Any other changed file makes
+  `openspec/`, and none is a role adapter under `.claude/agents/`, a canonical role contract under
+  `.agents/contracts/`, or the reviewer's skill under `.agents/skills/review-pr/`: the classifier of
+  `ateam review gate`, which the merge check runs. Any other changed file makes
   it a code pull request: a `.go` file, the harness included; `go.mod`; a script; `Taskfile.yml`; a CI workflow;
   `docs/admission-ledger.yaml`; `.agents/review-policy.json`; `.claude/agents/*`; `.codex/agents/*`;
-  `.agents/contracts/*`. If multiple agents wrote commits, the owner names the reviewer on the issue. A pull request no
-  agent wrote (a dependency bot's) is reviewed by any agent's reviewer, and the record names which; the gate provides
+  `.agents/contracts/*`; `.agents/skills/review-pr/*`. If multiple agents wrote commits, the owner names the reviewer
+  on the issue. A pull request no agent wrote (a dependency bot's) is reviewed by any agent's reviewer, and the
+  record names which; the gate provides
   for this only when GitHub reports the author as a bot. A code change the owner would write by hand is given to an
   agent session to make: the commits are then that agent's, `implemented-by:` names it truthfully, and another agent
   reviews. The ruleset on `main` lets nobody merge past a failed `Merge check`, and editing the ruleset is a waiver this

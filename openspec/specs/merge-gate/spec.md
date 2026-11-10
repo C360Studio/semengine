@@ -289,7 +289,7 @@ follows; no open `class:flake` issue it leaves open.
 #### Scenario: Documents-only pull request
 
 - **WHEN** every changed file ends in `.md`, or in `.yml`, `.yaml` or `.json` under `openspec/`, and none is under
-  `.claude/agents/` or `.agents/contracts/`
+  `.claude/agents/`, `.agents/contracts/` or `.agents/skills/review-pr/`
 - **THEN** the review check passes without reading the attestation lines
 
 ### Requirement: The merge-check workflow

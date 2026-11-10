@@ -39,6 +39,21 @@ func (fleetLens) Hydrate(context.Context, *fusion.Entity) (*message.StorageRefer
 	return nil, nil
 }
 
+// fusionEngine is fusion over fusionnats on o's connection, as a consumer builds it: no body
+// resolver, so no lens here hydrates a body.
+func (o observer) fusionEngine(t *testing.T) *fusion.Engine {
+	t.Helper()
+	client, err := fusionnats.New(o.client, requestTimeout)
+	if err != nil {
+		t.Fatalf("fusionnats.New: %v", err)
+	}
+	engine, err := fusion.NewEngine(client, nil, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatalf("fusion.NewEngine: %v", err)
+	}
+	return engine
+}
+
 // requireFused fails unless resp, as a consumer reads it on the wire, is want.
 func requireFused(t *testing.T, what string, resp fusion.Response, err error, want fusion.Response) {
 	t.Helper()
@@ -99,14 +114,7 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		t.Fatalf("%s holds keys %v, want %v (no %s)", graph.BucketGraphStatus, keys, want, readiness.KeyGraphEmbedding)
 	}
 
-	client, err := fusionnats.New(o.client, requestTimeout)
-	if err != nil {
-		t.Fatalf("fusionnats.New: %v", err)
-	}
-	engine, err := fusion.NewEngine(client, nil, slog.New(slog.DiscardHandler))
-	if err != nil {
-		t.Fatalf("fusion.NewEngine: %v", err)
-	}
+	engine := o.fusionEngine(t)
 	wants := []fusion.Want{fusion.WantRelations, fusion.WantPaths}
 	ref := func(name string) []fusion.Ref { return []fusion.Ref{{Name: name}} }
 	node := func(local, name, kind string, relations map[string][]fusion.Ref) fusion.Node {

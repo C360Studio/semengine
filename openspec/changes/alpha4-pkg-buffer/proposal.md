@@ -16,7 +16,8 @@ SemEngine and #34 cannot start. Issue #566.
 - New `pkg/buffer`, ported whole from the pin: `Buffer[T]`, `NewCircularBuffer`, the three overflow policies
   (`DropOldest`, `DropNewest`, `Block`), `WithOverflowPolicy`, `WithMetrics`, `WithDropCallback`, `Statistics` and
   `StatsSummary`, `WriteWithTimeout` and `WriteWithContext` on the returned buffer.
-- Dropped: `WithStats`, `StatsFromContext`, `ContextKeyStats` (state in context values, #91).
+- Dropped: `WithStats`, `StatsFromContext`, `ContextKeyStats` (state in context values, #91); `UpdateMemoryUsage`,
+  `MemoryUsage` and `StatsSummary.MemoryUsage`, which nothing sets (dead surface, as in `internal/cache`).
 - Metrics: on the injected registry through `metric.RegisterOrGet`, named `semengine_buffer_*`.
 - Corrections that binding rules require:
   - `WriteWithTimeout` keeps its signature and result, and invents no context root.
@@ -32,12 +33,12 @@ small PR, own OpenSpec change, port whole, drop the context-value statistics, ke
 row and `MIGRATION.md` land in this PR; merges before or alongside the websocket port; SemSource keeps `Block` with a
 timeout and changes only its import path.
 
-## Owner questions
+## Owner question
 
 - Q1. Add `WriteWithTimeout` and `WriteWithContext` to `Buffer[T]`, so SemSource needs no type assertion and cannot
-  fall back silently to an unbounded `Write`? No consumer breaks. Assumed here: no, as at the pin.
-- Q2. `Statistics.MemoryUsage` always reads 0 (nothing sets it); `internal/cache` dropped the same methods. Assumed
-  here: keep and say so in the doc comment.
+  fall back silently to an unbounded `Write`? No consumer breaks. The fallback is live today: SemSource's
+  `stop_settlement_test.go` wraps the buffer in a type embedding `buffer.Buffer[T]`, so that test runs plain `Write`.
+  Assumed here: no, as at the pin.
 
 ## Capabilities
 

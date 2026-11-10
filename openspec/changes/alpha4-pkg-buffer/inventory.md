@@ -151,6 +151,8 @@ Guidance: `grep -rln -i -E 'pkg/buffer|CircularBuffer|overflow polic'` over the 
    needs its own metrics prefix, or two share one series; (d) a zero timeout or an ended ctx refuses even when there
    is space.
 2. Do nothing: SemSource's assertion compiles against any type. If the method were renamed or removed, it would
-   silently switch to unbounded blocking.
+   silently switch to unbounded blocking. A wrapper already does: `internal/entitypub/stop_settlement_test.go:14-17`
+   (semsource bbfb3c6) — `type notifyingBuffer struct { buffer.Buffer[*graph.EntityPayload]; sealed chan struct{} }`
+   has no `WriteWithTimeout`, so the assertion at `publisher.go:269` fails and that test runs plain `Write`.
 3. Found out: nowhere for (b) (no compile or runtime signal); doc for (c), (d).
 4. Should know: nothing; the gap is that `Buffer[T]` hides the bounded write (owner question Q1).

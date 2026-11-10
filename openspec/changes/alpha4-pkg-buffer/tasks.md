@@ -7,24 +7,24 @@ after 2.2, before archive.
 
 ## 1. Design
 
-- [ ] 1.1 Inventory review passes (`INVENTORY PASS`), then pre-owner design review; the owner answers Q1 and Q2 and
+- [ ] 1.1 Inventory review passes (`INVENTORY PASS`), then pre-owner design review; the owner answers Q1 and
   fills `Approved-by:`. Gate: `task spec:check`, `task docs:check`.
   Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Port
 
-- [ ] 2.1 Port `pkg/buffer` with only the module path changed, then the failing-first tests (design D2, R3 to R6):
-  `TestWriteWithTimeoutAssertable`, `TestWriteWithTimeoutExpires`, `TestWriteWithTimeoutSucceedsWhenSpaceFrees`,
-  `TestWriteWithContextLeavesNothing`, `TestWriteWithContextRefusesNilContext`, `TestDropCallbackMayUseBuffer`,
-  `TestMetricsOnInjectedRegistry`, `TestCapacityBelowOneIsOne`. Each fails or hangs on that copy; output in
-  `notes/2.1.md`. Gate: the failures are recorded.
-- [ ] 2.2 Make them pass:
-  - Drop `WithStats`, `StatsFromContext` and `ContextKeyStats` (R1).
-  - Register metrics through `metric.RegisterOrGet` under `semengine` (R2).
-  - R3 to R6 as the design states them.
-  - Rewrite the pin tests at `buffer_test.go:445-447`, `:467`, `:480-482`, `:508` and `:643-703` in `synctest`
+- [ ] 2.1 Port `pkg/buffer` under the SemEngine module path with R1 (drop `WithStats`, `StatsFromContext`,
+  `ContextKeyStats`), R2 (metrics through `metric.RegisterOrGet` under `semengine`) and R10 (drop the `MemoryUsage`
+  family), so it builds; `TestMetricsOnInjectedRegistry`. Then the failing-first tests
+  `TestWriteWithContextRefusesNilContext` (R5) and `TestDropCallbackMayUseBuffer` (R6, a hang to `go test -timeout`),
+  output in `notes/2.1.md`. Gate: `task build`; the two failures are recorded.
+- [ ] 2.2 Fix R3 to R6 as the design states them, and add the behaviour pins `TestWriteWithTimeoutAssertable`,
+  `TestWriteWithTimeoutExpires`, `TestWriteWithTimeoutSucceedsWhenSpaceFrees`, `TestWriteWithContextLeavesNothing`
+  and `TestCapacityBelowOneIsOne`. Show each pin able to fail with `task mutate:check`, recorded in `notes/2.2.md`.
+  Remove the root and add the join in `circular.go`; the review checks them by reading it.
+  - Rewrite the pin tests at `buffer_test.go:438-449`, `:467`, `:471-482`, `:508` and `:643-703` in `synctest`
     without sleeps or elapsed bounds (R7).
-  - Doc comments for R9 and O4.
+  - Doc comments for R9.
 
   Gate: `task test:unit`, `task test:repeat`, `task lint`, `task verify` on a clean tree.
 

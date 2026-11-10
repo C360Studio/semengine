@@ -143,7 +143,7 @@ SemSource developer, never opened this package: (1) must know that the instance 
 config keys remain, the query edits in § 3 and that graph-query/index/ingest are composed. (2) Do nothing: an old key
 is refused at boot naming it; an old query gets 400 naming the field or argument; no graph-query gives a transient
 error naming the subject. (3) All loud: boot or typed runtime error. (4) Should know: nothing past composing
-graph-query; the query edits are a one-time migration. SemTeams developer: the `trajectory` source (owner question 1);
-with the seam, a reply that does not fit its schema is an error naming the path, never a partial value. SemConnect
+graph-query; the query edits are a one-time migration. SemTeams developer: `trajectory` is refused with 400 naming it
+(owner, 2026-11-10); SemTeams serves it from its own component. SemConnect
 developer: the `entitiesByPrefix` selection moves under `entities`, and `globalSearch` is refused with 400 naming it
 (loud).

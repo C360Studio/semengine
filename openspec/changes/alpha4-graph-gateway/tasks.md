@@ -30,11 +30,8 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
   `TestDeadlineIs504`, `TestConfigRefusesRemovedKeys` (one case per key), `TestConfigRefusesExtraPorts`,
   `TestQueryTimeoutIsRead`, `TestRefusedOutsideStartStop`, `TestStopWaitsForInFlightRequest` (through
   `internal/httpadmission`), lifecycle suite.
-- [ ] 2.4 `trajectory` as owner question 1 rules. If D4 (a): `RegisterWith`, `Operation` and its declared output port;
-  check `TestRegisterWithAddsOperation`, `TestRegisterWithRefuses` (one case each: bad SDL, undeclared field, built-in,
-  duplicate, non-null root field, wildcard, reserved subject, `graph.mutation.` subject). If (c): the trajectory SDL and
-  forward the ruling names, with an integration test against a test responder. If (d): no code. In every case, the spec
-  delta's last requirement and `MIGRATION.md` match the ruling (the requirement is removed for (c) or (d)).
+- [ ] 2.4 `trajectory` is not served (owner question 1). `MIGRATION.md` tells SemTeams to answer it from a component
+  of its own mounted at `/<instance>`. Check: `TestSchemaRefusesUnknownFieldNamingIt` has a `trajectory` case.
 - [ ] 2.5 Composed smoke (composed-stack delta). Add graph-gateway to the smoke config; POST the four operations through
   the process's HTTP port at `/graph-gateway/graphql`; six components in health; the composed-stack Purpose
   (`openspec/specs/composed-stack/spec.md:4`) and the "five-component" test comments in `internal/smoke` say six. Check:

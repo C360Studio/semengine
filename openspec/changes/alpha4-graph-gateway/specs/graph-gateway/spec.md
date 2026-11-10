@@ -112,7 +112,7 @@ with that error.
 
 The gateway SHALL accept `ports`, with exactly one required `graph_queries` NATS-request output on `graph.query.*`,
 interface `graph.query v1`, and `query_timeout_ms` (default 60000). It SHALL refuse at construction any other key,
-naming it, and any other port beside the outputs `RegisterWith` operations declare. It SHALL be mounted at
+naming it, and any other port. It SHALL be mounted at
 `/<instance>/graphql` by the service manager.
 
 #### Scenario: A pin key
@@ -124,22 +124,3 @@ naming it, and any other port beside the outputs `RegisterWith` operations decla
 
 - **WHEN** `query_timeout_ms` is 50 and the verb never answers
 - **THEN** the answer is HTTP 504 (`TestQueryTimeoutIsRead`)
-
-### Requirement: A composition root can add a read operation
-
-Conditional on owner question 1 choosing D4 (a); task 2.4 removes it otherwise. `RegisterWith`
-SHALL add each operation: an SDL extension of `Query` with one root field, requested on its subject, its reply projected
-by the selection. Each SHALL be declared as a required NATS-request output `<field>_queries`. Registration SHALL fail,
-naming the problem, for bad SDL, an undeclared, built-in, duplicate or non-null root field, or a wildcard, reserved
-or `graph.mutation.` subject.
-
-#### Scenario: A consumer operation
-
-- **WHEN** a composition root adds `trajectory(loopId: String!)` on a test subject and a responder answers it
-- **THEN** a `trajectory` query answers with the selected fields of that reply, and the factory's declared ports hold
-  `trajectory_queries` on that subject (`TestRegisterWithAddsOperation`)
-
-#### Scenario: A refused operation
-
-- **WHEN** an operation names a built-in field or a subject in `graph.QueryVerbs()`
-- **THEN** `RegisterWith` fails naming it (`TestRegisterWithRefuses`)

@@ -18,9 +18,8 @@ private copy.
   `entitiesByPredicate`, `pathSearch`. Requests are parsed and validated (`github.com/vektah/gqlparser/v2`, MIT, and its
   `github.com/agnivade/levenshtein`, MIT: two new modules); the answer holds only the selected fields, and entity
   replies are checked as the exact reader checks them. The pin's substring router is not carried.
-- `trajectory`: no SemEngine verb serves it (its pin responder is the excluded agentic loop). Recommended: an exported
-  seam lets a composition root add a root field with its own schema and subject, declared as an output port; SemTeams
-  adds `trajectory` with it. Owner question 1.
+- `trajectory` is not served (owner, 2026-11-10): SemTeams answers it from a component of its own, mounted on the
+  same HTTP server at `/<instance>`.
 - graph-query forwards `predicate` to graph-index as `graph.query.predicate` (as it forwards `byName`), so the gateway
   reads one family, `graph.query.*`.
 - Lifecycle on `component.Lifecycle`, requests admitted through `internal/httpadmission`; strict config.
@@ -44,6 +43,7 @@ private copy.
   `query_timeout`, `domain_examples_path`, `enable_embedding_classifier`, `readiness_keys`, `readiness_path`; the
   `graph_index_queries` and `agentic_queries` ports are refused.
 - Introspection (`__schema`, `__type`) is refused; `__typename` answers.
+- `trajectory` is refused with 400; SemTeams serves it from its own component and points its UI call there.
 
 ## Capabilities
 
@@ -56,5 +56,5 @@ private copy.
 
 ## Rulings
 
-Needed: owner question 1 (`owner-questions.md`). Covered: scope and re-admission (#567, 2026-11-10); consumer breaks as
-migration notes (2026-11-02).
+Covered: `trajectory` dropped (owner question 1, 2026-11-10); scope and re-admission (#567, 2026-11-10); consumer breaks
+as migration notes (2026-11-02).

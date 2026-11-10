@@ -10,7 +10,7 @@ lower-cased query text (`component.go:1095-1211`) and writes reply bytes as `dat
 
 ## Goals / Non-Goals
 
-Goals: the four reads, plus `trajectory` per owner question 1, through one validated schema; read-only; failures loud;
+Goals: the four reads through one validated schema; read-only; failures loud;
 ~600 lines. Non-goals: the other 14 pin operations, MCP, introspection, auth (the mux owns middleware, ADR-030).
 
 ## Decisions
@@ -63,18 +63,11 @@ Alternative, bytes passed through: breaks 2 of 4 consumer reads anyway and keeps
 Alternative: a second gateway port on `graph.index.query.*`, as the pin; a second family, and it bends "over
 `graph.query.*`".
 
-**D4. `trajectory` (owner question 1).** (a) Recommended: `RegisterWith(registry, ops ...Operation)`; `Register` is
-`RegisterWith(registry)`. `Operation{SDL, Field, Subject}` adds one root field (SDL `extend type Query { … }` plus its
-types); the request is the coerced arguments as a JSON object; the reply is projected by name. The factory's port
-declarer reports one required NATS-request output `<field>_queries` on `Subject` per operation beside `graph_queries`,
-so `composition.Analyze` judges it (composition-validation spec :206-215, :311); config never restates it.
-Registration refuses, naming the problem: bad SDL, undeclared `Field`, built-in, duplicate or non-null root field, a
-`Subject` that is
-invalid, wildcarded, in `graph.QueryVerbs()` or under `graph.mutation.`. SemTeams adds `trajectory` →
-`agentic.query.trajectory` with the pin's SDL (`:1906-1950`). (b) Operations declared in config: an operator writing
-SDL into JSON, domain schema owned by deployment text, no compile-time home; rejected. (c) SemEngine owns the
-trajectory SDL: agentic meaning and an `agentic.query` dependency in the engine. (d) Drop `trajectory`: against the
-ruling.
+**D4. `trajectory` is not served (owner, 2026-11-10, #567).** Its pin responder is the agentic loop SemTeams takes
+over, and its answer is agent detail. SemTeams serves it from a component of its own: any registered component with
+`RegisterHTTPHandlers(prefix, mux)` is mounted at `/<instance>` (`service/service_manager_http.go:268-289`), the way
+this gateway is. SemTeams' UI points its one `trajectory` call at that route. Rejected: a hook adding consumer root
+fields to this schema (new exported surface for one consumer), and a trajectory schema in the engine (agent meaning).
 
 **D5. Component.** `component.Lifecycle`; no run context, no goroutine, no NATS state. Requests go through
 `internal/httpadmission.Requests` (`admission.go:28-43`, as `metric/handler.go:143` and
@@ -111,4 +104,4 @@ lists every break; task 3.1 tells semsource #251, semteams #406 and semconnect b
 
 ## Open Questions
 
-1. **Owner:** the source of `trajectory` (D4), in `owner-questions.md`.
+None. Owner question 1 is answered in `owner-questions.md`.

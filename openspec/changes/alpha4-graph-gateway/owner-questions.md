@@ -2,6 +2,9 @@
 
 ## 1. Where does `trajectory` come from?
 
+**Owner answer (2026-11-10, in Enjoy): drop `trajectory` from SemEngine's gateway; SemTeams mounts its own
+component on SemEngine's HTTP server and serves it there.**
+
 **Recommendation: let SemTeams plug `trajectory` into the SemEngine gateway itself, through a small hook. SemEngine then
 carries no agent-trajectory code or schema.**
 

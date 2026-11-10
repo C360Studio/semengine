@@ -48,13 +48,14 @@ revision out of order) or a latched reset, no later tick starts and `Health` nam
 already running when the feed is lost finishes, and records published before the loss was detected may already lack
 a write. A stored entity the replay refuses latches the follower's reset (the pin's sticky reset, `pin:doc.go:21-22`).
 
-The component keeps its last tick's outcome. `Failed` returns the count and reasons from it, with reasons the
-component names itself: `refused_entity` (the length of `*IncompleteError.Refused`, no new maintainer surface) and
-`publication_failed` (1 while the last tick returned any other error). `Withhold` returns 0, so neither withholds
-ticks. A tick that fails every time therefore reads `degraded` in the envelope, is a stuck state in `Health`
-(`/readyz` not ready), and counts on `graph_clustering_publication_failures_total` on the injected registry, until a
-tick succeeds (ADR-109 D2: a persistent failure is stuck while it lasts, `109:88-96`). The follower's `Stuck` sentence
-becomes plug-in neutral: "N unresolved failures", followed by the reasons when the plug-in reports any
+The component keeps its last tick's outcome. `Failed` returns the count and reasons from it, with reasons the component
+names itself: `refused_entity` (the length of `*IncompleteError.Refused`, no new maintainer surface) and
+`publication_failed` (1 while the last tick returned any other error). A failed write returns no `*IncompleteError`, so
+the component keeps the last known `refused_entity` count until a tick returns one again or succeeds. `Withhold` returns
+0, so neither withholds ticks. A tick that fails every time therefore reads `degraded` in the envelope, is a stuck state
+in `Health` (`/readyz` not ready), and counts on `graph_clustering_publication_failures_total` on the injected registry,
+until a tick succeeds (ADR-109 D2: a persistent failure is stuck while it lasts, `109:88-96`). The follower's `Stuck`
+sentence becomes plug-in neutral: "N unresolved failures", followed by the reasons when the plug-in reports any
 (`follower.go:373` said "index writes"). `Stop` joins the ticker and the follower.
 
 ## D3. Config, ledger, removed surface

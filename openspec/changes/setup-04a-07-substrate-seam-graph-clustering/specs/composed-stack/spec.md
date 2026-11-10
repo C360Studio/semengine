@@ -47,8 +47,8 @@ SHALL catch up.
 - **WHEN** the process is killed with at least one input applied and at least one not acknowledged, and a new process
   boots
 - **THEN** each acknowledged entity answers with each statement once, and readiness and records catch up, community
-  records included, with a new entity and an edit published after the new process boots
-  (`TestSmoke_KillMidIngestKeepsAcknowledgedWrites`)
+  records included once their `entity_revision` reaches the last revision, with a new entity and an edit published after
+  the new process boots (`TestSmoke_KillMidIngestKeepsAcknowledgedWrites`)
 
 ### Requirement: A broker restart between runs keeps the answers
 
@@ -59,8 +59,8 @@ answers included.
 
 - **WHEN** the stack stops, the NATS server restarts on the same URL, and the stack boots again
 - **THEN** after a new entity and an edit are published, the graph-index, graph-embedding and graph-clustering keys
-  reach their revision, graph-ingest's reads not degraded, with the same answers plus the new writes
-  (`TestSmoke_BrokerRestartBetweenRuns`)
+  reach their revision, the community records' `entity_revision` reaches it, graph-ingest's reads not degraded, with
+  the same answers plus the new writes (`TestSmoke_BrokerRestartBetweenRuns`)
 
 ### Requirement: A running stack recovers from a broker restart
 
@@ -72,7 +72,8 @@ components by name, each healthy (graph-embedding's `embedding worker watch lost
 #### Scenario: Restart the broker under the running stack
 
 - **WHEN** the NATS server restarts while the stack runs, and a second batch, an edit and a delete are published after
-- **THEN** the graph-index, graph-embedding and graph-clustering keys reach their revision and graph-ingest's reads
-  not degraded, with answers, `localSearch` included, that include them, no envelope reports a lost feed or
-  `reset_required`, and `/components/health` lists graph-ingest, graph-index, graph-embedding, graph-clustering and
-  graph-query, a total of 5, each healthy (`TestSmoke_BrokerRestartUnderRunningStack`)
+- **THEN** the graph-index, graph-embedding and graph-clustering keys reach their revision and graph-ingest's reads not
+  degraded, the community records' `entity_revision` reaches it, with answers, `localSearch` included, that include
+  them, no envelope reports a lost feed or `reset_required`, and `/components/health` lists graph-ingest, graph-index,
+  graph-embedding, graph-clustering and graph-query, a total of 5, each healthy
+  (`TestSmoke_BrokerRestartUnderRunningStack`)

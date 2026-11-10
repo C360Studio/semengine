@@ -61,8 +61,12 @@ type IndexStatusResponse struct {
 	BootstrapComplete bool `json:"bootstrap_complete"`
 	// IndexedRevision is the low-water-of-pending watermark: every delivered
 	// ENTITY_STATES revision <= this has been applied and nothing <= it is still
-	// in flight. A consumer that knows its own target revision can gate on
-	// IndexedRevision >= myRev instead of the coarse global Ready bool.
+	// in flight. What "applied" means is the producer's: for graph-index it is
+	// indexed, so a consumer that knows its own target revision can gate on
+	// IndexedRevision >= myRev instead of the coarse global Ready bool. For
+	// graph-clustering it means held by its community maintainer, not yet
+	// published: a reader of communities gates on a community record's own
+	// entity_revision, never on this.
 	IndexedRevision uint64 `json:"indexed_revision,omitempty"`
 	// TargetRevision is the ENTITY_STATES stream LastSeq read at query time — the
 	// latest committed write the index must catch up to.

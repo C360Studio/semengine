@@ -94,9 +94,10 @@ What the caller owes the maintainer:
   delivery, whatever its key, to arrive in increasing revision order. Fed out of order across keys, the records'
   counts and words still come out right, but a record can name a revision above a write it does not yet reflect.
   That a KV watch delivers this order is not promised here:
-  [ADR-066](../../docs/adr/066-honest-graph-index-readiness.md) states it, unprobed at the pinned nats.go and
-  nats-server versions ([ADR-112](../../docs/adr/112-natsclient-contract.md)), and `processor/graph-clustering`
-  (change 7), which wires the watch, probes it.
+  [ADR-066](../../docs/adr/066-honest-graph-index-readiness.md) states it without a probe. `processor/graph-clustering`,
+  which wires the watch, probes it at the pinned nats.go and nats-server versions (`TestWatchOrderAcrossKeys`). The
+  order it observed is recorded in that change's `notes/2.3.md` as an observation, not a promise
+  ([ADR-112](../../docs/adr/112-natsclient-contract.md)).
 - **Revision 0 is refused.** A KV entry's first revision is 1 (`TestKVRevisionStartsAtOne` probes it on the pinned
   nats.go and nats-server; it is not promised beyond that), so 0 means the caller passed none.
 - **`BootstrapDone` once, after the replay.** `Tick` before it returns `ErrBootstrapIncomplete` and writes nothing,
@@ -145,9 +146,10 @@ removed, so the old records stay readable ([ADR-085](../../docs/adr/085-gate-on-
   template over the counts.
 - **Label propagation** and the edge providers that fed it: removed by ADR-099. A detection overlay over chosen
   relationship predicates may return as a later change, off by default, in a namespace nothing reads for serving.
-- **The watch and the ticker.** `processor/graph-clustering` (change 7) opens the `ENTITY_STATES` watch, calls this
-  package, and reads every record through `GetAllCommunities`. `graph/follower` does not hand a caller the value, its
-  revision and the end of the replay together today, so change 7 runs its own watch or extends the follower.
+- **The watch and the ticker.** `processor/graph-clustering` follows `ENTITY_STATES` through `graph/follower`, whose
+  entries carry the delivered value and its revision, calls `Upsert` and `Delete` with them, and runs `Tick` every
+  `detection_interval` once the replay is applied. It does not read records back: `GetAllCommunities` served the
+  pin's anomaly lane, which is never ported, and has no caller in this tree.
 - **A reader's consistency rule.** Which generation of the bucket a reader sees during a tick is for the
   `processor/graph-query` item, not decided here.
 - **A per-group member list and a membership hash.** Members are found through the prefix queries of the graph's

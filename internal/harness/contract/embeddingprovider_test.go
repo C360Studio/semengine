@@ -49,53 +49,120 @@ const graphEmbeddingProviderRule = "(graph-embedding › Tier-0 config)"
 //
 // Requirement: graph-embedding/Tier-0 config
 func TestGraphEmbeddingImportsNoProviderModule(t *testing.T) {
+	requireNoDirectModelProvider(t, "./processor/graph-embedding", graphEmbeddingProviderRule)
+}
+
+// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names: the
+// owner's ruling 2 on #32 (PR #582 comment 6768832111), tier 0 builds without the LLM plumbing.
+const llmPlumbingRule = "(#32 › tier 0 builds without the LLM plumbing)"
+
+// TestGraphClusteringImportsNoProviderModule holds processor/graph-clustering to graph-embedding's
+// guard: it does not import the module's model package, and it reaches the OpenAI SDK through
+// nothing it imports. The pin's clustering imported graph/llm for its LLM summarizer and anomaly
+// review; neither is carried (setup-04a-07 design D4, D5).
+func TestGraphClusteringImportsNoProviderModule(t *testing.T) {
+	requireNoDirectModelProvider(t, "./processor/graph-clustering", llmPlumbingRule)
+}
+
+// requireNoDirectModelProvider fails t on each provider path in pkg's listings, naming rule.
+func requireNoDirectModelProvider(t *testing.T, pkg, rule string) {
+	t.Helper()
 	root := repoRoot(t)
-	const pkg = "./processor/graph-embedding"
-	requireNoViolations(t, "processor/graph-embedding provider imports", graphEmbeddingProviderPaths(
-		modulePath(t, root), goList(t, root, pkg, "{{join .Imports \" \"}}"),
+	requireNoViolations(t, strings.TrimPrefix(pkg, "./")+" provider imports", directModelProviderPaths(
+		modulePath(t, root), pkg, rule, goList(t, root, pkg, "{{join .Imports \" \"}}"),
 		goList(t, root, pkg, "-deps", "{{.ImportPath}}")))
 }
 
 // Requirement: graph-embedding/Tier-0 config
 func TestGraphEmbeddingImportsNoProviderModuleSensitivity(t *testing.T) {
 	const module = "example.com/fixture"
-	const self = module + "/processor/graph-embedding"
-	component := []string{module + "/component", module + "/model", self}
-	requireNoViolations(t, "model reached only through component", graphEmbeddingProviderPaths(module,
-		[]string{module + "/component", module + "/modelregistry"}, component))
-	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/model"}, component),
-		module+"/model")
-	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/model/wire"}, component),
-		module+"/model/wire")
-	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/component"},
-		append(component, openAIModule+"/jsonschema")), openAIModule+"/jsonschema")
-	requireViolation(t, graphEmbeddingProviderPaths(module, []string{module + "/component"}, nil),
-		"listed no package")
-	requireViolation(t, graphEmbeddingProviderPaths(module, nil, component), "direct .Imports listing was empty")
+	for _, pkg := range []string{"./processor/graph-embedding", "./processor/graph-clustering"} {
+		t.Run(strings.TrimPrefix(pkg, "./processor/"), func(t *testing.T) {
+			name := strings.TrimPrefix(pkg, "./")
+			self := module + "/" + name
+			component := []string{module + "/component", module + "/model", self}
+			paths := func(direct, deps []string) []string {
+				return directModelProviderPaths(module, pkg, "(rule)", direct, deps)
+			}
+			requireNoViolations(t, "model reached only through component",
+				paths([]string{module + "/component", module + "/modelregistry"}, component))
+			requireViolation(t, paths([]string{module + "/model"}, component), module+"/model", name, "(rule)")
+			requireViolation(t, paths([]string{module + "/model/wire"}, component), module+"/model/wire")
+			requireViolation(t, paths([]string{module + "/component"}, append(component, openAIModule+"/jsonschema")),
+				openAIModule+"/jsonschema", name, "(rule)")
+			requireViolation(t, paths([]string{module + "/component"}, nil), "listed no package")
+			requireViolation(t, paths(nil, component), "direct .Imports listing was empty")
+		})
+	}
 }
 
-// graphEmbeddingProviderPaths names each provider path in processor/graph-embedding's listings:
-// the module's model package, or anything under it, among direct, its own imports; the OpenAI SDK,
-// or anything under it, among deps, everything it reaches. An empty listing is a violation.
-func graphEmbeddingProviderPaths(module string, direct, deps []string) []string {
-	const pkg = "./processor/graph-embedding"
+// directModelProviderPaths names each provider path in pkg's listings: the module's model package,
+// or anything under it, among direct, its own imports; the OpenAI SDK, or anything under it, among
+// deps, everything it reaches. Each violation names pkg and rule; an empty listing is a violation.
+func directModelProviderPaths(module, pkg, rule string, direct, deps []string) []string {
 	var violations []string
 	if len(direct) == 0 {
 		violations = append(violations, "go list's direct .Imports listing was empty; a check that saw nothing is not a pass "+
-			graphEmbeddingProviderRule)
+			rule)
 	} else {
-		violations = providerPathsFor(module, pkg, graphEmbeddingProviderRule, direct)
+		violations = providerPathsFor(module, pkg, rule, direct)
 	}
 	if len(deps) == 0 {
-		return append(violations, "go list -deps listed no package; a check that saw nothing is not a pass "+
-			graphEmbeddingProviderRule)
+		return append(violations, "go list -deps listed no package; a check that saw nothing is not a pass "+rule)
 	}
 	for _, dep := range deps {
-		if dep == openAIModule || strings.HasPrefix(dep, openAIModule+"/") {
-			violations = append(violations, "processor/graph-embedding reaches "+dep+" "+graphEmbeddingProviderRule)
+		if under(dep, openAIModule) {
+			violations = append(violations, strings.TrimPrefix(pkg, "./")+" reaches "+dep+" "+rule)
 		}
 	}
 	return violations
+}
+
+// TestTreeImportsNoProviderPlumbing holds the module, every package go list ./... builds, to the
+// owner's ruling on #32: tier 0 builds without the LLM plumbing. Nothing reaches the pin's LLM
+// client (graph/llm), its wire types (model/wire) or the OpenAI SDK, directly or through a package
+// it imports. Neither graph/llm nor model/wire is in the tree; this guards their return.
+// It replaces no per-package guard: those also forbid model, which component reaches for every
+// component (TestGraphEmbeddingImportsNoProviderModule), so the tree-wide listing cannot.
+// TestTreeImportsNoProviderPlumbingSensitivity shows the reader can fail.
+func TestTreeImportsNoProviderPlumbing(t *testing.T) {
+	root := repoRoot(t)
+	requireNoViolations(t, "tree-wide provider plumbing", treeProviderPlumbingPaths(modulePath(t, root),
+		goList(t, root, "./...", "-deps", "{{.ImportPath}}")))
+}
+
+func TestTreeImportsNoProviderPlumbingSensitivity(t *testing.T) {
+	const module = "example.com/fixture"
+	clean := []string{module + "/component", module + "/model", module + "/graph", module + "/graph/llmx",
+		module + "/model/wirex"}
+	requireNoViolations(t, "model and name-prefixed siblings", treeProviderPlumbingPaths(module, clean))
+	for _, plumbing := range []string{module + "/graph/llm", module + "/graph/llm/openai", module + "/model/wire",
+		module + "/model/wire/v2", openAIModule, openAIModule + "/jsonschema"} {
+		requireViolation(t, treeProviderPlumbingPaths(module, append(clean, plumbing)), plumbing, llmPlumbingRule)
+	}
+	requireViolation(t, treeProviderPlumbingPaths(module, nil), "listed no package", llmPlumbingRule)
+}
+
+// treeProviderPlumbingPaths reads go list -deps ./... output and names each LLM plumbing path in it:
+// the module's graph/llm or model/wire, or anything under either, or the OpenAI SDK or anything
+// under it. The module's model package is allowed. An empty listing is a violation.
+func treeProviderPlumbingPaths(module string, deps []string) []string {
+	if len(deps) == 0 {
+		return []string{"go list -deps ./... listed no package; a check that saw nothing is not a pass " +
+			llmPlumbingRule}
+	}
+	var violations []string
+	for _, dep := range deps {
+		if under(dep, module+"/graph/llm") || under(dep, module+"/model/wire") || under(dep, openAIModule) {
+			violations = append(violations, "the module reaches "+dep+" "+llmPlumbingRule)
+		}
+	}
+	return violations
+}
+
+// under reports whether path is root or a package under it; a name-prefixed sibling is not.
+func under(path, root string) bool {
+	return path == root || strings.HasPrefix(path, root+"/")
 }
 
 // goList runs go list in root for pkg with args, the last a -f template, and returns its fields.
@@ -181,8 +248,7 @@ func providerPathsFor(module, pkg, rule string, deps []string) []string {
 	}
 	var violations []string
 	for _, dep := range deps {
-		if dep == module+"/model" || strings.HasPrefix(dep, module+"/model/") ||
-			dep == openAIModule || strings.HasPrefix(dep, openAIModule+"/") {
+		if under(dep, module+"/model") || under(dep, openAIModule) {
 			violations = append(violations, strings.TrimPrefix(pkg, "./")+" reaches "+dep+" "+rule)
 		}
 	}

@@ -1,0 +1,4 @@
+ok  	github.com/c360studio/semstreams/processor/graph-clustering	26.871s
+ok  	github.com/c360studio/semstreams/graph/structural	0.592s
+ok  	github.com/c360studio/semstreams/graph/inference	20.247s
+rc=0

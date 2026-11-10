@@ -103,7 +103,7 @@ func TestKVCatalog_EveryRowValidates(t *testing.T) {
 		assert.False(t, seen[spec.Name], "catalog row %q must be declared exactly once", spec.Name)
 		seen[spec.Name] = true
 	}
-	assert.Len(t, seen, 18, "the catalog carries the 18 retained framework-guaranteed buckets")
+	assert.Len(t, seen, 17, "the catalog carries the 17 retained framework-guaranteed buckets")
 }
 
 // TestKVCatalog_DeclaredPolicies pins the per-bucket policy decisions (history
@@ -164,7 +164,7 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		graph.BucketAliasIndex, graph.BucketNameIndex, graph.BucketSpatialIndex,
 		graph.BucketTemporalIndex, graph.BucketTemporalIndexReverse,
 		graph.BucketEmbeddingIndex, graph.BucketEmbeddingDedup, graph.BucketCommunityIndex,
-		graph.BucketCommunitySummaries, graph.BucketAnomalyIndex,
+		graph.BucketCommunitySummaries,
 		graph.BucketGraphIngestAppliedSeq, graph.BucketGraphStatus, graph.BucketStorageReport,
 		// The configuration bucket family joined the guard set with ADR-104: a
 		// generic update_kv into platform_identity forges an authority the next
@@ -177,6 +177,11 @@ func TestIsFrameworkOwnedBucket_ProductionView(t *testing.T) {
 		"the retired provenance-only bucket must not remain in the generic write guard")
 	assert.False(t, IsFrameworkOwnedBucket("STRUCTURAL_INDEX"),
 		"the retired structural persistence bucket must not remain in the generic write guard")
+	// Anomaly detection is never ported (owner ruling 1, PR #582 comment
+	// 6768832111), so nothing writes ANOMALY_INDEX and the catalog does not
+	// guard it.
+	assert.False(t, IsFrameworkOwnedBucket("ANOMALY_INDEX"),
+		"the never-ported anomaly bucket must not remain in the generic write guard")
 	assert.False(t, IsFrameworkOwnedBucket("AGENT_LOOPS"),
 		"application buckets are outside the catalog by rule")
 }

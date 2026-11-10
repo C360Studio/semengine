@@ -7,6 +7,11 @@ recommended. Drafted on PR #164 (`Addresses #141`) under the owner's ruling of 2
 "Ruled 2"): one of four records ruled before change 3's design is written, which cites all four. #141 stays open as the
 adoption list.
 
+**Amendment, 2026-11-10 (setup-04a-07, PR #582).** Decision 7's `graph/inference/storage.go:159` (`ANOMALY_INDEX`)
+is never ported: anomaly detection, its only user, is not ported now or later (owner ruling 1, PR #582 comment
+6768832111), and `ANOMALY_INDEX` left the bucket catalog. Q1's "anomaly store" cost no longer applies. The other sites
+in that list are unchanged; #141 stays open for spatial and temporal.
+
 Lines in this repository are cited on `main` at `9d1dd87` or on PR #93's branch at `3d66c91`
 (`claude/setup-04a-02-ingest-kernel`, change 2, not yet merged), which establishes the seam; design D15, D21 and D23
 and `entity_writes.go` were read at that head and are re-checked if they change before this record merges.

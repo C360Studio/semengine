@@ -151,9 +151,9 @@ move the record, so the refusal can last until something in the group changes.
 Other refusals:
 
 - Transient `index_not_ready` while `COMMUNITY_INDEX` does not exist, its view is catching up, or its watch is lost,
-  and when the entity exists but its group has no record yet. Nothing in the framework writes `COMMUNITY_INDEX` until
-  `processor/graph-clustering` arrives in change 7, so until then every `localSearch` on an existing entity is refused
-  this way.
+  and when the entity exists but its group has no record yet. `processor/graph-clustering` writes
+  `COMMUNITY_INDEX`; its first tick after the replay decides when this refusal ends for a group, so a `localSearch` on
+  an existing entity is refused this way until then.
 - When the group has no record and the entity does not exist, the entity verb's own refusal, such as `entity_not_found`.
 - Transient `internal`, counted in `ErrorCount`, for a record that cannot be read (the message names its key), for a
   page that is broken or has no responder, and for a reply that cannot fit `max_payload` even with no entities.
@@ -237,7 +237,7 @@ What it refuses:
 | A named path start that names no entity ("what is connected to pump-99"; "the area of the plant", whose start is `area-of`) | class invalid, code `entity_not_found`, as `entityByAlias` answers it. A start whose entity is gone passes the entity verb's refusal as it came |
 | More than 16 distinct terms in a text question | class invalid, code `invalid_request`, before any read |
 | A refusal from the alias or entity verb behind a lookup (`alias_ambiguous`, `index_not_ready`, `internal`, `revision_not_reached`, and the entity verb's others) | the same refusal, as it arrived. For a one-word question `entity_not_found` from the entity verb is the exception: the word is searched as text |
-| A text question while `COMMUNITY_INDEX` is missing, catching up, lost or stopped, or when `level` holds no record | transient `index_not_ready`, counting no error. Nothing in the framework writes `COMMUNITY_INDEX` until change 7, so until then every text question is refused this way, `searchGraph` included |
+| A text question while `COMMUNITY_INDEX` is missing, catching up, lost or stopped, or when `level` holds no record | transient `index_not_ready`, counting no error. `processor/graph-clustering` writes `COMMUNITY_INDEX`, and its first tick after the replay decides when this refusal ends, so until then every text question is refused this way, `searchGraph` included |
 | A text question with `min_revision` above the mark | transient `revision_not_reached`, `indexed_revision` in detail |
 | Every record at `level` unreadable; a page that is broken or has no responder; a reply that cannot fit `max_payload` | transient `internal`, counted as an error in `Health` |
 | A time-range or area question, until change 7 | transient `internal`, naming the subject, counted as an error in `Health`: their responders are not in the tree |

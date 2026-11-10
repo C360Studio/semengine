@@ -80,8 +80,8 @@ so the counts above do not change:
 | --- | --- | --- |
 | `internal/componentadmission` | not ported: its only reader is the access-token parameter of `component.Registry`'s `CreateComponent`, `SealComposition` and `Snapshots`, which the ruling removes; `defer-exclude` row | ruling C, #91 comment 6035477895; change 2 design D14 |
 | `internal/lifecyclecleanup` | ported and made public as `pkg/lifecyclecleanup`, because SemTeams' components call its `RollbackFailedStart`; `adapt` row | #77 ruling, comment 6035317931; change 2 design D7 |
-| `graph/structural` | not ported in change 2: it moves to change 7 with its only readers, `graph/inference`'s detectors and `processor/graph-clustering`; `defer-exclude` row naming change 7 | ruling E, #91 comment 6037287957; change 2 design D1a |
-| `graph/inference` | ported as its hierarchy slice only (`hierarchy.go`, `container_entity.go` and a new `doc.go`); the rest of the package ports with `processor/graph-clustering` in change 7; `adapt` row | #97 ruling, comment 6036308092; change 2 design D1a |
+| `graph/structural` | not ported in change 2: it moved to change 7 with its only readers, `graph/inference`'s detectors and `processor/graph-clustering`'s anomaly lane; anomaly detection is then never ported, so neither is this package; `defer-exclude` row | ruling E, #91 comment 6037287957; change 2 design D1a; owner ruling 1, PR #582 comment 6768832111 |
+| `graph/inference` | ported as its hierarchy slice only (`hierarchy.go`, `container_entity.go` and a new `doc.go`); the rest of the package (anomaly detection and its review worker) is never ported; `adapt` row | #97 ruling, comment 6036308092; change 2 design D1a; owner ruling 1, PR #582 comment 6768832111 |
 | `vocabulary/export` | ported ahead of change 7 by `vocab-export-packs` (#234) with `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` so `semvocab` and `semsparql` can consume RDF/JSON-LD serialization and prefix registration; `adapt` row | #234; `vocab-export-packs` design D1 |
 | `vocabulary/bfo`, `vocabulary/cco` | not ported into `semengine`: domain and upper-ontology packs live in external repository `semvocab`, registering through `vocabulary`'s declarative/Go pack seams; `defer-exclude` rows | #234; `vocab-export-packs` design D1 |
 
@@ -91,7 +91,7 @@ so the counts above do not change:
 | --- | --- | --- |
 | `agentic`, `agentic/agentrun`, `vocabulary/agentic` | separated: `defer-exclude` row | 03B D4 (agentic domain); task 5.1 |
 | `gateway`, `gateway/graph-gateway` | separated: `defer-exclude` row | 03B D4 (layer 4 is consumer-owned); task 5.1 |
-| `model/wire` | behind the seam: not ported in change 2, which ports nothing that reads it; `defer-exclude` row naming change 7, which ports its first reader | 03B D4; change 2 design D1a, which replaces foundation D8's dormant carriage |
+| `model/wire` | behind the seam: not ported in change 2, which ports nothing that reads it, nor in change 7, which ports `processor/graph-clustering` without it; tier 0 builds without it (`TestTreeImportsNoProviderPlumbing`); `defer-exclude` row | 03B D4; change 2 design D1a, which replaces foundation D8's dormant carriage; owner ruling 2, PR #582 comment 6768832111 |
 | `componentregistry`, `payloadbuiltins`, `vocabulary/builtins` | not ported: aggregators; each consumer registers per package | 03B Q1 ruling (#3) |
 | `processor/gated-dag` | not ported: reached only through the aggregators | 03B Q1 ruling, measured consequence |
 | `processor/agentic-dispatch`, `processor/agentic-loop`, `processor/agentic-loop/lessonmatch`, `processor/agentic-model`, `processor/agentic-tools`, `processor/agentic-tools/executors`, `processor/agentic-tools/runner`, `persona` | not ported: agentic domain | 03B D4 ("`governance` and `processor/agentic-*`"); no tier-0 package imports `persona` |

@@ -10,6 +10,14 @@ respect: the plug-in does not return an outcome from delivery. It reports the ou
 revision applied), `Failed` (the count of writes still unresolved) and `Reset`, because graph-index's apply is
 asynchronous (accepted by the owner, PR #414 comment 6426254115).
 
+**Amendment, 2026-11-10 (`setup-04a-07-substrate-seam-graph-clustering`, draft PR #582).** Decision 5's sentence
+"graph-clustering and graph-query have no follower" describes the pin's timer loop. The PR #483 ruling replaced that
+loop with changes-only maintenance, so `processor/graph-clustering` is a follower plug-in (key `graph-clustering`).
+Decision 4's warning against applying the delivered value is kept for plug-ins with a repair lane racing the watch;
+graph-clustering has one apply path, on the follower's goroutine, so `follower.Entry.Value` carries the delivered
+bytes and the maintainer ignores a delivery at or below an entity's applied revision. Its `indexed_revision` counts
+revisions the maintainer holds, not revisions published. graph-query still has no follower.
+
 **Decision 3's 'controlled and abort Stop' superseded by ADR-113 (2026-10-18).** The context given to `Start` bounds
 only `Start`; `Stop(ctx)` is the only stop, and a `Stop` whose context ends first returns that error so a later `Stop`
 tries again.

@@ -27,7 +27,8 @@ import (
 // deliver is the follower's Deliver, on its Run goroutine. It counts the entry before any
 // coalescing. A delete goes through at once and drops the key's pending coalesced update;
 // an update is coalesced when coalesce_ms is above zero and reconciled at once otherwise.
-// The entry carries no value, so hop 1 reads the entity's current one.
+// Hop 1 reads the entity's current value rather than applying the entry's Value: a coalesced
+// update and the repair lane must see current truth, not the value one delivery carried (ADR-108 D4).
 func (c *Component) deliver(ctx context.Context, e follower.Entry) {
 	c.delivered.Store(e.Revision)
 	c.lifecycle.CountInput(e.Bytes)

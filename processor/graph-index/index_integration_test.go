@@ -403,7 +403,7 @@ func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	if n := h.c.failedTotal(); n != 1 {
 		t.Fatalf("failed entities = %d, want 1", n)
 	}
-	if stuck := h.f.Stuck(); !slices.Contains(stuck, "1 index writes unresolved") {
+	if stuck := h.f.Stuck(); !slices.Contains(stuck, "1 unresolved failures") {
 		t.Errorf("Stuck() = %q, want it to name the unresolved write", stuck)
 	}
 	if err := h.f.QueryReady(t.Context()); err == nil {

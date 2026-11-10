@@ -188,7 +188,7 @@ func TestWorkerFailureAnswersAndCounts(t *testing.T) {
 		if len(similar.reply.Data.Results) != 0 || similar.reply.Data.FailedRecords != 1 {
 			t.Errorf("similar with a content_error = %s; want no hit with failed_records 1", similar.raw)
 		}
-		if health := h.c.Health(); health.Healthy || !strings.Contains(health.LastError, "1 index writes unresolved") {
+		if health := h.c.Health(); health.Healthy || !strings.Contains(health.LastError, "1 unresolved failures: content_error 1") {
 			t.Errorf("Health with a content_error = %+v; want degraded naming the unresolved write", health)
 		}
 		published := await(t, "the published status counts the failure",

@@ -234,9 +234,10 @@ func requireRefusal(t *testing.T, what string, reply []byte, err error, code, te
 }
 
 // checkAnswers is the one oracle (design D5): every answer the stack gives about w, read after the
-// ordered waits. deleted are IDs the stack must no longer hold. s is the running stack, which the
-// search checks' wait watches.
-func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, deleted ...string) {
+// ordered waits. revision is the ENTITY_STATES revision awaitIndexed read after the last write, which
+// the community checks wait on. deleted are IDs the stack must no longer hold. s is the running
+// stack, which the search and community checks' waits watch.
+func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted ...string) {
 	t.Helper()
 	lead := f.id(drone1)
 	ids := slices.Sorted(maps.Keys(w))
@@ -303,10 +304,7 @@ func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, deleted 
 		t.Errorf("entityByAlias %s holds %v, want %v", leadAlias, got, w[lead].statementStrings())
 	}
 
-	// localSearch: nothing in this stack writes community records, so its answer is the refusal.
-	reply, err := o.ask(t, "localSearch", graph.LocalSearchRequest{EntityID: lead, Query: "falcon"})
-	requireRefusal(t, "localSearch", reply, err, graph.ErrorCodeIndexNotReady, graph.BucketCommunityIndex)
-
+	checkCommunities(t, o, s, f, w, revision)
 	checkEmbeddingRecords(t, o, revisions)
 	if t.Failed() {
 		t.FailNow()
@@ -598,6 +596,141 @@ func checkSearch(t *testing.T, o observer, s stack, f fixture, w want, deleted [
 	}
 }
 
+// matching is a one-word search's matches among w, sorted by ID, written from the text score
+// localSearch and the text search state (graph.LocalSearchData; processor/graph-query/localsearch.go,
+// score): one word matches an entity when it equals the ID's type position or lies within one of the
+// entity's predicates or string values, lowercased. The callers' words are no type, so every match
+// scores the same and ties order by ID. The values include graph-ingest's indexing profile and a
+// relationship's object, the other entity's ID.
+func (w want) matching(word string) []string {
+	out := []string{}
+	for id, e := range w {
+		held := append([]statement{{vocabulary.EntityIndexingProfile, smokeIndexingProfile}}, e.statements...)
+		if slices.ContainsFunc(held, func(s statement) bool {
+			return strings.Contains(strings.ToLower(s.predicate), word) || strings.Contains(strings.ToLower(s.object), word)
+		}) {
+			out = append(out, id)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
+// communityAnswer is one localSearch reply, or the refusal, with graph-clustering's envelope read
+// beside it.
+type communityAnswer struct {
+	reply      graph.QueryResponse[graph.LocalSearchData]
+	raw        []byte
+	err        error
+	clustering graph.IndexStatusResponse
+}
+
+// matchIDs is the entity IDs of matches, in the order the reply gave them.
+func matchIDs(t *testing.T, what string, matches []json.RawMessage) []string {
+	t.Helper()
+	out := []string{}
+	for _, raw := range matches {
+		var entity struct {
+			ID string `json:"id"`
+		}
+		if err := json.Unmarshal(raw, &entity); err != nil || entity.ID == "" {
+			t.Fatalf("%s: a match does not decode to an entity: %s: %v", what, raw, err)
+		}
+		out = append(out, entity.ID)
+	}
+	return out
+}
+
+// checkCommunities checks graph-clustering's records through graph-query's localSearch and the text
+// search (composed-stack, "Answers from one configuration"). Every fixed entity's ID starts
+// c360.<platform>.fleet.ops, so they make one level-0 group, whose record holds w's count.
+//
+// graph-clustering's GRAPH_STATUS key counts what its maintainer holds, not what it has published, and
+// graph-query answers from its own view of COMMUNITY_INDEX, so neither awaitIndexed nor a bucket read
+// orders a read of the answer. The record's entity_revision does: the highest ENTITY_STATES revision
+// the record reflects, which localSearch compares with min_revision before it answers. So localSearch
+// on the lead with min_revision set to revision is asked until it answers; a refusal that the view is
+// not ready or the record is below revision is asked again, and a latched graph-clustering envelope,
+// which no later tick clears, fails at once.
+func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revision uint64) {
+	t.Helper()
+	lead := f.id(drone1)
+	group := "c360." + f.platform + ".fleet.ops" // level 0: org.platform.system.domain (ADR-102)
+	word := w[lead].words()[0]
+	request := graph.LocalSearchRequest{EntityID: lead, Query: word, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
+	what := fmt.Sprintf("localSearch %q on %s at min_revision %d", word, lead, revision)
+	got := await(t, s, what+" to answer", func(ctx context.Context) (communityAnswer, error) {
+		status, err := o.readStatus(ctx, readiness.KeyGraphClustering)
+		if err != nil {
+			return communityAnswer{}, err
+		}
+		answer := communityAnswer{clustering: status}
+		answer.raw, answer.err = o.ask(t, "localSearch", request)
+		if answer.err == nil {
+			answer.err = json.Unmarshal(answer.raw, &answer.reply)
+		}
+		return answer, nil
+	}, func(a communityAnswer) bool {
+		if latched(a.clustering) != "" {
+			return true
+		}
+		var refusal *errs.ClassifiedError
+		if errors.As(a.err, &refusal) {
+			return refusal.Code != graph.ErrorCodeIndexNotReady && refusal.Code != graph.ErrorCodeRevisionNotReached
+		}
+		return true
+	})
+	if reason := latched(got.clustering); reason != "" {
+		t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, readiness.KeyGraphClustering, reason)
+	}
+	if got.err != nil {
+		t.Fatalf("%s: %s: %v", what, got.raw, got.err)
+	}
+	local := got.reply.Data
+	if got.reply.IndexedRevision < revision || local.CommunityID != group || local.Level != 0 ||
+		local.MemberCount != len(w) || local.EntitiesScanned != len(w) || local.EntitiesTruncated || local.Answer == "" {
+		t.Errorf("%s answered %+v at indexed_revision %d; want group %s, level 0, %d members, %d scanned, "+
+			"not truncated, an answer, at %d or above", what, local, got.reply.IndexedRevision, group, len(w), len(w), revision)
+	}
+	if ids, wantIDs := matchIDs(t, what, local.Entities), w.matching(word); !slices.Equal(ids, wantIDs) {
+		t.Errorf("%s matched %v, want %v", what, ids, wantIDs)
+	}
+
+	// A text question, read after localSearch's answer: the view held the record at revision then.
+	// One word that names no alias is searched as text; "field" is in four names, so it is one of the
+	// group's most frequent words.
+	const fieldWord = "field"
+	question := graph.GlobalSearchRequest{Query: fieldWord, MinRevisionField: graph.MinRevisionField{MinRevision: revision}}
+	raw, err := o.ask(t, "globalSearch", question)
+	if err != nil {
+		t.Fatalf("globalSearch %q: %s: %v", fieldWord, raw, err)
+	}
+	var global graph.QueryResponse[graph.GlobalSearchData]
+	if err := json.Unmarshal(raw, &global); err != nil {
+		t.Fatalf("globalSearch %q: decode %s: %v", fieldWord, raw, err)
+	}
+	text := global.Data.Text
+	if global.Data.Strategy != "text" || text == nil {
+		t.Fatalf("globalSearch %q answered %s, want the text strategy", fieldWord, raw)
+	}
+	var groups []string
+	for _, g := range text.Groups {
+		groups = append(groups, fmt.Sprintf("%s/%d", g.CommunityID, g.MemberCount))
+	}
+	if wantGroups := []string{fmt.Sprintf("%s/%d", group, len(w))}; !slices.Equal(groups, wantGroups) ||
+		text.Level != 0 || text.UnreadableGroups != 0 || global.IndexedRevision < revision {
+		t.Errorf("globalSearch %q: groups %v, level %d, %d unreadable, indexed_revision %d; want %v, 0, 0, at %d or above",
+			fieldWord, groups, text.Level, text.UnreadableGroups, global.IndexedRevision, wantGroups, revision)
+	}
+	var matches []string
+	for _, m := range text.Matches {
+		matches = append(matches, m.ID)
+	}
+	if wantMatches := w.matching(fieldWord); !slices.Equal(matches, wantMatches) {
+		t.Errorf("globalSearch %q matched %v, want %v", fieldWord, matches, wantMatches)
+	}
+}
+
 // TestSmoke_OneConfigAnswers holds composed-stack, "Answers from one configuration": the stack boots
 // from one configuration, answers the fixed questions, and follows an edit and a delete.
 func TestSmoke_OneConfigAnswers(t *testing.T) {
@@ -605,7 +738,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	o := newObserver(t, url)
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the four components are listed.
+	// StartAll has returned, so the composition is fixed: the five components are listed.
 	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
@@ -614,20 +747,20 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 		last = o.publish(t, e)
 	}
 	o.awaitAcknowledged(t, s, last)
-	o.awaitIndexed(t, s)
+	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
-	checkAnswers(t, o, s, f, wantOf(inputs...))
+	checkAnswers(t, o, s, f, wantOf(inputs...), revision)
 
 	// An edit on the stream and a delete through graph-ingest's mutation verb.
 	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
 	deleted := f.id(drone8)
 	o.deleteEntity(t, deleted)
-	o.awaitIndexed(t, s)
+	revision = o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
 	edited := wantOf(inputs...)
 	edited[f.id(drone3)] = f.editedDrone3()
 	delete(edited, deleted)
-	checkAnswers(t, o, s, f, edited, deleted)
+	checkAnswers(t, o, s, f, edited, revision, deleted)
 
 	stopStack(t, s)
 }
@@ -657,19 +790,19 @@ func (o observer) deleteEntity(t *testing.T, id string) {
 // checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
 // order design D5 sets after them, and checks the answers: before plus the two writes. It returns
 // what the stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
-// graph-index and graph-embedding envelopes an earlier process left, at a lower revision, cannot
-// pass them; the new entity's record and the edit's record at its new revision are ones no earlier
+// graph-index, graph-embedding and graph-clustering envelopes and the community record an earlier
+// process left, at a lower revision, cannot pass them; the new entity's record and the edit's record at its new revision are ones no earlier
 // process can have written (design D6).
 func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, before want) want {
 	t.Helper()
 	o.publish(t, f.newDrone())
 	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
-	o.awaitIndexed(t, s)
+	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
 	after := maps.Clone(before)
 	after[f.newDrone().id] = f.newDrone()
 	after[f.id(drone3)] = f.editedDrone3()
-	checkAnswers(t, o, s, f, after)
+	checkAnswers(t, o, s, f, after, revision)
 	return after
 }
 
@@ -689,10 +822,10 @@ func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 		last = o.publish(t, e)
 	}
 	o.awaitAcknowledged(t, first, last)
-	o.awaitIndexed(t, first)
+	revision := o.awaitIndexed(t, first)
 	requireComponentsHealthy(t, first)
 	before := wantOf(inputs...)
-	checkAnswers(t, o, first, f, before)
+	checkAnswers(t, o, first, f, before, revision)
 	t.Logf("first process, %s: %v", reindexMetric, readReindexCounter(t, first))
 	stopStack(t, first)
 
@@ -849,10 +982,10 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	if !o.appliedRecord(t, held.id) {
 		t.Fatalf("%s is acknowledged without its applied-sequence record", held.id)
 	}
-	o.awaitIndexed(t, second)
+	revision := o.awaitIndexed(t, second)
 	requireComponentsHealthy(t, second)
 	before := wantOf(append(inputs, held)...)
-	checkAnswers(t, o, second, f, before)
+	checkAnswers(t, o, second, f, before, revision)
 
 	checkWritesAfterRestart(t, o, second, f, before)
 	stopStack(t, second)
@@ -913,10 +1046,10 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 			last = o.publish(t, e)
 		}
 		o.awaitAcknowledged(t, first, last)
-		o.awaitIndexed(t, first)
+		revision := o.awaitIndexed(t, first)
 		requireComponentsHealthy(t, first)
 		before = wantOf(inputs...)
-		checkAnswers(t, o, first, f, before)
+		checkAnswers(t, o, first, f, before, revision)
 		stopStack(t, first)
 	}) {
 		return
@@ -940,7 +1073,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // running stack" (design D6, case 4): the NATS server restarts on the same URL with its file
 // storage while the stack keeps running, and the same process, never restarted, applies a new
 // entity, an edit and a delete published after it, answers what it did before plus those writes,
-// and lists its four components healthy, with no envelope reporting a lost feed or reset_required.
+// and lists its five components healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -962,10 +1095,10 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 		last = o.publish(t, e)
 	}
 	o.awaitAcknowledged(t, s, last)
-	o.awaitIndexed(t, s)
+	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
 	before := wantOf(inputs...)
-	checkAnswers(t, o, s, f, before)
+	checkAnswers(t, o, s, f, before, revision)
 
 	// Unlike case 3, nothing is stopped before the restart: the stack and the observer keep their
 	// connections, and both reconnect with natsclient's defaults (unlimited attempts). The observer
@@ -995,9 +1128,9 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// restart.
 	deleted := f.id(drone8)
 	o.deleteEntity(t, deleted)
-	o.awaitIndexed(t, s)
+	revision = o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
 	delete(after, deleted)
-	checkAnswers(t, o, s, f, after, deleted)
+	checkAnswers(t, o, s, f, after, revision, deleted)
 	stopStack(t, s)
 }

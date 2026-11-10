@@ -51,6 +51,10 @@ const (
 	KeyGraphIndex = "graph-index"
 	// KeyGraphEmbedding is graph-embedding's status key.
 	KeyGraphEmbedding = "graph-embedding"
+	// KeyGraphClustering is graph-clustering's status key. Its indexed revision counts what
+	// the community maintainer holds, not what is published; a community record's own
+	// entity_revision says what is published (graph.IndexStatusResponse.IndexedRevision).
+	KeyGraphClustering = "graph-clustering"
 	// KeyGraphIngest is graph-ingest's status key. Its envelope is a BACKLOG
 	// envelope (ComputeBacklogStatus): Lag is in MESSAGES, and the revision
 	// fields are absent because graph-ingest consumes multiple streams whose

@@ -430,6 +430,46 @@ func TestFollowerSnapshotEndSetsBootstrapTarget(t *testing.T) {
 	}
 }
 
+// TestEntryCarriesDeliveredValue: a key written twice delivers each revision with the bytes written
+// at it, and its delete delivers a marker with no value (entity-state-follower spec, "An entry
+// carries the delivered value"). Each write waits for the previous delivery, so the watch delivers
+// every revision instead of only the latest. Deliver copies Value, as a plug-in that keeps it must.
+func TestEntryCarriesDeliveredValue(t *testing.T) {
+	client := fixtureClient(t)
+	kv := entityStates(t, client)
+	id := entityID(1)
+	first := storedEntity(id)
+	second := []byte(strings.Replace(string(first), `"object":1`, `"object":2`, 1))
+
+	delivered := make(chan Entry, 4)
+	f := open(t, client, func(_ context.Context, e Entry) {
+		e.Value = slices.Clone(e.Value)
+		delivered <- e
+	}, noFailures)
+	start(t, f)
+
+	written := map[uint64][]byte{put(t, kv, id, first): first}
+	got := []Entry{<-delivered}
+	written[put(t, kv, id, second)] = second
+	got = append(got, <-delivered)
+	if err := kv.Delete(t.Context(), id); err != nil {
+		t.Fatalf("delete %s: %v", id, err)
+	}
+	marker := <-delivered
+
+	for _, e := range got {
+		if want, ok := written[e.Revision]; !ok || e.Deleted || string(e.Value) != string(want) {
+			t.Errorf("entry at revision %d = %+v (value %q); want the value written at it, %q", e.Revision, e, e.Value, want)
+		}
+	}
+	if got[0].Revision == got[1].Revision {
+		t.Errorf("both entries at revision %d; want each write delivered", got[0].Revision)
+	}
+	if !marker.Deleted || marker.Value != nil {
+		t.Errorf("delete marker = %+v; want Deleted and a nil Value", marker)
+	}
+}
+
 // TestFollowerLatchesResetOnUnreadableSnapshotValue: a stored value that does not decode latches
 // reset with its reason; the entry is still delivered; QueryReady is fatal; a later Reset changes
 // nothing.

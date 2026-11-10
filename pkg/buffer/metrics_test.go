@@ -91,3 +91,20 @@ func assertComponentLabel(t *testing.T, m *dto.Metric, want string) {
 	}
 	t.Errorf("no component label on %v", m)
 }
+
+// TestNewCircularBufferRefusedReturnsNil: when construction fails, NewCircularBuffer returns a
+// nil Buffer[T] with its error, so a caller's nil check agrees with the error. Oracle: the
+// interface compared to nil directly (reflection-based assertions treat a nil pointer inside a
+// non-nil interface as nil, so they are not used).
+func TestNewCircularBufferRefusedReturnsNil(t *testing.T) {
+	registry := metric.NewMetricsRegistry()
+	_, err := metric.RegisterOrGet(registry, "squatted", "buffer_writes",
+		prometheus.NewGauge(prometheus.GaugeOpts{Name: "squatter", Help: "owns the key first"}))
+	require.NoError(t, err)
+
+	buf, err := NewCircularBuffer[int](2, WithMetrics[int](registry, "squatted"))
+	require.Error(t, err)
+	if buf != nil {
+		t.Errorf("NewCircularBuffer returned a non-nil Buffer[int] (%T) with its error", buf)
+	}
+}

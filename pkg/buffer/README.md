@@ -1,6 +1,7 @@
 # Buffer Package
 
-A high-performance, thread-safe buffer implementation for Go with configurable overflow policies, built-in statistics, and optional Prometheus metrics integration.
+A high-performance, thread-safe buffer implementation for Go with configurable overflow policies, built-in
+statistics, and optional Prometheus metrics integration.
 
 ## Features
 
@@ -93,24 +94,33 @@ buf := buffer.NewCircularBuffer[*Message](1000,
 ## Overflow Policies
 
 ### DropOldest
+
 Removes the oldest item to make room for new items when buffer is full.
+
 ```go
 buffer.WithOverflowPolicy[T](buffer.DropOldest)
 ```
+
 **Use Case**: When newest data is more important (e.g., real-time telemetry)
 
 ### DropNewest  
+
 Drops incoming items when buffer is full.
+
 ```go
 buffer.WithOverflowPolicy[T](buffer.DropNewest)
 ```
+
 **Use Case**: When preserving order is critical (e.g., audit logs)
 
 ### Block
+
 Write operations block until space is available.
+
 ```go
 buffer.WithOverflowPolicy[T](buffer.Block)
 ```
+
 **Use Case**: When no data loss is acceptable (e.g., transaction processing)
 
 #### Block Policy with Timeout
@@ -133,19 +143,25 @@ err := buf.WriteWithContext(ctx, item)
 The buffer package uses functional options for clean, composable configuration:
 
 ### WithOverflowPolicy
+
 Set the overflow behavior (default: DropOldest):
+
 ```go
 buffer.WithOverflowPolicy[T](buffer.DropOldest)
 ```
 
 ### WithMetrics
+
 Enable Prometheus metrics export:
+
 ```go
 buffer.WithMetrics[T](registry, "component_name")
 ```
 
 ### WithDropCallback
+
 Set a callback for when items are dropped:
+
 ```go
 buffer.WithDropCallback[T](func(item T) {
     // Handle dropped item
@@ -327,6 +343,7 @@ Both Statistics and Metrics independently track operations, which appears redund
 | **Use Case** | Tests, debugging, local monitoring | Production dashboards, alerting |
 
 **Performance Trade-off:**
+
 - Dual tracking overhead: **~5% per operation** when metrics enabled
 - At 100k ops/sec: **0.5-1% total overhead**
 - Negligible cost for comprehensive observability
@@ -334,6 +351,7 @@ Both Statistics and Metrics independently track operations, which appears redund
 **Alternative Considered:** Reading Statistics from Prometheus metrics to avoid duplication.
 
 **Rejected because:**
+
 - Creates Prometheus dependency for basic stats
 - 10x slower (reading from Prometheus vs atomic operations)
 - Breaks Statistics when metrics disabled
@@ -405,6 +423,7 @@ stateDiagram-v2
 #### Why Stats Are Always On
 
 Statistics collection is mandatory because:
+
 - **Observability is critical** for understanding buffer behavior
 - **Negligible overhead** (atomic operations ~50ns)
 - **Drop rates and overflow metrics** inform capacity planning
@@ -414,6 +433,7 @@ Statistics collection is mandatory because:
 #### Why Functional Options
 
 We chose functional options over struct-based configuration because:
+
 - **More idiomatic Go** pattern
 - **Composable and extensible** - easy to add features
 - **Clear intent** with named functions
@@ -423,6 +443,7 @@ We chose functional options over struct-based configuration because:
 #### Why Circular Buffer
 
 Circular buffers provide:
+
 - **O(1) operations** for write and read
 - **Predictable memory** usage (pre-allocated)
 - **Zero allocations** during operation
@@ -432,6 +453,7 @@ Circular buffers provide:
 ## Thread Safety
 
 All buffer operations are thread-safe:
+
 - Multiple producers can write concurrently
 - Multiple consumers can read concurrently
 - Statistics use atomic operations
@@ -494,6 +516,7 @@ func setupEventPipeline(ctx context.Context, registry *metric.MetricsRegistry) {
 ## Contributing
 
 When implementing new buffer types:
+
 1. Statistics must always be initialized
 2. Follow functional options pattern
 3. Support optional Prometheus metrics

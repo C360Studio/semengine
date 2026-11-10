@@ -2,6 +2,7 @@ package buffer
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -20,17 +21,18 @@ type circularBuffer[T any] struct {
 	metrics  *bufferMetrics // Optional Prometheus metrics
 	opts     *bufferOptions[T]
 
-	// For Block policy
-	notEmpty *sync.Cond
-	notFull  *sync.Cond
-	closed   bool
+	// For Block policy. spaceFreed is nil until a writer waits for space; a read, Clear or
+	// Close closes it and clears the field, waking every waiting writer to look again.
+	notEmpty   *sync.Cond
+	spaceFreed chan struct{}
+	closed     bool
 }
 
 // newCircularBuffer creates a new circular buffer instance.
 // Returns an error if metrics registration fails when requested.
 func newCircularBuffer[T any](capacity int, opts *bufferOptions[T]) (*circularBuffer[T], error) {
 	if capacity <= 0 {
-		capacity = 1 // Minimum capacity
+		capacity = 1 // Minimum capacity; declared on NewCircularBuffer
 	}
 
 	// Stats are ALWAYS initialized - observability is not optional
@@ -55,20 +57,28 @@ func newCircularBuffer[T any](capacity int, opts *bufferOptions[T]) (*circularBu
 		opts:     opts,
 	}
 
-	// Set up condition variables for Block policy
 	cb.notEmpty = sync.NewCond(&cb.mu)
-	cb.notFull = sync.NewCond(&cb.mu)
 
 	return cb, nil
 }
 
 // Write adds an item to the buffer according to the overflow policy.
 func (cb *circularBuffer[T]) Write(item T) error {
+	dropped, hasDropped, err := cb.write(item)
+	if hasDropped {
+		// After the lock is released, so the callback may call any buffer method.
+		cb.opts.dropCallback(dropped)
+	}
+	return err
+}
+
+// write does Write's work under the lock and returns the item a drop callback must receive.
+func (cb *circularBuffer[T]) write(item T) (dropped T, hasDropped bool, err error) {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	if cb.closed {
-		return errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", "Write", "buffer closed")
+		return dropped, false, errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", "Write", "buffer closed")
 	}
 
 	// Handle different overflow policies when buffer is full
@@ -76,56 +86,52 @@ func (cb *circularBuffer[T]) Write(item T) error {
 		switch cb.opts.overflowPolicy {
 		case DropOldest:
 			// Remove oldest item to make room
-			droppedItem := cb.items[cb.tail]
+			dropped = cb.items[cb.tail]
 			cb.tail = (cb.tail + 1) % cb.capacity
 			cb.size--
-
-			// ALWAYS track in stats
-			cb.stats.Overflow()
-			cb.stats.Drop()
-
-			// ALSO track in metrics if enabled
-			if cb.metrics != nil {
-				cb.metrics.recordOverflow()
-				cb.metrics.recordDrop()
-			}
-
-			if cb.opts.dropCallback != nil {
-				// Call dropCallback outside the lock to avoid deadlock
-				defer cb.opts.dropCallback(droppedItem)
-			}
+			cb.recordDrop()
+			hasDropped = cb.opts.dropCallback != nil
 
 		case DropNewest:
 			// Drop the new item
-			// ALWAYS track in stats
-			cb.stats.Overflow()
-			cb.stats.Drop()
-
-			// ALSO track in metrics if enabled
-			if cb.metrics != nil {
-				cb.metrics.recordOverflow()
-				cb.metrics.recordDrop()
-			}
-
-			if cb.opts.dropCallback != nil {
-				defer cb.opts.dropCallback(item)
-			}
-			return nil
+			cb.recordDrop()
+			return item, cb.opts.dropCallback != nil, nil
 
 		case Block:
 			// Wait for space to become available
 			for cb.size == cb.capacity && !cb.closed {
-				cb.notFull.Wait()
+				space := cb.spaceChan()
+				cb.mu.Unlock()
+				<-space
+				cb.mu.Lock()
 			}
 
 			if cb.closed {
-				return errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", "Write",
+				return dropped, false, errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", "Write",
 					"buffer closed during blocking wait")
 			}
 		}
 	}
 
-	// Add the item
+	cb.push(item)
+	return dropped, hasDropped, nil
+}
+
+// recordDrop counts one overflow and one drop. The caller holds the lock.
+func (cb *circularBuffer[T]) recordDrop() {
+	// ALWAYS track in stats
+	cb.stats.Overflow()
+	cb.stats.Drop()
+
+	// ALSO track in metrics if enabled
+	if cb.metrics != nil {
+		cb.metrics.recordOverflow()
+		cb.metrics.recordDrop()
+	}
+}
+
+// push adds item at the head and records the write. The caller holds the lock and has made room.
+func (cb *circularBuffer[T]) push(item T) {
 	cb.items[cb.head] = item
 	cb.head = (cb.head + 1) % cb.capacity
 	cb.size++
@@ -141,8 +147,22 @@ func (cb *circularBuffer[T]) Write(item T) error {
 
 	// Signal waiting readers
 	cb.notEmpty.Signal()
+}
 
-	return nil
+// spaceChan returns the channel the next freed space closes. The caller holds the lock.
+func (cb *circularBuffer[T]) spaceChan() <-chan struct{} {
+	if cb.spaceFreed == nil {
+		cb.spaceFreed = make(chan struct{})
+	}
+	return cb.spaceFreed
+}
+
+// signalSpace wakes every writer waiting for space. The caller holds the lock.
+func (cb *circularBuffer[T]) signalSpace() {
+	if cb.spaceFreed != nil {
+		close(cb.spaceFreed)
+		cb.spaceFreed = nil
+	}
 }
 
 // Read retrieves and removes one item from the buffer.
@@ -173,7 +193,7 @@ func (cb *circularBuffer[T]) Read() (T, bool) {
 	}
 
 	// Signal waiting writers
-	cb.notFull.Signal()
+	cb.signalSpace()
 
 	return item, true
 }
@@ -218,12 +238,8 @@ func (cb *circularBuffer[T]) ReadBatch(maxN int) []T {
 		cb.metrics.updateSize(cb.size, cb.capacity)
 	}
 
-	// Signal waiting writers if we freed up space
-	if readCount > 0 {
-		for i := 0; i < readCount; i++ {
-			cb.notFull.Signal()
-		}
-	}
+	// Signal waiting writers: readCount > 0 here, so space was freed
+	cb.signalSpace()
 
 	return result
 }
@@ -280,24 +296,27 @@ func (cb *circularBuffer[T]) IsEmpty() bool {
 
 // Clear removes all items from the buffer.
 func (cb *circularBuffer[T]) Clear() {
+	dropped := cb.clear()
+	// After the lock is released, so the callback may call any buffer method.
+	for _, item := range dropped {
+		cb.opts.dropCallback(item)
+	}
+}
+
+// clear does Clear's work under the lock and returns the items a drop callback must receive.
+func (cb *circularBuffer[T]) clear() []T {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	var zero T
 
-	// Call dropCallback for all items if callback is set
+	var dropped []T
 	if cb.opts.dropCallback != nil {
-		itemsToDrop := make([]T, cb.size)
+		dropped = make([]T, cb.size)
 		for i := 0; i < cb.size; i++ {
 			idx := (cb.tail + i) % cb.capacity
-			itemsToDrop[i] = cb.items[idx]
+			dropped[i] = cb.items[idx]
 		}
-		// Call callbacks outside the lock to avoid deadlock
-		defer func() {
-			for _, item := range itemsToDrop {
-				cb.opts.dropCallback(item)
-			}
-		}()
 	}
 
 	// Clear all items
@@ -318,7 +337,9 @@ func (cb *circularBuffer[T]) Clear() {
 	}
 
 	// Signal all waiting writers
-	cb.notFull.Broadcast()
+	cb.signalSpace()
+
+	return dropped
 }
 
 // Stats returns buffer statistics (always available for observability).
@@ -339,7 +360,7 @@ func (cb *circularBuffer[T]) Close() error {
 
 	// Wake up all waiting goroutines
 	cb.notEmpty.Broadcast()
-	cb.notFull.Broadcast()
+	cb.signalSpace()
 
 	return nil
 }
@@ -349,111 +370,74 @@ func (cb *circularBuffer[T]) WriteWithTimeout(item T, timeout time.Duration) err
 	if cb.opts.overflowPolicy != Block {
 		return cb.Write(item)
 	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-
-	return cb.WriteWithContext(ctx, item)
+	if timeout <= 0 {
+		// As at the pin: a bound already passed refuses, even when there is space.
+		return cb.writeBounded("WriteWithTimeout", item, expired, deadlineExceeded, nil)
+	}
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	return cb.writeBounded("WriteWithTimeout", item, nil, nil, timer.C)
 }
 
 // WriteWithContext attempts to write an item with context cancellation when using Block policy.
 func (cb *circularBuffer[T]) WriteWithContext(ctx context.Context, item T) error {
+	if ctx == nil {
+		return errs.WrapInvalid(errNilContext, "Buffer", "WriteWithContext", "nil context")
+	}
 	if cb.opts.overflowPolicy != Block {
 		return cb.Write(item)
 	}
+	return cb.writeBounded("WriteWithContext", item, ctx.Done(), ctx.Err, nil)
+}
 
+var (
+	errNilContext = errors.New("nil context")
+
+	// expired is a closed channel: the bound of a write whose timeout has already passed.
+	expired = func() chan struct{} { c := make(chan struct{}); close(c); return c }()
+)
+
+func deadlineExceeded() error { return context.DeadlineExceeded }
+
+// writeBounded writes item under the Block policy, waiting for space until done is closed
+// (returning doneErr()) or expiry fires (returning context.DeadlineExceeded); either may be nil.
+// A bound that has already ended refuses before any wait, even when there is space. It starts
+// no goroutine: the wait is one select on the space, done and expiry channels.
+func (cb *circularBuffer[T]) writeBounded(op string, item T, done <-chan struct{}, doneErr func() error,
+	expiry <-chan time.Time,
+) error {
 	cb.mu.Lock()
 	defer cb.mu.Unlock()
 
 	if cb.closed {
-		return errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", "WriteWithContext", "buffer closed")
+		return errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", op, "buffer closed")
 	}
 
-	// Check if context is already cancelled
 	select {
-	case <-ctx.Done():
-		return ctx.Err()
+	case <-done:
+		return doneErr()
 	default:
 	}
 
-	// Create a done channel to signal when we're done waiting
-	done := make(chan struct{})
-	defer close(done)
-
-	// Track goroutine exit with WaitGroup to ensure cleanup
-	var ctxWg sync.WaitGroup
-	ctxWg.Add(1)
-
-	// Set up context cancellation handler. Acquire cb.mu before
-	// Broadcast to avoid a lost-wakeup race: without the lock, the
-	// Broadcast can fire between the waiter's pre-wait ctx check and
-	// the actual cb.notFull.Wait() call (where the waiter enqueues
-	// onto the cond's waiter list). The Broadcast hits zero waiters
-	// and is lost; the waiter then enters Wait with nothing left to
-	// wake it, hanging until some other unrelated Signal/Broadcast.
-	//
-	// Holding cb.mu around Broadcast serializes against the
-	// pre-wait window: either the waiter has finished entering Wait
-	// (released mu, now on the cond queue → Broadcast wakes it), or
-	// the waiter hasn't reached Wait yet (still holding mu → we
-	// block here until it enters Wait + releases mu).
-	//
-	// Detected via TestConcurrentContextCancellations CI timeout
-	// 2026-05-13. Local runs passed because the lost-wakeup
-	// timing window is small and CI runners' contention shape
-	// happens to widen it.
-	go func() {
-		defer ctxWg.Done()
-		select {
-		case <-ctx.Done():
-			cb.mu.Lock()
-			cb.notFull.Broadcast()
-			cb.mu.Unlock()
-		case <-done:
-			// Function completed successfully, exit goroutine
-		}
-	}()
-
-	// Wait for space or context cancellation
 	for cb.size == cb.capacity && !cb.closed {
-		// Check context before waiting
+		space := cb.spaceChan()
+		cb.mu.Unlock()
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
+		case <-space:
+		case <-done:
+			cb.mu.Lock()
+			return doneErr()
+		case <-expiry:
+			cb.mu.Lock()
+			return context.DeadlineExceeded
 		}
-
-		// Wait for space to become available
-		cb.notFull.Wait()
-
-		// Check context after being woken up
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+		cb.mu.Lock()
 	}
 
 	if cb.closed {
-		return errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", "WriteWithContext", "buffer closed during wait")
+		return errs.WrapInvalid(errs.ErrAlreadyStopped, "Buffer", op, "buffer closed during wait")
 	}
 
-	// Add the item
-	cb.items[cb.head] = item
-	cb.head = (cb.head + 1) % cb.capacity
-	cb.size++
-
-	// ALWAYS track in stats
-	cb.stats.Write()
-	cb.stats.UpdateSize(int64(cb.size))
-
-	// ALSO track in metrics if enabled
-	if cb.metrics != nil {
-		cb.metrics.recordWrite(cb.size, cb.capacity)
-	}
-
-	// Signal waiting readers
-	cb.notEmpty.Signal()
-
+	cb.push(item)
 	return nil
 }

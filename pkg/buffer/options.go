@@ -32,8 +32,8 @@ func WithOverflowPolicy[T any](policy OverflowPolicy) Option[T] {
 }
 
 // WithMetrics enables Prometheus metrics export for buffer statistics.
-// If registry is nil, this option is ignored.
-// Registry should not be nil in normal usage - this handles edge cases gracefully.
+// A nil registry or an empty prefix records no metrics: the option is then ignored, and
+// statistics are still collected.
 func WithMetrics[T any](registry *metric.MetricsRegistry, prefix string) Option[T] {
 	return func(opts *bufferOptions[T]) {
 		if registry != nil && prefix != "" {
@@ -44,7 +44,8 @@ func WithMetrics[T any](registry *metric.MetricsRegistry, prefix string) Option[
 }
 
 // WithDropCallback sets a callback function that is called when items are dropped.
-// The callback receives the item that was dropped.
+// The callback receives the item that was dropped. It runs after the buffer's lock is
+// released, on the goroutine that dropped the item, so it may call any buffer method.
 func WithDropCallback[T any](callback DropCallback[T]) Option[T] {
 	return func(opts *bufferOptions[T]) {
 		opts.dropCallback = callback

@@ -17,7 +17,7 @@ after 2.2, before archive.
   family), so it builds; `TestMetricsOnInjectedRegistry`. Then the failing-first tests
   `TestWriteWithContextRefusesNilContext` (R5) and `TestDropCallbackMayUseBuffer` (R6, a hang to `go test -timeout`),
   output in `notes/2.1.md`. Gate: `task build`; the two failures are recorded.
-- [ ] 2.2 Fix R3 to R6 and add R11 (the two bounded writes on `Buffer[T]`) as the design states them, and add
+- [x] 2.2 Fix R3 to R6 and add R11 (the two bounded writes on `Buffer[T]`) as the design states them, and add
   the behaviour pins `TestWriteWithTimeoutAssertable`,
   `TestWriteWithTimeoutExpires`, `TestWriteWithTimeoutSucceedsWhenSpaceFrees`, `TestWriteWithContextLeavesNothing`
   and `TestCapacityBelowOneIsOne`. Show each pin able to fail with `task mutate:check`, recorded in `notes/2.2.md`.

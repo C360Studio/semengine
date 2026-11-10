@@ -3,9 +3,9 @@ package buffer
 import (
 	"context"
 	"errors"
-	"runtime"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	cerrs "github.com/c360studio/semengine/pkg/errs"
@@ -420,110 +420,75 @@ func TestBufferBlockingPolicy(t *testing.T) {
 }
 
 func TestBlockingPolicyWithTimeout(t *testing.T) {
-	buf, err := NewCircularBuffer[int](2, WithOverflowPolicy[int](Block))
-	if err != nil {
-		t.Fatalf("Failed to create buffer: %v", err)
-	}
-	defer buf.Close()
+	// In a synctest bubble the timer runs on the fake clock: the call returns once every
+	// goroutine in the bubble is blocked and the clock reaches the timeout.
+	synctest.Test(t, func(t *testing.T) {
+		buf := fullBlockBuffer(t)
+		defer buf.Close()
 
-	// Fill buffer
-	if err := buf.Write(1); err != nil {
-		t.Fatalf("Failed to write first item: %v", err)
-	}
-	if err := buf.Write(2); err != nil {
-		t.Fatalf("Failed to write second item: %v", err)
-	}
-
-	// Test WriteWithTimeout when buffer is full
-	start := time.Now()
-	err = buf.(*circularBuffer[int]).WriteWithTimeout(3, 100*time.Millisecond)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Error("Expected timeout error when buffer is full")
-	}
-	if err != context.DeadlineExceeded {
-		t.Errorf("Expected context.DeadlineExceeded, got %v", err)
-	}
-	if elapsed < 90*time.Millisecond || elapsed > 200*time.Millisecond {
-		t.Errorf("Expected ~100ms timeout, got %v", elapsed)
-	}
+		// Test WriteWithTimeout when buffer is full
+		err := buf.WriteWithTimeout(3, 100*time.Millisecond)
+		if err != context.DeadlineExceeded {
+			t.Errorf("Expected context.DeadlineExceeded, got %v", err)
+		}
+	})
 }
 
 func TestBlockingPolicyWithContextCancellation(t *testing.T) {
-	buf, err := NewCircularBuffer[int](2, WithOverflowPolicy[int](Block))
-	require.NoError(t, err, "Failed to create blocking buffer")
-	defer buf.Close()
+	synctest.Test(t, func(t *testing.T) {
+		buf := fullBlockBuffer(t)
+		defer buf.Close()
 
-	// Fill buffer
-	_ = buf.Write(1)
-	_ = buf.Write(2)
-
-	// Test WriteWithContext cancellation
-	ctx, cancel := context.WithCancel(context.Background())
-
-	// Start a goroutine to cancel context after a short delay
-	go func() {
-		time.Sleep(50 * time.Millisecond)
+		ctx, cancel := context.WithCancel(t.Context())
+		result := make(chan error, 1)
+		go func() { result <- buf.WriteWithContext(ctx, 3) }()
+		synctest.Wait() // the writer is waiting for space
 		cancel()
-	}()
 
-	start := time.Now()
-	err = buf.(*circularBuffer[int]).WriteWithContext(ctx, 3)
-	elapsed := time.Since(start)
-
-	if err == nil {
-		t.Error("Expected cancellation error")
-	}
-	if err != context.Canceled {
-		t.Errorf("Expected context.Canceled, got %v", err)
-	}
-	if elapsed < 40*time.Millisecond || elapsed > 100*time.Millisecond {
-		t.Errorf("Expected ~50ms cancellation, got %v", elapsed)
-	}
+		if err := <-result; err != context.Canceled {
+			t.Errorf("Expected context.Canceled, got %v", err)
+		}
+	})
 }
 
 func TestBlockingPolicyUnblocksOnRead(t *testing.T) {
-	buf, err := NewCircularBuffer[int](2, WithOverflowPolicy[int](Block))
-	if err != nil {
-		t.Fatalf("Failed to create buffer: %v", err)
-	}
-	defer buf.Close()
+	synctest.Test(t, func(t *testing.T) {
+		buf := fullBlockBuffer(t)
+		defer buf.Close()
 
-	// Fill buffer
-	_ = buf.Write(1)
-	_ = buf.Write(2)
+		var wg sync.WaitGroup
+		var writeErr error
 
-	var wg sync.WaitGroup
-	var writeErr error
+		// Start blocking write in goroutine
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			writeErr = buf.Write(3)
+		}()
 
-	// Start blocking write in goroutine
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		writeErr = buf.Write(3)
-	}()
+		synctest.Wait() // the write is blocked
+		if buf.Stats().Writes() != 2 {
+			t.Fatalf("the third write did not block: %d writes", buf.Stats().Writes())
+		}
 
-	// Wait a bit to ensure write is blocked
-	time.Sleep(50 * time.Millisecond)
+		// Read to unblock write
+		value, ok := buf.Read()
+		if !ok || value != 1 {
+			t.Errorf("Expected to read 1, got %d (ok=%v)", value, ok)
+		}
 
-	// Read to unblock write
-	value, ok := buf.Read()
-	if !ok || value != 1 {
-		t.Errorf("Expected to read 1, got %d (ok=%v)", value, ok)
-	}
+		// Wait for write to complete; wg.Wait orders the reads of writeErr and Size after it
+		wg.Wait()
 
-	// Wait for write to complete
-	wg.Wait()
+		if writeErr != nil {
+			t.Errorf("Write should have succeeded after read, got error: %v", writeErr)
+		}
 
-	if writeErr != nil {
-		t.Errorf("Write should have succeeded after read, got error: %v", writeErr)
-	}
-
-	// Verify the write succeeded
-	if buf.Size() != 2 {
-		t.Errorf("Expected size 2 after unblocking write, got %d", buf.Size())
-	}
+		// Verify the write succeeded
+		if buf.Size() != 2 {
+			t.Errorf("Expected size 2 after unblocking write, got %d", buf.Size())
+		}
+	})
 }
 
 func TestErrorFrameworkIntegration(t *testing.T) {
@@ -641,76 +606,57 @@ func TestConcurrentContextCancellations(t *testing.T) {
 }
 
 func TestBlockingPolicyNoGoroutineLeaks(t *testing.T) {
-	initialGoroutines := countGoroutines()
+	synctest.Test(t, func(t *testing.T) {
+		buf, err := NewCircularBuffer[int](1, WithOverflowPolicy[int](Block))
+		if err != nil {
+			t.Fatalf("Failed to create buffer: %v", err)
+		}
+		defer buf.Close()
 
-	buf, err := NewCircularBuffer[int](1, WithOverflowPolicy[int](Block))
-	if err != nil {
-		t.Fatalf("Failed to create buffer: %v", err)
-	}
-	defer buf.Close()
+		// Fill buffer
+		_ = buf.Write(1)
 
-	// Fill buffer
-	_ = buf.Write(1)
+		// Test multiple cancelled context operations
+		for i := 0; i < 10; i++ {
+			ctx, cancel := context.WithTimeout(t.Context(), 10*time.Millisecond)
+			_ = buf.WriteWithContext(ctx, i)
+			cancel()
+		}
 
-	// Test multiple cancelled context operations
-	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
-		_ = buf.(*circularBuffer[int]).WriteWithContext(ctx, i)
-		cancel()
-	}
-
-	// Give time for goroutines to cleanup
-	time.Sleep(100 * time.Millisecond)
-
-	finalGoroutines := countGoroutines()
-
-	// Allow for some variance in goroutine count but no significant leak
-	if finalGoroutines > initialGoroutines+2 {
-		t.Errorf("Potential goroutine leak: started with %d, ended with %d", initialGoroutines, finalGoroutines)
-	}
+		synctest.Wait() // every goroutine that is going to exit has exited
+		if n := bubbleGoroutinesIn(bufferFrame); n != 0 {
+			t.Errorf("goroutine leak: %d goroutines still run buffer code", n)
+		}
+	})
 }
 
 func TestWriteWithContextNoLeaksOnSuccess(t *testing.T) {
-	initialGoroutines := countGoroutines()
-
-	buf, err := NewCircularBuffer[int](2, WithOverflowPolicy[int](Block))
-	if err != nil {
-		t.Fatalf("Failed to create buffer: %v", err)
-	}
-	defer buf.Close()
-
-	// Fill buffer leaving one space
-	_ = buf.Write(1)
-
-	// Test successful WriteWithContext operations (should not leak goroutines)
-	for i := 0; i < 10; i++ {
-		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-		err := buf.(*circularBuffer[int]).WriteWithContext(ctx, i)
+	synctest.Test(t, func(t *testing.T) {
+		buf, err := NewCircularBuffer[int](2, WithOverflowPolicy[int](Block))
 		if err != nil {
-			t.Errorf("WriteWithContext failed: %v", err)
+			t.Fatalf("Failed to create buffer: %v", err)
+		}
+		defer buf.Close()
+
+		// Fill buffer leaving one space
+		_ = buf.Write(1)
+
+		// Test successful WriteWithContext operations (should not leak goroutines)
+		for i := 0; i < 10; i++ {
+			ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+			err := buf.WriteWithContext(ctx, i)
+			if err != nil {
+				t.Errorf("WriteWithContext failed: %v", err)
+			}
+
+			// Read immediately to make space
+			buf.Read()
+			cancel()
 		}
 
-		// Read immediately to make space
-		buf.Read()
-		cancel()
-	}
-
-	// Give time for goroutines to cleanup
-	time.Sleep(50 * time.Millisecond)
-
-	finalGoroutines := countGoroutines()
-
-	// Should not leak goroutines even on successful writes
-	if finalGoroutines > initialGoroutines+1 {
-		t.Errorf(
-			"Goroutine leak on successful writes: started with %d, ended with %d",
-			initialGoroutines,
-			finalGoroutines,
-		)
-	}
-}
-
-// Helper function to count goroutines for leak detection
-func countGoroutines() int {
-	return runtime.NumGoroutine()
+		synctest.Wait() // every goroutine that is going to exit has exited
+		if n := bubbleGoroutinesIn(bufferFrame); n != 0 {
+			t.Errorf("goroutine leak on successful writes: %d goroutines still run buffer code", n)
+		}
+	})
 }

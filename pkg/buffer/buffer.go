@@ -10,6 +10,11 @@
 // Prometheus metrics can be optionally enabled via WithMetrics() functional option.
 package buffer
 
+import (
+	"context"
+	"time"
+)
+
 // Buffer represents a generic buffer interface that all buffer implementations must satisfy.
 // The buffer is parameterized by item type T for type safety.
 type Buffer[T any] interface {
@@ -49,6 +54,18 @@ type Buffer[T any] interface {
 
 	// Close shuts down the buffer and releases any resources.
 	Close() error
+
+	// WriteWithTimeout writes item, waiting at most timeout for space under the Block policy.
+	// Once timeout has passed with the buffer still full it returns context.DeadlineExceeded
+	// and writes nothing; a timeout of zero or less refuses at once, even when there is space.
+	// Under the other policies it behaves as Write.
+	WriteWithTimeout(item T, timeout time.Duration) error
+
+	// WriteWithContext writes item, waiting for space under the Block policy until ctx ends,
+	// when it returns ctx.Err() and writes nothing; an already-ended ctx refuses at once, even
+	// when there is space. Under the other policies it behaves as Write. A nil ctx is refused
+	// with an ErrorInvalid error under every policy.
+	WriteWithContext(ctx context.Context, item T) error
 }
 
 // OverflowPolicy defines how the buffer behaves when it reaches capacity.
@@ -79,15 +96,21 @@ func (p OverflowPolicy) String() string {
 	}
 }
 
-// DropCallback is called when an item is dropped due to overflow policy.
-// It receives the item that was dropped.
+// DropCallback is called when an item is dropped due to overflow policy or Clear.
+// It receives the item that was dropped. It runs on the goroutine that dropped the item, after
+// the buffer's lock is released, so it may call any buffer method.
 type DropCallback[T any] func(item T)
 
 // NewCircularBuffer creates a new circular buffer with the specified capacity and options.
 // Stats are ALWAYS collected for observability. Metrics are optional via WithMetrics().
 // Returns an error if metrics registration fails when metrics are requested.
-// Capacity is required - all other configuration is via functional options.
+// Capacity is required - all other configuration is via functional options. A capacity
+// below 1 becomes 1. On error the returned Buffer is nil.
 func NewCircularBuffer[T any](capacity int, options ...Option[T]) (Buffer[T], error) {
 	opts := applyOptions(options...)
-	return newCircularBuffer(capacity, opts)
+	cb, err := newCircularBuffer(capacity, opts)
+	if err != nil {
+		return nil, err
+	}
+	return cb, nil
 }

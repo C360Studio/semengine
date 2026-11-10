@@ -1,6 +1,6 @@
 # Proposal: setup-04a-07-substrate-seam-graph-clustering
 
-Approved-by: owner (Coby Leuschke), 2026-11-10, <https://github.com/C360Studio/semengine/pull/582#issuecomment-6768832111>
+Approved-by: owner (Coby Leuschke), 2026-11-10, PR #582 comment 6768832111 sha256:c8ee3104ece2
 
 Track: `design` (adds a capability, `graph-clustering`; modifies `entity-state-follower` and `composed-stack`).
 

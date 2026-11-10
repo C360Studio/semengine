@@ -188,8 +188,6 @@ var catalog = func() []natsclient.BucketSpec {
 		derived(graph.BucketCommunityIndex, "graph-clustering", "Community detection index"),
 		derived(graph.BucketCommunitySummaries, "graph-clustering",
 			"LLM community summaries (content-addressed by membership hash, SemStreams ADR-087)"),
-		derived(graph.BucketAnomalyIndex, "graph-clustering",
-			"Anomaly detection index for structural gaps and inferences"),
 
 		// Framework operational plane.
 		graphStatus,

@@ -36,7 +36,6 @@ const (
 	// the worker owns the LLM prose (this bucket), so a lagging worker can never
 	// clobber a fresher partition or resurrect a Prune-deleted community (SemStreams ADR-087).
 	BucketCommunitySummaries = "COMMUNITY_SUMMARIES"
-	BucketAnomalyIndex       = "ANOMALY_INDEX"
 
 	// BucketGraphIngestAppliedSeq is graph-ingest's SemStreams ADR-072 redelivery-guard
 	// durable tier: `(entityID/streamName) → (stream generation, last-applied

@@ -10,17 +10,18 @@ not a task tracker and not a description of the tree.
   (`docs/contract.md`) and approved in SETUP 03B (issue #8), but no code implements it yet.
 - **No runtime binary, no release, no tag.**
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **Three of the seven Slice 04A implementation changes are unfinished.** SETUP 02, SETUP 03B, the Slice 04A design,
-  `flake-defense` and the first four implementation changes are archived: `setup-04a-01-floor`,
-  `setup-04a-02-ingest-kernel` (PR #93), `setup-04a-03-boot` (seven packages, ending with PR #393) and
-  `setup-04a-04-graph-roots`. Change 4 landed its nine ruled items one pull request at a time, each with its own OpenSpec
-  change (archived as `setup-04a-04-graph-roots-*`, the last PR #544): `internal/revlag`, the shared component
-  lifecycle `component.Lifecycle`, `processor/graph-index` with `graph/follower` (the shared reader of entity
-  changes), `storage/objectstore`, `graph/embedding`, `graph/query`, `pkg/graphview`, `graph/clustering` (no LLM
-  summaries yet; they wait for tier 2) and `processor/graph-query`. The capability specs under `openspec/specs/` are
-  the current truth, and `docs/contract.md` states the tier-0 contract 03B approved. `vocabulary/export` was ported
-  ahead of change 7 (#234). `processor/graph-clustering` was ported by
-  `setup-04a-07-substrate-seam-graph-clustering`; the rest of change 7 (the spatial and temporal responders) is not
+- **Two of the seven Slice 04A implementation changes are unfinished: the rule core (change 6) and the rest of change
+  7.** SETUP 02, SETUP 03B, the Slice 04A design, `flake-defense` and the first five implementation changes are
+  archived: `setup-04a-01-floor`, `setup-04a-02-ingest-kernel` (PR #93), `setup-04a-03-boot` (seven packages, ending
+  with PR #393), `setup-04a-04-graph-roots` and `setup-04a-05-*` (graph-embedding and `pkg/fusion`, ending with PR
+  #577). Change 4 landed its nine ruled items one pull request at a time, each with its own OpenSpec change (archived as
+  `setup-04a-04-graph-roots-*`, the last PR #544): `internal/revlag`, the shared component lifecycle
+  `component.Lifecycle`, `processor/graph-index` with `graph/follower` (the shared reader of entity changes),
+  `storage/objectstore`, `graph/embedding`, `graph/query`, `pkg/graphview`, `graph/clustering` (no LLM summaries yet;
+  they wait for tier 2) and `processor/graph-query`. The capability specs under `openspec/specs/` are the current truth,
+  and `docs/contract.md` states the tier-0 contract 03B approved. `vocabulary/export` was ported ahead of change 7
+  (#234). `processor/graph-clustering` was ported by `setup-04a-07-substrate-seam-graph-clustering`; the rest of change
+  7 (the spatial and temporal responders, `internal/maxdelivery`, `composition/cli`, `graph/geo/geojson`) is not
   started.
 
 ## Present

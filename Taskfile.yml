@@ -136,7 +136,7 @@ tasks:
       - scripts/tools-changed.sh
 
   # .bin/ateam is the release ci.yml pins, so local gates run the version CI runs whatever ateam
-  # is on PATH. A bare tag check: a development build of the same tag (v0.3.9-4-g...) is rebuilt.
+  # is on PATH. A bare tag check: a development build of the same tag (v0.4.0-4-g...) is rebuilt.
   ateam:bin:
     desc: Build the ateam release pinned in .github/workflows/ci.yml into .bin/ateam; skipped when .bin/ateam already reports the pin
     vars:

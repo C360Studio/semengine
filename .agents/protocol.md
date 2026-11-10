@@ -4,6 +4,13 @@ Canonical. `CLAUDE.md` and `AGENTS.md` point to this file and carry the four gat
 inline; edit the protocol here only. Read it before taking, landing, or closing work; the pickup and handoff skills
 read it.
 
+ateam's base contracts and skills (`.agents/contracts/{architect,developer,reviewer}.md`, `.agents/skills/`) cite
+ateam's numbered protocol, which this file replaces. Read their citations this way: § 1 is the list of state homes
+below; § 2 is [Work lifecycle](#work-lifecycle), whose steps 1 to 5 are **Clarify**, **Take work** (claim), the change
+itself under [Bounded port scope](#bounded-port-scope), **Land** with [Verification](#verification), and **Close**;
+§ 3 and *Test-to-spec attribution* are [Verification](#verification) and `docs/testing.md`; § 4 is
+**Cross-agent review**.
+
 State that all agents must see lives in the repository's tools, never in a prose document or an agent's private
 memory. Each question has one home, and each home is a `gh` or `task` query. There is no `/tickets` state.
 
@@ -28,7 +35,10 @@ memory. Each question has one home, and each home is a `gh` or `task` query. The
   in a heading or a paragraph outside every task does not show, and `task spec:check` fails on it. Proposal approval
   (owner ruling of 2026-10-28 on #447, items 1 to 3): `proposal.md` stays on one page (60 lines or fewer;
   `task spec:check` warns past it) and carries `Approved-by:`, empty until the owner fills
-  `<name> (<YYYY-MM-DD>)`; the line may link the issue comment where the owner ruled. The first task holds
+  `<name> (<YYYY-MM-DD>) sha256:<12 hex>`, the digest of `proposal.md` and `design.md` that `task spec:queue` prints;
+  a link to the issue comment where the owner ruled may sit before the digest, which ends the line.
+  `task spec:check` fails once either file changes after approval, and warns on a line without a digest. The first
+  task holds
   `Hold: OPEN-Q proposal awaits owner approval` until the owner approves; the owner removes the hold in the same edit
   that fills `Approved-by:`. The one hold covers proposal and design. A `design.md` past 120 lines draws a warning,
   which is accepted (port designs, for example, keep the shape sweep, pin probes and ADR listing their rules require).

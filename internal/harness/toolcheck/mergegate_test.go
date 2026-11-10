@@ -248,11 +248,14 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 // mergeCheckWorkflowViolations), and every ateam install line in the two files names one release.
 // As above, the expected values are constants here, never read from the files under test.
 var (
-	requiredNeeds            = []string{"verify"}
-	mergeCheckPermissions    = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
-	pullRequestTypes         = []string{"opened", "synchronize", "reopened", "ready_for_review"}
-	mergeCheckTypes          = []string{"opened", "synchronize", "reopened", "ready_for_review", "edited"}
-	mergeCheckRequiredChecks = "Required,Merge check"
+	requiredNeeds         = []string{"verify"}
+	mergeCheckPermissions = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
+	// The probe also reads the head's Merge check check run: ateam v0.4.0 answers awaiting=false
+	// once a successful one stands there (ateam #359).
+	mergeCheckProbePermissions = map[string]string{"checks": "read", "contents": "read", "issues": "read", "pull-requests": "read"}
+	pullRequestTypes           = []string{"opened", "synchronize", "reopened", "ready_for_review"}
+	mergeCheckTypes            = []string{"opened", "synchronize", "reopened", "ready_for_review", "edited"}
+	mergeCheckRequiredChecks   = "Required,Merge check"
 )
 
 const (
@@ -314,7 +317,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
       - run: task verify
   required:
     runs-on: ubuntu-24.04
@@ -355,7 +358,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
       - name: Check
         env:
           ATEAM_REQUIRED_CHECKS: Required,Merge check
@@ -366,6 +369,7 @@ jobs:
     if: ${{ !github.event.pull_request.draft }}
     timeout-minutes: 5
     permissions:
+      checks: read
       contents: read
       issues: read
       pull-requests: read
@@ -376,7 +380,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
-      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
+      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
       - name: Probe
         id: probe
         run: |
@@ -476,9 +480,9 @@ jobs:
 		{"fetch-depth dropped", "        with:\n          fetch-depth: 0\n", "",
 			[]string{"job verify", "fetch-depth: 0"}},
 		// "Pins differ", from the ci.yml side.
-		{"ci.yml on another release", "ateam@v0.3.9", "ateam@v0.3.4",
-			[]string{"v0.3.4", "v0.3.9", "one version"}},
-		{"ci.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n", "",
+		{"ci.yml on another release", "ateam@v0.4.0", "ateam@v0.3.4",
+			[]string{"v0.3.4", "v0.4.0", "one version"}},
+		{"ci.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0\n", "",
 			[]string{"ci.yml", "no ateam install line"}},
 	} {
 		t.Run("ci.yml/"+tc.name, func(t *testing.T) {
@@ -496,9 +500,9 @@ jobs:
 			[]string{"merge-check.yml", "step 1", "base commit"}},
 		{"head sha named", "pull_request.base.sha", "pull_request.head.sha",
 			[]string{"merge-check.yml", "step 1", "head.sha", "base commit"}},
-		{"pins differ", "ateam@v0.3.9", "ateam@v0.3.4",
-			[]string{"v0.3.4", "v0.3.9", "one version"}},
-		{"merge-check.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n", "",
+		{"pins differ", "ateam@v0.4.0", "ateam@v0.3.4",
+			[]string{"v0.3.4", "v0.4.0", "one version"}},
+		{"merge-check.yml installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0\n", "",
 			[]string{"merge-check.yml", "no ateam install line"}},
 		{"credentials persisted", "          persist-credentials: false\n", "",
 			[]string{"merge-check.yml", "persist-credentials", "false"}},
@@ -527,15 +531,19 @@ jobs:
 			[]string{"merge-check.yml", "job awaiting", "named", "Merge check probe"}},
 		{"probe runs on a draft", "    if: ${{ !github.event.pull_request.draft }}\n", "",
 			[]string{"merge-check.yml", "job awaiting", "if:", "draft"}},
-		{"probe checks out the head", "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.base.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n      - name: Probe\n",
-			"    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n      - name: Probe\n",
+		{"probe checks out the head", "    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.base.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0\n      - name: Probe\n",
+			"    steps:\n      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1\n        with:\n          ref: ${{ github.event.pull_request.head.sha }}\n          persist-credentials: false\n      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0\n      - name: Probe\n",
 			[]string{"merge-check.yml", "job awaiting", "head.sha", "base commit"}},
-		{"probe installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9\n      - name: Probe\n", "      - name: Probe\n",
+		{"probe installs no ateam", "      - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0\n      - name: Probe\n", "      - name: Probe\n",
 			[]string{"merge-check.yml", "job awaiting", "no ateam install line"}},
 		{"probe output unwired", "awaiting: ${{ steps.probe.outputs.awaiting }}", "awaiting: ${{ steps.probe.outputs.result }}",
 			[]string{"merge-check.yml", "job awaiting", "outputs.awaiting", "steps.probe.outputs.awaiting"}},
 		{"probe step renamed", "        id: probe\n", "        id: check\n",
 			[]string{"merge-check.yml", "job awaiting", "no step with id probe"}},
+		{"probe cannot read check runs", "      checks: read\n", "",
+			[]string{"merge-check.yml", "job awaiting", "missing checks: read"}},
+		{"merge check reads check runs", "    permissions:\n      contents: read\n      issues: read\n", "    permissions:\n      checks: read\n      contents: read\n      issues: read\n",
+			[]string{"merge-check.yml", "job merge-check", "checks: read"}},
 		{"probe runs the full gate", "review gate --awaiting", "review gate",
 			[]string{"merge-check.yml", "job awaiting", "--awaiting"}},
 		{"probe answer not written", ` >> "$GITHUB_OUTPUT"`, "",
@@ -716,7 +724,7 @@ func mergeCheckWorkflowViolations(data []byte) []string {
 	if !ok {
 		violations = append(violations, file+": no job merge-check; the merge-gate spec requires it")
 	} else {
-		violations = append(violations, gateJobViolations(file, "merge-check", job, mergeCheckCondition)...)
+		violations = append(violations, gateJobViolations(file, "merge-check", job, mergeCheckCondition, mergeCheckPermissions)...)
 		if strings.TrimSpace(job.Name) != mergeCheckName {
 			violations = append(violations, fmt.Sprintf("%s: job merge-check is named %q; the merge-gate spec requires %s, so a job skipped on a draft or while awaiting leaves no run named Merge check", file, job.Name, mergeCheckName))
 		}
@@ -745,7 +753,7 @@ func mergeCheckWorkflowViolations(data []byte) []string {
 	if probe.Name != mergeCheckProbeName {
 		violations = append(violations, fmt.Sprintf("%s is named %q; the merge-gate spec requires %q, so the main ruleset's Merge check never names it", where, probe.Name, mergeCheckProbeName))
 	}
-	violations = append(violations, gateJobViolations(file, mergeCheckProbeJob, probe, mergeCheckDraftCondition)...)
+	violations = append(violations, gateJobViolations(file, mergeCheckProbeJob, probe, mergeCheckDraftCondition, mergeCheckProbePermissions)...)
 	if got := fmt.Sprint(probe.Outputs["awaiting"]); got != mergeCheckProbeOutput {
 		violations = append(violations, fmt.Sprintf("%s sets outputs.awaiting %v; the merge-gate spec requires %s, the answer the merge-check job reads", where, probe.Outputs["awaiting"], mergeCheckProbeOutput))
 	}
@@ -763,9 +771,10 @@ func mergeCheckWorkflowViolations(data []byte) []string {
 }
 
 // gateJobViolations holds one job of merge-check.yml to what the merge check and its probe share:
-// the if: condition wantIf, a 5-minute limit, exactly three read permissions of its own, a checkout
-// of the base commit without credentials, and an ateam install line (ateamPins checks the release).
-func gateJobViolations(file, name string, job ciJob, wantIf string) []string {
+// the if: condition wantIf, a 5-minute limit, exactly the read permissions wantPerms of its own, a
+// checkout of the base commit without credentials, and an ateam install line (ateamPins checks the
+// release).
+func gateJobViolations(file, name string, job ciJob, wantIf string, wantPerms map[string]string) []string {
 	var violations []string
 	cond := strings.TrimSpace(fmt.Sprint(job.If))
 	if inner, found := strings.CutPrefix(cond, "${{"); found {
@@ -777,7 +786,7 @@ func gateJobViolations(file, name string, job ciJob, wantIf string) []string {
 	if limit, ok := job.TimeoutMinutes.(int); !ok || limit != mergeCheckTimeoutMinutes {
 		violations = append(violations, fmt.Sprintf("%s: job %s has timeout-minutes %v; the merge-gate spec requires %d minutes", file, name, job.TimeoutMinutes, mergeCheckTimeoutMinutes))
 	}
-	violations = append(violations, mergeCheckPermissionViolations(file, name, job.Permissions)...)
+	violations = append(violations, mergeCheckPermissionViolations(file, name, job.Permissions, wantPerms)...)
 
 	checkouts, installs := 0, 0
 	for i, st := range job.Steps {
@@ -880,23 +889,22 @@ func writeGrants(file, where string, perms any) []string {
 	return nil
 }
 
-// mergeCheckPermissionViolations requires a merge-check.yml job's own grant to be exactly the three
-// reads. Inheriting the workflow's default does not count: the job's token is pinned where the job is.
-func mergeCheckPermissionViolations(file, name string, perms any) []string {
+// mergeCheckPermissionViolations requires a merge-check.yml job's own grant to be exactly want. Inheriting the workflow's default does not count: the job's token is pinned where the job is.
+func mergeCheckPermissionViolations(file, name string, perms any, want map[string]string) []string {
 	p, ok := perms.(map[string]any)
 	if !ok {
-		return []string{fmt.Sprintf("%s: job %s has no permissions of its own (%v); the merge-gate spec requires exactly %v", file, name, perms, mergeCheckPermissions)}
+		return []string{fmt.Sprintf("%s: job %s has no permissions of its own (%v); the merge-gate spec requires exactly %v", file, name, perms, want)}
 	}
 	var out []string
 	for _, scope := range slices.Sorted(maps.Keys(p)) {
 		level := fmt.Sprint(p[scope])
-		if mergeCheckPermissions[scope] != level {
-			out = append(out, fmt.Sprintf("%s: job %s is granted %s: %s; the merge-gate spec allows only %v", file, name, scope, level, mergeCheckPermissions))
+		if want[scope] != level {
+			out = append(out, fmt.Sprintf("%s: job %s is granted %s: %s; the merge-gate spec allows only %v", file, name, scope, level, want))
 		}
 	}
-	for _, scope := range slices.Sorted(maps.Keys(mergeCheckPermissions)) {
+	for _, scope := range slices.Sorted(maps.Keys(want)) {
 		if _, ok := p[scope]; !ok {
-			out = append(out, fmt.Sprintf("%s: job %s is missing %s: %s; the merge-gate spec requires exactly %v", file, name, scope, mergeCheckPermissions[scope], mergeCheckPermissions))
+			out = append(out, fmt.Sprintf("%s: job %s is missing %s: %s; the merge-gate spec requires exactly %v", file, name, scope, want[scope], want))
 		}
 	}
 	return out

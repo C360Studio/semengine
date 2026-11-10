@@ -9,7 +9,9 @@ runs of one commit get the same Ubuntu release. It also covers the merge check: 
 required check `Merge check`. That gate, not this repository, states the rules it applies (the up-to-date rule, no
 open known flake the pull request leaves open, and for a code pull request that is not a draft an approving record at
 its head by a different, not-weaker agent); this specification covers how the gate is wired and pinned.
+
 ## Requirements
+
 ### Requirement: Varied and repeated unit runs
 
 `task test:unit` SHALL run `go test -race -count=1 -cpu 1 -timeout 5m` over the unit packages (every package
@@ -287,7 +289,7 @@ follows; no open `class:flake` issue it leaves open.
 #### Scenario: Documents-only pull request
 
 - **WHEN** every changed file ends in `.md`, or in `.yml`, `.yaml` or `.json` under `openspec/`, and none is under
-  `.claude/agents/` or `.agents/contracts/`
+  `.claude/agents/`, `.agents/contracts/` or `.agents/skills/review-pr/`
 - **THEN** the review check passes without reading the attestation lines
 
 ### Requirement: The merge-check workflow
@@ -297,6 +299,12 @@ follows; no open `class:flake` issue it leaves open.
 checks out the base commit without credentials and installs the pinned release. A `Merge check probe` job runs
 `ateam review gate --awaiting <n>`; unless it answers `awaiting=true`, the `merge-check` job runs
 `scripts/merge-check.sh <n>` read-only in 5 minutes.
+
+#### Scenario: Each job reads only what it judges
+
+- **WHEN** the workflow runs
+- **THEN** the `merge-check` job is granted read on contents, issues and pull requests, and the `Merge check probe`
+  job the same plus read on check runs, which it needs to see a `Merge check` already passing at the head
 
 #### Scenario: Reviewer edits the description
 
@@ -321,7 +329,8 @@ checks out the base commit without credentials and installs the pinned release. 
 
 #### Scenario: Code pull request awaiting its review
 
-- **WHEN** a non-draft code pull request has no `reviewed-by:` line and no review record comment
+- **WHEN** a non-draft code pull request has no `reviewed-by:` line and no successful `Merge check` run at its head,
+  whether or not a review record comment exists
 - **THEN** the `merge-check` job is skipped, no run named `Merge check` exists on that head, and the required check is
   absent, which blocks the merge as a missing check, not a red one
 
@@ -329,6 +338,11 @@ checks out the base commit without credentials and installs the pinned release. 
 
 - **WHEN** the `Merge check probe` job fails or prints no `awaiting=` line
 - **THEN** the `merge-check` job runs the full check
+
+#### Scenario: A pass stands after the line is removed
+
+- **WHEN** a code pull request's `reviewed-by:` line is removed after a `Merge check` passed at the same head
+- **THEN** the probe answers `awaiting=false` and the full check runs, failing on the missing line
 
 ### Requirement: Required needs verify
 
@@ -369,4 +383,3 @@ name one release.
 
 - **WHEN** `ci.yml` installs `ateam@v0.3.4` and `merge-check.yml` installs `ateam@v0.3.3`
 - **THEN** the contract test and `scripts/doctor.sh` fail naming both versions
-

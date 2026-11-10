@@ -28,18 +28,20 @@ permissions:
   contents: read
 
 jobs:
-  # The awaiting probe (ateam #262): it checks out the base commit and installs
-  # the ateam pin as the merge check does, reads the pull request through the
-  # API, and answers awaiting=true only for a code pull request with no
-  # reviewed-by: line and no review record comment. It reads the pull request when it runs, so a rerun
-  # sees the description and records of that moment. The main ruleset does not
-  # require it.
+  # The awaiting probe (ateam #262, #359): it checks out the base commit and
+  # installs the ateam pin as the merge check does, reads the pull request
+  # through the API, and answers awaiting=true only for a code pull request with
+  # no reviewed-by: line and no successful Merge check already at its head, the
+  # one pass a skip could leave standing (hence checks: read). It reads the
+  # pull request when it runs, so a rerun sees that moment. The main ruleset
+  # does not require it.
   awaiting:
     name: Merge check probe
     if: ${{ !github.event.pull_request.draft }}
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
+      checks: read
       contents: read
       issues: read
       pull-requests: read
@@ -59,7 +61,7 @@ jobs:
       - name: Install ateam
         env:
           GOTOOLCHAIN: auto
-        run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
 
       - name: Is the pull request awaiting its review record
         id: probe
@@ -74,8 +76,8 @@ jobs:
 
   # Skipped and renamed on a draft, so a draft head carries no check run named
   # Merge check for GitHub to count as passing. Also skipped and renamed while
-  # the probe finds a code pull request with no reviewed-by: line and no review
-  # record: it is not yet judgeable, so the required check stays absent instead
+  # the probe finds a code pull request with no reviewed-by: line and no
+  # successful Merge check at its head: it is not yet judgeable, so the required check stays absent instead
   # of failing. A failed probe leaves no answer, so the full check runs.
   merge-check:
     needs: awaiting
@@ -102,7 +104,7 @@ jobs:
       - name: Install ateam
         env:
           GOTOOLCHAIN: auto
-        run: go install github.com/c360studio/ateam/cmd/ateam@v0.3.9
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
 
       - name: Check the up-to-date rule, the review and its strength, and known flakes
         env:

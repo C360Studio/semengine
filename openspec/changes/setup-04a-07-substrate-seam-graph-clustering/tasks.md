@@ -23,7 +23,8 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
   `TestStuckNamesReasons`, the follower suite, `-race`.
 - [x] 2.2 Config, factory, `Register`, shell and feed (D1, D3). Check: `TestConfigRefusesRemovedKeys` (one case per
   key, naming it), `TestConfigRefusesOutputPorts`, `TestConfigStartupWait` (defaults and set values, as
-  graph-embedding's), `TestRefusedValueReportedNotWithheld`, lifecycle suite (`TestStopLeavesNothing`, `synctest`).
+  graph-embedding's), `TestRefusedValueReportedNotWithheld`, lifecycle suite (`TestStopLeavesNothing` on the real
+  clock: the follower's `Run` needs real NATS, which a `synctest` bubble cannot drive; `notes/2.2.md`).
 - [ ] 2.3 Ticker and publication (D2) and #525 (D4). Check: `TestDetectionIntervalIsRead`, `TestRecordsFollowChanges`,
   `TestNothingPublishedBeforeReplay`, `TestLostFeedStopsPublication`, `TestResetStopsPublication`,
   `TestPersistentPublicationFailureIsStuck` (Health, envelope reason, the counter), and the integration probe
@@ -55,6 +56,7 @@ integration file. Review stops: after 2.2, after 3.1, before archive.
   `graph/inference/storage.go:159` site is gone and spatial and temporal remain. PR body: `Closes #525`, `Closes #32`,
   `Closes #198`; #488 stays open (a tier-2 slot, not ruled here).
   Check: `task ledger:diff`, `task test:unit` (`kvcatalog`), `task docs:check`.
-- [ ] 4.2 `processor/graph-clustering/MIGRATION.md`, `README.md`, `doc.go`; ledger row (`processor/graph-clustering`
+- [ ] 4.2 `processor/graph-clustering/MIGRATION.md` (including: a bad `detection_interval` or a negative startup
+  value is refused, where the pin fell back silently), `README.md`, `doc.go`; ledger row (`processor/graph-clustering`
   `adapt`); ADR-108 and ADR-099 port notes; `.agents/skills/query-pattern/SKILL.md:77,99`; `docs/repository-map.md`;
   spec sync (the `composed-stack` Purpose names five components) and archive as the last content commit.

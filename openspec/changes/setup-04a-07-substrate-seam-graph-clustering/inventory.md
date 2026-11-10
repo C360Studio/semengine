@@ -190,13 +190,13 @@ Context sweep: one private `cancel context.CancelFunc` (`pin:component.go:651`);
 
 | Issue | Names | Disposition (design) |
 | --- | --- | --- |
-| #525 watch order across keys | graph-clustering | retire: probe test plus publication stops on a lost feed (task 2.2) |
-| #32 capability seam | graph-clustering, graph/llm, model/wire | stays unless the owner amends its exit condition (Q2, from the owner's comment of 2026-10-24); the tree-wide seam test (task 3.2) lands either way |
+| #525 watch order across keys | graph-clustering | closes: the follower's order check stops publication, plus the probe (task 2.3) |
+| #32 capability seam | graph-clustering, graph/llm, model/wire | closes: exit condition amended by the owner (PR #582 comment 6768832111, ruling 2); the tree-wide seam test proves it (task 3.2) |
 | #35 http_embedder split | — | already CLOSED (state CLOSED, measured) |
-| #198 graph/inference rest at change 7 | graph/inference, graph-clustering | stays: anomaly lane (Q1) |
+| #198 graph/inference rest at change 7 | graph/inference, graph-clustering | closes: its work is porting the rest of `graph/inference`, which ruling 1 drops; the drop is recorded (task 4.1) |
 | #485 tier-2 community summaries | graph-clustering `component.go:2268-2330` | stays: tier 2, out of scope (owner, 2026-11-10) |
-| #488 tier-2 review worker | graph/inference | stays: tier 2 |
-| #141 UpdateWithRetryRead | `graph/inference/storage.go:159` (change 7) | stays: anomaly lane |
+| #488 tier-2 review worker | graph/inference | stays: a tier-2 slot; ruling 1 covers tier-0 anomaly detection only |
+| #141 UpdateWithRetryRead | `graph/inference/storage.go:159` (change 7) | stays: its spatial and temporal sites remain (#141 comment of 2026-11-08); only the `graph/inference` site goes, struck by comment (task 4.1) |
 | #196 lifecycleguard adoption | `processor/graph-clustering/component.go:646` | stays open (other rows); this package adopts `component.Lifecycle` |
 | #195 natsfixture.Open adoption | graph-clustering 18 sites | stays open (other packages); new tests use `natsfixture.Open` |
 | #554 own-deadline await helpers | graph-index and follower integration helpers | stays (its own fix); the new follower and clustering integration tests do not copy `context.WithTimeout(waitBound)` and wait on the event that orders the read |
@@ -233,5 +233,5 @@ slice, not carried), #195's other rows, #300, #350, #484, #486, #487, #554.
 | label propagation, edge providers | excluded | PR #483 comment 6543795826 |
 | LLM summaries | deferred, tier 2 | PR #483 comment 6543960797; #485 |
 | LLM review worker | deferred, tier 2 | #97; #488 |
-| anomaly detection (k-core, semantic gap, transitivity) | admitted (ledger `:2313-2314`, #198); order open | **no ruling on order** (Q1) |
+| anomaly detection (k-core, semantic gap, transitivity), with the review worker | excluded, never ported | PR #582 comment 6768832111, ruling 1 |
 | query, fusion, ingest, vocabulary, provenance, tier ladder; durable execution | untouched | — |

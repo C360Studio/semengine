@@ -4,7 +4,7 @@ Base `4cb8d58` on `057bc8b`; pin `8b99efe9`. Inventory: `inventory.md` (§ n bel
 item 1. **Goal.** With graph-clustering in a composition, `COMMUNITY_INDEX` holds one bounded record per entity-ID
 prefix group, kept current from `ENTITY_STATES` changes at tier 0, so `localSearch` and the text tier of
 `searchGraph` answer. **Non-goals:** tier-2 summaries (#485), the review worker (#488), label propagation (ADR-099),
-and, pending Q1, anomaly detection.
+and anomaly detection, which is never ported (owner, PR #582 comment 6768832111).
 
 ## Options for the feed (inventory § 2, § 6)
 
@@ -60,11 +60,12 @@ sentence becomes plug-in neutral: "N unresolved failures", followed by the reaso
 
 ## D3. Config, ledger, removed surface
 
-Strict decoding. Kept: `ports` (one `ENTITY_STATES` input; outputs refused, as graph-embedding),
-`detection_interval`, `startup_attempts`, `startup_interval_ms`. Refused at boot, naming the key with guidance
-(ADR-099): `batch_size` (unread at the pin, `pin:doc.go:85`), `enable_llm`, `enhancement_workers` (tier 2, #485),
-`min_community_size`, `max_iterations`, `entity_id_edges`, `semantic_edges` (ADR-099), `allow_ungated_reads` (no gate,
-ADR-099), and pending Q1 `enable_anomaly_detection`, `anomaly_config`. Exported surface per inventory § 8 item 4. Not
+Strict decoding. Kept: `ports` (one `ENTITY_STATES` input; outputs refused, as graph-embedding), `detection_interval`,
+`startup_attempts`, `startup_interval_ms`. Refused at boot, naming the key with guidance (ADR-099): `batch_size` (unread
+at the pin, `pin:doc.go:85`), `enable_llm`, `enhancement_workers` (tier 2, #485), `min_community_size`,
+`max_iterations`, `entity_id_edges`, `semantic_edges` (ADR-099), `allow_ungated_reads` (no gate, ADR-099), and
+`enable_anomaly_detection`, `anomaly_config` (anomaly detection, never ported). Exported surface per inventory § 8 item
+4. Not
 carried: the four `graph.clustering.query.*` verbs, the readiness gate on graph-index and graph-embedding (ADR-082,
 ADR-085), the enhancement and review workers, the indexing-profile check (ADR-054 Phase 1), Prometheus globals. New
 `adapt` ledger row; `processor/graph-clustering/MIGRATION.md` for semsource and semboids.
@@ -79,6 +80,19 @@ integration probe at the pinned nats.go and server image writes interleaved keys
 `model/wire` or `go-openai`, reusing its listing and reader. It replaces none of the per-package guards, which also
 forbid `model` (`:47-48`); it adds processor/graph-clustering to the direct-`model` guard graph-embedding has (`:51`).
 
+## D5. Anomaly detection dropped
+
+Ruling 1 drops the anomaly lane for good, so the admitted set shrinks by name (architect contract, "An owner ruling can
+still remove admitted surface by name"). Recorded in the ledger: the `graph/inference` row's consumer purpose and known
+risks stop naming change 7's detectors, review worker, storage and HTTP handlers
+(`docs/admission-ledger.yaml:2292-2320`), and `inference.Config` no longer makes the package public through
+graph-clustering; `graph/structural` (`:2630-2652`) becomes `defer-exclude` for good; the `graph/llm` and `model/wire`
+rows (`:2596-2629`) stop naming change 7 as their returning reader and name #32's new exit condition. `ANOMALY_INDEX`
+would have no writer, so `graph.BucketAnomalyIndex` (`graph/constants.go:39`) and its catalog row
+(`graph/kvcatalog/kvcatalog.go:191-192`, test `kvcatalog_test.go:167`) are removed. #198 closes (its work is that
+package rest); #488 stays (a tier-2 slot, not ruled here); #141 stays for spatial and temporal, with its
+`graph/inference/storage.go:159` site struck.
+
 ## Proving tests
 
 `TestConfigRefusesRemovedKeys`, `TestConfigStartupWait`, `TestDetectionIntervalIsRead`, `TestRecordsFollowChanges`,
@@ -88,11 +102,10 @@ forbid `model` (`:47-48`); it adds processor/graph-clustering to the direct-`mod
 
 ## Size and split
 
-Pin 4,117 prod / 6,716 test (§ 1); almost none carries as is. This change, hand estimate: 700 + 1,400 package,
-~60 + 120 follower, ~300 smoke, ~80 contract. One PR: one lifecycle owner, under the guide. If Q1 admits anomaly
-detection now it is three more changes after this one, in order: `graph/structural` (883 / 736), `graph/inference`'s
-detectors, storage and applier (3,568 / 2,097; #198), then graph-clustering's anomaly lane (786 / 363). #583 merges
-first (task 3.1's hold).
+Pin 4,117 prod / 6,716 test (§ 1); almost none carries as is. This change, hand estimate: 700 + 1,400 package, ~60 + 120
+follower, ~300 smoke, ~80 contract. One PR: one lifecycle owner, under the guide. The package is whole when it lands:
+its anomaly lane (786 / 363), `graph/structural` (883 / 736) and the rest of `graph/inference` (4,557 / 3,165) are
+dropped by ruling, not deferred. #583 merges first (task 3.1's hold).
 
 ## Guidance carried
 

@@ -7,12 +7,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"maps"
 	"os"
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -78,12 +81,18 @@ func ensureEntityStates(t *testing.T, client *natsclient.Client) jetstream.KeyVa
 }
 
 // newClustering builds an initialized, unstarted graph-clustering from raw through
-// CreateGraphClustering, on a metrics registry of its own.
+// CreateGraphClustering, on a metrics registry of its own, logging nowhere.
 func newClustering(t *testing.T, client *natsclient.Client, raw string) *Component {
+	t.Helper()
+	return newClusteringLogging(t, client, raw, slog.DiscardHandler)
+}
+
+// newClusteringLogging is newClustering logging to handler, through Dependencies.Logger.
+func newClusteringLogging(t *testing.T, client *natsclient.Client, raw string, handler slog.Handler) *Component {
 	t.Helper()
 	built, err := CreateGraphClustering(json.RawMessage(raw), component.Dependencies{
 		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
-		Logger: slog.New(slog.DiscardHandler),
+		Logger: slog.New(handler),
 	})
 	if err != nil {
 		t.Fatalf("CreateGraphClustering: %v", err)
@@ -96,7 +105,8 @@ func newClustering(t *testing.T, client *natsclient.Client, raw string) *Compone
 }
 
 // startClustering ensures ENTITY_STATES, builds graph-clustering with the default configuration
-// and starts it; the test's cleanup stops it.
+// and starts it, then waits for the replay of the empty bucket, so every write the test makes
+// after it is a live write (#584); the test's cleanup stops it.
 func startClustering(t *testing.T, client *natsclient.Client) (*Component, jetstream.KeyValue) {
 	t.Helper()
 	states := ensureEntityStates(t, client)
@@ -105,6 +115,7 @@ func startClustering(t *testing.T, client *natsclient.Client) (*Component, jetst
 		t.Fatalf("Start: %v", err)
 	}
 	t.Cleanup(func() { stopComponent(t, c) })
+	awaitApplied(t, c, 0)
 	return c, states
 }
 
@@ -148,6 +159,9 @@ func put(t *testing.T, kv jetstream.KeyValue, key string, value []byte) uint64 {
 
 // awaitApplied waits until the follower's floor reaches rev: every delivered revision at or below
 // it has been applied to the maintainer, and the follower answers queries, so a tick publishes.
+// On an empty ENTITY_STATES, awaitApplied(t, c, 0) returns once the watch's snapshot has ended:
+// the follower reads an empty bucket ready only then, so a later write is delivered live, never
+// in the replay, where a value that does not decode latches the reset.
 func awaitApplied(t *testing.T, c *Component, rev uint64) {
 	t.Helper()
 	await(t, fmt.Sprintf("revision %d applied and the follower ready", rev),
@@ -336,6 +350,7 @@ func TestStopLeavesNothing(t *testing.T) {
 		await(t, "the follower's watch on the server",
 			func(ctx context.Context) (int, error) { return watchConsumers(ctx, client) },
 			func(n int) bool { return n == 1 })
+		awaitApplied(t, c, 0) // the write below is live (#584)
 		rev := put(t, states, "acme.ops.test.alpha.doc.a1", storedEntity("acme.ops.test.alpha.doc.a1"))
 		awaitApplied(t, c, rev)
 		c.tick(t.Context())
@@ -360,4 +375,88 @@ func TestStopLeavesNothing(t *testing.T) {
 			func(ctx context.Context) (int, error) { return watchConsumers(ctx, client) },
 			func(n int) bool { return n == 0 })
 	})
+}
+
+// heldLine holds the first log record with message, once armed, inside the component's logger
+// until release closes: the goroutine that logs it is held there. entered closes once it is held.
+type heldLine struct {
+	message string
+	armed   atomic.Bool
+	entered chan struct{}
+	release chan struct{}
+}
+
+// holdingHandler is the component's slog.Handler, through Dependencies.Logger (as
+// graph-embedding's). It holds only the armed line, and only if inner is enabled at its level:
+// slog calls Handle only then.
+type holdingHandler struct {
+	inner slog.Handler
+	held  *heldLine
+}
+
+func (h holdingHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.inner.Enabled(ctx, level)
+}
+
+func (h holdingHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Message == h.held.message && h.held.armed.CompareAndSwap(true, false) {
+		close(h.held.entered)
+		<-h.held.release
+	}
+	return h.inner.Handle(ctx, r)
+}
+
+func (h holdingHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return holdingHandler{inner: h.inner.WithAttrs(attrs), held: h.held}
+}
+
+func (h holdingHandler) WithGroup(name string) slog.Handler {
+	return holdingHandler{inner: h.inner.WithGroup(name), held: h.held}
+}
+
+// TestStopWaitsForDelivery: Stop joins the follower's Run, so it does not return nil while a
+// delivery is still being applied. The delivery of a value that does not decode is held inside the
+// component's logger, on the follower's Run goroutine; a Stop whose context ends meanwhile returns
+// that context's error and keeps its handles; once the delivery is released, the next Stop returns
+// nil and nothing of the component is left running (graph-clustering spec, "Stop leaves nothing").
+func TestStopWaitsForDelivery(t *testing.T) {
+	client := fixtureClient(t)
+	states := ensureEntityStates(t, client)
+	held := &heldLine{
+		message: "entity refused by the community maintainer; it is left out of the records",
+		entered: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	c := newClusteringLogging(t, client, `{}`, holdingHandler{inner: slog.NewTextHandler(io.Discard, nil), held: held})
+	if err := c.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() { stopComponent(t, c) })
+	var released sync.Once
+	release := func() { released.Do(func() { close(held.release) }) }
+	t.Cleanup(release)    // runs first: a failed test never leaves the Stop above waiting on the hold
+	awaitApplied(t, c, 0) // the write below is live (#584)
+
+	held.armed.Store(true)
+	put(t, states, "acme.ops.test.beta.doc.b2", []byte("not an entity state"))
+	<-held.entered // deliver is held in its log line, on the follower's Run goroutine
+
+	// The deadline is the behaviour under test: Stop must outlast it while the delivery is held.
+	ctx, cancel := context.WithTimeout(t.Context(), 200*time.Millisecond)
+	defer cancel()
+	if err := c.Stop(ctx); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop while a delivery is held = %v; want context.DeadlineExceeded, Stop waiting for the follower's Run", err)
+	}
+	if held := (suiteOwner{c}).Observe().Unresolved; len(held) == 0 {
+		t.Fatal("Stop that ended early released its handles; want them kept for the next Stop")
+	}
+
+	release()
+	stopComponent(t, c)
+	if held := (suiteOwner{c}).Observe().Unresolved; len(held) != 0 {
+		t.Fatalf("held after a nil Stop = %v, want nothing", held)
+	}
+	await(t, "no goroutine in a Component or Follower method after Stop",
+		func(context.Context) (string, error) { return componentStacks(), nil },
+		func(stacks string) bool { return stacks == "" })
 }

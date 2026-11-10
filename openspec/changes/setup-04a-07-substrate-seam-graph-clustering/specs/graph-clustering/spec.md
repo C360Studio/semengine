@@ -42,18 +42,19 @@ detected MAY finish.
 - **WHEN** the component starts on a populated `ENTITY_STATES` and the replay is not yet applied
 - **THEN** `COMMUNITY_INDEX` is unchanged (`TestNothingPublishedBeforeReplay`)
 
-#### Scenario: A revision out of order
+#### Scenario: A lost feed
 
-- **WHEN** the feed delivers a revision at or below one already observed
+- **WHEN** the follower reports a lost feed (a revision at or below one already observed, or the bucket deleted)
 - **THEN** no tick that starts afterwards writes or removes a record, and `Health` names the lost feed
-  (`TestLostFeedStopsPublication`)
+  (`TestLostFeedStopsPublication` deletes the bucket; `TestFollowerDeclaresLostFeedOnOutOfOrderDelivery` covers the
+  out-of-order trigger)
 
 ### Requirement: A failing publication is a stuck state
 
-While the last tick returned an error other than `*clustering.IncompleteError`, graph-clustering SHALL report
-`Healthy` false naming the failure, count it in `Failed` under `publication_failed`, and count each failed tick on
-`graph_clustering_publication_failures_total`; the next successful tick SHALL clear the state. Refused entities SHALL
-count under `refused_entity` and SHALL NOT stop publication.
+While the last tick returned an error other than `*clustering.IncompleteError`, graph-clustering SHALL report `Healthy`
+false naming the failure, count it in `Failed` under `publication_failed`, and count each failed tick on
+`semengine_graph_clustering_publication_failures_total`; the next successful tick SHALL clear the state. Refused
+entities SHALL count under `refused_entity` and SHALL NOT stop publication.
 
 #### Scenario: Every write fails
 

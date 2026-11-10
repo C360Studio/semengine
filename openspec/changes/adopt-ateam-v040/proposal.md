@@ -15,7 +15,7 @@ which SemEngine's own protocol does not number.
 The owner asked for it on 2026-11-10 in the Enjoy conversation "ateam v0.4.0 upgrade issue" ("Claim #585 and do the
 ateam v0.4.0 upgrade"); the approval below, with its digest, is the owner's to fill.
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-11-10) sha256:0c6a799383b3
 
 ## What Changes
 

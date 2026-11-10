@@ -5,7 +5,8 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171), w
 
 ## 0. Approval
 
-- [ ] 0.1 The owner approves the proposal. Hold: OPEN-Q proposal awaits owner approval
+- [x] 0.1 The owner approves the proposal (Enjoy conversation "ateam v0.4.0 upgrade issue", 2026-11-10: "I approved
+  the proposal").
 
 ## 1. Pin and templates
 
@@ -19,4 +20,4 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171), w
 
 - [x] 2.1 `.agents/protocol.md` states the digest form of `Approved-by:` and maps ateam's protocol section numbers to
   this file's sections.
-- [ ] 2.2 The spec deltas applied to `openspec/specs/` and the change archived.
+- [x] 2.2 The spec deltas applied to `openspec/specs/` and the change archived.

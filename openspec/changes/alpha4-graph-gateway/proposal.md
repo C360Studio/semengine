@@ -1,6 +1,6 @@
 # Proposal: alpha4-graph-gateway
 
-Approved-by:
+Approved-by: cglusky (2026-11-10) sha256:c8e16d3571ef
 
 Track: `design` (re-admits a package the ledger excludes; adds capability `graph-gateway`; modifies `graph-query`,
 `graph-transport-boundary` and `composed-stack`).

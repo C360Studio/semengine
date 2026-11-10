@@ -7,8 +7,7 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and one-page design; pre-owner design review passes; the owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Architect inventory and one-page design; pre-owner design review passes; the owner fills `Approved-by:`.
 
 ## 2. Code
 

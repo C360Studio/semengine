@@ -67,10 +67,12 @@ an artifact. `test:unit` and `test:repeat` stay in `checks` only.
 (`:20-21`, `:37`, `:51`, `:53-57`), so each job prints its host line at start and end and fails if its own steps
 changed a tracked file. Nothing moves.
 
-**D5. Limits: `checks` 15 minutes, `integration` 20 minutes.** `checks` runs 3 to 6 minutes of steps (table) plus a
-minute of setup, so 4 to 7 minutes; 15 is about twice the busiest. `integration` runs 7.1 to 8.2 minutes of steps plus
-setup, so 8 to 10 minutes; 20 is about twice the busiest. `required` keeps 5 minutes. The "Why five minutes" scenario
-(unit hang ends inside the job) moves to `checks`' 15 minutes, still three times the five-minute bound.
+**D5. Limits: `checks` 15 minutes, `integration` 20 minutes.** These are estimates built from the single job's step
+timings, not measurements of the split jobs; this PR's CI run measures them (task 1.2). `checks` runs 3 to 6 minutes of
+steps (table) plus a minute of setup, so 4 to 7 minutes; 15 is about twice the busiest. `integration` runs 7.1 to 8.2
+minutes of steps plus setup, so 8 to 10 minutes; 20 is about twice the busiest. `required` keeps 5 minutes. The "Why
+five minutes" scenario (unit hang ends inside the job) moves to `checks`' 15 minutes, still three times the five-minute
+bound.
 
 **D6. Job ids `checks` and `integration`.** The ruleset names neither (Context), so renaming `verify` needs no ruleset
 change. Keeping `verify` for the first job would edit fewer lines but would name a job that no longer runs all of
@@ -95,9 +97,10 @@ nothing changes by default: `task verify` with no argument is the full gate. To 
 
 ## Risks / Trade-offs
 
-- The `integration` job no longer reuses the race-built packages `test:unit` compiled in the same job. The measured
-  `test:integration` time varied little between warm and cold builds (420 s with `build` 1 s, 464 s with `build`
-  18 s), and 20 minutes leaves the margin; this PR's own CI run records both jobs' times.
+- The `integration` job no longer reuses the race-built packages `test:unit` compiled in the same job. Every measured
+  `test:integration` ran after `test:unit`'s race builds (420 s with `build` 1 s, 464 s with `build` 18 s), so an
+  integration-only job's compile cost is not yet measured; 20 minutes is meant to leave the margin, and this PR's own
+  CI run records both jobs' times.
 - Two jobs use two runners per push.
 
 ## Migration Plan

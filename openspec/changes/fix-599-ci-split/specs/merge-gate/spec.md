@@ -158,8 +158,9 @@ stays the full gate (owner ruling of 2026-11-11, #599).
 ### Requirement: Each CI job has a time limit
 
 In `.github/workflows/ci.yml` the job `checks` SHALL have a limit of 15 minutes and the job `integration` a limit of
-20 minutes, each about twice its normal run time: on `ubuntu-24.04` with 4 cores, `checks` measured 4 to 7 minutes
-and `integration` 8 to 10 minutes, setup included (owner ruling of 2026-11-11, #599).
+20 minutes, each about twice its estimated normal run time: on `ubuntu-24.04` with 4 cores, the single job's step
+timings put `checks` at 4 to 7 minutes and `integration` at 8 to 10 minutes, setup included; these are starting budgets,
+not measurements of the split jobs (owner ruling of 2026-11-11, #599).
 
 #### Scenario: A limit changed
 

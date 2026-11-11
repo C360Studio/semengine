@@ -189,16 +189,27 @@ func checkWebsocket(t *testing.T, o observer, c *wsClient, state map[string]stor
 	}
 }
 
-// awaitStreamed waits until the websocket output's view has applied ENTITY_STATES through revision:
-// a client it accepts reads its snapshot, and the changes after it, through that revision. It is
-// the output's ordering event, as an index's GRAPH_STATUS key at the revision is the index's: its
-// health reads degraded until its view is caught up, and an upgrade is refused until then.
+// awaitStreamed waits until the websocket output's view has applied ENTITY_STATES through revision,
+// and then until its health reads healthy. The two are separate events: a client the output accepts
+// reads its snapshot, and the changes after it, through that revision (stream convergence), but the
+// view admits clients before its caught-up hook publishes the health the output reports, so a
+// snapshot already at the revision orders no health read. The second wait polls /components/health,
+// the value requireComponentsHealthy asserts, as the index waits poll their GRAPH_STATUS keys.
 func awaitStreamed(t *testing.T, s stack, revision uint64) {
 	t.Helper()
 	c := dialWebsocket(t, s)
-	defer c.close()
 	state := map[string]stored{}
 	if synced := c.readSnapshot(t, state); synced < revision {
 		c.readThrough(t, state, revision)
 	}
+	c.close()
+	await(t, s, "the websocket output's health to read healthy", func(context.Context) (bool, error) {
+		for _, component := range readHealth(t, s).Components {
+			if component.Component == websocketComponent {
+				return component.Healthy, nil
+			}
+		}
+		t.Fatalf("/components/health does not list %s", websocketComponent)
+		return false, nil
+	}, func(healthy bool) bool { return healthy })
 }

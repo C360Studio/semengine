@@ -4909,3 +4909,50 @@
     components); notes/2.2.md-4.1.md of the change record seeds and mutation checks
   owner: setup-04a-07-substrate-seam-graph-clustering developer
   disposition: adapt
+
+# Change alpha4-pkg-buffer (PR #587, #566): pkg/buffer ported as adapt for v0.1.0-alpha.4. Owner rulings 2026-11-10:
+# carry as an Adapt (#566 comment 6772860154); the bounded writes join Buffer[T] (#566 comment 6782336804).
+
+- source_path: pkg/buffer
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    bounded in-memory FIFO ring with three overflow policies. SemSource's entity publisher
+    (internal/entitypub/publisher.go, Block policy with WriteWithTimeout) and the output/websocket pending-ack ring
+    (#34) use it; at the pin input/udp and input/websocket also import it (consumer adapters, not ported). Owner
+    ruling 2026-11-10, #566 comment 6772860154
+  destination: pkg/buffer
+  contract: >-
+    Buffer[T], NewCircularBuffer, DropOldest/DropNewest/Block, WithOverflowPolicy, WithMetrics, WithDropCallback,
+    Statistics/StatsSummary, and WriteWithTimeout(T, time.Duration) and WriteWithContext(ctx, T), as at the pin,
+    with these adaptations: (1) WithStats, StatsFromContext and ContextKeyStats dropped (#91, owner ruling); (2)
+    collectors register through metric.RegisterOrGet as semengine_buffer_* and the returned collectors are used, so
+    two buffers under one prefix share one series (#69); (3) WriteWithTimeout invents no context root and still
+    returns context.DeadlineExceeded on expiry; (4) WriteWithContext refuses a nil context with an ErrorInvalid error
+    and leaves no goroutine running when it returns; (5) drop callbacks run after the buffer's lock is released; (6)
+    capacity below 1 becomes 1, and a nil registry or empty prefix records no metrics, both declared in doc comments;
+    (7) UpdateMemoryUsage, MemoryUsage and StatsSummary.MemoryUsage dropped as dead surface (nothing set it; as
+    internal/cache, #9, #220); (8) WriteWithTimeout and WriteWithContext are methods of Buffer[T], so callers and
+    types embedding Buffer[T] reach them without a type assertion (owner ruling, #566 comment 6782336804); (9)
+    NewCircularBuffer returns a nil Buffer[T] with its error, where the pin returned a non-nil interface holding a
+    nil pointer; (10) ReadBatch adds the items it removes to semengine_buffer_reads_total, where the pin counted
+    them only in Statistics (#589); (11) DropRate and OverflowRate keep the pin's arithmetic and are documented as
+    ratios to accepted writes with no upper bound, where the pin promised 0 to 1 (#589)
+  dependencies_and_side_effects: >-
+    metric, pkg/errs (in-set); prometheus/client_golang; stdlib. No background goroutine: Block-policy waits run in
+    the caller's goroutine
+  known_risks: >-
+    no production context roots. Kept with reasons (alpha4-pkg-buffer design D3): Buffer[T] has one implementation;
+    WithDropCallback has no production caller, kept as README-offered surface; Statistics mutators are exported with
+    no outside reader; Write under Block waits until space or Close with no deadline; a zero timeout or ended context
+    refuses even with free space. Tests moved to synctest; the pin's four time.Sleep calls and wall-clock bounds
+    removed
+  proving_tests: >-
+    pkg/buffer/circular_test.go (TestWriteWithContextRefusesNilContext, TestDropCallbackMayUseBuffer,
+    TestWriteWithTimeoutAssertable, TestWriteWithTimeoutExpires, TestWriteWithTimeoutSucceedsWhenSpaceFrees,
+    TestWriteWithContextLeavesNothing, TestCapacityBelowOneIsOne), metrics_test.go (TestMetricsOnInjectedRegistry,
+    TestNewCircularBufferRefusedReturnsNil, TestReadBatchCountsReadMetric), circular_test.go
+    TestDropNewestRatesExceedOne, buffer_test.go (the pin's tests, the blocking ones rewritten in synctest),
+    benchmark_test.go; notes/2.1.md, 2.2.md and review-589.md of the change record the failing-first output and
+    mutation checks
+  owner: alpha4-pkg-buffer developer
+  disposition: adapt

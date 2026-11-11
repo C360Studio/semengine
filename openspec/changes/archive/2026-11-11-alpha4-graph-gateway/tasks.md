@@ -42,5 +42,6 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
 
 ## 3. Close-out
 
-- [ ] 3.1 Before the merge: specs synced and change archived as the last content commit; semsource #251, semteams #406
-  and semconnect told of the migration notes. Check: `task spec:check`.
+- [x] 3.1 Before the merge: specs synced and change archived as the last content commit; semsource #251, semteams #406
+  and semconnect told of the migration notes (told 2026-11-11: semsource#251, semteams#406, semconnect#75). Check:
+  `task spec:check`.

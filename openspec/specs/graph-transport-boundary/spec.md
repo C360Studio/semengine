@@ -27,10 +27,11 @@ reserved.
 #### Scenario: graph-query's verbs are in the table
 
 - **WHEN** `graph.QueryVerbs()` is read
-- **THEN** it holds `entity`, `batch`, `prefix`, `entityByAlias`, `relationships`, `byName`, `pathSearch`,
+- **THEN** it holds `entity`, `batch`, `prefix`, `entityByAlias`, `relationships`, `byName`, `predicate`, `pathSearch`,
   `hierarchyStats`, `summary`, `semantic`, `similar`, `spatial`, `temporal`, `localSearch`, `globalSearch` and
-  `searchGraph` on `graph.query.*`, each with responder `graph-query`, `localSearch` enveloped with a
-  `graph.LocalSearchData`, and `globalSearch` and `searchGraph` with a `graph.GlobalSearchData`
+  `searchGraph` on `graph.query.*`, each with responder `graph-query`, `predicate` enveloped with a
+  `graph.PredicateData`, `localSearch` enveloped with a `graph.LocalSearchData`, and `globalSearch` and `searchGraph`
+  with a `graph.GlobalSearchData`
 
 #### Scenario: The forwarded derived-index verbs are in the table
 
@@ -41,13 +42,19 @@ reserved.
 
 ### Requirement: The verb table declares each reply
 
-Each verb table entry SHALL name verb, subject, responder, whether its reply is enveloped, and its reply type. Entity and
-batch requests SHALL be Go types declared in `graph` (`EntityRequest`, `EntityBatchRequest`).
+Each verb table entry SHALL name verb, subject, responder, whether its reply is enveloped, and its reply type. Entity,
+batch and predicate requests SHALL be Go types declared in `graph` (`EntityRequest`, `EntityBatchRequest`,
+`PredicateRequest`).
 
 #### Scenario: Caller and responder share the request type
 
 - **WHEN** a caller sends an entity request and graph-ingest answers it
 - **THEN** both use the `graph.EntityRequest` type declared in `graph`
+
+#### Scenario: The predicate request has one declaration
+
+- **WHEN** the gateway sends a predicate request and graph-index answers it
+- **THEN** both use `graph.PredicateRequest` (`TestPredicateRequestWireNames`, graph-index predicate tests)
 
 ### Requirement: Servers and clients take subjects from the declarations
 

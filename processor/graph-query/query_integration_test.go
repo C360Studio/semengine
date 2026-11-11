@@ -42,6 +42,7 @@ func forwardRows(t *testing.T) []forward {
 		{"batch", graph.ResponderGraphIngest, "batch"},
 		{"prefix", graph.ResponderGraphIngest, "prefix"},
 		{"byName", graph.ResponderGraphIndex, "byName"},
+		{"predicate", graph.ResponderGraphIndex, "predicate"},
 		{"semantic", graph.ResponderGraphEmbedding, "search"},
 		{"similar", graph.ResponderGraphEmbedding, "similar"},
 		{"spatial", graph.ResponderGraphIndexSpatial, "bounds"},
@@ -572,7 +573,7 @@ func TestGraphQueryServesExactlyTheDeclaredVerbs(t *testing.T) {
 			declared = append(declared, verb.Name)
 		}
 	}
-	want := []string{"entity", "batch", "prefix", "byName", "entityByAlias", "relationships", "pathSearch", "hierarchyStats", "summary", "localSearch", "globalSearch", "searchGraph", "semantic", "similar", "spatial", "temporal"}
+	want := []string{"entity", "batch", "prefix", "byName", "predicate", "entityByAlias", "relationships", "pathSearch", "hierarchyStats", "summary", "localSearch", "globalSearch", "searchGraph", "semantic", "similar", "spatial", "temporal"}
 	if !reflect.DeepEqual(declared, want) {
 		t.Fatalf("the verb table declares %v for graph-query, want %v", declared, want)
 	}

@@ -3,6 +3,7 @@
 package smoke
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -25,6 +26,7 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/config"
+	graphgateway "github.com/c360studio/semengine/gateway/graph-gateway"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/readiness"
 	"github.com/c360studio/semengine/health"
@@ -61,7 +63,7 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the five-component stack boots from (design D2), as a
+// stackConfig is the one configuration the six-component stack boots from (design D2), as a
 // product would write it. The child fills the three placeholders from its environment: the NATS
 // URL and the two ports the test picked (design D4), and graph-ingest's configuration, {} (its
 // defaults) unless the test passes one. Every other component takes its defaults, except that
@@ -86,7 +88,8 @@ const stackConfig = `{
       "config": {"embedder_type": "bm25"}},
     "graph-clustering": {"type": "processor", "name": "graph-clustering", "enabled": true,
       "config": {"detection_interval": "1s"}},
-    "graph-query": {"type": "processor", "name": "graph-query", "enabled": true, "config": {}}
+    "graph-query": {"type": "processor", "name": "graph-query", "enabled": true, "config": {}},
+    "graph-gateway": {"type": "gateway", "name": "graph-gateway", "enabled": true, "config": {}}
   }
 }`
 
@@ -129,14 +132,14 @@ type composition struct {
 	labels []string
 }
 
-// fullStack is the five-component stack every test but the no-embedder one boots. graph-clustering's
+// fullStack is the six-component stack every test but the no-embedder one boots. graph-clustering's
 // key counts what its maintainer holds, not what it has published (readiness.KeyGraphClustering), so
 // awaitIndexed's wait on it orders no community read: checkCommunities waits on the record's own
 // entity_revision.
 var fullStack = composition{
 	name:       "full",
 	config:     stackConfig,
-	components: []string{"graph-clustering", "graph-embedding", "graph-index", "graph-ingest", "graph-query"},
+	components: []string{"graph-clustering", "graph-embedding", "graph-gateway", "graph-index", "graph-ingest", "graph-query"},
 	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering},
 }
 
@@ -167,6 +170,7 @@ var componentFactories = map[string]func(*component.Registry) error{
 	"graph-embedding":  graphembedding.Register,
 	"graph-clustering": graphclustering.Register,
 	"graph-query":      graphquery.Register,
+	"graph-gateway":    graphgateway.Register,
 }
 
 // What the test passes the child in its environment.
@@ -440,7 +444,7 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the five-component stack in a child against url, on two ports it picks, and
+// startStack boots the six-component stack in a child against url, on two ports it picks, and
 // returns once StartAll has returned in it.
 func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
@@ -736,28 +740,35 @@ type componentsHealth struct {
 	Total      int             `json:"total"`
 }
 
-// get reads path from the stack's server on port, dialled at the IPv6 loopback: on a Mac,
-// 127.0.0.1:<port> can belong to another program that bound IPv4 only (design D4, #390).
+// get reads path from the stack's server on port.
 func get(t *testing.T, s stack, port int, path string) (string, int, []byte) {
 	t.Helper()
+	return send(t, s, port, http.MethodGet, path, nil)
+}
+
+// send sends one request to the stack's server on port, dialled at the IPv6 loopback: on a Mac,
+// 127.0.0.1:<port> can belong to another program that bound IPv4 only (design D4, #390). It
+// returns the URL, the status and the body.
+func send(t *testing.T, s stack, port int, method, path string, body []byte) (string, int, []byte) {
+	t.Helper()
 	if !s.process.Alive() {
-		t.Fatalf("the stack exited before %s was read", path)
+		t.Fatalf("the stack exited before %s %s was sent", method, path)
 	}
 	url := "http://" + net.JoinHostPort("::1", strconv.Itoa(port)) + path
-	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, url, nil)
+	request, err := http.NewRequestWithContext(t.Context(), method, url, bytes.NewReader(body))
 	if err != nil {
 		t.Fatal(err)
 	}
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		t.Fatalf("GET %s: %v", url, err)
+		t.Fatalf("%s %s: %v", method, url, err)
 	}
 	defer func() { _ = response.Body.Close() }()
-	body, err := io.ReadAll(response.Body)
+	reply, err := io.ReadAll(response.Body)
 	if err != nil {
 		t.Fatalf("read %s: %v", url, err)
 	}
-	return url, response.StatusCode, body
+	return url, response.StatusCode, reply
 }
 
 // readHealth reads the component health the stack serves.

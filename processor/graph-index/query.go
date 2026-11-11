@@ -285,12 +285,7 @@ func (c *Component) handleQueryAlias(ctx context.Context, data []byte) ([]byte, 
 func (c *Component) handleQueryPredicate(ctx context.Context, data []byte) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, queryTimeout)
 	defer cancel()
-	var req struct {
-		Predicate string  `json:"predicate"`
-		Value     *string `json:"value,omitempty"`
-		Limit     int     `json:"limit,omitempty"`
-		graph.MinRevisionField
-	}
+	var req graph.PredicateRequest
 	if err := json.Unmarshal(data, &req); err != nil {
 		return nil, invalidRequest(err)
 	}

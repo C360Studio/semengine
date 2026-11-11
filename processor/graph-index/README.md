@@ -79,8 +79,8 @@ Every verb accepts an optional `min_revision`, the `kv_revision` of a write the 
 (`graph.MinRevisionField`, a number; `0` or absent means any). If the indexed revision is below it, the verb refuses
 with transient `revision_not_reached` (`graph.ErrorCodeRevisionNotReached`), the revision reached in the detail. The
 verb does not wait; the caller retries. In `graph.QueryVerbs()` all eight verbs are marked `Enveloped`, the mark that
-says a reply is a `graph.QueryResponse`; `graph-query`'s `byName`, `entityByAlias` and `relationships` pass the field
-through.
+says a reply is a `graph.QueryResponse`; `graph-query`'s `byName`, `predicate`, `entityByAlias` and `relationships`
+pass the field through.
 
 A malformed request is refused as `invalid_request` before any readiness check, so a bad request fails the same way
 during a rebuild.

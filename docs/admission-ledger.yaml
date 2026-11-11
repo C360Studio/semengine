@@ -1929,18 +1929,61 @@
 - source_path: gateway/graph-gateway
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
-    none; separated at tier 0: layer 4 of SETUP 03B design D5 is consumer-owned (owner scope
-    ruling, #8 comment 5930898291; SETUP 03B design D4); 2,676 non-test lines at the pin, never carried
-  destination: none
-  contract: n/a
-  dependencies_and_side_effects: n/a
+    the graph's read-only GraphQL route, /graph-gateway/graphql, that SemSource's UI and smoke test (semsource PR #259),
+    SemTeams' UI (semteams #406) and SemConnect's UI read the graph through; re-admitted as a trimmed adapt for
+    v0.1.0-alpha.4 (owner ruling 2026-11-10, #567)
+  destination: gateway/graph-gateway
+  contract: >-
+    spec graph-gateway (design D1-D6 of change alpha4-graph-gateway). Almost none of the pin's code carries: its
+    substring router (pin component.go:1095-1211), hand parser (:1547-1732) and reply copy (:1520-1545) are replaced
+    by a schema (schema.graphql) that every request is parsed and validated against with gqlparser before any request
+    is sent, and an executor that answers exactly the selected names, under aliases, through fragments, with
+    __typename from the schema. Four nullable root fields over graph.query.* verbs read from graph.QueryVerbs():
+    entity (stored value decoded by graph.UnmarshalEntityState; a missing entity or kv_revision 0 refused, pin
+    ADR-091 section 4), entitiesByPrefix (graph.ValidateDecodedEntityStates; an empty prefix matches all),
+    entitiesByPredicate (over the new graph.query.predicate forward to graph-index) and pathSearch (startEntity,
+    direction in any letter case, maxDepth, maxNodes, predicates [String] with a null item refused; paths[k] the run
+    of edges from the start to entities[k], paths[0] empty, each step named as the graph holds it). Refused with
+    HTTP 400 naming the field or argument: a document that does not parse or validate, a mutation or subscription,
+    two root fields, __schema and __type, trajectory and every other pin operation. A classified refusal answers 200
+    with the field null and class and code in extensions (ADR-060); no responder 500 naming the subject; past
+    query_timeout_ms 504; a reply not fitting the schema 200 with the field null and the path named (the pin
+    answered 500); not POST 405; before Start and once Stop begins 503. Lifecycle on component.Lifecycle, requests
+    admitted through internal/httpadmission, Stop waiting for every admitted request; mounted at
+    /<instance>/graphql by the service manager. Strict configuration: ports (exactly one required graph_queries
+    nats-request output on graph.query.*, graph.query v1) and query_timeout_ms (default 60000); any other key or port
+    refused naming it
+  dependencies_and_side_effects: >-
+    production: component, graph, internal/httpadmission, natsclient, pkg/errs (in-set); github.com/vektah/gqlparser/v2
+    v2.5.64 and github.com/agnivade/levenshtein v1.2.2 (both MIT, new modules); one route on the service manager's mux;
+    one classified NATS request per answered root field, on the HTTP handler's goroutine; no goroutine, no NATS state,
+    no bucket write, no metric of its own; tests also use nats.go, graph-ingest, graph-index and graph-query
   known_risks: >-
-    composed by SemSource (run.go:852) but not exercised; it requires agentic_queries with no responder
-    and drags agentic and graph/inference; re-admission requires a consumer assertion through its HTTP
-    surface
-  proving_tests: n/a
-  owner: setup-04a-01-floor technical writer
-  disposition: defer-exclude
+    consumer break, every one listed in gateway/graph-gateway/MIGRATION.md: entitiesByPredicate needs a selection,
+    pathSearch's arguments and answer changed, SemConnect's entitiesByPrefix selection moves under entities,
+    globalSearch, trajectory (SemTeams answers it from a component of its own, owner question 1) and introspection are
+    refused, entity storage_ref, message_type and updated_at and triple context, datatype and expires_at are not in
+    the schema, and eleven pin config keys and the graph_index_queries and agentic_queries ports are refused at boot.
+    Answer keys are written in sorted order, not selection order. Not carried: agentic decode and the agentic
+    dependency, the gateway parent package, the /mcp stub, the playground, the standalone server, the readiness
+    surface, the inference API and embedding classifier, the OpenAPI init registration, the pin's test hooks, the
+    other 14 operations and the pin's tests (dropped surface)
+  proving_tests: >-
+    gateway/graph-gateway execute_test.go (TestSchemaRefusesUnknownFieldNamingIt, its trajectory case included,
+    TestMutationAndIntrospectionRefused, TestOneRootFieldPerRequest, TestTypenameAnswers,
+    TestReplyNotFittingSchemaNamesPath, TestExecutedQueryKeepsData), projection_prop_test.go
+    (TestProjectionHoldsExactlySelectedNames, rapid), config_test.go (TestConfigRefusesRemovedKeys,
+    TestConfigRefusesExtraPorts, TestConfigTimeoutDefaultAndRange, TestCreateGraphGatewayRequiresNATSClient,
+    TestRegisterAddsGraphGateway, TestRefusedOutsideStartStop, TestRequestBodyRefused), lifecycle_test.go
+    (TestGraphGatewayLifecycleSuite, TestLifecycleBeforeStart), the integration-tagged gateway_integration_test.go
+    (TestGatewayAnswersFourOperations, TestPathsFollowEdgesBack, TestPathReplyBreakingAlignmentRefused,
+    TestDirectionIsCaseInsensitive, TestPredicatesRefuseANullItem, TestEntityZeroRevisionRefused,
+    TestPrefixReplyValidated, TestClassifiedRefusalCarriesClassAndCode, TestNoResponderNamesSubject, TestDeadlineIs504,
+    TestQueryTimeoutIsRead, TestStopWaitsForInFlightRequest); internal/smoke (TestSmoke_OneConfigAnswers and
+    TestSmoke_BrokerRestartUnderRunningStack with six components); notes/2.2.md, 2.3.md and 2.5.md of the change
+    record seeds and mutation checks
+  owner: alpha4-graph-gateway developer
+  disposition: adapt
 
 - source_path: gateway
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128

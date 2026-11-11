@@ -22,7 +22,7 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
   `TestReplyNotFittingSchemaNamesPath` (a null root field leaves the rest of `data`), and
   `TestProjectionHoldsExactlySelectedNames` (rapid: random selections and replies; seed and run count recorded;
   failing mutant shown).
-- [ ] 2.3 Component (D2 resolvers and checks, D5, D6), on real NATS with graph-ingest, graph-index and graph-query
+- [x] 2.3 Component (D2 resolvers and checks, D5, D6), on real NATS with graph-ingest, graph-index and graph-query
   composed. Check: `TestGatewayAnswersFourOperations` (the semsource assertion's queries in migrated form),
   `TestEntityZeroRevisionRefused`, `TestPrefixReplyValidated`, `TestPathsFollowEdgesBack` (pin alignment, `paths[0]`
   empty), `TestDirectionIsCaseInsensitive`, `TestClassifiedRefusalCarriesClassAndCode`, `TestNoResponderNamesSubject`,

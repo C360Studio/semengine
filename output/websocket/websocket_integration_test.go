@@ -495,12 +495,18 @@ func fullestQueue(c *output) int {
 	return most
 }
 
-// TestStalledClientDoesNotSlowOthers: while one client reads nothing, another receives every frame
-// in order, each before the next is published, through the stalled client's queue filling and two
-// frames more; the shed is counted under client_queue_full and logged once in the minute, naming
-// the reason, the listener and that other clients are unaffected (design D2; output-websocket spec,
-// "A slow client never slows another").
+// TestStalledClientDoesNotSlowOthers: a client that stops reading delays no other, on either input
+// (design D2; output-websocket spec, "A slow client never slows another").
 func TestStalledClientDoesNotSlowOthers(t *testing.T) {
+	t.Run("subject", stalledSubject)
+	t.Run("applied_state", stalledAppliedState)
+}
+
+// stalledSubject: while one client reads nothing, another receives every frame in order, each
+// before the next is published, through the stalled client's queue filling and two frames more;
+// the shed is counted under client_queue_full and logged once in the minute, naming the reason, the
+// listener and that other clients are unaffected.
+func stalledSubject(t *testing.T) {
 	client := fixtureClient(t)
 	o := startOutput(t, client, "ws.stall", "30s")
 	stalled := dialConn(t, websocket.DefaultDialer, o.url(), nil)

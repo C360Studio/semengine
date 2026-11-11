@@ -27,6 +27,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.served != nil {
 		held = append(held, "server")
 	}
+	if o.c.supervised != nil {
+		held = append(held, "view supervisor")
+	}
 	o.c.clientsMu.Lock()
 	clients := len(o.c.clients)
 	o.c.clientsMu.Unlock()

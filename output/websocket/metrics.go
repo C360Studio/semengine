@@ -18,6 +18,8 @@ const (
 	disconnectWriteFailed = "write_failed"
 	// disconnectStopped: Stop closed the client with 1001.
 	disconnectStopped = "stopped"
+	// disconnectWatchLost: the applied-state view lost its watch and closed the client with 1013.
+	disconnectWatchLost = "watch_lost"
 )
 
 // The kinds of server error, the errors_total type label.
@@ -41,6 +43,9 @@ type outputMetrics struct {
 	sizes       prometheus.Observer
 	connected   prometheus.Gauge
 	connections prometheus.Counter
+	// coalesced is changes_coalesced_total: applied-state changes merged into a later one for a
+	// client that was behind (graphview's Hooks.OnFanOut overwritten count).
+	coalesced prometheus.Counter
 	// disconnections is labelled listener and reason, errors listener and type, dropped listener
 	// and reason.
 	disconnections *prometheus.CounterVec
@@ -55,7 +60,7 @@ func newOutputMetrics(registry *metric.MetricsRegistry, listener string) (*outpu
 	r := registrar{registry: registry}
 	m := &outputMetrics{
 		received: r.counter("messages_received_total",
-			"Messages the input received, whether or not they were sent").WithLabelValues(listener),
+			"Messages the input received, whether or not they were sent: subject messages, or applied-state writes").WithLabelValues(listener),
 		sent: r.counter("messages_sent_total",
 			"Data frames written to a client, once per client").WithLabelValues(listener),
 		bytesSent: r.counter("bytes_sent_total",
@@ -71,8 +76,10 @@ func newOutputMetrics(registry *metric.MetricsRegistry, listener string) (*outpu
 		}, []string{"listener"})).WithLabelValues(listener),
 		connections: r.counter("client_connections_total",
 			"Requests upgraded to a WebSocket client").WithLabelValues(listener),
+		coalesced: r.counter("changes_coalesced_total",
+			"Applied-state changes merged into a later change of the same key because a client was behind").WithLabelValues(listener),
 		disconnections: r.counter("client_disconnections_total",
-			"Clients whose connection ended, by reason: read_timeout, client_closed, write_failed, stopped", "reason"),
+			"Clients whose connection ended, by reason: read_timeout, client_closed, write_failed, stopped, watch_lost", "reason"),
 		errors: r.counter("errors_total",
 			"Server errors, by type: upgrade (a request that could not be upgraded), serve (the server stopped before Stop)", "type"),
 		dropped: r.counter("messages_dropped_total",

@@ -2,7 +2,6 @@ package websocket
 
 import (
 	"encoding/json"
-	"errors"
 	"reflect"
 	"strings"
 	"testing"
@@ -347,31 +346,22 @@ func TestRegisterDeclaresWhatTheFactoryResolves(t *testing.T) {
 		}
 	}
 
-	// A subject configuration builds: the declarer reports the built component's ports.
-	raw := withPorts(t, []component.PortDefinition{frames}, []component.PortDefinition{server(9001)})
-	built, err := create(json.RawMessage(raw), testDeps(t))
-	if err != nil {
-		t.Fatalf("factory(%s): %v", raw, err)
-	}
-	declared, err := reg.Ports(json.RawMessage(raw), "websocket")
-	if err != nil {
-		t.Fatalf("declare ports for %s: %v", raw, err)
-	}
-	c := built.(*output)
-	if want := component.PortConfigFrom(c.InputPorts(), c.OutputPorts()); !reflect.DeepEqual(declared, want) {
-		t.Fatalf("declared ports for %s = %+v, want the built component's %+v", raw, declared, want)
-	}
-}
-
-// TestAppliedStateNotBuiltYet: until the applied-state input exists (task 3.3), a kv-watch
-// configuration that passes every check is still refused, so no composition admits an instance
-// that would never stream. The refusal is not a configuration fault.
-func TestAppliedStateNotBuiltYet(t *testing.T) {
-	built, err := create(json.RawMessage(`{}`), testDeps(t))
-	if built != nil || !errors.Is(err, errNotBuilt) {
-		t.Fatalf("factory({}) = %v, %v; want no component and errNotBuilt", built, err)
-	}
-	if errs.IsInvalid(err) {
-		t.Fatalf("factory({}) = %v; want a refusal that is not an invalid-config error", err)
+	// Each input builds: the declarer reports the built component's ports.
+	for _, raw := range []string{
+		`{}`,
+		withPorts(t, []component.PortDefinition{frames}, []component.PortDefinition{server(9001)}),
+	} {
+		built, err := create(json.RawMessage(raw), testDeps(t))
+		if err != nil {
+			t.Fatalf("factory(%s): %v", raw, err)
+		}
+		declared, err := reg.Ports(json.RawMessage(raw), "websocket")
+		if err != nil {
+			t.Fatalf("declare ports for %s: %v", raw, err)
+		}
+		c := built.(*output)
+		if want := component.PortConfigFrom(c.InputPorts(), c.OutputPorts()); !reflect.DeepEqual(declared, want) {
+			t.Fatalf("declared ports for %s = %+v, want the built component's %+v", raw, declared, want)
+		}
 	}
 }

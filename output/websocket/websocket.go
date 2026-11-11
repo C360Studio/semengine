@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"strconv"
 	"sync"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
@@ -29,13 +30,6 @@ const key = "websocket"
 
 // stopping is the answer to an upgrade once Stop has begun.
 const stopping = "websocket output is stopping"
-
-// errNotBuilt refuses an applied-state configuration, which passed every check, because the input
-// that would feed it does not exist yet.
-//
-// shortcut: the kv-watch input of ENTITY_STATES is refused, so no composition admits an instance
-// that never streams; task 3.3 of alpha4-output-websocket replaces this with the applied-state view.
-var errNotBuilt = errors.New("websocket output: the applied-state input is not built yet (alpha4-output-websocket task 3.3)")
 
 var _ component.LifecycleComponent = (*output)(nil)
 
@@ -72,6 +66,16 @@ type output struct {
 	sub    *natsclient.Subscription
 	server *http.Server
 	served chan struct{}
+
+	// Applied state only. runCancel ends the one run context the view supervisor runs under
+	// (ADR-113), supervised is closed once the supervisor has returned, and supervisorErr is what it
+	// returned. view is the view upgrades attach to, nil while there is none; applied is its
+	// readiness, which Health reports.
+	runCancel     context.CancelFunc
+	supervised    chan struct{}
+	supervisorErr error
+	view          atomic.Pointer[stateView]
+	applied       atomic.Int32
 }
 
 // declarePorts is the component.PortDeclarer for the websocket output: the ports the factory
@@ -98,9 +102,6 @@ func create(rawConfig json.RawMessage, deps component.Dependencies) (component.D
 	if err != nil {
 		return nil, err
 	}
-	if s.subject == "" {
-		return nil, errs.Wrap(errNotBuilt, key, "factory", "build")
-	}
 	network := s.output.Config.(component.NetworkPort) // resolveOutput accepts only a network port
 	listener := net.JoinHostPort(network.Host, strconv.Itoa(network.Port))
 	logger := deps.GetLoggerWithComponent(key)
@@ -115,7 +116,7 @@ func create(rawConfig json.RawMessage, deps component.Dependencies) (component.D
 		listener:   listener,
 		tls:        deps.Security.TLS.Server,
 		metrics:    metrics,
-		drops:      newDrops(listener, logger, metrics.dropped),
+		drops:      newDrops(listener, logger, metrics),
 		// Every origin is accepted, as the pin did: the output has no authentication (#84).
 		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
 		clients:  map[*client]struct{}{},
@@ -143,24 +144,33 @@ func (c *output) InputPorts() []component.Port { return []component.Port{c.setti
 // OutputPorts returns the one http network port the server listens on.
 func (c *output) OutputPorts() []component.Port { return []component.Port{c.settings.output} }
 
-// Health reports the shell's verdict (component.Lifecycle.Health).
-func (c *output) Health() component.HealthStatus { return c.lifecycle.Health() }
+// Health reports the shell's verdict (component.Lifecycle.Health), over the applied-state view's
+// stuck state: catching up, or its watch lost and reopening (design D3).
+func (c *output) Health() component.HealthStatus {
+	if c.settings.subject != "" {
+		return c.lifecycle.Health()
+	}
+	return c.lifecycle.Health(c.appliedStuck())
+}
 
-// DataFlow reports input messages: one per subject message received, with its length.
+// DataFlow reports input messages: one per subject message received, or per applied-state write
+// the view decodes, with its length.
 func (c *output) DataFlow() component.FlowMetrics { return c.lifecycle.DataFlow() }
 
 // Initialize marks the component initialized (no I/O); the factory validated the configuration.
 func (c *output) Initialize() error { return c.lifecycle.Initialize() }
 
 // Start loads TLS when the deployment enables it, binds the listener, subscribes to the input
-// subject and serves upgrades, over TLS when it was loaded. The lifecycle
+// subject or starts the applied-state view supervisor, and serves upgrades, over TLS when it was
+// loaded. The lifecycle
 // state is the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
 // second Start are refused, and a Start that fails is rolled back through cleanup, which releases
 // the port. A component with no NATS client is refused first.
 //
 // ctx bounds the bind and the subscribe and is not kept: ending it after Start returned stops
-// nothing (ADR-113). Nothing that continues after Start takes a context: the server, each client's
-// reader and writer, and the subscription's handler end only through Stop.
+// nothing (ADR-113). The view supervisor runs under the one run context Start creates and Stop
+// ends; the server, each client's reader and writer, and the subscription's handler end only
+// through Stop.
 func (c *output) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, key, "Start", "NATS client is required")
@@ -184,11 +194,23 @@ func (c *output) start(ctx context.Context) error {
 		return errs.WrapFatal(err, key, "Start", "bind "+c.listener)
 	}
 	c.listen = listen
-	sub, err := c.natsClient.Subscribe(ctx, c.settings.subject, c.receive)
-	if err != nil {
-		return errs.Wrap(err, key, "Start", "subscribe to "+c.settings.subject)
+	if c.settings.subject != "" {
+		sub, err := c.natsClient.Subscribe(ctx, c.settings.subject, c.receive)
+		if err != nil {
+			return errs.Wrap(err, key, "Start", "subscribe to "+c.settings.subject)
+		}
+		c.sub = sub
+	} else {
+		c.applied.Store(appliedCatchingUp)
+		// The one run context: Start's values without its cancellation, ended only by cleanup.
+		runCtx, runCancel := context.WithCancel(context.WithoutCancel(ctx))
+		supervised := make(chan struct{})
+		c.runCancel, c.supervised = runCancel, supervised
+		go func() {
+			defer close(supervised)
+			c.supervisorErr = c.superviseView(runCtx)
+		}()
 	}
-	c.sub = sub
 	// A Start context that ended during setup fails Start here, before anything is served
 	// (ADR-113).
 	if err := ctx.Err(); err != nil {
@@ -225,8 +247,11 @@ func (c *output) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
 // partial start. It refuses later upgrades with 503, stops the server so the port is released,
 // drains the subscription so nothing more is sent, sends every client close 1001, then waits until
-// the server and every client handler have returned. A ctx that ends first returns its error with
-// the handles kept, and the next Stop resumes.
+// the server and every client handler have returned. Only then does it end the run context and wait
+// for the view supervisor, so a client is closed by the stop, never by the view ending under it. A
+// ctx that ends first returns its error with the handles kept, and the next Stop resumes. A view
+// that could not stop its watch is reported by the Stop that joined its supervisor only, as
+// graph-query does: there is nothing left to retry.
 func (c *output) cleanup(ctx context.Context) error {
 	c.requests.CloseAdmission()
 	if c.server != nil {
@@ -260,7 +285,23 @@ func (c *output) cleanup(ctx context.Context) error {
 	if err := c.requests.Wait(ctx); err != nil {
 		return err
 	}
+	if c.runCancel != nil {
+		c.runCancel()
+	}
+	if c.supervised != nil {
+		select {
+		case <-c.supervised:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	// Read after supervised closed.
+	viewErr := c.supervisorErr
 	c.listen, c.sub, c.server, c.served = nil, nil, nil, nil
+	c.runCancel, c.supervised, c.supervisorErr = nil, nil, nil
+	if viewErr != nil {
+		return errs.Wrap(viewErr, key, "Stop", "stop the applied-state view")
+	}
 	return nil
 }
 

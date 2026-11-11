@@ -36,6 +36,7 @@ import (
 	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
+	wsoutput "github.com/c360studio/semengine/output/websocket"
 	"github.com/c360studio/semengine/payloadregistry"
 	graphclustering "github.com/c360studio/semengine/processor/graph-clustering"
 	graphembedding "github.com/c360studio/semengine/processor/graph-embedding"
@@ -63,12 +64,13 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the six-component stack boots from (design D2), as a
-// product would write it. The child fills the three placeholders from its environment: the NATS
-// URL and the two ports the test picked (design D4), and graph-ingest's configuration, {} (its
-// defaults) unless the test passes one. Every other component takes its defaults, except that
-// graph-embedding runs BM25 only and graph-clustering publishes the changed groups every second
-// rather than every 30 s, so a community wait lasts about a second.
+// stackConfig is the one configuration the seven-component stack boots from (design D2), as a
+// product would write it. The child fills the placeholders from its environment: the NATS URL and
+// the three ports the test picked (design D4), and graph-ingest's configuration, {} (its defaults)
+// unless the test passes one. Every other component takes its defaults, except that
+// graph-embedding runs BM25 only, graph-clustering publishes the changed groups every second rather
+// than every 30 s, so a community wait lasts about a second, and the websocket output streams
+// applied ENTITY_STATES on the loopback port the test picked.
 const stackConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -89,7 +91,11 @@ const stackConfig = `{
     "graph-clustering": {"type": "processor", "name": "graph-clustering", "enabled": true,
       "config": {"detection_interval": "1s"}},
     "graph-query": {"type": "processor", "name": "graph-query", "enabled": true, "config": {}},
-    "graph-gateway": {"type": "gateway", "name": "graph-gateway", "enabled": true, "config": {}}
+    "graph-gateway": {"type": "gateway", "name": "graph-gateway", "enabled": true, "config": {}},
+    "websocket": {"type": "output", "name": "websocket", "enabled": true, "config": {"ports": {
+      "inputs": [{"name": "entity_watch", "config": {"kind": "kv-watch", "bucket": "ENTITY_STATES"}}],
+      "outputs": [{"name": "websocket_server",
+        "config": {"kind": "network", "protocol": "http", "host": "127.0.0.1", "port": {{websocket_port}}}}]}}}
   }
 }`
 
@@ -132,15 +138,16 @@ type composition struct {
 	labels []string
 }
 
-// fullStack is the six-component stack every test but the no-embedder one boots. graph-clustering's
+// fullStack is the seven-component stack every test but the no-embedder one boots. graph-clustering's
 // key counts what its maintainer holds, not what it has published (readiness.KeyGraphClustering), so
 // awaitIndexed's wait on it orders no community read: checkCommunities waits on the record's own
 // entity_revision.
 var fullStack = composition{
-	name:       "full",
-	config:     stackConfig,
-	components: []string{"graph-clustering", "graph-embedding", "graph-gateway", "graph-index", "graph-ingest", "graph-query"},
-	indexKeys:  []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering},
+	name:   "full",
+	config: stackConfig,
+	components: []string{"graph-clustering", "graph-embedding", "graph-gateway", "graph-index", "graph-ingest", "graph-query",
+		"websocket"},
+	indexKeys: []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering},
 }
 
 // graphOnlyStack is the stack with no embedder: graph-embedding neither configured nor registered.
@@ -171,6 +178,7 @@ var componentFactories = map[string]func(*component.Registry) error{
 	"graph-clustering": graphclustering.Register,
 	"graph-query":      graphquery.Register,
 	"graph-gateway":    graphgateway.Register,
+	"websocket":        wsoutput.Register,
 }
 
 // What the test passes the child in its environment.
@@ -178,6 +186,8 @@ const (
 	envNATSURL     = "SMOKE_NATS_URL"
 	envHTTPPort    = "SMOKE_HTTP_PORT"
 	envMetricsPort = "SMOKE_METRICS_PORT"
+	// envWebsocketPort is the websocket output's port; a composition without one ignores it.
+	envWebsocketPort = "SMOKE_WEBSOCKET_PORT"
 	// envComposition is the name of the composition the child boots.
 	envComposition = "SMOKE_COMPOSITION"
 	// envReady is the file the child creates once StartAll returned.
@@ -276,6 +286,7 @@ func runStack(ctx context.Context) (result error) {
 		"{{nats_url}}", os.Getenv(envNATSURL),
 		"{{http_port}}", os.Getenv(envHTTPPort),
 		"{{metrics_port}}", os.Getenv(envMetricsPort),
+		"{{websocket_port}}", os.Getenv(envWebsocketPort),
 		"{{ingest_config}}", ingestConfig,
 	).Replace(stackComposition.config)
 	cfg, err := config.NewLoader().LoadFromBytes([]byte(raw))
@@ -416,14 +427,16 @@ func (h *holdOnIngested) WithGroup(name string) slog.Handler {
 	return &holdOnIngested{inner: h.inner.WithGroup(name), suffix: h.suffix}
 }
 
-// stack is one running child, the ports it serves HTTP and metrics on and the platform ID it
-// reported.
+// stack is one running child, the ports it serves HTTP, metrics and websocket clients on and the
+// platform ID it reported.
 type stack struct {
 	composition composition
 	process     *prochost.Process
 	httpPort    int
 	metricsPort int
-	platform    string
+	// websocketPort is the websocket output's port on 127.0.0.1.
+	websocketPort int
+	platform      string
 	// ingestStatusBefore is the revision of graph-ingest's GRAPH_STATUS entry before this child
 	// started, 0 if absent: an entry above it is one this child wrote.
 	ingestStatusBefore uint64
@@ -444,7 +457,22 @@ func freePort(t *testing.T) int {
 	return port
 }
 
-// startStack boots the six-component stack in a child against url, on two ports it picks, and
+// freeLoopbackPort picks a port for the websocket output, which binds 127.0.0.1, in that family,
+// and releases it (design "Tests"; #390).
+func freeLoopbackPort(t *testing.T) int {
+	t.Helper()
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("pick a loopback port: %v", err)
+	}
+	port := listener.Addr().(*net.TCPAddr).Port
+	if err := listener.Close(); err != nil {
+		t.Fatalf("release port %d: %v", port, err)
+	}
+	return port
+}
+
+// startStack boots the seven-component stack in a child against url, on three ports it picks, and
 // returns once StartAll has returned in it.
 func startStack(t *testing.T, o observer, url string, env ...string) stack {
 	t.Helper()
@@ -454,7 +482,7 @@ func startStack(t *testing.T, o observer, url string, env ...string) stack {
 // startComposition is startStack for the composition c.
 func startComposition(t *testing.T, o observer, url string, c composition, env ...string) stack {
 	t.Helper()
-	return startStackOn(t, o, url, c, freePort(t), freePort(t), env...)
+	return startStackOn(t, o, url, c, ports{http: freePort(t), metrics: freePort(t), websocket: freeLoopbackPort(t)}, env...)
 }
 
 // restartStack boots a new child against url from the configuration previous booted from, its
@@ -467,27 +495,33 @@ func restartStack(t *testing.T, o observer, url string, previous stack, env ...s
 	if previous.process.Alive() {
 		t.Fatal("restartStack: the previous stack is still running")
 	}
-	return startStackOn(t, o, url, previous.composition, previous.httpPort, previous.metricsPort, env...)
+	return startStackOn(t, o, url, previous.composition,
+		ports{http: previous.httpPort, metrics: previous.metricsPort, websocket: previous.websocketPort}, env...)
 }
 
-// startStackOn boots a child running c on the two ports; env adds to what the child is passed, as
+// ports are the three ports a child serves on.
+type ports struct{ http, metrics, websocket int }
+
+// startStackOn boots a child running c on the ports p; env adds to what the child is passed, as
 // envIngestConfig and envHold.
-func startStackOn(t *testing.T, o observer, url string, c composition, httpPort, metricsPort int, env ...string) stack {
+func startStackOn(t *testing.T, o observer, url string, c composition, p ports, env ...string) stack {
 	t.Helper()
 	ready := filepath.Join(t.TempDir(), "ready")
 	// Read before the child exists, so an entry above this revision is the child's own write.
 	before := o.statusRevision(t, readiness.KeyGraphIngest)
-	p, err := prochost.Start(t, stackHelper, append([]string{
+	process, err := prochost.Start(t, stackHelper, append([]string{
 		envComposition + "=" + c.name,
 		envNATSURL + "=" + url,
-		envHTTPPort + "=" + strconv.Itoa(httpPort),
-		envMetricsPort + "=" + strconv.Itoa(metricsPort),
+		envHTTPPort + "=" + strconv.Itoa(p.http),
+		envMetricsPort + "=" + strconv.Itoa(p.metrics),
+		envWebsocketPort + "=" + strconv.Itoa(p.websocket),
 		envReady + "=" + ready,
 	}, env...)...)
 	if err != nil {
 		t.Fatalf("start the stack: %v", err)
 	}
-	s := stack{composition: c, process: p, httpPort: httpPort, metricsPort: metricsPort, ingestStatusBefore: before}
+	s := stack{composition: c, process: process, httpPort: p.http, metricsPort: p.metrics, websocketPort: p.websocket,
+		ingestStatusBefore: before}
 	// The child renames the file into place, so a file that exists is whole.
 	s.platform = await(t, s, "the stack's StartAll to return", func(context.Context) (string, error) {
 		data, err := os.ReadFile(ready)
@@ -692,8 +726,9 @@ func latched(status graph.IndexStatusResponse) string {
 // awaitIndexed is the rest of design D5's order, after the acknowledgement or a mutation's reply:
 // the ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one,
 // not degraded; then the envelope of each index the composition runs (graph-index, and
-// graph-embedding and graph-clustering where they are configured) at or above that revision. It returns the revision. A latched
-// state fails at once, naming it.
+// graph-embedding and graph-clustering where they are configured) at or above that revision; then,
+// where the websocket output is configured, a client it accepts streamed through that revision
+// (awaitStreamed). It returns the revision. A latched state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()
 	revision := o.entityRevision(t)
@@ -730,8 +765,14 @@ func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 			t.Fatalf("%s/%s latched: %s", graph.BucketGraphStatus, key, reason)
 		}
 	}
+	if slices.Contains(s.composition.components, websocketComponent) {
+		awaitStreamed(t, s, revision)
+	}
 	return revision
 }
+
+// websocketComponent is the websocket output's instance name in stackConfig.
+const websocketComponent = "websocket"
 
 // componentsHealth is the reply of GET /components/health.
 type componentsHealth struct {

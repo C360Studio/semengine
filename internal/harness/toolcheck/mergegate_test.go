@@ -299,19 +299,30 @@ func TestVerifyGroups(t *testing.T) {
 	}
 }
 
-// merge-gate › "A contract test guards both workflows", "Required needs verify", "The merge-check
-// workflow" and "Pinned runner image". .github/workflows/ci.yml is held to six facts: no
-// permission anywhere in the workflow is a write; required needs verify; verify's limit is 15
-// minutes; required runs under if: always(), and its step, which takes its results from
+// merge-gate › "A contract test guards both workflows", "Required needs both CI jobs", "Each CI
+// job has a time limit", "CI runs verify as two parallel jobs", "The merge-check workflow" and
+// "Pinned runner image". .github/workflows/ci.yml is held to these facts: no permission anywhere
+// in the workflow is a write; required needs checks and integration; checks' limit is 15 minutes
+// and integration's 20; each of the two needs no job and ends with its own task verify -- <group>
+// line; required runs under if: always(), and its step, which takes its results from
 // needs.*.result, exits 0 only when every needed job succeeded; the pull_request trigger lists
-// exactly four activity types; every job runs on the one label ubuntu-24.04; verify's checkout
+// exactly four activity types; every job runs on the one label ubuntu-24.04; checks' checkout
 // fetches full history (fetch-depth: 0), so scripts/tools-changed.sh finds the base. The step is
 // shown by running its script as the workflow writes it, with each set of results planted.
 // .github/workflows/merge-check.yml is held to the merge-check workflow requirement (see
 // mergeCheckWorkflowViolations), and every ateam install line in the two files names one release.
 // As above, the expected values are constants here, never read from the files under test.
 var (
-	requiredNeeds         = []string{"verify"}
+	requiredNeeds = []string{"checks", "integration"}
+	// verifyJobs are the two CI jobs that run task verify, each with its limit and its last step.
+	verifyJobs = []struct {
+		job   string
+		limit int
+		run   string
+	}{
+		{"checks", 15, "task verify -- checks"},
+		{"integration", 20, "task verify -- integration"},
+	}
 	mergeCheckPermissions = map[string]string{"contents": "read", "issues": "read", "pull-requests": "read"}
 	// The probe also reads the head's Merge check check run: ateam v0.4.0 answers awaiting=false
 	// once a successful one stands there (ateam #359).
@@ -322,7 +333,6 @@ var (
 )
 
 const (
-	verifyTimeoutMinutes     = 15
 	mergeCheckTimeoutMinutes = 5
 	runnerLabel              = "ubuntu-24.04"
 	mergeCheckDraftCondition = "!github.event.pull_request.draft"
@@ -373,7 +383,7 @@ func TestCIWorkflowPinnedSensitivity(t *testing.T) {
 permissions:
   contents: read
 jobs:
-  verify:
+  checks:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -381,10 +391,16 @@ jobs:
         with:
           fetch-depth: 0
       - run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
-      - run: task verify
+      - run: task verify -- checks
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - run: task verify -- integration
   required:
     runs-on: ubuntu-24.04
-    needs: [verify]
+    needs: [checks, integration]
     if: always()
     steps:
       - name: Require every needed job to succeed
@@ -476,28 +492,48 @@ jobs:
 	}
 	for _, tc := range []plantCase{
 		// "A contract test guards both workflows", the ci.yml half.
-		{"required needs nothing", "needs: [verify]", "needs: []",
-			[]string{"job required", "verify", "missing"}},
+		{"required needs nothing", "needs: [checks, integration]", "needs: []",
+			[]string{"job required", "checks", "missing"}},
+		{"required needs checks alone", "needs: [checks, integration]", "needs: [checks]",
+			[]string{"job required", "integration", "missing"}},
 		{"write permission on a job", "    timeout-minutes: 15\n", "    timeout-minutes: 15\n    permissions:\n      issues: write\n",
-			[]string{"ci.yml", "job verify", "issues: write"}},
-		{"verify limit changed", "timeout-minutes: 15", "timeout-minutes: 30",
-			[]string{"job verify", "30", "15 minutes"}},
+			[]string{"ci.yml", "job checks", "issues: write"}},
+		{"checks limit changed", "timeout-minutes: 15", "timeout-minutes: 30",
+			[]string{"job checks", "30", "15 minutes"}},
+		{"integration limit changed", "timeout-minutes: 20", "timeout-minutes: 15",
+			[]string{"job integration", "15", "20 minutes"}},
+		// "CI runs verify as two parallel jobs": a job loses its group, both run one group, a step
+		// follows the run line, or either job needs the other (Codex, #600 comment 6808069861).
+		{"integration runs verify with no group", "      - run: task verify -- integration\n", "      - run: task verify\n",
+			[]string{"job integration", "task verify -- integration"}},
+		{"both jobs run the checks group", "      - run: task verify -- integration\n", "      - run: task verify -- checks\n",
+			[]string{"job integration", "task verify -- integration"}},
+		{"checks runs a step after its verify line", "      - run: task verify -- checks\n", "      - run: task verify -- checks\n      - run: echo done\n",
+			[]string{"job checks", "task verify -- checks"}},
+		{"integration needs checks", "  integration:\n", "  integration:\n    needs: checks\n",
+			[]string{"job integration", "needs checks", "run in parallel"}},
+		{"checks needs integration", "  checks:\n", "  checks:\n    needs: [integration]\n",
+			[]string{"job checks", "needs [integration]", "run in parallel"}},
+		{"checks job renamed", "  checks:\n", "  verify:\n",
+			[]string{"no job checks"}},
 		{"edited added to ci.yml", "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, synchronize, reopened, ready_for_review, edited]",
 			[]string{"ci.yml", "pull_request", "edited is extra"}},
 		// The same holes by other spellings.
-		{"required needs another job", "needs: [verify]", "needs: build",
-			[]string{"job required", "verify", "missing"}},
+		{"required needs another job", "needs: [checks, integration]", "needs: build",
+			[]string{"job required", "checks", "missing"}},
 		{"write-all on the workflow", "permissions:\n  contents: read\njobs:", "permissions: write-all\njobs:",
 			[]string{"ci.yml", "workflow", "write-all"}},
-		{"verify limit removed", "    timeout-minutes: 15\n", "",
-			[]string{"job verify", "15 minutes"}},
+		{"checks limit removed", "    timeout-minutes: 15\n", "",
+			[]string{"job checks", "15 minutes"}},
+		{"integration limit removed", "    timeout-minutes: 20\n", "",
+			[]string{"job integration", "20 minutes"}},
 		// The three planted workflows added to tasks.md 7.4 after implementation: required must run
 		// whatever its needed jobs did, and its step must fail on anything but success from all of them.
 		{"required without if: always()", "    if: always()\n", "",
 			[]string{"job required", "if: always()"}},
 		{"step exits 0 for skipped", `if [ "$r" != "success" ]`, `if [ "$r" != "success" ] && [ "$r" != "skipped" ]`,
 			[]string{"job required", "exits 0", "skipped"}},
-		{"step reads verify alone, by its source", "${{ join(needs.*.result, ' ') }}", "${{ needs.verify.result }}",
+		{"step reads checks alone, by its source", "${{ join(needs.*.result, ' ') }}", "${{ needs.checks.result }}",
 			[]string{"job required", "does not take its results from needs.*.result"}},
 		// The same holes by other spellings.
 		{"required runs on success only", "    if: always()\n", "    if: success()\n",
@@ -524,24 +560,26 @@ jobs:
 			[]string{"pull_request", "ready_for_review"}},
 		{"default type missing", "types: [opened, synchronize, reopened, ready_for_review]", "types: [opened, reopened, ready_for_review]",
 			[]string{"pull_request", "synchronize"}},
-		// "Pinned runner image": each plant defeats one weaker check. The fourth job defeats a check
-		// of the three named jobs only; the missing runs-on, one that runs only when runs-on is
+		// "Pinned runner image": each plant defeats one weaker check. The extra job defeats a check
+		// of the named jobs only; the missing runs-on, one that runs only when runs-on is
 		// present; ubuntu-26.04, a refusal of -latest labels only; ubuntu-24.04-arm, a prefix match;
 		// the list, a "contains ubuntu-24.04" test of the printed value; the group, a check that
 		// handles a list but not a mapping; the expression, a check that skips expressions.
-		{"a fourth job on the moving label", "jobs:\n", "jobs:\n  lint: {runs-on: ubuntu-latest, steps: [{run: echo}]}\n",
+		{"an extra job on the moving label", "jobs:\n", "jobs:\n  lint: {runs-on: ubuntu-latest, steps: [{run: echo}]}\n",
 			[]string{"job lint", "ubuntu-latest", "ubuntu-24.04"}},
 		{"required has no runs-on", "  required:\n    runs-on: ubuntu-24.04\n", "  required:\n",
 			[]string{"job required", "no runs-on", "ubuntu-24.04"}},
-		{"verify on another release", "  verify:\n    runs-on: ubuntu-24.04\n", "  verify:\n    runs-on: ubuntu-26.04\n",
-			[]string{"job verify", "ubuntu-26.04", "ubuntu-24.04"}},
-		{"verify on a list of labels", "  verify:\n    runs-on: ubuntu-24.04\n", "  verify:\n    runs-on: [self-hosted, ubuntu-24.04]\n",
-			[]string{"job verify", "[self-hosted ubuntu-24.04]"}},
+		{"checks on another release", "  checks:\n    runs-on: ubuntu-24.04\n", "  checks:\n    runs-on: ubuntu-26.04\n",
+			[]string{"job checks", "ubuntu-26.04", "ubuntu-24.04"}},
+		{"integration on the moving label", "  integration:\n    runs-on: ubuntu-24.04\n", "  integration:\n    runs-on: ubuntu-latest\n",
+			[]string{"job integration", "ubuntu-latest", "ubuntu-24.04"}},
+		{"checks on a list of labels", "  checks:\n    runs-on: ubuntu-24.04\n", "  checks:\n    runs-on: [self-hosted, ubuntu-24.04]\n",
+			[]string{"job checks", "[self-hosted ubuntu-24.04]"}},
 		{"required on an expression", "  required:\n    runs-on: ubuntu-24.04\n", "  required:\n    runs-on: ${{ vars.RUNNER_IMAGE }}\n",
 			[]string{"job required", "runs on ${{ vars.RUNNER_IMAGE }}"}},
 		// "How the changed files are found": the scenario "Full history dropped from CI".
 		{"fetch-depth dropped", "        with:\n          fetch-depth: 0\n", "",
-			[]string{"job verify", "fetch-depth: 0"}},
+			[]string{"job checks", "fetch-depth: 0"}},
 		// "Pins differ", from the ci.yml side.
 		{"ci.yml on another release", "ateam@v0.4.0", "ateam@v0.3.4",
 			[]string{"v0.3.4", "v0.4.0", "one version"}},
@@ -715,17 +753,28 @@ func ciWorkflowViolations(t *testing.T, data []byte) []string {
 		violations = append(violations, requiredStepViolations(t, req, needs)...)
 	}
 
-	if v, ok := wf.Jobs["verify"]; !ok {
-		violations = append(violations, "ci.yml: no job verify; the merge-gate spec requires it")
-	} else if limit, ok := v.TimeoutMinutes.(int); !ok || limit != verifyTimeoutMinutes {
-		violations = append(violations, fmt.Sprintf("ci.yml: job verify has timeout-minutes %v; the merge-gate spec requires %d minutes", v.TimeoutMinutes, verifyTimeoutMinutes))
+	for _, want := range verifyJobs {
+		v, ok := wf.Jobs[want.job]
+		if !ok {
+			violations = append(violations, fmt.Sprintf("ci.yml: no job %s; the merge-gate spec requires it", want.job))
+			continue
+		}
+		if limit, ok := v.TimeoutMinutes.(int); !ok || limit != want.limit {
+			violations = append(violations, fmt.Sprintf("ci.yml: job %s has timeout-minutes %v; the merge-gate spec requires %d minutes", want.job, v.TimeoutMinutes, want.limit))
+		}
+		if v.Needs != nil {
+			violations = append(violations, fmt.Sprintf("ci.yml: job %s needs %v; the merge-gate spec requires checks and integration to need no job, so they run in parallel", want.job, v.Needs))
+		}
+		if n := len(v.Steps); n == 0 || v.Steps[n-1].Run != want.run {
+			violations = append(violations, fmt.Sprintf("ci.yml: job %s does not end with `%s`; the merge-gate spec requires that run line as its last step", want.job, want.run))
+		}
 	}
-	if v, ok := wf.Jobs["verify"]; ok {
+	if v, ok := wf.Jobs["checks"]; ok {
 		i := slices.IndexFunc(v.Steps, func(s ciStep) bool { return strings.HasPrefix(s.Uses, "actions/checkout@") })
 		if i < 0 {
-			violations = append(violations, "ci.yml: job verify has no actions/checkout step; the merge-gate spec requires one with fetch-depth: 0")
+			violations = append(violations, "ci.yml: job checks has no actions/checkout step; the merge-gate spec requires one with fetch-depth: 0")
 		} else if depth, ok := v.Steps[i].With["fetch-depth"].(int); !ok || depth != 0 {
-			violations = append(violations, fmt.Sprintf("ci.yml: job verify checks out with fetch-depth %v; the merge-gate spec (\"How the changed files are found\") requires fetch-depth: 0", v.Steps[i].With["fetch-depth"]))
+			violations = append(violations, fmt.Sprintf("ci.yml: job checks checks out with fetch-depth %v; the merge-gate spec (\"How the changed files are found\") requires fetch-depth: 0", v.Steps[i].With["fetch-depth"]))
 		}
 	}
 	return violations

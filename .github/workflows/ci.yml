@@ -5,7 +5,7 @@ on:
     branches: [main]
   # Every PR gets CI whatever its base, so stacked PRs are covered too. Listing
   # types replaces GitHub's default three, so they are listed with
-  # ready_for_review: marking a draft ready runs verify on the head. The merge
+  # ready_for_review: marking a draft ready runs both verify jobs on the head. The merge
   # check is its own workflow, merge-check.yml.
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -22,8 +22,11 @@ permissions:
 # Every job is pinned to ubuntu-24.04 by the merge-gate spec. Moving to another
 # image changes that spec; that change's CI run is task verify on the new image.
 jobs:
-  verify:
-    name: Verify
+  # task verify runs as two jobs in parallel (merge-gate spec, "CI runs verify as two parallel
+  # jobs"); each limit is about twice the job's estimated normal run time ("Each CI job has a
+  # time limit"). Local task verify with no group stays the full gate.
+  checks:
+    name: Checks
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
@@ -61,14 +64,56 @@ jobs:
 
       - run: task doctor
 
-      # verify includes test:integration, which needs the runner's Docker daemon.
-      - run: task verify
+      # Every step but test:integration and cover:check.
+      - run: task verify -- checks
+
+  integration:
+    name: Integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    # The same setup steps as checks; only the last line differs.
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - run: npm ci
+
+      # .task-version is the single pin; task doctor compares against the same file.
+      - name: Read Task version pin
+        id: task-version
+        run: echo "version=$(tr -d '[:space:]' < .task-version)" >> "$GITHUB_OUTPUT"
+
+      - uses: go-task/setup-task@a00fbb05ce67b35648be3c78cbc9fd85354c757e # v2.2.0
+        with:
+          version: ${{ steps.task-version.outputs.version }}
+
+      # The ateam pin; scripts/doctor.sh reads it from this line. ateam may need a newer Go
+      # than go.mod, so the toolchain is fetched as needed.
+      - name: Install ateam
+        env:
+          GOTOOLCHAIN: auto
+        run: go install github.com/c360studio/ateam/cmd/ateam@v0.4.0
+
+      - run: task doctor
+
+      # ateam:doctor, test:integration and cover:check; test:integration needs the runner's Docker daemon.
+      - run: task verify -- integration
 
   # Single required status check: anything other than success in a needed job
   # (failure, cancelled, skipped, or a job that never ran) fails the aggregate.
   required:
     name: Required
-    needs: [verify]
+    needs: [checks, integration]
     if: always()
     runs-on: ubuntu-24.04
     timeout-minutes: 5

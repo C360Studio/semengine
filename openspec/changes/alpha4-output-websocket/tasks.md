@@ -41,7 +41,7 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
   merged in: a client receives each fixed entity's `put` and `synced`, and its folded frames follow the edit and delete;
   the broker-restart scenario lists seven healthy components (`specs/composed-stack/spec.md`). Check:
   `task test:integration -- ./internal/smoke/`.
-- [ ] 4.2 `output/websocket/README.md` and `doc.go` written against the code: wire format, inputs, at-most-once,
+- [x] 4.2 `output/websocket/README.md` and `doc.go` written against the code: wire format, inputs, at-most-once,
   every origin accepted and no authentication (#84), TLS, metrics, migration notes for semsource and semboids.
   Check: `task docs:check`.
 - [ ] 4.3 Ledger (D10): new `output/websocket` `adapt` row; `internal/tlsutil` stale "change 5" text and

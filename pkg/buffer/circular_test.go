@@ -282,3 +282,28 @@ func TestCapacityBelowOneIsOne(t *testing.T) {
 		assert.Equal(t, []int{2}, drain(buf), "capacity %d holds one item", capacity)
 	}
 }
+
+// TestDropNewestRatesExceedOne: DropRate and OverflowRate are ratios to accepted writes with no
+// upper bound (#589). Under DropNewest a rejected write counts a drop and an overflow but no
+// write, so the ratios pass 1.
+//
+// Oracle: counted by hand. Capacity 1, four writes: the first is accepted, the other three find
+// the buffer full and are rejected. Writes 1, drops 3, overflows 3, both ratios 3/1.
+func TestDropNewestRatesExceedOne(t *testing.T) {
+	buf, err := NewCircularBuffer[int](1, WithOverflowPolicy[int](DropNewest))
+	require.NoError(t, err)
+	for i := range 4 {
+		require.NoError(t, buf.Write(i))
+	}
+
+	stats := buf.Stats()
+	assert.Equal(t, int64(1), stats.Writes(), "only the accepted write counts")
+	assert.Equal(t, int64(3), stats.Drops())
+	assert.Equal(t, int64(3), stats.Overflows())
+	assert.Equal(t, 3.0, stats.DropRate())
+	assert.Equal(t, 3.0, stats.OverflowRate())
+
+	got, ok := buf.Read()
+	require.True(t, ok)
+	assert.Equal(t, 0, got, "DropNewest keeps the first item")
+}

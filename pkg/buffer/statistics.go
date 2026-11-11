@@ -64,7 +64,8 @@ func (s *Statistics) UpdateSize(size int64) {
 	s.mu.Unlock()
 }
 
-// Writes returns the total number of write operations.
+// Writes returns the number of items the buffer accepted. A write DropNewest rejects is not
+// counted; a write that evicts the oldest item under DropOldest is.
 func (s *Statistics) Writes() int64 {
 	return atomic.LoadInt64(&s.writes)
 }
@@ -131,7 +132,9 @@ func (s *Statistics) ReadThroughput() float64 {
 	return float64(totalReads) / elapsed.Seconds()
 }
 
-// DropRate returns the percentage of writes that resulted in drops (0.0 to 1.0).
+// DropRate returns Drops divided by Writes, or 0 before the first accepted write. It is a ratio
+// to accepted writes with no upper bound: under DropNewest a rejected write adds a drop but no
+// write, so a full buffer of capacity 1 given four writes reports 3.
 func (s *Statistics) DropRate() float64 {
 	writes := s.Writes()
 	drops := s.Drops()
@@ -143,7 +146,8 @@ func (s *Statistics) DropRate() float64 {
 	return float64(drops) / float64(writes)
 }
 
-// OverflowRate returns the percentage of writes that caused overflows (0.0 to 1.0).
+// OverflowRate returns Overflows divided by Writes, or 0 before the first accepted write. Like
+// DropRate it is a ratio to accepted writes with no upper bound, and exceeds 1 under DropNewest.
 func (s *Statistics) OverflowRate() float64 {
 	writes := s.Writes()
 	overflows := s.Overflows()

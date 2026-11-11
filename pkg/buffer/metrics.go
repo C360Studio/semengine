@@ -116,6 +116,13 @@ func (m *bufferMetrics) recordRead(size, capacity int) {
 	m.utilization.Set(float64(size) / float64(capacity))
 }
 
+// recordReads adds n to the read counter and updates size/utilization once.
+func (m *bufferMetrics) recordReads(n, size, capacity int) {
+	m.reads.Add(float64(n))
+	m.size.Set(float64(size))
+	m.utilization.Set(float64(size) / float64(capacity))
+}
+
 // recordPeek increments the peek counter.
 func (m *bufferMetrics) recordPeek() {
 	m.peeks.Inc()

@@ -233,9 +233,9 @@ func (cb *circularBuffer[T]) ReadBatch(maxN int) []T {
 	// ALWAYS track in stats
 	cb.stats.UpdateSize(int64(cb.size))
 
-	// ALSO track in metrics if enabled - use final state after all reads
+	// ALSO track in metrics if enabled - count every item removed, then set the final size once
 	if cb.metrics != nil {
-		cb.metrics.updateSize(cb.size, cb.capacity)
+		cb.metrics.recordReads(readCount, cb.size, cb.capacity)
 	}
 
 	// Signal waiting writers: readCount > 0 here, so space was freed

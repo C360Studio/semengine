@@ -108,3 +108,51 @@ func TestNewCircularBufferRefusedReturnsNil(t *testing.T) {
 		t.Errorf("NewCircularBuffer returned a non-nil Buffer[int] (%T) with its error", buf)
 	}
 }
+
+// TestReadBatchCountsReadMetric: semengine_buffer_reads_total counts every item removed,
+// whether by Read or ReadBatch (#589). Two buffers share one prefix, so the gathered series
+// is the sum of both buffers' reads.
+//
+// Oracle: the script each buffer runs, counted by hand: capacity 4, writes 1, 2, 3, 4; Read
+// removes 1; ReadBatch(0) removes nothing; ReadBatch(2) removes 2 and 3; ReadBatch(10), larger
+// than the 1 item left, removes 4; ReadBatch(5) on the empty buffer removes nothing. That is
+// 4 reads per buffer and 8 on the shared series, with size 0 and utilization 0 at the end.
+func TestReadBatchCountsReadMetric(t *testing.T) {
+	registry := metric.NewMetricsRegistry()
+
+	for range 2 {
+		buf, err := NewCircularBuffer[int](4, WithMetrics[int](registry, "batch"))
+		require.NoError(t, err)
+		for _, v := range []int{1, 2, 3, 4} {
+			require.NoError(t, buf.Write(v))
+		}
+		got, ok := buf.Read()
+		require.True(t, ok)
+		require.Equal(t, 1, got)
+		assert.Empty(t, buf.ReadBatch(0), "maxN 0 removes nothing")
+		assert.Equal(t, []int{2, 3}, buf.ReadBatch(2))
+		assert.Equal(t, []int{4}, buf.ReadBatch(10), "an oversized batch removes what is there")
+		assert.Empty(t, buf.ReadBatch(5), "a batch from an empty buffer removes nothing")
+		assert.Equal(t, int64(4), buf.Stats().Reads())
+	}
+
+	families, err := registry.PrometheusRegistry().Gather()
+	require.NoError(t, err)
+	byName := make(map[string]*dto.MetricFamily)
+	for _, mf := range families {
+		byName[mf.GetName()] = mf
+	}
+
+	reads := byName["semengine_buffer_reads_total"]
+	require.NotNil(t, reads, "reads_total gathered")
+	require.Len(t, reads.GetMetric(), 1, "the two buffers share one series")
+	assert.Equal(t, 8.0, reads.GetMetric()[0].GetCounter().GetValue(), "items removed by Read and ReadBatch")
+	assertComponentLabel(t, reads.GetMetric()[0], "batch")
+
+	for _, name := range []string{"semengine_buffer_size", "semengine_buffer_utilization"} {
+		mf := byName[name]
+		require.NotNil(t, mf, "%s gathered", name)
+		require.Len(t, mf.GetMetric(), 1, name)
+		assert.Equal(t, 0.0, mf.GetMetric()[0].GetGauge().GetValue(), name)
+	}
+}

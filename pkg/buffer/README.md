@@ -139,7 +139,7 @@ A type that implements `Buffer[T]` without embedding it must have both bounded-w
 ```go
 stats := buf.Stats()
 
-stats.Writes()         // total writes
+stats.Writes()         // items accepted; a write DropNewest rejects is not one
 stats.Reads()          // total reads
 stats.Peeks()          // total peeks
 stats.Drops()          // total items dropped
@@ -148,7 +148,8 @@ stats.CurrentSize()    // items now
 stats.MaxSize()        // highest size seen
 stats.Throughput()     // writes per second since start
 stats.ReadThroughput() // reads per second since start
-stats.DropRate()       // drops divided by writes
+stats.DropRate()       // drops divided by accepted writes, no upper bound
+stats.OverflowRate()   // overflows divided by accepted writes, no upper bound
 stats.Utilization(cap) // size divided by cap
 stats.Summary()        // all of the above as a StatsSummary, for JSON
 ```

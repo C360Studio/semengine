@@ -29,6 +29,9 @@ not run against your code. It comes from reading the SemEngine package and the S
   buffer deadlocked. SemSource sets no drop callback.
 - `NewCircularBuffer` returns a true nil `Buffer[T]` with its error. At the pin it returned a non-nil interface
   holding a nil pointer, so a `buf != nil` check passed on a failed construction. Check the error, as before.
+- `semengine_buffer_reads_total` counts the items `ReadBatch` removes. At the pin it counted only `Read`, so a
+  publisher that drains with `ReadBatch`, as SemSource's does, reported zero reads. `Stats().Reads()` counted both
+  then and now. Do: expect the reads series to rise with batch drains.
 - `StatsSummary` has no `memory_usage` field in its JSON.
 - A wrapper that embeds `Buffer[T]` (SemSource's `notifyingBuffer` in `stop_settlement_test.go`) now keeps the
   bounded writes, because they are part of the interface. At the pin the embedded interface hid them.

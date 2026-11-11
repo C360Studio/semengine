@@ -4891,7 +4891,9 @@
     internal/cache, #9, #220); (8) WriteWithTimeout and WriteWithContext are methods of Buffer[T], so callers and
     types embedding Buffer[T] reach them without a type assertion (owner ruling, #566 comment 6782336804); (9)
     NewCircularBuffer returns a nil Buffer[T] with its error, where the pin returned a non-nil interface holding a
-    nil pointer
+    nil pointer; (10) ReadBatch adds the items it removes to semengine_buffer_reads_total, where the pin counted
+    them only in Statistics (#589); (11) DropRate and OverflowRate keep the pin's arithmetic and are documented as
+    ratios to accepted writes with no upper bound, where the pin promised 0 to 1 (#589)
   dependencies_and_side_effects: >-
     metric, pkg/errs (in-set); prometheus/client_golang; stdlib. No background goroutine: Block-policy waits run in
     the caller's goroutine
@@ -4905,8 +4907,9 @@
     pkg/buffer/circular_test.go (TestWriteWithContextRefusesNilContext, TestDropCallbackMayUseBuffer,
     TestWriteWithTimeoutAssertable, TestWriteWithTimeoutExpires, TestWriteWithTimeoutSucceedsWhenSpaceFrees,
     TestWriteWithContextLeavesNothing, TestCapacityBelowOneIsOne), metrics_test.go (TestMetricsOnInjectedRegistry,
-    TestNewCircularBufferRefusedReturnsNil), buffer_test.go (the pin's tests, the blocking ones rewritten in
-    synctest), benchmark_test.go; notes/2.1.md and 2.2.md of the change record the failing-first output and mutation
-    checks
+    TestNewCircularBufferRefusedReturnsNil, TestReadBatchCountsReadMetric), circular_test.go
+    TestDropNewestRatesExceedOne, buffer_test.go (the pin's tests, the blocking ones rewritten in synctest),
+    benchmark_test.go; notes/2.1.md, 2.2.md and review-589.md of the change record the failing-first output and
+    mutation checks
   owner: alpha4-pkg-buffer developer
   disposition: adapt

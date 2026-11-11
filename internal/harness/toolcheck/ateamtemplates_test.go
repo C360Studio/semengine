@@ -2,6 +2,7 @@ package toolcheck
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -12,6 +13,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 // harness-boundaries › "ateam template files are the pin's": every file `ateam init` writes into an
@@ -25,26 +28,29 @@ import (
 // compare.
 
 // semengineOwned are the paths init writes that SemEngine keeps its own text in, with the reason. The
-// five client configurations are ateam's to register into but the adopter's to edit: init never
-// replaces them, since they "may contain permissions, secrets, or other servers" (ateam mcp.go,
-// isClientConfig), and doctor checks the hook and MCP registrations inside them.
+// client and plugin configurations are ateam's to register into but the adopter's to edit (here, to
+// invoke scripts/ateam): init never replaces client configs, since they "may contain permissions,
+// secrets, or other servers" (ateam mcp.go, isClientConfig), and doctor checks the hook and MCP
+// registrations inside them.
 var semengineOwned = map[string]string{
-	".gitignore":                        "the repository's own ignore list, with init's two lines appended",
-	"AGENTS.md":                         "SemEngine's rules",
-	"CLAUDE.md":                         "SemEngine's import of AGENTS.md",
-	".agents/README.md":                 "SemEngine's agent profiles",
-	".agents/protocol.md":               "SemEngine's shared work protocol",
-	".agents/rules-index.md":            "SemEngine's rule index",
-	".agents/skills/preflight/SKILL.md": "SemEngine's gate table, with ateam's section markers",
-	".claude/skills/preflight/SKILL.md": "the adapter of SemEngine's preflight",
-	"openspec/config.yaml":              "SemEngine's OpenSpec configuration",
-	"openspec/changes/.gitkeep":         "openspec/changes/ holds SemEngine's changes",
-	"openspec/specs/.gitkeep":           "openspec/specs/ holds SemEngine's specs",
-	".claude/settings.json":             "client configuration; doctor checks its hooks",
-	".codex/config.toml":                "client configuration; doctor checks its MCP registration",
-	".codex/hooks.json":                 "client configuration; doctor checks its hooks",
-	".gemini/settings.json":             "client configuration; doctor checks its hooks and MCP registration",
-	".mcp.json":                         "client configuration; doctor checks its MCP registration",
+	".gitignore":                            "the repository's own ignore list, with init's lines appended",
+	"AGENTS.md":                             "SemEngine's rules",
+	"CLAUDE.md":                             "SemEngine's import of AGENTS.md",
+	".agents/README.md":                     "SemEngine's agent profiles",
+	".agents/protocol.md":                   "SemEngine's shared work protocol",
+	".agents/rules-index.md":                "SemEngine's rule index",
+	".agents/skills/preflight/SKILL.md":     "SemEngine's gate table, with ateam's section markers",
+	".claude/skills/preflight/SKILL.md":     "the adapter of SemEngine's preflight",
+	"openspec/config.yaml":                  "SemEngine's OpenSpec configuration",
+	"openspec/changes/.gitkeep":             "openspec/changes/ holds SemEngine's changes",
+	"openspec/specs/.gitkeep":               "openspec/specs/ holds SemEngine's specs",
+	".claude/settings.json":                 "client configuration; doctor checks its hooks (scripts/ateam)",
+	".codex/config.toml":                    "client configuration; doctor checks its MCP registration (scripts/ateam)",
+	".codex/hooks.json":                     "client configuration; doctor checks its hooks (scripts/ateam)",
+	".gemini/settings.json":                 "client configuration; doctor checks its hooks and MCP registration (scripts/ateam)",
+	".mcp.json":                             "client configuration; doctor checks its MCP registration (scripts/ateam)",
+	".agents/hooks.json":                    "plugin hook configuration; invokes scripts/ateam and doctor checks its hooks",
+	".agents/plugins/ateam/mcp_config.json": "plugin MCP configuration; invokes scripts/ateam",
 }
 
 // ateamPin matches an ateam install line in .github/workflows/ci.yml and merge-check.yml; every one
@@ -80,6 +86,64 @@ func ateamPins(files map[string][]byte) (string, []string) {
 		return "", violations
 	}
 	return all[0], nil
+}
+
+// ateamPinParityViolations checks that Taskfile.yml's ATEAM_VERSION and .agents/ateam.json's
+// ateam_version both equal the workflow pin (harness-boundaries › "ateam doctor gates verify").
+func ateamPinParityViolations(workflowPin string, taskfile, ateamJSON []byte) []string {
+	var violations []string
+	var tf struct {
+		Vars map[string]any `yaml:"vars"`
+	}
+	if err := yaml.Unmarshal(taskfile, &tf); err != nil {
+		violations = append(violations, fmt.Sprintf("Taskfile.yml: %v", err))
+	} else if got := fmt.Sprint(tf.Vars["ATEAM_VERSION"]); got != workflowPin {
+		violations = append(violations, fmt.Sprintf("Taskfile.yml: vars.ATEAM_VERSION is %q, want workflow pin %s", got, workflowPin))
+	}
+	var cfg struct {
+		Version      int    `json:"version"`
+		AteamVersion string `json:"ateam_version"`
+	}
+	if err := json.Unmarshal(ateamJSON, &cfg); err != nil {
+		violations = append(violations, fmt.Sprintf(".agents/ateam.json: %v", err))
+	} else {
+		if cfg.Version != 1 {
+			violations = append(violations, fmt.Sprintf(".agents/ateam.json: version is %d, want 1", cfg.Version))
+		}
+		if cfg.AteamVersion != workflowPin {
+			violations = append(violations, fmt.Sprintf(".agents/ateam.json: ateam_version is %q, want workflow pin %s", cfg.AteamVersion, workflowPin))
+		}
+	}
+	return violations
+}
+
+func TestAteamPinParity(t *testing.T) {
+	root := repoRoot(t)
+	workflows := map[string][]byte{}
+	for _, name := range []string{"ci.yml", "merge-check.yml"} {
+		data, err := os.ReadFile(filepath.Join(root, ".github", "workflows", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		workflows[name] = data
+	}
+	pin, violations := ateamPins(workflows)
+	requireNoViolations(t, "workflow ateam pins", violations)
+	taskfile, err := os.ReadFile(filepath.Join(root, "Taskfile.yml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ateamJSON, err := os.ReadFile(filepath.Join(root, ".agents", "ateam.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	requireNoViolations(t, "ateam pin parity", ateamPinParityViolations(pin, taskfile, ateamJSON))
+
+	// Sensitivity: a drifted Taskfile or .agents/ateam.json fails naming the file and version.
+	requireViolation(t, ateamPinParityViolations(pin, []byte("version: '3'\nvars:\n  ATEAM_VERSION: v0.3.9\n"), ateamJSON),
+		"Taskfile.yml", "v0.3.9", pin)
+	requireViolation(t, ateamPinParityViolations(pin, taskfile, []byte(`{"version":1,"ateam_version":"v0.3.9"}`)),
+		".agents/ateam.json", "v0.3.9", pin)
 }
 
 func TestAteamTemplatesUnchanged(t *testing.T) {
@@ -125,9 +189,9 @@ func TestAteamTemplatesUnchangedSensitivity(t *testing.T) {
 	}
 }
 
-// ateamTemplates runs the pinned ateam init (.bin/ateam, built by task ateam:bin) into an empty
-// directory and returns every file it wrote that SemEngine does not own, by slash path. It fails,
-// never skips, when .bin/ateam is missing or is not the pinned release.
+// ateamTemplates runs the pinned ateam init (via scripts/ateam, installed by task tools:ateam) into an
+// empty directory and returns every file it wrote that SemEngine does not own, by slash path. It fails,
+// never skips, when scripts/ateam is missing or does not report the pinned release.
 func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	t.Helper()
 	workflows := map[string][]byte{}
@@ -140,16 +204,16 @@ func ateamTemplates(t *testing.T, root string) map[string][]byte {
 	}
 	pin, violations := ateamPins(workflows)
 	requireNoViolations(t, "ateam pin", violations)
-	ateam := filepath.Join(root, ".bin", "ateam")
+	ateam := filepath.Join(root, "scripts", "ateam")
 	if _, err := os.Stat(ateam); err != nil {
-		t.Fatalf("%s is missing; build the pinned release %s with task ateam:bin", ateam, pin)
+		t.Fatalf("%s is missing; install the pinned release %s with task tools:ateam", ateam, pin)
 	}
 	out, err := exec.CommandContext(t.Context(), ateam, "version").CombinedOutput()
 	if err != nil {
-		t.Fatalf("ateam version: %v\n%s", err, out)
+		t.Fatalf("scripts/ateam version: %v\n%s (install the pinned release %s with task tools:ateam)", err, out, pin)
 	}
 	if !slices.Contains(strings.Fields(string(out)), pin) {
-		t.Fatalf("ateam version reports %q, want the workflows' pin %s; rebuild it with task ateam:bin", strings.TrimSpace(string(out)), pin)
+		t.Fatalf("scripts/ateam version reports %q, want the workflows' pin %s; rebuild it with task tools:ateam", strings.TrimSpace(string(out)), pin)
 	}
 
 	// init reads the review policy (review_record: aip writes a different reviewer.md and

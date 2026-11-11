@@ -37,24 +37,29 @@ else bad node "not found"; fi
 
 if command -v npm >/dev/null; then ok npm "$(npm --version)"; else bad npm "not found"; fi
 
-# ateam: every go install line in ci.yml and merge-check.yml names the one pinned version, and each
-# file has one, and .bin/ateam (task ateam:bin builds it) reports that version; task ateam:doctor runs it.
+# ateam: every go install line in ci.yml and merge-check.yml, Taskfile.yml's ATEAM_VERSION, and
+# .agents/ateam.json's ateam_version name the one pinned version, and scripts/ateam (task tools:ateam
+# installs it into the main checkout's .tools/bin/ateam) reports that version; task ateam:doctor runs it.
 semver='v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?'
 workflows=(.github/workflows/ci.yml .github/workflows/merge-check.yml)
 missing=""
 for f in "${workflows[@]}"; do
   grep -Eq "ateam/cmd/ateam@$semver" "$f" 2>/dev/null || missing="$missing $f"
 done
-pins=$(cat "${workflows[@]}" 2>/dev/null | grep -Eo "ateam/cmd/ateam@$semver" | sed 's/.*@//' | sort -u || true)
+tf_pin=$(awk -F': *' '/^[[:space:]]*ATEAM_VERSION:/{print $2; exit}' Taskfile.yml | tr -d '[:space:]"'"'" || true)
+json_pin=$(node -p "require('./.agents/ateam.json').ateam_version || ''" 2>/dev/null || true)
+pins=$( { cat "${workflows[@]}" 2>/dev/null | grep -Eo "ateam/cmd/ateam@$semver" | sed 's/.*@//'; printf '%s\n%s\n' "$tf_pin" "$json_pin"; } | grep -E "^$semver$" | sort -u || true)
 npins=$(printf '%s' "$pins" | grep -c . || true)
 if [ -n "$missing" ]; then
   bad ateam "no ateam install line in$missing"
+elif [ -z "$tf_pin" ] || [ -z "$json_pin" ]; then
+  bad ateam "missing ATEAM_VERSION in Taskfile.yml or ateam_version in .agents/ateam.json"
 elif [ "$npins" -ne 1 ]; then
-  bad ateam "ci.yml and merge-check.yml ateam install lines name $npins versions ($(echo $pins)), want one"
-elif [ -x .bin/ateam ]; then
-  have=$(.bin/ateam version 2>&1 | grep -Eo "$semver" | head -n1 || true)
-  if [ "$have" = "$pins" ]; then ok ateam "$have (.bin/ateam)"; else bad ateam "${have:-unknown} != workflow pin $pins (run task ateam:bin)"; fi
-else bad ateam ".bin/ateam not found (run task ateam:bin)"; fi
+  bad ateam "workflows, Taskfile.yml and .agents/ateam.json name $npins versions ($(echo $pins)), want one"
+elif [ -x scripts/ateam ]; then
+  have=$(scripts/ateam version 2>&1 | grep -Eo "$semver" | head -n1 || true)
+  if [ "$have" = "$pins" ]; then ok ateam "$have (scripts/ateam)"; else bad ateam "${have:-unknown} != pin $pins (run task tools:ateam)"; fi
+else bad ateam "scripts/ateam not found or not executable"; fi
 
 # python3: no pin; scripts/port-status.sh (task status) builds its scoreboard and reads GitHub's JSON with it.
 if command -v python3 >/dev/null; then ok python3 "$(python3 --version 2>&1 | sed 's/^Python //')"

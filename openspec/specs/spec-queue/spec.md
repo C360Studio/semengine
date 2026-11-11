@@ -14,8 +14,8 @@ they are wired here and what a reader can expect from them.
 
 ### Requirement: The spec queue is ateam state spec-queue at the pin
 
-`task spec:queue` SHALL run `.bin/ateam state spec-queue` and nothing else. At the pinned release the queue reads each
-`openspec/changes/<name>/tasks.md` but `archive`'s, with no `openspec` CLI, and prints per change its ticked/total
+`task spec:queue` SHALL run `scripts/ateam state spec-queue` and nothing else. At the pinned release the queue reads
+each `openspec/changes/<name>/tasks.md` but `archive`'s, with no `openspec` CLI, and prints per change its ticked/total
 count, a line per open task whose first line carries a label (`WONTDO`, `HALT`, `RED`, `BLOCKED`, `OPEN-Q`), a line per
 hold from `Hold:` on, `ok` for neither, or `done, not archived` when all are ticked; it exits 0, or 2 when a file cannot
 be read.
@@ -66,11 +66,11 @@ that lies in no task's block, and exit 1; exit 2 when a change's file cannot be 
 
 ### Requirement: spec:check runs validate then ateam state spec-check
 
-`task spec:check` SHALL run `npx --no-install openspec validate --all --strict --no-interactive`, then `.bin/ateam state
-spec-check`, and nothing else, each a plain string under `cmds`; besides `desc` and `summary` the only key allowed is
-`deps: [ateam:bin]`, and none can skip a command or discard its exit status; `task spec:queue` SHALL run `.bin/ateam
-state spec-queue` alone, the same way. A contract test SHALL fail naming the task and the command when either entry
-differs.
+`task spec:check` SHALL run `npx --no-install openspec validate --all --strict --no-interactive`, then `scripts/ateam
+state spec-check`, and nothing else, each a plain string under `cmds`; besides `desc` and `summary` the only key allowed
+is `deps: [tools:ateam]`, and none can skip a command or discard its exit status; `task spec:queue` SHALL run
+`scripts/ateam state spec-queue` alone, the same way. A contract test SHALL fail naming the task and the command when
+either entry differs.
 
 #### Scenario: The validate line is the fail-closed one
 
@@ -88,9 +88,9 @@ differs.
 #### Scenario: The queue entry changed
 
 - **WHEN** a `Taskfile.yml` under test runs `scripts/openspec-queue.sh` under `spec:queue`
-- **THEN** the contract test fails naming `spec:queue` and `.bin/ateam state spec-queue` as the command it wants
+- **THEN** the contract test fails naming `spec:queue` and `scripts/ateam state spec-queue` as the command it wants
 
 #### Scenario: A second dependency
 
-- **WHEN** a `Taskfile.yml` under test sets `deps: [ateam:bin, cleanup]` under `spec:queue`
+- **WHEN** a `Taskfile.yml` under test sets `deps: [tools:ateam, cleanup]` under `spec:queue`
 - **THEN** the contract test fails naming `spec:queue` and `deps`

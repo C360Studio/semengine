@@ -33,7 +33,7 @@ after 2.2, before archive.
 
 - [x] 3.1 Ledger row `pkg/buffer` (`adapt`) in `docs/admission-ledger.yaml`. PR body: `Closes #566`. Gate:
   `task ledger:diff -- pkg/buffer`, the ledger contract test.
-- [ ] 3.2 `pkg/buffer/README.md` and `doc.go`: the module path; examples that compile, calling the bounded writes
+- [x] 3.2 `pkg/buffer/README.md` and `doc.go`: the module path; examples that compile, calling the bounded writes
   on `Buffer[T]` (R8, R11);
   the dropped context helpers removed; markdownlint clean. Also `pkg/buffer/MIGRATION.md`, and a `pkg/buffer/` row in
   `docs/repository-map.md`. Gate: `task docs:check`, `go test -run Example ./pkg/buffer/`.

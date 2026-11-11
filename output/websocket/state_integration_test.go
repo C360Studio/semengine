@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go/jetstream"
@@ -448,6 +449,100 @@ func TestWatchLossClosesAndRecovers(t *testing.T) {
 	if len(snapshot) != 1 || snapshot[0].Key != entityID(2) || synced != rev {
 		t.Fatalf("snapshot after recovery %+v, synced %d; want only the put of %s and synced at %d",
 			snapshot, synced, entityID(2), rev)
+	}
+}
+
+// TestWatchLossStopsSnapshotDelivery: a watch lost while a client is still receiving its snapshot
+// ends the snapshot there. The client is closed with 1013 and is never sent the lost view's synced
+// once Health reports the loss (design D2, D9; output-websocket spec, "No stream before the view is
+// caught up"). Frames already in the socket buffers may still arrive after the loss; synced, the
+// snapshot's last frame, is too far behind them to arrive unless the writer kept sending.
+func TestWatchLossStopsSnapshotDelivery(t *testing.T) {
+	client := fixtureClient(t)
+	kv := entityStates(t, client)
+	// Each entity is a 64 KiB frame, so the client's 32 KiB read buffer and the server's send buffer
+	// hold only a few. Read one per pace tick, 80 frames take 40s, past the 20s or so the view takes to
+	// see the deleted bucket (TestWatchLossClosesAndRecovers runs 25s); once Health reports the loss
+	// the client reads without pausing, so the test does not wait out the snapshot.
+	const entities = 80
+	pad := strings.Repeat("x", 64<<10)
+	for i := range entities {
+		put(t, kv, entityID(i), storedEntity(entityID(i), pad))
+	}
+	o := startApplied(t, client)
+	awaitHealthy(t, o)
+	conn := dialConn(t, websocket.DefaultDialer, o.url(), nil)
+	if tcp, ok := conn.UnderlyingConn().(*net.TCPConn); ok {
+		if err := tcp.SetReadBuffer(32 << 10); err != nil {
+			t.Fatalf("set the client's read buffer: %v", err)
+		}
+	}
+	// The reader's record, read once ended is closed.
+	var (
+		afterLoss                         int // frames read once Health reported the loss
+		syncedBeforeLoss, syncedAfterLoss bool
+		readErr                           error
+	)
+	first := make(chan struct{})
+	ended := make(chan struct{})
+	go func() {
+		defer close(ended)
+		pace := time.NewTicker(500 * time.Millisecond)
+		defer pace.Stop()
+		for n := 0; ; n++ {
+			_, raw, err := conn.ReadMessage()
+			if err != nil {
+				readErr = err
+				return
+			}
+			lost := !o.c.Health().Healthy
+			var f stateFrameJSON
+			if err := json.Unmarshal(raw, &f); err != nil {
+				readErr = fmt.Errorf("frame %.80s: %w", raw, err)
+				return
+			}
+			if n == 0 {
+				close(first)
+			}
+			switch {
+			case lost:
+				afterLoss++
+				syncedAfterLoss = syncedAfterLoss || f.Type == "synced"
+			case f.Type == "synced":
+				syncedBeforeLoss = true
+			default:
+				<-pace.C
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		<-ended
+	})
+	select {
+	case <-first:
+	case <-ended:
+		t.Fatalf("client read ended before its first frame: %v", readErr)
+	}
+
+	js, err := client.JetStream()
+	if err != nil {
+		t.Fatalf("JetStream: %v", err)
+	}
+	if err := js.DeleteKeyValue(t.Context(), graph.BucketEntityStates); err != nil {
+		t.Fatalf("delete %s: %v", graph.BucketEntityStates, err)
+	}
+	<-ended // orders the reads of the reader's record after its writes
+	if syncedBeforeLoss {
+		t.Fatalf("synced arrived before Health reported the loss: the snapshot outran the loss, so this run " +
+			"did not lose the watch during delivery")
+	}
+	if syncedAfterLoss {
+		t.Fatalf("sent synced from the lost view: %d frames read after Health reported the loss", afterLoss)
+	}
+	if !websocket.IsCloseError(readErr, websocket.CloseTryAgainLater) {
+		t.Fatalf("client read ended with %v after %d frames read once the loss was reported; want close 1013",
+			readErr, afterLoss)
 	}
 }
 

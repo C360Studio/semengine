@@ -34,7 +34,8 @@ type client struct {
 
 	// Applied state only: snapshot is the frames sent first, and sub the changes after them. The
 	// writer takes a batch from sub only once it has written the one before, so while a client is
-	// behind, its later changes merge per key in the view (design D2).
+	// behind, its later changes merge per key in the view (design D2). The writer clears snapshot
+	// once it is sent, so a connection does not keep the view's values from when it attached.
 	snapshot frames
 	sub      *stateSubscription
 
@@ -189,8 +190,12 @@ func (c *output) write(cl *client) {
 	defer func() { _ = cl.conn.Close() }()
 	ping := time.NewTicker(c.settings.pingInterval)
 	defer ping.Stop()
-	if cl.snapshot != nil && !c.drain(cl, ping, cl.snapshot) {
-		return
+	if cl.snapshot != nil {
+		sent := c.drain(cl, ping, cl.snapshot)
+		cl.snapshot = nil
+		if !sent {
+			return
+		}
 	}
 	var changes <-chan []graphview.Delta[storedState] // nil for a subject client: never ready
 	if cl.sub != nil {
@@ -225,7 +230,12 @@ func (c *output) write(cl *client) {
 
 // drain writes every frame next gives, reporting false when the connection ended instead. A ping due
 // between two frames goes before the next, or a client kept busy past its read deadline would be
-// closed while reading (TestBusyClientKeepsPings), and a stop is taken between frames too.
+// closed while reading (TestBusyClientKeepsPings), and a stop is taken between frames too. So is the
+// end of an applied-state client's subscription: once the view's watch is lost, the rest of a
+// snapshot or batch is the lost view's, and the client is closed with 1013 before any more of it,
+// synced included (TestWatchLossStopsSnapshotDelivery). Err is the subscription's terminal reason,
+// recorded before its changes close (graphview's Subscription.terminate), so it is seen here while
+// the writer is still busy with frames rather than at its next wait on changes.
 func (c *output) drain(cl *client, ping *time.Ticker, next frames) bool {
 	for {
 		select {
@@ -237,6 +247,10 @@ func (c *output) drain(cl *client, ping *time.Ticker, next frames) bool {
 				return false
 			}
 		default:
+		}
+		if cl.sub != nil && cl.sub.Err() != nil {
+			c.sendEnded(cl)
+			return false
 		}
 		frame, ok := next()
 		if !ok {

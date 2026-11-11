@@ -1,7 +1,7 @@
 # composed-stack Specification
 
 ## Purpose
-The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-clustering and graph-query) boots from one JSON
+The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query and graph-gateway) boots from one JSON
 configuration through the real startup path, answers fixed questions through the paths a consumer uses, and keeps those answers
 across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and a quick NATS restart
 (about 0.2 s down) under the running stack. A second, three-component stack without graph-embedding (the no-embedder

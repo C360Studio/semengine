@@ -31,7 +31,7 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
   `internal/httpadmission`), lifecycle suite.
 - [ ] 2.4 `trajectory` is not served (owner question 1). `MIGRATION.md` tells SemTeams to answer it from a component
   of its own mounted at `/<instance>`. Check: `TestSchemaRefusesUnknownFieldNamingIt` has a `trajectory` case.
-- [ ] 2.5 Composed smoke (composed-stack delta). Add graph-gateway to the smoke config; POST the four operations through
+- [x] 2.5 Composed smoke (composed-stack delta). Add graph-gateway to the smoke config; POST the four operations through
   the process's HTTP port at `/graph-gateway/graphql`; six components in health; the composed-stack Purpose
   (`openspec/specs/composed-stack/spec.md:4`) and the "five-component" test comments in `internal/smoke` say six. Check:
   `TestSmoke_OneConfigAnswers`, `TestSmoke_BrokerRestartUnderRunningStack`.

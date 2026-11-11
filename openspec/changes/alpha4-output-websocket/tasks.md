@@ -29,7 +29,7 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
   `TestSilentClientIsClosed`, `-race`. Each warning emit is shown to fail when removed.
 - [x] 3.2 TLS and metrics (D6). Check: `TestTLSServesWSS`, `TestACMEModeRefusedAtStart`, `TestMetricsCountTraffic`
   (two instances on one registry stay apart by `listener`).
-- [ ] 3.3 Applied-state input (D1, D2). Check: `TestAppliedStateSnapshotThenChanges` (synced marker shown to fail
+- [x] 3.3 Applied-state input (D1, D2). Check: `TestAppliedStateSnapshotThenChanges` (synced marker shown to fail
   when removed), `TestAppliedStateConverges` (same-key put/put, put/delete, put/poison/heal in one burst; folded frames
   against the bucket read back), `TestNotReadyRefusesUpgrade`, `TestPoisonedValueIsAnnounced`,
   `TestWatchLossClosesAndRecovers`, `TestStalledClientDoesNotSlowOthers` (applied state: `changes_coalesced_total`

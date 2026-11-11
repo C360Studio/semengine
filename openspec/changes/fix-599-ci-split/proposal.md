@@ -14,7 +14,7 @@ checks, unit tests and repeat run; the other runs the integration tests and the 
 Each job gets a time limit of about twice its normal run time. Local `task verify` stays the full gate." #599 is not
 a flake.
 
-Approved-by:
+Approved-by: owner (Coby Leuschke), 2026-11-11 in Enjoy; recorded on #599 (comment 6808723739) sha256:a001ec2c51f1
 
 ## What Changes
 

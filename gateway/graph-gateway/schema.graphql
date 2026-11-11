@@ -1,0 +1,21 @@
+# The graph-gateway schema: the contract its answers follow (design D2 of the alpha4-graph-gateway change).
+# Every root field is nullable, so a refused or misfitting field answers null and the rest of data stands.
+scalar JSON
+scalar Uint64
+
+type Query {
+  entity(id: String!): ExactEntity
+  entitiesByPrefix(prefix: String!, limit: Int, cursor: String): EntityPage
+  entitiesByPredicate(predicate: String!, value: String, limit: Int): PredicateMatches
+  pathSearch(startEntity: String!, direction: String!, maxDepth: Int!, maxNodes: Int,
+             predicates: [String]): PathSearchResult
+}
+
+type ExactEntity { entity: Entity!  kvRevision: Uint64! }
+type Entity { id: String!  triples: [Triple!]! }
+type Triple { subject: String! predicate: String! object: JSON source: String timestamp: String confidence: Float }
+type EntityPage { entities: [Entity!]!  total: Int!  next_cursor: String }
+type PredicateMatches { entities: [String!]! }
+type PathSearchResult { entities: [PathEntity!]!  paths: [[Edge!]!]!  truncated: Boolean! }
+type PathEntity { id: String!  depth: Int! }
+type Edge { from: String!  predicate: String!  to: String! }

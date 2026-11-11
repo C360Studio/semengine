@@ -16,7 +16,7 @@ own, no `context.WithValue`, no `t.Parallel` in an integration file. Review stop
   `graph.PredicateRequest`; graph-index decodes into it. Check: `TestQueryVerbsDeclareEachRespondersVerbs` (row added),
   `TestForwardPassesBytesBothWays` (predicate case), `TestGraphQueryServesExactlyTheDeclaredVerbs`, the graph-index
   predicate tests unchanged and green.
-- [ ] 2.2 Schema and executor, no NATS (D1, D2, D6 rows 1-2 and the last row). Add `github.com/vektah/gqlparser/v2`
+- [x] 2.2 Schema and executor, no NATS (D1, D2, D6 rows 1-2 and the last row). Add `github.com/vektah/gqlparser/v2`
   (with `github.com/agnivade/levenshtein`). Check: `TestSchemaRefusesUnknownFieldNamingIt`,
   `TestMutationAndIntrospectionRefused`, `TestOneRootFieldPerRequest`, `TestTypenameAnswers`,
   `TestReplyNotFittingSchemaNamesPath` (a null root field leaves the rest of `data`), and

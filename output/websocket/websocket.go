@@ -1,5 +1,3 @@
-// Package websocket is the websocket output component: a server that streams applied ENTITY_STATES,
-// or one core NATS subject, to WebSocket clients. Register is its only export.
 package websocket
 
 import (

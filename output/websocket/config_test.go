@@ -346,17 +346,45 @@ func TestRegisterDeclaresWhatTheFactoryResolves(t *testing.T) {
 			t.Fatalf("declared ports for %s = %+v, want the factory's %+v", raw, declared, want)
 		}
 	}
+
+	// A subject configuration builds: the declarer reports the built component's ports.
+	raw := withPorts(t, []component.PortDefinition{frames}, []component.PortDefinition{server(9001)})
+	built, err := create(json.RawMessage(raw), testDeps(t))
+	if err != nil {
+		t.Fatalf("factory(%s): %v", raw, err)
+	}
+	declared, err := reg.Ports(json.RawMessage(raw), "websocket")
+	if err != nil {
+		t.Fatalf("declare ports for %s: %v", raw, err)
+	}
+	c := built.(*output)
+	if want := component.PortConfigFrom(c.InputPorts(), c.OutputPorts()); !reflect.DeepEqual(declared, want) {
+		t.Fatalf("declared ports for %s = %+v, want the built component's %+v", raw, declared, want)
+	}
 }
 
-// TestFactoryBuildsNothingYet: until the server exists (task 3.1), a configuration that passes
-// every check is still refused, so no composition admits a websocket instance that would never
-// serve. The refusal is not a configuration fault.
-func TestFactoryBuildsNothingYet(t *testing.T) {
+// TestAppliedStateNotBuiltYet: until the applied-state input exists (task 3.3), a kv-watch
+// configuration that passes every check is still refused, so no composition admits an instance
+// that would never stream. The refusal is not a configuration fault.
+func TestAppliedStateNotBuiltYet(t *testing.T) {
 	built, err := create(json.RawMessage(`{}`), testDeps(t))
 	if built != nil || !errors.Is(err, errNotBuilt) {
 		t.Fatalf("factory({}) = %v, %v; want no component and errNotBuilt", built, err)
 	}
 	if errs.IsInvalid(err) {
 		t.Fatalf("factory({}) = %v; want a refusal that is not an invalid-config error", err)
+	}
+}
+
+// TestTLSNotBuiltYet: until TLS is loaded at Start (task 3.2), a deployment that enables TLS is
+// refused, so the output never serves plain HTTP where TLS was asked for.
+func TestTLSNotBuiltYet(t *testing.T) {
+	deps := testDeps(t)
+	deps.Security.TLS.Server.Enabled = true
+	frames := component.PortDefinition{Name: "frames", Config: component.NATSPort{Subject: "boids.frames"}}
+	built, err := create(json.RawMessage(withPorts(t, []component.PortDefinition{frames},
+		[]component.PortDefinition{server(9001)})), deps)
+	if built != nil || !errors.Is(err, errTLSNotBuilt) {
+		t.Fatalf("factory with TLS enabled = %v, %v; want no component and errTLSNotBuilt", built, err)
 	}
 }

@@ -236,6 +236,69 @@ func unitInvocationViolations(taskfile, verify []byte) []string {
 	return violations
 }
 
+// merge-gate › "Verify runs in groups": scripts/verify.sh walks its one step list and runs every
+// step with no group, every step but test:integration and cover:check for checks, and only
+// ateam:doctor, test:integration and cover:check for integration; any other group runs no step
+// and names both. The script runs in a planted git repository with a stand-in task that logs its
+// argument and passes. The lists are constants here, never read from the script under test.
+var (
+	verifyAllSteps = []string{"ateam:doctor", "spec:check", "docs:check", "fmt:check", "tidy:check",
+		"cleanup-roots:check", "build", "vet", "lint", "vuln", "ledger:check", "test:unit", "test:tools:changed",
+		"test:integration", "cover:check", "test:repeat"}
+	verifyChecksSteps = []string{"ateam:doctor", "spec:check", "docs:check", "fmt:check", "tidy:check",
+		"cleanup-roots:check", "build", "vet", "lint", "vuln", "ledger:check", "test:unit", "test:tools:changed",
+		"test:repeat"}
+	verifyIntegrationSteps = []string{"ateam:doctor", "test:integration", "cover:check"}
+)
+
+func TestVerifyGroups(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		args  []string
+		steps []string // nil: the run must fail before any step
+	}{
+		{"no group", nil, verifyAllSteps},
+		{"checks", []string{"checks"}, verifyChecksSteps},
+		{"integration", []string{"integration"}, verifyIntegrationSteps},
+		{"unknown group", []string{"bogus"}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			root := copyScript(t, "verify.sh")
+			gitIn(t, root, "init", "-q")
+			gitIn(t, root, "add", ".")
+			gitIn(t, root, "commit", "-q", "-m", "base")
+			log := filepath.Join(t.TempDir(), "task.log")
+			env := fakeBin(t, map[string]string{"task": fakeTask}, "FAKE_TASK_LOG="+log)
+			out, status := runIn(t, root, env, "verify.sh", tc.args...)
+			ran, err := os.ReadFile(log)
+			if err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			got := strings.Fields(string(ran))
+			if tc.steps == nil {
+				if status == 0 || len(got) > 0 {
+					t.Errorf("exit %d and steps %v, want a non-zero exit before any step\n%s", status, got, out)
+				}
+				for _, group := range []string{"checks", "integration"} {
+					if !strings.Contains(out, group) {
+						t.Errorf("output does not name the group %s:\n%s", group, out)
+					}
+				}
+				return
+			}
+			if status != 0 {
+				t.Fatalf("exit %d, want 0\n%s", status, out)
+			}
+			if !slices.Equal(got, tc.steps) {
+				t.Errorf("ran %v, want %v\n%s", got, tc.steps, out)
+			}
+			if strings.Count(out, "host: ") < 2 || !strings.Contains(out, "step timings:") {
+				t.Errorf("output lacks two host lines or the step timings:\n%s", out)
+			}
+		})
+	}
+}
+
 // merge-gate › "A contract test guards both workflows", "Required needs verify", "The merge-check
 // workflow" and "Pinned runner image". .github/workflows/ci.yml is held to six facts: no
 // permission anywhere in the workflow is a write; required needs verify; verify's limit is 15

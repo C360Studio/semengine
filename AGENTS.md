@@ -50,8 +50,9 @@ task merge:check  # -- <n>: review gate for PR n
 task verify       # every gate, cheapest first
 ```
 
-Run `task verify` before every implementation push. CI: `ci.yml` runs `verify` and `Required` fails unless it
-passed; `merge-check.yml` runs `scripts/merge-check.sh` (`task merge:check`) on the base commit as `Merge check`.
+Run `task verify` before every implementation push. CI: `ci.yml` runs `task verify` as two jobs, `Checks` and
+`Integration`, and `Required` fails unless both passed; `merge-check.yml` runs `scripts/merge-check.sh`
+(`task merge:check`) on the base commit as `Merge check`.
 Gate selection per diff: `preflight` skill. Session checkpoints: ateam's `pickup` and `handoff`.
 
 ## Rules and what enforces them

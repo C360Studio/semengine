@@ -13,7 +13,7 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
   `required` need both (design D2, D5, D6). Update `ciWorkflowViolations`, its constants and the
   `TestCIWorkflowPinnedSensitivity` fixture and cases (both jobs' limits, run lines, `required`'s needs). The PR
   records each job's wall time from its own CI run.
-- [ ] 1.3 Say there are two CI jobs in `AGENTS.md` (the "CI:" line), `.agents/protocol.md` § Verification,
+- [x] 1.3 Say there are two CI jobs in `AGENTS.md` (the "CI:" line), `.agents/protocol.md` § Verification,
   `.agents/rules-index.md` (the "A merge needs `Required`" row's spec citation), `.agents/skills/preflight/SKILL.md`
   (the `task verify` row and the CI paragraph), `docs/repository-map.md` (the `.github/` row) and the
   `scripts/tools-changed.sh` comment that names the verify job.

@@ -29,8 +29,9 @@ Test-text rules, measured by grep on the pin copy:
 | build tags other than `integration` | 0 | |
 | `t.Parallel` | 0 | |
 | `natsclient.NewTestClient(` | 18 | 6 each in the three NATS-using integration files (matches #195) |
-| pick-then-release ports | 7 | `net.Listen("tcp", "127.0.0.1:0")` then close, e.g. `constructor_test.go:53`, `lifecycle_owner_test.go:45`, `websocket_integration_test.go:434` |
-| dial `localhost` (dual-stack) | 10 | e.g. `metrics_integration_test.go:90` — `wsURL := fmt.Sprintf("ws://localhost:%d/ws", port)` |
+| fixed ports bound or dialled | 26 lines in `websocket_test.go` (22 bind, 4 dial); 2 more elsewhere | ports 8080-8094, 8901-8904, 18081-18083; e.g. `:290` `mustNewOutput(t, 8901, ...)`, `:320` `Host: "localhost:8901"`; also `passthrough_test.go:26` (8099), `websocket_nats_integration_test.go:24` (8082) |
+| pick-then-release ports | 9 | `net.Listen` then close: 8 on `127.0.0.1:0`, e.g. `constructor_test.go:53`, `lifecycle_authority_test.go:30`, `lifecycle_owner_test.go:45`, `metrics_integration_test.go:384`, `websocket_integration_test.go:434`; and `websocket_test.go:1173` — `net.Listen("tcp", ":0")`, an every-address pick (#390) |
+| dial `localhost` (dual-stack) | 13 | e.g. `metrics_integration_test.go:90` — `wsURL := fmt.Sprintf("ws://localhost:%d/ws", port)`; 4 in `metrics_integration_test.go`, 4 in `websocket_test.go`, 5 in `websocket_integration_test.go` (`path_test.go:102` holds `localhost` in a config string, not a dial) |
 | production hooks set by tests | 6 | `lifecycle_owner_test.go:100,150,203,206,214,224` (`requestHook`, `subscribeCore`, `waitForInput`, `consumeStream`, `waitJSClosed`) |
 
 Also relevant to proving tests: `websocket.go:612` — `if w.port < 1024 || w.port > 65535 {` (Initialize refuses port 0,
@@ -38,7 +39,8 @@ so the component cannot bind an ephemeral port itself).
 
 ## 1. The claimed gap
 
-- `output/websocket` is absent on main: `ls output` → "No such file or directory"; `git grep -n 'output/websocket'`
+- `output/websocket` is absent on main: `ls output` and `ls input` → "No such file or directory"
+  (no ACME caller has been ported); `git grep -n 'output/websocket'`
   finds only docs: `docs/admission-ledger.yaml:4877` (pkg/buffer row names it as a consumer),
   `docs/adr/108-processor-shell.md:181`, `docs/tier1-cross-check.md:39,61,125`, `docs/inventory-scope.md:24`,
   `scripts/port-status.sh:99`.
@@ -51,11 +53,12 @@ so the component cannot bind an ephemeral port itself).
     `adapt`). `internal/tlsutil/tlsutil.go:19` —
     `func LoadServerTLSConfig(cfg security.ServerTLSConfig) (*tls.Config, error) {` applies MTLS. The pin's websocket
     calls two loaders main lacks: `LoadServerTLSConfigWithMTLS` (dropped, #221; ledger `:718`) and
-    `LoadServerTLSConfigWithACME` (deferred; ledger `:723-724`, `:729-733`).
+    `LoadServerTLSConfigWithACME` (deferred; ledger `:723-724`, `:729-733`; the ledger text still says "deferred to
+    change 5", which shipped as graph-embedding without a websocket, so it is stale).
   - `pkg/security` is ported: `pkg/security/config.go`; `component/dependencies.go:47` —
     `Security        security.Config           // Platform-wide security configuration`.
   - `pkg/lifecyclecleanup` is ported (ledger `:1961-1981`).
-  - `pkg/buffer` is ported (PR #587, ledger `:4872-`). Its `consumer_purpose` names "the output/websocket pending-ack
+  - `pkg/buffer` is ported (PR #587, ledger `:4873-`). Its `consumer_purpose` names "the output/websocket pending-ack
     ring (#34)" as a reader.
 - On main nothing publishes an applied entity change on a subject: `git grep -n '\.Publish(\|PublishMsg('` in
   `processor/graph-ingest` non-test → only `processor/graph-ingest/readiness.go:376` —
@@ -68,6 +71,7 @@ so the component cannot bind an ephemeral port itself).
 | Per-reader KV watch, operator SSE | `service/message_logger_http.go:45` — `mux.HandleFunc("GET "+prefix+"kv/{bucket}/watch", ml.handleKVWatch)`; `service/message_logger_kv_watch.go:138` — `watcher, err = kv.WatchAll(watchCtx)` | one watch per SSE client (the ADR-081 trap; #477 lists it "Convert"); wire type `KVWatchEvent{Bucket,Key,Operation,Value,Revision,Timestamp}` (`:49-58`) plus an `initial_sync_complete` marker |
 | Shared view | `pkg/graphview/view.go:480` — `func (v *View[T]) SnapshotAndSubscribe(ctx context.Context) (Snapshot[T], *Subscription[T], error) {`; `:516` `Subscribe` | one `WatchAll`, decode once, atomic snapshot then coalesced `Delta{Op,Key,Value,Revision,Created,Err}` (`pkg/graphview/delta.go:41-56`), slow subscribers coalesce, never disconnect |
 | Projection-owner follower | `graph/follower/follower.go:1-7` (package doc); used at `processor/graph-clustering/component.go:192` — `f, err := follower.Open(ctx, follower.Config{`, and graph-embedding `component.go:256`, graph-index | per-entry `Deliver`, `Complete` watermark, publishes readiness to `GRAPH_STATUS` (ADR-108 D4) |
+| Second view over `COMMUNITY_INDEX` | `processor/graph-query/community.go:84-88` — `kvcatalog.OpenCatalogReader(ctx, c.natsClient, graph.BucketCommunityIndex)` then `graphview.New(reader, decodeCommunityEntry)`; the ledger `pkg/graphview` row names it as the reader in this tree (`docs/admission-ledger.yaml:3979-3980`); `processor/graph-embedding/query.go:16,183` imports graphview too (for `ErrNotReady`) | one view of the bucket already runs in graph-query; `.agents/skills/kv-or-stream/SKILL.md:61`: "Many local readers of one bucket share one `graphview.View` ..., never one `WatchAll` each" |
 | Raw catalog reader | `graph/kvcatalog/kvcatalog.go:275-281` (`CatalogReader`: `Get`, `Watch`, `WatchAll`, `WatchFiltered`, `Status`); `:295` `OpenCatalogReader` | must-exist bind, read-only |
 | Port declaration | `component/port_kv.go:6` — `type KVWatchPort struct {` (`Bucket`, `Keys`, `History`); graph-clustering and graph-embedding accept only all-keys, no-history `ENTITY_STATES` (`processor/graph-clustering/config.go:97`, `processor/graph-embedding/config.go:105`) | |
 | Decoders | `graph/entity_predicate_contract.go:288` — `func UnmarshalEntityState(key string, data []byte, entity *EntityState) error {`; `graph/clustering/storage.go:132` — `func DecodeCommunity(key string, value []byte) (*Community, error) {` | refusals are classified (`graph_state_reset_required`) |
@@ -122,8 +126,13 @@ Names the word, not the package: #15, #24, #109, #110 (from `applied state`).
 - Matrix row (`:721`): "Change observation · `output/websocket` as a transport over applied state, not a UI and not a
   relay of ingest input"; proving test "harness: a websocket client receives applied entity changes".
 - D15 (`:633-645`): one primitive, two transports (websocket for consumers, SSE KV watch for operators).
-- #9 comment 5950752741 (2026-10-02) and 5950822861: the ACME loaders "and the `Certificates` race land with the first
-  change that ports a caller, change 5 (`output/websocket`)", under the background-work rule.
+- #9 comment 5950822861 (clarifying 5950752741), in full: "the ACME loaders, their shutdown defect and the `Certificates`
+  race land with the first change that ports a caller, change 5 (`output/websocket`)." Comment 5950752741 (2026-10-02)
+  adds that the shutdown defect ("the stop can block inside lego's `Certificate.Renew`, which takes no context") "needs
+  `Shutdown(ctx)` and a renewal test seam", and that all of it lands "under the background-work rule".
+  This ruling binds this change: change 5 shipped as graph-embedding without the websocket, no caller has been ported
+  since (`input/` and `output/` are absent on main), and #34's 2026-11-10 note says "No new ruling". The ledger
+  `internal/tlsutil` row (`:723`, `:729-731`) still says "deferred to change 5", which is stale.
 - #34 comment (2026-11-10): scheduled for alpha.4, "No new ruling"; "the applied-state message shape is a migration
   note".
 - Owner 2026-11-02: a consumer break is a migration note.
@@ -139,15 +148,18 @@ Names the word, not the package: #15, #24, #109, #110 (from `applied state`).
 `docs/setup-plan.md:79` puts "change observation" at tier 0. No active OpenSpec change under `openspec/changes/`.
 
 **Ledger rows touching the territory:** `pkg/graphview` (`:3973`, "the view layer of change observation (SETUP 03B
-design D14, tier 0)"), `internal/tlsutil` (`:711`), `pkg/security` (`:401`), `pkg/buffer` (`:4872`),
+design D14, tier 0)"), `internal/tlsutil` (`:711`), `pkg/security` (`:401`), `pkg/buffer` (`:4873`),
 `internal/lifecyclecleanup` (`:1961`).
 
 **Guards that will apply:** the JetStream consumer allowlist `internal/harness/contract/consumerpolicy_test.go:40`
 (pin's equivalent lists `output/websocket/websocket.go` at `natsclient/consumer_policy_callsite_test.go:265`);
 the metric-registry rule (`metric/registry.go:29` — `func RegisterOrGet[C prometheus.Collector](...)`; the pin's
-`registry.RegisterCounterVec` etc., `websocket.go:344-353`, do not exist on main); strict config decode
+`registry.RegisterCounterVec` etc., `websocket.go:345-354`, do not exist on main); strict config decode
 (`component/validation.go:183` `SafeUnmarshal` refuses unknown keys); `component.Factory` takes no instance name
-(`component/registry.go:21`); `composition/catalog.go:39` — `"websocket":      "WebSocket Output",`.
+(`component/registry.go:21`); `composition/catalog.go:39` — `"websocket":      "WebSocket Output",`; the registry's
+admission of network port claims (`component/registry.go:631-669`: `checkSelfClash` and
+`claimsClash` refuse clashing exclusive network claims, so the `NetworkPort` output is checked against other claims);
+`component/port_codec_test.go:150` refuses the legacy `websocket-server` port kind.
 
 ## 4. Who it is for
 
@@ -196,9 +208,13 @@ HTTP and holding hijacked connections across Stop; (iii) fan-out to slow clients
   `listener, err = net.Listen("tcp", httpServer.Addr)`; `service/pprof.go:49`) with `httpadmission`; and routes
   mounted on the service manager's server by a component's `RegisterHTTPHandlers`
   (`service/service_manager_http.go:280-284`; #588's gateway uses it). The pin binds its own listener from a
-  `NetworkPort` output (`websocket.go:788`).
+  `NetworkPort` output (`websocket.go:789`, `net.Listen`).
 - (iii) Pin: per-message goroutine per client, waits for all (`:1525-1562`), slow client dropped after 5 s;
   graphview: coalesce per key, never disconnect (`pkg/graphview/subscription.go:9-16`).
+
+For `COMMUNITY_INDEX`, graph-query already holds the one view (`processor/graph-query/community.go:84-88`); the design
+must say whether a websocket watch of that bucket shares that view or is a second `WatchAll` against
+`.agents/skills/kv-or-stream/SKILL.md:61`.
 
 Whether the port adopts each is design work.
 
@@ -211,6 +227,7 @@ Fetched from the pin copy `docs/adr` (85 records); `grep -l -i -e 'output/websoc
 | --- | --- | --- |
 | ADR-081 Graph View Subscription (on main `docs/adr/081-...`) | one shared `WatchAll`, snapshot+delta, per-subscriber at-most-once coalescing, fail-closed loss; per-client watchers are the trap (#579) | yes for an applied-state input |
 | ADR-095 One-shot running lifecycle with retained failed-start cleanup (on main) | Stop fences admission, drains native `ConsumeContext`, failed Start retains `cleanupPending` | yes; the pin's Start/Stop (`:631-997`) implement it |
+| ADR-090 Authoritative current state and materialized views (pin only; `docs/adr/` on main has no 090, though ADR-099, 110 and 111 cite it, and PR #588 cites decision 6 as governing) | Decision 6: "Remote application reads use the required GraphQL gateway's admitted operations; GS-12 makes that gateway conformant. ... Raw KV is an owner/operator seam, not an application fallback." Decision 2: "SemStreams does not adopt event sourcing or a general CQRS/read-model runtime." Decision 9: "Shared runtime mechanics are introduced only after at least three surviving owners need the same behavior and a prototype reduces total code and adopter knowledge." | yes: a websocket that watches `ENTITY_STATES` or `COMMUNITY_INDEX` is a remote application read of raw KV. 03B D14 (2026-10-01) is the later owner ruling; the design must say whether D14 keeps or changes decision 6, and which of decisions 2 and 9 a new shared read path meets |
 | ADR-092 Lifecycle poison localization | "Keep asynchronous value-channel and WebSocket closure as the terminal contract" (`:28`); a subscription closes on matching poison | about `pkg/lifecycle` watches; names websocket closure as terminal |
 | ADR-049 (`:393`) | lifecycle harness "WebSocket stream watches ENTITY_STATES" | context only; not admitted |
 | ADR-047, 044, 036, 056, 071 | mention websocket in passing | no |
@@ -231,7 +248,7 @@ queue") and `.agents/skills/query-pattern/SKILL.md`. No pin guidance names `outp
 | # | Shape | Pin `path:line` — text | Binding basis if required |
 | --- | --- | --- | --- |
 | S1 | second spelling | `websocket.go:1022` — `func (w *Output) admitRequest() bool {` (vs `internal/httpadmission`) | none on its own; optional |
-| S2 | second spelling | `websocket.go:1238` — `func (w *Output) handleNATSMessage(ctx context.Context, msg *natspkg.Msg) {` (test-only duplicate) | test-only code (#186): required |
+| S2 | second spelling | `websocket.go:1238` — `func (w *Output) handleNATSMessage(ctx context.Context, msg *natspkg.Msg) {` (test-only duplicate) | test-only code (#186); unexported pin code only tests call falls under Bounded port scope, so optional; probably falls away with the NATS input |
 | S3 | second spelling | `websocket.go:1590` — `func (w *Output) buildClientSnapshot() ...` vs `pingClients` `:1785-1796` | optional |
 | S4 | second spelling | path validated at `:114`, `:377`, `:618`, `:727` | optional |
 | S5 | copied shell | `websocket.go:157` — `lifecycleUsed  bool` (own Start/Stop/Health/DataFlow state) | AGENTS row "component.Lifecycle"; ADR-108: required |
@@ -243,7 +260,7 @@ queue") and `.agents/skills/query-pattern/SKILL.md`. No pin guidance names `outp
 | S11 | phantom config | `websocket.go:1881` — `deliveryMode = cfg.DeliveryMode` (unvalidated) | "refuse unknown config ... naming the key" spirit; review |
 | S12 | context root | `websocket.go:642` — `runtimeCtx, runtimeCancel := context.WithCancel(ctx)` | ADR-113 (verify+review): required |
 | S13 | nil default | `websocket.go:625` — `// NATS client is optional for testing - will skip NATS subscription if nil`; `:1058` — `if w.natsClient == nil {` | "never invent ... nil defaults": required |
-| S14 | metric API | `websocket.go:344` `registry.RegisterCounterVec(...)` (absent on main) | metric-registry spec: required (build) |
+| S14 | metric API | `websocket.go:345` `registry.RegisterCounterVec(...)` (absent on main) | metric-registry spec: required (build) |
 | S15 | identity | `websocket.go:1902` — `Name:            "websocket-output",` fixed name feeds metric labels and the JetStream durable `ws-output-<subject>` (`:1131` — `consumerName := fmt.Sprintf("ws-output-%s", sanitizedSubject)`); two instances on one subject collide | review; may fall away with the NATS input |
 | S16 | origin | `websocket.go:433-436` `CheckOrigin` always `true` ("In production, this should be more restrictive") | review; #84 scope |
 | S17 | dead state | `lastPing` (`:231`), `clientInfo.messagesSent`, `PendingMessage.Retries/SentAt/Subject/Data`, `pendingBuffer` write-only | dead surface: drop or keep with reason |
@@ -255,12 +272,12 @@ queue") and `.agents/skills/query-pattern/SKILL.md`. No pin guidance names `outp
 | Dimension | Evidence |
 | --- | --- |
 | Semantic class | change observation over `ENTITY_STATES`/`COMMUNITY_INDEX` (03B D14) |
-| Owners | `pkg/graphview` (view); `graph/follower` (projection owners); `service` message logger SSE (operator transport, D15); semboids `graphstream` (consumer); pin `output/websocket` (relay of NATS input) |
+| Owners | `pkg/graphview` (view; graph-query's `COMMUNITY_INDEX` view is its one live instance on that bucket); `graph/follower` (projection owners); `service` message logger SSE (operator transport, D15); semboids `graphstream` (consumer); pin `output/websocket` (relay of NATS input) |
 | Catalogs | `graph/kvcatalog/kvcatalog.go:78` (`ENTITY_STATES`, owner graph-ingest), `:188` (`COMMUNITY_INDEX`, derived, graph-clustering); `component.KVWatchPort` declarations |
 | Status | follower publishes `GRAPH_STATUS` readiness; graphview `ErrNotReady` until caught up, `ErrWatcherLost`; SSE sends `initial_sync_complete`; pin websocket `Health` = running && server non-nil (`:551-570`) |
 | Lifecycle | graphview `Run(ctx)` once, replace by new view; follower `Open`/`Run`; SSE per-request; pin Start/Stop (ADR-095) |
 | Ownership | no singleton claim in any; graphview one watch per view; pin websocket durable JetStream consumer name from subject (`:1131`) |
-| Readers | graph-embedding vector cache (graphview); graph-index, graph-clustering, graph-embedding (follower); operators (SSE); SemSource UI and external ws clients (pin websocket) |
+| Readers | graph-embedding vector cache (graphview); graph-query community view over `COMMUNITY_INDEX` (graphview, `community.go:84-88`); graph-index, graph-clustering, graph-embedding (follower); operators (SSE); SemSource UI and external ws clients (pin websocket) |
 | Writers | graph-ingest only (`ENTITY_STATES`); graph-clustering (`COMMUNITY_INDEX`) |
 | Recovery | graphview: lost watch fails closed, owner rebuilds; follower: lost feed never repaired until restart (`follower.go:10-14`); SSE: client reconnects; pin websocket: JetStream durable resumes (input side only) |
 
@@ -269,7 +286,9 @@ queue") and `.agents/skills/query-pattern/SKILL.md`. No pin guidance names `outp
 The change sets no new boundary: `output/websocket`'s membership (tier 0) and its input change are ruled (03B D14, Q11
 re-ruled; #34 2026-11-10). One capability effect for the owner to see: the pin's general NATS-subject relay
 (semboids' `boids.frames`, § 10) has no ruling either way once the input changes (no ruling found in #8, #9, #34 for a
-retained subject input).
+retained subject input). Also for the owner: the 03B matrix row (`design.md:721`) names semboids as the qualifying
+consumer for change observation, yet semboids' websocket use (`boids.frames`) has no applied-state input, and its
+applied-state stream is its own graphview-based SSE (`internal/api/graphstream*.go`).
 
 ## 10. Adopter seam inventory
 

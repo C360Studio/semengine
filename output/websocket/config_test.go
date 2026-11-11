@@ -375,16 +375,3 @@ func TestAppliedStateNotBuiltYet(t *testing.T) {
 		t.Fatalf("factory({}) = %v; want a refusal that is not an invalid-config error", err)
 	}
 }
-
-// TestTLSNotBuiltYet: until TLS is loaded at Start (task 3.2), a deployment that enables TLS is
-// refused, so the output never serves plain HTTP where TLS was asked for.
-func TestTLSNotBuiltYet(t *testing.T) {
-	deps := testDeps(t)
-	deps.Security.TLS.Server.Enabled = true
-	frames := component.PortDefinition{Name: "frames", Config: component.NATSPort{Subject: "boids.frames"}}
-	built, err := create(json.RawMessage(withPorts(t, []component.PortDefinition{frames},
-		[]component.PortDefinition{server(9001)})), deps)
-	if built != nil || !errors.Is(err, errTLSNotBuilt) {
-		t.Fatalf("factory with TLS enabled = %v, %v; want no component and errTLSNotBuilt", built, err)
-	}
-}

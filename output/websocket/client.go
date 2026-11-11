@@ -2,7 +2,9 @@ package websocket
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"sync"
@@ -39,6 +41,11 @@ type client struct {
 	closing    chan struct{}
 	closeOnce  sync.Once
 	readerDone chan struct{}
+
+	// endReason is why the connection ended, its client_disconnections_total reason: the first
+	// recorded by end, read once the reader and the writer have both returned.
+	endOnce   sync.Once
+	endReason string
 }
 
 func newClient(conn *websocket.Conn) *client {
@@ -84,14 +91,21 @@ func (cl *client) next() ([]byte, bool) {
 // stop asks the writer to send close 1001 and end. It never blocks.
 func (cl *client) stop() { cl.closeOnce.Do(func() { close(cl.closing) }) }
 
+// end records reason as why the connection ended unless a reason was recorded first. The reader
+// and the writer each record theirs before they close the connection, so the side whose failure
+// ended it is the one recorded, not the side that saw the closed connection after.
+func (cl *client) end(reason string) { cl.endOnce.Do(func() { cl.endReason = reason }) }
+
 // serveUpgrade upgrades one admitted request and serves the client until it ends, so the
 // request's admission lasts as long as the client: cleanup's wait on requests joins it.
 func (c *output) serveUpgrade(w http.ResponseWriter, r *http.Request) {
 	conn, err := c.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		// Upgrade has answered the request with an HTTP error.
+		c.metrics.errors.WithLabelValues(c.listener, errorUpgrade).Inc()
 		return
 	}
+	c.metrics.connections.Inc()
 	cl := newClient(conn)
 	if !c.attach(cl) {
 		cl.stop() // Stop has begun: the writer sends close 1001 at once
@@ -124,13 +138,24 @@ func (c *output) read(cl *client) {
 	})
 	for {
 		_, frame, err := cl.conn.NextReader()
-		if err != nil {
-			return
+		if err == nil {
+			_, err = io.Copy(io.Discard, frame)
 		}
-		if _, err := io.Copy(io.Discard, frame); err != nil {
+		if err != nil {
+			cl.end(readEndReason(err))
 			return
 		}
 	}
+}
+
+// readEndReason is the disconnection reason for the error that ended a client's reads: the read
+// deadline passing (TestSilentClientIsClosed drives it), or anything else.
+func readEndReason(err error) string {
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return disconnectReadTimeout
+	}
+	return disconnectClientClosed
 }
 
 // write is the client's only writer: queued frames in order, a ping every ping_interval, and close
@@ -150,6 +175,7 @@ func (c *output) write(cl *client) {
 			return
 		case <-ping.C:
 			if c.send(cl, websocket.PingMessage, nil) != nil {
+				cl.end(disconnectWriteFailed)
 				return
 			}
 		case <-cl.ready:
@@ -165,8 +191,12 @@ func (c *output) write(cl *client) {
 					break
 				}
 				if c.send(cl, websocket.TextMessage, frame) != nil {
+					cl.end(disconnectWriteFailed)
 					return
 				}
+				c.metrics.sent.Inc()
+				c.metrics.bytesSent.Add(float64(len(frame)))
+				c.metrics.sizes.Observe(float64(len(frame)))
 			}
 		}
 	}
@@ -179,8 +209,10 @@ func (c *output) send(cl *client, messageType int, data []byte) error {
 	return cl.conn.WriteMessage(messageType, data)
 }
 
-// sendClose sends close 1001. The connection is closed next whether or not the frame was sent.
+// sendClose records the stop as why the connection ends, then sends close 1001. The connection is
+// closed next whether or not the frame was sent.
 func (c *output) sendClose(cl *client) {
+	cl.end(disconnectStopped)
 	if cl.conn.SetWriteDeadline(time.Now().Add(closeWait)) != nil {
 		return
 	}

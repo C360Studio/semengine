@@ -6,8 +6,6 @@ import (
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
-
-	"github.com/c360studio/semengine/metric"
 )
 
 // The reasons a frame is not sent (design D2, "Declared drops").
@@ -19,28 +17,14 @@ const (
 // dropWarnEvery is how often a reason is logged after its first warning, which logs at once.
 const dropWarnEvery = time.Minute
 
-// newDroppedCounter builds messages_dropped_total and registers it on registry, the injected
-// component.Dependencies.MetricsRegistry, through metric.RegisterOrGet, keeping the collector it
-// returns, so instances on one registry share it and stay apart by listener. With a nil registry it
-// is registered nowhere. The output's other metrics come with task 3.2.
-func newDroppedCounter(registry *metric.MetricsRegistry) (*prometheus.CounterVec, error) {
-	counter := prometheus.NewCounterVec(prometheus.CounterOpts{
-		Namespace: "semengine", Subsystem: key, Name: "messages_dropped_total",
-		Help: "Frames not sent, by reason: not_json (a subject message that is not JSON), client_queue_full (a client's oldest queued frame)",
-	}, []string{"listener", "reason"})
-	if registry == nil {
-		return counter, nil
-	}
-	return metric.RegisterOrGet(registry, key, "messages_dropped_total", counter)
-}
-
 // drops counts and logs each declared drop: every drop is counted at once, and each reason is
 // logged the first time at once, then at most once every dropWarnEvery with the count since its
 // last line.
 type drops struct {
 	listener string
 	logger   *slog.Logger
-	counter  *prometheus.CounterVec
+	// counter is messages_dropped_total, labelled listener and reason.
+	counter *prometheus.CounterVec
 
 	mu sync.Mutex
 	// warned is when each reason was last logged; unlogged counts its drops since then.

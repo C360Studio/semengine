@@ -5,10 +5,13 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/security"
 )
 
 // freePort picks a loopback port for the output and releases it, as the smoke test's freePort
@@ -70,6 +73,35 @@ func TestStartFailureReleasesPort(t *testing.T) {
 	}
 	if held := (suiteOwner{c}).Observe().Unresolved; len(held) != 0 {
 		t.Fatalf("after a failed Start the component holds %v; want nothing", held)
+	}
+}
+
+// TestACMEModeRefusedAtStart: ACME is not ported (#9 comment 6797029453). A deployment whose server
+// TLS asks for mode "acme" builds, and its Start is refused as invalid configuration naming the mode
+// key, before the port is bound or the subject subscribed, holding nothing (design D6).
+func TestACMEModeRefusedAtStart(t *testing.T) {
+	port := freePort(t)
+	deps := testDeps(t)
+	deps.Security.TLS.Server = security.ServerTLSConfig{Enabled: true, Mode: "acme"}
+	built, err := create(json.RawMessage(subjectConfig(t, "boids.frames", port, "30s")), deps)
+	if err != nil {
+		t.Fatalf("factory: %v", err)
+	}
+	c := built.(*output)
+	if err := c.Initialize(); err != nil {
+		t.Fatalf("Initialize: %v", err)
+	}
+	err = c.Start(t.Context())
+	if !errs.IsInvalid(err) || !strings.Contains(err.Error(), `mode "acme"`) {
+		t.Fatalf("Start with TLS mode acme = %v; want an invalid-config refusal naming mode \"acme\"", err)
+	}
+	address := net.JoinHostPort("127.0.0.1", strconv.Itoa(port))
+	if conn, err := net.Dial("tcp4", address); err == nil {
+		_ = conn.Close()
+		t.Fatalf("dial %s after the refused Start connected; want it refused", address)
+	}
+	if held := (suiteOwner{c}).Observe().Unresolved; len(held) != 0 {
+		t.Fatalf("after the refused Start the component holds %v; want nothing", held)
 	}
 }
 

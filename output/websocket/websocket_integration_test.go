@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net"
 	"net/http"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	dto "github.com/prometheus/client_model/go"
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
@@ -118,18 +120,27 @@ type instance struct {
 
 func (o instance) url() string { return "ws://" + o.listener + "/ws" }
 
-// newOutput builds an initialized, unstarted output streaming subject on a free loopback port.
+// newOutput builds an initialized, unstarted output streaming subject on a free loopback port,
+// with a registry of its own.
 func newOutput(t *testing.T, client *natsclient.Client, subject, interval string) instance {
+	t.Helper()
+	return newOutputWith(t, subject, interval, component.Dependencies{
+		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
+	})
+}
+
+// newOutputWith is newOutput with deps' NATS client, metrics registry and security configuration;
+// the logger is the instance's capture.
+func newOutputWith(t *testing.T, subject, interval string, deps component.Dependencies) instance {
 	t.Helper()
 	port := freePort(t)
 	o := instance{
 		listener: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
-		registry: metric.NewMetricsRegistry(),
+		registry: deps.MetricsRegistry,
 		logs:     &logged{},
 	}
-	built, err := create(json.RawMessage(subjectConfig(t, subject, port, interval)), component.Dependencies{
-		NATSClient: client, MetricsRegistry: o.registry, Logger: slog.New(o.logs),
-	})
+	deps.Logger = slog.New(o.logs)
+	built, err := create(json.RawMessage(subjectConfig(t, subject, port, interval)), deps)
 	if err != nil {
 		t.Fatalf("factory: %v", err)
 	}
@@ -143,7 +154,12 @@ func newOutput(t *testing.T, client *natsclient.Client, subject, interval string
 // startOutput is newOutput started; the test's cleanup stops it.
 func startOutput(t *testing.T, client *natsclient.Client, subject, interval string) instance {
 	t.Helper()
-	o := newOutput(t, client, subject, interval)
+	return started(t, newOutput(t, client, subject, interval))
+}
+
+// started starts o; the test's cleanup stops it.
+func started(t *testing.T, o instance) instance {
+	t.Helper()
 	if err := o.c.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -185,27 +201,49 @@ func awaitClients(t *testing.T, c *output, n int) {
 	}, func(got int) bool { return got == n })
 }
 
-// dropped reads messages_dropped_total for listener and reason from the registry by name.
-func dropped(o instance, reason string) (float64, error) {
+// sample reads semengine_websocket_<name> for o's listener and the label pairs in labels (name,
+// value, ...) from o's registry by name, or nil when it has no such sample.
+func sample(o instance, name string, labels ...string) (*dto.Metric, error) {
 	families, err := o.registry.PrometheusRegistry().Gather()
 	if err != nil {
-		return 0, err
+		return nil, err
+	}
+	want := map[string]string{"listener": o.listener}
+	for i := 0; i+1 < len(labels); i += 2 {
+		want[labels[i]] = labels[i+1]
 	}
 	for _, family := range families {
-		if family.GetName() != "semengine_websocket_messages_dropped_total" {
+		if family.GetName() != "semengine_websocket_"+name {
 			continue
 		}
 		for _, m := range family.GetMetric() {
-			labels := map[string]string{}
+			got := map[string]string{}
 			for _, pair := range m.GetLabel() {
-				labels[pair.GetName()] = pair.GetValue()
+				got[pair.GetName()] = pair.GetValue()
 			}
-			if labels["listener"] == o.listener && labels["reason"] == reason {
-				return m.GetCounter().GetValue(), nil
+			if maps.Equal(got, want) {
+				return m, nil
 			}
 		}
 	}
-	return 0, nil
+	return nil, nil
+}
+
+// value is the counter or gauge value of sample, 0 when there is no sample; a failed gather fails
+// the test.
+func value(t *testing.T, o instance, name string, labels ...string) float64 {
+	t.Helper()
+	m, err := sample(o, name, labels...)
+	if err != nil {
+		t.Fatalf("gather %s: %v", name, err)
+	}
+	if m == nil {
+		return 0
+	}
+	if m.Counter != nil {
+		return m.GetCounter().GetValue()
+	}
+	return m.GetGauge().GetValue()
 }
 
 func publish(t *testing.T, client *natsclient.Client, subject string, data []byte) {
@@ -228,7 +266,13 @@ type wsClient struct {
 // dial connects a reading client to url with header; its cleanup closes it and joins its reader.
 func dial(t *testing.T, url string, header http.Header, answerPings bool) *wsClient {
 	t.Helper()
-	conn := dialConn(t, url, header)
+	return reading(t, dialConn(t, websocket.DefaultDialer, url, header), answerPings)
+}
+
+// reading reads every frame conn receives into a wsClient; its cleanup closes conn and joins its
+// reader.
+func reading(t *testing.T, conn *websocket.Conn, answerPings bool) *wsClient {
+	t.Helper()
 	c := &wsClient{conn: conn, frames: make(chan []byte, 1024), pings: make(chan struct{}, 1024), ended: make(chan struct{})}
 	answer := conn.PingHandler()
 	conn.SetPingHandler(func(data string) error {
@@ -265,10 +309,10 @@ func dial(t *testing.T, url string, header http.Header, answerPings bool) *wsCli
 	return c
 }
 
-// dialConn connects to url with header and does not read; its cleanup closes it.
-func dialConn(t *testing.T, url string, header http.Header) *websocket.Conn {
+// dialConn connects to url with header through dialer and does not read; its cleanup closes it.
+func dialConn(t *testing.T, dialer *websocket.Dialer, url string, header http.Header) *websocket.Conn {
 	t.Helper()
-	conn, resp, err := websocket.DefaultDialer.DialContext(t.Context(), url, header)
+	conn, resp, err := dialer.DialContext(t.Context(), url, header)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
@@ -338,8 +382,8 @@ func TestWebsocketLifecycleSuite(t *testing.T) {
 
 // TestStartContextEndingStopsNothing: ending Start's context after Start returned stops nothing: a
 // client connects and receives a message published afterwards. Stop then closes the client with
-// 1001, releases the port and leaves no client attached (design D3; output-websocket spec, "Start
-// bounds start; Stop is the only stop").
+// 1001, releases the port and leaves no client attached, with clients_connected 0 (design D3;
+// output-websocket spec, "Start bounds start; Stop is the only stop").
 func TestStartContextEndingStopsNothing(t *testing.T) {
 	client := fixtureClient(t)
 	o := newOutput(t, client, "ws.start", "30s")
@@ -352,6 +396,10 @@ func TestStartContextEndingStopsNothing(t *testing.T) {
 
 	ws := dial(t, o.url(), nil, true)
 	awaitClients(t, o.c, 1)
+	// attach sets clients_connected under the lock awaitClients reads the clients under.
+	if n := value(t, o, "clients_connected"); n != 1 {
+		t.Fatalf("clients_connected = %v with one client attached; want 1", n)
+	}
 	publish(t, client, "ws.start", []byte(`{"after":"start"}`))
 	if got := decodeData(t, ws.next(t)); string(got.Payload) != `{"after":"start"}` {
 		t.Fatalf("payload = %s, want the message published after Start's context ended", got.Payload)
@@ -362,6 +410,9 @@ func TestStartContextEndingStopsNothing(t *testing.T) {
 	requireDialRefused(t, o.listener)
 	if held := (suiteOwner{o.c}).Observe().Unresolved; len(held) != 0 {
 		t.Fatalf("after Stop the output holds %v; want nothing", held)
+	}
+	if n := value(t, o, "clients_connected"); n != 0 {
+		t.Fatalf("clients_connected = %v after Stop; want 0", n)
 	}
 }
 
@@ -414,8 +465,8 @@ func TestSubjectFanOut(t *testing.T) {
 	for _, ws := range clients {
 		requireClosedByStop(t, ws)
 	}
-	if n, err := dropped(o, reasonNotJSON); err != nil || n != 1 {
-		t.Fatalf("not_json dropped = %v, %v; want 1", n, err)
+	if n := value(t, o, "messages_dropped_total", "reason", reasonNotJSON); n != 1 {
+		t.Fatalf("not_json dropped = %v; want 1", n)
 	}
 	warnings := o.logs.warnings(reasonNotJSON)
 	if len(warnings) != 1 {
@@ -452,7 +503,7 @@ func fullestQueue(c *output) int {
 func TestStalledClientDoesNotSlowOthers(t *testing.T) {
 	client := fixtureClient(t)
 	o := startOutput(t, client, "ws.stall", "30s")
-	stalled := dialConn(t, o.url(), nil)
+	stalled := dialConn(t, websocket.DefaultDialer, o.url(), nil)
 	live := dial(t, o.url(), nil, true)
 	awaitClients(t, o.c, 2)
 
@@ -482,8 +533,8 @@ func TestStalledClientDoesNotSlowOthers(t *testing.T) {
 		t.Fatalf("close the stalled client: %v", err)
 	}
 	stopOutput(t, o.c)
-	if n, err := dropped(o, reasonClientQueueFull); err != nil || n < 2 {
-		t.Fatalf("client_queue_full dropped = %v, %v; want at least 2", n, err)
+	if n := value(t, o, "messages_dropped_total", "reason", reasonClientQueueFull); n < 2 {
+		t.Fatalf("client_queue_full dropped = %v; want at least 2", n)
 	}
 	warnings := o.logs.warnings(reasonClientQueueFull)
 	if len(warnings) != 1 {
@@ -519,8 +570,9 @@ func TestQuietClientStaysConnected(t *testing.T) {
 }
 
 // TestSilentClientIsClosed: a client that answers no pings is closed once its read deadline, twice
-// ping_interval, passes, without the close frame Stop sends, and is no longer attached (design D2;
-// output-websocket spec, "Keep-alive"). Still connected after six pings, three deadlines, fails.
+// ping_interval, passes, without the close frame Stop sends, is no longer attached, and is counted
+// under client_disconnections_total{reason="read_timeout"} (design D2; output-websocket spec,
+// "Keep-alive"). Still connected after six pings, three deadlines, fails.
 func TestSilentClientIsClosed(t *testing.T) {
 	client := fixtureClient(t)
 	o := startOutput(t, client, "ws.silent", "100ms")
@@ -539,5 +591,9 @@ func TestSilentClientIsClosed(t *testing.T) {
 	if websocket.IsCloseError(ws.err, websocket.CloseGoingAway) {
 		t.Fatalf("client read ended with %v; want the connection closed for its read deadline, not a stop", ws.err)
 	}
+	// detach counts the disconnection before it removes the client awaitClients waits on.
 	awaitClients(t, o.c, 0)
+	if n := value(t, o, "client_disconnections_total", "reason", "read_timeout"); n != 1 {
+		t.Fatalf("read_timeout disconnections = %v; want 1", n)
+	}
 }

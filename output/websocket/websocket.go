@@ -4,6 +4,7 @@ package websocket
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -17,8 +18,10 @@ import (
 
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/internal/httpadmission"
+	"github.com/c360studio/semengine/internal/tlsutil"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
+	"github.com/c360studio/semengine/pkg/security"
 )
 
 // key names the websocket output once: its registration, its logger and its metrics.
@@ -34,12 +37,6 @@ const stopping = "websocket output is stopping"
 // that never streams; task 3.3 of alpha4-output-websocket replaces this with the applied-state view.
 var errNotBuilt = errors.New("websocket output: the applied-state input is not built yet (alpha4-output-websocket task 3.3)")
 
-// errTLSNotBuilt refuses a deployment that enables TLS, so the output never serves plain HTTP where
-// TLS was asked for.
-//
-// shortcut: TLS is refused until task 3.2 of alpha4-output-websocket loads it at Start.
-var errTLSNotBuilt = errors.New("websocket output: TLS is not built yet (alpha4-output-websocket task 3.2)")
-
 var _ component.LifecycleComponent = (*output)(nil)
 
 // output is the websocket output component: an HTTP server whose upgrade path streams frames to
@@ -50,6 +47,9 @@ type output struct {
 	logger     *slog.Logger
 	// listener is the output's host:port, the label its metrics and warnings carry.
 	listener string
+	// tls is the deployment's server TLS configuration (Dependencies.Security), loaded at Start.
+	tls      security.ServerTLSConfig
+	metrics  *outputMetrics
 	drops    *drops
 	upgrader websocket.Upgrader
 
@@ -101,13 +101,10 @@ func create(rawConfig json.RawMessage, deps component.Dependencies) (component.D
 	if s.subject == "" {
 		return nil, errs.Wrap(errNotBuilt, key, "factory", "build")
 	}
-	if deps.Security.TLS.Server.Enabled {
-		return nil, errs.Wrap(errTLSNotBuilt, key, "factory", "build")
-	}
 	network := s.output.Config.(component.NetworkPort) // resolveOutput accepts only a network port
 	listener := net.JoinHostPort(network.Host, strconv.Itoa(network.Port))
 	logger := deps.GetLoggerWithComponent(key)
-	dropped, err := newDroppedCounter(deps.MetricsRegistry)
+	metrics, err := newOutputMetrics(deps.MetricsRegistry, listener)
 	if err != nil {
 		return nil, errs.Wrap(err, key, "factory", "register metrics")
 	}
@@ -116,7 +113,9 @@ func create(rawConfig json.RawMessage, deps component.Dependencies) (component.D
 		natsClient: deps.NATSClient,
 		logger:     logger,
 		listener:   listener,
-		drops:      newDrops(listener, logger, dropped),
+		tls:        deps.Security.TLS.Server,
+		metrics:    metrics,
+		drops:      newDrops(listener, logger, metrics.dropped),
 		// Every origin is accepted, as the pin did: the output has no authentication (#84).
 		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
 		clients:  map[*client]struct{}{},
@@ -153,7 +152,8 @@ func (c *output) DataFlow() component.FlowMetrics { return c.lifecycle.DataFlow(
 // Initialize marks the component initialized (no I/O); the factory validated the configuration.
 func (c *output) Initialize() error { return c.lifecycle.Initialize() }
 
-// Start binds the listener, subscribes to the input subject and serves upgrades. The lifecycle
+// Start loads TLS when the deployment enables it, binds the listener, subscribes to the input
+// subject and serves upgrades, over TLS when it was loaded. The lifecycle
 // state is the shell's (component.Lifecycle): Start before Initialize, a nil or ended context and a
 // second Start are refused, and a Start that fails is rolled back through cleanup, which releases
 // the port. A component with no NATS client is refused first.
@@ -168,9 +168,16 @@ func (c *output) Start(ctx context.Context) error {
 	return c.lifecycle.Start(ctx, c.start, c.cleanup)
 }
 
-// start binds, subscribes, then serves, recording each handle as it is acquired so cleanup
-// releases a partial start.
+// start loads TLS, binds, subscribes, then serves, recording each handle as it is acquired so
+// cleanup releases a partial start.
 func (c *output) start(ctx context.Context) error {
+	// LoadServerTLSConfig returns nil when server TLS is disabled, applies mTLS when it is enabled,
+	// and refuses what this module does not build, such as an "acme" mode, naming the key (design
+	// D6; TestACMEModeRefusedAtStart). Loading first means a refusal binds nothing.
+	tlsConfig, err := tlsutil.LoadServerTLSConfig(c.tls)
+	if err != nil {
+		return errs.Wrap(err, key, "Start", "load TLS")
+	}
 	var config net.ListenConfig
 	listen, err := config.Listen(ctx, "tcp", c.listener)
 	if err != nil {
@@ -191,12 +198,18 @@ func (c *output) start(ctx context.Context) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc(c.settings.path, c.serveUpgrade)
 	c.server = &http.Server{Handler: c.requests.Wrap(mux, stopping)}
+	if tlsConfig != nil {
+		// A TLS listener rather than ServeTLS, which net/http documents as enabling HTTP/2: the
+		// upgrade is an HTTP/1.1 request, and over this listener the server speaks HTTP/1.1 only.
+		listen = tls.NewListener(listen, tlsConfig)
+	}
 	served := make(chan struct{})
 	c.served = served
 	go func(server *http.Server) {
 		defer close(served)
 		if err := server.Serve(listen); !errors.Is(err, http.ErrServerClosed) {
 			c.lifecycle.CountError()
+			c.metrics.errors.WithLabelValues(c.listener, errorServe).Inc()
 			c.logger.Error("websocket server stopped serving; Stop releases the port",
 				slog.String("listener", c.listener), slog.Any("error", err))
 		}
@@ -269,19 +282,25 @@ func (c *output) attach(cl *client) bool {
 		return false
 	}
 	c.clients[cl] = struct{}{}
+	c.metrics.connected.Set(float64(len(c.clients)))
 	return true
 }
 
+// detach counts cl's disconnection under the reason its connection ended, then removes it from
+// the clients, if it was attached.
 func (c *output) detach(cl *client) {
+	c.metrics.disconnections.WithLabelValues(c.listener, cl.endReason).Inc()
 	c.clientsMu.Lock()
 	defer c.clientsMu.Unlock()
 	delete(c.clients, cl)
+	c.metrics.connected.Set(float64(len(c.clients)))
 }
 
 // receive is the subscription's handler: a message that is valid JSON goes to every client as a
 // data frame; any other is dropped, counted and logged (design D2, "Declared drops").
 func (c *output) receive(_ context.Context, msg *nats.Msg) {
 	c.lifecycle.CountInput(len(msg.Data))
+	c.metrics.received.Inc()
 	if !json.Valid(msg.Data) {
 		c.drops.record(reasonNotJSON, 1,
 			"subject message is not JSON and was not sent; later messages still flow",

@@ -4,7 +4,7 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 1. Two CI jobs
 
-- [ ] 1.1 `scripts/verify.sh` takes an optional group (`checks`, `integration`) and walks the one step list, skipping
+- [x] 1.1 `scripts/verify.sh` takes an optional group (`checks`, `integration`) and walks the one step list, skipping
   what the group leaves out (design D1); `Taskfile.yml` `verify` runs `scripts/verify.sh {{.CLI_ARGS}}`. Add
   `TestVerifyGroups` to `internal/harness/toolcheck/mergegate_test.go`, failing first, shown able to fail by a planted
   `verify.sh` whose `integration` group drops `cover:check`.

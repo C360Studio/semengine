@@ -44,7 +44,7 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
 - [x] 4.2 `output/websocket/README.md` and `doc.go` written against the code: wire format, inputs, at-most-once,
   every origin accepted and no authentication (#84), TLS, metrics, migration notes for semsource and semboids.
   Check: `task docs:check`.
-- [ ] 4.3 Ledger (D10): new `output/websocket` `adapt` row; `internal/tlsutil` stale "change 5" text and
+- [x] 4.3 Ledger (D10): new `output/websocket` `adapt` row; `internal/tlsutil` stale "change 5" text and
   `consumer_purpose`; `pkg/buffer` `consumer_purpose`; new `pkg/acme` `defer-exclude` row. `docs/repository-map.md`
   entries (package, ADR-115); `query-pattern` skill line. Check: `task verify` (ledger tests), `task status` counts
   `pkg/acme` excluded.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
@@ -251,6 +253,50 @@ func TestReplyNotFittingSchemaNamesPath(t *testing.T) {
 			}
 			if len(wire.Errors) != 1 || !reflect.DeepEqual(wire.Errors[0].Path, tc.path) {
 				t.Fatalf("errors = %s, want one error at path %v", b, tc.path)
+			}
+		})
+	}
+}
+
+// TestExecutedQueryKeepsData checks the encoded body: an executed query answers a data entry even when every root
+// field is skipped, and a request refused before execution answers none (#591).
+func TestExecutedQueryKeepsData(t *testing.T) {
+	cases := []struct {
+		name, query, want string
+		refused           bool
+	}{
+		{name: "only root skipped", query: `{ entity(id: "x") @skip(if: true) { kvRevision } }`, want: `{"data":{}}`},
+		{name: "only root not included", query: `{ entity(id: "x") @include(if: false) { kvRevision } }`,
+			want: `{"data":{}}`},
+		{name: "root included", query: `{ entity(id: "x") @include(if: true) { kvRevision } }`,
+			want: `{"data":{"entity":{"kvRevision":7}}}`},
+		{name: "refused before execution", query: `mutation { entity(id: "x") { kvRevision } }`, refused: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			r := &recorder{replies: map[string]any{"entity": exactEntityReply()}}
+			resp, refused := run(t, r, tc.query, nil)
+			if refused != tc.refused {
+				t.Fatalf("refused = %v, want %v: %v", refused, tc.refused, resp.Errors)
+			}
+			w := httptest.NewRecorder()
+			writeResponse(w, http.StatusOK, resp)
+			body := strings.TrimSpace(w.Body.String())
+			if tc.refused {
+				var keys map[string]json.RawMessage
+				if err := json.Unmarshal([]byte(body), &keys); err != nil {
+					t.Fatalf("body %s: %v", body, err)
+				}
+				if _, ok := keys["data"]; ok {
+					t.Fatalf("refused request encoded a data entry: %s", body)
+				}
+				if _, ok := keys["errors"]; !ok {
+					t.Fatalf("refused request encoded no errors: %s", body)
+				}
+				return
+			}
+			if body != tc.want {
+				t.Fatalf("encoded %s, want %s", body, tc.want)
 			}
 		})
 	}

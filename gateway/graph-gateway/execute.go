@@ -27,9 +27,10 @@ type request struct {
 	Variables     map[string]any `json:"variables"`
 }
 
-// response is a GraphQL response body. Data is absent when the request was refused before execution.
+// response is a GraphQL response body. Data is nil, and absent from the body, only when the request was refused
+// before execution; an executed request answers data even when it is empty (all root fields skipped, #591).
 type response struct {
-	Data   map[string]any `json:"data,omitempty"`
+	Data   map[string]any `json:"data,omitzero"`
 	Errors gqlerror.List  `json:"errors,omitempty"`
 }
 

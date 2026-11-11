@@ -8,7 +8,7 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
   what the group leaves out (design D1); `Taskfile.yml` `verify` runs `scripts/verify.sh {{.CLI_ARGS}}`. Add
   `TestVerifyGroups` to `internal/harness/toolcheck/mergegate_test.go`, failing first, shown able to fail by a planted
   `verify.sh` whose `integration` group drops `cover:check`.
-- [ ] 1.2 Split `.github/workflows/ci.yml` `verify` into `checks` (limit 15, `task verify -- checks`, checkout with
+- [x] 1.2 Split `.github/workflows/ci.yml` `verify` into `checks` (limit 15, `task verify -- checks`, checkout with
   `fetch-depth: 0`) and `integration` (limit 20, `task verify -- integration`), the setup steps in each, and make
   `required` need both (design D2, D5, D6). Update `ciWorkflowViolations`, its constants and the
   `TestCIWorkflowPinnedSensitivity` fixture and cases (both jobs' limits, run lines, `required`'s needs). The PR

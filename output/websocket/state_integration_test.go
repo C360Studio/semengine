@@ -33,6 +33,12 @@ import (
 // deps' NATS client, registry and security; the logger is the instance's capture.
 func newApplied(t *testing.T, deps component.Dependencies) instance {
 	t.Helper()
+	return newAppliedPinging(t, deps, defaultPingInterval)
+}
+
+// newAppliedPinging is newApplied pinging each client every interval.
+func newAppliedPinging(t *testing.T, deps component.Dependencies, interval string) instance {
+	t.Helper()
 	port := freePort(t)
 	o := instance{
 		listener: net.JoinHostPort("127.0.0.1", strconv.Itoa(port)),
@@ -40,7 +46,16 @@ func newApplied(t *testing.T, deps component.Dependencies) instance {
 		logs:     &logged{},
 	}
 	deps.Logger = slog.New(o.logs)
-	raw := withPorts(t, []component.PortDefinition{entityWatch()}, []component.PortDefinition{server(port)})
+	raw, err := json.Marshal(map[string]any{
+		"ping_interval": interval,
+		"ports": component.PortConfig{
+			Inputs:  []component.PortDefinition{entityWatch()},
+			Outputs: []component.PortDefinition{server(port)},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal config: %v", err)
+	}
 	built, err := create(json.RawMessage(raw), deps)
 	if err != nil {
 		t.Fatalf("factory: %v", err)

@@ -576,21 +576,46 @@ func TestQuietClientStaysConnected(t *testing.T) {
 }
 
 // TestBusyClientKeepsPings: a client that answers pings and reads a frame every 5ms stays connected
-// for six pings at 200ms after a burst of 1024 frames of 32 KiB fills its queue (design D2, D3;
-// output-websocket spec, "Keep-alive"). The 5ms ticker is the client's processing time, not an
-// ordering: it keeps the queue non-empty past a read deadline. A writer that drains its whole queue
-// before it pings sends no ping during the burst, and the server closes the client at its read
-// deadline (PR #592 review, comment 6801700128).
+// for six pings at 200ms while the 160 frames of 256 KiB of its applied-state snapshot are written
+// to it (design D2, D3; output-websocket spec, "Keep-alive"). The 5ms ticker is the client's
+// processing time, not an ordering: it keeps the writer busy for 800ms, twice the read deadline. A
+// writer that writes every frame it has before it pings sends no ping meanwhile, and the server
+// closes the client at its read deadline (PR #592 review, comment 6801700128). Snapshot, subject
+// queue and change batches share that loop (drain).
+//
+// The writer's frames must be ready faster than the client reads them, or the writer runs out and
+// pings between them whether or not drain does. A snapshot is: it is in memory before the client
+// connects. Subject frames are not: under -race the subscription took about 28 MB/s, so only small
+// frames back up behind a client reading every 5ms. A ping also reaches the client behind every
+// frame already in the server's socket send buffer, which the test cannot size: on Linux it held up
+// to 1.3 MB, 39 frames of 32 KiB, about 200ms of reading, and the server closed the client for
+// read_timeout (CI run 43076963073). In 256 KiB frames that is five frames, 25ms of reading; even a
+// 4 MiB buffer, Linux's default tcp_wmem maximum, is 80ms.
 func TestBusyClientKeepsPings(t *testing.T) {
 	client := fixtureClient(t)
-	o := startOutput(t, client, "ws.busy", "200ms")
-	conn := dialConn(t, websocket.DefaultDialer, o.url(), nil)
-	// A small receive buffer keeps the burst in the server's queue rather than in the socket.
-	if tcp, ok := conn.UnderlyingConn().(*net.TCPConn); ok {
-		if err := tcp.SetReadBuffer(32 << 10); err != nil {
-			t.Fatalf("set the client's read buffer: %v", err)
-		}
+	kv := entityStates(t, client)
+	pad := strings.Repeat("x", 256<<10)
+	for n := range 160 {
+		put(t, kv, entityID(n), storedEntity(entityID(n), pad))
 	}
+	o := started(t, newAppliedPinging(t,
+		component.Dependencies{NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry()}, "200ms"))
+	// Healthy means the view has caught up, so the client's snapshot holds every entity.
+	awaitHealthy(t, o)
+	// A small receive buffer, set before the upgrade, keeps the snapshot in the writer rather than
+	// in the client's socket.
+	dialer := &websocket.Dialer{NetDialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+		conn, err := (&net.Dialer{}).DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		if err := conn.(*net.TCPConn).SetReadBuffer(32 << 10); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		return conn, nil
+	}}
+	conn := dialConn(t, dialer, o.url(), nil)
 	pings := make(chan struct{}, 64)
 	answer := conn.PingHandler()
 	conn.SetPingHandler(func(data string) error {
@@ -629,25 +654,14 @@ func TestBusyClientKeepsPings(t *testing.T) {
 		_ = conn.Close()
 		<-ended
 	})
-	awaitClients(t, o.c, 1)
-	awaitPings := func(n int, when string) {
-		t.Helper()
-		for i := 0; i < n; i++ {
-			select {
-			case <-pings:
-			case r := <-ended:
-				ended <- r // for the cleanup's join
-				t.Fatalf("client closed %s after %d pings and %d data frames: %v", when, i, r.frames, r.err)
-			}
+	for i := 0; i < 6; i++ {
+		select {
+		case <-pings:
+		case r := <-ended:
+			ended <- r // for the cleanup's join
+			t.Fatalf("client closed after %d pings and %d frames: %v", i, r.frames, r.err)
 		}
 	}
-	awaitPings(3, "before the burst")
-
-	payload := []byte(`{"pad":"` + strings.Repeat("x", 32<<10) + `"}`)
-	for range 1024 {
-		publish(t, client, "ws.busy", payload)
-	}
-	awaitPings(6, "after the burst")
 }
 
 // TestSilentClientIsClosed: a client that answers no pings is closed once its read deadline, twice

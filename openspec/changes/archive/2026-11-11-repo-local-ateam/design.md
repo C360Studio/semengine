@@ -23,9 +23,9 @@ and the configured `hook_binary` against the pin.
   and `.agents/plugins/ateam/mcp_config.json` as well as the five client configs; adding those two to `semengineOwned`
   in `ateamtemplates_test.go` lets them invoke `scripts/ateam` while `ateam doctor --check` validates their hook and
   MCP entries.
-- **Single version across workflows, Taskfile, and `.agents/ateam.json`.** `scripts/doctor.sh` and `ateamPins` in
-  `ateamtemplates_test.go` verify that `.github/workflows/{ci,merge-check}.yml`, `Taskfile.yml` (`ATEAM_VERSION`), and
-  `.agents/ateam.json` (`ateam_version`) all name the same release.
+- **Single version across workflows, Taskfile, and `.agents/ateam.json`.** `scripts/doctor.sh` and `TestAteamPinParity`
+  in `ateamtemplates_test.go` verify that `.github/workflows/{ci,merge-check}.yml`, `Taskfile.yml` (`ATEAM_VERSION`),
+  and `.agents/ateam.json` (`ateam_version`) all name the same release.
 - **No generated checks needed.** The shim is a 20-line POSIX shell script with four deterministic resolution branches
   (main `.tools/bin`, worktree `.tools/bin`, `PATH`, missing -> exit 127), covered by example and mutation-sensitivity
   subtests in `TestAteamShimResolution`.

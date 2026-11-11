@@ -13,4 +13,4 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 2. Spec
 
-- [ ] 2.1 Apply the spec deltas to `openspec/specs/{harness-boundaries,spec-queue}/spec.md` and archive the change.
+- [x] 2.1 Apply the spec deltas to `openspec/specs/{harness-boundaries,spec-queue}/spec.md` and archive the change.

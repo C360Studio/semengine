@@ -4,12 +4,10 @@
 
 ### Requirement: ateam doctor gates verify
 
-`scripts/verify.sh` SHALL run `task ateam:doctor` as its first step, and `task ateam:doctor` SHALL run `scripts/ateam
-doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`,
-`GEMINI_SESSION_ID`) unset, so that the check never takes the writer lease. The ateam release is pinned as `v0.4.0` in
-`.github/workflows/ci.yml`, `.github/workflows/merge-check.yml`, `Taskfile.yml` (`ATEAM_VERSION`), and
-`.agents/ateam.json` (`ateam_version`), every pin naming the same version, compared by `scripts/doctor.sh` and
-`TestAteamTemplatesUnchanged`.
+`scripts/verify.sh` SHALL run `task ateam:doctor` first, and `task ateam:doctor` SHALL run `scripts/ateam doctor
+--check` with the session variables (`ATEAM_SESSION_ID`, `CLAUDE_SESSION_ID`, `CODEX_SESSION_ID`, `GEMINI_SESSION_ID`)
+unset so it never takes the writer lease. The ateam release is pinned as `v0.4.0` in `.github/workflows/ci.yml`,
+`merge-check.yml`, `Taskfile.yml`, and `.agents/ateam.json`, compared by `scripts/doctor.sh` and `TestAteamPinParity`.
 
 #### Scenario: Doctor violation fails verify
 
@@ -29,9 +27,9 @@ doctor --check` with the session identity variables (`ATEAM_SESSION_ID`, `CLAUDE
 
 Every file `ateam init` writes into an empty directory at the pinned release SHALL be byte-identical in this repository,
 except the files SemEngine writes itself and the client and plugin configurations an adopter edits to invoke
-`scripts/ateam` (listed with reasons in `semengineOwned`). The tool test `TestAteamTemplatesUnchanged`
-(`internal/harness/toolcheck`) SHALL check it using `scripts/ateam`, failing and never skipping when `scripts/ateam`
-cannot run the pinned release (installed by `task tools:ateam`).
+`scripts/ateam` (both listed with reasons in `semengineOwned`). `TestAteamTemplatesUnchanged`
+(`internal/harness/toolcheck`) SHALL check it via `scripts/ateam`, failing and never skipping when `scripts/ateam`
+(from `task tools:ateam`) is missing or is not the pin.
 
 #### Scenario: A line is added to a base contract
 

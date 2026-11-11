@@ -21,7 +21,7 @@ responders in change 7. `MIGRATION.md` lists what a consumer changes at its cuto
 | Verb on `graph.query.` | Answers from | Reply |
 | --- | --- | --- |
 | `entity`, `batch`, `prefix` | `graph.ingest.query.` same name | bare, as graph-ingest sends it |
-| `byName` | `graph.index.query.byName` | enveloped, as graph-index sends it |
+| `byName`, `predicate` | `graph.index.query.` same name | enveloped, as graph-index sends it |
 | `entityByAlias` | `graph.index.query.alias`, then `graph.ingest.query.entity` | enveloped by `graph-query`, `data` a `graph.ExactEntity` |
 | `relationships` | `graph.index.query.outgoing` or `incoming` | enveloped by `graph-query`, `data` a list of `graph.RelationshipEdge` |
 | `pathSearch` | `graph.ingest.query.entity` for the start, then `graph.index.query.outgoing` and `incoming` | enveloped by `graph-query`, `data` a `graph.PathSearchData` |
@@ -33,11 +33,11 @@ responders in change 7. `MIGRATION.md` lists what a consumer changes at its cuto
 | `semantic`, `similar` | `graph.embedding.query.search`, `similar` | enveloped by the responder |
 | `spatial`, `temporal` | `graph.spatial.query.bounds`, `graph.temporal.query.range` | enveloped by the responder |
 
-The first four, and `semantic`, `similar`, `spatial` and `temporal`, are forwards: the request and reply bytes pass
-unchanged, neither decoded nor checked, so `min_revision` reaches graph-index on `byName` and an authority read on
-`entity`, `batch` and `prefix` ignores it. The embedding responder is in this tree (graph-embedding); the spatial and
-temporal ones arrive in change 7. Until a responder exists, the verb forwarding to it is refused transient `internal`,
-naming the subject.
+The first five, and `semantic`, `similar`, `spatial` and `temporal`, are forwards: the request and reply bytes pass
+unchanged, neither decoded nor checked, so `min_revision` reaches graph-index on `byName` and `predicate`, and an
+authority read on `entity`, `batch` and `prefix` ignores it. The embedding responder is in this tree (graph-embedding);
+the spatial and temporal ones arrive in change 7. Until a responder exists, the verb forwarding to it is refused
+transient `internal`, naming the subject.
 
 A refusal from any verb behind these reaches the caller with its class, code, detail and message. A request that gets
 no answer is refused by `graph-query` itself, class transient, code `internal`, naming the subject: nothing responding,

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
 	"reflect"
 	"slices"
 	"strings"
@@ -732,13 +733,14 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 }
 
 // TestSmoke_OneConfigAnswers holds composed-stack, "Answers from one configuration": the stack boots
-// from one configuration, answers the fixed questions, and follows an edit and a delete.
+// from one configuration, answers the fixed questions over NATS and over graph-gateway's GraphQL
+// route, and follows an edit and a delete.
 func TestSmoke_OneConfigAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the five components are listed.
+	// StartAll has returned, so the composition is fixed: the six components are listed.
 	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
@@ -750,6 +752,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	revision := o.awaitIndexed(t, s)
 	requireComponentsHealthy(t, s)
 	checkAnswers(t, o, s, f, wantOf(inputs...), revision)
+	checkGateway(t, s, f, wantOf(inputs...))
 
 	// An edit on the stream and a delete through graph-ingest's mutation verb.
 	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
@@ -761,6 +764,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	edited[f.id(drone3)] = f.editedDrone3()
 	delete(edited, deleted)
 	checkAnswers(t, o, s, f, edited, revision, deleted)
+	checkGateway(t, s, f, edited)
 
 	stopStack(t, s)
 }
@@ -1073,7 +1077,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // running stack" (design D6, case 4): the NATS server restarts on the same URL with its file
 // storage while the stack keeps running, and the same process, never restarted, applies a new
 // entity, an edit and a delete published after it, answers what it did before plus those writes,
-// and lists its five components healthy, with no envelope reporting a lost feed or reset_required.
+// and lists its six components healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1133,4 +1137,152 @@ func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	delete(after, deleted)
 	checkAnswers(t, o, s, f, after, revision, deleted)
 	stopStack(t, s)
+}
+
+// gatewayRoute is graph-gateway's GraphQL route: the service manager mounts the component's routes
+// at /<instance> (service/service_manager_http.go), and the configuration names it graph-gateway.
+const gatewayRoute = "/graph-gateway/graphql"
+
+// postGraphQL posts one GraphQL request to graph-gateway through the stack's HTTP port and decodes
+// the answer's data.<field> into out. It fails unless the answer is HTTP 200 with no errors.
+func postGraphQL(t *testing.T, s stack, field, query string, vars map[string]any, out any) {
+	t.Helper()
+	request, err := json.Marshal(map[string]any{"query": query, "variables": vars})
+	if err != nil {
+		t.Fatal(err)
+	}
+	url, code, body := send(t, s, s.httpPort, http.MethodPost, gatewayRoute, request)
+	var answer struct {
+		Data   map[string]json.RawMessage `json:"data"`
+		Errors []json.RawMessage          `json:"errors"`
+	}
+	if err := json.Unmarshal(body, &answer); err != nil {
+		t.Fatalf("POST %s %s: HTTP %d, not JSON: %v: %s", url, field, code, err, body)
+	}
+	if code != http.StatusOK || len(answer.Errors) != 0 {
+		t.Fatalf("POST %s %s: HTTP %d %s, want 200 with no errors", url, field, code, body)
+	}
+	if err := json.Unmarshal(answer.Data[field], out); err != nil {
+		t.Fatalf("POST %s %s: decode data.%s %s: %v", url, field, field, body, err)
+	}
+}
+
+// gatewayEntity is an Entity in graph-gateway's schema, with the triple fields the check selects.
+type gatewayEntity struct {
+	ID      string `json:"id"`
+	Triples []struct {
+		Predicate string `json:"predicate"`
+		Object    any    `json:"object"`
+	} `json:"triples"`
+}
+
+// statements returns the entity's triples as statementsOf does.
+func (e gatewayEntity) statements() []string {
+	var got []string
+	for _, triple := range e.Triples {
+		got = append(got, fmt.Sprintf("%s=%v", triple.Predicate, triple.Object))
+	}
+	slices.Sort(got)
+	return got
+}
+
+// checkGateway checks graph-gateway's four root fields, posted to its route on the process's HTTP
+// port, against w (composed-stack, "Answers from one configuration"). The gateway asks graph-query,
+// which forwards entity and entitiesByPrefix to graph-ingest's ENTITY_STATES reads and
+// entitiesByPredicate and pathSearch to graph-index; the caller's awaitIndexed returned after
+// graph-index reported the ENTITY_STATES revision read after the last write, which orders these
+// reads after every write w holds.
+func checkGateway(t *testing.T, s stack, f fixture, w want) {
+	t.Helper()
+	ids := slices.Sorted(maps.Keys(w))
+	const entityFields = `id triples { predicate object }`
+
+	// entity: each live entity's ID and every triple it holds.
+	for _, id := range ids {
+		var exact struct {
+			Entity     gatewayEntity `json:"entity"`
+			KVRevision uint64        `json:"kvRevision"`
+		}
+		postGraphQL(t, s, "entity", `query($id: String!) { entity(id: $id) { entity { `+entityFields+` } kvRevision } }`,
+			map[string]any{"id": id}, &exact)
+		if exact.Entity.ID != id || exact.KVRevision == 0 {
+			t.Errorf("gateway entity %s answered ID %q at kvRevision %d, want its own ID at a revision", id,
+				exact.Entity.ID, exact.KVRevision)
+		}
+		if got, wantStatements := exact.Entity.statements(), w[id].statementStrings(); !slices.Equal(got, wantStatements) {
+			t.Errorf("gateway entity %s holds %v, want %v", id, got, wantStatements)
+		}
+	}
+
+	// entitiesByPrefix: the four bases, on one page, in key order, each with its triples.
+	basePrefix := f.id("base")
+	var page struct {
+		Entities   []gatewayEntity `json:"entities"`
+		Total      int             `json:"total"`
+		NextCursor *string         `json:"next_cursor"`
+	}
+	postGraphQL(t, s, "entitiesByPrefix", `query($p: String!) { entitiesByPrefix(prefix: $p) { entities { `+
+		entityFields+` } total next_cursor } }`, map[string]any{"p": basePrefix}, &page)
+	wantBases := []string{f.id(base1), f.id(base2), f.id(base3), f.id(base4)}
+	var pageIDs []string
+	for _, e := range page.Entities {
+		pageIDs = append(pageIDs, e.ID)
+		if got, wantStatements := e.statements(), w[e.ID].statementStrings(); !slices.Equal(got, wantStatements) {
+			t.Errorf("gateway entitiesByPrefix %s: %s holds %v, want %v", basePrefix, e.ID, got, wantStatements)
+		}
+	}
+	if !slices.Equal(pageIDs, wantBases) || page.Total != len(wantBases) || page.NextCursor != nil {
+		t.Errorf("gateway entitiesByPrefix %s = %v, total %d, next_cursor %v; want %v, total %d, no cursor",
+			basePrefix, pageIDs, page.Total, page.NextCursor, wantBases, len(wantBases))
+	}
+
+	// entitiesByPredicate: the entities homed at base2, as a value filter on homePredicate.
+	wantHomed := []string{}
+	for _, local := range []string{drone5, drone6, drone7, drone8} {
+		if _, live := w[f.id(local)]; live {
+			wantHomed = append(wantHomed, f.id(local))
+		}
+	}
+	var matches struct {
+		Entities []string `json:"entities"`
+	}
+	postGraphQL(t, s, "entitiesByPredicate", `query($p: String!, $v: String) { entitiesByPredicate(predicate: $p, value: $v) { entities } }`,
+		map[string]any{"p": homePredicate, "v": f.id(base2)}, &matches)
+	if !slices.Equal(matches.Entities, wantHomed) {
+		t.Errorf("gateway entitiesByPredicate %s = %s: %v, want %v", homePredicate, f.id(base2), matches.Entities, wantHomed)
+	}
+
+	// pathSearch: the known path, each entity with the edges that lead to it from the lead.
+	type edge struct{ From, Predicate, To string }
+	var path struct {
+		Entities []struct {
+			ID    string `json:"id"`
+			Depth int    `json:"depth"`
+		} `json:"entities"`
+		Paths     [][]edge `json:"paths"`
+		Truncated bool     `json:"truncated"`
+	}
+	postGraphQL(t, s, "pathSearch", `query($start: String!, $depth: Int!) { pathSearch(startEntity: $start, direction: "OUTGOING", maxDepth: $depth) {
+		entities { id depth } paths { from predicate to } truncated } }`,
+		map[string]any{"start": f.id(drone1), "depth": graph.MaxPathSearchDepth}, &path)
+	lead := f.leadPath()
+	var gotPath, wantPath []string
+	for k, e := range path.Entities {
+		gotPath = append(gotPath, fmt.Sprintf("%s@%d", e.ID, e.Depth))
+		if k < len(path.Paths) {
+			gotPath = append(gotPath, fmt.Sprint(path.Paths[k]))
+		}
+	}
+	// The chain is a line, so the path to entity k is the first k edges.
+	var steps []edge
+	for k, e := range lead.Entities {
+		wantPath = append(wantPath, fmt.Sprintf("%s@%d", e.EntityID, e.Depth), fmt.Sprint(steps))
+		if k < len(lead.Edges) {
+			steps = append(steps, edge{lead.Edges[k].FromEntityID, lead.Edges[k].Predicate, lead.Edges[k].ToEntityID})
+		}
+	}
+	if !slices.Equal(gotPath, wantPath) || len(path.Paths) != len(path.Entities) || path.Truncated {
+		t.Errorf("gateway pathSearch from %s = %v (%d paths, truncated %v), want %v (%d paths, not truncated)",
+			f.id(drone1), gotPath, len(path.Paths), path.Truncated, wantPath, len(lead.Entities))
+	}
 }

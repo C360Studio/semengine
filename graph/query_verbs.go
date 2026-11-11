@@ -50,7 +50,8 @@ var entityVerb = QueryVerb{
 
 // QueryVerbs returns the declared request/reply verbs. Each call returns a new
 // slice, so a caller cannot change the declaration. The entity verb takes an
-// EntityRequest, batch an EntityBatchRequest and prefix a PrefixQueryRequest.
+// EntityRequest, batch an EntityBatchRequest, prefix a PrefixQueryRequest and
+// predicate a PredicateRequest.
 // Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
 // QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
 // (search, similar, bounds, range), of which only search and similar have a responder in
@@ -100,6 +101,8 @@ func QueryVerbs() []QueryVerb {
 			Reply: reflect.TypeFor[PrefixQueryResponse]()},
 		{Name: "byName", Subject: "graph.query.byName", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[NameData]()},
+		{Name: "predicate", Subject: "graph.query.predicate", Responder: ResponderGraphQuery,
+			Enveloped: true, Reply: reflect.TypeFor[PredicateData]()},
 		{Name: "entityByAlias", Subject: "graph.query.entityByAlias", Responder: ResponderGraphQuery,
 			Enveloped: true, Reply: reflect.TypeFor[ExactEntity]()},
 		{Name: "relationships", Subject: "graph.query.relationships", Responder: ResponderGraphQuery,

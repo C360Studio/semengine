@@ -25,14 +25,15 @@ type queryHandler = func(ctx context.Context, data []byte) ([]byte, error)
 // handler, and Start fails naming it.
 func (c *Component) queryHandlers() map[string]queryHandler {
 	forwards := map[string]struct{ responder, name string }{
-		"entity":   {graph.ResponderGraphIngest, "entity"},
-		"batch":    {graph.ResponderGraphIngest, "batch"},
-		"prefix":   {graph.ResponderGraphIngest, "prefix"},
-		"byName":   {graph.ResponderGraphIndex, "byName"},
-		"semantic": {graph.ResponderGraphEmbedding, "search"},
-		"similar":  {graph.ResponderGraphEmbedding, "similar"},
-		"spatial":  {graph.ResponderGraphIndexSpatial, "bounds"},
-		"temporal": {graph.ResponderGraphIndexTemporal, "range"},
+		"entity":    {graph.ResponderGraphIngest, "entity"},
+		"batch":     {graph.ResponderGraphIngest, "batch"},
+		"prefix":    {graph.ResponderGraphIngest, "prefix"},
+		"byName":    {graph.ResponderGraphIndex, "byName"},
+		"predicate": {graph.ResponderGraphIndex, "predicate"},
+		"semantic":  {graph.ResponderGraphEmbedding, "search"},
+		"similar":   {graph.ResponderGraphEmbedding, "similar"},
+		"spatial":   {graph.ResponderGraphIndexSpatial, "bounds"},
+		"temporal":  {graph.ResponderGraphIndexTemporal, "range"},
 	}
 	handlers := make(map[string]queryHandler, len(forwards))
 	for verb, downstream := range forwards {

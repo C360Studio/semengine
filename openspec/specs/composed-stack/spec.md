@@ -1,7 +1,7 @@
 # composed-stack Specification
 
 ## Purpose
-The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-clustering and graph-query) boots from one JSON
+The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query and graph-gateway) boots from one JSON
 configuration through the real startup path, answers fixed questions through the paths a consumer uses, and keeps those answers
 across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and a quick NATS restart
 (about 0.2 s down) under the running stack. A second, three-component stack without graph-embedding (the no-embedder
@@ -12,9 +12,10 @@ subject. A longer outage is not yet covered (#574). The tests live in `internal/
 
 ### Requirement: The graph stack boots from one configuration
 
-graph-ingest, graph-index, graph-embedding, graph-clustering and graph-query SHALL start together from one JSON
-configuration through `config.Manager`, `ServiceManager` and `ComponentManager`, and SHALL answer the fixed questions
-about entities a producer published on `entity.>`.
+graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query and graph-gateway SHALL start together from
+one JSON configuration through `config.Manager`, `ServiceManager` and `ComponentManager`, and SHALL answer the fixed
+questions about entities a producer published on `entity.>`, over NATS and over graph-gateway's
+`/graph-gateway/graphql` route.
 
 #### Scenario: Answers from one configuration
 
@@ -27,6 +28,8 @@ about entities a producer published on `entity.>`.
   entities whose names share a word with the entity's, as a set, since BM25's scores depend on arrival order
 - **AND** once the lead's level-0 record's `entity_revision` reaches that revision, `localSearch` on the lead answers
   from that group, and a text question on a word of the fixed names answers that group
+- **AND** `entity`, `entitiesByPrefix`, `entitiesByPredicate` and `pathSearch` posted to `/graph-gateway/graphql` on
+  the process's HTTP port answer HTTP 200 with no `errors` and the fixed entities' IDs and triples
 - **AND** after an edit and a delete the answers and records follow (`TestSmoke_OneConfigAnswers`)
 
 ### Requirement: A whole-stack restart keeps the answers
@@ -72,7 +75,7 @@ answers included.
 
 With file storage, a stack that keeps running while the NATS server restarts on the same URL SHALL reach ready again
 without a process restart, and SHALL apply what is published after the restart. Because of the restart, no
-`GRAPH_STATUS` envelope SHALL report a lost feed or `reset_required`, and `/components/health` SHALL list all five
+`GRAPH_STATUS` envelope SHALL report a lost feed or `reset_required`, and `/components/health` SHALL list all six
 components by name, each healthy (graph-embedding's `embedding worker watch lost` included).
 
 #### Scenario: Restart the broker under the running stack
@@ -81,7 +84,7 @@ components by name, each healthy (graph-embedding's `embedding worker watch lost
 - **THEN** the graph-index, graph-embedding and graph-clustering keys reach their revision and graph-ingest's reads not
   degraded, the lead's level-0 record's `entity_revision` reaches it, with answers, `localSearch` included, that include
   them, no envelope reports a lost feed or `reset_required`, and `/components/health` lists graph-ingest, graph-index,
-  graph-embedding, graph-clustering and graph-query, a total of 5, each healthy
+  graph-embedding, graph-clustering, graph-query and graph-gateway, a total of 6, each healthy
   (`TestSmoke_BrokerRestartUnderRunningStack`)
 
 ### Requirement: The graph stack answers fusion without an embedder

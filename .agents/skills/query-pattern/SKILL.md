@@ -7,13 +7,14 @@ description: >-
 
 # How to read the graph
 
-Start from the reader the user names. In this tree the graph is read six ways, and only these.
+Start from the reader the user names. In this tree the graph is read seven ways, and only these.
 
 ## What exists
 
 | Way | For | What you get |
 | --- | --- | --- |
 | graph-gateway's GraphQL route | Remote apps and web front ends, over HTTP: an entity, a prefix page, the entities with a predicate, the entities within reach of one | Exactly the fields the request selected, checked against the schema (`gateway/graph-gateway/schema.graphql`) |
+| `output/websocket` with its default applied-state input | An application kept current as entities change, over a WebSocket on the component's own port (ADR-115); never the message logger's debug SSE watch | A `put` per current entity, `synced`, then `put`, `delete` and `poisoned` frames converging to each key's latest value, not every revision (`output/websocket/README.md`) |
 | `graph.NewExactEntityReader` | One entity by ID, from embedded code | The validated entity and its `ENTITY_STATES` revision (`graph.ExactEntity`) |
 | graph-ingest's `batch` and `prefix` verbs | Several entities by ID, or a page of entities under an ID prefix | `graph.EntityBatchResponse`, `graph.PrefixQueryResponse` |
 | graph-query's verbs | One front door for application code: an entity, a batch, a prefix page, a name, the entities with a predicate, an alias, the links of an entity, the entities within reach of one, counts of a group, a summary of the graph, a keyword search inside one community | The answer of the component behind the verb; every verb but `entity`, `batch`, `prefix` and `hierarchyStats` is a `graph.QueryResponse` |

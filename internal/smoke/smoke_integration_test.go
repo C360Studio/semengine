@@ -734,13 +734,13 @@ func checkCommunities(t *testing.T, o observer, s stack, f fixture, w want, revi
 
 // TestSmoke_OneConfigAnswers holds composed-stack, "Answers from one configuration": the stack boots
 // from one configuration, answers the fixed questions over NATS and over graph-gateway's GraphQL
-// route, and follows an edit and a delete.
+// route, streams ENTITY_STATES to a websocket client, and follows an edit and a delete.
 func TestSmoke_OneConfigAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
 	s := startStack(t, o, url)
 	f := fixture{platform: s.platform}
-	// StartAll has returned, so the composition is fixed: the six components are listed.
+	// StartAll has returned, so the composition is fixed: the seven components are listed.
 	requireComponentsListed(t, s)
 
 	inputs := f.fixedEntities()
@@ -753,6 +753,14 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	requireComponentsHealthy(t, s)
 	checkAnswers(t, o, s, f, wantOf(inputs...), revision)
 	checkGateway(t, s, f, wantOf(inputs...))
+	// The client connects after the writes, so its snapshot holds a put for each fixed entity and
+	// synced, and any put the view had not yet applied follows as a change.
+	ws := dialWebsocket(t, s)
+	streamed := map[string]stored{}
+	synced := ws.readSnapshot(t, streamed)
+	checkWebsocket(t, o, ws, streamed, synced, revision, wantOf(inputs...))
+
+	streamedThrough := max(synced, revision)
 
 	// An edit on the stream and a delete through graph-ingest's mutation verb.
 	o.awaitAcknowledged(t, s, o.publish(t, f.editedDrone3()))
@@ -765,6 +773,7 @@ func TestSmoke_OneConfigAnswers(t *testing.T) {
 	delete(edited, deleted)
 	checkAnswers(t, o, s, f, edited, revision, deleted)
 	checkGateway(t, s, f, edited)
+	checkWebsocket(t, o, ws, streamed, streamedThrough, revision, edited)
 
 	stopStack(t, s)
 }
@@ -1077,7 +1086,7 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 // running stack" (design D6, case 4): the NATS server restarts on the same URL with its file
 // storage while the stack keeps running, and the same process, never restarted, applies a new
 // entity, an edit and a delete published after it, answers what it did before plus those writes,
-// and lists its six components healthy, with no envelope reporting a lost feed or reset_required.
+// and lists its seven components healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)

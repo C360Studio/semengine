@@ -712,7 +712,8 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     builds tls.Config for servers and clients, with mTLS, from pkg/security types; imported by metric
-    (handler.go); no consumer imports it and no public signature names its types (design D5, P21, P22)
+    (handler.go) and output/websocket (websocket.go, server TLS at Start); no consumer imports it and no public
+    signature names its types (design D5, P21, P22)
   destination: internal/tlsutil
   contract: >-
     LoadServerTLSConfig and LoadClientTLSConfig apply the MTLS block as at the pin, except: the two
@@ -720,7 +721,7 @@
     server mTLS unless ServerMTLSConfig.ClientCertOptional is set; (2) LoadServerTLSConfig
     refuses mTLS when server TLS is disabled (ErrInvalidConfig); (3) MinVersion values other than
     "1.2", "1.3", or empty are refused with an invalid error; (4) ACME loaders are not ported here
-    (deferred to change 5); until then both loaders refuse a mode other than empty or "manual" and
+    (deferred until a consumer needs ACME, #9 comment 6797029453); until then both loaders refuse a mode other than empty or "manual" and
     acme.enabled true with an invalid error naming the key, LoadServerTLSConfig only when server TLS
     is enabled (owner question 1, #274)
   dependencies_and_side_effects: >-
@@ -728,7 +729,8 @@
   known_risks: >-
     no context roots; moved from pkg/tlsutil to internal/tlsutil (design D5). ACME loaders
     (LoadServerTLSConfigWithACME, LoadClientTLSConfigWithACME, initACMEClient) and pkg/acme
-    dependency dropped until change 5. When change 5 ports LoadClientTLSConfigWithACME, its ACME
+    dependency dropped until a consumer needs ACME (#9 comment 6797029453; pkg/acme row). When a change ports
+    LoadClientTLSConfigWithACME, its ACME
     branch (pin tlsutil.go:286) passes a copy with MTLS cleared, so the fallback key pair is not
     loaded first
   proving_tests: >-
@@ -4917,9 +4919,10 @@
   source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
   consumer_purpose: >-
     bounded in-memory FIFO ring with three overflow policies. SemSource's entity publisher
-    (internal/entitypub/publisher.go, Block policy with WriteWithTimeout) and the output/websocket pending-ack ring
-    (#34) use it; at the pin input/udp and input/websocket also import it (consumer adapters, not ported). Owner
-    ruling 2026-11-10, #566 comment 6772860154
+    (internal/entitypub/publisher.go, Block policy with WriteWithTimeout) uses it; at the pin input/udp and
+    input/websocket also import it (consumer adapters, not ported), and so does output/websocket for its pending-ack
+    ring, which alpha4-output-websocket drops with at-least-once delivery (#34), so no SemEngine package reads it.
+    Owner ruling 2026-11-10, #566 comment 6772860154
   destination: pkg/buffer
   contract: >-
     Buffer[T], NewCircularBuffer, DropOldest/DropNewest/Block, WithOverflowPolicy, WithMetrics, WithDropCallback,
@@ -4956,3 +4959,76 @@
     mutation checks
   owner: alpha4-pkg-buffer developer
   disposition: adapt
+
+# Change alpha4-output-websocket (PR #592, #34): output/websocket ported as adapt for v0.1.0-alpha.4, over applied
+# state (03B D14). Owner rulings 2026-11-11: #34 comments 6797028887, 6797377552 and 6798408792; ADR-115.
+
+- source_path: output/websocket
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    the engine's tier-0 transport for live data to applications (03B D14; ADR-115 decision 3). SemSource's /ws
+    (cmd/semsource/run.go) streams applied entity state through it; semboids relays its boids.frames subject through
+    it (configs/flock.json)
+  destination: output/websocket
+  contract: >-
+    retained-contract matrix row "Change observation" (SETUP 03B design.md:721): a transport over applied state, not a
+    UI and not a relay of ingest input; spec output-websocket (design D1-D6 of change alpha4-output-websocket).
+    Exactly one input per instance: a kv-watch of every ENTITY_STATES key without history (the default), read through
+    one graphview.View per instance, or one core NATS subject. Over applied state a client gets a put per current
+    entity, a poisoned per value that does not decode, synced with the view's revision, then changes that converge to
+    each key's latest write; before the view has caught up or while its watch is lost an upgrade is refused 503 and
+    Health is degraded; a lost watch closes clients with 1013. A subject message that is JSON goes to every client as
+    data with its payload unchanged; one that is not is dropped, counted and logged. A slow client never slows the
+    others: on a subject its 256-frame queue drops the oldest, on applied state its changes merge per key, each
+    counted (messages_dropped_total, changes_coalesced_total) and logged. A pong extends the read deadline to twice
+    ping_interval; a client that answers no ping is closed. Lifecycle on component.Lifecycle, upgrades admitted through
+    internal/httpadmission, one run context ended in Stop (ADR-113); Stop sends 1001 and returns nil once every client
+    handler and the server have returned; a cleanup error or an ended ctx keeps the rest for a later Stop. TLS through internal/tlsutil.LoadServerTLSConfig, an acme mode refused at
+    Start. Metrics semengine_websocket_* through metric.RegisterOrGet, labelled listener. Strict configuration: ports,
+    path (default /ws) and ping_interval (default 30s); delivery_mode, ack_timeout, passthrough, a jetstream input and
+    any other key or port refused naming it; a nil NATS client refused
+  dependencies_and_side_effects: >-
+    production: component, graph, graph/kvcatalog, internal/httpadmission, internal/kvwatch, internal/tlsutil, metric,
+    natsclient, pkg/errs, pkg/graphview, pkg/security (in-set); github.com/gorilla/websocket v1.5.3 (BSD-2-Clause, new
+    module); nats.go; prometheus/client_golang. Binds its own TCP listener; one core subscription or one ENTITY_STATES
+    watch per instance; one writer and one reader goroutine per client, joined by Stop; no bucket write
+  known_risks: >-
+    class:port-refactor, tracked by #34. Subject delivery is at most once, best effort, nothing acknowledged or
+    replayed; the pin's JetStream input, pending-ack ring and delivery_mode are dropped. Applied state converges and
+    does not deliver every revision (ADR-081's merge per key). No authentication, and every Origin is accepted, as at the
+    pin (#84). The view holds every entity's stored bytes in memory. What gorilla does when a write blocks past 10s is
+    not promised (ADR-112; uncovered). Consumer break, listed in the README: SemSource's /ws carries current entity
+    state, not every graph.ingest message; frames replace MessageEnvelope (id dropped, payload no longer rewritten);
+    delivery_mode fails boot. Not carried: the pin's state machine and test hooks, COMMUNITY_INDEX streaming (owner
+    decision 1), broadcast_duration_seconds, server_uptime_seconds and the subject label, the pin's tests
+  proving_tests: >-
+    output/websocket config_test.go (TestConfigRefusals, TestConfigKeysAreRead, TestDefaultConfig,
+    TestRegisterDeclaresWhatTheFactoryResolves), component_test.go (TestStartFailureReleasesPort,
+    TestACMEModeRefusedAtStart, TestClientQueueDropsOldest), the integration-tagged state_integration_test.go
+    (TestAppliedStateLifecycleSuite, TestAppliedStateSnapshotThenChanges, TestAppliedStateConverges,
+    TestNotReadyRefusesUpgrade, TestPoisonedValueIsAnnounced, TestWatchLossClosesAndRecovers,
+    TestWatchLossStopsSnapshotDelivery), websocket_integration_test.go (TestWebsocketLifecycleSuite,
+    TestStartContextEndingStopsNothing, TestSubjectFanOut, TestStalledClientDoesNotSlowOthers,
+    TestQuietClientStaysConnected, TestBusyClientKeepsPings, TestSilentClientIsClosed), tls_integration_test.go
+    (TestTLSServesWSS), metrics_integration_test.go (TestMetricsCountTraffic); internal/smoke (TestSmoke_OneConfigAnswers
+    streaming ENTITY_STATES to a client, TestSmoke_BrokerRestartUnderRunningStack with seven components); notes/2.1.md,
+    3.1.md, 3.2.md, 3.3.md and 4.1.md of the change record failing-first output and mutation checks
+  owner: alpha4-output-websocket developer
+  disposition: adapt
+
+- source_path: pkg/acme
+  source_sha: 8b99efe9c66a4faa4fa509f9f62cc6bad8392128
+  consumer_purpose: >-
+    none yet; ACME certificates are deferred until a consumer needs them (owner ruling 2026-11-11, #34 comment
+    6797028887; #9 comment 6797029453). At the pin only pkg/tlsutil's ACME loaders import it
+  destination: none
+  contract: n/a
+  dependencies_and_side_effects: n/a
+  known_risks: >-
+    543 non-test lines at the pin (client.go 402, doc.go 141) and github.com/go-acme/lego/v4 v4.20.4. Whoever ports it
+    takes on: renew_before silently falling back to 8h (#285); a stop that can block inside lego's Certificate.Renew,
+    which takes no context, needing Shutdown(ctx) under the background-work rule (#9 comment 5950752741); the
+    Certificates race (#9 comment 5950822861). internal/tlsutil refuses an acme mode until then
+  proving_tests: n/a
+  owner: alpha4-output-websocket developer
+  disposition: defer-exclude

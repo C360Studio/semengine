@@ -37,7 +37,7 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
 
 ## 4. Stack, docs, ledger
 
-- [ ] 4.1 Composed smoke stack adds an applied-state websocket output after #588 has merged and `origin/main` is
+- [x] 4.1 Composed smoke stack adds an applied-state websocket output after #588 has merged and `origin/main` is
   merged in: a client receives each fixed entity's `put` and `synced`, and its folded frames follow the edit and delete;
   the broker-restart scenario lists seven healthy components (`specs/composed-stack/spec.md`). Check:
   `task test:integration -- ./internal/smoke/`.

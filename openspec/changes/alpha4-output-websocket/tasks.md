@@ -48,7 +48,7 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
   `consumer_purpose`; `pkg/buffer` `consumer_purpose`; new `pkg/acme` `defer-exclude` row. `docs/repository-map.md`
   entries (package, ADR-115); `query-pattern` skill line. Check: `task verify` (ledger tests), `task status` counts
   `pkg/acme` excluded.
-- [ ] 4.4 PR body: `Closes #34`; migration notes (D4); comments on #196, #195, #477 naming what this PR retired or
+- [x] 4.4 PR body: `Closes #34`; migration notes (D4); comments on #196, #195, #477 naming what this PR retired or
   added; probe P1 posted on PR #592 with source, command, versions, output. Check: read back each `gh` write.
 
 ## 5. Archive

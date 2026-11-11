@@ -1,7 +1,7 @@
 # composed-stack Specification
 
 ## Purpose
-The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query and graph-gateway) boots from one JSON
+The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query, graph-gateway and an applied-state websocket output) boots from one JSON
 configuration through the real startup path, answers fixed questions through the paths a consumer uses, and keeps those answers
 across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and a quick NATS restart
 (about 0.2 s down) under the running stack. A second, three-component stack without graph-embedding (the no-embedder
@@ -12,10 +12,10 @@ subject. A longer outage is not yet covered (#574). The tests live in `internal/
 
 ### Requirement: The graph stack boots from one configuration
 
-graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query and graph-gateway SHALL start together from
-one JSON configuration through `config.Manager`, `ServiceManager` and `ComponentManager`, and SHALL answer the fixed
-questions about entities a producer published on `entity.>`, over NATS and over graph-gateway's
-`/graph-gateway/graphql` route.
+graph-ingest, graph-index, graph-embedding, graph-clustering, graph-query, graph-gateway and an applied-state
+`websocket` output SHALL start together from one JSON configuration through `config.Manager`, `ServiceManager` and
+`ComponentManager`, and SHALL answer the fixed questions about entities a producer published on `entity.>`, over NATS
+and over graph-gateway's `/graph-gateway/graphql` route, and SHALL stream those entities to a websocket client.
 
 #### Scenario: Answers from one configuration
 
@@ -30,7 +30,10 @@ questions about entities a producer published on `entity.>`, over NATS and over 
   from that group, and a text question on a word of the fixed names answers that group
 - **AND** `entity`, `entitiesByPrefix`, `entitiesByPredicate` and `pathSearch` posted to `/graph-gateway/graphql` on
   the process's HTTP port answer HTTP 200 with no `errors` and the fixed entities' IDs and triples
-- **AND** after an edit and a delete the answers and records follow (`TestSmoke_OneConfigAnswers`)
+- **AND** a websocket client connected to the output's port receives a `put` for each fixed entity, whose payload is
+  the `ENTITY_STATES` value at that revision, and `synced`
+- **AND** after an edit and a delete the answers and records follow, and the websocket client's folded frames match
+  `ENTITY_STATES` read back after them (`TestSmoke_OneConfigAnswers`)
 
 ### Requirement: A whole-stack restart keeps the answers
 
@@ -75,7 +78,7 @@ answers included.
 
 With file storage, a stack that keeps running while the NATS server restarts on the same URL SHALL reach ready again
 without a process restart, and SHALL apply what is published after the restart. Because of the restart, no
-`GRAPH_STATUS` envelope SHALL report a lost feed or `reset_required`, and `/components/health` SHALL list all six
+`GRAPH_STATUS` envelope SHALL report a lost feed or `reset_required`, and `/components/health` SHALL list all seven
 components by name, each healthy (graph-embedding's `embedding worker watch lost` included).
 
 #### Scenario: Restart the broker under the running stack
@@ -84,7 +87,7 @@ components by name, each healthy (graph-embedding's `embedding worker watch lost
 - **THEN** the graph-index, graph-embedding and graph-clustering keys reach their revision and graph-ingest's reads not
   degraded, the lead's level-0 record's `entity_revision` reaches it, with answers, `localSearch` included, that include
   them, no envelope reports a lost feed or `reset_required`, and `/components/health` lists graph-ingest, graph-index,
-  graph-embedding, graph-clustering, graph-query and graph-gateway, a total of 6, each healthy
+  graph-embedding, graph-clustering, graph-query, graph-gateway and websocket, a total of 7, each healthy
   (`TestSmoke_BrokerRestartUnderRunningStack`)
 
 ### Requirement: The graph stack answers fusion without an embedder

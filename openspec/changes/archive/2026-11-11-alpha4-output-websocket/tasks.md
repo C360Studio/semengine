@@ -53,5 +53,5 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
 
 ## 5. Archive
 
-- [ ] 5.1 Specs synced (`output-websocket` added, `composed-stack` modified, its Purpose naming the websocket) and
+- [x] 5.1 Specs synced (`output-websocket` added, `composed-stack` modified, its Purpose naming the websocket) and
   the change archived as the last content commit. Check: `task spec:check`, `task docs:check`.

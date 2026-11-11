@@ -4982,8 +4982,8 @@
     others: on a subject its 256-frame queue drops the oldest, on applied state its changes merge per key, each
     counted (messages_dropped_total, changes_coalesced_total) and logged. A pong extends the read deadline to twice
     ping_interval; a client that answers no ping is closed. Lifecycle on component.Lifecycle, upgrades admitted through
-    internal/httpadmission, one run context ended in Stop (ADR-113); Stop sends 1001 and returns once every client
-    handler and the server have returned. TLS through internal/tlsutil.LoadServerTLSConfig, an acme mode refused at
+    internal/httpadmission, one run context ended in Stop (ADR-113); Stop sends 1001 and returns nil once every client
+    handler and the server have returned; a cleanup error or an ended ctx keeps the rest for a later Stop. TLS through internal/tlsutil.LoadServerTLSConfig, an acme mode refused at
     Start. Metrics semengine_websocket_* through metric.RegisterOrGet, labelled listener. Strict configuration: ports,
     path (default /ws) and ping_interval (default 30s); delivery_mode, ack_timeout, passthrough, a jetstream input and
     any other key or port refused naming it; a nil NATS client refused

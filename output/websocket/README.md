@@ -104,10 +104,12 @@ effort: the component acknowledges nothing, replays nothing, and a client that w
   it as degraded: `applied-state view catching up` or `applied-state watch lost, reopening`. A watch lost on a running
   instance closes every client with code `1013` (try again later); reconnect after a `503` clears to get a fresh
   snapshot.
-- **Stop.** New upgrades get `503`, every client is sent close code `1001` (going away), and `Stop` returns once the
-  server and every client handler have returned. After `Stop` returns nil the port is released.
+- **Stop.** New upgrades get `503`, every client is sent close code `1001` (going away), and `Stop` returns nil once
+  the server and every client handler have returned; the port is then released. If cleanup fails or `Stop`'s context
+  ends first, `Stop` returns that error and keeps what it has not released, and a later `Stop` finishes it.
 - **Start.** `Start` binds the listener, loads TLS when enabled, and subscribes or starts the view. A failure returns
-  the error and holds nothing. Ending `Start`'s context afterwards stops nothing; only `Stop` does (ADR-113).
+  the error after releasing what it took; if that release fails too, `Start` reports both errors and keeps the rest for
+  `Stop`. Ending `Start`'s context afterwards stops nothing; only `Stop` does (ADR-113).
 
 ## Slow and silent clients
 

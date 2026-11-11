@@ -46,13 +46,14 @@ with current CI.
 | `task test:repeat` | Unit tests (not the tool packages, not the repository guards in `internal/harness/contract`) five times at one CPU without the race detector, in shuffled order; `-- <pkgs>` to focus |
 | `task mutate:check -- -pkg … -test … -file … -mutant … -expect …` | Run by hand: applies one wrong change to a Go source file through `go test -overlay` and prints detection, survivor, invalid or inconclusive (the `mutation-check` spec); fails unless the verdict is detection; writes nothing in the repository |
 | `task merge:check -- <n>` | `ateam review gate` run via `scripts/ateam`, the pin (`task tools:ateam` installs it; `docs/testing.md`): fails while the rules on `main` do not require an up-to-date head, while PR `n` is a code pull request, not a draft, without `implemented-by:` and `reviewed-by:` lines naming a not-weaker other agent and an approving review record at its head, or while an open `class:flake` issue is not closed by PR `n`; reads GitHub |
-| `task verify` | `ateam:doctor` first, then the checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:tools:changed` after `test:unit` and `test:repeat` last; prints each step's time; fails on tracked-file change |
+| `task verify` | `ateam:doctor` first, then the checks above except `doctor`, `fmt`, `spec:queue`, `mutate:check`, `merge:check`, cheapest first with `test:tools:changed` after `test:unit` and `test:repeat` last; prints each step's time; fails on tracked-file change; `task verify -- checks` and `task verify -- integration` run the two halves CI runs as separate jobs (`integration`: `ateam:doctor`, `test:integration`, `cover:check`; `checks`: the rest) |
 
-CI has two workflows: in `ci.yml`, `verify` runs `task verify` and `required` fails if `verify` failed, is missing, or
-was skipped or cancelled; `merge-check.yml` runs `scripts/merge-check.sh` for a pull request that is not a draft, from
-the base commit, on every push, ready and description edit. `task verify` needs a reachable Docker daemon for
-`test:integration`; a daemon that is not reachable is a failing gate, never a skipped one. A consumer lane joins
-`task verify` when its workload exists; until then no task for it exists, and a missing lane is not a passing one.
+CI has two workflows: in `ci.yml`, the jobs `checks` and `integration` run the two halves of `task verify` in parallel
+and `required` fails if either failed, is missing, or was skipped or cancelled; `merge-check.yml` runs
+`scripts/merge-check.sh` for a pull request that is not a draft, from the base commit, on every push, ready and
+description edit. `task verify` needs a reachable Docker daemon for `test:integration`; a daemon that is not reachable
+is a failing gate, never a skipped one. A consumer lane joins `task verify` when its workload exists; until then no task
+for it exists, and a missing lane is not a passing one.
 
 Select by what the diff changes:
 

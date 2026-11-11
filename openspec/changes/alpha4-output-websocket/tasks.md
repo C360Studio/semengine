@@ -8,9 +8,8 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner answers the design's open questions and approves
+- [x] 1.1 Pre-owner design review passes; the owner answers the design's open questions and approves
   (`Approved-by:` in `proposal.md`); ADR-115 is accepted with it. Gate: `task spec:check`, `task docs:check`.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Config, ports, registration
 

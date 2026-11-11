@@ -1,6 +1,6 @@
 # Proposal: alpha4-output-websocket
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-11-11) in the Enjoy session; recorded on #34 comment 6798408792 sha256:60761d427470
 
 Track: `design` (adds a capability, `output-websocket`; modifies `composed-stack`).
 

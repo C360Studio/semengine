@@ -19,13 +19,12 @@ comments 6797028887 and 6797377552; #9 comment 6797029453; 03B D14/D15/D4a
 | App SSE = second wire format here; no GraphQL subscriptions (6797377552) | ADR-115 `:59-60` |
 | `adapt` row naming `class:port-refactor`; matrix proving test (03B D4a, `:721`) | D10 `design.md:170`; "Tests" `design.md:182`; `specs/output-websocket/spec.md:17`, `:29`; `specs/composed-stack/spec.md:5` |
 
-Open for the owner (not ruled; `Approved-by:` and the OPEN-Q hold stay until the owner acts):
+Owner decisions (2026-11-11, #34 comment 6798408792), each as recommended:
 
-1. `COMMUNITY_INDEX`: carry it now, or defer it (recommended; Options)?
-2. ADR-090 decision 6 and #588: ADR-115 keeps request/response reads on the gateway, as #588's spec cites, and drops
-   only "raw KV is not an application fallback" for streaming. Or should #588's citation point to ADR-115?
-3. New key `ping_interval`: accept it as new surface (offered through the spec and README; no consumer caller)?
-4. #477's SSE item: keep it, or drop it now that ADR-115 says debug routes are not built for many watchers?
+1. `COMMUNITY_INDEX` is not carried; the websocket streams `ENTITY_STATES` only.
+2. #588's citation of pin ADR-090 decision 6 stays; ADR-115 drops decision 6 only for streaming.
+3. The new key `ping_interval` is accepted.
+4. #477's SSE item stays, as optional.
 
 ## Options considered
 
@@ -37,9 +36,10 @@ Open for the owner (not ruled; `Approved-by:` and the OPEN-Q hold stay until the
 - **Applied-state contract.** (a) Current-state convergence (chosen): what graphview gives, merging per key in each
   250 ms window and per slow subscriber (`pkg/graphview/view.go:17`, `:628-654`, `:737-774`). (b) Every revision: needs
   a JetStream consumer per instance or client, the at-least-once machinery the pin never finished; no consumer asks.
-- **`COMMUNITY_INDEX`.** (a) Not carried (recommended): no consumer streams communities; state frames carry `bucket`, so
-  it can be added later without a wire change. (b) Carried: a second decode path, and a second watch of the bucket
-  beside graph-query's (`processor/graph-query/community.go:84-88`), since components share no view.
+- **`COMMUNITY_INDEX`.** (a) Not carried (chosen, owner decision 1): no consumer streams communities; state frames
+  carry `bucket`, so it can be added later without a wire change. (b) Carried: a second decode path, and a second
+  watch of the bucket beside graph-query's (`processor/graph-query/community.go:84-88`), since components share no
+  view.
 - **Fast keep-alive test.** (a) Key `ping_interval` (chosen): pin `doc.go:57-80` advertises it, proxies with idle
   timeouts need it. (b) Fixed 30 s/60 s: a test waits over a minute. (c) A test hook: a back door (#186).
 
@@ -156,12 +156,12 @@ owns authentication. Pin `doc.go` and `README.md` are rewritten against the code
 
 Retired: #34 (`Closes #34`). Websocket items retired, issues stay for others, with a PR comment: #196 (task 3.1), #195
 (tests use `natsfixture`). Stay: #284 (products using `tlsutil`; optional), #285 (until ACME), #477 (new adopter noted;
-owner question 4), #84 (no authentication, declared).
+owner decision 4: stays, optional), #84 (no authentication, declared).
 
 ## D9. Governing records
 
 03B D14 and the matrix row govern; pin ADR-090 decision 6 is not carried for streaming, recorded in ADR-115 (owner
-question 2 on #588's citation). ADR-090 is not ported: only this decision touches the package. ADR-081 adopted,
+decision 2: #588's citation stays). ADR-090 is not ported: only this decision touches the package. ADR-081 adopted,
 including its merge per key, which is why D2 promises convergence, not every revision. ADR-095 kept through the shell;
 its JetStream mechanics leave with the input. ADR-108 Decision 1 adopted (`docs/adr/108-processor-shell.md:181` names
 this site). ADR-113 applied. ADR-112: probe P1. Pin ADR-092 (`pkg/lifecycle`) is not binding; a close frame is

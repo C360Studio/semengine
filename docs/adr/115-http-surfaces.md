@@ -2,9 +2,9 @@
 
 ## Status
 
-**Proposed (2026-11-11).** Drafted with the `alpha4-output-websocket` design (PR #592, `Closes #34`). It records these
-owner rulings and adds no decision of its own; what it adds is the plain description, the alternatives and the
-consequences:
+**Accepted (2026-11-11).** The owner approved it with the `alpha4-output-websocket` design (PR #592, `Closes #34`;
+issue #34 comment 6798408792). It records these owner rulings and adds no decision of its own; what it adds is the plain
+description, the alternatives and the consequences:
 
 - 2026-11-11, #34 comment 6797377552: HTTP surfaces have three roles; 03B D14 governs and pin ADR-090 decision 6 is
   not carried; application SSE, if ever wanted, is a second wire format on the output component; GraphQL

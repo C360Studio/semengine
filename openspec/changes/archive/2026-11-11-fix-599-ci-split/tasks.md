@@ -20,4 +20,4 @@ Each step ends when `task verify` passes on a clean tree at its commit (#171). O
 
 ## 2. Spec
 
-- [ ] 2.1 Apply the delta to `openspec/specs/merge-gate/spec.md` and archive the change.
+- [x] 2.1 Apply the delta to `openspec/specs/merge-gate/spec.md` and archive the change.

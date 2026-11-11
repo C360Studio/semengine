@@ -158,8 +158,8 @@ func readEndReason(err error) string {
 	return disconnectClientClosed
 }
 
-// write is the client's only writer: queued frames in order, a ping every ping_interval, and close
-// 1001 when Stop asks. It ends at the first failed write, when the reader has ended, or after the
+// write is the client's only writer: queued frames in order, a ping every ping_interval, between
+// queued frames too, and close 1001 when Stop asks. It ends at the first failed write, when the reader has ended, or after the
 // close frame, and closes the connection so the reader ends too.
 func (c *output) write(cl *client) {
 	// A second Close, after serveUpgrade's, has nothing left to release.
@@ -179,11 +179,18 @@ func (c *output) write(cl *client) {
 				return
 			}
 		case <-cl.ready:
+			// A ping due between two queued frames goes before the next, or a queue kept full past
+			// the read deadline would close a client that is reading (TestBusyClientKeepsPings).
 			for {
 				select {
 				case <-cl.closing:
 					c.sendClose(cl)
 					return
+				case <-ping.C:
+					if c.send(cl, websocket.PingMessage, nil) != nil {
+						cl.end(disconnectWriteFailed)
+						return
+					}
 				default:
 				}
 				frame, ok := cl.next()

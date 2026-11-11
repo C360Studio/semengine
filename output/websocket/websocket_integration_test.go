@@ -569,6 +569,81 @@ func TestQuietClientStaysConnected(t *testing.T) {
 	}
 }
 
+// TestBusyClientKeepsPings: a client that answers pings and reads a frame every 5ms stays connected
+// for six pings at 200ms after a burst of 1024 frames of 32 KiB fills its queue (design D2, D3;
+// output-websocket spec, "Keep-alive"). The 5ms ticker is the client's processing time, not an
+// ordering: it keeps the queue non-empty past a read deadline. A writer that drains its whole queue
+// before it pings sends no ping during the burst, and the server closes the client at its read
+// deadline (PR #592 review, comment 6801700128).
+func TestBusyClientKeepsPings(t *testing.T) {
+	client := fixtureClient(t)
+	o := startOutput(t, client, "ws.busy", "200ms")
+	conn := dialConn(t, websocket.DefaultDialer, o.url(), nil)
+	// A small receive buffer keeps the burst in the server's queue rather than in the socket.
+	if tcp, ok := conn.UnderlyingConn().(*net.TCPConn); ok {
+		if err := tcp.SetReadBuffer(32 << 10); err != nil {
+			t.Fatalf("set the client's read buffer: %v", err)
+		}
+	}
+	pings := make(chan struct{}, 64)
+	answer := conn.PingHandler()
+	conn.SetPingHandler(func(data string) error {
+		select {
+		case pings <- struct{}{}:
+		default:
+		}
+		return answer(data)
+	})
+	type result struct {
+		frames int
+		err    error
+	}
+	ended := make(chan result, 1)
+	quit := make(chan struct{})
+	go func() {
+		pace := time.NewTicker(5 * time.Millisecond)
+		defer pace.Stop()
+		frames := 0
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				ended <- result{frames, err}
+				return
+			}
+			frames++
+			select {
+			case <-pace.C:
+			case <-quit:
+				ended <- result{frames, nil}
+				return
+			}
+		}
+	}()
+	t.Cleanup(func() {
+		close(quit)
+		_ = conn.Close()
+		<-ended
+	})
+	awaitClients(t, o.c, 1)
+	awaitPings := func(n int, when string) {
+		t.Helper()
+		for i := 0; i < n; i++ {
+			select {
+			case <-pings:
+			case r := <-ended:
+				ended <- r // for the cleanup's join
+				t.Fatalf("client closed %s after %d pings and %d data frames: %v", when, i, r.frames, r.err)
+			}
+		}
+	}
+	awaitPings(3, "before the burst")
+
+	payload := []byte(`{"pad":"` + strings.Repeat("x", 32<<10) + `"}`)
+	for range 1024 {
+		publish(t, client, "ws.busy", payload)
+	}
+	awaitPings(6, "after the burst")
+}
+
 // TestSilentClientIsClosed: a client that answers no pings is closed once its read deadline, twice
 // ping_interval, passes, without the close frame Stop sends, is no longer attached, and is counted
 // under client_disconnections_total{reason="read_timeout"} (design D2; output-websocket spec,

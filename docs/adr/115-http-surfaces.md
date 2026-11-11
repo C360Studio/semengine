@@ -44,12 +44,14 @@ watchers: each SSE client opens its own watch.
 
 **3. Output components are the application streaming plane.** Live data leaves a flow through an output component on
 its own port. The component shares one upstream watch across its clients and sheds a slow client's data rather than
-slowing the others. `output/websocket` is the first.
+slowing the others. `output/websocket` is the first. Over applied state it streams the current state as it changes, not
+a history: a client always ends at each entity's latest value, and may miss values in between (ADR-081's merge per
+key). A consumer that needs every revision reads a stream with its own consumer, not an output component.
 
 **What an app developer uses.** Ask the server; subscribe to an output. For "what is entity X now?" or "which entities
-match?", call the gateway. For "tell me as entities change", compose `output/websocket` with an applied-state input and
-connect to its port. For a high-rate feed that never enters the graph (semboids' frames), compose it with a NATS
-subject input. Do not build an application on the debug SSE watch.
+match?", call the gateway. For "keep me current as entities change", compose `output/websocket` with an applied-state
+input and connect to its port. For a high-rate feed that never enters the graph (semboids' frames), compose it with a
+NATS subject input. Do not build an application on the debug SSE watch.
 
 **What this changes from the pin.** ADR-090 decision 6 is not carried for streaming. An application may stream applied
 state through an output component (03B D14). Request/response reads still go through the gateway, as #588 applies it.

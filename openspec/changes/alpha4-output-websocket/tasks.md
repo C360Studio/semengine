@@ -14,10 +14,10 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
 ## 2. Config, ports, registration
 
 - [x] 2.1 `output/websocket` config, declarer, factory and `Register` (design D1, D5); `github.com/gorilla/websocket
-  v1.5.3` enters `go.mod` with its first importer in 3.1 (notes/2.1.md). Check: `TestConfigRefusals` (one case per removed key, each naming it; `jetstream` input naming
-  its replacement; kv-watch of another bucket, with keys, with history; two inputs; port 0 and below 1024; bad
-  `ping_interval`; nil NATS client), `TestConfigKeysAreRead` (`path`, `ports`, `ping_interval`), `TestDefaultConfig`,
-  declarer/constructor parity.
+  v1.5.3` enters `go.mod` with its first importer in 3.1 (notes/2.1.md). Check: `TestConfigRefusals` (one case per
+  removed key, each naming it; `jetstream` input naming its replacement; kv-watch of another bucket, with keys, with
+  history; two inputs; port 0 and below 1024; bad `ping_interval`; nil NATS client), `TestConfigKeysAreRead` (`path`,
+  `ports`, `ping_interval`), `TestDefaultConfig`, declarer/constructor parity.
 
 ## 3. Server and inputs
 

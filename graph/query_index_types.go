@@ -41,7 +41,7 @@ type AliasData struct {
 
 // PredicateRequest is the request for graph.index.query.predicate, and for
 // graph.query.predicate, which forwards it unchanged: the entities carrying
-// Predicate, with Value set only those whose current state holds it with that
+// Predicate, with Value set, only those whose current state holds it with that
 // value (an empty Value is a value), at most Limit of them when Limit is above
 // zero.
 type PredicateRequest struct {

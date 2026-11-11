@@ -46,4 +46,4 @@ batch and predicate requests SHALL be Go types declared in `graph` (`EntityReque
 #### Scenario: The predicate request has one declaration
 
 - **WHEN** the gateway sends a predicate request and graph-index answers it
-- **THEN** both use `graph.PredicateRequest` (`TestForwardPassesBytesBothWays`, graph-index predicate tests)
+- **THEN** both use `graph.PredicateRequest` (`TestPredicateRequestWireNames`, graph-index predicate tests)

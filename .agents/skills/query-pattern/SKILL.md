@@ -15,7 +15,7 @@ Start from the reader the user names. In this tree the graph is read five ways, 
 | --- | --- | --- |
 | `graph.NewExactEntityReader` | One entity by ID, from embedded code | The validated entity and its `ENTITY_STATES` revision (`graph.ExactEntity`) |
 | graph-ingest's `batch` and `prefix` verbs | Several entities by ID, or a page of entities under an ID prefix | `graph.EntityBatchResponse`, `graph.PrefixQueryResponse` |
-| graph-query's verbs | One front door for application code: an entity, a batch, a prefix page, a name, an alias, the links of an entity, the entities within reach of one, counts of a group, a summary of the graph, a keyword search inside one community | The answer of the component behind the verb; every verb but `entity`, `batch`, `prefix` and `hierarchyStats` is a `graph.QueryResponse` |
+| graph-query's verbs | One front door for application code: an entity, a batch, a prefix page, a name, the entities with a predicate, an alias, the links of an entity, the entities within reach of one, counts of a group, a summary of the graph, a keyword search inside one community | The answer of the component behind the verb; every verb but `entity`, `batch`, `prefix` and `hierarchyStats` is a `graph.QueryResponse` |
 | graph-index's eight verbs | Relationships in or out of an entity, an alias, the entities with a predicate or a name | A `graph.QueryResponse`: the result in `data`, the revision it reflects in `indexed_revision`, and `producer` |
 | Direct bucket access | The bucket's declared owner, and operator diagnostics | Raw entries; no query contract |
 
@@ -23,9 +23,9 @@ Every verb graph-query, graph-ingest and graph-index serve is declared once, in 
 with its subject and its responder; the function's doc comment names each verb's request and reply types. Each
 component serves exactly its own verbs. graph-index's are `outgoing`, `incoming`, `alias`, `predicate`,
 `predicateList`, `predicateStats`, `predicateCompound` and `byName`, on `graph.index.query.*`. graph-query's, on
-`graph.query.*`, are `entity`, `batch`, `prefix`, `byName`, `entityByAlias`, `relationships`, `pathSearch`,
-`hierarchyStats`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial` and
-`temporal`; the first four forward to
+`graph.query.*`, are `entity`, `batch`, `prefix`, `byName`, `predicate`, `entityByAlias`, `relationships`,
+`pathSearch`, `hierarchyStats`, `summary`, `localSearch`, `globalSearch`, `searchGraph`, `semantic`, `similar`, `spatial`
+and `temporal`; the first five forward to
 the verb of the same name behind them, and `semantic`, `similar`, `spatial` and `temporal` forward to the embedding,
 spatial and
 temporal verbs. Those four have no responder in the tree yet and are refused transient `internal` until changes 5 and 7.
@@ -121,9 +121,9 @@ the keys of `pathSearch`, `hierarchyStats` and `summary` changed, so code writte
 Every enveloped verb takes an optional `min_revision`, the `kv_revision` of your write (`graph.MinRevisionField`). If
 the index has not reached it, the verb refuses with transient `revision_not_reached`, the revision reached in the
 detail, and never waits; retry it. A bare verb (`entity`, `batch`, `prefix`, and `hierarchyStats` on `graph.query.*`)
-ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `entityByAlias`,
-`relationships`, `pathSearch`, `localSearch`, `globalSearch`, `searchGraph` and `summary` (unless it excludes
-predicates) honour it. `localSearch` compares it with the searched group's record, not the whole index (see above);
+ignores the field: graph-ingest, which answers it, is the authority. On `graph.query.*`, `byName`, `predicate`,
+`entityByAlias`, `relationships`, `pathSearch`, `localSearch`, `globalSearch`, `searchGraph` and `summary` (unless it
+excludes predicates) honour it. `localSearch` compares it with the searched group's record, not the whole index (see above);
 the text strategy of `globalSearch` compares it with the highest revision among the records at its `level`, which a
 write anywhere reaches once clustering has published it.
 

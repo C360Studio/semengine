@@ -25,7 +25,7 @@ import (
 // shuffled order, over the repeat packages (the unit packages but the repository guards) or the
 // packages given after --; both carry -timeout 5m, the one deadline their tests have; test:tools runs the tool
 // packages as test:unit runs the unit ones; test:tools:changed runs only scripts/tools-changed.sh.
-// harness-boundaries › "ateam doctor gates verify": ateam:doctor runs .bin/ateam doctor --check with the
+// harness-boundaries › "ateam doctor gates verify": ateam:doctor runs scripts/ateam doctor --check with the
 // four session variables unset and is verify's first step.
 // Neither line is read from the file under test: these constants are the spec.
 const (
@@ -33,7 +33,7 @@ const (
 	requiredRepeatCmd       = "go test -count=5 -cpu 1 -shuffle=on -timeout 5m {{.CLI_ARGS | default .PKGS}}"
 	requiredToolsCmd        = "go test -race -count=1 -cpu 1 {{.PKGS}}"
 	requiredToolsChangedCmd = "scripts/tools-changed.sh"
-	requiredAteamDoctorCmd  = "env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID .bin/ateam doctor --check"
+	requiredAteamDoctorCmd  = "env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID scripts/ateam doctor --check"
 )
 
 // The fingerprint cover:check compares is written only after go test passed, because Task runs a

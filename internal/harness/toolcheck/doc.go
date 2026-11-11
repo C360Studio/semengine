@@ -9,9 +9,10 @@
 // any other file of the real tree stays in contract. Only review enforces this rule, so each test
 // file's reads are listed here for the reviewer to check:
 //
-//   - ateamtemplates_test.go: .github/workflows/ci.yml and merge-check.yml,
-//     .agents/review-policy.json and the files ateam init writes under .agents/, .claude/, .codex/
-//     and .gemini/.
+//   - ateamshim_test.go: scripts/ateam.
+//   - ateamtemplates_test.go: .github/workflows/ci.yml and merge-check.yml, Taskfile.yml,
+//     .agents/ateam.json, .agents/review-policy.json, scripts/ateam and the files ateam init writes
+//     under .agents/, .claude/, .codex/ and .gemini/.
 //   - cleanuproots_test.go: scripts/cleanup-roots-check.sh.
 //   - cover_test.go: scripts/cover-check.sh and scripts/tree-state.sh.
 //   - ledgercheck_test.go: Taskfile.yml.

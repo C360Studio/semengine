@@ -51,7 +51,7 @@ cannot run the pinned release (installed by `task tools:ateam`).
   `.agents/rules-index.md`, either `preflight` file, or the `openspec/` scaffold differs from ateam's template
 - **THEN** `TestAteamTemplatesUnchanged` does not report it
 
-#### Scenario: A client configuration gains a server or invokes scripts/ateam
+#### Scenario: A client configuration gains a server
 
 - **WHEN** an MCP server is added to `.mcp.json`, or a permission or `scripts/ateam` command to `.claude/settings.json`,
   `.codex/config.toml`, `.codex/hooks.json`, `.gemini/settings.json`, `.agents/hooks.json`, or
@@ -59,7 +59,7 @@ cannot run the pinned release (installed by `task tools:ateam`).
 - **THEN** `TestAteamTemplatesUnchanged` does not report it; `ateam doctor --check` still checks the file's ateam hook
   and MCP registrations
 
-#### Scenario: ateam is not at the pin
+#### Scenario: ateam is not installed
 
 - **WHEN** `scripts/ateam` is missing or does not report the pinned release
 - **THEN** `TestAteamTemplatesUnchanged` fails naming `task tools:ateam`

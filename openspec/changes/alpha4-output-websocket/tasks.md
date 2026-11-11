@@ -21,13 +21,13 @@ no `t.Parallel` in an integration file, no fixed port, no `localhost` dial. Revi
 
 ## 3. Server and inputs
 
-- [ ] 3.1 Server, client writer, subject input, keep-alive, lifecycle (D2, D3; S1, S5, S7, S12, S13, S18); gorilla in
+- [x] 3.1 Server, client writer, subject input, keep-alive, lifecycle (D2, D3; S1, S5, S7, S12, S13, S18); gorilla in
   `go.mod`; the 2.1 factory refusal and `TestFactoryBuildsNothingYet` removed. Check:
   lifecycle suite, `TestStartFailureReleasesPort`, `TestStartContextEndingStopsNothing`, `TestSubjectFanOut` (counter
   and warning for `not_json`), `TestStalledClientDoesNotSlowOthers` (subject: counter and warning for
   `client_queue_full`), `TestQuietClientStaysConnected` (shown to fail without the pong extension),
   `TestSilentClientIsClosed`, `-race`. Each warning emit is shown to fail when removed.
-- [ ] 3.2 TLS and metrics (D6). Check: `TestTLSServesWSS`, `TestACMEModeRefusedAtStart`, `TestMetricsCountTraffic`
+- [x] 3.2 TLS and metrics (D6). Check: `TestTLSServesWSS`, `TestACMEModeRefusedAtStart`, `TestMetricsCountTraffic`
   (two instances on one registry stay apart by `listener`).
 - [ ] 3.3 Applied-state input (D1, D2). Check: `TestAppliedStateSnapshotThenChanges` (synced marker shown to fail
   when removed), `TestAppliedStateConverges` (same-key put/put, put/delete, put/poison/heal in one burst; folded frames

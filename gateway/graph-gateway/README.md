@@ -37,12 +37,13 @@ RFC 3339. `kvRevision` is the entity's `ENTITY_STATES` revision, a JSON number. 
 - **`entitiesByPredicate`** lists the entities holding `predicate`, only those whose value is `value` when it is given.
   A match on nothing answers `[]`.
 - **`pathSearch`** walks from `startEntity`. `direction` is `outgoing`, `incoming` or `both`, in any letter case.
-  `maxDepth` is 1 to 10 and `maxNodes`, the start included, is 1 to 500, 100 when left out; a value outside a limit is
-  refused, never clamped. `predicates` keeps only edges holding one of them; a null item in it is refused with HTTP
+  `maxDepth` is 1 to 10. `maxNodes`, the start included, is at most 500; left out, null or 0 means 100. A value outside
+  a limit (for `maxNodes`, a negative value or one over 500) is refused, never clamped. `predicates` keeps only edges
+  holding one of them; a null item in it is refused with HTTP
   400. `entities[0]` is the start at depth 0. `paths[k]` is the run of edges from the start to `entities[k]`, so
-  `paths[0]` is `[]`, and each step names the edge as the graph holds it (`from` holds `predicate` pointing at `to`),
-  whichever way the walk crossed it. `truncated` is true exactly when the walk found an entity it had no room for.
-  For an entity's triples, ask `entity` or `entitiesByPrefix`.
+       `paths[0]` is `[]`, and each step names the edge as the graph holds it (`from` holds `predicate` pointing at
+       `to`), whichever way the walk crossed it. `truncated` is true exactly when the walk found an entity it had no
+       room for. For an entity's triples, ask `entity` or `entitiesByPrefix`.
 
 One request names one root field, besides `__typename`. Ask several in several requests. There is no mutation, no
 subscription and no introspection: `__schema` and `__type` are refused, and `__typename` answers from the schema.

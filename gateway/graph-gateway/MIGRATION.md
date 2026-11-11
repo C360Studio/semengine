@@ -18,10 +18,10 @@ it. A query that worked because nothing checked it fails now, loudly. The route 
   answer is the same shape as before, a list of entity IDs under `entities`; a query with no selection is refused.
   SemSource's UI test and smoke script send it with none.
 - **`pathSearch` takes new argument names and answers a narrower shape.**
-  - Arguments are `startEntity`, `direction`, `maxDepth`, `maxNodes` and `predicates`. `start` and `depth` are
-    gone. `startEntity`, `direction` and `maxDepth` are required. `direction` is `outgoing`, `incoming` or `both`, in
-    any letter case. `maxDepth` is 1 to 10 and `maxNodes` 1 to 500 (100 when left out); a value outside is refused,
-    not clamped. `predicates` is `[String]`, as SemSource declares it; a null item is refused.
+  - Arguments are `startEntity`, `direction`, `maxDepth`, `maxNodes` and `predicates`. `start` and `depth` are gone.
+    `startEntity`, `direction` and `maxDepth` are required. `direction` is `outgoing`, `incoming` or `both`, in any
+    letter case. `maxDepth` is 1 to 10. `maxNodes` is at most 500; left out, null or 0 means 100; a negative value or
+    one over 500 is refused, not clamped. `predicates` is `[String]`, as SemSource declares it; a null item is refused.
   - `entities` are `{ id depth }`, with the start first at depth 0. `paths[k]` is the run of edges from the start to
     `entities[k]`, as before, so `paths[0]` is `[]`. Each step is `{ from predicate to }` naming the edge as the graph
     holds it, whichever way the walk crossed it.
@@ -49,8 +49,8 @@ it. A query that worked because nothing checked it fails now, loudly. The route 
   answers the same question on its NATS verb `globalSearch` (see `processor/graph-query/README.md`).
 - **`trajectory`** is refused with HTTP 400 (owner, 2026-11-10). Its answer is agent detail that SemTeams now owns, so
   SemTeams answers it. Write a component of your own with a method `RegisterHTTPHandlers(prefix string, mux
-  *http.ServeMux)`: the service manager mounts every such component on the same HTTP server under `/<instance>`, the
-  way it mounts this gateway at `/graph-gateway`. Point the UI's one `trajectory` call (`ui/src/lib/services/agentApi.ts`)
+  *http.ServeMux)`: the service manager mounts every such component on the same HTTP server under `/<instance>`, the way
+  it mounts this gateway at `/graph-gateway`. Point the UI's one `trajectory` call (`ui/src/lib/services/agentApi.ts`)
   at that route.
 - **Introspection** (`__schema`, `__type`) is refused with HTTP 400; `__typename` answers. The only caller found is a
   SemTeams test that semteams #406 deletes. Read `schema.graphql` for the schema.

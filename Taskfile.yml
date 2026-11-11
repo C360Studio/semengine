@@ -5,6 +5,16 @@ version: '3'
 # .task-version, OpenSpec and markdownlint in package.json, revive and
 # govulncheck in go.mod tool directives.
 
+vars:
+  # The ateam pin (checked against .agents/ateam.json and .github/workflows/{ci,merge-check}.yml).
+  # Installed into the MAIN checkout's gitignored .tools/bin so every linked worktree shares one
+  # install without colliding with sister repos on PATH. Hooks, MCP, and Task targets reach it
+  # through scripts/ateam.
+  ATEAM_VERSION: v0.4.0
+  ATEAM_BIN_DIR:
+    sh: echo "$(dirname "$(git rev-parse --path-format=absolute --git-common-dir)")/.tools/bin"
+  ATEAM: "{{.ATEAM_BIN_DIR}}/ateam"
+
 tasks:
   default:
     desc: List tasks
@@ -12,18 +22,18 @@ tasks:
       - task --list
 
   doctor:
-    deps: [ateam:bin]
-    desc: Report tool versions and Docker reachability against their pins, ateam as .bin/ateam (built first by ateam:bin); starts no workloads
+    deps: [tools:ateam]
+    desc: Report tool versions and Docker reachability against their pins, ateam via scripts/ateam (installed first by tools:ateam); starts no workloads
     cmds:
       - scripts/doctor.sh
 
   # The four session variables are unset so the check never takes ateam's writer lease
   # (harness-boundaries spec, "ateam doctor gates verify").
   ateam:doctor:
-    deps: [ateam:bin]
-    desc: Check ateam agent setup with .bin/ateam, the pinned release (task ateam:bin); (files, skills and adapters, hooks, MCP, review policy, AGENTS.md size and rule-row parity) without changing the worktree
+    deps: [tools:ateam]
+    desc: Check ateam agent setup with scripts/ateam, the pinned release (task tools:ateam); (files, skills and adapters, hooks, MCP, review policy, AGENTS.md size and rule-row parity) without changing the worktree
     cmds:
-      - env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID .bin/ateam doctor --check
+      - env -u ATEAM_SESSION_ID -u CLAUDE_SESSION_ID -u CODEX_SESSION_ID -u GEMINI_SESSION_ID scripts/ateam doctor --check
 
   fmt:
     desc: Format Go sources (changes files)
@@ -135,23 +145,21 @@ tasks:
     cmds:
       - scripts/tools-changed.sh
 
-  # .bin/ateam is the release ci.yml pins, so local gates run the version CI runs whatever ateam
-  # is on PATH. A bare tag check: a development build of the same tag (v0.4.0-4-g...) is rebuilt.
-  ateam:bin:
-    desc: Build the ateam release pinned in .github/workflows/ci.yml into .bin/ateam; skipped when .bin/ateam already reports the pin
-    vars:
-      PIN:
-        sh: grep -Eo 'ateam/cmd/ateam@v[0-9][^[:space:]]*' .github/workflows/ci.yml | head -n1 | sed 's/.*@//'
+  # .tools/bin/ateam in the main checkout is the release ci.yml pins, so local gates and hooks
+  # run the version CI runs whatever ateam is on PATH. A bare tag check: a development build of
+  # the same tag (v0.4.0-4-g...) is rebuilt.
+  tools:ateam:
+    desc: Install the pinned ateam into the main checkout's .tools/bin (skips when already at the pin)
     cmds:
-      - GOBIN="{{.ROOT_DIR}}/.bin" GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@{{.PIN}}
+      - GOBIN="{{.ATEAM_BIN_DIR}}" GOTOOLCHAIN=auto go install github.com/c360studio/ateam/cmd/ateam@{{.ATEAM_VERSION}}
     status:
-      - '.bin/ateam version 2>/dev/null | grep -Eq "(^| ){{.PIN}}( |$)"'
+      - '"{{.ATEAM}}" version 2>/dev/null | grep -Eq "(^| ){{.ATEAM_VERSION}}( |$)"'
 
   merge:check:
-    deps: [ateam:bin]
-    desc: Run ateam review gate on PR <n> (-- <n>) with .bin/ateam, the pinned release (task ateam:bin); fails while main's rules lack Required with the up-to-date setting, a code PR that is not a draft lacks its attestation lines or an approving review record at its head, or a class:flake issue it does not close is open. Reads GitHub, so not in verify
+    deps: [tools:ateam]
+    desc: Run ateam review gate on PR <n> (-- <n>) with scripts/ateam, the pinned release (task tools:ateam); fails while main's rules lack Required with the up-to-date setting, a code PR that is not a draft lacks its attestation lines or an approving review record at its head, or a class:flake issue it does not close is open. Reads GitHub, so not in verify
     cmds:
-      - ATEAM="{{.ROOT_DIR}}/.bin/ateam" scripts/merge-check.sh {{.CLI_ARGS}}
+      - ATEAM="${ATEAM:-scripts/ateam}" scripts/merge-check.sh {{.CLI_ARGS}}
 
   cover:check:
     desc: Fail below 80% coverage on each target listed in scripts/cover-check.sh, each measured from the unit run, the last integration run (natsfixture), or both merged
@@ -159,17 +167,17 @@ tasks:
       - scripts/cover-check.sh
 
   spec:check:
-    deps: [ateam:bin]
-    desc: Validate all OpenSpec changes and specs strictly (fails when npx reaches no openspec), then run .bin/ateam state spec-check (the pinned release, task ateam:bin), which fails on a hold written outside every task and warns on a proposal over 60 lines or a design over 120
+    deps: [tools:ateam]
+    desc: Validate all OpenSpec changes and specs strictly (fails when npx reaches no openspec), then run scripts/ateam state spec-check (the pinned release, task tools:ateam), which fails on a hold written outside every task and warns on a proposal over 60 lines or a design over 120
     cmds:
       - npx --no-install openspec validate --all --strict --no-interactive
-      - .bin/ateam state spec-check
+      - scripts/ateam state spec-check
 
   spec:queue:
-    deps: [ateam:bin]
-    desc: Show each in-flight OpenSpec change with its ticked/total count, holds and labelled open tasks (.bin/ateam state spec-queue, the pinned release)
+    deps: [tools:ateam]
+    desc: Show each in-flight OpenSpec change with its ticked/total count, holds and labelled open tasks (scripts/ateam state spec-queue, the pinned release)
     cmds:
-      - .bin/ateam state spec-queue
+      - scripts/ateam state spec-queue
 
   status:
     desc: Print the Slice 04A 65-package port scoreboard, open PR claims, flakes, and milestone/issue hygiene (-- --offline, --check, or --sync-project); reads GitHub unless --offline

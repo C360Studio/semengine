@@ -157,10 +157,12 @@ against the base and says so when it skips them. An edit under `.agents/`, `.cla
 writes there. Nothing but review checks which package a test belongs in.
 
 `task doctor`, `task ateam:doctor`, `task spec:check`, `task spec:queue`, `task merge:check` and
-`TestAteamTemplatesUnchanged` run `.bin/ateam`, never the `ateam` on your `PATH`. It is the release pinned in
-`.github/workflows/ci.yml` and `merge-check.yml`; `task ateam:bin` builds it into the worktree (git-ignored), and each
-of those tasks runs `ateam:bin` first, which does nothing once `.bin/ateam` reports the pin. Run plain `go test` on the
-tool packages only after a task has built it; the test fails naming `task ateam:bin` when it is missing.
+`TestAteamTemplatesUnchanged` run `scripts/ateam`, which prefers `<main-checkout>/.tools/bin/ateam` over
+`<worktree>/.tools/bin/ateam` and `ateam` on `PATH`. It is the release pinned in `.github/workflows/ci.yml`,
+`merge-check.yml`, `Taskfile.yml` (`ATEAM_VERSION`) and `.agents/ateam.json`; `task tools:ateam` installs it into the
+main checkout's `.tools/bin` (git-ignored, shared across linked worktrees), and each of those tasks runs `tools:ateam`
+first, which does nothing once `.tools/bin/ateam` reports the pin. Run plain `go test` on the tool packages only after
+a task has installed it; the test fails naming `task tools:ateam` when it is missing or at the wrong version.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;

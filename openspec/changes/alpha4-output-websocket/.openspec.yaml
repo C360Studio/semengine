@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-11-11
+# Inventory phase: no design yet, so no spec delta exists. Remove skip_specs when the design adds its deltas.
+skip_specs: true

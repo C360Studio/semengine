@@ -218,8 +218,11 @@ func TestWriteWithTimeoutSucceedsWhenSpaceFrees(t *testing.T) {
 }
 
 // TestWriteWithContextLeavesNothing: whichever way WriteWithContext returns (written at once,
-// written after a read, cancelled, deadline, closed), no goroutine it started is still running
-// (design R4). Oracle: after synctest.Wait, no goroutine in the bubble runs buffer code.
+// written after a Read, a ReadBatch or a Clear frees space, cancelled, deadline, closed), no
+// goroutine it started is still running (design R4). The three "written after" cases also pin
+// that each of those calls wakes a waiting writer: without the wake-up the write waits out its
+// minute and returns context.DeadlineExceeded. Oracle: the write's result, and after
+// synctest.Wait, no goroutine in the bubble runs buffer code.
 func TestWriteWithContextLeavesNothing(t *testing.T) {
 	cases := []struct {
 		name    string
@@ -229,6 +232,10 @@ func TestWriteWithContextLeavesNothing(t *testing.T) {
 	}{
 		{"written at once", false, nil, func(t *testing.T, err error) { require.NoError(t, err) }},
 		{"written after a read", true, func(buf Buffer[int], _ context.CancelFunc) { _, _ = buf.Read() },
+			func(t *testing.T, err error) { require.NoError(t, err) }},
+		{"written after ReadBatch", true, func(buf Buffer[int], _ context.CancelFunc) { _ = buf.ReadBatch(1) },
+			func(t *testing.T, err error) { require.NoError(t, err) }},
+		{"written after Clear", true, func(buf Buffer[int], _ context.CancelFunc) { buf.Clear() },
 			func(t *testing.T, err error) { require.NoError(t, err) }},
 		{"cancelled", true, func(_ Buffer[int], cancel context.CancelFunc) { cancel() },
 			func(t *testing.T, err error) { require.ErrorIs(t, err, context.Canceled) }},

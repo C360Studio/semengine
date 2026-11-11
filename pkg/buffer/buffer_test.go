@@ -540,8 +540,7 @@ func TestWriteWithContextClosedBuffer(t *testing.T) {
 	_ = buf.Close()
 
 	// Test WriteWithContext returns framework error
-	ctx := context.Background()
-	err = buf.(*circularBuffer[int]).WriteWithContext(ctx, 1)
+	err = buf.WriteWithContext(t.Context(), 1)
 
 	if err == nil {
 		t.Fatal("Expected error when writing to closed buffer")
@@ -575,10 +574,10 @@ func TestConcurrentContextCancellations(t *testing.T) {
 		go func(id int) {
 			defer wg.Done()
 
-			ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+			ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 			defer cancel()
 
-			err := buf.(*circularBuffer[int]).WriteWithContext(ctx, id)
+			err := buf.WriteWithContext(ctx, id)
 
 			errorsMutex.Lock()
 			errs = append(errs, err)

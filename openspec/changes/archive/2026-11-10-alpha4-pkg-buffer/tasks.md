@@ -37,4 +37,4 @@ after 2.2, before archive.
   on `Buffer[T]` (R8, R11);
   the dropped context helpers removed; markdownlint clean. Also `pkg/buffer/MIGRATION.md`, and a `pkg/buffer/` row in
   `docs/repository-map.md`. Gate: `task docs:check`, `go test -run Example ./pkg/buffer/`.
-- [ ] 3.3 Archive (`openspec archive alpha4-pkg-buffer`) as the last content commit. Gate: `task spec:check`.
+- [x] 3.3 Archive (`openspec archive alpha4-pkg-buffer`) as the last content commit. Gate: `task spec:check`.

@@ -31,7 +31,7 @@ after 2.2, before archive.
 
 ## 3. Close-out
 
-- [ ] 3.1 Ledger row `pkg/buffer` (`adapt`) in `docs/admission-ledger.yaml`. PR body: `Closes #566`. Gate:
+- [x] 3.1 Ledger row `pkg/buffer` (`adapt`) in `docs/admission-ledger.yaml`. PR body: `Closes #566`. Gate:
   `task ledger:diff -- pkg/buffer`, the ledger contract test.
 - [ ] 3.2 `pkg/buffer/README.md` and `doc.go`: the module path; examples that compile, calling the bounded writes
   on `Buffer[T]` (R8, R11);

@@ -46,5 +46,5 @@ second wire format on this component; GraphQL subscriptions are out of scope.
 - Pin: 2,220 production and 3,659 test lines. This PR is about 1,000 production and 1,450 test lines, plus about 150
   elsewhere (smoke, ledger, docs); hand estimate. One PR, four reviewed steps.
 - Consumers migrate: semsource replaces its JetStream input and drops `delivery_mode`; semboids drops
-  `delivery_mode`. Both clients read the new frames and keep the latest per key (design D4).
+  `delivery_mode`. Both read the new frame format; only applied-state clients keep entity state by key (design D4).
 - New dependency `github.com/gorilla/websocket v1.5.3` (BSD-2-Clause), as at the pin. Merges after #588.

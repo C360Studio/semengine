@@ -8,13 +8,11 @@ import (
 	"testing"
 )
 
-// plainQuery is a query of the distinct words of text.
-func plainQuery(text string) Query {
-	var q Query
-	for _, w := range Tokens(text) {
-		if !slices.Contains(q.words, w) {
-			q.words = append(q.words, w)
-		}
+func mustParse(t *testing.T, text string) Query {
+	t.Helper()
+	q, err := ParseQuery(text)
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", text, err)
 	}
 	return q
 }
@@ -28,7 +26,7 @@ func mustPut(t *testing.T, ix *Index, id string, doc Document) {
 
 func mustSearch(t *testing.T, ix *Index, query string, opts Options) Result {
 	t.Helper()
-	res, err := ix.Search(plainQuery(query), opts)
+	res, err := ix.Search(mustParse(t, query), opts)
 	if err != nil {
 		t.Fatalf("Search(%q): %v", query, err)
 	}
@@ -200,10 +198,10 @@ func TestScopeBeforeLimit(t *testing.T) {
 		}
 	}
 
-	if _, err := ix.Search(plainQuery("pump"), Options{Scope: []string{"c360."}, Limit: 2}); !errors.Is(err, ErrInvalidScope) {
+	if _, err := ix.Search(mustParse(t, "pump"), Options{Scope: []string{"c360."}, Limit: 2}); !errors.Is(err, ErrInvalidScope) {
 		t.Errorf("scope %q: err = %v, want ErrInvalidScope", "c360.", err)
 	}
-	if _, err := ix.Search(plainQuery("pump"), Options{Scope: []string{inside}}); !errors.Is(err, ErrInvalidLimit) {
+	if _, err := ix.Search(mustParse(t, "pump"), Options{Scope: []string{inside}}); !errors.Is(err, ErrInvalidLimit) {
 		t.Errorf("limit 0: err = %v, want ErrInvalidLimit", err)
 	}
 }
@@ -244,6 +242,10 @@ func TestSearchDuringWrites(t *testing.T) {
 	docA := Document{Name: "pump motor", Body: "relay"}
 	docB := Document{Body: "pump pump motor valve valve valve"}
 	queries := []string{"pump", "motor valve", "relay pump"}
+	parsed := make([]Query, len(queries))
+	for i, q := range queries {
+		parsed[i] = mustParse(t, q)
+	}
 
 	answers := func(doc Document) []Result {
 		ix := NewIndex()
@@ -300,7 +302,7 @@ func TestSearchDuringWrites(t *testing.T) {
 		searchers.Go(func() {
 			for i := range 5000 {
 				q := i % len(queries)
-				res, err := ix.Search(plainQuery(queries[q]), Options{Limit: 10})
+				res, err := ix.Search(parsed[q], Options{Limit: 10})
 				if err != nil {
 					t.Errorf("Search(%q): %v", queries[q], err)
 					return

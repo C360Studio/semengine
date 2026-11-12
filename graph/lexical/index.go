@@ -39,12 +39,6 @@ type Document struct {
 	Body string
 }
 
-// Query is what Search looks for.
-type Query struct {
-	// words are the distinct plain words, in the order the query gave them.
-	words []string
-}
-
 // Options bound a search. An empty Scope searches every entity; otherwise
 // only entities under one of its ID prefixes are matched (an empty prefix
 // matches every entity). Limit is the most hits returned, at least 1.
@@ -81,7 +75,8 @@ type Index struct {
 }
 
 // entity is what the index holds for one entity: its words in order, per
-// field, which a write needs to remove the entity's postings.
+// field, which a write needs to remove the entity's postings and a phrase is
+// checked against.
 type entity struct {
 	name   []string
 	body   []string
@@ -166,10 +161,13 @@ func (ix *Index) Len() int {
 	return len(ix.entities)
 }
 
-// Search scores every entity in scope that holds one of the query's words
-// and returns the best opts.Limit of them. The entity count, each word's
-// entity count and the average length are those of the entities held when
-// the search runs; scope filters before the limit and never changes a score.
+// Search scores every entity in scope that holds one of the query's plain or
+// phrase words, every one of its phrases and none of its excluded terms, and
+// returns the best opts.Limit of them. A score sums BM25F over the distinct
+// plain and phrase words; excluded words never add to it. The entity count,
+// each word's entity count and the average length are those of the entities
+// held when the search runs; scope filters before the limit and never changes
+// a score.
 func (ix *Index) Search(q Query, opts Options) (Result, error) {
 	if opts.Limit < 1 {
 		return Result{}, fmt.Errorf("%w: got %d", ErrInvalidLimit, opts.Limit)
@@ -191,7 +189,7 @@ func (ix *Index) Search(q Query, opts Options) (Result, error) {
 	n := float64(len(ix.entities))
 	avgLength := float64(ix.totalLength) / n
 	scores := make(map[string]float64)
-	for _, w := range q.words {
+	for _, w := range q.scored() {
 		holders := ix.postings[w]
 		if len(holders) == 0 {
 			continue
@@ -207,7 +205,7 @@ func (ix *Index) Search(q Query, opts Options) (Result, error) {
 
 	var hits []Hit
 	for id, score := range scores {
-		if graph.MatchesAnyIDPrefix(id, opts.Scope) {
+		if graph.MatchesAnyIDPrefix(id, opts.Scope) && ix.admits(id, q) {
 			hits = append(hits, Hit{EntityID: id, Score: score})
 		}
 	}
@@ -222,4 +220,42 @@ func (ix *Index) Search(q Query, opts Options) (Result, error) {
 		hits = hits[:opts.Limit]
 	}
 	return Result{Hits: hits, Matched: matched}, nil
+}
+
+// admits reports whether entity id holds every phrase of q and none of its
+// excluded terms. The caller holds the read lock.
+func (ix *Index) admits(id string, q Query) bool {
+	for _, p := range q.phrases {
+		if !ix.holdsRun(id, p) {
+			return false
+		}
+	}
+	for _, x := range q.excluded {
+		if ix.holdsRun(id, x) {
+			return false
+		}
+	}
+	return true
+}
+
+// holdsRun reports whether entity id holds run's words next to each other, in
+// order, within its Name or within its Body. The postings narrow it first, so
+// only an entity holding every word has its fields scanned.
+func (ix *Index) holdsRun(id string, run []string) bool {
+	for _, w := range run {
+		if _, ok := ix.postings[w][id]; !ok {
+			return false
+		}
+	}
+	e := ix.entities[id]
+	return containsRun(e.name, run) || containsRun(e.body, run)
+}
+
+func containsRun(field, run []string) bool {
+	for i := 0; i+len(run) <= len(field); i++ {
+		if slices.Equal(field[i:i+len(run)], run) {
+			return true
+		}
+	}
+	return false
 }

@@ -6,5 +6,9 @@
 // when they come from the same written word, its plural, or one part of a
 // split identifier.
 //
+// ParseQuery reads a query of plain words, "quoted phrases" and -excluded
+// terms. Phrases and exclusions decide which entities match; plain and phrase
+// words decide their order.
+//
 // The package is pure: it imports no NATS client and reads no storage.
 package lexical

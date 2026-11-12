@@ -1,6 +1,7 @@
 package lexical
 
 import (
+	"errors"
 	"maps"
 	"math"
 	"slices"
@@ -84,6 +85,72 @@ func inModelScope(id string, scope []string) bool {
 	return false
 }
 
+// modelQuery is a generated query in the model's terms: its plain words, its
+// phrases and its excluded terms, each a list of vocabulary words.
+type modelQuery struct {
+	plain             []string
+	phrases, excluded [][]string
+}
+
+func plainOnly(words ...string) modelQuery { return modelQuery{plain: words} }
+
+// text writes the query out, its parts in the given order (nil: plain words,
+// phrases, then excluded terms): plain words bare, phrases in quotes,
+// excluded terms after "-", quoted when they hold more than one word.
+func (mq modelQuery) text(order []int) string {
+	parts := slices.Clone(mq.plain)
+	for _, p := range mq.phrases {
+		parts = append(parts, `"`+strings.Join(p, " ")+`"`)
+	}
+	for _, x := range mq.excluded {
+		if len(x) == 1 {
+			parts = append(parts, "-"+x[0])
+		} else {
+			parts = append(parts, `-"`+strings.Join(x, " ")+`"`)
+		}
+	}
+	if order == nil {
+		return strings.Join(parts, " ")
+	}
+	out := make([]string, 0, len(parts))
+	for _, i := range order {
+		out = append(out, parts[i])
+	}
+	return strings.Join(out, " ")
+}
+
+func (mq modelQuery) parts() int { return len(mq.plain) + len(mq.phrases) + len(mq.excluded) }
+
+// scored is the distinct words the requirement scores: plain and phrase words.
+func (mq modelQuery) scored() []string {
+	return distinct(slices.Concat(mq.plain, slices.Concat(mq.phrases...)))
+}
+
+// fieldHolds reports run standing word after word in field, compared as
+// space-joined text.
+func fieldHolds(field string, run []string) bool {
+	return strings.Contains(" "+strings.Join(strings.Fields(field), " ")+" ", " "+strings.Join(run, " ")+" ")
+}
+
+func docHolds(d Document, run []string) bool {
+	return fieldHolds(d.Name, run) || fieldHolds(d.Body, run)
+}
+
+// admits is the requirement's filter: every phrase held, no excluded term.
+func (mq modelQuery) admits(d Document) bool {
+	for _, p := range mq.phrases {
+		if !docHolds(d, p) {
+			return false
+		}
+	}
+	for _, x := range mq.excluded {
+		if docHolds(d, x) {
+			return false
+		}
+	}
+	return true
+}
+
 // scores gives every entity in scope that holds a query word its BM25F score.
 func (m model) scores(words []string, scope []string) map[string]float64 {
 	out := map[string]float64{}
@@ -157,36 +224,52 @@ func applyAll(t failer, ix *Index, m model, ops []op) {
 }
 
 // checkAgainstModel runs one query on the index and compares it with the
-// model: the same count of matches, the model's score for each hit within
-// 1e-9, and at each position the model's score at that position, so the
-// order is the model's wherever two scores differ by more than that.
-func checkAgainstModel(t failer, ix *Index, m model, words []string, opts Options) {
-	words = distinct(words)
-	res, err := ix.Search(Query{words: words}, opts)
-	if err != nil {
-		t.Fatalf("Search(%v, %+v): %v", words, opts, err)
-	}
+// model: a refusal exactly when the query has no plain word and no phrase,
+// the same count of matches, the model's score for each hit within 1e-9, and
+// at each position the model's score at that position, so the order is the
+// model's wherever two scores differ by more than that.
+func checkAgainstModel(t failer, ix *Index, m model, mq modelQuery, order []int, opts Options) {
+	text := mq.text(order)
 	if ix.Len() != len(m) {
 		t.Fatalf("Len() = %d, model holds %d", ix.Len(), len(m))
 	}
-	scores := m.scores(words, opts.Scope)
+	q, err := ParseQuery(text)
+	if len(mq.plain) == 0 && len(mq.phrases) == 0 {
+		if !errors.Is(err, ErrEmptyQuery) {
+			t.Fatalf("ParseQuery(%q) = %+v, %v; want ErrEmptyQuery", text, q, err)
+		}
+		return
+	}
+	if err != nil {
+		t.Fatalf("ParseQuery(%q): %v", text, err)
+	}
+	res, err := ix.Search(q, opts)
+	if err != nil {
+		t.Fatalf("Search(%q, %+v): %v", text, opts, err)
+	}
+	scores := m.scores(mq.scored(), opts.Scope)
+	for id := range scores {
+		if !mq.admits(m[id]) {
+			delete(scores, id)
+		}
+	}
 	want := ranked(scores)
 	if res.Matched != len(want) {
-		t.Fatalf("Search(%v, %+v): Matched = %d, model %d (%v)", words, opts, res.Matched, len(want), want)
+		t.Fatalf("Search(%q, %+v): Matched = %d, model %d (%v)", text, opts, res.Matched, len(want), want)
 	}
 	if len(res.Hits) != min(opts.Limit, len(want)) {
-		t.Fatalf("Search(%v, %+v): %d hits, model %v", words, opts, len(res.Hits), want)
+		t.Fatalf("Search(%q, %+v): %d hits, model %v", text, opts, len(res.Hits), want)
 	}
 	seen := map[string]bool{}
 	for i, h := range res.Hits {
 		modelScore, ok := scores[h.EntityID]
 		if !ok || seen[h.EntityID] {
-			t.Fatalf("Search(%v, %+v): hit %d %v is not a model match once (model %v)", words, opts, i, h, want)
+			t.Fatalf("Search(%q, %+v): hit %d %v is not a model match once (model %v)", text, opts, i, h, want)
 		}
 		seen[h.EntityID] = true
 		if math.Abs(h.Score-modelScore) > 1e-9 || math.Abs(h.Score-want[i].Score) > 1e-9 {
-			t.Fatalf("Search(%v, %+v): hit %d = %v, model ranks %v there and scores it %v",
-				words, opts, i, h, want[i], modelScore)
+			t.Fatalf("Search(%q, %+v): hit %d = %v, model ranks %v there and scores it %v",
+				text, opts, i, h, want[i], modelScore)
 		}
 	}
 }
@@ -216,41 +299,102 @@ func genOptions(t *rapid.T) Options {
 	}
 }
 
+// genRun draws 1 to maxLen words: half the time a run that stands in a held
+// field, so phrases and exclusions often match, otherwise any vocabulary
+// words.
+func genRun(t *rapid.T, m model, maxLen int, label string) []string {
+	if len(m) > 0 && rapid.Bool().Draw(t, label+" from a held field") {
+		d := m[rapid.SampledFrom(slices.Sorted(maps.Keys(m))).Draw(t, label+" entity")]
+		field := strings.Fields(d.Body)
+		if rapid.Bool().Draw(t, label+" in name") || len(field) == 0 {
+			field = strings.Fields(d.Name)
+		}
+		if len(field) > 0 {
+			start := rapid.IntRange(0, len(field)-1).Draw(t, label+" start")
+			n := rapid.IntRange(1, min(maxLen, len(field)-start)).Draw(t, label+" length")
+			return field[start : start+n]
+		}
+	}
+	return rapid.SliceOfN(rapid.SampledFrom(allVocab), 1, maxLen).Draw(t, label+" words")
+}
+
+func genQuery(t *rapid.T, m model) (modelQuery, []int) {
+	var mq modelQuery
+	for range rapid.IntRange(0, 4).Draw(t, "plain words") {
+		mq.plain = append(mq.plain, rapid.SampledFrom(allVocab).Draw(t, "plain"))
+	}
+	for range rapid.IntRange(0, 2).Draw(t, "phrases") {
+		mq.phrases = append(mq.phrases, genRun(t, m, 3, "phrase"))
+	}
+	for range rapid.IntRange(0, 2).Draw(t, "exclusions") {
+		mq.excluded = append(mq.excluded, genRun(t, m, 2, "excluded"))
+	}
+	order := make([]int, mq.parts())
+	for i := range order {
+		order[i] = i
+	}
+	return mq, rapid.Permutation(order).Draw(t, "order")
+}
+
 func TestPropIndexMatchesModel(t *testing.T) {
 	a, b, c := propIDs[0], propIDs[1], propIDs[3]
 	witnesses := []struct {
-		name  string
-		ops   []op
-		words []string
-		opts  Options
+		name string
+		ops  []op
+		mq   modelQuery
+		opts Options
 	}{
 		{"replaced document", []op{
 			{id: a, doc: Document{Name: "alpha", Body: "bravo bravo"}},
 			{id: a, doc: Document{Body: "delta"}},
 			{id: b, doc: Document{Body: "alpha delta golf"}},
-		}, []string{"alpha", "delta"}, Options{Limit: 5}},
+		}, plainOnly("alpha", "delta"), Options{Limit: 5}},
 		{"empty document and delete", []op{
 			{id: a, doc: Document{Body: "alpha"}},
 			{id: b, doc: Document{Name: "alpha", Body: "bravo"}},
 			{id: c, doc: Document{Body: "alpha alpha"}},
 			{id: a, doc: Document{}},
 			{id: b, delete: true},
-		}, []string{"alpha", "bravo"}, Options{Limit: 5}},
+		}, plainOnly("alpha", "bravo"), Options{Limit: 5}},
 		{"scope and limit", []op{
 			{id: a, doc: Document{Body: "alpha"}},
 			{id: b, doc: Document{Body: "alpha alpha bravo"}},
 			{id: c, doc: Document{Name: "alpha", Body: "alpha"}},
-		}, []string{"alpha"}, Options{Scope: []string{"c360.lex.prop.doc"}, Limit: 1}},
+		}, plainOnly("alpha"), Options{Scope: []string{"c360.lex.prop.doc"}, Limit: 1}},
 		{"tie broken by ID", []op{
 			{id: b, doc: Document{Body: "golf hotel"}},
 			{id: a, doc: Document{Body: "golf hotel"}},
-		}, []string{"golf", "zulu"}, Options{Limit: 1}},
+		}, plainOnly("golf", "zulu"), Options{Limit: 1}},
+		{"phrase together, apart and across fields", []op{
+			{id: a, doc: Document{Body: "kilo alpha bravo"}},
+			{id: b, doc: Document{Body: "bravo alpha kilo"}},
+			{id: c, doc: Document{Name: "golf alpha", Body: "bravo"}},
+		}, modelQuery{plain: []string{"kilo"}, phrases: [][]string{{"alpha", "bravo"}}}, Options{Limit: 5}},
+		{"two phrases, one held", []op{
+			{id: a, doc: Document{Name: "delta golf", Body: "kilo lima"}},
+			{id: b, doc: Document{Body: "delta golf lima kilo"}},
+		}, modelQuery{phrases: [][]string{{"delta", "golf"}, {"kilo", "lima"}}}, Options{Limit: 5}},
+		{"excluded word and phrase", []op{
+			{id: a, doc: Document{Body: "alpha hotel"}},
+			{id: b, doc: Document{Name: "alpha", Body: "india kilo"}},
+			{id: c, doc: Document{Name: "india", Body: "kilo alpha"}},
+		}, modelQuery{plain: []string{"alpha"}, excluded: [][]string{{"hotel"}, {"india", "kilo"}}}, Options{Limit: 1}},
+		{"phrase no entity holds", []op{
+			{id: a, doc: Document{Body: "alpha bravo"}},
+		}, modelQuery{plain: []string{"alpha"}, phrases: [][]string{{"bravo", "alpha"}}}, Options{Limit: 5}},
+		{"word in plain and phrase scores once", []op{
+			{id: a, doc: Document{Body: "alpha bravo"}},
+			{id: b, doc: Document{Body: "alpha alpha bravo delta"}},
+		}, modelQuery{plain: []string{"alpha"}, phrases: [][]string{{"alpha", "bravo"}}}, Options{Limit: 5}},
+		{"only exclusions", []op{
+			{id: a, doc: Document{Body: "alpha"}},
+		}, modelQuery{excluded: [][]string{{"alpha"}}}, Options{Limit: 5}},
 	}
 	for _, w := range witnesses {
 		t.Run(w.name, func(t *testing.T) {
 			ix, m := NewIndex(), model{}
 			applyAll(t, ix, m, w.ops)
-			checkAgainstModel(t, ix, m, w.words, w.opts)
+			checkAgainstModel(t, ix, m, w.mq, nil, w.opts)
 		})
 	}
 
@@ -258,8 +402,8 @@ func TestPropIndexMatchesModel(t *testing.T) {
 		ix, m := NewIndex(), model{}
 		applyAll(t, ix, m, genOps(t, propIDs, "history"))
 		for range rapid.IntRange(1, 4).Draw(t, "queries") {
-			words := rapid.SliceOfN(rapid.SampledFrom(allVocab), 1, 4).Draw(t, "words")
-			checkAgainstModel(t, ix, m, words, genOptions(t))
+			mq, order := genQuery(t, m)
+			checkAgainstModel(t, ix, m, mq, order, genOptions(t))
 		}
 	})
 }
@@ -267,7 +411,10 @@ func TestPropIndexMatchesModel(t *testing.T) {
 // checkSameResults asks two indexes the same query and requires equal
 // answers, scores compared exactly.
 func checkSameResults(t failer, first, second *Index, words []string, opts Options) {
-	q := Query{words: distinct(words)}
+	q, err := ParseQuery(strings.Join(words, " "))
+	if err != nil {
+		t.Fatalf("ParseQuery(%v): %v", words, err)
+	}
 	r1, err1 := first.Search(q, opts)
 	r2, err2 := second.Search(q, opts)
 	if err1 != nil || err2 != nil {
@@ -348,7 +495,11 @@ func TestPropRankingIgnoresHistory(t *testing.T) {
 // checkAbsentFindsNothing queries words no held entity holds, per the
 // model, plus words never written at all.
 func checkAbsentFindsNothing(t failer, ix *Index, m model, words []string) {
-	res, err := ix.Search(Query{words: distinct(words)}, Options{Limit: 10})
+	q, err := ParseQuery(strings.Join(words, " "))
+	if err != nil {
+		t.Fatalf("ParseQuery(%v): %v", words, err)
+	}
+	res, err := ix.Search(q, Options{Limit: 10})
 	if err != nil {
 		t.Fatalf("Search(%v): %v", words, err)
 	}

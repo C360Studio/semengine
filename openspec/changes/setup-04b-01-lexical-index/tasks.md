@@ -28,7 +28,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   Each property draws from a closed vocabulary (lower case, no `s` or `x`, never ending in `e`, no stopword, so
   tokenizing changes nothing) against a naive BM25F model over a `map[id]Document`. Named witnesses run before
   `rapid.Check`, and the seed and completed checks go in `notes/2.2.md`.
-- [ ] 2.3 Query forms (`ParseQuery`, phrases, exclusion and reserved syntax; design D4, D4b, D5, D7). Premise:
+- [x] 2.3 Query forms (`ParseQuery`, phrases, exclusion and reserved syntax; design D4, D4b, D5, D7). Premise:
   SemSource's R2 and R3 (inventory §5); per-entity word sequences cost 472 B and 1,590 B per entity at one million
   (`notes/probes/sequence-probe.log`); requiring every word reaches 6.5% of known-item answers
   (`notes/probes/and-query-probe.log`). Accept: `TestParseQuery`, `TestParseQueryReservesForms`, `FuzzParseQuery`,

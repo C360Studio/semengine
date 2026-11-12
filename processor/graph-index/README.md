@@ -166,16 +166,16 @@ entry, update or delete, before merging.
 The follower publishes the readiness record to `GRAPH_STATUS` at once and then every heartbeat, with `indexed_revision`,
 `target_revision` and `failed_count`. The state reads `degraded` when index writes are unresolved, the feed is lost, or
 the follower has been behind for 30 seconds with no completed write. Any completed write counts, so one entity held
-while others finish reads not ready, not degraded (owner ruling (a1), PR #550 comment 6721867279).
+while others finish reads not ready, not degraded (owner ruling).
 
 ### Lost feed
 
-The follower declares the feed lost when the watch cannot start, when it closes while the component is running, or when
-`ENTITY_STATES`' backing stream is a different stream from the one it bound (the bucket was deleted and created again).
-Nothing rebinds the watch: the state holds until the process restarts. How long a watch stalls after a broker restart
-(about 20 s in one probe of nats.go v1.54.0, PR #414 comment 6425769680) and when a deleted bucket closes it (about 18 s,
-comment 6426443564) are that library's timings and are not promised here. A bucket deleted and created again within one
-stall of the watch is caught at the next heartbeat; a stream restored with the same creation time is not.
+The follower declares the feed lost when the watch cannot start, when it closes while the component is running, or
+when `ENTITY_STATES`' backing stream is a different stream from the one it bound (the bucket was deleted and created
+again). Nothing rebinds the watch: the state holds until the process restarts. How long a watch stalls after a broker
+restart (about 20 s in one probe of nats.go v1.54.0) and when a deleted bucket closes it (about 18 s in another) are
+that library's timings and are not promised here. A bucket deleted and created again within one stall of the watch is
+caught at the next heartbeat; a stream restored with the same creation time is not.
 
 ## Metrics
 
@@ -202,7 +202,7 @@ graph-index on one registry writes the collectors the first registered.
 - **Overwritten revisions.** `ENTITY_STATES` keeps one revision per key, so a revision overwritten before the watch
   reads it is never delivered. The watermark tolerates this.
 - **Rebuild on every start.** The index is rebuilt from `ENTITY_STATES` at every start, and queries are refused for the
-  length of the rebuild. Issue #108 holds the decision on resuming instead.
+  length of the rebuild. Resuming instead is an open decision.
 - **Memory.** One string per entity is kept to count `reindex_events_total`.
 
 ## Dependencies

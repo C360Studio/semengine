@@ -110,8 +110,7 @@ protection uses the generation read before the bind".
 - Not in this release:
   - durable execution beyond phases: a record of each attempt with one owner for its final outcome, a guard that
     stops an outside call from running twice after a restart, typed reasons an attempt is blocked and may be
-    retried, and replay of unfinished work at startup. They are planned as their own piece of work
-    ([#24](https://github.com/C360Studio/semengine/issues/24)).
+    retried, and replay of unfinished work at startup. They are planned as their own piece of work.
 
 ### Observing changes
 

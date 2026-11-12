@@ -389,11 +389,17 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 
 ## Comments and docs
 
-A comment, a test comment, or a doc line gives the reason in plain words and stops. It carries no port history: no
-issue, pull request, comment, review-checkpoint, OpenSpec task, or design-decision reference, and no account of what
-the pin did. That history goes in the commit message and the pull request body. Name an ADR only where the ADR is the
-reason for the code. The markers a guard reads (`// Own server:`, `// Every address:`, `// shortcut:`) stay, and so does
-the issue a harness doc comment names for the failure it exists for (owner ruling 2026-11-12, #606).
+Scope: code comments, test comments, and durable docs (package READMEs, `MIGRATION.md`, `docs/`). A line there gives
+the reason in plain words and stops. It carries no port history: no issue, pull request, comment, review-checkpoint,
+OpenSpec task, or design-decision reference, and no account of what the pin did. That history goes in the commit message
+and the pull request body. A `MIGRATION.md` still says what SemStreams did and what SemEngine does; it drops the
+references. A table cell is a sentence or two; longer text is prose under a heading.
+
+Out of scope, where references are the record: `AGENTS.md`, `.agents/rules-index.md` and the agent contracts (their
+rules tables cite issues), `openspec/` (notes, designs, tasks), ADRs, `docs/admission-ledger.yaml`, pull request
+bodies, commits, and issues. Also kept: an ADR named where it is the reason for the code, the markers a guard reads
+(`// Own server:`, `// Every address:`, `// shortcut:`), and the issue a harness doc comment names for the failure it
+exists for (owner ruling 2026-11-12, #606).
 
 ## Handoff
 

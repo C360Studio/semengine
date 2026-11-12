@@ -119,7 +119,7 @@ registers one, `semengine_graph_clustering_publication_failures_total` (counter)
 ## Known limits
 
 - **No LLM summaries.** A record's summary is a one-line template over its counts. Language-model summaries are tier 2
-  (#485) and not present.
+  and not present.
 - **Replay-time reset is permanent.** A stored `ENTITY_STATES` value that cannot be decoded during the replay stops
   publication until the process restarts.
 - **Records update on successful ticks.** `detection_interval` is how often a tick starts, not a bound on how stale a

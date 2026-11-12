@@ -9,13 +9,13 @@ of ported code traceable to its origin and keep the license obligations intact. 
    port never removes or rewrites that notice, and a file ported verbatim keeps any notice it carries.
 2. **Every ported unit is traceable.** Each retained unit has one entry in the admission ledger recording its
    SemStreams source path and the full 40-character commit SHA it was taken from. The unit is a package when the
-   package is ported, or a single source file when only that file's pattern is taken, as the SETUP 02 harness does.
+   package is ported, or a single source file when only that file's pattern is taken, as the test harness does.
    An abbreviated SHA or a branch name is not provenance: it can move or become ambiguous.
 3. **No ledger row, no port.** Code without a row does not land. The row also records the consumer purpose,
    destination, contract, dependencies and side effects, known risks, proving tests, owner, and disposition (carry,
    adapt, repair before port, or defer/exclude), as `docs/setup-plan.md` specifies under "Package admission
    heuristic".
-4. **The pin is frozen** (owner ruling, 2026-09-30). The pin is SemStreams at the commit a ledger row's `source_sha`
+4. **The pin is frozen** . The pin is SemStreams at the commit a ledger row's `source_sha`
    records. Repairs to ported code land in this repository behind a failing-first test and are not round-tripped
    through SemStreams. A SemStreams change made after the pin enters only as its own ledger row, with the source
    commit and a proving test. Nothing syncs automatically in either direction.
@@ -61,32 +61,19 @@ which fix belongs to which side, and an upstream change can enter unreviewed.
 
 ## Status
 
-The admission ledger is `docs/admission-ledger.yaml` (owner ruling of 2026-09-30, recorded on
-[issue #6][setup-02-rulings]): a YAML list with one entry per SemStreams source path,
+The admission ledger is `docs/admission-ledger.yaml`: a YAML list with one entry per SemStreams source path,
 carrying the fields of rule 3 under the names given in the file's header comment. Its first entries record the
-SemStreams files SETUP 02 adapts, carries, or reads and excludes; package rows are seeded from the measured dependency
-closure during SETUP 03 and 04. SETUP 03B (change `setup-03b-contract-boundary`, PR #21) approved the tier-0 port set
-(65 packages at the pin, its `design.md` D4); each Slice 04A change adds the rows for the packages it ports. Change
-`setup-04a-01-floor` ports fifteen packages, all now in the tree; their rows start at `pkg/platform`. SETUP 02 adapted six
-patterns into `internal/harness/` and `scripts/test-integration.sh`, recorded four exclusions, and carried two scripts
-byte-identical (`scripts/lint-test-ports.sh` and its fixture test). Change `flake-defense` then adapted those two
-scripts: the inline exemption marker is gone and the guidance names no SemStreams file, so both rows read `adapt`.
-`task ledger:check` (contract test T-B7, `internal/harness/contract/ledger_test.go`) machine-checks the schema inside
-`task verify`, then compares every `carry` row with the pin (rule 5). The ledger has
-four `carry` rows, so the check fetches the pin: one of the fifteen ported floor packages
-(`pkg/projection/contract`), the test helpers `internal/semantictest`, which moved to `internal/harness/semantictest`,
-and change `setup-04a-02-ingest-kernel`'s `model` and `storage`. The other fourteen of the fifteen floor packages are
-`adapt` (`pkg/timestamp` since #217 dropped dead `timestamp.Parse`, and `pkg/errs` since `setup-04a-02-ingest-kernel`
-task 3.12h); `vocabulary` and `pkg/types` were first among them only because their
-`README.md` files include markdownlint fixes, and the check compares `.go` and `testdata` files, not READMEs. A ported
-README or `doc.go` keeps the pin's text except for these edits: the fixes markdownlint requires; changes to passages
-that describe behavior the ported code no longer has (owner ruling, [#9 comment 5957221949][readme-ruling], which
-replaced the lint-only rule of comment 5955265930); and corrections of passages that describe API the code does not
-have, including API that never existed even at the pin, with links to packages SemEngine does not have removed (owner
-ruling, [#9 comment 5984291337][readme-false-api-ruling]). Nothing is reworded beyond what the correction needs; the
-package's row summarizes the behavioral differences and dropped surface, while `task ledger:diff` and git history hold
-the line-by-line diffs.
-
-[setup-02-rulings]: https://github.com/C360Studio/semengine/issues/6#issuecomment-5921046663
-[readme-ruling]: https://github.com/C360Studio/semengine/issues/9#issuecomment-5957221949
-[readme-false-api-ruling]: https://github.com/C360Studio/semengine/issues/9#issuecomment-5984291337
+SemStreams files the test harness adapts, carries, or reads and excludes; package rows are seeded from the measured
+dependency closure. The approved tier-0 port set is 65 packages at the pin; each port adds the rows for the packages it
+brings. The test harness adapted six patterns into `internal/harness/` and `scripts/test-integration.sh`, recorded four
+exclusions, and carried two scripts byte-identical (`scripts/lint-test-ports.sh` and its fixture test); both scripts
+were later adapted (the inline exemption marker is gone and the guidance names no SemStreams file), so both rows read
+`adapt`. `task ledger:check` (`internal/harness/contract/ledger_test.go`) machine-checks the schema inside
+`task verify`, then compares every `carry` row with the pin (rule 5). The ledger has one `carry` row today, so the
+check fetches the pin. Every other ported package is `adapt`; the check compares `.go` and `testdata` files, not
+READMEs, so a README with markdownlint fixes does not change a row. A ported README or `doc.go` keeps the pin's text
+except for these edits: the fixes markdownlint requires; changes to passages that describe behavior the ported code no
+longer has; and corrections of passages that describe API the code does not have, including API that never existed
+even at the pin, with links to packages SemEngine does not have removed. Nothing is reworded beyond what the
+correction needs; the package's row summarizes the behavioral differences and dropped surface, while
+`task ledger:diff` and git history hold the line-by-line diffs.

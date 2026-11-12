@@ -110,7 +110,7 @@ The follower publishes the readiness record to `GRAPH_STATUS` at once and then e
 `indexed_revision`, `target_revision`, `failed_count` and `failed_reasons` (the count of failed entities per bounded
 reason). It reads `degraded` when entities are failed, the feed is lost, or the component has been behind for 30
 seconds with no revision completed. Any completion counts, so one entity held while others finish reads not ready,
-not degraded (owner ruling (a1), PR #550 comment 6721867279). A graph with no entities is caught up once the
+not degraded (owner ruling). A graph with no entities is caught up once the
 snapshot is delivered.
 
 ### Failed entities and the repair lane
@@ -170,8 +170,7 @@ under the same prefix.
 
 ## Known limits
 
-- **Offloaded-body fetch has no deadline.** A store that hangs holds one Worker lane until the process stops
-  (#551).
+- **Offloaded-body fetch has no deadline.** A store that hangs holds one Worker lane until the process stops.
 - **Double count after a restart without the store.** If the process restarts with no store registered for an
   offloaded body, the Worker's replay of the old pending record and hop 1's re-read of the entity are two
   exclusions, and `content_unresolved_total` counts both.

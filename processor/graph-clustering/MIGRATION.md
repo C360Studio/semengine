@@ -15,8 +15,8 @@ are kept from `ENTITY_STATES` changes, never by rescanning, and nothing else is 
 Each of these fails when the component is created, naming the key or value, with a line saying what replaces it. Fix
 the configuration before the first start.
 
-- **`batch_size` is refused.** At the pin nothing read it. *Do:* delete the line. semboids sets it.
-- **`enable_llm` and `enhancement_workers` are refused.** Language-model community summaries are tier 2 (#485) and
+- **`batch_size` is refused.** In SemStreams nothing read it. *Do:* delete the line. semboids sets it.
+- **`enable_llm` and `enhancement_workers` are refused.** Language-model community summaries are tier 2 and
   not present; a record carries a one-line summary built from its counts. semsource always sends `enable_llm`.
   *Do:* delete the line.
 - **`min_community_size` and `max_iterations` are refused.** There is no label propagation, so nothing iterates and
@@ -26,7 +26,7 @@ the configuration before the first start.
 - **`allow_ungated_reads` is refused.** The component reads no other index, so there is no readiness gate to bypass.
   *Do:* delete the line.
 - **`enable_anomaly_detection` and `anomaly_config` are refused.** Anomaly detection is not ported and will not be
-  (owner ruling, PR #582 comment 6768832111). *Do:* delete the lines.
+  (owner ruling). *Do:* delete the lines.
 - **Any unknown key is refused**, naming it. The kept keys are `ports`, `detection_interval`, `startup_attempts` and
   `startup_interval_ms`. A key in the wrong case (`BATCH_SIZE`) is refused as unknown, without the guidance line.
 - **A bad `detection_interval` is refused.** The pin fell back to 30 seconds silently when it could not parse the
@@ -78,7 +78,7 @@ Read these. Nothing errors.
 - The four `graph.clustering.query.*` verbs. Nothing in the consumers called them. Read `COMMUNITY_INDEX` through
   graph-query.
 - The readiness gate on graph-index and graph-embedding (ADR-082, ADR-085).
-- The enhancement and review workers, the summary store and language-model summaries (tier 2, #485, #488).
+- The enhancement and review workers, the summary store and language-model summaries (tier 2).
 - Label propagation and the edge providers (ADR-099).
 - Anomaly detection and its storage and handlers: never ported.
 - The indexing-profile check: ADR-054 is not ported.

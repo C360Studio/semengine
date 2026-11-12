@@ -126,14 +126,14 @@ Merging inside the view's 250 ms window is part of the applied-state contract an
 
 Keep-alive: the component pings each client every `ping_interval`, and a pong extends the client's read deadline to
 twice that. A client that answers pings but sends nothing stays connected; one that answers none is closed
-(`client_disconnections_total{reason="read_timeout"}`). Probe P1 (PR #592): at gorilla/websocket v1.5.3, a pong
+(`client_disconnections_total{reason="read_timeout"}`). At gorilla/websocket v1.5.3, a pong
 that does not extend the read deadline lets the read time out with pongs received, so the handler extends it. A write
 to a client that does not complete in 10 seconds closes that client; what gorilla/websocket does when that deadline
 passes is not promised.
 
 ## Origins and authentication
 
-Every `Origin` is accepted, as in the SemStreams original, and the output has no authentication (#84). Anything that
+Every `Origin` is accepted, as in the SemStreams original, and the output has no authentication. Anything that
 can reach the port can read the stream. Bind it to an interface the deployment trusts, or put a proxy in front that
 checks origin and credentials.
 
@@ -181,7 +181,7 @@ at construction with a line saying what replaces them: `delivery_mode`, `ack_tim
 - **At most once on a subject.** A message sent while no client is connected, or dropped from a full queue, is gone.
 - **Convergence, not history, on applied state.** Intermediate revisions can be merged away.
 - **Memory.** The instance holds every entity's stored bytes in memory, so its footprint grows with `ENTITY_STATES`.
-- **No authentication, any origin** (#84).
+- **No authentication, any origin**.
 - **`COMMUNITY_INDEX` is not streamed.** State frames carry `bucket`, so another bucket could be added without a
   wire change; none is present.
 

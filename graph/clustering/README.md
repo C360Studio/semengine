@@ -96,7 +96,7 @@ What the caller owes the maintainer:
   That a KV watch delivers this order is not promised here:
   [ADR-066](../../docs/adr/066-honest-graph-index-readiness.md) states it without a probe. `processor/graph-clustering`,
   which wires the watch, probes it at the pinned nats.go and nats-server versions (`TestWatchOrderAcrossKeys`). The
-  order it observed is recorded in that change's `notes/2.3.md` as an observation, not a promise
+  order it observed is an observation, not a promise
   ([ADR-112](../../docs/adr/112-natsclient-contract.md)).
 - **Revision 0 is refused.** A KV entry's first revision is 1 (`TestKVRevisionStartsAtOne` probes it on the pinned
   nats.go and nats-server; it is not promised beyond that), so 0 means the caller passed none.
@@ -135,14 +135,14 @@ removed, so the old records stay readable ([ADR-085](../../docs/adr/085-gate-on-
 - A refusal from `Upsert`, an invalid error naming the entity: a nil state, an ID that is not a valid 6-part entity
   ID, or a state whose ID differs from `entityID`. A refused entity contributes nothing and stays in the refused set
   until a valid `Upsert` or a `Delete` for it.
-- `GetAllCommunities` fails, naming the key, on an entry it cannot read or that `DecodeCommunity` refuses (the pin
+- `GetAllCommunities` fails, naming the key, on an entry it cannot read or that `DecodeCommunity` refuses (SemStreams
   skipped such entries), and returns the context's error if the context ends. An empty bucket is no records and
   no error.
 
 ## What is not here
 
-- **Language-model summaries and the summary store** (the pin's `CommunitySummarizer`, `StatisticalSummarizer`,
-  enhancement worker and `COMMUNITY_SUMMARIES`): tier 2, tracked in issue #485. The record's `StatisticalSummary` is a
+- **Language-model summaries and the summary store** (SemStreams' `CommunitySummarizer`, `StatisticalSummarizer`,
+  enhancement worker and `COMMUNITY_SUMMARIES`): tier 2. The record's `StatisticalSummary` is a
   template over the counts.
 - **Label propagation** and the edge providers that fed it: removed by ADR-099. A detection overlay over chosen
   relationship predicates may return as a later change, off by default, in a namespace nothing reads for serving.

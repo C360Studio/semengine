@@ -192,10 +192,8 @@ when each "stays" has a supported basis.
   accepted commitment, or demonstrated defect still requires the smallest complete correction and its proof.
 - A doc that breaks the owner's documentation rule (technical-writer contract, rule 9: human-dev friendly, no
   jargon, no marketing) is a review finding.
-- Port history in a comment, test comment, or doc line the change adds or edits (an issue, pull request, comment,
-  review-checkpoint, OpenSpec task, or design-decision reference; an account of what the pin did; an ADR named where
-  it is not the reason) is a review finding; the remedy is the reason in plain words, with the reference moved to the
-  pull request body. Lines the change does not touch are not a finding (developer contract § Comments and docs; #606).
+- Port history in a comment, test comment, or doc line the change adds or edits is a review finding; scope and
+  exceptions are in the developer contract, "Comments and docs". Lines the change does not touch are not a finding.
 - Confirm checked tasks are fully complete as worded. Split mixed tasks instead of treating partial evidence as done.
 - A task that asserts a post-merge fact ("CI green", "merged", "merge-ready"), or that waits on a step after the
   archive commit (the archive check, undraft, the final CI run), is a finding: it cannot be ticked before the archive

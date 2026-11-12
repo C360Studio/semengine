@@ -101,7 +101,7 @@ Both read one page of entity IDs under a prefix from graph-ingest, so each reque
 and a caller who wants more pays per page. A count covers that page and no more.
 
 - `total_entities` is the whole group as listed, before the cursor and any limit. It is live and as listed, not a
-  snapshot: under concurrent overwrites a listing can omit a key (#512). A repeated key counts once.
+  snapshot: under concurrent overwrites a listing can omit a key. A repeated key counts once.
 - `entities_scanned` is the rows on this page. `truncated` is true exactly when `next_cursor` is set, so false says only
   that this is the last page, not that the counts are the whole group. Send `next_cursor` as `cursor` for the next page.
 - On a first page with `truncated` true, the type counts, children and examples are of the lexically smallest IDs, a
@@ -175,7 +175,7 @@ says so, rather than answered in part.
 
 The request is `{"query": "...", "level": 0, "min_revision": ...}`. `query` is required and not blank. `level`, 0 to
 2 and omitted meaning 0, picks the group size the text search reads (see `localSearch`) and is checked on every
-request, whichever strategy answers. An unknown key is refused, and so are the pin's `max_communities`,
+request, whichever strategy answers. An unknown key is refused, and so are SemStreams' `max_communities`,
 `summarize_threshold` and `include_summaries`, `include_relationships` and `include_sources` keys, by name.
 
 How the question is read:
@@ -225,13 +225,13 @@ words appear in `answer` as `Not honoured: ...`.
 The matches are a sample. `entities_truncated` is true when a group had more than the one page, or matches were left
 out so the reply fits the connection's `max_payload`; a match further down a group's ID order can be missed. A group
 whose summary and ten keywords contain none of the question's words scores 0 and is not read, so a match in it is not
-found; #506 is the keyword index that would remove this limit.
+found; a keyword index per group would remove this limit.
 
 What `min_revision` means here differs from `localSearch`: the mark is the highest `entity_revision` among the level's
 readable records, and a write raises its groups' records at every level, so a revision from a write anywhere is reached
 once the clustering tick that publishes it has run. One exception: a delete that empties its group removes the record
 and raises nothing, so a `min_revision` from that delete is refused until another write. The rule relies on the
-maintainer applying writes in revision order (#525). A request above the mark is refused transient
+maintainer applying writes in revision order. A request above the mark is refused transient
 `revision_not_reached` with `indexed_revision` in detail, before any page is read.
 
 What it refuses:
@@ -259,7 +259,7 @@ A caller's `invalid_request`, a named start's `entity_not_found`, and the text s
 `revision_not_reached` count no error in `Health`. A classification that ends with the request, or a hint the route
 cannot read, is transient `internal` and counts one.
 
-Known limits of the keyword classifier, accepted by the owner and tracked in #535:
+Known limits of the keyword classifier, accepted by the owner:
 
 - "From A to B" reads one start. The walk begins at A and B is dropped without a word.
 - A path start is the hyphenated word the classifier finds, never a whole ID: "what is connected to
@@ -270,10 +270,10 @@ Known limits of the keyword classifier, accepted by the owner and tracked in #53
 - Ordinary words are hints. "max retries" is refused as an aggregation, and "pumps in area 51" is read as a start
   `area-51` and refused `entity_not_found`.
 
-Not carried from the pin: the semantic strategy and its fallback, which on a missing community index answered
+Not carried from SemStreams: the semantic strategy and its fallback, which on a missing community index answered
 `searchGraph` from embeddings (a deployment without clustering gets `index_not_ready` instead until a follow-up
-graph-query change adds the semantic fallback, owner ruling S1, #563); `max_communities` (five groups,
-always); summarising an answer with a model; the pin's `count`, `duration_ms`, `community_summaries`,
+graph-query change adds the semantic fallback; owner ruling); `max_communities` (five groups,
+always); summarising an answer with a model; SemStreams' `count`, `duration_ms`, `community_summaries`,
 `answer_model` and `degraded` reply fields. `MIGRATION.md` has the decoder changes.
 
 ### A reply `graph-query` cannot use
@@ -368,7 +368,7 @@ count and register nowhere. A second `graph-query` on one registry counts into t
 A `localSearch` or text search answer is cut short when a group had more entities than the one page read (at most
 1,000), or matches were left out to fit `max_payload`: both set `entities_truncated`, and each adds one to the
 counter. A search over a large community can miss a match further down the page order, so this count is how many
-answers were cut short; it says when a keyword index per community (#506) is due. A refused request, and an
+answers were cut short; it says when a keyword index per community is due. A refused request, and an
 answer that is whole, count nothing.
 
 ## Starting and stopping

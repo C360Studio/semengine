@@ -32,7 +32,7 @@ if err := cfg.Validate(); err != nil {
    (ADR-104).
 
 Write every key exactly as this README shows it. A key that differs from a key `Config` declares only in letter case
-fails the load, naming the right spelling (#325): `"nats":{"URLs":[...]}` fails with an error ending
+fails the load, naming the right spelling: `"nats":{"URLs":[...]}` fails with an error ending
 `config key nats.URLs must be written nats.urls`. Names you choose (component, service, stream, archival
 and model registry names) are yours to spell, and a component's or service's `config` payload belongs to that
 component or service: loading does not check its keys.
@@ -119,7 +119,7 @@ Loading fails, and returns no `Config`, when:
 - The document sets a NATS setting that nothing in SemEngine applies yet. These keys are refused when present,
   whatever their value and in any letter case: `nats.username`, `nats.password`, `nats.token`, `nats.tls`,
   `nats.max_reconnects`, `nats.reconnect_wait`, `nats.jetstream.domain`, `nats.jetstream.retention_policy` and
-  `nats.jetstream.replication_factor`. Each comes back when the code that connects to NATS uses it (#74).
+  `nats.jetstream.replication_factor`. Each comes back when the code that connects to NATS uses it.
 - `SEMENGINE_NATS_USERNAME`, `SEMENGINE_NATS_PASSWORD` or `SEMENGINE_NATS_TOKEN` is set to a value that is not empty,
   for the same reason.
 - The document sets `platform.instance_id`, in any letter case.

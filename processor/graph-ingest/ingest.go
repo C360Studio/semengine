@@ -278,9 +278,9 @@ func removeIndexingProfileTriples(entity *graph.EntityState) {
 // indexing profile, hierarchy statements, a hierarchy container's statements): the latest
 // Timestamp among entity's statements, never the clock. Each lane reads it from the write's
 // own statements before graph-ingest adds one of its own, and reads all of them, reserved
-// sources included: a hierarchy container's statements are all graph-ingest-hierarchy, and pkg/lifecycle writes under its own. A
-// statement graph-ingest has added already carries this time, so reading after it gives the
-// same answer. Every lane refuses a write that carries no statement before it reads this, so
+// sources included: a hierarchy container's statements are all graph-ingest-hierarchy, and
+// pkg/lifecycle writes under its own. A statement graph-ingest has added already carries this
+// time, so reading after it gives the same answer. Every lane refuses a write that carries no statement before it reads this, so
 // the time it returns is never zero.
 func triggeringTime(entity *graph.EntityState) time.Time {
 	var latest time.Time

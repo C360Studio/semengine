@@ -236,8 +236,8 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 	if err := validateEntityID(request.EntityID); err != nil {
 		return nil, rejectFromError(err)
 	}
-	// Before the fetch: a refused mutation must not even read the imported
-	// entity's state (ADR-102 — "before any KV I/O").
+	// Before the fetch, and before any other KV read: a refused mutation must
+	// not even read the imported entity's state (ADR-102).
 	if err := c.authorizeSubject(request.EntityID, false); err != nil {
 		return nil, err
 	}

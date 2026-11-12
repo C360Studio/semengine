@@ -7,8 +7,9 @@ scorers and no word index (§1, §2). The embedder's statistics are learned per 
 cause of the order and restart drift SemSource's R1 names (§5). An entity's text is picked by predicate suffix and
 its offloaded body is fetched by the caller (§3). Entities with no text are reached only by structure (§4). The
 package is new, has no ledger row, and is public, so it is framework API (§6, §7). Memory was measured (§8).
-Three new probes back the choices below, to be committed under `notes/probes/`: `sequence-probe`,
-`tokenizer-probe-2` and `word-shape-probe` (source and log each).
+Probes under `notes/probes/` back the choices below: `sequence-probe`, `tokenizer-probe-2` and `word-shape-probe`
+(committed), and `tokenizer-law-probe`, `corpus-size-probe` and `and-query-probe` (added with this revision), each
+with its source and log.
 
 ## Goals / Non-Goals
 
@@ -17,7 +18,8 @@ and `-excluded` words, ranks name words above body words, and proves it with law
 "Room to extend" points in the proposal, plus `similar`, can be added later with no change for existing callers.
 
 Non-goals: callers (changes 2 to 4), a stored index, a per-entity token record, typo tolerance, word splitting for
-scripts written without spaces (Chinese, Japanese), and any help for entities without text (README says so, D9).
+scripts written without spaces (Chinese, Japanese), Unicode normalisation (a decomposed `é` splits its word), and
+any help for entities without text (README says so, D9).
 
 ## Decisions
 
@@ -25,12 +27,13 @@ scripts written without spaces (Chinese, Japanese), and any help for entities wi
 held; `Delete(entityID string)`; `Len() int`; `ParseQuery(text string) (Query, error)`;
 `Search(q Query, opts Options) (Result, error)`. `Document{Name, Body string}`. `Options{Scope []string; Limit int}`.
 `Result{Hits []Hit; Matched int}`, `Hit{EntityID string; Score float64}`. `Tokens(text string) []string` is the shared
-tokenizer. Put refuses an invalid entity ID (`semtypes.ValidateEntityID`), so a held entity always matches a scope
-correctly (`graph.MatchesAnyIDPrefix` fails closed on invalid IDs, inventory §2). A document with no words removes
-the entity, since it could never match. Search refuses a malformed scope prefix or a limit below 1. ParseQuery
-refuses a query left with no word to match (only stopwords, or only exclusions) and one over `MaxQueryWords` (32),
-with sentinel errors (spec). Hits are ordered by score, then ID. `Matched` counts every match in scope before the
-limit, for truncation reporting and rank fusion.
+tokenizer. Put refuses an invalid entity ID (`ErrInvalidEntityID`), so a held entity always matches a scope correctly
+(`graph.MatchesAnyIDPrefix` fails closed on invalid IDs, inventory §2). A document with no words removes the entity.
+Search refuses a malformed scope prefix (`ErrInvalidScope`) or a limit below 1 (`ErrInvalidLimit`). ParseQuery
+refuses a query with nothing to search for (`ErrEmptyQuery`), reserved syntax (`ErrReservedSyntax`, D7) and more
+than `graph.MaxSearchTerms` (16) distinct words (`ErrQueryTooLong`). That bound is the one local search already
+enforces, and change 3 moves local search onto this index, so one spelling serves both. Hits are ordered by score,
+then ID. `Matched` counts every match in scope before the limit, for truncation reporting and rank fusion.
 Options considered: (a) Put takes text in fields (chosen): one call, and the index does the tokenizing.
 (b) Put takes already-split words: two calls every caller must pair, and they can pair them wrongly. Option (a)
 leaves room for (b) later as a second write method that sits beside Put (D7). `Query` keeps its fields unexported,
@@ -42,29 +45,29 @@ answers as if it ran wholly before or wholly after each write (chosen; proved by
 (adopter seam, inventory §7). (c) Copy-on-write snapshots: memory doubles while a write runs. The lock is the
 developer's choice.
 
-**D3. Tokenizer.** The smallest rule set that meets the laws; the exact rules and their witnesses are in the spec.
+**D3. Tokenizer.** The smallest rule set that meets the laws. The exact rules, their order and their witnesses are
+in the spec. The order was run, not worked by hand: `tokenizer-law-probe` passes the witnesses and 32.4 million fuzz
+inputs. The order is: split into runs, split identifiers, lower-case, fold, then drop.
 
-- Lower-case with Unicode rules. A word is a run of Unicode letters and digits; anything else splits, so
-  `graph.query.status`, `pump-7` and `_test.go` become separate words. One-letter words stay (`-v`, `7`).
+- A word is a run of Unicode letters and digits, so `graph.query.status`, `pump-7` and `_test.go` split into
+  separate words. One-letter words stay (`-v`, `7`). A capital is a letter that lower-casing changes. This
+  definition came from the fuzz run: a capital with no lower-case form split again on a second pass.
 - Identifiers split at a lower-to-upper step and before the last capital of a capital run (`withRetry` is held as
-  `retry`, since `with` is a stopword). The joined form is not held, so the query `withretry` finds nothing. The
-  spec and README declare this, and a behaviour question pins it. Holding the joined form as well would add 8.3%
-  more words and 14,899 distinct forms beside 10,504 on our Go files, and it would have to stay out of the word
-  sequence to keep phrases adjacent. It can be added later as an internal change, since the index is rebuilt.
-- Length: a word over 32 bytes is dropped after splitting. Three options were measured on our Go and Markdown
-  (`word-shape-probe.log`). Capping at 32 before splitting loses 2,263 of 41,864 runs: every long test or type name.
-  Capping at 32 after splitting loses 345, all of them lower-case hex (commit SHAs, digests). Capping at 64 before
-  and 32 after loses 402. Random base64 still becomes junk words under every option (about 300 to 1,100 per
-  4,000 characters); each junk word is held by one entity and costs memory only. Chosen: cap after splitting.
-- Stopwords: the 30 words of `graph/clustering/terms.go:16`, not the embedder's 84. The 84-word list drops `not`,
-  `no`, `get`, `find`, `show` and `all`, which carry meaning in phrases and in code. Measured
-  (`tokenizer-probe-2.log`): R@10 36.6% against 37.0%, with 3,709 matches per query against 3,341. The original
-  `tokenizer-probe.log` measured only the 84-word list. Change 4 points clustering at this list, leaving one.
-- Plurals: the plural-only stemmer (`tokenizer-probe.go.txt:11`) plus two rules that go before it. `es` is stripped
-  after `ss`, `x`, `ch` or `sh`, and a final `e` after them, so class, match, box, hash and cache fold with their
-  plurals. Corpus pairs that fail to fold drop from 117 to 54, and R@10 is unchanged (`tokenizer-probe-2.log`).
-  Words in `-us` and `-s` (bus, status) still do not fold. Rejected: the embedder's suffix stemmer (it splits 545
-  pairs) and a dictionary stemmer (a new dependency for about one point at best).
+  `retry`). The joined form is not held, so `withretry` finds nothing; the spec, the README and a behaviour question
+  pin this. Holding it would add 8.3% more words and 14,899 distinct forms beside 10,504 on our Go files, and it
+  would have to stay out of the word sequence (D4). It can be added later as an internal change.
+- Length: a folded word over 32 bytes is dropped. Capping at 32 before splitting loses 2,263 of 41,864 runs (every
+  long test or type name); capping after loses 345, all lower-case hex; 64 before and 32 after loses 402
+  (`word-shape-probe.log`). Random base64 becomes single-entity junk words under every option (memory only).
+- Stopwords: the 30 words of `graph/clustering/terms.go:16`. A word is dropped when it or its fold is one, so
+  `wills` and `does` are dropped and tokenizing stays idempotent. `tokenizer-probe.log` measured the embedder's
+  84-word list, which drops `not`, `no`, `get`, `find`, `show` and `all`. The 30-word list was measured in
+  `tokenizer-probe-2.log`: R@10 36.6% against 37.0%, 3,709 matches per query against 3,341. Change 4 points
+  clustering at this list.
+- Plurals: the plural-only stemmer (`tokenizer-probe.go.txt:11`) with two rules ahead of it (strip `es`, or a final
+  `e`, after `ss`, `x`, `ch` or `sh`). Unfolded corpus pairs drop from 117 to 54 (`word-shape-probe.log`) and R@10
+  is unchanged (`tokenizer-probe-2.log`). `-us` and `-s` words (bus, status) still do not fold. Rejected: the
+  embedder's stemmer (it splits 545 pairs) and a dictionary stemmer (a new dependency for about one point).
 
 **D4. Phrases.** (a) Each entity keeps its word sequence (word numbers, repeats included) in memory. A phrase is
 first narrowed to the entities holding all its words, then checked for adjacency in their sequences (chosen).
@@ -73,8 +76,22 @@ Measured at one million entities: 472 B per entity against 471 B with no sequenc
 (b) Positions in every posting: 1,186 B (20 words) and about 5.2 KB (120 words) (`memory-probe.log`).
 (c) Re-read the text of the best candidates: the index would have to read storage, including offloaded bodies, which
 the proposal rules out. Option (a) still allows (b) later as an internal change if long-text phrase checks prove slow
-(D7). Phrases and the words around them are compared after stopwords are removed: `"out of memory"` also matches
-"out the memory". This is declared in the spec and the README.
+(D7). Phrases are compared after tokenizing, within one field: `"out of memory"` also matches "out the memory".
+The spec and the README declare this.
+
+**D4b. Combining forms.** Take `retry "docker compose" -test`. Three options:
+
+- (a) Every plain word, phrase and exclusion is required. This is precise, but the answer to a natural question must
+  then hold every word: 6.5% of the probes' known-item questions (`and-query-probe.log`).
+- (b) Phrases and exclusions filter, and plain words rank (chosen).
+- (c) A phrase only adds a bonus. This needs a second tuned weight, and it still returns passages that merely share
+  the phrase's words, which R2 asks to push down.
+
+Behaviour under (b): an entity is returned only when it holds every phrase, holds no excluded term, and holds at least
+one plain or phrase word. Its score is the BM25F sum over the distinct plain and phrase words it holds. A phrase that
+no entity holds returns no hit and `Matched` 0, never an error. Generated checks are used, because the forms
+interact: `TestPropIndexMatchesModel` draws queries with up to two phrases and two exclusions against the model,
+after the named witnesses `TestCombinedQuery` and `TestUnmatchedPhraseFindsNothing`.
 
 **D5. Exclusion.** `-x` removes every entity that holds `x`'s words, adjacent, in any field (Name or Body). `-test`
 drops an entity whose Body holds `foo_test.go`, because `_test.go` splits into `test` and `go`. What goes into the
@@ -83,13 +100,16 @@ Body (a file path, as R3 needs) is change 2's mapping of predicates to fields. (
 the product's (`AGENTS.md`, What this is for).
 
 **D6. Scoring and the name weight.** Field-weighted BM25 (BM25F): term frequency is `w·tf(Name) + tf(Body)`, length
-is `w·len(Name) + len(Body)`, with Lucene's IDF `ln(1 + (N − df + 0.5)/(df + 0.5))` (never negative), `k1` 1.2 and
+is `w·len(Name) + len(Body)` counted in held words after tokenizing, and the average length is taken over that same
+weighted length. It uses Lucene's IDF `ln(1 + (N − df + 0.5)/(df + 0.5))` (never negative), `k1` 1.2 and
 `b` 0.75, the probe's reference (`retrieval-probe.go.txt:85`, `:112`). N, df and average length are read from the
 index at search time, so equal held sets give equal scores. Scope filters before the limit and never changes a
 score. Options: (a) BM25F (chosen); (b) two BM25 scores summed: saturates twice, and a name match can lose to a
 long body; (c) a flat bonus for a name match: a second unit of score, with no length normalisation. Value of `w`:
-task 2.4 sweeps 1, 2, 3 and 5 on the scorecard and records the results in `notes/2.4.md`. It keeps the smallest `w`
-that passes `TestNameOutranksBody` and is within one point of the best R@10. Not measured yet.
+the exported constant `NameWeight` is its one home. Task 2.4 sweeps 2, 3 and 5 on the scorecard, reports 1 for
+comparison (it ties a name match with a body match, so it cannot pass `TestNameOutranksBody`), and keeps the smallest
+value within one point of the best R@10. The results go in `notes/2.4.md`, and the value is written here. Not
+measured yet.
 
 **D7. Room to extend.** Each later addition is a new method or an internal change; no caller and no scorecard
 question changes.
@@ -97,31 +117,37 @@ question changes.
 - **Token record:** add `Words(id)` to read an entity's sequences and `PutWords(id, ...)` to restore them. A stored
   record would then also hold a tokenizer version.
 - **Positions (D4b):** internal; the phrase law test does not see the layout.
-- **Typo tolerance and query forms:** a new form adds an unexported field to `Query`; the word table is internal.
+- **Typo tolerance and query forms:** a new form adds an unexported field to `Query`, and the word table is
+  internal. A new form must not change any query that is answered today. So the syntax later forms would take is
+  refused now with `ErrReservedSyntax`: a term starting `name:` or `body:` (field search), and a term ending in `*`
+  (prefix) or `~` (typo). Every other punctuation separates words, as it does in documents. A leading `-` excludes
+  (`-v`, `--force`); quote a flag to search for it. Bare `AND`, `OR` and `NOT` are words, so word-shaped operators
+  are foreclosed.
 - **Tier 1 vectors by rank:** `Result` gives a total order and `Matched`, which is what rank fusion reads.
 - **Entity-to-entity `similar` (change 4):** `SimilarTo(id, Options)` can build a query from the entity's own held
   words.
 
 **D8. Scorecard.** (a) A frozen known-item set: 2,000 sections of this repository's Markdown at `2853486d`, each
 file's first heading as Name and the section as Body, with 500 section headings as questions. It is kept in
-`graph/lexical/testdata/scorecard/` and gzipped (size reported in task 2.4). The floor is the measured R@10 minus one
-point. The floor is shown able to fail with `task mutate:check` and an IDF-is-one mutant (notes/2.4.md).
+`graph/lexical/testdata/scorecard/` and gzipped (0.97 MB measured; open question 1). The floor is the measured R@10
+minus one point. The floor is shown able to fail with `task mutate:check` and an IDF-is-one mutant (notes/2.4.md).
 (b) About 30 behaviour questions in SemSource's `questions.json` shape: phrases, flags, dotted names, `-test`,
 identifiers. Every one must pass. SemSource's 21.6k corpus and 33 questions stay in their repository, for their
 runner against the composed stack once change 2 serves the verb. Rejected: a generated corpus (it proves the
 arithmetic, which D10's reference model already does, not quality) and copying SemSource's corpus (too large, and
 their data).
 
-**D9. README.** It says plainly that word search helps only entities with text, and that telemetry and other numeric
-data are reached through structure: prefix, predicate and value, relationships, name and alias, and groups by ID.
-The time-range and bounds verbs have no responder yet (inventory §4).
+**D9. README.** It says plainly that word search helps only entities with text. Telemetry and other numeric data are
+reached through structure: prefix, predicate, relationships, name and alias, and groups by ID. A predicate's value
+filter matches the value written as a string, exactly (`processor/graph-index/query.go:366`); nothing offers numeric
+ranges. The time-range and bounds verbs have no responder in the tree (inventory §4).
 
 **D10. Rules (inventory §6).**
 
 - `TestLexicalImportsNoNATS` lives in `internal/harness/contract`, beside `graphtransport_test.go`, with a
   sensitivity case.
-- Fuzz targets `FuzzTokens` and `FuzzParseQuery`: they never panic, every word is lower case, 32 bytes or less and
-  free of separators, and tokenizing twice gives the same words.
+- Fuzz targets `FuzzTokens` and `FuzzParseQuery`: they never panic, every word equals its lower-casing, is 32 bytes
+  or less and holds only letters and digits, and tokenizing twice gives the same words.
 - `"graph/lexical unit"` is added to `scripts/cover-check.sh`.
 - Rapid properties over a closed vocabulary (lower-case, no `s` or `x`, never ending in `e`, no stopword, so
   tokenizing changes nothing):
@@ -131,8 +157,8 @@ The time-range and bounds verbs have no responder yet (inventory §4).
 
 ## Risks / Trade-offs
 
-- Memory is about 1.6 KB per entity at 120 words; text up to the 4,000-character cap could be several times that
-  (owner question 2). Query time is not measured; change 2 measures it.
+- Memory is about 1.6 KB per entity at 120 words; text up to the 4,000-character cap could be several times that.
+  Query time is not measured. Change 2 measures both and chooses any per-entity word cap.
 - The name weight and the floor are tuned on our own Markdown, so they may overfit it; SemSource's runner is the
   outside check.
 - The tokenizer becomes part of a stored format once a token record exists (D7 records a version then).
@@ -144,6 +170,9 @@ None: no caller until change 2. Nothing in the tree changes behaviour.
 
 ## Open Questions
 
-1. Owner: commit about 2,000 sections of our own Markdown, gzipped, as test data (D8a)? Recommended: yes.
-2. Owner: should change 2 cap the words indexed per entity? Recommended: yes, a number measured in change 2.
-3. Change 2: which predicates feed Name and Body, including file paths for R3.
+1. Owner: may we commit 2,000 sections of our own Markdown as frozen test data (D8a)? It is 2.6 MB as JSON lines,
+   0.97 MB gzipped, and 668 of the sections cite issue or pull request numbers (`corpus-size-probe.log`). That is
+   the port history #606 is removing from the live docs; the frozen copy keeps it as it was at `2853486d`.
+   Recommended: yes. A generated corpus cannot measure quality.
+2. Change 2: which predicates feed Name and Body, including file paths for R3; and a per-entity word cap, chosen by
+   measurement on SemSource data.

@@ -26,6 +26,10 @@ The design added three more, each with its source and its log:
   added plural rules (design D3). It runs as `tokenizer-probe` does.
 - `word-shape-probe`: a Python script over the tree's Go and Markdown files that counts long words before and after
   identifier splitting and plural pairs that fold (design D3). Run it from the repository root with `python3`.
+- `tokenizer-law-probe`: runs the tokenizer's rules in the order the spec states and fuzzes the law that tokenizing
+  twice changes nothing (design D3).
+- `and-query-probe`: how many known-item answers hold every word of their question (design D4b).
+- `corpus-size-probe`: the size of 2,000 sections, raw and gzipped, and how many carry issue numbers (design D8).
 
 Limits of these numbers:
 

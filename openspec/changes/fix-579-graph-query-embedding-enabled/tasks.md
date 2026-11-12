@@ -18,7 +18,7 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
   `resolveConfig` decoding into `Config{EmbeddingEnabled: true}` (D1). Check: wire-value test beside
   `graph/query_verbs_test.go:202`, `TestConfigEmbeddingEnabled`, the `FuzzDeclarePorts` seed; the preset shown to fail
   when removed.
-- [ ] 2.2 The refusing handler for `semantic` and `similar` in `queryHandlers` (`query.go:23-80`; D2). Check:
+- [x] 2.2 The refusing handler for `semantic` and `similar` in `queryHandlers` (`query.go:23-80`; D2). Check:
   `TestEmbeddingVerbsRefuseWhenNotEnabled`, `TestEveryDeclaredVerbHasAHandler` for both settings,
   `TestNotEnabledRefusesBeforeForwarding` (integration); existing `TestNoRespondersIsTransient` and
   `TestForwardPassesBytesBothWays` unchanged and green.

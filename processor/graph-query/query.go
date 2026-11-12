@@ -37,7 +37,13 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	}
 	handlers := make(map[string]queryHandler, len(forwards))
 	for verb, downstream := range forwards {
-		if subject := subjectOf(downstream.responder, downstream.name); subject != "" {
+		subject := subjectOf(downstream.responder, downstream.name)
+		if subject == "" {
+			continue
+		}
+		if downstream.responder == graph.ResponderGraphEmbedding && !c.config.EmbeddingEnabled {
+			handlers[verb] = c.notEnabled(verb)
+		} else {
 			handlers[verb] = c.forward(subject)
 		}
 	}
@@ -132,6 +138,18 @@ func (c *Component) forward(subject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
 		return c.ask(ctx, subject, data)
+	}
+}
+
+// notEnabled answers verb when embedding_enabled is false: the composition runs no graph-embedding,
+// so every request is refused invalid not_enabled, naming the verb, and nothing is sent (design D2).
+// The request counts as one input and no error: the refusal is a fact about the composition, not a
+// failure of graph-query.
+func (c *Component) notEnabled(verb string) queryHandler {
+	return func(_ context.Context, data []byte) ([]byte, error) {
+		c.lifecycle.CountInput(len(data))
+		return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeNotEnabled,
+			fmt.Errorf("%s is not enabled: graph-query's embedding_enabled is false", verb))
 	}
 }
 

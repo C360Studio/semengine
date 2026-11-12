@@ -134,20 +134,88 @@ func TestHandlerForNamesAnUnservedVerb(t *testing.T) {
 	}
 }
 
-// TestEveryDeclaredVerbHasAHandler: every row the table declares for graph-query has a handler, so
-// a row added without one is caught here as well as at Start.
+// TestEveryDeclaredVerbHasAHandler: every row the table declares for graph-query has a handler, with
+// embedding_enabled on or off, so a row added without one is caught here as well as at Start.
 func TestEveryDeclaredVerbHasAHandler(t *testing.T) {
-	c, err := createFromJSON(t, `{}`)
+	for _, raw := range []string{`{}`, `{"embedding_enabled":false}`} {
+		c, err := createFromJSON(t, raw)
+		if err != nil {
+			t.Fatalf("CreateGraphQuery(%s): %v", raw, err)
+		}
+		handlers := c.queryHandlers()
+		for _, verb := range graph.QueryVerbs() {
+			if verb.Responder != graph.ResponderGraphQuery {
+				continue
+			}
+			if _, err := handlerFor(verb, handlers); err != nil {
+				t.Errorf("%s: %v", raw, err)
+			}
+		}
+	}
+}
+
+// TestEmbeddingVerbsRefuseWhenNotEnabled: with embedding_enabled false, semantic and similar refuse
+// every request invalid not_enabled, naming the verb, whatever its bytes; each counts as one input
+// and no error. Left out, the same calls forward: the client is never connected, so the forward's
+// own transient internal refusal names the downstream subject (graph-query spec, "Embedding verbs
+// can be turned off").
+func TestEmbeddingVerbsRefuseWhenNotEnabled(t *testing.T) {
+	downstream := map[string]string{"semantic": "search", "similar": "similar"}
+	requests := []string{`{"query":"widget"}`, `{"entity_id":"c360.test.a.b.c.d"}`, `not json`, ``}
+
+	off, err := createFromJSON(t, `{"embedding_enabled":false}`)
 	if err != nil {
 		t.Fatalf("CreateGraphQuery: %v", err)
 	}
-	handlers := c.queryHandlers()
-	for _, verb := range graph.QueryVerbs() {
-		if verb.Responder != graph.ResponderGraphQuery {
-			continue
+	handlers := off.queryHandlers()
+	var messages, bytes int64
+	for verb := range downstream {
+		for _, request := range requests {
+			reply, err := handlers[verb](t.Context(), []byte(request))
+			if err == nil {
+				t.Fatalf("%s(%q) with embedding_enabled false answered %q", verb, request, reply)
+			}
+			var refusal *errs.ClassifiedError
+			if !errors.As(err, &refusal) || refusal.Class != errs.ErrorInvalid || refusal.Code != "not_enabled" {
+				t.Errorf("%s(%q) refused %v, want invalid not_enabled", verb, request, err)
+			}
+			if !strings.Contains(err.Error(), verb+" is not enabled") {
+				t.Errorf("%s(%q) refusal %q does not name the verb", verb, request, err)
+			}
+			messages++
+			bytes += int64(len(request))
 		}
-		if _, err := handlerFor(verb, handlers); err != nil {
-			t.Error(err)
+	}
+	// Each handler counts before it returns.
+	if flow := off.DataFlow(); flow.Messages != messages || flow.Bytes != bytes {
+		t.Errorf("DataFlow = %+v, want %d messages of %d bytes", flow, messages, bytes)
+	}
+	if got := off.Health().ErrorCount; got != 0 {
+		t.Errorf("ErrorCount = %d, want 0: not_enabled is not graph-query's error", got)
+	}
+
+	on, err := createFromJSON(t, `{}`)
+	if err != nil {
+		t.Fatalf("CreateGraphQuery: %v", err)
+	}
+	handlers = on.queryHandlers()
+	for verb, name := range downstream {
+		var subject string
+		for _, row := range graph.QueryVerbs() {
+			if row.Responder == graph.ResponderGraphEmbedding && row.Name == name {
+				subject = row.Subject
+			}
+		}
+		reply, err := handlers[verb](t.Context(), []byte(requests[0]))
+		if err == nil {
+			t.Fatalf("%s with no connection answered %q", verb, reply)
+		}
+		var refusal *errs.ClassifiedError
+		if !errors.As(err, &refusal) || refusal.Class != errs.ErrorTransient || refusal.Code != graph.ErrorCodeInternal {
+			t.Errorf("%s left on refused %v, want transient internal", verb, err)
+		}
+		if subject == "" || !strings.Contains(err.Error(), subject) {
+			t.Errorf("%s left on: refusal %q does not name the downstream subject %q", verb, err, subject)
 		}
 	}
 }

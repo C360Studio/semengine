@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/c360studio/semengine/component"
@@ -71,5 +72,67 @@ func TestSemanticForwardsMinRevision(t *testing.T) {
 			t.Errorf("semantic with min_revision %s: class %v code %q (%v), want invalid %s", revision, refusal.Class,
 				refusal.Code, err, graph.ErrorCodeInvalidRequest)
 		}
+	}
+}
+
+// TestNotEnabledRefusesBeforeForwarding: with embedding_enabled false, graph-query refuses semantic
+// and similar invalid not_enabled, naming the verb, while a real graph-embedding is serving, so a
+// forward would have been answered. Each request is one input in DataFlow and no error in Health
+// (graph-query spec, "Embedding verbs can be turned off", "Refusals that are not errors").
+func TestNotEnabledRefusesBeforeForwarding(t *testing.T) {
+	client := fixtureClient(t)
+	if _, err := kvcatalog.EnsureCatalogBucket(t.Context(), client, graph.BucketEntityStates); err != nil {
+		t.Fatalf("ensure %s: %v", graph.BucketEntityStates, err)
+	}
+	built, err := graphembedding.CreateGraphEmbedding(json.RawMessage(`{}`), component.Dependencies{
+		NATSClient: client, MetricsRegistry: metric.NewMetricsRegistry(),
+	})
+	if err != nil {
+		t.Fatalf("CreateGraphEmbedding: %v", err)
+	}
+	startLifecycle(t, "graph-embedding", built)
+
+	// graph-embedding answers its own search once its cache has applied its first snapshot; until
+	// then it refuses index_not_ready. That answer is the event that shows it is serving.
+	search := verbRow(t, graph.ResponderGraphEmbedding, "search").Subject
+	direct, err := probe.Await(t.Context(), func(ctx context.Context) (error, error) {
+		_, err := client.RequestClassified(ctx, search, []byte(`{"query":"widget"}`), requestTimeout)
+		return err, nil
+	}, func(err error) bool {
+		var refusal *errs.ClassifiedError
+		return !(errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady)
+	})
+	if err != nil || direct != nil {
+		t.Fatalf("graph-embedding search: %v, %v", err, direct)
+	}
+
+	c := startComponent(t, client, `{"embedding_enabled": false}`)
+	var messages, bytes int64
+	// Requests graph-embedding would answer: a search, and a similar it would refuse
+	// embedding_unavailable, an answer of its own.
+	for verb, request := range map[string][]byte{
+		"semantic": []byte(`{"query":"widget"}`),
+		"similar":  []byte(`{"entity_id":"c360.test.robotics.drone.unit.1"}`),
+	} {
+		reply, err := client.RequestClassified(t.Context(), verbRow(t, graph.ResponderGraphQuery, verb).Subject, request, requestTimeout)
+		if err == nil {
+			t.Fatalf("%s with embedding_enabled false answered %s", verb, reply)
+		}
+		refusal := refusalOf(t, err)
+		if refusal.Class != errs.ErrorInvalid || refusal.Code != graph.ErrorCodeNotEnabled {
+			t.Errorf("%s: class, code = %v, %q (%v), want invalid, %q", verb, refusal.Class, refusal.Code, err, graph.ErrorCodeNotEnabled)
+		}
+		if !strings.Contains(err.Error(), verb+" is not enabled") {
+			t.Errorf("%s: refusal %q does not name the verb", verb, err)
+		}
+		messages++
+		bytes += int64(len(request))
+	}
+	// Each handler counts before it returns, so before its reply: the replies above order these reads.
+	if flow := c.DataFlow(); flow.Messages != messages || flow.Bytes != bytes {
+		t.Errorf("DataFlow = %+v, want %d messages of %d bytes", flow, messages, bytes)
+	}
+	if health := c.Health(); health.ErrorCount != 0 || !health.Healthy {
+		t.Errorf("Health = %+v, want healthy with no error: not_enabled is not graph-query's error", health)
 	}
 }

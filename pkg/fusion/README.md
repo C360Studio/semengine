@@ -117,13 +117,13 @@ when read alone is listed with reason `not_found`. Any other error from those re
 (checked before each read and after each refused one), fails the call.
 `Entities` refuses a nil context.
 
-Two gaps remain, each a filed issue:
+One gap remains, a filed issue: a `prefix` resolve whose page holds a poisoned entity is refused whole by
+graph-ingest, so that `Fuse` call fails (#578).
 
-- A `prefix` resolve whose page holds a poisoned entity is refused whole by graph-ingest, so that `Fuse` call fails
-  (#578).
-- A stack with no graph-embedding still offers `semantic`: an `nl` question there fails with a transient `internal`
-  refusal naming `graph.embedding.query.search`, which a caller may retry without success. Issue #579 asks graph-query
-  to refuse it outright when the composition offers no embedder.
+A stack with no graph-embedding must say so: set graph-query's `embedding_enabled` to `false` there. An `nl`
+  question is then refused invalid with code `not_enabled`, naming `semantic`, before anything is sent. Left at its
+  default (true), such a stack still fails the question with a transient `internal` refusal naming
+  `graph.embedding.query.search`, which a caller may retry without success.
 
 `symbol` and `prefix` questions need no graph-embedding: `TestSmoke_NoEmbedderAnswers` (`internal/smoke`) answers them
 over a stack of graph-ingest, graph-index and graph-query alone.

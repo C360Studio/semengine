@@ -92,7 +92,8 @@ func (o observer) graphStatusKeys(t *testing.T) []string {
 // TestSmoke_NoEmbedderAnswers holds composed-stack, "The graph stack answers fusion without an
 // embedder": graph-ingest, graph-index and graph-query boot from one configuration with no
 // graph-embedding, and fusion over fusionnats answers symbol and prefix questions from them, misses
-// an unknown name, and refuses a word question naming the embedding verb, never answering it empty.
+// an unknown name, and refuses a word question as not enabled, naming the semantic verb, never
+// answering it empty.
 func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -177,33 +178,24 @@ func TestSmoke_NoEmbedderAnswers(t *testing.T) {
 		ContractVersion: fusion.ContractVersion,
 	})
 
-	// A word question goes to graph.query.semantic, which asks graph.embedding.query.search; nothing
-	// answers there, and graph-query's refusal reaches the caller intact: transient internal, naming
-	// the subject (owner's Q-B, PR #577 comment 6749007774). Never an empty answer.
-	search := ""
-	for _, v := range graph.QueryVerbs() {
-		if v.Responder == graph.ResponderGraphEmbedding && v.Name == "search" {
-			search = v.Subject
-		}
-	}
-	if search != "graph.embedding.query.search" {
-		t.Fatalf("graph-embedding's search verb is %q, want graph.embedding.query.search", search)
-	}
+	// A word question goes to graph.query.semantic. graph-query is configured with embedding_enabled
+	// false, so it refuses at once, invalid not_enabled naming the verb, and the refusal reaches the
+	// caller intact (graph-query, "Embedding verbs can be turned off"; #579). Never an empty answer.
 	resp, err = engine.Fuse(t.Context(), fusion.Request{Query: "falcon", Want: wants}, fleetLens{fusion.ResolveModeNL})
 	var refusal *errs.ClassifiedError
 	if !errors.As(err, &refusal) {
 		t.Fatalf("NL falcon answered %+v (error %v), want a classified refusal", resp, err)
 	}
-	if refusal.Class != errs.ErrorTransient || refusal.Code != graph.ErrorCodeInternal ||
-		!strings.Contains(refusal.Error(), search) {
-		t.Fatalf("NL falcon refused %v (class %v, code %q), want transient %q naming %s",
-			refusal, refusal.Class, refusal.Code, graph.ErrorCodeInternal, search)
+	if refusal.Class != errs.ErrorInvalid || refusal.Code != graph.ErrorCodeNotEnabled ||
+		!strings.Contains(refusal.Error(), "semantic is not enabled") {
+		t.Fatalf("NL falcon refused %v (class %v, code %q), want invalid %q naming semantic",
+			refusal, refusal.Class, refusal.Code, graph.ErrorCodeNotEnabled)
 	}
 	if !reflect.DeepEqual(resp, fusion.Response{}) {
 		t.Fatalf("NL falcon returned %+v beside its refusal, want no response", resp)
 	}
-	// graph-query counted the failed request as an error; health does not read that count, so a
-	// word question leaves the stack healthy.
+	// not_enabled is a refusal, not an error of graph-query's, so a word question leaves the stack
+	// healthy.
 	requireComponentsHealthy(t, s)
 
 	stopStack(t, s)

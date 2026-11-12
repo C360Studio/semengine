@@ -25,8 +25,11 @@
 // more: total_entities is the whole group as listed, and truncated, entities_scanned and next_cursor say
 // whether the rest is a later page. summary also asks graph-index's predicateList verb unless
 // exclude_predicates is set. semantic, similar, spatial and temporal forward to the embedding, spatial
-// and temporal verbs, whose responders are not in the tree; until they are, each is refused transient
-// internal, naming the subject.
+// and temporal verbs. The spatial and temporal responders are not in the tree; until they are, those two
+// are refused transient internal, naming the subject. The embedding_enabled key (true when left out) says
+// whether graph-embedding runs: when it is false, semantic and similar refuse every request invalid with
+// code not_enabled, naming the verb, before anything is sent, and the refusal counts as an input, not an
+// error.
 //
 // localSearch searches one group of entities, the entities that share the first 4, 3 or 2 parts of an ID
 // (level 0, 1 or 2). It reads the group's record from the view of COMMUNITY_INDEX, then one page of at most

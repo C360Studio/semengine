@@ -382,8 +382,8 @@ func TestWebsocketLifecycleSuite(t *testing.T) {
 
 // TestStartContextEndingStopsNothing: ending Start's context after Start returned stops nothing: a
 // client connects and receives a message published afterwards. Stop then closes the client with
-// 1001, releases the port and leaves no client attached, with clients_connected 0 (design D3;
-// output-websocket spec, "Start bounds start; Stop is the only stop").
+// 1001, releases the port and leaves no client attached, with clients_connected 0
+// (output-websocket spec, "Start bounds start; Stop is the only stop").
 func TestStartContextEndingStopsNothing(t *testing.T) {
 	client := fixtureClient(t)
 	o := newOutput(t, client, "ws.start", "30s")
@@ -433,7 +433,7 @@ func requireClosedByStop(t *testing.T, ws *wsClient) {
 // TestSubjectFanOut: a JSON message reaches every client as one data frame whose payload is the
 // published bytes unchanged; a message that is not JSON is sent to none, counted under not_json and
 // logged once, naming the reason, the listener, the subject and that later messages still flow. A
-// client sending any Origin is accepted (design D2; output-websocket spec, "A subject is delivered
+// client sending any Origin is accepted (output-websocket spec, "A subject is delivered
 // at most once, unchanged").
 func TestSubjectFanOut(t *testing.T) {
 	client := fixtureClient(t)
@@ -496,7 +496,7 @@ func fullestQueue(c *output) int {
 }
 
 // TestStalledClientDoesNotSlowOthers: a client that stops reading delays no other, on either input
-// (design D2; output-websocket spec, "A slow client never slows another").
+// (output-websocket spec, "A slow client never slows another").
 func TestStalledClientDoesNotSlowOthers(t *testing.T) {
 	t.Run("subject", stalledSubject)
 	t.Run("applied_state", stalledAppliedState)
@@ -554,8 +554,8 @@ func stalledSubject(t *testing.T) {
 
 // TestQuietClientStaysConnected: a client that answers pings and sends nothing stays connected
 // across three read deadlines (six pings at 300ms, each deadline twice that) and still receives
-// the next frame (design D2, S18; output-websocket spec, "Keep-alive"). Without the pong extending
-// the read deadline the server closes it at the first deadline (probe P1).
+// the next frame (output-websocket spec, "Keep-alive"). Without the pong extending
+// the read deadline the server closes it at the first deadline.
 func TestQuietClientStaysConnected(t *testing.T) {
 	client := fixtureClient(t)
 	o := startOutput(t, client, "ws.quiet", "300ms")
@@ -577,10 +577,10 @@ func TestQuietClientStaysConnected(t *testing.T) {
 
 // TestBusyClientKeepsPings: a client that answers pings and reads a frame every 5ms stays connected
 // for six pings at 200ms while the 160 frames of 256 KiB of its applied-state snapshot are written
-// to it (design D2, D3; output-websocket spec, "Keep-alive"). The 5ms ticker is the client's
+// to it (output-websocket spec, "Keep-alive"). The 5ms ticker is the client's
 // processing time, not an ordering: it keeps the writer busy for 800ms, twice the read deadline. A
 // writer that writes every frame it has before it pings sends no ping meanwhile, and the server
-// closes the client at its read deadline (PR #592 review, comment 6801700128). Snapshot, subject
+// closes the client at its read deadline. Snapshot, subject
 // queue and change batches share that loop (drain).
 //
 // The writer's frames must be ready faster than the client reads them, or the writer runs out and
@@ -666,7 +666,7 @@ func TestBusyClientKeepsPings(t *testing.T) {
 
 // TestSilentClientIsClosed: a client that answers no pings is closed once its read deadline, twice
 // ping_interval, passes, without the close frame Stop sends, is no longer attached, and is counted
-// under client_disconnections_total{reason="read_timeout"} (design D2; output-websocket spec,
+// under client_disconnections_total{reason="read_timeout"} (output-websocket spec,
 // "Keep-alive"). Still connected after six pings, three deadlines, fails.
 func TestSilentClientIsClosed(t *testing.T) {
 	client := fixtureClient(t)

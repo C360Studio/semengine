@@ -47,7 +47,7 @@ func subjectConfig(t *testing.T, subject string, port int, interval string) stri
 }
 
 // TestStartFailureReleasesPort: a Start that fails after binding its port (here the subscribe, on a
-// NATS client that never connected) releases the port and holds nothing (design D3; output-websocket
+// NATS client that never connected) releases the port and holds nothing (output-websocket
 // spec, "Start bounds start; Stop is the only stop").
 func TestStartFailureReleasesPort(t *testing.T) {
 	port := freePort(t)
@@ -76,9 +76,9 @@ func TestStartFailureReleasesPort(t *testing.T) {
 	}
 }
 
-// TestACMEModeRefusedAtStart: ACME is not ported (#9 comment 6797029453). A deployment whose server
+// TestACMEModeRefusedAtStart: ACME is not supported. A deployment whose server
 // TLS asks for mode "acme" builds, and its Start is refused as invalid configuration naming the mode
-// key, before the port is bound or the subject subscribed, holding nothing (design D6).
+// key, before the port is bound or the subject subscribed, holding nothing.
 func TestACMEModeRefusedAtStart(t *testing.T) {
 	port := freePort(t)
 	deps := testDeps(t)
@@ -106,8 +106,7 @@ func TestACMEModeRefusedAtStart(t *testing.T) {
 }
 
 // TestClientQueueDropsOldest: a client's queue holds the newest 256 frames; each frame queued while
-// it is full drops the oldest, reported to the caller, and the writer takes the rest oldest first
-// (design D2, the stalled-client row).
+// it is full drops the oldest, reported to the caller, and the writer takes the rest oldest first.
 func TestClientQueueDropsOldest(t *testing.T) {
 	cl := newClient(nil)
 	const queued = 300

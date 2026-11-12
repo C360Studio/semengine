@@ -122,7 +122,7 @@ func requireDialFails(t *testing.T, dialer *websocket.Dialer, url, why string) {
 // wss: a client trusting the test's own CA and presenting a certificate it signed completes the
 // handshake and receives a frame published afterwards. A client presenting no certificate, and a
 // plain ws client, are refused, so the whole loaded configuration is applied and nothing is served
-// without TLS (design D6).
+// without TLS.
 func TestTLSServesWSS(t *testing.T) {
 	ca := newTestCA(t)
 	serverCert, serverKey := ca.issue(t, "server", x509.ExtKeyUsageServerAuth)

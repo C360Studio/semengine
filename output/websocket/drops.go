@@ -8,8 +8,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 )
 
-// The reasons a frame is not sent, or a change is merged into a later one (design D2, "Declared
-// drops").
+// The reasons a frame is not sent, or a change is merged into a later one.
 const (
 	reasonNotJSON         = "not_json"
 	reasonClientQueueFull = "client_queue_full"

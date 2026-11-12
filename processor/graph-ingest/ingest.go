@@ -30,7 +30,7 @@ import (
 // inside Decode, its Validate, and its EntityID/Triples/StorageRef/
 // IndexingProfile during extraction. A panic there becomes a classified error
 // on the poison path instead of escaping to the stream handler's Nak and an
-// endless redelivery (SemStreams #1112, PR #1437; design D8 Q13).
+// endless redelivery.
 func (c *Component) decodeEntity(subject string, data []byte) (entity *graph.EntityState, err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
@@ -70,7 +70,7 @@ func wireMessageType(data []byte) string {
 }
 
 // ingestEntity merges one Graphable projection into its authority entity.
-// importLane is the arrival port's declared lane (ADR-102 d5); the synchronous
+// importLane is the arrival port's declared lane (ADR-102); the synchronous
 // compat entry point and every direct caller pass false.
 func (c *Component) ingestEntity(ctx context.Context, entity *graph.EntityState, importLane bool) error {
 	if err := c.prepareFactProjection(entity, importLane); err != nil {
@@ -87,13 +87,10 @@ func (c *Component) ingestEntity(ctx context.Context, entity *graph.EntityState,
 		return err
 	}
 
-	// Store entity in KV bucket — MERGE semantics (SemStreams gh#177). Earlier code
-	// used CreateEntity (Put = full-replace) here, which clobbered any
-	// pre-existing triples on the entity. The Graphable lane merges while the
-	// four explicit mutation operations apply their own strict semantics; the
-	// JetStream consumer path previously replaced all state and silently
-	// erased lifecycle-managed entity state on every subsequent
-	// Graphable arrival.
+	// Store entity in KV bucket — MERGE semantics, never a full replace (Put), which
+	// would clobber any pre-existing triples on the entity, lifecycle-managed state
+	// included, on every Graphable arrival. The Graphable lane merges while the
+	// four explicit mutation operations apply their own strict semantics.
 	if err := c.mergeEntityOnLane(ctx, entity, importLane); err != nil {
 		c.logger.Error("Failed to merge entity",
 			slog.String("entity_id", entity.ID),
@@ -123,7 +120,7 @@ func (c *Component) prepareFactProjection(entity *graph.EntityState, importLane 
 			Err:         err,
 		}, "Component", "ingestEntity", "validate envelope entity ID")
 	}
-	// Authority gate (ADR-102 d5), before the projection fill and before any KV
+	// Authority gate (ADR-102), before the projection fill and before any KV
 	// I/O. importLane is the arrival port's own declaration, carried from the
 	// consume closure; a direct caller supplies false.
 	if err := c.authorizeSubject(entity.ID, importLane); err != nil {
@@ -193,7 +190,7 @@ func extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, err
 		return nil, fmt.Errorf("graphable payload returned empty entity ID")
 	}
 
-	// Statement metadata (design D15, #98): a payload with no statement refuses the message,
+	// Statement metadata: a payload with no statement refuses the message,
 	// a statement without a Source or Timestamp takes the envelope's, and a statement under a
 	// reserved source refuses the message. This reads only the payload's statements, before the
 	// indexing-profile statement graph-ingest stamps below under its own reserved source.
@@ -213,26 +210,26 @@ func extractEntityFromMessage(msg *message.BaseMessage) (*graph.EntityState, err
 		MessageType: msg.Type(),
 	}
 
-	// SemStreams ADR-055 §5 StorageRef extraction (consumer half): a Graphable payload that
+	// SemStreams ADR-055 StorageRef extraction (consumer half): a Graphable payload that
 	// also implements message.Storable carries an ObjectStore reference to its
 	// offloaded content. Lift it onto the EntityState so mergeEntityOnLane persists it
 	// (the create branch marshals it verbatim; the existing-entity branch merges
 	// it onto the stored copy). Without this, a ContentStorable producer's offloaded
 	// content (tool results, model responses, document bodies) loses its storage
 	// pointer at the ingest seam and the embedding worker can never find the
-	// text — the "offloaded content stops embedding" gap.
+	// text.
 	if storable, ok := payload.(message.Storable); ok {
 		if ref := storable.StorageRef(); ref != nil {
 			entity.StorageRef = ref
 		}
 	}
 
-	// SemStreams ADR-054 channel (a): a Graphable payload MAY also declare its indexing
+	// SemStreams ADR-054: a Graphable payload MAY also declare its indexing
 	// profile via the optional IndexingProfiler interface. Stamp it explicitly
 	// here so it's present on entity.Triples by the time mergeEntityOnLane reaches
 	// its create seam; absence (or an invalid value) falls through to the
 	// fallback floor there. It carries the time read from the stamped statements
-	// before it is added (design D15), the time mergeEntityOnLane reads again.
+	// before it is added, the time mergeEntityOnLane reads again.
 	if profiler, ok := payload.(message.IndexingProfiler); ok {
 		stampExplicitIndexingProfile(entity, profiler.IndexingProfile(), triggeringTime(entity))
 	}
@@ -279,12 +276,11 @@ func removeIndexingProfileTriples(entity *graph.EntityState) {
 
 // triggeringTime is the time every statement graph-ingest derives for a write carries (the
 // indexing profile, hierarchy statements, a hierarchy container's statements): the latest
-// Timestamp among entity's statements, never the clock (design D15; owner ruling, #91 comment
-// 6066791396). Each lane reads it from the write's own statements before graph-ingest adds one
-// of its own, and reads all of them, reserved sources included: a hierarchy container's
-// statements are all graph-ingest-hierarchy, and pkg/lifecycle writes under its own. A
-// statement graph-ingest has added already carries this time, so reading after it gives the
-// same answer. Every lane refuses a write that carries no statement before it reads this, so
+// Timestamp among entity's statements, never the clock. Each lane reads it from the write's
+// own statements before graph-ingest adds one of its own, and reads all of them, reserved
+// sources included: a hierarchy container's statements are all graph-ingest-hierarchy, and
+// pkg/lifecycle writes under its own. A statement graph-ingest has added already carries this
+// time, so reading after it gives the same answer. Every lane refuses a write that carries no statement before it reads this, so
 // the time it returns is never zero.
 func triggeringTime(entity *graph.EntityState) time.Time {
 	var latest time.Time
@@ -325,7 +321,7 @@ func stampExplicitIndexingProfile(entity *graph.EntityState, profile string, at 
 	appendIndexingProfileTriple(entity, profile, at)
 }
 
-// reconcileIndexingProfile is the entity-CREATION-seam stamp (SemStreams ADR-054 §5). It
+// reconcileIndexingProfile is the entity-CREATION-seam stamp (SemStreams ADR-054). It
 // runs at every place an entity is born — createEntity, mergeEntityOnLane's
 // first-write branch, and the stub→real upgrade in mergeEntityOnLane's merge branch —
 // and never on a plain update of an already-profiled entity, so a profile is
@@ -362,10 +358,10 @@ func (c *Component) reconcileIndexingProfile(entity *graph.EntityState, at time.
 		return
 	}
 	// No explicit declaration → apply the floor registered with the type
-	// (SemStreams ADR-054 channel c, SemStreams ADR-103). The default-fallback metric fires ONLY when
+	// (SemStreams ADR-054, SemStreams ADR-103). The default-fallback metric fires ONLY when
 	// the registered type declares no floor and silently took the control
 	// default. A registered floor (e.g. agentic.request → trace) is a deliberate
-	// classification, not an operator gap; the label now points at a
+	// classification, not an operator gap; the label points at a
 	// Registration literal.
 	profile, floored := c.registeredIndexingProfile(entity.MessageType)
 	appendIndexingProfileTriple(entity, profile, at)
@@ -426,23 +422,20 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // exist; its fields land as given, a statement repeated equal in every
 // field stored once); subsequent writes replace each
 // (predicate, source) set the arrival carries, unless it is older than the
-// stored set, keeping every other source's statements (graph.ReplaceBySource,
-// design D15; the create-time indexing profile is preserved), and take the
+// stored set, keeping every other source's statements (graph.ReplaceBySource;
+// the create-time indexing profile is preserved), and take the
 // arrival's MessageType and StorageRef when no set was older (UpdatedAt always).
 //
-// Closes SemStreams gh#177: the prior code called CreateEntity (Put = full-
-// replace) from the stream lane, which erased triples written through mutation
-// request/reply. The JetStream consumer
-// path was the lone outlier. Lifecycle-managed entities surfaced this
-// most loudly: Manager.Create stamped the phase triple, then the
-// first Graphable arrival via a downstream processor wiped it.
+// A full replace (Put) from the stream lane would erase triples written through
+// mutation request/reply: a lifecycle-managed entity would lose, at the first Graphable
+// arrival from a downstream processor, the phase triple Manager.Create stamped.
 //
 // Writes through replaceEntity (entity_writes.go), a CAS read-modify-write,
 // so concurrent arrivals on the same Subject converge without racing.
 //
 // importLane carries the arrival lane so the authority gate can admit a
 // foreign subject on a declared import port and refuse it everywhere else
-// (ADR-102 d5); only ingestEntity, for such a port, passes true.
+// (ADR-102); only ingestEntity, for such a port, passes true.
 func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityState, importLane bool) error {
 	if entity == nil {
 		return errs.WrapInvalid(errs.ErrInvalidData, "Component", "mergeEntityOnLane", "entity cannot be nil")
@@ -450,15 +443,15 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	// Entity-ID-only preflight (cheap subset): the ID is the CAS key and the
 	// hierarchy-probe key, so reject a malformed ID before any KV I/O.
 	//
-	// SemStreams gh#562 write-cost: the full ValidateEntityStateContract pass that used to
-	// run here was redundant with the MarshalEntityState write gate inside the
+	// No full ValidateEntityStateContract pass runs here: it would be redundant
+	// with the MarshalEntityState write gate inside the
 	// CAS closure — BOTH closure branches marshal a superset of the incoming
 	// candidate (create: candidate + hierarchy/profile stamps; merge: every
 	// incoming statement but a set older than the stored one, which is not
 	// committed), so an invalid candidate never
 	// commits under its own key, and classifyStoredStateRMWError keeps the
 	// caller-vs-resident attribution honest. The Graphable ingest lane already
-	// runs one caller-blaming full pass before side effects, so the pass here was a
+	// runs one caller-blaming full pass before side effects, so a pass here would be a
 	// third full validation per mutation on the
 	// per-key-serialized hot path (SemStreams ADR-072). Two narrow ergonomic changes for
 	// un-preflighted direct callers: (1) an incoming entity.indexing.profile
@@ -474,7 +467,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	if err := validateEntityID(entity.ID); err != nil {
 		return err
 	}
-	// The write chokepoint's own authority gate (ADR-102 d5): the fact lane has
+	// The write chokepoint's own authority gate (ADR-102): the fact lane has
 	// already run it in prepareFactProjection AND returned, so reaching a
 	// rejection here means a DIRECT caller, which is why the recording is the
 	// direct lane's and cannot double-count the fact lane's.
@@ -493,14 +486,14 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	at := triggeringTime(entity)
 
 	// Hierarchy is added at birth only: the CAS callback's create branch applies the
-	// membership statements, so a merge never appends them again (SemStreams gh#177). The read
+	// membership statements, so a merge never appends them again. The read
 	// below decides whether this arrival is a birth before the inference runs, so an
 	// update pays no inference. If another writer creates the entity between this
 	// read and the CAS, the callback's merge branch does not apply them: that
 	// writer's birth is the birth. If the entity is deleted between the two, the CAS
 	// finds the key absent after this read found it (readFound), so it writes nothing
 	// and returns a transient error; the redelivery reads again and births the entity
-	// with its hierarchy (design D21).
+	// with its hierarchy.
 	var hierarchyTriples []message.Triple
 	readFound := false
 	if c.hierarchyInference != nil {
@@ -510,7 +503,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 			// An update: no hierarchy.
 			readFound = true
 		case natsclient.IsKVNotFoundError(err):
-			// A birth: born with its hierarchy statements or not at all (design D21).
+			// A birth: born with its hierarchy statements or not at all.
 			triples, herr := c.addToContainers(ctx, entity.ID, at)
 			if herr != nil {
 				return herr
@@ -519,7 +512,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 		default:
 			// A birth cannot be told from an update, and the CAS below could birth the
 			// entity without its hierarchy, so nothing is written and the input is
-			// delivered again (design D21).
+			// delivered again.
 			return errs.WrapTransient(err, "Component", "mergeEntityOnLane", "read entity before hierarchy")
 		}
 	}
@@ -531,7 +524,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 	}
 
 	if revision == 0 {
-		// No set applied and nothing was written (design D23): every set was older, or the only
+		// No set applied and nothing was written: every set was older, or the only
 		// statement was the profile of a profiled entity. replaceEntity counted and logged each
 		// older set. The message is processed, but no entity was updated.
 		return nil
@@ -550,7 +543,7 @@ func (c *Component) mergeEntityOnLane(ctx context.Context, entity *graph.EntityS
 // membership statements its birth carries; with hierarchy off it returns none. The
 // stream lane and the in-process create call it, and only for a birth. A failure of
 // any part (a container's birth) is returned classified transient, and the
-// caller stores nothing for the entity (design D21): the stream lane leaves the
+// caller stores nothing for the entity: the stream lane leaves the
 // input unacknowledged, so it is delivered again, and the in-process caller gets the
 // error. The class is transient whatever class the store gave its refusal: the
 // arrival is not at fault, and the containers born before the failure are found by
@@ -574,9 +567,9 @@ func (c *Component) createEntityWithReceipt(
 	if entity == nil {
 		return nil, 0, errs.WrapInvalid(errs.ErrInvalidData, "Component", "CreateEntity", "entity cannot be nil")
 	}
-	// SemStreams ADR-103 d3: the in-process birth passes the same registered-type gate as
+	// SemStreams ADR-103: the in-process birth passes the same registered-type gate as
 	// the RPC lane. The classified error goes back to the caller (on the hierarchy
-	// container path it fails the birth that asked for the container, design D21);
+	// container path it fails the birth that asked for the container);
 	// it is not metered here.
 	if err := c.requireRegisteredMessageType(entity); err != nil {
 		return nil, 0, err
@@ -588,7 +581,7 @@ func (c *Component) createEntityWithReceipt(
 	}
 	// In-process creation is a LOCAL lane: hierarchy container births are minted
 	// by this deployment, so a foreign subject here would be the framework
-	// minting under a peer's authority (ADR-102 d5). Metered and logged under
+	// minting under a peer's authority (ADR-102). Metered and logged under
 	// the `direct` arrival, so the requirement's "each rejection is metered
 	// exactly once and loudly logged" holds on this lane too — an in-process
 	// birth has no RPC subject, not no destination.
@@ -610,7 +603,7 @@ func (c *Component) createEntityWithReceipt(
 	}
 
 	// Hierarchy before the write, so the entity is written once with its membership
-	// statements, or not at all when the inference fails (design D21).
+	// statements, or not at all when the inference fails.
 	hierarchyTriples, err := c.addToContainers(ctx, entity.ID, at)
 	if err != nil {
 		return nil, 0, err
@@ -656,7 +649,7 @@ func (c *Component) deleteEntityAtRevision(ctx context.Context, entityID string,
 		return err
 	}
 	// Deleting a foreign subject is a mutation of an imported mirror, refused
-	// on every local lane (ADR-102 d5, ruled O-12(a)). handleCanonicalDelete
+	// on every local lane (ADR-102). handleCanonicalDelete
 	// authorizes and returns before it reaches this body, so a rejection here is
 	// a direct in-process delete and is metered as one.
 	if err := c.authorizeSubject(entityID, false); err != nil {
@@ -713,7 +706,7 @@ type addTriplesResult struct {
 	SubjectErrors map[string]error
 	// UnchangedSubjects maps each subject whose submitted tuples were all already
 	// present to the revision its CAS read: nothing was written, and the canonical
-	// reply is unchanged at that revision, never at a later read's (design D23).
+	// reply is unchanged at that revision, never at a later read's.
 	UnchangedSubjects map[string]uint64
 	// CommittedRevisions holds the EXACT revision each subject's CAS produced,
 	// keyed by subject. A subject that was wholly suppressed or that failed is
@@ -753,7 +746,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 	}
 	// EVERY subject in the batch, not just the synthetic root: a batch is
 	// rejected whole, so one foreign subject must not ride in beside local ones
-	// (ADR-102 d5). One record for the batch, at the first refused subject:
+	// (ADR-102). One record for the batch, at the first refused subject:
 	// the batch is one rejected operation, not one per subject.
 	// handleCanonicalAppend authorizes every subject and returns before this
 	// body, so the RPC lane never reaches here with a foreign subject.
@@ -796,7 +789,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 	// poisonErr preserves the FIRST typed resident-poison failure so the
 	// aggregated error can wrap it: without this the typed
 	// *graph.StateContractError would die as a FailedSubjects string and the
-	// whole-batch reply would misclassify as retryable-internal (design D4).
+	// whole-batch reply would misclassify as retryable-internal.
 	var poisonErr error
 	for i, subject := range subjects {
 		// Short-circuit on context cancellation: don't burn the retry

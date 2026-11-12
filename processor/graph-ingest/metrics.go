@@ -94,7 +94,7 @@ func newProcessingDurationMetric() prometheus.Histogram {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "processing_duration_seconds",
-		Help:      "Per-message apply time in graph-ingest (merge + CAS write). The processing half of the queue-wait-vs-processing split (SemStreams gh#480).",
+		Help:      "Per-message apply time in graph-ingest (merge + CAS write). Read with ingest_lag_seconds (queue wait) to tell slow processing apart from a backlog.",
 		Buckets:   []float64{0.0005, 0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5},
 	})
 	return processingDurationHistogram
@@ -111,7 +111,7 @@ func newIngestLagMetric() prometheus.Histogram {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "ingest_lag_seconds",
-		Help:      "Age of a message when graph-ingest starts processing it (queue/backlog wait). The queue-wait half of the split (SemStreams gh#480).",
+		Help:      "Age of a message when graph-ingest starts processing it (queue/backlog wait). Read with processing_duration_seconds to tell a backlog apart from slow processing.",
 		Buckets:   []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 2.5, 5, 10, 30, 60},
 	})
 	return ingestLagHistogram
@@ -130,7 +130,7 @@ func newRedeliveriesDroppedMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "redeliveries_dropped_total",
-		Help:      "Stale redeliveries dropped by the applied-sequence guard (SemStreams ADR-072).",
+		Help:      "Stale redeliveries dropped by the applied-sequence guard: a redelivered message whose stream sequence is not newer than the last one applied to that entity from the same stream.",
 	})
 	return redeliveriesDroppedCounter
 }
@@ -189,7 +189,7 @@ func newCasRetriesMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "cas_retries_total",
-		Help:      "Entity-merge CAS-conflict retries — cross-entity contention observability, NOT a keying-correctness proof (SemStreams ADR-072).",
+		Help:      "Entity-merge CAS-conflict retries — cross-entity contention observability, NOT a keying-correctness proof.",
 	})
 	return casRetriesCounter
 }
@@ -353,7 +353,7 @@ func newBatchMissingMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "batch_query_missing_total",
-		Help:      "Requested entity IDs a batch query could not hydrate, by reason — partial hydration made visible (SemStreams gh#597)",
+		Help:      "Requested entity IDs a batch query could not hydrate, by reason — the IDs the response lists under Missing",
 	}, []string{"reason"})
 	// Pre-initialize the closed label set: an absent series breaks rate() alerting,
 	// so a reason that has never fired must still be scrapeable at zero. `unknown`

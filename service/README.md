@@ -12,18 +12,11 @@ settings and says it forwards nothing yet. The package also holds the helpers a 
 `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the
 OpenAPI registry, plus the service-configuration and schema helpers the service manager reads.
 
-The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
-the second `Manager` and `Metrics`; the third `ComponentManager`, the service that owns the components
-([The component manager](#the-component-manager)); the fourth `MessageLogger`
-([The message logger](#the-message-logger)); the fifth `StorageObservabilityService`
-([The storage observability service](#the-storage-observability-service)).
-
-The sixth carried `HeartbeatService` ([The heartbeat service](#the-heartbeat-service)) and `MetricsForwarder`
-([The metrics forwarder](#the-metrics-forwarder)). Of the two, only the heartbeat is on by default; the forwarder, like
-the message logger and storage observability, runs only when the configuration enables it.
-
-The seventh pull request, this one and the last, carries `LogForwarder` ([The log forwarder](#the-log-forwarder)). It
-forwards nothing yet. It is the last service the port carries.
+Of the built-in services only the heartbeat is on by default. The metrics forwarder, the log forwarder, the message
+logger and storage observability run only when the configuration enables them. Each has a section below:
+[The component manager](#the-component-manager), [The message logger](#the-message-logger),
+[The storage observability service](#the-storage-observability-service), [The heartbeat service](#the-heartbeat-service),
+[The metrics forwarder](#the-metrics-forwarder) and [The log forwarder](#the-log-forwarder).
 
 ## Embedding BaseService
 

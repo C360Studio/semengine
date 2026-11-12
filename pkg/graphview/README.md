@@ -96,9 +96,9 @@ returned, and after the watch's delivery has closed, for at most `kvwatch.DrainB
 ends; if the budget runs out the error is joined with `kvwatch.ErrDeliveryOpen`. A hook or decode function that
 never returns holds `Run`; the component that runs the view bounds its own wait (ADR-113).
 
-How nats.go times a watch's shutdown or its close is not promised. The probes behind this package's behaviour ran at
-nats.go v1.54.0. For one case, deleting the bucket under a live watch closed the update channel after about 20 s
-there, and that delay is not promised.
+How nats.go times a watch's shutdown or its close is not promised. This package's behaviour is shown at nats.go
+v1.54.0 by its integration tests. In `TestRunLeavesNoWatchDelivery`, deleting the bucket under a live watch closed
+the update channel after about 20 s; that delay is not promised.
 
 ## Readers and delivery
 

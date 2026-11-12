@@ -5,9 +5,9 @@ your cutover and what you can leave alone. The port breaks old shapes where that
 (owner, 2026-11-02). Cites to sister repositories are at SemSource `e4febc0d`. Nothing here was run against
 your code: it comes from reading it.
 
-graph-embedding is ported in four pull requests. This file covers the first two: the write path (the component that
-follows `ENTITY_STATES` and keeps one BM25 embedding record per entity with text) and the query verbs
-(`graph.embedding.query.search` and `.similar`). `pkg/fusion` arrives in the third and fourth.
+This file covers the write path (the component that follows `ENTITY_STATES` and keeps one BM25 embedding record per
+entity with text) and the query verbs (`graph.embedding.query.search` and `.similar`). `pkg/fusion` has its own
+`MIGRATION.md`.
 
 ## Changes that stop boot (loud)
 
@@ -40,8 +40,8 @@ Read these. Nothing errors.
   entities currently failed, as before.
 - **The status verb is gone.** `graph.embedding.query.status` has no responder and is not declared in
   `graph.QueryVerbs`; a request to it gets "no responders". Readiness is the `GRAPH_STATUS` record (read the key
-  `graph-embedding`); the second pull request is to carry "not ready" on the embedding replies themselves
-  (ADR-083, ADR-109), and the query verbs now do. *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
+  `graph-embedding`), and the embedding query replies also say "not ready" themselves (ADR-083, ADR-109).
+  *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
   Nothing in SemSource's tree
   calls the status verb (grep, 0 hits at `e4febc0d`).
 - **When the status reads `degraded`.** The follower now reads degraded when the component is behind and no revision

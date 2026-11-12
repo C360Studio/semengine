@@ -103,7 +103,7 @@ On `Run`'s shutdown the Worker stops reading, ends the context it derived from `
 pool finish the entries it already accepted (under `ctx`, ended or not), joins the pool's lanes,
 and stops the watch through `internal/kvwatch.Stop`. A callback that never returns holds `Run`;
 the join has no bound of its own. How nats.go times the watch's shutdown is not promised; the
-probe behind this package's order ran at nats.go v1.54.0.
+order this package relies on is shown at nats.go v1.54.0 by `TestWorkerRunLeavesNoWatchDelivery`.
 
 ## Not here
 

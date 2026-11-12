@@ -11,7 +11,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
 
 ## 2. Code
 
-- [ ] 2.1 Tokenizer (`Tokens`, stopwords, plural rules; design D3). Premise: three tokenizers exist and none is
+- [x] 2.1 Tokenizer (`Tokens`, stopwords, plural rules; design D3). Premise: three tokenizers exist and none is
   shared (inventory §2: `graph/embedding/bm25_embedder.go:242`, `graph/clustering/terms.go:28`,
   `processor/graph-query/localsearch.go:60`). The rules and their order were measured in
   `notes/probes/tokenizer-probe-2.log`, `word-shape-probe.log` and `tokenizer-law-probe.log`. Accept: `TestTokens`

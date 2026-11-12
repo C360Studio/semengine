@@ -25,8 +25,8 @@ the configuration before the first start.
   share a group. semsource may send `entity_id_edges`, and semboids sets it. *Do:* delete the line.
 - **`allow_ungated_reads` is refused.** The component reads no other index, so there is no readiness gate to bypass.
   *Do:* delete the line.
-- **`enable_anomaly_detection` and `anomaly_config` are refused.** Anomaly detection is not ported and will not be
-  (owner ruling). *Do:* delete the lines.
+- **`enable_anomaly_detection` and `anomaly_config` are refused.** Anomaly detection is not ported and will not be.
+  *Do:* delete the lines.
 - **Any unknown key is refused**, naming it. The kept keys are `ports`, `detection_interval`, `startup_attempts` and
   `startup_interval_ms`. A key in the wrong case (`BATCH_SIZE`) is refused as unknown, without the guidance line.
 - **A bad `detection_interval` is refused.** The pin fell back to 30 seconds silently when it could not parse the
@@ -51,7 +51,7 @@ Read these. Nothing errors.
 - **semboids' two-community test will see one group per source.** Its spike builds two clusters from explicit edges
   and asserts two label-propagation communities (`internal/boidgraph/clustering_spike_integration_test.go`). Under
   prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes
-  (owner accepted the record break, 2026-10-31). *Do:* assert on the groups of the IDs you wrote.
+ . *Do:* assert on the groups of the IDs you wrote.
 - **The readiness key counts what is held, not what is published.** `GRAPH_STATUS` under `graph-clustering` reports a
   revision indexed once the Maintainer has applied it, which is before the next tick writes it. A reader that needs a
   group's published state reads the record's `entity_revision`. *Do:* do not gate a read on `indexed_revision` for

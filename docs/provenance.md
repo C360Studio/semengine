@@ -15,7 +15,7 @@ of ported code traceable to its origin and keep the license obligations intact. 
    destination, contract, dependencies and side effects, known risks, proving tests, owner, and disposition (carry,
    adapt, repair before port, or defer/exclude), as `docs/setup-plan.md` specifies under "Package admission
    heuristic".
-4. **The pin is frozen** . The pin is SemStreams at the commit a ledger row's `source_sha`
+4. **The pin is frozen.** The pin is SemStreams at the commit a ledger row's `source_sha`
    records. Repairs to ported code land in this repository behind a failing-first test and are not round-tripped
    through SemStreams. A SemStreams change made after the pin enters only as its own ledger row, with the source
    commit and a proving test. Nothing syncs automatically in either direction.
@@ -70,10 +70,10 @@ exclusions, and carried two scripts byte-identical (`scripts/lint-test-ports.sh`
 were later adapted (the inline exemption marker is gone and the guidance names no SemStreams file), so both rows read
 `adapt`. `task ledger:check` (`internal/harness/contract/ledger_test.go`) machine-checks the schema inside
 `task verify`, then compares every `carry` row with the pin (rule 5). The ledger has one `carry` row today, so the
-check fetches the pin. Every other ported package is `adapt`; the check compares `.go` and `testdata` files, not
-READMEs, so a README with markdownlint fixes does not change a row. A ported README or `doc.go` keeps the pin's text
-except for these edits: the fixes markdownlint requires; changes to passages that describe behavior the ported code no
-longer has; and corrections of passages that describe API the code does not have, including API that never existed
-even at the pin, with links to packages SemEngine does not have removed. Nothing is reworded beyond what the
-correction needs; the package's row summarizes the behavioral differences and dropped surface, while
-`task ledger:diff` and git history hold the line-by-line diffs.
+check fetches the pin. Every other ported package is `adapt` or `repair-before-port`; the check compares `.go` and
+`testdata` files, not READMEs, so a README with markdownlint fixes does not change a row. A ported README or
+`doc.go` keeps the pin's text except for these edits: the fixes markdownlint requires; changes to passages that
+describe behavior the ported code no longer has; and corrections of passages that describe API the code does not have,
+including API that never existed even at the pin, with links to packages SemEngine does not have removed. Nothing is
+reworded beyond what the correction needs; the package's row summarizes the behavioral differences and dropped
+surface, while `task ledger:diff` and git history hold the line-by-line diffs.

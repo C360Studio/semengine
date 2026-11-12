@@ -8,11 +8,11 @@ not a task tracker and not a description of the tree.
 
 - **No consumer.** SemSource does not build against SemEngine. The contract is written down in `docs/contract.md`,
   but no consumer builds against it yet.
-- **No runtime binary, no release, no tag.**
+- **No runtime binary.** Pre-release tags `v0.1.0-alpha.1` to `v0.1.0-alpha.4` exist; no stable release.
 - **No consumer lane** in the gate graph; it joins `task verify` when its workload exists.
-- **The rule core and part of the last implementation change.** Not yet present: the rule core, the spatial and
-  temporal responders, `internal/maxdelivery`, `composition/cli` and `graph/geo/geojson`. Everything else in the
-  Slice 04A chain is in the tree and listed below. `graph/clustering` has no LLM summaries yet; they wait for tier 2.
+- **The rule core and some graph packages.** Not yet present: the rule core, the spatial and temporal responders,
+  `internal/maxdelivery`, `composition/cli` and `graph/geo/geojson`. Everything else the tier-0 plan names is in the
+  tree and listed below. `graph/clustering` has no LLM summaries yet; they wait for tier 2.
   The capability specs under `openspec/specs/` are the current truth, and `docs/contract.md` states the tier-0
   contract.
 
@@ -27,7 +27,7 @@ not a task tracker and not a description of the tree.
 | `docs/repository-map.md` | This file |
 | `docs/provenance.md` | License and provenance requirements for ported code |
 | `docs/inventory-scope.md` | Which repositories agents may read, for what question; the starter consumer set |
-| `docs/adr/` | Architecture decision records: why a design is the way it is. Records ported from SemStreams keep their numbers (for example ADR-102, what each entity-ID position means, and ADR-104, the minted `platform.id` suffix); SemEngine's own continue after them (ADR-111 to ADR-113 and ADR-115, for example). A ported record that a port changed carries a port note saying what was applied and what was not carried |
+| `docs/adr/` | Architecture decision records: why a design is the way it is. Records ported from SemStreams keep their numbers (for example ADR-102, what each entity-ID position means, and ADR-104, the minted `platform.id` suffix); SemEngine's own continue after them (ADR-111 to ADR-113 and ADR-115, for example). A ported record that a port changed carries a port note saying what was applied and what was not carried. Run `ls docs/adr` for the full list; the numbers and titles are 030 http middleware, 058 boot lifecycle phases, 060 RPC error contract, 062 graph fusion, 063 store substrate, 066 and 083 to 085 and 088 readiness, 071 fusion retrieval, 074, 077 and 078 predicate and index keys, 081 graph view subscription, 087 community summary store, 094 to 096 boot and lifecycle, 098 observability, 099 community partition, 100 composition validation, 102 and 104 entity IDs and platform authority, 107 vocabulary export, 108 processor shell, 109 readiness, 110 write seam, 111 durable execution, 112 natsclient contract, 113 start context, 114 alias index, 115 HTTP surfaces |
 | `docs/specs/entity-id-contract.md` | The entity-ID reference contract, ported from SemStreams with `pkg/types`: the requirements for entity identity as SemStreams states them, not a statement of current code. Each requirement moves into a capability spec under `openspec/specs/` when the code it describes is ported |
 | `docs/concepts/16-federation.md` | How entity-ID positions and the authority check separate sources and deployments; ported from SemStreams with `pkg/types` |
 | `AGENTS.md`, `CLAUDE.md` | Agent entry point; `CLAUDE.md` imports `AGENTS.md` |

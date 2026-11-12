@@ -110,7 +110,7 @@ The follower publishes the readiness record to `GRAPH_STATUS` at once and then e
 `indexed_revision`, `target_revision`, `failed_count` and `failed_reasons` (the count of failed entities per bounded
 reason). It reads `degraded` when entities are failed, the feed is lost, or the component has been behind for 30
 seconds with no revision completed. Any completion counts, so one entity held while others finish reads not ready,
-not degraded (owner ruling). A graph with no entities is caught up once the
+not degraded. A graph with no entities is caught up once the
 snapshot is delivered.
 
 ### Failed entities and the repair lane

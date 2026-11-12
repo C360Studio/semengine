@@ -9,7 +9,8 @@ Two terms first:
 - **Tier 1** here means SemStreams' *package* tier: the 62 packages listed in `release/tier1-packages.txt` at the
   SemStreams pin `8b99efe9`. These are the packages a sister repository imported on 2026-09-02, frozen under
   SemStreams' ADR-106. It is not a SemEngine capability level. The owner ruled that SemEngine makes no compatibility
-  promise to it. - **The ruled 65** is the tier-0 port set: 65 packages, 140,842 non-test lines (set by the owner at
+  promise to it.
+- **The ruled 65** is the tier-0 port set: 65 packages, 140,842 non-test lines (set by the owner at
   contract approval). It is the first-pass `go list` closure of 65, less the ten packages the rulings cut, plus the
   ten they admitted.
 
@@ -31,7 +32,7 @@ GOFLAGS=-mod=mod GOWORK=off go list -deps ./component ./config ./gateway/graph-g
   ./storage/objectstore ./storage/storeregistry ./types ./vocabulary ./vocabulary/cco \
   | grep 'c360studio/semstreams' | sort -u > first65.txt                        # → 65 lines
 
-# 2. The ruled 65 = first65 − the ten cut + the ten admitted 
+# 2. The ruled 65 = first65 − the ten cut + the ten admitted
 #    cut:      agentic gateway/graph-gateway vocabulary/agentic agentic/agentrun model/wire graph/llm gateway
 #              internal/deliverylane internal/agentterminal internal/looptoken
 #    admitted: processor/rule processor/rule/expression processor/graph-clustering output/websocket
@@ -86,12 +87,12 @@ admission-ledger row, and none leaves the ruled 65, so the counts above do not c
 | Package | Disposition |
 | --- | --- |
 | `agentic`, `agentic/agentrun`, `vocabulary/agentic` | separated: `defer-exclude` row |
-| `gateway`, `gateway/graph-gateway` | separated: `defer-exclude` row |
+| `gateway` | separated: `defer-exclude` row (the parent package; `gateway/graph-gateway` is now ported, see the ledger) |
 | `model/wire` | behind the seam; not ported, since nothing ported reads it, and `processor/graph-clustering` is ported without it; tier 0 builds without it (`TestTreeImportsNoProviderPlumbing`); `defer-exclude` row |
 | `componentregistry`, `payloadbuiltins`, `vocabulary/builtins` | not ported: aggregators; each consumer registers per package |
 | `processor/gated-dag` | not ported: reached only through the aggregators |
 | `processor/agentic-dispatch`, `processor/agentic-loop`, `processor/agentic-loop/lessonmatch`, `processor/agentic-model`, `processor/agentic-tools`, `processor/agentic-tools/executors`, `processor/agentic-tools/runner`, `persona` | not ported: agentic domain |
-| `input/websocket` | not in any change of the chain; the change that ports it inherits the ACME loaders' row |
+| `input/websocket` | not ported yet; porting it would inherit the ACME loaders' row |
 | `gateway/lifecycle-gateway`, `pkg/context`, `pkg/logging`, `test/e2e/mock` | not ported: no tier-0 package imports them (see "Edges leaving the set"), and neither first-wave consumer imports them (below) |
 
 Not ported means no ledger row: a row is written for a package that is ported, or one that tier 0 reaches and the
@@ -139,7 +140,7 @@ Both repositories require the pin (`go.mod`: `v1.0.0-beta.162.0.20260930150212-8
 | semconnect | 27 packages | `gateway`, `payloadbuiltins`, `vocabulary/builtins` | `payloadbuiltins` |
 
 Each hit already has a ruling. The aggregators move to per-package registration in each consumer's composition
-root (owner ruling). SemConnect's `gateway` import is a compile-time interface assertion
+root. SemConnect's `gateway` import is a compile-time interface assertion
 (`gateway/cs-api/component.go:198`), and dropping it is SemConnect work. Neither consumer imports a
 package outside the ruled 65 and Tier 1.
 

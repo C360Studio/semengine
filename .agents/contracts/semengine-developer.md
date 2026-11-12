@@ -395,11 +395,17 @@ OpenSpec task, or design-decision reference, and no account of what the pin did.
 and the pull request body. A `MIGRATION.md` still says what SemStreams did and what SemEngine does; it drops the
 references. A table cell is a sentence or two; longer text is prose under a heading.
 
-Out of scope, where references are the record: `AGENTS.md`, `.agents/rules-index.md` and the agent contracts (their
-rules tables cite issues), `openspec/` (notes, designs, tasks), ADRs, `docs/admission-ledger.yaml`, pull request
-bodies, commits, and issues. Also kept: an ADR named where it is the reason for the code, the markers a guard reads
-(`// Own server:`, `// Every address:`, `// shortcut:`), and the issue a harness doc comment names for the failure it
-exists for (owner ruling 2026-11-12, #606).
+Out of scope, where references are the record: `AGENTS.md`, `.agents/` (rules index, README, protocol, skills and the
+agent contracts, whose rules tables cite issues), `openspec/` (notes, designs, tasks), ADRs,
+`docs/admission-ledger.yaml`, pull request bodies, commits, and issues.
+
+Also kept: an ADR named where it is the reason for the code; the markers a guard reads (`// Own server:`,
+`// Every address:`, `// shortcut:`); the issue a harness doc comment names for the failure it exists for; and the
+SemStreams pin in the port-record docs (`docs/provenance.md`, `docs/inventory-scope.md`, `docs/setup-plan.md`,
+`docs/tier1-cross-check.md`), where it is the subject.
+
+A sentence about how a library times, orders, bounds or fails still names its probe test, or says the behaviour is not
+promised (the library-claim rule); dropping the issue reference never drops that locator (owner ruling 2026-11-12, #606).
 
 ## Handoff
 

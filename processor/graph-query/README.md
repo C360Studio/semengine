@@ -12,10 +12,10 @@ holds a record per group of entities and which `localSearch` and the text search
 declared for `graph-query`, and fails to start if a declared verb has no handler. Any other `graph.query.*` subject is
 left alone, so a consumer can serve its own verb there.
 
-graph-query was ported in five steps, and all five are in the tree: the table below is what it serves. The semantic
+The table below is what graph-query serves. The semantic
 search (`semantic`, `similar`) is answered by graph-embedding (or refused `not_enabled` when the `embedding_enabled`
 option is false), and the time-range and area searches wait for their
-responders in change 7. `MIGRATION.md` lists what a consumer changes at its cutover and grows with each step.
+responders, which are not in the tree. `MIGRATION.md` lists what a consumer changes at its cutover.
 
 ## Verbs
 
@@ -37,7 +37,7 @@ responders in change 7. `MIGRATION.md` lists what a consumer changes at its cuto
 The first five, and `semantic`, `similar`, `spatial` and `temporal`, are forwards: the request and reply bytes pass
 unchanged, neither decoded nor checked, so `min_revision` reaches graph-index on `byName` and `predicate`, and an
 authority read on `entity`, `batch` and `prefix` ignores it. The embedding responder is in this tree (graph-embedding);
-the spatial and temporal ones arrive in change 7. Until a responder exists, the verb forwarding to it is refused
+the spatial and temporal ones are not in the tree. Until a responder exists, the verb forwarding to it is refused
 transient `internal`, naming the subject.
 
 `semantic` and `similar` forward only when `embedding_enabled` is true, which it is when the key is left out. Set it to
@@ -247,7 +247,7 @@ What it refuses:
 | A text question while `COMMUNITY_INDEX` is missing, catching up, lost or stopped, or when `level` holds no record | transient `index_not_ready`, counting no error. `processor/graph-clustering` writes `COMMUNITY_INDEX`, and its first tick after the replay decides when this refusal ends, so until then every text question is refused this way, `searchGraph` included |
 | A text question with `min_revision` above the mark | transient `revision_not_reached`, `indexed_revision` in detail |
 | Every record at `level` unreadable; a page that is broken or has no responder; a reply that cannot fit `max_payload` | transient `internal`, counted as an error in `Health` |
-| A time-range or area question, until change 7 | transient `internal`, naming the subject, counted as an error in `Health`: their responders are not in the tree |
+| A time-range or area question, until the spatial and temporal responders exist | transient `internal`, naming the subject, counted as an error in `Health`: their responders are not in the tree |
 
 Some records unreadable is an answer, not a refusal: `unreadable_groups` is their count, `answer` says so, `Health`
 counts one error, and `graph-query` logs one `Warn`, "text search answered past unreadable community records", with

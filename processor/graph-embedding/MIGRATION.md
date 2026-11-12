@@ -32,8 +32,8 @@ start.
 
 Read these. Nothing errors.
 
-- - **The status card loses `first_failure_at`.** The readiness record on `GRAPH_STATUS` under `graph-embedding` no
-  longer has that field, and `graph.IndexStatusResponse` no longer has the Go field `FirstFailureAt` (owner ruling).
+- **The status card loses `first_failure_at`.** The readiness record on `GRAPH_STATUS` under `graph-embedding` no
+  longer has that field, and `graph.IndexStatusResponse` no longer has the Go field `FirstFailureAt`.
   SemSource's MCP gateway passes this entry through to agents (`processor/mcp-gateway/tools.go:142`), so its status
   card stops showing the time. *Do:* stop reading the field; a decoder that requires it fails, one that ignores a
   missing key does not notice. `failed_count` and `failed_reasons` stay: the reasons are the per-reason counts of the
@@ -44,9 +44,9 @@ Read these. Nothing errors.
   (ADR-083, ADR-109), and the query verbs now do. *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
   Nothing in SemSource's tree
   calls the status verb (grep, 0 hits at `e4febc0d`).
-- - **When the status reads `degraded`.** The follower now reads degraded when the component is behind and no revision
+- **When the status reads `degraded`.** The follower now reads degraded when the component is behind and no revision
   has completed for 30 seconds. Before, graph-embedding waited 120 seconds on the same completion rule, and
-  graph-index waited 30 seconds for the lowest unfinished revision to move (owner ruling). Effects: graph-embedding
+  graph-index waited 30 seconds for the lowest unfinished revision to move. Effects: graph-embedding
   reaches `degraded` sooner when it stalls; graph-index no longer reads `degraded` when one revision is held while
   later ones complete, only not ready with `staleness_ms` rising. An alert on `degraded` for graph-index fires less
   often; one on graph-embedding fires after 30 seconds, not 120. *Do:* check any alert threshold built on the old

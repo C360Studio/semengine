@@ -127,7 +127,8 @@ Merging inside the view's 250 ms window is part of the applied-state contract an
 Keep-alive: the component pings each client every `ping_interval`, and a pong extends the client's read deadline to
 twice that. A client that answers pings but sends nothing stays connected; one that answers none is closed
 (`client_disconnections_total{reason="read_timeout"}`). At gorilla/websocket v1.5.3, a pong
-that does not extend the read deadline lets the read time out with pongs received, so the handler extends it. A write
+that does not extend the read deadline lets the read time out with pongs received, so the handler extends it
+(`TestQuietClientStaysConnected`). A write
 to a client that does not complete in 10 seconds closes that client; what gorilla/websocket does when that deadline
 passes is not promised.
 

@@ -31,7 +31,7 @@ counters and latencies on it, in names that start `semengine_objectstore_`; `New
   `Config.InstanceName` is the name stamped into every reference the Store returns (`StorageReference.StorageInstance`)
   and defaults to the bucket name; the code that owns the Store sets it.
 - `Put` replaces the object at the key. No earlier version is kept. NATS was observed to behave this way with nats.go
-  v1.54.0 and nats-server v2.15.1 (probed);
+  v1.54.0 and nats-server v2.15.1 (`TestPutReplacesObjectAtKey`);
   the library does not promise it.
 - `Get` and `Open` of a missing key return an error that matches `storage.ErrObjectNotFound` and is not transient.
 - `Delete` of a key with no object returns nil.

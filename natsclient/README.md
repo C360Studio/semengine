@@ -276,7 +276,7 @@ collectors, so the two overwrite each other's gauges, and which client's value a
 configuration we know of runs two clients on one registry.
 
 At nats.go v1.55.0, a write the timeout ends partway closes the socket, and nats.go reconnects
-(`TestWriteTimeoutAndPingIntervalOptions`; owner-ruled). How soon the
+(`TestWriteTimeoutAndPingIntervalOptions`). How soon the
 connection carries messages again is not promised. `WithPingInterval` sets how soon nats.go finds a silent server
 when no write is held; while a write is held its check does not fire. Each option refuses a value that is not
 positive.

@@ -55,13 +55,12 @@ list gives `healthy`. The result's `SubStatuses` is a copy of the input list.
 
 `FromComponentHealth(name, ch)`:
 
-- - The word comes from `ch.Healthy` alone: `true` gives `healthy`, `false` gives `unhealthy`. The component's own
-  `ch.Status` is not read, so a component that reports itself `degraded` with `Healthy` false becomes `unhealthy`
-  (owner ruling).
+- The word comes from `ch.Healthy` alone: `true` gives `healthy`, `false` gives `unhealthy`. The component's own
+  `ch.Status` is not read, so a component that reports itself `degraded` with `Healthy` false becomes `unhealthy`.
 - `Healthy` is `ch.Healthy`.
 - `Metrics` carries `ch.Uptime`, `ch.ErrorCount` and `ch.LastCheck` (as `LastActivity`).
 - `Message` is "Component healthy" or "Component unhealthy", following `ch.Healthy`, when `ch.LastError` is empty.
-  SemStreams wrote "Component healthy" in both cases; the owner ruled the fix.
+  SemStreams wrote "Component healthy" in both cases.
 - Otherwise `Message` is `ch.LastError` with likely secrets replaced.
 
 ### What the error text loses

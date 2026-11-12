@@ -496,14 +496,15 @@ healthy lag with freshness information from `Deferred`: no usable answer, rather
 ## Known risks and what to carry forward
 
 - SemSource's current smoke checks establish startup and route reachability, not complete semantic correctness. The
-  known-answer workload must supply the missing evidence. - SemStreams has an open RPC stream collision defect.
-  Reproduce it against the pin and assess whether the retained request paths need the fix before treating it as a
-  current SemEngine defect. - SemSource reports that beta.161 fails the OSH corpus tail against the GRAPH 256MiB
-  ceiling that beta.159/160 absorbed. The 03A baseline must record this and check whether the pin resolves it. -
-  SemSource has an open physical-deletion request. Physical removal differs from retained stale history; require hard
-  removal only if admitted by the consumer contract, and reproduce the relevant behavior. - Fusion risks include
-  truncation nondeterminism and impact counts without names. Reproduce retained paths before carrying these as current
-  defects.
+  known-answer workload must supply the missing evidence.
+- SemStreams has an open RPC stream collision defect. Reproduce it against the pin and assess whether the retained
+  request paths need the fix before treating it as a current SemEngine defect.
+- SemSource reports that beta.161 fails the OSH corpus tail against the GRAPH 256MiB ceiling that beta.159/160 absorbed.
+  The 03A baseline must record this and check whether the pin resolves it.
+- SemSource has an open physical-deletion request. Physical removal differs from retained stale history; require hard
+  removal only if admitted by the consumer contract, and reproduce the relevant behavior.
+- Fusion risks include truncation nondeterminism and impact counts without names. Reproduce retained paths before
+  carrying these as current defects.
 
 Carry reproduced defects and scoped unresolved risks with compact evidence and source links.
 

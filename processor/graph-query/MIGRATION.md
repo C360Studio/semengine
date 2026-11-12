@@ -22,13 +22,12 @@ Read these first. Nothing errors.
   first call fails loudly before this: its `summarize_threshold` key is refused (SemSource section).
 - **SemSource `deriveDisclosure` (with `searchGraph`).** It reads the same bytes for top-level fields
   (`disclosure.go:86`), so it reports no answer rather than a failure.
-- **SemSource `searchGraph` on a deployment with embeddings but no community records.** The old version
-  answered from the embedding index when global search was empty or refused `index_not_ready`: strategy
-  `semantic_fallback`, up to 8 entities, marked degraded. That fallback is not carried. Until a responder writes
+- - **SemSource `searchGraph` on a deployment with embeddings but no community records.** The old version answered
+  from the embedding index when global search was empty or refused `index_not_ready`: strategy `semantic_fallback`, up
+  to 8 entities, marked degraded. That fallback is not carried. Until graph-clustering's first tick writes
   `COMMUNITY_INDEX` every text question is refused transient `index_not_ready`, so a deployment that relied on the
   fallback gets a refusal where it got matches, and an empty text answer is returned as empty, not retried against
-  embeddings. Adding the semantic fallback back is planned (owner ruling); it is
-  not in this tree.
+  embeddings. Adding the semantic fallback back is planned; it is not in this tree.
 - **Fix for both:** unwrap once before reading, and assert it on a real reply. No framework mechanism does this for
   you.
 - **A copy of the GraphQL gateway.** It nests every wrapped answer one
@@ -76,10 +75,10 @@ Read these first. Nothing errors.
 
 ## SemSource
 
-**Use cases kept:** free-text search (`searchGraph`, answering as `globalSearch`; changes 5 and 7 bring what its
-answers read); prefix paging (`processor/supersession/prefixquery.go:19`, bare reply, which gains `total`); your
-own verbs on the same family (`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table
-does not reserve.
+**Use cases kept:** free-text search (`searchGraph`, answering as `globalSearch`; its time-range and area answers need
+the spatial and temporal responders, which are not in the tree); prefix paging
+(`processor/supersession/prefixquery.go:19`, bare reply, which gains `total`); your own verbs on the same family
+(`sources`, `sourceSummary`, `status`, `predicates`, `versionDiff`), which the verb table does not reserve.
 
 **What you change:**
 
@@ -126,15 +125,14 @@ backend (`cmd/cs-graph-backend/main.go:127`).
 
 ## Whoever keeps the GraphQL gateway
 
-`gateway/graph-gateway` is not ported: the ledger has it as consumer-owned, composed by SemSource but not exercised,
-and a copy needs the agentic and `graph/inference` packages. SemSource composes it (`cmd/semsource/run.go:867`) and
-documents `/graphql` (`docs/integration/m5-consumer-integration.md:178`); no owner is named after cutover.
-
-**Use case to keep:** GraphQL over the `graph.query.*` verbs, if anyone still wants it.
+`gateway/graph-gateway` is in this tree; `gateway/graph-gateway/MIGRATION.md` covers moving to it. SemSource composes
+the SemStreams gateway (`cmd/semsource/run.go:867`) and documents `/graphql`
+(`docs/integration/m5-consumer-integration.md:178`). A project that keeps its own copy of that gateway instead must
+change the following.
 
 **What a copy must change:**
 
-- - It unwraps by detection (`component.go:2059`), which is not ported, and the old unwrap accepts only `data` and
+- It unwraps by detection (`component.go:2059`), which is not ported, and the old unwrap accepts only `data` and
   `timestamp` (SemStreams `graph/query_contracts.go:89`). The new envelope has four keys, so a copy silently nests
   every wrapped answer one level too deep: `relationships`, `entityByAlias`, `summary` and the other verbs. Decode by
   `graph.QueryVerbs()` instead.
@@ -283,7 +281,7 @@ ranking ("top 5") or a similarity ("similar to") is not answered by that strateg
 the path or time part and dropped the rest).
 
 Any other question, and a name or ID that names no entity (no alias holder and no valid ID, or a valid ID with no
-record), is answered by the text search (the text search below). A zone or area question whose start names no entity
+record), is answered by the text search (below). A zone or area question whose start names no entity
 ("the area of the plant") is `entity_not_found`; the old version, once started, passed it on to its community search
 (`graphrag`), whose empty `pathrag` answer ran only without a community cache, which a started component always has.
 
@@ -299,7 +297,8 @@ from either verb reaches you as it arrived, its class, code and detail unchanged
 `truncated` would read as a complete answer.
 
 Until their responders are in the tree both are refused transient `internal` naming the subject, which counts as an
-error in `Health` A question with no hint, or whose only hints are path words with no start ("http connection pool",
+error in `Health`.
+A question with no hint, or whose only hints are path words with no start ("http connection pool",
 "file path handling"), a similarity ("similar to") or a ranking ("top 5"), is answered by the text search, `strategy`
 `text`; its reply names each such hint it did not honour in `unhonoured_hints` (`path`, `similarity`, `ranking`) and
 in `answer`. A count or other aggregation ("how many", "max retries", "total memory usage"), with or without other
@@ -312,7 +311,8 @@ pump-99", and "the area of the plant", whose start is `area-of`) is `entity_not_
 `entityByAlias` answers it; a start whose entity is gone passes the entity verb's refusal as it came.
 
 Until graph-clustering's first tick has written `COMMUNITY_INDEX` the text search refuses transient `index_not_ready`,
-which counts no error in `Health` A text question with more than 16 distinct terms (lowercased, repeats removed) is
+which counts no error in `Health`.
+A text question with more than 16 distinct terms (lowercased, repeats removed) is
 `invalid_request`, before any read.
 
 The text search reads the community records at `level` once, and before any page read refuses: transient
@@ -358,8 +358,8 @@ request gets the same `data` and the same refusal (see `globalSearch` above), so
 strategy `semantic_fallback`, marked degraded.
 
 That is not carried, and no semantic request is made: an empty answer is the answer, and a missing or unready
-`COMMUNITY_INDEX` refuses transient `index_not_ready`, until a follow-up graph-query change adds the semantic fallback
-(owner ruling). A truncated answer counts under `searchGraph`, not `globalSearch`.
+`COMMUNITY_INDEX` refuses transient `index_not_ready`, until a follow-up graph-query change adds the semantic fallback.
+A truncated answer counts under `searchGraph`, not `globalSearch`.
 
 A stream capturing a declared `graph.query.*` subject refuses boot, and so does a declared NATS-request input
 port overlapping one, unless it belongs to graph-query. An undeclared subscriber is not seen. Decode by the verb table:
@@ -375,7 +375,6 @@ In the new `graphquery` package, the old version's names: `Register`, `DeclarePo
 `SemanticData`, `SimilarData`, `SimilarityHit`, `SpatialData`, `SpatialHit`, `TemporalData`, `TemporalHit`.
 `SummaryRequest` and `SummaryData` change as the `summary` row says. For local search, in `graph`:
 `LocalSearchRequest`, `LocalSearchData` and `MaxSearchTerms`. In `graph/clustering`: `Community.EntityRevision`,
-`GroupKey` and `DecodeCommunity`. Package `graphquery` exports nothing new. For `globalSearch`, in `graph`:
-`GlobalSearchRequest`, `GlobalSearchData`, `TemporalRangeRequest` and `SpatialBoundsRequest`. Package `graphquery`
-exports nothing new. For the text search, in `graph`: `GlobalSearchRequest.Level`, `GlobalSearchData.Text`,
-`TextSearchData`, `TextSearchGroup` and `TextSearchMatch`.
+`GroupKey` and `DecodeCommunity`. For `globalSearch`, in `graph`: `GlobalSearchRequest`, `GlobalSearchData`,
+`TemporalRangeRequest` and `SpatialBoundsRequest`. For the text search, in `graph`: `GlobalSearchRequest.Level`,
+`GlobalSearchData.Text`, `TextSearchData`, `TextSearchGroup` and `TextSearchMatch`.

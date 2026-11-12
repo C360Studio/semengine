@@ -123,10 +123,11 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   fields named above.
 - `WithSignals` and the predicate-weight half of `fusionvocab` (read from `vocabulary`'s registry).
 
+A deployment with no graph-embedding sets `"embedding_enabled": false` in graph-query's config. A word question
+(`nl` lens) is then refused invalid `not_enabled`, naming `semantic`, instead of a transient `internal` refusal a
+retrying caller would repeat without success (#579). Left at its default, true, the old refusal stays. Symbol and
+prefix lenses answer either way.
+
 ## Still open
 
-- A word question (`nl` lens) on a stack with no graph-embedding fails with a transient `internal` refusal naming
-  `graph.embedding.query.search`, so a caller that retries transient errors retries it without success. Issue #579
-  asks graph-query to refuse it outright when the composition offers no embedder. Symbol and prefix lenses answer on
-  such a stack.
 - A `prefix` resolve whose page holds a poisoned entity fails the call (#578).

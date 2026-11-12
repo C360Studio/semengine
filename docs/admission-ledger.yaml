@@ -4339,8 +4339,10 @@
     (total_entities the whole group as listed, a sample declared by entities_scanned, truncated and next_cursor; a
     page that cannot be counted is refused transient internal; summary refuses when its predicate index cannot answer,
     exclude_predicates asks without it and reports indexed_revision 0); and semantic, similar, spatial and temporal
-    as forwards to graph.embedding.query.search and similar, graph.spatial.query.bounds and graph.temporal.query.range,
-    refused transient internal until changes 5 and 7 bring the responders. Step 3
+    as forwards to graph.embedding.query.search and similar, graph.spatial.query.bounds and graph.temporal.query.range;
+    spatial and temporal are refused transient internal until change 7 brings their responders, and semantic and
+    similar are refused invalid not_enabled, naming the verb and sending nothing, when the embedding_enabled key
+    (true when left out) is false (#579). Step 3
     (setup-04a-04-graph-roots-graph-query-communities, graphrag.go:2218-2397) adds localSearch: a community view
     over COMMUNITY_INDEX opened through kvcatalog.OpenCatalogReader and graphview, reopened every 5 s when the bucket
     is missing or the watch is lost (Start neither waits for nor fails on a missing bucket; Stop ends the view and
@@ -4826,8 +4828,9 @@
     the ended context. Filed by this change, status:blocked, linked
     without a closing keyword: #578 (graph-ingest's prefix read refuses a whole page for one poisoned entity, so a
     prefix resolve over that page fails the call) and #579 (graph-query should refuse word and similar-entity
-    questions outright when the composition offers no embedder; until then a word question on such a stack is a
-    transient internal refusal naming graph.embedding.query.search, design D5 Q-B). Issues: #195 adopted here (the
+    questions outright when the composition offers no embedder; closed by the embedding_enabled key: set it false and
+    a word question is refused invalid not_enabled, left true it is a transient internal refusal naming
+    graph.embedding.query.search, design D5 Q-B). Issues: #195 adopted here (the
     integration test opens its client with natsfixture.Open) and stays open for other packages; #110 stays open for
     item 3; #563 stays open (fusionnats never calls searchGraph)
   proving_tests: >-

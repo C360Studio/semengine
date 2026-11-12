@@ -20,7 +20,7 @@ func TestCreateGraphQueryRequiresNATSClient(t *testing.T) {
 }
 
 // TestRegisterAddsGraphQuery: Register adds the graph-query factory, whose schema lists exactly the
-// two keys and whose port declarer reports the ports the factory builds. Importing the package
+// three keys and whose port declarer reports the ports the factory builds. Importing the package
 // registers nothing: the registry is empty until Register runs.
 func TestRegisterAddsGraphQuery(t *testing.T) {
 	registry := component.NewRegistry()
@@ -34,10 +34,10 @@ func TestRegisterAddsGraphQuery(t *testing.T) {
 	if !ok {
 		t.Fatal("Register did not add graph-query")
 	}
-	if len(registration.Schema.Properties) != 2 {
-		t.Errorf("schema properties = %v, want ports and query_timeout_ms", registration.Schema.Properties)
+	if len(registration.Schema.Properties) != 3 {
+		t.Errorf("schema properties = %v, want ports, query_timeout_ms and embedding_enabled", registration.Schema.Properties)
 	}
-	for _, key := range []string{"ports", "query_timeout_ms"} {
+	for _, key := range []string{"ports", "query_timeout_ms", "embedding_enabled"} {
 		if _, ok := registration.Schema.Properties[key]; !ok {
 			t.Errorf("schema has no %q property", key)
 		}

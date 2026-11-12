@@ -11,7 +11,8 @@ import "github.com/c360studio/semengine/pkg/errs"
 // structural_invalid (its stream lane only), message_type_unregistered and
 // internal; the exact reader emits invalid_request and internal; index_not_ready
 // comes from natsclient's OpenFrameworkBucket and pkg/lifecycle's queries.
-// embedding_unavailable is emitted by processor/graph-embedding's similar verb. Nothing
+// embedding_unavailable is emitted by processor/graph-embedding's similar verb.
+// not_enabled is sent by processor/graph-query's semantic and similar verbs. Nothing
 // here emits resource_exhausted: its emitters are pin packages not ported yet.
 // graph-ingest counts each refused canonical mutation on graph_mutation_outcomes_total
 // under its code, or internal when it carries none.
@@ -101,6 +102,17 @@ const (
 	// empty (SemStreams #662 / Codex P1#2). Consumers classify by this stable code, never by the
 	// message text.
 	ErrorCodeEmbeddingUnavailable = "embedding_unavailable"
+
+	// ErrorCodeNotEnabled indicates the composition turned the verb off: graph-query
+	// was configured with embedding_enabled false, so it answers no semantic or
+	// similar request. Every request is refused alike, unlike embedding_unavailable,
+	// which is one source entity with no vector, and index_not_ready, which is an
+	// index still catching up. Retrying does not help. Class is ErrorInvalid; the
+	// message names the verb.
+	//
+	// Sent by graph-query's semantic and similar verbs. Consumers classify by this
+	// stable code, never by the message text.
+	ErrorCodeNotEnabled = "not_enabled"
 
 	// ErrorCodeAliasAmbiguous indicates an alias query named an alias that two or
 	// more distinct entities carry, so no one entity answers it. Rows of one entity

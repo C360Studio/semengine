@@ -66,7 +66,9 @@ func DeclarePorts(rawConfig json.RawMessage, _ string) (component.PortConfig, er
 // resolveConfig parses rawConfig, applies defaults, validates, and resolves the one input port. It
 // is the one derivation DeclarePorts and CreateGraphQuery share.
 func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, error) {
-	var config Config
+	// embedding_enabled is on when left out: decoding leaves this true unless the key says false
+	// (design D1).
+	config := Config{EmbeddingEnabled: true}
 	if len(rawConfig) > 0 {
 		// Strict decoding: a key Config does not define is refused, naming the key, where
 		// encoding/json would drop it, as the pin's did (design D7). A port definition decodes

@@ -111,6 +111,33 @@ func TestConfigTimeout(t *testing.T) {
 	}
 }
 
+// TestConfigEmbeddingEnabled: embedding_enabled is on when left out or null, reads what is
+// written when it is a boolean, and is refused when it is anything else (design D1).
+func TestConfigEmbeddingEnabled(t *testing.T) {
+	for raw, want := range map[string]bool{
+		``:                            true,
+		`{}`:                          true,
+		`{"embedding_enabled":null}`:  true,
+		`{"embedding_enabled":true}`:  true,
+		`{"embedding_enabled":false}`: false,
+		`{"ports":{"inputs":[` + requiredPort + `]}}`: true,
+	} {
+		c, err := createFromJSON(t, raw)
+		if err != nil {
+			t.Errorf("CreateGraphQuery(%q): %v", raw, err)
+			continue
+		}
+		if c.config.EmbeddingEnabled != want {
+			t.Errorf("CreateGraphQuery(%q) embedding_enabled = %v, want %v", raw, c.config.EmbeddingEnabled, want)
+		}
+	}
+	for _, raw := range []string{`{"embedding_enabled":"false"}`, `{"embedding_enabled":0}`} {
+		if _, err := createFromJSON(t, raw); err == nil {
+			t.Errorf("CreateGraphQuery accepted %s", raw)
+		}
+	}
+}
+
 // TestConfigTimeoutFitsADuration: the largest accepted value is the last millisecond count a
 // time.Duration holds, 2^63-1 nanoseconds, written out here so the test does not take it from the
 // code. One more would wrap negative when the value is read as a duration, so it is refused, naming
@@ -278,6 +305,7 @@ func FuzzDeclarePorts(f *testing.F) {
 		`{}`,
 		`null`,
 		`{"query_timeout_ms":250}`,
+		`{"embedding_enabled":false}`,
 		`{"ports":{"inputs":[` + requiredPort + `]}}`,
 		`{"no_such_key":1}`,
 		`{} {}`,

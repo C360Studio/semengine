@@ -11,7 +11,7 @@ import (
 )
 
 // The reasons the stream lane refuses a statement, each the reason label it is counted
-// under on predicate_contract_rejections_total (design D15, statement metadata).
+// under on predicate_contract_rejections_total.
 const (
 	statementReasonMissingSource    = "missing_source"
 	statementReasonMissingTimestamp = "missing_timestamp"
@@ -43,7 +43,7 @@ func (r *statementRefusal) Error() string {
 }
 
 // refuseNoStatement is the stream lane's refusal of a Graphable payload that carries no
-// statement (owner ruling, #91 comment 6066791396): the statements graph-ingest derives take the
+// statement: the statements graph-ingest derives take the
 // latest Timestamp among the message's own, so with none there is no time to give them. That
 // includes a payload that would only replace an existing entity's message type or storage
 // reference.
@@ -52,7 +52,7 @@ func refuseNoStatement() error {
 }
 
 // stampFromEnvelope returns triples with each empty Source taken from the envelope's source
-// and each zero Timestamp from its creation time (design D15, #98); a statement that carries
+// and each zero Timestamp from its creation time; a statement that carries
 // its own keeps it. It copies before the first stamp, so the payload's slice is never
 // written. It refuses as invalid_request, naming the statement's index, a statement whose
 // missing value the envelope lacks too, and a statement whose source, once stamped, is

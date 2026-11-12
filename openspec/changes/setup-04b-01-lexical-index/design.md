@@ -115,7 +115,7 @@ question changes.
 
 - **Token record:** add `Words(id)` to read an entity's sequences and `PutWords(id, ...)` to restore them. A stored
   record would then also hold a tokenizer version.
-- **Positions (D4b):** internal; the phrase law test does not see the layout.
+- **Positions (D4, option b):** internal; the phrase law test does not see the layout.
 - **Typo tolerance and query forms:** a new form adds an unexported field to `Query`, and the word table is
   internal. So that a later form changes no answer given today, its syntax (`name:`, `body:`, a letter or digit
   followed by `*` or `~`) is refused now. A single leading `-` excludes. Bare `AND`, `OR` and `NOT` are words, which

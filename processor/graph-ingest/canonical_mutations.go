@@ -29,7 +29,7 @@ type canonicalMutationRoute struct {
 // meteredCanonicalMutation is the one metering layer a mutation request passes
 // through. A refused request counts once on graph_mutation_outcomes_total and
 // once on mutation_rejections_total, under its classified code or internal when
-// it carries none (ruling L, #91 comment 6062681355), and logs one WARN line
+// it carries none, and logs one WARN line
 // that carries the error's detail. An authority refusal counts under its own
 // reason and logs without the identity (recordAuthorityRejection). A successful
 // request is counted by its handler once the reply is built. Every request that
@@ -133,7 +133,7 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 }
 
 // requireRegisteredMessageType is the one registered-type gate for both create
-// paths (SemStreams ADR-103 d3): the entity.create RPC (after the structural IsValid
+// paths (SemStreams ADR-103): the entity.create RPC (after the structural IsValid
 // check) and the in-process CreateEntity (the hierarchy container birth). It
 // writes nothing and yields one classified error — class invalid, closed code
 // message_type_unregistered, the key in detail "message_type" — which the RPC
@@ -164,10 +164,10 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	if err := c.requireRegisteredMessageType(request.Entity); err != nil {
 		return nil, err
 	}
-	// Authority gate before any clone, profile, or KV work (ADR-102 d5). The
+	// Authority gate before any clone, profile, or KV work (ADR-102). The
 	// mutation lane is never an import lane — only a declared JetStream input
 	// port is — so a foreign subject here is refused unconditionally, which is
-	// also what makes an import a read-only mirror (ruled O-12(a)).
+	// also what makes an import a read-only mirror.
 	if err := c.authorizeSubject(request.Entity.ID, false); err != nil {
 		return nil, err
 	}
@@ -195,7 +195,7 @@ func (c *Component) handleCanonicalCreate(ctx context.Context, data []byte) ([]b
 	if entity.UpdatedAt.IsZero() {
 		entity.UpdatedAt = time.Now()
 	}
-	// Read before graph-ingest adds the profile (design D15).
+	// Read before graph-ingest adds the profile.
 	at := triggeringTime(entity)
 	stampExplicitIndexingProfile(entity, request.IndexingProfile, at)
 	c.reconcileIndexingProfile(entity, at)
@@ -323,7 +323,7 @@ func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]b
 		return nil, rejectInvalid(graph.ErrorCodeInvalidRequest, err)
 	}
 	// Every subject, before the batch reaches KV: annotating an imported
-	// subject from a local lane is refused (ADR-102 d5, ruled O-12(a)).
+	// subject from a local lane is refused (ADR-102).
 	for index := range request.Triples {
 		if err := c.authorizeSubject(request.Triples[index].Subject, false); err != nil {
 			return nil, err
@@ -369,7 +369,7 @@ func (c *Component) handleCanonicalAppend(ctx context.Context, data []byte) ([]b
 			return nil, rejectInternal(fmt.Errorf("append subject %q lost its accounted outcome", subject))
 		}
 		// Duplicate-only wrote nothing: unchanged at the revision the append's CAS
-		// read (design D23), never a later read's.
+		// read, never a later read's.
 		response.Results = append(response.Results, graph.AppendSubjectResult{
 			EntityID: subject, Outcome: graph.MutationUnchanged, KVRevision: revision,
 		})
@@ -429,8 +429,8 @@ func (c *Component) handleCanonicalDelete(ctx context.Context, data []byte) ([]b
 	var stateErr *graph.StateContractError
 	switch {
 	case errors.As(err, &stateErr):
-		// A delete is not refused for its stored value (ruled O, #91 comment
-		// 6080973822; design D15): readEntity has recorded the refusal, and the
+		// A delete is not refused for its stored value: readEntity has recorded
+		// the refusal, and the
 		// delete below runs at the caller's expected revision, the bucket's
 		// revision check being the fence. This is the repair the poison advice names.
 	case natsclient.IsKVNotFoundError(err):
@@ -529,7 +529,7 @@ func validateCanonicalReconcileRequest(request graph.ReconcilePredicatesRequest)
 	return predicates, nil
 }
 
-// requireReconcileSource is the conditional replace's source rule (design D15, ruling 1): a
+// requireReconcileSource is the conditional replace's source rule: a
 // reconcile names the one source whose statements it replaces, and every desired statement is
 // from it. A request with no source on the wire is refused earlier, by decodeCanonicalMutation.
 func requireReconcileSource(request graph.ReconcilePredicatesRequest) error {

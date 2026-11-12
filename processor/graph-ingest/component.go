@@ -74,20 +74,20 @@ type Component struct {
 
 	// mu guards the ports and the entityCache handle: each cache use reads the handle
 	// once under mu and uses that copy, and clearLifecycleHandles clears it under mu, so
-	// a use running during or after Stop holds a handle that stays usable (#306).
+	// a use running during or after Stop holds a handle that stays usable.
 	mu sync.RWMutex
 	// shell is the lifecycle state, Health and DataFlow (component.Lifecycle, ADR-108);
 	// Initialize, Start, Stop, Health and DataFlow go through it.
 	lifecycle component.Lifecycle
 	// startCompleted is set as start's last step and never cleared, since graph-ingest is
-	// one-shot (D13). Request handlers refuse until it is set (subscribeForRequests).
+	// one-shot. Request handlers refuse until it is set (subscribeForRequests).
 	// The shell's running state cannot stand in: it ends when release begins, before
 	// Stop's drain, which still serves.
 	startCompleted atomic.Bool
 	// The handles start records for release: release reads and clears them. Both run
-	// under the lifecycle guard, one at a time, so no lock is needed (ruling I, #91
-	// comment 6062681355). No other goroutine reads them: the status loop closes its own
-	// statusDone, and each consumer callback holds the pool it was built with.
+	// under the lifecycle guard, one at a time, so no lock is needed. No other goroutine
+	// reads them: the status loop closes its own statusDone, and each consumer callback
+	// holds the pool it was built with.
 	statusDone chan struct{}
 	cancel     context.CancelFunc
 
@@ -115,11 +115,11 @@ type Component struct {
 	// (stamped on the applied path, before the Ack). It ages the reported staleness.
 	lastAppliedAt atomic.Value // stores time.Time
 
-	// Per-entity poison inventory (poison-response-scoping D2/D3). Observability
+	// Per-entity poison inventory. Observability
 	// only — no read or write path consults it for a decision; refusal derives
 	// solely from decoding stored bytes at each seam. entityPoisonSize mirrors
 	// len(entityPoison) so hot-path clear checks cost one atomic load when the
-	// inventory is empty (design D2, required). See poison_inventory.go.
+	// inventory is empty. See poison_inventory.go.
 	entityPoisonMu   sync.Mutex
 	entityPoison     map[string]entityPoisonRecord
 	entityPoisonSize atomic.Int64
@@ -136,7 +136,7 @@ type Component struct {
 	// (writeFailed invalidates after any errored write, so a request naming an
 	// ID that never existed adds one too). It is not pruned, so it grows with
 	// create/delete churn and with requests for made-up IDs. Removing or bounding
-	// it is #300 (the entity cache question); pruning must exclude in-flight
+	// it is an open entity-cache question; pruning must exclude in-flight
 	// reads to keep the guarantee the counter provides.
 	cacheGenMu sync.Mutex
 	cacheGen   map[string]uint64
@@ -157,21 +157,21 @@ type Component struct {
 	batchMissing                  *prometheus.CounterVec
 	predicateContractRejections   *prometheus.CounterVec
 	entityStateContractRejections *prometheus.CounterVec
-	processingDuration            prometheus.Histogram   // SemStreams gh#480 per-message apply time (processing half)
-	ingestLag                     prometheus.Histogram   // SemStreams gh#480 message age at processing start (queue-wait half)
+	processingDuration            prometheus.Histogram   // per-message apply time (processing half)
+	ingestLag                     prometheus.Histogram   // message age at processing start (queue-wait half)
 	redeliveriesDropped           prometheus.Counter     // SemStreams ADR-072 stale redeliveries dropped by the applied-sequence guard
-	guardRecordRefusals           prometheus.Counter     // inputs refused for an undecodable applied-sequence record (design D21)
-	unguardedInputs               prometheus.Counter     // inputs applied as first seen with no applied-sequence bucket (design D8)
-	workInterrupted               *prometheus.CounterVec // inputs whose application was interrupted and left unsettled, by cause (design D8)
+	guardRecordRefusals           prometheus.Counter     // inputs refused for an undecodable applied-sequence record
+	unguardedInputs               prometheus.Counter     // inputs applied as first seen with no applied-sequence bucket
+	workInterrupted               *prometheus.CounterVec // inputs whose application was interrupted and left unsettled, by cause
 	casRetries                    prometheus.Counter     // SemStreams ADR-072 entity-merge CAS-conflict retries (contention observability)
-	staleSets                     prometheus.Counter     // stream-lane sets not applied as older (design D15, #98)
+	staleSets                     prometheus.Counter     // stream-lane sets not applied as older
 	duplicateTriplesSuppressed    *prometheus.CounterVec // append duplicates not stored, by lane (closed enum)
 	poisonedEntities              prometheus.Gauge       // per-entity poison inventory size (single gauge, no per-entity labels)
 	metricsRegistry               *metric.MetricsRegistry
 
-	// Keyed-concurrent entity ingest (SemStreams ADR-072, SemStreams gh#480). The pool partitions
+	// Keyed-concurrent entity ingest (SemStreams ADR-072). The pool partitions
 	// ingest by entity ID so same-entity updates stay ordered while different
-	// entities ingest in parallel. Built in Start BEFORE subscriptions (M3);
+	// entities ingest in parallel. Built in Start BEFORE subscriptions;
 	// drained in Stop after every consume callback has returned. The pool and
 	// submission contexts are children of the run context Start creates; only their cancel
 	// functions are retained so no production struct stores context authority.
@@ -179,7 +179,7 @@ type Component struct {
 	ingestPoolCancel   context.CancelFunc
 	ingestSubmitCancel context.CancelFunc
 
-	// Redelivery guard (SemStreams ADR-072 B1/B2/B3), two-tier. ingestGuardMem is the
+	// Redelivery guard (SemStreams ADR-072), two-tier. ingestGuardMem is the
 	// in-memory fast path, one map per lane (lane-local → lock-free, since a
 	// lane's inputs are applied one at a time). ingestGuardBucket is the durable
 	// backstop `(entityID/streamName) → last-applied stream seq`; it survives
@@ -221,9 +221,8 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, []compo
 	if len(rawConfig) > 0 {
 		// Strict decoding: a key Config does not define is refused, naming the key, where
 		// encoding/json would drop it and leave the component running on a default the
-		// operator meant to change (design D6, Config (b); the shape of the pin's
-		// inference.RejectUnknownKeys, SemStreams ADR-054). A port definition decodes through its
-		// own UnmarshalJSON, which this setting does not reach.
+		// operator meant to change. A port definition decodes through its own UnmarshalJSON,
+		// which this setting does not reach.
 		decoder := json.NewDecoder(bytes.NewReader(rawConfig))
 		decoder.DisallowUnknownFields()
 		if err := decoder.Decode(&config); err != nil {
@@ -275,7 +274,7 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 		return nil, errs.WrapInvalid(errors.New("payload registry is required"), "CreateGraphIngest", "factory", "PayloadRegistry required")
 	}
 	// The authority gate compares every candidate subject against this pair
-	// (ADR-102 d5). An absent pair has no honest reading: admitting everything
+	// (ADR-102). An absent pair has no honest reading: admitting everything
 	// would silently retire the gate, and rejecting everything would take the
 	// graph down at the first fact. Both are worse than refusing to construct,
 	// and config load already requires platform.org and platform.id
@@ -290,9 +289,9 @@ func CreateGraphIngest(rawConfig json.RawMessage, deps component.Dependencies) (
 	if err != nil {
 		return nil, err
 	}
-	// O-16 (a): hierarchy containers are born with a registered framework type.
+	// Hierarchy containers are born with a registered framework type.
 	// A registry that lacks it would refuse every container birth, and with it
-	// every birth that infers hierarchy (design D21), so the composition root
+	// every birth that infers hierarchy, so the composition root
 	// learns at construction instead.
 	if config.EnableHierarchy {
 		containerType := inference.HierarchyContainerMessageType()
@@ -367,9 +366,9 @@ func (c *Component) OutputPorts() []component.Port {
 // Health reports the shell's verdict (component.Lifecycle.Health) over graph-ingest's
 // stuck states, not a count of past errors (ADR-109 Decision 2): a poisoned entity, a
 // backlog the latest status tick could not read, or a lost input binding, which only a
-// process restart clears (#216, observeLostBinding). ErrorCount is reported and never
+// process restart clears (observeLostBinding). ErrorCount is reported and never
 // lowers Healthy. A non-empty poison inventory degrades Health per-entity: status is
-// "degraded", NOT "reset_required" (that stays a per-read error code, design D6), and
+// "degraded", NOT "reset_required" (that stays a per-read error code), and
 // the message carries count + a bounded ID/reason sample. Full enumeration rides
 // DebugStatus.
 func (c *Component) Health() component.HealthStatus {
@@ -436,7 +435,7 @@ func (c *Component) start(ctx context.Context) error {
 
 	if c.natsClient.Status() != natsclient.StatusConnected {
 		// Connect refuses a client whose connection is installed, as it is while nats.go
-		// reconnects it; Start then waits for that connection (#291).
+		// reconnects it; Start then waits for that connection.
 		if err := c.natsClient.Connect(ctx); err != nil && !errors.Is(err, errs.ErrAlreadyStarted) {
 			if ctx.Err() != nil {
 				return errs.Wrap(ctx.Err(), "Component", "Start", "context cancelled during NATS connection")
@@ -495,8 +494,8 @@ func (c *Component) start(ctx context.Context) error {
 // subscription graph-ingest makes goes through it, and handler does no work until start
 // has completed: before that, a request gets a transient error matching
 // errs.ErrNotStarted. natsclient can run a handler during a registration that then fails
-// and returns no subscription, which a failed Start's rollback cannot drain (checkpoint 3
-// B2); the check keeps that handler off what the rollback clears. The requester receives
+// and returns no subscription, which a failed Start's rollback cannot drain; the check
+// keeps that handler off what the rollback clears. The requester receives
 // the refusal as a transient error with no code (SemStreams ADR-060's code set is closed). The check
 // wraps the metering wrappers, so a refused mutation records no outcome or rejection.
 func (c *Component) subscribeForRequests(
@@ -533,7 +532,7 @@ func (c *Component) Stop(ctx context.Context) error {
 
 // release is the cleanup the shell runs, for a Stop or for a failed Start's rollback.
 // The handles stay set when cleanup fails, so the next Stop releases them again; they
-// are cleared only by a cleanup that succeeded (design D22). A consumer whose drain was
+// are cleared only by a cleanup that succeeded. A consumer whose drain was
 // already issued is not drained again (drainIssued). Each release that succeeds logs
 // "component stopped gracefully" once, after the handles are cleared, whether it ran
 // for a Stop or for a failed Start's rollback; one that fails logs nothing.
@@ -550,7 +549,7 @@ func (c *Component) release(ctx context.Context) error {
 // submission, pool, KV, and cache authority live until every consume callback
 // has returned. It waits through natsclient's WaitConsumerHandlers, not the
 // consume loop's Closed(), which can close while a callback still runs once the
-// connection is lost for good (TestStopJoinsCallbackAfterConnectionLoss, #441).
+// connection is lost for good (TestStopJoinsCallbackAfterConnectionLoss).
 func (c *Component) cleanup(ctx context.Context) error {
 	var cleanupErr error
 	for index := range c.consumers {
@@ -641,7 +640,7 @@ func (c *Component) initStorage(ctx, runCtx context.Context) error {
 
 	// SemStreams ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
 	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`
-	// (#15). Operational state graph-ingest owns (bucket-ownership rubric), a
+	// Operational state graph-ingest owns (bucket-ownership rubric), a
 	// sixteen-byte value — no cross-repo/EntityState schema change. No TTL: a
 	// record must outlive every redelivery or re-publish of its input, whatever
 	// the consumer's delivery limit, and the key set is bounded by entity

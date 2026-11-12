@@ -40,8 +40,8 @@ func (c *Component) setupSubscriptions(ctx, submitCtx context.Context) error {
 
 // defaultIngestAckWait is the acknowledgement wait graph-ingest's consumer is created with
 // when its input port declares no ack_wait. It is passed to the consumer, so natsclient's
-// own fallback is never reached; it is the same 30 s, so a port that declares nothing keeps
-// the wait it had before graph-ingest read the port (design D8, "Long apply").
+// own fallback is never reached; it is the same 30 s, so a port that declares nothing gets
+// natsclient's default wait (graph-ingest-recovery spec, "Long apply").
 const defaultIngestAckWait = 30 * time.Second
 
 // ingestDeliveryTiming returns the acknowledgement wait for an input port's consumer and
@@ -78,7 +78,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	importLane := stream.Import()
 
 	// The stream's generation is its creation time on the server, from the stream info the wait
-	// reads (design D8, #15), never from configuration. It is read once, here, before the consumer
+	// reads, never from configuration. It is read once, here, before the consumer
 	// is bound, and every input this consumer delivers carries it. A stream deleted and created again
 	// between this read and the bind is a declared limitation (graph-ingest-recovery, "Replay
 	// protection uses the generation read before the bind").
@@ -125,7 +125,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 		AckPolicy:     consumerCfg.AckPolicy,
 		MaxDeliver:    consumerCfg.MaxDeliver,
 		AckWait:       ackWait,
-		MaxAckPending: consumerCfg.MaxAckPending, // SemStreams gh#480: 0 leaves inherited/default/capped policy to NATS
+		MaxAckPending: consumerCfg.MaxAckPending, // 0 leaves inherited/default/capped policy to NATS
 		AutoCreate:    false,
 	}
 	// The pair is checked by natsclient's own rules for heartbeat delivery, once, before
@@ -142,7 +142,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 
 	// The closure submits to this pool and submitCtx, both from this Start, never to
 	// c.ingestPool. A consumer whose setup fails is not recorded for the rollback to drain,
-	// and its callback can run after the rollback cleared c.ingestPool (checkpoint 3 B2).
+	// and its callback can run after the rollback cleared c.ingestPool.
 	// By then this pool has shut down, so the submit is refused and the message is Nak'd.
 	pool := c.ingestPool
 	lane := &inputLane{
@@ -180,7 +180,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 }
 
 // waitForStream waits for a JetStream stream to be available and returns its
-// creation time as the server reports it, which is the stream's generation (#15).
+// creation time as the server reports it, which is the stream's generation.
 func (c *Component) waitForStream(ctx context.Context, streamName string) (time.Time, error) {
 	js, err := c.natsClient.JetStream()
 	if err != nil {
@@ -251,7 +251,7 @@ func (l *inputLane) deliver(submitCtx context.Context, msg jetstream.Msg) {
 		}
 		return
 	}
-	// SemStreams gh#480 queue-wait (message age when we reach it). Host clock skew can make
+	// Queue wait (message age when we reach it). Host clock skew can make
 	// this marginally negative on a co-located deploy — harmless (skews _sum only).
 	if !meta.Timestamp.IsZero() {
 		l.c.ingestLag.Observe(time.Since(meta.Timestamp).Seconds())
@@ -259,10 +259,10 @@ func (l *inputLane) deliver(submitCtx context.Context, msg jetstream.Msg) {
 	// Decode + extract ONCE (the submit's key is the already-parsed entity.ID; the
 	// lane reuses the parsed entity — no double parse). A decode/validate/extract
 	// failure, a fenced payload panic included, is a poison message: counted,
-	// logged and terminated, never returned for redelivery (design D8 Q13).
+	// logged and terminated, never returned for redelivery.
 	entity, derr := l.c.decodeEntity(msg.Subject(), msg.Data())
 	if derr != nil {
-		// A refused statement (design D15) is this message's own fault and can never be
+		// A refused statement is this message's own fault and can never be
 		// admitted: it is terminated, counted and logged as applyIngest does a
 		// structurally invalid candidate, in the contract-rejection counts, not as poison.
 		var refusal *statementRefusal
@@ -284,7 +284,7 @@ func (l *inputLane) deliver(submitCtx context.Context, msg jetstream.Msg) {
 	}
 	// Submit on the dedicated submit ctx (NOT msgCtx — a block past AckWait would
 	// otherwise surface as an ignored error → message neither enqueued nor acked).
-	// A submit failure MUST Nak so the server redelivers (SemStreams ADR-072 B1), never
+	// A submit failure MUST Nak so the server redelivers (SemStreams ADR-072), never
 	// silent-drop.
 	work := ingestWork{
 		entity:      entity,

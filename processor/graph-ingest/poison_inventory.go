@@ -1,14 +1,14 @@
 package graphingest
 
-// poison_inventory.go — the per-entity poison inventory (poison-response-scoping
-// D2/D3/D6). The inventory replaces the surface-global sticky latch: it is
+// poison_inventory.go — the per-entity poison inventory. It is not a
+// surface-global sticky latch: it is
 // OBSERVABILITY-ONLY — no read or write path consults it for a decision.
 // Refusal derives solely from decoding the bytes actually stored at each seam;
 // the inventory exists so operators get an alertable, enumerable, self-healing
 // signal (Health degraded + gauge + DebugStatus) instead of a whole-surface
 // outage.
 //
-// Each record carries the KV revision whose decode failed. Clear paths (D3):
+// Each record carries the KV revision whose decode failed. Clear paths:
 //
 //	(a) DeleteEntity — the poisoned bytes are gone, up to the revision the
 //	    delete removed;
@@ -19,7 +19,7 @@ package graphingest
 //	    canonical decode, so an out-of-band repair recovers Health for free.
 //
 // Steady-state cost with an empty inventory is a single atomic load on every
-// commit/read hot path (design D2, required).
+// commit/read hot path.
 
 import (
 	"context"
@@ -55,7 +55,7 @@ type entityPoisonRecord struct {
 }
 
 // newPoisonedEntitiesMetric builds the poison-inventory gauge.
-// One gauge, never per-entity labels (cardinality discipline, design D6):
+// One gauge, never per-entity labels (cardinality discipline):
 // enumeration belongs to DebugStatus, alerting belongs to this gauge plus the
 // Health message.
 func newPoisonedEntitiesMetric() prometheus.Gauge {
@@ -121,7 +121,7 @@ func (c *Component) logEntityPoisonRecorded(contractErr *graph.StateContractErro
 
 // inventoryEntityPoison is the standard record path for detection sites that
 // hold the failing entry's revision (query lanes, mutation read seams, and the
-// write seam's callbacks, at the revision they read: design D23). It
+// write seam's callbacks, at the revision they read). It
 // records, logs once on a new record, and then verifies the record against the
 // key's CURRENT bytes — closing the last record/clear interleaving: a repair
 // (delete or commit) that completed entirely between this detection's read and
@@ -140,8 +140,8 @@ func (c *Component) inventoryEntityPoison(ctx context.Context, contractErr *grap
 // out-of-band overwrite, at that revision — the revision guard keeps a
 // re-poison newer than the proof). An absent key proves repair only up to the
 // revision recorded before the read: a newer poisoned revision recorded while
-// the read was in flight stays (checkpoint 3 B1). A transient KV read error
-// keeps the record; it self-heals on the key's next touch (D3c). One extra KV
+// the read was in flight stays. A transient KV read error
+// keeps the record; it self-heals on the key's next touch (clear path (c)). One extra KV
 // Get, only on the already-failing detection path.
 func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID string) {
 	if c.entityBucket == nil {
@@ -172,7 +172,7 @@ func (c *Component) verifyEntityPoisonRecord(ctx context.Context, entityID strin
 // newer than the proof — a re-poison after the proof must not be erased. A
 // revision's bytes are immutable, so proofRev == recorded means the recorded
 // revision is repaired and the entry is stale. Every clear goes through this
-// guard (checkpoint 3 B1).
+// guard.
 func (c *Component) dropEntityPoisonRecord(entityID string, proofRev uint64) {
 	c.entityPoisonMu.Lock()
 	defer c.entityPoisonMu.Unlock()
@@ -202,8 +202,7 @@ func (c *Component) clearEntityPoisonOnDelete(entityID string, deletedRev uint64
 // clearEntityPoisonOnCommit is clear path (b): a write-gate-validated commit
 // to the key proves repair when its revision is newer than the recorded one.
 // committedRev is the revision that commit produced, as the write returned it.
-// The healthy hot path exits on the first atomic load (design D2's required
-// fast path).
+// The healthy hot path exits on the first atomic load.
 func (c *Component) clearEntityPoisonOnCommit(_ context.Context, entityID string, committedRev uint64) {
 	if c.entityPoisonSize.Load() == 0 {
 		return // steady-state: one atomic load, mutex untouched
@@ -272,7 +271,7 @@ type entityPoisonDebugStatus struct {
 
 // DebugStatus implements component.DebugStatusProvider: the FULL poison
 // inventory, sorted by entity ID, so a mass-poison event is enumerable in-band
-// (design D6 — the Health message and gauge are bounded; this is not).
+// (the Health message and gauge are bounded; this is not).
 func (c *Component) DebugStatus() any {
 	c.entityPoisonMu.Lock()
 	defer c.entityPoisonMu.Unlock()
@@ -349,7 +348,7 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 }
 
 // stopEntityStateGuardWatcher performs the deliberate snapshot-watcher stop
-// (design D1 mandatory shape): Stop(), then KEEP READING the updates channel
+// in a mandatory shape: Stop(), then KEEP READING the updates channel
 // until nats.go closes it, discarding entries. The nats.go update callback
 // blocks on a full channel while holding the watcher mutex, so an unread
 // channel would wedge the connection's async-callback dispatcher (via
@@ -363,7 +362,7 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 // closes the channel (jetstream/kv.go:1356-1368), and nats.go reads that handler
 // once, when its delivery goroutine exits (nats.go:3830-3834). A watch whose
 // context ends, or whose connection closes, in between leaves the channel open
-// for good with no delivery goroutine running (#456).
+// for good with no delivery goroutine running.
 // TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses drives the bound on a
 // scripted watcher; the window itself has not been reproduced against nats.go.
 func (c *Component) stopEntityStateGuardWatcher(ctx context.Context, watcher jetstream.KeyWatcher, updates <-chan jetstream.KeyValueEntry) error {
@@ -453,10 +452,10 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 }
 
 // classifyStoredStateRMWError re-attributes a read-modify-write failure to
-// resident stored-state poison (SemStreams gh#562). The owner's own RMW reads check only
-// the trusted decode and the key (decodeStoredForWrite, design D23), so a
-// noncanonical STORED statement, or one with no Source or no Timestamp
-// (checkpoint 3 H3), does not fail on the read — it surfaces either as a
+// resident stored-state poison. The owner's own RMW reads check only
+// the trusted decode and the key (decodeStoredForWrite), so a
+// noncanonical STORED statement, or one with no Source or no Timestamp,
+// does not fail on the read — it surfaces either as a
 // trusted-decode failure (unreadable JSON) or as a rejection by the merge's
 // metadata check or MarshalEntityState write gate (encodeMerge) that would
 // otherwise blame the merged CANDIDATE the caller submitted. On this slow path
@@ -473,7 +472,7 @@ func (c *Component) recordBootSweepPoison(ctx context.Context, sweep map[string]
 //
 // entityID is the RMW target (the CAS key) — the closures are the only place
 // the identity is reliably in scope, so stamping happens here rather than at
-// any outer helper (design D4).
+// any outer helper.
 func (c *Component) classifyStoredStateRMWError(ctx context.Context, entityID string, current []byte, revision uint64, cycleErr error) error {
 	_, err := decodeStoredEntity(entityID, current)
 	if err == nil {

@@ -19,6 +19,14 @@ and `MRR` is the average of one over its rank.
 | `community-probe.go.txt` | `graph/clustering/zz_review_community_test.go` | `go test ./graph/clustering -run TestReviewCommunities -v -count=1` | Community keywords, and global text search through community records |
 | `router-probe.go.txt` | `processor/graph-query/zz_review_route_test.go` | `go test ./processor/graph-query -run TestReviewRoutes -v -count=1` | Where global search routes plain questions |
 
+The design added three more, each with its source and its log:
+
+- `sequence-probe`: the memory program with one more layout, where each entity keeps its word sequence (design D4).
+- `tokenizer-probe-2`: the tokenizer probe with three more rows, among them the 30-word stopword list and the two
+  added plural rules (design D3). It runs as `tokenizer-probe` does.
+- `word-shape-probe`: a Python script over the tree's Go and Markdown files that counts long words before and after
+  identifier splitting and plural pairs that fold (design D3). Run it from the repository root with `python3`.
+
 Limits of these numbers:
 
 - The corpus is English prose from one repository. No consumer's data or questions were used.

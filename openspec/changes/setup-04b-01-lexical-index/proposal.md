@@ -38,7 +38,7 @@ be added later without changing the package's callers or the scorecard:
 
 - a per-entity token record, so a restart need not refetch bodies kept in the object store: the index is fed entity
   by entity and never reads storage, so what feeds it can change;
-- word positions, if phrase search by re-reading the best candidates proves too slow;
+- word positions in the index, if checking phrases against each entity's word sequence proves too slow;
 - typo tolerance and further query forms: the query is a parsed value, so a form adds a field;
 - tier 1 vectors beside the index, combined by rank: the index returns an ordered list, which is all that needs.
 
@@ -49,7 +49,8 @@ No search library, stored index or typo tolerance. No change to graph-embedding,
 
 ## Impact
 
-`graph/lexical` (new) and its test data; `docs/repository-map.md`. Overlap: the comment clean-up (#606) will reach
+`graph/lexical` (new) and its test data; a dependency guard in `internal/harness/contract`; one line in
+`scripts/cover-check.sh`; `docs/repository-map.md`. Overlap: the comment clean-up (#606) will reach
 files changes 3 and 4 delete (`bm25_embedder.go`, `classifier_embedding.go`, the scorers) and should skip them.
 
 ## Rulings

@@ -1,0 +1,101 @@
+package embedding
+
+import (
+	"math/rand"
+	"strings"
+	"testing"
+	"unicode"
+)
+
+// sStem is Harman's plural-only stemmer.
+func sStem(w string) string {
+	n := len(w)
+	switch {
+	case n > 4 && strings.HasSuffix(w, "ies") && !strings.HasSuffix(w, "eies") && !strings.HasSuffix(w, "aies"):
+		return w[:n-3] + "y"
+	case n > 3 && strings.HasSuffix(w, "es") && !strings.HasSuffix(w, "aes") && !strings.HasSuffix(w, "ees") && !strings.HasSuffix(w, "oes"):
+		return w[:n-1]
+	case n > 3 && strings.HasSuffix(w, "s") && !strings.HasSuffix(w, "us") && !strings.HasSuffix(w, "ss"):
+		return w[:n-1]
+	}
+	return w
+}
+
+var stop30 = map[string]bool{
+	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
+	"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
+	"with": true, "by": true, "from": true, "as": true, "is": true, "was": true,
+	"are": true, "be": true, "has": true, "have": true, "had": true, "do": true,
+	"does": true, "did": true, "will": true, "would": true, "could": true, "should": true,
+}
+
+var stopList = stopwords
+
+// esStem is sStem plus: strip "es" after ss, x, ch, sh, z.
+func esStem(w string) string {
+	n := len(w)
+	if n > 4 && strings.HasSuffix(w, "es") {
+		b := w[:n-2]
+		if strings.HasSuffix(b, "ss") || strings.HasSuffix(b, "x") || strings.HasSuffix(b, "ch") || strings.HasSuffix(b, "sh") || strings.HasSuffix(b, "z") {
+			return b
+		}
+	}
+	return sStem(w)
+}
+
+func tokens(text string, stemmer func(string) string, stop bool) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
+		if stop && stopList[w] {
+			continue
+		}
+		out = append(out, stemmer(w))
+	}
+	return out
+}
+
+func TestReviewTokenizers(t *testing.T) {
+	secs := loadSections(t, "../..")
+	rng := rand.New(rand.NewSource(1))
+	rng.Shuffle(len(secs), func(i, j int) { secs[i], secs[j] = secs[j], secs[i] })
+	secs = secs[:8000]
+	headingCount := map[string]int{}
+	for _, s := range secs {
+		headingCount[strings.ToLower(s.heading)]++
+	}
+	var queries []int
+	for i, s := range secs {
+		if headingCount[strings.ToLower(s.heading)] == 1 && len(strings.Fields(s.heading)) >= 3 && len(queries) < 1500 {
+			queries = append(queries, i)
+		}
+	}
+	id := func(w string) string { return w }
+	for _, v := range []struct {
+		name string
+		stem func(string) string
+		stop bool
+	}{
+		{"shipped stemmer, stopwords", stem, true},
+		{"no stemming, stopwords", id, true},
+		{"plural-only stemmer, stopwords", sStem, true},
+		{"plural-only stemmer, no stopword list", sStem, false},
+		{"plural-only stemmer, 30-word list", sStem, true},
+		{"plural+es stemmer, 30-word list", esStem, true},
+		{"plural+es stemmer, 84-word list", esStem, true},
+	} {
+		stopList = stopwords
+		if strings.Contains(v.name, "30-word") {
+			stopList = stop30
+		}
+		toks := make([][]string, len(secs))
+		for i, s := range secs {
+			toks[i] = tokens(s.body, v.stem, v.stop)
+		}
+		ref := newRef(toks)
+		var tl tally
+		for _, target := range queries {
+			tl.add(ref.scores(tokens(secs[target].heading, v.stem, v.stop)), target, nil)
+		}
+		t.Logf("%-40s %s", v.name, tl.String())
+	}
+}

@@ -1,0 +1,14 @@
+go test ./graph/embedding -run TestReviewTokenizers -v -count=1   (commit 2853486d, a scratch copy from git archive;
+  tokenizer-probe-2.go.txt is tokenizer-probe.go.txt with three more rows; go1.26.11 darwin/arm64, Apple M3 Pro)
+
+shipped stemmer, stopwords               R@1  13.1%  R@10  36.7%  MRR 0.210  docs>0/query    3459
+no stemming, stopwords                   R@1  11.9%  R@10  35.3%  MRR 0.196  docs>0/query    3016
+plural-only stemmer, stopwords           R@1  12.5%  R@10  37.0%  MRR 0.204  docs>0/query    3341
+plural-only stemmer, no stopword list    R@1  11.7%  R@10  36.7%  MRR 0.198  docs>0/query    6401
+plural-only stemmer, 30-word list        R@1  11.9%  R@10  36.6%  MRR 0.200  docs>0/query    3709
+plural+es stemmer, 30-word list          R@1  11.9%  R@10  36.6%  MRR 0.200  docs>0/query    3714
+plural+es stemmer, 84-word list          R@1  12.5%  R@10  36.9%  MRR 0.205  docs>0/query    3347
+
+"stopwords" is graph/embedding's 84-word list (bm25_embedder.go:18-41); "30-word list" is graph/clustering/terms.go:16.
+"plural+es" adds two rules before the plural-only stemmer: strip "es" after ss, x, ch or sh, and strip a final "e"
+after them. The first four rows match tokenizer-probe.log.

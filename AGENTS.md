@@ -172,6 +172,7 @@ A new repo-wide or agent-conduct rule updates this file and `.agents/rules-index
 | `review` | Pushed claim branches update by merging `origin/main`, never rebase or force-push | `protocol` |
 | `review` | Evidence in a PR or task opens on another machine; git-ignored paths named local only | `protocol`; `.agents/skills/preflight` |
 | `review` | Docs are for a working developer: coined terms defined at first use, no jargon, no marketing | `writer`, `rev` |
+| `review` | Comments, tests, and docs give the reason in plain words, never port history (issue, PR, comment, checkpoint, task, or design-decision reference; "the pin did X"); an ADR is named only where it is the reason (#606) | `dev`, `rev`, `writer` |
 | `review` | Developer notes on task choices the design leaves open go in `openspec/changes/<id>/notes/<task>.md`, linked from a PR comment (#159) | `dev`, `rev`; `protocol` |
 
 ## Where state lives

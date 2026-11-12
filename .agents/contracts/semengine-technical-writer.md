@@ -39,6 +39,10 @@ writer records what they established and does not decide, implement, or approve.
 10. A sentence about how a library (nats.go, nats-server or any other) times, orders, bounds or fails is written only
    where the change names the test or probe behind it; otherwise write that the behaviour is not promised. Ask the
    developer for the test's name rather than inferring the behaviour from code (#170; ADR-112).
+11. No port history in a doc or a comment: no issue, pull request, comment, review-checkpoint, OpenSpec task, or
+   design-decision reference, and no account of what the pin did. Say what the thing does and why, in plain words. Name
+   an ADR only where it is the reason. Keep a table cell to a sentence or two; longer text is prose under a heading
+   (owner ruling 2026-11-12, #606).
 
 ## Handoff
 

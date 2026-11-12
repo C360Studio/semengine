@@ -12,9 +12,9 @@ settings and says it forwards nothing yet. The package also holds the helpers a 
 `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the
 OpenAPI registry, plus the service-configuration and schema helpers the service manager reads.
 
-Of the built-in services only the heartbeat is on by default. The metrics forwarder, the log forwarder, the message
-logger and storage observability run only when the configuration enables them. Each has a section below:
-[The component manager](#the-component-manager), [The message logger](#the-message-logger),
+Of the built-in services the metrics service and the heartbeat are on by default. The metrics forwarder, the log
+forwarder, the message logger and storage observability run only when the configuration enables them.
+Each has a section below: [The component manager](#the-component-manager), [The message logger](#the-message-logger),
 [The storage observability service](#the-storage-observability-service), [The heartbeat service](#the-heartbeat-service),
 [The metrics forwarder](#the-metrics-forwarder) and [The log forwarder](#the-log-forwarder).
 

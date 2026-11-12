@@ -27,7 +27,7 @@ not a task tracker and not a description of the tree.
 | `docs/repository-map.md` | This file |
 | `docs/provenance.md` | License and provenance requirements for ported code |
 | `docs/inventory-scope.md` | Which repositories agents may read, for what question; the starter consumer set |
-| `docs/adr/` | Architecture decision records: why a design is the way it is. Records ported from SemStreams keep their numbers; SemEngine's own start at ADR-111. `ls docs/adr` lists them, and each file name says what it decides |
+| `docs/adr/` | Architecture decision records: why a design is the way it is. Records ported from SemStreams keep their numbers; SemEngine's own start at ADR-108. `ls docs/adr` lists them, and each file name says what it decides |
 | `docs/specs/entity-id-contract.md` | The entity-ID reference contract, ported from SemStreams with `pkg/types`: the requirements for entity identity as SemStreams states them, not a statement of current code. Each requirement moves into a capability spec under `openspec/specs/` when the code it describes is ported |
 | `docs/concepts/16-federation.md` | How entity-ID positions and the authority check separate sources and deployments; ported from SemStreams with `pkg/types` |
 | `AGENTS.md`, `CLAUDE.md` | Agent entry point; `CLAUDE.md` imports `AGENTS.md` |

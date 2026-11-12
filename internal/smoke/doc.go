@@ -13,7 +13,8 @@
 //
 // A second composition has no graph-embedding, neither configured nor registered:
 // TestSmoke_NoEmbedderAnswers boots it and asks pkg/fusion, over pkg/fusion/fusionnats, the
-// questions a stack without an embedder answers, and the word question it refuses.
+// questions a stack without an embedder answers, and the word question it refuses: graph-query is
+// configured with embedding_enabled false, so the refusal is invalid not_enabled naming semantic.
 //
 // The package holds no production code; everything else is in integration-tagged test files.
 package smoke

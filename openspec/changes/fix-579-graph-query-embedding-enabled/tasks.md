@@ -25,7 +25,7 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
 
 ## 3. Smoke stack
 
-- [ ] 3.1 `internal/smoke/stack_integration_test.go` `graphOnlyConfig`: `"embedding_enabled": false` on graph-query,
+- [x] 3.1 `internal/smoke/stack_integration_test.go` `graphOnlyConfig`: `"embedding_enabled": false` on graph-query,
   and its comment. `TestSmoke_NoEmbedderAnswers`: the NL refusal is invalid `not_enabled` naming `semantic`; drop the
   `graph.embedding.query.search` lookup and the PR #577 citation; the health comment says the refusal is no error.
   `internal/smoke/doc.go:14-16` updated. Check: the smoke run green; the assertion shown to fail with the key removed

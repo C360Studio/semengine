@@ -369,9 +369,9 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 	// rerun reports whether a write error lets the callback run again: the bucket refused the
 	// write as a revision conflict, or nats.go returned jetstream.ErrNoStreamResponse, which it
 	// does only when every publish attempt got no responders, so no stream stored the write
-	// (publish.go:248-263). Any other write error may follow a stored write, and a later run's
-	// refusal could not show whether it was stored, so it ends the call. A failed read stores
-	// nothing and is retried.
+	// (jetstream/publish.go:276-291 at v1.55.0, read, not measured). Any other write error may
+	// follow a stored write, and a later run's refusal could not show whether it was stored, so
+	// it ends the call. A failed read stores nothing and is retried.
 	rerun := func(err error) bool {
 		return IsKVConflictError(err) || errors.Is(err, jetstream.ErrNoStreamResponse)
 	}

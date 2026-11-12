@@ -35,7 +35,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   `TestCombinedQuery`, `TestUnmatchedPhraseFindsNothing`, `TestPhraseNeedsAdjacentWords`,
   `TestPhraseStaysInOneField` and `TestExcludedWordRemovesEntities`. `TestPropIndexMatchesModel` is extended so that
   its model and generated queries carry up to two phrases and two exclusions, with seed and checks in `notes/2.3.md`.
-- [ ] 2.4 Scorecard and name weight (design D6, D8). Premise: the probes' known-item method
+- [x] 2.4 Scorecard and name weight (design D6, D8). Premise: the probes' known-item method
   (`notes/probes/README.md`); 2,000 sections come to 0.97 MB gzipped (`notes/probes/corpus-size-probe.log`); the
   unit-test time budget (`openspec/specs/merge-gate/spec.md:15-19`). Accept: the frozen corpus and questions, among
   them one that pins `withretry` finding nothing, are in `graph/lexical/testdata/scorecard/`, with their source

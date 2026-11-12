@@ -1,0 +1,82 @@
+package lexical
+
+import (
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
+	"math"
+	"os"
+	"strings"
+	"testing"
+)
+
+type evEntry struct{ ID, Path, Name, Body string }
+type evQ struct{ Query, ID string }
+
+func evLoad(t *testing.T, dir string) ([]evEntry, []evQ) {
+	f, _ := os.Open(dir + "/corpus.jsonl.gz")
+	zr, _ := gzip.NewReader(f)
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(nil, 1<<20)
+	var es []evEntry
+	for sc.Scan() {
+		var m map[string]string
+		json.Unmarshal(sc.Bytes(), &m)
+		es = append(es, evEntry{m["id"], m["path"], m["name"], m["body"]})
+	}
+	var qs []evQ
+	b, _ := os.ReadFile(dir + "/known.json")
+	json.Unmarshal(b, &qs)
+	return es, qs
+}
+
+func evRun(t *testing.T, ix *Index, qs []evQ, label string) {
+	var r1, r10, n, refused, excl, phr int
+	var mrr float64
+	for _, q := range qs {
+		n++
+		pq, err := ParseQuery(q.Query)
+		if err != nil {
+			refused++
+			continue
+		}
+		if len(pq.excluded) > 0 {
+			excl++
+		}
+		if len(pq.phrases) > 0 {
+			phr++
+		}
+		res, _ := ix.Search(pq, Options{Limit: ix.Len()})
+		for i, h := range res.Hits {
+			if h.EntityID == q.ID {
+				mrr += 1 / float64(i+1)
+				if i == 0 {
+					r1++
+				}
+				if i < 10 {
+					r10++
+				}
+			}
+		}
+	}
+	f := float64(n)
+	t.Logf("%-28s R@1 %5.1f%%  R@10 %5.1f%%  MRR %.3f  (n=%d refused=%d excl=%d phrase=%d)", label,
+		100*float64(r1)/f, 100*float64(r10)/f, mrr/f, n, refused, excl, phr)
+	_ = math.Abs
+}
+
+func TestEval(t *testing.T) {
+	es, qs := evLoad(t, os.Getenv("SC"))
+	ix := NewIndex()
+	for _, e := range es {
+		d := Document{Name: e.Name, Body: e.Body}
+		if os.Getenv("BODYONLY") != "" {
+			d.Name = ""
+		}
+		if err := ix.Put(e.ID, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	evRun(t, ix, qs, "w="+os.Getenv("W")+" body-only="+os.Getenv("BODYONLY"))
+	_ = strings.Fields
+}

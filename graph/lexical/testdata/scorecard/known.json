@@ -1,0 +1,2002 @@
+[
+ {
+  "query": "2. Probes and suite (unit lane)",
+  "id": "c360.semengine.openspec.markdown.section.s0000"
+ },
+ {
+  "query": "The adapter reading against `metric/handler.go`",
+  "id": "c360.semengine.openspec.markdown.section.s0002"
+ },
+ {
+  "query": "11. Collision table: vector cache and Worker",
+  "id": "c360.semengine.openspec.markdown.section.s0005"
+ },
+ {
+  "query": "Specs, ledger, records",
+  "id": "c360.semengine.openspec.markdown.section.s0006"
+ },
+ {
+  "query": "7. Ledger and what already landed",
+  "id": "c360.semengine.openspec.markdown.section.s0007"
+ },
+ {
+  "query": "Requirement: Each terminal outcome is reported once",
+  "id": "c360.semengine.openspec.markdown.section.s0010"
+ },
+ {
+  "query": "D1. One reading, one answer (#135 finding 1, item c; #132 item b)",
+  "id": "c360.semengine.openspec.markdown.section.s0011"
+ },
+ {
+  "query": "D2 The commit state lives on the error",
+  "id": "c360.semengine.openspec.markdown.section.s0012"
+ },
+ {
+  "query": "Scenario: No readiness import",
+  "id": "c360.semengine.openspec.markdown.section.s0013"
+ },
+ {
+  "query": "Requirement: A group record is bounded",
+  "id": "c360.semengine.openspec.markdown.section.s0015"
+ },
+ {
+  "query": "Requirement: Path answers name each edge as the graph holds it",
+  "id": "c360.semengine.openspec.markdown.section.s0017"
+ },
+ {
+  "query": "Found, not changed",
+  "id": "c360.semengine.openspec.markdown.section.s0018"
+ },
+ {
+  "query": "5. The #40 flake as an input (closed by `d303c51`)",
+  "id": "c360.semengine.openspec.markdown.section.s0019"
+ },
+ {
+  "query": "Requirement: Out-of-range numbers are refused",
+  "id": "c360.semengine.openspec.markdown.section.s0025"
+ },
+ {
+  "query": "2. Connect honours its context (design D2)",
+  "id": "c360.semengine.openspec.markdown.section.s0029"
+ },
+ {
+  "query": "1. graph-index: low-water-of-pending watermark (the corrected invariant)",
+  "id": "c360.semengine.docs.markdown.section.s0031"
+ },
+ {
+  "query": "D13. Durable execution at tier 0",
+  "id": "c360.semengine.openspec.markdown.section.s0034"
+ },
+ {
+  "query": "Scenario: Read from a live bucket",
+  "id": "c360.semengine.openspec.markdown.section.s0038"
+ },
+ {
+  "query": "Scenario: A revision not reached",
+  "id": "c360.semengine.openspec.markdown.section.s0039"
+ },
+ {
+  "query": "Real-file mutations",
+  "id": "c360.semengine.openspec.markdown.section.s0040"
+ },
+ {
+  "query": "4. Docs and archive",
+  "id": "c360.semengine.openspec.markdown.section.s0041"
+ },
+ {
+  "query": "graph-index's reindex counter (#108)",
+  "id": "c360.semengine.openspec.markdown.section.s0042"
+ },
+ {
+  "query": "Related issues this change does not close",
+  "id": "c360.semengine.openspec.markdown.section.s0043"
+ },
+ {
+  "query": "The retention mutant, by hand under `-tags integration` (#129)",
+  "id": "c360.semengine.openspec.markdown.section.s0044"
+ },
+ {
+  "query": "Requirement: Generic JSON accepts an object or null body",
+  "id": "c360.semengine.openspec.markdown.section.s0046"
+ },
+ {
+  "query": "Scenario: Null or absent data",
+  "id": "c360.semengine.openspec.markdown.section.s0047"
+ },
+ {
+  "query": "What the trial shows, and what was checked",
+  "id": "c360.semengine.openspec.markdown.section.s0048"
+ },
+ {
+  "query": "Semantic identity and graph contracts",
+  "id": "c360.semengine.agents.markdown.section.s0049"
+ },
+ {
+  "query": "1. Reconcile the Checkpoint",
+  "id": "c360.semengine.agents.markdown.section.s0051"
+ },
+ {
+  "query": "Pattern 2: Component Initialization",
+  "id": "c360.semengine.pkg.markdown.section.s0054"
+ },
+ {
+  "query": "Scenario: Doctor violation fails verify",
+  "id": "c360.semengine.openspec.markdown.section.s0056"
+ },
+ {
+  "query": "Scenario: File list incomplete",
+  "id": "c360.semengine.openspec.markdown.section.s0057"
+ },
+ {
+  "query": "How It Works",
+  "id": "c360.semengine.pkg.markdown.section.s0058"
+ },
+ {
+  "query": "The pins against the unchanged files",
+  "id": "c360.semengine.openspec.markdown.section.s0061"
+ },
+ {
+  "query": "6. Review stop (Codex), part 2",
+  "id": "c360.semengine.openspec.markdown.section.s0062"
+ },
+ {
+  "query": "3.4 Consumer decode/execute table after E1–E4",
+  "id": "c360.semengine.openspec.markdown.section.s0064"
+ },
+ {
+  "query": "Option 2 — `Lens.SeedFilter(entity) bool` + engine over-fetch *(self-contained, cheaper, weaker)*",
+  "id": "c360.semengine.docs.markdown.section.s0065"
+ },
+ {
+  "query": "4. Not established (and what would establish it)",
+  "id": "c360.semengine.openspec.markdown.section.s0066"
+ },
+ {
+  "query": "Requirement: In Go files the image-pin check reports image literals only",
+  "id": "c360.semengine.openspec.markdown.section.s0067"
+ },
+ {
+  "query": "2.1 Code or documents only",
+  "id": "c360.semengine.openspec.markdown.section.s0075"
+ },
+ {
+  "query": "Requirement: A component's report becomes unhealthy whenever it is not healthy",
+  "id": "c360.semengine.openspec.markdown.section.s0076"
+ },
+ {
+  "query": "D4. What a caller observes: reads",
+  "id": "c360.semengine.openspec.markdown.section.s0077"
+ },
+ {
+  "query": "Built into the repository's own checks",
+  "id": "c360.semengine.docs.markdown.section.s0082"
+ },
+ {
+  "query": "D6. Proving tests",
+  "id": "c360.semengine.openspec.markdown.section.s0083"
+ },
+ {
+  "query": "Requirement: GitHub Project v2 sync",
+  "id": "c360.semengine.openspec.markdown.section.s0084"
+ },
+ {
+  "query": "Open-issue inventory for `pkg/errs` and `pkg/retry`",
+  "id": "c360.semengine.openspec.markdown.section.s0087"
+ },
+ {
+  "query": "Scenario: Every setting arrives unchanged",
+  "id": "c360.semengine.openspec.markdown.section.s0089"
+ },
+ {
+  "query": "Open issues naming carried packages",
+  "id": "c360.semengine.openspec.markdown.section.s0090"
+ },
+ {
+  "query": "Requirement: Failed-start rollback helper",
+  "id": "c360.semengine.openspec.markdown.section.s0096"
+ },
+ {
+  "query": "Cost of each call",
+  "id": "c360.semengine.openspec.markdown.section.s0098"
+ },
+ {
+  "query": "Adopter seam (SemSource, the websocket output port)",
+  "id": "c360.semengine.openspec.markdown.section.s0100"
+ },
+ {
+  "query": "6.6 What the statements say",
+  "id": "c360.semengine.openspec.markdown.section.s0102"
+ },
+ {
+  "query": "What the error text loses",
+  "id": "c360.semengine.health.markdown.section.s0103"
+ },
+ {
+  "query": "2. Every spelling of \"the commit state of a mutation request's error\"",
+  "id": "c360.semengine.openspec.markdown.section.s0104"
+ },
+ {
+  "query": "Benchmark (evidence, not a gate)",
+  "id": "c360.semengine.openspec.markdown.section.s0106"
+ },
+ {
+  "query": "What is NOT changing",
+  "id": "c360.semengine.docs.markdown.section.s0109"
+ },
+ {
+  "query": "Scenario: A body that is not an object",
+  "id": "c360.semengine.openspec.markdown.section.s0112"
+ },
+ {
+  "query": "Already in-process today",
+  "id": "c360.semengine.openspec.markdown.section.s0115"
+ },
+ {
+  "query": "Tests that replace the probes",
+  "id": "c360.semengine.openspec.markdown.section.s0116"
+ },
+ {
+  "query": "6. Intent check (boundary moved by this change)",
+  "id": "c360.semengine.openspec.markdown.section.s0117"
+ },
+ {
+  "query": "What loading refuses",
+  "id": "c360.semengine.config.markdown.section.s0119"
+ },
+ {
+  "query": "Scenario: Collections are named apart",
+  "id": "c360.semengine.openspec.markdown.section.s0122"
+ },
+ {
+  "query": "Operator endpoints and metrics",
+  "id": "c360.semengine.docs.markdown.section.s0124"
+ },
+ {
+  "query": "8. Adopter seam",
+  "id": "c360.semengine.openspec.markdown.section.s0126"
+ },
+ {
+  "query": "7. Adopter seam inventory",
+  "id": "c360.semengine.openspec.markdown.section.s0127"
+ },
+ {
+  "query": "§5.3 semboids and semteams",
+  "id": "c360.semengine.openspec.markdown.section.s0129"
+ },
+ {
+  "query": "D1. Files, edges, exclusions, size",
+  "id": "c360.semengine.openspec.markdown.section.s0134"
+ },
+ {
+  "query": "Scenario: a taxonomy across sources is a pattern, not a prefix",
+  "id": "c360.semengine.docs.markdown.section.s0135"
+ },
+ {
+  "query": "Scenario: The queue meets a tasks.md that is not UTF-8",
+  "id": "c360.semengine.openspec.markdown.section.s0138"
+ },
+ {
+  "query": "Requirement: Declarative JSON and YAML vocabulary packs load and register fail-closed",
+  "id": "c360.semengine.openspec.markdown.section.s0140"
+ },
+ {
+  "query": "4. Consumers at birth",
+  "id": "c360.semengine.openspec.markdown.section.s0142"
+ },
+ {
+  "query": "Issues filed (status:blocked on this branch, no closing keyword)",
+  "id": "c360.semengine.openspec.markdown.section.s0143"
+ },
+ {
+  "query": "0. The question and the reading scope",
+  "id": "c360.semengine.openspec.markdown.section.s0145"
+ },
+ {
+  "query": "Requirement: Agent setup step 1: required files exist",
+  "id": "c360.semengine.openspec.markdown.section.s0147"
+ },
+ {
+  "query": "Requirement: A panic in payload code is poison, not an interruption",
+  "id": "c360.semengine.openspec.markdown.section.s0148"
+ },
+ {
+  "query": "Scenario: An insertion right after a label",
+  "id": "c360.semengine.openspec.markdown.section.s0150"
+ },
+ {
+  "query": "Requirement: Comparison with the pin",
+  "id": "c360.semengine.openspec.markdown.section.s0151"
+ },
+ {
+  "query": "Scenario: Close begins after the subscription ended while a handler runs",
+  "id": "c360.semengine.openspec.markdown.section.s0152"
+ },
+ {
+  "query": "D3. What the write lane stores (ADR-063; N1)",
+  "id": "c360.semengine.openspec.markdown.section.s0155"
+ },
+ {
+  "query": "Ruling conformance (Q6, #19)",
+  "id": "c360.semengine.openspec.markdown.section.s0156"
+ },
+ {
+  "query": "3. Adjacent claims on the territory",
+  "id": "c360.semengine.openspec.markdown.section.s0160"
+ },
+ {
+  "query": "Scenario: An empty bucket",
+  "id": "c360.semengine.openspec.markdown.section.s0161"
+ },
+ {
+  "query": "One view per instance, reopened",
+  "id": "c360.semengine.openspec.markdown.section.s0162"
+ },
+ {
+  "query": "D2. One retry config: `retry.Config` through `retry.Do`",
+  "id": "c360.semengine.openspec.markdown.section.s0163"
+ },
+ {
+  "query": "Requirement: The heartbeat's Start bounds Start; Stop is the only stop",
+  "id": "c360.semengine.openspec.markdown.section.s0165"
+ },
+ {
+  "query": "2. Every spelling",
+  "id": "c360.semengine.openspec.markdown.section.s0166"
+ },
+ {
+  "query": "Requirement: Edges are ordered before any cap",
+  "id": "c360.semengine.openspec.markdown.section.s0168"
+ },
+ {
+  "query": "D8. The counting enumeration in `pkg/graphview`",
+  "id": "c360.semengine.openspec.markdown.section.s0171"
+ },
+ {
+  "query": "Scenario: The refusal contains the method's text",
+  "id": "c360.semengine.openspec.markdown.section.s0175"
+ },
+ {
+  "query": "D4. What `indexed_revision` means here",
+  "id": "c360.semengine.openspec.markdown.section.s0177"
+ },
+ {
+  "query": "Step 6: Trace registration from every composition root",
+  "id": "c360.semengine.agents.markdown.section.s0178"
+ },
+ {
+  "query": "Requirement: A failing publication is a stuck state",
+  "id": "c360.semengine.openspec.markdown.section.s0180"
+ },
+ {
+  "query": "Requirement: Prefix queries support literal prefixes and wildcard patterns",
+  "id": "c360.semengine.openspec.markdown.section.s0181"
+ },
+ {
+  "query": "D6. Text follows the code (#133 item 5)",
+  "id": "c360.semengine.openspec.markdown.section.s0182"
+ },
+ {
+  "query": "Item 4. Open pull requests",
+  "id": "c360.semengine.openspec.markdown.section.s0184"
+ },
+ {
+  "query": "D6. Help text (#287)",
+  "id": "c360.semengine.openspec.markdown.section.s0185"
+ },
+ {
+  "query": "Requirement: Health reads running and the stuck states it is given",
+  "id": "c360.semengine.openspec.markdown.section.s0187"
+ },
+ {
+  "query": "Lifecycle methods as they are now",
+  "id": "c360.semengine.openspec.markdown.section.s0188"
+ },
+ {
+  "query": "2. Review and close",
+  "id": "c360.semengine.openspec.markdown.section.s0189"
+ },
+ {
+  "query": "Requirement: An input with no stored record is applied as first seen",
+  "id": "c360.semengine.openspec.markdown.section.s0191"
+ },
+ {
+  "query": "Probes (go1.26.10 darwin/arm64, at `a5f1d0e`, local only)",
+  "id": "c360.semengine.openspec.markdown.section.s0192"
+ },
+ {
+  "query": "Scenario: A large integer survives the wire",
+  "id": "c360.semengine.openspec.markdown.section.s0193"
+ },
+ {
+  "query": "Requirement: One resolver reads an entity reference",
+  "id": "c360.semengine.openspec.markdown.section.s0195"
+ },
+ {
+  "query": "The changes that fail silently",
+  "id": "c360.semengine.processor.markdown.section.s0196"
+ },
+ {
+  "query": "D6. Applied-input barrier (#18)",
+  "id": "c360.semengine.openspec.markdown.section.s0197"
+ },
+ {
+  "query": "Duplication, rule by rule (ADR-108 D3)",
+  "id": "c360.semengine.openspec.markdown.section.s0198"
+ },
+ {
+  "query": "Decision 3. `GRAPH_STATUS` is information, not a gate",
+  "id": "c360.semengine.docs.markdown.section.s0199"
+ },
+ {
+  "query": "Scenario: Ports after a running fixture's own are held",
+  "id": "c360.semengine.openspec.markdown.section.s0200"
+ },
+ {
+  "query": "Scenario: A deployment-authority name is exported",
+  "id": "c360.semengine.openspec.markdown.section.s0208"
+ },
+ {
+  "query": "Scenario: Failure text that mentions cancellation",
+  "id": "c360.semengine.openspec.markdown.section.s0210"
+ },
+ {
+  "query": "Scenario: A blocked write",
+  "id": "c360.semengine.openspec.markdown.section.s0215"
+ },
+ {
+  "query": "Requirement: Only Close changes the status once Close begins",
+  "id": "c360.semengine.openspec.markdown.section.s0220"
+ },
+ {
+  "query": "Hint names and value types",
+  "id": "c360.semengine.graph.markdown.section.s0221"
+ },
+ {
+  "query": "D1. The requirement's home",
+  "id": "c360.semengine.openspec.markdown.section.s0223"
+ },
+ {
+  "query": "Points that hold",
+  "id": "c360.semengine.agents.markdown.section.s0225"
+ },
+ {
+  "query": "Finding 2: test-only hooks in the production Watcher — CONFIRMED",
+  "id": "c360.semengine.openspec.markdown.section.s0227"
+ },
+ {
+  "query": "D4. Readiness: none (ruling 4; ADR-109 D3)",
+  "id": "c360.semengine.openspec.markdown.section.s0229"
+ },
+ {
+  "query": "Mutant A: every KV bucket memory-backed",
+  "id": "c360.semengine.openspec.markdown.section.s0233"
+ },
+ {
+  "query": "Scenario: An alias that is not a KV key",
+  "id": "c360.semengine.openspec.markdown.section.s0234"
+ },
+ {
+  "query": "5. Interface, test code and prose (#197, #153)",
+  "id": "c360.semengine.openspec.markdown.section.s0236"
+ },
+ {
+  "query": "D13. Pin ADRs: kept, changed, dropped",
+  "id": "c360.semengine.openspec.markdown.section.s0239"
+ },
+ {
+  "query": "Requirement: Hierarchy counts name each child",
+  "id": "c360.semengine.openspec.markdown.section.s0241"
+ },
+ {
+  "query": "Requirement: A refusal names the first holder and changes nothing",
+  "id": "c360.semengine.openspec.markdown.section.s0244"
+ },
+ {
+  "query": "Design options (not holds)",
+  "id": "c360.semengine.openspec.markdown.section.s0246"
+ },
+ {
+  "query": "`query_timeout_ms` wording",
+  "id": "c360.semengine.openspec.markdown.section.s0248"
+ },
+ {
+  "query": "D6. Surface audit dispositions",
+  "id": "c360.semengine.openspec.markdown.section.s0249"
+ },
+ {
+  "query": "Requirement: The heartbeat logs system health at Start and every interval",
+  "id": "c360.semengine.openspec.markdown.section.s0251"
+ },
+ {
+  "query": "Scenario: A collection already inside the account listing",
+  "id": "c360.semengine.openspec.markdown.section.s0252"
+ },
+ {
+  "query": "Scenario: The status is recorded",
+  "id": "c360.semengine.openspec.markdown.section.s0254"
+ },
+ {
+  "query": "Requirement: Projection metadata attaches to predicates by deep copy",
+  "id": "c360.semengine.openspec.markdown.section.s0256"
+ },
+ {
+  "query": "Scenario: Pure ProjectionSpec validation rejects invalid steps",
+  "id": "c360.semengine.openspec.markdown.section.s0257"
+ },
+ {
+  "query": "Requirement: A hold outside every task fails spec:check",
+  "id": "c360.semengine.openspec.markdown.section.s0258"
+ },
+ {
+  "query": "Read contract (raw body, not envelope)",
+  "id": "c360.semengine.docs.markdown.section.s0259"
+ },
+ {
+  "query": "D1. Bookkeeping runs after every write that returns an error (#174)",
+  "id": "c360.semengine.openspec.markdown.section.s0261"
+ },
+ {
+  "query": "D4. Every left-out piece is declared (owner question 3)",
+  "id": "c360.semengine.openspec.markdown.section.s0264"
+ },
+ {
+  "query": "Requirement: Hits are ranked before the limit",
+  "id": "c360.semengine.openspec.markdown.section.s0266"
+ },
+ {
+  "query": "3. Which tests need what (#205 item 3)",
+  "id": "c360.semengine.openspec.markdown.section.s0267"
+ },
+ {
+  "query": "Requirement: The run context reaches only Process",
+  "id": "c360.semengine.openspec.markdown.section.s0271"
+ },
+ {
+  "query": "3. Verify, review and close",
+  "id": "c360.semengine.openspec.markdown.section.s0272"
+ },
+ {
+  "query": "Scenario: One stuck revision",
+  "id": "c360.semengine.openspec.markdown.section.s0276"
+ },
+ {
+  "query": "Review finding: every phrase is checked",
+  "id": "c360.semengine.openspec.markdown.section.s0284"
+ },
+ {
+  "query": "D5. `task ledger:check`",
+  "id": "c360.semengine.openspec.markdown.section.s0286"
+ },
+ {
+  "query": "Requirement: Snapshot and changes form one history",
+  "id": "c360.semengine.openspec.markdown.section.s0288"
+ },
+ {
+  "query": "Requirement: Integration test command",
+  "id": "c360.semengine.openspec.markdown.section.s0289"
+ },
+ {
+  "query": "Scenario: A bucket created with a TTL",
+  "id": "c360.semengine.openspec.markdown.section.s0290"
+ },
+ {
+  "query": "Scenario: Skipped test moved behind the integration tag",
+  "id": "c360.semengine.openspec.markdown.section.s0296"
+ },
+ {
+  "query": "Scenario: A live owner admits",
+  "id": "c360.semengine.openspec.markdown.section.s0297"
+ },
+ {
+  "query": "`globalSearch` and `searchGraph`",
+  "id": "c360.semengine.processor.markdown.section.s0298"
+ },
+ {
+  "query": "7.2 Scheduled suite stress with an auto-filed issue",
+  "id": "c360.semengine.openspec.markdown.section.s0299"
+ },
+ {
+  "query": "Configuration-Driven Cache Creation",
+  "id": "c360.semengine.internal.markdown.section.s0300"
+ },
+ {
+  "query": "Scenario: Plain go test runs an integration test",
+  "id": "c360.semengine.openspec.markdown.section.s0302"
+ },
+ {
+  "query": "Scenario: A corrupt record",
+  "id": "c360.semengine.openspec.markdown.section.s0306"
+ },
+ {
+  "query": "5. Workflow, review, and merge gates",
+  "id": "c360.semengine.root.markdown.section.s0307"
+ },
+ {
+  "query": "Scenario: The owners, the carrier and the caller's claim pass",
+  "id": "c360.semengine.openspec.markdown.section.s0309"
+ },
+ {
+  "query": "Probes (go1.26.9 darwin/arm64, Darwin 25.5.0)",
+  "id": "c360.semengine.openspec.markdown.section.s0310"
+ },
+ {
+  "query": "2. Per file at the pin",
+  "id": "c360.semengine.openspec.markdown.section.s0312"
+ },
+ {
+  "query": "Requirement: A running stack recovers from a broker restart",
+  "id": "c360.semengine.openspec.markdown.section.s0314"
+ },
+ {
+  "query": "Gate: `go doc ./service` lists only the kept surface",
+  "id": "c360.semengine.openspec.markdown.section.s0315"
+ },
+ {
+  "query": "Requirement: The entity cache stays usable through Stop",
+  "id": "c360.semengine.openspec.markdown.section.s0317"
+ },
+ {
+  "query": "Tests written (task 4.2)",
+  "id": "c360.semengine.openspec.markdown.section.s0318"
+ },
+ {
+  "query": "Requirement: A view runs once",
+  "id": "c360.semengine.openspec.markdown.section.s0319"
+ },
+ {
+  "query": "Requirement: Mutation replies are counted by outcome",
+  "id": "c360.semengine.openspec.markdown.section.s0320"
+ },
+ {
+  "query": "Scenario: Any sequence of writes",
+  "id": "c360.semengine.openspec.markdown.section.s0321"
+ },
+ {
+  "query": "5. Code review",
+  "id": "c360.semengine.openspec.markdown.section.s0323"
+ },
+ {
+  "query": "Scenario: Two histories, one final state",
+  "id": "c360.semengine.openspec.markdown.section.s0326"
+ },
+ {
+  "query": "2.3 Time budgets already in the harness",
+  "id": "c360.semengine.openspec.markdown.section.s0327"
+ },
+ {
+  "query": "Scenario: a client-authored run_id or in_reply_to is refused at dispatch, before any state is recorded",
+  "id": "c360.semengine.docs.markdown.section.s0331"
+ },
+ {
+  "query": "A6. Repair and decision issues: the code at the pin",
+  "id": "c360.semengine.openspec.markdown.section.s0332"
+ },
+ {
+  "query": "Review stop 1: a second cut",
+  "id": "c360.semengine.openspec.markdown.section.s0334"
+ },
+ {
+  "query": "Scenario: Application panics",
+  "id": "c360.semengine.openspec.markdown.section.s0335"
+ },
+ {
+  "query": "D7 Generated inputs (Rapid)",
+  "id": "c360.semengine.openspec.markdown.section.s0340"
+ },
+ {
+  "query": "Scenario: Open flake and an unrelated pull request",
+  "id": "c360.semengine.openspec.markdown.section.s0342"
+ },
+ {
+  "query": "Role and platform mapping",
+  "id": "c360.semengine.agents.markdown.section.s0344"
+ },
+ {
+  "query": "Scenario: An insertion after a labeled last statement",
+  "id": "c360.semengine.openspec.markdown.section.s0345"
+ },
+ {
+  "query": "2.1o The state shape and the manager's health",
+  "id": "c360.semengine.openspec.markdown.section.s0346"
+ },
+ {
+  "query": "What External Sources Must Provide",
+  "id": "c360.semengine.docs.markdown.section.s0347"
+ },
+ {
+  "query": "Requirement: Indexes implement replacement",
+  "id": "c360.semengine.openspec.markdown.section.s0349"
+ },
+ {
+  "query": "Requirement: A retried update passes the revision it read",
+  "id": "c360.semengine.openspec.markdown.section.s0350"
+ },
+ {
+  "query": "Scenario: An unknown identity is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0352"
+ },
+ {
+  "query": "What changed from 3.1",
+  "id": "c360.semengine.openspec.markdown.section.s0353"
+ },
+ {
+  "query": "6. Adopter seam (products composing `service.Manager`)",
+  "id": "c360.semengine.openspec.markdown.section.s0357"
+ },
+ {
+  "query": "#136: four pieces with no reader",
+  "id": "c360.semengine.openspec.markdown.section.s0360"
+ },
+ {
+  "query": "6. Pin decision records and adopters",
+  "id": "c360.semengine.openspec.markdown.section.s0361"
+ },
+ {
+  "query": "Q1.3 Symbols referenced, by action family",
+  "id": "c360.semengine.openspec.markdown.section.s0363"
+ },
+ {
+  "query": "Check against a D7-shaped fix (not committed)",
+  "id": "c360.semengine.openspec.markdown.section.s0364"
+ },
+ {
+  "query": "Scenario: Same space and other space",
+  "id": "c360.semengine.openspec.markdown.section.s0366"
+ },
+ {
+  "query": "2. Findings added by this sweep",
+  "id": "c360.semengine.openspec.markdown.section.s0370"
+ },
+ {
+  "query": "L19. Coverage coupling",
+  "id": "c360.semengine.openspec.markdown.section.s0371"
+ },
+ {
+  "query": "Open questions for the owner",
+  "id": "c360.semengine.openspec.markdown.section.s0372"
+ },
+ {
+  "query": "Known gap in the proving tests",
+  "id": "c360.semengine.openspec.markdown.section.s0373"
+ },
+ {
+  "query": "2. Follower and component",
+  "id": "c360.semengine.openspec.markdown.section.s0375"
+ },
+ {
+  "query": "Phase 0 (beta.22, shipped)",
+  "id": "c360.semengine.docs.markdown.section.s0379"
+ },
+ {
+  "query": "Requirement: Component writes are next-boot desired state",
+  "id": "c360.semengine.openspec.markdown.section.s0381"
+ },
+ {
+  "query": "Scenario: The constructor is registered and runs only when enabled",
+  "id": "c360.semengine.openspec.markdown.section.s0382"
+ },
+ {
+  "query": "Requirement: An interrupt stops the run in progress",
+  "id": "c360.semengine.openspec.markdown.section.s0384"
+ },
+ {
+  "query": "(d) Uncovered cases collected from the notes",
+  "id": "c360.semengine.openspec.markdown.section.s0387"
+ },
+ {
+  "query": "Scenario: A race report that is expected",
+  "id": "c360.semengine.openspec.markdown.section.s0392"
+ },
+ {
+  "query": "#438: ack_wait reaches the consumer; consumer_name is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0393"
+ },
+ {
+  "query": "D2. Packages and files",
+  "id": "c360.semengine.openspec.markdown.section.s0395"
+ },
+ {
+  "query": "D11. Declared limits (#185: MEDIUM at most, no new mechanism)",
+  "id": "c360.semengine.openspec.markdown.section.s0396"
+ },
+ {
+  "query": "Scenario: Pull request that closes the only open flake",
+  "id": "c360.semengine.openspec.markdown.section.s0398"
+ },
+ {
+  "query": "D8 Plain prose, and the alias goes (#153 items 4 and 7)",
+  "id": "c360.semengine.openspec.markdown.section.s0399"
+ },
+ {
+  "query": "2. Port (D1-D5)",
+  "id": "c360.semengine.openspec.markdown.section.s0400"
+ },
+ {
+  "query": "Decision 3. The revision is the only fence, and there is one stored revision",
+  "id": "c360.semengine.docs.markdown.section.s0401"
+ },
+ {
+  "query": "2. Every place that decides when a helper ends",
+  "id": "c360.semengine.openspec.markdown.section.s0404"
+ },
+ {
+  "query": "Requirement: A component's Health, DataFlow and DebugStatus answer at any time",
+  "id": "c360.semengine.openspec.markdown.section.s0405"
+ },
+ {
+  "query": "D3. Query refusals carry a code (#300 B; owner questions 2 and 3)",
+  "id": "c360.semengine.openspec.markdown.section.s0406"
+ },
+ {
+  "query": "D7. Proving tests",
+  "id": "c360.semengine.openspec.markdown.section.s0407"
+ },
+ {
+  "query": "Requirement: A refusal reaches the caller intact",
+  "id": "c360.semengine.openspec.markdown.section.s0411"
+ },
+ {
+  "query": "Supplementary mutant A: record before write (detected)",
+  "id": "c360.semengine.openspec.markdown.section.s0414"
+ },
+ {
+  "query": "Review round 1, HIGH 2: adopter skill adapters",
+  "id": "c360.semengine.openspec.markdown.section.s0417"
+ },
+ {
+  "query": "What the startup files keep, and what waits for PR 3",
+  "id": "c360.semengine.openspec.markdown.section.s0418"
+ },
+ {
+  "query": "Scenario: A malformed filter is not a reserved capture",
+  "id": "c360.semengine.openspec.markdown.section.s0419"
+ },
+ {
+  "query": "Requirement: Reset to a verified-empty server",
+  "id": "c360.semengine.openspec.markdown.section.s0422"
+ },
+ {
+  "query": "Scenario: a non-canonical reply_to fails at the client boundary on both intake paths",
+  "id": "c360.semengine.docs.markdown.section.s0423"
+ },
+ {
+  "query": "Existing tests that reach the block",
+  "id": "c360.semengine.openspec.markdown.section.s0424"
+ },
+ {
+  "query": "7. Verify, review and close",
+  "id": "c360.semengine.openspec.markdown.section.s0425"
+ },
+ {
+  "query": "D4. Issues, ADRs, guidance, order",
+  "id": "c360.semengine.openspec.markdown.section.s0428"
+ },
+ {
+  "query": "Requirement: Revision zero is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0429"
+ },
+ {
+  "query": "Scenario: Refused when a broader subject covers it",
+  "id": "c360.semengine.openspec.markdown.section.s0430"
+ },
+ {
+  "query": "#276: the lifecycle watch skips the stored-value rule",
+  "id": "c360.semengine.openspec.markdown.section.s0431"
+ },
+ {
+  "query": "Scenario: Shutdown under an in-flight request",
+  "id": "c360.semengine.openspec.markdown.section.s0433"
+ },
+ {
+  "query": "Requirement: Requests are served only while running",
+  "id": "c360.semengine.openspec.markdown.section.s0436"
+ },
+ {
+  "query": "Scenario: Nothing left behind",
+  "id": "c360.semengine.openspec.markdown.section.s0439"
+ },
+ {
+  "query": "Scenario: A name the bucket cannot hold as one key",
+  "id": "c360.semengine.openspec.markdown.section.s0440"
+ },
+ {
+  "query": "3.2 Edits (each a `class:port-refactor` ledger-row candidate)",
+  "id": "c360.semengine.openspec.markdown.section.s0441"
+ },
+ {
+  "query": "3.1 Open pull requests",
+  "id": "c360.semengine.openspec.markdown.section.s0443"
+ },
+ {
+  "query": "D4. Doc comments",
+  "id": "c360.semengine.openspec.markdown.section.s0445"
+ },
+ {
+  "query": "Requirement: Exclusive resource claims yield conflict findings",
+  "id": "c360.semengine.openspec.markdown.section.s0446"
+ },
+ {
+  "query": "6. Evidence and review",
+  "id": "c360.semengine.openspec.markdown.section.s0447"
+ },
+ {
+  "query": "Requirement: A one-word question is an entity reference",
+  "id": "c360.semengine.openspec.markdown.section.s0448"
+ },
+ {
+  "query": "Requirement: No second spelling of deployment authority",
+  "id": "c360.semengine.openspec.markdown.section.s0451"
+ },
+ {
+  "query": "10. Size against the one-package rule",
+  "id": "c360.semengine.openspec.markdown.section.s0453"
+ },
+ {
+  "query": "9.5 #101: the `graph` root (P-14)",
+  "id": "c360.semengine.openspec.markdown.section.s0454"
+ },
+ {
+  "query": "6. In the archive commit",
+  "id": "c360.semengine.openspec.markdown.section.s0455"
+ },
+ {
+  "query": "Requirement: A contract test fails on a global registration",
+  "id": "c360.semengine.openspec.markdown.section.s0456"
+ },
+ {
+  "query": "2.1 Owners (definition: `setup-04a-foundation/design.md:84-97`)",
+  "id": "c360.semengine.openspec.markdown.section.s0457"
+ },
+ {
+  "query": "Scenario: Hold on a continuation line",
+  "id": "c360.semengine.openspec.markdown.section.s0461"
+ },
+ {
+  "query": "Requirement: A contract test guards both workflows",
+  "id": "c360.semengine.openspec.markdown.section.s0462"
+ },
+ {
+  "query": "4. Query codes (batch 3, #300 B; questions 2 and 3)",
+  "id": "c360.semengine.openspec.markdown.section.s0463"
+ },
+ {
+  "query": "D1. Wire shape",
+  "id": "c360.semengine.openspec.markdown.section.s0467"
+ },
+ {
+  "query": "Requirement: Aggregate reads only each input's status word",
+  "id": "c360.semengine.openspec.markdown.section.s0468"
+ },
+ {
+  "query": "Issue #580 (Codex review stop 1, fixed in this PR)",
+  "id": "c360.semengine.openspec.markdown.section.s0469"
+ },
+ {
+  "query": "D4. Port set: admission or separation of each questioned package",
+  "id": "c360.semengine.openspec.markdown.section.s0471"
+ },
+ {
+  "query": "#300 section B: two wrappers and the re-decode",
+  "id": "c360.semengine.openspec.markdown.section.s0472"
+ },
+ {
+  "query": "Requirement: The forwarder counts its drops and keeps going",
+  "id": "c360.semengine.openspec.markdown.section.s0473"
+ },
+ {
+  "query": "2. Bookkeeping after a failed write (batch 1, #174)",
+  "id": "c360.semengine.openspec.markdown.section.s0477"
+ },
+ {
+  "query": "Invariants and their spec homes (new spec deltas this change must add)",
+  "id": "c360.semengine.openspec.markdown.section.s0481"
+ },
+ {
+  "query": "Requirement: Storage observability's construction refuses an unusable configuration",
+  "id": "c360.semengine.openspec.markdown.section.s0482"
+ },
+ {
+  "query": "#132 item 4: one field, two wire spellings",
+  "id": "c360.semengine.openspec.markdown.section.s0484"
+ },
+ {
+  "query": "Requirement: The message logger's construction refuses an incomplete composition",
+  "id": "c360.semengine.openspec.markdown.section.s0486"
+ },
+ {
+  "query": "9. Problem shape, collision table, intent",
+  "id": "c360.semengine.openspec.markdown.section.s0487"
+ },
+ {
+  "query": "#132 item 5: verb-table fields read only by tests",
+  "id": "c360.semengine.openspec.markdown.section.s0488"
+ },
+ {
+  "query": "Orchestrator decisions (2026-10-27)",
+  "id": "c360.semengine.openspec.markdown.section.s0490"
+ },
+ {
+  "query": "Scenario: Late delivery on an acknowledged consumer",
+  "id": "c360.semengine.openspec.markdown.section.s0492"
+ },
+ {
+  "query": "Do the first-wave consumers import a Tier-1-only package?",
+  "id": "c360.semengine.docs.markdown.section.s0495"
+ },
+ {
+  "query": "§0. Question and repositories read",
+  "id": "c360.semengine.openspec.markdown.section.s0498"
+ },
+ {
+  "query": "Requirement: The merge-check workflow",
+  "id": "c360.semengine.openspec.markdown.section.s0499"
+ },
+ {
+  "query": "Q5.2 What graph-ingest / graph-index publish that a consumer could observe",
+  "id": "c360.semengine.openspec.markdown.section.s0500"
+ },
+ {
+  "query": "Step 2: MarshalJSON and UnmarshalJSON",
+  "id": "c360.semengine.agents.markdown.section.s0501"
+ },
+ {
+  "query": "Requirement: /services and /services/health list the services",
+  "id": "c360.semengine.openspec.markdown.section.s0502"
+ },
+ {
+  "query": "Requirement: Both lanes embed the same bytes",
+  "id": "c360.semengine.openspec.markdown.section.s0503"
+ },
+ {
+  "query": "Requirement: Questions needing the text search are refused until it exists",
+  "id": "c360.semengine.openspec.markdown.section.s0507"
+ },
+ {
+  "query": "Requirement: Replay protection is generation-aware",
+  "id": "c360.semengine.openspec.markdown.section.s0509"
+ },
+ {
+  "query": "Scenario: an explicitly marked reference cannot degrade into a literal",
+  "id": "c360.semengine.docs.markdown.section.s0511"
+ },
+ {
+  "query": "Orchestrating role agents",
+  "id": "c360.semengine.agents.markdown.section.s0514"
+ },
+ {
+  "query": "Review stop 1: T3 gets an oracle that does not depend on scheduling",
+  "id": "c360.semengine.openspec.markdown.section.s0515"
+ },
+ {
+  "query": "Requirement: Varied and repeated unit runs",
+  "id": "c360.semengine.openspec.markdown.section.s0516"
+ },
+ {
+  "query": "Scenario: A pattern with no matches skips exact-key fallback",
+  "id": "c360.semengine.openspec.markdown.section.s0518"
+ },
+ {
+  "query": "Scenario: File stream across a broker restart",
+  "id": "c360.semengine.openspec.markdown.section.s0519"
+ },
+ {
+  "query": "Scenario: Nil Close context",
+  "id": "c360.semengine.openspec.markdown.section.s0521"
+ },
+ {
+  "query": "Scenario: A late attach across a tick",
+  "id": "c360.semengine.openspec.markdown.section.s0522"
+ },
+ {
+  "query": "Generated checks: not used, and why the examples suffice",
+  "id": "c360.semengine.openspec.markdown.section.s0523"
+ },
+ {
+  "query": "12. SemVocab",
+  "id": "c360.semengine.openspec.markdown.section.s0525"
+ },
+ {
+  "query": "3. Global search",
+  "id": "c360.semengine.openspec.markdown.section.s0526"
+ },
+ {
+  "query": "Why revision-lag (a), and why not the alternatives",
+  "id": "c360.semengine.docs.markdown.section.s0527"
+ },
+ {
+  "query": "6. Same-class collision table",
+  "id": "c360.semengine.openspec.markdown.section.s0533"
+ },
+ {
+  "query": "D3 Blank-node (`_:label`) and full-IRI predicates in `export` (`ADR-107`)",
+  "id": "c360.semengine.openspec.markdown.section.s0536"
+ },
+ {
+  "query": "Pin tests dropped or deferred",
+  "id": "c360.semengine.openspec.markdown.section.s0540"
+ },
+ {
+  "query": "Milestone and label rules for every issue and PR",
+  "id": "c360.semengine.agents.markdown.section.s0541"
+ },
+ {
+  "query": "Mutant C: a failed status read latches the lost feed (survivor)",
+  "id": "c360.semengine.openspec.markdown.section.s0542"
+ },
+ {
+  "query": "The oracle passes on base",
+  "id": "c360.semengine.openspec.markdown.section.s0543"
+ },
+ {
+  "query": "(b) `mutate:check` rows recorded by earlier units (cited, not re-run)",
+  "id": "c360.semengine.openspec.markdown.section.s0546"
+ },
+ {
+  "query": "3d. Where the two existing stream limitations live today",
+  "id": "c360.semengine.openspec.markdown.section.s0547"
+ },
+ {
+  "query": "Stop-2 review fixes (in-house review at 0f79c92)",
+  "id": "c360.semengine.openspec.markdown.section.s0550"
+ },
+ {
+  "query": "Scenario: a task carrying any non-canonical loop-token field is refused",
+  "id": "c360.semengine.docs.markdown.section.s0553"
+ },
+ {
+  "query": "Scope under `docs/inventory-scope.md`",
+  "id": "c360.semengine.openspec.markdown.section.s0554"
+ },
+ {
+  "query": "Specs and ledger rows",
+  "id": "c360.semengine.openspec.markdown.section.s0555"
+ },
+ {
+  "query": "D2. Which groups are read",
+  "id": "c360.semengine.openspec.markdown.section.s0556"
+ },
+ {
+  "query": "§3.2 Gates and scripts (`Taskfile.yml`, `scripts/`)",
+  "id": "c360.semengine.openspec.markdown.section.s0560"
+ },
+ {
+  "query": "Requirement: The logger is unhealthy while a subject has failed to subscribe",
+  "id": "c360.semengine.openspec.markdown.section.s0561"
+ },
+ {
+  "query": "3. Consumer evidence (read)",
+  "id": "c360.semengine.openspec.markdown.section.s0566"
+ },
+ {
+  "query": "Requirement: Construction names the bucket and Start acquires it",
+  "id": "c360.semengine.openspec.markdown.section.s0568"
+ },
+ {
+  "query": "Requirement: The storage report lists every published row",
+  "id": "c360.semengine.openspec.markdown.section.s0569"
+ },
+ {
+  "query": "2. Birth: what stops a timing-dependent test from being written or merged",
+  "id": "c360.semengine.openspec.markdown.section.s0571"
+ },
+ {
+  "query": "Requirement: A failed health check makes the service unhealthy",
+  "id": "c360.semengine.openspec.markdown.section.s0572"
+ },
+ {
+  "query": "Requirement: Start adopts a recorded platform identity",
+  "id": "c360.semengine.openspec.markdown.section.s0573"
+ },
+ {
+  "query": "Replaced (owner ruling, #91 comment 6124130342)",
+  "id": "c360.semengine.openspec.markdown.section.s0574"
+ },
+ {
+  "query": "Migration from Legacy Systems",
+  "id": "c360.semengine.message.markdown.section.s0575"
+ },
+ {
+  "query": "Scenario: Two filters",
+  "id": "c360.semengine.openspec.markdown.section.s0576"
+ },
+ {
+  "query": "Requirement: The revision is the only fence",
+  "id": "c360.semengine.openspec.markdown.section.s0577"
+ },
+ {
+  "query": "Scenario: A cache after Close",
+  "id": "c360.semengine.openspec.markdown.section.s0578"
+ },
+ {
+  "query": "11. Adopter seam, and collisions",
+  "id": "c360.semengine.openspec.markdown.section.s0579"
+ },
+ {
+  "query": "Scenario: The server does not answer",
+  "id": "c360.semengine.openspec.markdown.section.s0581"
+ },
+ {
+  "query": "5. Verify, review and close",
+  "id": "c360.semengine.openspec.markdown.section.s0582"
+ },
+ {
+  "query": "Requirement: Prefix lengths have fixed meanings and the instance position is last",
+  "id": "c360.semengine.docs.markdown.section.s0583"
+ },
+ {
+  "query": "Generated checks or examples",
+  "id": "c360.semengine.openspec.markdown.section.s0584"
+ },
+ {
+  "query": "9.9 Tasks 3.12 and 3.13: the guard's state in graph-ingest's tests (P-18)",
+  "id": "c360.semengine.openspec.markdown.section.s0585"
+ },
+ {
+  "query": "Stored-state poison is permanent for the process lifetime",
+  "id": "c360.semengine.docs.markdown.section.s0586"
+ },
+ {
+  "query": "Requirement: The KV query answers values as stored",
+  "id": "c360.semengine.openspec.markdown.section.s0588"
+ },
+ {
+  "query": "Counted before the line: mutation check",
+  "id": "c360.semengine.openspec.markdown.section.s0590"
+ },
+ {
+  "query": "Pin tests not carried, or carried in another form (task 4.1's scope)",
+  "id": "c360.semengine.openspec.markdown.section.s0591"
+ },
+ {
+  "query": "3. Local search",
+  "id": "c360.semengine.openspec.markdown.section.s0594"
+ },
+ {
+  "query": "D1. Home and name",
+  "id": "c360.semengine.openspec.markdown.section.s0595"
+ },
+ {
+  "query": "F1: an absent or unreadable read completes only what was delivered before it",
+  "id": "c360.semengine.openspec.markdown.section.s0596"
+ },
+ {
+  "query": "Benchmark at 50,000 records",
+  "id": "c360.semengine.openspec.markdown.section.s0599"
+ },
+ {
+  "query": "Owner rulings already made (2026-11-02, Enjoy)",
+  "id": "c360.semengine.openspec.markdown.section.s0601"
+ },
+ {
+  "query": "Adopter Seam: `graph.ingest.query.prefix` (`graph.PrefixQueryRequest`)",
+  "id": "c360.semengine.openspec.markdown.section.s0602"
+ },
+ {
+  "query": "Scenario: The watch's delivery never closes",
+  "id": "c360.semengine.openspec.markdown.section.s0603"
+ },
+ {
+  "query": "4. Searches run anew, over the pin snapshot",
+  "id": "c360.semengine.openspec.markdown.section.s0604"
+ },
+ {
+  "query": "Requirement: A retrying request refuses what it cannot attempt",
+  "id": "c360.semengine.openspec.markdown.section.s0606"
+ },
+ {
+  "query": "Requirement: A process killed mid-ingest loses no acknowledged write",
+  "id": "c360.semengine.openspec.markdown.section.s0607"
+ },
+ {
+  "query": "Real-tree outputs",
+  "id": "c360.semengine.openspec.markdown.section.s0608"
+ },
+ {
+  "query": "Scenario: An insertion at the end of an if-branch whose else ran",
+  "id": "c360.semengine.openspec.markdown.section.s0609"
+ },
+ {
+  "query": "The options each question gets",
+  "id": "c360.semengine.openspec.markdown.section.s0610"
+ },
+ {
+  "query": "D2. Behaviour as at the pin, as ruled (S2, ruled; S1, optional)",
+  "id": "c360.semengine.openspec.markdown.section.s0611"
+ },
+ {
+  "query": "Requirement: Close and Drain are bounded by the caller's context",
+  "id": "c360.semengine.openspec.markdown.section.s0614"
+ },
+ {
+  "query": "Requirement: The message logger's routes are served under /message-logger",
+  "id": "c360.semengine.openspec.markdown.section.s0618"
+ },
+ {
+  "query": "Scenario: Code pull request awaiting its review",
+  "id": "c360.semengine.openspec.markdown.section.s0619"
+ },
+ {
+  "query": "Scenario: Providers register before consumers start",
+  "id": "c360.semengine.openspec.markdown.section.s0620"
+ },
+ {
+  "query": "Requirement: Versions compare as semantic versions",
+  "id": "c360.semengine.openspec.markdown.section.s0621"
+ },
+ {
+  "query": "Review fixes at code stop 3 (#429, #430)",
+  "id": "c360.semengine.openspec.markdown.section.s0624"
+ },
+ {
+  "query": "SETUP 01 Foundation",
+  "id": "c360.semengine.docs.markdown.section.s0625"
+ },
+ {
+  "query": "Scenario: Restart the broker while the stack is stopped",
+  "id": "c360.semengine.openspec.markdown.section.s0626"
+ },
+ {
+  "query": "§1.6 Production third-party imports the tier-0 set carries (per importing package)",
+  "id": "c360.semengine.openspec.markdown.section.s0627"
+ },
+ {
+  "query": "What is not covered",
+  "id": "c360.semengine.openspec.markdown.section.s0628"
+ },
+ {
+  "query": "Requirement: Every string a message encodes is valid UTF-8",
+  "id": "c360.semengine.openspec.markdown.section.s0630"
+ },
+ {
+  "query": "Scenario: A watch filter",
+  "id": "c360.semengine.openspec.markdown.section.s0635"
+ },
+ {
+  "query": "Open issues naming a carried package",
+  "id": "c360.semengine.openspec.markdown.section.s0636"
+ },
+ {
+  "query": "11. Size and split facts (for the design; no split chosen here)",
+  "id": "c360.semengine.openspec.markdown.section.s0637"
+ },
+ {
+  "query": "Scenario: Publish at StartAll",
+  "id": "c360.semengine.openspec.markdown.section.s0639"
+ },
+ {
+  "query": "M10 was not an equivalent mutant",
+  "id": "c360.semengine.openspec.markdown.section.s0642"
+ },
+ {
+  "query": "1C. `vocabulary/export` (`SubjectIRI`, blank nodes, and full-IRI predicates)",
+  "id": "c360.semengine.openspec.markdown.section.s0644"
+ },
+ {
+  "query": "Requirement: Subscribe returns ErrConnectionClosed once Close has begun",
+  "id": "c360.semengine.openspec.markdown.section.s0645"
+ },
+ {
+  "query": "P8-P12, path search at the pin",
+  "id": "c360.semengine.openspec.markdown.section.s0646"
+ },
+ {
+  "query": "4. Docs and ledger",
+  "id": "c360.semengine.openspec.markdown.section.s0648"
+ },
+ {
+  "query": "3. Path search",
+  "id": "c360.semengine.openspec.markdown.section.s0649"
+ },
+ {
+  "query": "9. Claims in #79, checked",
+  "id": "c360.semengine.openspec.markdown.section.s0650"
+ },
+ {
+  "query": "1.4 Owner question in vocabulary: `PredicateAuthority`",
+  "id": "c360.semengine.openspec.markdown.section.s0651"
+ },
+ {
+  "query": "2.1i Rule-pack binding",
+  "id": "c360.semengine.openspec.markdown.section.s0654"
+ },
+ {
+  "query": "7. Open evidence questions",
+  "id": "c360.semengine.openspec.markdown.section.s0655"
+ },
+ {
+  "query": "Requirement: The retained-context check is static",
+  "id": "c360.semengine.openspec.markdown.section.s0656"
+ },
+ {
+  "query": "Scenario: Start succeeds with the account unreadable",
+  "id": "c360.semengine.openspec.markdown.section.s0659"
+ },
+ {
+  "query": "Requirement: An exported call refuses a nil context before it acts",
+  "id": "c360.semengine.openspec.markdown.section.s0660"
+ },
+ {
+  "query": "D2. The paths route serves the library's answer, counted",
+  "id": "c360.semengine.openspec.markdown.section.s0661"
+ },
+ {
+  "query": "Start with the wrong behavior",
+  "id": "c360.semengine.docs.markdown.section.s0662"
+ },
+ {
+  "query": "Requirement: A stored record that cannot be decoded is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0663"
+ },
+ {
+  "query": "D10. Spec deltas by change (named only)",
+  "id": "c360.semengine.openspec.markdown.section.s0666"
+ },
+ {
+  "query": "Requirement: The limit is bounded",
+  "id": "c360.semengine.openspec.markdown.section.s0669"
+ },
+ {
+  "query": "A concurrent Stop is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0670"
+ },
+ {
+  "query": "Scenario: Failures with reasons",
+  "id": "c360.semengine.openspec.markdown.section.s0671"
+ },
+ {
+  "query": "Scenario: A subscription over the server's limit is counted",
+  "id": "c360.semengine.openspec.markdown.section.s0673"
+ },
+ {
+  "query": "Scenario: An option in the operand's place",
+  "id": "c360.semengine.openspec.markdown.section.s0674"
+ },
+ {
+  "query": "Requirement: Start bounds Start and Stop is the only stop",
+  "id": "c360.semengine.openspec.markdown.section.s0675"
+ },
+ {
+  "query": "State ownership and component wiring",
+  "id": "c360.semengine.agents.markdown.section.s0676"
+ },
+ {
+  "query": "6.2 The `AGENTS.md` rules row",
+  "id": "c360.semengine.openspec.markdown.section.s0677"
+ },
+ {
+  "query": "7. Open pull requests (category 3)",
+  "id": "c360.semengine.openspec.markdown.section.s0680"
+ },
+ {
+  "query": "D2. Client refusals are invalid, not committed (#268, #137 item a)",
+  "id": "c360.semengine.openspec.markdown.section.s0681"
+ },
+ {
+  "query": "3. Text, ledger, coverage, guidance (D7)",
+  "id": "c360.semengine.openspec.markdown.section.s0682"
+ },
+ {
+  "query": "Scenario: The observation succeeds again",
+  "id": "c360.semengine.openspec.markdown.section.s0684"
+ },
+ {
+  "query": "Requirement: Embedding verbs can be turned off",
+  "id": "c360.semengine.openspec.markdown.section.s0685"
+ },
+ {
+  "query": "Behaviour: what a developer observes, and the test that proves it",
+  "id": "c360.semengine.openspec.markdown.section.s0686"
+ },
+ {
+  "query": "Requirement: An interrupted application is redelivered, not a stop",
+  "id": "c360.semengine.openspec.markdown.section.s0687"
+ },
+ {
+  "query": "4. Open issues naming the package",
+  "id": "c360.semengine.openspec.markdown.section.s0688"
+ },
+ {
+  "query": "Scenario: A differing carried package",
+  "id": "c360.semengine.openspec.markdown.section.s0690"
+ },
+ {
+  "query": "Surface: what landed, and what step 2 meets",
+  "id": "c360.semengine.openspec.markdown.section.s0691"
+ },
+ {
+  "query": "Scenario: A key deleted between listing and read",
+  "id": "c360.semengine.openspec.markdown.section.s0693"
+ },
+ {
+  "query": "Owner's rulings",
+  "id": "c360.semengine.openspec.markdown.section.s0696"
+ },
+ {
+  "query": "Pin probe: `vocabulary/export` (`8b99efe9c66a4faa4fa509f9f62cc6bad8392128`)",
+  "id": "c360.semengine.openspec.markdown.section.s0703"
+ },
+ {
+  "query": "Scenario: A caller outside the allowlist",
+  "id": "c360.semengine.openspec.markdown.section.s0704"
+ },
+ {
+  "query": "Scenario: Every schema reference resolves",
+  "id": "c360.semengine.openspec.markdown.section.s0708"
+ },
+ {
+  "query": "D6. TLS and metrics",
+  "id": "c360.semengine.openspec.markdown.section.s0709"
+ },
+ {
+  "query": "1. Pin and probe",
+  "id": "c360.semengine.openspec.markdown.section.s0710"
+ },
+ {
+  "query": "2. Placement totals",
+  "id": "c360.semengine.openspec.markdown.section.s0711"
+ },
+ {
+  "query": "D8. Ledger, text, guidance, ADRs, coverage, issues",
+  "id": "c360.semengine.openspec.markdown.section.s0712"
+ },
+ {
+  "query": "Separate syntax, declaration, mutation intent, and encoding",
+  "id": "c360.semengine.docs.markdown.section.s0715"
+ },
+ {
+  "query": "Scenario: a mixed literal and wildcard pattern is valid only as a pattern",
+  "id": "c360.semengine.docs.markdown.section.s0718"
+ },
+ {
+  "query": "Requirement: An unreadable pin exits 2",
+  "id": "c360.semengine.openspec.markdown.section.s0719"
+ },
+ {
+  "query": "Cache Architecture by Type",
+  "id": "c360.semengine.internal.markdown.section.s0720"
+ },
+ {
+  "query": "Scenario: Not one label",
+  "id": "c360.semengine.openspec.markdown.section.s0722"
+ },
+ {
+  "query": "5. Review, ruleset, archive",
+  "id": "c360.semengine.openspec.markdown.section.s0726"
+ },
+ {
+  "query": "Scenario: Open items and their fields",
+  "id": "c360.semengine.openspec.markdown.section.s0727"
+ },
+ {
+  "query": "Carried from SemStreams PR #1437 at `0ea823a6`",
+  "id": "c360.semengine.openspec.markdown.section.s0729"
+ },
+ {
+  "query": "Scenario: Offline clash judgment matches admission",
+  "id": "c360.semengine.openspec.markdown.section.s0737"
+ },
+ {
+  "query": "Scenario: A pattern query pages across sorted matches",
+  "id": "c360.semengine.openspec.markdown.section.s0738"
+ },
+ {
+  "query": "Decision 7. Where the pattern stops",
+  "id": "c360.semengine.docs.markdown.section.s0740"
+ },
+ {
+  "query": "D8 Docs and nits (#154 items 4–5)",
+  "id": "c360.semengine.openspec.markdown.section.s0744"
+ },
+ {
+  "query": "D2 A new step repeats the unit suite at one CPU without the race detector",
+  "id": "c360.semengine.openspec.markdown.section.s0746"
+ },
+ {
+  "query": "Scenario: A reply that does not fit",
+  "id": "c360.semengine.openspec.markdown.section.s0748"
+ },
+ {
+  "query": "5. Overlapping open PRs and issues",
+  "id": "c360.semengine.openspec.markdown.section.s0752"
+ },
+ {
+  "query": "Requirement: A candidate whose descriptor another owner holds is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0753"
+ },
+ {
+  "query": "Each removed seam, and what proves its behaviour now",
+  "id": "c360.semengine.openspec.markdown.section.s0754"
+ },
+ {
+  "query": "Scenario: Members of an alias target",
+  "id": "c360.semengine.openspec.markdown.section.s0758"
+ },
+ {
+  "query": "9.2 The closure after #97 and #102 (P-11)",
+  "id": "c360.semengine.openspec.markdown.section.s0759"
+ },
+ {
+  "query": "Requirement: Reserved request subjects have one declaration",
+  "id": "c360.semengine.openspec.markdown.section.s0760"
+ },
+ {
+  "query": "Scenario: A long wait before the application starts",
+  "id": "c360.semengine.openspec.markdown.section.s0764"
+ },
+ {
+  "query": "Scenario: A pass stands after the line is removed",
+  "id": "c360.semengine.openspec.markdown.section.s0766"
+ },
+ {
+  "query": "3. The two regressions as fixtures (category 1)",
+  "id": "c360.semengine.openspec.markdown.section.s0768"
+ },
+ {
+  "query": "Scenario: A dropped alias still resolves",
+  "id": "c360.semengine.openspec.markdown.section.s0773"
+ },
+ {
+  "query": "Scenario: Stream deleted and created again while the broker stays up",
+  "id": "c360.semengine.openspec.markdown.section.s0775"
+ },
+ {
+  "query": "D2 Export `export.SubjectIRI` in `vocabulary/export` (`ADR-102`)",
+  "id": "c360.semengine.openspec.markdown.section.s0778"
+ },
+ {
+  "query": "Scenario: The caller's context ends during the round trip",
+  "id": "c360.semengine.openspec.markdown.section.s0779"
+ },
+ {
+  "query": "D1. Which questions reach the text tier (owner ruled option (a), 2026-11-07)",
+  "id": "c360.semengine.openspec.markdown.section.s0783"
+ },
+ {
+  "query": "Requirement: Restart keeps the container",
+  "id": "c360.semengine.openspec.markdown.section.s0784"
+ },
+ {
+  "query": "When a test gets its own server",
+  "id": "c360.semengine.openspec.markdown.section.s0785"
+ },
+ {
+  "query": "Why Multiple Cache Types",
+  "id": "c360.semengine.internal.markdown.section.s0786"
+ },
+ {
+  "query": "8. Intent check",
+  "id": "c360.semengine.openspec.markdown.section.s0788"
+ },
+ {
+  "query": "Known problem: Docker Desktop on macOS loses a host port",
+  "id": "c360.semengine.openspec.markdown.section.s0790"
+ },
+ {
+  "query": "Mutants (each builds; each run with `task mutate:check` on its named test)",
+  "id": "c360.semengine.openspec.markdown.section.s0795"
+ },
+ {
+  "query": "Requirement: Helper process from the test binary",
+  "id": "c360.semengine.openspec.markdown.section.s0797"
+ },
+ {
+  "query": "Scenario: One link-local address on two interfaces",
+  "id": "c360.semengine.openspec.markdown.section.s0799"
+ },
+ {
+  "query": "7. Tests and the harness guards (pin test files)",
+  "id": "c360.semengine.openspec.markdown.section.s0800"
+ },
+ {
+  "query": "D8. ADRs, issues, order",
+  "id": "c360.semengine.openspec.markdown.section.s0802"
+ },
+ {
+  "query": "1. Pin and review launch",
+  "id": "c360.semengine.openspec.markdown.section.s0803"
+ },
+ {
+  "query": "Option A (ACCEPTED, as extend-`ClassifiedError`) — one typed, wrappable error channel",
+  "id": "c360.semengine.docs.markdown.section.s0804"
+ },
+ {
+  "query": "Requirement: The graph stack answers fusion without an embedder",
+  "id": "c360.semengine.openspec.markdown.section.s0805"
+ },
+ {
+  "query": "Codex findings at b37aaa6",
+  "id": "c360.semengine.openspec.markdown.section.s0806"
+ },
+ {
+  "query": "Requirement: A store opens its bucket with no lifecycle eviction",
+  "id": "c360.semengine.openspec.markdown.section.s0807"
+ },
+ {
+  "query": "5. The problem shape and closest existing instances in the tree",
+  "id": "c360.semengine.openspec.markdown.section.s0811"
+ },
+ {
+  "query": "9.15 Round 6: the probes rulings A–F called for (P-20, P-21)",
+  "id": "c360.semengine.openspec.markdown.section.s0813"
+ },
+ {
+  "query": "Shown able to fail (`task mutate:check`, each verdict `detection`)",
+  "id": "c360.semengine.openspec.markdown.section.s0814"
+ },
+ {
+  "query": "D1 Pure validation on `ProjectionSpec` and `PackSpec` in `vocabulary` (`ADR-107`)",
+  "id": "c360.semengine.openspec.markdown.section.s0816"
+ },
+ {
+  "query": "D3. Subjects: one fixed set, validated first, covered subjects once",
+  "id": "c360.semengine.openspec.markdown.section.s0817"
+ },
+ {
+  "query": "Requirement: A mismatching candidate for a held key is refused",
+  "id": "c360.semengine.openspec.markdown.section.s0818"
+ },
+ {
+  "query": "1. Sizes (measured, `wc -l`, pin)",
+  "id": "c360.semengine.openspec.markdown.section.s0820"
+ },
+ {
+  "query": "2. What a nil return means",
+  "id": "c360.semengine.docs.markdown.section.s0823"
+ },
+ {
+  "query": "D1. Check `StartContextEndStopsNothing`",
+  "id": "c360.semengine.openspec.markdown.section.s0824"
+ },
+ {
+  "query": "D1 The rule is one requirement with two enforcing paragraphs",
+  "id": "c360.semengine.openspec.markdown.section.s0825"
+ },
+ {
+  "query": "After the Codex review",
+  "id": "c360.semengine.openspec.markdown.section.s0827"
+ },
+ {
+  "query": "Cross-repo contract",
+  "id": "c360.semengine.docs.markdown.section.s0829"
+ },
+ {
+  "query": "U-f (task 2.1, tests first) -- service PR 4, MessageLogger KV watch",
+  "id": "c360.semengine.openspec.markdown.section.s0830"
+ },
+ {
+  "query": "Scenario: Entities pass unchanged",
+  "id": "c360.semengine.openspec.markdown.section.s0834"
+ },
+ {
+  "query": "Requirement: A subject is delivered at most once, unchanged",
+  "id": "c360.semengine.openspec.markdown.section.s0835"
+ },
+ {
+  "query": "D2 Reverse predicate IRI lookup (`LookupByIRI`)",
+  "id": "c360.semengine.openspec.markdown.section.s0836"
+ },
+ {
+  "query": "D6. The Observe() adapter is test-side, one per owner type",
+  "id": "c360.semengine.openspec.markdown.section.s0837"
+ },
+ {
+  "query": "Requirement: Impact and the graph facet say when a read was skipped",
+  "id": "c360.semengine.openspec.markdown.section.s0838"
+ },
+ {
+  "query": "Scenario: The cache's update channel closes",
+  "id": "c360.semengine.openspec.markdown.section.s0839"
+ },
+ {
+  "query": "Requirement: Revision requests answer or refuse, never wrongly succeed",
+  "id": "c360.semengine.openspec.markdown.section.s0841"
+ },
+ {
+  "query": "1. Wire Type, Handler, and Proving Tests",
+  "id": "c360.semengine.openspec.markdown.section.s0842"
+ },
+ {
+  "query": "0. Question, scope, track",
+  "id": "c360.semengine.openspec.markdown.section.s0843"
+ },
+ {
+  "query": "Requirement: The Worker runs until its context ends",
+  "id": "c360.semengine.openspec.markdown.section.s0845"
+ },
+ {
+  "query": "6. The pin's decision records",
+  "id": "c360.semengine.openspec.markdown.section.s0847"
+ },
+ {
+  "query": "2.5 HTTP routes `service` registers at the pin",
+  "id": "c360.semengine.openspec.markdown.section.s0848"
+ },
+ {
+  "query": "Scenario: Two stores on one bucket",
+  "id": "c360.semengine.openspec.markdown.section.s0850"
+ },
+ {
+  "query": "Scenario: Services stop in reverse registration order",
+  "id": "c360.semengine.openspec.markdown.section.s0851"
+ },
+ {
+  "query": "Requirement: Open waits for ENTITY_STATES within a bound",
+  "id": "c360.semengine.openspec.markdown.section.s0852"
+ },
+ {
+  "query": "D4 Dead layers go; behaviour stays",
+  "id": "c360.semengine.openspec.markdown.section.s0854"
+ },
+ {
+  "query": "2. The queue reads whole tasks, and spec:check gains the check",
+  "id": "c360.semengine.openspec.markdown.section.s0855"
+ },
+ {
+  "query": "Requirement: Report and exit status",
+  "id": "c360.semengine.openspec.markdown.section.s0856"
+ },
+ {
+  "query": "Scenario: One component on one address twice",
+  "id": "c360.semengine.openspec.markdown.section.s0857"
+ },
+ {
+  "query": "2.1b Start, Stop and Q-A's tests",
+  "id": "c360.semengine.openspec.markdown.section.s0861"
+ },
+ {
+  "query": "D9. Spec deltas (written after acceptance; `skip_specs` removed then)",
+  "id": "c360.semengine.openspec.markdown.section.s0862"
+ },
+ {
+  "query": "`WithRange(valueRange string)`",
+  "id": "c360.semengine.vocabulary.markdown.section.s0863"
+ },
+ {
+  "query": "Readiness: Health and 503",
+  "id": "c360.semengine.openspec.markdown.section.s0865"
+ },
+ {
+  "query": "Requirement: One subject grammar decides validity, cover and overlap",
+  "id": "c360.semengine.openspec.markdown.section.s0866"
+ },
+ {
+  "query": "Scenario: A method added before a function that did not run",
+  "id": "c360.semengine.openspec.markdown.section.s0869"
+ },
+ {
+  "query": "Requirement: Agent setup step 7: skill adapters",
+  "id": "c360.semengine.openspec.markdown.section.s0870"
+ },
+ {
+  "query": "Scenario: Another write lands after graph-ingest's read",
+  "id": "c360.semengine.openspec.markdown.section.s0871"
+ },
+ {
+  "query": "Mutants (D9 M1-M5, applied to the stub, one at a time)",
+  "id": "c360.semengine.openspec.markdown.section.s0874"
+ },
+ {
+  "query": "Addenda from task 2.1",
+  "id": "c360.semengine.openspec.markdown.section.s0876"
+ },
+ {
+  "query": "1.2 Results",
+  "id": "c360.semengine.openspec.markdown.section.s0877"
+ },
+ {
+  "query": "Scenario: Same key, another type, help or label names",
+  "id": "c360.semengine.openspec.markdown.section.s0880"
+ },
+ {
+  "query": "Requirement: A missing registration names the call that fixes it",
+  "id": "c360.semengine.openspec.markdown.section.s0883"
+ },
+ {
+  "query": "`docs/adr/112-natsclient-contract.md` (accepted 2026-10-11)",
+  "id": "c360.semengine.openspec.markdown.section.s0884"
+ },
+ {
+  "query": "Scenario: TERM reaches the test binaries",
+  "id": "c360.semengine.openspec.markdown.section.s0885"
+ },
+ {
+  "query": "What a caller observes, and the test that proves it",
+  "id": "c360.semengine.openspec.markdown.section.s0886"
+ },
+ {
+  "query": "1. Locate and Measure",
+  "id": "c360.semengine.agents.markdown.section.s0887"
+ },
+ {
+  "query": "D5. #280 item 2: `component.Declaration`'s parallel port and facts lists",
+  "id": "c360.semengine.openspec.markdown.section.s0888"
+ },
+ {
+  "query": "What task 4.3 must connect",
+  "id": "c360.semengine.openspec.markdown.section.s0893"
+ },
+ {
+  "query": "2. Port (D1-D6)",
+  "id": "c360.semengine.openspec.markdown.section.s0894"
+ },
+ {
+  "query": "Requirement: /openapi.json documents the mounted routes",
+  "id": "c360.semengine.openspec.markdown.section.s0895"
+ },
+ {
+  "query": "Next-boot writes",
+  "id": "c360.semengine.config.markdown.section.s0898"
+ },
+ {
+  "query": "Requirement: An entity that cannot be planned is held as failed",
+  "id": "c360.semengine.openspec.markdown.section.s0899"
+ },
+ {
+  "query": "Requirement: Agent setup step 8: Codex model pins",
+  "id": "c360.semengine.openspec.markdown.section.s0900"
+ },
+ {
+  "query": "Requirement: Health and service listings are served as at the pin",
+  "id": "c360.semengine.openspec.markdown.section.s0901"
+ },
+ {
+  "query": "Requirement: Publication waits for the replay and stops on a broken feed",
+  "id": "c360.semengine.openspec.markdown.section.s0904"
+ },
+ {
+  "query": "Shape findings for what step 3 carries",
+  "id": "c360.semengine.openspec.markdown.section.s0906"
+ },
+ {
+  "query": "The \"dead\" claims hold, checked more widely than the inventory did",
+  "id": "c360.semengine.openspec.markdown.section.s0907"
+ },
+ {
+  "query": "Guarantee, signal, and revision contracts",
+  "id": "c360.semengine.agents.markdown.section.s0908"
+ },
+ {
+  "query": "Scenario: A new integration package",
+  "id": "c360.semengine.openspec.markdown.section.s0909"
+ },
+ {
+  "query": "Scenario: Findings, not error returns",
+  "id": "c360.semengine.openspec.markdown.section.s0914"
+ },
+ {
+  "query": "`hierarchyStats` and `summary`",
+  "id": "c360.semengine.processor.markdown.section.s0915"
+ },
+ {
+  "query": "3. Tie Tasks to Premises",
+  "id": "c360.semengine.agents.markdown.section.s0916"
+ },
+ {
+  "query": "Show that each assertion runs",
+  "id": "c360.semengine.docs.markdown.section.s0917"
+ },
+ {
+  "query": "Scenario: A refused construction",
+  "id": "c360.semengine.openspec.markdown.section.s0918"
+ },
+ {
+  "query": "Requirement: A held call does not hold Close or Connect",
+  "id": "c360.semengine.openspec.markdown.section.s0920"
+ },
+ {
+  "query": "A1.2 Import graph among the 65 (importers of the questioned packages)",
+  "id": "c360.semengine.openspec.markdown.section.s0921"
+ },
+ {
+  "query": "2. Every current spelling of the fact",
+  "id": "c360.semengine.openspec.markdown.section.s0922"
+ },
+ {
+  "query": "Budgets and failure evidence",
+  "id": "c360.semengine.docs.markdown.section.s0923"
+ },
+ {
+  "query": "Disposition of `vocabulary/bfo` and `vocabulary/cco`",
+  "id": "c360.semengine.openspec.markdown.section.s0928"
+ }
+]

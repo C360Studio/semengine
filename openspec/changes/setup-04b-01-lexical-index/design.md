@@ -67,9 +67,12 @@ inputs. The order is: split into runs, split identifiers, lower-case, fold, then
   `tokenizer-probe-2.log`: R@10 36.6% against 37.0%, 3,709 matches per query against 3,341. Change 4 points
   clustering at this list.
 - Plurals: the plural-only stemmer (`tokenizer-probe.go.txt:11`) with two rules ahead of it (strip `es`, or a final
-  `e`, after `ss`, `x`, `ch` or `sh`). Unfolded corpus pairs drop from 117 to 54 (`word-shape-probe.log`) and R@10
-  is unchanged (`tokenizer-probe-2.log`). `-us` and `-s` words (bus, status) still do not fold. Rejected: the
-  embedder's stemmer (it splits 545 pairs) and a dictionary stemmer (a new dependency for about one point).
+  `e`, after `ss`, `x`, `ch` or `sh`). Unfolded corpus pairs drop from 117 to 54 (`word-shape-probe.log`).
+  `tokenizer-probe-2.log` measured an earlier variant (strip `es` after `ss`, `x`, `ch`, `sh` or `z`, no final-`e`
+  rule), not this pair: R@10 was unchanged for it (36.6% against 36.6%). The shipped pair is measured by the
+  scorecard (D8): R@10 56.0%, against 55.8% without the two rules (`notes/2.4.md`). `-us` and `-s` words (bus,
+  status) still do not fold. Rejected: the embedder's stemmer (it splits 545 pairs) and a dictionary stemmer (a new
+  dependency for about one point).
 
 **D4. Phrases.** (a) Each entity keeps its word sequence (word numbers, repeats included) in memory. A phrase is
 first narrowed to the entities holding all its words, then checked for adjacency in their sequences (chosen).
@@ -107,8 +110,11 @@ score. Options: (a) BM25F (chosen); (b) two BM25 scores summed: saturates twice,
 long body; (c) a flat bonus for a name match: a second unit of score, with no length normalisation. Value of `w`:
 the exported constant `NameWeight` is its one home. Task 2.4 sweeps 2, 3 and 5 on the scorecard, reports 1 for
 comparison (it ties a name match with a body match, so it cannot pass `TestNameOutranksBody`), and keeps the smallest
-value within one point of the best R@10. The results go in `notes/2.4.md`, and the value is written here. Not
-measured yet.
+value within one point of the best R@10. The results go in `notes/2.4.md`, and the value is written here:
+`NameWeight` is 2. On the scorecard, R@10 is 56.0% at 1 and 2 and 55.6% at 3 and 5, and R@1 falls as the weight
+rises (25.4%, 24.6%, 23.0%, 22.0%). There, Name is the file's first heading, shared by every section of the file,
+so the sweep shows a name weight costs little on this corpus, not that it helps; SemSource's runner is the check
+with real entity names.
 
 **D7. Room to extend.** Each later addition is a new method or an internal change; no caller and no scorecard
 question changes.
@@ -128,7 +134,9 @@ question changes.
 **D8. Scorecard.** (a) A frozen known-item set: 2,000 sections of this repository's Markdown at `2853486d`, each
 file's first heading as Name and the section as Body, with 500 section headings as questions. It is kept in
 `graph/lexical/testdata/scorecard/` and gzipped (0.97 MB measured; open question 1). The floor is the measured R@10
-minus one point. It lives as a constant in `TestScorecardHoldsItsFloor`, and task 2.4 also records its value here.
+minus one point. It lives as a constant in `TestScorecardHoldsItsFloor`, and task 2.4 also records its value here:
+R@10 measured 56.0% (280 of 500) at `NameWeight` 2, so the floor is 55.0%. The probe's plain BM25 (the embedder's
+tokens, Body only) scores 52.6% on the same corpus and questions (`notes/2.4.md`).
 It is shown able to fail with `task mutate:check` and an IDF-is-one mutant (notes/2.4.md).
 (b) About 30 behaviour questions in SemSource's `questions.json` shape: phrases, flags, dotted names, `-test`,
 identifiers. Every one must pass. SemSource's 21.6k corpus and 33 questions stay in their repository, for their

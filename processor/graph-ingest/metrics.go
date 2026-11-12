@@ -339,9 +339,10 @@ func (c *Component) registerMetrics(registry *metric.MetricsRegistry) error {
 // newBatchMissingMetric builds the counter for requested entity IDs a
 // batch query could not hydrate, labelled by the closed graph.MissingReason set.
 //
-// It exists because partial hydration is otherwise invisible: an ID whose KV read comes
-// back not-found is dropped from the response, and the symptom surfaces several hops
-// downstream as a missing search result. Counting it at the source is what
+// It exists because partial hydration is otherwise invisible to an operator: an ID whose
+// KV read comes back not-found is absent from the hydrated entity list (the response names
+// it only under Missing), and the symptom surfaces several hops downstream as a missing
+// search result. Counting the missing IDs at the source is what
 // makes "how often, and is it not-found or a fault?" answerable from a dashboard rather
 // than from a bug report.
 //

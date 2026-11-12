@@ -1,0 +1,25 @@
+# Probes: how tier 0 search behaves today
+
+These four probes measured the search code on `main` at commit `2853486d` (2026-11-12), before this change. They are
+the evidence the proposal cites. Each `.go.txt` file is a Go test kept as text so that it is not built; each `.log`
+file is its output.
+
+A *known-item query* is a question with one known right answer. Here the corpus is this repository's Markdown, cut
+into sections; the query is a section's heading and the right answer is the section under it. The heading is not
+part of the section's text. `R@1` is how often the right answer came first, `R@10` how often it was in the first ten,
+and `MRR` is the average of one over its rank.
+
+| Probe | Copy to | Run | Measures |
+| --- | --- | --- | --- |
+| `retrieval-probe.go.txt` | `graph/embedding/zz_review_experiment_test.go` | `go test ./graph/embedding -run TestReviewExperiment -v -count=1` (add `SHORT=1` for 20-word texts) | The shipped `BM25Embedder` and graph-query's substring rule against a plain BM25 index; made-up words; ingest order; the stemmer |
+| `tokenizer-probe.go.txt` | `graph/embedding/zz_review_tokenizer_test.go`, beside the first | `go test ./graph/embedding -run TestReviewTokenizers -v -count=1` | Stemmer and stopword choices under a plain BM25 index |
+| `community-probe.go.txt` | `graph/clustering/zz_review_community_test.go` | `go test ./graph/clustering -run TestReviewCommunities -v -count=1` | Community keywords, and global text search through community records |
+| `router-probe.go.txt` | `processor/graph-query/zz_review_route_test.go` | `go test ./processor/graph-query -run TestReviewRoutes -v -count=1` | Where global search routes plain questions |
+
+Limits of these numbers:
+
+- The corpus is English prose from one repository. No consumer's data or questions were used.
+- The community probe groups sections by directory, which is the probe's choice and not a deployment's entity IDs;
+  one group holds 6,601 of the 8,000 sections. It copies graph-query's group and entity scoring rules into the
+  probe, since they are unexported in another package.
+- The corpus is the tree's own Markdown, so the numbers reproduce only at commit `2853486d`.

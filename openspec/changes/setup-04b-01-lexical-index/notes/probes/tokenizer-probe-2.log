@@ -10,5 +10,7 @@ plural+es stemmer, 30-word list          R@1  11.9%  R@10  36.6%  MRR 0.200  doc
 plural+es stemmer, 84-word list          R@1  12.5%  R@10  36.9%  MRR 0.205  docs>0/query    3347
 
 "stopwords" is graph/embedding's 84-word list (bm25_embedder.go:18-41); "30-word list" is graph/clustering/terms.go:16.
-"plural+es" adds two rules before the plural-only stemmer: strip "es" after ss, x, ch or sh, and strip a final "e"
-after them. The first four rows match tokenizer-probe.log.
+"plural+es" adds one rule before the plural-only stemmer: strip "es" after ss, x, ch, sh or z (esStem in
+tokenizer-probe-2.go.txt). It is not the shipped rule set: the shipped tokenizer has no z case and also strips a final
+"e" after ss, x, ch or sh, so "cache" folds to "cach" there and not here. The scorecard measures the shipped rules.
+The first four rows match tokenizer-probe.log.

@@ -22,8 +22,10 @@ and `MRR` is the average of one over its rank.
 The design added three more, each with its source and its log:
 
 - `sequence-probe`: the memory program with one more layout, where each entity keeps its word sequence (design D4).
-- `tokenizer-probe-2`: the tokenizer probe with three more rows, among them the 30-word stopword list and the two
-  added plural rules (design D3). It runs as `tokenizer-probe` does.
+- `tokenizer-probe-2`: the tokenizer probe with three more rows, among them the 30-word stopword list and an earlier
+  plural rule (strip `es` after `ss`, `x`, `ch`, `sh` or `z`), not the shipped pair of rules (design D3). Design D3
+  and `and-query-probe.log` were written as if it measured the shipped pair; it did not, and the scorecard measures
+  the shipped rules. It runs as `tokenizer-probe` does.
 - `word-shape-probe`: a Python script over the tree's Go and Markdown files that counts long words before and after
   identifier splitting and plural pairs that fold (design D3). Run it from the repository root with `python3`.
 - `tokenizer-law-probe`: runs the tokenizer's rules in the order the spec states and fuzzes the law that tokenizing

@@ -130,7 +130,7 @@ func newRedeliveriesDroppedMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "redeliveries_dropped_total",
-		Help:      "Stale redeliveries dropped by the applied-sequence guard: a message whose stream sequence is not newer than the last one applied to that entity from the same stream, unless the stream has since been recreated.",
+		Help:      "Stale redeliveries dropped by the applied-sequence guard: a message whose stream sequence is not newer than the last one applied to that entity from the same recorded stream generation.",
 	})
 	return redeliveriesDroppedCounter
 }

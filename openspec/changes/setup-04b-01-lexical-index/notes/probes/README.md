@@ -4,7 +4,7 @@ The first four probes measured the search code on `main` at commit `2853486d` (2
 are the evidence the proposal cites. The fifth, `memory-probe.go.txt`, is the inventory's: a program of its own, not
 a test, that builds a plain in-memory word index from generated text and prints its heap and build time. Run it
 outside the tree as `go run main.go <entities> <tokens per entity> <pos|nopos>`; its numbers are in `inventory.md`
-section 7. Every `.go.txt` file is Go source kept as text so that it is not built, and each `.log` file is the
+section 8. Every `.go.txt` file is Go source kept as text so that it is not built, and each `.log` file is the
 output of the probe it is named for.
 
 A *known-item query* is a question with one known right answer. Here the corpus is this repository's Markdown, cut

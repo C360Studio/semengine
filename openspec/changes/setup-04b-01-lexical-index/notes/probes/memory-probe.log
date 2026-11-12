@@ -14,5 +14,5 @@ n=1000000 tokens=20 positions=false terms=468765 postings=18460172 heap=471.3MB 
 n=1000000 tokens=20 positions=true terms=468765 postings=18460172 heap=1187.0MB per-entity=1186B build=4.454s (4.5us/entity)
 n=1000000 tokens=120 positions=false terms=499998 postings=92745066 heap=1495.6MB per-entity=1495B build=27.762s (27.8us/entity)
 
-Not run: 1000000 x 120 with positions (extrapolated in inventory.md section 7).
+Not run: 1000000 x 120 with positions (extrapolated in inventory.md section 8).
 heap excludes the 500,000 generated word strings, allocated before the baseline (memory-probe.go.txt:43-47).

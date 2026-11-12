@@ -110,17 +110,39 @@ counts as one (`:395-396` — `if df == 0 {` / `df = 1 // Smoothing for unseen t
 
 - An entity whose `extractText` is empty, with no registered offloaded body, has no embedding record: `hop1.go:165`
   — `if record.SourceText == "" {` calls `:166` — `c.removeTextless(ctx, key, revision)`, which deletes any earlier
-  record and completes the revision (`:195-196`). It is never a `search` or `similar` hit. Community keywords take
-  words only from string values (`graph/clustering/terms.go:55`), so such an entity adds none.
-- Read paths that need no text, each with a responder in the tree: exact entity (`graph/query_verbs.go:47` graph-ingest,
-  `:96` graph-query), prefix (`:70` — `{Name: "prefix", Subject: "graph.ingest.query.prefix", ...`), predicate (`:78`;
-  graph-index records every predicate an entity holds, `processor/graph-index/index.go:310` —
-  `plan.predicatesUsed[triple.Predicate] = true`), relationships (`:72` outgoing, `:74` incoming), alias (`:76`) and
-  name (`:86` — `{Name: "byName", Subject: "graph.index.query.byName", ...`, label predicates only).
+  record and completes the revision (`:195-196`). It is never a `search` or `similar` hit, and as the source of a
+  `similar` request it is refused with code `embedding_unavailable` (`processor/graph-embedding/query.go:136` —
+  `return nil, errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEmbeddingUnavailable,`; spec
+  `graph-embedding` `:157-158`). Community keywords take words only from string values
+  (`graph/clustering/terms.go:55` — `// come only from string values; the ID's positions, predicate names and the
+  object of a`), so it adds no keywords.
+- Its groups need no text: `graph/clustering/doc.go:6-7` — `org.platform (ADR-099, with the levels ADR-102 gives).
+  Nothing is detected: an entity's` / `groups follow from its ID alone.`
+- Read paths that need no text. `grep -c -E 'Name: +"' graph/query_verbs.go` gives 32 verbs: seven text or vector
+  verbs (`search` and `similar` on graph-embedding, `semantic`, `similar`, `localSearch`, `globalSearch`,
+  `searchGraph` on graph-query), the four spatial and temporal verbs below, and these 21, which read structure:
+  - graph-ingest: entity (`:47` — `Name: "entity", Subject: "graph.ingest.query.entity", ...`), batch (`:68` —
+    `{Name: "batch", Subject: "graph.ingest.query.batch", ...`), prefix (`:70`).
+  - graph-index: outgoing (`:72`) and incoming (`:74`) relationships, alias (`:76`), predicate (`:78`), predicateList
+    (`:80`), predicateStats (`:82`), predicateCompound (`:84`), byName (`:86`, label predicates only). graph-index
+    records every predicate an entity holds (`processor/graph-index/index.go:310` —
+    `plan.predicatesUsed[triple.Predicate] = true`); the predicate verb's value filter compares strings exactly
+    (`processor/graph-index/query.go:366` — `if triple.Predicate == predicate && objectString(triple.Object) ==
+    value {`).
+  - graph-query: entity, batch, prefix, byName, predicate, entityByAlias, relationships (`:96-108`), pathSearch
+    (`:110` — `{Name: "pathSearch", Subject: "graph.query.pathSearch", ...`), hierarchyStats (`:112`), summary
+    (`:114`).
 - Declared but served by nothing in the tree: `:92` — `{Name: "bounds", Subject: "graph.spatial.query.bounds", ...`
   and `:94` — `{Name: "range", Subject: "graph.temporal.query.range", ...` (`:57` — `// (search, similar, bounds,
   range), of which only search and similar have a responder in`); graph-query still forwards to them
-  (`processor/graph-query/query.go:35-36`). `ls processor` lists no spatial or temporal component.
+  (`processor/graph-query/query.go:35-36`), and its own `spatial` and `temporal` verbs (`:126`, `:128`) answer
+  only through them. `ls processor` lists no spatial or temporal component.
+- When they get responders: the ledger says "their responders arrive in changes 5 and 7"
+  (`docs/admission-ledger.yaml:2165` — `graph.temporal.query.range; their responders arrive in changes 5 and 7)
+  ...`); search and similar arrived in change 5, and `processor/graph-index-spatial` and
+  `processor/graph-index-temporal` are in change 7's list (`openspec/changes/archive/2026-10-01-setup-04a-foundation/
+  design.md:176-177`). Open issue #109 says "spatial/temporal become plug-ins" on the shared `ENTITY_STATES`
+  follower, landing in changes 4, 5 and 7. No ledger row exists for either package yet.
 
 ## 5. Adjacent claims
 

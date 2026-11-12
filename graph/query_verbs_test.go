@@ -202,4 +202,7 @@ func TestQueryWireNames(t *testing.T) {
 	if ErrorCodeRevisionNotReached != "revision_not_reached" {
 		t.Fatalf("ErrorCodeRevisionNotReached = %q, want revision_not_reached", ErrorCodeRevisionNotReached)
 	}
+	if ErrorCodeNotEnabled != "not_enabled" {
+		t.Fatalf("ErrorCodeNotEnabled = %q, want not_enabled", ErrorCodeNotEnabled)
+	}
 }

@@ -12,7 +12,7 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
 
 ## 2. graph-query
 
-- [ ] 2.1 `graph.ErrorCodeNotEnabled` and its doc comment, plus the sender line at `graph/mutation_responses.go:9-17`
+- [x] 2.1 `graph.ErrorCodeNotEnabled` and its doc comment, plus the sender line at `graph/mutation_responses.go:9-17`
   (design D3). `EmbeddingEnabled bool` in `processor/graph-query/config.go` with its schema tag, `DefaultConfig` setting
   true, and
   `resolveConfig` decoding into `Config{EmbeddingEnabled: true}` (D1). Check: wire-value test beside

@@ -130,7 +130,7 @@ func newRedeliveriesDroppedMetric() prometheus.Counter {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "redeliveries_dropped_total",
-		Help:      "Stale redeliveries dropped by the applied-sequence guard: a redelivered message whose stream sequence is not newer than the last one applied to that entity from the same stream.",
+		Help:      "Stale redeliveries dropped by the applied-sequence guard: a message whose stream sequence is not newer than the last one applied to that entity from the same stream, unless the stream has since been recreated.",
 	})
 	return redeliveriesDroppedCounter
 }
@@ -353,7 +353,7 @@ func newBatchMissingMetric() *prometheus.CounterVec {
 		Namespace: "semengine",
 		Subsystem: "graph_ingest",
 		Name:      "batch_query_missing_total",
-		Help:      "Requested entity IDs a batch query could not hydrate, by reason — the IDs the response lists under Missing",
+		Help:      "Requested entity IDs a batch query could not hydrate, by reason — the IDs the response lists under missing",
 	}, []string{"reason"})
 	// Pre-initialize the closed label set: an absent series breaks rate() alerting,
 	// so a reason that has never fired must still be scrapeable at zero. `unknown`

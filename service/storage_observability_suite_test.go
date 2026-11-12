@@ -15,11 +15,11 @@ import (
 const suiteStorageObservabilityConfig = `{}`
 
 // storageObservabilityOwner adapts the storage observability service to the lifecycle suite
-// (lifecycle-suite, "Observe adapter contract"; design D2, D7 U-a). A started service holds its base
+// (lifecycle-suite, "Observe adapter contract"). A started service holds its base
 // service and its two loops, the inventory collector's and the report consumer's. Observe lists
 // "base-status=<status>" while the base service is neither stopped nor starting, and "loops" while a
 // loop goroutine has not returned, read from s.loopsDone, the channel Stop's join waits on. It reads
-// the base service's status through its accessor and adds nothing to the service (#186, #190).
+// the base service's status through its accessor and adds nothing to the service.
 type storageObservabilityOwner struct {
 	s *StorageObservabilityService
 }
@@ -39,11 +39,10 @@ func (o *storageObservabilityOwner) Observe() lifecycletest.Observation {
 }
 
 // TestStorageObservabilityPassesTheLifecycleSuite runs the lifecycle suite on the storage
-// observability service (ADR-113; design D2; the pin failed StartContextEndStopsNothing, probe § 3).
-// Every service is built through NewStorageObservabilityService over a client that never connects:
-// Start does no I/O, and the loops retry an unreadable account on their own schedule (design D2,
-// "Startup work"). The must-fail owner is a service stopped before Start, whose Start is refused
-// (base_lifecycle_test.go's precedent). The service is one-shot: no restart is promised.
+// observability service (ADR-113). Every service is built through NewStorageObservabilityService
+// over a client that never connects: Start does no I/O, and the loops retry an unreadable account
+// on their own schedule. The must-fail owner is a service stopped before Start, whose Start is
+// refused (base_lifecycle_test.go's precedent). The service is one-shot: no restart is promised.
 //
 // spec: service-lifecycle / Storage observability's Start bounds Start; Stop is the only stop
 func TestStorageObservabilityPassesTheLifecycleSuite(t *testing.T) {
@@ -69,7 +68,7 @@ func TestStorageObservabilityPassesTheLifecycleSuite(t *testing.T) {
 		require.Empty(t, owner.Observe().Unresolved, "a Stop that returned nil left a handle")
 	})
 
-	// design D2, "Refusals": a Start after any Stop is refused with errs.ErrAlreadyStarted and
+	// A Start after any Stop is refused with errs.ErrAlreadyStarted and
 	// holds nothing. The suite's FailedStartHoldsNothing accepts any refusal.
 	t.Run("StartAfterStopIsRefused", func(t *testing.T) {
 		owner := newOwner()

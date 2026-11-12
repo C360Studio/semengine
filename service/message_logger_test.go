@@ -19,14 +19,11 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The message logger's construction, subject and in-memory tests (design D7, U-b). Every logger
-// is built through NewMessageLoggerService, by U-a's helper over a client that never connects, and
-// none of them is started except to watch Start refuse a malformed subject. The pin's tests that
-// built the logger through the dropped NewMessageLogger, read ConfigSchema or the default config
-// (pin message_logger_test.go:12-96, :222-266's DefaultMessageLoggerConfig) are adapted to the
-// constructor's JSON or dropped with that surface (D1).
+// The message logger's construction, subject and in-memory tests. Every logger is built through
+// NewMessageLoggerService, by the shared helper over a client that never connects, and none of
+// them is started except to watch Start refuse a malformed subject.
 
-// TestMessageLoggerConstructionRefusals: NewMessageLoggerService refuses each input D1 names, with
+// TestMessageLoggerConstructionRefusals: NewMessageLoggerService refuses each malformed input, with
 // an invalid-class error naming it, and builds nothing; the same input with the one fact changed
 // builds. Strict decoding refuses an unknown key and a key in another letter case, naming the key.
 func TestMessageLoggerConstructionRefusals(t *testing.T) {
@@ -59,8 +56,8 @@ func TestMessageLoggerConstructionRefusals(t *testing.T) {
 			deps: func() *Dependencies { d := deps(); d.ComponentRegistry = nil; return d },
 		},
 		{
-			// An empty monitor_subjects means ["*"] (D1's one home for defaults), so it needs the
-			// component registry too.
+			// An empty monitor_subjects means ["*"] (the constructor is the one home for defaults),
+			// so it needs the component registry too.
 			name: "default subjects without a component registry", config: `{}`, want: "component registry",
 			deps: func() *Dependencies { d := deps(); d.ComponentRegistry = nil; return d },
 		},
@@ -88,7 +85,7 @@ func TestMessageLoggerConstructionRefusals(t *testing.T) {
 		require.Nil(t, svc)
 	})
 
-	// The bounds themselves build, and the defaults are the ones D1 states.
+	// The bounds themselves build, and so does the empty config, which takes the defaults.
 	for _, config := range []string{
 		`{"max_entries":0}`, `{"max_entries":100000}`, `{"sample_rate":0}`, `{"sample_rate":1}`, `{}`,
 	} {
@@ -106,9 +103,8 @@ func TestMessageLoggerConstructionRefusals(t *testing.T) {
 }
 
 // TestMessageLoggerSampling: with sample_rate n every n-th message reaching the subscription
-// callback is stored and the rest only counted; 0 (the default) and 1 store every message (pin
-// message_logger_test.go:98-148 and :268-279, through the constructor and handleMessage instead
-// of a struct literal and shouldSample).
+// callback is stored and the rest only counted; 0 (the default) and 1 store every message,
+// driven through the constructor and handleMessage.
 func TestMessageLoggerSampling(t *testing.T) {
 	for _, tt := range []struct {
 		config     string
@@ -136,7 +132,7 @@ func TestMessageLoggerSampling(t *testing.T) {
 }
 
 // TestContainsWildcard: only the whole subject "*" asks for auto-discovery; NATS wildcards inside a
-// subject do not (pin message_logger_test.go:150-189).
+// subject do not.
 func TestContainsWildcard(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -163,8 +159,8 @@ func TestUniqueStringsPreservesFirstOccurrence(t *testing.T) {
 
 // TestResolveLoggerSubjectsOmitsCoveredSubjects: a desired subject another desired subject covers
 // is not subscribed and is reported as an overlap; two subjects that overlap without either
-// covering the other are both subscribed (design D3, M10). The pin's version (:198-220) omitted
-// only three named agentic pairs, so "unrelated.*" was subscribed beside "unrelated.>".
+// covering the other are both subscribed. Any covered pair
+// is omitted, not only named ones, so "unrelated.*" is not subscribed beside "unrelated.>".
 func TestResolveLoggerSubjectsOmitsCoveredSubjects(t *testing.T) {
 	desired := map[string]struct{}{
 		"agent.toolcall.proposed.>": {}, "agent.toolcall.proposed.*": {},
@@ -181,22 +177,22 @@ func TestResolveLoggerSubjectsOmitsCoveredSubjects(t *testing.T) {
 	}, overlaps)
 }
 
-// TestPropCoveredSubjectsSubscribedOnce checks D3's law on every generated subject set: every
-// desired subject is covered by at least one subscribed subject; no subscribed subject covers
-// another; the subscribed subjects are a sorted, duplicate-free subset of the desired ones; and
-// each desired subject left out is reported once, as covered by another desired subject that
-// covers it. The oracle is flowgraph.SubjectCovers, tested on its own
+// TestPropCoveredSubjectsSubscribedOnce checks the cover-reduction law on every generated subject
+// set: every desired subject is covered by at least one subscribed subject; no subscribed subject
+// covers another; the subscribed subjects are a sorted, duplicate-free subset of the desired
+// ones; and each desired subject left out is reported once, as covered by another desired subject
+// that covers it. The oracle is flowgraph.SubjectCovers, tested on its own
 // (internal/flowgraph/subject_cover_test.go); the reference result is not recomputed.
 //
 // Generator: a slice of zero to six subjects, each one to three tokens from {a, b, *}, the last
-// possibly >, so every subject is valid under D3's grammar by construction (the reduction's input
-// is a validated set) and drawn from a small alphabet so covers are common. A slice is drawn and
-// folded into the set, so a repeated subject is part of the input.
+// possibly >, so every subject is valid under the subject grammar by construction (the reduction's
+// input is a validated set) and drawn from a small alphabet so covers are common. A slice is drawn
+// and folded into the set, so a repeated subject is part of the input.
 //
 // What makes each assertion run: every case below has a named set that reaches it, run through the
 // same assertions, and the test fails unless the set reaches its case. No random run has to reach a
-// case (docs/testing.md, "Show that each assertion runs"; requiring one was flake #497); how often
-// the random sets reach each case is logged only.
+// case (docs/testing.md, "Show that each assertion runs"; requiring one made the test flaky); how
+// often the random sets reach each case is logged only.
 func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
 	witnesses := []struct {
 		reaches  string
@@ -227,8 +223,8 @@ func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
 	}
 }
 
-// checkCoveredSubjects asserts D3's law on one subject list, folded into a set, and counts in
-// reached the cases the assertions ran on.
+// checkCoveredSubjects asserts the cover-reduction law on one subject list, folded into a set, and
+// counts in reached the cases the assertions ran on.
 func checkCoveredSubjects(t rapid.TB, drawn []string, reached map[string]int) {
 	desired := make(map[string]struct{}, len(drawn))
 	for _, s := range drawn {
@@ -325,8 +321,8 @@ func checkCoveredSubjects(t rapid.TB, drawn []string, reached map[string]int) {
 	}
 }
 
-// drawValidSubject draws one to three tokens from {a, b, *}, the last possibly >: valid under D3's
-// grammar by construction.
+// drawValidSubject draws one to three tokens from {a, b, *}, the last possibly >: valid under the
+// subject grammar by construction.
 func drawValidSubject(rt *rapid.T) string {
 	n := rapid.IntRange(1, 3).Draw(rt, "tokens")
 	tokens := make([]string, n)
@@ -338,7 +334,7 @@ func drawValidSubject(rt *rapid.T) string {
 }
 
 // requireMessageLoggerHoldsNothing: the base service is not running and no subscription or
-// subscribe retry is held (the fields U-a's suite adapter reads, under the same lock).
+// subscribe retry is held (the fields the suite adapter reads, under the same lock).
 func requireMessageLoggerHoldsNothing(t *testing.T, ml *MessageLogger) {
 	t.Helper()
 	require.Equal(t, StatusStopped, ml.Status())
@@ -363,7 +359,7 @@ func stopMessageLoggerAtCleanup(t *testing.T, ml *MessageLogger) {
 // TestMessageLoggerRefusesMalformedSubject: Start checks every subject before it starts the base
 // service or subscribes, and refuses the first malformed one with an invalid-class error naming
 // the subject (quoted, so the empty subject is visible) and its source, monitor_subjects; the
-// logger holds nothing afterwards (design D3, M11, #368). The client never connects, so without
+// logger holds nothing afterwards. The client never connects, so without
 // the check the subscribe would fail with natsclient's ErrNotConnected and be retried, and Start
 // would return nil. A valid subject listed first shows the refusal does not wait for a subscribe.
 func TestMessageLoggerRefusesMalformedSubject(t *testing.T) {
@@ -386,8 +382,8 @@ func TestMessageLoggerRefusesMalformedSubject(t *testing.T) {
 
 // TestMessageLoggerRefusesMalformedSubjectCoveredByBroader: a malformed subject is refused even
 // when a broader subject in the set would otherwise lead the cover reduction to omit it, because
-// validation runs before the reduction (design D3: with ["a.>", "a.foo bar"] the pin's order
-// removed the second before anything could refuse it).
+// validation runs before the reduction (with ["a.>", "a.foo bar"], reducing first
+// would remove the second before anything could refuse it).
 func TestMessageLoggerRefusesMalformedSubjectCoveredByBroader(t *testing.T) {
 	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["a.>","a.foo bar"]}`, nil)
 	stopMessageLoggerAtCleanup(t, ml)
@@ -400,13 +396,11 @@ func TestMessageLoggerRefusesMalformedSubjectCoveredByBroader(t *testing.T) {
 	requireMessageLoggerHoldsNothing(t, ml)
 }
 
-// The trace and ring tests store entries through storeEntry with sequences the test chooses
-// (design D7: "trace tests use storeEntry only"; D4, M13: the trace index is dropped and
-// GetEntriesByTrace scans the buffer).
+// The trace and ring tests store entries through storeEntry with sequences the test chooses;
+// there is no trace index: GetEntriesByTrace scans the buffer.
 
 // TestMessageLoggerEntriesByTrace: a trace query returns the entries of that trace still held,
-// oldest first, whatever order they were stored in; an unknown trace returns none (pin
-// message_logger_test.go:268-347).
+// oldest first, whatever order they were stored in; an unknown trace returns none.
 func TestMessageLoggerEntriesByTrace(t *testing.T) {
 	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["test.>"]}`, nil)
 	traceA := "aaaabbbbccccdddd1111222233334444"
@@ -431,7 +425,7 @@ func TestMessageLoggerEntriesByTrace(t *testing.T) {
 }
 
 // TestMessageLoggerTraceOmitsOverwrittenEntry: once the ring wraps over a trace's entry, the trace
-// query no longer returns it (pin message_logger_test.go:379-415).
+// query no longer returns it.
 func TestMessageLoggerTraceOmitsOverwrittenEntry(t *testing.T) {
 	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["test.>"],"max_entries":10}`, nil)
 	trace := "aaaabbbbccccdddd1111222233334444"
@@ -446,7 +440,7 @@ func TestMessageLoggerTraceOmitsOverwrittenEntry(t *testing.T) {
 }
 
 // TestMessageLoggerOlderEntryCannotOverwriteNewer: an entry stored late never replaces a newer one
-// already in its slot (the ring's law, pin message_logger.go:1062-1075; test :349-363).
+// already in its slot (the ring's law).
 func TestMessageLoggerOlderEntryCannotOverwriteNewer(t *testing.T) {
 	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["test.>"],"max_entries":1}`, nil)
 
@@ -461,7 +455,7 @@ func TestMessageLoggerOlderEntryCannotOverwriteNewer(t *testing.T) {
 
 // TestMessageLoggerRecentEntriesAreTheStoredOnes: the entries read are the ones stored, not a
 // range of sequences counted back from the newest; a sequence taken by a callback that has not
-// reached the buffer leaves no empty entry (pin message_logger_test.go:365-377).
+// reached the buffer leaves no empty entry.
 func TestMessageLoggerRecentEntriesAreTheStoredOnes(t *testing.T) {
 	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["test.>"],"max_entries":2}`, nil)
 

@@ -58,8 +58,8 @@ type ComponentManager struct {
 
 	// components is the admitted set in the fixed start order (providers by name,
 	// then the rest by name), and componentsByName the same records by instance
-	// name. Both are built by the constructor and never written again (design D2,
-	// "State shape"), so they are read without a lock.
+	// name. Both are built by the constructor and never written again, so they
+	// are read without a lock.
 	components       []*componentRecord
 	componentsByName map[string]*componentRecord
 
@@ -102,7 +102,7 @@ type ComponentManager struct {
 // each component's Stop on the caller's stack, so a Stop cut short leaves no
 // writer behind. Nothing else enforces it, and the race detector cannot see a
 // breach: two stores to one atomic.Pointer are synchronised, so a lost update
-// passes -race silently (design D2, "State shape").
+// passes -race silently.
 type componentRecord struct {
 	name      string
 	component component.Discoverable
@@ -166,7 +166,7 @@ func (r *componentRecord) managed() *component.ManagedComponent {
 }
 
 // NewComponentManager decodes the component manager's configuration, which
-// defines no key, and composes the boot component set (design D3). It refuses a
+// defines no key, and composes the boot component set. It refuses a
 // configuration key, a missing configuration manager or component registry, a
 // component that cannot be built (naming every one) and a composition with an
 // error-severity finding; a refusal returns a nil Service.
@@ -258,10 +258,10 @@ func (cm *ComponentManager) initialize() error {
 				"factory", componentConfig.Name,
 				"type", componentConfig.Type,
 				"error", err)
-			// Every enabled component the manager cannot build refuses boot (Q-B,
-			// owner 2026-10-21). The creation pass still finishes, so the refusal
-			// names every failure. An enabled rule pack dropped here would also
-			// hide it from ProjectionBinders; its failures keep the pin's own text.
+			// Every enabled component the manager cannot build refuses boot. The
+			// creation pass still finishes, so the refusal names every failure. An
+			// enabled rule pack dropped here would also hide it from
+			// ProjectionBinders; its failures keep their own rule-processor wording.
 			if componentConfig.Name == "rule-processor" {
 				rulePackFailures = append(rulePackFailures,
 					fmt.Errorf("rule processor component %q: %w", instanceName, err))
@@ -407,7 +407,7 @@ func (cm *ComponentManager) createComponent(
 // healthCheck is the check BaseService runs while it runs. It loads every
 // component's record every time and reports each component in StateFailed, in
 // name order, with its last error; otherwise the manager is healthy. It waits on
-// nothing (design D4, "The manager's own health").
+// nothing.
 func (cm *ComponentManager) healthCheck() error {
 	var failures []error
 	for _, name := range slices.Sorted(maps.Keys(cm.componentsByName)) {
@@ -523,7 +523,7 @@ func (cm *ComponentManager) deregisterProvidedStores(name string) {
 
 // GetComponentHealth returns each admitted component's own health answer. It
 // asks every component, before, during and after Start and Stop, with nothing
-// held (design D2, "No wait for readers").
+// held.
 func (cm *ComponentManager) GetComponentHealth() map[string]component.HealthStatus {
 	result := make(map[string]component.HealthStatus, len(cm.components))
 	for _, record := range cm.components {

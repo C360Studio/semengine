@@ -21,10 +21,8 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// Carried from the pin's config_boot_process_restart_integration_test.go. The pin's subprocess
-// helper was a test that skipped itself unless its role variable was set; here the package's
-// TestMain (fixture_client_integration_test.go) runs the role instead of the tests when the
-// variable is set, so no test skips (design D7).
+// The subprocess helper is not a test: the package's TestMain (fixture_client_integration_test.go)
+// runs the role instead of the tests when its role variable is set, so no test skips.
 const (
 	configBootProcessRoleEnv = "SEMENGINE_TEST_CONFIG_BOOT_PROCESS_ROLE"
 	configBootProcessURLEnv  = "SEMENGINE_TEST_CONFIG_BOOT_PROCESS_NATS_URL"

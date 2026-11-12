@@ -42,7 +42,7 @@ type Metrics struct {
 
 	// testListener, when set by a test, is the listener the server serves on:
 	// metric.NewServer maps port 0 to 9090, so no configuration asks for a
-	// kernel-picked port (setup-04a-03-boot-service-manager design D4, S9).
+	// kernel-picked port.
 	testListener net.Listener
 }
 

@@ -20,12 +20,11 @@ import (
 	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
-// The storage report route and the example alert rules (design D5 and Q1, U-e), carried from the
-// pin's storage_observability_http_test.go. The response shape is proven through
+// The storage report route and the example alert rules. The response shape is proven through
 // storageReportResponseFrom and the JSON encoding; the route through RegisterHTTPHandlers on a
-// service built by NewStorageObservabilityService (design O4: no reader field a test could swap).
+// service built by NewStorageObservabilityService (no reader field a test could swap).
 
-// --- fakes (pin :24-85) ---------------------------------------------------------------------
+// --- fakes -----------------------------------------------------------------------------------
 
 // fakeReportEntry is one KV entry as a watch delivers it.
 type fakeReportEntry struct {
@@ -129,7 +128,7 @@ func serve(mux *http.ServeMux, method, path string) *httptest.ResponseRecorder {
 	return recorder
 }
 
-// --- the response shape (pin :128-310) ------------------------------------------------------
+// --- the response shape ---------------------------------------------------------------------
 
 // TestStorageReportHTTP_ResponseRoundTrips pins the wire shape an operator builds a CLI or a
 // dashboard against.
@@ -267,7 +266,7 @@ func TestStorageReportHTTP_WorstPressureIsEmptyWhenNothingIsEvaluated(t *testing
 
 // TestStorageReportHTTP_CriticalPressureFailsNothing: critical pressure is a fact in the body of
 // a report that still says report-only. The route answering 200 on a critical row is
-// TestStorageObservabilityCriticalPressureKeepsReadiness (U-f), over a real account.
+// TestStorageObservabilityCriticalPressureKeepsReadiness, over a real account.
 func TestStorageReportHTTP_CriticalPressureFailsNothing(t *testing.T) {
 	response, _ := wireReport(t, storagereport.Snapshot{
 		Resources: []storagereport.ResourceReport{
@@ -283,7 +282,7 @@ func TestStorageReportHTTP_CriticalPressureFailsNothing(t *testing.T) {
 	assert.Len(t, response.Resources, 1)
 }
 
-// --- the route (pin :311-345) ---------------------------------------------------------------
+// --- the route -------------------------------------------------------------------------------
 
 // TestStorageReportHTTP_RejectsNonGET keeps the route read-only.
 func TestStorageReportHTTP_RejectsNonGET(t *testing.T) {
@@ -303,7 +302,7 @@ func TestStorageReportHTTP_PrefixWithOrWithoutTrailingSlash(t *testing.T) {
 }
 
 // TestStorageReportHTTP_AnswersGETAndHEAD: the route is a GET pattern, so ServeMux answers HEAD as
-// GET and refuses every other method with 405 and an Allow header naming GET (design D5).
+// GET and refuses every other method with 405 and an Allow header naming GET.
 func TestStorageReportHTTP_AnswersGETAndHEAD(t *testing.T) {
 	_, mux := reportRoute(t, "/storage-observability")
 
@@ -327,7 +326,7 @@ func TestStorageReportHTTP_AnswersGETAndHEAD(t *testing.T) {
 
 // TestStorageObservabilityRoutesAfterStop: GET /report reads the consumer's snapshot, which does
 // no I/O, so it answers before Start, while running and after Stop; after Stop the health message
-// carries the base service's verdict (design, "Reads during and after Stop").
+// carries the base service's verdict.
 func TestStorageObservabilityRoutesAfterStop(t *testing.T) {
 	s, mux := reportRoute(t, "/storage-observability")
 	t.Cleanup(func() {
@@ -354,7 +353,7 @@ func TestStorageObservabilityRoutesAfterStop(t *testing.T) {
 	require.NoError(t, s.Stop(ctx))
 	answers("after Stop")
 
-	// Health keeps the base service's verdict and appends the storage picture (design D5).
+	// Health keeps the base service's verdict and appends the storage picture.
 	base, health := s.BaseService.Health(), s.Health()
 	assert.False(t, health.Healthy, "a stopped service is not healthy")
 	assert.Equal(t, base.Status, health.Status)
@@ -362,7 +361,7 @@ func TestStorageObservabilityRoutesAfterStop(t *testing.T) {
 		"health after Stop carries the base verdict %q, got %q", base.Message, health.Message)
 }
 
-// --- one produced truth (pin :346-445) ------------------------------------------------------
+// --- one produced truth ----------------------------------------------------------------------
 
 // TestStorageReportHTTP_CannotDivergeFromTheMetricsSurface: one consumer, fed by one watch, fans
 // out to both surfaces, so the route's rows and the published series agree about every resource.
@@ -458,7 +457,7 @@ func TestStorageReportHTTP_CannotDivergeFromTheMetricsSurface(t *testing.T) {
 	assert.Equal(t, 2, response.Summary.NotEvaluated)
 }
 
-// --- the example alert rules (pin :448-624; design Q1) --------------------------------------
+// --- the example alert rules ----------------------------------------------------------------
 
 // storageAlertRuleFile is the example rule set operators copy; the engine does not load it.
 const storageAlertRuleFile = "../configs/prometheus/rules/storage-pressure.yml"

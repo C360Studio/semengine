@@ -100,8 +100,7 @@ func TestFlowPathsTraverseTheRetainedGraph(t *testing.T) {
 }
 
 // TestFlowPathsRouteServesTheLibraryAnswer asks the /components/paths route itself and checks
-// the whole body against hand-written values (design D2, task 2.1). It was written and passed
-// before composition.FlowPaths existed, so it shows the route's answer is unchanged by the move.
+// the whole body against hand-written values.
 //
 // The two origins reach paths of different lengths, so the average is not a whole number:
 // "long" reaches long -> relay -> sink (3) and "short" reaches short -> sink (2). That gives two

@@ -14,9 +14,8 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// The pin's base_test.go ran every test against a shared NATS client. The tests here need no NATS,
-// so they are unit tests without WithNATS; the ones that need a client are in
-// base_integration_test.go (design D6).
+// The tests here need no NATS, so they are unit tests without WithNATS; the ones that need a
+// client are in base_integration_test.go.
 
 // serviceStatusGauge reads the service-status gauge the registry holds for name.
 func serviceStatusGauge(registry *metric.MetricsRegistry, name string) float64 {
@@ -34,7 +33,7 @@ func TestService_Creation(t *testing.T) {
 }
 
 // Test service lifecycle. The status is also recorded on the injected registry, so WithMetrics is
-// shown to be read (metric-registry spec; design D1).
+// shown to be read (metric-registry spec).
 func TestService_Lifecycle(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	service := NewBaseServiceWithOptions("test-service", WithMetrics(registry))
@@ -97,9 +96,8 @@ func TestService_CustomHealthCheck(t *testing.T) {
 	})
 }
 
-// TestFailingHealthCheckMakesTheServiceUnhealthy is the pin's TestService_FailingHealthCheck
-// without its sleep (design D2). The check then passes, so the test also shows the service
-// becoming healthy again.
+// TestFailingHealthCheckMakesTheServiceUnhealthy: a failing health check makes the service
+// unhealthy. The check then passes, so the test also shows the service becoming healthy again.
 //
 // spec: service-lifecycle / A failed health check makes the service unhealthy
 func TestFailingHealthCheckMakesTheServiceUnhealthy(t *testing.T) {
@@ -197,8 +195,7 @@ func TestService_StatusTransitions(t *testing.T) {
 }
 
 // Test functional options pattern. The subtests that pass a NATS client are in
-// base_integration_test.go; the options the port drops (WithHealthCheck, WithHealthInterval,
-// OnHealthChange) lost their subtests (design D1, D6).
+// base_integration_test.go.
 func TestService_FunctionalOptions(t *testing.T) {
 	t.Run("service with no dependencies", func(t *testing.T) {
 		service := NewBaseServiceWithOptions("test-service")

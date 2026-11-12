@@ -20,7 +20,7 @@ type schemaSample struct {
 	hidden   string    // unexported: skipped
 }
 
-// TestSchemaFromType: one case per kind schema.go handles (design D6). The expected schemas are
+// TestSchemaFromType: one case per kind schema.go handles. The expected schemas are
 // written from JSON Schema draft-07: integer, number, boolean and string types, "date-time" and
 // "byte" formats, anyOf with null for a pointer, and an object's properties and required list.
 func TestSchemaFromType(t *testing.T) {
@@ -76,8 +76,8 @@ var schemaNamePattern = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 
 // TestTypeNameFromReflectNamesEachShapeApart: a pointer is named by its element and a named type
 // keeps its bare name, while a slice, an array, a map and an anonymous struct get names that differ
-// from their element's and from one another, each a valid OpenAPI component name (#349; design D6).
-// The pin named []X and map[string]X "X", so a collection's schema overwrote its element's.
+// from their element's and from one another, each a valid OpenAPI component name, so a
+// collection's schema never overwrites its element's.
 //
 // spec: operator-surface / /openapi.json documents the mounted routes
 func TestTypeNameFromReflectNamesEachShapeApart(t *testing.T) {

@@ -19,17 +19,11 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// This file carries the pin's startup_observability_test.go. Its tests that need a real
-// ComponentManager (pin lines 148-223, 264-395 and 418-449) came with it in PR 3 and are at the end
-// of the file (setup-04a-03-boot-service-component-manager, task 2.1j).
-// TestStartupMuxCommitIsCausallyAtomic (pin :509-537) is not carried: it drove the dropped
-// testCommitPrepared hooks (design D2, "Test-only code"). The tests that called the pin's private
-// startup steps (sealComposition, initializeHTTPInfrastructure, commitStartup and the readiness
-// handler on a recorder) now drive StartAll and read the main listener, as the manager's other
-// tests do.
+// The tests that need a real ComponentManager are at the end of the file. Every test drives
+// StartAll and reads the main listener, as the manager's other tests do.
 
 // gatedStartupService is a Service whose Start blocks until release is closed (a nil release
-// does not block) and whose health a test sets (pin :27).
+// does not block) and whose health a test sets.
 type gatedStartupService struct {
 	name    string
 	entered chan struct{}
@@ -81,8 +75,8 @@ func (s *gatedStartupService) Health() health.Status {
 	return health.NewUnhealthy(s.name, "unhealthy")
 }
 
-// observedManagerMetricsURL returns the scrape URL of the metrics server the manager claimed
-// (pin :48). metricsServer is set from the claim until the manager released it.
+// observedManagerMetricsURL returns the scrape URL of the metrics server the manager claimed.
+// metricsServer is set from the claim until the manager released it.
 func observedManagerMetricsURL(t *testing.T, manager *Manager) string {
 	t.Helper()
 	manager.mu.RLock()
@@ -92,7 +86,7 @@ func observedManagerMetricsURL(t *testing.T, manager *Manager) string {
 	return server.Address()
 }
 
-// observedManagerStart is a StartAll running in its own goroutine (pin :57).
+// observedManagerStart is a StartAll running in its own goroutine.
 type observedManagerStart struct {
 	done chan struct{}
 	err  error
@@ -183,8 +177,8 @@ func getStartupCounts(t *testing.T, baseURL string) startupCountsResponse {
 // TestStartupReadinessAndAtomicPromotion: while a service's Start blocks, the main listener
 // serves only the startup routes, so /readyz and /graph/triples answer 503 NOT READY; once
 // StartAll committed, /graph/triples answers (an empty array with no NATS client) and /readyz
-// answers READY, until the component-manager service turns unhealthy (ADR-109; design D6; pin
-// :224, which drove the private startup steps on a recorder).
+// answers READY, until the component-manager service turns unhealthy
+// (ADR-109).
 //
 // spec: operator-surface / The service manager serves only diagnostics until boot commits
 // spec: operator-surface / /readyz says READY only after boot, while all is healthy
@@ -210,7 +204,7 @@ func TestStartupReadinessAndAtomicPromotion(t *testing.T) {
 }
 
 // TestServicesResponseIncludesStartupCounts: /services, a startup route, reports the startup
-// counts while the only service's Start blocks (pin :396, which called the private recorders).
+// counts while the only service's Start blocks.
 func TestServicesResponseIncludesStartupCounts(t *testing.T) {
 	release := newReleaser(t)
 	componentManager := newGatedStartupService("component-manager", release.ch)
@@ -229,8 +223,7 @@ func TestServicesResponseIncludesStartupCounts(t *testing.T) {
 	require.NoError(t, start.wait(t))
 }
 
-// TestStartupMetricsExposeFixedOwnerStagePairs (pin :450; the gauge is semengine_startup_units,
-// design D1).
+// TestStartupMetricsExposeFixedOwnerStagePairs: the gauge is semengine_startup_units.
 func TestStartupMetricsExposeFixedOwnerStagePairs(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	err := registerStartupCollector(
@@ -274,8 +267,8 @@ func (s *startOrderService) Start(context.Context) error {
 }
 
 // TestBuiltinMetricsRetainsRegistrationOrder: the metrics service starts in its registration
-// place, whether it is the real Metrics or any service named metrics (pin :478, which read the
-// private sealed order; here the starts are observed).
+// place, whether it is the real Metrics or any service named metrics, observed
+// through the starts.
 func TestBuiltinMetricsRetainsRegistrationOrder(t *testing.T) {
 	t.Run("the real Metrics", func(t *testing.T) {
 		deps := createTestServiceDependencies()
@@ -319,9 +312,8 @@ func TestBuiltinMetricsRetainsRegistrationOrder(t *testing.T) {
 // TestStartAllBindsSharedAndMetricsBeforeBlockedService: while the first service's Start blocks,
 // the main listener serves the startup routes through the middleware, the claimed metrics server
 // already serves the startup gauge (three admitted, one start invoked, none completed), and the
-// later service has not started; after release the full route set is served (pin :538). The pin's
-// wait for Metrics' first health observation went with the dropped OnHealthChange seam;
-// readiness after boot is TestStartupReadinessAndAtomicPromotion's and
+// later service has not started; after release the full route set is served.
+// Readiness after boot is TestStartupReadinessAndAtomicPromotion's and
 // TestPreparedFullMuxStaysInvisibleUntilCommit's.
 func TestStartAllBindsSharedAndMetricsBeforeBlockedService(t *testing.T) {
 	deps := createTestServiceDependencies()
@@ -392,10 +384,9 @@ func (l *addrPausingListener) Addr() net.Addr {
 
 // TestMetricsBindFailureClosesSharedAndStartsNoLaterService: when the claimed metrics server
 // fails to bind, StartAll fails naming the metrics bind, starts no service, and releases the main
-// listener, which was bound before the metrics bind began (design D2 and D4; pin :660). The pin
-// paused StartAll through the dropped testSharedHTTPBound and testMetricsBindRelease fields; here
-// the metrics service's test listener pauses the bind, a call production makes. The pin's
-// drained-request leg is TestStartAllRollbackWaitsForAnInFlightRequest's (design D2).
+// listener, which was bound before the metrics bind began. The
+// metrics service's test listener pauses the bind, a call production makes. The
+// drained-request leg is TestStartAllRollbackWaitsForAnInFlightRequest's.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestMetricsBindFailureClosesSharedAndStartsNoLaterService(t *testing.T) {
@@ -452,7 +443,7 @@ func TestMetricsBindFailureClosesSharedAndStartsNoLaterService(t *testing.T) {
 	})
 }
 
-// stopOrderService records its name when it stops (pin :773).
+// stopOrderService records its name when it stops.
 type stopOrderService struct {
 	MockService
 	order *[]string
@@ -466,8 +457,8 @@ func (s *stopOrderService) Stop(context.Context) error {
 	return nil
 }
 
-// TestStopAllReversesRegistrationOrder (pin :786). The pin called StopAll without StartAll; a
-// StopAll before any StartAll stops no service here (design D2), so StartAll runs first.
+// TestStopAllReversesRegistrationOrder: a StopAll before any StartAll stops no service, so
+// StartAll runs first.
 func TestStopAllReversesRegistrationOrder(t *testing.T) {
 	manager := createTestServiceManager(ManagerConfig{}, nil)
 	var mu sync.Mutex
@@ -486,7 +477,7 @@ func TestStopAllReversesRegistrationOrder(t *testing.T) {
 	require.Equal(t, []string{"metrics", "later", "component-manager"}, stopped)
 }
 
-// TestStartupMetricHasNoUnitIdentityLabel (pin :801).
+// TestStartupMetricHasNoUnitIdentityLabel.
 func TestStartupMetricHasNoUnitIdentityLabel(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	err := registerStartupCollector(
@@ -514,8 +505,7 @@ func TestStartupMetricHasNoUnitIdentityLabel(t *testing.T) {
 
 // TestStartAllRejectsEndedContextBeforeCompositionOrListenerMutation: a StartAll refused for a
 // nil or ended context binds nothing, creates no component-manager and leaves the composition
-// open (design D2; pin :826, which read the dropped sealed and httpUsed flags and named a fixed
-// port it never bound).
+// open.
 func TestStartAllRejectsEndedContextBeforeCompositionOrListenerMutation(t *testing.T) {
 	for _, test := range []struct {
 		name string
@@ -547,16 +537,12 @@ func TestStartAllRejectsEndedContextBeforeCompositionOrListenerMutation(t *testi
 	}
 }
 
-// The tests below are the pin's that need a real ComponentManager (pin :148-223, :264-395,
-// :418-449). The pin built the manager as a struct literal and set its components, states and
-// initialized flag by hand, and drove the service manager's private startup steps on a recorder;
-// here the component manager is built by NewComponentManager over the test components
-// (newTestComponentManager) and the service manager runs StartAll and is asked over its main
-// listener (setup-04a-03-boot-service-component-manager design D7; PR 2's notes/2.1.md part 5).
+// The tests below need a real ComponentManager: it is built by NewComponentManager over the test
+// components (newTestComponentManager), and the service manager runs StartAll and is asked over
+// its main listener.
 
 // startupDiscoverable is a component with no lifecycle (it implements only component.Discoverable)
-// whose health a test sets (pin :148). The pin's Meta and ConfigSchema are not on
-// component.Discoverable any more.
+// whose health a test sets.
 type startupDiscoverable struct {
 	baseDiscoverable
 	healthy atomic.Bool
@@ -596,8 +582,7 @@ func awaitStartupAnswer(t *testing.T, url string, status int, body string) {
 // TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts: a composition of one
 // lifecycle component and one plain component counts two admitted and one lifecycle participant;
 // while the lifecycle component's Start is held, one start is invoked and none completed, in the
-// snapshot and on semengine_startup_units, and once it returns one start completed and none failed
-// (pin :167, which set the components and their states on a struct literal).
+// snapshot and on semengine_startup_units, and once it returns one start completed and none failed.
 func TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts(t *testing.T) {
 	gated := newBarrierTestComponent("gated")
 	gated.entered = make(chan struct{})
@@ -644,8 +629,7 @@ func TestComponentStartupSnapshotDistinguishesAdmittedAndLifecycleStarts(t *test
 
 // TestReadinessIncludesHealthyNonLifecycleDiscoverables: after StartAll, /readyz answers READY
 // once the component manager's first health check passed, and NOT READY as soon as a component
-// with no lifecycle reports itself unhealthy (pin :264, which waited on the dropped
-// OnHealthChange and called the private startup steps).
+// with no lifecycle reports itself unhealthy.
 //
 // spec: operator-surface / /readyz says READY only after boot, while all is healthy
 func TestReadinessIncludesHealthyNonLifecycleDiscoverables(t *testing.T) {
@@ -666,9 +650,9 @@ func TestReadinessIncludesHealthyNonLifecycleDiscoverables(t *testing.T) {
 
 // TestReadinessWaitsForInitialServiceHealthObservation: StartAll commits the full route set
 // while the component manager's first health check is still running, and /readyz answers NOT
-// READY until that check has passed, then READY (pin :321). The check is held by wrapping the
-// manager's own check through SetHealthCheck, as the pin did; the pin's bootCommitted flag is
-// read as the committed route /graph/triples answering.
+// READY until that check has passed, then READY. The check is held by wrapping the
+// manager's own check through SetHealthCheck; the commit is read as the committed route
+// /graph/triples answering.
 //
 // spec: operator-surface / /readyz says READY only after boot, while all is healthy
 func TestReadinessWaitsForInitialServiceHealthObservation(t *testing.T) {
@@ -702,9 +686,8 @@ func TestReadinessWaitsForInitialServiceHealthObservation(t *testing.T) {
 
 // TestStartupMuxAdmitsOnlyReadOnlyComponentDiagnostics: before StartAll commits, the main
 // listener serves the component manager's read-only routes (health, list, a component's status)
-// and answers its other routes 503 NOT READY (design D5; PR 2's design D6; pin :418, which built
-// the startup handler through the private steps). A service registered before the component
-// manager holds StartAll, so the component manager has not started either, as at the pin.
+// and answers its other routes 503 NOT READY. A service registered
+// before the component manager holds StartAll, so the component manager has not started either.
 //
 // spec: operator-surface / The service manager serves only diagnostics until boot commits
 func TestStartupMuxAdmitsOnlyReadOnlyComponentDiagnostics(t *testing.T) {

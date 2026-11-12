@@ -56,8 +56,7 @@ func (h *recordingHandler) count() int {
 
 // TestOpenAPIDocumentListsMountedRoutes: after boot, /openapi.json is an OpenAPI 3.0.0 document
 // whose paths are each HTTPHandler service's paths under its prefix, and /docs serves the
-// Swagger UI page, which loads its scripts from unpkg.com, only when swagger_ui is true (design
-// D6; the 03B operator-surface row's proof).
+// Swagger UI page, which loads its scripts from unpkg.com, only when swagger_ui is true.
 //
 // spec: operator-surface / /openapi.json documents the mounted routes
 func TestOpenAPIDocumentListsMountedRoutes(t *testing.T) {
@@ -124,8 +123,7 @@ func TestOpenAPIDocumentListsMountedRoutes(t *testing.T) {
 // schemas reach /openapi.json in OpenAPI 3.0's shape: requestBody and each response's
 // content[mediaType].schema, a $ref, an array of $ref items for IsArray, and application/json when
 // the request body names no content type. The expected JSON is written from the OpenAPI 3.0.0
-// Operation, Request Body, Response and Media Type objects, not from the encoder (Codex review of
-// PR #353, issue #357).
+// Operation, Request Body, Response and Media Type objects, not from the encoder.
 //
 // spec: operator-surface / /openapi.json documents the mounted routes
 func TestOpenAPIDocumentSerialisesBodiesAsOpenAPI3(t *testing.T) {

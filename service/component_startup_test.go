@@ -52,7 +52,7 @@ func awaitStartupStatus(t *testing.T, baseURL, status string) {
 // TestComponentStartupServesStartupRoutesCountsAndComponentRoutes: the component manager serves
 // its read-only startup routes under /components before the commit, its component counts are
 // reported in /services and, while a component's Start is held, in the startup gauge, and has the routes of components that register their own mounted with the
-// full route set (design D3 and D6; pin service_manager.go:593, :1142, :1543).
+// full route set.
 //
 // spec: operator-surface / The service manager serves only diagnostics until boot commits
 func TestComponentStartupServesStartupRoutesCountsAndComponentRoutes(t *testing.T) {
@@ -92,7 +92,7 @@ func TestComponentStartupServesStartupRoutesCountsAndComponentRoutes(t *testing.
 // TestComponentStartupGatesReadiness: with one lifecycle component and one plain component,
 // /readyz says READY only while every admitted component reports healthy and every lifecycle
 // participant has started, and not once the component manager's stop has begun; /services names
-// the reason (ADR-109; design D3 and D6; pin service_manager.go:1792-1866).
+// the reason (ADR-109).
 //
 // spec: operator-surface / /readyz says READY only after boot, while all is healthy
 func TestComponentStartupGatesReadiness(t *testing.T) {
@@ -170,10 +170,9 @@ func TestComponentStartupGatesReadiness(t *testing.T) {
 // TestConfigureRefusesACompositionWithoutAComponentManager: a registry offering metrics but no
 // component-manager constructor (a composition that registers its services by hand instead of
 // calling RegisterAll) cannot compose the mandatory component-manager, so ConfigureFromServices
-// refuses naming the missing constructor and StartAll refuses likewise, binding nothing
-// (setup-04a-03-boot-service-manager design D3). With a component-manager constructor
-// registered, here one returning a stand-in component manager, the default composition holds
-// component-manager and metrics.
+// refuses naming the missing constructor and StartAll refuses likewise, binding nothing. With a
+// component-manager constructor registered, here one returning a stand-in component manager, the
+// default composition holds component-manager and metrics.
 //
 // spec: service-lifecycle / Every composition has a component manager
 func TestConfigureRefusesACompositionWithoutAComponentManager(t *testing.T) {
@@ -219,9 +218,8 @@ func TestConfigureRefusesACompositionWithoutAComponentManager(t *testing.T) {
 }
 
 // TestManagerLogsThroughTheInjectedLogger: the manager logs through deps.Logger, which
-// ConfigureFromServices sets, and never through slog's default logger (design D2, P4; the pin fell
-// back to slog.Default). It replaces the process-wide default logger, so it must not run in
-// parallel with another test.
+// ConfigureFromServices sets, and never through slog's default logger. It replaces the process-wide
+// default logger, so it must not run in parallel with another test.
 func TestManagerLogsThroughTheInjectedLogger(t *testing.T) {
 	fallback := &recordingHandler{}
 	previous := slog.Default()

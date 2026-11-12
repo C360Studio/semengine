@@ -13,7 +13,7 @@ import (
 )
 
 // decodeProbePayload is a payload only this file registers, so the logger can decode it only
-// through the payload registry its Dependencies hand it (design D1, ADR-093).
+// through the payload registry its Dependencies hand it (ADR-093).
 type decodeProbePayload struct {
 	Note string `json:"note"`
 }
@@ -41,8 +41,7 @@ func (p *decodeProbePayload) UnmarshalJSON(data []byte) error {
 
 // TestMessageLoggerDecodesPayloadsFromItsRegistry: a message logger built with a payload registry
 // that holds a payload type logs a BaseMessage of that type under the type's registered name and
-// summarises it as the concrete Go type, not as raw JSON (pin message_logger_user_response_test.go
-// :16-49, with a test payload in place of agentic.UserResponse; design D1, D7 U-g).
+// summarises it as the concrete Go type, not as raw JSON.
 //
 // The logger is built through NewMessageLoggerService directly, not newTestMessageLogger, because
 // that helper hands every logger an empty payload registry.

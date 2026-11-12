@@ -70,7 +70,7 @@ type Manager struct {
 	httpStarted bool
 
 	// The main listener, set from its bind until a stop released it. Only tests
-	// read httpListener, for the bound port (design D2, "Test-only code").
+	// read httpListener, for the bound port.
 	httpServer    *http.Server
 	httpListener  net.Listener
 	httpServeDone chan struct{}

@@ -280,10 +280,10 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		// that sentinel terminate the retry loop cleanly, NOT burn the full
 		// retry budget into ErrKVMaxRetriesExceeded.
 		//
-		// This is the scenario filed in issue #122. The fix in IsKVNotFoundError
-		// recognizing jetstream.ErrKeyDeleted is the defensive guard; this test
-		// validates the end-to-end behavior the must-exist callers (e.g.
-		// graph-ingest's handleEntityUpdateWithTriples) depend on.
+		// IsKVNotFoundError recognizing jetstream.ErrKeyDeleted is the
+		// defensive guard; this test validates the end-to-end behavior the
+		// must-exist callers (e.g. graph-ingest's
+		// handleEntityUpdateWithTriples) depend on.
 		kv := client.NewKVStore(bucket, func(opts *KVOptions) {
 			opts.MaxRetries = 3
 			opts.RetryDelay = 10 * time.Millisecond

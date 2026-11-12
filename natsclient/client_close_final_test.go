@@ -21,9 +21,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The tests in this file are task 3.7c2 (design D3: natsclient-close-is-final,
-// natsclient-close-honours-each-context, natsclient-status-ownership and
-// natsclient-close-reports-drain-timeout), Codex F21-F25 at 7ce1940 (PR #48 comment 5980134911).
+// The tests in this file prove transport-client's Close requirements: "Close returns nil only
+// after everything the client owns has finished", "Each Close returns within its own context",
+// "Only Close changes the status once Close begins" and "Close reports a drain that runs out of
+// time".
 
 // heldCall blocks every caller of hold until Release; entered closes when the first caller
 // arrives and returned when it leaves. Release is registered in t.Cleanup before anything can
@@ -103,7 +104,7 @@ const (
 // requireJoinPending requires that Close's join, which every nil Close waits for, is still open.
 // It waits (bounded by lifecycleBound, a failure bound) until the joiner is observed blocked at the
 // named wait point, the one the test's held work keeps it at, or has finished; then it requires
-// that the joiner has not finished. No real-clock interval decides the outcome (design D8, R1b): a
+// that the joiner has not finished. No real-clock interval decides the outcome: a
 // joiner observed blocked at that point has not closed the join, and cannot while the work is
 // held.
 func requireJoinPending(t *testing.T, c *Client, waitPoint, what string) {
@@ -191,8 +192,7 @@ func claimCount(c *Client) int {
 	return len(c.internalClaims)
 }
 
-// 1. Codex TestReviewerForceCloseKeepsNativeCallbackJoin, extended to SubscribeForRequests: a
-// handler passed to Subscribe or SubscribeForRequests is running when Close force-closes the
+// A handler passed to Subscribe or SubscribeForRequests is running when Close force-closes the
 // connection under an ended context. A later Close with a live context must not return nil until
 // the handler has returned.
 func TestClientCloseJoinsSubscribeHandlerAfterForcedClose(t *testing.T) {
@@ -229,7 +229,7 @@ func TestClientCloseJoinsSubscribeHandlerAfterForcedClose(t *testing.T) {
 	}
 }
 
-// startedNativeConsumer is Codex's reviewerStartedConsumer: its Consume delivers one message on
+// startedNativeConsumer is a native consumer whose Consume delivers one message on
 // another goroutine before returning the handle, and that goroutine closes the handle's Closed
 // once the handler returns.
 type startedNativeConsumer struct {
@@ -268,9 +268,8 @@ func consumeVia(
 	return c.ConsumeInternalStreamWithConfig(ctx, cfg, handler)
 }
 
-// 2. Codex TestReviewerRefusedConsumerRetainsJoinUntilClosed, assertions unchanged: native Consume
-// delivers before returning its handle and Close wins. The refused setup must keep its claim and
-// its place in Close's join until the handler has returned.
+// Native Consume delivers before returning its handle and Close wins. The refused setup must keep
+// its claim and its place in Close's join until the handler has returned.
 func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 	for _, port := range []bool{false, true} {
 		name := "internal"
@@ -372,9 +371,8 @@ func TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn(t *testing.T) {
 	}
 }
 
-// 3. Codex TestReviewerConcurrentCloseDuringDrain, assertions unchanged: while the first Close
-// drains a connection whose native callback is held, a second Close with an ended context
-// returns at once.
+// While the first Close drains a connection whose native callback is held, a second Close with
+// an ended context returns at once.
 func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
@@ -413,8 +411,7 @@ func TestClientCloseHonoursItsContextDuringAnotherDrain(t *testing.T) {
 	t.Logf("after release: first=%v second=%v", err, secondErr)
 }
 
-// 4. Codex TestReviewerLosingDialPreservesWinner (dial-error, canceled-dial, assertions
-// unchanged): a Connect whose dial loses to a winner leaves the winner's status standing. The
+// A Connect whose dial loses to a winner leaves the winner's status standing. The
 // losing Connect's socket dial is held (netDial) while the winner connects, then fails; in
 // canceled-dial the losing Connect's context ends before the dial fails.
 func TestClientLosingConnectLeavesWinnerStatus(t *testing.T) {
@@ -498,7 +495,7 @@ func fakeConsumerClient(t *testing.T, native jetstream.Consumer, opts ...ClientO
 	return c
 }
 
-// 6. H1: a consumer handler is running when Close force-closes the connection; the caller then
+// A consumer handler is running when Close force-closes the connection; the caller then
 // calls the handle's Closed(), which the native library closes at once for an invalid
 // subscription. Close must still not return nil, nor release the claim, before the handler
 // returns. Real JetStream on an embedded server, and a twin whose fake Closed() closes early.
@@ -563,7 +560,7 @@ func TestClientCloseJoinsConsumerHandlerWhenClosedReportsEarly(t *testing.T) {
 	})
 }
 
-// 7. H2: a Connect after Close refuses before it dials and writes no status.
+// A Connect after Close refuses before it dials and writes no status.
 func TestClientConnectAfterCloseRefusesBeforeDial(t *testing.T) {
 	url, accepted := silentListener(t)
 	c, err := NewClient(url, WithHealthInterval(0))
@@ -581,7 +578,7 @@ func TestClientConnectAfterCloseRefusesBeforeDial(t *testing.T) {
 	require.Equal(t, StatusDisconnected, c.Status())
 }
 
-// 11. H6: the connection's error handler is running (held on its "NATS error" record, raised by a
+// The connection's error handler is running (held on its "NATS error" record, raised by a
 // slow consumer) when Close is called. Close must not return nil until the connection's event
 // handlers have finished.
 func TestClientCloseJoinsConnectionEventHandlers(t *testing.T) {
@@ -613,7 +610,7 @@ func jsErrors(c *Client, operation string) float64 {
 	return testutil.ToFloat64(c.jsMetrics.errors.WithLabelValues(operation))
 }
 
-// 13. N7, M-4: once Close has begun, the async publish error handler still counts its metric and
+// Once Close has begun, the async publish error handler still counts its metric and
 // logs, and changes no status.
 func TestClientAsyncPublishErrorAfterCloseRecordsMetricOnly(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -640,8 +637,8 @@ type tableClient struct {
 	firstClose <-chan error // the draining Close in the closing state
 }
 
-// 14. F25: every lifecycle state against every operation. Expected returns and statuses are
-// written out from D3, never derived from the client.
+// Every lifecycle state against every operation. Expected returns and statuses are written out
+// from transport-client's Close and status requirements, never derived from the client.
 func TestClientLifecycleOperationTable(t *testing.T) {
 	url := embeddedJetStreamURL(t)
 	type expect struct {
@@ -766,7 +763,8 @@ func runTableOp(t *testing.T, tc *tableClient, op string, id int) error {
 		out := closeAsync(live, c)
 		// A precondition, not the outcome: the held drain keeps the join open, so this live
 		// Close cannot have returned nil yet. What a Close returns while handlers are held is
-		// TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn's and test 1's to check.
+		// TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn's and
+		// TestClientCloseJoinsSubscribeHandlerAfterForcedClose's to check.
 		requireJoinOpen(t, c, "the held drain was released")
 		tc.release()
 		return awaitErr(t, out, "the live Close")
@@ -789,7 +787,7 @@ func runTableOp(t *testing.T, tc *tableClient, op string, id int) error {
 	return nil
 }
 
-// 15. H8: the lifecycle adapter lists a running message handler after Close has cleared the
+// The lifecycle adapter lists a running message handler after Close has cleared the
 // connection, and lists nothing once a nil Close has returned.
 func TestClientLifecycleAdapterListsHeldHandler(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
@@ -820,10 +818,10 @@ func lateRefusals(h *recordingHandler) []loggedRecord {
 	})
 }
 
-// 16. F-4(a), F-2: a delivery the native library hands over after the client recorded that
-// consumer's end does not run the handler. It is not settled, it is logged at warn level with the
-// subject and ack policy, and it is counted as late_delivery_refused. A core subscription's late
-// delivery takes the same refusal (ownedDelivery.run) and has no test of its own.
+// A delivery the native library hands over after the client recorded that consumer's end does not
+// run the handler. It is not settled, it is logged at warn level with the subject and ack policy,
+// and it is counted as late_delivery_refused. A core subscription's late delivery takes the same
+// refusal (ownedDelivery.run) and has no test of its own.
 func TestClientRefusesLateDeliveryAfterRecordedEnd(t *testing.T) {
 	for _, tc := range []struct {
 		name string
@@ -866,9 +864,9 @@ func TestClientRefusesLateDeliveryAfterRecordedEnd(t *testing.T) {
 	}
 }
 
-// 17. F-4(b): as test 2, but the setup context ends while the handler is held after Close began.
-// The setup returns that context's error; the claim stays held, and Close does not return nil,
-// until the handler returns.
+// As TestClientRefusedConsumerKeepsOwnershipUntilHandlersReturn, but the setup context ends while
+// the handler is held after Close began. The setup returns that context's error; the claim stays
+// held, and Close does not return nil, until the handler returns.
 func TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns(t *testing.T) {
 	for _, port := range []bool{false, true} {
 		name := "internal"
@@ -940,7 +938,7 @@ func TestClientRefusedConsumerSetupContextEndsWhileHandlerRuns(t *testing.T) {
 	}
 }
 
-// 18. F-4(c): an async publish error handler entered before Close is joined: a live Close does
+// An async publish error handler entered before Close is joined: a live Close does
 // not return nil while it runs.
 func TestClientCloseJoinsRunningAsyncPublishErrorHandler(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -966,7 +964,7 @@ func TestClientCloseJoinsRunningAsyncPublishErrorHandler(t *testing.T) {
 	})
 }
 
-// 19. F-3, H9: a client-owned handler outlasts the drain. Whichever timer runs out first, the
+// A client-owned handler outlasts the drain. Whichever timer runs out first, the
 // native drain's or the client's own, the first Close returns a transient error wrapping
 // nats.ErrDrainTimeout, after the handler has returned. The other timer is an hour and Close's
 // context is the test's, so only the timer under test can end the drain: a drain that ignored it

@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestCheckNoLifecycleRetention covers the pure D1 guardrail (ADR-068): any TTL
+// TestCheckNoLifecycleRetention covers the pure guardrail (ADR-068): any TTL
 // (MaxAge) or binding MaxBytes on a live graph bucket is forbidden; the NATS
 // default MaxBytes of -1 (unlimited) and a zero TTL are the clean case.
 func TestCheckNoLifecycleRetention(t *testing.T) {

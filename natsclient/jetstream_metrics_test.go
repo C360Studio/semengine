@@ -16,10 +16,9 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// Task 3.7d test (2), design D9: two clients' metrics on one registry share the canonical
-// collector for each of the 12 metrics, and a value written through the second is gathered. At the
-// pin the 8 registered through the removed Register* methods were orphans for the second client;
-// the twelfth, the server refusal counter, came with design D1 of simplify-04a-18 (#169).
+// Two clients' metrics on one registry share the canonical collector for each of the 12 metrics,
+// and a value written through the second is gathered: a collector the second client registered for
+// itself would be an orphan whose values are never gathered.
 func TestJetStreamMetricsShareCanonicalCollectorsAcrossOwners(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	first, err := newJetStreamMetrics(registry)
@@ -158,11 +157,11 @@ func (f *serverConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo, err
 	return f.info, nil
 }
 
-// Task 3.7d test (1), design D9: the three consumer metrics report the server's state, so two polls
-// of an unchanged consumer gather the server's values, as gauges under their new names. At the pin
-// they were counters that added the server's current values on every poll, so a second poll
-// doubled them. A third poll follows the server when its state changes: NumRedelivered counts
-// messages redelivered and not yet acknowledged, so it falls on acknowledgement.
+// The three consumer metrics report the server's state, so two polls of an unchanged consumer
+// gather the server's values, as gauges. A counter that added the server's current values on every
+// poll would double them on the second poll. A third poll follows the server when its state
+// changes: NumRedelivered counts messages redelivered and not yet acknowledged, so it falls on
+// acknowledgement.
 func TestJetStreamConsumerMetricsReportServerStateAcrossPolls(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	metrics, err := newJetStreamMetrics(registry)
@@ -481,11 +480,10 @@ func (s *switchableConsumerInfo) Info(context.Context) (*jetstream.ConsumerInfo,
 	return s.info, nil
 }
 
-// TestJetStreamConsumerMetricsDropSeriesWhenInfoFails (PR #48 comment 5985648705, HIGH 1): when a
-// tracked consumer's Info fails, its four gauges are deleted rather than left holding the last
-// poll's values as if current (each is set from the server's current state, design D9), and the
-// failure is counted on the JetStream error metric each poll, as operation consumer_info. A later
-// successful poll sets them again.
+// TestJetStreamConsumerMetricsDropSeriesWhenInfoFails: when a tracked consumer's Info fails, its
+// four gauges are deleted rather than left holding the last poll's values as if current (each is
+// set from the server's current state), and the failure is counted on the JetStream error metric
+// each poll, as operation consumer_info. A later successful poll sets them again.
 func TestJetStreamConsumerMetricsDropSeriesWhenInfoFails(t *testing.T) {
 	metrics, err := newJetStreamMetrics(metric.NewMetricsRegistry())
 	if err != nil {

@@ -40,8 +40,8 @@ func (s *reclaimBacklogStore) WatchFiltered(ctx context.Context, keys []string, 
 	return watcher, nil
 }
 
-// reclaimListingStacks returns the stacks of nats.go's key lister goroutine (what reclaim read
-// before #496) and of its watch delivery, or "".
+// reclaimListingStacks returns the stacks of nats.go's key lister goroutine and of its watch
+// delivery, or "".
 func reclaimListingStacks() string {
 	buf := make([]byte, 1<<20)
 	var found []string
@@ -59,7 +59,7 @@ func reclaimListingStacks() string {
 // TestPublishStoppedMidReclaimLeavesNoDelivery: a Publish whose context ends while reclaim's
 // listing of a bucket holding more stale rows than nats.go's 256-entry buffers is backlogged
 // returns an error matching context.Canceled, deletes no row, and leaves no key lister or watch
-// delivery running (design D3 test 3). Ten cycles on one bucket, as graph/follower's
+// delivery running. Ten cycles on one bucket, as graph/follower's
 // TestFollowerRunReturnsAndLeavesNothing runs.
 func TestPublishStoppedMidReclaimLeavesNoDelivery(t *testing.T) {
 	client, err := natsclient.NewClient(startFixture(t).URL(), natsclient.WithMaxReconnects(0))

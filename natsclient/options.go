@@ -62,7 +62,7 @@ func WithConnectionLostCallback(fn func(error)) ClientOption {
 // first disconnect; if the connection has not recovered within grace, the
 // callback runs once with the original disconnect error. A reconnect
 // before the deadline cancels the timer. A non-positive grace disables the
-// watchdog (legacy behavior — onConnectionLost never fires automatically).
+// watchdog (the default — onConnectionLost never fires automatically).
 //
 // The callback only signals — it does not call os.Exit or otherwise act on
 // the client. Callers decide the policy (graceful shutdown, alerting,
@@ -101,15 +101,14 @@ func WithTimeout(d time.Duration) ClientOption {
 
 // WithWriteTimeout sets how long one write may wait for the server to read it
 // before nats.go fails the write (nats.FlusherTimeout). One deadline covers a
-// whole flush, so at 10 s a 1 MB message needs about 100 KB/s (design D4). The
-// default is nats.go's, one minute. Other calls on the connection wait behind a
-// held write (T2; P17).
+// whole flush, so at 10 s a 1 MB message needs about 100 KB/s. The default is
+// nats.go's, one minute. Other calls on the connection wait behind a held write
+// (measured at nats.go v1.55.0, ADR-112).
 //
 // At nats.go v1.55.0 a write the timeout ends partway closes the socket, and
-// nats.go reconnects (probes P14 and P24r, PR #492 comment 6545759092; owner
-// ruling, comment 6545866336). How soon the connection carries messages again
-// is not promised. d must be positive: NewClient refuses any other value as
-// invalid (T9).
+// nats.go reconnects (measured, ADR-112). How soon the connection carries
+// messages again is not promised. d must be positive: NewClient refuses any
+// other value as invalid (TestWriteTimeoutAndPingIntervalOptions).
 func WithWriteTimeout(d time.Duration) ClientOption {
 	return func(c *Client) error {
 		if d <= 0 {
@@ -123,11 +122,13 @@ func WithWriteTimeout(d time.Duration) ClientOption {
 // WithPingInterval sets how often nats.go sends the server a PING
 // (nats.PingInterval). The default is 30 s. When PINGs go unanswered, nats.go
 // finds the connection stale, closes it and reconnects: at 300 ms that took
-// 1.2 s (P20, P24); the timing at other values is not promised.
+// 1.2 s at nats.go v1.54.0 and 0.9 s at v1.55.0 (measured, ADR-112); the timing
+// at other values is not promised.
 //
-// While a write is held this check does not fire (P20; P24r at nats.go v1.55.0,
-// PR #492 comment 6545759092), so only the write timeout ends that write. d must
-// be positive: NewClient refuses any other value as invalid (T9).
+// While a write is held this check does not fire (measured at nats.go v1.55.0,
+// ADR-112), so only the write timeout ends that write. d must be positive:
+// NewClient refuses any other value as invalid
+// (TestWriteTimeoutAndPingIntervalOptions).
 func WithPingInterval(d time.Duration) ClientOption {
 	return func(c *Client) error {
 		if d <= 0 {

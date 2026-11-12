@@ -53,9 +53,9 @@ func TestCheckOrdinaryStreamName(t *testing.T) {
 			},
 		},
 		{
-			// Decision 4 of the design: strip exactly ONE leading prefix, so a
-			// product bucket literally named KV_FOO (backing stream KV_KV_FOO)
-			// resolves to KV_FOO, not FOO.
+			// Strip exactly ONE leading prefix, so a product bucket literally
+			// named KV_FOO (backing stream KV_KV_FOO) resolves to KV_FOO, not
+			// FOO.
 			name:        "doubled prefix strips exactly one",
 			stream:      KVStreamPrefix + KVStreamPrefix + "FOO",
 			wantBucket:  `"KV_FOO"`,
@@ -96,8 +96,8 @@ func TestCheckOrdinaryStreamName(t *testing.T) {
 }
 
 // TestEnsureStream_RefusesBackingStreamName closes the fourth bypass path.
-// Client.EnsureStream is operator-reachable: processor/gated-dag exposes
-// dispatch_stream as config JSON and passes it straight through with a MaxAge.
+// Client.EnsureStream is operator-reachable: a component can expose a stream
+// name as config JSON and pass it straight through with a MaxAge.
 // EnsureStream is get-or-create rather than reconcile, so it cannot restamp a
 // LIVE bucket — but on a fresh deployment, where the bucket does not exist yet,
 // it would name-squat the bucket's reserved stream with a foreign TTL and the
@@ -121,7 +121,7 @@ func TestEnsureStream_RefusesBackingStreamName(t *testing.T) {
 			_, err := c.EnsureStream(context.Background(), jetstream.StreamConfig{
 				Name:     name,
 				Subjects: []string{"dispatch.>"},
-				MaxAge:   24 * 60 * 60, // the gated-dag shape: a TTL on a bucket's stream
+				MaxAge:   24 * 60 * 60, // an operator-configured shape: a TTL on a bucket's stream
 			})
 
 			require.ErrorIs(t, err, ErrBackingStreamNotProvisionable)

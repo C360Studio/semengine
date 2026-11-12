@@ -20,13 +20,11 @@ import (
 )
 
 // This conformance test runs against the fixture's broker, the one NATS image
-// SemEngine's integration tests use (the digest pin in internal/harness/natsfixture/nats-image;
-// owner ruling, #9 comment 5969522395, item 6). The pin ran it on its own
-// digest-pinned 2.14.4 image through a version override, which is gone. The
-// KV grammar is unchanged across the move: upstream's validBucketRe /
-// validKeyRe / validSearchKeyRe are byte-identical in nats.go v1.55.0 and
-// v1.54.0 (jetstream/kv.go:504-506) and v1.52.0 (:501-503), and this test runs against
-// the image's server.
+// SemEngine's integration tests use (the digest pin in
+// internal/harness/natsfixture/nats-image), so it checks the server every other
+// integration test runs against. The KV grammar it checks is nats.go's
+// validBucketRe / validKeyRe / validSearchKeyRe, byte-identical in nats.go
+// v1.55.0 and v1.54.0 (jetstream/kv.go:504-506) and v1.52.0 (:501-503).
 //
 // pinnedNATSGoVersion is REPORTED in this test's log line, beside the version
 // the broker itself reports and the image the fixture ran. It must track the

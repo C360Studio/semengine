@@ -44,7 +44,7 @@ type StreamConsumerConfig struct {
 	// MaxAckPending limits the number of outstanding (unacknowledged) messages
 	// that can be delivered to a consumer. This provides backpressure to prevent
 	// overwhelming the consumer. 0 leaves it unset, so NATS applies inherited,
-	// default, or server/account-capped policy; -1 means unlimited outstanding acks (gh#480).
+	// default, or server/account-capped policy; -1 means unlimited outstanding acks.
 	MaxAckPending int
 
 	// AutoCreate enables automatic stream creation if it doesn't exist.
@@ -98,7 +98,7 @@ type StreamAutoCreateConfig struct {
 	MaxAge time.Duration
 
 	// Duplicates is the server-side duplicate-detection window for the
-	// Nats-Msg-Id header (ADR-055 §5 "T1"). Zero leaves the NATS server
+	// Nats-Msg-Id header (ADR-055). Zero leaves the NATS server
 	// default (2m). ensureStreamForConsumer clamps it down to MaxAge when it
 	// exceeds it; the clamp is natsclient's own. That the server rejects
 	// creation when it exceeds MaxAge is not measured, and not promised.
@@ -130,11 +130,11 @@ type StreamAutoCreateConfig struct {
 // DefaultStreamConfig returns the auto-create defaults for the fields that HAVE
 // defaults: storage tier, retention policy and replica count.
 //
-// It deliberately declares NO bounds. It used to return MaxAge 7 days with
-// MaxBytes unset — the exact silent framework default the bounds requirement
-// removed from the configuration path, still handing out a retention window
-// nobody chose and no size ceiling at all. A caller that auto-creates must state
-// its own bounds; CheckStreamBounds refuses the creation otherwise.
+// It deliberately declares NO bounds: a default MaxAge with MaxBytes unset is
+// the silent framework default the bounds requirement keeps out of the
+// configuration path, a retention window nobody chose and no size ceiling at
+// all. A caller that auto-creates must state its own bounds; CheckStreamBounds
+// refuses the creation otherwise.
 func DefaultStreamConfig() *StreamAutoCreateConfig {
 	return &StreamAutoCreateConfig{
 		Storage:   "file",
@@ -428,13 +428,13 @@ func streamNotVisible(ctx context.Context, absent error) error {
 // nats.ErrConnectionClosed. The handler receives the raw jetstream.Msg and must
 // settle it with Ack, Nak, or Term.
 //
-// ctx is used for the setup only and is not retained (owner ruling, #9 comment
-// 5994720412 item 2). It does not end a wait behind a write the server is not
-// reading: such a write holds the setup until it completes or nats.go's write
-// timeout (one minute by default, WithWriteTimeout) ends it (P13; ADR-112).
-// Each handler's context descends from a context the client owns for this
-// consumer: it is cancelled when Close begins, and Close joins every handler
-// invocation. A caller that wants its own parent for the handlers uses
+// ctx is used for the setup only and is not retained. It does not end a wait
+// behind a write the server is not reading: such a write holds the setup until
+// it completes or nats.go's write timeout (one minute by default,
+// WithWriteTimeout) ends it (measured at nats.go v1.55.0, ADR-112). Each
+// handler's context descends from a context the client owns for this consumer:
+// it is cancelled when Close begins, and Close joins every handler invocation.
+// A caller that wants its own parent for the handlers uses
 // ConsumeStreamWithConfigContexts.
 func (c *Client) ConsumeStreamWithConfig(
 	ctx context.Context,
@@ -453,12 +453,11 @@ func (c *Client) ConsumeStreamWithConfig(
 }
 
 // clientOwnedHandlerContext is the parent of a consumer's handler contexts when the caller gave
-// none, and of a Subscribe or SubscribeForRequests subscription's (owner ruling, #9 comment
-// 5994720412 item 2).
-// It is a root this client owns, like the metrics poller's: the setup context must not parent
-// handlers that outlive it, and no other context of the client lives as long as the consumer or
-// subscription. The consumer's ownership goroutine (ownConsumer), or the subscription's watcher
-// (watchOwnedSubscription), cancels it when Close begins and once the last handler has returned.
+// none, and of a Subscribe or SubscribeForRequests subscription's. It is a root this client owns,
+// like the metrics poller's: the setup context must not parent handlers that outlive it, and no
+// other context of the client lives as long as the consumer or subscription. The consumer's
+// ownership goroutine (ownConsumer), or the subscription's watcher (watchOwnedSubscription),
+// cancels it when Close begins and once the last handler has returned.
 func clientOwnedHandlerContext() (context.Context, context.CancelFunc) {
 	return context.WithCancel(context.Background())
 }
@@ -474,9 +473,8 @@ func clientOwnedHandlerContext() (context.Context, context.CancelFunc) {
 //
 // As with ConsumeStreamWithConfig, ctx is used for the setup only and is not
 // retained: each handler's context descends from a context the client owns for
-// this consumer, cancelled when Close begins (owner ruling, #9 comment
-// 5994720412 item 2). A write the server is not reading holds the setup, as
-// there (P13; ADR-112).
+// this consumer, cancelled when Close begins. A write the server is not reading
+// holds the setup, as there (measured at nats.go v1.55.0, ADR-112).
 func (c *Client) ConsumeInternalStreamWithConfig(
 	ctx context.Context,
 	cfg StreamConsumerConfig,
@@ -559,7 +557,7 @@ func (c *Client) ConsumeInternalStreamWithConfig(
 		}
 	}
 	// The consumer becomes client-owned work before native Consume can deliver,
-	// so Close joins every handler invocation (design D3). Refused once Close
+	// so Close joins every handler invocation. Refused once Close
 	// has begun: native Consume is never called, and the deferred release frees
 	// the claim.
 	d := newOwnedDelivery(c, consumerAttrs(observed.stream, observed.durable, consumerCfg.AckPolicy)...)
@@ -672,7 +670,7 @@ func (c *Client) startPortConsumer(
 		messageTimeout = 30 * time.Second
 	}
 	// The consumer becomes client-owned work before native Consume can deliver,
-	// so Close joins every handler invocation (design D3). Refused once Close
+	// so Close joins every handler invocation. Refused once Close
 	// has begun: native Consume is never called.
 	d := newOwnedDelivery(c, consumerAttrs(identity.stream, identity.durable, c.buildConsumerConfig(cfg).AckPolicy)...)
 	owned, ok := c.ownConsumer(d, cancelHandlers, func(started bool) {
@@ -724,9 +722,9 @@ func (c *Client) startPortConsumer(
 //
 // setupCtx is used only for the setup and is not retained; as with
 // ConsumeStreamWithConfig, a write the server is not reading holds the setup
-// (P13; ADR-112). handlerCtx is the parent of every handler's context for as
-// long as the consumer runs; its end does not stop delivery, it only ends the
-// context each later handler receives.
+// (measured at nats.go v1.55.0, ADR-112). handlerCtx is the parent of every
+// handler's context for as long as the consumer runs; its end does not stop
+// delivery, it only ends the context each later handler receives.
 func (c *Client) ConsumeStreamWithConfigContexts(
 	setupCtx context.Context,
 	handlerCtx context.Context,
@@ -827,12 +825,12 @@ func messageHandlerContext(parent context.Context, timeout time.Duration, disabl
 	return context.WithTimeout(parent, timeout)
 }
 
-// safeHandleMessage runs handler and recovers a panic in it (owner ruling 3, #9 comment
-// 5985697767: only a root process lets a panic end it). A recovered panic is logged at error
-// level with the message's subject, counted on the JetStream error metric as operation
-// handler_panic, and the message is Nak'd so the server redelivers it; a Nak that fails is logged
-// with the panic, never discarded. A handler that returns without settling its message is left
-// as it is: the message is redelivered when its AckWait expires, by the server, not by this call.
+// safeHandleMessage runs handler and recovers a panic in it (only a root process lets a panic end
+// it). A recovered panic is logged at error level with the message's subject, counted on the
+// JetStream error metric as operation handler_panic, and the message is Nak'd so the server
+// redelivers it; a Nak that fails is logged with the panic, never discarded. A handler that returns
+// without settling its message is left as it is: the message is redelivered when its AckWait
+// expires, by the server, not by this call.
 func (c *Client) safeHandleMessage(ctx context.Context, msg jetstream.Msg, handler func(context.Context, jetstream.Msg)) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -901,7 +899,7 @@ func (c *Client) buildConsumerConfig(cfg StreamConsumerConfig) jetstream.Consume
 	}
 
 	// Set max ack pending for backpressure. Use != 0 (not > 0) so a -1 reaches
-	// NATS as "unlimited" (gh#480) rather than being dropped to the server default;
+	// NATS as "unlimited" rather than being dropped to the server default;
 	// 0 stays unset so NATS owns the inherited/default/capped result.
 	if cfg.MaxAckPending != 0 {
 		consumerCfg.MaxAckPending = cfg.MaxAckPending

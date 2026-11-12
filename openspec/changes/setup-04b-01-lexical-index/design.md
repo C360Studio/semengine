@@ -31,8 +31,10 @@ tokenizer. Put refuses an invalid entity ID (`ErrInvalidEntityID`), so a held en
 (`graph.MatchesAnyIDPrefix` fails closed on invalid IDs, inventory §2). A document with no words removes the entity.
 Search refuses a malformed scope prefix (`ErrInvalidScope`) or a limit below 1 (`ErrInvalidLimit`). ParseQuery
 refuses a query with nothing to search for (`ErrEmptyQuery`), reserved syntax (`ErrReservedSyntax`, D7) and more
-than `graph.MaxSearchTerms` (16) distinct words (`ErrQueryTooLong`). That bound is the one local search already
-enforces, and change 3 moves local search onto this index, so one spelling serves both. Hits are ordered by score,
+than `graph.MaxSearchTerms` (16) distinct words, counting plain, phrase and excluded words after tokenizing
+(`ErrQueryTooLong`). That is the bound local search already enforces, though it counts white-space terms there
+(`graph/query_local_search_types.go:12`). Change 3 moves local search onto this index and updates the constant's
+doc comment, so one spelling serves both. Hits are ordered by score,
 then ID. `Matched` counts every match in scope before the limit, for truncation reporting and rank fusion.
 Options considered: (a) Put takes text in fields (chosen): one call, and the index does the tokenizing.
 (b) Put takes already-split words: two calls every caller must pair, and they can pair them wrongly. Option (a)
@@ -87,11 +89,8 @@ The spec and the README declare this.
 - (c) A phrase only adds a bonus. This needs a second tuned weight, and it still returns passages that merely share
   the phrase's words, which R2 asks to push down.
 
-Behaviour under (b): an entity is returned only when it holds every phrase, holds no excluded term, and holds at least
-one plain or phrase word. Its score is the BM25F sum over the distinct plain and phrase words it holds. A phrase that
-no entity holds returns no hit and `Matched` 0, never an error. Generated checks are used, because the forms
-interact: `TestPropIndexMatchesModel` draws queries with up to two phrases and two exclusions against the model,
-after the named witnesses `TestCombinedQuery` and `TestUnmatchedPhraseFindsNothing`.
+The observable rule, its witnesses and the generated check over combined forms are in the spec ("Phrases and
+exclusions filter, words rank") and task 2.3.
 
 **D5. Exclusion.** `-x` removes every entity that holds `x`'s words, adjacent, in any field (Name or Body). `-test`
 drops an entity whose Body holds `foo_test.go`, because `_test.go` splits into `test` and `go`. What goes into the
@@ -118,11 +117,10 @@ question changes.
   record would then also hold a tokenizer version.
 - **Positions (D4b):** internal; the phrase law test does not see the layout.
 - **Typo tolerance and query forms:** a new form adds an unexported field to `Query`, and the word table is
-  internal. A new form must not change any query that is answered today. So the syntax later forms would take is
-  refused now with `ErrReservedSyntax`: a term starting `name:` or `body:` (field search), and a term ending in `*`
-  (prefix) or `~` (typo). Every other punctuation separates words, as it does in documents. A leading `-` excludes
-  (`-v`, `--force`); quote a flag to search for it. Bare `AND`, `OR` and `NOT` are words, so word-shaped operators
-  are foreclosed.
+  internal. So that a later form changes no answer given today, its syntax (`name:`, `body:`, a letter or digit
+  followed by `*` or `~`) is refused now. A single leading `-` excludes. Bare `AND`, `OR` and `NOT` are words, which
+  forecloses word-shaped operators. The exact rules and witnesses are in the spec ("Syntax kept for later query
+  forms is refused", "A query holds words, quoted phrases and excluded words").
 - **Tier 1 vectors by rank:** `Result` gives a total order and `Matched`, which is what rank fusion reads.
 - **Entity-to-entity `similar` (change 4):** `SimilarTo(id, Options)` can build a query from the entity's own held
   words.
@@ -130,30 +128,21 @@ question changes.
 **D8. Scorecard.** (a) A frozen known-item set: 2,000 sections of this repository's Markdown at `2853486d`, each
 file's first heading as Name and the section as Body, with 500 section headings as questions. It is kept in
 `graph/lexical/testdata/scorecard/` and gzipped (0.97 MB measured; open question 1). The floor is the measured R@10
-minus one point. The floor is shown able to fail with `task mutate:check` and an IDF-is-one mutant (notes/2.4.md).
+minus one point. It lives as a constant in `TestScorecardHoldsItsFloor`, and task 2.4 also records its value here.
+It is shown able to fail with `task mutate:check` and an IDF-is-one mutant (notes/2.4.md).
 (b) About 30 behaviour questions in SemSource's `questions.json` shape: phrases, flags, dotted names, `-test`,
 identifiers. Every one must pass. SemSource's 21.6k corpus and 33 questions stay in their repository, for their
 runner against the composed stack once change 2 serves the verb. Rejected: a generated corpus (it proves the
 arithmetic, which D10's reference model already does, not quality) and copying SemSource's corpus (too large, and
 their data).
 
-**D9. README.** It says plainly that word search helps only entities with text. Telemetry and other numeric data are
-reached through structure: prefix, predicate, relationships, name and alias, and groups by ID. A predicate's value
-filter matches the value written as a string, exactly (`processor/graph-index/query.go:366`); nothing offers numeric
-ranges. The time-range and bounds verbs have no responder in the tree (inventory §4).
+**D9. README.** It states what word search does not help with (telemetry and other entities without text) and where
+those entities are reached instead; the content is task 3.1's acceptance check.
 
-**D10. Rules (inventory §6).**
-
-- `TestLexicalImportsNoNATS` lives in `internal/harness/contract`, beside `graphtransport_test.go`, with a
-  sensitivity case.
-- Fuzz targets `FuzzTokens` and `FuzzParseQuery`: they never panic, every word equals its lower-casing, is 32 bytes
-  or less and holds only letters and digits, and tokenizing twice gives the same words.
-- `"graph/lexical unit"` is added to `scripts/cover-check.sh`.
-- Rapid properties over a closed vocabulary (lower-case, no `s` or `x`, never ending in `e`, no stopword, so
-  tokenizing changes nothing):
-  history equality, index against a reference model (a naive BM25F over a `map[id]Document`), absent words, and
-  plural folding. Named witnesses run before each `rapid.Check`.
-- Framework-API contract line: the spec plus the README. Product test: `ExampleIndex` in package `lexical_test`.
+**D10. Rules (inventory §6).** The no-NATS guard sits in `internal/harness/contract`; there are two fuzz targets, a
+`scripts/cover-check.sh` line, and Rapid properties against a naive reference model with named witnesses first. The
+framework-API contract line is the spec plus the README, and the product test is `ExampleIndex`. Each test is named
+in the spec and tasks 2.1 to 2.5.
 
 ## Risks / Trade-offs
 
@@ -175,4 +164,4 @@ None: no caller until change 2. Nothing in the tree changes behaviour.
    the port history #606 is removing from the live docs; the frozen copy keeps it as it was at `2853486d`.
    Recommended: yes. A generated corpus cannot measure quality.
 2. Change 2: which predicates feed Name and Body, including file paths for R3; and a per-entity word cap, chosen by
-   measurement on SemSource data.
+   measurement on SemSource data. Change 3: the doc comment of `graph.MaxSearchTerms` (D1).

@@ -26,7 +26,9 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   (`graph/embedding/storage.go:132`). Accept: `TestPutReplacesAndDeletes`, `TestSearchRanksByBM25`,
   `TestNameOutranksBody`, `TestScopeBeforeLimit`, `TestSearchDuringWrites` (race detector), and the properties
   `TestPropIndexMatchesModel` (plain words), `TestPropRankingIgnoresHistory` and `TestPropAbsentWordsMatchNothing`.
-  Each property has named witnesses before `rapid.Check`, and its seed and completed checks go in `notes/2.2.md`.
+  Each property draws from a closed vocabulary (lower case, no `s` or `x`, never ending in `e`, no stopword, so
+  tokenizing changes nothing) against a naive BM25F model over a `map[id]Document`. Named witnesses run before
+  `rapid.Check`, and the seed and completed checks go in `notes/2.2.md`.
 - [ ] 2.3 Query forms (`ParseQuery`, phrases, exclusion and reserved syntax; design D4, D4b, D5, D7). Premise:
   SemSource's R2 and R3 (inventory §5); per-entity word sequences cost 472 B and 1,590 B per entity at one million
   (`notes/probes/sequence-probe.log`); requiring every word reaches 6.5% of known-item answers
@@ -39,7 +41,8 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   unit-test time budget (`openspec/specs/merge-gate/spec.md:15-19`). Accept: the frozen corpus and questions, among
   them one that pins `withretry` finding nothing, are in `graph/lexical/testdata/scorecard/`, with their source
   commit in `notes/2.4.md`. The sweep of `NameWeight` over 2, 3 and 5, with 1 for comparison, is recorded there; the
-  chosen value is set in the constant and written into design D6. `TestScorecardHoldsItsFloor` and
+  chosen value is set in the constant and written into design D6. The floor (measured R@10 minus one point) is set
+  as a constant in `TestScorecardHoldsItsFloor` and written into design D8. `TestScorecardHoldsItsFloor` and
   `TestScorecardBehaviour` pass, and an IDF-is-one mutant is shown to fail the floor.
 - [ ] 2.5 Guards and coverage (design D10). Premise: the graph root guard covers `./graph` only
   (`internal/harness/contract/graphtransport_test.go:18`). Accept: `TestLexicalImportsNoNATS` and its sensitivity
@@ -48,7 +51,12 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
 
 ## 3. Land
 
-- [ ] 3.1 `graph/lexical/README.md` with `ExampleIndex`: what word search does not help with and where those entities
-  are reached (design D9; inventory §4), the leading `-` rule and reserved syntax (D7), and the `withretry` limit
-  (D3); and `docs/repository-map.md`.
+- [ ] 3.1 `graph/lexical/README.md` with `ExampleIndex`, and `docs/repository-map.md`. Premise: inventory §4 (read
+  paths that need no text) and `processor/graph-index/query.go:366` (exact string value match). Accept: the README
+  says word search helps only entities with text; telemetry and other numeric data are reached through prefix,
+  predicate, relationships, name and alias, and groups by ID; the value filter matches the value written as a
+  string, exactly, and nothing offers numeric ranges; the time-range and bounds verbs have no responder in the
+  tree. It also states the query rules: a single leading `-` excludes (`go test -race` excludes `race`, while
+  `--force` is text; quote the flag to search for it), quoting makes any text literal, which syntax is reserved,
+  and that `withretry` finds nothing.
 - [ ] 3.2 Archive and spec sync.

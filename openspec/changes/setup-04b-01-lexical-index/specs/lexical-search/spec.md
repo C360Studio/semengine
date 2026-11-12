@@ -134,22 +134,24 @@ A search SHALL return no hit for a query whose words no held entity holds.
 
 ### Requirement: A query holds words, quoted phrases and excluded words
 
-`lexical.ParseQuery` SHALL read text in double quotes as a phrase, any other term starting with one or more `-` as
-excluded (so `-v` and `--force` exclude `v` and `force`), and the rest as plain words, all tokenized as documents
-are. A `-` inside quotes SHALL be text, and an unclosed quote SHALL end at the end of the text.
+`lexical.ParseQuery` SHALL read text in double quotes as a phrase, a term starting with a single `-` followed by a
+letter, digit or quote as excluded, and the rest as plain words, all tokenized as documents are. Quoted text SHALL be
+literal: no rule but tokenizing applies inside quotes. An unclosed quote SHALL end at the end of the text.
 
 #### Scenario: The three forms
 
-- **WHEN** the queries are `retry -test "docker compose down -v"` and `deploy --force`
-- **THEN** the first parses to one word, one excluded word and one phrase of four words, and the second to the word
-  `deploy` and the excluded word `force`
+- **WHEN** the queries are `retry -test "docker compose down -v"`, `go test -race`, `go test "-race"` and
+  `deploy --force`
+- **THEN** the first parses to one word, one excluded word and one phrase of four words; the second to the words
+  `go test` and the excluded word `race`; the third to the words `go test` and the phrase `race`; and the fourth to
+  the words `deploy force`
 - **AND** the test that verifies this is `TestParseQuery`, with `FuzzParseQuery` showing no input panics
 
 ### Requirement: A query with nothing to search for is refused
 
 A phrase or excluded term left with no word after tokenizing SHALL be ignored. A query left with no plain word and no
 phrase SHALL be refused with an error matching `ErrEmptyQuery`, and one with more than `graph.MaxSearchTerms`
-distinct words with an error matching `ErrQueryTooLong`.
+distinct words, counting plain, phrase and excluded words after tokenizing, with an error matching `ErrQueryTooLong`.
 
 #### Scenario: Forms and refusals
 
@@ -161,14 +163,15 @@ distinct words with an error matching `ErrQueryTooLong`.
 ### Requirement: Syntax kept for later query forms is refused
 
 `ParseQuery` SHALL refuse, with an error matching `ErrReservedSyntax`, a term outside quotes that starts with `name:`
-or `body:` followed by more text, or that ends in `*` or `~`. Every other character outside letters and digits SHALL
-separate words, as in documents.
+or `body:` followed by more text, or that ends in a letter or digit followed by `*` or `~`. Every other character
+outside letters and digits, a lone `*` or `~` among them, SHALL separate words, as in documents.
 
 #### Scenario: Reserved and ordinary punctuation
 
-- **WHEN** the queries are `name:retry`, `retr*`, `retry~`, `pkg.Func() name: retry` and `"name:retry"`
-- **THEN** the first three are refused with `ErrReservedSyntax`, the fourth parses to the words `pkg func name
-  retry`, and the fifth to the phrase `name retry`
+- **WHEN** the queries are `name:retry`, `retr*`, `retry~`, `void*`, `pkg.Func() name: retry`, `SELECT * FROM users`,
+  `java.util.*`, `**bold**`, `cd ~` and `"name:retry void*"`
+- **THEN** the first four are refused with `ErrReservedSyntax`; the next five parse to the words `pkg func name
+  retry`, `select user`, `java util`, `bold` and `cd`; and the last parses to the phrase `name retry void`
 - **AND** the test that verifies this is `TestParseQueryReservesForms`
 
 ### Requirement: Phrases and exclusions filter, words rank
@@ -252,8 +255,8 @@ would return before that write or after it, never a mix.
 
 ### Requirement: The scorecard holds its floor
 
-The package's frozen known-item corpus SHALL have the right entity in the first ten at or above the floor the design
-records, and every behaviour question SHALL pass.
+The package's frozen known-item corpus SHALL have the right entity in the first ten at or above the floor set in
+`TestScorecardHoldsItsFloor`, whose value design D8 records, and every behaviour question SHALL pass.
 
 #### Scenario: The fixed questions
 

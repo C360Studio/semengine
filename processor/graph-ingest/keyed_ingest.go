@@ -42,9 +42,9 @@ type ingestWork struct {
 	// authority rejection is metered under, so an operator reading
 	// mutation_rejections can see WHICH port a refused write came in on.
 	subject string
-	// importLane is the arrival port's own "import": true declaration (ADR-102
-	// d5). It is read from the port, never from the message: a peer cannot
-	// declare itself trusted.
+	// importLane is the arrival port's own "import": true declaration (ADR-102).
+	// It is read from the port, never from the message: a peer cannot declare
+	// itself trusted.
 	importLane bool
 }
 

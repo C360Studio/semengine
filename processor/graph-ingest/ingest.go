@@ -70,7 +70,7 @@ func wireMessageType(data []byte) string {
 }
 
 // ingestEntity merges one Graphable projection into its authority entity.
-// importLane is the arrival port's declared lane (ADR-102 d5); the synchronous
+// importLane is the arrival port's declared lane (ADR-102); the synchronous
 // compat entry point and every direct caller pass false.
 func (c *Component) ingestEntity(ctx context.Context, entity *graph.EntityState, importLane bool) error {
 	if err := c.prepareFactProjection(entity, importLane); err != nil {
@@ -120,7 +120,7 @@ func (c *Component) prepareFactProjection(entity *graph.EntityState, importLane 
 			Err:         err,
 		}, "Component", "ingestEntity", "validate envelope entity ID")
 	}
-	// Authority gate (ADR-102 d5), before the projection fill and before any KV
+	// Authority gate (ADR-102), before the projection fill and before any KV
 	// I/O. importLane is the arrival port's own declaration, carried from the
 	// consume closure; a direct caller supplies false.
 	if err := c.authorizeSubject(entity.ID, importLane); err != nil {
@@ -277,8 +277,8 @@ func removeIndexingProfileTriples(entity *graph.EntityState) {
 // triggeringTime is the time every statement graph-ingest derives for a write carries (the
 // indexing profile, hierarchy statements, a hierarchy container's statements): the latest
 // Timestamp among entity's statements, never the clock. Each lane reads it from the write's
-// own statements before graph-ingest adds one of its own, and reads all of them, reserved sources included: a hierarchy container's
-// statements are all graph-ingest-hierarchy, and pkg/lifecycle writes under its own. A
+// own statements before graph-ingest adds one of its own, and reads all of them, reserved
+// sources included: a hierarchy container's statements are all graph-ingest-hierarchy, and pkg/lifecycle writes under its own. A
 // statement graph-ingest has added already carries this time, so reading after it gives the
 // same answer. Every lane refuses a write that carries no statement before it reads this, so
 // the time it returns is never zero.
@@ -427,8 +427,8 @@ func (c *Component) CreateEntity(ctx context.Context, entity *graph.EntityState)
 // arrival's MessageType and StorageRef when no set was older (UpdatedAt always).
 //
 // A full replace (Put) from the stream lane would erase triples written through
-// mutation request/reply: a lifecycle-managed entity would lose the phase triple
-// Manager.Create stamped at the first Graphable arrival from a downstream processor.
+// mutation request/reply: a lifecycle-managed entity would lose, at the first Graphable
+// arrival from a downstream processor, the phase triple Manager.Create stamped.
 //
 // Writes through replaceEntity (entity_writes.go), a CAS read-modify-write,
 // so concurrent arrivals on the same Subject converge without racing.
@@ -746,7 +746,7 @@ func (c *Component) addTriplesLane(ctx context.Context, triples []message.Triple
 	}
 	// EVERY subject in the batch, not just the synthetic root: a batch is
 	// rejected whole, so one foreign subject must not ride in beside local ones
-	// (ADR-102 d5). One record for the batch, at the first refused subject:
+	// (ADR-102). One record for the batch, at the first refused subject:
 	// the batch is one rejected operation, not one per subject.
 	// handleCanonicalAppend authorizes every subject and returns before this
 	// body, so the RPC lane never reaches here with a foreign subject.

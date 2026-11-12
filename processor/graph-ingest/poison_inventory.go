@@ -347,8 +347,8 @@ func (c *Component) startEntityStateGuard(ctx context.Context, bucket *natsclien
 	}
 }
 
-// stopEntityStateGuardWatcher performs the deliberate snapshot-watcher stop
-// in a mandatory shape: Stop(), then KEEP READING the updates channel
+// stopEntityStateGuardWatcher performs the deliberate snapshot-watcher stop in a
+// mandatory shape: Stop(), then KEEP READING the updates channel
 // until nats.go closes it, discarding entries. The nats.go update callback
 // blocks on a full channel while holding the watcher mutex, so an unread
 // channel would wedge the connection's async-callback dispatcher (via

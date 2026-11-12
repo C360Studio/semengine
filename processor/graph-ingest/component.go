@@ -142,7 +142,7 @@ type Component struct {
 	cacheGen   map[string]uint64
 
 	// platform is the deployment's own authority, the org and platform at
-	// positions 1-2 of every identity this deployment may mint (ADR-102 d5). It is
+	// positions 1-2 of every identity this deployment may mint (ADR-102). It is
 	// deps.Platform, read once at construction, which refuses an empty pair, and
 	// never re-derived from a candidate, a payload or a subject. The authority gate
 	// and hierarchy inference both read it.
@@ -639,7 +639,7 @@ func (c *Component) initStorage(ctx, runCtx context.Context) error {
 	c.mu.Unlock()
 
 	// SemStreams ADR-072 redelivery-guard durable tier: graph-ingest-owned bucket mapping
-	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`
+	// `(entityID/streamName) → (stream generation, last-applied stream sequence)`.
 	// Operational state graph-ingest owns (bucket-ownership rubric), a
 	// sixteen-byte value — no cross-repo/EntityState schema change. No TTL: a
 	// record must outlive every redelivery or re-publish of its input, whatever

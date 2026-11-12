@@ -144,8 +144,8 @@ func (c *Component) clearBoundConsumers() {
 }
 
 // statusMetricsLoop republishes the readiness envelope on the shared heartbeat.
-// The write doubles as a
-// liveness heartbeat, so it is unconditional rather than on-change.
+// The write doubles as a liveness heartbeat, so it is unconditional rather than
+// on-change.
 func (c *Component) statusMetricsLoop(ctx context.Context) {
 	// Publish once up front so the key is populated before the first tick rather
 	// than reading absent (which consumers correctly treat as unknown) for a whole

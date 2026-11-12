@@ -173,8 +173,8 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 			c.casRetries.Inc()
 		}
 		stale = nil
-		// First write: entity didn't exist (absence is revision 0, never an empty value; design
-		// D23). Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
+		// First write: entity didn't exist (absence is revision 0, never an empty value).
+		// Apply hierarchy triples (deterministic-per-ID so safe to apply once on create),
 		// then store each statement once.
 		if read == 0 {
 			if readFound {
@@ -274,7 +274,7 @@ func (c *Component) replaceEntity(ctx context.Context, entity *graph.EntityState
 	if revision == 0 {
 		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
 		// written. A skip clears no poison record and invalidates no cache entry: the next
-		// valid read or commit clears a stale record (D3c).
+		// valid read or commit clears a stale record.
 		return 0, nil
 	}
 	c.committed(ctx, entity.ID, revision)
@@ -457,7 +457,7 @@ func (c *Component) appendEntityTriples(ctx context.Context, subject string, tri
 	if revision == 0 {
 		// The callback declined (UpdateWithRetryRead returns 0 only then) and nothing was
 		// written. A skip clears no poison record and invalidates no cache entry: the next
-		// valid read or commit clears a stale record (D3c).
+		// valid read or commit clears a stale record.
 		return appendResult{revision: read, outcome: graph.MutationUnchanged, suppressed: suppressed}, nil
 	}
 	c.committed(ctx, subject, revision)

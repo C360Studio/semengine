@@ -43,7 +43,7 @@ const authorityRejectionLogMessage = "graph-ingest: entity authority rejected"
 //
 // It is NEVER called for an @id OBJECT: a relationship target keeps structural
 // validation only, no stub is created for it, and an absent target is permitted
-// (ADR-102 d5), which is what lets a local entity cite an imported one.
+// (ADR-102), which is what lets a local entity cite an imported one.
 //
 // importLane is true only for a JetStream input port the operator declared
 // "import": true. On that lane a foreign pair is admitted unchanged and the

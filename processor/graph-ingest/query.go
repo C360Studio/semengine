@@ -122,13 +122,10 @@ func (c *Component) handleQueryBatchNATS(ctx context.Context, data []byte) ([]by
 
 	// Fetch entities with bounded concurrency and cache.
 	//
-	// Timed because this handler's budget and its CALLER's budget are set
-	// independently and can be inverted: graph-query's loadEntities abandons the
-	// request at its QueryTimeout (default 5s) while this handler is allowed
-	// 10s, so a batch taking 5–10s is charged to the caller as an opaque
-	// "context deadline exceeded" that no server-side log records at all: an
-	// intermittent failure with nothing on the responder side to look at. Same reasoning as reportBatchMissing below:
-	// the symptom reaches the user several hops from the fact.
+	// Timed because this handler's 10 s budget and its caller's deadline are set
+	// independently: a caller that gives up first sees an opaque "context deadline
+	// exceeded" that no server-side log records. Same reasoning as reportBatchMissing
+	// below: the symptom reaches the user several hops from the fact.
 	fetchStart := time.Now()
 	entities, missing, err := c.fetchEntitiesConcurrent(ctx, req.IDs, defaultMaxConcurrent)
 	fetchElapsed := time.Since(fetchStart)
@@ -554,8 +551,8 @@ func (c *Component) fetchEntitiesConcurrent(ctx context.Context, ids []string, m
 			gen0 := c.loadEntityCacheGen(entityID)
 
 			// readEntity records poison at the failing revision, so a single
-			// batch attempt inventories EVERY poisoned entity it touched (D5),
-			// and clears a stale record on a valid read (D3c).
+			// batch attempt inventories EVERY poisoned entity it touched,
+			// and clears a stale record on a valid read (clear path (c)).
 			entity, _, err := c.readEntity(ctx, entityID)
 			if err != nil {
 				if natsclient.IsKVNotFoundError(err) {

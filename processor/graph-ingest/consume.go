@@ -41,7 +41,7 @@ func (c *Component) setupSubscriptions(ctx, submitCtx context.Context) error {
 // defaultIngestAckWait is the acknowledgement wait graph-ingest's consumer is created with
 // when its input port declares no ack_wait. It is passed to the consumer, so natsclient's
 // own fallback is never reached; it is the same 30 s, so a port that declares nothing gets
-// natsclient's default wait (graph-ingest-recovery spec, "Long apply").
+// natsclient's default wait.
 const defaultIngestAckWait = 30 * time.Second
 
 // ingestDeliveryTiming returns the acknowledgement wait for an input port's consumer and
@@ -74,7 +74,7 @@ func (c *Component) setupJetStreamConsumer(ctx, submitCtx context.Context, port 
 	subject := stream.Subjects()[0]
 	streamName := stream.Name()
 	// The operator's import declaration is read from the PORT, once, here — a
-	// message can never claim it (ADR-102 d5).
+	// message can never claim it (ADR-102).
 	importLane := stream.Import()
 
 	// The stream's generation is its creation time on the server, from the stream info the wait

@@ -87,7 +87,8 @@ func newEntityStateContractRejectionsMetric() *prometheus.CounterVec {
 // newProcessingDurationMetric builds the histogram of per-message
 // apply time — the merge + CAS write applyIngest times. Paired with
 // newIngestLagMetric it separates processing time from queue wait, which an
-// end-to-end latency measured downstream cannot tell apart. Buckets span sub-ms (a warm CAS is ~1.5ms) to seconds (a stalled KV).
+// end-to-end latency measured downstream cannot tell apart. Buckets span sub-ms
+// (a warm CAS is ~1.5ms) to seconds (a stalled KV).
 func newProcessingDurationMetric() prometheus.Histogram {
 	processingDurationHistogram := prometheus.NewHistogram(prometheus.HistogramOpts{
 		Namespace: "semengine",

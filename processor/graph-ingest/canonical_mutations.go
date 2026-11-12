@@ -139,7 +139,7 @@ func requireMutationProviderPort(ports *component.PortConfig) error {
 // message_type_unregistered, the key in detail "message_type" — which the RPC
 // lane meters and logs through meteredCanonicalMutation and the in-process lane returns
 // to its caller (not metered: the counter is labelled by RPC subject). The
-// registry is never nil: CreateGraphIngest refuses to build without one (O-15).
+// registry is never nil: CreateGraphIngest refuses to build without one.
 func (c *Component) requireRegisteredMessageType(entity *graph.EntityState) error {
 	key := entity.MessageType.Key()
 	if _, ok := c.payloadRegistry.GetRegistration(entity.MessageType); !ok {
@@ -237,7 +237,7 @@ func (c *Component) handleCanonicalReconcile(ctx context.Context, data []byte) (
 		return nil, rejectFromError(err)
 	}
 	// Before the fetch: a refused mutation must not even read the imported
-	// entity's state (ADR-102 d5 — "before any KV I/O").
+	// entity's state (ADR-102 — "before any KV I/O").
 	if err := c.authorizeSubject(request.EntityID, false); err != nil {
 		return nil, err
 	}
@@ -429,10 +429,10 @@ func (c *Component) handleCanonicalDelete(ctx context.Context, data []byte) ([]b
 	var stateErr *graph.StateContractError
 	switch {
 	case errors.As(err, &stateErr):
-		// A delete is not refused for its stored value: readEntity has recorded
-		// the refusal, and the
-		// delete below runs at the caller's expected revision, the bucket's
-		// revision check being the fence. This is the repair the poison advice names.
+		// A delete is not refused for its stored value: readEntity has recorded the
+		// refusal, and the delete below runs at the caller's expected revision, the
+		// bucket's revision check being the fence. This is the repair the poison
+		// advice names.
 	case natsclient.IsKVNotFoundError(err):
 		return nil, rejectInvalidDetail(graph.ErrorCodeEntityNotFound,
 			map[string]any{"entity": request.EntityID}, fmt.Errorf("entity not found: %s", request.EntityID))

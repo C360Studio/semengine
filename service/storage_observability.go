@@ -1,5 +1,4 @@
-// storage_observability.go hosts the account storage collector as a SERVICE
-// (storage-capacity-observability section 4).
+// storage_observability.go hosts the account storage collector as a SERVICE.
 //
 // It is a service rather than a component because it watches the SUBSTRATE, not
 // the flow. A component is a flow participant with ports that processes

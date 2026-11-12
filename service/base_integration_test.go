@@ -61,8 +61,7 @@ func TestService_HealthMonitoring(t *testing.T) {
 	})
 }
 
-// Test functional options with a NATS client: the subtests of the pin's TestService_FunctionalOptions
-// that pass one (design D6), without the dropped options.
+// Test functional options with a NATS client: the functional-options subtests that pass one.
 func TestService_FunctionalOptionsWithNATS(t *testing.T) {
 	t.Run("service with NATS only", func(t *testing.T) {
 		natsClient := fixtureClient(t)

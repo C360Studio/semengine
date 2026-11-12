@@ -10,10 +10,9 @@ import (
 	"github.com/c360studio/semengine/component"
 )
 
-// Construction's refusals and the empty component-manager configuration (pin
-// component_manager_boot_only_test.go; design D1, D3). ComponentManagerConfig defines no key, so
-// a strict decode refuses every key, naming it; the pin's TestNewComponentManagerRejectsRetiredWatchConfig
-// is one of its cases.
+// Construction's refusals and the empty component-manager configuration. ComponentManagerConfig
+// defines no key, so a strict decode refuses every key, naming it; a retired watch key is one of
+// its cases.
 
 // TestComponentManagerConfigRefusesEveryKey: an empty ComponentManagerConfig decoded strictly
 // refuses any key, the retired enabled_components and watch_config among them, and names it.
@@ -51,7 +50,7 @@ func TestNewComponentManagerAcceptsTheEmptyConfiguration(t *testing.T) {
 }
 
 // TestNewComponentManagerRefusesANilConfigManager: with no dependencies, or dependencies without a
-// config.Manager, there is no configuration to compose and construction refuses (pin :155-157).
+// config.Manager, there is no configuration to compose and construction refuses.
 func TestNewComponentManagerRefusesANilConfigManager(t *testing.T) {
 	built, err := NewComponentManager(nil, nil)
 	require.ErrorContains(t, err, "component-manager requires config manager")
@@ -64,9 +63,8 @@ func TestNewComponentManagerRefusesANilConfigManager(t *testing.T) {
 	require.Nil(t, built)
 }
 
-// TestNewComponentManagerRefusesANilComponentRegistry: sweep C2. The pin fell back to a private
-// empty registry, where no configured component found its factory and boot went on without them;
-// here construction refuses.
+// TestNewComponentManagerRefusesANilComponentRegistry: with no component registry no configured
+// component would find its factory and boot would go on without them, so construction refuses.
 func TestNewComponentManagerRefusesANilComponentRegistry(t *testing.T) {
 	deps := testComponentDependencies(t, component.NewRegistry())
 	deps.ComponentRegistry = nil
@@ -75,9 +73,9 @@ func TestNewComponentManagerRefusesANilComponentRegistry(t *testing.T) {
 	require.Nil(t, built)
 }
 
-// TestComponentManagerHasNoPostBootConfigOrMutationSeam: the boot set is composed once (ADR-096
-// ¶4), so the manager keeps no post-boot configuration or mutation seam, and the surface design D1
-// drops for want of a reader is gone with it.
+// TestComponentManagerHasNoPostBootConfigOrMutationSeam: the boot set is composed once (ADR-096),
+// so the manager keeps no post-boot configuration or mutation seam, and surface with no reader is
+// gone with it.
 func TestComponentManagerHasNoPostBootConfigOrMutationSeam(t *testing.T) {
 	managerType := reflect.TypeOf(ComponentManager{})
 	for _, retiredField := range []string{
@@ -91,7 +89,7 @@ func TestComponentManagerHasNoPostBootConfigOrMutationSeam(t *testing.T) {
 	pointerType := reflect.TypeOf((*ComponentManager)(nil))
 	for _, retiredMethod := range []string{
 		"CreateComponent", "RemoveComponent", "CreateComponentsFromConfig", "GetManagedComponents",
-		// Design D1: dropped, no reader; Initialize became the constructor's unexported initialize.
+		// No reader; the constructor initializes the manager.
 		"Initialize", "IsInitialized", "IsStarted", "GetHealthyComponents", "GetUnhealthyComponents",
 	} {
 		if _, ok := pointerType.MethodByName(retiredMethod); ok {

@@ -23,7 +23,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// MockService is a Service whose status and health a test sets (pin service_manager_test.go:149).
+// MockService is a Service whose status and health a test sets.
 // Its Start honours an ended context and its Stop does nothing.
 type MockService struct {
 	name    string
@@ -56,17 +56,15 @@ func (m *MockService) Health() health.Status {
 	}
 }
 
-// newStandInComponentManager returns the plain Service named component-manager that every
-// composition here holds until PR 3 registers the real constructor (design D3, "Tests"). It
-// is not a *ComponentManager, so the manager takes the pin's not-concrete path: no component
-// routes, zero component counts, readiness from services.
+// newStandInComponentManager returns the plain Service named component-manager that compositions
+// here hold in place of the real one. It is not a *ComponentManager, so the manager takes its
+// not-concrete path: no component routes, zero component counts, readiness from services.
 func newStandInComponentManager() *MockService {
 	return &MockService{name: "component-manager", status: StatusRunning, healthy: true}
 }
 
 // createTestServiceDependencies returns Dependencies with an Error-level logger and a fresh metrics
-// registry. The pin's mockNATSClient argument is not carried: the pin set an empty
-// natsclient.Client whatever the mock said, so no test read the mock.
+// registry.
 func createTestServiceDependencies() *Dependencies {
 	return &Dependencies{
 		Logger:          slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelError})),
@@ -74,10 +72,10 @@ func createTestServiceDependencies() *Dependencies {
 	}
 }
 
-// createTestServiceManager returns a Manager whose configuration the test sets, as the pin's helper
-// does (pin :607): port 0 binds a kernel-picked main port, which no configuration path offers.
-// The Manager is not a Service (design D2, S11), so the pin's embedded BaseService goes; logger and
-// natsClient are set from deps as ConfigureFromServices sets them.
+// createTestServiceManager returns a Manager whose configuration the test sets: port 0 binds a
+// kernel-picked main port, which no configuration path offers. The Manager is not a Service, so it
+// embeds no BaseService; logger and natsClient are set from deps as ConfigureFromServices sets
+// them.
 func createTestServiceManager(config ManagerConfig, deps *Dependencies) *Manager {
 	m := NewServiceManager(NewServiceRegistry())
 	m.config = config
@@ -89,11 +87,10 @@ func createTestServiceManager(config ManagerConfig, deps *Dependencies) *Manager
 	return m
 }
 
-// observedManagerHTTPURL returns the URL of a manager's bound main listener (pin
-// startup_observability_test.go:37). The listener field is set from the bind until it is released.
+// observedManagerHTTPURL returns the URL of a manager's bound main listener. The listener field is set from the bind until it is released.
 // It dials the address the listener reports, never a hand-built 127.0.0.1: the manager binds every
 // address, and on macOS another socket may bind 127.0.0.1 on the same port and take those
-// connections (#372). Dialing the unspecified address reaches the local system (net.Dial).
+// connections. Dialing the unspecified address reaches the local system (net.Dial).
 func observedManagerHTTPURL(t *testing.T, manager *Manager) string {
 	t.Helper()
 	manager.mu.RLock()
@@ -120,8 +117,7 @@ func startTestManager(t *testing.T, manager *Manager) {
 // waits: a correct call is still waiting when the window ends, however slow the machine.
 const negativeWindow = 100 * time.Millisecond
 
-// failedStartRollbackService is a Service whose Start and Stop run the test's functions (pin
-// service_manager_test.go:162).
+// failedStartRollbackService is a Service whose Start and Stop run the test's functions.
 type failedStartRollbackService struct {
 	MockService
 	start func(context.Context) error
@@ -209,9 +205,9 @@ func (r *releaser) release() { r.once.Do(func() { close(r.ch) }) }
 
 // TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext: the second of two services fails
 // its Start; StartAll stops both under a live, bounded context derived from its own (the pass
-// token below is the pin's observation of that derivation, no production state), does not return
+// token below is the test's observation of that derivation, no production state), does not return
 // before the rollback joined, returns the Start error, and leaves the main listener refusing
-// connections. A rollback that fails is run again by StopAll (design D2; pin :176).
+// connections. A rollback that fails is run again by StopAll.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext(t *testing.T) {
@@ -330,7 +326,7 @@ func TestStartAllRollsBackFailedChildStartWithDetachedBoundedContext(t *testing.
 }
 
 // TestStartAllMainBindFailureStartsNoService: StartAll on the port of a listener the test holds
-// returns the bind error before any service's Start is called (design D2; pin :286).
+// returns the bind error before any service's Start is called.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStartAllMainBindFailureStartsNoService(t *testing.T) {
@@ -361,9 +357,7 @@ func TestStartAllMainBindFailureStartsNoService(t *testing.T) {
 // TestStartAllRollsBackMainAndPublisherAfterPublisherStartFailure: the last service's Start ends
 // the StartAll context and returns nil, so the health publisher, started after every service under
 // that context, is refused. StartAll returns that error, stops the service under a live bounded
-// context, and leaves neither the main listener nor the publisher running (design D2; pin :314,
-// which forced the failure by starting the publisher through a private call and read the private
-// httpTerminal and healthPublisherTerminal flags).
+// context, and leaves neither the main listener nor the publisher running.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStartAllRollsBackMainAndPublisherAfterPublisherStartFailure(t *testing.T) {
@@ -399,8 +393,7 @@ func TestStartAllRollsBackMainAndPublisherAfterPublisherStartFailure(t *testing.
 }
 
 // TestStopAllRetainsServiceAuthorityAfterFailure: a service's Stop fails; StopAll returns an error
-// naming it, the service stays composed, and the next StopAll calls its Stop again (design D2; pin
-// :340, which wrote the service map directly).
+// naming it, the service stays composed, and the next StopAll calls its Stop again.
 //
 // spec: service-lifecycle / StopAll counts a service already stopped as stopped
 func TestStopAllRetainsServiceAuthorityAfterFailure(t *testing.T) {
@@ -506,9 +499,7 @@ func TestServiceManager_RegisterInstance_DuplicateRejected(t *testing.T) {
 
 // TestStopAllWithAnEndedContextStopsNothing: a started manager's StopAll given a cancelled context
 // returns context.Canceled, calls no service's Stop and leaves the main listener serving; a
-// following StopAll with a live context returns nil. It replaces the pin's
-// TestRuntimeServerCanceledStopIsTerminalWithoutResultReplay and
-// TestHealthPublisherCanceledStopIsHonestAndTerminal, which called such a stop final (design D2).
+// following StopAll with a live context returns nil: such a stop is not final.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStopAllWithAnEndedContextStopsNothing(t *testing.T) {
@@ -551,11 +542,8 @@ func (s *blockingHealthService) Health() health.Status {
 }
 
 // TestStopAllWaitsForInFlightRequests: StopAll does not return while a request on the main or the
-// health listener is in flight, and that request is answered once its handler returns. It
-// replaces the pin's TestRuntimeServerShutdownKeepsHandlerAuthorityLiveUntilHandlerReturns and
-// TestHealthListenerShutdownKeepsHandlerAuthorityLiveUntilHandlerReturns, which installed a
-// private runtime (design D2: a listener stops accepting and StopAll waits for its in-flight
-// requests).
+// health listener is in flight, and that request is answered once its handler returns: a listener
+// stops accepting and StopAll waits for its in-flight requests.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStopAllWaitsForInFlightRequests(t *testing.T) {
@@ -602,8 +590,7 @@ func TestStopAllWaitsForInFlightRequests(t *testing.T) {
 // TestStopAllCutsOpenConnectionsAtItsDeadline: a handler on the main listener waits for its
 // request context to end and then for a release. A StopAll whose 100 ms context ends while it
 // waits returns context.DeadlineExceeded, the handler has seen its request context end, and a new
-// dial is refused; a second StopAll does not return before the release and returns nil after it
-// (design D2, Q-B; the pin's TestRuntimeServerCanceledStopIsTerminalWithoutResultReplay flipped).
+// dial is refused; a second StopAll does not return before the release and returns nil after it.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStopAllCutsOpenConnectionsAtItsDeadline(t *testing.T) {
@@ -655,9 +642,7 @@ func TestStopAllCutsOpenConnectionsAtItsDeadline(t *testing.T) {
 // TestStartAllRollbackWaitsForAnInFlightRequest: a service whose Start blocks until released and
 // then fails holds StartAll open while a /services request blocks in a middleware. StartAll does
 // not return before that request's handler returns, and the request answers "status":"failed", the
-// startup status a failed service start takes over a begun stop (pin service_manager.go:1824)
-// (design D2, the drained-request leg of the pin's
-// TestMetricsBindFailureClosesSharedAndStartsNoLaterService).
+// startup status a failed service start takes over a begun stop.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
 func TestStartAllRollbackWaitsForAnInFlightRequest(t *testing.T) {
@@ -716,7 +701,7 @@ func TestStartAllRollbackWaitsForAnInFlightRequest(t *testing.T) {
 
 // TestReadinessRequiresCommitAndClearsBeforeChildStop: /readyz answers NOT READY while a service's
 // Start blocks, READY once StartAll returned nil, and NOT READY again while a service's Stop
-// blocks inside StopAll, which returns nil once that Stop returns (design D2, D6).
+// blocks inside StopAll, which returns nil once that Stop returns.
 //
 // spec: operator-surface / /readyz says READY only after boot, while all is healthy
 func TestReadinessRequiresCommitAndClearsBeforeChildStop(t *testing.T) {
@@ -771,8 +756,7 @@ func TestReadinessRequiresCommitAndClearsBeforeChildStop(t *testing.T) {
 // TestReadinessStaysClearedWhenStopAllExpiresDuringStart: a StopAll given a live context is a
 // stop request from its entry, even when its deadline ends while a service is still starting and
 // before any service is stopped. Once that start completes, StartAll commits, but /readyz answers
-// NOT READY, never READY (design D2; Codex review of PR #353, issue #356: SIGTERM during a slow
-// start).
+// NOT READY, never READY: a SIGTERM during a slow start must not leave the process READY.
 //
 // spec: operator-surface / /readyz says READY only after boot, while all is healthy
 func TestReadinessStaysClearedWhenStopAllExpiresDuringStart(t *testing.T) {
@@ -822,7 +806,7 @@ func newUnconnectedClient(t *testing.T) *natsclient.Client {
 // StartAll, and the failed publish of each composed service's health is counted on
 // semengine_errors_total{service="service-manager",type="health_publish"}. The count is read after
 // StopAll, which joins the publisher, so the first publish has run whether StartAll made it or the
-// publisher goroutine did (design D2, S8).
+// publisher goroutine did.
 //
 // spec: service-lifecycle / The service manager publishes health and counts its drops
 func TestHealthPublishFailureIsCounted(t *testing.T) {
@@ -842,7 +826,7 @@ func TestHealthPublishFailureIsCounted(t *testing.T) {
 
 // TestCreateServiceRefusedAfterStartAll: once StartAll sealed the composition, CreateService and
 // RegisterInstance return a *CompositionSealedError, the constructor is not called, and the
-// service is not added (design D2).
+// service is not added.
 //
 // spec: service-lifecycle / Every composition has a component manager
 func TestCreateServiceRefusedAfterStartAll(t *testing.T) {
@@ -875,7 +859,7 @@ func TestCreateServiceRefusedAfterStartAll(t *testing.T) {
 
 // TestServicesListsComposedServicesWithHealth: /services lists component-manager and probe, each
 // with its own status and health, with restart_required false, the startup snapshot and the
-// pending changes (design D6).
+// pending changes.
 //
 // spec: operator-surface / Health and service listings are served as at the pin
 func TestServicesListsComposedServicesWithHealth(t *testing.T) {
@@ -910,7 +894,7 @@ func TestServicesListsComposedServicesWithHealth(t *testing.T) {
 
 // TestSystemHealthReportsNATSDisconnected: /health from a manager whose NATS client is not
 // connected answers 503, and its nats sub-status is unhealthy with a message beginning
-// "Disconnected:" (design D2; the pin's failure count is gone with natsStatus.FailureCount).
+// "Disconnected:".
 //
 // spec: operator-surface / Health and service listings are served as at the pin
 func TestSystemHealthReportsNATSDisconnected(t *testing.T) {
@@ -938,10 +922,10 @@ func TestSystemHealthReportsNATSDisconnected(t *testing.T) {
 }
 
 // managerOwner adapts the Manager to the lifecycle suite (lifecycle-suite, "Observe adapter
-// contract"; design D2). A started manager holds its main listener, its health publisher, the
+// contract"). A started manager holds its main listener, its health publisher, the
 // metrics server it claimed from the metrics service, and its services; the child BaseService
 // stands for those, through its health goroutine. Observe reads the manager's handles under its
-// lock and adds nothing to the Manager (#186, #190). Calls is empty for BaseService's reason
+// lock and adds nothing to the Manager: production code carries no test-only hook. Calls is empty for BaseService's reason
 // (base_lifecycle_test.go).
 type managerOwner struct {
 	m     *Manager
@@ -997,8 +981,8 @@ func newSuiteManager(t *testing.T, failing bool) *managerOwner {
 	return &managerOwner{m: manager, child: child}
 }
 
-// TestManagerPassesTheLifecycleSuite runs the lifecycle suite on the Manager (ADR-113; design D2;
-// the pin failed StartContextEndStopsNothing). The must-fail owner is a composition whose second
+// TestManagerPassesTheLifecycleSuite runs the lifecycle suite on the Manager (ADR-113). The
+// must-fail owner is a composition whose second
 // service's Start fails, so StartAll rolls back the main listener and the claimed metrics server.
 // The manager is one-shot: no restart is promised.
 //
@@ -1020,7 +1004,7 @@ func TestManagerPassesTheLifecycleSuite(t *testing.T) {
 	})
 }
 
-// TestManagerServesTheClaimedMetricsServerAroundItsServices is D4's manager-driven half: the
+// TestManagerServesTheClaimedMetricsServerAroundItsServices is the manager-driven half: the
 // metrics server the manager claimed from the metrics service already serves when the first
 // service starts and still serves when the last service stops (after the metrics service's own
 // Stop), is released by StopAll, and the metrics service is healthy while it serves.

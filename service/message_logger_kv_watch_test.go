@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestIsValidBucketName keeps the pin's cases (message_logger_kv_watch_test.go:9-44) for the one
-// bucket-name check both KV routes use (design D4, M16), plus a bare "*", ">" and "/".
+// TestIsValidBucketName covers the one bucket-name check both KV routes use, including a bare "*",
+// ">" and "/".
 func TestIsValidBucketName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -45,13 +45,11 @@ func TestIsValidBucketName(t *testing.T) {
 	}
 }
 
-// TestIsValidWatchPattern: an empty pattern or "*" watches every key, as at the pin
-// (message_logger_kv_watch.go:216-220); any other pattern is a NATS KV wildcard filter
+// TestIsValidWatchPattern: an empty pattern or "*" watches every key; any other pattern is a NATS KV wildcard filter
 // (natsclient.ValidateKVWildcardFilter: tokens split on '.', none empty, '*' only as a whole token,
 // '>' only as the whole final token, literal tokens from letters, digits, '-', '/', '_', '=').
-// The expected answers are written from that grammar, not computed by the validator (design D4,
-// M17). Two answers changed from the pin's own cases: a final '>' is accepted, and '/' is a
-// literal key character. A space, which the pin accepted, is refused.
+// The expected answers are written from that grammar, not computed by the validator.
+// A final '>' is accepted, '/' is a literal key character, and a space is refused.
 func TestIsValidWatchPattern(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -89,9 +87,8 @@ func TestIsValidWatchPattern(t *testing.T) {
 }
 
 // TestDetectKVOperation: the watch reports the operation NATS records for an entry, put, delete
-// or purge (owner ruling Q1(b)). At the pin a put was "create" only at the bucket's revision 1 and
-// "update" otherwise, and a purge was "unknown" (message_logger_kv_watch.go:89-102); the revision
-// no longer enters. The integration file proves the same values on entries read from a real
+// or purge. The bucket revision does not enter: a put is "put" at any
+// revision. The integration file proves the same values on entries read from a real
 // bucket (TestKVWatchStreamsInitialValuesThenChanges).
 func TestDetectKVOperation(t *testing.T) {
 	tests := []struct {

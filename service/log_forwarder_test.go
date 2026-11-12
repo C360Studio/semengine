@@ -16,15 +16,11 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The log forwarder's configuration, record, status, registration, composition and lifecycle
-// (setup-04a-03-boot-service-log-forwarder design D1-D5, D7 unit U-a). Pin
-// log_forwarder_test.go maps here as D7's table says: the config table's refusal rows become
-// TestLogForwarderConstructionRefusals and its accepted rows TestLogForwarderSaysItForwardsNothing,
-// which reads the applied values from the record; the lifecycle test becomes
-// TestLogForwarderPassesTheLifecycleSuite; the Validate, interface and Config() tests go with what
-// they tested.
+// The log forwarder's configuration, record, status, registration, composition and lifecycle.
+// Accepted configurations are checked by TestLogForwarderSaysItForwardsNothing, which reads the
+// applied values from the record.
 
-// forwardsNothingMessage is the record's message, written out from design D4 as the oracle.
+// forwardsNothingMessage is the record's message, written out by hand as the oracle.
 const forwardsNothingMessage = "log-forwarder forwards nothing: no log handler in this module publishes logs to NATS"
 
 // newTestLogForwarder builds a log forwarder the one production way, through
@@ -59,10 +55,9 @@ func jsonRecords(t *testing.T, logs *syncBuffer) []map[string]any {
 	return records
 }
 
-// TestLogForwarderConstructionRefusals is design D3's refusal list, replacing the pin's refusal
-// rows (log_forwarder_test.go:14-114). Each refusal is invalid data (errs.IsInvalid) and names
-// the input it refuses. The pin's Validate row for an empty level (:150-155) has no counterpart:
-// an empty level takes INFO (TestLogForwarderSaysItForwardsNothing).
+// TestLogForwarderConstructionRefusals: each refusal is invalid data (errs.IsInvalid) and names
+// the input it refuses. An empty level is not refused: it takes INFO
+// (TestLogForwarderSaysItForwardsNothing).
 //
 // spec: service-lifecycle / The log forwarder refuses an invalid configuration
 func TestLogForwarderConstructionRefusals(t *testing.T) {
@@ -92,14 +87,13 @@ func TestLogForwarderConstructionRefusals(t *testing.T) {
 	}
 }
 
-// TestLogForwarderSaysItForwardsNothing is design D4 and ruling (b): after Start the service has
+// TestLogForwarderSaysItForwardsNothing: after Start the service has
 // written exactly one record, at WARN, saying it forwards nothing and stating the configuration
-// it resolved. The pin's accepted config rows (log_forwarder_test.go:14-114) and its
-// exclude_sources test (:250-270) are read here from that record. The oracle is the production
+// it resolved; the accepted config rows and exclude_sources are read from that record. The oracle is the production
 // slog.NewJSONHandler at Debug, so a record at any level counts. The exclusion list is exactly
-// what was configured, normalised (owner ruling Q1, D6 option B): nothing is added.
+// what was configured, normalised: nothing is added.
 //
-// A refused Start writes no record (design D2): neither one under an ended context nor one after
+// A refused Start writes no record: neither one under an ended context nor one after
 // Stop.
 //
 // spec: service-lifecycle / The log forwarder forwards nothing and says so
@@ -157,8 +151,7 @@ func TestLogForwarderSaysItForwardsNothing(t *testing.T) {
 	})
 }
 
-// TestLogForwarderReportsItsStatus is the pin's WithMetrics (log_forwarder.go:31-33; design D1,
-// L9, #387): the service's status is recorded on the injected registry as
+// TestLogForwarderReportsItsStatus: the service's status is recorded on the injected registry as
 // semengine_service_status, stopped (0) once built, running (2) after Start and stopped (0) after
 // Stop, as TestMetricsForwarderReportsItsStatus does.
 //
@@ -176,7 +169,7 @@ func TestLogForwarderReportsItsStatus(t *testing.T) {
 }
 
 // TestLogForwarderIsRegistered: RegisterAll offers the service under its config-block name
-// (design D5), and that name's constructor builds a *LogForwarder from {}.
+// and that name's constructor builds a *LogForwarder from {}.
 //
 // spec: service-lifecycle / The log forwarder refuses an invalid configuration
 func TestLogForwarderIsRegistered(t *testing.T) {
@@ -192,8 +185,7 @@ func TestLogForwarderIsRegistered(t *testing.T) {
 }
 
 // TestLogForwarderComposedWhenEnabled: a document enabling log-forwarder composes one, and the
-// same document naming no services composes none, since config's defaults do not enable it
-// (design D5).
+// same document naming no services composes none, since config's defaults do not enable it.
 //
 // spec: service-lifecycle / The log forwarder refuses an invalid configuration
 func TestLogForwarderComposedWhenEnabled(t *testing.T) {
@@ -226,9 +218,9 @@ func TestLogForwarderComposedWhenEnabled(t *testing.T) {
 }
 
 // logForwarderOwner adapts the log forwarder to the lifecycle suite (lifecycle-suite, "Observe
-// adapter contract"; design D2). The service holds nothing of its own: a started log forwarder
+// adapter contract"). The service holds nothing of its own: a started log forwarder
 // holds its base service's health goroutine, which Observe reports as baseServiceOwner does over
-// the embedded BaseService. Nothing is added to the service for this adapter (#186, #190).
+// the embedded BaseService. Nothing is added to the service for this adapter.
 type logForwarderOwner struct {
 	lf *LogForwarder
 }
@@ -241,9 +233,8 @@ func (o *logForwarderOwner) Observe() lifecycletest.Observation {
 }
 
 // TestLogForwarderPassesTheLifecycleSuite runs the lifecycle suite on the log forwarder built
-// through NewLogForwarderService (ADR-113; design D2; replacing pin log_forwarder_test.go:181-207).
-// The must-fail owner is a log forwarder stopped before Start, whose Start is refused
-// (base_lifecycle_test.go's precedent). The service is one-shot: no restart is promised.
+// through NewLogForwarderService (ADR-113). The must-fail owner is a log forwarder stopped before
+// Start, whose Start is refused (base_lifecycle_test.go's precedent). The service is one-shot: no restart is promised.
 //
 // spec: service-lifecycle / The log forwarder's Start bounds Start and Stop is the only stop
 func TestLogForwarderPassesTheLifecycleSuite(t *testing.T) {

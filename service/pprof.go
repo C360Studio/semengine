@@ -26,9 +26,8 @@ type PProfServer struct {
 // logged at Warn on logger (slog.Default() when nil) and returns nil; profiling
 // is a debug aid, never a boot gate.
 //
-// SemStreams ADR-058 rollout step 4: pprof is deliberately NOT a
-// service.Service. Wrapping it in a StartAll-managed Service would move the
-// start from the composition root (before NATS) to StartAll (after NATS and all
+// ADR-058: pprof is deliberately NOT a service.Service. Wrapping it in a
+// StartAll-managed Service would move the start from the composition root (before NATS) to StartAll (after NATS and all
 // wiring), losing the ability to profile a wedged or slow boot, the canonical
 // pprof use case. So it is a plain helper the composition root calls early. It
 // is not fire-and-forget: the composition root calls Shutdown on its exit path,

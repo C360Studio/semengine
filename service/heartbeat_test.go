@@ -17,15 +17,12 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The heartbeat service's configuration, registration, composition, lifecycle edges and record
-// (design D2-D5, D6 U-b). The pin's config and constructor tests (heartbeat_test.go:59-157) become
-// TestHeartbeatConstructionRefusals; its Start refusals (:258-345) become
-// TestHeartbeatStartRefusesWithoutTheComponentManager; its record tests (:379-470) read the record
-// from Dependencies.Logger, never a swapped field. The pin's mock health getter (:17-26) and its
-// test-only constructor are not carried (S10): every heartbeat is built through its registered
-// constructor (newTestHeartbeat).
+// The heartbeat service's configuration, registration, composition, lifecycle edges and record.
+// The record tests read the record from Dependencies.Logger, never a swapped field, and every
+// heartbeat is built through its registered constructor (newTestHeartbeat), with no mock health
+// getter or test-only constructor.
 
-// heartbeatRecordMessage is the message of the heartbeat's one record (pin heartbeat.go:244).
+// heartbeatRecordMessage is the message of the heartbeat's one record.
 const heartbeatRecordMessage = "System heartbeat"
 
 // heartbeatRecord is one "System heartbeat" record: its level and its attributes, each as its
@@ -86,12 +83,11 @@ func (c *healthComponent) Health() component.HealthStatus {
 // a direct construction needs.
 func heartbeatTestManager() *Manager { return NewServiceManager(NewServiceRegistry()) }
 
-// --- configuration and construction (design D3) ----------------------------
+// --- configuration and construction -----------------------------------------
 
-// TestHeartbeatConstructionRefusals is design D3's heartbeat list, replacing pin
-// heartbeat_test.go:59-157. Each refusal is invalid data (errs.IsInvalid) and names the input it
-// refuses; each accepted block builds a *HeartbeatService. The pin's empty-interval row now takes
-// the default (its cadence is TestHeartbeatCadence's "default" rows).
+// TestHeartbeatConstructionRefusals: each refusal is invalid data (errs.IsInvalid) and names the
+// input it refuses; each accepted block builds a *HeartbeatService. An empty interval takes the
+// default (its cadence is TestHeartbeatCadence's "default" rows).
 func TestHeartbeatConstructionRefusals(t *testing.T) {
 	withManager := func() *Dependencies { return &Dependencies{ServiceManager: heartbeatTestManager()} }
 	noDeps := func() *Dependencies { return nil }
@@ -141,9 +137,9 @@ func TestHeartbeatConstructionRefusals(t *testing.T) {
 	}
 }
 
-// TestHeartbeatRefusesAMiscasedKeyBesideTheDefault is the #344 proof (design D3). The loader merges
-// an operator's {"Interval":"5s"} with the default {"interval":"30s"}; the pin's decoder then took
-// 30s and dropped the operator's value without a word. The strict decoder refuses the document,
+// TestHeartbeatRefusesAMiscasedKeyBesideTheDefault: the loader merges an operator's
+// {"Interval":"5s"} with the default {"interval":"30s"}; a case-insensitive decoder would take
+// 30s and drop the operator's value without a word. The strict decoder refuses the document,
 // naming both spellings, so composition fails instead of running at a value nobody wrote.
 func TestHeartbeatRefusesAMiscasedKeyBesideTheDefault(t *testing.T) {
 	loaded, err := config.NewLoader().LoadFromBytes([]byte(`{"platform":{"org":"acme","id":"p1"},` +
@@ -161,7 +157,7 @@ func TestHeartbeatRefusesAMiscasedKeyBesideTheDefault(t *testing.T) {
 }
 
 // TestHeartbeatAndMetricsForwarderAreRegistered: RegisterAll offers both services under their
-// config-block names (design D5), and each name's constructor builds that service.
+// config-block names, and each name's constructor builds that service.
 func TestHeartbeatAndMetricsForwarderAreRegistered(t *testing.T) {
 	registry := NewServiceRegistry()
 	require.NoError(t, RegisterAll(registry))
@@ -181,7 +177,7 @@ func TestHeartbeatAndMetricsForwarderAreRegistered(t *testing.T) {
 	assert.IsType(t, &MetricsForwarder{}, built)
 }
 
-// TestHeartbeatComposedFromTheConfigDefaults is design D5: a loaded document that names no
+// TestHeartbeatComposedFromTheConfigDefaults: a loaded document that names no
 // service composes the heartbeat, which config's defaults turn on, and no forwarder, which is
 // opt-in. The heartbeat needs the component manager composed, not started.
 func TestHeartbeatComposedFromTheConfigDefaults(t *testing.T) {
@@ -201,10 +197,9 @@ func TestHeartbeatComposedFromTheConfigDefaults(t *testing.T) {
 	assert.False(t, ok, "the forwarder is opt-in")
 }
 
-// --- lifecycle edges (design D2) -------------------------------------------
+// --- lifecycle edges --------------------------------------------------------
 
-// TestHeartbeatStartRefusesWithoutTheComponentManager is design D2's "The heartbeat's Start needs
-// the component manager", carrying pin heartbeat_test.go:282-345: Start refuses, naming
+// TestHeartbeatStartRefusesWithoutTheComponentManager: Start refuses, naming
 // component-manager, when no service has that name or the service is not the framework's
 // *ComponentManager, and the refused Start leaves the service stopped and holding nothing. The
 // lookup is at Start, so the constructor accepts both compositions.
@@ -236,12 +231,12 @@ func TestHeartbeatStartRefusesWithoutTheComponentManager(t *testing.T) {
 	}
 }
 
-// TestHeartbeatFailedStopIsRetried is design D2's "Stop": a Stop whose context ends before the
+// TestHeartbeatFailedStopIsRetried: a Stop whose context ends before the
 // loop returns reports that context's error, and the next Stop waits for the loop again. The
 // composition's logger holds the loop's first record ("System heartbeat"), so the loop is inside
 // its log call and cannot return until released.
 //
-// The two 200 ms windows are real-clock windows (design, "Harness rules"). The first Stop's
+// The two 200 ms windows are real-clock windows. The first Stop's
 // deadline cannot fail a correct service: the held loop keeps the join from finishing, so it can
 // only end at the deadline. The second window is an observation: a service that forgets its loop
 // after a failed Stop returns nil from the second Stop at once; a correct one waits for the held
@@ -284,13 +279,8 @@ func TestHeartbeatFailedStopIsRetried(t *testing.T) {
 		"a stopped heartbeat holds no loop and no base status")
 }
 
-// --- what the heartbeat emits (design D4) ----------------------------------
+// --- what the heartbeat emits -----------------------------------------------
 
-// TestHeartbeatRecordsComponentHealth carries pin heartbeat_test.go:379-459 onto the production
-// path: the heartbeat's component manager composes two healthy components and one unhealthy one,
-// and the record written at Start, read from Dependencies.Logger, counts 2 of 3 at Info (owner,
-// Q1; the pin's was Debug). The oracle is the three health answers the test composes. The manager
-// is not started: its health read waits on nothing.
 // stopHeartbeatAtCleanup stops hb when the test ends, so a failed assertion inside a synctest
 // bubble does not leave the loop running and turn the failure into a bubble deadlock.
 func stopHeartbeatAtCleanup(t *testing.T, hb *HeartbeatService) {
@@ -302,6 +292,10 @@ func stopHeartbeatAtCleanup(t *testing.T, hb *HeartbeatService) {
 	})
 }
 
+// TestHeartbeatRecordsComponentHealth runs on the production path: the heartbeat's component
+// manager composes two healthy components and one unhealthy one, and the record written at Start,
+// read from Dependencies.Logger, counts 2 of 3 at Info. The oracle is the three health answers the
+// test composes. The manager is not started: its health read waits on nothing.
 func TestHeartbeatRecordsComponentHealth(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		recorder := &heartbeatRecorder{}
@@ -325,10 +319,10 @@ func TestHeartbeatRecordsComponentHealth(t *testing.T) {
 	})
 }
 
-// TestHeartbeatCadence is design D4's "at once and then every interval", on synctest's clock: one
+// TestHeartbeatCadence: a record at once and then every interval, on synctest's clock: one
 // record at Start, none more before the interval has passed, and one per interval, each carrying
 // the base service's uptime at that round. The default rows show an empty block and an empty
-// interval both take 30s (design D3; the pin's empty-interval refusal row).
+// interval both take 30s.
 func TestHeartbeatCadence(t *testing.T) {
 	cases := map[string]struct {
 		config   string

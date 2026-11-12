@@ -21,12 +21,11 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The boot findings tests, from the pin's component_manager_boot_findings_integration_test.go.
-// Each builds a component manager through NewComponentManager over a config.Manager started on
-// the package's shared NATS server (fixtureClient, #195), so the boot analysis runs at the real
-// boundary: the configuration the config.Manager settled on, its explicit streams included.
-// Construction analyses the composition and keeps the result (design D3); the HTTP projections
-// serve that result and compute nothing (design D5).
+// The boot findings tests. Each builds a component manager through NewComponentManager over a
+// config.Manager started on the package's shared NATS server (fixtureClient), so the boot analysis
+// runs at the real boundary: the configuration the config.Manager settled on, its explicit streams
+// included. Construction analyses the composition and keeps the result; the HTTP projections serve
+// that result and compute nothing.
 
 // bootFindingsComponent is a fake whose constructed ports are exactly the resolution of its
 // declarer, so the registry's declared-versus-constructed check holds and the boot-time findings
@@ -134,7 +133,7 @@ func bootFindingsProcessor(factory string) types.ComponentConfig {
 	}
 }
 
-// corePublisherPorts and streamConsumerPorts are the pin's mismatch: a JetStream input on
+// corePublisherPorts and streamConsumerPorts are a mismatch: a JetStream input on
 // boot.data whose only publisher is a core-NATS output on the same subject.
 func corePublisherPorts() component.PortConfig {
 	return component.PortConfig{Outputs: []component.PortDefinition{
@@ -150,7 +149,7 @@ func streamConsumerPorts() component.PortConfig {
 
 // TestComponentManagerRefusesBootOnErrorFinding: a JetStream input fed only by a core-NATS output
 // is a stream_requirement error; NewComponentManager refuses, naming the finding and the
-// component, returns no manager, and leaves the registry unsealed (design D3: refuse, then seal).
+// component, returns no manager, and leaves the registry unsealed (refuse, then seal).
 //
 // spec: service-lifecycle / The component manager composes the boot set once
 func TestComponentManagerRefusesBootOnErrorFinding(t *testing.T) {
@@ -169,10 +168,9 @@ func TestComponentManagerRefusesBootOnErrorFinding(t *testing.T) {
 		require.Contains(t, err.Error(), want, "the boot error does not name %q", want)
 	}
 
-	// Not sealed: the pin created a late instance on the registry directly; here a second
-	// composition over the same registry reaches the late factory, which a sealed registry
-	// refuses before any factory runs (component.Registry.CreateComponent). Whether the second
-	// boot is refused is not asserted: the first boot's admissions may stay in the registry.
+	// Not sealed: a second composition over the same registry reaches the late factory, which a
+	// sealed registry refuses before any factory runs (component.Registry.CreateComponent). Whether
+	// the second boot is refused is not asserted: the first boot's admissions may stay in the registry.
 	lateCalls := registerBootFindingsFactory(t, registry, "late", component.PortConfig{})
 	_, _ = newBootFindingsManager(t, client, registry, "boot-refused-late", config.ComponentConfigs{
 		"late-instance": bootFindingsProcessor("late"),
@@ -272,7 +270,7 @@ func TestComponentManagerExposesBootFindings(t *testing.T) {
 
 // TestGraphProjectionMatchesAdmittedComposition: <components>/flowgraph names every admitted
 // instance with its factory and resolved ports and every derived edge, as JSON and as Mermaid.
-// The expected nodes are the test's own declarations; the pin read them back from the registry's
+// The expected nodes are the test's own declarations, not read back from the registry's
 // Snapshots, which only the component manager calls (AGENTS.md section 1).
 //
 // spec: operator-surface / The composition projections serve the result kept at construction
@@ -330,7 +328,7 @@ func TestGraphProjectionMatchesAdmittedComposition(t *testing.T) {
 // TestComponentManagerBootFindingsHonourExplicitStreams: at the real boundary too, a JetStream
 // input fed by a core-NATS output is not a stream_requirement finding when the configuration's
 // explicit streams cover its subjects: the boot analysis receives the configuration's streams,
-// not only its components (design D3).
+// not only its components.
 //
 // spec: service-lifecycle / The component manager composes the boot set once
 func TestComponentManagerBootFindingsHonourExplicitStreams(t *testing.T) {

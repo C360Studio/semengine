@@ -18,10 +18,8 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The component manager's routes, from the pin's component_manager_http_test.go. The pin built
-// struct-literal managers and filled their component map by hand; here every manager is built
-// through NewComponentManager over a test registry and configuration (design D7), and the
-// flowgraph answer is compared with checked-in files (design D5).
+// The component manager's routes. Every manager is built through NewComponentManager over a test
+// registry and configuration, and the flowgraph answer is compared with checked-in files.
 
 // TestHandleComponentStatus_WithoutDebugParam: without a debug parameter the status carries the
 // component's name and state and no debug field.
@@ -211,10 +209,10 @@ func TestHandleComponentStatus_MethodNotAllowed(t *testing.T) {
 }
 
 // TestExtractComponentNameRefusesUnsafeNames: the name is the whole of the path after the route the
-// handler was registered under (a prefix holding a route word included, #366), read from the
+// handler was registered under (a prefix holding a route word included), read from the
 // request httptest.NewRequest parses (its Path already decoded, the encoded form kept in RawPath),
 // as a handler receives it. A name that is empty, "." or "..", has a second segment, or decodes to
-// a path separator, is refused, which the status route answers with a 400 (design D5; #365). It
+// a path separator, is refused, which the status route answers with a 400. It
 // decodes with path semantics, so "+" stays "+".
 func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 	cases := []struct {
@@ -268,7 +266,7 @@ func TestExtractComponentNameRefusesUnsafeNames(t *testing.T) {
 // TestComponentRoutesRejectMalformedName: through the registered mux, a name that is empty, has
 // more than one segment, or decodes to a separator answers 400 on the status, config and type
 // routes, even where its last segment names a composed component, so a wrong lookup cannot hide
-// behind a 404 (design D5; #365).
+// behind a 404.
 func TestComponentRoutesRejectMalformedName(t *testing.T) {
 	cm := newDebugStatusComponentManager(t)
 	mux := http.NewServeMux()
@@ -297,7 +295,7 @@ func TestComponentRoutesRejectMalformedName(t *testing.T) {
 }
 
 // TestComponentRoutesRespectTheirMountPrefix: a name is read after the exact prefix the routes were
-// registered under, so a prefix that itself holds a route word still serves a valid name (#366).
+// registered under, so a prefix that itself holds a route word still serves a valid name.
 func TestComponentRoutesRespectTheirMountPrefix(t *testing.T) {
 	cm := newDebugStatusComponentManager(t)
 	for _, route := range []string{"status", "config", "types"} {
@@ -332,9 +330,8 @@ func TestComponentRoutesRespectEscapedMountPrefix(t *testing.T) {
 }
 
 // TestFlowValidationHandlerProjectsLibraryResult: <components>/validate serves the result kept at
-// construction verbatim. The pin handed a struct literal a result whose status its arrays could
-// not derive; a manager built through NewComponentManager keeps the library's own analysis, so
-// the test asserts the served body is that kept result and, independently, the finding the
+// construction verbatim. A manager built through NewComponentManager keeps the library's own
+// analysis, so the test asserts the served body is that kept result and, independently, the finding the
 // composition library documents for a component with no connections.
 func TestFlowValidationHandlerProjectsLibraryResult(t *testing.T) {
 	cm := newTestComponentManager(t, testComponent{name: "alone", instance: &mockDiscoverableComponent{}})
@@ -362,7 +359,7 @@ func TestFlowValidationHandlerProjectsLibraryResult(t *testing.T) {
 }
 
 // TestFlowGraphMatchesGoldenForFixtureComposition: the flowgraph answer is a tested contract
-// (design D5; docs/contract.md). For a fixture composition of an input, a processor and an
+// (docs/contract.md). For a fixture composition of an input, a processor and an
 // output, joined by a JetStream stream, a core NATS subject and a KV bucket, the JSON and the
 // Mermaid answers of the route RegisterHTTPHandlers serves are the files under testdata/. The
 // files were written from the composition library's analysis and Mermaid rendering of the same

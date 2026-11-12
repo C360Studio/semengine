@@ -22,12 +22,9 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// This file carries the pin's startup_observability_amendment_test.go. Its tests that need a real
-// ComponentManager (pin lines 130-150 and 269-368) came with it in PR 3 and are at the end of the
-// file (setup-04a-03-boot-service-component-manager, task 2.1j).
-// TestReadinessRequiresCommitAndClearsBeforeChildStop (pin :151) is in service_manager_test.go
-// (task 2.1, part 4). The two commit tests, which drove
-// the pin's private startup steps and flags, now drive StartAll and read the main listener.
+// The tests that need a real ComponentManager are at the end of the file.
+// TestReadinessRequiresCommitAndClearsBeforeChildStop is in service_manager_test.go. The two commit
+// tests drive StartAll and read the main listener.
 
 // foreignStartupGauge returns a collector under the startup gauge's name that the service manager
 // did not create.
@@ -38,7 +35,7 @@ func foreignStartupGauge(labels []string) *prometheus.GaugeVec {
 	}, labels)
 }
 
-// TestStartupCollectorReportsExactlyNineSeries (pin :27, which named the writer).
+// TestStartupCollectorReportsExactlyNineSeries.
 func TestStartupCollectorReportsExactlyNineSeries(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	require.NoError(t, registerStartupCollector(
@@ -62,9 +59,9 @@ func TestStartupCollectorReportsExactlyNineSeries(t *testing.T) {
 	}))
 }
 
-// TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt (pin :52): the collector is
+// TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt: the collector is
 // registered directly on the injected registry, which refuses a gauge of that name it did not
-// create; metric.RegisterOrGet would adopt it (design D4, S13).
+// create; metric.RegisterOrGet would adopt it.
 func TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt(t *testing.T) {
 	for _, labels := range [][]string{{"owner", "stage"}, {"owner", "stage", "unit"}} {
 		t.Run(labels[len(labels)-1], func(t *testing.T) {
@@ -83,7 +80,7 @@ func TestStartupCollectorRejectsForeignCollectorInsteadOfAdoptingIt(t *testing.T
 
 // TestComponentManagerOnItsOwnPublishesNoStartupGauge: a component manager started with no
 // service manager registers no startup gauge on its metrics registry; only the service manager
-// registers it (design D1).
+// registers it.
 func TestComponentManagerOnItsOwnPublishesNoStartupGauge(t *testing.T) {
 	registry := component.NewRegistry()
 	lifecycle := newBarrierTestComponent("lifecycle")
@@ -105,7 +102,7 @@ func TestComponentManagerOnItsOwnPublishesNoStartupGauge(t *testing.T) {
 
 // TestStartupGaugeReadsZeroComponentsForAStandInComponentManager: when the component-manager
 // service is not the framework's *ComponentManager, the five component series read zero while the
-// service series count the composition (design D1 and D2).
+// service series count the composition.
 func TestStartupGaugeReadsZeroComponentsForAStandInComponentManager(t *testing.T) {
 	deps := createTestServiceDependencies()
 	manager := createTestServiceManager(ManagerConfig{}, deps)
@@ -128,16 +125,15 @@ func TestStartupGaugeReadsZeroComponentsForAStandInComponentManager(t *testing.T
 	require.Equal(t, float64(1), gauge("services", "starts_completed"))
 }
 
-// TestMetricCoreExportsNoStartupLifecycleWriter (pin :73).
+// TestMetricCoreExportsNoStartupLifecycleWriter.
 func TestMetricCoreExportsNoStartupLifecycleWriter(t *testing.T) {
 	metricsType := reflect.TypeOf((*metric.Metrics)(nil))
 	_, exists := metricsType.MethodByName("RecordStartupUnits")
 	require.False(t, exists)
 }
 
-// TestStartupGaugeVecHasOnlyPrivateServicePackageOwner (pin :79). The pin matched a GaugeVec
-// field; the gauge is now read at collection, so the check finds the gauge's name in exactly one
-// non-test file of the package (design D1).
+// TestStartupGaugeVecHasOnlyPrivateServicePackageOwner: the gauge is read at collection, so the
+// check finds the gauge's name in exactly one non-test file of the package.
 func TestStartupGaugeVecHasOnlyPrivateServicePackageOwner(t *testing.T) {
 	for _, path := range []string{"../metric/core.go", "../metric/registry.go"} {
 		source, err := os.ReadFile(path)
@@ -162,7 +158,7 @@ func TestStartupGaugeVecHasOnlyPrivateServicePackageOwner(t *testing.T) {
 	require.Equal(t, []string{"startup_metrics.go"}, holders)
 }
 
-// TestStartupMetricRegistrationConflictFailsBeforeListenersOrChildren (pin :103): a foreign
+// TestStartupMetricRegistrationConflictFailsBeforeListenersOrChildren: a foreign
 // startup gauge fails StartAll before any listener is bound or service started.
 func TestStartupMetricRegistrationConflictFailsBeforeListenersOrChildren(t *testing.T) {
 	for _, labels := range [][]string{{"owner", "stage"}, {"owner", "stage", "unit"}} {
@@ -185,7 +181,7 @@ func TestStartupMetricRegistrationConflictFailsBeforeListenersOrChildren(t *test
 }
 
 // assertStartupOnly requires that the main listener at baseURL serves only the startup routes:
-// /readyz and the widgets service's route both answer 503 NOT READY (pin :480).
+// /readyz and the widgets service's route both answer 503 NOT READY.
 func assertStartupOnly(t *testing.T, baseURL string) {
 	t.Helper()
 	requireAnswer(t, baseURL+"/readyz", http.StatusServiceUnavailable, "NOT READY")
@@ -195,9 +191,8 @@ func assertStartupOnly(t *testing.T, baseURL string) {
 // TestPreparedFullMuxStaysInvisibleUntilCommit: while the full route set is being prepared (a
 // service's RegisterHTTPHandlers blocks, a call production makes), the main listener serves only
 // the startup routes; after StartAll returned, the service's route answers and /readyz answers
-// READY (design D2, "Test-only code"; pin :197). The pin also looked between the end of the
-// preparation and the commit through the dropped testCommitPrepared hooks; no production call
-// pauses there.
+// READY. The window between the end of the preparation and the commit is not observed: no
+// production call pauses there.
 //
 // spec: operator-surface / The service manager serves only diagnostics until boot commits
 func TestPreparedFullMuxStaysInvisibleUntilCommit(t *testing.T) {
@@ -233,9 +228,7 @@ type stopTimeAnswers struct {
 
 // TestHealthPublisherFailureNeverCommitsPreparedRoutes: when StartAll fails after preparing the
 // full route set and before committing it, no request is served by the prepared routes, even
-// while the rollback stops the services and the main listener still serves (design D6; pin :241,
-// which forced the publisher's failure through the dropped healthPublisherUsed flag). Here the
-// widgets service ends StartAll's context while its routes are prepared, so the publisher, started
+// while the rollback stops the services and the main listener still serves. The widgets service ends StartAll's context while its routes are prepared, so the publisher, started
 // under that context, or the commit is refused; services stop before the listeners, so the
 // rollback's Stop of widgets can request both routes.
 //
@@ -283,7 +276,7 @@ func TestHealthPublisherFailureNeverCommitsPreparedRoutes(t *testing.T) {
 }
 
 // orderGateService is a running, healthy Service whose Start and Stop each signal entry and
-// block until released (pin :440).
+// block until released.
 type orderGateService struct {
 	MockService
 	startEntered chan struct{}
@@ -317,7 +310,7 @@ func (s *orderGateService) Stop(context.Context) error {
 // TestConcreteMetricsLifecycleRetainsRegistrationAndReverseStopOrder: the real Metrics,
 // registered between two services, starts after the first and before the second and stops
 // after the second and before the first, while its claimed server already serves when the first
-// starts (pin :369, which read Metrics' private lifecycle flags; here its Status).
+// starts, read from its Status.
 func TestConcreteMetricsLifecycleRetainsRegistrationAndReverseStopOrder(t *testing.T) {
 	deps := createTestServiceDependencies()
 	manager := createTestServiceManager(ManagerConfig{}, deps)
@@ -371,7 +364,7 @@ func TestConcreteMetricsLifecycleRetainsRegistrationAndReverseStopOrder(t *testi
 	require.NoError(t, <-stopDone)
 }
 
-// requireMetricFamily returns the gathered family named name (pin :498).
+// requireMetricFamily returns the gathered family named name.
 func requireMetricFamily(t *testing.T, registry *metric.MetricsRegistry, name string) *dto.MetricFamily {
 	t.Helper()
 	families, err := registry.PrometheusRegistry().Gather()
@@ -385,9 +378,8 @@ func requireMetricFamily(t *testing.T, registry *metric.MetricsRegistry, name st
 	return nil
 }
 
-// The tests below are the pin's that need a real ComponentManager (pin :130-150, :269-368), built
-// by NewComponentManager over the test components instead of the pin's struct literal and
-// newBarrierTestManager (setup-04a-03-boot-service-component-manager design D7).
+// The tests below need a real ComponentManager, built by NewComponentManager over the test
+// components.
 
 // awaitComponentStartupGauges reads semengine_startup_units{owner="components"} on registry until
 // every stage in want has its value, failing the test once stopBound passes. A component's start
@@ -415,8 +407,7 @@ func awaitComponentStartupGauges(t *testing.T, registry *metric.MetricsRegistry,
 
 // TestPreparedComponentIsNotInvokedUntilLaunchBoundary: building the component manager admits and
 // prepares its lifecycle component without invoking its Start; the start counts as invoked only
-// once Start launches it (pin :130, which called the private prepareComponentsPhase and
-// launchComponentsPhase).
+// once Start launches it.
 func TestPreparedComponentIsNotInvokedUntilLaunchBoundary(t *testing.T) {
 	gated := newBarrierTestComponent("prepared")
 	gated.entered = make(chan struct{})
@@ -448,8 +439,7 @@ func TestPreparedComponentIsNotInvokedUntilLaunchBoundary(t *testing.T) {
 
 // TestComponentMetricPublicationRemainsMonotonicUnderReverseCompletion: of two components started
 // together, the second fails and returns first; the gauge shows one completed and one failed, and
-// the first's later completion raises the completed count to two without lowering the failed one
-// (pin :269, which waited on the dropped per-component startDone channel).
+// the first's later completion raises the completed count to two without lowering the failed one.
 func TestComponentMetricPublicationRemainsMonotonicUnderReverseCompletion(t *testing.T) {
 	first := newBarrierTestComponent("first")
 	first.entered = make(chan struct{})
@@ -497,7 +487,7 @@ func TestComponentMetricPublicationRemainsMonotonicUnderReverseCompletion(t *tes
 // registered before the component manager holds StartAll, the claimed metrics server already
 // serves the component manager's counts (two admitted, one lifecycle participant, no start
 // invoked or completed); after release the component manager starts its lifecycle component and
-// StartAll returns nil (pin :314, which set the components on a struct literal).
+// StartAll returns nil.
 func TestManagerPrebindPublishesConcreteComponentCountsBeforeComponentManagerStart(t *testing.T) {
 	deps := createTestServiceDependencies()
 	manager := createTestServiceManager(ManagerConfig{}, deps)

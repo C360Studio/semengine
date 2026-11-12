@@ -205,8 +205,7 @@ func serveHTTP(server *http.Server, listener net.Listener, logger *slog.Logger, 
 // within ctx, for the requests in flight. If ctx ends first it closes every
 // connection still open, which ends each open request's context, and returns
 // ctx's error. net/http stops tracking a handler once its connection is closed,
-// so a later call waits for the handlers requests admitted
-// (setup-04a-03-boot-service-manager design D2, Q-B). It returns nil only once
+// so a later call waits for the handlers requests admitted. It returns nil only once
 // Serve and every admitted handler have returned.
 func stopHTTP(ctx context.Context, server *http.Server, serveDone <-chan struct{}, requests *httpadmission.Requests) error {
 	requests.CloseAdmission()

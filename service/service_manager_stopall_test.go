@@ -11,8 +11,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// stopSpyService is a Service whose Stop returns a set error and counts its calls (pin
-// service_manager_stopall_test.go:17).
+// stopSpyService is a Service whose Stop returns a set error and counts its calls.
 type stopSpyService struct {
 	MockService
 	stopErr   error
@@ -25,8 +24,8 @@ func (s *stopSpyService) Stop(context.Context) error {
 }
 
 // startedManagerWith starts a manager composing the stand-in component-manager and then services,
-// in that registration order. StopAll before StartAll stops no service (design D2), so the pin's
-// direct writes into the service map become a StartAll.
+// in that registration order. StopAll before StartAll stops no service, so the services are
+// started through StartAll.
 func startedManagerWith(t *testing.T, services ...Service) *Manager {
 	t.Helper()
 	manager := createTestServiceManager(ManagerConfig{}, createTestServiceDependencies())
@@ -40,7 +39,7 @@ func startedManagerWith(t *testing.T, services ...Service) *Manager {
 
 // TestServiceManager_StopAll_Idempotency: a service whose Stop returns errs.ErrAlreadyStopped is
 // stopped, a genuine failure is returned naming its service while the others are still stopped,
-// and a clean pass returns nil (pin gh#520; design D2).
+// and a clean pass returns nil.
 func TestServiceManager_StopAll_Idempotency(t *testing.T) {
 	t.Run("already-stopped service is not aggregated as fatal", func(t *testing.T) {
 		already := &stopSpyService{
@@ -87,7 +86,7 @@ func TestServiceManager_StopAll_Idempotency(t *testing.T) {
 
 // TestStopAllCountsAlreadyStoppedAsStopped: a started manager holding one service whose Stop
 // returns errs.ErrAlreadyStopped and one whose Stop returns nil; StopAll returns nil, each Stop was
-// called once, and a second StopAll calls nothing (owner Q2, the SS#1218 substitute; design D2).
+// called once, and a second StopAll calls nothing.
 //
 // spec: service-lifecycle / StopAll counts a service already stopped as stopped
 func TestStopAllCountsAlreadyStoppedAsStopped(t *testing.T) {

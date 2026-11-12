@@ -18,16 +18,16 @@ import (
 	"github.com/c360studio/semengine/payloadregistry"
 )
 
-// The message logger's subscriptions against the package's shared NATS server (design D2, D3;
-// D7 U-c). Each test uses one fixture client both to publish and, through the logger, to
+// The message logger's subscriptions against the package's shared NATS server. Each test uses
+// one fixture client both to publish and, through the logger, to
 // subscribe: a SUB the logger sends reaches the server before any later PUB on the same
 // connection, so a publish after Start needs no wait for the subscription. Counts are read after
 // a Stop that returned nil: the publishing connection is flushed first, so the server has sent
 // every message to the connection, and Stop drains each subscription, which handles every message
 // already delivered to it. A count read then is final, with no window to wait out.
 
-// messageSample is the Debug record the logger writes after it stores a message (pin
-// message_logger.go:1001, :1027); holdingHandler holds the first one.
+// messageSample is the Debug record the logger writes after it stores a message;
+// holdingHandler holds the first one.
 const messageSample = "Message sample"
 
 // subscriptionStats is the part of GetStatistics these tests read, decoded from its JSON as the
@@ -73,7 +73,7 @@ func capturedMessages(ml *MessageLogger) []capturedMessage {
 // startSubscriptionLogger builds a logger over client from config and starts it under a bounded
 // context. A Stop under fresh bounded authority is registered as the test's cleanup, before the
 // Start, so a logger a failed assertion leaves running is stopped; a Stop after one that returned
-// nil returns nil (D2).
+// nil returns nil.
 func startSubscriptionLogger(t *testing.T, client *natsclient.Client, config string, logger *slog.Logger) *MessageLogger {
 	t.Helper()
 	ml := newTestMessageLogger(t, client, config, logger)
@@ -112,9 +112,8 @@ func stopLogger(t *testing.T, ml *MessageLogger) error {
 	return ml.Stop(ctx)
 }
 
-// TestMessageLoggerMonitorsOnlyConfiguredSubjects carries the pin's explicit mode
-// (message_logger_registry_test.go:19-29, subscription_integration_test.go:17-56) onto the shared
-// server: with explicit monitor_subjects the logger monitors exactly those, sorted and
+// TestMessageLoggerMonitorsOnlyConfiguredSubjects checks explicit mode on the
+// shared server: with explicit monitor_subjects the logger monitors exactly those, sorted and
 // deduplicated, and stores what is published on them and nothing else.
 func TestMessageLoggerMonitorsOnlyConfiguredSubjects(t *testing.T) {
 	client := fixtureClient(t)
@@ -168,13 +167,13 @@ func TestMessageLoggerKeepsCapturingAfterStartContextEnds(t *testing.T) {
 	require.NoError(t, stopErr)
 }
 
-// TestMessageLoggerStopDrainsInFlightMessage carries pin message_logger_lifecycle_test.go:102-145
-// (D2, Stop step 2): a message being handled when Stop begins, and one queued behind it, are both
+// TestMessageLoggerStopDrainsInFlightMessage: a message being handled when Stop
+// begins, and one queued behind it, are both
 // stored before Stop returns nil. The handler holds message 1's "Message sample" record, which the
 // logger writes after storing it, so message 1's callback has not returned; message 2 is published
 // and flushed behind it, then Stop begins. Message 2 reaching the handler during the drain is
-// measured, not promised (design D2, drain probe: 200 of 200 runs at nats.go v1.54.0). A Stop that
-// unsubscribes instead of draining (mutant M6) loses message 2. Ending the run context first no
+// measured, not promised (200 of 200 runs at nats.go v1.54.0). A Stop that
+// unsubscribes instead of draining loses message 2. Ending the run context first no
 // longer drops it: the run context is no message's parent.
 func TestMessageLoggerStopDrainsInFlightMessage(t *testing.T) {
 	client := fixtureClient(t)
@@ -206,16 +205,15 @@ func TestMessageLoggerStopDrainsInFlightMessage(t *testing.T) {
 	require.Equal(t, int64(2), readSubscriptionStats(t, ml).TotalMessages)
 }
 
-// TestMessageLoggerFailedStopIsRetried is D2's "A failed Stop is retried" (M3), flipping pin
-// message_logger_subscription_integration_test.go:62-63 and lifecycle_test.go:147-178, where a
-// failed Stop was terminal and forgot its subscriptions.
+// TestMessageLoggerFailedStopIsRetried: a failed Stop is not terminal and does not forget
+// its subscriptions, so a later Stop retries the drain.
 //
-// The two 200 ms windows are the only real-clock windows in these tests (design D7, as
+// The two 200 ms windows are the only real-clock windows in these tests (as
 // docs/testing.md § Porting a test from SemStreams requires). The first Stop's deadline cannot fail
 // a correct logger: the held callback keeps the drain from finishing, so it can only end at the
 // deadline. The second window is an observation: under a logger that forgets its subscriptions
 // after a failed Stop, the second Stop returns nil at once; a correct one waits for the drain,
-// which waits for the held callback (drain probe: a second Drain returned while the callback was
+// which waits for the held callback (measured: a second Drain returned while the callback was
 // held in 0 of 200 runs). If the first Stop's deadline ends before it reached its drain, that
 // mutant passes the run; such a pass is inconclusive, not a survivor.
 func TestMessageLoggerFailedStopIsRetried(t *testing.T) {
@@ -251,8 +249,7 @@ func TestMessageLoggerFailedStopIsRetried(t *testing.T) {
 	require.Equal(t, []capturedMessage{held}, capturedMessages(ml))
 }
 
-// TestMessageLoggerIgnoresPublishesAfterStop carries pin
-// message_logger_subscription_integration_test.go:59-63: after a Stop that returned nil, a
+// TestMessageLoggerIgnoresPublishesAfterStop: after a Stop that returned nil, a
 // message published on a monitored subject is not stored or counted. A plain subscription on the
 // same connection receives that message, so the server did deliver it to the connection the logger
 // subscribed on; the logger, having unsubscribed, does not see it.
@@ -276,8 +273,8 @@ func TestMessageLoggerIgnoresPublishesAfterStop(t *testing.T) {
 	require.Equal(t, int64(1), readSubscriptionStats(t, ml).TotalMessages)
 }
 
-// TestMessageLoggerCapturesCoveredSubjectOnce is D3's covered-subject rule on the wire, replacing
-// pin message_logger_registry_test.go:31-56: a desired subject another desired subject covers is
+// TestMessageLoggerCapturesCoveredSubjectOnce checks the covered-subject rule on the
+// wire: a desired subject another desired subject covers is
 // not subscribed, the omission is reported in subject_overlaps, and a message on it is captured
 // once. A logger that also subscribed the covered subject would store the message on
 // logger.cover.x twice, once per subscription.
@@ -304,9 +301,8 @@ func TestMessageLoggerCapturesCoveredSubjectOnce(t *testing.T) {
 	require.Equal(t, int64(2), readSubscriptionStats(t, ml).TotalMessages)
 }
 
-// TestMessageLoggerRetriesSubscribeUntilConnected is D2's "Retry, declared", replacing pin
-// message_logger_registry_test.go:58-73 (a subscribe that fails is retried and the degraded state
-// clears) without its injected subscriber and retry clock. The logger starts on a client built for
+// TestMessageLoggerRetriesSubscribeUntilConnected: a subscribe that fails is
+// retried and the degraded state clears, with no injected subscriber or retry clock. The logger starts on a client built for
 // the shared server's URL but not yet connected, so every subscribe fails with ErrNotConnected
 // (natsclient.Client.Subscribe), the state a NATS outage during boot leaves. Start returns nil;
 // /stats reports the subject unsubscribed and the logger's health check, run through the base
@@ -345,7 +341,7 @@ func TestMessageLoggerRetriesSubscribeUntilConnected(t *testing.T) {
 	require.NoError(t, client.WaitForConnection(connectCtx))
 
 	// The retry runs on its own every 100 ms and signals nothing a caller can wait on (no seam is
-	// added for a test, #186), so the test polls the two production reads under a bounded context.
+	// added for a test), so the test polls the two production reads under a bounded context.
 	recovered, err := probe.Await(connectCtx, func(context.Context) (subscriptionStats, error) {
 		ml.performHealthCheck()
 		s := readSubscriptionStats(t, ml)
@@ -365,7 +361,7 @@ func TestMessageLoggerRetriesSubscribeUntilConnected(t *testing.T) {
 		"a Stop that returned nil leaves no retry, subscription or base service running")
 }
 
-// TestMessageLoggerDiscoversAdmittedComponentSubjects is D7 U-c's default discovery through a
+// TestMessageLoggerDiscoversAdmittedComponentSubjects checks default discovery through a
 // registry holding an admitted component: with monitor_subjects ["*"] the logger monitors the NATS
 // subjects the component's ports declare, and stores a message published on one. The component is
 // admitted the boot way, by NewComponentManager, which creates it and seals the composition.

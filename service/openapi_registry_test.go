@@ -7,7 +7,7 @@ import (
 )
 
 // TestOpenAPIRegistryReturnsACopy: GetAllOpenAPISpecs returns a map the caller may change without
-// changing the registry (design D6).
+// changing the registry.
 func TestOpenAPIRegistryReturnsACopy(t *testing.T) {
 	const name = "registry-copy-test"
 	spec := &OpenAPISpec{Paths: map[string]PathSpec{"/probe": {}}}

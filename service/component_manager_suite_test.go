@@ -17,10 +17,10 @@ import (
 // its Start.
 var errSuiteComponentStart = errors.New("suite component Start failed")
 
-// suiteComponent is a lifecycle component written to the carried contract
+// suiteComponent is a lifecycle component written to the lifecycle contract
 // (component.LifecycleComponent; ADR-113): its Start launches work under a run context of its own,
 // which outlives Start's context, and its Stop ends that context and waits for the work to return.
-// Its lifecycle state is a lifecycleguard.Guard, as a ported component's is. A suiteComponent with
+// Its lifecycle state is a lifecycleguard.Guard, as a production component's is. A suiteComponent with
 // startErr set fails its Start before launching anything.
 type suiteComponent struct {
 	baseDiscoverable
@@ -89,13 +89,13 @@ func (c *suiteComponent) working() bool {
 }
 
 // componentManagerOwner adapts the component manager to the lifecycle suite (lifecycle-suite,
-// "Observe adapter contract"; design D2). A started manager holds its base service, its
-// supervisor (the health publisher, which returns before the supervisor's done channel closes,
-// design D4) and its components' work. Observe lists
+// "Observe adapter contract"). A started manager holds its base service, its
+// supervisor (the health publisher, which returns before the supervisor's done channel closes)
+// and its components' work. Observe lists
 // "base-status=<status>" while the base service is not stopped, "supervisor" while
 // cm.supervisorDone is open, and "component-work:<name>" while that component's work runs; it
-// reads the base service's status through its accessor and adds nothing to the ComponentManager
-// (#186, #190).
+// reads the base service's status through its accessor and adds nothing to the ComponentManager:
+// production code carries no test-only hook.
 //
 // Calls counts each component's Start and Stop calls, "start:<name>" and "stop:<name>": the
 // manager makes those calls, so the suite's no-op checks (a refused second Start, a repeated
@@ -143,7 +143,7 @@ func newSuiteComponentManager(t *testing.T, failing bool) *componentManagerOwner
 }
 
 // TestComponentManagerPassesTheLifecycleSuite runs the lifecycle suite on the component manager
-// (ADR-113; design D2; the pin failed StartContextEndStopsNothing, sweep § 3). The must-fail owner
+// (ADR-113). The must-fail owner
 // is a composition one of whose two components fails its Start. The manager is one-shot: no
 // restart is promised.
 //
@@ -166,7 +166,7 @@ func TestComponentManagerPassesTheLifecycleSuite(t *testing.T) {
 	})
 
 	// The must-fail composition's Start fails naming the failing component, and its rollback
-	// stops both components, the failing one included (design D2): the suite's
+	// stops both components, the failing one included: the suite's
 	// FailedStartHoldsNothing reads only that nothing is held, not that the working component had
 	// started and was stopped.
 	t.Run("FailedStartRollsBackTheStartedComponent", func(t *testing.T) {

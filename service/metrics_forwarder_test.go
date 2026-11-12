@@ -17,19 +17,19 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The metrics forwarder's construction, Stop and publish-loop tests (design D2, D3, D4; D6 U-c).
+// The metrics forwarder's construction, Stop and publish-loop tests.
 // Every forwarder is built through newTestMetricsForwarder over a client that never connects, so
 // every publish fails at once with natsclient.ErrNotConnected and the loop's failure records and
 // counts are what a test reads. The tests that read the loop run inside a synctest bubble: the
 // unconnected client starts no goroutine and no timer, so the bubble settles once the loop waits
-// on its ticker (design "Harness rules").
+// on its ticker.
 
 const (
 	forwarderPublishFailedLog = "failed to publish metrics to NATS"
 	forwarderGatherFailedLog  = "failed to gather metrics"
 
 	// forwarderProbeSubject is the subject of probeCounter's one sample: it has no component
-	// label, so the forwarder publishes it under system (design D4).
+	// label, so the forwarder publishes it under system.
 	forwarderProbeSubject = "metrics.system.forwarder_probe_total"
 )
 
@@ -104,13 +104,12 @@ func stopForwarderAtCleanup(t *testing.T, mf *MetricsForwarder) {
 	})
 }
 
-// --- configuration (design D3; pin metrics_forwarder_test.go:27-186, :971-1022) ---------------
+// --- configuration -----------------------------------------------------------------------------
 
-// TestMetricsForwarderConstructionRefusals is D3's forwarder refusals, one subtest each, every one
-// an invalid-data refusal naming what it refuses, and the pin's accepted rows read as the applied
-// values. The pin refused "push_interval": "" through a second decode; it now takes the default,
-// as the heartbeat's and storage observability's intervals do. A key the forwarder does not define,
-// or one in another letter case, is refused (#344).
+// TestMetricsForwarderConstructionRefusals: the forwarder's refusals, one subtest each, every one
+// an invalid-data refusal naming what it refuses, and the accepted rows read as the applied
+// values. "push_interval": "" takes the default, as the heartbeat's and storage observability's
+// intervals do. A key the forwarder does not define, or one in another letter case, is refused.
 //
 // spec: service-lifecycle / The metrics forwarder refuses an invalid configuration
 func TestMetricsForwarderConstructionRefusals(t *testing.T) {
@@ -180,11 +179,10 @@ func TestMetricsForwarderConstructionRefusals(t *testing.T) {
 	}
 }
 
-// --- lifecycle edges (design D2) ---------------------------------------------------------------
+// --- lifecycle edges ---------------------------------------------------------------------------
 
-// TestMetricsForwarderReportsItsStatus is the pin's WithMetrics (metrics_forwarder.go:70): the
-// forwarder's status is recorded on the injected registry as semengine_service_status, stopped (0)
-// once built, running (2) after Start and stopped (0) again after Stop (#387).
+// TestMetricsForwarderReportsItsStatus: the forwarder's status is recorded on the injected registry as semengine_service_status, stopped (0)
+// once built, running (2) after Start and stopped (0) again after Stop.
 func TestMetricsForwarderReportsItsStatus(t *testing.T) {
 	mf, registry := newTestMetricsForwarder(t, newUnconnectedClient(t), `{}`, discardLogger)
 	labels := map[string]string{"service": "metrics-forwarder"}
@@ -196,14 +194,14 @@ func TestMetricsForwarderReportsItsStatus(t *testing.T) {
 	require.Equal(t, 0.0, requireGauge(t, registry, "semengine_service_status", labels), "stopped")
 }
 
-// TestMetricsForwarderFailedStopIsRetried is D2's "Stop": a Stop whose context ends before the
+// TestMetricsForwarderFailedStopIsRetried: a Stop whose context ends before the
 // loop returns reports that context's error, and the next Stop waits for the loop again. The
 // composition's logger holds the loop's first "failed to publish metrics to NATS" record (every
 // publish fails over a client that never connects), so the loop is inside its log call and cannot
 // return until released.
 //
-// The two 200 ms windows are this file's only real-clock windows (design "Harness rules"). The first Stop's deadline cannot fail a correct service: the
-// held loop keeps the join from finishing, so it can only end at the deadline. The second window
+// The two 200 ms windows are this file's only real-clock windows. The first Stop's deadline cannot
+// fail a correct service: the held loop keeps the join from finishing, so it can only end at the deadline. The second window
 // is an observation: a forwarder that forgets its loop after a failed Stop returns nil from the
 // second Stop at once; a correct one waits for the held loop.
 //
@@ -245,13 +243,12 @@ func TestMetricsForwarderFailedStopIsRetried(t *testing.T) {
 	assert.Empty(t, owner.Observe().Unresolved, "a stopped forwarder holds no loop and no base status")
 }
 
-// --- the publish loop (design D4; pin metrics_forwarder_test.go:218-271, :608-640, :810-848) ----
+// --- the publish loop -------------------------------------------------------------------------
 
-// TestMetricsForwarderCadence carries the pin's TestMetricsForwarder_TickerInterval onto the
-// production constructor: with push_interval 100ms, the probe counter's subject is attempted once
-// at Start and once per tick. 350 ms of the bubble's clock owe the ticks at 100, 200 and 300 ms, so
-// the count is exactly four: a loop that never ticks leaves one, one without its first round three,
-// a faster one more. Rounds are counted as the probe subject's failed publishes, one per round.
+// TestMetricsForwarderCadence: through the production constructor, with push_interval 100ms, the
+// probe counter's subject is attempted once at Start and once per tick. 350 ms of the bubble's
+// clock owe the ticks at 100, 200 and 300 ms, so the count is exactly four: a loop that never ticks
+// leaves one, one without its first round three, a faster one more. Rounds are counted as the probe subject's failed publishes, one per round.
 //
 // spec: service-lifecycle / The metrics forwarder publishes every sample and counts its drops
 func TestMetricsForwarderCadence(t *testing.T) {
@@ -274,8 +271,8 @@ func TestMetricsForwarderCadence(t *testing.T) {
 
 // TestMetricsForwarderIncludeFlagsReachThePublisher: a go_ and a process_ counter registered on the
 // injected registry are attempted only when include_go_metrics or include_proc_metrics is set, and
-// the probe counter, neither, always is (pin metrics_forwarder_test.go:971-1022's flags, read at
-// the publisher rather than at the config field).
+// the probe counter, neither, always is, read at the publisher
+// rather than at the config field.
 //
 // spec: service-lifecycle / The metrics forwarder publishes every sample and counts its drops
 func TestMetricsForwarderIncludeFlagsReachThePublisher(t *testing.T) {
@@ -317,7 +314,7 @@ func TestMetricsForwarderIncludeFlagsReachThePublisher(t *testing.T) {
 	}
 }
 
-// TestMetricsForwarderPublishFailureIsCounted is D4's "Drops are declared" for a publish: every
+// TestMetricsForwarderPublishFailureIsCounted: a publish drop is declared: every
 // failed publish increments semengine_errors_total{service="metrics-forwarder",
 // type="metrics_publish"} and is logged at Debug naming its subject, and the loop goes on. The
 // count is read after Stop, which joins the loop, and must equal the records one to one.
@@ -347,8 +344,8 @@ func TestMetricsForwarderPublishFailureIsCounted(t *testing.T) {
 }
 
 // invalidCollector is a collector whose every collection reports an invalid metric, so the
-// registry's Gather returns an error (pin metrics_forwarder_test.go:810-848's failing gatherer,
-// on the injected registry rather than a mock).
+// registry's Gather returns an error, on the injected
+// registry rather than a mock.
 type invalidCollector struct{ desc *prometheus.Desc }
 
 func newInvalidCollector() *invalidCollector {
@@ -360,7 +357,7 @@ func (c *invalidCollector) Collect(ch chan<- prometheus.Metric) {
 	ch <- prometheus.NewInvalidMetric(c.desc, errors.New("U-c probe: collection failed"))
 }
 
-// TestMetricsForwarderGatherFailureIsCounted is D4's "Drops are declared" for a gather: a failed
+// TestMetricsForwarderGatherFailureIsCounted: a gather drop is declared: a failed
 // gather increments semengine_errors_total{service="metrics-forwarder",type="metrics_gather"}, is
 // logged at Debug, and skips that round, so nothing is published, not even the samples the gather
 // did return. requireGauge needs a clean gather, so the failing collector is unregistered after

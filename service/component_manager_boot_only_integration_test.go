@@ -15,8 +15,7 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The boot set is composed once (pin component_manager_boot_only_integration_test.go; design
-// D3, ADR-096 ¶4): component and model-registry writes a running config.Manager applies after
+// The boot set is composed once (ADR-096): component and model-registry writes a running config.Manager applies after
 // NewComponentManager change neither the composed components nor what their factories received.
 
 // TestComponentManagerPostBootComponentAndModelWritesDoNotChangeRuntimeComposition: a component
@@ -81,7 +80,7 @@ func TestComponentManagerPostBootComponentAndModelWritesDoNotChangeRuntimeCompos
 		}))
 		// The boot configuration holds no model registry, so the factory received none. Compared
 		// with == because require.Nil also passes a nil *model.Registry inside the interface, which
-		// a component would read as a registry (pin component_manager.go:173-174).
+		// a component would read as a registry.
 		require.True(t, receivedModelRegistry == nil,
 			"%s: the factory received model registry %#v", when, receivedModelRegistry)
 	}

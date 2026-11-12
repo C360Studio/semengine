@@ -24,7 +24,7 @@ import (
 // newListenerMetrics returns a Metrics built by NewMetrics from an empty configuration, whose
 // server will serve on a loopback listener the test bound. testListener is the one test field
 // Metrics keeps: metric.NewServer maps port 0 to 9090, so no configuration asks for a
-// kernel-picked port (design D4, S9).
+// kernel-picked port.
 func newListenerMetrics(t *testing.T, registry *metric.MetricsRegistry) *Metrics {
 	t.Helper()
 	svc, err := NewMetrics(json.RawMessage(`{}`), &Dependencies{MetricsRegistry: registry})
@@ -46,10 +46,10 @@ func boundMetricsListener(t *testing.T) net.Listener {
 }
 
 // heldPort returns a port a listener the test holds is bound to, on every interface, so a server
-// binding ":port" fails (probe H1 on #343, as TestMaybeStartPProfLogsABindFailure holds its port).
+// binding ":port" fails (as TestMaybeStartPProfLogsABindFailure holds its port).
 func heldPort(t *testing.T) int {
 	t.Helper()
-	// Every address: blocks a server's ":port" bind (probe H1 on #343).
+	// Every address: blocks a server's ":port" bind.
 	held, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = held.Close() })
@@ -66,9 +66,9 @@ func requireListenerReleased(t *testing.T, addr string) {
 // listenerReleased returns nil when a dial to the listener's loopback address is refused. A
 // listener bound on every address reports an unspecified host ("[::]" or "0.0.0.0"); a dial to
 // that reaches the local system in both families, so any other process whose loopback socket
-// shares the port answers it. On the owner's Mac a daemon holds 127.0.0.1:63150, and macOS hands
+// shares the port answers it. On a developer's Mac a daemon held 127.0.0.1:63150, and macOS hands
 // 63150 to a port-0 listener on every address regardless, so the released port read as still
-// accepting (#388; #372 was the same socket answering 404). The dial goes to the loopback address
+// accepting. The dial goes to the loopback address
 // of the listener's own family, which only that listener serves. Only a refused connection counts:
 // any other dial error is a broken probe, not a released port.
 func listenerReleased(addr string) error {
@@ -106,11 +106,11 @@ func loopbackAddr(addr string) (string, error) {
 
 // TestListenerReleasedSeesOnlyTheListenersOwnFamily: a loopback socket of another process on the
 // port a listener bound on every address has just released must not read as that listener still
-// accepting (#388). A Go tcp4 loopback listener stands in for the daemon: macOS lets it bind beside
+// accepting. A Go tcp4 loopback listener stands in for the daemon: macOS lets it bind beside
 // the open wildcard listener, Linux refuses it, and the check runs either way. The open listener
 // must still read as held, so the check is shown able to fail.
 func TestListenerReleasedSeesOnlyTheListenersOwnFamily(t *testing.T) {
-	// Every address: plays the manager's every-address listener, as #388 needs.
+	// Every address: plays the manager's every-address listener.
 	wildcard, err := net.Listen("tcp", ":0")
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = wildcard.Close() })
@@ -176,9 +176,7 @@ func scrape(ctx context.Context, addr string) error {
 	return nil
 }
 
-// TestMetricsStopRejectsConcurrentStop is the pin's
-// TestMetricsStopRunsProviderOutsideLockAndRejectsConcurrentStop on the real server: the pin's
-// fake provider went with the metricsServer interface (design D4, S10). A scrape held in flight
+// TestMetricsStopRejectsConcurrentStop runs on the real server, with no fake provider. A scrape held in flight
 // keeps one Stop waiting for it; a second Stop made meanwhile is refused as transient, whichever
 // of the two entered first, and the waiting one returns nil once the scrape ends.
 //
@@ -218,14 +216,14 @@ func TestMetricsStopRejectsConcurrentStop(t *testing.T) {
 
 // TestMetricsRollsBackItsServerWhenBaseServiceStartFails: when the BaseService refuses its Start
 // after the server has bound, Metrics.Start returns that refusal, holds no server and has released
-// the listener (pin TestMetricsRollsBackBoundProviderWhenBaseCommitFails, built through NewMetrics).
+// the listener, built through NewMetrics.
 //
 // spec: service-lifecycle / The metrics service serves on its own or through the manager
 func TestMetricsRollsBackItsServerWhenBaseServiceStartFails(t *testing.T) {
 	m := newListenerMetrics(t, metric.NewMetricsRegistry())
 	addr := m.testListener.Addr().String()
-	// A BaseService stopped before its Start refuses that Start (PR 1,
-	// TestBaseServiceStopBeforeStartRejectsSameInstanceStart).
+	// A BaseService stopped before its Start refuses that Start
+	// (TestBaseServiceStopBeforeStartRejectsSameInstanceStart).
 	require.NoError(t, m.BaseService.Stop(stopContext(t)))
 
 	err := m.Start(t.Context())
@@ -237,8 +235,8 @@ func TestMetricsRollsBackItsServerWhenBaseServiceStartFails(t *testing.T) {
 
 // TestMetricsLifecycleContextAndStopBeforeStartAreImmutable: a Start refused for a nil or ended
 // context, and a Stop refused for a nil context, leave the service unused, so it still starts;
-// a Stop before any Start makes a later Start refused. The pin read its private used flag; this
-// reads what a caller sees.
+// a Stop before any Start makes a later Start refused. The test reads what a caller sees, not a
+// private flag.
 //
 // spec: service-lifecycle / The metrics service serves on its own or through the manager
 func TestMetricsLifecycleContextAndStopBeforeStartAreImmutable(t *testing.T) {
@@ -265,7 +263,7 @@ func TestMetricsLifecycleContextAndStopBeforeStartAreImmutable(t *testing.T) {
 
 // TestMetricsRefusesAClaimAfterStart: the manager's claim on the metrics server is refused, wrapping
 // errs.ErrAlreadyStarted, once Metrics.Start or Stop has been called or a server was already
-// claimed; the first claim on an unused Metrics returns a server (design D4).
+// claimed; the first claim on an unused Metrics returns a server.
 //
 // spec: service-lifecycle / The metrics service serves on its own or through the manager
 func TestMetricsRefusesAClaimAfterStart(t *testing.T) {
@@ -301,7 +299,7 @@ func TestMetricsRefusesAClaimAfterStart(t *testing.T) {
 // metricsOwner adapts a standalone Metrics to the lifecycle suite (lifecycle-suite, "Observe adapter
 // contract"). A started Metrics holds its server and its BaseService's health goroutine; Observe
 // lists "metrics-server" while the server field is set and "health-loop" while that goroutine's
-// done channel is open. Nothing is added to Metrics for the adapter (#186, #190).
+// done channel is open. Nothing is added to Metrics for the adapter.
 //
 // Observe reads the server field without Metrics' lock: the suite calls Observe only after the
 // Start or Stop it judges has returned, and the health goroutine only reads the field, so the read
@@ -329,9 +327,8 @@ func (o *metricsOwner) Observe() lifecycletest.Observation {
 }
 
 // TestMetricsPassesTheLifecycleSuite runs the lifecycle suite on a standalone Metrics serving on a
-// test listener (design D4, D7; the pin passed 7 of the 8 checks). The must-fail owner is a Metrics
-// configured with a port a listener the test holds, so its Start cannot bind. The service is
-// one-shot: no restart is promised.
+// test listener. The must-fail owner is a Metrics configured with a port a listener the test
+// holds, so its Start cannot bind. The service is one-shot: no restart is promised.
 //
 // spec: service-lifecycle / The metrics service serves on its own or through the manager
 func TestMetricsPassesTheLifecycleSuite(t *testing.T) {

@@ -15,14 +15,12 @@ import (
 	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
-// The storage observability service's health rendering (design D5, "Health"; D7, U-d). Health
+// The storage observability service's health rendering. Health
 // returns the base service's status with the storage picture appended to its message and nothing
 // else changed, so pressure, an over-committed tier, an unread report or a failed collection make
 // nothing unhealthy, degraded or not ready. The rendering is the plain function
 // describeStorageHealth, which these tests call with the base status, snapshot and inventory each
-// one builds. Carried from the pin: storage_observability_test.go:249-283 and :346-483, and
-// storage_observability_tier_metrics_test.go:151-222; the pin's storageHealthSurface and its
-// staticSnapshot reader become the snapshot and inventory values passed in (O4).
+// one builds.
 
 // TestStorageObservabilityHealth_CriticalPressureFailsNoGate is the report-only guarantee stated
 // where it would break first. Readiness reads Status() and IsHealthy(); /health aggregates
@@ -243,16 +241,15 @@ func TestInheritedPressure_DoesNotEvictOwnBoundFindingsFromTheHealthMessage(t *t
 	assert.Contains(t, message, "and 2 more")
 }
 
-// TestPropStorageHealthKeepsTheBaseVerdict checks the stated law of design D5: the rendering
+// TestPropStorageHealthKeepsTheBaseVerdict checks the rendering's stated law: it
 // never moves the base verdict. The oracle is the base status itself: Healthy, Status and the
 // sub-statuses equal the base's, and the message begins with the base message when that is not
-// empty. The generator (design D7, "Generated checks") draws the base from all three constructors
+// empty. The generator draws the base from all three constructors
 // with an empty or any message and zero to three sub-statuses; a snapshot synced or not whose rows
 // take every pressure state, evaluated or not, against their own bound or the account tier; an
 // account known or not whose tiers take every over-commitment state; and an inventory stale or
 // not, collected or not. Each case runs every assertion; the empty-message branch runs whenever
-// the drawn message is "", which the generator draws by construction. Seed and completed checks
-// are recorded in the notes when the test runs (task 2.1, U-d).
+// the drawn message is "", which the generator draws by construction.
 func TestPropStorageHealthKeepsTheBaseVerdict(t *testing.T) {
 	rapid.Check(t, func(rt *rapid.T) {
 		base := drawBaseStatus(rt, "base")

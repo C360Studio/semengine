@@ -13,10 +13,10 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Model-based test of Manager.StopAll (design § Generated checks, "StopAll passes"). A rapid
+// Model-based test of Manager.StopAll. A rapid
 // state machine composes register (before StartAll only), StartAll, arm a stop failure, and
 // StopAll, and checks each action against a test-owned reference model of which services a pass
-// must visit, filled from design D2, never from the manager's code.
+// must visit, filled from the stated StopAll contract, never from the manager's code.
 
 // propStopCtxKey tags the per-pass token the test threads through StopAll, so the spy can show
 // which context reached it. It marks an observation in a test; no production state travels in it.
@@ -53,9 +53,8 @@ func (s *propStopService) Stop(ctx context.Context) error {
 	return nil
 }
 
-// TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean is the pin's promoted rapid
-// counterexample (pin service_manager_prop_test.go:82), with StartAll first: a failed pass is
-// retried whole in reverse registration order, and errs.ErrAlreadyStopped on the retry is clean.
+// TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean is a promoted rapid counterexample,
+// with StartAll first: a failed pass is retried whole in reverse registration order, and errs.ErrAlreadyStopped on the retry is clean.
 //
 // spec: service-lifecycle / StopAll counts a service already stopped as stopped
 func TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean(t *testing.T) {
@@ -98,17 +97,14 @@ func TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean(t *testing.T) {
 	}
 }
 
-// TestPropStopAllShutdownContract checks every history against the model (design § Generated
-// checks): a StopAll after StartAll, or after a failed pass, visits every service once in exact
+// TestPropStopAllShutdownContract checks every history against the model: a StopAll after StartAll, or after a failed pass, visits every service once in exact
 // reverse registration order and hands each the pass's context; it returns nil exactly when no
 // armed failure fired, a nil or errs.ErrAlreadyStopped repeat counting as clean; after a nil pass a
 // later StopAll visits nothing and returns nil. A StopAll before StartAll visits nothing and returns
 // nil, and a StartAll after any StopAll, or a second StartAll, is refused with
-// errs.ErrAlreadyStarted. The arm action is a no-op when no service is left to fail (the pin's
-// t.Skip at :168). What makes each assertion run: "stopAll" reaches a visiting pass whenever
+// errs.ErrAlreadyStarted. The arm action is a no-op when no service is left to fail. What makes each assertion run: "stopAll" reaches a visiting pass whenever
 // "startAll" precedes it, and a failing pass whenever "armStopFailure" drew a service first; both
-// orders are within rapid's default action count. Seed and completed checks are recorded in the
-// notes when the test first runs (task 2.2).
+// orders are within rapid's default action count.
 //
 // spec: service-lifecycle / StopAll counts a service already stopped as stopped
 func TestPropStopAllShutdownContract(t *testing.T) {
@@ -132,7 +128,7 @@ func TestPropStopAllShutdownContract(t *testing.T) {
 			order = append(order, name)
 			services[name] = svc
 		}
-		// Every composition holds a component-manager (design D3); here it is one of the spies.
+		// Every composition holds a component-manager; here it is one of the spies.
 		add("component-manager", nil)
 
 		defer func() {
@@ -241,8 +237,8 @@ func TestPropStopAllShutdownContract(t *testing.T) {
 			},
 			"": func(rt *rapid.T) {
 				// Checked after every action: a started manager keeps every service until a nil
-				// pass, and holds none after it (design D2, pin :928-931). Before StartAll the
-				// design states nothing about GetService after StopAll, so nothing is checked.
+				// pass, and holds none after it. Before StartAll nothing is stated about
+				// GetService after StopAll, so nothing is checked.
 				if !started {
 					return
 				}

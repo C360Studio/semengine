@@ -12,9 +12,8 @@ import (
 	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
-// The storage observability metrics surface (design D4, U-c), carried from the pin
-// (storage_observability_test.go:485-839) with the series named semengine_storage_* and the report
-// types in storagereport, plus the two tests D4 adds: the second registration and ForgetAccount.
+// The storage observability metrics surface: the series named semengine_storage_*, the second
+// registration, and ForgetAccount.
 
 // newTestStorageMetrics builds the metrics surface and registers it on a fresh registry, which it
 // returns so a test reads the series a scrape would.
@@ -346,7 +345,7 @@ func TestStorageAccountMetrics_TierThatDisappearsIsRetracted(t *testing.T) {
 	assert.False(t, ok, "a tier that is no longer reported stops reporting")
 }
 
-// TestStorageAccountMetrics_ForgetAccountRetractsEveryTierSeries (design D4, O1): when the
+// TestStorageAccountMetrics_ForgetAccountRetractsEveryTierSeries: when the
 // consumer drops the account row it held, every per-tier series published for it goes, the
 // freshness gauge keeps the newest collection seen, and a later account row publishes afresh.
 func TestStorageAccountMetrics_ForgetAccountRetractsEveryTierSeries(t *testing.T) {
@@ -399,7 +398,7 @@ func TestStorageAccountMetrics_ForgetAccountRetractsEveryTierSeries(t *testing.T
 		map[string]string{"tier": "file", "state": "critical"}), 1e-9, "a later account row publishes afresh")
 }
 
-// TestStorageMetrics_SecondRegistrationWritesTheCanonicalCollectors (design D4, O2): a second
+// TestStorageMetrics_SecondRegistrationWritesTheCanonicalCollectors: a second
 // surface registered on the same registry must write the collectors the registry serves, never its
 // own unregistered candidates, or its series never reach a scrape.
 func TestStorageMetrics_SecondRegistrationWritesTheCanonicalCollectors(t *testing.T) {

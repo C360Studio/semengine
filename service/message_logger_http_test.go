@@ -19,11 +19,11 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// The message logger's HTTP routes (design D4, Q1; D7 unit U-d). Every test builds the logger the
-// production way (U-a's helper) over a client that never connects, stores entries through
+// The message logger's HTTP routes. Every test builds the logger the production way (the shared
+// helper) over a client that never connects, stores entries through
 // handleMessage, the subscription callback's body, and reads them through the routes
 // RegisterHTTPHandlers mounts on a ServeMux, as the service manager mounts them. No test needs NATS:
-// the KV routes are exercised only up to their refusals; their reads are U-e's and U-f's.
+// the KV routes are exercised only up to their refusals; their reads are in the integration tests.
 
 // routeTestTraceID is a W3C trace ID written by hand, the oracle for the trace route.
 const routeTestTraceID = "0123456789abcdef0123456789abcdef"
@@ -101,8 +101,8 @@ func subjectsOf(entries []entryView) []string {
 }
 
 // TestEntriesLimit: /entries serves the newest entries first, at most limit of them; a limit that
-// is missing, zero, negative or not a whole number serves 100, and one above 10000 serves 10000
-// (pin message_logger_http.go:251-258). The buffer holds 20000 so the clamp is visible: 10001
+// is missing, zero, negative or not a whole number serves 100, and one above 10000 serves 10000.
+// The buffer holds 20000 so the clamp is visible: 10001
 // entries are stored and a limit of 20000 must still serve 10000.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
@@ -133,10 +133,10 @@ func TestEntriesLimit(t *testing.T) {
 	})
 }
 
-// TestEntriesFilterBeforeLimit: the subject filter picks the entries before the limit counts them
-// (Q1(c)). Three matching entries are stored before twenty newer ones that do not match; a filtered
-// request with limit 3 serves the three. At the pin the limit took the three newest entries first,
-// all non-matching, and the filter then served none.
+// TestEntriesFilterBeforeLimit: the subject filter picks the entries before the limit counts them.
+// Three matching entries are stored before twenty newer ones that do not match; a filtered
+// request with limit 3 serves the three; a limit
+// applied first would take the three newest, all non-matching, and serve none.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestEntriesFilterBeforeLimit(t *testing.T) {
@@ -156,9 +156,9 @@ func TestEntriesFilterBeforeLimit(t *testing.T) {
 }
 
 // TestEntriesSubjectFilterUsesNATSMatching: the subject filter is a NATS subject pattern, matched
-// with the cover rule the logger's subscriptions use (Q1(c), D3): `*` matches exactly one token and
+// with the cover rule the logger's subscriptions use: `*` matches exactly one token and
 // `>` one or more trailing tokens, so `subject=*` serves only one-token subjects and `agent.*` only
-// two-token ones (the ruling's stated cost). A filter NATS cannot parse matches nothing; it is not
+// two-token ones (an accepted cost). A filter NATS cannot parse matches nothing; it is not
 // refused. The expected sets are written by hand from the NATS rule.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
@@ -182,7 +182,7 @@ func TestEntriesSubjectFilterUsesNATSMatching(t *testing.T) {
 		{filter: "*.response.*.y", want: []string{"user.response.x.y"}},
 		{filter: "agent.task", want: []string{"agent.task"}},
 		{filter: "agent", want: []string{}},
-		// Malformed patterns, each of which the pin's text match would have matched something with.
+		// Malformed patterns, each of which a plain text match would match something with.
 		{filter: "agent*", want: []string{}},
 		{filter: "agent..task", want: []string{}},
 		{filter: "agent.>.created", want: []string{}},
@@ -204,9 +204,8 @@ func TestEntriesSubjectFilterUsesNATSMatching(t *testing.T) {
 }
 
 // TestEntriesServeNonJSONPayload: a message whose bytes are not JSON is stored as a JSON string of
-// those bytes (Q1(a)), so /entries and /trace still serve valid JSON with every entry, and the
-// string reads back as the bytes sent; a JSON payload is still served as itself. At the pin one
-// such message made both routes fail for as long as it was held. The trace ID rides in the
+// those bytes, so /entries and /trace still serve valid JSON with every entry, and the
+// string reads back as the bytes sent; a JSON payload is still served as itself. The trace ID rides in the
 // callback's context as natsclient.Client.Subscribe puts it there, read from the message's
 // headers.
 //
@@ -264,10 +263,9 @@ func TestEntriesServeNonJSONPayload(t *testing.T) {
 }
 
 // TestStatsCountsOnlyTypedEnvelopesValid: /stats counts a message valid only when it decodes as a
-// typed envelope (Q1(d)); a JSON payload that is no envelope and a payload that is not JSON both
+// typed envelope; a JSON payload that is no envelope and a payload that is not JSON both
 // count invalid. The logger's payload registry here is empty, so nothing decodes as an envelope.
-// At the pin valid_messages counted every message and invalid_messages stayed 0. The typed case is
-// U-g's (message_logger_decode_test.go).
+// The typed case is in message_logger_decode_test.go.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestStatsCountsOnlyTypedEnvelopesValid(t *testing.T) {
@@ -295,10 +293,10 @@ func TestStatsCountsOnlyTypedEnvelopesValid(t *testing.T) {
 	assert.Equal(t, 2, *stats.Invalid)
 }
 
-// TestMessageLoggerCountsAndLogsADroppedMessage is design D3: a message the subscription callback
+// TestMessageLoggerCountsAndLogsADroppedMessage: a message the subscription callback
 // is handed with a context that has ended is not stored and not counted in total_messages; /stats
 // reports it in dropped_messages, and one Warn record names its subject and the context's error.
-// natsclient ends a handler's context once its Close has begun (T2, T3); which messages arrive that
+// natsclient ends a handler's context once its Close has begun (natsclient/consume_context_test.go); which messages arrive that
 // late is not promised, so the test hands the callback's body an ended context directly.
 //
 // spec: service-lifecycle / The message logger's Start bounds Start and Stop is the only stop
@@ -350,7 +348,7 @@ func TestMessageLoggerCountsAndLogsADroppedMessage(t *testing.T) {
 }
 
 // TestTraceRouteRefusesMalformedID: /trace/{traceID} answers 400 unless the ID is 32 hex digits,
-// either case, as at the pin (message_logger_http.go:287-299); a well-formed ID nobody used answers
+// either case; a well-formed ID nobody used answers
 // 200 with no entries.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
@@ -386,7 +384,7 @@ func TestTraceRouteRefusesMalformedID(t *testing.T) {
 }
 
 // TestMessageLoggerRoutesRefuseOtherMethods: every route answers GET and HEAD (ServeMux serves HEAD
-// on a "GET " pattern); any other method gets 405 (D4).
+// on a "GET " pattern); any other method gets 405.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestMessageLoggerRoutesRefuseOtherMethods(t *testing.T) {
@@ -416,7 +414,7 @@ func TestMessageLoggerRoutesRefuseOtherMethods(t *testing.T) {
 }
 
 // TestKVRoutesRejectMalformedBucket: both KV routes refuse a malformed bucket name before any bucket
-// lookup (D4, M16): `.`, `..`, `\`, `*` and `>` answer 400 from the one validator. An empty name or
+// lookup: `.`, `..`, `\`, `*` and `>` answer 400 from the one validator. An empty name or
 // one holding `/` never reaches a handler, because no route matches a path with an empty or split
 // segment, so the mux answers 404 (measured with go1.26.4's ServeMux: `/kv/%2F` and `/kv/` both 404);
 // either way no lookup runs. A lookup on this never-connected client fails with 500, which is what a
@@ -454,8 +452,7 @@ func TestKVRoutesRejectMalformedBucket(t *testing.T) {
 	}
 }
 
-// TestRecordMatchesStatus pins the KV query's opt-in status filter, carried from the pin
-// (message_logger_http_kv_query_test.go:126-147): an empty filter matches every value, a non-empty
+// TestRecordMatchesStatus pins the KV query's opt-in status filter: an empty filter matches every value, a non-empty
 // one only a JSON object whose top-level "status" string equals it, and a non-object never.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
@@ -479,7 +476,7 @@ func TestRecordMatchesStatus(t *testing.T) {
 }
 
 // TestMatchesPatternMiddleWildcard: a middle `*` matches only a key at least as long as its two
-// literal parts together, so the parts never share a character (#371).
+// literal parts together, so the parts never share a character.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestMatchesPatternMiddleWildcard(t *testing.T) {
@@ -494,8 +491,8 @@ func TestMatchesPatternMiddleWildcard(t *testing.T) {
 }
 
 // TestMessageLoggerRoutesAfterStop: after Stop, /entries, /stats and /trace still answer from memory,
-// /subjects answers [], and a watch answers 503 and opens nothing (D2, "Reads during and after
-// Stop"). The 503 is checked on a well-formed bucket, which before Stop is looked up (500 on this
+// /subjects answers [], and a watch answers 503 and opens nothing.
+// The 503 is checked on a well-formed bucket, which before Stop is looked up (500 on this
 // never-connected client, TestKVRoutesRejectMalformedBucket), so a 503 shows the watch refused
 // before any lookup.
 //

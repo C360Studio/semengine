@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-// retiredFlowRoutes is the routed/advertised surface ADR-100 decision D5
+// retiredFlowRoutes is the routed/advertised surface ADR-100
 // removes, enumerated from the declaration that owned it
 // (`flowServiceOpenAPISpec`, `service/flow_service.go`) before deletion. It is
 // spelled here — not derived from the live registry — because a guard derived
@@ -19,7 +19,7 @@ var retiredFlowRoutes = []string{
 	"/flows/{id}/observations/messages",
 }
 
-// TestServiceRegistryHasNoFlowBuilder is the absence guard for ADR-100 D5:
+// TestServiceRegistryHasNoFlowBuilder is the absence guard for ADR-100:
 // the framework registers no flow-builder service, so no process can compose
 // one and no route it owned can be served. It also asserts the advertised
 // surface, because a service can contribute OpenAPI rows through the package
@@ -27,9 +27,8 @@ var retiredFlowRoutes = []string{
 // entry mentions — deleting the constructor without deleting the declaration
 // would leave the routes published and unserved.
 //
-// RegisterAll registers metrics and the component manager until each other
-// service's owner lands (design D1), so the guard also checks that both are
-// offered: a RegisterAll that registered nothing would pass the absence checks
+// The guard also checks that RegisterAll offers metrics and the component
+// manager: a RegisterAll that registered nothing would pass the absence checks
 // vacuously.
 func TestServiceRegistryHasNoFlowBuilder(t *testing.T) {
 	registry := NewServiceRegistry()

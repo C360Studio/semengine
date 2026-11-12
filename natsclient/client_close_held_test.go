@@ -17,8 +17,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// T1, design "Tests that replace the probes". A publish the server is not
-// reading holds nats.go's connection lock, which Drain and Close need; Close
+// A publish the server is not reading holds nats.go's connection lock, which
+// Drain and Close need (this test shows it at nats.go v1.55.0); Close
 // must close the socket when its context ends rather than wait for nats.go's
 // write timeout (one minute by default).
 func TestCloseEndsAHeldWrite(t *testing.T) {
@@ -28,8 +28,8 @@ func TestCloseEndsAHeldWrite(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
-	// Before design D1, Close waited for the write. The hour write timeout makes
-	// that wait unreachable as a late pass: such a Close hangs.
+	// A Close that waited for the write would not pass late: the hour write
+	// timeout makes that wait unreachable, so such a Close hangs.
 	err := within(t, startClose(ctx, client), lifecycleBound, "Close")
 
 	require.ErrorIs(t, err, context.DeadlineExceeded)
@@ -37,10 +37,13 @@ func TestCloseEndsAHeldWrite(t *testing.T) {
 	requireClosed(t, conn)
 }
 
-// requireClosed requires conn to reach CLOSED. It is awaited, not read once:
-// when Close's drain had begun, nats.go's drain goroutine can set DRAINING_PUBS
-// after natsclient's close, and closes the connection again only once a flush
-// of up to 5 s has failed (nats.go:6378-6390). Seen in 2 of 160 runs of T1.
+// requireClosed requires conn to reach CLOSED. It is awaited, not read once: at
+// nats.go v1.54.0, when Close's drain had begun, the drain goroutine could set
+// DRAINING_PUBS after natsclient's close, and closed the connection again only
+// once a flush of up to 5 s had failed; seen in 2 of 160 runs of
+// TestCloseEndsAHeldWrite. At v1.55.0 that goroutine returns on a closed
+// connection (nats.go:6476-6480, read, not measured), but that a single read
+// sees CLOSED is not promised, so the wait stays.
 func requireClosed(t *testing.T, conn *nats.Conn) {
 	t.Helper()
 	wait, cancel := context.WithTimeout(t.Context(), lifecycleBound)
@@ -51,10 +54,9 @@ func requireClosed(t *testing.T, conn *nats.Conn) {
 	require.NoError(t, err, "the connection was not closed: status %v", status)
 }
 
-// T2, design "Tests that replace the probes". A Subscribe held behind a write
-// the server is not reading must not hold natsclient's own lock while it waits
-// for nats.go's, or Close cannot begin, and so cannot cut the socket (design D3;
-// P21).
+// A Subscribe held behind a write the server is not reading must not hold
+// natsclient's own lock while it waits for nats.go's, or Close cannot begin,
+// and so cannot cut the socket.
 func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
 	client, proxy := newHeldClient(t, WithWriteTimeout(time.Hour))
 	conn := client.GetConnection()
@@ -80,9 +82,9 @@ func TestCloseIsNotHeldByAHeldSubscribe(t *testing.T) {
 	requireClosed(t, conn)
 }
 
-// T8, design "Tests that replace the probes". A reconnect dial holds nats.go's
-// connection lock, as a held write does (P23); Close must end the dial through
-// the dialer's Cancel rather than wait for it.
+// A reconnect dial holds nats.go's connection lock, as a held write does
+// (measured at nats.go v1.54.0, recorded in ADR-112); Close must end the dial
+// through the dialer's Cancel rather than wait for it.
 func TestCloseEndsAReconnectDial(t *testing.T) {
 	client := newReconnectDialClient(t)
 
@@ -90,12 +92,13 @@ func TestCloseEndsAReconnectDial(t *testing.T) {
 	defer cancel()
 	// The fake reconnect dial ignores the dial timeout and ends only on the
 	// dialer's Cancel, so a Close that waits for the dial instead of cutting it
-	// hangs (P23: before the cut, nats.go's 5 s dial timeout bounded Close).
+	// hangs (without the cut, nats.go's 5 s dial timeout bounded Close: measured
+	// at nats.go v1.54.0, recorded in ADR-112).
 	err := within(t, startClose(ctx, client), 3*time.Second, "Close")
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
-// Design D3: a Subscribe admitted before Close began, whose connection check
+// A Subscribe admitted before Close began, whose connection check
 // then finds the connection not connected, returns nats.ErrConnectionClosed,
 // not ErrNotConnected (transport-client, the Subscribe's error order). The
 // reconnect dial holds nats.go's lock until Close cuts it, and no reconnect
@@ -263,7 +266,8 @@ func within[T any](t *testing.T, ch <-chan T, _ time.Duration, _ string) T {
 // heldProxy forwards each connection it accepts to the server. Once a client
 // has sent the first bytes of a publish on heldSubject, the proxy reads nothing
 // more from that client, as a server that has stopped reading, and closes held.
-// It reads again after resume (T9) or close.
+// It reads again after resume (TestWriteTimeoutAndPingIntervalOptions) or
+// close.
 type heldProxy struct {
 	url        string
 	ln         net.Listener

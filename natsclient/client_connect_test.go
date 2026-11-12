@@ -62,7 +62,7 @@ func TestConnectRejectsCandidateWhenCloseWinsAdmission(t *testing.T) {
 	require.Equal(t, StatusDisconnected, client.Status())
 }
 
-// T3, design "Tests that replace the probes".
+// Connect refuses a context that has already ended.
 func TestConnectRefusesAnEndedContext(t *testing.T) {
 	t.Run("no dial", func(t *testing.T) {
 		url, accepted := silentListener(t)
@@ -97,9 +97,9 @@ func TestConnectRefusesAnEndedContext(t *testing.T) {
 	})
 }
 
-// T4, design "Tests that replace the probes". Each client's connect timeout is an hour, so only
-// the context's cut can end the dial: a Connect that waited for the timeout instead hangs until
-// go test -timeout rather than returning late and passing.
+// Each client's connect timeout is an hour, so only the context's cut can end the dial: a Connect
+// that waited for the timeout instead hangs until go test -timeout rather than returning late and
+// passing.
 func TestConnectEndsWithItsContext(t *testing.T) {
 	t.Run("deadline", func(t *testing.T) {
 		url, _ := silentListener(t)
@@ -159,8 +159,8 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 
 	// A host name must reach the dialer unresolved, so that its lookup runs
 	// inside the dial, under the dialer's Cancel. Otherwise nats.go looks the
-	// name up first (nats.go:2484-2485), and nothing ends that lookup when the
-	// context does (PR #177, Codex stop-1 F1).
+	// name up first (nats.go:2508-2509 at v1.55.0), and nothing ends that
+	// lookup when the context does.
 	t.Run("host name resolved inside the dial", func(t *testing.T) {
 		_, port, err := net.SplitHostPort(strings.TrimPrefix(refusedNATSURL(t), "nats://"))
 		require.NoError(t, err)
@@ -193,9 +193,9 @@ func TestConnectEndsWithItsContext(t *testing.T) {
 	})
 }
 
-// T5, design "Tests that replace the probes". Connect's context must not reach
-// the connection once Connect has returned: a cut left armed would close the
-// socket when the context ends and refuse every reconnect.
+// Connect's context must not reach the connection once Connect has returned: a
+// cut left armed would close the socket when the context ends and refuse every
+// reconnect.
 func TestReconnectAfterConnectContextEnded(t *testing.T) {
 	server, err := natsserver.NewServer(&natsserver.Options{Host: "127.0.0.1", Port: -1, NoLog: true, NoSigs: true})
 	require.NoError(t, err)

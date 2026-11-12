@@ -172,10 +172,10 @@ func TestClassifyReply_HeaderClassifiedError(t *testing.T) {
 	}
 }
 
-// TestClassifyReply_NoHeaderIsSuccess pins the ADR-060 contract: with the
-// legacy "error: " body fallback removed, a reply WITHOUT the X-Status header is
-// success — its body is returned verbatim even if it happens to start with
-// "error: ". A failure is signalled ONLY by the header.
+// TestClassifyReply_NoHeaderIsSuccess pins the ADR-060 contract: a reply
+// WITHOUT the X-Status header is success — its body is returned verbatim even
+// if it happens to start with "error: ". A failure is signalled ONLY by the
+// header.
 func TestClassifyReply_NoHeaderIsSuccess(t *testing.T) {
 	t.Parallel()
 	msg := &nats.Msg{
@@ -262,7 +262,7 @@ func TestRespondError_RoundTrip(t *testing.T) {
 
 // TestRespondError_RoundTripUnclassifiedIsFatal: a handler error nobody
 // classified goes on the wire as fatal, so the requester reads errs.IsFatal
-// true and errs.IsTransient false (owner ruling 1, #167 comment 6191970843).
+// true and errs.IsTransient false.
 func TestRespondError_RoundTripUnclassifiedIsFatal(t *testing.T) {
 	t.Parallel()
 	orig := errors.New("marshal failed")
@@ -295,14 +295,12 @@ func TestRespondError_RoundTripUnclassifiedIsFatal(t *testing.T) {
 }
 
 // TestClassifyReply_ReconstructedErrorPreservesInnerMessage pins the
-// load-bearing Phase 2-polish contract: the reconstructed
-// *errs.ClassifiedError's Error() string is the handler's clean inner
-// message — NOT a leaky framework-attribution wrap. Phase 2's
-// reviewer R2/R3 surfaced that gateway/graph-gateway and
-// agentic-tools/executors were leaking
-// "natsclient.ClassifyReply: handler error failed: <real msg>" to
-// external surfaces; classifiedFromHeader now uses errs.Classified
-// (bare constructor) so the inner message round-trips verbatim.
+// load-bearing contract: the reconstructed *errs.ClassifiedError's Error()
+// string is the handler's clean inner message — NOT a leaky
+// framework-attribution wrap such as "natsclient.ClassifyReply: handler error
+// failed: <real msg>", which a caller that shows the error on an external
+// surface, such as gateway/graph-gateway, would leak. classifiedFromHeader uses
+// errs.Classified (bare constructor) so the inner message round-trips verbatim.
 func TestClassifyReply_ReconstructedErrorPreservesInnerMessage(t *testing.T) {
 	t.Parallel()
 	msg := &nats.Msg{

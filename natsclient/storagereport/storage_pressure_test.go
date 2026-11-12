@@ -386,8 +386,8 @@ func TestStoragePressureThresholds_ResolveRejectsIncoherentConfiguration(t *test
 	}
 }
 
-// TestStoragePressureThresholds_JSONRoundTrip is the operator-surface proof
-// (task 3.5): the thresholds are a JSON configuration an operator edits, so
+// TestStoragePressureThresholds_JSONRoundTrip is the operator-surface proof:
+// the thresholds are a JSON configuration an operator edits, so
 // every field must survive the encode/decode the config loader performs. A
 // field that marshals but does not unmarshal reads back as the default and
 // applies a number the operator did not choose, successfully and silently.

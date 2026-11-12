@@ -4,12 +4,10 @@
 // The requirement itself is declared by the configuration path: an ordinary
 // stream states a finite MaxAge, a finite MaxBytes, and a discard policy, or it
 // is admitted by an archival declaration. This file exists because a
-// requirement enforced at only one of two doors is not a requirement — a
-// direct `Client.EnsureStream` caller would be the supported
-// route around it. The retired COMPONENT_CAPABILITIES stream was the historical
-// in-repository example: it was created here with MaxAge one hour, no MaxBytes
-// and no discard policy; the live server reported `max_bytes=-1 discard=old`,
-// neither of which anyone chose.
+// requirement enforced at only one of two doors is not a requirement — a direct
+// `Client.EnsureStream` caller would be the supported route around it. Without
+// it, a stream created here with a MaxAge alone carries no byte bound and the
+// zero-value discard policy, neither of which anyone chose.
 //
 // It follows the prefix refusal that already came to this seam, and for the same
 // reason: the seam is reachable from operator configuration — processor/gated-dag

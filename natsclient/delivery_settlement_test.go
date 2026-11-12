@@ -324,23 +324,19 @@ func TestConsumeDeliveryWithHeartbeatMetadataFailureFailsClosedBeforeWork(t *tes
 }
 
 // TestConsumeDeliveryWithHeartbeatInProgressFailureRequiresOwnerStop is the
-// lease-renewal failure row, ported from the three ConsumeWithHeartbeat tests
-// deleted with that helper (#1249/#759): _ReturnsErrorOnInProgressFailure,
-// _CancelsWorkOnInProgressFailure and _JoinsCleanupErrorOnInProgressFailure.
+// lease-renewal failure row.
 //
-// It is the one claim of theirs with no twin on the typed path, and it is the
-// row every delivery-lane latch rests on: a renewal failure means the server
-// may already have handed this message to someone else, so the work must be
-// cancelled, the delivery must be left unsettled for that redelivery, and the
-// owner must be told to stop its lane. Settling it here would race the new
-// owner; answering without OwnerStopRequired would leave this process
-// consuming a lane it no longer owns.
+// It is the row every delivery-lane latch rests on: a renewal failure means the server may already
+// have handed this message to someone else, so the work must be cancelled, the delivery must be
+// left unsettled for that redelivery, and the owner must be told to stop its lane. Settling it here
+// would race the new owner; answering without OwnerStopRequired would leave this process consuming
+// a lane it no longer owns.
 //
-// The three assertions the deleted tests carried between them — work cancelled
-// before return, ErrHeartbeatFailed joined, cleanup error retained — are kept
-// together because each alone permits the defect the other two catch.
+// Its three assertions — work cancelled before return, ErrHeartbeatFailed
+// joined, cleanup error retained — are kept together because each alone permits
+// the defect the other two catch.
 func TestConsumeDeliveryWithHeartbeatInProgressFailureRequiresOwnerStop(t *testing.T) {
-	// R1a: the heartbeat ticker and the limit below run on the bubble's clock, so the limit
+	// The heartbeat ticker and the limit below run on the bubble's clock, so the limit
 	// expires only when ConsumeDeliveryWithHeartbeat never returns after the work's cleanup.
 	synctest.Test(t, func(t *testing.T) {
 		renewalErr := errors.New("connection lost")
@@ -652,7 +648,7 @@ func TestSettleDeliveryInvalidTuplesAndNilMessageFailClosed(t *testing.T) {
 }
 
 func TestConsumeDeliveryWithHeartbeatControlLossPreservesJoinedMeaning(t *testing.T) {
-	// R1a: the 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
+	// The 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
 	// delivers is the only thing that ends this work, so the tick must fire for the call to return.
 	synctest.Test(t, func(t *testing.T) {
 		controlErr := errors.New("heartbeat transport")
@@ -680,7 +676,7 @@ func TestConsumeDeliveryWithHeartbeatControlLossPreservesJoinedMeaning(t *testin
 // unexported field: work that ends cleanly after the renewal failed must still report the
 // heartbeat failure and its transport cause there.
 func TestConsumeDeliveryWithHeartbeatErrCarriesControlLoss(t *testing.T) {
-	// R1a: the 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
+	// The 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
 	// delivers is the only thing that ends this work, so the tick must fire for the call to return.
 	synctest.Test(t, func(t *testing.T) {
 		transportErr := errors.New("heartbeat transport")
@@ -756,7 +752,7 @@ func TestConsumeDeliveryWithHeartbeatControlLossNormalizesInvalidAndPanic(t *tes
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// R1a: the 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
+			// The 1 ms heartbeat ticker runs on the bubble's clock. The renewal failure it
 			// delivers is the only thing that ends this work, so the tick must fire for the call to return.
 			synctest.Test(t, func(t *testing.T) {
 				msg := &mockMsg{subject: tt.name, data: []byte("body"), inProgressErr: controlErr}

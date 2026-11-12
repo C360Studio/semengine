@@ -15,7 +15,7 @@ import (
 	"github.com/c360studio/semengine/pkg/retry"
 )
 
-// The siblings of the entry points in Codex's F32 probe (reviewer_nil_context_probe_test.go): every
+// The siblings of the entry points in reviewer_nil_context_probe_test.go: every
 // exported, context-taking method on the request/reply path and the KV bucket acquisition path
 // refuses a nil context with an invalid-data error, on a connected client, without panicking.
 func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
@@ -107,7 +107,7 @@ func TestExportedNilContextRefusedOnRequestAndBucketPaths(t *testing.T) {
 }
 
 // An already-cancelled context sends nothing from the retrying request method: each attempt,
-// the first included, checks the context first (Codex F32), and the refusal is a transient
+// the first included, checks the context first, and the refusal is a transient
 // classified error that still matches context.Canceled.
 func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
@@ -137,8 +137,7 @@ func TestRetryRequestEndedContextNeverDispatches(t *testing.T) {
 }
 
 // A retry count below one makes one attempt, as retry.Do does: the handler runs once and its
-// reply comes back (changed: at the pin a negative count returned success with no reply, Codex
-// F31; before #222 it was refused).
+// reply comes back, never a success with no reply.
 func TestRetryRequestNegativeCountMakesOneAttempt(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)
@@ -189,10 +188,8 @@ func TestRetryRequestRefusedConfigNeverDispatches(t *testing.T) {
 }
 
 // Every other exported, error-returning natsclient entry that takes a context refuses a nil one,
-// without panicking and before touching any state (Codex F32, "cover these sibling entry points
-// together"), with the same invalid-data error as the rest. KVStore.KeysByFilter,
-// ValidateHeartbeatDeliveryPolicy and Subscription.Drain refused nil before the sweep with an
-// unclassified error; they now use the same class (early check E2).
+// without panicking and before touching any state, with the same invalid-data error as the
+// rest, KVStore.KeysByFilter, ValidateHeartbeatDeliveryPolicy and Subscription.Drain included.
 func TestExportedNilContextRefusedOnEveryOtherEntry(t *testing.T) {
 	c, err := NewClient(embeddedJetStreamURL(t), WithHealthInterval(0))
 	require.NoError(t, err)

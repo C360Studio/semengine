@@ -75,11 +75,11 @@ func fixtureSpec(name string) BucketSpec {
 	}
 }
 
-// TestIntegration_EnsureFrameworkBucket_ReconcilesAdoptedHistory is the F1
+// TestIntegration_EnsureFrameworkBucket_ReconcilesAdoptedHistory is the
 // mechanism test at the seam: a bucket created earlier by another path with a
 // divergent History is adopted by the owner's Ensure and reconciled to the
-// declared value, WARNing with both values — so bucket configuration is no
-// longer decided by boot order.
+// declared value, WARNing with both values — so bucket configuration is not
+// decided by boot order.
 func TestIntegration_EnsureFrameworkBucket_ReconcilesAdoptedHistory(t *testing.T) {
 	ctx := context.Background()
 	tc := newFixtureClient(t)
@@ -193,7 +193,7 @@ func TestIntegration_EnsureFrameworkBucket_BoundedTTLConvergesToDeclared(t *test
 }
 
 // TestIntegration_OpenFrameworkBucket_AbsentIsNotReadyAndNeverCreates is the
-// #714-closing seam assertion: Open on an absent bucket returns a classified
+// seam's never-creates assertion: Open on an absent bucket returns a classified
 // not-ready error naming the catalog Owner, and the bucket is STILL ABSENT
 // afterwards — a reader can never become an emitter of divergent
 // configuration.
@@ -212,7 +212,7 @@ func TestIntegration_OpenFrameworkBucket_AbsentIsNotReadyAndNeverCreates(t *test
 	assert.Contains(t, err.Error(), "kvspec-fixture-owner",
 		"the error must name the catalog Owner so the operator knows who provisions it")
 
-	// The #714 closure: the bucket must STILL be absent (Open never creates).
+	// The bucket must STILL be absent (Open never creates).
 	_, gerr := tc.Client.GetKeyValueBucket(ctx, "KVSPEC_NEVER_CREATED")
 	assert.ErrorIs(t, gerr, jetstream.ErrBucketNotFound,
 		"OpenFrameworkBucket must NEVER create the bucket")

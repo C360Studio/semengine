@@ -73,11 +73,12 @@ func listerFor(infos ...*jetstream.StreamInfo) *fakeLister {
 	}
 }
 
-// TestCollect_ComparesDeclaredBoundsAgainstTheAccountLimitPerTier is task 4.5
-// through the collector: the comparison is derived from the same collection
-// that produced the rows, so no operator surface has to recompute it.
+// TestCollect_ComparesDeclaredBoundsAgainstTheAccountLimitPerTier compares
+// declared bounds with the account limit through the collector: the comparison
+// is derived from the same collection that produced the rows, so no operator
+// surface has to recompute it.
 func TestCollect_ComparesDeclaredBoundsAgainstTheAccountLimitPerTier(t *testing.T) {
-	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
 	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
 	// runnable, so a slow host cannot fail a correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -113,10 +114,11 @@ func TestCollect_ComparesDeclaredBoundsAgainstTheAccountLimitPerTier(t *testing.
 	})
 }
 
-// TestCollect_UnboundedAccountLimitIsNotApplicable is task 4.6 through the
-// collector, on the path a stock server and testcontainers actually take.
+// TestCollect_UnboundedAccountLimitIsNotApplicable: an unbounded account limit
+// is not applicable, through the collector, on the path a stock server and
+// testcontainers actually take.
 func TestCollect_UnboundedAccountLimitIsNotApplicable(t *testing.T) {
-	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
 	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
 	// runnable, so a slow host cannot fail a correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -143,7 +145,7 @@ func TestCollect_UnboundedAccountLimitIsNotApplicable(t *testing.T) {
 // else: the resource inventory, which is the larger and more actionable half,
 // is still complete.
 func TestCollect_AccountLimitsAreOptionalEnrichment(t *testing.T) {
-	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
 	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
 	// runnable, so a slow host cannot fail a correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -165,7 +167,7 @@ func TestCollect_AccountLimitsAreOptionalEnrichment(t *testing.T) {
 // TestCollect_AccountInfoFailureReportsUnknownAndKeepsTheInventory is the same
 // soft failure through a real error rather than a missing method.
 func TestCollect_AccountInfoFailureReportsUnknownAndKeepsTheInventory(t *testing.T) {
-	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
 	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
 	// runnable, so a slow host cannot fail a correct collection.
 	synctest.Test(t, func(t *testing.T) {
@@ -229,7 +231,7 @@ func TestReadAccountTierLimits_UnreadableIsNotKnown(t *testing.T) {
 // the cost bound the inventory is built to respect: one account call per
 // collection, never one per resource.
 func TestCollect_AccountLimitsAreReadOncePerCollection(t *testing.T) {
-	// R1a: Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
+	// Collect arms the collector's default 15 s timeout (storage_inventory.go:269), and the
 	// listings stop when it expires. On the bubble's clock it cannot expire while the walk is
 	// runnable, so a slow host cannot fail a correct collection.
 	synctest.Test(t, func(t *testing.T) {

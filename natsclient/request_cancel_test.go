@@ -11,15 +11,15 @@ import (
 )
 
 // A caller that cancels while a request is in flight gets context.Canceled, on every request
-// method (early check E1). The responder blocks until the test lets it go, and the test cancels only once
+// method. The responder blocks until the test lets it go, and the test cancels only once
 // the responder has been entered, so the cancellation always lands while the attempt waits for its
 // reply.
 //
-// Every path reports rather than hangs (Codex F42): each subtest has its own subject and
-// responder, so no invocation outlives its subtest's channels; the responder's release is a close,
-// safe after the responder has exited or if it never ran; a test-owned bound limits both the wait
-// for entry and the wait for the call to return after the cancellation (early check G3); and the
-// cancelling goroutine is joined on every outcome.
+// Every path reports rather than hangs: each subtest has its own subject and responder, so no
+// invocation outlives its subtest's channels; the responder's release is a close, safe after the
+// responder has exited or if it never ran; a test-owned bound limits both the wait for entry and
+// the wait for the call to return after the cancellation; and the cancelling goroutine is joined on
+// every outcome.
 func TestRequestCancelledInFlightRecordsNoFailure(t *testing.T) {
 	c, err := NewClient(embeddedServerURL(t), WithHealthInterval(0))
 	require.NoError(t, err)

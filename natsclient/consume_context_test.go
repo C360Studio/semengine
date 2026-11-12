@@ -71,11 +71,10 @@ var consumeContextCases = []struct {
 	port bool
 }{{"internal", false}, {"port", true}}
 
-// TestConsumeSetupDeadlineDoesNotEndLaterHandlers (owner ruling, #9 comment 5994720412 item 2):
-// the context passed to ConsumeStreamWithConfig and ConsumeInternalStreamWithConfig bounds setup
-// only. A handler invoked after that context's deadline receives a live context. At the pin the
-// setup context parented every handler, so each handler after the deadline got an ended context
-// while delivery continued.
+// TestConsumeSetupDeadlineDoesNotEndLaterHandlers: the context passed to ConsumeStreamWithConfig
+// and ConsumeInternalStreamWithConfig bounds setup only. A handler invoked after that context's
+// deadline receives a live context. A setup context that parented every handler would hand each
+// handler after the deadline an ended context while delivery continued.
 func TestConsumeSetupDeadlineDoesNotEndLaterHandlers(t *testing.T) {
 	for _, tc := range consumeContextCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -107,9 +106,8 @@ func TestConsumeSetupDeadlineDoesNotEndLaterHandlers(t *testing.T) {
 	}
 }
 
-// TestConsumeHandlerContextEndsWhenCloseBegins (owner ruling, #9 comment 5994720412 item 2): the
-// handlers' context is owned by the client and is cancelled when Close begins, and Close still
-// joins the handler before it returns nil.
+// TestConsumeHandlerContextEndsWhenCloseBegins: the handlers' context is owned by the client and
+// is cancelled when Close begins, and Close still joins the handler before it returns nil.
 func TestConsumeHandlerContextEndsWhenCloseBegins(t *testing.T) {
 	for _, tc := range consumeContextCases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -142,8 +140,7 @@ func TestConsumeHandlerContextEndsWhenCloseBegins(t *testing.T) {
 	}
 }
 
-// TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded (owner ruling, #9 comment
-// 5994720412 item 2; reviewer early check at 5ecc016, HIGH): delivery can end, by the caller's
+// TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded: delivery can end, by the caller's
 // Stop or a native end, while a handler still runs. Close beginning after that still cancels the
 // handler's context, so a handler without a message timeout does not hold Close until its context
 // ends.
@@ -180,8 +177,7 @@ func TestConsumeHandlerContextEndsWhenCloseBeginsAfterDeliveryEnded(t *testing.T
 	}
 }
 
-// TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle (owner ruling, #9 comment
-// 5994720412 item 2; reviewer early check at 5ecc016, MEDIUM): native Consume can deliver before
+// TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle: native Consume can deliver before
 // it returns its handle. If Close begins in that window, the running handler's context is
 // cancelled then, not only once the handle arrives.
 func TestConsumeHandlerContextEndsWhenCloseBeginsBeforeTheHandle(t *testing.T) {

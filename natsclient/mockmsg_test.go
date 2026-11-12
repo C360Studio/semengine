@@ -12,11 +12,9 @@ import (
 
 // mockMsg is the package's in-memory jetstream.Msg: it records which terminal
 // method a settlement contract applied, in what order relative to the metadata
-// and payload reads, and can be configured to fail any of them.
-//
-// It lived in heartbeat_test.go until ConsumeWithHeartbeat was removed
-// (#1249/#759); it moved here rather than going with that file because
-// delivery_settlement_test.go drives the typed path through it.
+// and payload reads, and can be configured to fail any of them. It has a file
+// of its own because delivery_settlement_test.go drives the typed path through
+// it.
 type mockMsg struct {
 	subject         string
 	data            []byte

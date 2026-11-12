@@ -145,7 +145,7 @@ func TestDeriveGrowth_FromSuccessiveObservations(t *testing.T) {
 }
 
 // TestDeriveGrowth_IsNotBytesOverTheResourcesOwnSpan is the falsifying test for
-// the design's corrected decision 7: the tempting implementation reads a
+// growth from successive observations: the tempting implementation reads a
 // stream's own FirstTime/LastTime span and divides its byte count by it, which
 // needs no history at all — and reports sustained growth, and projects
 // exhaustion, for a bucket whose size never changes.

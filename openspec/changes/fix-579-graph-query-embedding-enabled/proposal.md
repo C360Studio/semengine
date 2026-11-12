@@ -1,6 +1,6 @@
 # Proposal: fix-579-graph-query-embedding-enabled
 
-Approved-by:
+Approved-by: Coby Leuschke (2026-11-12) sha256:faddb6595b43
 
 Track: `design` (adds a `graph-query` requirement; modifies `graph-query` and `composed-stack`).
 

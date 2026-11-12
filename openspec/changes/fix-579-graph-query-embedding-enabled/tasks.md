@@ -7,8 +7,7 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
 
 ## 1. Design
 
-- [ ] 1.1 Pre-owner design review passes; the owner approves (`Approved-by:` in `proposal.md`).
-  Hold: OPEN-Q proposal awaits owner approval
+- [x] 1.1 Pre-owner design review passes; the owner approves (`Approved-by:` in `proposal.md`).
   Gate: `task spec:check`, `task docs:check`.
 
 ## 2. graph-query

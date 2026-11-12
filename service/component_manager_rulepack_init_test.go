@@ -14,11 +14,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// Construction's composition pass (pin component_manager_rulepack_init_test.go). The pin built a
-// struct-literal manager and called its exported Initialize; here NewComponentManager composes the
-// boot set and the tests read what it returns and what the factories saw (design D3, D7). Under
-// Q-B (owner, 2026-10-21) a component that cannot be built refuses construction, naming every
-// failed instance, so the pin's best-effort test for ordinary components is not carried.
+// Construction's composition pass. NewComponentManager composes the boot set and the tests read
+// what it returns and what the factories saw. A component that cannot be built refuses
+// construction, naming every failed instance.
 
 type rulePackInitProbe struct {
 	baseDiscoverable
@@ -47,8 +45,8 @@ type rulePackInitFixture struct {
 }
 
 // coldBootFactories records what the probe factories saw: the calls per factory name and every
-// probe they returned. Construction builds components one after another (pin :316-352), so the
-// fields need no lock.
+// probe they returned. Construction builds components one after another, so the fields need no
+// lock.
 type coldBootFactories struct {
 	calls  map[string]int
 	probes []*rulePackInitProbe
@@ -147,7 +145,7 @@ func TestComponentManagerInitializeAggregatesEnabledRulePackFailuresDeterministi
 		strings.Index(err.Error(), "zeta-pack"),
 		err.Error(),
 	)
-	// Q-B: the ordinary component that failed is named beside the rule packs.
+	// The ordinary component that failed is named beside the rule packs.
 	require.ErrorContains(t, err, "ordinary-failure")
 	require.ErrorContains(t, err, "ordinary component failure")
 	require.NotContains(t, err.Error(), "valid-pack")
@@ -162,11 +160,10 @@ func TestComponentManagerInitializeAggregatesEnabledRulePackFailuresDeterministi
 	}
 }
 
-// TestComponentManagerRefusesBootWhenAComponentCannotBeBuilt: Q-B (owner, 2026-10-21). An enabled
-// component that is not a rule processor and whose factory or Initialize fails refuses
-// construction, and the refusal names every failed instance with its cause, not only the first.
-// It replaces the pin's TestComponentManagerInitializeOrdinaryFailureRemainsBestEffort (pin :135),
-// where construction logged the failure and composed the rest.
+// TestComponentManagerRefusesBootWhenAComponentCannotBeBuilt: an enabled component that is not a
+// rule processor and whose factory or Initialize fails refuses construction, and the refusal names
+// every failed instance with its cause, not only the first; construction never logs the failure
+// and composes the rest.
 func TestComponentManagerRefusesBootWhenAComponentCannotBeBuilt(t *testing.T) {
 	t.Parallel()
 	deps, factories := newColdBootDependencies(t, config.ComponentConfigs{

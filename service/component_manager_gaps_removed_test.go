@@ -15,11 +15,8 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The retired /gaps operation and the component manager's OpenAPI document, from the pin's
-// component_manager_gaps_removed_test.go, plus TestOpenAPIDocumentResolvesEverySchemaRef (design
-// D5, option (a)). The pin built a struct-literal manager and ran analyzeBootComposition by hand;
-// here NewComponentManager admits the component and analyses the composition once, as at boot
-// (design D3, D7).
+// The retired /gaps operation and the component manager's OpenAPI document. NewComponentManager
+// admits the component and analyses the composition once, as at boot.
 
 // externalOrphanFixture is one admitted component whose only input is a
 // required JetStream port fed from outside the composition. Under ADR-100 the
@@ -45,7 +42,7 @@ func externalOrphanFixture(t *testing.T) *ComponentManager {
 }
 
 // TestComponentGapsOperationIsAbsent proves the second composition judgment is
-// gone (ADR-100 D3, one validator and one vocabulary): the /gaps route is not
+// gone (ADR-100, one validator and one vocabulary): the /gaps route is not
 // served and the ComponentManager OpenAPI document does not advertise it.
 func TestComponentGapsOperationIsAbsent(t *testing.T) {
 	mux := http.NewServeMux()
@@ -84,9 +81,8 @@ func TestExternalInputIsNeverACriticalOrphanOnAnyComponentOperation(t *testing.T
 	// and "orphaned_port" are the classifications it applied to this port.
 	banned := []string{"no_publishers", "orphaned_port", "critical", "has_issues"}
 
-	// The pin exempted status/{name} and config/{name} from answering, because its
-	// struct-literal fixture held no component record. A manager NewComponentManager
-	// built holds the consumer's record and its factory, so every GET answers here.
+	// A manager NewComponentManager built holds the consumer's record and its factory,
+	// so every GET answers here, status/{name} and config/{name} included.
 	for path, item := range paths {
 		concrete := strings.NewReplacer("{name}", "consumer", "{id}", "consumer").Replace(path)
 		for _, method := range declaredMethods(item) {
@@ -151,8 +147,8 @@ func declaredMethods(item PathSpec) []string {
 // same document carries, the component manager's Graph and Result among them. /openapi.json takes
 // its schemas only from the process-wide OpenAPI registry, so the refs resolve only because
 // RegisterAll registered the component manager's spec there; importing the package registers
-// nothing (design D5, option (a); sweep C9). The message logger is composed too, so its
-// MessageLogEntry ref resolves only if RegisterAll registered its spec (PR 4 design D4, M15).
+// nothing. The message logger is composed too, so its MessageLogEntry ref resolves only if
+// RegisterAll registered its spec.
 //
 // spec: operator-surface / The component manager's routes are served under /components
 func TestOpenAPIDocumentResolvesEverySchemaRef(t *testing.T) {
@@ -178,7 +174,7 @@ func TestOpenAPIDocumentResolvesEverySchemaRef(t *testing.T) {
 	deps.PayloadRegistry = payloadregistry.New()
 	manager := createTestServiceManager(ManagerConfig{}, deps)
 	require.NoError(t, RegisterAll(manager.registry))
-	// The message logger, enabled with "*" over the empty component registry, needs no NATS (design D4).
+	// The message logger, enabled with "*" over the empty component registry, needs no NATS.
 	_, err := manager.CreateService("message-logger", json.RawMessage(`{"monitor_subjects":["*"]}`), deps)
 	require.NoError(t, err)
 	startTestManager(t, manager)

@@ -11,7 +11,7 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// The heartbeat's and the metrics forwarder's shared test helpers (design D6, U-a). Every
+// The heartbeat's and the metrics forwarder's shared test helpers. Every
 // service is built the one production way, through its registered constructor, so a test sees
 // only what the constructor composes.
 
@@ -19,7 +19,7 @@ import (
 // holding a component manager composing components (newTestComponentManager) under
 // component-manager, and the heartbeat constructed by that manager through CreateService from
 // config, a JSON HeartbeatConfig, with logger as Dependencies.Logger. The component manager is
-// not started; the heartbeat's Start looks it up and reads its health (design D2).
+// not started; the heartbeat's Start looks it up and reads its health.
 func newTestHeartbeat(
 	t *testing.T, config string, logger *slog.Logger, components ...testComponent,
 ) *HeartbeatService {

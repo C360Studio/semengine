@@ -14,10 +14,8 @@ import (
 	"github.com/c360studio/semengine/payloadregistry"
 )
 
-// The message logger's shared test helpers (design D7, U-a). The pin's createTestMessageLogger
-// (message_logger_test.go:76-96) dialled a fixed address and built the logger through the dropped
-// NewMessageLogger; here every logger is built the one production way, NewMessageLoggerService,
-// so a test sees only what the constructor composes.
+// The message logger's shared test helpers. Every logger is built the one production way,
+// NewMessageLoggerService, so a test sees only what the constructor composes.
 
 // newTestMessageLogger builds a message logger through NewMessageLoggerService from config, a JSON
 // MessageLoggerConfig, over client and logger, with a fresh component registry and payload
@@ -36,10 +34,10 @@ func newTestMessageLogger(t *testing.T, client *natsclient.Client, config string
 	return ml
 }
 
-// holdingHandler is a slog.Handler a test composes into the logger it builds (design D2's Stop
-// proofs, D4's watch overflow). It is enabled from Debug up, because the logger records each
-// stored message as a Debug "Message sample" record after storing it (pin message_logger.go:1001,
-// :1027), so a held record means its message is stored and its callback has not returned.
+// holdingHandler is a slog.Handler a test composes into the logger it builds (the Stop proofs, the
+// watch overflow). It is enabled from Debug up, because the logger records each stored message as a
+// Debug "Message sample" record after storing it, so a held record means its message is stored and
+// its callback has not returned.
 //
 // It holds the first record whose message is hold until release is called, closing held when that
 // record arrives; an empty hold holds nothing. arrived(msg) returns a channel closed once a record

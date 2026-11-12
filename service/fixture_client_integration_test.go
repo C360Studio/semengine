@@ -15,7 +15,7 @@ import (
 )
 
 // shared is this package's NATS server. It starts at the first reset; TestMain removes it after
-// the tests. It replaces the pin's main_test.go NewSharedTestClient (#195; design D6).
+// the tests.
 var shared natsfixture.Shared
 
 // TestMain runs the tests, or, in a child process TestIntegration_ConfigBootActivationRequiresProcessRestart

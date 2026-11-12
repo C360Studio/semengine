@@ -21,16 +21,15 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// The metrics forwarder against the package's shared NATS server (design D2, D4, D6 U-e; the pin's
-// concurrent gather, metrics_forwarder_test.go:641-696, now over the real wire under -race). Every
-// sample is read back from a METRICS stream over metrics.> through a consumer, as an operator's
-// reader would. The 1 s push interval of the start-context test is a real-clock window, and every
-// wait in this file is bounded by forwardedSampleWait (design § Harness rules).
+// The metrics forwarder against the package's shared NATS server, its concurrent gather over the
+// real wire under -race. Every sample is read back from a METRICS stream over metrics.> through a
+// consumer, as an operator's reader would. The 1 s push interval of the start-context test is a
+// real-clock window, and every wait in this file is bounded by forwardedSampleWait.
 
 // forwardedSampleWait bounds every wait in this file for a sample or a count to appear.
 const forwardedSampleWait = 30 * time.Second
 
-// forwardedSample is one published sample decoded by the wire names design D4 lists, not by the
+// forwardedSample is one published sample decoded by the documented wire names, not by the
 // forwarder's own type, so a renamed or dropped field fails here.
 type forwardedSample struct {
 	Timestamp int64             `json:"timestamp"`
@@ -41,7 +40,7 @@ type forwardedSample struct {
 	Labels    map[string]string `json:"labels"`
 }
 
-// forwardedWireNames are the keys design D4 names, the whole set of a sample's object.
+// forwardedWireNames are the documented keys, the whole set of a sample's object.
 var forwardedWireNames = []string{"component", "labels", "name", "timestamp", "type", "value"}
 
 // metricsStream creates the METRICS stream over metrics.> on the client's server, the stream the
@@ -58,9 +57,9 @@ func metricsStream(t *testing.T, js jetstream.JetStream) jetstream.Stream {
 }
 
 // awaitForwardedSample reads subject from the start of stream through an ordered consumer until a
-// sample satisfies until, and returns it. Every message's object must carry exactly D4's keys. It
-// fails the test, naming what it waited for and the last sample read, when forwardedSampleWait
-// passes first.
+// sample satisfies until, and returns it. Every message's object must carry exactly
+// forwardedWireNames. It fails the test, naming what it waited for and the last sample read, when
+// forwardedSampleWait passes first.
 func awaitForwardedSample(
 	t *testing.T, stream jetstream.Stream, subject, what string, until func(forwardedSample) bool,
 ) forwardedSample {
@@ -137,8 +136,7 @@ func startMetricsForwarder(t *testing.T, ctx context.Context, mf *MetricsForward
 
 // TestMetricsForwarderPublishesEachSample checks that the forwarder's first round, run at Start,
 // publishes every sample of a family on metrics.<component>.<name> with the component label, and
-// a sample with no component label on metrics.system.<name>, each with its type, value and labels
-// (design D4; pin mf:340-387).
+// a sample with no component label on metrics.system.<name>, each with its type, value and labels.
 func TestMetricsForwarderPublishesEachSample(t *testing.T) {
 	client := fixtureClient(t)
 	js, err := client.JetStream()
@@ -191,8 +189,8 @@ func TestMetricsForwarderPublishesEachSample(t *testing.T) {
 
 // TestMetricsForwarderCountsAnUnencodableSample checks that a sample JSON cannot carry (a NaN
 // gauge) is counted on semengine_errors_total{service="metrics-forwarder",type="metrics_publish"}
-// and never published, and that the round goes on to publish the samples after it (design D4,
-// S8). The gauge's family sorts before the counter's, so a round that stopped at the failure
+// and never published, and that the round goes on to publish the samples after it.
+// The gauge's family sorts before the counter's, so a round that stopped at the failure
 // would never publish the counter; the 1 h interval keeps the test to the one round Start runs.
 func TestMetricsForwarderCountsAnUnencodableSample(t *testing.T) {
 	client := fixtureClient(t)
@@ -221,9 +219,8 @@ func TestMetricsForwarderCountsAnUnencodableSample(t *testing.T) {
 
 // TestMetricsForwarderKeepsPublishingAfterStartContextEnds checks that ending the context Start
 // was given, after Start returned, stops nothing: rounds go on at the 1 s interval and carry the
-// counter's later value (design D2; probe sweep.md § 3, H6, where the pin stops). The counter is
-// raised from ten goroutines while rounds gather and publish, the pin's concurrent gather
-// (metrics_forwarder_test.go:641-696) under -race over the real wire.
+// counter's later value. The counter is raised from ten goroutines while rounds gather and
+// publish, a concurrent gather under -race over the real wire.
 func TestMetricsForwarderKeepsPublishingAfterStartContextEnds(t *testing.T) {
 	client := fixtureClient(t)
 	js, err := client.JetStream()

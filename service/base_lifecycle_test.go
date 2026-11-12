@@ -66,10 +66,8 @@ func TestBaseServiceStopBeforeStartRejectsSameInstanceStart(t *testing.T) {
 	require.ErrorIs(t, s.Start(t.Context()), errs.ErrAlreadyStarted)
 }
 
-// TestStartContextEndingKeepsHealthChecksRunning replaces the pin's
-// TestBaseServiceParentCancellationConvergesAndJoins and TestService_ContextCancellation, which
-// asserted the pin's abort (design D2, ADR-113): ending Start's context after Start returned stops
-// nothing.
+// TestStartContextEndingKeepsHealthChecksRunning: ending Start's context after Start returned
+// stops nothing (ADR-113).
 //
 // spec: service-lifecycle / BaseService's Start bounds Start and Stop is the only stop
 func TestStartContextEndingKeepsHealthChecksRunning(t *testing.T) {
@@ -99,7 +97,7 @@ func TestStartContextEndingKeepsHealthChecksRunning(t *testing.T) {
 }
 
 // TestStopWithAnEndedContextStopsNothing: a Stop given a context that has already ended returns
-// that context's error and stops nothing (design D2; the guard's reading).
+// that context's error and stops nothing.
 //
 // spec: service-lifecycle / BaseService's Start bounds Start and Stop is the only stop
 func TestStopWithAnEndedContextStopsNothing(t *testing.T) {
@@ -127,10 +125,9 @@ func TestStopWithAnEndedContextStopsNothing(t *testing.T) {
 	})
 }
 
-// TestRepeatedStopWaitsForABlockedHealthCheck replaces the pin's
-// TestBaseServiceStopIsOneShotAfterFailedJoin, which asserted that a later Stop returns nil at once
-// without waiting (design D2). Here a Stop whose context ends while it waits returns that error,
-// and a later Stop waits again for the blocked check.
+// TestRepeatedStopWaitsForABlockedHealthCheck: a Stop whose context ends while it waits returns
+// that error, and a later Stop waits again for the blocked check rather than returning nil at
+// once.
 //
 // spec: service-lifecycle / BaseService's Start bounds Start and Stop is the only stop
 func TestRepeatedStopWaitsForABlockedHealthCheck(t *testing.T) {
@@ -207,13 +204,13 @@ func TestRepeatedStopWaitsForABlockedHealthCheck(t *testing.T) {
 }
 
 // baseServiceOwner adapts BaseService to the lifecycle suite (lifecycle-suite, "Observe adapter
-// contract"; design D2). A started BaseService holds one thing, its health goroutine, which Stop
+// contract"). A started BaseService holds one thing, its health goroutine, which Stop
 // waits on through the healthDone channel; Observe lists "health-loop" while that channel is open.
-// Nothing is added to BaseService for this adapter (#186, #190).
+// Nothing is added to BaseService for this adapter: production code carries no test-only hook.
 //
 // Calls is empty: BaseService makes no external call, and the suite's no-op checks compare Calls
 // before and after a call, so a count of the adapter's own Start and Stop calls would fail them by
-// construction (config design D2's reason).
+// construction.
 type baseServiceOwner struct {
 	s *BaseService
 }
@@ -242,8 +239,8 @@ func isClosed(done <-chan struct{}) bool {
 	}
 }
 
-// TestBaseServicePassesTheLifecycleSuite runs the lifecycle suite on BaseService (ADR-113; design
-// D2). The must-fail owner is a BaseService stopped before Start, whose Start is refused. The
+// TestBaseServicePassesTheLifecycleSuite runs the lifecycle suite on BaseService (ADR-113). The
+// must-fail owner is a BaseService stopped before Start, whose Start is refused. The
 // service is one-shot: no restart is promised.
 //
 // spec: service-lifecycle / BaseService's Start bounds Start and Stop is the only stop

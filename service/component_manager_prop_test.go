@@ -16,13 +16,13 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Model-based test of the component manager's Start and Stop (design § Generated checks, "Start
-// and Stop histories"). A rapid state machine composes up to four components, providers and
-// consumers, each scripted to fail its Start or not and to fail its next zero to two Stop calls,
-// and draws Start, Stop with a live context, Stop with an ended context, and clearing the armed
-// Stop failures. Every action is checked against a test-owned reference model filled from design D2
-// and D4, never from the manager's code: which components each Start and Stop calls, in what
-// order, what each returns, each component's state and last error, and the manager's health.
+// Model-based test of the component manager's Start and Stop histories. A rapid state machine
+// composes up to four components, providers and consumers, each scripted to fail its Start or not
+// and to fail its next zero to two Stop calls, and draws Start, Stop with a live context, Stop with
+// an ended context, and clearing the armed Stop failures. Every action is checked against a
+// test-owned reference model filled from the stated Start, Stop and health contract, never from the
+// manager's code: which components each Start and Stop calls, in what order, what each returns,
+// each component's state and last error, and the manager's health.
 
 // cmPropNames is the pool component names are drawn from, in name order. A component's role is
 // drawn apart from its name, so a consumer often sorts before a provider and the launch order
@@ -63,8 +63,8 @@ func (s *cmPropStopScript) clear() {
 	s.queue = nil
 }
 
-// cmPropModel is the reference model of one composed component: what D2 and D4 say the manager
-// has done to it so far.
+// cmPropModel is the reference model of one composed component: what the stated contract says the
+// manager has done to it so far.
 type cmPropModel struct {
 	name       string
 	provider   bool
@@ -76,8 +76,7 @@ type cmPropModel struct {
 	lastErr    error
 }
 
-// TestPropComponentManagerStopHistory checks every history against the model (design § Generated
-// checks; D2; D4, #360):
+// TestPropComponentManagerStopHistory checks every history against the model:
 //
 //   - The first Start starts every provider, then, only if no provider failed, every consumer. It
 //     returns nil exactly when no Start failed; otherwise its error carries each Start failure,
@@ -96,21 +95,20 @@ type cmPropModel struct {
 //   - The health check is unhealthy exactly when a component is failed, naming each failed
 //     component in name order, each carrying its last error; healthy otherwise.
 //
-// The model stays sequential (design § Generated checks); the concurrent reads are proven by
+// The model stays sequential; the concurrent reads are proven by
 // examples. What makes each assertion run: each branch has a named witness history that reaches
 // it, run through the same assertions before the generated run and failing if it misses its
-// branch (#500). The generated run then explores further: the first Start's outcome is drawn and
+// branch. The generated run then explores further: the first Start's outcome is drawn and
 // the composition built to reach it, and a quarter of the histories begin with a Stop before any
 // Start. How often random histories reach each branch is only logged, never asserted, so a run
-// with few checks (-rapid.checks) cannot fail on what it happened to draw. The run's seed and
-// completed checks are recorded in the notes when the test first runs (task 2.2).
+// with few checks (-rapid.checks) cannot fail on what it happened to draw.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 // spec: service-lifecycle / The component manager's health reads every component
 func TestPropComponentManagerStopHistory(t *testing.T) {
 	// One witness per branch: a history known to reach it, run through the same assertions before
 	// the generated run and failing if it misses its branch, so every assertion runs on every run
-	// whatever rapid draws (#500). Components are listed in name order.
+	// whatever rapid draws. Components are listed in name order.
 	witnesses := []struct {
 		branch  string
 		comps   []cmPropComponent
@@ -264,7 +262,7 @@ func newCMPropHistory(t *testing.T, tb rapid.TB, comps []cmPropComponent, reache
 			composed = append(composed, m.comp.testComponent())
 		}
 	}
-	// The launch order the design fixes: providers by name, then consumers by name.
+	// The launch order: providers by name, then consumers by name.
 	launchOrder := slices.Concat(providers, consumers)
 	reverseLaunch := slices.Clone(launchOrder)
 	slices.Reverse(reverseLaunch)
@@ -283,8 +281,8 @@ func newCMPropHistory(t *testing.T, tb rapid.TB, comps []cmPropComponent, reache
 	}, h.done
 }
 
-// cmPropHistory is one composition on a new manager and the model of what D2 and D4 say the
-// manager has done to it so far. Each method is one action of a history or a helper of one,
+// cmPropHistory is one composition on a new manager and the model of what the stated contract says
+// the manager has done to it so far. Each method is one action of a history or a helper of one,
 // failing tb when the manager departs from the model.
 type cmPropHistory struct {
 	t             *testing.T
@@ -316,7 +314,7 @@ func (h *cmPropHistory) done() {
 func (h *cmPropHistory) stopsSince(mark int) []string { return h.log.stopOrder()[mark:] }
 
 // nextStopFailures reads, from the scripts, the failure each component's next Stop returns.
-// It is read before the action: a failed Start's rollback runs inside Start (design D2), so
+// It is read before the action: a failed Start's rollback runs inside Start, so
 // by the time Start returns the rollback has already popped the queues.
 func (h *cmPropHistory) nextStopFailures() map[string]error {
 	next := map[string]error{}
@@ -487,7 +485,7 @@ func (h *cmPropHistory) stopLive() {
 }
 
 // The history never holds a Stop with an ended context before the first Start: whether it
-// uses the manager up is not stated (design D2), and the history starts before Repeat.
+// uses the manager up is not stated, and the history starts before Repeat.
 func (h *cmPropHistory) stopEnded() {
 	mark := len(h.log.stopOrder())
 	ctx, cancel := context.WithCancel(h.t.Context())

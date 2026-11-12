@@ -14,10 +14,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The component type catalog, from the pin's component_catalog_test.go. BuildComponentTypeCatalog
-// is framework API (design D1): a consumer adapter builds its own catalog from it, so the tests
-// call it as a product would. The pin's handler test built a struct-literal manager; here the
-// manager is built through NewComponentManager over the catalog's registry (design D7).
+// The component type catalog. BuildComponentTypeCatalog is framework API: a consumer adapter
+// builds its own catalog from it, so the tests call it as a product would. The handler test's
+// manager is built through NewComponentManager over the catalog's registry.
 
 // stubFactory is a factory no test calls: no catalog factory is named by a configuration.
 func stubFactory(json.RawMessage, component.Dependencies) (component.Discoverable, error) {
@@ -136,7 +135,7 @@ func TestBuildComponentTypeCatalog_EmptyRegistry(t *testing.T) {
 // TestHandleComponentTypes_DelegatesToBuilder confirms the HTTP handler encodes the same data
 // BuildComponentTypeCatalog returns for the manager's registry, which lists every registered
 // factory whether or not the configuration names it. Guards against the handler growing its own
-// copy of the shape: the pin compared entry counts; here the whole answer is compared.
+// copy of the shape: the whole answer is compared, not only the entry count.
 func TestHandleComponentTypes_DelegatesToBuilder(t *testing.T) {
 	t.Parallel()
 

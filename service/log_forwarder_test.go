@@ -87,11 +87,11 @@ func TestLogForwarderConstructionRefusals(t *testing.T) {
 	}
 }
 
-// TestLogForwarderSaysItForwardsNothing: after Start the service has
-// written exactly one record, at WARN, saying it forwards nothing and stating the configuration
-// it resolved; the accepted config rows and exclude_sources are read from that record. The oracle is the production
-// slog.NewJSONHandler at Debug, so a record at any level counts. The exclusion list is exactly
-// what was configured, normalised: nothing is added.
+// TestLogForwarderSaysItForwardsNothing: after Start the service has written exactly one record, at
+// WARN, saying it forwards nothing and stating the configuration it resolved; the accepted config
+// rows and exclude_sources are read from that record. The oracle is the production
+// slog.NewJSONHandler at Debug, so a record at any level counts. The exclusion list is exactly what
+// was configured, normalised: nothing is added.
 //
 // A refused Start writes no record: neither one under an ended context nor one after
 // Stop.
@@ -234,7 +234,8 @@ func (o *logForwarderOwner) Observe() lifecycletest.Observation {
 
 // TestLogForwarderPassesTheLifecycleSuite runs the lifecycle suite on the log forwarder built
 // through NewLogForwarderService (ADR-113). The must-fail owner is a log forwarder stopped before
-// Start, whose Start is refused (base_lifecycle_test.go's precedent). The service is one-shot: no restart is promised.
+// Start, whose Start is refused (base_lifecycle_test.go's precedent). The service is one-shot: no
+// restart is promised.
 //
 // spec: service-lifecycle / The log forwarder's Start bounds Start and Stop is the only stop
 func TestLogForwarderPassesTheLifecycleSuite(t *testing.T) {

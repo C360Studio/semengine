@@ -55,9 +55,9 @@ func samplesNamed(t *testing.T, samples []metricSample, name string) metricSampl
 	return found[0]
 }
 
-// TestMetricSamplesMapsWhatTheRegistryGathers: a counter, a gauge and a histogram registered on a metrics registry and gathered the way the
-// forwarder gathers, each mapped to one sample on metrics.system.<name>. The histogram's
-// value is its sample count (2), not its sum (0.75).
+// TestMetricSamplesMapsWhatTheRegistryGathers: a counter, a gauge and a histogram registered on a
+// metrics registry and gathered the way the forwarder gathers, each mapped to one sample on
+// metrics.system.<name>. The histogram's value is its sample count (2), not its sum (0.75).
 func TestMetricSamplesMapsWhatTheRegistryGathers(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	counter := prometheus.NewCounter(prometheus.CounterOpts{Name: "test_messages_total", Help: "Test counter"})
@@ -116,8 +116,8 @@ func TestMetricSamplesCarryThePayloadFields(t *testing.T) {
 	}, samplesNamed(t, metricSamples(families, false, false, samplesNow), "test_messages_total"))
 }
 
-// TestMetricSamplesSubjectNamesTheComponent: the subject is metrics.<component>.<name>, the component the
-// sample's component label, else system.
+// TestMetricSamplesSubjectNamesTheComponent: the subject is metrics.<component>.<name>, the
+// component the sample's component label, else system.
 func TestMetricSamplesSubjectNamesTheComponent(t *testing.T) {
 	tests := []struct {
 		name          string

@@ -358,9 +358,8 @@ func TestServeGraphTriples_ContentTypeJSON(t *testing.T) {
 
 // ---- message.Triple wire-shape round-trip ----
 
-// TestServeGraphTriples_ContextAndDatatypeRoundTrip verifies that Context and
-// Datatype — fields that TripleResponse formerly dropped — now survive the full
-// HTTP encode/decode cycle.
+// TestServeGraphTriples_ContextAndDatatypeRoundTrip verifies that a triple's
+// Context and Datatype survive the full HTTP encode/decode cycle.
 func TestServeGraphTriples_ContextAndDatatypeRoundTrip(t *testing.T) {
 	ts := fixedTime
 	triple := message.Triple{

@@ -45,11 +45,11 @@ func TestIsValidBucketName(t *testing.T) {
 	}
 }
 
-// TestIsValidWatchPattern: an empty pattern or "*" watches every key; any other pattern is a NATS KV wildcard filter
-// (natsclient.ValidateKVWildcardFilter: tokens split on '.', none empty, '*' only as a whole token,
-// '>' only as the whole final token, literal tokens from letters, digits, '-', '/', '_', '=').
-// The expected answers are written from that grammar, not computed by the validator.
-// A final '>' is accepted, '/' is a literal key character, and a space is refused.
+// TestIsValidWatchPattern: an empty pattern or "*" watches every key; any other pattern is a NATS
+// KV wildcard filter (natsclient.ValidateKVWildcardFilter: tokens split on '.', none empty, '*'
+// only as a whole token, '>' only as the whole final token, literal tokens from letters, digits,
+// '-', '/', '_', '='). The expected answers are written from that grammar, not computed by the
+// validator. A final '>' is accepted, '/' is a literal key character, and a space is refused.
 func TestIsValidWatchPattern(t *testing.T) {
 	tests := []struct {
 		name     string

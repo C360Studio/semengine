@@ -173,8 +173,8 @@ func TestMessageLoggerKeepsCapturingAfterStartContextEnds(t *testing.T) {
 // logger writes after storing it, so message 1's callback has not returned; message 2 is published
 // and flushed behind it, then Stop begins. Message 2 reaching the handler during the drain is
 // measured, not promised (200 of 200 runs at nats.go v1.54.0). A Stop that
-// unsubscribes instead of draining loses message 2. Ending the run context first no
-// longer drops it: the run context is no message's parent.
+// unsubscribes instead of draining loses message 2. Ending the run context first does
+// not drop it: the run context is no message's parent.
 func TestMessageLoggerStopDrainsInFlightMessage(t *testing.T) {
 	client := fixtureClient(t)
 	handler := newHoldingHandler(t, messageSample)
@@ -301,14 +301,15 @@ func TestMessageLoggerCapturesCoveredSubjectOnce(t *testing.T) {
 	require.Equal(t, int64(2), readSubscriptionStats(t, ml).TotalMessages)
 }
 
-// TestMessageLoggerRetriesSubscribeUntilConnected: a subscribe that fails is
-// retried and the degraded state clears, with no injected subscriber or retry clock. The logger starts on a client built for
-// the shared server's URL but not yet connected, so every subscribe fails with ErrNotConnected
-// (natsclient.Client.Subscribe), the state a NATS outage during boot leaves. Start returns nil;
-// /stats reports the subject unsubscribed and the logger's health check, run through the base
-// service's production path, turns it unhealthy. Once the client connects, the retry subscribes:
-// the degraded state clears, the logger is healthy again, and a message published then is stored.
-// A logger whose health check is not wired stays healthy through the outage and fails here.
+// TestMessageLoggerRetriesSubscribeUntilConnected: a subscribe that fails is retried and the
+// degraded state clears, with no injected subscriber or retry clock. The logger starts on a client
+// built for the shared server's URL but not yet connected, so every subscribe fails with
+// ErrNotConnected (natsclient.Client.Subscribe), the state a NATS outage during boot leaves. Start
+// returns nil; /stats reports the subject unsubscribed and the logger's health check, run through
+// the base service's production path, turns it unhealthy. Once the client connects, the retry
+// subscribes: the degraded state clears, the logger is healthy again, and a message published then
+// is stored. A logger whose health check is not wired stays healthy through the outage and fails
+// here.
 func TestMessageLoggerRetriesSubscribeUntilConnected(t *testing.T) {
 	url := shared.Reset(t)
 	client, err := natsclient.NewClient(url,

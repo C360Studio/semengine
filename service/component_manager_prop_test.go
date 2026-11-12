@@ -16,12 +16,13 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Model-based test of the component manager's Start and Stop histories. A rapid state machine composes up to four components, providers and
-// consumers, each scripted to fail its Start or not and to fail its next zero to two Stop calls,
-// and draws Start, Stop with a live context, Stop with an ended context, and clearing the armed
-// Stop failures. Every action is checked against a test-owned reference model filled from the
-// stated Start, Stop and health contract, never from the manager's code: which components each Start and Stop calls, in what
-// order, what each returns, each component's state and last error, and the manager's health.
+// Model-based test of the component manager's Start and Stop histories. A rapid state machine
+// composes up to four components, providers and consumers, each scripted to fail its Start or not
+// and to fail its next zero to two Stop calls, and draws Start, Stop with a live context, Stop with
+// an ended context, and clearing the armed Stop failures. Every action is checked against a
+// test-owned reference model filled from the stated Start, Stop and health contract, never from the
+// manager's code: which components each Start and Stop calls, in what order, what each returns,
+// each component's state and last error, and the manager's health.
 
 // cmPropNames is the pool component names are drawn from, in name order. A component's role is
 // drawn apart from its name, so a consumer often sorts before a provider and the launch order

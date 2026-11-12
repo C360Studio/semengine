@@ -10,10 +10,10 @@ import (
 	"github.com/c360studio/semengine/natsclient/storagereport"
 )
 
-// The tier ceiling's own series, named semengine_storage_*. They exist because the tier ceiling is the ONLY ceiling an unbounded
-// resource has: such a resource inherits the tier's pressure state, so without them an operator
-// could see that an archive is critical and have no way to see the number that made it critical,
-// or how long they have.
+// The tier ceiling's own series, named semengine_storage_*. They exist because the tier ceiling is
+// the ONLY ceiling an unbounded resource has: such a resource inherits the tier's pressure state,
+// so without them an operator could see that an archive is critical and have no way to see the
+// number that made it critical, or how long they have.
 
 func TestAccountTierMetrics_PublishTheCeilingsOwnCapacity(t *testing.T) {
 	metrics, registry := newTestStorageMetrics(t)

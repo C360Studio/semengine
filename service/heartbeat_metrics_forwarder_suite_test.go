@@ -59,9 +59,9 @@ func observeOneLoop(status Status, loopDone chan struct{}) lifecycletest.Observa
 	return lifecycletest.Observation{Unresolved: held}
 }
 
-// TestHeartbeatPassesTheLifecycleSuite runs the lifecycle suite on the heartbeat service
-// (ADR-113). Every heartbeat is built through newTestHeartbeat, a service manager holding a component manager, so
-// Start finds the component manager it needs. The must-fail owner is a heartbeat stopped before
+// TestHeartbeatPassesTheLifecycleSuite runs the lifecycle suite on the heartbeat service (ADR-113).
+// Every heartbeat is built through newTestHeartbeat, a service manager holding a component manager,
+// so Start finds the component manager it needs. The must-fail owner is a heartbeat stopped before
 // Start, whose Start is refused (base_lifecycle_test.go's precedent). The service is one-shot: no
 // restart is promised.
 //

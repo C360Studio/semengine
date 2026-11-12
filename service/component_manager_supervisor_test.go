@@ -122,8 +122,8 @@ func (b *blockingHealthComponent) Health() component.HealthStatus {
 
 // TestComponentManagerFailedStartLaunchesNoPublisher: a Start that fails, here because a
 // component's Start fails, leaves no supervisor behind: no health was published, and the done
-// channel is nil or closed. The bubble would also fail the test if any goroutine the Start launched were left
-// running.
+// channel is nil or closed. The bubble would also fail the test if any goroutine the Start launched
+// were left running.
 //
 // spec: service-lifecycle / Component health is published and its drops counted
 func TestComponentManagerFailedStartLaunchesNoPublisher(t *testing.T) {

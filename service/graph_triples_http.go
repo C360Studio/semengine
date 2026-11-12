@@ -214,7 +214,7 @@ func scanGraphTriples(
 	if err != nil {
 		return nil, fmt.Errorf("list entity keys: %w", err)
 	}
-	// The listing is in delivery order and can repeat a key.
+	// The listing is not promised to be sorted or free of repeats: sort and remove repeats.
 	slices.Sort(keys)
 	keys = slices.Compact(keys)
 

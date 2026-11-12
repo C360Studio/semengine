@@ -385,11 +385,9 @@
 // entity.
 //
 // It is report-only. It rejects no write, throttles no component, fails no
-// readiness or health check and applies no retention because of pressure;
-// capacity admission waits until four conditions hold (the report runs in production, the projection is checked
-// against outcome on at least three real resources, no critical state clears
-// without an operator, and the rejection path classifies transient and NAKs),
-// and a consumer that wants backpressure reads the report and decides itself.
+// readiness or health check and applies no retention because of pressure. The
+// service does no capacity admission: a consumer that wants backpressure reads
+// the report and decides for itself.
 //
 // It is off unless the configuration enables it: ResolveServiceConfigs does not
 // add it. RegisterAll registers its constructor, NewStorageObservabilityService,

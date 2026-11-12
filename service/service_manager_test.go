@@ -87,10 +87,11 @@ func createTestServiceManager(config ManagerConfig, deps *Dependencies) *Manager
 	return m
 }
 
-// observedManagerHTTPURL returns the URL of a manager's bound main listener. The listener field is set from the bind until it is released.
-// It dials the address the listener reports, never a hand-built 127.0.0.1: the manager binds every
-// address, and on macOS another socket may bind 127.0.0.1 on the same port and take those
-// connections. Dialing the unspecified address reaches the local system (net.Dial).
+// observedManagerHTTPURL returns the URL of a manager's bound main listener. The listener field is
+// set from the bind until it is released. It dials the address the listener reports, never a
+// hand-built 127.0.0.1: the manager binds every address, and on macOS another socket may bind
+// 127.0.0.1 on the same port and take those connections. Dialing the unspecified address reaches
+// the local system (net.Dial).
 func observedManagerHTTPURL(t *testing.T, manager *Manager) string {
 	t.Helper()
 	manager.mu.RLock()
@@ -922,11 +923,11 @@ func TestSystemHealthReportsNATSDisconnected(t *testing.T) {
 }
 
 // managerOwner adapts the Manager to the lifecycle suite (lifecycle-suite, "Observe adapter
-// contract"). A started manager holds its main listener, its health publisher, the
-// metrics server it claimed from the metrics service, and its services; the child BaseService
-// stands for those, through its health goroutine. Observe reads the manager's handles under its
-// lock and adds nothing to the Manager: production code carries no test-only hook. Calls is empty for BaseService's reason
-// (base_lifecycle_test.go).
+// contract"). A started manager holds its main listener, its health publisher, the metrics server
+// it claimed from the metrics service, and its services; the child BaseService stands for those,
+// through its health goroutine. Observe reads the manager's handles under its lock and adds nothing
+// to the Manager: production code carries no test-only hook. Calls is empty for BaseService's
+// reason (base_lifecycle_test.go).
 type managerOwner struct {
 	m     *Manager
 	child *BaseService

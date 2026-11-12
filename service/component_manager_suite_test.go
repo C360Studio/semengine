@@ -20,8 +20,8 @@ var errSuiteComponentStart = errors.New("suite component Start failed")
 // suiteComponent is a lifecycle component written to the lifecycle contract
 // (component.LifecycleComponent; ADR-113): its Start launches work under a run context of its own,
 // which outlives Start's context, and its Stop ends that context and waits for the work to return.
-// Its lifecycle state is a lifecycleguard.Guard, as a production component's is. A suiteComponent with
-// startErr set fails its Start before launching anything.
+// Its lifecycle state is a lifecycleguard.Guard, as a production component's is. A suiteComponent
+// with startErr set fails its Start before launching anything.
 type suiteComponent struct {
 	baseDiscoverable
 	name     string

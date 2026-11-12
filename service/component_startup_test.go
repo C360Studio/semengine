@@ -170,9 +170,9 @@ func TestComponentStartupGatesReadiness(t *testing.T) {
 // TestConfigureRefusesACompositionWithoutAComponentManager: a registry offering metrics but no
 // component-manager constructor (a composition that registers its services by hand instead of
 // calling RegisterAll) cannot compose the mandatory component-manager, so ConfigureFromServices
-// refuses naming the missing constructor and StartAll refuses likewise, binding nothing. With a component-manager constructor
-// registered, here one returning a stand-in component manager, the default composition holds
-// component-manager and metrics.
+// refuses naming the missing constructor and StartAll refuses likewise, binding nothing. With a
+// component-manager constructor registered, here one returning a stand-in component manager, the
+// default composition holds component-manager and metrics.
 //
 // spec: service-lifecycle / Every composition has a component manager
 func TestConfigureRefusesACompositionWithoutAComponentManager(t *testing.T) {
@@ -218,8 +218,8 @@ func TestConfigureRefusesACompositionWithoutAComponentManager(t *testing.T) {
 }
 
 // TestManagerLogsThroughTheInjectedLogger: the manager logs through deps.Logger, which
-// ConfigureFromServices sets, and never through slog's default logger. It replaces the process-wide default logger, so it must not run in
-// parallel with another test.
+// ConfigureFromServices sets, and never through slog's default logger. It replaces the process-wide
+// default logger, so it must not run in parallel with another test.
 func TestManagerLogsThroughTheInjectedLogger(t *testing.T) {
 	fallback := &recordingHandler{}
 	previous := slog.Default()

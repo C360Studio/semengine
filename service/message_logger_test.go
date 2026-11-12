@@ -56,8 +56,8 @@ func TestMessageLoggerConstructionRefusals(t *testing.T) {
 			deps: func() *Dependencies { d := deps(); d.ComponentRegistry = nil; return d },
 		},
 		{
-			// An empty monitor_subjects means ["*"] (the constructor is the one home for defaults), so it needs the
-			// component registry too.
+			// An empty monitor_subjects means ["*"] (the constructor is the one home for defaults),
+			// so it needs the component registry too.
 			name: "default subjects without a component registry", config: `{}`, want: "component registry",
 			deps: func() *Dependencies { d := deps(); d.ComponentRegistry = nil; return d },
 		},
@@ -223,8 +223,8 @@ func TestPropCoveredSubjectsSubscribedOnce(t *testing.T) {
 	}
 }
 
-// checkCoveredSubjects asserts the cover-reduction law on one subject list, folded into a set, and counts in
-// reached the cases the assertions ran on.
+// checkCoveredSubjects asserts the cover-reduction law on one subject list, folded into a set, and
+// counts in reached the cases the assertions ran on.
 func checkCoveredSubjects(t rapid.TB, drawn []string, reached map[string]int) {
 	desired := make(map[string]struct{}, len(drawn))
 	for _, s := range drawn {
@@ -321,8 +321,8 @@ func checkCoveredSubjects(t rapid.TB, drawn []string, reached map[string]int) {
 	}
 }
 
-// drawValidSubject draws one to three tokens from {a, b, *}, the last possibly >: valid under the subject
-// grammar by construction.
+// drawValidSubject draws one to three tokens from {a, b, *}, the last possibly >: valid under the
+// subject grammar by construction.
 func drawValidSubject(rt *rapid.T) string {
 	n := rapid.IntRange(1, 3).Draw(rt, "tokens")
 	tokens := make([]string, n)

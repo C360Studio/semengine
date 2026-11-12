@@ -61,8 +61,9 @@ func (o *messageLoggerOwner) Observe() lifecycletest.Observation {
 
 // TestMessageLoggerPassesTheLifecycleSuite runs the lifecycle suite on the message logger
 // (ADR-113). Every logger is built through NewMessageLoggerService over one fixture client, shared
-// because each fixtureClient call resets the shared server. The must-fail owner is a logger
-// stopped before Start, whose Start is refused (base_lifecycle_test.go's precedent). The logger is one-shot: no restart is promised.
+// because each fixtureClient call resets the shared server. The must-fail owner is a logger stopped
+// before Start, whose Start is refused (base_lifecycle_test.go's precedent). The logger is
+// one-shot: no restart is promised.
 //
 // spec: service-lifecycle / The message logger's Start bounds Start and Stop is the only stop
 func TestMessageLoggerPassesTheLifecycleSuite(t *testing.T) {
@@ -100,8 +101,8 @@ func TestMessageLoggerPassesTheLifecycleSuite(t *testing.T) {
 	})
 }
 
-// TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing checks Start's final context check: with
-// one subject, the Start context is cancelled while the logger writes that subject's Debug
+// TestMessageLoggerStartFailsWhenItsContextEndsAfterSubscribing checks Start's final context check:
+// with one subject, the Start context is cancelled while the logger writes that subject's Debug
 // "Subscribed to subject" record, which it writes after its last subscribe has succeeded and been
 // recorded. Start then returns an error matching context.Canceled, writes no "MessageLogger
 // started" record, and holds nothing; a later Stop returns nil (ADR-113: if ctx ends before Start

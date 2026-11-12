@@ -22,9 +22,9 @@ import (
 )
 
 // The metrics forwarder against the package's shared NATS server, its concurrent gather over the
-// real wire under -race. Every sample is read back from a METRICS stream over metrics.> through a consumer, as an operator's
-// reader would. The 1 s push interval of the start-context test is a real-clock window, and every
-// wait in this file is bounded by forwardedSampleWait.
+// real wire under -race. Every sample is read back from a METRICS stream over metrics.> through a
+// consumer, as an operator's reader would. The 1 s push interval of the start-context test is a
+// real-clock window, and every wait in this file is bounded by forwardedSampleWait.
 
 // forwardedSampleWait bounds every wait in this file for a sample or a count to appear.
 const forwardedSampleWait = 30 * time.Second
@@ -57,9 +57,9 @@ func metricsStream(t *testing.T, js jetstream.JetStream) jetstream.Stream {
 }
 
 // awaitForwardedSample reads subject from the start of stream through an ordered consumer until a
-// sample satisfies until, and returns it. Every message's object must carry exactly forwardedWireNames. It
-// fails the test, naming what it waited for and the last sample read, when forwardedSampleWait
-// passes first.
+// sample satisfies until, and returns it. Every message's object must carry exactly
+// forwardedWireNames. It fails the test, naming what it waited for and the last sample read, when
+// forwardedSampleWait passes first.
 func awaitForwardedSample(
 	t *testing.T, stream jetstream.Stream, subject, what string, until func(forwardedSample) bool,
 ) forwardedSample {

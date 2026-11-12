@@ -237,8 +237,8 @@ func TestComponentStartContextIsTheManagersStartContext(t *testing.T) {
 
 // TestStopDuringStartWaitsForComponentStarts: a Stop that arrives while a component's Start is in
 // flight waits for every Start to return, ends no Start context, and then stops each component once
-// in reverse start order. The synctest bubble makes "Stop has not returned" exact: synctest.Wait returns
-// only once the Stop goroutine is blocked.
+// in reverse start order. The synctest bubble makes "Stop has not returned" exact: synctest.Wait
+// returns only once the Stop goroutine is blocked.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestStopDuringStartWaitsForComponentStarts(t *testing.T) {
@@ -390,8 +390,8 @@ func TestStopRetriesOnlyComponentsThatDidNotStop(t *testing.T) {
 }
 
 // TestComponentManagerCallsComponentStopBeforeRuntimeCancellation: the component's Stop runs while
-// its Start context is live, and the manager's Stop does not end that context afterwards. A repeated Stop calls nothing, and a Start after Stop
-// is refused.
+// its Start context is live, and the manager's Stop does not end that context afterwards. A
+// repeated Stop calls nothing, and a Start after Stop is refused.
 //
 // spec: service-lifecycle / The component manager's Start bounds Start
 func TestComponentManagerCallsComponentStopBeforeRuntimeCancellation(t *testing.T) {

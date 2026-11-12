@@ -181,8 +181,9 @@ func TestMetricsForwarderConstructionRefusals(t *testing.T) {
 
 // --- lifecycle edges ---------------------------------------------------------------------------
 
-// TestMetricsForwarderReportsItsStatus: the forwarder's status is recorded on the injected registry as semengine_service_status, stopped (0)
-// once built, running (2) after Start and stopped (0) again after Stop.
+// TestMetricsForwarderReportsItsStatus: the forwarder's status is recorded on the injected registry
+// as semengine_service_status, stopped (0) once built, running (2) after Start and stopped (0)
+// again after Stop.
 func TestMetricsForwarderReportsItsStatus(t *testing.T) {
 	mf, registry := newTestMetricsForwarder(t, newUnconnectedClient(t), `{}`, discardLogger)
 	labels := map[string]string{"service": "metrics-forwarder"}
@@ -201,9 +202,9 @@ func TestMetricsForwarderReportsItsStatus(t *testing.T) {
 // return until released.
 //
 // The two 200 ms windows are this file's only real-clock windows. The first Stop's deadline cannot
-// fail a correct service: the held loop keeps the join from finishing, so it can only end at the deadline. The second window
-// is an observation: a forwarder that forgets its loop after a failed Stop returns nil from the
-// second Stop at once; a correct one waits for the held loop.
+// fail a correct service: the held loop keeps the join from finishing, so it can only end at the
+// deadline. The second window is an observation: a forwarder that forgets its loop after a failed
+// Stop returns nil from the second Stop at once; a correct one waits for the held loop.
 //
 // spec: service-lifecycle / The forwarder's Start bounds Start; Stop is the only stop
 func TestMetricsForwarderFailedStopIsRetried(t *testing.T) {
@@ -248,7 +249,8 @@ func TestMetricsForwarderFailedStopIsRetried(t *testing.T) {
 // TestMetricsForwarderCadence: through the production constructor, with push_interval 100ms, the
 // probe counter's subject is attempted once at Start and once per tick. 350 ms of the bubble's
 // clock owe the ticks at 100, 200 and 300 ms, so the count is exactly four: a loop that never ticks
-// leaves one, one without its first round three, a faster one more. Rounds are counted as the probe subject's failed publishes, one per round.
+// leaves one, one without its first round three, a faster one more. Rounds are counted as the probe
+// subject's failed publishes, one per round.
 //
 // spec: service-lifecycle / The metrics forwarder publishes every sample and counts its drops
 func TestMetricsForwarderCadence(t *testing.T) {

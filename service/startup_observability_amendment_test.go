@@ -227,10 +227,11 @@ type stopTimeAnswers struct {
 }
 
 // TestHealthPublisherFailureNeverCommitsPreparedRoutes: when StartAll fails after preparing the
-// full route set and before committing it, no request is served by the prepared routes, even
-// while the rollback stops the services and the main listener still serves. The widgets service ends StartAll's context while its routes are prepared, so the publisher, started
-// under that context, or the commit is refused; services stop before the listeners, so the
-// rollback's Stop of widgets can request both routes.
+// full route set and before committing it, no request is served by the prepared routes, even while
+// the rollback stops the services and the main listener still serves. The widgets service ends
+// StartAll's context while its routes are prepared, so the publisher, started under that context,
+// or the commit is refused; services stop before the listeners, so the rollback's Stop of widgets
+// can request both routes.
 //
 // spec: operator-surface / The service manager serves only diagnostics until boot commits
 func TestHealthPublisherFailureNeverCommitsPreparedRoutes(t *testing.T) {

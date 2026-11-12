@@ -331,8 +331,8 @@ func TestComponentRoutesRespectEscapedMountPrefix(t *testing.T) {
 
 // TestFlowValidationHandlerProjectsLibraryResult: <components>/validate serves the result kept at
 // construction verbatim. A manager built through NewComponentManager keeps the library's own
-// analysis, so the test asserts the served body is that kept result and, independently, the finding the
-// composition library documents for a component with no connections.
+// analysis, so the test asserts the served body is that kept result and, independently, the finding
+// the composition library documents for a component with no connections.
 func TestFlowValidationHandlerProjectsLibraryResult(t *testing.T) {
 	cm := newTestComponentManager(t, testComponent{name: "alone", instance: &mockDiscoverableComponent{}})
 

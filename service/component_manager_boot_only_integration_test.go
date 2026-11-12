@@ -15,8 +15,9 @@ import (
 	"github.com/c360studio/semengine/types"
 )
 
-// The boot set is composed once (ADR-096): component and model-registry writes a running config.Manager applies after
-// NewComponentManager change neither the composed components nor what their factories received.
+// The boot set is composed once (ADR-096): component and model-registry writes a running
+// config.Manager applies after NewComponentManager change neither the composed components nor what
+// their factories received.
 
 // TestComponentManagerPostBootComponentAndModelWritesDoNotChangeRuntimeComposition: a component
 // manager built over a started config.Manager keeps the component instance and the configuration

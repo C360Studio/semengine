@@ -204,10 +204,9 @@ func TestEntriesSubjectFilterUsesNATSMatching(t *testing.T) {
 }
 
 // TestEntriesServeNonJSONPayload: a message whose bytes are not JSON is stored as a JSON string of
-// those bytes, so /entries and /trace still serve valid JSON with every entry, and the
-// string reads back as the bytes sent; a JSON payload is still served as itself. The trace ID rides in the
-// callback's context as natsclient.Client.Subscribe puts it there, read from the message's
-// headers.
+// those bytes, so /entries and /trace still serve valid JSON with every entry, and the string reads
+// back as the bytes sent; a JSON payload is still served as itself. The trace ID rides in the
+// callback's context as natsclient.Client.Subscribe puts it there, read from the message's headers.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestEntriesServeNonJSONPayload(t *testing.T) {
@@ -293,11 +292,12 @@ func TestStatsCountsOnlyTypedEnvelopesValid(t *testing.T) {
 	assert.Equal(t, 2, *stats.Invalid)
 }
 
-// TestMessageLoggerCountsAndLogsADroppedMessage: a message the subscription callback
-// is handed with a context that has ended is not stored and not counted in total_messages; /stats
-// reports it in dropped_messages, and one Warn record names its subject and the context's error.
-// natsclient ends a handler's context once its Close has begun (natsclient/consume_context_test.go); which messages arrive that
-// late is not promised, so the test hands the callback's body an ended context directly.
+// TestMessageLoggerCountsAndLogsADroppedMessage: a message the subscription callback is handed with
+// a context that has ended is not stored and not counted in total_messages; /stats reports it in
+// dropped_messages, and one Warn record names its subject and the context's error. natsclient ends
+// a handler's context once its Close has begun (natsclient/consume_context_test.go); which messages
+// arrive that late is not promised, so the test hands the callback's body an ended context
+// directly.
 //
 // spec: service-lifecycle / The message logger's Start bounds Start and Stop is the only stop
 // spec: operator-surface / The message logger's routes are served under /message-logger
@@ -452,8 +452,9 @@ func TestKVRoutesRejectMalformedBucket(t *testing.T) {
 	}
 }
 
-// TestRecordMatchesStatus pins the KV query's opt-in status filter: an empty filter matches every value, a non-empty
-// one only a JSON object whose top-level "status" string equals it, and a non-object never.
+// TestRecordMatchesStatus pins the KV query's opt-in status filter: an empty filter matches every
+// value, a non-empty one only a JSON object whose top-level "status" string equals it, and a
+// non-object never.
 //
 // spec: operator-surface / The message logger's routes are served under /message-logger
 func TestRecordMatchesStatus(t *testing.T) {

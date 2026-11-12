@@ -176,9 +176,10 @@ func scrape(ctx context.Context, addr string) error {
 	return nil
 }
 
-// TestMetricsStopRejectsConcurrentStop runs on the real server, with no fake provider. A scrape held in flight
-// keeps one Stop waiting for it; a second Stop made meanwhile is refused as transient, whichever
-// of the two entered first, and the waiting one returns nil once the scrape ends.
+// TestMetricsStopRejectsConcurrentStop runs on the real server, with no fake provider. A scrape
+// held in flight keeps one Stop waiting for it; a second Stop made meanwhile is refused as
+// transient, whichever of the two entered first, and the waiting one returns nil once the scrape
+// ends.
 //
 // spec: service-lifecycle / The metrics service serves on its own or through the manager
 func TestMetricsStopRejectsConcurrentStop(t *testing.T) {

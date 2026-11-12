@@ -16,8 +16,9 @@ import (
 )
 
 // The component manager's tests against a live NATS server. They are in package service so they
-// reach the package's shared server through fixtureClient. Construction builds the composition,
-// and what the tests read is what the constructor, Start and Stop report. The helpers that build a manager over a started config.Manager are the boot findings tests'
+// reach the package's shared server through fixtureClient. Construction builds the composition, and
+// what the tests read is what the constructor, Start and Stop report. The helpers that build a
+// manager over a started config.Manager are the boot findings tests'
 // (component_manager_boot_findings_integration_test.go).
 
 // TestNewComponentManagerCreatesEnabledComponents: NewComponentManager builds every enabled

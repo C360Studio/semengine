@@ -34,9 +34,10 @@ func newTestMessageLogger(t *testing.T, client *natsclient.Client, config string
 	return ml
 }
 
-// holdingHandler is a slog.Handler a test composes into the logger it builds (the Stop
-// proofs, the watch overflow). It is enabled from Debug up, because the logger records each
-// stored message as a Debug "Message sample" record after storing it, so a held record means its message is stored and its callback has not returned.
+// holdingHandler is a slog.Handler a test composes into the logger it builds (the Stop proofs, the
+// watch overflow). It is enabled from Debug up, because the logger records each stored message as a
+// Debug "Message sample" record after storing it, so a held record means its message is stored and
+// its callback has not returned.
 //
 // It holds the first record whose message is hold until release is called, closing held when that
 // record arrives; an empty hold holds nothing. arrived(msg) returns a channel closed once a record

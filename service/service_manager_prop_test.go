@@ -54,7 +54,8 @@ func (s *propStopService) Stop(ctx context.Context) error {
 }
 
 // TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean is a promoted rapid counterexample,
-// with StartAll first: a failed pass is retried whole in reverse registration order, and errs.ErrAlreadyStopped on the retry is clean.
+// with StartAll first: a failed pass is retried whole in reverse registration order, and
+// errs.ErrAlreadyStopped on the retry is clean.
 //
 // spec: service-lifecycle / StopAll counts a service already stopped as stopped
 func TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean(t *testing.T) {
@@ -97,14 +98,15 @@ func TestStopAllRetryAfterFailedPassTreatsAlreadyStoppedAsClean(t *testing.T) {
 	}
 }
 
-// TestPropStopAllShutdownContract checks every history against the model: a StopAll after StartAll, or after a failed pass, visits every service once in exact
-// reverse registration order and hands each the pass's context; it returns nil exactly when no
-// armed failure fired, a nil or errs.ErrAlreadyStopped repeat counting as clean; after a nil pass a
-// later StopAll visits nothing and returns nil. A StopAll before StartAll visits nothing and returns
-// nil, and a StartAll after any StopAll, or a second StartAll, is refused with
-// errs.ErrAlreadyStarted. The arm action is a no-op when no service is left to fail. What makes each assertion run: "stopAll" reaches a visiting pass whenever
-// "startAll" precedes it, and a failing pass whenever "armStopFailure" drew a service first; both
-// orders are within rapid's default action count.
+// TestPropStopAllShutdownContract checks every history against the model: a StopAll after StartAll,
+// or after a failed pass, visits every service once in exact reverse registration order and hands
+// each the pass's context; it returns nil exactly when no armed failure fired, a nil or
+// errs.ErrAlreadyStopped repeat counting as clean; after a nil pass a later StopAll visits nothing
+// and returns nil. A StopAll before StartAll visits nothing and returns nil, and a StartAll after
+// any StopAll, or a second StartAll, is refused with errs.ErrAlreadyStarted. The arm action is a
+// no-op when no service is left to fail. What makes each assertion run: "stopAll" reaches a
+// visiting pass whenever "startAll" precedes it, and a failing pass whenever "armStopFailure" drew
+// a service first; both orders are within rapid's default action count.
 //
 // spec: service-lifecycle / StopAll counts a service already stopped as stopped
 func TestPropStopAllShutdownContract(t *testing.T) {

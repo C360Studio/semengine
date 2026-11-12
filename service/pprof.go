@@ -27,11 +27,12 @@ type PProfServer struct {
 // is a debug aid, never a boot gate.
 //
 // ADR-058: pprof is deliberately NOT a service.Service. Wrapping it in a
-// StartAll-managed Service would move the start from the composition root (before NATS) to StartAll (after NATS and all
-// wiring), losing the ability to profile a wedged or slow boot, the canonical
-// pprof use case. So it is a plain helper the composition root calls early. It
-// is not fire-and-forget: the composition root calls Shutdown on its exit path,
-// after its services have stopped (background-work spec).
+// StartAll-managed Service would move the start from the composition root
+// (before NATS) to StartAll (after NATS and all wiring), losing the ability to
+// profile a wedged or slow boot, the canonical pprof use case. So it is a plain
+// helper the composition root calls early. It is not fire-and-forget: the
+// composition root calls Shutdown on its exit path, after its services have
+// stopped (background-work spec).
 //
 // The pprof handlers are registered on http.DefaultServeMux by the CALLER's
 // `import _ "net/http/pprof"` blank import; this helper serves that mux (nil

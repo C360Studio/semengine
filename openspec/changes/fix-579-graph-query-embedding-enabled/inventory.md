@@ -63,7 +63,7 @@ unsupported NL verbs".
   nil-is-refused: `config.go:58`. Existing `*bool` config fields with default true: none
   (`git grep -n "\*bool" -- '*.go'` only finds schema types and a decode struct at `globalsearch.go:224`). The schema
   generator reads type and default from the tag (`component/schema_tags.go:675-680`, `case "bool"`), not from the Go
-  type, so `*bool` with `type:bool,default:true` generates `true`.
+  type, so a field with `type:bool,default:true` generates `true`.
 
 ## Adopter seam
 

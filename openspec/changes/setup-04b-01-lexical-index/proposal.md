@@ -1,6 +1,6 @@
 # Proposal: setup-04b-01-lexical-index
 
-Approved-by:
+Approved-by: cglusky (2026-11-12) <https://github.com/C360Studio/semengine/issues/10#issuecomment-6834866772> sha256:ce7d8464129b
 
 Track: `design`. Capability added: `lexical-search`.
 

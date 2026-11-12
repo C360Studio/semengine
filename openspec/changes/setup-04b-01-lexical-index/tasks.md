@@ -5,10 +5,9 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`): the package's surface, the tokenizer's rules,
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`): the package's surface, the tokenizer's rules,
   how a phrase is checked, the name weight, the scorecard's corpus and floor, and the four extension points the
   proposal names. Pre-owner design review passes; the owner fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
 
 ## 2. Code
 

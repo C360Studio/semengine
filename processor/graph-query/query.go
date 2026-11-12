@@ -38,11 +38,12 @@ func (c *Component) queryHandlers() map[string]queryHandler {
 	handlers := make(map[string]queryHandler, len(forwards))
 	for verb, downstream := range forwards {
 		subject := subjectOf(downstream.responder, downstream.name)
-		switch {
-		case subject == "":
-		case downstream.responder == graph.ResponderGraphEmbedding && !c.config.EmbeddingEnabled:
+		if subject == "" {
+			continue
+		}
+		if downstream.responder == graph.ResponderGraphEmbedding && !c.config.EmbeddingEnabled {
 			handlers[verb] = c.notEnabled(verb)
-		default:
+		} else {
 			handlers[verb] = c.forward(subject)
 		}
 	}

@@ -33,7 +33,7 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
 
 ## 4. Docs, ledger, archive
 
-- [ ] 4.1 `processor/graph-query/doc.go:27`, `processor/graph-query/README.md` (forward table note at :33-38, option
+- [x] 4.1 `processor/graph-query/doc.go:27`, `processor/graph-query/README.md` (forward table note at :33-38, option
   table at :307-310),
   `processor/graph-query/MIGRATION.md` (:125, :162-163), `pkg/fusion/README.md:124-126` and
   `pkg/fusion/MIGRATION.md:128-131` (the gap is closed; say how to close it),

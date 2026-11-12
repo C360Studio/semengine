@@ -18,8 +18,8 @@ returns within its context, and so does `Close` on a connection the client diall
 `TestCloseEndsAHeldWrite`).
 
 [ADR-112](../docs/adr/112-natsclient-contract.md) records what natsclient promises over nats.go, and the test or probe
-behind each promise. A probe is a program posted on PR #177 with its source, command, versions and output; ADR-112's
-Status names the comment that holds each one.
+behind each promise. A probe is a program with its source, command, versions and output; ADR-112's
+Status names where each one is recorded.
 
 This package is the foundation for all NATS communication in SemEngine, providing both core pub/sub
 functionality and advanced features like JetStream streams, consumers, and Key-Value stores. The client handles
@@ -276,9 +276,7 @@ collectors, so the two overwrite each other's gauges, and which client's value a
 configuration we know of runs two clients on one registry.
 
 At nats.go v1.55.0, a write the timeout ends partway closes the socket, and nats.go reconnects
-(`TestWriteTimeoutAndPingIntervalOptions`; probes P14 and P24r,
-[PR #492 comment](https://github.com/C360Studio/semengine/pull/492#issuecomment-6545759092); owner ruling,
-[comment 6545866336](https://github.com/C360Studio/semengine/pull/492#issuecomment-6545866336)). How soon the
+(`TestWriteTimeoutAndPingIntervalOptions`). How soon the
 connection carries messages again is not promised. `WithPingInterval` sets how soon nats.go finds a silent server
 when no write is held; while a write is held its check does not fire. Each option refuses a value that is not
 positive.

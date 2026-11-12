@@ -6,7 +6,7 @@ Shared domain types used across SemEngine to avoid circular dependencies.
 
 This package provides foundational types that multiple packages need to reference. By placing these types in a
 low-level package with minimal dependencies, we break circular import chains between higher-level packages like
-`config`, `component`, and `service` (`config` and `service` arrive with setup change 3).
+`config`, `component`, and `service`.
 
 ## Design Principles
 

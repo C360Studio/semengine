@@ -186,7 +186,7 @@ stored entity fails to decode (the poison inventory is empty), and the latest re
 every consumer it bound. While either of the last two fails, `Healthy` is false, `Status` is `degraded`, and
 `LastError` names each: a sample of the poisoned entities, or the consumers whose backlog could not be read. Both clear
 without a restart: a repair or a valid write clears the poison record, and the next tick that reads every backlog
-clears the other. A lost durable consumer reads unhealthy this way; graph-ingest does not bind a new one (#216).
+clears the other. A lost durable consumer reads unhealthy this way; graph-ingest does not bind a new one.
 
 A third stuck state does not clear. If a status tick, run while the component is running and before `Stop` begins,
 sees that a consume loop (the goroutine that pulls messages for one consumer) has ended, graph-ingest records the

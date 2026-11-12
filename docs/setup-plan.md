@@ -2,8 +2,7 @@
 
 Status: draft for discussion, 2026-09-30. This proposes the setup sequence; it does not authorize implementation.
 
-*Amended 2026-10-01 per #8 ([comment
-5932313950](https://github.com/C360Studio/semengine/issues/8#issuecomment-5932313950)): starter consumers and admission
+*Amended 2026-10-01: starter consumers and admission
 by mandate added below; tiers are capability levels and 04A–04C are slices.*
 
 SemSource is SemEngine's first consumer and the workload that should establish its value. The starter consumers are
@@ -69,7 +68,7 @@ approval.
 
 ## Earned design baseline
 
-*Amended 2026-10-01 per #8: the tier model below replaces the provisional slice labels and the open term question.*
+*Amended 2026-10-01: the tier model below replaces the provisional slice labels and the open term question.*
 
 Every tier runs the same graph model and contracts. A tier is a capability level with graceful fallback, and a tier
 boundary exists only where a dependency can be lost at runtime. A deployment runs at the highest tier whose providers
@@ -98,8 +97,7 @@ sister-repo files. SemEngine tier 0 maps to SemSource's `configs/tiers/tier0-sta
 `tier1-semantic.json`. SemSource's numbered examples use `bm25`/`http`/`http`; `tier2-semantic-instruct.json` leaves
 clustering off. `tier2-compose-dev.json` plus its opt-in dev overlay enables clustering and LLM; the shipped MVP uses
 semembed only. Generative answers/community enrichment require separate admission. New tiers preserve identity,
-authority, and graph correctness. The word is "tier"
-([#4](https://github.com/C360Studio/semengine/issues/4#issuecomment-5929716018)); the capability matrix, with each
+authority, and graph correctness. The word is "tier"; the capability matrix, with each
 behavior's tier and proving evidence, is in the SETUP 03B change
 (`openspec/changes/archive/2026-10-01-setup-03b-contract-boundary/design.md`).
 
@@ -118,7 +116,7 @@ Domain vocabularies and adapters stay consumer-owned; generic registration and e
 
 ### Capability and service qualification
 
-*Amended 2026-10-01 per #8: rows renumbered to the tier model.*
+*Amended 2026-10-01: rows renumbered to the tier model.*
 
 This service matrix preserves the shared graph and separates embedding from instruction/generation.
 
@@ -175,17 +173,17 @@ Before selecting the port set, map both families to current behavior at the pin,
 owner-approved shared contracts. Record keep, change, or defer with test implications. The `beta.161` baseline is
 evidence of current behavior, not a mandate for the future API.
 
-The [graph tool consolidation discussion][graph-tools] chiefly concerns the later SemTeams agentic surface. Its full
+The SemStreams discussion of consolidating graph tools chiefly concerns the later SemTeams agentic surface. Its full
 redesign is not an MVP dependency; only demonstrated shared-contract overlap blocks extraction. Keep agentic planning
 with that consumer. Toolchain, coordination, and isolated harness setup can proceed while this boundary is reviewed.
 
 ## Package admission heuristic
 
-*Amended 2026-10-01 per #8 (Q14): admission by owner mandate added beside consumer need.*
+*Amended 2026-10-01: admission by owner mandate added beside consumer need.*
 
 A capability is engine-owned when it belongs to either half of SemEngine (the live semantic knowledge graph, or
 durable execution) and runs at tier 0 without an external provider; it is admitted by owner mandate at a named tier
-with a named qualifying workload, and consumer need decides order, never membership (`AGENTS.md`; epic #8, Q14).
+with a named qualifying workload, and consumer need decides order, never membership (`AGENTS.md`).
 
 Review each consumer-visible slice and its retained dependency closure, not every package in SemStreams. Every
 retained package gets a short admission review. Go deeper for asynchronous work, persistence, wire formats, shared
@@ -210,13 +208,13 @@ and due milestone. Unproven guarantees hold admission until qualification passes
 Avoid opportunistic refactors. Changed behavior needs failing-first tests; unchanged extraction retains earned tests
 and adds only missing boundary evidence. Independent reviewer approval is required before each slice integrates.
 
-The pin is frozen (owner ruling, 2026-09-30). Repairs land in SemEngine behind failing-first tests and are not
+The pin is frozen. Repairs land in SemEngine behind failing-first tests and are not
 round-tripped through SemStreams. A SemStreams change made after the pin enters only as its own ledger row, with the
 source commit and a proving test. Nothing syncs automatically in either direction.
 
-SemStreams' lifecycle campaign is not finished: at the audit, [epic 1147][ss-1147] and issues 1145, 1411, 1415, 1417,
-and 1218–1220 were open. Whatever is still open against a port-set package at pin time becomes that package's
-repair-before-port row (owner ruling, 2026-09-30). SemStreams decides separately for its remaining surface.
+SemStreams' lifecycle campaign is not finished: at the audit, its lifecycle epic and several related issues were open.
+Whatever is still open against a port-set package at pin time becomes that package's repair-before-port row.
+SemStreams decides separately for its remaining surface.
 
 The context and lifecycle rules below bind new and changed code. Carried code is triaged in the ledger instead of
 being rewritten wholesale: the 46-package row has about 66 non-test `context.Background()` and `context.TODO()`
@@ -265,7 +263,7 @@ Prefer testcontainers for small Go integration fixtures and a scoped Compose pro
 Wait for authoritative readiness and expected state with deadlines. Avoid fixed sleeps and shared default ports.
 Start with conservative concurrency limits. Dynamic ports prevent collisions but do not prevent CPU or memory
 saturation; SemEngine bounds its own load with `go test -p` and one NATS server per package, and does not
-coordinate its use of a Docker daemon with another repository (#205, comment 6132580576).
+coordinate its use of a Docker daemon with another repository.
 
 Propagate cancellation to child processes. Capture exit status, logs, readiness failures, versions, and owned resource
 identities before cleanup on success, failure, cancellation, or partial startup. Never use broad Docker prune commands.
@@ -411,7 +409,7 @@ recorded. The architect approves the contract, port set, and critical package li
 
 ### SETUP 04 Sequential extraction and slice releases
 
-*Amended 2026-10-01 per #8: slices 04A–04C are named by tier; tier 0 is complete after 04B.*
+*Amended 2026-10-01: slices 04A–04C are named by tier; tier 0 is complete after 04B.*
 
 Owner: Go developer for extraction and consumer integration, independent Go reviewer for release evidence, architect
 for contract changes, technical writer for current docs and extraction ledger. Dependency: SETUP 03B sign-off.
@@ -419,7 +417,7 @@ for contract changes, technical writer for current docs and extraction ledger. D
 Port small slices using the admission heuristic, mapping each dependency closure to the contract and ledger.
 From Slice 04A change 3 on, the unit of a porting pull request, and how a dependency closure becomes a group of them
 under the Slice 04A milestone, are set by the architect contract, Extraction slices, "One package per pull request"
-(owner ruling 2026-10-09, epic #9 comment 6085243841).
+(owner ruling 2026-10-09).
 Shared contract planning may look ahead; do not port the next slice until the current slice passes its architect and
 independent reviewer gates. Record the exact qualified engine commit, SemSource SHA, configuration, and admitted tier.
 Keep the accepted lower tier deployable and retain every promised lower-tier regression suite at each stage,
@@ -486,7 +484,7 @@ Acknowledged-write durability needs an explicit decision. The source GRAPH trans
 an accepted publish alone must not be treated as proof that data survives broker restart. Specify what is acknowledged,
 where it is durable, and whether recovery depends on replay or re-ingestion, then test that promise.
 
-*Amended 2026-10-01 per #8: tiers renumbered.* Verification follows the admitted tier: deterministic graph and lexical
+*Amended 2026-10-01: tiers renumbered.* Verification follows the admitted tier: deterministic graph and lexical
 checks at tier 0 (slices 04A and 04B), and real embedding-provider qualification at tier 1 (slice 04C). Models do not
 block tier 0; optional generation is verified only where admitted, and becomes required evidence there. All promised
 lower-tier suites remain required. No benchmark targets or latency promises are assumed before measurement. Cover
@@ -497,16 +495,16 @@ healthy lag with freshness information from `Deferred`: no usable answer, rather
 
 ## Known risks and what to carry forward
 
-- SemSource's current smoke checks establish startup and route reachability, not complete semantic correctness.
-  The known-answer workload must supply the missing evidence.
-- SemStreams [RPC stream collision issue 1143][rpc-issue] is open. Reproduce it against the pin and assess
-  whether the retained request paths need the fix before treating it as a current SemEngine defect.
-- SemSource [issue 178][semsource-178] reports that beta.161 fails the OSH corpus tail against the GRAPH 256MiB
-  ceiling that beta.159/160 absorbed. The 03A baseline must record this and check whether the pin resolves it.
-- SemSource [physical deletion issue 210][delete-issue] is open. Physical removal differs from retained stale history;
-  require hard removal only if admitted by the consumer contract, and reproduce the relevant behavior.
-- Fusion risks include [truncation nondeterminism 621][fusion-truncation] and
-  [impact counts without names 603][fusion-impact]. Reproduce retained paths before carrying these as current defects.
+- SemSource's current smoke checks establish startup and route reachability, not complete semantic correctness. The
+  known-answer workload must supply the missing evidence.
+- SemStreams has an open RPC stream collision defect. Reproduce it against the pin and assess whether the retained
+  request paths need the fix before treating it as a current SemEngine defect.
+- SemSource reports that beta.161 fails the OSH corpus tail against the GRAPH 256MiB ceiling that beta.159/160 absorbed.
+  The 03A baseline must record this and check whether the pin resolves it.
+- SemSource has an open physical-deletion request. Physical removal differs from retained stale history; require hard
+  removal only if admitted by the consumer contract, and reproduce the relevant behavior.
+- Fusion risks include truncation nondeterminism and impact counts without names. Reproduce retained paths before
+  carrying these as current defects.
 
 Carry reproduced defects and scoped unresolved risks with compact evidence and source links.
 
@@ -516,15 +514,12 @@ Defer cloud infrastructure, Kubernetes, Terraform, fleet management, agentic run
 matrices, and extra domain skills or approval layers until the retained workload demonstrates a concrete need.
 Keep SemStreams as reference until the workload qualifies and remaining ownership resolves; defer SemTeams migration.
 
-Open owner ruling: how SemEngine relates to SemStreams [ADR-106][adr-106], which freezes the packages its sisters
+Open owner ruling: how SemEngine relates to SemStreams ADR-106, which freezes the packages its sisters
 import on the way to 1.0. Decide whether that freeze proceeds unchanged alongside SemEngine or whether extracted
 packages leave the frozen surface. The ruling is due with SETUP 03B approval.
 
-[ss-1147]: https://github.com/C360Studio/semstreams/issues/1147
-[semsource-178]: https://github.com/C360Studio/semsource/issues/178
 [sister-imports]:
   https://github.com/C360Studio/semstreams/blob/5457b3458936f668b71d2fea061f67f8d7d01e67/release/tier1-packages.txt
-[adr-106]: https://github.com/C360Studio/semstreams/tree/5457b3458936f668b71d2fea061f67f8d7d01e67/docs/adr
 [semstreams]: https://github.com/C360Studio/semstreams/tree/5457b3458936f668b71d2fea061f67f8d7d01e67
 [semsource]: https://github.com/C360Studio/semsource/tree/34bda6406fb06fd723a040988647b204204a1583
 [semconnect]: https://github.com/C360Studio/semconnect/tree/d0d06e00bf05a545f30ceea798db1c2b1ee47d4f
@@ -536,8 +531,3 @@ packages leave the frozen surface. The ruling is due with SETUP 03B approval.
 [go-security]: https://go.dev/doc/security/
 [go-context]: https://pkg.go.dev/context
 [compose-projects]: https://docs.docker.com/compose/how-tos/project-name/
-[rpc-issue]: https://github.com/C360Studio/semstreams/issues/1143
-[delete-issue]: https://github.com/C360Studio/semsource/issues/210
-[graph-tools]: https://github.com/C360Studio/semstreams/issues/1422
-[fusion-truncation]: https://github.com/C360Studio/semstreams/issues/621
-[fusion-impact]: https://github.com/C360Studio/semstreams/issues/603

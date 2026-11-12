@@ -10,11 +10,11 @@ How external graph sources (like semsource) send entities into a SemEngine knowl
 > **What exists in this repository today:** the identity half. `pkg/types` (the six-part ID, its validation, and
 > `ValidateEntityIDAuthority`), `message` (`Triple`) and `payloadregistry` are ported. The ingest path this page
 > describes is not yet ported: the `graph` package and its `Graphable` interface, graph-ingest, the WebSocket
-> input, flow configuration, and `config.Manager.Start`, which mints the platform suffix. Issue numbers (`#1095`) are SemStreams'.
+> input, flow configuration, and `config.Manager.Start`, which mints the platform suffix.
 >
 > The pin's text is kept apart from the product name (SemStreams becomes SemEngine), one link to a concept page
 > that is not ported, the path of the entity-ID contract (the pin's `openspec/specs/entity-id-contract/spec.md` is
-> `docs/specs/entity-id-contract.md` here, #72 ruling of 2026-10-03), and two passages corrected to what the pin's
+> `docs/specs/entity-id-contract.md` here), and two passages corrected to what the pin's
 > code does, each marked **Correction (SemEngine port)** with the pin line it supersedes.
 
 ## The Core Idea
@@ -46,7 +46,7 @@ every graph boundary today:
 org.platform.system.domain.type.instance
 ```
 
-The positions have meanings (ADR-102, #1095). `org.platform` is the **minting deployment authority** — the
+The positions have meanings (ADR-102). `org.platform` is the **minting deployment authority** — the
 composition root's `platform.org` / `platform.id` of the deployment that produced the entity. `system` is the
 **source** that produced it: a repository, feed, world, board, API, or framework component. `domain.type` is a
 delegated taxonomy. `instance` is the leaf.

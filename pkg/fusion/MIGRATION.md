@@ -3,7 +3,7 @@
 For the authors of SemSource's code-context component and its fusion lenses, who move from SemStreams' `pkg/fusion`
 to SemEngine's. It says what you change at your cutover and what you can leave alone. The port breaks old shapes where
 that gives a better result (owner, 2026-11-02). Nothing here was run against your code: it comes from reading the
-SemEngine package and the SemStreams pin `8b99efe9`. Your call sites at SemSource `8737c7ea` are
+SemEngine package and SemStreams. Your call sites at SemSource `8737c7ea` are
 `processor/code-context/component.go` (`NewEngine` with `WithSignals` and `WithMetrics`, `NewBodyResolver`,
 `MapStoreResolver`, `fusionnats.New`), `processor/code-context/exact_seed.go` (a `RetrievalClient` wrapper),
 `source/fusion/fusiontest/memgraph.go` (a `RetrievalClient`), and the test doubles in
@@ -44,7 +44,7 @@ Each of these is a compile error. Fix them first.
   `fusionnats.New(nats, timeout) *Client`, which accepted a nil client and bound a readiness watch on its first
   `Status` call. It is now `New(requester, timeout) (*Client, error)`: a nil requester and a negative timeout are
   refused. A zero timeout is passed to the requester, which for `*natsclient.Client` means its
-  `DefaultRequestTimeout` (5 s, the pin's own default). The client starts nothing and watches no key, so there is
+  `DefaultRequestTimeout` (5 s, SemStreams' own default). The client starts nothing and watches no key, so there is
   nothing to close. *Do:*
 
   ```go
@@ -75,7 +75,7 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **Four `defer_reason` values are gone: `hard_stop`, `status_unknown`, `bootstrap_incomplete`, `unrecognized_state`.**
   They came from the readiness gate. `defer_reason` is now empty, `index_not_ready` or `all_seeds_unhydrated`. Code
   that switches on the old values never matches; treat any non-empty value as "no answer yet, try again".
-- **A graph reset is an error, not a deferral.** At the pin a reset deferred as `hard_stop`. Now a fatal error such as
+- **A graph reset is an error, not a deferral.** In SemStreams a reset deferred as `hard_stop`. Now a fatal error such as
   `graph_state_reset_required` from `Resolve` or `Entities` is returned by `Fuse` as the error and no response. The
   same fatal error from a read after the seeds (relations, a relation target, paths, impact, graph) does not fail the
   call: that read is skipped and the answer is labelled `relations_truncated`, `paths_truncated`, `impact.truncated`
@@ -87,10 +87,10 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
   `unhydrated` with reason `error`, the other seeds answer, and if every seed is poisoned the response is `deferred`
   with `all_seeds_unhydrated`. A seed not found when read alone is listed `not_found`; any other error from those
   reads, including an ended context, still fails the call. A `prefix`
-  resolve whose page holds a poisoned entity still fails the call (#578). *Do:* read `unhydrated` on an
+  resolve whose page holds a poisoned entity still fails the call. *Do:* read `unhydrated` on an
   answered response, not only on a deferred one.
 - **A relations read that replies `index_not_ready` still defers the whole response**, nodes already built included, as
-  at the pin. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.
+  in SemStreams. Relation targets, paths, impact and graph reads do not: they are skipped and labelled.
 - **A node's refs are listed by predicate, then target.** Every edge list is sorted and de-duplicated before the cap
   of 12 per role, so the same graph gives the same refs whatever order the reply used. The pin kept reply order, so
   the 12 kept (and the order within a role) can change when a role has more than 12.
@@ -100,7 +100,7 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **New labels, all omitted when zero or false.** `unreadable_records` and `failed_records` on the response (only
   after a word search, `nl` resolve; omitted at 0 and never set for symbol or prefix resolves; they also ride on a
   miss and on a deferral that follows the search's answer); `relations_truncated` on a node; `paths_truncated` on the
-  response. Where the pin sent a short answer, a truncated flag may now be set; an answer whose search could not read
+  response. Where SemStreams sent a short answer, a truncated flag may now be set; an answer whose search could not read
   records is no longer the same as an answer that read them all. A path now ends, marked `truncated`, at the last node
   it could read and never names an unread node.
 - **`impact.truncated` and `graph.truncated` are set in more cases:** a skipped read for an affected node's file
@@ -109,7 +109,7 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 - **Two counters, on the injected registry only.**
   `semengine_fusion_skipped_reads_total{facet}` (`relations`, `paths`, `impact`, `graph`) is new, and each `Fuse` call
   logs one Warn line per facet that skipped a read (count and first error). The body counter is now
-  `semengine_fusion_body_hydration_failures_total{reason}`; the pin's was
+  `semengine_fusion_body_hydration_failures_total{reason}`; SemStreams' was
   `semstreams_fusion_body_hydration_failures_total`, and it fell back to Prometheus' default registerer when no
   registry was given. Now an engine built without `WithMetrics` has no counters at all, and two engines built on one
   registry share one series. A body failure also logs a Warn line.
@@ -125,9 +125,9 @@ Read these. Nothing fails to compile, and a consumer that reads the JSON can be 
 
 A deployment with no graph-embedding sets `"embedding_enabled": false` in graph-query's config. A word question
 (`nl` lens) is then refused invalid `not_enabled`, naming `semantic`, instead of a transient `internal` refusal a
-retrying caller would repeat without success (#579). Left at its default, true, the old refusal stays. Symbol and
+retrying caller would repeat without success. Left at its default, true, the old refusal stays. Symbol and
 prefix lenses answer either way.
 
 ## Still open
 
-- A `prefix` resolve whose page holds a poisoned entity fails the call (#578).
+- A `prefix` resolve whose page holds a poisoned entity fails the call.

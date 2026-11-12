@@ -117,7 +117,7 @@ The packages under `internal/harness/` are test-only; a contract test refuses an
   `prochost.Start(t, name)` re-runs the test binary with a marker that selects it. In a normal test run every
   `Helper` call returns at once. The child runs in its own process group, its output goes to files, and the test's
   cleanup kills and reaps it. A helper also ends when its test process ends without running cleanups (killed,
-  interrupted, crashed), so a killed run leaves no helper behind (#208). A helper's standard input is reserved for
+  interrupted, crashed), so a killed run leaves no helper behind. A helper's standard input is reserved for
   that, so a helper function must not read it, and a helper paused with `Pause` is not promised to end until it is
   resumed. A helper that must stay up waits for SIGTERM (`signal.Notify`, then receive) and never parks on a bare
   `select {}`, which the repository refuses.
@@ -161,8 +161,9 @@ writes there. Nothing but review checks which package a test belongs in.
 `<worktree>/.tools/bin/ateam` and `ateam` on `PATH`. It is the release pinned in `.github/workflows/ci.yml`,
 `merge-check.yml`, `Taskfile.yml` (`ATEAM_VERSION`) and `.agents/ateam.json`; `task tools:ateam` installs it into the
 main checkout's `.tools/bin` (git-ignored, shared across linked worktrees), and each of those tasks runs `tools:ateam`
-first, which does nothing once `.tools/bin/ateam` reports the pin. Run plain `go test` on the tool packages only after
-a task has installed it; the test fails naming `task tools:ateam` when it is missing or at the wrong version.
+first, which does nothing once `.tools/bin/ateam` reports the expected version. Run plain `go test` on the tool
+packages only after a task has installed it; the test fails naming `task tools:ateam` when it is missing or at the
+wrong version.
 
 `task ledger:check` also runs `internal/harness/pindiff`, which compares every `carry` row of the ledger (a package
 ported unchanged) with the pin (SemStreams at the row's `source_sha`) and fails on any difference;
@@ -459,7 +460,7 @@ require a random run to reach a rare state a minimum number of times; that makes
 
 `TestNoReachCheckAfterGeneratedRun` refuses a failing call (`t.Fatal`, `t.Error`, `require.`, `assert.` and the like)
 placed after `rapid.Check` returns in the same function, because such a call usually asks what the random inputs
-happened to cover (#466, #497, #500). What passes: a named witness (an input you write out and run through the same
+happened to cover. What passes: a named witness (an input you write out and run through the same
 assertions before the generated run, so the case is reached every time), logging after the run, and assertions inside
 the property closure. The only escape is `// After check: <reason>` on the line above, for an assertion on state the
 run must leave behind (a goroutine count, a closed resource); a reach count is never a reason. A run inside a `t.Run`
@@ -535,7 +536,7 @@ including those.
   Time passing is not such an event, and neither is a log line that can print before the write. A test sets no
   deadline of its own for work that must finish: `go test -timeout` is the one deadline (five minutes per package on
   `task test:unit` and `task test:repeat`, ten on `task test:integration`), and when it fires it prints every
-  goroutine's stack (#392, #500).
+  goroutine's stack.
 - Do not write `case <-time.After(...)` in a `select` when the arm's body fails the test (`t.Fatal`, `t.Fatalf`,
   `t.Error`, `t.Errorf`, `t.FailNow` or a `require.` call). That is a deadline of your own, and a loaded machine
   trips it before the work is wrong. `TestNoOwnDeadlineInTests` refuses it in every `*_test.go` file. It leaves a
@@ -551,7 +552,7 @@ including those.
   behaviour under test is not. Removing a deadline is safe only when a wrong implementation hangs. Where the awaited
   call has a shorter fallback of its own (a 30 s context, a library timeout), make that fallback unreachable (derive
   from `t.Context()`, or give it a budget of an hour) so a hang is the only wrong outcome; otherwise the old deadline
-  was the assertion (#500).
+  was the assertion.
 - Run with `-race`. `task test:unit` and `task test:integration` both do.
 - Pass contexts in. Derive test contexts from `t.Context()`. Narrow one with `context.WithTimeout` only when the
   deadline is the behaviour under test, never to bound a wait for work that must finish. Helpers take the caller's
@@ -562,9 +563,9 @@ including those.
 - Use ephemeral ports. Listen on `127.0.0.1:0` and read back the port; reach the NATS fixture through
   `shared.Reset(t)` or `f.URL()`. `task lint` and a contract test refuse fixed `net.Listen` ports and fixed broker
   addresses in tests.
-- Pick a port in the address family that will be bound (#390, #391). A port-0 pick (asking the operating system for
+- Pick a port in the address family that will be bound. A port-0 pick (asking the operating system for
   any free port) on every address, such as `net.Listen("tcp", ":0")`, can return a port that another program holds on
-  one family only: on a Mac, an every-address pick was handed a port a daemon held on `127.0.0.1` (#390). Use
+  one family only: on a Mac, an every-address pick was handed a port a daemon held on `127.0.0.1`. Use
   `tcp4` for a port handed to Docker, and `127.0.0.1:0` (or the listener itself) for a test server. A test that holds a
   port on every address on purpose, for example so a server's `:port` bind fails, says why with a
   `// Every address: <reason>` comment on the line above the call. `TestEveryAddressPortPickSaysWhy` refuses a literal

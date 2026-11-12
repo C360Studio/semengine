@@ -76,10 +76,10 @@ transport"; `TestGraphImportsNoTransport`).
   `unhonoured_hints` (the hints the text search could not apply: `path`, `similarity`, `ranking`) and an `answer`
   sentence. `TemporalRangeRequest` (`start_time` and `end_time`, RFC 3339, `limit`, `min_revision`) and
   `SpatialBoundsRequest` (`north`, `south`, `east`, `west`, `limit`, `min_revision`) are what graph-query sends to the
-  time-range and bounds verbs, and so what change 7's responders decode; the pin spelled the times `startTime` and
+  time-range and bounds verbs, and so what the responders decode; SemStreams spelled the times `startTime` and
   `endTime`. Which questions each strategy answers, and what is refused, is in `processor/graph-query/README.md`.
 - **Counts.** `PrefixQueryResponse.Total` is the number of distinct keys in the listing before the cursor and any limit,
-  as listed and not a snapshot (#512). `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
+  as listed and not a snapshot. `HierarchyStatsData` and `SummaryData` build on one prefix page: `TotalEntities`
   is the whole group, `EntitiesScanned`, `Truncated` and `NextCursor` say how much of it this page covers, and the type
   counts or children cover that page and no more. `Truncated` false says only that it is the last page. When `summary`
   leaves predicates out (`ExcludePredicates`), its `indexed_revision` is 0, which claims nothing: do not compare it with
@@ -175,7 +175,7 @@ This provides maximum flexibility while maintaining semantic clarity.
 ## What is elsewhere
 
 - `graph/kvcatalog`: the bucket catalog, its acquisition, the owned-bucket retention check and the write-guard pair
-  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once it is ported (change 6).
+  (`IsFrameworkOwnedBucket`, `FrameworkOwnedWriteRefusal`) the rule engine reads once the rule engine is ported.
 - `natsclient`: `IsKVTombstone`, which reports whether a KV watch entry is a delete or a purge.
 - `graph/readiness`: the readiness computation and the GRAPH_STATUS publisher.
 - `graph/inference`: hierarchy inference (its hierarchy slice).

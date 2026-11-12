@@ -118,7 +118,7 @@ when read alone is listed with reason `not_found`. Any other error from those re
 `Entities` refuses a nil context.
 
 One gap remains, a filed issue: a `prefix` resolve whose page holds a poisoned entity is refused whole by
-graph-ingest, so that `Fuse` call fails (#578).
+graph-ingest, so that `Fuse` call fails.
 
 A stack with no graph-embedding must say so: set graph-query's `embedding_enabled` to `false` there. An `nl`
   question is then refused invalid with code `not_enabled`, naming `semantic`, before anything is sent. Left at its

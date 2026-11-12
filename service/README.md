@@ -12,18 +12,11 @@ settings and says it forwards nothing yet. The package also holds the helpers a 
 `main` function, which builds and wires everything) calls itself: `MaybeStartPProf`, `WireGraphRuntime` and the
 OpenAPI registry, plus the service-configuration and schema helpers the service manager reads.
 
-The package is ported from SemStreams in seven pull requests. The first carried `BaseService` and the shared files;
-the second `Manager` and `Metrics`; the third `ComponentManager`, the service that owns the components
-([The component manager](#the-component-manager)); the fourth `MessageLogger`
-([The message logger](#the-message-logger)); the fifth `StorageObservabilityService`
-([The storage observability service](#the-storage-observability-service)).
-
-The sixth carried `HeartbeatService` ([The heartbeat service](#the-heartbeat-service)) and `MetricsForwarder`
-([The metrics forwarder](#the-metrics-forwarder)). Of the two, only the heartbeat is on by default; the forwarder, like
-the message logger and storage observability, runs only when the configuration enables it.
-
-The seventh pull request, this one and the last, carries `LogForwarder` ([The log forwarder](#the-log-forwarder)). It
-forwards nothing yet. It is the last service the port carries.
+Of the built-in services the metrics service and the heartbeat are on by default. The metrics forwarder, the log
+forwarder, the message logger and storage observability run only when the configuration enables them.
+Each has a section below: [The component manager](#the-component-manager), [The message logger](#the-message-logger),
+[The storage observability service](#the-storage-observability-service), [The heartbeat service](#the-heartbeat-service),
+[The metrics forwarder](#the-metrics-forwarder) and [The log forwarder](#the-log-forwarder).
 
 ## Embedding BaseService
 
@@ -530,7 +523,7 @@ client that sees `initial_sync_complete` has seen every initial value. Each stre
 ### Not ported
 
 `GetMessages`, `ConfigSchema`, `DefaultMessageLoggerConfig`, the exported `NewMessageLogger` and `SetDecoder`, the
-reconciliation of a changing subject set, and the test-only seams the pin carried. `service/configurable.go`
+reconciliation of a changing subject set, and the test-only seams SemStreams carried. `service/configurable.go`
 (`ConfigSchema`, `PropertySchema`, `NewConfigSchema`) is removed with them.
 
 ## The storage observability service
@@ -548,8 +541,8 @@ SemStreams pin's storage observability spec records why nothing gates on pressur
 write when storage is tight) stays deferred until four conditions hold. The report runs in production; the projection
 has been checked against what happened on at least three real resources; no critical state has cleared without an
 operator acting; and the rejection path is proven to classify a refusal as transient and NAK it (ask the sender to
-retry) instead of acknowledging and dropping the write. That text is the pin's
-(`openspec/specs/storage-observability/spec.md:169-218`) and is not ported here. A consumer that wants backpressure
+retry) instead of acknowledging and dropping the write. That text is SemStreams'
+and is not ported here. A consumer that wants backpressure
 today reads the report and decides in its own code. The reasoning behind reporting through logs and metrics, not graph
 triples, is [ADR-098](../docs/adr/098-observability-splits-by-subject.md).
 
@@ -709,7 +702,7 @@ it and stops the base service. If `ctx` ends first, `Stop` returns that error an
 
 ### Not ported
 
-`HeartbeatConfig.Validate`, the test-only constructor and the interface the pin used to swap the component manager in
+`HeartbeatConfig.Validate`, the test-only constructor and the interface SemStreams used to swap the component manager in
 tests.
 
 ## The metrics forwarder
@@ -763,7 +756,7 @@ state on `semengine_service_status{service="metrics-forwarder"}` (0 stopped, 2 r
 `Start(ctx)` refuses a nil or ended `ctx`, a second `Start` and a `Start` after any `Stop`
 (`errs.ErrAlreadyStarted`); a refused `Start` holds nothing. It does no I/O: it starts one background loop and
 returns, and a NATS client that is not connected makes each publish fail and be counted. `ctx` bounds `Start` only;
-ending it afterwards stops nothing (at the pin it marked the service stopped while the loop went on publishing).
+ending it afterwards stops nothing (in SemStreams it marked the service stopped while the loop went on publishing).
 `Stop(ctx)` is the only stop and behaves as the
 heartbeat's does.
 
@@ -877,7 +870,7 @@ if err != nil {
 ```
 
 It first runs `kvcatalog.EnsureCatalogRetentionClean`, which removes a retention limit, such as a TTL, left on a
-framework catalog bucket whose entries must never expire (SemStreams ADR-068 D1), and returns its error if that
+framework catalog bucket whose entries must never expire (SemStreams ADR-068), and returns its error if that
 fails; a `nil` context or client is refused there. Then it builds the client with `projection.NewMutationClient`. It
 starts no goroutine and owns nothing that needs stopping.
 

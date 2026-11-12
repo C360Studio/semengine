@@ -5,27 +5,27 @@ your cutover and what you can leave alone. The port breaks old shapes where that
 (owner, 2026-11-02). Cites to sister repositories are at SemSource `e4febc0d`. Nothing here was run against
 your code: it comes from reading it.
 
-graph-embedding is ported in four pull requests. This file covers the first two: the write path (the component that
-follows `ENTITY_STATES` and keeps one BM25 embedding record per entity with text) and the query verbs
-(`graph.embedding.query.search` and `.similar`). `pkg/fusion` arrives in the third and fourth.
+This file covers the write path (the component that follows `ENTITY_STATES` and keeps one BM25 embedding record per
+entity with text) and the query verbs (`graph.embedding.query.search` and `.similar`). `pkg/fusion` has its own
+`MIGRATION.md`.
 
 ## Changes that stop boot (loud)
 
 Each of these fails when the component is created, naming the key or value. Fix the configuration before the first
 start.
 
-- **`batch_size` is refused.** At the SemStreams pin nothing read it. SemSource's composition sets it under
+- **`batch_size` is refused.** In SemStreams nothing read it. SemSource's composition sets it under
   graph-embedding. *Do:* delete the line.
-- **Any unknown key is refused**, `cache_ttl` included (the pin refused that one by name; the rest it dropped
+- **Any unknown key is refused**, `cache_ttl` included (SemStreams refused that one by name; the rest it dropped
   silently). *Do:* delete the key. The kept keys are `ports`, `embedder_type`, `workers`, `max_text_len`,
   `text_suffixes`, `startup_attempts`, `startup_interval_ms` and `coalesce_ms`.
 - **`embedder_type: "http"` is refused** at tier 0, with an error naming the value and the tier. Only `bm25` works
-  (an empty value means `bm25`). The HTTP embedder and the model registry it needed are not ported; issue #489 owns
-  tier 1. *Do:* use `bm25` or leave the key out. The registration no longer asks boot for a model registry.
+  (an empty value means `bm25`). The HTTP embedder and the model registry it needed are not ported; they belong
+  to tier 1. *Do:* use `bm25` or leave the key out. The registration no longer asks boot for a model registry.
 - **Ports are checked.** An input other than a `kv-watch` of every `ENTITY_STATES` key with no history, or a
   `store-read`, is refused naming the port, and one such watch is required. Any declared output is refused: the
   component writes `EMBEDDING_INDEX` and `EMBEDDING_DEDUP` itself. A `ports` block that is present is used as
-  written; the pin filled in an empty input list with the entity watch, this does not. *Do:* leave `ports` out to
+  written; SemStreams filled in an empty input list with the entity watch, this does not. *Do:* leave `ports` out to
   take the defaults, or declare the watch yourself.
 
 ## Changes that do not stop boot (silent)
@@ -33,25 +33,25 @@ start.
 Read these. Nothing errors.
 
 - **The status card loses `first_failure_at`.** The readiness record on `GRAPH_STATUS` under `graph-embedding` no
-  longer has that field, and `graph.IndexStatusResponse` no longer has the Go field `FirstFailureAt` (owner, PR #550 comment
-  6716972354). SemSource's MCP gateway passes this entry through to agents (`processor/mcp-gateway/tools.go:142`),
-  so its status card stops showing the time. *Do:* stop reading the field; a decoder that requires it fails, one
-  that ignores a missing key does not notice. `failed_count` and `failed_reasons` stay: the reasons are the
-  per-reason counts of the entities currently failed, as before.
+  longer has that field, and `graph.IndexStatusResponse` no longer has the Go field `FirstFailureAt`.
+  SemSource's MCP gateway passes this entry through to agents (`processor/mcp-gateway/tools.go:142`), so its status
+  card stops showing the time. *Do:* stop reading the field; a decoder that requires it fails, one that ignores a
+  missing key does not notice. `failed_count` and `failed_reasons` stay: the reasons are the per-reason counts of the
+  entities currently failed, as before.
 - **The status verb is gone.** `graph.embedding.query.status` has no responder and is not declared in
   `graph.QueryVerbs`; a request to it gets "no responders". Readiness is the `GRAPH_STATUS` record (read the key
-  `graph-embedding`); the second pull request is to carry "not ready" on the embedding replies themselves
-  (ADR-083, ADR-109), and the query verbs now do. *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
+  `graph-embedding`), and the embedding query replies also say "not ready" themselves (ADR-083, ADR-109).
+  *Do:* read `GRAPH_STATUS`, as SemSource's gateway already does.
   Nothing in SemSource's tree
   calls the status verb (grep, 0 hits at `e4febc0d`).
-- **When the status reads `degraded`.** The follower now reads degraded when the component is behind and no
-  revision has completed for 30 seconds. Before, graph-embedding waited 120 seconds on the same completion rule, and
-  graph-index waited 30 seconds for the lowest unfinished revision to move (owner ruling (a1), PR #550 comment
-  6721867279). Effects: graph-embedding reaches `degraded` sooner when it stalls; graph-index no longer reads
-  `degraded` when one revision is held while later ones complete, only not ready with `staleness_ms` rising. An
-  alert on `degraded` for graph-index fires less often; one on graph-embedding fires after 30 seconds, not 120.
-  *Do:* check any alert threshold built on the old timing.
-- **The error count now rises, and `Healthy` ignores it.** At the pin `error_count` and `error_rate` were always 0:
+- **When the status reads `degraded`.** The follower now reads degraded when the component is behind and no revision
+  has completed for 30 seconds. Before, graph-embedding waited 120 seconds on the same completion rule, and
+  graph-index waited 30 seconds for the lowest unfinished revision to move. Effects: graph-embedding
+  reaches `degraded` sooner when it stalls; graph-index no longer reads `degraded` when one revision is held while
+  later ones complete, only not ready with `staleness_ms` rising. An alert on `degraded` for graph-index fires less
+  often; one on graph-embedding fires after 30 seconds, not 120. *Do:* check any alert threshold built on the old
+  timing.
+- **The error count now rises, and `Healthy` ignores it.** In SemStreams `error_count` and `error_rate` were always 0:
   nothing wrote the count, though `Healthy` would have dropped had it risen. Here the count (`ErrorCount`) rises by one
   when an entity becomes failed (it was not failed before) and by one per latched reset (a stored `ENTITY_STATES`
   value the component cannot decode; `Health` then reads "graph state reset required" until the process restarts);
@@ -80,7 +80,7 @@ forward the bytes unchanged. Each change below fails or alters an answer without
   `graph.QueryResponse`; `search` also sends `data.embedder_type`. *Do:* read `data.results`.
 - **`similar`'s hit list is renamed.** `similar` (the field holding the hits) is now `results`, and the echoed
   `entity_id` and the `duration` are gone.
-- **Limits are refused, not clamped.** At the pin a `limit` of 0 or below meant 10 and one above 100 was cut to 100.
+- **Limits are refused, not clamped.** In SemStreams a `limit` of 0 or below meant 10 and one above 100 was cut to 100.
   Now 0 still means 10, but a negative limit or one above 100 is refused `invalid_request`, naming the bound.
   *Do:* send a limit from 0 to 100 (0 means 10).
 - **Unknown keys are refused.** The pin ignored them, so a typo or an old key went unnoticed; now the request is
@@ -105,7 +105,7 @@ forward the bytes unchanged. Each change below fails or alters an answer without
 
 ## Not carried
 
-- The HTTP embedder and the vector providers behind it (#32, #489).
-- The indexing-profile check: at the pin every path returned true, and the ADR behind it (ADR-054) is not ported.
+- The HTTP embedder and the vector providers behind it.
+- The indexing-profile check: in SemStreams every path returned true, and the ADR behind it (ADR-054) is not ported.
 - The pin's own watch, reset latch, status bucket, heartbeat and `readiness.go`: `graph/follower` does these for
   graph-index and graph-embedding alike.

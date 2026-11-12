@@ -120,7 +120,7 @@ another zone. A full entity ID is an entity reference whether or not a segment h
 to c360.test.x.y.z.001 in zone b" names `c360.test.x.y.z.001` and `zone-b`. An entity reference inside the zone
 phrase ("zone-b" itself, "sensor-zone-1") is the same place. These refusals are loud and can be wrong: an
 ordinary hyphenated word ("in real-time", "non-zero") or "zone or area" plus a word ("the area with pumps") beside a
-place is refused as a second place, a known limit tracked in #535.
+place is refused as a second place, a known limit.
 `KeywordClassifier.ClassifyQuery` on its own still answers a path from one of them. Two entity references with
 no zone phrase ("from pump-1 to pump-2") are not refused; the keyword tier reads the first.
 

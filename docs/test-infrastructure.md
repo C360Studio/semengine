@@ -135,7 +135,7 @@ Four tests restart something, and after each the stack must give the same answer
 4. restart the NATS server while the stack keeps running.
 
 The NATS restarts are quick: the server is down for about 0.2 s. The tests do not prove the stack survives a longer
-outage; that is issue #574.
+outage.
 
 Run it with `task test:integration -- ./internal/smoke/`. It takes about two minutes, most of it the stall after
 each NATS restart while the components' watches reconnect.
@@ -149,7 +149,7 @@ removes only containers that carry our label, and never runs `docker … prune` 
 ## Testing a consumer against a broker
 
 `natsfixture` is internal to this repository. A consumer (SemSource, SemTeams, or any module that imports SemEngine)
-cannot import it, and SemEngine does not ship a test fixture (owner ruling on #568). The client is the part that
+cannot import it, and SemEngine does not ship a test fixture (an owner ruling). The client is the part that
 belongs to the framework, and it connects to any broker URL in three calls:
 
 ```go
@@ -198,16 +198,16 @@ connections.
 ## Known problem: Docker Desktop on macOS loses a host port
 
 When Docker picks the host port and a Mac program already listens on it, Docker Desktop reports the container's port
-as missing (#180, #209). The fixture no longer lets Docker pick: it asks the operating system for a free port and
-gives Docker that exact port (#209, #210), so Docker's pick no longer applies. It asks with `tcp4`, a listener on every
-IPv4 address, because the one Docker bind error seen named an IPv4 address (#345); Docker's choice of family is not
-promised. An every-address `tcp` pick was once handed a port that a daemon held on `127.0.0.1` (#390). That a `tcp4`
-pick skips such a port was measured on one Mac (PR #404 comment 6386556253, go1.26.10, macOS 26.5.2), not promised.
+as missing. The fixture no longer lets Docker pick: it asks the operating system for a free port and
+gives Docker that exact port, so Docker's pick no longer applies. It asks with `tcp4`, a listener on every
+IPv4 address, because the one Docker bind error seen named an IPv4 address; Docker's choice of family is not
+promised. An every-address `tcp` pick was once handed a port that a daemon held on `127.0.0.1`. That a `tcp4`
+pick skips such a port was measured on one Mac (go1.26.10, macOS 26.5.2), not promised.
 That Docker then publishes the port, and keeps it across a stop and start, is not promised by Docker: it rests on one
-macOS probe (Docker Desktop 29.8.2, testcontainers v0.44.0, PR #210 comment 6151736554) and on every run since, and
+macOS probe (Docker Desktop 29.8.2, testcontainers v0.44.0) and on every run since, and
 `TestRestartURLDials` checks it. A port another program takes in the moment before Docker binds it fails the container
 start with "address already in use", and `Start` removes that unstarted container, takes a new port, and tries once
-more (#345). The `tcp4` pick does not close the gap between the fixture releasing the port and Docker binding it, so
+more. The `tcp4` pick does not close the gap between the fixture releasing the port and Docker binding it, so
 the retry stays. Linux has not been measured. When a mapped port is missing, the error says what an inspect of the
 container showed.
 
@@ -222,6 +222,6 @@ command, and only then code of our own, kept to the fewest lines.
 
 When the failure a piece of harness code names can no longer happen (the upstream bug is fixed, the test that needed
 it is gone), remove the code in its own pull request and cite the evidence: a release note, a measurement, or the
-removed test. Start's replacement container and Restart's extra stop and start for #180 went this way: once the
-fixture picked the port, #210's probe (PR #210 comment 6151736554) showed a picked port coming up and a held port
-failing at the start, where neither retry ran, and the owner ruled both out (#205 comment 6173171452).
+removed test. Start's replacement container and Restart's extra stop and start, written for Docker's own port pick,
+went this way: once the fixture picked the port, a probe showed a picked port coming up and a held port failing at the
+start, where neither retry ran, and the owner ruled both out.

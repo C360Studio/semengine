@@ -31,7 +31,7 @@ counters and latencies on it, in names that start `semengine_objectstore_`; `New
   `Config.InstanceName` is the name stamped into every reference the Store returns (`StorageReference.StorageInstance`)
   and defaults to the bucket name; the code that owns the Store sets it.
 - `Put` replaces the object at the key. No earlier version is kept. NATS was observed to behave this way with nats.go
-  v1.54.0 and nats-server v2.15.1 (probe P4, [PR #432 comment](https://github.com/C360Studio/semengine/pull/432#issuecomment-6445520357));
+  v1.54.0 and nats-server v2.15.1 (`TestPutReplacesObjectAtKey`);
   the library does not promise it.
 - `Get` and `Open` of a missing key return an error that matches `storage.ErrObjectNotFound` and is not transient.
 - `Delete` of a key with no object returns nil.
@@ -130,8 +130,6 @@ consumer's `MaxDeliver` limit is not delivered again, and the Component reports 
 ## Not here
 
 These are not in this package: the in-memory data cache and `Close` of the SemStreams original (dropped by the
-owner, [PR #432 comment][cache-ruling]), the SemStreams Component's raw lane (storing the wire bytes of any message
+owner), the SemStreams Component's raw lane (storing the wire bytes of any message
 under a generated key), its `events` output and its `api` input, and a way to name several Store instances in one
 process (ADR-063 left it open; the answer is one name, `objectstore`, per process).
-
-[cache-ruling]: https://github.com/C360Studio/semengine/pull/432#issuecomment-6446982969

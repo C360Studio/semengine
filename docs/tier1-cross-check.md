@@ -1,23 +1,22 @@
 # Tier-1 cross-check of the tier-0 port set
 
 This is a record, not a rule. It compares SemEngine's tier-0 port set with SemStreams' Tier 1 list and changes no
-admission-ledger row. Task 5.2 of `setup-04a-01-floor` records it, carrying #9 "Carried to 04A" item 1 and
-SETUP 03B task 2.2. Task 6.2 of `setup-04a-02-ingest-kernel` adds what that change did with four tier-0-only
-packages and with `model/wire`.
+admission-ledger row. It also records what the graph-ingest kernel port did with four tier-0-only packages and with
+`model/wire`.
 
 Two terms first:
 
 - **Tier 1** here means SemStreams' *package* tier: the 62 packages listed in `release/tier1-packages.txt` at the
   SemStreams pin `8b99efe9`. These are the packages a sister repository imported on 2026-09-02, frozen under
-  SemStreams' ADR-106. It is not a SemEngine capability level. SETUP 03B ruled (Q2, #2) that SemEngine makes no
-  compatibility promise to it.
-- **The ruled 65** is the tier-0 port set: 65 packages, 140,842 non-test lines (SETUP 03B design D4, owner ruling
-  #8 comment 5932313950). It is the first-pass `go list` closure of 65, less the ten packages the rulings cut, plus
-  the ten they admitted.
+  SemStreams' ADR-106. It is not a SemEngine capability level. The owner ruled that SemEngine makes no compatibility
+  promise to it.
+- **The ruled 65** is the tier-0 port set: 65 packages, 140,842 non-test lines (set by the owner at
+  contract approval). It is the first-pass `go list` closure of 65, less the ten packages the rulings cut, plus the
+  ten they admitted.
 
 The setup plan asks for this cross-check when the ledger is seeded (`docs/setup-plan.md`, "seed the ledger from the
 measured closure and cross-check it against SemStreams' sister-import list"). It was first measured on the
-first-pass 65 (SETUP 03B `inventory.md` A7: 39 / 23 / 26). This page re-measures it on the ruled 65.
+first-pass 65 (39 / 23 / 26). This page re-measures it on the ruled 65.
 
 ## How it was measured
 
@@ -25,7 +24,7 @@ Read-only, on 2026-10-04. The SemStreams pin came from `gh api repos/C360Studio/
 unpacked to a scratch directory; no sister checkout was used. In the unpacked pin:
 
 ```bash
-# 1. The first-pass 65 (03B inventory A1, same 28 roots)
+# 1. The first-pass 65 (same 28 roots)
 GOFLAGS=-mod=mod GOWORK=off go list -deps ./component ./config ./gateway/graph-gateway ./graph ./message \
   ./metric ./model ./natsclient ./payloadregistry ./pkg/buffer ./pkg/errs ./pkg/fusion ./pkg/fusion/fusionnats \
   ./pkg/fusion/fusionvocab ./pkg/projection ./pkg/retry ./pkg/types ./processor/graph-embedding \
@@ -33,7 +32,7 @@ GOFLAGS=-mod=mod GOWORK=off go list -deps ./component ./config ./gateway/graph-g
   ./storage/objectstore ./storage/storeregistry ./types ./vocabulary ./vocabulary/cco \
   | grep 'c360studio/semstreams' | sort -u > first65.txt                        # → 65 lines
 
-# 2. The ruled 65 = first65 − the ten cut + the ten admitted (03B design D4)
+# 2. The ruled 65 = first65 − the ten cut + the ten admitted
 #    cut:      agentic gateway/graph-gateway vocabulary/agentic agentic/agentrun model/wire graph/llm gateway
 #              internal/deliverylane internal/agentterminal internal/looptoken
 #    admitted: processor/rule processor/rule/expression processor/graph-clustering output/websocket
@@ -50,7 +49,7 @@ comm -23 tier1.txt ruled65.txt | wc -l   # Tier 1 only     → 23
 comm -13 tier1.txt ruled65.txt | wc -l   # tier 0 only     → 26
 
 # Side check: non-test lines of the ruled 65, less graph/embedding/http_embedder.go (220)
-#   → 141,062 − 220 = 140,842, the D4 ceiling
+#   → 141,062 − 220 = 140,842, the ceiling
 ```
 
 ## Result
@@ -71,32 +70,30 @@ Package paths are relative to `github.com/c360studio/semstreams/`.
 `pkg/projection/contract`, `pkg/resource`, `pkg/revlag`, `pkg/rulepack`, `pkg/security`, `pkg/timestamp`,
 `pkg/tlsutil`, `pkg/worker`, `processor/graph-index-spatial`, `processor/graph-index-temporal`.
 
-**What change 2 did with four of the tier-0-only packages.** The Slice 04A design splits the port into seven
-changes, `setup-04a-01-floor` to `setup-04a-07-substrate-seam`, called change 1 to change 7 here. Change 2 is
-`setup-04a-02-ingest-kernel` (PR #93). Each package below has an admission-ledger row, and none leaves the ruled 65,
-so the counts above do not change:
+**What the graph-ingest kernel port did with four of the tier-0-only packages.** Each package below has an
+admission-ledger row, and none leaves the ruled 65, so the counts above do not change:
 
-| Package | What change 2 did | Source |
-| --- | --- | --- |
-| `internal/componentadmission` | not ported: its only reader is the access-token parameter of `component.Registry`'s `CreateComponent`, `SealComposition` and `Snapshots`, which the ruling removes; `defer-exclude` row | ruling C, #91 comment 6035477895; change 2 design D14 |
-| `internal/lifecyclecleanup` | ported and made public as `pkg/lifecyclecleanup`, because SemTeams' components call its `RollbackFailedStart`; `adapt` row | #77 ruling, comment 6035317931; change 2 design D7 |
-| `graph/structural` | not ported in change 2: it moved to change 7 with its only readers, `graph/inference`'s detectors and `processor/graph-clustering`'s anomaly lane; anomaly detection is then never ported, so neither is this package; `defer-exclude` row | ruling E, #91 comment 6037287957; change 2 design D1a; owner ruling 1, PR #582 comment 6768832111 |
-| `graph/inference` | ported as its hierarchy slice only (`hierarchy.go`, `container_entity.go` and a new `doc.go`); the rest of the package (anomaly detection and its review worker) is never ported; `adapt` row | #97 ruling, comment 6036308092; change 2 design D1a; owner ruling 1, PR #582 comment 6768832111 |
-| `vocabulary/export` | ported ahead of change 7 by `vocab-export-packs` (#234) with `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` so `semvocab` and `semsparql` can consume RDF/JSON-LD serialization and prefix registration; `adapt` row | #234; `vocab-export-packs` design D1 |
-| `vocabulary/bfo`, `vocabulary/cco` | not ported into `semengine`: domain and upper-ontology packs live in external repository `semvocab`, registering through `vocabulary`'s declarative/Go pack seams; `defer-exclude` rows | #234; `vocab-export-packs` design D1 |
+| Package | Disposition |
+| --- | --- |
+| `internal/componentadmission` | not ported: its only reader is the access-token parameter of `component.Registry`'s `CreateComponent`, `SealComposition` and `Snapshots`, which the ruling removes; `defer-exclude` row |
+| `internal/lifecyclecleanup` | ported and made public as `pkg/lifecyclecleanup`, because SemTeams' components call its `RollbackFailedStart`; `adapt` row |
+| `graph/structural` | not ported: its only readers are `graph/inference`'s detectors and `processor/graph-clustering`'s anomaly lane, and anomaly detection is never ported; `defer-exclude` row |
+| `graph/inference` | ported as its hierarchy slice only (`hierarchy.go`, `container_entity.go` and a new `doc.go`); the rest of the package (anomaly detection and its review worker) is never ported; `adapt` row |
+| `vocabulary/export` | ported with `docs/adr/107-semantic-web-vocabulary-lives-at-the-export-edge.md` so `semvocab` and `semsparql` can consume RDF/JSON-LD serialization and prefix registration; `adapt` row |
+| `vocabulary/bfo`, `vocabulary/cco` | not ported into `semengine`: domain and upper-ontology packs live in external repository `semvocab`, registering through `vocabulary`'s declarative/Go pack seams; `defer-exclude` rows |
 
-**In Tier 1 only (23)**, each with its disposition and where that comes from:
+**In Tier 1 only (23)**, each with its disposition:
 
-| Package | Disposition | Source |
-| --- | --- | --- |
-| `agentic`, `agentic/agentrun`, `vocabulary/agentic` | separated: `defer-exclude` row | 03B D4 (agentic domain); task 5.1 |
-| `gateway`, `gateway/graph-gateway` | separated: `defer-exclude` row | 03B D4 (layer 4 is consumer-owned); task 5.1 |
-| `model/wire` | behind the seam: not ported in change 2, which ports nothing that reads it, nor in change 7, which ports `processor/graph-clustering` without it; tier 0 builds without it (`TestTreeImportsNoProviderPlumbing`); `defer-exclude` row | 03B D4; change 2 design D1a, which replaces foundation D8's dormant carriage; owner ruling 2, PR #582 comment 6768832111 |
-| `componentregistry`, `payloadbuiltins`, `vocabulary/builtins` | not ported: aggregators; each consumer registers per package | 03B Q1 ruling (#3) |
-| `processor/gated-dag` | not ported: reached only through the aggregators | 03B Q1 ruling, measured consequence |
-| `processor/agentic-dispatch`, `processor/agentic-loop`, `processor/agentic-loop/lessonmatch`, `processor/agentic-model`, `processor/agentic-tools`, `processor/agentic-tools/executors`, `processor/agentic-tools/runner`, `persona` | not ported: agentic domain | 03B D4 ("`governance` and `processor/agentic-*`"); no tier-0 package imports `persona` |
-| `input/websocket` | not in any change of the chain; the change that ports it inherits the ACME loaders' row | `setup-04a-01-floor` D1; #9 comment 5950822861 |
-| `gateway/lifecycle-gateway`, `pkg/context`, `pkg/logging`, `test/e2e/mock` | not ported: no tier-0 package imports them (see "Edges leaving the set"), and neither first-wave consumer imports them (below) | this measurement |
+| Package | Disposition |
+| --- | --- |
+| `agentic`, `agentic/agentrun`, `vocabulary/agentic` | separated: `defer-exclude` row |
+| `gateway` | separated: `defer-exclude` row (the parent package; `gateway/graph-gateway` is now ported, see the ledger) |
+| `model/wire` | behind the seam; not ported, since nothing ported reads it, and `processor/graph-clustering` is ported without it; tier 0 builds without it (`TestTreeImportsNoProviderPlumbing`); `defer-exclude` row |
+| `componentregistry`, `payloadbuiltins`, `vocabulary/builtins` | not ported: aggregators; each consumer registers per package |
+| `processor/gated-dag` | not ported: reached only through the aggregators |
+| `processor/agentic-dispatch`, `processor/agentic-loop`, `processor/agentic-loop/lessonmatch`, `processor/agentic-model`, `processor/agentic-tools`, `processor/agentic-tools/executors`, `processor/agentic-tools/runner`, `persona` | not ported: agentic domain |
+| `input/websocket` | not ported yet; porting it would inherit the ACME loaders' row |
+| `gateway/lifecycle-gateway`, `pkg/context`, `pkg/logging`, `test/e2e/mock` | not ported: no tier-0 package imports them (see "Edges leaving the set"), and neither first-wave consumer imports them (below) |
 
 Not ported means no ledger row: a row is written for a package that is ported, or one that tier 0 reaches and the
 rulings cut (`docs/provenance.md`).
@@ -113,8 +110,8 @@ outside the set:
 - `processor/rule` → `agentic`, `agentic/agentrun`, `governance` and `vocabulary/agentic`;
 - `service` → `agentic/agentrun`.
 
-Every one ends at a package the rulings cut. These are the port-refactor edges of SETUP 03B design D4 (E1–E4 and
-the seam). No tier-0 package imports any of the five unruled Tier-1-only packages, or `input/websocket`.
+Every one ends at a package the rulings cut. These are the edges the port refactors cut. No tier-0 package imports any
+of the five unruled Tier-1-only packages, or `input/websocket`.
 
 ## Against the first measurement
 
@@ -125,16 +122,16 @@ The counts are the same, 39 / 23 / 26, but the membership changed:
 | In both | `graph/geo/geojson`, `output/websocket`, `processor/graph-clustering`, `processor/rule`, `processor/rule/expression`, `vocabulary/export` | `agentic`, `agentic/agentrun`, `gateway`, `gateway/graph-gateway`, `model/wire`, `vocabulary/agentic` |
 | Tier 0 only | `composition/cli`, `internal/maxdelivery`, `processor/graph-index-spatial`, `processor/graph-index-temporal` | `graph/llm`, `internal/agentterminal`, `internal/deliverylane`, `internal/looptoken` |
 
-The six that left "both" are now Tier-1-only, and the six that joined came from Tier-1-only. This is the change
-SETUP 03B design D2 predicted. Every package that left tier 0 is a separated package with a ledger row: task 5.1,
-or change 2's `defer-exclude` rows for `model/wire` and `graph/llm`.
+The six that left "both" are now Tier-1-only, and the six that joined came from Tier-1-only. The contract design
+predicted this change. Every package that left tier 0 is a separated package with a ledger row, including the
+`defer-exclude` rows for `model/wire` and `graph/llm`.
 
 ## Do the first-wave consumers import a Tier-1-only package?
 
 Imports of `github.com/c360studio/semstreams/...` were read from tarballs fetched with `gh api … /tarball/<sha>`.
 Both repositories require the pin (`go.mod`: `v1.0.0-beta.162.0.20260930150212-8b99efe9c66a`):
 
-- semsource at `e4febc0d2e23bf33811edc20b9a4159cf5275dc4` (the SHA design D5 cites);
+- semsource at `e4febc0d2e23bf33811edc20b9a4159cf5275dc4`;
 - semconnect at `dff1265708910ef411ab6f85b16fd9e94663e997`.
 
 | Consumer | Production imports | Tier-1-only among them | Test-only Tier-1-only |
@@ -143,8 +140,8 @@ Both repositories require the pin (`go.mod`: `v1.0.0-beta.162.0.20260930150212-8
 | semconnect | 27 packages | `gateway`, `payloadbuiltins`, `vocabulary/builtins` | `payloadbuiltins` |
 
 Each hit already has a ruling. The aggregators move to per-package registration in each consumer's composition
-root (03B Q1). SemConnect's `gateway` import is a compile-time interface assertion
-(`gateway/cs-api/component.go:198`), and dropping it is SemConnect work (03B D4). Neither consumer imports a
+root. SemConnect's `gateway` import is a compile-time interface assertion
+(`gateway/cs-api/component.go:198`), and dropping it is SemConnect work. Neither consumer imports a
 package outside the ruled 65 and Tier 1.
 
 **Not measured.** semteams' and semboids' imports of `gateway/lifecycle-gateway`, `pkg/context`, `pkg/logging`,

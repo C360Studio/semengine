@@ -44,7 +44,7 @@ The package resolves dotted-notation identifiers to IRIs automatically:
 - Unregistered predicates that are valid `http://` or `https://` IRIs pass through unchanged
 - Other unregistered predicates generate `{base}/predicates/domain/category/property`
 
-**Objects** are classified by a total order, most specific first (gh#1267):
+**Objects** are classified by a total order, most specific first:
 
 1. **the triple's own `Datatype` hint** — a statement about THIS value;
 2. **the predicate's declared `DataType`** — a statement about the PREDICATE, and the only place a fact the

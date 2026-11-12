@@ -52,9 +52,9 @@ func fillingFileTier(storeUsed int64) accountTierLimits {
 // --- the resource-level guarantee --------------------------------------------
 
 // TestArchivalStream_IsEvaluatedAgainstItsAccountTierCeiling is the acceptance
-// criterion. Against the pre-existing publisher this row reported
-// Evaluated=false with reason "unbounded", which is precisely how declaring a
-// stream archival used to remove it from the pressure surface.
+// criterion. A publisher that reported this row as Evaluated=false with reason
+// "unbounded" would let declaring a stream archival remove it from the
+// pressure surface.
 func TestArchivalStream_IsEvaluatedAgainstItsAccountTierCeiling(t *testing.T) {
 	store := newFakeReportStore(10)
 	publisher := newTestPublisher(t, store, defaultSource())
@@ -631,7 +631,7 @@ func TestPublishAccount_StillReportsWhenAResourceRowFails(t *testing.T) {
 }
 
 // TestPublishFailure_DoesNotAdvanceTheBaselinePastAnUnpublishedRow is the
-// restart-parity property, and it is the one a failed write used to break.
+// restart-parity property, which a failed write must not break.
 //
 // The rate is defined as Δbytes over Δt across successive PUBLISHED observations,
 // and the in-memory baseline is a cache of exactly that. If it advanced for a row

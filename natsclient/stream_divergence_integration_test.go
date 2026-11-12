@@ -14,10 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestEnsureStream_BindDivergence covers #730: binding an existing stream discards
-// the caller's configuration, which is correct, and used to do it in total silence,
-// which is how a stream two components declare has its limits decided permanently
-// by boot order with no diagnostic on either side.
+// TestEnsureStream_BindDivergence: binding an existing stream discards the caller's
+// configuration, which is correct, but done in silence it lets a stream two
+// components declare have its limits decided permanently by boot order with no
+// diagnostic on either side.
 //
 // The client's log output is CAPTURED because the report IS the requirement here
 // rather than a debugging nicety: a caller whose declaration was discarded has no
@@ -43,7 +43,7 @@ func TestEnsureStream_BindDivergence(t *testing.T) {
 
 	// The acceptance criterion. Two components declaring one stream differently is
 	// resolved permanently by boot order; that behavior is correct — a non-owner
-	// restamping another owner's stream is worse — but it happened silently.
+	// restamping another owner's stream is worse — but it must not happen silently.
 	t.Run("a bind that discards a declaration reports what it discarded", func(t *testing.T) {
 		logs.Reset()
 

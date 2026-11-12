@@ -26,10 +26,12 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Tests of the change subscribe-registers-interest, design D7: T1 to T8. T1 runs against the
-// embedded server. T2 to T8 run against a scripted server on a net.Pipe, which binds no address:
-// T2 to T7 inside a synctest bubble, each in a test process of its own (ownProcessBubble), so a
-// withheld PONG costs no wall time; T8 on real time, outside a bubble.
+// Tests that Subscribe registers interest before it returns. The first,
+// TestSubscribeRegistrationAnswersAnotherConnection, runs against the embedded server. The
+// TestSubscribeRegistration tests after it run against a scripted server on a net.Pipe, which
+// binds no address: all but the last inside a synctest bubble, each in a test process of its own
+// (ownProcessBubble), so a withheld PONG costs no wall time; the last,
+// TestSubscribeRegistrationCloseEndsConnectionDuringRoundTrip, on real time, outside a bubble.
 
 // scriptedServer is the server end of a net.Pipe. It answers nats.go's handshake, records every
 // later line the client sends, answers or withholds each later PING as the test says, and
@@ -236,9 +238,10 @@ func requireTransient(t *testing.T, err error) {
 
 func noopHandler(context.Context, *nats.Msg) {}
 
-// T1. It can fail only at one CPU: the probe P1 missed 831 and 800 of 2,000 requests at -cpu=1
-// (without and with -race) when nothing waited for the server to read the SUB, and #144's test
-// failed 0 of 500 times at the default CPU count. task test:unit runs at one CPU.
+// It can fail only at one CPU: when nothing waited for the server to read the SUB, a one-off
+// measurement missed 831 and 800 of 2,000 requests at -cpu=1 (without and with -race), and 0 of
+// 500 at the default CPU count; which interleavings expose the miss is not promised. task
+// test:unit runs at one CPU.
 func TestSubscribeRegistrationAnswersAnotherConnection(t *testing.T) {
 	const iterations = 200
 	url := embeddedServerURL(t)
@@ -293,7 +296,7 @@ func TestSubscribeRegistrationAnswersAnotherConnection(t *testing.T) {
 	}
 }
 
-// T2. The server never answers the PING and the context has no deadline: the call returns once
+// The server never answers the PING and the context has no deadline: the call returns once
 // DefaultRequestTimeout has passed, and the subscription is removed.
 func TestSubscribeRegistrationBoundedByDefaultRequestTimeout(t *testing.T) {
 	ownProcessBubble(t, func(t *testing.T) {
@@ -315,7 +318,7 @@ func TestSubscribeRegistrationBoundedByDefaultRequestTimeout(t *testing.T) {
 	})
 }
 
-// T3. The caller cancels the context while the round trip waits: the call returns at once, and the
+// The caller cancels the context while the round trip waits: the call returns at once, and the
 // subscription is removed.
 func TestSubscribeRegistrationCancelledDuringRoundTrip(t *testing.T) {
 	ownProcessBubble(t, func(t *testing.T) {
@@ -342,7 +345,7 @@ func TestSubscribeRegistrationCancelledDuringRoundTrip(t *testing.T) {
 	})
 }
 
-// T4. A context that has already ended, on a connected client: the call refuses it and sends no SUB.
+// A context that has already ended, on a connected client: the call refuses it and sends no SUB.
 // Both facts are checked, so a failure reports each.
 func TestSubscribeRegistrationEndedContextSendsNoSub(t *testing.T) {
 	ownProcessBubble(t, func(t *testing.T) {
@@ -361,7 +364,7 @@ func TestSubscribeRegistrationEndedContextSendsNoSub(t *testing.T) {
 	})
 }
 
-// T5. The connection is lost while the round trip waits: the call reports ErrNotConnected, not
+// The connection is lost while the round trip waits: the call reports ErrNotConnected, not
 // Close's nats.ErrConnectionClosed, and the connection holds no more subscriptions than before.
 func TestSubscribeRegistrationConnectionLostDuringRoundTrip(t *testing.T) {
 	ownProcessBubble(t, func(t *testing.T) {
@@ -387,7 +390,7 @@ func TestSubscribeRegistrationConnectionLostDuringRoundTrip(t *testing.T) {
 	})
 }
 
-// T6. A message reaches the handler during the round trip and the handler is held when
+// A message reaches the handler during the round trip and the handler is held when
 // DefaultRequestTimeout passes: the call returns while the handler is held, and Close joins it.
 func TestSubscribeRegistrationReturnsWhileHandlerHeld(t *testing.T) {
 	ownProcessBubble(t, func(t *testing.T) {
@@ -430,9 +433,9 @@ func TestSubscribeRegistrationReturnsWhileHandlerHeld(t *testing.T) {
 	})
 }
 
-// T7. As T6 up to the held handler; then Close begins and the server answers every PING: the call
-// returns Close's refusal although its round trip completed, while the handler is held, and Close
-// joins the handler.
+// As TestSubscribeRegistrationReturnsWhileHandlerHeld up to the held handler; then Close begins
+// and the server answers every PING: the call returns Close's refusal although its round trip
+// completed, while the handler is held, and Close joins the handler.
 func TestSubscribeRegistrationCloseBeginsDuringRoundTrip(t *testing.T) {
 	ownProcessBubble(t, func(t *testing.T) {
 		// Close's context stays live through cleanup (its cancel runs after connectScripted's),
@@ -473,7 +476,7 @@ func TestSubscribeRegistrationCloseBeginsDuringRoundTrip(t *testing.T) {
 	})
 }
 
-// T8. Close begins while the round trip waits, with a context that has already ended, so Close's
+// Close begins while the round trip waits, with a context that has already ended, so Close's
 // cut closes the pipe, the connection's socket, at once, as it closes a TCP socket in production:
 // the call reports Close's nats.ErrConnectionClosed, not ErrNotConnected. It runs on real time,
 // outside a bubble: nats.go's drain goroutine outlives a Close that closes the connection
@@ -554,7 +557,7 @@ func (h *refusalCountHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 
 func (h *refusalCountHandler) WithGroup(string) slog.Handler { return h }
 
-// Design D1 (#169): the server answers a SUB or a PUB with a refusal before the PONG. Subscribe
+// The server answers a SUB or a PUB with a refusal before the PONG. Subscribe
 // still returns the subscription and nil, and when the client writes its "NATS error" record the
 // refusal has already been counted under its reason, decided by the error's type. Real time,
 // outside a bubble: the test needs no fake clock and waits only on the scripted server's signals.

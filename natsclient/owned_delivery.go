@@ -14,10 +14,10 @@ import (
 )
 
 // ownedDelivery tracks the handler invocations of one subscription or consumer the client created,
-// so that Close knows when they have all returned (design D3, natsclient-close-is-final). nats.go
-// v1.55.0 cannot tell it: a forced close does not wait for a running callback (nats.go:6284-6315),
-// a drain gives up after its timeout with a callback running (:6437-6465, :6490-6491), and a
-// consumer's Closed() closes at once for an invalid subscription (jetstream/pull.go:855-870).
+// so that Close knows when they have all returned. nats.go v1.55.0 cannot tell it: a forced close
+// does not wait for a running callback (nats.go:6284-6315), a drain gives up after its timeout with
+// a callback running (:6437-6465, :6490-6491), and a consumer's Closed() closes at once for an
+// invalid subscription (jetstream/pull.go:855-870).
 //
 // The native library delivers on one goroutine per subscription, so at most one invocation runs
 // at a time. Once end has been recorded no invocation starts: a delivery handed over after that is
@@ -90,13 +90,12 @@ func (d *ownedDelivery) complete() {
 	close(d.done)
 }
 
-// refuse declares a delivery dropped because its subscription's end was already recorded
-// (design D3, natsclient-close-is-final). It is safe to drop: with an explicit or all ack policy the
-// message stays unacknowledged and the server redelivers it after its ack wait. With AckNone, and
-// on a core subscription, it is lost, as the buffered messages the native library discards at the
-// same moment are (nats.go:3801-3803, :3817-3828; jetstream/pull.go:58-61). The owner accepted that AckNone
-// loss (question 4, #9 comment 5980769459). The late_delivery_refused label of the JetStream
-// error metric also counts core subscriptions.
+// refuse declares a delivery dropped because its subscription's end was already recorded. It is
+// safe to drop: with an explicit or all ack policy the message stays unacknowledged and the server
+// redelivers it after its ack wait. With AckNone, and on a core subscription, it is lost, as the
+// buffered messages the native library discards at the same moment are (nats.go:3801-3803,
+// :3817-3828; jetstream/pull.go:58-61). That AckNone loss is accepted. The late_delivery_refused
+// label of the JetStream error metric also counts core subscriptions.
 func (d *ownedDelivery) refuse(subject string) {
 	attrs := append([]any{slog.String("subject", subject)}, d.attrs...)
 	d.m.logger.Warn("NATS client refused a delivery after its subscription ended", attrs...)
@@ -120,9 +119,9 @@ type consumerOwnership struct {
 //
 // Close drains the client's connection, which ends the consumers made on it gracefully.
 //
-// cancelHandlers, when not nil, cancels the context the client owns for this consumer's handlers
-// (owner ruling, #9 comment 5994720412 item 2). The goroutine calls it as soon as Close begins, and
-// once every handler invocation has returned. When ownConsumer reports false the caller cancels.
+// cancelHandlers, when not nil, cancels the context the client owns for this consumer's handlers.
+// The goroutine calls it as soon as Close begins, and once every handler invocation has returned.
+// When ownConsumer reports false the caller cancels.
 func (c *Client) ownConsumer(
 	d *ownedDelivery, cancelHandlers context.CancelFunc, release func(started bool),
 ) (*consumerOwnership, bool) {

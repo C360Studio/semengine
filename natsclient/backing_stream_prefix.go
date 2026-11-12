@@ -36,7 +36,7 @@ type ResourceKind string
 
 // Resource kinds.
 const (
-	// ResourceOrdinaryStream is a stream SemStreams provisions to carry
+	// ResourceOrdinaryStream is a stream a component provisions to carry
 	// time-shaped events — the only kind stream provisioning governs.
 	ResourceOrdinaryStream ResourceKind = "stream"
 	// ResourceKeyValue is a KV bucket's backing stream (KVStreamPrefix).
@@ -80,7 +80,7 @@ var ErrBackingStreamNotProvisionable = errors.New(
 
 // CheckOrdinaryStreamName is the fail-closed name guard shared by every
 // stream-provisioning seam. Stream provisioning governs ORDINARY streams —
-// JetStream streams SemStreams creates to carry time-shaped events. NATS also
+// JetStream streams a component creates to carry time-shaped events. NATS also
 // implements every KV bucket and every ObjectStore as a JetStream stream
 // (KVStreamPrefix+<bucket> and ObjectStoreStreamPrefix+<bucket>), which puts
 // those resources within reach of the plain stream API. They are not ordinary

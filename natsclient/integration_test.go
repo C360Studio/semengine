@@ -46,11 +46,9 @@ func TestIntegration_ConnectToRealNATS(t *testing.T) {
 // TestIntegration_ReconnectionIsRedial proves re-dial, not nats.go's automatic reconnect: when the
 // broker restarts, a client on it observes the loss (its connection-lost callback fires and its
 // Status leaves connected), Connect on it refuses once nats.go has closed its connection, and a
-// client dialled from the restarted broker's URL is healthy.
-// The pin skipped this test because Docker could map the restarted broker to another host port
-// (integration_test.go:63-65). natsfixture keeps the host port across a restart (#209); the first
-// client here has no reconnects because the test proves a re-dial, not a reconnect. Rewritten on
-// natsfixture.Restart (owner ruling, #9 comment 5941920346, Q2; comment 5969522395, item 2).
+// client dialled from the restarted broker's URL is healthy. natsfixture.Restart keeps the host
+// port across a restart, so Docker cannot move the restarted broker to another port; the first
+// client here has no reconnects because the test proves a re-dial, not a reconnect.
 func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	ctx := t.Context()
 	// Own server: restarts the server mid-test.
@@ -89,9 +87,8 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	assert.False(t, manager.IsHealthy())
 
 	// With no reconnects left, nats.go closes the connection; the client keeps it installed, so
-	// Status stays Disconnected and Connect refuses, naming the case (design
-	// natsclient-handler-root D3, T5; #317). This is also the pinned-version probe for nats.go
-	// closing the connection once its reconnects run out.
+	// Status stays Disconnected and Connect refuses, naming the case. This is also the probe, at
+	// the pinned nats.go (v1.55.0), that nats.go closes the connection once its reconnects run out.
 	closed, err := probe.Await(waitCtx, func(context.Context) (bool, error) { return manager.GetConnection().IsClosed(), nil },
 		func(closed bool) bool { return closed })
 	require.NoError(t, err, "nats.go closed the connection: %v", closed)
@@ -112,12 +109,11 @@ func TestIntegration_ReconnectionIsRedial(t *testing.T) {
 	require.NoError(t, err, "a round trip to the restarted broker")
 }
 
-// TestIntegration_AcknowledgedIsNotDurableOnMemoryStream is task 4.2, the natsclient half of
+// TestIntegration_AcknowledgedIsNotDurableOnMemoryStream proves the natsclient half of
 // transport-client "Acknowledged is not durable on a memory stream": a message PublishToStream
 // returned nil for (the server acknowledged it) on a memory-backed stream is absent after the
 // broker restarts, and one published the same way on a file-backed stream is present. Both are
-// read back before the restart, so the absence afterwards is not a publish that never landed. The
-// graph-ingest half of the scenario is change 2's.
+// read back before the restart, so the absence afterwards is not a publish that never landed.
 func TestIntegration_AcknowledgedIsNotDurableOnMemoryStream(t *testing.T) {
 	ctx := t.Context()
 	// Own server: restarts the server mid-test.

@@ -35,7 +35,7 @@ func gatheredCount(t *testing.T, registry *metric.MetricsRegistry, name, label, 
 	return 0
 }
 
-// Design D3: the stream publish calls keep their errors per call. A publish no stream captures
+// The stream publish calls keep their errors per call. A publish no stream captures
 // fails: PublishToStream returns nats.go's error unclassified and counts nothing, while
 // PublishToStreamWithAck counts publish_to_stream and classifies the error transient. On a client
 // that is not connected, PublishToStreamWithAck returns ErrNotConnected itself and counts nothing.

@@ -26,7 +26,7 @@ type KVEntry struct {
 type KVOptions struct {
 	MaxRetries            int           // Maximum CAS retry attempts
 	RetryDelay            time.Duration // Initial delay between retries
-	Timeout               time.Duration // Ends the wait for the server's answer, not a held write (P13, P14; ADR-112)
+	Timeout               time.Duration // Ends the wait for the server's answer, not a held write (measured at nats.go v1.55.0, ADR-112)
 	MaxValueSize          int           // Maximum size for values (default: 1MB)
 	UseExponentialBackoff bool          // Enable exponential backoff with jitter
 	MaxRetryDelay         time.Duration // Maximum delay between retries
@@ -134,7 +134,7 @@ func BucketLastSeq(ctx context.Context, bucket interface {
 // stream: maxAge (the KV bucket's TTL — age eviction) and maxBytes (size
 // eviction; 0/negative = unlimited). Callers on the live graph assert both are
 // non-binding — NATS age/size eviction is reachability-blind and would drop
-// entities with live inbound edges (ADR-068 D1). Mirrors BucketLastSeq: the
+// entities with live inbound edges (ADR-068). Mirrors BucketLastSeq: the
 // KeyValueStatus interface does not surface these, so we read the concrete
 // JetStream-backed status's stream config.
 func BucketRetention(ctx context.Context, bucket jetstream.KeyValue) (maxAge time.Duration, maxBytes int64, err error) {
@@ -162,10 +162,10 @@ func BucketRetention(ctx context.Context, bucket jetstream.KeyValue) (maxAge tim
 // a transient status error.
 //
 // Two callers, one mechanical rule and two reasons for it: the live graph
-// bucket (ADR-068 D1 — eviction is reachability-blind) and the shared
-// configuration bucket that holds the create-once platform identity (ADR-102
-// decision 7 — an expired identity is reminted as a second authority that can
-// never be reconciled). The exported name predates the second caller.
+// bucket (ADR-068 — eviction is reachability-blind) and the shared
+// configuration bucket that holds the create-once platform identity (ADR-102 —
+// an expired identity is reminted as a second authority that can never be
+// reconciled). The exported name predates the second caller.
 var ErrGraphBucketRetention = errors.New("bucket has lifecycle retention, which is forbidden for state that must not be evicted")
 
 // CheckNoLifecycleRetention is the pure guardrail: it errors if a bucket's
@@ -188,8 +188,8 @@ func CheckNoLifecycleRetention(name string, maxAge time.Duration, maxBytes int64
 
 // AssertNoLifecycleRetention reads this bucket's retention config and returns
 // ErrGraphBucketRetention if it is binding — the boot-time guardrail for a live
-// graph bucket (ADR-068 D1) and for the shared configuration bucket that holds
-// the create-once platform identity (ADR-102 d7). A retention config here means
+// graph bucket (ADR-068) and for the shared configuration bucket that holds
+// the create-once platform identity (ADR-102). A retention config here means
 // some process won the get-or-create race with a TTL/size cap; fail-closed
 // rather than silently expire state that cannot be regenerated.
 func (kv *KVStore) AssertNoLifecycleRetention(ctx context.Context, name string) error {
@@ -369,9 +369,9 @@ func (kv *KVStore) UpdateWithRetryRead(ctx context.Context, key string,
 	// rerun reports whether a write error lets the callback run again: the bucket refused the
 	// write as a revision conflict, or nats.go returned jetstream.ErrNoStreamResponse, which it
 	// does only when every publish attempt got no responders, so no stream stored the write
-	// (publish.go:248-263). Any other write error may follow a stored write, and a later run's
-	// refusal could not show whether it was stored, so it ends the call (Codex interim review
-	// R2, PR #93 comment 6112098987). A failed read stores nothing and is retried.
+	// (jetstream/publish.go:276-291 at v1.55.0, read, not measured). Any other write error may
+	// follow a stored write, and a later run's refusal could not show whether it was stored, so
+	// it ends the call. A failed read stores nothing and is retried.
 	rerun := func(err error) bool {
 		return IsKVConflictError(err) || errors.Is(err, jetstream.ErrNoStreamResponse)
 	}
@@ -571,7 +571,7 @@ func (kv *KVStore) DeleteAtRevision(ctx context.Context, key string, revision ui
 // Keys returns every key in the bucket, sorted, each once, or no keys and an
 // error. It applies the store's operation timeout, then lists the filter ">"
 // as keysByFilter does, so a listing cut short is an error, never a partial
-// list (#533). An empty bucket gives nil and no error.
+// list. An empty bucket gives nil and no error.
 func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
 	if ctx == nil {
 		return nil, nilContextErrorOf("KVStore", "Keys")
@@ -583,8 +583,8 @@ func (kv *KVStore) Keys(ctx context.Context) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	// nats.go's Keys sorted and removed repeats; keep both (#512 measured repeats
-	// under concurrent overwrites; TestKVStoreKeysListsEachKeyOnceSorted).
+	// nats.go's Keys sorted and removed repeats; keep both (a listing under concurrent
+	// overwrites can repeat a key; TestKVStoreKeysListsEachKeyOnceSorted).
 	slices.Sort(keys)
 	return slices.Compact(keys), nil
 }
@@ -715,8 +715,9 @@ drain:
 		}
 	}
 	// A Stop error after a complete snapshot whose delivery closed is ignored,
-	// as nats.go's Keys ignores it (owner, #533): a denied consumer delete must
-	// not fail a listing that has every key.
+	// as nats.go's Keys ignores it (a deferred watcher.Stop, read at nats.go
+	// v1.55.0, jetstream/kv.go:1409): a denied consumer delete must not fail a
+	// listing that has every key.
 	if stopErr != nil && (!closed || (primaryErr != nil && !errors.Is(stopErr, nats.ErrBadSubscription) && !errors.Is(stopErr, nats.ErrConnectionClosed))) {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("filtered watcher Stop: %w", stopErr))
 	}
@@ -756,10 +757,10 @@ func IsKVTombstone(operation jetstream.KeyValueOp) bool {
 // The NATS Go SDK's public Get already maps ErrKeyDeleted → ErrKeyNotFound, so
 // in the common KVStore.Get path only ErrKeyNotFound reaches us. The ErrKeyDeleted
 // branch defends paths that bypass that mapping (Watch handler entry-error chains,
-// GetRevision wrappers, future SDK changes). See issue #122 and
-// feedback_jetstream_sentinel_set_coverage.
+// GetRevision wrappers, future SDK changes). The mapping is read at nats.go
+// v1.55.0 (jetstream/kv.go:1011-1013), not measured.
 //
-// The class is read from the error's type, never its text (#146): a refusal's
+// The class is read from the error's type, never its text: a refusal's
 // text can name a stored entity, and an ID holding "10037" is not an absence.
 func IsKVNotFoundError(err error) bool {
 	return errors.Is(err, ErrKVKeyNotFound) ||
@@ -769,9 +770,10 @@ func IsKVNotFoundError(err error) bool {
 }
 
 // IsKVConflictError checks if error indicates a conflict (key exists or wrong revision).
-// Like IsKVNotFoundError it reads the error's type, never its text (#146). A
-// replicated stream reports a wrong last sequence as 10164 where a single
-// replica reports 10071.
+// Like IsKVNotFoundError it reads the error's type, never its text. A wrong
+// last sequence comes back as 10164 or 10071, both "wrong last sequence"
+// (server/errors.json at nats-server v2.15.2, read); that a replicated stream
+// answers 10164 and a single replica 10071 is not measured and not promised.
 func IsKVConflictError(err error) bool {
 	return errors.Is(err, ErrKVRevisionMismatch) ||
 		errors.Is(err, ErrKVKeyExists) ||

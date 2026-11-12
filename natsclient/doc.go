@@ -5,9 +5,10 @@
 // reconnection with natsclient's settings (see Connection Lifecycle below). Every call
 // that waits for the server takes a context, which ends that wait. It does not end a
 // wait behind a write the server is not reading, which lasts until the write completes
-// or nats.go's write timeout (WithWriteTimeout) ends it (P13, P14); Close, on a
-// connection the client dialled, and Connect are the exception (T1, T4; ADR-112). It
-// serves as the foundation for all of SemEngine's NATS communication.
+// or nats.go's write timeout (WithWriteTimeout) ends it (measured at nats.go v1.55.0,
+// ADR-112); Close, on a connection the client dialled, and Connect are the exception
+// (TestCloseEndsAHeldWrite, TestConnectEndsWithItsContext). It serves as the
+// foundation for all of SemEngine's NATS communication.
 //
 // # Core Features
 //
@@ -109,10 +110,11 @@
 //
 //	// Create a stream. An ordinary stream MUST declare a finite MaxAge and a
 //	// finite MaxBytes, and creation is refused without them. MaxBytes 0 and -1
-//	// both mean unlimited to JetStream (P16, at nats-server v2.14.7), so neither is a declaration. Set
-//	// Discard explicitly too — it cannot be required (DiscardOld is the field's
-//	// zero value) but at a finite MaxBytes it decides whether the oldest
-//	// messages are evicted or the newest are refused.
+//	// both mean unlimited to JetStream (measured at nats-server v2.14.7,
+//	// ADR-112), so neither is a declaration. Set Discard explicitly too — it
+//	// cannot be required (DiscardOld is the field's zero value) but at a
+//	// finite MaxBytes it decides whether the oldest messages are evicted or
+//	// the newest are refused.
 //	stream, err := client.CreateStream(ctx, jetstream.StreamConfig{
 //	    Name:     "EVENTS",
 //	    Subjects: []string{"events.>"},
@@ -373,8 +375,8 @@
 //   - X-Error-Code: <stable machine code> (when coded)
 //   - Body: the standard {"message": "...", "detail": {...}} envelope
 //
-// There is no in-band error channel and no legacy "error: <msg>" body — a
-// reply with no X-Status header is success.
+// There is no in-band error channel: a reply with no X-Status header is success,
+// whatever its body says.
 //
 // Callers use RequestClassified, or RequestWithRetryClassified only when an
 // operation-specific non-graph contract authorizes redelivery. Both surface the
@@ -419,8 +421,9 @@
 //
 // Context-First API: every call that waits for the server takes a context.Context as
 // its first parameter, and the context ends that wait. It does not end a wait behind a
-// write the server is not reading (P13); Close and Connect are the exception (T1, T4;
-// P18; ADR-112). RTT takes no context.
+// write the server is not reading (measured at nats.go v1.55.0, ADR-112); Close and
+// Connect are the exception (TestCloseEndsAHeldWrite, TestConnectEndsWithItsContext).
+// RTT takes no context.
 //
 // KVStore Abstraction: Created high-level KV abstraction with built-in CAS retry logic
 // to eliminate code duplication across services. Centralizes revision conflict handling

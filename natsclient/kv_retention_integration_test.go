@@ -14,7 +14,7 @@ import (
 
 // TestIntegration_BucketRetention_D1Guardrail proves the boot-time guardrail
 // against a real server: a clean bucket reads MaxAge 0 and passes; a bucket
-// created with a TTL reads it back and trips ErrGraphBucketRetention (ADR-068 D1).
+// created with a TTL reads it back and trips ErrGraphBucketRetention (ADR-068).
 func TestIntegration_BucketRetention_D1Guardrail(t *testing.T) {
 	ctx := context.Background()
 	natsURL := startFixture(t).URL()

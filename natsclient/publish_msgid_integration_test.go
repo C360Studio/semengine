@@ -13,19 +13,19 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestIntegration_PublishToStreamWithMsgID_Dedup verifies the ADR-055 §5 "T1"
+// TestIntegration_PublishToStreamWithMsgID_Dedup verifies the ADR-055 §5
 // contract: a deterministic Nats-Msg-Id collapses re-publishes of the same
 // logical event to a single stored message within the stream's duplicate
 // window, distinct IDs each store, and an empty ID opts out of dedup entirely
 // (drop-in PublishToStream behavior). The window's expiry is a separate proof,
 // TestIntegration_PublishToStreamWithMsgID_StoresAgainAfterWindow.
 func TestIntegration_PublishToStreamWithMsgID_Dedup(t *testing.T) {
-	// Why the window's expiry cannot fail this proof (design D8 R1c): every publish and
-	// read below runs under proofCtx, which ends failureBound after it starts. The server
-	// stores the first evt-1 after proofCtx starts and handles the second before that
-	// publish returns, so the two are at most failureBound apart, and the window is six
-	// times that. A host too slow to finish inside failureBound fails on the context with a
-	// deadline error; it can never reach the count assertion with the window expired.
+	// Why the window's expiry cannot fail this proof: every publish and read below runs under
+	// proofCtx, which ends failureBound after it starts. The server stores the first evt-1 after
+	// proofCtx starts and handles the second before that publish returns, so the two are at most
+	// failureBound apart, and the window is six times that. A host too slow to finish inside
+	// failureBound fails on the context with a deadline error; it can never reach the count
+	// assertion with the window expired.
 	const duplicateWindow = 6 * failureBound
 
 	natsURL := startFixture(t).URL()
@@ -71,9 +71,9 @@ func TestIntegration_PublishToStreamWithMsgID_Dedup(t *testing.T) {
 }
 
 // TestIntegration_PublishToStreamWithMsgID_StoresAgainAfterWindow is the expiry
-// half of the T1 contract: once the stream's duplicate window has passed, the
-// same Nats-Msg-Id stores again. Expiry is the wall-clock behaviour under test
-// (design D8 R1c), so the window is the pin's 250 ms and nothing here asserts a
+// half of the ADR-055 §5 contract: once the stream's duplicate window has
+// passed, the same Nats-Msg-Id stores again. Expiry is the wall-clock behaviour
+// under test, so the window is a short 250 ms and nothing here asserts a
 // duplicate inside it: a slow host can only make the first retry land after the
 // window, which this check accepts. The retries are observed with probe.Await
 // over the server's stream state, bounded by the window plus failureBound.

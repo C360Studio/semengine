@@ -237,7 +237,7 @@ func TestKVStore_Watch(t *testing.T) {
 	defer watcher.Stop()
 
 	// The watcher sends nil once it has delivered the bucket's initial values (none here); changes
-	// made after that arrive as updates. The pin waited 100 ms instead.
+	// made after that arrive as updates, so that nil orders them; a fixed wait would order nothing.
 	entry := <-watcher.Updates()
 	require.Nil(t, entry, "an empty bucket has no initial values")
 
@@ -403,7 +403,7 @@ func TestKVStore_Timeout(t *testing.T) {
 
 	t.Run("normal operations with reasonable timeout", func(t *testing.T) {
 		kvStore := client.NewKVStore(bucket, func(opts *KVOptions) {
-			opts.Timeout = failureBound // Reasonable timeout (design D8 R1b)
+			opts.Timeout = failureBound // a failure bound, never reached by a working store
 		})
 
 		// Should complete normally
@@ -425,7 +425,7 @@ func TestKVStore_ErrorHelpers(t *testing.T) {
 
 		// Raw NATS sentinels — both the not-found and the tombstone-deleted
 		// cases must surface as "key absent" for UpdateWithRetry to route
-		// through the create path. See issue #122.
+		// through the create path.
 		assert.True(t, IsKVNotFoundError(jetstream.ErrKeyNotFound),
 			"raw jetstream.ErrKeyNotFound must be recognized")
 		assert.True(t, IsKVNotFoundError(jetstream.ErrKeyDeleted),
@@ -437,7 +437,7 @@ func TestKVStore_ErrorHelpers(t *testing.T) {
 		assert.True(t, IsKVNotFoundError(fmt.Errorf("get failed: %w", jetstream.ErrKeyNotFound)),
 			"wrapped ErrKeyNotFound must be recognized via errors.Is")
 
-		// No text match: the class is read from the type (ruling N, #146).
+		// No text match: the class is read from the type.
 		assert.False(t, IsKVNotFoundError(errors.New("kv get foo: nats: key was deleted")),
 			"'key was deleted' in the text alone must not classify")
 		assert.False(t, IsKVNotFoundError(errors.New("kv get foo: nats: key not found")),

@@ -57,7 +57,7 @@ func TestIntegration_PublicSubscriptionFactoriesReturnDrainableAuthority(t *test
 }
 
 // A connection that closes while a callback runs must still let Drain return
-// nil once that callback returns (#1372). This also guards a nats.go upgrade
+// nil once that callback returns. This also guards a nats.go upgrade
 // that changes when the closed handler fires.
 func TestIntegration_SubscriptionDrainAfterConnectionCloseJoinsCallback(t *testing.T) {
 	client := newFixtureClient(t).Client
@@ -77,7 +77,7 @@ func TestIntegration_SubscriptionDrainAfterConnectionCloseJoinsCallback(t *testi
 	<-entered
 
 	// Close the client's own native connection directly: Client.Close would
-	// drain first. (The pin's GetNativeConnection returned this connection.)
+	// drain first.
 	client.GetConnection().Close()
 
 	drainCtx, cancel := context.WithTimeout(t.Context(), 10*time.Second)

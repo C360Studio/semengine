@@ -32,7 +32,7 @@ const stopping = "websocket output is stopping"
 var _ component.LifecycleComponent = (*output)(nil)
 
 // output is the websocket output component: an HTTP server whose upgrade path streams frames to
-// every connected client (design D2, D3).
+// every connected client.
 type output struct {
 	settings   settings
 	natsClient *natsclient.Client
@@ -115,7 +115,7 @@ func create(rawConfig json.RawMessage, deps component.Dependencies) (component.D
 		tls:        deps.Security.TLS.Server,
 		metrics:    metrics,
 		drops:      newDrops(listener, logger, metrics),
-		// Every origin is accepted, as the pin did: the output has no authentication (#84).
+		// Every origin is accepted: the output has no authentication.
 		upgrader: websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
 		clients:  map[*client]struct{}{},
 	}, nil
@@ -143,7 +143,7 @@ func (c *output) InputPorts() []component.Port { return []component.Port{c.setti
 func (c *output) OutputPorts() []component.Port { return []component.Port{c.settings.output} }
 
 // Health reports the shell's verdict (component.Lifecycle.Health), over the applied-state view's
-// stuck state: catching up, or its watch lost and reopening (design D3).
+// stuck state: catching up, or its watch lost and reopening.
 func (c *output) Health() component.HealthStatus {
 	if c.settings.subject != "" {
 		return c.lifecycle.Health()
@@ -180,8 +180,8 @@ func (c *output) Start(ctx context.Context) error {
 // cleanup releases a partial start.
 func (c *output) start(ctx context.Context) error {
 	// LoadServerTLSConfig returns nil when server TLS is disabled, applies mTLS when it is enabled,
-	// and refuses what this module does not build, such as an "acme" mode, naming the key (design
-	// D6; TestACMEModeRefusedAtStart). Loading first means a refusal binds nothing.
+	// and refuses what this module does not build, such as an "acme" mode, naming the key
+	// (TestACMEModeRefusedAtStart). Loading first means a refusal binds nothing.
 	tlsConfig, err := tlsutil.LoadServerTLSConfig(c.tls)
 	if err != nil {
 		return errs.Wrap(err, key, "Start", "load TLS")
@@ -336,7 +336,7 @@ func (c *output) detach(cl *client) {
 }
 
 // receive is the subscription's handler: a message that is valid JSON goes to every client as a
-// data frame; any other is dropped, counted and logged (design D2, "Declared drops").
+// data frame; any other is dropped, counted and logged.
 func (c *output) receive(_ context.Context, msg *nats.Msg) {
 	c.lifecycle.CountInput(len(msg.Data))
 	c.metrics.received.Inc()

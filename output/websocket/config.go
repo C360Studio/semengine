@@ -22,8 +22,8 @@ const (
 	defaultPort         = 8081
 )
 
-// removedKeys are the pin's configuration keys the websocket no longer defines, each with what
-// replaces it (design D5). A configuration carrying one is refused with that guidance, where
+// removedKeys are configuration keys the websocket does not define, each with what replaces
+// it. A configuration carrying one is refused with that guidance, where
 // strict decoding alone would only say the key is unknown.
 var removedKeys = map[string]string{
 	"delivery_mode": "every frame is sent at most once; the at-least-once mode and its acknowledgements are gone",
@@ -81,8 +81,8 @@ func resolveConfig(rawConfig json.RawMessage) (settings, error) {
 		return settings{}, err
 	}
 	// Scalars start at their defaults so an explicit empty value is refused, not defaulted. A ports
-	// block that is present is used as written, never merged with the default ports (ruling K, #91
-	// comment 6062681355), so Ports starts nil.
+	// block that is present is used as written, never merged with the default ports, so Ports starts
+	// nil.
 	cfg := config{Path: defaultPath, PingInterval: defaultPingInterval}
 	if err := component.SafeUnmarshal(rawConfig, &cfg); err != nil {
 		return settings{}, errs.WrapInvalid(err, "websocket", "factory", "config unmarshal")
@@ -133,7 +133,7 @@ func refuseRemovedKeys(rawConfig json.RawMessage) error {
 }
 
 // resolveInput accepts exactly one input: a kv-watch of every ENTITY_STATES key with no history
-// (applied state), or a core NATS subject without a queue group (design D1). It returns the port
+// (applied state), or a core NATS subject without a queue group. It returns the port
 // and, for a subject input, its subject.
 func resolveInput(definitions []component.PortDefinition) (component.Port, string, error) {
 	if len(definitions) != 1 {
@@ -170,8 +170,8 @@ func resolveInput(definitions []component.PortDefinition) (component.Port, strin
 	}
 }
 
-// resolveOutput accepts exactly one http network output on a port from 1024 to 65535, as the pin
-// did; port 0 is refused because the address a client dials must be known before Start.
+// resolveOutput accepts exactly one http network output on a port from 1024 to 65535;
+// port 0 is refused because the address a client dials must be known before Start.
 func resolveOutput(definitions []component.PortDefinition) (component.Port, error) {
 	if len(definitions) != 1 {
 		return component.Port{}, errs.WrapInvalid(errs.ErrInvalidConfig, "websocket", "factory",
@@ -198,7 +198,7 @@ func resolveOutput(definitions []component.PortDefinition) (component.Port, erro
 	return port, nil
 }
 
-// validatePath refuses a path that is not a path-only ServeMux pattern (pin validateWebSocketPath).
+// validatePath refuses a path that is not a path-only ServeMux pattern.
 func validatePath(path string) (err error) {
 	if path == "" {
 		return errors.New("path cannot be empty")

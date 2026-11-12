@@ -6,7 +6,7 @@ import (
 	"github.com/c360studio/semengine/metric"
 )
 
-// The reasons a client's connection ends, the client_disconnections_total label (design D2, D6).
+// The reasons a client's connection ends, the client_disconnections_total label.
 // The first to happen is the one counted.
 const (
 	// disconnectReadTimeout: the client answered no ping before its read deadline.
@@ -30,10 +30,10 @@ const (
 	errorServe = "serve"
 )
 
-// messageSizeBuckets are the pin's (output/websocket/websocket.go:322 at 8b99efe9), in bytes.
+// messageSizeBuckets are the message_size_bytes bucket bounds, in bytes.
 var messageSizeBuckets = []float64{100, 500, 1000, 2000, 5000, 10000, 25000}
 
-// outputMetrics are one output's semengine_websocket_* collectors (design D6). Every one is
+// outputMetrics are one output's semengine_websocket_* collectors. Every one is
 // labelled listener, so instances on one registry stay apart; the single-label ones are resolved
 // for this output's listener at construction.
 type outputMetrics struct {

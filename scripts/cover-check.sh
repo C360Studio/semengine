@@ -64,6 +64,8 @@ readonly targets=(
   # setup-04a-05-fusionnats design D6 (03B critical list): the unit lane (a fake requester) holds the floor alone;
   # the integration lane drives the same methods against real responders.
   "pkg/fusion/fusionnats unit"
+  # graph/lexical is in-memory only: its unit lane is the whole of its tests.
+  "graph/lexical unit"
 )
 
 # The unit profile's packages: every target measured from it, alone or merged.

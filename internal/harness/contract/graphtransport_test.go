@@ -15,7 +15,7 @@ const graphTransportRule = "(graph-transport-boundary › The graph root imports
 // Requirement: graph-transport-boundary/The graph root imports no transport
 func TestGraphImportsNoTransport(t *testing.T) {
 	root := repoRoot(t)
-	requireNoViolations(t, "graph root transport imports", graphTransportViolations(t, root, "./graph"))
+	requireNoViolations(t, "graph root transport imports", transportViolations(t, root, "./graph", graphTransportRule))
 }
 
 // Requirement: graph-transport-boundary/The graph root imports no transport
@@ -28,7 +28,7 @@ func TestGraphImportsNoTransportSensitivity(t *testing.T) {
 		"natsclient/n.go": "package natsclient\n",
 	}
 	root, _ := writeTree(t, clean)
-	requireNoViolations(t, "clean fixture", graphTransportViolations(t, root, "./graph"))
+	requireNoViolations(t, "clean fixture", transportViolations(t, root, "./graph", graphTransportRule))
 
 	// The root reaches natsclient through a package it imports: the transitive edge is the case.
 	reaching := map[string]string{
@@ -38,20 +38,21 @@ func TestGraphImportsNoTransportSensitivity(t *testing.T) {
 		"natsclient/n.go": "package natsclient\n",
 	}
 	root, _ = writeTree(t, reaching)
-	requireViolation(t, graphTransportViolations(t, root, "./graph"), "example.com/fixture/natsclient")
+	requireViolation(t, transportViolations(t, root, "./graph", graphTransportRule), "example.com/fixture/natsclient")
 
 	// A github.com/nats-io path in the listing, read from planted go list output: the fixture
 	// module cannot fetch the real one.
-	requireViolation(t, transportPaths("example.com/fixture",
+	requireViolation(t, transportPaths("example.com/fixture", graphTransportRule,
 		[]string{"example.com/fixture/graph", "github.com/nats-io/nats.go/jetstream"}),
 		"github.com/nats-io/nats.go/jetstream")
-	if got := transportPaths("example.com/fixture", nil); len(got) == 0 {
+	if got := transportPaths("example.com/fixture", graphTransportRule, nil); len(got) == 0 {
 		t.Fatal("an empty go list -deps listing passed; a check that saw nothing is not a pass")
 	}
 }
 
-// graphTransportViolations lists every transport package go list -deps reports for pkg in root.
-func graphTransportViolations(t *testing.T, root, pkg string) []string {
+// transportViolations lists every transport package go list -deps reports for pkg in root,
+// each naming rule.
+func transportViolations(t *testing.T, root, pkg, rule string) []string {
 	t.Helper()
 	cmd := exec.Command("go", "list", "-deps", "-f", "{{.ImportPath}}", pkg)
 	cmd.Dir = root
@@ -59,20 +60,20 @@ func graphTransportViolations(t *testing.T, root, pkg string) []string {
 	if err != nil {
 		t.Fatalf("go list -deps %s: %v", pkg, err)
 	}
-	return transportPaths(modulePath(t, root), strings.Fields(string(out)))
+	return transportPaths(modulePath(t, root), rule, strings.Fields(string(out)))
 }
 
 // transportPaths reads go list -deps output and names each transport path in it: the module's
 // natsclient package or anything under github.com/nats-io.
-func transportPaths(module string, deps []string) []string {
+func transportPaths(module, rule string, deps []string) []string {
 	if len(deps) == 0 {
-		return []string{"go list -deps listed no package; a check that saw nothing is not a pass " + graphTransportRule}
+		return []string{"go list -deps listed no package; a check that saw nothing is not a pass " + rule}
 	}
 	var violations []string
 	for _, dep := range deps {
 		if dep == module+"/natsclient" || strings.HasPrefix(dep, module+"/natsclient/") ||
 			strings.HasPrefix(dep, "github.com/nats-io/") {
-			violations = append(violations, "graph reaches "+dep+" "+graphTransportRule)
+			violations = append(violations, "reaches "+dep+" "+rule)
 		}
 	}
 	return violations

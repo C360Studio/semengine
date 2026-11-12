@@ -44,7 +44,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   chosen value is set in the constant and written into design D6. The floor (measured R@10 minus one point) is set
   as a constant in `TestScorecardHoldsItsFloor` and written into design D8. `TestScorecardHoldsItsFloor` and
   `TestScorecardBehaviour` pass, and an IDF-is-one mutant is shown to fail the floor.
-- [ ] 2.5 Guards and coverage (design D10). Premise: the graph root guard covers `./graph` only
+- [x] 2.5 Guards and coverage (design D10). Premise: the graph root guard covers `./graph` only
   (`internal/harness/contract/graphtransport_test.go:18`). Accept: `TestLexicalImportsNoNATS` and its sensitivity
   test pass in `internal/harness/contract`; `"graph/lexical unit"` is in `scripts/cover-check.sh` and
   `task cover:check` passes.

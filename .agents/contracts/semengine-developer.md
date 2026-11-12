@@ -387,6 +387,14 @@ The reasoning behind these rules, and the mutation procedure step by step, is in
 - For paid LLM calls, cloud runs, prolonged CI, or other costly operations, validate monitor filters and actively poll
   authoritative state every 30-60 seconds. Compare progress timestamps and abort promptly when a wedge is proven.
 
+## Comments and docs
+
+A comment, a test comment, or a doc line gives the reason in plain words and stops. It carries no port history: no
+issue, pull request, comment, review-checkpoint, OpenSpec task, or design-decision reference, and no account of what
+the pin did. That history goes in the commit message and the pull request body. Name an ADR only where the ADR is the
+reason for the code. The markers a guard reads (`// Own server:`, `// Every address:`, `// shortcut:`) stay, and so does
+the issue a harness doc comment names for the failure it exists for (owner ruling 2026-11-12, #606).
+
 ## Handoff
 
 Summarize the implemented task slice, semantic blast radius, tests and exact results (the record in `docs/testing.md`,

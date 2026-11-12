@@ -14,7 +14,8 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
 - [x] 2.1 Tokenizer (`Tokens`, stopwords, plural rules; design D3). Premise: three tokenizers exist and none is
   shared (inventory §2: `graph/embedding/bm25_embedder.go:242`, `graph/clustering/terms.go:28`,
   `processor/graph-query/localsearch.go:60`). The rules and their order were measured in
-  `notes/probes/tokenizer-probe-2.log`, `word-shape-probe.log` and `tokenizer-law-probe.log`. Accept: `TestTokens`
+  `word-shape-probe.log` and `tokenizer-law-probe.log`; `tokenizer-probe-2.log` measured an earlier plural variant,
+  and the scorecard (2.4) measures the shipped rules. Accept: `TestTokens`
   (with the `wills does haves ands ares thes fors withs` and long-run witnesses), `TestPluralRules`,
   `TestSingularFindsPlural`,
   `TestPropFoldIsIdempotent`, `TestJoinedIdentifierIsNotHeld` and `FuzzTokens` pass; a mutant that skips identifier

@@ -142,7 +142,7 @@ checks origin and credentials.
 
 TLS comes from the deployment's server TLS configuration (`component.Dependencies.Security`), loaded in `Start`
 through `internal/tlsutil`: certificate and key files, with client certificates (mTLS) applied when that
-configuration asks. An `acme` mode is refused at `Start` naming the key; ACME is not carried until a consumer needs it.
+configuration asks. An `acme` mode is refused at `Start` naming the key; ACME is not supported.
 With TLS enabled the server speaks HTTP/1.1 only, which the WebSocket upgrade needs, and clients dial `wss://`.
 
 ## Metrics

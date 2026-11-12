@@ -22,9 +22,9 @@ const (
 	defaultPort         = 8081
 )
 
-// removedKeys are configuration keys the websocket does not define, each with what replaces
-// it. A configuration carrying one is refused with that guidance, where
-// strict decoding alone would only say the key is unknown.
+// removedKeys are keys an earlier websocket configuration may carry, each with what replaces
+// it. A configuration carrying one is refused with that guidance, where strict decoding alone
+// would only say the key is unknown.
 var removedKeys = map[string]string{
 	"delivery_mode": "every frame is sent at most once; the at-least-once mode and its acknowledgements are gone",
 	"ack_timeout":   "nothing is acknowledged, so there is no timeout to wait for",

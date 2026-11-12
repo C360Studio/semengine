@@ -150,8 +150,8 @@ func (c *output) serveUpgrade(w http.ResponseWriter, r *http.Request) {
 // read discards every frame the client sends until a read fails. The read deadline starts at twice
 // ping_interval and each pong extends it by as much, so a client that answers pings stays connected
 // however long it sends nothing, and one that answers none is closed. At gorilla/websocket
-// v1.5.3, a pong that does not extend the deadline leaves the read to
-// time out with pongs received; TestQuietClientStaysConnected fails without the extension.
+// v1.5.3, a pong that does not extend the deadline leaves the read to time out with pongs
+// received; TestQuietClientStaysConnected fails without the extension.
 func (c *output) read(cl *client) {
 	deadline := 2 * c.settings.pingInterval
 	// Setting a deadline fails only on a closed connection, whose next read fails and ends the loop.

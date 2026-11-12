@@ -8,10 +8,10 @@ When `embedding_enabled` is `false`, `semantic` and `similar` SHALL refuse every
 code `not_enabled`, the message naming the verb, without sending any request. Every other verb SHALL be unchanged by
 the key.
 
-#### Scenario: Not the same as a missing responder or a missing vector
+#### Scenario: Not the same as a missing responder
 
-- **WHEN** `embedding_enabled` is true and nothing serves `graph.embedding.query.search`, or one entity has no vector
-- **THEN** the caller is refused transient `internal` or `embedding_unavailable` as today, never `not_enabled`
+- **WHEN** `embedding_enabled` is true and nothing serves `graph.embedding.query.search`
+- **THEN** the caller is refused transient `internal` naming that subject, as today, never `not_enabled`
   (`TestNoRespondersIsTransient`)
 
 #### Scenario: Turned off beside a running responder

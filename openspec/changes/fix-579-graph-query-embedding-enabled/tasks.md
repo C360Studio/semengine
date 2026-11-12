@@ -14,10 +14,11 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
 ## 2. graph-query
 
 - [ ] 2.1 `graph.ErrorCodeNotEnabled` and its doc comment, plus the sender line at `graph/mutation_responses.go:9-17`
-  (design D3). `EmbeddingEnabled *bool` in `processor/graph-query/config.go` with its schema tag, `ApplyDefaults`,
-  `DefaultConfig` and the nil refusal in `Validate` (D1). Check: wire-value test beside `graph/query_verbs_test.go:202`,
-  `TestConfigEmbeddingEnabled`, the nil case in `TestValidateRefusesHandBuiltConfigs`, the `FuzzDeclarePorts` seed;
-  the default shown to fail when removed.
+  (design D3). `EmbeddingEnabled bool` in `processor/graph-query/config.go` with its schema tag, `DefaultConfig` setting
+  true, and
+  `resolveConfig` decoding into `Config{EmbeddingEnabled: true}` (D1). Check: wire-value test beside
+  `graph/query_verbs_test.go:202`, `TestConfigEmbeddingEnabled`, the `FuzzDeclarePorts` seed; the preset shown to fail
+  when removed.
 - [ ] 2.2 The refusing handler for `semantic` and `similar` in `queryHandlers` (`query.go:23-80`; D2). Check:
   `TestEmbeddingVerbsRefuseWhenNotEnabled`, `TestEveryDeclaredVerbHasAHandler` for both settings,
   `TestNotEnabledRefusesBeforeForwarding` (integration); existing `TestNoRespondersIsTransient` and
@@ -33,9 +34,11 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
 
 ## 4. Docs, ledger, archive
 
-- [ ] 4.1 `processor/graph-query/README.md` (forward table note at :33, option table at :307-310),
+- [ ] 4.1 `processor/graph-query/doc.go:27`, `processor/graph-query/README.md` (forward table note at :33-38, option
+  table at :307-310),
   `processor/graph-query/MIGRATION.md` (:125, :162-163), `pkg/fusion/README.md:124-126` and
-  `pkg/fusion/MIGRATION.md:128-131` (the gap is closed; say how to close it), `.agents/skills/query-pattern/SKILL.md:31`,
+  `pkg/fusion/MIGRATION.md:128-131` (the gap is closed; say how to close it),
+  `.agents/skills/query-pattern/SKILL.md:31`,
   the `processor/graph-query` ledger row (`docs/admission-ledger.yaml:4323`) and the fusionnats row's "until then"
   (`:4828-4830`). Gate: `task docs:check`, `task spec:check`.
 - [ ] 4.2 Archive: sync the deltas into `openspec/specs/graph-query` and `openspec/specs/composed-stack`, and edit

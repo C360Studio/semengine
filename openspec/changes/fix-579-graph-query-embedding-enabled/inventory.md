@@ -11,6 +11,9 @@ category 6 is "none: this change carries no pin package".
 - `git grep -n -i "embedding_enabled\|EmbeddingEnabled\|not_enabled\|NotEnabled"`: no hits. No key, no code.
 - `processor/graph-query/config.go:22-29` — `type Config struct` holds only `Ports` and `QueryTimeoutMs`.
 
+Purpose: `docs/setup-plan.md:439-441`, a no-embedder composition offers "explicitly admitted graph-only interfaces, not
+unsupported NL verbs".
+
 ## 2. Every current spelling of "this composition has no embedder"
 
 - `processor/graph-query/query.go:33-34` — `"semantic":  {graph.ResponderGraphEmbedding, "search"},` /
@@ -37,7 +40,7 @@ category 6 is "none: this change carries no pin package".
 - Docs that state today's behaviour: `pkg/fusion/README.md:124-126`, `pkg/fusion/MIGRATION.md:128-131`,
   `internal/smoke/doc.go:14-16`, `docs/admission-ledger.yaml:4828-4830` (fusionnats row, "until then"),
   `processor/graph-query/README.md:33,300-318`, `processor/graph-query/MIGRATION.md:125,162-163`,
-  `.agents/skills/query-pattern/SKILL.md:31`.
+  `.agents/skills/query-pattern/SKILL.md:31`, `processor/graph-query/doc.go:27`, `processor/graph-query/README.md:36-38`.
 - Superseded ruling: PR #577 comment 6749007774 (Q-B, transient internal), cited at
   `internal/smoke/noembedder_integration_test.go:184-186`.
 - Open PRs (`gh pr list --state open`): #603 (this claim, no files yet); #597, #598 (go.mod, go.sum only). No overlap.
@@ -53,7 +56,7 @@ category 6 is "none: this change carries no pin package".
 
 ## 5. Problem shape: refuse at a seam before any request is sent
 
-- Closest instance: `processor/graph-query/query.go:233-236`: `relationships` refuses an unknown direction
+- Closest instance: `processor/graph-query/query.go:236-239,255-256`: `relationships` refuses an unknown direction
   `invalid_request` before any request goes out. This change follows that shape: classified invalid, nothing sent,
   no error counted.
 - Default-when-absent config field: `config.go:89-96` `ApplyDefaults` (`QueryTimeoutMs == 0`, `Ports == nil`);

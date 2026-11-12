@@ -2,7 +2,8 @@
 
 ## Context
 
-The accepted inventory is `inventory.md` (base 88aa6033). The premises this design rests on:
+The inventory is `inventory.md` (base 88aa6033; INVENTORY PASS in the pre-owner review of ba5be638). The premises this
+design rests on:
 
 - graph-query always forwards `semantic` to `graph.embedding.query.search` and `similar` to
   `graph.embedding.query.similar` (`processor/graph-query/query.go:33-34`). With no graph-embedding, `ask`
@@ -24,14 +25,15 @@ changing any other verb; `searchGraph`'s semantic fallback (#563, not in the tre
 
 ### D1. How "on when left out" is represented
 
-- **A (chosen): `EmbeddingEnabled *bool`**, `json:"embedding_enabled,omitempty"`, schema tag
-  `type:bool,description:...,default:true,category:basic`. `ApplyDefaults` sets nil to true, as it does for the
-  timeout; `DefaultConfig` sets true; `Validate` refuses nil, as it refuses nil `Ports`, so the component never reads
-  a config whose defaults were not filled in. `null` decodes to nil and is the same as leaving the key out (how
-  `encoding/json` decodes a pointer). A string such as `"false"` is refused by strict decoding. Cost: a pointer in an
-  exported struct. Hand-built `Config` values must now set it, which only tests do.
-- B: plain `bool`, decoding onto `DefaultConfig()`. A written `ports` block would decode into the default one and
-  merge, which ruling K forbids (`config.go:86-88`). Rejected.
+- **A (chosen): plain `bool` preset before decoding.** `EmbeddingEnabled bool`, `json:"embedding_enabled"`, schema
+  tag `type:bool,description:...,default:true,category:basic`. `resolveConfig` (`component.go:68`) decodes into
+  `Config{EmbeddingEnabled: true}` instead of the zero `Config`, so a key left out, or `null` (`encoding/json` leaves a
+  non-pointer as it is on `null`), stays true; `false` reads false; `"false"` is refused by `encoding/json`'s type
+  check. `Ports` stays nil unless written, so ruling K holds. `DefaultConfig` sets true. Cost: a `Config{}` built in Go
+  reads false; only tests build one (`config_test.go:259`), and the result is a loud `not_enabled`, never a silent
+  loss.
+- B: `EmbeddingEnabled *bool`, nil set to true in `ApplyDefaults` and refused in `Validate`. Same behaviour, plus a
+  pointer in an exported struct, a `*` on every read and a nil branch in two places. Rejected as more than needed.
 - C: plain `bool` with a custom `UnmarshalJSON` that notices the key is present. More code than A for the same result.
 - D: invert it to `embedding_disabled`, false by default. Contradicts the ruled key name.
 
@@ -46,7 +48,8 @@ refusal. No silent loss is possible.
   `ask`. The message names the verb's graph-query name (`semantic` or `similar`) and the key, for example
   `semantic is not enabled: graph-query's embedding_enabled is false`.
 - B: leave the two verbs unsubscribed. The caller would get a no-responders error, which says nothing about why, and
-  `Start`'s every-declared-verb check (`query.go:85-90`) would need an exception. Rejected.
+  `Start`'s every-declared-verb check (`handlerFor`, `query.go:91-97`, called from `subscribeQueries`, `:99-112`) would
+  need an exception. Rejected.
 
 Counting: like `invalid_request` and a responder's refusal, `not_enabled` adds one input in `DataFlow` and no error in
 `Health` ("Refusals that are not errors", spec delta). It is a fact about the composition, not a failure of graph-query.
@@ -70,8 +73,7 @@ the way `revision_not_reached` is (`graph/query_verbs_test.go:202`).
 
 - Unit, `processor/graph-query/config_test.go`:
   - `TestConfigEmbeddingEnabled`: left out, `null` and `true` give true; `false` gives false; `"false"` is refused;
-    shown to fail if `ApplyDefaults` stops setting it.
-  - `TestValidateRefusesHandBuiltConfigs` gains a nil case.
+    shown to fail when the preset in `resolveConfig` is removed.
   - `FuzzDeclarePorts` gains a `false` seed.
 - Unit, `TestEmbeddingVerbsRefuseWhenNotEnabled` (`lifecycle_test.go`, which builds handlers through
   `createFromJSON`):

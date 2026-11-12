@@ -22,7 +22,7 @@ Read these first. Nothing errors.
   first call fails loudly before this: its `summarize_threshold` key is refused (SemSource section).
 - **SemSource `deriveDisclosure` (with `searchGraph`).** It reads the same bytes for top-level fields
   (`disclosure.go:86`), so it reports no answer rather than a failure.
-- - **SemSource `searchGraph` on a deployment with embeddings but no community records.** The old version answered
+- **SemSource `searchGraph` on a deployment with embeddings but no community records.** The old version answered
   from the embedding index when global search was empty or refused `index_not_ready`: strategy `semantic_fallback`, up
   to 8 entities, marked degraded. That fallback is not carried. Until graph-clustering's first tick writes
   `COMMUNITY_INDEX` every text question is refused transient `index_not_ready`, so a deployment that relied on the

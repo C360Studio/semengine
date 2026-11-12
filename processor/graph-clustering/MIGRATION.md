@@ -50,8 +50,8 @@ Read these. Nothing errors.
   keywords and a few sample IDs, never a member list (see `graph/clustering/README.md`).
 - **semboids' two-community test will see one group per source.** Its spike builds two clusters from explicit edges
   and asserts two label-propagation communities (`internal/boidgraph/clustering_spike_integration_test.go`). Under
-  prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes
- . *Do:* assert on the groups of the IDs you wrote.
+  prefix grouping the edges do not count: the test sees one group per source prefix, so its expectation changes.
+  *Do:* assert on the groups of the IDs you wrote.
 - **The readiness key counts what is held, not what is published.** `GRAPH_STATUS` under `graph-clustering` reports a
   revision indexed once the Maintainer has applied it, which is before the next tick writes it. A reader that needs a
   group's published state reads the record's `entity_revision`. *Do:* do not gate a read on `indexed_revision` for

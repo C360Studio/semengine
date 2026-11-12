@@ -716,7 +716,7 @@ drain:
 	}
 	// A Stop error after a complete snapshot whose delivery closed is ignored,
 	// as nats.go's Keys ignores it (a deferred watcher.Stop, read at nats.go
-	// v1.55.0, jetstream/kv.go:1408): a denied consumer delete must not fail a
+	// v1.55.0, jetstream/kv.go:1409): a denied consumer delete must not fail a
 	// listing that has every key.
 	if stopErr != nil && (!closed || (primaryErr != nil && !errors.Is(stopErr, nats.ErrBadSubscription) && !errors.Is(stopErr, nats.ErrConnectionClosed))) {
 		cleanupErr = errors.Join(cleanupErr, fmt.Errorf("filtered watcher Stop: %w", stopErr))
@@ -770,9 +770,10 @@ func IsKVNotFoundError(err error) bool {
 }
 
 // IsKVConflictError checks if error indicates a conflict (key exists or wrong revision).
-// Like IsKVNotFoundError it reads the error's type, never its text. A
-// replicated stream reports a wrong last sequence as 10164 where a single
-// replica reports 10071.
+// Like IsKVNotFoundError it reads the error's type, never its text. A wrong
+// last sequence comes back as 10164 or 10071, both "wrong last sequence"
+// (server/errors.json at nats-server v2.15.2, read); that a replicated stream
+// answers 10164 and a single replica 10071 is not measured and not promised.
 func IsKVConflictError(err error) bool {
 	return errors.Is(err, ErrKVRevisionMismatch) ||
 		errors.Is(err, ErrKVKeyExists) ||

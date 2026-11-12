@@ -99,7 +99,8 @@ type StreamAutoCreateConfig struct {
 
 	// Duplicates is the server-side duplicate-detection window for the
 	// Nats-Msg-Id header (ADR-055). Zero leaves the NATS server
-	// default (2m). ensureStreamForConsumer clamps it down to MaxAge when it
+	// default (2m: server/stream.go:1903 at nats-server v2.15.2, read, not
+	// measured). ensureStreamForConsumer clamps it down to MaxAge when it
 	// exceeds it; the clamp is natsclient's own. That the server rejects
 	// creation when it exceeds MaxAge is not measured, and not promised.
 	Duplicates time.Duration

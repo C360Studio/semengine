@@ -210,8 +210,8 @@ func TestKVStore_ErrorBoundaries(t *testing.T) {
 		require.NoError(t, err)
 
 		// Every attempt conflicts: the update function writes the key itself after the attempt
-		// read it, so the attempt's revision is stale when it writes. The pin raced a 2 ms
-		// background writer against a 10 ms sleep in the update function instead.
+		// read it, so the attempt's revision is stale when it writes, with no race against a
+		// background writer to decide it.
 		counter := 2
 		err = kv.UpdateWithRetry(ctx, "exhaustion-key", func(_ []byte) ([]byte, error) {
 			_, putErr := bucket.Put(ctx, "exhaustion-key", []byte(fmt.Sprintf("v%d", counter)))

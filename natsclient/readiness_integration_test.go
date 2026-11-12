@@ -34,7 +34,7 @@ func TestIntegration_RequestReady_ResponderAppearsLate(t *testing.T) {
 
 	// A monitor that never replies sees the first attempt; the responder subscribes
 	// only after that, so the first attempt can only time out and success proves the
-	// loop RETRIED. The pin subscribed the responder after a 700 ms sleep instead.
+	// loop RETRIED, which a sleep before subscribing could not prove.
 	// The monitor unsubscribes once it has seen the first attempt: its unread
 	// messages would otherwise hold the client's drain open at Close.
 	monitor, err := client.GetConnection().SubscribeSync(subject)

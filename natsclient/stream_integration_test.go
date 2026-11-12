@@ -372,7 +372,7 @@ func TestIntegration_ConsumeStreamWithConfig_DeliverPolicies(t *testing.T) {
 
 			// Processing is over once the server holds nothing for the consumer to
 			// deliver or to wait for an ack on, and the handler has counted at least
-			// the minimum. The pin waited 500 ms instead.
+			// the minimum; that observed state, not a fixed wait, ends the wait.
 			consumer, err := js.Consumer(ctx, streamName, cfg.ConsumerName)
 			require.NoError(t, err)
 			awaitCtx, cancelAwait := context.WithTimeout(ctx, failureBound)

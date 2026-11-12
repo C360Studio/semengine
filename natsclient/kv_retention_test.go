@@ -110,7 +110,7 @@ func newFakeKVJS(bucket string, maxAge time.Duration, maxBytes int64) *fakeKVJS 
 
 // TestReconcileNoLifecycleRetention_KV drives every branch of the KV
 // reconcile-then-assert atom against a fake KV backing stream (KV_<bucket>): a
-// clean bucket boots untouched; a legacy MaxAge / a size cap is stripped in
+// clean bucket boots untouched; an existing MaxAge / a size cap is stripped in
 // place then boots; and a strip that is DENIED (UpdateStream fails, config stays
 // binding) fails closed with the ErrGraphBucketRetention sentinel. Symmetric
 // with storage/objectstore/retention_test.go so KV and ObjectStore can never

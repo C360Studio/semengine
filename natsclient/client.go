@@ -504,8 +504,8 @@ func (m *Client) Connect(ctx context.Context) error {
 	// began, before the result is read, so the context touches nothing once
 	// Connect returns (TestReconnectAfterConnectContextEnded). nats.go would
 	// look a host name up before calling the dialer, where nothing ends the
-	// lookup (nats.go:2484-2485); SkipHostLookup hands the name to the dialer,
-	// whose net.Dialer resolves it under the same cut
+	// lookup (nats.go:2508-2509 at v1.55.0); SkipHostLookup hands the name to
+	// the dialer, whose net.Dialer resolves it under the same cut
 	// (TestConnectEndsWithItsContext).
 	socket := newSocketDialer(m.timeout, m.netDial)
 	opts := append(m.buildConnectionOptions(), nats.SetCustomDialer(socket), nats.SkipHostLookup())
@@ -1325,9 +1325,10 @@ func (m *Client) PublishToStream(ctx context.Context, subject string, data []byt
 //
 // Scope of the guarantee: dedup only holds WITHIN the stream's configured
 // duplicate window (config.StreamConfig.Duplicates; the NATS server default is
-// 2m when unset). Redelivery outside that window — e.g. DeliverPolicy:all
-// replay on consumer recreation — can still re-append. An empty msgID is
-// equivalent to PublishToStream (no dedup), so this is a safe drop-in.
+// 2m when unset: server/stream.go:1903 at nats-server v2.15.2, read, not
+// measured). Redelivery outside that window — e.g. DeliverPolicy:all replay on
+// consumer recreation — can still re-append. An empty msgID is equivalent to
+// PublishToStream (no dedup), so this is a safe drop-in.
 func (m *Client) PublishToStreamWithMsgID(ctx context.Context, subject string, data []byte, msgID string) error {
 	if ctx == nil {
 		return nilContextError("PublishToStreamWithMsgID")

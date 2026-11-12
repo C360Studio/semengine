@@ -192,8 +192,8 @@ func TestIntegration_SubscribeForRequestsLogsResponseLimitRefusalPublishFailure(
 	// responder's connection makes the broker process everything it had published before
 	// the record; flushing the observer's then delivers, ahead of its PONG, any reply the
 	// broker routed to it. An empty pending queue after both is the observed absence of a
-	// reply, made before the request is cancelled. The pin waited for a 150 ms request
-	// timeout instead.
+	// reply, made before the request is cancelled, so no request timeout has to stand in
+	// for it.
 	require.NoError(t, client.GetConnection().FlushWithContext(flushCtx))
 	require.NoError(t, observer.FlushWithContext(flushCtx))
 	pending, _, err := replies.Pending()

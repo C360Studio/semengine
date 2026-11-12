@@ -37,11 +37,13 @@ func TestCloseEndsAHeldWrite(t *testing.T) {
 	requireClosed(t, conn)
 }
 
-// requireClosed requires conn to reach CLOSED. It is awaited, not read once:
-// when Close's drain had begun, nats.go's drain goroutine can set DRAINING_PUBS
-// after natsclient's close, and closes the connection again only once a flush
-// of up to 5 s has failed (nats.go:6481-6491 at v1.55.0). Seen in 2 of 160 runs of
-// TestCloseEndsAHeldWrite.
+// requireClosed requires conn to reach CLOSED. It is awaited, not read once: at
+// nats.go v1.54.0, when Close's drain had begun, the drain goroutine could set
+// DRAINING_PUBS after natsclient's close, and closed the connection again only
+// once a flush of up to 5 s had failed; seen in 2 of 160 runs of
+// TestCloseEndsAHeldWrite. At v1.55.0 that goroutine returns on a closed
+// connection (nats.go:6476-6480, read, not measured), but that a single read
+// sees CLOSED is not promised, so the wait stays.
 func requireClosed(t *testing.T, conn *nats.Conn) {
 	t.Helper()
 	wait, cancel := context.WithTimeout(t.Context(), lifecycleBound)

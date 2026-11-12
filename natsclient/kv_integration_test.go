@@ -237,7 +237,7 @@ func TestKVStore_Watch(t *testing.T) {
 	defer watcher.Stop()
 
 	// The watcher sends nil once it has delivered the bucket's initial values (none here); changes
-	// made after that arrive as updates. The pin waited 100 ms instead.
+	// made after that arrive as updates, so that nil orders them; a fixed wait would order nothing.
 	entry := <-watcher.Updates()
 	require.Nil(t, entry, "an empty bucket has no initial values")
 

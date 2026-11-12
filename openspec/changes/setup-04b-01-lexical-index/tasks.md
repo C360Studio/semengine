@@ -51,7 +51,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
 
 ## 3. Land
 
-- [ ] 3.1 `graph/lexical/README.md` with `ExampleIndex`, and `docs/repository-map.md`. Premise: inventory §4 (read
+- [x] 3.1 `graph/lexical/README.md` with `ExampleIndex`, and `docs/repository-map.md`. Premise: inventory §4 (read
   paths that need no text) and `processor/graph-index/query.go:366` (exact string value match). Accept: the README
   says word search helps only entities with text; telemetry and other numeric data are reached through prefix,
   predicate, relationships, name and alias, and groups by ID; the value filter matches the value written as a

@@ -1,4 +1,5 @@
-// Package lexical holds tier 0 word search's rules for turning text into words.
+// Package lexical is tier 0 word search: an in-memory index that ranks
+// entities by field-weighted BM25 over the words of their text.
 //
 // Tokens is the one tokenizer: text written into an index and the text of a
 // query go through it alone, so a query word and an indexed word agree exactly

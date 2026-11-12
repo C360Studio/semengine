@@ -20,7 +20,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (passed 
   `TestPropFoldIsIdempotent`, `TestJoinedIdentifierIsNotHeld` and `FuzzTokens` pass; a mutant that skips identifier
   splitting, one that drops rule 1, and one that tests only the unfolded word against the stopwords are each shown
   to fail.
-- [ ] 2.2 Index, BM25F and scope (`NewIndex`, `Put`, `Delete`, `Len`, `Search`, `NameWeight`; design D1, D2, D6).
+- [x] 2.2 Index, BM25F and scope (`NewIndex`, `Put`, `Delete`, `Len`, `Search`, `NameWeight`; design D1, D2, D6).
   Premise: no word index exists (inventory §1); scope matching is `graph/id_prefix.go:26` and ties go by ID
   (`graph/embedding/storage.go:132`). Accept: `TestPutReplacesAndDeletes`, `TestSearchRanksByBM25`,
   `TestNameOutranksBody`, `TestScopeBeforeLimit`, `TestSearchDuringWrites` (race detector), and the properties

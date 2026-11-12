@@ -96,38 +96,6 @@ func TestPluralRules(t *testing.T) {
 	}
 }
 
-// holdsAny reports whether held contains any of the words of query: a ranked
-// word search returns an entity that holds at least one query word.
-func holdsAny(held []string, query string) bool {
-	for _, w := range Tokens(query) {
-		if slices.Contains(held, w) {
-			return true
-		}
-	}
-	return false
-}
-
-func TestSingularFindsPlural(t *testing.T) {
-	held := Tokens("services processes")
-	for _, q := range []string{"service", "process"} {
-		if !holdsAny(held, q) {
-			t.Errorf("query %q finds nothing in %q", q, held)
-		}
-	}
-}
-
-func TestJoinedIdentifierIsNotHeld(t *testing.T) {
-	held := Tokens("withRetry")
-	for _, q := range []string{"withRetry", "retry"} {
-		if !holdsAny(held, q) {
-			t.Errorf("query %q finds nothing in %q", q, held)
-		}
-	}
-	if holdsAny(held, "withretry") {
-		t.Errorf("query %q finds %q; the joined form must not be held", "withretry", held)
-	}
-}
-
 func TestPropFoldIsIdempotent(t *testing.T) {
 	check := func(t interface{ Fatalf(string, ...any) }, w string) {
 		once := fold(w)

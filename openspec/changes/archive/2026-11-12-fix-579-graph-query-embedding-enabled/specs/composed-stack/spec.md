@@ -4,11 +4,10 @@
 
 ### Requirement: The graph stack answers fusion without an embedder
 
-graph-ingest, graph-index and graph-query SHALL start from one configuration with no graph-embedding, graph-query
-setting `embedding_enabled: false`, and `fusion.Engine` over `fusionnats` SHALL answer symbol and prefix questions from
-them. A natural-language question SHALL be refused class invalid, code `not_enabled`, naming the `semantic` verb,
-never answered empty. `pkg/fusion/fusionnats` SHALL import neither `graph/embedding`, `processor/graph-embedding` nor
-`graph/readiness`, directly or through a package it imports.
+graph-ingest, graph-index and graph-query SHALL start from one configuration with no graph-embedding and
+`embedding_enabled: false`, and `fusion.Engine` over `fusionnats` SHALL answer symbol and prefix questions from them. A
+natural-language question SHALL be refused `not_enabled`, never answered empty. `pkg/fusion/fusionnats` SHALL import
+neither `graph/embedding`, `processor/graph-embedding` nor `graph/readiness`, directly or through a package it imports.
 
 #### Scenario: No embedder
 

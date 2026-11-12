@@ -48,9 +48,9 @@ in `DataFlow` on entry.
 
 Decoding SHALL refuse an unknown key, naming it. `query_timeout_ms` SHALL be the deadline on the wait for each
 downstream reply, default 15000; like the handler's context, it does not end a wait to write to a broker that has
-stopped reading (ADR-112, "Time"). `embedding_enabled` SHALL be a boolean, true when left out, and a value of any other
-type SHALL be refused. A configuration with no ports SHALL take the default required `graph_queries` NATS-request port
-on `graph.query.*`, and any other input port shape SHALL be refused.
+stopped reading (ADR-112, "Time"). `embedding_enabled` SHALL be true when left out. A configuration with no ports SHALL
+take the default required `graph_queries` NATS-request port on `graph.query.*`, and any other input port shape SHALL be
+refused.
 
 #### Scenario: A key the pin ignored
 

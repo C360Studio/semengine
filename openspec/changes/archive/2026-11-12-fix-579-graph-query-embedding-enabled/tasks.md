@@ -40,6 +40,6 @@ or failing-first output in `notes/<task>.md`. No `time.Sleep`, no `Skip`, no tes
   `.agents/skills/query-pattern/SKILL.md:31`,
   the `processor/graph-query` ledger row (`docs/admission-ledger.yaml:4323`) and the fusionnats row's "until then"
   (`:4828-4830`). Gate: `task docs:check`, `task spec:check`.
-- [ ] 4.2 Archive: sync the deltas into `openspec/specs/graph-query` and `openspec/specs/composed-stack`, and edit
+- [x] 4.2 Archive: sync the deltas into `openspec/specs/graph-query` and `openspec/specs/composed-stack`, and edit
   `composed-stack`'s Purpose (`:7`, "naming the embedding search subject" becomes "refusing natural-language ones as
   not enabled"). Last content commit.

@@ -5,8 +5,8 @@ The tier-0 graph stack (graph-ingest, graph-index, graph-embedding, graph-cluste
 configuration through the real startup path, answers fixed questions through the paths a consumer uses, and keeps those answers
 across four restarts: the whole stack, a process killed mid-ingest, NATS restarted between runs, and a quick NATS restart
 (about 0.2 s down) under the running stack. A second, three-component stack without graph-embedding (the no-embedder
-stack) answers symbol and prefix fusion questions and refuses natural-language ones, naming the embedding search
-subject. A longer outage is not yet covered (#574). The tests live in `internal/smoke`.
+stack) answers symbol and prefix fusion questions and refuses natural-language ones as not enabled
+(graph-query's `embedding_enabled: false`). A longer outage is not yet covered (#574). The tests live in `internal/smoke`.
 
 ## Requirements
 
@@ -92,18 +92,18 @@ components by name, each healthy (graph-embedding's `embedding worker watch lost
 
 ### Requirement: The graph stack answers fusion without an embedder
 
-graph-ingest, graph-index and graph-query SHALL start from one configuration with no graph-embedding, and
-`fusion.Engine` over `fusionnats` SHALL answer symbol and prefix questions from them. A natural-language question SHALL
-be refused naming `graph.embedding.query.search`, never answered empty. `pkg/fusion/fusionnats` SHALL import neither
-`graph/embedding`, `processor/graph-embedding` nor `graph/readiness`, directly or through a package it imports.
+graph-ingest, graph-index and graph-query SHALL start from one configuration with no graph-embedding and
+`embedding_enabled: false`, and `fusion.Engine` over `fusionnats` SHALL answer symbol and prefix questions from them. A
+natural-language question SHALL be refused `not_enabled`, never answered empty. `pkg/fusion/fusionnats` SHALL import
+neither `graph/embedding`, `processor/graph-embedding` nor `graph/readiness`, directly or through a package it imports.
 
 #### Scenario: No embedder
 
 - **WHEN** the stack boots without graph-embedding and the producer publishes the fixed entities
 - **THEN** the three components are healthy, `GRAPH_STATUS` holds no `graph-embedding` key, a symbol lens and a prefix
-  lens return the expected nodes, relations and paths, an unknown name is a miss, and an NL lens's `Fuse` returns a
-  refusal naming `graph.embedding.query.search`, transient `internal` as graph-query's "A refusal reaches the caller
-  intact" requires (`TestSmoke_NoEmbedderAnswers`)
+  lens return the expected nodes, relations and paths, an unknown name is a miss, and an NL lens's `Fuse` returns an
+  invalid `not_enabled` refusal naming `semantic`, as graph-query's "Embedding verbs can be turned off" requires,
+  and the stack stays healthy (`TestSmoke_NoEmbedderAnswers`)
 
 #### Scenario: An embedding import
 

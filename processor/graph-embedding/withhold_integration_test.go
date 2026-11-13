@@ -27,7 +27,7 @@ import (
 )
 
 // brokenInstance is the storage instance of a store whose every read fails, so the Worker fails
-// the entity content_error (text extraction failed), a Worker failure at tier 0.
+// the entity content_error (text extraction failed), the Worker failure tier 0 can produce.
 const brokenInstance = "broken"
 
 type brokenStore struct{ storage.StreamableStore }

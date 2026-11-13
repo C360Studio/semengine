@@ -77,7 +77,7 @@ type Record struct {
 
 	// SourceRevision is the ENTITY_STATES stream revision that produced this record.
 	// It is threaded from the hop-1 watcher so hop 2 can complete the embedding
-	// readiness watermark at the terminal transition (ADR-066, decision 3), and it is
+	// readiness watermark at the terminal transition (ADR-066 § 3), and it is
 	// persisted onto generated and failed records so SaveGenerated and SaveFailed can
 	// order writes by it: a record already carrying a higher SourceRevision has a
 	// newer outcome, so a late older-revision write is dropped. 0 means unknown and

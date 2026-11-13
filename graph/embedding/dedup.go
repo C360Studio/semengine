@@ -52,8 +52,7 @@ type EmbedderIdentity struct {
 //
 // An identity with a non-positive Dimensions has not learned its vector width
 // yet (a remote embedder resolves it from its first response) and gets NO key.
-// "" is the package's established "dedup disabled for this record" signal, which
-// both hops already honour: it is stored as the pending record's ContentHash and
+// "" is the package's "dedup disabled for this record" signal:
 // getOrGenerateEmbedding generates unconditionally for it. Keying on a
 // placeholder width instead would split EMBEDDING_DEDUP into two disjoint
 // keyspaces per embedder; omitting Dimensions from the key would be worse still,

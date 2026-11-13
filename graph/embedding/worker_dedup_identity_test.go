@@ -8,23 +8,13 @@ import (
 // TestDedupRecordUsable_RejectsIdentitylessLegacyRecord: a dedup record with no
 // Model is never usable.
 //
-// Such a record can still be reached. EMBEDDING_INDEX pending records are durable KV
-// with no TTL, and Worker.Run watches the bucket, whose snapshot re-delivers every current
-// value on restart. handleKVEntry skips only NON-pending records, so a stale pending
-// record whose ContentHash was derived from the text alone is replayed as pending, and
-// hop 2 uses that ContentHash verbatim:
-//
-//  1. An entity is queued under embedder_type bm25 with a text-only key. Its pending
-//     record holds ContentHash(text); EMBEDDING_DEDUP[ContentHash(text)] holds a BM25
-//     vector with no Model.
-//  2. The operator switches to http against the same NATS state.
-//  3. Hop 2 replays the stale pending record and looks up that text-only key.
-//  4. Were a record with no Model usable, the BM25 record would be served.
-//  5. saveAndNotify would stamp that BM25 vector with the neural model's name.
-//
-// Both spaces are 384-dim by default, so cosine returns a plausible score and no
-// health signal fires. An identityless record must be regenerated; the cost is one
-// re-embed per such record, once.
+// The Worker stamps Model and Dimensions on every dedup record it writes, but
+// EMBEDDING_DEDUP is durable, has no TTL and is never cleared, so a record read
+// from it may lack them. Such a record does not say which vector space its vector
+// belongs to: served under an http embedder, a BM25 vector would be stored under
+// the neural model's name. Both spaces are 384-dim by default, so cosine returns a
+// plausible score and no health signal fires. An identityless record is
+// regenerated instead; the cost is one re-embed per such record, once.
 func TestDedupRecordUsable_RejectsIdentitylessLegacyRecord(t *testing.T) {
 	t.Parallel()
 

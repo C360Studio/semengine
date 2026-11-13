@@ -11,7 +11,8 @@ import (
 // sleeping.
 //
 // It is itself a context.Context derived from its parent, so it holds the parent the way the
-// standard library's derived contexts do; contract test T-B2 exempts this one type by name.
+// standard library's derived contexts do; the contract test TestNoRetainedContext exempts this one
+// type by name.
 type ObservedContext struct {
 	context.Context
 	observed chan struct{}

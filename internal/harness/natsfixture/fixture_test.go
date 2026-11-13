@@ -106,8 +106,8 @@ func TestRollbackIgnoresParentCancellationButStaysBounded(t *testing.T) {
 	}
 }
 
-// M5: connect honours its context. A broker that accepts the TCP connection and
-// never speaks would otherwise hold Start for the whole dial timeout after the caller gave up.
+// Connect honours its context. A broker that accepts the TCP connection and never speaks would
+// otherwise hold Start for the whole dial timeout after the caller gave up.
 func TestConnectHonoursItsContext(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

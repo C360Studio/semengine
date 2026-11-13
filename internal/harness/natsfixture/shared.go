@@ -27,7 +27,7 @@ const (
 	// closing across Docker's port forwarding.
 	connWaitBudget = 2 * time.Second
 	// statzSubject is the server's account-statistics subject, imported into every account
-	// (nats-server v2.15.0 server/events.go:2404; probe on PR #206 comment 6133623880).
+	// (nats-server v2.15.0 server/events.go:2404).
 	statzSubject = "$SYS.REQ.ACCOUNT.PING.STATZ"
 	// connzSubject is the server's per-account connection listing, imported into every account
 	// beside statzSubject (nats-server v2.15.1 server/events.go:2402).

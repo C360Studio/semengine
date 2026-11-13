@@ -12,7 +12,7 @@ const componentDepsRule = "(component-registration › The component model reach
 // TestComponentReachesNoAgenticOrGraphPackage holds the rule that the component model is the
 // contract every component builds on, so importing it must not pull in the agentic domain or the
 // graph family: a component that needs the lifecycle manager or a tool registry gets it from its
-// host, not through component.Dependencies (issues #29 and #102).
+// host, not through component.Dependencies.
 //
 // Requirement: component-registration/The component model reaches no agentic or graph package
 func TestComponentReachesNoAgenticOrGraphPackage(t *testing.T) {
@@ -96,8 +96,8 @@ func componentDepViolations(t *testing.T, root, pkg string) []string {
 }
 
 // forbiddenComponentDeps reads go list -deps output and names each forbidden path in it: any path
-// with an agentic element (one named agentic, or agentic- and a suffix, as the pin's
-// processor/agentic-tools is), and the module's graph, internal/graphmutation, pkg/lifecycle and
+// with an agentic element (one named agentic, or agentic- and a suffix, such as
+// processor/agentic-tools), and the module's graph, internal/graphmutation, pkg/lifecycle and
 // pkg/projection packages or any package under them, except pkg/projection/contract, which
 // payloadregistry imports.
 func forbiddenComponentDeps(module string, deps []string) []string {

@@ -16,7 +16,7 @@ func runLintTestPorts(root string) ([]byte, error) {
 }
 
 // TestLintTestPortsHonoursNoMarker (harness-boundaries › "Marked fixed port", "Guidance keeps the
-// listener"): a fixed port on a line carrying the old inline marker still fails the guard, the
+// listener"): a fixed port on a line carrying an inline allow marker still fails the guard, the
 // line is named, and the guidance says to bind port 0 and hand the listener on, naming no file.
 // The planted line is assembled at run time so this file does not trip the guard itself.
 func TestLintTestPortsHonoursNoMarker(t *testing.T) {
@@ -54,8 +54,8 @@ func TestLintTestPortsHonoursNoMarker(t *testing.T) {
 	}
 }
 
-// TestLintTestPortsSkipsIgnoredFiles (design D6): the guard reads no git-ignored path, such as a
-// main checkout's .worktrees/ copies, yet still refuses the same fixed port at a path git does not
+// TestLintTestPortsSkipsIgnoredFiles: the guard reads no git-ignored path, such as a main
+// checkout's .worktrees/ copies, yet still refuses the same fixed port at a path git does not
 // ignore. The planted line is assembled at run time so this file does not trip the guard itself.
 func TestLintTestPortsSkipsIgnoredFiles(t *testing.T) {
 	planted := "package x\n\nfunc f() { net." + "Listen(\"tcp\", \"127.0.0.1:18082\") }\n"

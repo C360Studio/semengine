@@ -33,7 +33,8 @@ func withEnv(environ []string, set ...string) []string {
 // not signalled after its leader exited by itself: its number may then belong to a process this
 // program did not start. PWD is the directory the child runs in: Go takes its working directory
 // from PWD when PWD names that directory, and looks overlay paths up under it without resolving
-// symbolic links, so a caller's PWD through a link would hide the overlay (design D15, P26).
+// symbolic links, so a caller's PWD through a link would hide the overlay (measured at go1.26.6,
+// not promised by Go; TestDetectionThroughASymlink checks this program's side).
 func command(ctx context.Context, dir string, env []string, name string, args ...string) *exec.Cmd {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir, cmd.Env = dir, withEnv(env, "PWD="+dir)
@@ -43,7 +44,7 @@ func command(ctx context.Context, dir string, env []string, name string, args ..
 }
 
 // gitEnv is the environment of the program's git commands: reading the tree's state does not
-// refresh git's index (design D1).
+// refresh git's index.
 func gitEnv(environ []string) []string { return withEnv(environ, "GIT_OPTIONAL_LOCKS=0") }
 
 // runGit runs git in root. A diff that found differences exits 1, which is not an error here.

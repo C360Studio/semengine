@@ -36,7 +36,7 @@ var directConsumerCreations = map[string]bool{
 // policyEntryPointAllowlist names the production files that may reach a policy entry point:
 // graph-ingest's JetStream input ports, its one port consumer and its one GetConsumerConfig reader,
 // and the objectstore Component's JetStream inputs, bound the same way. A new caller is a
-// deliberate edit here, reviewed as such; how often a listed file calls is not checked (#422).
+// deliberate edit here, reviewed as such; how often a listed file calls is not checked.
 var policyEntryPointAllowlist = map[string]bool{
 	"processor/graph-ingest/consume.go": true,
 	"storage/objectstore/component.go":  true,
@@ -369,10 +369,9 @@ func scanLegacyHeartbeatReferences(files []productionGoFile) legacyHeartbeatRefe
 					if declaration.Name.Name != "ConsumeWithHeartbeat" {
 						continue
 					}
-					// Any declaration is a violation now. Until #1249 the
-					// scan exempted natsclient/heartbeat.go, because the
-					// symbol still had to exist for its last caller; that
-					// exemption is what would let the helper come back.
+					// Any declaration is a violation,
+					// natsclient/heartbeat.go included: exempting a file
+					// is what would let the helper come back.
 					declarationNames[declaration.Name] = struct{}{}
 					result.violations = append(result.violations,
 						parsed.rel+": function or receiver method")
@@ -595,12 +594,9 @@ func TestNewDurableHandlerRetirementIgnoresUnrelatedSelector(t *testing.T) {
 	}
 }
 
-// TestConsumeWithHeartbeatHasNoDeclarationOrProductionCalls is the inverted
-// ratchet (#1249/#759). Until this layer the guard pinned the EXACT remaining
-// caller set and asserted that the declaration still existed, because the
-// symbol had to survive for its last caller; AgentRun migrated to the typed
-// path and the helper was deleted without alias, so the guard now asserts
-// absence everywhere — no declaration, no alias, no reference, in any package.
+// TestConsumeWithHeartbeatHasNoDeclarationOrProductionCalls asserts that the
+// retired ConsumeWithHeartbeat helper is absent everywhere: no declaration, no
+// alias, no reference, in any package.
 //
 // It is the same shape as the NewDurableHandler retirement above, and for the
 // same reason: a retired helper comes back as a convenience wrapper, an

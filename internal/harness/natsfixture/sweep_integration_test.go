@@ -87,7 +87,7 @@ func TestOnlyOldLabelledContainersAreSwept(t *testing.T) {
 	}
 	sweep(t.Context(), own, 0, t.Logf)
 	if containerExists(t, labelled) {
-		// Docker records creation in its own clock (design P4); one ahead of the host's keeps it.
+		// Docker records creation in its own clock (not promised); one ahead of the host's keeps it.
 		created, _ := exec.Command("docker", "inspect", "--format", "{{.Created}}", labelled).Output()
 		t.Fatalf("a sweep with an age of zero kept the labelled container, created %s by Docker; host time %s",
 			strings.TrimSpace(string(created)), time.Now().UTC().Format(time.RFC3339Nano))

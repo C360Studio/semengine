@@ -12,7 +12,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// T-B7: docs/admission-ledger.yaml is the one home of SemStreams provenance (owner ruling Q5).
+// docs/admission-ledger.yaml is the one home of SemStreams provenance.
 // `task ledger:check` runs exactly this test; `task test:unit` runs it inside `task verify`.
 func TestAdmissionLedger(t *testing.T) {
 	root := repoRoot(t)
@@ -109,9 +109,9 @@ var (
 	dispositions = map[string]bool{"carry": true, "adapt": true, "repair-before-port": true, "defer-exclude": true}
 )
 
-// ledgerViolations is the T-B7 check. It walks the YAML node tree rather than decoding into a
-// struct so an unknown key, a list where a scalar belongs, or an empty value is reported instead of
-// being silently dropped or zero-filled.
+// ledgerViolations is the admission-ledger check. It walks the YAML node tree rather than decoding
+// into a struct so an unknown key, a list where a scalar belongs, or an empty value is reported
+// instead of being silently dropped or zero-filled.
 func ledgerViolations(data []byte) []string {
 	var doc yaml.Node
 	if err := yaml.Unmarshal(data, &doc); err != nil {

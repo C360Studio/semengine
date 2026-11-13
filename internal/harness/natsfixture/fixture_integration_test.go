@@ -18,9 +18,7 @@ import (
 	"github.com/testcontainers/testcontainers-go"
 )
 
-// These include the owner tests S1-1, S1-2 and S1-6..S1-8 of design "Lifecycle ownership proof"
-// (S1-3 and S1-5 went with Consume, test-infra-audit task 3.2). They need Docker:
-// `go test -tags integration ./internal/harness/natsfixture/`.
+// These tests need Docker: `go test -tags integration ./internal/harness/natsfixture/`.
 
 // stopBound is the fresh finite authority these tests give a controlled Stop.
 const stopBound = 60 * time.Second
@@ -161,7 +159,7 @@ func TestStreamsDeclareBounds(t *testing.T) {
 }
 
 // errNotFound is the error testcontainers' MappedPort returns when Docker Desktop has left the
-// container's port list empty (#180).
+// container's port list empty (seen on Docker Desktop for Mac; not promised).
 var errNotFound = errors.New(`port "4222/tcp" not found`)
 
 // stopHoldsNothing reports whether Stop under an ended context returns nil. Stop returns nil with
@@ -184,10 +182,10 @@ func deadPort(t *testing.T) string {
 	return port
 }
 
-// S1-1: a failure in a phase after the container exists removes it, names the phase and the
-// container, writes the container's log to the test log once, and leaves Stop nothing to do
-// (nats-fixture › "Failure after the container exists", "A missing mapped port fails Start"). The
-// fixture's one test seam, the mapped-port read, drives both rows: it fails the read, or it reports
+// A failure in a phase after the container exists removes it, names the phase and the container,
+// writes the container's log to the test log once, and leaves Stop nothing to do (nats-fixture ›
+// "Failure after the container exists", "A missing mapped port fails Start"). The fixture's
+// per-fixture test seam, the mapped-port read, drives both rows: it fails the read, or it reports
 // a port nothing listens on, so the real connect fails.
 func TestS1_1PartialStartupCleanup(t *testing.T) {
 	for _, tc := range []struct {
@@ -234,10 +232,10 @@ func TestS1_1PartialStartupCleanup(t *testing.T) {
 
 }
 
-// S1-2: cancelling the test context while Start is in I/O fails Start with context.Canceled,
-// reports the parent state, removes the container, and starts no other container. The mapped-port
-// read succeeds and is then held until the test has cancelled: work that finishes after
-// cancellation is not accepted, so Start fails in that phase rather than the next.
+// Cancelling the test context while Start is in I/O fails Start with context.Canceled, reports
+// the parent state, removes the container, and starts no other container. The mapped-port read
+// succeeds and is then held until the test has cancelled: work that finishes after cancellation is
+// not accepted, so Start fails in that phase rather than the next.
 func TestS1_2CancellationDuringIO(t *testing.T) {
 	tb := &logTB{TB: t}
 	f := New(tb)
@@ -284,7 +282,7 @@ func TestS1_2CancellationDuringIO(t *testing.T) {
 	}
 }
 
-// S1-6: a Stop after a successful Stop is a no-op: nil, and no Docker call.
+// A Stop after a successful Stop is a no-op: nil, and no Docker call.
 func TestS1_6RepeatedStop(t *testing.T) {
 	f := startFixture(t)
 	if err := stop(t, f); err != nil {
@@ -295,7 +293,7 @@ func TestS1_6RepeatedStop(t *testing.T) {
 	}
 }
 
-// S1-7: a second Start is refused and leaves the running fixture untouched.
+// A second Start is refused and leaves the running fixture untouched.
 func TestS1_7Restart(t *testing.T) {
 	f := startFixture(t)
 	id, before := f.containerID, f.remaining()
@@ -310,7 +308,7 @@ func TestS1_7Restart(t *testing.T) {
 	}
 }
 
-// S1-8: two fixtures in one test are disjoint, and each Stop removes only its own.
+// Two fixtures in one test are disjoint, and each Stop removes only its own.
 func TestS1_8Isolation(t *testing.T) {
 	a, b := startFixture(t), startFixture(t)
 	if a.containerID == b.containerID || a.URL() == b.URL() {
@@ -340,8 +338,8 @@ func restart(t *testing.T, f *Fixture) {
 }
 
 // Restart keeps the container's writable layer: a message acknowledged on a file-backed stream is
-// readable at its sequence afterwards, one on a memory-backed stream is not (design P3, proven
-// here). Stop then removes both streams and the container.
+// readable at its sequence afterwards, one on a memory-backed stream is not (proven here). Stop
+// then removes both streams and the container.
 func TestRestartKeepsFileStreamLosesMemoryStream(t *testing.T) {
 	f := startFixture(t)
 	ctx := t.Context()

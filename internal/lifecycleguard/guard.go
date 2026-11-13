@@ -94,9 +94,9 @@ func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) 
 // data, as Start refuses it. Stop before any Start runs nothing, returns nil and uses up the guard.
 // Stop during a Start waits for that Start to finish, or returns ctx's error first if Start is
 // still running when ctx ends. When cleanup returns an error, it stays pending and the next Stop
-// runs it again. When cleanup returns nil, the guard becomes terminal; if ctx had already ended or
-// ended during cleanup, Stop still returns ctx.Err() unwrapped while later Stops return nil and run
-// nothing. A Stop while another Stop runs cleanup is refused as transient.
+// runs it again. When cleanup returns nil, the guard becomes terminal; if ctx had already ended
+// when cleanup began, Stop still returns that context error unwrapped while later Stops return nil
+// and run nothing. A Stop while another Stop runs cleanup is refused as transient.
 //
 // A cleanup that panics is not recovered, and it leaves the guard stuck: after a panic in a Stop's
 // cleanup every later Stop is refused as concurrent, and after a panic in a failed Start's rollback
@@ -141,6 +141,7 @@ func (g *Guard) Stop(ctx context.Context) error {
 		cleanup := g.cleanup
 		g.mu.Unlock()
 
+		ended := ctx.Err()
 		err := cleanup(ctx)
 		g.mu.Lock()
 		g.stopping, g.terminal = false, err == nil
@@ -148,7 +149,7 @@ func (g *Guard) Stop(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		return ctx.Err()
+		return ended
 	}
 }
 

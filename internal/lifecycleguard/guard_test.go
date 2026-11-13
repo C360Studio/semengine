@@ -462,6 +462,29 @@ func TestGuardStopInitiatesCleanupWithEndedContext(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("live ctx ending after cleanup succeeds returns nil", func(t *testing.T) {
+		var g Guard
+		stopCtx, cancelStop := context.WithCancel(t.Context())
+		defer cancelStop()
+		runs := 0
+		if err := g.Start(t.Context(), func(context.Context) error { return nil }, func(context.Context) error {
+			runs++
+			cancelStop()
+			return nil
+		}); err != nil {
+			t.Fatalf("Start = %v", err)
+		}
+		if err := g.Stop(stopCtx); err != nil {
+			t.Fatalf("Stop(live ctx cancelled after cleanup) = %v, want nil", err)
+		}
+		if runs != 1 {
+			t.Fatalf("Stop ran cleanup %d time(s), want 1", runs)
+		}
+		if err := g.Stop(t.Context()); err != nil || runs != 1 {
+			t.Fatalf("later Stop = %v with %d run(s), want nil and 1", err, runs)
+		}
+	})
 }
 
 // A Stop that arrives while another Stop runs the cleanup is refused as transient at once, without

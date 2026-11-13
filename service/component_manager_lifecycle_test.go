@@ -526,14 +526,16 @@ func (c *shellLifecycleComponent) Initialize() error { return c.lifecycle.Initia
 func (c *shellLifecycleComponent) Start(ctx context.Context) error {
 	return c.lifecycle.Start(ctx, func(ctx context.Context) error {
 		runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		c.releaseCleanupCancel = cancel
+		if !c.holdCleanup {
+			close(c.workerDone)
+			return nil
+		}
 		go func() {
 			defer close(c.workerDone)
 			<-runCtx.Done()
-			if c.holdCleanup {
-				<-c.releaseWorker
-			}
+			<-c.releaseWorker
 		}()
-		c.releaseCleanupCancel = cancel
 		return nil
 	}, func(ctx context.Context) error {
 		c.cleanups.Add(1)
@@ -543,6 +545,9 @@ func (c *shellLifecycleComponent) Start(ctx context.Context) error {
 		}
 		if c.releaseCleanupCancel != nil {
 			c.releaseCleanupCancel()
+		}
+		if !c.holdCleanup {
+			return nil
 		}
 		select {
 		case <-c.workerDone:
@@ -569,7 +574,7 @@ func (c *shellLifecycleComponent) ProvidedStores() map[string]storage.Streamable
 // remaining started component in reverse start order, and a live retry finishes unjoined work
 // without re-running cleanups that already completed.
 //
-// spec: service-lifecycle / The component manager's Start bounds Start
+// spec: service-lifecycle / The component manager's Stop is the only stop and waits for a Start in progress
 func TestComponentManagerStopTimeoutStillStopsRemainingComponents(t *testing.T) {
 	providerA := newShellLifecycleComponent("timeout-a", false, true)
 	consumerB := newShellLifecycleComponent("timeout-b", true, false)
@@ -634,21 +639,18 @@ func TestComponentManagerStopTimeoutStillStopsRemainingComponents(t *testing.T) 
 	_, registered = providerA.storeRegistry.Streamable(providerA.name)
 	require.False(t, registered, "provider store must no longer be registered after timed-out Stop")
 
-	// Wait for providerA's synchronous worker exit if needed, release held consumers, and retry Stop.
-	<-providerA.workerDone
+	// Release held consumers and retry Stop; providerA's cleanup returned nil on the first pass
+	// (becoming terminal while returning expired ctx's error), so retry must not re-run providerA's cleanup.
 	close(consumerB.releaseWorker)
 	close(consumerC.releaseWorker)
 
 	require.NoError(t, cm.Stop(stopContext(t)))
 	require.Equal(t, int64(2), consumerC.cleanups.Load(), "consumer C retry must finish join")
 	require.Equal(t, int64(2), consumerB.cleanups.Load(), "consumer B retry must finish join")
-	// Provider A may have completed its join on the first pass (1 cleanup) or retried if select picked ctx.Done() (at most 2).
-	require.LessOrEqual(t, providerA.cleanups.Load(), int64(2))
-	if providerA.cleanups.Load() == 1 {
-		// Verify a subsequent Stop still does not re-run providerA's cleanup.
-		require.NoError(t, cm.Stop(stopContext(t)))
-		require.Equal(t, int64(1), providerA.cleanups.Load())
-	}
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "provider A finished cleanup must not re-run on retry")
+
+	require.NoError(t, cm.Stop(stopContext(t)))
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "terminal Stop must not re-run provider A cleanup")
 	statuses := cm.GetComponentStatus()
 	for _, name := range []string{providerA.name, consumerB.name, consumerC.name} {
 		require.Equal(t, component.StateStopped, statuses[name].State, "component %q", name)

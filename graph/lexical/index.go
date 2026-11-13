@@ -98,7 +98,8 @@ type word struct {
 }
 
 // numbered holds values under small numbers, reusing a removed value's number
-// for the next one added, so the numbers stay as few as the values held.
+// for the next one added, so there are never more numbers than the most values
+// held at once.
 type numbered[T any] struct {
 	// items holds each value at its number; a removed value's place holds
 	// the zero value until the number is reused.

@@ -4,7 +4,7 @@ package lexical
 // graph/lexical as scale_test.go and run:
 //
 //	SCALE_COPIES=25 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
-//	SCALE_COPIES=16 SCALE_BODY_BYTES=750 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
+//	SCALE_COPIES=16 SCALE_BODY_BYTES=800 go test -run '^TestScale$' -count=1 -v ./graph/lexical/
 //
 // The corpus is the scorecard's 2,000 sections written SCALE_COPIES times under
 // different entity IDs. SCALE_BODY_BYTES, when set, cuts each body at the last

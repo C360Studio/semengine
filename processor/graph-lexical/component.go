@@ -257,8 +257,8 @@ func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ct
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
 // partial start: it ends the run context and joins the follower's Run and the body path, so
-// nothing more is delivered or read. A read in flight ends by its own deadline at the latest. A ctx that ends first returns its error with the handles kept, and the next Stop
-// resumes.
+// nothing more is delivered or read. A read in flight ends by its own deadline at the latest. A
+// ctx that ends first returns its error with the handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
 	if c.runCancel != nil {
 		c.runCancel()

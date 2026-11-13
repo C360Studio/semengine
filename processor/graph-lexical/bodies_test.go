@@ -345,7 +345,8 @@ func TestMissingAndUnresolvedBodies(t *testing.T) {
 
 // TestBodyCutAtCap: an offloaded body longer than max_text_len has its words past the cap left
 // out, its name's words found, the cut gauge counts it, and the first cut since start is logged
-// once at warning level, naming the entity and the cap.
+// once at warning level, naming the entity and the cap. Once one cut entity is deleted and the
+// other rewritten short, the cut gauge reads 0.
 func TestBodyCutAtCap(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const maxLen = 40
@@ -369,6 +370,13 @@ func TestBodyCutAtCap(t *testing.T) {
 		want := fmt.Sprintf("level=WARN msg=\"entity text cut at max_text_len; words past it are not indexed\" entity=%s max_text_len=%d", pump, maxLen)
 		if !strings.Contains(logs, want) || strings.Count(logs, "text cut") != 1 {
 			t.Errorf("logs hold no single warning %q:\n%s", want, logs)
+		}
+
+		r.deliver(deleteEntry(pump, 3))
+		r.deliver(stateEntry(t, valve, 4, text{name: "valvename", inline: "short"}))
+		r.awaitFloor(4)
+		if got := testutil.ToFloat64(r.apply.metrics.cut); got != 0 {
+			t.Errorf("bodies_cut = %v after a delete and a short rewrite; want 0", got)
 		}
 	})
 }

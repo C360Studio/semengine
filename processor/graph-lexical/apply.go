@@ -68,7 +68,7 @@ func readState(err error) bodyState {
 // does not hold.
 type applier struct {
 	rule     entitytext.Rule
-	maxLen   int // the rule's cap, named when a body is first cut
+	maxLen   int // the rule's cap: a body read is cut at it, and it is named when a body is first cut
 	index    *lexical.Index
 	complete func(key string, revision uint64)
 	metrics  *lexicalMetrics
@@ -90,9 +90,31 @@ type held struct {
 	words    int
 	cut      bool
 	body     bodyState
-	// waiting is the state whose offloaded body is still to be read for revision, so the body
-	// joins that state's text when it is read; nil when no read is wanted.
-	waiting *graph.EntityState
+	// waiting is what the offloaded body still to be read for revision is joined to; nil when no
+	// read is wanted.
+	waiting *pending
+}
+
+// pending is what an offloaded body still to be read needs, and no more of the entity's state:
+// the document of the entity's inline text, which the body joins, and where the body is.
+type pending struct {
+	inline entitytext.Document
+	ref    message.StorageReference
+}
+
+// withBody is inline, the document Rule.Document makes with no body, joined by body as
+// Rule.Document joins it: after the inline body text, then cut at maxLen. An inline body already
+// cut stays as it is, since the cap falls inside it and the body would follow the cut.
+func withBody(inline entitytext.Document, body string, maxLen int) entitytext.Document {
+	if inline.Cut || body == "" {
+		return inline
+	}
+	full := body
+	if inline.Body != "" {
+		full = inline.Body + " " + body
+	}
+	capped := entitytext.Truncate(full, maxLen)
+	return entitytext.Document{Name: inline.Name, Body: capped, Cut: len(capped) < len(full)}
 }
 
 // newApplier returns an applier over an empty index that completes revisions through complete
@@ -139,7 +161,8 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 	if err := graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {
 		return bodyRead{}, false, err
 	}
-	h, err := a.put(e.Key, e.Revision, a.rule.Document(&state, ""))
+	inline := a.rule.Document(&state, "")
+	h, err := a.put(e.Key, e.Revision, inline)
 	if err != nil {
 		return bodyRead{}, false, err
 	}
@@ -148,7 +171,7 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 		a.complete(e.Key, e.Revision)
 		return bodyRead{}, false, nil
 	}
-	a.setBody(h, bodyQueued, &state)
+	a.setBody(h, bodyQueued, &pending{inline: inline, ref: *state.StorageRef})
 	return bodyRead{key: e.Key, revision: e.Revision, ref: *state.StorageRef}, true, nil
 }
 
@@ -178,7 +201,7 @@ func (a *applier) bodyDone(read bodyRead, body string, err error) {
 		case bodyNone:
 			// put refuses only an ID that is not canonical, and this key's was accepted when its
 			// inline text was put.
-			_, _ = a.put(read.key, read.revision, a.rule.Document(h.waiting, body))
+			_, _ = a.put(read.key, read.revision, withBody(h.waiting.inline, body, a.maxLen))
 			a.setBody(h, bodyNone, nil)
 		case bodyMissing:
 			a.setBody(h, s, nil)
@@ -205,7 +228,7 @@ func (a *applier) retries() []bodyRead {
 	var reads []bodyRead
 	for key, h := range a.held {
 		if h.body == bodyUnread || h.body == bodyNoStore {
-			reads = append(reads, bodyRead{key: key, revision: h.revision, ref: *h.waiting.StorageRef})
+			reads = append(reads, bodyRead{key: key, revision: h.revision, ref: h.waiting.ref})
 		}
 	}
 	return reads
@@ -252,8 +275,8 @@ func (a *applier) put(key string, revision uint64, doc entitytext.Document) (*he
 	return h, nil
 }
 
-// setBody puts h's body in state s, waiting on the state waiting names, and reports it.
-func (a *applier) setBody(h *held, s bodyState, waiting *graph.EntityState) {
+// setBody puts h's body in state s, waiting on waiting, and reports it.
+func (a *applier) setBody(h *held, s bodyState, waiting *pending) {
 	if h.body != bodyNone {
 		a.bodies[h.body]--
 	}

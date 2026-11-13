@@ -35,7 +35,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   search times in `notes/2.2.md`; every `graph/lexical` test, the generated checks and
   `TestScorecardHoldsItsFloor` pass unchanged; design D7 records the figures and the entity count and text size they
   are accepted for. PR body: `Closes #623`.
-- [ ] 2.3 PR C. The component and its apply rule (design D1, D2). Premise: the follower plug-in contract and the
+- [x] 2.3 PR C. The component and its apply rule (design D1, D2). Premise: the follower plug-in contract and the
   Value-apply rule (`graph/follower/follower.go:62-88`, `:75-76`;
   `openspec/specs/entity-state-follower/spec.md:204-205`); the graph-clustering shape
   (`processor/graph-clustering/component.go:192-203`, `:276`); `lexical.Index` holds no revision

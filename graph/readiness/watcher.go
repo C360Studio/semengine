@@ -53,6 +53,10 @@ const (
 	// the community maintainer holds, not what is published; a community record's own
 	// entity_revision says what is published (graph.IndexStatusResponse.IndexedRevision).
 	KeyGraphClustering = "graph-clustering"
+	// KeyGraphLexical is graph-lexical's status key. Its indexed revision counts what the word
+	// index holds: an entity's revision is applied once its text is in the index, its offloaded
+	// body included or given up for that revision.
+	KeyGraphLexical = "graph-lexical"
 	// KeyGraphIngest is graph-ingest's status key. Its envelope is a BACKLOG
 	// envelope (ComputeBacklogStatus): Lag is in MESSAGES, and the revision
 	// fields are absent because graph-ingest consumes multiple streams whose

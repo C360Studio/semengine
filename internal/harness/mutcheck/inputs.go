@@ -234,7 +234,8 @@ func goEnv(ctx context.Context, root string, environ []string) (string, string, 
 }
 
 // checkGoflags refuses a GOFLAGS that sets an overlay, which the program's own would conflict
-// with, or coverage, under which Go builds the target from the file on disk.
+// with, or coverage, under which Go builds the target from the file on disk (measured at go1.26.6
+// and go1.26.4, not promised by Go).
 func checkGoflags(goflags string) error {
 	fields, err := splitQuoted(goflags)
 	if err != nil {

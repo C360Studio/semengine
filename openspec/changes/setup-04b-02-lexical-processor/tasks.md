@@ -13,7 +13,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
 
 ## 2. Code
 
-- [ ] 2.1 PR A. `graph/entitytext`, and graph-embedding onto it (design D3, D5). Premise: four text rules,
+- [x] 2.1 PR A. `graph/entitytext`, and graph-embedding onto it (design D3, D5). Premise: four text rules,
   graph-embedding's at `processor/graph-embedding/hop1.go:228` with defaults `config.go:27` and cap `config.go:23`,
   its body read at `graph/embedding/worker.go:744` with no deadline (inventory §2a; #551); `storage` reaches no NATS
   module (`go list -deps ./storage | grep -c nats-io` is 0); the NATS object store's read returns at its context's

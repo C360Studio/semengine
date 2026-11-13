@@ -222,26 +222,10 @@ func (c *Component) reportOffloadedBodyExcluded(key, instance string) {
 		slog.String("entity", key), slog.String("storage_instance", instance))
 }
 
-// extractText joins the entity's string values whose predicate ends with one of the
-// configured text suffixes, relationships excepted. For an offloaded entity it is the identity
-// text: the body is not a triple.
+// extractText joins the entity's text values (entitytext.Rule.Values) with one space. For an
+// offloaded entity it is the identity text: the body is not a triple.
 func (c *Component) extractText(state *graph.EntityState) string {
-	var parts []string
-	for _, triple := range state.Triples {
-		if triple.IsRelationship() {
-			continue
-		}
-		predicate := strings.ToLower(triple.Predicate)
-		for _, suffix := range c.config.TextSuffixes {
-			if strings.HasSuffix(predicate, suffix) {
-				if text, ok := triple.Object.(string); ok && text != "" {
-					parts = append(parts, text)
-				}
-				break
-			}
-		}
-	}
-	return strings.Join(parts, " ")
+	return strings.Join(c.text.Values(state), " ")
 }
 
 // onTerminal is the Worker's terminal callback (embedding.TerminalCallback): the pending

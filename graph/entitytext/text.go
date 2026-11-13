@@ -73,8 +73,8 @@ type Document struct {
 // Document splits the entity's text into a name and a body. Name is every string value of a
 // vocabulary label predicate, whatever its suffix, and every text value whose predicate ends in
 // .name or .title, each value once and in triple order. Body is every other text value in triple
-// order, then body, the entity's offloaded body ("" for none). The cap cuts Body's tail at a word
-// and never cuts Name.
+// order, then body, the entity's offloaded body ("" for none). The cap cuts Body's tail as Truncate
+// does and never cuts Name.
 func (r Rule) Document(state *graph.EntityState, body string) Document {
 	var names, rest []string
 	for _, triple := range state.Triples {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/storage"
 )
 
@@ -193,6 +194,19 @@ func TestBodyReadOutcomes(t *testing.T) {
 		if !strings.HasPrefix(full, body) || utf8.RuneCountInString(body) < 5 || len(body) > 5*utf8.UTFMax+1 {
 			t.Fatalf("ReadBody read %d bytes (%q), want a prefix holding the 5 capped characters in at most %d bytes",
 				len(body), body, 5*utf8.UTFMax+1)
+		}
+	})
+	t.Run("a nil context is refused before any store is asked", func(t *testing.T) {
+		opened := false
+		store := fakeStore{open: func(context.Context, string) (io.ReadCloser, error) {
+			opened = true
+			return io.NopCloser(strings.NewReader("body")), nil
+		}}
+		if _, err := entitytext.ReadBody(nil, stores{"objstore": store}, ref, 100); !errs.IsInvalid(err) {
+			t.Fatalf("ReadBody(nil) = %v; want an invalid-input error", err)
+		}
+		if opened {
+			t.Fatal("ReadBody(nil) opened the store")
 		}
 	})
 	t.Run("a cap below one is refused", func(t *testing.T) {

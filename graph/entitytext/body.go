@@ -9,6 +9,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/storage"
 )
 
@@ -32,8 +33,11 @@ type Stores interface {
 // When that context has ended by the time the store returns, the error wraps the context's error,
 // context.DeadlineExceeded for the deadline, whatever the store returned: a store may answer its
 // deadline with an error of its own that wraps no context error. A store that ignores its context
-// is not bounded by the deadline.
+// is not bounded by the deadline. A nil ctx is refused before any store is asked.
 func ReadBody(ctx context.Context, stores Stores, ref message.StorageReference, maxLen int) (string, error) {
+	if ctx == nil {
+		return "", errs.WrapInvalid(errors.New("nil context"), "entitytext", "ReadBody", "check the context")
+	}
 	if maxLen < 1 {
 		return "", fmt.Errorf("entitytext: read body %q: cap %d is below 1 character", ref.Key, maxLen)
 	}

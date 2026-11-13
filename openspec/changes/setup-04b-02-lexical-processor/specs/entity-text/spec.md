@@ -30,13 +30,15 @@ order, then the offloaded body; graph-lexical SHALL read its text only through i
 ### Requirement: The text cap cuts the body's tail and says so
 
 `max_text_len` SHALL be the most characters of text taken. For `Document` it SHALL apply to Body only, inline values
-first and the offloaded body after them, cut at a word, and SHALL never cut Name. A cut SHALL be reported to the
-caller, which counts it. For `Values` it SHALL apply as graph-embedding applies it today.
+first and the offloaded body after them, cut at the last whitespace in the back half of the cap, else at the cap,
+and SHALL never cut Name. A cut SHALL be reported to the caller, which counts it. For `Values` it SHALL apply as
+graph-embedding applies it today.
 
 #### Scenario: A long body
 
 - **WHEN** an entity's Body is longer than the cap
-- **THEN** Body ends at a word at or before the cap, Name is whole, and the cut is reported (`TestDocumentCap`)
+- **THEN** Body ends at the last whitespace in the back half of the cap, else at the cap, Name is whole, and the cut
+  is reported (`TestDocumentCap`)
 
 ### Requirement: An offloaded body is read with a deadline
 

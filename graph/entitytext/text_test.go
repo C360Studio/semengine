@@ -85,7 +85,7 @@ func TestNameAndBodyRoles(t *testing.T) {
 }
 
 // TestDocumentCap: the cap applies to Body only, inline values first and the offloaded body after
-// them, and cuts at a word at or before the cap; Name is never cut, even when it alone is longer
+// them, and cuts at the last whitespace in the back half of the cap, else at the cap; Name is never cut, even when it alone is longer
 // than the cap; the cut is reported.
 //
 // Requirement: entity-text/The text cap cuts the body's tail and says so
@@ -117,6 +117,12 @@ func TestDocumentCap(t *testing.T) {
 		doc := entitytext.New(nil, 7).Document(state, "")
 		if doc.Name != longName || doc.Body != "alpha" || !doc.Cut {
 			t.Errorf("Document = %+v, want the whole name, Body %q, cut", doc, "alpha")
+		}
+	})
+	t.Run("a word longer than half the cap is cut at the cap", func(t *testing.T) {
+		doc := entitytext.New(nil, 7).Document(entity(), "ab cdefghij")
+		if doc.Body != "ab cdef" || !doc.Cut {
+			t.Errorf("Document = %+v, want Body %q, cut", doc, "ab cdef")
 		}
 	})
 	t.Run("a cap counts characters, not bytes", func(t *testing.T) {

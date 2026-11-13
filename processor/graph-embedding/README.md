@@ -184,5 +184,6 @@ under the same prefix.
 
 - Upstream: graph-ingest writes `ENTITY_STATES`, which this component follows.
 - Reads: `graph/follower` (watch, watermark, readiness), `graph/embedding` (BM25 embedder, Worker, storage),
-  `graph/kvcatalog`, `storage/storeregistry` (offloaded bodies).
+  `graph/entitytext` (which values are text, the offloaded-body read), `graph/kvcatalog`, `storage/storeregistry`
+  (offloaded bodies).
 - Writes: `EMBEDDING_INDEX` and `EMBEDDING_DEDUP`, which this component owns.

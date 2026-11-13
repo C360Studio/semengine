@@ -73,7 +73,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   Accept: a probe, its source and log in `notes/2.6.md`, starts the component over 20,000 and 100,000 entities on
   one NATS server, inline and with bodies in an object store, and records time to the first answer; the result is
   compared with the budget the owner set and posted on #10.
-- [ ] 2.7 PR C. Smoke (design D8; #628 first item). Premise: the composition lists, factories and `indexKeys`
+- [x] 2.7 PR C. Smoke (design D8; #628 first item). Premise: the composition lists, factories and `indexKeys`
   (`internal/smoke/stack_integration_test.go:150-152`, `:177-185`; inventory §4); the running-broker test counts
   seven components (`openspec/specs/composed-stack/spec.md:77-90`). Accept: `TestSmoke_OneConfigAnswers`,
   `TestSmoke_StackRestartKeepsAnswers`, `TestSmoke_BrokerRestartBetweenRuns` and

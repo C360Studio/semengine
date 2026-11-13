@@ -201,9 +201,11 @@ A vector cache watch lost while the component runs SHALL be named in `Health` as
 
 ### Requirement: A body store that hangs frees the Worker's lane
 
-graph-embedding SHALL read an offloaded body through `graph/entitytext`, so a read that has not returned 10 seconds
-after it began ends with a deadline error. The entity's record SHALL then be failed with reason `content_error`, as
-any body read failure is today, without withholding the verbs, and the lane SHALL go on to its next record.
+graph-embedding SHALL read an offloaded body through `graph/entitytext`, which gives the read a context that ends 10
+seconds after it began; a store that fails after that context has ended returns a deadline error, and a store that
+ignores its context is not bounded by it. On a failed read the entity's record SHALL be failed with reason
+`content_error`, as any body read failure is today, without withholding the verbs, and the lane SHALL go on to its
+next record.
 
 #### Scenario: One hung read on a lane
 

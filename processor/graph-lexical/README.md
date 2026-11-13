@@ -71,17 +71,18 @@ store. Until then, a body not in the index is in one of four states, counted on 
 | `no_store` | No store is registered for the body's storage instance | Looked up again every 30 seconds |
 
 A read that fails for any reason other than a missing object skips that store until the next 30-second pass, so a
-store that does not answer costs one 10-second read deadline per pass, not one per body. The first missing body and
+store that does not answer, but honours its read's context, costs one 10-second read deadline per pass, not one per
+body. A store that ignores its context is not bounded by the deadline. The first missing body and
 the first unregistered store since start are logged once each.
 
 ## The text cap
 
-`max_text_len` is the most characters of an entity's body that are indexed. Text past it is cut at a word boundary,
-and the name is never cut. The default is 16,000 characters, long enough that a code body is almost never cut;
-graph-embedding's default is 4,000, so the two can index different amounts of the same entity. The gauge
-`semengine_graph_lexical_bodies_cut` counts the entities whose body is cut, and the first cut since start is logged
-once, naming the entity and the cap. Words past the cap cannot be found. A larger value reads more of each offloaded
-body and holds more words; the accepted range is 0 to 1,000,000.
+`max_text_len` is the most characters of an entity's body that are indexed. Text past it is cut, preferring a word
+boundary, otherwise at the cap, and the name is never cut. The default is 16,000 characters, long enough that a code
+body is almost never cut; graph-embedding's default is 4,000, so the two can index different amounts of the same
+entity. The gauge `semengine_graph_lexical_bodies_cut` counts the entities whose body is cut, and the first cut since
+start is logged once, naming the entity and the cap. Words past the cap cannot be found. A larger value reads more of
+each offloaded body and holds more words; the accepted range is 0 to 1,000,000.
 
 File paths are not indexed unless a product adds the suffix of its path predicate to `text_suffixes`.
 

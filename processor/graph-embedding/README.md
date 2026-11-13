@@ -39,10 +39,12 @@ text, deleted, or a generated record already standing). So readiness waits for h
 
 ## Text
 
-Which values are text comes from `graph/entitytext`, the rule `graph-lexical` uses too, so both components see the
-same text. Inline text is the string values of the entity's non-relationship triples whose predicate ends in one of
-`text_suffixes`, joined with spaces and cut to `max_text_len` characters at a word boundary. An entity whose body is
-offloaded to an object store (a `StorageRef`) is embedded from its identity text followed by the body, which the
+Which values are text comes from `graph/entitytext`, the rule `graph-lexical` uses too. The two read different views
+of it: graph-embedding reads only values whose predicate ends in one of `text_suffixes`, while graph-lexical also
+takes every registered label predicate as name text, whatever its suffix, and the two caps differ. Inline text here
+is the string values of the entity's non-relationship triples whose predicate ends in one of `text_suffixes`, joined
+with spaces and cut to `max_text_len` characters, preferring a word boundary, otherwise at the cap. An entity whose
+body is offloaded to an object store (a `StorageRef`) is embedded from its identity text followed by the body, which the
 Worker reads through the store registry. If no store is registered for the body's storage instance, only the inline
 text is embedded and `content_unresolved_total` counts the exclusion.
 

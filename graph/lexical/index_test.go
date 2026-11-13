@@ -216,6 +216,39 @@ func TestSingularFindsPlural(t *testing.T) {
 	}
 }
 
+// An acronym written in capitals, in lower case, and in the plural of either
+// is one word, so each form finds all four. Each group below is written by
+// hand; the expected hits are the group's own entities, nothing else.
+func TestAcronymPluralsMeetTheirSingular(t *testing.T) {
+	groups := []struct {
+		forms [4]string
+		ids   [4]string
+	}{
+		{[4]string{"ID", "id", "IDs", "ids"}, [4]string{"c360.lex.test.doc.id.a", "c360.lex.test.doc.id.b", "c360.lex.test.doc.id.c", "c360.lex.test.doc.id.d"}},
+		{[4]string{"URL", "url", "URLs", "urls"}, [4]string{"c360.lex.test.doc.url.a", "c360.lex.test.doc.url.b", "c360.lex.test.doc.url.c", "c360.lex.test.doc.url.d"}},
+		{[4]string{"API", "api", "APIs", "apis"}, [4]string{"c360.lex.test.doc.api.a", "c360.lex.test.doc.api.b", "c360.lex.test.doc.api.c", "c360.lex.test.doc.api.d"}},
+		{[4]string{"PR", "pr", "PRs", "prs"}, [4]string{"c360.lex.test.doc.pr.a", "c360.lex.test.doc.pr.b", "c360.lex.test.doc.pr.c", "c360.lex.test.doc.pr.d"}},
+		{[4]string{"ADR", "adr", "ADRs", "adrs"}, [4]string{"c360.lex.test.doc.adr.a", "c360.lex.test.doc.adr.b", "c360.lex.test.doc.adr.c", "c360.lex.test.doc.adr.d"}},
+		{[4]string{"UUID", "uuid", "UUIDs", "uuids"}, [4]string{"c360.lex.test.doc.uuid.a", "c360.lex.test.doc.uuid.b", "c360.lex.test.doc.uuid.c", "c360.lex.test.doc.uuid.d"}},
+	}
+	ix := NewIndex()
+	for _, g := range groups {
+		for i, form := range g.forms {
+			mustPut(t, ix, g.ids[i], Document{Body: form})
+		}
+	}
+	for _, g := range groups {
+		want := slices.Sorted(slices.Values(g.ids[:]))
+		for _, form := range g.forms {
+			got := hitIDs(mustSearch(t, ix, form, Options{Limit: 100}))
+			slices.Sort(got)
+			if !slices.Equal(got, want) {
+				t.Errorf("search %q = %v, want %v", form, got, want)
+			}
+		}
+	}
+}
+
 func TestJoinedIdentifierIsNotHeld(t *testing.T) {
 	ix := NewIndex()
 	mustPut(t, ix, idOne, Document{Body: "withRetry"})

@@ -12,7 +12,7 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md` and `no
 
 ## 2. Code
 
-- [ ] 2.1 Tests first (`graph/lexical/tokens_test.go`, and an index test). Premise: `splitIdentifier` splits before
+- [x] 2.1 Tests first (`graph/lexical/tokens_test.go`, and an index test). Premise: `splitIdentifier` splits before
   the last capital of a capital run followed by lower case, so `IDs` gives `i ds` (`graph/lexical/tokens.go`,
   `splitIdentifier`); `fold` rule 5 needs over 3 bytes (`fold`, last case), pinned by the `"its": "its"` witness in
   `TestPluralRules`. Accept: a new test puts one entity per form (`ID`, `id`, `IDs`, `ids`, and the same four for

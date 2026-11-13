@@ -3862,11 +3862,14 @@
     not carried; (8) both Run methods stop their watch through internal/kvwatch.Stop; (9) a failure counts as
     shutdown only when its error matches context.Canceled and the Worker's context has ended, not by message text; (10)
     a text cap of 0 means 8,000 runes on both lanes; (11) WorkerMetrics gains IncContentUnresolved and loses
-    SetPending. Not carried: http_embedder.go (own row), ContentHash, SavePending, SavePendingWithStorageRef,
+    SetPending; (12) an offloaded body is read through graph/entitytext.ReadBody, which ends the read 10 s after it
+    begins, and the truncation routine is graph/entitytext.Truncate (setup-04b-02-lexical-processor, #551). Not
+    carried: http_embedder.go (own row), ContentHash, SavePending, SavePendingWithStorageRef,
     Record.ContentFields, DedupRecord.EntityIDs, euclideanDistance, dotProduct, magnitude, normalize
   dependencies_and_side_effects: >-
-    internal/dispatch, internal/kvwatch, natsclient, pkg/errs, pkg/types, storage (in-set); nats.go/jetstream;
-    golang.org/x/sync/singleflight; no Prometheus, no provider module (TestEmbeddingImportsNoProviderModule). Worker.Run and
+    graph/entitytext, internal/dispatch, internal/kvwatch, message, natsclient, pkg/errs, pkg/types, storage (in-set);
+    nats.go/jetstream; golang.org/x/sync/singleflight; no Prometheus, no provider module
+    (TestEmbeddingImportsNoProviderModule). Worker.Run and
     VectorCache.Run each read one EMBEDDING_INDEX watch on the caller's goroutine; the Worker also runs one keyed pool
     of lanes (default 5), joined before Run returns. Writes EMBEDDING_INDEX and EMBEDDING_DEDUP; creates neither bucket
   known_risks: >-
@@ -3889,7 +3892,8 @@
     TestWorkerSecondRunRefused, TestWorkerRunLeavesNothingBehind, TestFailureWithCanceledTextIsAFailure,
     TestBothLanesEmbedIdenticalBytes, TestTerminalCallbackOncePerOutcome, TestCASExhaustionIsNotTerminal,
     TestNoTextDeleteFailureIsNotTerminal, TestKeyedCallbacksFollowRevisionOrder,
-    TestWorkerSaveRefusedWhenNewerPendingArrives); worker_resilience_test.go (TestPanickingEntryStaysPending);
+    TestWorkerSaveRefusedWhenNewerPendingArrives); worker_hungstore_test.go (TestHungStoreFreesWorkerLane);
+    worker_resilience_test.go (TestPanickingEntryStaysPending);
     worker_integration_test.go (TestWorkerRunLeavesNoWatchDelivery, TestWorkerRunReportsLostWatch,
     TestNoTextDeleteKeepsNewerPending, TestNoTextDeleteKeepsNewerGenerated); vector_cache_test.go
     (TestVectorCacheSecondRunRefused, TestVectorCacheNotAuthoritative, TestVectorCachePoisonCountedAndHeals,
@@ -4619,10 +4623,10 @@
     (invalid_request), dropping score-0 hits, filtering by scope before ranking, and withholding on the follower's
     QueryReady narrowed by follower.Config.Withhold to hop 1's failures (spec graph-embedding; ADR-071)
   dependencies_and_side_effects: >-
-    component, graph, graph/embedding, graph/follower, graph/kvcatalog, graph/readiness, internal/cache,
-    natsclient, metric, pkg/errs, storage/storeregistry (in-set); nats.go/jetstream; the follower's watch on
-    ENTITY_STATES, reads and writes on EMBEDDING_INDEX and EMBEDDING_DEDUP, the Worker's watch on EMBEDDING_INDEX, a
-    repair lane and a coalescer, started in Start and joined in Stop; registers semengine_graph_embedding_
+    component, graph, graph/embedding, graph/entitytext, graph/follower, graph/kvcatalog, graph/readiness,
+    internal/cache, natsclient, metric, pkg/errs, storage/storeregistry (in-set); nats.go/jetstream; the follower's
+    watch on ENTITY_STATES, reads and writes on EMBEDDING_INDEX and EMBEDDING_DEDUP, the Worker's watch on
+    EMBEDDING_INDEX, a repair lane and a coalescer, started in Start and joined in Stop; registers semengine_graph_embedding_
     content_unresolved_total on the injected metrics registry (metrics.go)
   known_risks: >-
     Config break for consumers: semsource's configuration sets batch_size under graph-embedding and fails at boot
@@ -4630,9 +4634,10 @@
     graph.embedding.query.status has no responder; the query verbs refuse unknown keys, limits outside 0 to 100 and
     a min_revision above 0, and drop score-0 hits; the degraded rule is completion-based at 30 s for every plug-in
     (MIGRATION.md). Hop 1 runs serially on the follower's goroutine, so a slow pending write delays delivery
-    (throughput, not correctness). Open: an offloaded body's fetch has no deadline and a hanging store pins a Worker
-    lane (#551); after a restart without the body's store the Worker's replay
-    and hop 1's re-read count two exclusions in content_unresolved_total. The Worker's other metrics are dropped
+    (throughput, not correctness). An offloaded body read ends 10 s after it begins, so a hanging store holds a
+    Worker lane for one deadline, then the record fails content_error (#551). Open: after a restart without the
+    body's store the Worker's replay and hop 1's re-read count two exclusions in content_unresolved_total. The
+    Worker's other metrics are dropped
     until their collectors are ported. Not carried: the http embedder and the model import (#32, #489), BatchSize,
     the cache_ttl probe, the indexing-profile check (ADR-054 not ported), the pin's bucket-scan query fallback, its
     test hook subscribeForRequests, and its nil-storage, nil-embedder and empty-vector branches

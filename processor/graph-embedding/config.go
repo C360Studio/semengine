@@ -7,6 +7,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
@@ -21,10 +22,6 @@ const defaultWorkers = 5
 // default, 8,000, is the cap for other embedders, so the component always passes this value
 // instead.
 const maxSourceTextLenBM25 = 4000
-
-// defaultTextSuffixes are the predicate suffixes embedded when text_suffixes is unset.
-var defaultTextSuffixes = []string{".title", ".content", ".description", ".summary", ".text", ".name", ".body",
-	".abstract", ".subject"}
 
 // Config holds configuration for graph-embedding component. Decoding is strict: a key it
 // does not define, batch_size among them, is refused.
@@ -42,7 +39,7 @@ type Config struct {
 	MaxTextLen int `json:"max_text_len,omitempty" schema:"type:int,description:Max characters of source text embedded per entity; text beyond is truncated at a word boundary. 0 uses the default (4000),min:0,max:1000000,category:advanced"`
 
 	// TextSuffixes are the predicate suffixes whose string values are embedded; empty means
-	// defaultTextSuffixes.
+	// entitytext.DefaultSuffixes.
 	TextSuffixes []string `json:"text_suffixes,omitempty" schema:"type:array,description:Predicate suffixes to extract for embedding (e.g. .source_code .signature). Defaults to common text predicates,category:advanced"`
 
 	// Dependency startup configuration
@@ -131,7 +128,7 @@ func (c *Config) ApplyDefaults() {
 		c.MaxTextLen = maxSourceTextLenBM25
 	}
 	if len(c.TextSuffixes) == 0 {
-		c.TextSuffixes = append([]string(nil), defaultTextSuffixes...)
+		c.TextSuffixes = entitytext.DefaultSuffixes()
 	}
 	if c.StartupAttempts == 0 {
 		c.StartupAttempts = 30 // ~15 seconds with 500ms interval

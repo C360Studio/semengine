@@ -5,20 +5,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"runtime/debug"
 	"strings"
 	"sync"
 	"sync/atomic"
-	"unicode"
-	"unicode/utf8"
 
 	"github.com/nats-io/nats.go/jetstream"
 	"golang.org/x/sync/singleflight"
 
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/internal/dispatch"
 	"github.com/c360studio/semengine/internal/kvwatch"
+	"github.com/c360studio/semengine/message"
 	"github.com/c360studio/semengine/natsclient"
 	"github.com/c360studio/semengine/pkg/errs"
 	"github.com/c360studio/semengine/storage"
@@ -137,11 +136,6 @@ type StoreResolver interface {
 // errWatchLost says the Worker's EMBEDDING_INDEX watch's update channel closed while Run's
 // context was still live, as nats.go closes it when the bucket is deleted.
 var errWatchLost = errors.New("embedding: the EMBEDDING_INDEX watch was lost")
-
-// errContentUnresolved says no store is registered for a body's StorageInstance, as distinct
-// from a store that resolved and then failed to open or read. The first excludes only the
-// body and keeps the inline identity text; the second is a content failure.
-var errContentUnresolved = errors.New("storage instance unresolved")
 
 // Worker turns the pending records of EMBEDDING_INDEX into generated or failed ones (hop 2).
 // Run watches the bucket and processes each pending record on a keyed pool, one entity's
@@ -666,7 +660,7 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 
 	// fetchTextFromStorage truncates the body and counts that truncation.
 	body, bodyTruncated, err := w.fetchTextFromStorage(ctx, record.StorageRef)
-	if errors.Is(err, errContentUnresolved) {
+	if errors.Is(err, entitytext.ErrNoStore) {
 		body, bodyTruncated, err = "", false, nil
 	}
 	if err != nil {
@@ -693,57 +687,24 @@ func (w *Worker) getSourceText(ctx context.Context, record *Record) (string, err
 	return truncated, nil
 }
 
-// truncateAtWord truncates text to at most maxLen runes, preferring the last Unicode
-// whitespace boundary in the back half of the cap. It is the one truncation routine for both
-// lanes, so identical over-cap content yields identical bytes, and the same dedup key, on
-// either. It never splits a multibyte rune, so the result is valid UTF-8. A maxLen of 0 or less
-// returns text unchanged.
+// truncateAtWord cuts text to at most maxLen runes at a word, by entitytext.Truncate. Both lanes
+// cut with it, so identical over-cap content yields identical bytes, and the same dedup key, on
+// either.
 func truncateAtWord(text string, maxLen int) string {
-	if maxLen <= 0 {
-		return text
-	}
-
-	// The byte offset just past the maxLen-th rune; ranging a string yields each rune's start.
-	runeCount := 0
-	cut := len(text)
-	for i := range text {
-		if runeCount == maxLen {
-			cut = i
-			break
-		}
-		runeCount++
-	}
-	if cut == len(text) {
-		return text
-	}
-	truncated := text[:cut]
-
-	// Prefer the last whitespace boundary when it is past the halfway point, in runes.
-	if sp := strings.LastIndexFunc(truncated, unicode.IsSpace); sp > 0 {
-		if utf8.RuneCountInString(truncated[:sp]) > maxLen/2 {
-			return truncated[:sp]
-		}
-	}
-	return truncated
+	return entitytext.Truncate(text, maxLen)
 }
 
-// resolveStore returns the registered owner of instance, resolved per fetch; the store is
-// borrowed, never cached or closed. Another registered instance is never a candidate.
-func (w *Worker) resolveStore(instance string) storage.StreamableStore {
-	if w.storeResolver != nil && instance != "" {
-		if s, ok := w.storeResolver.Streamable(instance); ok {
-			return s
-		}
-	}
-	return nil
-}
-
-// fetchTextFromStorage streams the body from its store, reading at most enough bytes for
-// textCap runes, and truncates it with truncateAtWord. The store holds raw bytes. bodyTruncated
-// reports whether the body itself exceeded the cap, so getSourceText counts a truncation once.
+// fetchTextFromStorage reads the body from the store registered under its StorageInstance
+// through entitytext.ReadBody, which reads at most enough bytes for textCap runes and ends the
+// read 10 seconds after it begins, and truncates it with truncateAtWord. The store holds raw
+// bytes. bodyTruncated reports whether the body itself exceeded the cap, so getSourceText counts
+// a truncation once. An instance with no registered store returns an error wrapping
+// entitytext.ErrNoStore.
 func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef) (text string, bodyTruncated bool, err error) {
-	store := w.resolveStore(ref.StorageInstance)
-	if store == nil {
+	limit := w.textCap()
+	raw, err := entitytext.ReadBody(ctx, w.storeResolver,
+		message.StorageReference{StorageInstance: ref.StorageInstance, Key: ref.Key}, limit)
+	if errors.Is(err, entitytext.ErrNoStore) {
 		if w.metrics != nil {
 			w.metrics.IncContentUnresolved()
 		}
@@ -751,37 +712,21 @@ func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef) (tex
 			w.logger.Warn("offloaded body excluded from embedding: no live store is registered for the StorageInstance; start or restore that storage component to include the body",
 				slog.String("storage_instance", ref.StorageInstance))
 		})
-		return "", false, fmt.Errorf("%w: %q", errContentUnresolved, ref.StorageInstance)
+		return "", false, err
 	}
-
-	reader, err := store.Open(ctx, ref.Key)
 	if err != nil {
 		if w.metrics != nil {
 			w.metrics.IncContentResolveError()
 		}
-		return "", false, fmt.Errorf("failed to open content from instance %q: %w", ref.StorageInstance, err)
-	}
-	defer reader.Close()
-
-	// The cap is in runes and a rune is up to utf8.UTFMax bytes, so this budget always holds
-	// limit whole runes when the body has them, and the truncation matches the inline lane's.
-	limit := w.textCap()
-	readCap := int64(limit)*utf8.UTFMax + 1
-	data, err := io.ReadAll(io.LimitReader(reader, readCap))
-	if err != nil {
-		if w.metrics != nil {
-			w.metrics.IncContentResolveError()
-		}
-		return "", false, fmt.Errorf("failed to read content from instance %q: %w", ref.StorageInstance, err)
+		return "", false, err
 	}
 
-	if len(data) > 0 && data[0] == '{' {
+	if len(raw) > 0 && raw[0] == '{' {
 		w.logger.Debug("stored content appears JSON-wrapped, expected raw text",
 			slog.String("key", ref.Key),
 			slog.String("hint", "store the raw body text, not a JSON envelope"))
 	}
 
-	raw := string(data)
 	truncated := truncateAtWord(raw, limit)
 	bodyTruncated = len(truncated) < len(raw)
 	if bodyTruncated && w.metrics != nil {

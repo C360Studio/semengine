@@ -170,7 +170,9 @@ under the same prefix.
 
 ## Known limits
 
-- **Offloaded-body fetch has no deadline.** A store that hangs holds one Worker lane until the process stops.
+- **A hung body store holds a lane for one deadline.** An offloaded body read ends 10 s after it begins; a store
+  that hangs holds one Worker lane that long, then the record is failed `content_error` and the lane goes on. A store
+  that ignores its context is not bounded by the deadline.
 - **Double count after a restart without the store.** If the process restarts with no store registered for an
   offloaded body, the Worker's replay of the old pending record and hop 1's re-read of the entity are two
   exclusions, and `content_unresolved_total` counts both.
@@ -182,5 +184,6 @@ under the same prefix.
 
 - Upstream: graph-ingest writes `ENTITY_STATES`, which this component follows.
 - Reads: `graph/follower` (watch, watermark, readiness), `graph/embedding` (BM25 embedder, Worker, storage),
-  `graph/kvcatalog`, `storage/storeregistry` (offloaded bodies).
+  `graph/entitytext` (which values are text, the offloaded-body read), `graph/kvcatalog`, `storage/storeregistry`
+  (offloaded bodies).
 - Writes: `EMBEDDING_INDEX` and `EMBEDDING_DEDUP`, which this component owns.

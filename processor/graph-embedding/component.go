@@ -15,6 +15,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/embedding"
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/graph/kvcatalog"
 	"github.com/c360studio/semengine/graph/readiness"
@@ -48,6 +49,9 @@ type Component struct {
 	logger          *slog.Logger
 	metricsRegistry *metric.MetricsRegistry
 	metrics         *embeddingMetrics
+
+	// text selects the values hop 1 embeds, from text_suffixes.
+	text entitytext.Rule
 
 	// storeRegistry resolves an offloaded body's StorageRef to its store (ADR-063); it is the
 	// injected registry when a store-read input is declared and nil otherwise.
@@ -182,6 +186,7 @@ func CreateGraphEmbedding(rawConfig json.RawMessage, deps component.Dependencies
 		logger:          deps.GetLoggerWithComponent(key),
 		metricsRegistry: deps.MetricsRegistry,
 		metrics:         metrics,
+		text:            entitytext.New(config.TextSuffixes, config.MaxTextLen),
 		storeRegistry:   storeRegistry,
 	}, nil
 }

@@ -12,3 +12,17 @@ S + F  NameWeight 2: R@1 24.6%  R@10 56.0%  MRR 0.358 over 500 questions; one fa
 
 Every TestScorecardBehaviour question passes under all four. The TestPluralRules failure is the rule-5 length-bound
 witness ("its" stays "its"), which rule F moves by design.
+
+Rule F3 (round 2): rule F, skipped for a part written all in capitals (a part with a capital and no lower-case
+letter keeps today's fold). Same copy of the tree, go test ./graph/lexical/ -count=1 -v, plus a throwaway test
+calling ParseQuery and Tokens:
+
+S + F3 NameWeight 2: R@1 24.6%  R@10 56.0%  MRR 0.358 over 500 questions; TestPluralRules fails on "its" as above
+         Tokens("TLS") = ["tls"], Tokens("tls") = ["tl"]: an all-caps text and its lower-case query no longer meet
+         ParseQuery("DOS") ok, ["dos"]; ParseQuery("dos") refused with ErrEmptyQuery
+       go test -run '^$' -fuzz '^FuzzTokens$' -fuzztime 20s, under S + F3:
+         tokens_test.go:146: Tokens("חS") = ["חs"], but tokenizing those words gives ["ח"]
+       so F3 breaks the round-trip law of the "Any text" scenario (tokenizing the joined words gives them back).
+
+S + F, same throwaway test: Tokens("TLS") = Tokens("tls") = ["tl"]; ParseQuery("DOS") and ParseQuery("dos") are
+both refused with ErrEmptyQuery (today both give ["dos"]).

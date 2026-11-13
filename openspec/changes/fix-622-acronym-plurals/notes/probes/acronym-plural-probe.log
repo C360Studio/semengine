@@ -1,4 +1,4 @@
-# Run at 9f573ed4 (tokens.go last changed in f8bdf8b7), go1.26.11 darwin/arm64: go run . graph/lexical/testdata/scorecard/corpus.jsonl.gz
+# Run at d2a3e6d7 (tokens.go last changed in f8bdf8b7), go1.26.11 darwin/arm64: go run . graph/lexical/testdata/scorecard/corpus.jsonl.gz
 sections 2000
 == rule S: runs whose words change (occurrences, run, today -> with S) ==
    44 IDs                        i ds -> id
@@ -83,16 +83,83 @@ distinct 23 occurrences 150
     1    1 mjs  -> mj      0 
     1    1 tos  -> to      0 fold is a stopword: dropped
 distinct 56 occurrences 2663 meeting an existing word 44
+== rule F by written form (occurrences, form -> fold); * = all capitals, skipped by rule F3 ==
+ 2002 its -> it 
+  197 Its -> it 
+  104 ops -> op 
+   96 00s -> 00 
+   69 yes -> ye 
+   58 TLS -> tl *
+   15 CAS -> ca *
+   11 ids -> id 
+   10 tls -> tl 
+    8 10s -> 10 
+    4 45s -> 45 
+    4 60s -> 60 
+    4 Yes -> ye 
+    4 gcs -> gc 
+    4 sys -> sy 
+    3 04s -> 04 
+    3 42s -> 42 
+    3 SYS -> sy *
+    3 kvs -> kv 
+    3 µs -> µ 
+    2 01s -> 01 
+    2 02s -> 02 
+    2 11s -> 11 
+    2 15s -> 15 
+    2 19s -> 19 
+    2 21s -> 21 
+    2 29s -> 29 
+    2 35s -> 35 
+    2 90s -> 90 
+    2 97s -> 97 
+    2 GPS -> gp *
+    2 abs -> ab 
+    2 cjs -> cj 
+    2 ins -> in 
+    2 mis -> mi 
+    2 prs -> pr 
+    1 13s -> 13 
+    1 17s -> 17 
+    1 18s -> 18 
+    1 22s -> 22 
+    1 23s -> 23 
+    1 28s -> 28 
+    1 30s -> 30 
+    1 32s -> 32 
+    1 33s -> 33 
+    1 34s -> 34 
+    1 37s -> 37 
+    1 38s -> 38 
+    1 39s -> 39 
+    1 40s -> 40 
+    1 51s -> 51 
+    1 69s -> 69 
+    1 71s -> 71 
+    1 88s -> 88 
+    1 95s -> 95 
+    1 His -> hi 
+    1 Mis -> mi 
+    1 aws -> aw 
+    1 cas -> ca 
+    1 dfs -> df 
+    1 mjs -> mj 
+    1 tos -> to 
+rule F: written forms 62 occurrences 2663
+rule F3: written forms 58 occurrences 2585
 == witnesses ==
-"ID id IDs ids"                          today=["id" "id" "i" "ds" "ids"] S=["id" "id" "id" "ids"] S+F=["id" "id" "id" "id"]
-"URL url URLs urls"                      today=["url" "url" "ur" "ls" "url"] S=["url" "url" "url" "url"] S+F=["url" "url" "url" "url"]
-"API APIs apis"                          today=["api" "ap" "api"] S=["api" "api" "api"] S+F=["api" "api" "api"]
-"PR PRs prs"                             today=["pr" "p" "rs" "prs"] S=["pr" "pr" "prs"] S+F=["pr" "pr" "pr"]
-"ADR ADRs adrs"                          today=["adr" "ad" "rs" "adr"] S=["adr" "adr" "adr"] S+F=["adr" "adr" "adr"]
-"UUID UUIDs uuids"                       today=["uuid" "uui" "ds" "uuid"] S=["uuid" "uuid" "uuid"] S+F=["uuid" "uuid" "uuid"]
-"IDS URLS APIS PRS"                      today=["ids" "url" "api" "prs"] S=["ids" "url" "api" "prs"] S+F=["id" "url" "api" "pr"]
-"CPUs"                                   today=["cp" "us"] S=["cpu"] S+F=["cpu"]
-"HTTPServer HTTPs"                       today=["http" "server" "htt" "ps"] S=["http" "server" "http"] S+F=["http" "server" "http"]
-"EntityIDsByType EntityIDIsTerminated"   today=["entity" "i" "ds" "type" "entity" "id" "terminated"] S=["entity" "i" "ds" "type" "entity" "id" "terminated"] S+F=["entity" "i" "ds" "type" "entity" "id" "terminated"]
-"AWS TLS DNS GPS"                        today=["aws" "tls" "dns" "gps"] S=["aws" "tls" "dns" "gps"] S+F=["aw" "tl" "dn" "gp"]
-"bus gas yes its his this"               today=["bus" "gas" "yes" "its" "his" "thi"] S=["bus" "gas" "yes" "its" "his" "thi"] S+F=["bus" "ga" "ye" "it" "hi" "thi"]
+"ID id IDs ids"                          today=["id" "id" "i" "ds" "ids"] S=["id" "id" "id" "ids"] S+F=["id" "id" "id" "id"] S+F3=["id" "id" "id" "id"]
+"URL url URLs urls"                      today=["url" "url" "ur" "ls" "url"] S=["url" "url" "url" "url"] S+F=["url" "url" "url" "url"] S+F3=["url" "url" "url" "url"]
+"API APIs apis"                          today=["api" "ap" "api"] S=["api" "api" "api"] S+F=["api" "api" "api"] S+F3=["api" "api" "api"]
+"PR PRs prs"                             today=["pr" "p" "rs" "prs"] S=["pr" "pr" "prs"] S+F=["pr" "pr" "pr"] S+F3=["pr" "pr" "pr"]
+"ADR ADRs adrs"                          today=["adr" "ad" "rs" "adr"] S=["adr" "adr" "adr"] S+F=["adr" "adr" "adr"] S+F3=["adr" "adr" "adr"]
+"UUID UUIDs uuids"                       today=["uuid" "uui" "ds" "uuid"] S=["uuid" "uuid" "uuid"] S+F=["uuid" "uuid" "uuid"] S+F3=["uuid" "uuid" "uuid"]
+"IDS URLS APIS PRS"                      today=["ids" "url" "api" "prs"] S=["ids" "url" "api" "prs"] S+F=["id" "url" "api" "pr"] S+F3=["ids" "url" "api" "prs"]
+"CPUs"                                   today=["cp" "us"] S=["cpu"] S+F=["cpu"] S+F3=["cpu"]
+"HTTPServer HTTPs"                       today=["http" "server" "htt" "ps"] S=["http" "server" "http"] S+F=["http" "server" "http"] S+F3=["http" "server" "http"]
+"EntityIDsByType EntityIDIsTerminated"   today=["entity" "i" "ds" "type" "entity" "id" "terminated"] S=["entity" "i" "ds" "type" "entity" "id" "terminated"] S+F=["entity" "i" "ds" "type" "entity" "id" "terminated"] S+F3=["entity" "i" "ds" "type" "entity" "id" "terminated"]
+"AWS TLS DNS GPS"                        today=["aws" "tls" "dns" "gps"] S=["aws" "tls" "dns" "gps"] S+F=["aw" "tl" "dn" "gp"] S+F3=["aws" "tls" "dns" "gps"]
+"bus gas yes its his this"               today=["bus" "gas" "yes" "its" "his" "thi"] S=["bus" "gas" "yes" "its" "his" "thi"] S+F=["bus" "ga" "ye" "it" "hi" "thi"] S+F3=["bus" "ga" "ye" "it" "hi" "thi"]
+"CAS cas GCS gc DOS dos"                 today=["cas" "cas" "gcs" "gc" "dos" "dos"] S=["cas" "cas" "gcs" "gc" "dos" "dos"] S+F=["ca" "ca" "gc" "gc"] S+F3=["cas" "ca" "gcs" "gc" "dos"]
+"add-ons plug-ins ios io AES"            today=["add" "ons" "plug" "ins" "ios" "io" "aes"] S=["add" "ons" "plug" "ins" "ios" "io" "aes"] S+F=["add" "plug" "io" "io" "ae"] S+F3=["add" "plug" "io" "io" "aes"]

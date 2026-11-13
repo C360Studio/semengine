@@ -6,7 +6,8 @@
 // It compares today's tokenizer with the two proposed rules over the
 // scorecard corpus (each section's name and body): (S) a run that ends in a
 // lower-case s right after two or more capitals drops the s and keeps the
-// capitals as one part; (F) plural rule 5 applies from 3 bytes instead of 4.
+// capitals as one part; (F) plural rule 5 applies from 3 bytes instead of 4;
+// (F3) rule F, skipped for a part written all in capitals.
 package main
 
 import (
@@ -17,6 +18,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"unicode"
 )
 
 func splitS(run string) []string {
@@ -32,6 +34,39 @@ func foldF(w string) string {
 		return w[:2]
 	}
 	return fold(w)
+}
+
+// allCaps reports a part with a capital and no lower-case letter.
+func allCaps(part string) bool {
+	capital := false
+	for _, r := range part {
+		if unicode.IsLower(r) {
+			return false
+		}
+		capital = capital || isCapital(r)
+	}
+	return capital
+}
+
+// tokF3 is rule S plus rule F, with rule F skipped for a part written all in capitals.
+func tokF3(text string) []string {
+	var words []string
+	for _, run := range strings.FieldsFunc(text, notWordRune) {
+		for _, part := range splitS(run) {
+			caps := allCaps(part)
+			for _, w := range strings.FieldsFunc(strings.ToLower(part), notWordRune) {
+				g := foldF(w)
+				if caps {
+					g = fold(w)
+				}
+				if stopwords[w] || stopwords[g] || len(g) > maxWordBytes {
+					continue
+				}
+				words = append(words, g)
+			}
+		}
+	}
+	return words
 }
 
 func tok(text string, split func(string) []string, f func(string) string) []string {
@@ -78,6 +113,7 @@ func main() {
 	changed, runs := map[string]string{}, map[string]int{}
 	newFold, newFoldSections, today := map[string]int{}, map[string]int{}, map[string]int{}
 	sections := 0
+	formF, formF3 := map[string]int{}, map[string]int{}
 	for sc.Scan() {
 		var s struct{ Name, Body string }
 		if err := json.Unmarshal(sc.Bytes(), &s); err != nil {
@@ -95,6 +131,12 @@ func main() {
 			}
 			for _, part := range splitS(run) {
 				for _, w := range strings.FieldsFunc(strings.ToLower(part), notWordRune) {
+					if foldF(w) != fold(w) && !stopwords[w] {
+						formF[part+" -> "+foldF(w)]++
+						if !allCaps(part) {
+							formF3[part+" -> "+foldF(w)]++
+						}
+					}
 					if foldF(w) != fold(w) && !stopwords[w] {
 						newFold[w]++
 						if !seen[w] {
@@ -132,9 +174,28 @@ func main() {
 		total += newFold[k]
 	}
 	fmt.Println("distinct", len(newFold), "occurrences", total, "meeting an existing word", collide)
+	sum := func(m map[string]int) (int, int) {
+		t := 0
+		for _, v := range m {
+			t += v
+		}
+		return len(m), t
+	}
+	fmt.Println("== rule F by written form (occurrences, form -> fold); * = all capitals, skipped by rule F3 ==")
+	for _, k := range byCount(formF) {
+		mark := ""
+		if formF3[k] == 0 {
+			mark = "*"
+		}
+		fmt.Printf("%5d %s %s\n", formF[k], k, mark)
+	}
+	d, t := sum(formF)
+	fmt.Println("rule F: written forms", d, "occurrences", t)
+	d, t = sum(formF3)
+	fmt.Println("rule F3: written forms", d, "occurrences", t)
 	fmt.Println("== witnesses ==")
 	for _, s := range []string{"ID id IDs ids", "URL url URLs urls", "API APIs apis", "PR PRs prs", "ADR ADRs adrs", "UUID UUIDs uuids",
-		"IDS URLS APIS PRS", "CPUs", "HTTPServer HTTPs", "EntityIDsByType EntityIDIsTerminated", "AWS TLS DNS GPS", "bus gas yes its his this"} {
-		fmt.Printf("%-40q today=%q S=%q S+F=%q\n", s, tok(s, splitIdentifier, fold), tok(s, splitS, fold), tok(s, splitS, foldF))
+		"IDS URLS APIS PRS", "CPUs", "HTTPServer HTTPs", "EntityIDsByType EntityIDIsTerminated", "AWS TLS DNS GPS", "bus gas yes its his this", "CAS cas GCS gc DOS dos", "add-ons plug-ins ios io AES"} {
+		fmt.Printf("%-40q today=%q S=%q S+F=%q S+F3=%q\n", s, tok(s, splitIdentifier, fold), tok(s, splitS, fold), tok(s, splitS, foldF), tokF3(s))
 	}
 }

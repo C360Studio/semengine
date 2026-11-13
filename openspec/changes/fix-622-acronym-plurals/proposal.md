@@ -19,21 +19,24 @@ bytes, so `ids` would still not meet `id`.
   inside one the same shape is just as often a capital run followed by the word `Is` (`EntityIDIsTerminated`, 3
   times in the corpus, against 3 for `EntityIDsByType`), so `EntityIDsByType` keeps today's words.
 - **Plural rule 5 (rule F).** Drop a final `s` (not `us` or `ss`) from words over 2 bytes instead of over 3, so
-  `ids` meets `id` and `prs` meets `pr`. All-caps forms then fold like lower-case ones: `IDS` gives `id`, `PRS` `pr`;
-  `URLS` and `APIS` already give `url` and `api` today.
-- A new test, failing on today's code, shows `ID`, `id`, `IDs` and `ids` find one another, and the same for URL,
-  API, PR, ADR and UUID. `tokens.go`'s comments, `doc.go` if needed, the README's "How text becomes words" and the
-  two spec requirements state the rules.
+  `ids` meets `id` and `prs` meets `pr`. The limit is in bytes: `µs` folds to `µ`; `ms` and `ns` keep their `s`.
+  All-caps forms fold too: `IDS` gives `id`, `PRS` `pr`; `URLS` and `APIS` give `url` and `api` already.
+- A test failing today shows `ID`, `id`, `IDs`, `ids` meet, and likewise URL, API, PR, ADR, UUID. `tokens.go`,
+  `doc.go`'s sentence on when words agree, the README and the two spec requirements state the rules.
 
 ## Cost of rule F, measured
 
-56 distinct 3-byte words newly fold, 2,663 times in the corpus (`acronym-plural-probe.log`, rule F). `its` is
-2,199 of them: it now meets `it`. 35 are durations (`10s`, `60s`), 157 times, which now meet the bare number, as
-`100s` already does today. The rest are acronyms and short words: `ops` meets `op`, `kvs` `kv`; `yes`, `tls`,
-`sys`, `aws`, `his` fold to stems no other corpus word has. `ins` and `tos` fold to stopwords and are dropped (3
-times). The fold is the same on both sides, so `tls` still finds `TLS`; the cost is only words that now meet.
-Scorecard, today against S + F: R@1 24.6% / 24.6%, R@10 56.0% / 56.0%, MRR 0.356 / 0.358; every behaviour
-question passes (`notes/probes/scorecard-probe.log`).
+`notes/probes/acronym-plural-probe.log`: 58 written forms newly fold, 2,663 times. `its`/`Its` is 2,199: it meets
+`it`. Durations (`10s`) meet the bare number, as `100s` does today. Not all merges are plurals:
+
+- Every 3-letter acronym ending in `S` folds to two letters: `TLS`/`tls` to `tl` (68), `CAS`/`cas` to `ca` (16),
+  `SYS`, `GPS`, and `DNS`, `AES` (none here). Unrelated terms then meet: `CAS` (compare-and-swap) and `ca`
+  (certificate authority), `gcs` (ground control stations) and `gc` (`runtime.GC`), `ios` and Go's `io` (16 `io`).
+- Any 2-byte stopword plus `s` is dropped: `add-ons plug-ins` gives `add plug`; `DOS` and `dos` give no word, so a
+  query `DOS` is refused with `ErrEmptyQuery` where today it finds matches.
+
+Scorecard, today against S + F: R@1 24.6% both, R@10 56.0% both, MRR 0.356 / 0.358; every behaviour question
+passes (`notes/probes/scorecard-probe.log`).
 
 ## Non-goals
 
@@ -42,16 +45,16 @@ run (`EntityIDsByType`). A list of known acronyms or any dictionary.
 
 ## Impact
 
-No exported symbol, signature or config changes. Every stored word list is rebuilt from text, so nothing migrates.
-Overlap: PR #648 edits the purpose line of the same spec and the README's first section, not the lines this change
-edits; #648 merges first and this branch merges `main` after.
+No exported surface changes; word lists are rebuilt from text, so nothing migrates. PR #648 edits other lines of
+the same spec and README; it merges first, then this branch merges `main`.
 
 ## Rulings
 
 Open for the owner:
 
-1. **Lower-case 3-byte plurals.** (a) Adopt rule F, the full Done-when: `ids` and `prs` meet `id` and `pr`, at the
-   cost above, mostly `its` meeting `it`. (b) Narrow the Done-when to rule S only: `IDs`, `ID` and `id` meet, but
-   `ids` and `prs` meet only themselves, so a typed query `ids` misses the 44 standalone `IDs` in the corpus and
-   finds only its 11 `ids`. Recommended: (a). The merges it adds are plural-like and the scorecard does not drop.
+1. **Lower-case 3-byte plurals.** (a) Rule F, the full Done-when, at the cost above. (b) Rule S only: `ids` and
+   `prs` meet only themselves, so a query `ids` misses the 44 standalone `IDs` and finds 11 `ids`. (c) Rule F
+   skipped for an all-caps part: same scorecard (MRR 0.358), keeps `TLS`, `CAS`, `DOS`, but `TLS` text then gives
+   `tls` and a `tls` query `tl`, so they stop meeting (today they meet), and the fuzz test breaks the round-trip
+   law at once (`Tokens("חS")`); rejected. Recommended: (a), naming its merges in the README.
 2. `Approved-by:` stamp.

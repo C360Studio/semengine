@@ -27,8 +27,9 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md` and `no
   gives them back) are already `TestPropFoldIsIdempotent` and `FuzzTokens`; the acronym rule adds no new law, so the
   table of examples suffices.
 - [ ] 2.2 Implement rules S and F in `graph/lexical/tokens.go`; update the `Tokens`, `splitIdentifier` and `fold`
-  comments, `graph/lexical/doc.go` if its sentence on when words agree no longer holds, and the README's "How text
-  becomes words" (plain words, no history). Accept: 2.1's tests pass; `TestScorecardHoldsItsFloor` logs R@1, R@10
+  comments, the sentence in `graph/lexical/doc.go:5-7` on when a query word and an indexed word agree (it must name
+  acronym plurals and the merges rule F adds), and the README's "How text becomes words", stating the length limits
+  in bytes (plain words, no history). Accept: 2.1's tests pass; `TestScorecardHoldsItsFloor` logs R@1, R@10
   and MRR no lower than 24.6%, 56.0% and 0.356, recorded in `notes/2.2.md`; every `TestScorecardBehaviour` question
   passes; full `task verify` passes on a clean tree.
 - [ ] 2.3 Archive: `openspec archive fix-622-acronym-plurals --yes` promotes the delta; `task spec:check` and

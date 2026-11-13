@@ -6,14 +6,14 @@ Tests come first. Each code task ends at a clean-tree local verification gate (`
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `proposal.md`, `design.md`, `specs/`): unify `Stop(ctx)` /
+- [x] 1.1 Architect inventory and design (`inventory.md`, `proposal.md`, `design.md`, `specs/`): unify `Stop(ctx)` /
   `StopAll(ctx)` teardown initiation under bounded and ended contexts (`ADR-113`, `ADR-112`, `#604`). Pre-owner design
-  review passes (`DESIGN REVIEW PASS`); `task spec:check` and `task docs:check` pass.
-  Hold: OPEN-Q proposal awaits owner approval
+  review passes (`DESIGN REVIEW PASS`); `task spec:check` and `task docs:check` pass; approved 2026-11-13
+  (`sha256:9f4e3a62e187`).
 
 ## 2. Code
 
-- [ ] 2.1 `internal/lifecycleguard`, `component.Lifecycle`, and `lifecycletest` reference double (design D1, I1-I4).
+- [x] 2.1 `internal/lifecycleguard`, `component.Lifecycle`, and `lifecycletest` reference double (design D1, I1-I4).
   Premise: `Guard.Stop` refuses ended `ctx` before `cleanup` (`internal/lifecycleguard/guard.go:109-111`) and does not
   re-check `startDone` if `Start` finishes concurrently with `ctx.Done()` (`:123-130`); `component.Lifecycle` wraps
   `Guard` (`component/lifecycle_type.go:73-77`, doc at `component/lifecycle.go:77-79`); `refowner.Stop` refuses ended
@@ -26,7 +26,7 @@ Tests come first. Each code task ends at a clean-tree local verification gate (`
   `TestGuardRefusesNilAndEndedContexts` updated for nil-only refusal; `internal/harness/lifecycletest` tests pass; a
   mutant restoring `if err := ctx.Err(); err != nil { return err }` at the top of `Guard.Stop` is shown to fail via
   `task mutate:check`.
-- [ ] 2.2 `service` managers and services (`BaseService`, `LogForwarder`, `Manager`, `ComponentManager`, `Metrics`,
+- [x] 2.2 `service` managers and services (`BaseService`, `LogForwarder`, `Manager`, `ComponentManager`, `Metrics`,
   `MessageLogger`, `HeartbeatService`, `MetricsForwarder`, `StorageObservabilityService`) (design D1, D3, I1-I4;
   `Closes #604`). Premise: `Manager.StopAll` gates on `ctx.Err()` (`service/service_manager.go:677-679`);
   `ComponentManager.stopComponents` skips remaining components and store deregistration on `ctx.Err()`
@@ -48,7 +48,7 @@ Tests come first. Each code task ends at a clean-tree local verification gate (`
   `TestPropComponentManagerStopHistory` passes; every `lifecycle-suite` test in `service` and `config` passes; a mutant
   restoring the `ctx.Err()` `continue` in `stopComponents` fails `TestComponentManagerStopTimeoutStillStopsRemainingComponents`
   via `task mutate:check`.
-- [ ] 2.3 Multi-resource component `cleanup(ctx)` alignment (`graph-embedding`, `graph-index`, `graph-query`,
+- [x] 2.3 Multi-resource component `cleanup(ctx)` alignment (`graph-embedding`, `graph-index`, `graph-query`,
   `websocket`, and `graph-ingest` timeout test) (design D1, D3, I2-I4). Premise: `graph-embedding`
   (`processor/graph-embedding/component.go:411-435`), `graph-index` (`processor/graph-index/component.go:308-332`),
   `graph-query` (`processor/graph-query/component.go:212-228`), and `websocket` (`output/websocket/websocket.go:263-295`)

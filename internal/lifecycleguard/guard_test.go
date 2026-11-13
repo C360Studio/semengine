@@ -270,11 +270,12 @@ func TestGuardStopBeforeStartRefusesLaterStart(t *testing.T) {
 	}
 }
 
-// Start and Stop refuse a nil context alike, as invalid data, before running anything. They answer
-// an ended context differently on purpose: Start refuses it as invalid, since a Start given an ended
-// context cannot begin, and Stop returns the context's own error, as the tree's other stop methods
-// do. A refusal leaves the guard as it was: after a refused Start a live Start is admitted, and
-// after a refused Stop a live Stop runs the cleanup once.
+// Start and Stop refuse a nil context alike, as invalid data, before running anything. Start also
+// refuses an ended context as invalid, since a Start given an ended context cannot begin; Stop
+// initiates cleanup even when its context has already ended (covered in
+// TestGuardStopInitiatesCleanupWithEndedContext). A refusal leaves the guard as it was: after a
+// refused Start a live Start is admitted, and after a refused Stop(nil) a live Stop runs the
+// cleanup once.
 func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 	cancelled, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -283,10 +284,6 @@ func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 
 	invalidMatching := func(target error) func(error) bool {
 		return func(err error) bool { return errs.IsInvalid(err) && errors.Is(err, target) }
-	}
-	contextsOwn := func(target error) func(error) bool {
-		// The context's own error, unwrapped, as Stop's doc promises: identity, not errors.Is.
-		return func(err error) bool { return err == target }
 	}
 	rows := []struct {
 		method   string // "Start" on a fresh guard, or "Stop" on a started one
@@ -303,10 +300,6 @@ func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 			fmt.Sprintf("want an invalid refusal matching %v", context.DeadlineExceeded)},
 		{"Stop", "nil", nil, invalidMatching(errs.ErrInvalidData),
 			"want an invalid refusal matching errs.ErrInvalidData"},
-		{"Stop", "cancelled", cancelled, contextsOwn(context.Canceled),
-			fmt.Sprintf("want the context's own error %v", context.Canceled)},
-		{"Stop", "expired", expired, contextsOwn(context.DeadlineExceeded),
-			fmt.Sprintf("want the context's own error %v", context.DeadlineExceeded)},
 	}
 	nilErrs := map[string]error{}
 	for _, r := range rows {
@@ -349,6 +342,126 @@ func TestGuardRefusesNilAndEndedContexts(t *testing.T) {
 	if strings.ReplaceAll(startMsg, "Start", "Stop") != stopMsg {
 		t.Errorf("Start(nil) and Stop(nil) messages %q and %q differ beyond the method name", startMsg, stopMsg)
 	}
+}
+
+// Stop with an already-ended context initiates cleanup unconditionally on a started unstopped
+// guard: ctx bounds only waiting inside cleanup.
+func TestGuardStopInitiatesCleanupWithEndedContext(t *testing.T) {
+	cancelled, cancel := context.WithCancel(t.Context())
+	cancel()
+	expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(0, 0))
+	defer cancelExpired()
+
+	t.Run("held cleanup initiates on ended ctx and retries on live ctx", func(t *testing.T) {
+		var g Guard
+		runs := 0
+		released := false
+		cleanup := func(ctx context.Context) error {
+			runs++
+			if !released {
+				return ctx.Err()
+			}
+			return nil
+		}
+		if err := g.Start(t.Context(), func(context.Context) error { return nil }, cleanup); err != nil {
+			t.Fatalf("Start = %v", err)
+		}
+		if err := g.Stop(cancelled); err != context.Canceled {
+			t.Fatalf("Stop(cancelled) = %v, want %v", err, context.Canceled)
+		}
+		if runs != 1 {
+			t.Fatalf("Stop(cancelled) ran cleanup %d time(s), want 1", runs)
+		}
+		released = true
+		if err := g.Stop(t.Context()); err != nil {
+			t.Fatalf("retry Stop(live) = %v, want nil", err)
+		}
+		if runs != 2 {
+			t.Fatalf("after retry Stop(live), cleanup ran %d time(s), want 2", runs)
+		}
+		if err := g.Stop(expired); err != nil || runs != 2 {
+			t.Fatalf("Stop(expired) on terminal guard = %v with %d run(s), want nil and 2", err, runs)
+		}
+	})
+
+	t.Run("synchronous nil cleanup becomes terminal while returning ended ctx error", func(t *testing.T) {
+		for _, tc := range []struct {
+			name string
+			ctx  context.Context
+			want error
+		}{
+			{"cancelled", cancelled, context.Canceled},
+			{"expired", expired, context.DeadlineExceeded},
+		} {
+			var g Guard
+			runs := 0
+			cleanup := func(context.Context) error {
+				runs++
+				return nil
+			}
+			if err := g.Start(t.Context(), func(context.Context) error { return nil }, cleanup); err != nil {
+				t.Fatalf("%s: Start = %v", tc.name, err)
+			}
+			if err := g.Stop(tc.ctx); err != tc.want {
+				t.Fatalf("%s: Stop(ended) = %v, want unwrapped %v", tc.name, err, tc.want)
+			}
+			if runs != 1 {
+				t.Fatalf("%s: Stop(ended) ran cleanup %d time(s), want 1", tc.name, runs)
+			}
+			if err := g.Stop(t.Context()); err != nil || runs != 1 {
+				t.Fatalf("%s: later Stop(live) = %v with %d run(s), want nil and 1", tc.name, err, runs)
+			}
+		}
+	})
+
+	t.Run("stop before start with ended ctx returns nil and uses up guard", func(t *testing.T) {
+		var g Guard
+		if err := g.Stop(cancelled); err != nil {
+			t.Fatalf("Stop(cancelled) before Start = %v, want nil", err)
+		}
+		err := g.Start(t.Context(), func(context.Context) error {
+			t.Fatal("Start after Stop(cancelled) acquired")
+			return nil
+		}, func(context.Context) error { return nil })
+		if !errors.Is(err, errs.ErrAlreadyStarted) {
+			t.Fatalf("Start after Stop(cancelled) = %v, want ErrAlreadyStarted", err)
+		}
+	})
+
+	t.Run("start finishing before or as Stop(endedCtx) runs still initiates cleanup", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			var g Guard
+			entered, releaseStart := make(chan struct{}), make(chan struct{})
+			var runs atomic.Int32
+			started := make(chan error, 1)
+			go func() {
+				started <- g.Start(t.Context(), func(context.Context) error {
+					close(entered)
+					<-releaseStart
+					return nil
+				}, func(context.Context) error {
+					runs.Add(1)
+					return nil
+				})
+			}()
+			<-entered
+			// While Start is still running, Stop(cancelled) does not run cleanup concurrently.
+			if err := g.Stop(cancelled); err != context.Canceled || runs.Load() != 0 {
+				t.Fatalf("Stop(cancelled) during Start = %v with %d cleanup(s), want Canceled and 0", err, runs.Load())
+			}
+			close(releaseStart)
+			if err := <-started; err != nil {
+				t.Fatalf("Start = %v", err)
+			}
+			// Once Start has finished, Stop(expired) initiates cleanup and marks terminal.
+			if err := g.Stop(expired); err != context.DeadlineExceeded || runs.Load() != 1 {
+				t.Fatalf("Stop(expired) after Start = %v with %d cleanup(s), want DeadlineExceeded and 1", err, runs.Load())
+			}
+			if err := g.Stop(t.Context()); err != nil || runs.Load() != 1 {
+				t.Fatalf("later Stop(live) = %v with %d cleanup(s), want nil and 1", err, runs.Load())
+			}
+		})
+	})
 }
 
 // A Stop that arrives while another Stop runs the cleanup is refused as transient at once, without

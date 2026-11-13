@@ -533,3 +533,51 @@ func TestLifecycleSuiteCatchesWorkUnderTheStartContext(t *testing.T) {
 		}
 	})
 }
+
+// Stop with an already-ended context clears running status and begins cleanup immediately rather
+// than refusing before cleanup runs; ctx bounds only waiting inside cleanup.
+//
+// spec: component-lifecycle / The shell is running from start's return until cleanup begins
+func TestLifecycleStopWithEndedContextBeginsCleanup(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var l component.Lifecycle
+		stopAtEnd(t, &l)
+		initialize(t, &l)
+
+		cleanups := 0
+		released := false
+		cleanup := func(ctx context.Context) error {
+			cleanups++
+			if !released {
+				return ctx.Err()
+			}
+			return nil
+		}
+		if err := l.Start(t.Context(), nop, cleanup); err != nil {
+			t.Fatalf("Start = %v, want nil", err)
+		}
+		if h := l.Health(); !h.Healthy || h.Status != "running" {
+			t.Fatalf("before Stop, Health = %+v, want running", h)
+		}
+
+		cancelled, cancel := context.WithCancel(t.Context())
+		cancel()
+		if err := l.Stop(cancelled); !errors.Is(err, context.Canceled) {
+			t.Fatalf("Stop(cancelled) = %v, want %v", err, context.Canceled)
+		}
+		if cleanups != 1 {
+			t.Fatalf("Stop(cancelled) ran cleanup %d time(s), want 1", cleanups)
+		}
+		if h := l.Health(); h.Healthy || h.Status != "stopped" {
+			t.Fatalf("after Stop(cancelled) began cleanup, Health = %+v, want stopped", h)
+		}
+
+		released = true
+		if err := l.Stop(t.Context()); err != nil {
+			t.Fatalf("retry Stop(live) = %v, want nil", err)
+		}
+		if cleanups != 2 {
+			t.Fatalf("after retry Stop(live), cleanup ran %d time(s), want 2", cleanups)
+		}
+	})
+}

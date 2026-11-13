@@ -9,8 +9,8 @@
 //
 // Start and Stop refuse a nil context the same way, as invalid data. They answer a context that
 // has already ended differently: Start refuses it as invalid, since a Start given an ended context
-// cannot begin, while Stop returns the context's own error, as it does whenever its context ends
-// first.
+// cannot begin, while Stop on a started unstopped owner still runs cleanup so teardown always
+// initiates and ctx bounds only waiting inside cleanup.
 package lifecycleguard
 
 import (
@@ -89,13 +89,14 @@ func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) 
 	return nil
 }
 
-// Stop runs the cleanup the admitted Start recorded and returns its result. A nil context is
-// refused as invalid data, as Start refuses it, and a context already ended returns the context's
-// own error, unwrapped. Stop before any Start runs nothing, returns nil and uses up the guard. Stop
-// during a Start waits for that Start to finish, or returns ctx's error first. When cleanup fails,
-// it stays pending and the next Stop runs it again. Once a cleanup or a failed Start's rollback has
-// succeeded, Stop returns nil and runs nothing. A Stop while another Stop runs cleanup is refused
-// as transient.
+// Stop runs the cleanup the admitted Start recorded even when ctx has already ended, so teardown
+// always initiates and ctx bounds only waiting inside cleanup. A nil context is refused as invalid
+// data, as Start refuses it. Stop before any Start runs nothing, returns nil and uses up the guard.
+// Stop during a Start waits for that Start to finish, or returns ctx's error first if Start is
+// still running when ctx ends. When cleanup returns an error, it stays pending and the next Stop
+// runs it again. When cleanup returns nil, the guard becomes terminal; if ctx had already ended or
+// ended during cleanup, Stop still returns ctx.Err() unwrapped while later Stops return nil and run
+// nothing. A Stop while another Stop runs cleanup is refused as transient.
 //
 // A cleanup that panics is not recovered, and it leaves the guard stuck: after a panic in a Stop's
 // cleanup every later Stop is refused as concurrent, and after a panic in a failed Start's rollback
@@ -105,9 +106,6 @@ func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) 
 func (g *Guard) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return nilContextError("Stop")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	for {
 		g.mu.Lock()
@@ -126,7 +124,13 @@ func (g *Guard) Stop(ctx context.Context) error {
 			case <-done:
 				continue
 			case <-ctx.Done():
-				return ctx.Err()
+				g.mu.Lock()
+				stillStarting := g.startDone != nil
+				g.mu.Unlock()
+				if stillStarting {
+					return ctx.Err()
+				}
+				continue
 			}
 		}
 		if g.stopping {
@@ -141,7 +145,10 @@ func (g *Guard) Stop(ctx context.Context) error {
 		g.mu.Lock()
 		g.stopping, g.terminal = false, err == nil
 		g.mu.Unlock()
-		return err
+		if err != nil {
+			return err
+		}
+		return ctx.Err()
 	}
 }
 

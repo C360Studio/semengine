@@ -149,7 +149,7 @@ func (m *Metrics) start(ctx context.Context) error {
 // error and a later Stop tries again. A Stop while another runs is refused as
 // transient.
 func (m *Metrics) Stop(ctx context.Context) error {
-	if ctx != nil && ctx.Err() == nil {
+	if ctx != nil {
 		m.mu.Lock()
 		m.lifecycleCalled = true
 		m.mu.Unlock()

@@ -85,10 +85,12 @@ type cmPropModel struct {
 //     name descending), its Stop failures joined into Start's error.
 //   - A Start after any Start or after a Stop with a live context is refused with
 //     errs.ErrAlreadyStarted and starts and stops nothing.
-//   - A Stop with a live context before any Start stops nothing and returns nil. Otherwise it stops
-//     every launched component whose Stop has not yet returned nil, in exact reverse launch order,
-//     and returns nil exactly when none of those Stops failed, carrying each failure otherwise.
-//   - A Stop with an ended context stops nothing and returns the context's error.
+//   - A Stop before any Start stops nothing and returns nil. On a manager whose earlier Stop (or
+//     failed-Start rollback) already released everything, Stop returns nil for any non-nil context
+//     and calls nothing.
+//   - Otherwise, Stop with a live or ended context calls every launched component whose Stop has
+//     not yet returned nil, in exact reverse launch order, and returns nil exactly when none of
+//     those Stops (nor runtime/base teardown) failed, carrying each failure otherwise.
 //   - A component is initialized until launched, started after a Start that succeeded, stopped
 //     after a Stop that returned nil, and failed, with that error as its last error, after a
 //     failed Start or Stop.
@@ -125,7 +127,8 @@ func TestPropComponentManagerStopHistory(t *testing.T) {
 			[]cmPropComponent{{name: "comp-a", provider: true, stopFailures: 1}, {name: "comp-b"}}, []string{"start", "stopLive", "stopLive"}},
 		{"stop before start", []cmPropComponent{{name: "comp-a"}}, []string{"stopLive"}},
 		{"start refused after stop", []cmPropComponent{{name: "comp-a"}}, []string{"stopLive", "start"}},
-		{"stop with an ended context", []cmPropComponent{{name: "comp-a"}}, []string{"start", "stopEnded"}},
+		{"stop with an ended context", []cmPropComponent{{name: "comp-a", provider: true}, {name: "comp-b"}}, []string{"start", "stopEnded"}},
+		{"stop with an ended context after terminal stop", []cmPropComponent{{name: "comp-a"}}, []string{"start", "stopLive", "stopEnded"}},
 		{"health named two failed components",
 			[]cmPropComponent{{name: "comp-a", provider: true, startFails: true, stopFailures: 1}, {name: "comp-b", provider: true, startFails: true, stopFailures: 1}},
 			[]string{"start"}},
@@ -250,7 +253,12 @@ func newCMPropHistory(t *testing.T, tb rapid.TB, comps []cmPropComponent, reache
 			m.script.queue = append(m.script.queue, fmt.Errorf("stop failure %d in %s", i+1, c.name))
 		}
 		script := m.script
-		m.comp.onStop = func(context.Context, int64) error { return script.pop() }
+		m.comp.onStop = func(ctx context.Context, _ int64) error {
+			if err := script.pop(); err != nil {
+				return err
+			}
+			return ctx.Err()
+		}
 		models[c.name] = m
 		names = append(names, c.name)
 		if m.provider {
@@ -297,6 +305,7 @@ type cmPropHistory struct {
 	cm            *ComponentManager
 	startCalled   bool
 	stopAdmitted  bool
+	terminal      bool
 }
 
 func (h *cmPropHistory) done() {
@@ -442,6 +451,8 @@ func (h *cmPropHistory) start() {
 	h.requireCarries("Start", err, fired)
 	if len(fired) > 0 {
 		h.reached["rollback stop failed"]++
+	} else {
+		h.terminal = true
 	}
 	h.applyStops(visits, fired)
 }
@@ -454,6 +465,7 @@ func (h *cmPropHistory) stopLive() {
 	h.stopAdmitted = true
 
 	if first {
+		h.terminal = true
 		h.reached["stop before start"]++
 		if err != nil {
 			h.tb.Fatalf("Stop before any Start returned %v, want nil", err)
@@ -475,6 +487,7 @@ func (h *cmPropHistory) stopLive() {
 		if err != nil {
 			h.tb.Fatalf("Stop with no armed Stop failure in %v returned %v", visits, err)
 		}
+		h.terminal = true
 	} else {
 		if err == nil {
 			h.tb.Fatalf("Stop returned nil with Stop failures armed in %v", slices.Sorted(maps.Keys(fired)))
@@ -484,18 +497,39 @@ func (h *cmPropHistory) stopLive() {
 	h.applyStops(visits, fired)
 }
 
-// The history never holds a Stop with an ended context before the first Start: whether it
-// uses the manager up is not stated, and the history starts before Repeat.
+// Stop with an ended context initiates Stop across every unstopped launched component in reverse
+// launch order, or returns nil and calls nothing once an earlier Stop or rollback already released
+// everything.
 func (h *cmPropHistory) stopEnded() {
 	mark := len(h.log.stopOrder())
+	next := h.nextStopFailures()
 	ctx, cancel := context.WithCancel(h.t.Context())
 	cancel()
 	err := h.cm.Stop(ctx)
-	h.reached["stop with an ended context"]++
-	if !errors.Is(err, context.Canceled) {
-		h.tb.Fatalf("Stop with an ended context returned %v, want context.Canceled", err)
+	h.stopAdmitted = true
+
+	if h.terminal {
+		h.reached["stop with an ended context after terminal stop"]++
+		if err != nil {
+			h.tb.Fatalf("Stop with an ended context on a terminal manager returned %v, want nil", err)
+		}
+		h.requireStops("a Stop with an ended context on a terminal manager", mark, nil)
+		return
 	}
-	h.requireStops("a Stop with an ended context", mark, nil)
+
+	h.reached["stop with an ended context"]++
+	visits, fired := h.expectStops(next)
+	for _, name := range visits {
+		if fired[name] == nil {
+			fired[name] = context.Canceled
+		}
+	}
+	if err == nil {
+		h.tb.Fatalf("Stop with an ended context on an unstopped manager returned nil")
+	}
+	h.requireStops("a Stop with an ended context", mark, visits)
+	h.requireCarries("a Stop with an ended context", err, fired)
+	h.applyStops(visits, fired)
 }
 
 // Clearing disarms every Stop failure still queued. A Start failure is not cleared: the

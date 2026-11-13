@@ -3155,8 +3155,8 @@
     Service), NewOpenAPISpec, AddPath, AddTag, GetOpenAPISpec, Configurable, service.ErrAlreadyStopped (one sentinel,
     errs.ErrAlreadyStopped), and NewBaseServiceWithOptions' unread config argument (Q1). Changed from the pin: ending
     Start's context stops nothing and a later Stop waits again (ADR-113); a Stop during another Stop is refused as
-    transient (lifecycleguard), where the pin returned nil before the first Stop finished; a Stop given an ended
-    context stops nothing; MaybeStartPProf takes a logger, binds before it returns, logs a bind failure at Warn
+    transient (lifecycleguard), where the pin returned nil before the first Stop finished; any non-nil Stop context
+    (live or already ended) initiates teardown and bounds only the join wait (#604); MaybeStartPProf takes a logger, binds before it returns, logs a bind failure at Warn
     instead of printing it, and stops through Shutdown (owner 2026-10-20); NewConfigSchema (removed in PR 4) kept a Category
     set on the outer PropertySchema field, which the pin dropped (fixed in the port). Retained: pprof listens on all
     interfaces; GetAllOpenAPISpecs copies the map but shares the registered spec pointers. PR 2 edits three
@@ -3168,8 +3168,8 @@
     Registry.Services, Registry.Constructors, Metrics.Port, Path, URL and ConfigSchema, Dependencies.ToolRegistry and
     LifecycleManager; the Manager's four test-only pause channels. Changed from the pin: ending StartAll's or
     StartHealthListener's context stops nothing and request contexts are not derived from it (ADR-113); at its
-    deadline StopAll still closes open connections, but a later StopAll waits for every handler still running instead
-    of returning at once (Q-B); a StopAll with an ended context stops nothing; a StopAll before any StartAll stops
+    deadline StopAll still closes open connections, initiates Stop across every remaining started service (#604), and a later StopAll waits for every handler still running instead
+    of returning at once (Q-B); a StopAll before any StartAll stops
     only a started health listener and calls no service's Stop, where the pin called Stop on every configured
     service; a second StartAll is refused with ErrAlreadyStarted; StopAll counts errs.ErrAlreadyStopped as stopped;
     service payloads refuse keys in another letter case (internal/keycase), which PR 1 accepted; a failed health
@@ -3209,7 +3209,7 @@
     6325195862; measured: graph-ingest and semboids' sim answer during and after Stop; unmeasured: semteams'
     agentic components and semsource's components, for which the read line is review only); the manager's health
     reads every component and names each failed one, where the pin answered healthy before Start completed (#360);
-    a component whose Stop failed is stopped again by the next Stop and one whose Stop returned nil is not called
+    a component whose Stop failed (including one cut short by Stop's context) is stopped again by the next Stop after every remaining started component has had its stores deregistered and Stop initiated (#604), and one whose Stop returned nil is not called
     again; a nil component registry is refused, where the pin built a private one; the start order is fixed (store
     providers by instance name, then the rest) and Stop is its reverse; the config route encodes the fixed boot
     configuration holding nothing; a route's component name is the whole parameter after the route word, read from
@@ -3288,7 +3288,7 @@
     PR 7 of 7 (log_forwarder.go; it edits register.go). Dropped as unread: NewLogForwarder with its nil-config branch
     (folded into NewLogForwarderService), LogForwarderConfig.Validate, LogForwarder.Config, the pin's config field (the
     service keeps the resolved logforwarderpolicy.Policy), the Stop override (BaseService.Stop is promoted) and the
-    two validateLifecycleContext calls (BaseService's guard refuses a nil or ended context). Changed from the pin:
+    two validateLifecycleContext calls (BaseService's guard refuses nil contexts and ended Start contexts; #604). Changed from the pin:
     the service forwards nothing and says so in one record at Warn at Start (message, min_level, exclude_sources),
     where the pin's comments said logs reach NATS, because no log handler in this module publishes logs to NATS and
     pkg/logging and the boot wiring stay out (owner, #9 comment 6272104271; Q2, 2026-10-24); construction refuses a

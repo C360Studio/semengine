@@ -394,30 +394,24 @@ func (c *Component) openBuckets(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does
-// nothing, and a Stop whose context ends first returns that context's error and keeps what is
-// left for the next Stop.
+// nothing, and any non-nil Stop on a started component initiates every teardown step, bounds
+// drain/join waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start. It drains the query subscriptions first, so no handler is running. Then it ends
-// the run context, joins the follower's Run, so nothing more is delivered, the repair lane, so no
-// repair pass is in flight, the Worker's Run, so no terminal outcome follows, and the vector
-// cache's Run, then shuts the coalescer down, which waits for a batch in progress. A ctx that ends
-// first returns its error with the handles kept, and the next Stop resumes.
+// partial start. It initiates every query subscription drain, ends the run context, waits up to
+// ctx for the follower's Run, repair lane, Worker's Run, and vector cache's Run, and initiates
+// coalescer shutdown without returning early on an earlier ctx error. A ctx that ends before
+// all joins complete returns its error with the handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
-	// Stop serving queries first: Drain returns once every running handler has returned. Each
-	// drain is begun whatever the one before returned, so one handler that outlasts ctx does not
-	// keep the other verb serving.
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
 	}
+	var waitErr error
 	for _, done := range []chan struct{}{c.feeds, c.repairs, c.worked, c.cached} {
 		if done == nil {
 			continue
@@ -425,15 +419,15 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-done:
 		case <-ctx.Done():
-			return ctx.Err()
+			if waitErr == nil {
+				waitErr = ctx.Err()
+			}
 		}
 	}
 	if c.coalescer != nil {
-		if err := c.coalescer.Shutdown(ctx); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.coalescer.Shutdown(ctx))
 	}
-	if err := ctx.Err(); err != nil {
+	if err := errors.Join(cleanupErr, waitErr, ctx.Err()); err != nil {
 		return err
 	}
 	c.runCancel, c.feeds, c.repairs, c.worked, c.cached, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil, nil

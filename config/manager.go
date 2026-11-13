@@ -528,14 +528,14 @@ func (cm *Manager) addWatcher(watcher jetstream.KeyWatcher) {
 }
 
 // Stop stops the watches, closes every channel onChange and WatchModelRegistry
-// returned, and waits for every goroutine the Manager started. It returns nil
-// only once all of that is done. If ctx ends first it returns ctx's error, and a
-// later Stop tries again.
+// returned, and waits for every goroutine the Manager started. It refuses a nil
+// ctx; any non-nil ctx (live or already ended) initiates teardown at once and
+// bounds only the join wait, returning nil once all goroutines exit or ctx's
+// error if ctx ended first so a later Stop tries again.
 //
-// A ctx that has already ended stops nothing. A caller on its shutdown path
-// therefore passes a fresh bounded context, for example
-// context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second), not its
-// ended signal context.
+// Pass a fresh bounded context on shutdown, for example
+// context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second), so watches
+// have time to drain cleanly rather than returning ctx.Err() immediately.
 func (cm *Manager) Stop(ctx context.Context) error {
 	if err := cm.lifecycle.Stop(ctx); err != nil {
 		return err

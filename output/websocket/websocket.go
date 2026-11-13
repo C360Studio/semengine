@@ -238,51 +238,46 @@ func (c *output) start(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does nothing,
-// and a Stop whose context ends first returns that context's error and keeps what is left for the
-// next Stop.
+// and any non-nil Stop on a started component initiates every teardown step, bounds drain/join
+// waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *output) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start. It refuses later upgrades with 503, stops the server so the port is released,
-// drains the subscription so nothing more is sent, sends every client close 1001, then waits until
-// the server and every client handler have returned. Only then does it end the run context and wait
-// for the view supervisor, so a client is closed by the stop, never by the view ending under it. A
-// ctx that ends first returns its error with the handles kept, and the next Stop resumes. A view
-// that could not stop its watch is reported by the Stop that joined its supervisor only, as
-// graph-query does: there is nothing left to retry.
+// partial start. It refuses later upgrades with 503, stops the HTTP server, initiates subscription
+// drain, sends every client close 1001, closes the listener, waits up to ctx for the server and
+// client handlers, ends the run context, and waits up to ctx for the view supervisor without
+// returning early on an earlier ctx error. Because sendEnded treats view context cancellation as a
+// stop (close 1001) rather than watch loss (1013), ending the run context when requests.Wait
+// outlasts ctx never misclassifies a stopping client. A ctx that ends before all joins complete
+// returns its error with the handles kept, and the next Stop resumes.
 func (c *output) cleanup(ctx context.Context) error {
+	var cleanupErr error
 	c.requests.CloseAdmission()
 	if c.server != nil {
 		// Close stops Serve and closes the connections not upgraded. net/http documents that it
 		// does not close a hijacked connection: an upgraded client is its handler's, which
 		// closeClients asks to close (TestStartContextEndingStopsNothing sees its close 1001).
-		if err := c.server.Close(); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.server.Close())
 	}
 	if c.sub != nil {
-		if err := c.sub.Drain(ctx); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.sub.Drain(ctx))
 	}
 	c.closeClients()
 	if c.served != nil {
 		select {
 		case <-c.served:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
 	}
 	if c.listen != nil {
 		// Serve closes the listener it was given; closing it here as well releases the port after
 		// a partial start, which never served.
 		if err := c.listen.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			return err
+			cleanupErr = errors.Join(cleanupErr, err)
 		}
 	}
-	if err := c.requests.Wait(ctx); err != nil {
-		return err
-	}
+	cleanupErr = errors.Join(cleanupErr, c.requests.Wait(ctx))
 	if c.runCancel != nil {
 		c.runCancel()
 	}
@@ -290,8 +285,11 @@ func (c *output) cleanup(ctx context.Context) error {
 		select {
 		case <-c.supervised:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	// Read after supervised closed.
 	viewErr := c.supervisorErr

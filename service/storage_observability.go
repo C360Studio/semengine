@@ -298,15 +298,20 @@ func (s *StorageObservabilityService) cleanup(ctx context.Context) error {
 	if s.runCancel != nil {
 		s.runCancel()
 	}
+	var loopErr error
 	if s.loopsDone != nil {
 		select {
 		case <-s.loopsDone:
 		case <-ctx.Done():
-			return fmt.Errorf("wait for storage observability loops: %w", ctx.Err())
+			loopErr = fmt.Errorf("wait for storage observability loops: %w", ctx.Err())
 		}
 	}
+	var baseErr error
 	if err := s.BaseService.Stop(ctx); err != nil {
-		return fmt.Errorf("stop storage-observability base service: %w", err)
+		baseErr = fmt.Errorf("stop storage-observability base service: %w", err)
+	}
+	if err := errors.Join(loopErr, baseErr); err != nil {
+		return err
 	}
 	s.logger.Info("storage observability stopped")
 	return nil

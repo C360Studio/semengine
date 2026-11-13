@@ -131,8 +131,11 @@ func (o *refowner) Start(ctx context.Context) error {
 }
 
 func (o *refowner) Stop(ctx context.Context) error {
-	if ctx == nil && o.fp != acceptNilCtx {
-		return errors.New("refowner: nil Stop context")
+	if ctx == nil {
+		if o.fp != acceptNilCtx {
+			return errors.New("refowner: nil Stop context")
+		}
+		ctx = context.Background()
 	}
 	o.mu.Lock()
 	if !o.running {
@@ -146,7 +149,7 @@ func (o *refowner) Stop(ctx context.Context) error {
 		}
 		return nil
 	}
-	if ctx != nil && ctx.Err() != nil {
+	if ctx.Err() != nil {
 		switch o.fp {
 		case stopIgnoresCallerDeadline:
 			o.mu.Unlock()
@@ -154,15 +157,17 @@ func (o *refowner) Stop(ctx context.Context) error {
 			return nil
 		case abortStopDropsCause:
 			// The defect under test is only the dropped cause. Keep the worker for a later Stop, as
-			// the clean path does: marking the owner stopped here without joining would also let the
-			// next Stop return nil ahead of the worker's exit.
+			// an incomplete join does: marking the owner stopped here without joining would also let
+			// the next Stop return nil ahead of the worker's exit.
 			o.mu.Unlock()
 			return nil
 		}
-		o.mu.Unlock()
-		return ctx.Err() // the bound is not a join: keep the worker for a later Stop
 	}
 	if o.fp == stopReturnsNilWithWorkerRunning {
+		if err := ctx.Err(); err != nil {
+			o.mu.Unlock()
+			return err
+		}
 		o.running, o.stopped = false, true
 		o.mu.Unlock()
 		return nil
@@ -178,7 +183,7 @@ func (o *refowner) Stop(ctx context.Context) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.finishLocked()
-	return nil
+	return ctx.Err()
 }
 
 func (o *refowner) finishLocked() {
@@ -452,8 +457,9 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 }
 
 // TestAbortStopThenFinishJoinsWorker forces one interleaving instead of waiting for the scheduler
-// to produce it: a Stop given an ended context has returned without signalling the worker,
-// then finalize's Stop runs and signals it, and the worker is held before it closes workerDone. In a
+// to produce it: a Stop given an ended context signals the worker (or, under abortStopDropsCause,
+// returns without signalling it) while workerExit holds the worker before it closes workerDone, and
+// finalize's Stop then waits for workerDone. In a
 // synctest bubble, Wait returns only once every goroutine is durably blocked, so whether that Stop
 // has returned is decided by the double's code, not by timing: a Stop that returned while the worker
 // is still held claimed a join it never made. The cases are the clean double and every row of

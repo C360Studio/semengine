@@ -288,29 +288,22 @@ func (c *Component) start(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does
-// nothing, and a Stop whose context ends first returns that context's error and keeps what
-// is left for the next Stop.
+// nothing, and any non-nil Stop on a started component initiates every teardown step, bounds
+// drain/join waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *Component) Stop(ctx context.Context) error {
 	return c.lifecycle.Stop(ctx)
 }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating
-// a partial start. It drains the query subscriptions first, so no handler is running. Then
-// the order is graph-ingest's: end the feeds' context and join them, so nothing new is
-// submitted; drain the pool with Shutdown while the run context is still live, so work it
-// accepted is written; then end the run context. A ctx that ends first returns its error with
-// the handles kept, and the next Stop resumes; the handles are cleared only once everything is
-// released.
+// a partial start. It initiates every query subscription drain, ends the feeds' context, waits
+// up to ctx for the feeds, and initiates pool Shutdown while keeping poolCtx live until the
+// pool's accepted work has finished writing, without returning early on an earlier ctx error.
+// A ctx that ends before all joins complete returns its error with the handles kept, and the
+// next Stop resumes; poolCancel runs and handles are cleared once everything has joined.
 func (c *Component) cleanup(ctx context.Context) error {
-	// Stop serving queries first: Drain returns once every running handler has returned. Each drain
-	// is begun whatever the one before returned, so one handler that outlasts ctx does not keep the
-	// other verbs serving.
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
@@ -319,19 +312,17 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-c.feeds:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
 	}
 	if c.pool != nil {
-		if err := c.pool.Shutdown(ctx); err != nil {
-			return err
-		}
+		cleanupErr = errors.Join(cleanupErr, c.pool.Shutdown(ctx))
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	if c.poolCancel != nil {
 		c.poolCancel()
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	c.runCancel, c.poolCancel, c.feeds, c.pool, c.coalescer, c.subscriptions = nil, nil, nil, nil, nil, nil
 	return nil

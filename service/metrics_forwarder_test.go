@@ -224,6 +224,8 @@ func TestMetricsForwarderFailedStopIsRetried(t *testing.T) {
 	defer cancelFirst()
 	require.ErrorIs(t, mf.Stop(firstCtx), context.DeadlineExceeded,
 		"a Stop whose loop cannot return reports its context's error")
+	require.NotEqual(t, StatusRunning, mf.Status(),
+		"a cut-short Stop must still initiate BaseService teardown")
 
 	secondCtx, cancelSecond := context.WithTimeout(t.Context(), stopBound)
 	defer cancelSecond()

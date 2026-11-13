@@ -1,6 +1,6 @@
 # Proposal: fix-604-stop-always-stops
 
-Approved-by:
+Approved-by: cglusky (2026-11-13) sha256:9f4e3a62e187
 
 Track: `design`. Capabilities modified: `service-lifecycle`, `component-lifecycle`.
 

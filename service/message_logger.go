@@ -512,7 +512,7 @@ func (ml *MessageLogger) healthCheck() error {
 // next Stop, which runs the same steps. A Stop after one that returned nil returns nil; a Stop
 // while another runs is refused as transient. A watch requested once Stop has begun is refused.
 func (ml *MessageLogger) Stop(ctx context.Context) error {
-	if ctx != nil && ctx.Err() == nil {
+	if ctx != nil {
 		ml.lifecycleMu.Lock()
 		ml.watchesClosed = true
 		ml.lifecycleMu.Unlock()
@@ -525,14 +525,11 @@ func (ml *MessageLogger) Stop(ctx context.Context) error {
 }
 
 // cleanup is the one cleanup the lifecycle guard runs for a failed Start and for every Stop. Each
-// step keeps what it did not release, so running it again finishes the job.
+// step initiates its teardown even if an earlier wait timed out, keeping unjoined items so running
+// it again finishes the job.
 func (ml *MessageLogger) cleanup(ctx context.Context) error {
-	if err := ml.joinRetry(ctx); err != nil {
-		return err
-	}
-	if err := ml.drainSubscriptions(ctx); err != nil {
-		return err
-	}
+	retryErr := ml.joinRetry(ctx)
+	drainErr := ml.drainSubscriptions(ctx)
 
 	ml.lifecycleMu.Lock()
 	cancel := ml.runCancel
@@ -542,11 +539,13 @@ func (ml *MessageLogger) cleanup(ctx context.Context) error {
 		cancel()
 	}
 
-	if err := ml.endWatchStreams(ctx); err != nil {
-		return err
-	}
+	watchErr := ml.endWatchStreams(ctx)
+	var baseErr error
 	if err := ml.BaseService.Stop(ctx); err != nil {
-		return fmt.Errorf("stop message-logger base service: %w", err)
+		baseErr = fmt.Errorf("stop message-logger base service: %w", err)
+	}
+	if err := errors.Join(retryErr, drainErr, watchErr, baseErr); err != nil {
+		return err
 	}
 
 	ml.lifecycleMu.Lock()

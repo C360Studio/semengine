@@ -50,7 +50,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   `readiness.KeyGraphLexical` is declared; a mutant that applies a body read whatever the key's revision, one that
   drops the delivery guard, one that calls `Complete` before `Put`, and one that never completes a dropped read's
   revision are each shown to fail.
-- [ ] 2.4 PR C. The body path (design D5). Premise: SemSource offloads every passage and code body (inventory §9);
+- [x] 2.4 PR C. The body path (design D5). Premise: SemSource offloads every passage and code body (inventory §9);
   a missing object is `storage.ErrObjectNotFound`, not transient (`storage/objectstore/store.go:148-153`); store
   providers start and register before other components (`service/component_manager_lifecycle.go:37-54`, `:123`);
   `Failed` above 0 reads degraded (`graph/follower/follower.go:508-512`). Accept: `TestBlockingStoreBoundsFirstBuild`

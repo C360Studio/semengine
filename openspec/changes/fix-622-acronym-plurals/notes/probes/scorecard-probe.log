@@ -1,0 +1,14 @@
+# Scorecard and package tests with each rule applied to a copy of the tree at 9f573ed4 (git archive HEAD), go1.26.11
+# darwin/arm64. Each run replaced graph/lexical/tokens.go with the variant below, then ran
+# go test ./graph/lexical/ -count=1 -v. Rule S: a run ending in a lower-case s right after two or more capitals drops
+# the s (added at the top of splitIdentifier). Rule F: plural rule 5 is "n > 2" instead of "n > 3".
+
+today  NameWeight 2: R@1 24.6%  R@10 56.0%  MRR 0.356 over 500 questions; every test passes
+S      NameWeight 2: R@1 24.6%  R@10 56.0%  MRR 0.357 over 500 questions; every test passes
+F      NameWeight 2: R@1 24.6%  R@10 56.0%  MRR 0.357 over 500 questions; one failure:
+         tokens_test.go:94: Tokens("its") = ["it"], want ["its"]   --- FAIL: TestPluralRules
+S + F  NameWeight 2: R@1 24.6%  R@10 56.0%  MRR 0.358 over 500 questions; one failure:
+         tokens_test.go:94: Tokens("its") = ["it"], want ["its"]   --- FAIL: TestPluralRules
+
+Every TestScorecardBehaviour question passes under all four. The TestPluralRules failure is the rule-5 length-bound
+witness ("its" stays "its"), which rule F moves by design.

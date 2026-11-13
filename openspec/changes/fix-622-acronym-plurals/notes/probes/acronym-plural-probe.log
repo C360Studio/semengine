@@ -1,0 +1,98 @@
+# Run at 9f573ed4 (tokens.go last changed in f8bdf8b7), go1.26.11 darwin/arm64: go run . graph/lexical/testdata/scorecard/corpus.jsonl.gz
+sections 2000
+== rule S: runs whose words change (occurrences, run, today -> with S) ==
+   44 IDs                        i ds -> id
+   33 PRs                        p rs -> pr
+   18 ADRs                       ad rs -> adr
+   13 IRIs                       ir -> iri
+    7 URLs                       ur ls -> url
+    5 EntityIDs                  entity i ds -> entity id
+    4 APIs                       ap -> api
+    4 SHAs                       sh -> sha
+    3 ListGeneratedEntityIDs     list generated entity i ds -> list generated entity id
+    3 NITs                       ni ts -> nit
+    2 ADDs                       ad ds -> add
+    2 CPUs                       cp us -> cpu
+    2 READMEs                    readm es -> readme
+    1 HEADs                      hea ds -> head
+    1 HIGHs                      hig hs -> high
+    1 LOWs                       lo ws -> low
+    1 MEDIUMs                    mediu ms -> medium
+    1 PINGs                      pin gs -> ping
+    1 SDKs                       sd ks -> sdk
+    1 SIGKILLs                   sigkil ls -> sigkill
+    1 SkipsMalformedIDs          skip malformed i ds -> skip malformed id
+    1 URIs                       ur -> uri
+    1 ValidateDecodedEntityIDs   validate decoded entity i ds -> validate decoded entity id
+distinct 23 occurrences 150
+== rule F: 3-byte words that newly fold (occurrences, sections, word -> fold, fold's occurrences as a word today) ==
+ 2199 1020 its  -> it   3058 meets an existing word
+  104   17 ops  -> op     79 meets an existing word
+   96   24 00s  -> 00      6 meets an existing word
+   73   33 yes  -> ye      0 
+   68   21 tls  -> tl      0 
+   16   15 cas  -> ca      3 meets an existing word
+   11    9 ids  -> id    566 meets an existing word
+    8    6 10s  -> 10    442 meets an existing word
+    7    6 sys  -> sy      0 
+    4    3 45s  -> 45     45 meets an existing word
+    4    4 60s  -> 60     51 meets an existing word
+    4    3 gcs  -> gc      2 meets an existing word
+    3    2 04s  -> 04    165 meets an existing word
+    3    3 42s  -> 42     69 meets an existing word
+    3    3 kvs  -> kv    428 meets an existing word
+    3    2 mis  -> mi     11 meets an existing word
+    3    1 µs   -> µ       0 
+    2    1 01s  -> 01     68 meets an existing word
+    2    2 02s  -> 02     54 meets an existing word
+    2    2 11s  -> 11    136 meets an existing word
+    2    2 15s  -> 15    135 meets an existing word
+    2    2 19s  -> 19     97 meets an existing word
+    2    2 21s  -> 21     50 meets an existing word
+    2    2 29s  -> 29     63 meets an existing word
+    2    1 35s  -> 35     37 meets an existing word
+    2    2 90s  -> 90     57 meets an existing word
+    2    2 97s  -> 97     32 meets an existing word
+    2    2 abs  -> ab      0 
+    2    2 cjs  -> cj      0 
+    2    2 gps  -> gp      0 
+    2    2 ins  -> in      0 fold is a stopword: dropped
+    2    2 prs  -> pr    799 meets an existing word
+    1    1 13s  -> 13    111 meets an existing word
+    1    1 17s  -> 17    106 meets an existing word
+    1    1 18s  -> 18     93 meets an existing word
+    1    1 22s  -> 22     64 meets an existing word
+    1    1 23s  -> 23     49 meets an existing word
+    1    1 28s  -> 28     62 meets an existing word
+    1    1 30s  -> 30    124 meets an existing word
+    1    1 32s  -> 32     83 meets an existing word
+    1    1 33s  -> 33     47 meets an existing word
+    1    1 34s  -> 34     54 meets an existing word
+    1    1 37s  -> 37     44 meets an existing word
+    1    1 38s  -> 38     47 meets an existing word
+    1    1 39s  -> 39     32 meets an existing word
+    1    1 40s  -> 40     87 meets an existing word
+    1    1 51s  -> 51     46 meets an existing word
+    1    1 69s  -> 69     38 meets an existing word
+    1    1 71s  -> 71     32 meets an existing word
+    1    1 88s  -> 88     40 meets an existing word
+    1    1 95s  -> 95     45 meets an existing word
+    1    1 aws  -> aw      0 
+    1    1 dfs  -> df      4 meets an existing word
+    1    1 his  -> hi      0 
+    1    1 mjs  -> mj      0 
+    1    1 tos  -> to      0 fold is a stopword: dropped
+distinct 56 occurrences 2663 meeting an existing word 44
+== witnesses ==
+"ID id IDs ids"                          today=["id" "id" "i" "ds" "ids"] S=["id" "id" "id" "ids"] S+F=["id" "id" "id" "id"]
+"URL url URLs urls"                      today=["url" "url" "ur" "ls" "url"] S=["url" "url" "url" "url"] S+F=["url" "url" "url" "url"]
+"API APIs apis"                          today=["api" "ap" "api"] S=["api" "api" "api"] S+F=["api" "api" "api"]
+"PR PRs prs"                             today=["pr" "p" "rs" "prs"] S=["pr" "pr" "prs"] S+F=["pr" "pr" "pr"]
+"ADR ADRs adrs"                          today=["adr" "ad" "rs" "adr"] S=["adr" "adr" "adr"] S+F=["adr" "adr" "adr"]
+"UUID UUIDs uuids"                       today=["uuid" "uui" "ds" "uuid"] S=["uuid" "uuid" "uuid"] S+F=["uuid" "uuid" "uuid"]
+"IDS URLS APIS PRS"                      today=["ids" "url" "api" "prs"] S=["ids" "url" "api" "prs"] S+F=["id" "url" "api" "pr"]
+"CPUs"                                   today=["cp" "us"] S=["cpu"] S+F=["cpu"]
+"HTTPServer HTTPs"                       today=["http" "server" "htt" "ps"] S=["http" "server" "http"] S+F=["http" "server" "http"]
+"EntityIDsByType EntityIDIsTerminated"   today=["entity" "i" "ds" "type" "entity" "id" "terminated"] S=["entity" "i" "ds" "type" "entity" "id" "terminated"] S+F=["entity" "i" "ds" "type" "entity" "id" "terminated"]
+"AWS TLS DNS GPS"                        today=["aws" "tls" "dns" "gps"] S=["aws" "tls" "dns" "gps"] S+F=["aw" "tl" "dn" "gp"]
+"bus gas yes its his this"               today=["bus" "gas" "yes" "its" "his" "thi"] S=["bus" "gas" "yes" "its" "his" "thi"] S+F=["bus" "ga" "ye" "it" "hi" "thi"]

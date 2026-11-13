@@ -91,7 +91,7 @@ func TestLocalSearchScoresAsThePin(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			kept := tc.score >= 0.3 // the pin's threshold, as a literal
+			kept := tc.score >= 0.3 // minLocalSearchScore, written as a literal so the test does not read the value it checks
 			if got := len(matches) == 1; got != kept {
 				t.Errorf("kept = %v at score %v, want %v", got, tc.score, kept)
 			}

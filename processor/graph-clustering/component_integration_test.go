@@ -357,7 +357,7 @@ func TestStopLeavesNothing(t *testing.T) {
 		await(t, "the follower's watch on the server",
 			func(ctx context.Context) (int, error) { return watchConsumers(ctx, client) },
 			func(n int) bool { return n == 1 })
-		awaitApplied(t, c, 0) // the write below is live (#584)
+		awaitApplied(t, c, 0) // the snapshot has ended, so the write below is delivered live
 		rev := put(t, states, "acme.ops.test.alpha.doc.a1", storedEntity("acme.ops.test.alpha.doc.a1"))
 		awaitApplied(t, c, rev)
 		c.tick(t.Context())
@@ -442,7 +442,7 @@ func TestStopWaitsForDelivery(t *testing.T) {
 	var released sync.Once
 	release := func() { released.Do(func() { close(held.release) }) }
 	t.Cleanup(release)    // runs first: a failed test never leaves the Stop above waiting on the hold
-	awaitApplied(t, c, 0) // the write below is live (#584)
+	awaitApplied(t, c, 0) // the snapshot has ended, so the write below is delivered live
 
 	held.armed.Store(true)
 	put(t, states, "acme.ops.test.beta.doc.b2", []byte("not an entity state"))

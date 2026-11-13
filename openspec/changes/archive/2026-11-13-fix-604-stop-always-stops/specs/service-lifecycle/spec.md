@@ -5,12 +5,10 @@
 
 ### Requirement: BaseService's Stop(ctx) is the only stop
 
-`Stop(ctx)` SHALL be the only stop. It SHALL refuse a nil context. Before `Start`, or after a `Stop` that joined the
-health goroutine, it SHALL return nil for any non-nil context. On a started `BaseService` not yet stopped, given any
-non-nil context (live or already ended), it SHALL report `StatusStopping` (or `StatusStopped` once the health goroutine
-exits), cancel its run context so no further health check starts, wait up to `ctx` for the health goroutine to exit,
-and return `ctx`'s error if `ctx` ends first or had already ended, otherwise nil with `StatusStopped` and `IsHealthy()`
-false.
+`Stop(ctx)` SHALL be the only stop and SHALL refuse a nil context. Before `Start`, or after a `Stop` joined the health
+goroutine, any non-nil `ctx` SHALL return nil. On a started unstopped `BaseService`, any non-nil `ctx` (live or ended)
+SHALL cancel the run context so no new health check starts, report `StatusStopping` until exit, wait up to `ctx`, and
+return `ctx`'s error if `ctx` ended, else nil with `StatusStopped` and `IsHealthy()` false.
 
 #### Scenario: Stop is given a context that has already ended
 
@@ -21,12 +19,10 @@ false.
 
 ### Requirement: The service manager's StopAll is the only stop
 
-`StopAll(ctx)` SHALL be the only stop. It SHALL refuse a nil context; before any `StartAll` it SHALL return nil for any
-non-nil context when no health listener was started, and when a health listener was started SHALL stop accepting and
-bound its drain and join wait by `ctx`. A `StopAll` after one that released everything SHALL return nil and stop
-nothing. On a started manager not yet stopped, given any non-nil context (live or already ended), `StopAll(ctx)` SHALL
-clear readiness, initiate teardown across every started service, the health publisher, the listeners and the metrics
-server, and return `ctx`'s error when `ctx` ends first or had already ended.
+`StopAll(ctx)` SHALL be the only stop and SHALL refuse a nil context. Before `StartAll` it SHALL return nil if no
+health listener started, else stop accepting on it and bound its drain wait by `ctx`. After full release, `StopAll`
+SHALL return nil and stop nothing. On a started unstopped manager, any non-nil `ctx` (live or ended) SHALL clear
+readiness, initiate teardown across all owned resources, and return `ctx`'s error if `ctx` ends first or had ended.
 
 #### Scenario: StopAll is given a context that has already ended
 
@@ -49,12 +45,11 @@ ended; a listener SHALL stop accepting and `StopAll` SHALL wait up to `ctx` for 
 
 ### Requirement: The component manager's Stop is the only stop and waits for a Start in progress
 
-`Stop(ctx)` SHALL be the only stop: it SHALL refuse a nil context, return nil before `Start` or after every owned
-component and service resource has stopped, and otherwise deregister provided stores and call `Stop(ctx)` on each
-started unstopped lifecycle component in reverse start order (even when `ctx` has already ended or expires during an
-earlier component's `Stop`), then stop the health publisher and the base service, returning nil only when all are
-released and `ctx` has not ended. A `Stop` during `Start` SHALL wait for every `Start` to return, or return its own
-context's error first while `Start` is still running.
+`Stop(ctx)` SHALL be the only stop and SHALL refuse a nil context. Before `Start` or after full release, any non-nil
+`ctx` SHALL return nil. During `Start`, `Stop` SHALL wait up to `ctx` for `Start` to finish. Otherwise any non-nil `ctx`
+(live or ended) SHALL deregister provided stores, call `Stop(ctx)` on every started unstopped lifecycle component in
+reverse start order, and stop the health publisher and base service, returning nil only once all release and `ctx` is
+live.
 
 #### Scenario: Stop during Start
 
@@ -87,11 +82,10 @@ SHALL not be called again.
 
 ### Requirement: The message logger's Stop drains and releases what it holds
 
-`Stop(ctx)` SHALL refuse a nil context. For any non-nil context (live or already ended), it SHALL fence new KV watch
-streams and, when started and not yet stopped, end the subscribe retry and wait up to `ctx` for it, initiate drain on
-every subscription so that a message being handled when a live `Stop` begins is stored, cancel the run context, end
-every open KV watch stream and wait for its KV watcher to stop, and stop the base service, returning nil only once all
-are released and `ctx` has not ended.
+`Stop(ctx)` SHALL refuse a nil context. For any non-nil `ctx` (live or ended), it SHALL fence new KV watch streams and,
+when started and unstopped, end the subscribe retry and wait up to `ctx` for it, initiate drain on each subscription so
+a message being handled when a live `Stop` begins is stored, cancel the run context, end open KV watch streams and wait
+for their watchers, and stop the base service, returning nil only once all release and `ctx` has not ended.
 
 #### Scenario: Stop stores the message being handled
 
@@ -119,11 +113,10 @@ Not covered by a test, and reviewed only:
 
 ### Requirement: Storage observability's Stop is the only stop and can be retried
 
-`Stop(ctx)` SHALL refuse a nil context. For any non-nil context on a started service not yet stopped, it SHALL end both
-loops, wait up to `ctx` for them and stop the base service, returning nil only once all three are done and `ctx` has not
-ended. If its context ends first or had already ended, `Stop` SHALL still initiate base-service stop, return `ctx`'s
-error, and the next `Stop` SHALL wait again for anything not yet joined. A `Stop` after one that joined everything SHALL
-return nil, and a `Stop` while another runs SHALL be refused as transient.
+`Stop(ctx)` SHALL refuse a nil context, refuse a concurrent `Stop` as transient, and return nil before `Start` or after
+a `Stop` joined everything. On a started unstopped service, any non-nil `ctx` (live or ended) SHALL end both loops,
+wait up to `ctx` for them, and initiate base-service stop, returning nil only once all three finish and `ctx` has not
+ended; if `ctx` ended, `Stop` SHALL return `ctx`'s error and a later `Stop` SHALL wait again for anything unjoined.
 
 #### Scenario: A failed Stop is retried
 
@@ -143,11 +136,10 @@ the bucket is created or reconciled, so a slow server holds a second caller behi
 
 ### Requirement: The heartbeat's Stop is the only stop
 
-`Stop(ctx)` SHALL refuse a nil context. For any non-nil context on a started service not yet stopped, it SHALL end the
-loop, wait up to `ctx` for it and stop the base service, returning nil only once both are done and `ctx` has not ended.
-If its context ends first or had already ended, `Stop` SHALL still initiate base-service stop, return `ctx`'s error, and
-the next `Stop` SHALL wait again for anything not yet joined. A `Stop` after one that joined everything SHALL return
-nil, and a `Stop` while another runs SHALL be refused as transient.
+`Stop(ctx)` SHALL refuse a nil context, refuse a concurrent `Stop` as transient, and return nil before `Start` or after
+a `Stop` joined everything. On a started unstopped service, any non-nil `ctx` (live or ended) SHALL end the loop, wait
+up to `ctx` for it, and initiate base-service stop, returning nil only once both finish and `ctx` has not ended; if
+`ctx` ended, `Stop` SHALL return `ctx`'s error and a later `Stop` SHALL wait again for anything unjoined.
 
 #### Scenario: A failed Stop is retried
 

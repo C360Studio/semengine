@@ -8,11 +8,11 @@ import (
 )
 
 // metricSubsystem is the Prometheus subsystem of graph-index's collectors, derived from
-// its key ("graph-index" -> "graph_index") so the name is spelled once (design D3, D10).
+// its key ("graph-index" -> "graph_index") so the name is spelled once.
 var metricSubsystem = strings.ReplaceAll(key, "-", "_")
 
 // indexMetrics holds graph-index's own collectors. The readiness gauges are the
-// follower's (graph/follower, design D10).
+// follower's (graph/follower).
 type indexMetrics struct {
 	eventsProcessed     prometheus.Counter
 	indexUpdates        *prometheus.CounterVec
@@ -41,7 +41,7 @@ func newCounterVec(name, help string, labels ...string) *prometheus.CounterVec {
 // keeping the collector each call returns: a second graph-index on the same registry
 // writes the collectors the first one registered. With a nil registry the collectors are
 // built and registered nowhere; nothing is registered on Prometheus' process-global
-// registry (design D10, #68).
+// registry.
 func newIndexMetrics(registry *metric.MetricsRegistry) (*indexMetrics, error) {
 	m := &indexMetrics{
 		eventsProcessed: newCounter("events_processed_total", "Total events processed by graph index"),

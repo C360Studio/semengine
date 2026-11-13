@@ -55,10 +55,9 @@ func reindexCount(families map[string]*dto.MetricFamily, result string) (float64
 }
 
 // TestGraphIndexMetricsRegisterOnItsRegistry: two components built on two registries each
-// put their series on their own registry under the pin's names (namespace semengine,
-// subsystem graph_index), a write through one is gathered only from its registry, and
-// Prometheus' global registry gathers none (design D10; metric-registry, "Two
-// registries, two components").
+// put their series on their own registry under namespace semengine and subsystem
+// graph_index, a write through one is gathered only from its registry, and Prometheus'
+// global registry gathers none (metric-registry, "Two registries, two components").
 func TestGraphIndexMetricsRegisterOnItsRegistry(t *testing.T) {
 	registryA, registryB := metric.NewMetricsRegistry(), metric.NewMetricsRegistry()
 	componentA := newOnRegistry(t, registryA)

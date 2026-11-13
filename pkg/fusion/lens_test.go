@@ -10,8 +10,8 @@ import (
 )
 
 // refLens is a minimal but realistic reference Lens proving the SPI is
-// implementable end-to-end (ADR-062 increment 3). It reads human-facing fields
-// off an entity's triples and hydrates via a StorageReference handle — never a
+// implementable end-to-end (ADR-062). It reads human-facing fields off an
+// entity's triples and hydrates via a StorageReference handle — never a
 // filesystem read, never returning bytes (the headless-safe hydration contract).
 // Concrete product lenses (semsource code/docs, a research-graph lens) follow
 // the same shape with domain-specific predicates.

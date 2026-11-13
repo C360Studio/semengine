@@ -20,12 +20,11 @@ import (
 
 // The lens-driven engine entry (ADR-062). Resolves a query against the graph
 // through a Lens and returns a fused Response — the deterministic counterpart to
-// research_graph's chain (same resolve→expand→assemble shape, no LLM). Ported
-// from semsource's validated source/fusion engine, generalized: a string
-// ResolveMode, verbatim bodies hydrated via the handle-deref BodyResolver
-// (ADR-062 increment 4) rather than a lens filesystem read, and (for now)
-// resolve-order + lexical ranking with the ontology-coherence signal and the
-// paths/impact facets deferred (gh#376 increment 5 + a facets follow-on).
+// research_graph's chain (same resolve→expand→assemble shape, no LLM). The
+// resolve mode is a string, and verbatim bodies are hydrated by dereferencing a
+// storage handle through the BodyResolver. Ranking is resolve order plus lexical
+// name match, with ontology specificity and predicate salience added when
+// RankSignals is attached.
 
 // Engine bounds keep the multi-hop traversal cheap and predictable.
 const (
@@ -35,10 +34,10 @@ const (
 
 // Ranking weights. Resolve order (the graph's own index/semantic ranking) is the
 // base signal; lexical name match reorders locally. Ontology specificity and
-// predicate salience (gh#376 increment 5) are SECONDARY reorderings folded in
-// only when RankSignals is attached — deliberately small next to resolveScale
-// (up to resolveScale×N) and lexExact so they break ties / nudge within a
-// resolve-lexical tier rather than dominating the graph's own ranking.
+// predicate salience are SECONDARY reorderings folded in only when RankSignals
+// is attached — deliberately small next to resolveScale (up to resolveScale×N)
+// and lexExact so they break ties / nudge within a resolve-lexical tier rather
+// than dominating the graph's own ranking.
 const (
 	lexExact      = 40.0
 	lexPrefix     = 20.0
@@ -49,9 +48,9 @@ const (
 )
 
 // ontologyClassPredicate is the stamped BFO/CCO class triple (semsource ADR-0005).
-// Read for Node.Class when present; ID-derived class fallback is increment 5.
-// Keep in sync with semsource's ontology.ClassPredicate — increment 5 (#396),
-// which lifts the ontology helpers framework-side, is where these unify.
+// Read for Node.Class when present; no class is derived from the entity ID. Keep
+// in sync with semsource's ontology.ClassPredicate: the two are separate
+// constants, not one shared definition.
 const ontologyClassPredicate = "entity.ontology.class"
 
 // Engine runs the lens-driven deterministic fusion pipeline over a
@@ -91,7 +90,7 @@ func NewEngine(graph RetrievalClient, body *BodyResolver, logger *slog.Logger, o
 // Fuse resolves req against the graph through lens and returns the fused response.
 //
 // The honesty rule is that an empty result is never ambiguous. Fuse asks no
-// readiness status; it reads readiness from each reply (ADR-109 D1). Every failed
+// readiness status; it reads readiness from each reply (ADR-109). Every failed
 // read ends in one of these outcomes, checked in this order:
 //
 //   - the context ended: Fuse returns the context's error, whichever read failed.
@@ -102,7 +101,7 @@ func NewEngine(graph RetrievalClient, body *BodyResolver, logger *slog.Logger, o
 //   - any other failed read (a relations Neighbors read, a relation target, the
 //     paths, impact and graph walks, index_not_ready included for the walks): the
 //     read is skipped and the answer goes on without it. A fatal walk read is
-//     skipped too, because poison refuses only the poisoned entities (ADR-109 D1)
+//     skipped too, because poison refuses only the poisoned entities (ADR-109)
 //     and the reply cannot tell that refusal from a reset.
 //
 // A healthy graph that found nothing yields a miss with near-matches; seeds that
@@ -123,8 +122,8 @@ func (e *Engine) Fuse(ctx context.Context, req Request, lens Lens) (Response, er
 		return Response{}, err
 	}
 	// Every response built after a natural-language search answered carries what
-	// the search could not read (design D3); symbol and prefix resolves count
-	// nothing, so their responses carry neither count.
+	// the search could not read; symbol and prefix resolves count nothing, so
+	// their responses carry neither count.
 	if mode == ResolveModeNL {
 		resp.UnreadableRecords, resp.FailedRecords = resolution.UnreadableRecords, resolution.FailedRecords
 	}
@@ -145,7 +144,7 @@ func (e *Engine) fuseSeeds(ctx context.Context, req Request, lens Lens, mode Res
 		// draw. Say what failed to hydrate and leave Misses empty.
 		if len(hydration.Unhydrated) > 0 {
 			// Nothing loaded and the caller gave up: the ended context is the
-			// answer, as for any failed read (#580).
+			// answer, as for any failed read.
 			if cerr := ctx.Err(); cerr != nil {
 				return Response{}, cerr
 			}
@@ -217,7 +216,7 @@ func seedReadFailure(ctx context.Context, err error) (Response, error) {
 	return Response{}, err
 }
 
-// applyScores attaches each node's RESOLVE rank and resolve similarity (ADR-084 D5),
+// applyScores attaches each node's RESOLVE rank and resolve similarity (ADR-084),
 // opt-in via the request so the default wire shape is unchanged.
 //
 // Rank is the seed's 1-based position in RESOLVE order — deliberately not the node's
@@ -324,10 +323,10 @@ func (e *Engine) buildNodes(ctx context.Context, ranked []*Entity, lens Lens, wa
 
 // nodeFor builds one Node, including only the requested facets. The body is
 // hydrated by dereferencing the lens's Hydrate HANDLE through the BodyResolver
-// (ADR-062 increment 4). Hydration is best-effort and degrades-don't-fail: a
-// Hydrate or deref failure omits the body and does NOT fail the node — but it is
-// not SILENT (gh#616, #600): the node ships with a bounded BodyReason. Only an
-// ended context fails it.
+// (ADR-062). Hydration is best-effort and degrades-don't-fail: a Hydrate or
+// deref failure omits the body and does NOT fail the node — but it is not
+// SILENT: the node ships with a bounded BodyReason. Only an ended context fails
+// it.
 func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[Want]bool, skips *skipLog) (Node, error) {
 	loc := lens.Location(ent)
 	node := Node{
@@ -340,12 +339,12 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 		Handle:   ent.ID,
 	}
 	if wants[WantBody] {
-		// Gate on the WANT alone, then always ask the lens for a handle. A nil
-		// BodyResolver (NewEngine(graph, nil, logger)) is documented-valid, but it must not
+		// Gate on the WANT alone, then always ask the lens for a handle. A nil BodyResolver
+		// (NewEngine(graph, nil, logger)) is documented-valid, but it must not
 		// SHORT-CIRCUIT the WantBody path — a node whose lens yields a real handle it
-		// cannot resolve is a reportable config gap, exactly the silent failure #632
-		// set out to kill (gh#616, #600). The ref==nil case below still keeps genuinely
-		// body-less tiers silent, so no resolver never spams BodyError for them.
+		// cannot resolve is a reportable config gap, which an empty body with no reason
+		// would hide. The ref==nil case below still keeps genuinely body-less tiers silent,
+		// so no resolver never spams BodyError for them.
 		ref, err := lens.Hydrate(ctx, ent)
 		switch {
 		case err != nil:
@@ -362,11 +361,11 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 			// The lens produced a REAL storage handle but no BodyResolver is wired to
 			// dereference it. That is a configuration gap, NOT a body-less tier: the
 			// node has a body it simply cannot load, so report it rather than ship an
-			// unexplained empty body (gh#616, #600).
-			// TODO(when lens Engine is wired): distinct not_configured reason to
-			// separate "no resolver wired" from "read faulted" (deferred — the Engine
-			// has no production caller yet, so expanding the closed BodyReason
-			// vocabulary for an unwired path is premature).
+			// unexplained empty body.
+			// TODO(when lens Engine is wired): a distinct not_configured reason to
+			// separate "no resolver wired" from "read faulted" (deferred — the
+			// Engine has no production caller yet, so expanding the closed
+			// BodyReason vocabulary for an unwired path is premature).
 			e.reportBodyFailure(&node, BodyError, errors.New("fusion: no body resolver configured"))
 		default:
 			body, derr := e.body.ResolveBody(ctx, ref)
@@ -377,7 +376,7 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 				return Node{}, ctx.Err()
 			case errors.Is(derr, storage.ErrObjectNotFound):
 				// The ref is present on the entity but resolves to no stored object
-				// — the #600 case: content-addressed evidence was reclaimed while the
+				// — for example, content-addressed evidence was reclaimed while the
 				// entity still points at it.
 				e.reportBodyFailure(&node, BodyNotFound, derr)
 			default:
@@ -399,7 +398,7 @@ func (e *Engine) nodeFor(ctx context.Context, ent *Entity, lens Lens, wants map[
 // reportBodyFailure stamps a body-hydration failure onto the node (bounded
 // reason, empty body left as-is), logs it and counts it by reason. It never
 // defers the response or synthesizes a Miss — the node is a partial result that
-// still ships (gh#616, #600).
+// still ships.
 func (e *Engine) reportBodyFailure(node *Node, reason BodyReason, err error) {
 	node.BodyReason = reason
 	e.logger.Warn("fusion could not load a node body; the node ships without it",
@@ -513,7 +512,7 @@ func (e *Engine) refFor(ctx context.Context, id string, lens Lens) (Ref, bool, e
 // forward/reverse role lookups used during expansion, restricted to the specs that
 // participate in facet f. An EdgeSpec with no Facets participates in every facet
 // (backward-compatible default); one with a non-empty Facets is included only for
-// the facets it names (gh#475).
+// the facets it names.
 func edgePredicates(specs []EdgeSpec, f Facet) (preds []string, fwd, rev map[string]string) {
 	fwd = make(map[string]string, len(specs))
 	rev = make(map[string]string, len(specs))
@@ -532,8 +531,8 @@ func edgePredicates(specs []EdgeSpec, f Facet) (preds []string, fwd, rev map[str
 	return preds, fwd, rev
 }
 
-// classOf returns an entity's stamped BFO/CCO class IRI (entity.ontology.class),
-// or "". ID-derived class fallback + ontology-distance ranking are gh#376 increment 5.
+// classOf returns an entity's stamped BFO/CCO class IRI (entity.ontology.class), or "".
+// No class is derived from the entity ID, and nothing ranks by ontology distance.
 func classOf(e *Entity) string {
 	return e.First(ontologyClassPredicate)
 }
@@ -548,10 +547,10 @@ func lineRange(l [2]int) []int {
 }
 
 // rankEntities orders entities (given in resolve order) by resolve-rank base +
-// lexical name match, plus — when RankSignals is attached (increment 5) —
-// ontology specificity and predicate salience as secondary reorderings.
-// names[i] is entity[i]'s display name. With no signals the result is exactly
-// resolve order + lexical (increments 1–4).
+// lexical name match, plus — when RankSignals is attached — ontology
+// specificity and predicate salience as secondary reorderings. names[i] is
+// entity[i]'s display name. With no signals the result is exactly resolve order
+// plus lexical match.
 func (e *Engine) rankEntities(entities []*Entity, names []string, query string) []*Entity {
 	q := strings.ToLower(strings.TrimSpace(query))
 	type scored struct {
@@ -585,20 +584,19 @@ func (e *Engine) rankEntities(entities []*Entity, names []string, query string) 
 // entitySalience is an entity's ranking salience: the entity's single most
 // salient (max positive) weight PLUS its single strongest demotion (min
 // negative) weight over its predicates — one presence-based boost and one
-// presence-based penalty, summed (gh#441). Extremes, not a sum over all
-// predicates, so a densely-annotated entity does not outrank a sharply-
-// identified one purely on fact count; and the two extremes come from different
-// predicates (a predicate's weight is one sign), so a boost and a demotion
-// compose without either masking the other.
+// presence-based penalty, summed. Extremes, not a sum over all predicates, so a
+// densely-annotated entity does not outrank a sharply-identified one purely on
+// fact count; and the two extremes come from different predicates (a
+// predicate's weight is one sign), so a boost and a demotion compose without
+// either masking the other.
 //
 // Signed weights are what let a ranker DEMOTE, not just boost: structurally-
 // identifiable noise (tests, generated code, mocks) that carries the SAME
 // salient predicates as the real thing — a *_test.go with the same doc-comment
 // salience as its impl — also carries a negatively-weighted presence predicate
-// (e.g. code.artifact.test → WithWeight(-1.5)), so it sinks below the impl the
-// additive-only ranker could never separate it from. With no negative weights
-// (every config before gh#441) min-negative stays 0 and this is exactly the old
-// max — backward-compatible.
+// (e.g. code.artifact.test → WithWeight(-1.5)), so it sinks below the impl,
+// which a boost-only ranker could never separate it from. With no negative
+// weights min-negative stays 0 and the salience is the strongest boost alone.
 func entitySalience(ent *Entity, sig RankSignals) float64 {
 	var maxPos, minNeg float64 // strongest boost (≥0), strongest demotion (≤0)
 	for i := range ent.Triples {

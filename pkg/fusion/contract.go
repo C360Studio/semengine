@@ -1,15 +1,14 @@
 package fusion
 
-// The fused response contract (ADR-062 lens-driven entry). Lifted from
-// semsource's validated source/fusion contract.go — the response shape an agent
-// acts on: verbatim body + the structure around it, keyed by what a human reads
-// (never an entity ID), with provenance and an explicit Deferred flag so a caller
-// can calibrate trust and never mistake "not ready" for "not found".
+// The fused response contract (ADR-062 lens-driven entry) — the response shape an
+// agent acts on: verbatim body + the structure around it, keyed by what a human reads
+// (never an entity ID), with provenance and an explicit Deferred flag so a caller can
+// calibrate trust and never mistake "not ready" for "not found".
 
 // ContractVersion identifies the wire shape of Request/Response.
 //
 // "2" removed the readiness envelope (`index`), the graph facet's `view_revision`, and
-// the readiness gate's defer reasons: readiness is read from each reply (ADR-109 D1).
+// the readiness gate's defer reasons: readiness is read from each reply (ADR-109).
 const ContractVersion = "2"
 
 // Want enumerates the optional facets a caller can request. Empty defaults to
@@ -38,12 +37,12 @@ type Request struct {
 	Want  []Want `json:"want,omitempty"`
 	// Scope optionally constrains NL seed resolution to entities whose ID
 	// matches at least one of these dot-delimited entity-ID prefixes
-	// (OR-matched). Empty/absent means no filter — today's behavior. It lets a
-	// lens instance over a shared embedding index retrieve only its own domain
-	// so a smaller domain is not diluted by a larger co-resident one (ADR-071).
-	// A list, not a scalar: one domain often spans several prefixes (semsource
-	// "all code" = golang/python/ts/svelte). NL-only; ignored by symbol/prefix
-	// resolve modes.
+	// (OR-matched). Empty/absent means no filter. It lets a lens instance over
+	// a shared embedding index retrieve only its own domain so a smaller domain
+	// is not diluted by a larger co-resident one (ADR-071). A list, not a
+	// scalar: one domain often spans several prefixes (semsource "all code" =
+	// golang/python/ts/svelte). NL-only; ignored by symbol/prefix resolve
+	// modes.
 	Scope  []string `json:"scope,omitempty"`
 	Budget Budget   `json:"budget,omitzero"`
 	// IncludeScores asks for per-node rank and resolve similarity. Opt-in so the
@@ -90,11 +89,11 @@ type Node struct {
 	Body  string `json:"body,omitempty"`
 	// BodyReason names why Body is absent when a body was requested (WantBody) but
 	// could not be loaded — a bounded, closed reason (not_found / error) so a
-	// missing body is a partial-result SIGNAL, never a silent empty string
-	// (gh#616, #600). It is DISTINCT from Response.Unhydrated: a missing body is a
-	// node that exists and ranks, so the reason rides on the node itself rather
-	// than the top-level list. A failed body hydration never defers the response
-	// or synthesizes a Miss — the node still ships.
+	// missing body is a partial-result SIGNAL, never a silent empty string. It is
+	// DISTINCT from Response.Unhydrated: a missing body is a node that exists and
+	// ranks, so the reason rides on the node itself rather than the top-level
+	// list. A failed body hydration never defers the response or synthesizes a
+	// Miss — the node still ships.
 	//
 	// Omitted from the wire when the body hydrates, so a fully-hydrated response is
 	// byte-unchanged for existing consumers.
@@ -131,11 +130,11 @@ type Node struct {
 
 // Miss reports a query that resolved to nothing, with near-matches.
 //
-// A Miss is NOT an absence proof and is no longer tied to Ready (ADR-084): it is
-// reachable under ordinary lag now that healthy-but-behind indexes serve, and it was
-// never evidence the entity does not exist — only that this lookup found nothing.
-// Callers that must distinguish "found nothing" from "could not read" want Unhydrated,
-// which is a statement about the read.
+// A Miss is NOT an absence proof and is not tied to Ready (ADR-084): it is reachable
+// under ordinary lag, since healthy-but-behind indexes serve, and it is never evidence
+// the entity does not exist — only that this lookup found nothing. Callers that must
+// distinguish "found nothing" from "could not read" want Unhydrated, which is a
+// statement about the read.
 type Miss struct {
 	Query      string   `json:"query"`
 	DidYouMean []string `json:"did_you_mean,omitempty"`

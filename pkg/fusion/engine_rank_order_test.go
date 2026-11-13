@@ -9,22 +9,20 @@ import (
 )
 
 // TestEngine_RankingFollowsHydrationOrder pins the load-bearing coupling between
-// hydration order and rank (ADR-084 D4, task 2.3). The engine's resolve-rank base is
+// hydration order and rank (ADR-084). The engine's resolve-rank base is
 // POSITION-derived — entity i scores resolveScale*(len-i) — so the order Entities
 // returns IS the ranking prior, not a presentation detail.
 //
-// It exists because that contract was being broken in production and nothing caught
-// it: graph-ingest's batch hydration returns cache hits first and KV fetches after
-// ("callers process as sets"), so cache residency alone could demote the top resolve
-// seed. Every fusion test until now used a fake that returns requested order, which
-// models the FIXED contract and therefore proves nothing about the broken one.
+// It matters because graph-ingest's batch hydration returns cache hits first and KV
+// fetches after ("callers process as sets"), so cache residency alone could demote the
+// top resolve seed. A fake that returns requested order models the honoured contract
+// and proves nothing about a transport that breaks it, so one case below reorders.
 //
-// fusionnats.Entities now restores resolve order before returning (see
+// fusionnats.Entities restores resolve order before returning (see
 // reconcileHydration's "restores request order" case, which pins the transport half).
-// This test is the reason that fix is required rather than optional, and it keeps
-// passing after it — the engine's dependence on order is deliberate; the transport's
-// failure to honor it was the bug. The RetrievalClient contract now states the
-// requirement explicitly so a future implementation cannot reintroduce it by accident.
+// This test is why that restore is required rather than optional: the engine's
+// dependence on order is deliberate, and the RetrievalClient contract states the
+// requirement so no implementation drops it by accident.
 func TestEngine_RankingFollowsHydrationOrder(t *testing.T) {
 	// Three entities whose titles share no lexical affinity with the query, so
 	// position is the only ranking signal in play and the assertion is unambiguous.

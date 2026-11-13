@@ -37,7 +37,7 @@ type Manager struct {
 	// bucketName is this deployment's configuration bucket, derived once at
 	// construction by BucketName from the DECLARED pair — before Start can
 	// replace platform.id with the minted identifier, which lives inside the
-	// bucket and so can never name it (#1188). Resolved through the catalog's
+	// bucket and so can never name it. Resolved through the catalog's
 	// configuration family, never spelled locally.
 	bucketName string
 
@@ -85,7 +85,7 @@ type Manager struct {
 	// cannot override a newer write to the same key. The revision is kept per
 	// key, never bucket-wide: a write to one key must not suppress another key's
 	// event at a lower revision, such as an external writer's update still queued
-	// behind it (PR #329 Codex review; the pin kept one watermark for the bucket).
+	// behind it.
 	appliedRev map[string]uint64
 }
 
@@ -199,7 +199,7 @@ func (cm *Manager) acquireBucket(ctx context.Context) (jetstream.KeyValue, *nats
 	// create-once (ADR-104; ADR-102 decision 7). This is the bucket's only
 	// acquisition: its name is derived from the declared pair only this
 	// Manager holds, and the rule ConfigManager writes rules.* through the key
-	// family this Manager serves it (#1188).
+	// family this Manager serves it.
 	kv, err := kvcatalog.EnsureCatalogBucket(ctx, cm.natsClient, cm.bucketName)
 	if err != nil {
 		return nil, nil, fmt.Errorf("acquire config bucket %q: %w", cm.bucketName, err)
@@ -462,7 +462,7 @@ func (cm *Manager) arbitrate(ctx context.Context, kvStore *natsclient.KVStore, h
 	cmp, err := CompareVersions(fileVersion, kvVersion)
 	switch {
 	case err != nil:
-		// Nothing is lost by selecting the bucket, so this stays as at the pin.
+		// Nothing is lost by selecting the bucket, so a compare failure selects it.
 		cm.logger.Warn("Failed to compare versions, syncing from KV",
 			"file_version", fileVersion,
 			"kv_version", kvVersion,
@@ -608,9 +608,9 @@ func (cm *Manager) stopWatches(ctx context.Context, watchers []jetstream.KeyWatc
 	for _, watcher := range watchers {
 		wg.Go(func() {
 			if err := kvwatch.Stop(ctx, watcher); err != nil {
-				// Logged, not returned, as at the pin (owner ruling Q4, #9 comment
-				// 6278986482): a second unsubscribe fails, so returning it would fail
-				// every later Stop.
+				// Logged, not returned: this teardown runs on its own goroutine with
+				// no caller to return to, and release has already removed the
+				// watchers, so the manager proceeds once the teardown finishes.
 				cm.logger.Warn("Config watch did not stop; its consumer may remain on the server",
 					"bucket", cm.bucketName, "error", err)
 			}
@@ -723,7 +723,7 @@ func (cm *Manager) matchesPattern(key, pattern string) bool {
 func (cm *Manager) updateConfig(key string, value []byte) error {
 	// Apply the update as a single serialized read-modify-write so a concurrent
 	// mutation (the watcher goroutine vs a caller-goroutine PutComponentToKV /
-	// DeleteComponentFromKV, or an engine deploy) cannot drop this change (gh#515).
+	// DeleteComponentFromKV, or an engine deploy) cannot drop this change.
 	// Returning errNoConfigChange from the mutation signals an ignored key without
 	// swapping — surfaced as a nil error to the caller.
 	err := cm.config.Mutate(func(currentConfig *Config) error {
@@ -853,7 +853,7 @@ func sanitizeNATSKey(key string) string {
 // sectionKey returns the key of a service or component name in section
 // ("services" or "components"). It refuses a name that is not one NATS KV
 // literal token after the space mapping: such a name would be written as a key
-// the watches and the boot-time sync never read back (design D3).
+// the watches and the boot-time sync never read back.
 func sectionKey(section, name string) (string, error) {
 	token := sanitizeNATSKey(name)
 	if err := natsclient.ValidateKVLiteralToken(token); err != nil {
@@ -1018,7 +1018,7 @@ func nameByKey(cfg *Config) error {
 // encodePush encodes every value a push of cfg writes, in write order, with
 // version last: a push interrupted after its first write leaves the bucket's
 // old version, or none, so the next boot's newer file pushes again instead of
-// selecting a partial set (design D3).
+// selecting a partial set.
 func encodePush(cfg *Config) ([]kvWrite, error) {
 	var writes []kvWrite
 	// named maps each key to the name that claimed it: two names that map to one
@@ -1288,10 +1288,9 @@ func (cm *Manager) mintPlatformIdentity(ctx context.Context, kvStore *natsclient
 // semengine_config_<org>_<s-xxxxxx> and would silently mint a second
 // authority there — unrepairable under ADR-102 decision 7. Before minting, it
 // reads the identity record of every other bucket in the org's family and
-// refuses with the d5 guidance when one recorded this org and exactly the
-// declared value as its minted identifier. That is a comparison against stored
-// values, never a reading of the declared string's shape (owner ruling on
-// #1188, Q4 (b)).
+// refuses, telling the operator to declare the stem, when one recorded this org
+// and exactly the declared value as its minted identifier. That is a comparison
+// against stored values, never a reading of the declared string's shape.
 //
 // Bounded: one bucket listing and one Get per sibling bucket, under the
 // caller's context, with no retries. The prefix is over-inclusive — an org may
@@ -1363,8 +1362,8 @@ func mintIdentitySuffix() (string, error) {
 }
 
 // adoptPlatformIdentity takes the recorded identifier as this process's
-// effective platform.id. The comparison is its own — it does not depend on the
-// gh#459 guard reading the KV `platform` config key, which #1188 retires.
+// effective platform.id. The comparison is its own: it reads only the identity
+// record, never the KV `platform` config key.
 func (cm *Manager) adoptPlatformIdentity(ctx context.Context, kvStore *natsclient.KVStore) error {
 	entry, err := kvStore.Get(ctx, platformIdentityKVKey)
 	if err != nil {
@@ -1403,8 +1402,8 @@ func (cm *Manager) adoptPlatformIdentity(ctx context.Context, kvStore *natsclien
 		}
 		// The bucket is named by the declared pair, so a record for another
 		// pair is reachable only through an alias — `_` is legal inside both
-		// parts — or a hand-written record (owner ruling on #1188, Q2 (a):
-		// refused here, not prevented at naming).
+		// parts — or a hand-written record. It is refused here; naming does not
+		// prevent it.
 		return fmt.Errorf(
 			"config bucket platform identity mismatch: "+
 				"this configuration declares org=%q platform.id=%q, but config bucket %q records org=%q stem=%q id=%q. "+
@@ -1435,10 +1434,10 @@ func (cm *Manager) adoptPlatformIdentity(ctx context.Context, kvStore *natsclien
 //
 // Mutate re-validates the WHOLE configuration, which is how the effective pair
 // gets bounded — and also means an unrelated defect anywhere in the document
-// now surfaces at Start rather than wherever it used to. That finding leads the
-// error: reading "apply effective platform identity: … streams: ordinary stream
-// bounds are not declared" as an identity failure costs a reader the real
-// cause, so the identity step names itself last.
+// surfaces at Start, inside this step. That defect leads the error: reading
+// "apply effective platform identity: … streams: ordinary stream bounds are not
+// declared" as an identity failure costs a reader the real cause, so the
+// identity step names itself last.
 func (cm *Manager) applyEffectivePlatformID(id string) error {
 	if err := cm.config.Mutate(func(current *Config) error {
 		current.Platform.ID = id
@@ -1474,8 +1473,8 @@ func (cm *Manager) getKVVersion(ctx context.Context, kvStore *natsclient.KVStore
 
 // syncFromKV loads all configuration from KV and applies it. Version
 // arbitration selected the bucket, so its services.* and components.* entries
-// replace the file's (design D3). Any entry that cannot be read or decoded fails
-// Start, naming its key (design D4).
+// replace the file's. Any entry that cannot be read or decoded fails Start,
+// naming its key.
 func (cm *Manager) syncFromKV(ctx context.Context, kvStore *natsclient.KVStore) error {
 	// List all keys
 	keys, err := kvStore.Keys(ctx)
@@ -1506,7 +1505,7 @@ func (cm *Manager) syncFromKV(ctx context.Context, kvStore *natsclient.KVStore) 
 	// Apply them in one mutation, so a Start that fails here leaves GetConfig as
 	// it was. Services and components are whole-entry desired next-boot state, so
 	// the bucket's services.* and components.* keys replace the file maps instead
-	// of overlaying them. Other top-level sections overlay as at the pin.
+	// of overlaying them. Other top-level sections overlay the file's.
 	if err := cm.config.Mutate(func(current *Config) error {
 		current.Services = make(types.ServiceConfigs)
 		current.Components = make(ComponentConfigs)

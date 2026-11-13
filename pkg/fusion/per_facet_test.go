@@ -8,8 +8,8 @@ import (
 )
 
 // facetedLens is refLens plus a second, containment-style edge restricted to the
-// relations facet — the gh#475 motivating shape (a file→symbol "contains" edge
-// that must populate relations without inflating the impact/paths walks).
+// relations facet — the motivating shape (a file→symbol "contains" edge that
+// must populate relations without inflating the impact/paths walks).
 type facetedLens struct{ refLens }
 
 const containsPred = "ref.relationship.contains"
@@ -45,7 +45,7 @@ func fuseFaceted(t *testing.T, g *fakeGraph, want fusion.Want) fusion.Response {
 // TestPerFacet_ImpactExcludesRelationsOnlyEdge: the reverse-impact walk must skip
 // the relations-only containment edge, so a symbol's impact is its real
 // reverse-dependents (A via references) and NOT its structural container (F via
-// contains). Without the facet mask, impact would be {A, F} = 2. gh#475.
+// contains). Without the facet mask, impact would be {A, F} = 2.
 func TestPerFacet_ImpactExcludesRelationsOnlyEdge(t *testing.T) {
 	entities := map[string]*fusion.Entity{
 		"S": entity("S", "S", "s.go"),

@@ -22,7 +22,7 @@ import (
 
 // acquireAndPublish gives a manager a live bucket without running Start, for
 // tests that drive an exported writer directly. Start itself publishes only
-// after every step that can refuse has passed (Codex B6), so a test that wants
+// after every step that can refuse has passed, so a test that wants
 // an armed writer says so explicitly rather than relying on acquisition
 // arming it.
 func acquireAndPublish(t *testing.T, ctx context.Context, manager *Manager) {
@@ -87,18 +87,18 @@ func readIdentityRecord(t *testing.T, ctx context.Context, manager *Manager) pla
 }
 
 // directKVStore opens the manager's configuration bucket independently of the
-// manager's lifecycle. Since the constructor no longer performs I/O (the
-// context hard rule), a manager has no bucket until Start acquires one, so a
-// test that seeds the bucket BEFORE Start opens it itself.
+// manager's lifecycle. The constructor performs no I/O (it has no context to do
+// it under), so a manager has no bucket until Start acquires one, and a test
+// that seeds the bucket BEFORE Start opens it itself.
 func directKVStore(t *testing.T, ctx context.Context, manager *Manager) *natsclient.KVStore {
 	t.Helper()
 	return manager.natsClient.NewKVStore(directBucket(t, ctx, manager))
 }
 
 // directBucket is directKVStore's raw handle. A test that inspects the bucket
-// after a REFUSED Start must use this: since Codex B6 the manager publishes its
-// own handles only on success, so reading through the manager would (rightly)
-// report errBucketNotAcquired.
+// after a REFUSED Start must use this: the manager publishes its own handles
+// only on success, so reading through the manager would (rightly) report
+// errBucketNotAcquired.
 func directBucket(t *testing.T, ctx context.Context, manager *Manager) jetstream.KeyValue {
 	t.Helper()
 	kv, err := manager.natsClient.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
@@ -184,10 +184,10 @@ func mapKeys(m map[string]any) []string {
 // different organization, or the minted identifier itself (which is not a
 // declarable value; see TestFileDeclaringTheMintedIdentifierIsRefusedWithGuidance).
 //
-// Since #1188 the bucket is named by the declared pair, so the record is seeded
-// into the bucket the DECLARING manager names: a record for another pair can
-// reach it only through an alias (`_` is legal inside both parts) or by hand,
-// and this org/stem compare is what refuses it (owner ruling Q2 (a)).
+// The bucket is named by the declared pair, so the record is seeded into the
+// bucket the DECLARING manager names: a record for another pair can reach it
+// only through an alias (`_` is legal inside both parts) or by hand, and this
+// org/stem compare is what refuses it.
 func TestConfigManagerAdoptsPersistedPlatformIdentity(t *testing.T) {
 	cases := []struct {
 		name      string
@@ -295,10 +295,10 @@ func TestFirstBootMintsDistinctSuffixesPerDeployment(t *testing.T) {
 	require.NotEqual(t, first, second, "one template must not mint one authority twice")
 }
 
-// TestPreCreatedIdentityRecordIsAdoptedUnsuffixed pins the knobless opt-out
-// (owner ruling, 2026-08-30): an operator who owns global uniqueness
-// pre-creates the record with id == stem. It is per-deployment by construction,
-// so cloning the configuration template cannot clone it.
+// TestPreCreatedIdentityRecordIsAdoptedUnsuffixed pins the knobless opt-out: an
+// operator who owns global uniqueness pre-creates the record with id == stem.
+// It is per-deployment by construction, so cloning the configuration template
+// cannot clone it.
 func TestPreCreatedIdentityRecordIsAdoptedUnsuffixed(t *testing.T) {
 	tc := fixtureClient(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -369,7 +369,7 @@ func TestPreIdentityBucketRefusesStartWithoutMinting(t *testing.T) {
 	require.ErrorContains(t, err, "predates framework-minted platform identity")
 	require.ErrorContains(t, err, platformIdentityKVKey)
 	// The refusal names WHICH keys it found, and says the manager is the
-	// bucket's only writer until Start succeeds (#1188), so the keys came from
+	// bucket's only writer until Start succeeds, so the keys came from
 	// a carried-over bucket or a hand-written one.
 	require.ErrorContains(t, err, "platform, version")
 	require.ErrorContains(t, err, "only writer")
@@ -479,18 +479,16 @@ func preCreateConfigBucket(t *testing.T, ctx context.Context, tc *natsclient.Cli
 	require.NoError(t, err)
 }
 
-// TestIdentityUnderAnEvictingBucketNeverRemints is the Codex B1 reproduction.
-//
-// `platform_identity` is create-once correctness state, but it inherits
-// whatever policy the bucket was created with. Codex pre-created
-// the configuration bucket with TTL 250ms, booted, let the record expire, and booted
-// again:
+// TestIdentityUnderAnEvictingBucketNeverRemints: `platform_identity` is
+// create-once correctness state, but it inherits whatever policy the bucket was
+// created with. Pre-creating the configuration bucket with TTL 250ms, booting,
+// letting the record expire and booting again would mint twice:
 //
 //	Minted platform identity ... platform=dep-a8fd5f
 //	Minted platform identity ... platform=dep-1d0995
 //
-// Two authorities for one deployment — ADR-102 d7 violated, unrepairably. The
-// framework must never mint into a bucket whose policy can delete what it
+// Two authorities for one deployment violate ADR-102 decision 7, unrepairably.
+// The framework must never mint into a bucket whose policy can delete what it
 // minted, so BOTH boots refuse here and no second authority can exist.
 func TestIdentityUnderAnEvictingBucketNeverRemints(t *testing.T) {
 	tc := fixtureClient(t)
@@ -507,9 +505,9 @@ func TestIdentityUnderAnEvictingBucketNeverRemints(t *testing.T) {
 	}
 
 	// Wait for the CONDITION the remint depends on — the record actually gone —
-	// rather than for a duration. Post-fix the first boot refuses, so nothing
-	// was ever written and this is true immediately; pre-fix it waited out the
-	// TTL, exactly as Codex did.
+	// rather than for a duration. The first boot refuses, so nothing was ever
+	// written and this is true immediately; a first boot that minted would make
+	// this wait out the TTL.
 	probe := directKVStore(t, ctx, first)
 	require.Eventually(t, func() bool {
 		_, err := probe.Get(ctx, platformIdentityKVKey)
@@ -567,12 +565,11 @@ func TestEvictingConfigBucketRefusesStart(t *testing.T) {
 	}
 }
 
-// TestEnvironmentDoesNotSeparateDeployments pins the owner ruling on #1188
-// (2026-09-01): "retire it — the bucket name is the separation."
-// platform.environment is a startup log label; two deployments declaring the
-// same org and platform.id are one deployment and share its configuration
-// bucket and its authority, whatever their environments. The environment
-// claim that used to refuse the second one (Codex B2) is retired with it.
+// TestEnvironmentDoesNotSeparateDeployments: the bucket name is the
+// separation. platform.environment is a startup log label; two deployments
+// declaring the same org and platform.id are one deployment and share its
+// configuration bucket and its authority, whatever their environments. No
+// environment claim is written to the bucket.
 func TestEnvironmentDoesNotSeparateDeployments(t *testing.T) {
 	tc := fixtureClient(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -601,7 +598,7 @@ func TestEnvironmentDoesNotSeparateDeployments(t *testing.T) {
 }
 
 // TestFileDeclaringTheMintedIdentifierIsRefusedWithGuidance keeps ADR-104
-// decision 5 now that the bucket is named by the declared pair (#1188, Q4 (b)).
+// decision 5 with a bucket named by the declared pair.
 //
 // A file declaring the identifier minted from stem s names a different, empty
 // bucket, so nothing in that bucket can say the value was minted. The mint
@@ -636,7 +633,7 @@ func TestFileDeclaringTheMintedIdentifierIsRefusedWithGuidance(t *testing.T) {
 
 // TestAliasingPairsAreRefusedWithTheAliasMessage: `_` is legal inside both
 // parts, so org "a_b" + stem "c" and org "a" + stem "b_c" name one bucket. The
-// ruled answer is a refusal at adoption, not injective naming (#1188, Q2 (a)).
+// answer is a refusal at adoption, not injective naming.
 func TestAliasingPairsAreRefusedWithTheAliasMessage(t *testing.T) {
 	tc := fixtureClient(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -704,23 +701,22 @@ func bucketEntries(t *testing.T, ctx context.Context, tc *natsclient.Client, nam
 	return entries
 }
 
-// TestRefusedStartDisarmsEveryExportedWriter is the Codex B6 reproduction.
-//
-// acquireBucket published cm.kv/cm.kvStore before establishPlatformIdentity
-// ran, so ANY identity refusal — a foreign org or stem, a pre-identity bucket,
-// a malformed record, a lost environment claim — returned with the handles
-// still set. store() only nil-checks, so PushToKV (dropped here), PutComponentToKV and
-// DeleteComponentFromKV all kept working: a caller could overwrite the very
-// bucket Start had just refused as belonging to another platform. The spec says
-// foreign identity fails BEFORE writes and that detached running mode does not
-// exist; this is detached running mode.
+// TestRefusedStartDisarmsEveryExportedWriter: Start publishes the bucket handles
+// only after establishPlatformIdentity passes. Were cm.kv/cm.kvStore published
+// at acquisition, ANY identity refusal — a foreign org or stem, a pre-identity
+// bucket, a malformed record — would return with the handles still set.
+// store() only nil-checks, so PutComponentToKV and DeleteComponentFromKV would
+// keep working: a caller could overwrite the very bucket Start had just refused
+// as belonging to another platform. The spec says foreign identity fails BEFORE
+// writes and that detached running mode does not exist; that would be detached
+// running mode.
 func TestRefusedStartDisarmsEveryExportedWriter(t *testing.T) {
 	tc := fixtureClient(t)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	// The bucket this deployment names records a foreign identity — by hand,
-	// or through an alias (#1188: a foreign deployment no longer shares it).
+	// or through an alias; a foreign deployment's own pair names another bucket.
 	family, _ := collectingFamily(t, "rules")
 	local, err := NewConfigManager(identityTestConfig("acme", "dep"), tc, nil, WithKeyFamily(family))
 	require.NoError(t, err)
@@ -731,7 +727,7 @@ func TestRefusedStartDisarmsEveryExportedWriter(t *testing.T) {
 
 	require.Error(t, local.Start(ctx), "a foreign record must refuse Start")
 
-	// PushToKV is dropped (design D1); a registered key family is the other exported writer, and
+	// There is no exported PushToKV; a registered key family is the other exported writer, and
 	// its reads stay disarmed too (spec: config-manager / A refused Start leaves no writer armed).
 	_, getErr := family.Get(ctx, "a")
 	require.ErrorIs(t, getErr, errFamilyNotRegistered, "a refused Start must leave family reads disarmed")

@@ -268,7 +268,7 @@ func TestBatchFaultNotReadAlone(t *testing.T) {
 
 // TestPoisonFallbackOneSeedCancelled holds that a context ended while the only
 // per-ID request is in flight is returned, not hidden by its reset refusal
-// being listed (#580).
+// being listed.
 func TestPoisonFallbackOneSeedCancelled(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
@@ -279,8 +279,8 @@ func TestPoisonFallbackOneSeedCancelled(t *testing.T) {
 }
 
 // TestPoisonFallbackFinalSeedCancelled holds that a context ended while the
-// last per-ID request is in flight is returned, whether that request is
-// refused for poison or not found (#580).
+// last per-ID request is in flight is returned, whether that request is refused
+// for poison or not found.
 func TestPoisonFallbackFinalSeedCancelled(t *testing.T) {
 	notFound := errs.ClassifiedCode(errs.ErrorInvalid, graph.ErrorCodeEntityNotFound, errors.New("not found"))
 	for name, refusal := range map[string]error{"reset": resetRefusal(), "not found": notFound} {

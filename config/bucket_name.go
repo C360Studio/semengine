@@ -15,9 +15,8 @@ const maxBucketNameBytes = 255 - len("KV_")
 // BucketName is the ONE derivation of a deployment's configuration bucket
 // name: "semengine_config_<org>_<stem>", from the configuration document's
 // platform.org and its DECLARED platform.id — never the minted identifier,
-// which lives inside the bucket and so cannot name it (owner ruling on #1188,
-// 2026-09-01: "Bucket = semengine_config_<org>_<stem>, looked up by the
-// same").
+// which lives inside the bucket and so cannot name it. The bucket is looked up
+// by the same name it was created under.
 //
 // It refuses an empty part, a byte outside the NATS bucket grammar
 // [A-Za-z0-9_-] (nats.go jetstream/kv.go validBucketRe), and a result longer
@@ -27,7 +26,7 @@ const maxBucketNameBytes = 255 - len("KV_")
 // The separator is not injective: `_` is legal inside both parts, so org
 // "a_b" with stem "c" and org "a" with stem "b_c" name the same bucket. That
 // alias is refused at Start by the identity record's org/stem compare, not
-// prevented here (owner ruling on #1188, 2026-09-27, Q2 (a)).
+// prevented here.
 func BucketName(org, stem string) (string, error) {
 	for _, part := range []struct{ field, value string }{{"platform.org", org}, {"platform.id", stem}} {
 		if part.value == "" {

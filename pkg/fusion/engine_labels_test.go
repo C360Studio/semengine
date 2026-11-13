@@ -12,9 +12,9 @@ import (
 	"github.com/c360studio/semengine/pkg/fusion"
 )
 
-// Tests for design D4: every left-out piece of an answer is declared, and every
-// Neighbors result is ordered before a cap cuts it. Expected values come from
-// how each fixture is built, never from the engine's walk.
+// Tests that every left-out piece of an answer is declared, and every Neighbors
+// result is ordered before a cap cuts it. Expected values come from how each
+// fixture is built, never from the engine's walk.
 
 // labelEntity builds an entity whose display name differs from its ID, so a test
 // can tell a name from an ID on the wire.
@@ -112,8 +112,7 @@ func TestRelationsCapLabelled(t *testing.T) {
 }
 
 // TestRelationsFaultLabelled: a relations Neighbors read that fails with an
-// unclassified error is skipped, and the node ships labelled. Replaces the pin's
-// TestEngine_NeighborGenuineError_Swallowed.
+// unclassified error is skipped, and the node ships labelled.
 func TestRelationsFaultLabelled(t *testing.T) {
 	g := targetsGraph(numbered(2), nil)
 	g.neighborsErr = errors.New("neighbors backend down")

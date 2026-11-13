@@ -187,8 +187,7 @@ func TestVerbLookupNamesMissingRow(t *testing.T) {
 
 // TestEnvelopedRowNeedsProducer holds that an enveloped row's reply is decoded as
 // an envelope, never by its content: a bare body, and "{}", which decodes as an
-// envelope naming no producer, are both refused. It replaces the pin's test that
-// bare and enveloped replies read the same.
+// envelope naming no producer, are both refused.
 func TestEnvelopedRowNeedsProducer(t *testing.T) {
 	id := "acme.ops.robotics.gcs.drone.001"
 	neighbor := "acme.ops.robotics.gcs.sensor.002"
@@ -557,8 +556,8 @@ func TestNeighbors_NoPredicatesMeansNoFilter(t *testing.T) {
 }
 
 // TestNeighborsReadsPredicate holds that an edge's predicate is read from the
-// tree's wire key, predicate, which the pin's edge_type does not carry: a reply
-// with only edge_type has edges with no predicate, which a filter keeps none of.
+// wire key predicate, never edge_type: a reply with only edge_type has edges with
+// no predicate, which a filter keeps none of.
 func TestNeighborsReadsPredicate(t *testing.T) {
 	reply := enveloped(t, []map[string]string{{
 		"from_entity_id": "a.b.c.d.e.seed", "to_entity_id": "a.b.c.d.e.x", "predicate": "code.calls.fn",
@@ -591,8 +590,8 @@ func TestNames_DedupesAndCaps(t *testing.T) {
 }
 
 // TestEntitiesRefusesNilContext holds that a nil context is refused before the
-// empty-batch shortcut, with no request (#580); a valid empty batch still sends
-// none (TestEntities_EmptyShortCircuits).
+// empty-batch shortcut, with no request; a valid empty batch still sends none
+// (TestEntities_EmptyShortCircuits).
 func TestEntitiesRefusesNilContext(t *testing.T) {
 	fake := &fakeRequester{err: errors.New("must not be called")}
 	// A nil context is the input under test.

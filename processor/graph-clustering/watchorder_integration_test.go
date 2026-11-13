@@ -11,13 +11,13 @@ import (
 	"github.com/c360studio/semengine/graph/kvcatalog"
 )
 
-// TestWatchOrderAcrossKeys is the probe #525 asks for (design D4, ADR-112): at the pinned nats.go
-// and NATS server image, a watch of every ENTITY_STATES key, the one the follower opens
-// (kvcatalog.CatalogReader.WatchAll), delivers revisions in ascending order across keys, in the
-// replay of the stored keys and in the live writes after it. It is an observation at those
-// versions, recorded in the change's notes/2.3.md, not a promise graph-clustering relies on: the
-// follower declares the feed lost on a revision at or below one it has observed, and publication
-// stops (TestLostFeedStopsPublication). A version bump that changes the order fails this probe.
+// TestWatchOrderAcrossKeys is a probe (ADR-112): at the pinned nats.go and NATS server image, a
+// watch of every ENTITY_STATES key, the one the follower opens (kvcatalog.CatalogReader.WatchAll),
+// delivers revisions in ascending order across keys, in the replay of the stored keys and in the
+// live writes after it. It is an observation at those versions, not a promise graph-clustering
+// relies on: the follower declares the feed lost on a revision at or below one it has observed, and
+// publication stops (TestLostFeedStopsPublication). A version bump that changes the order fails
+// this probe.
 func TestWatchOrderAcrossKeys(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)

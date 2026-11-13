@@ -3,7 +3,7 @@
 // (ADR-063).
 //
 // StorageInstance is a logical federation NAME (the producing storage
-// component's instance name, gh#400), not a physical address — a reader holding
+// component's instance name), not a physical address — a reader holding
 // a StorageRef cannot derive a handle on its own (it does not know the bucket,
 // backend, or connection, and the owner may change them at runtime). This
 // registry is the single place the owner publishes "instance X = this live
@@ -53,7 +53,7 @@ func New() *Registry {
 // duplicate: an instance already held by a live component. Duplicate ownership
 // (two components claiming the same StorageInstance) is a wiring fault surfaced
 // loud at Start rather than a silent registry clobber — the ADR-063 replacement
-// for exclusive-port conflict detection, which is reconfig-fragile (B1). The
+// for exclusive-port conflict detection, which is reconfig-fragile. The
 // populator Deregisters on Stop, so a normal reconfig (Stop→Start) never
 // collides here; a collision means two live owners.
 func (r *Registry) Register(instance string, s storage.StreamableStore) error {

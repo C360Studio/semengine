@@ -77,12 +77,11 @@ func requireRefused(t *testing.T, raw string, want ...string) {
 	}
 }
 
-// TestConfigRefusesRemovedKeys: each configuration key the pin defined and graph-clustering
-// does not is refused at construction and by port declaration, naming the key and saying it was
-// removed with what replaces it; the same configuration without it builds (design D3;
-// graph-clustering spec, "Removed configuration is refused"). The keys and the words of their
-// guidance are written out here, not read from the package's table. A key nobody ever defined
-// (a misspelling) is refused naming it too.
+// TestConfigRefusesRemovedKeys: each removed configuration key is refused at construction and by
+// port declaration, naming the key and saying it was removed with what replaces it; the same
+// configuration without it builds (graph-clustering spec, "Removed configuration is refused"). The
+// keys and the words of their guidance are written out here, not read from the package's table. A
+// key nobody ever defined (a misspelling) is refused naming it too.
 func TestConfigRefusesRemovedKeys(t *testing.T) {
 	raw, err := json.Marshal(DefaultConfig())
 	if err != nil {
@@ -136,9 +135,8 @@ func entityWatch() component.PortDefinition {
 }
 
 // TestConfigRefusesOutputPorts: graph-clustering writes COMMUNITY_INDEX itself and declares no
-// output ports, so the pin's default outputs (a graph-mutation request port and a COMMUNITY_INDEX
-// write, which semboids' configuration declares) are refused, as is any one of them alone
-// (design D3).
+// output ports, so a graph-mutation request port and a COMMUNITY_INDEX write, the outputs
+// semboids' configuration declares, are refused, as is a COMMUNITY_INDEX write alone.
 func TestConfigRefusesOutputPorts(t *testing.T) {
 	mutations := component.PortDefinition{Name: "graph_mutations", Config: component.NATSRequestPort{Subject: "graph.mutation.>"}}
 	communities := component.PortDefinition{Name: "communities", Config: component.KVWritePort{Bucket: graph.BucketCommunityIndex}}
@@ -180,8 +178,7 @@ func TestConfigWithoutPortsTakesDefaultPorts(t *testing.T) {
 // TestConfigRefusesInputsTheFollowerDoesNotRead: the one input is the follower's watch of every
 // ENTITY_STATES key with no history; any other input, a second input, or none is refused, naming
 // the port where there is one, so a composition never advertises a feed graph-clustering does not
-// read (#424, as graph-index). The pin's default also read ENTITY_STATES, OUTGOING_INDEX and
-// INCOMING_INDEX through kv-read ports; those are refused.
+// read, as graph-index does. A kv-read port, on ENTITY_STATES or OUTGOING_INDEX, is refused too.
 func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 	cases := map[string]struct {
 		inputs []component.PortDefinition
@@ -202,7 +199,7 @@ func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 }
 
 // TestConfigStartupWait: the wait for ENTITY_STATES defaults to 30 attempts 500 ms apart, and set
-// values are kept (pin ApplyDefaults); a negative value is refused.
+// values are kept; a negative value is refused.
 func TestConfigStartupWait(t *testing.T) {
 	c := mustCreate(t, `{}`)
 	if c.config.StartupAttempts != 30 || c.config.StartupInterval != 500 {
@@ -218,10 +215,9 @@ func TestConfigStartupWait(t *testing.T) {
 	requireRefused(t, `{"startup_interval_ms": -1}`, "startup_interval_ms")
 }
 
-// TestConfigDetectionInterval: detection_interval defaults to the pin's 30 s and a set duration is
-// kept; where the pin fell back to 30 s on a value it could not parse, a value that is not a
-// duration, or is not above zero, is refused naming the key. The ticker that reads it is
-// TestDetectionIntervalIsRead's (task 2.3).
+// TestConfigDetectionInterval: detection_interval defaults to 30 s and a set duration is kept; a
+// value that is not a duration, or is not above zero, is refused naming the key, never replaced by
+// the default. The ticker that reads it is TestDetectionIntervalIsRead's.
 func TestConfigDetectionInterval(t *testing.T) {
 	for raw, want := range map[string]string{`{}`: "30s", `{"detection_interval": "5m"}`: "5m0s"} {
 		d, err := mustCreate(t, raw).config.interval()

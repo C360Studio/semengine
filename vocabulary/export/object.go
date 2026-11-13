@@ -73,7 +73,7 @@ type classifiedObject struct {
 // datatype its predicate declares in the vocabulary registry, and returns a
 // classified representation suitable for serialization.
 //
-// Classification is a total order, most specific first (gh#1267):
+// Classification is a total order, most specific first:
 //
 //  1. the triple's own Datatype hint — a statement about THIS value;
 //  2. the predicate's declared DataType — a statement about the PREDICATE,
@@ -112,9 +112,9 @@ func classifyObject(t message.Triple, opts *options) classifiedObject {
 //
 // The one datatype that is not a literal marker is the framework's own
 // entity-reference marker: message.EntityReferenceDatatype is "@id", a
-// relative reference, so emitting it as a literal's datatype produced
+// relative reference, so emitting it as a literal's datatype would produce
 // `"acme.ops.gcs.robotics.drone.001"^^<@id>` — invalid RDF for the only
-// per-triple marker the authoritative persistence seam validates (gh#1272).
+// per-triple marker the authoritative persistence seam validates.
 // It denotes an IRI or blank node, and it is serialized as one.
 //
 // A marked object that is NOT a canonical entity ID or valid blank-node label
@@ -332,10 +332,10 @@ func classifyFloat(f float64) classifiedObject {
 // classifyString determines if a string is an entity reference, an absolute
 // IRI, or a literal.
 //
-// The absolute-IRI branch is gh#1142: message.IsValidEntityID is false for
-// anything carrying a scheme, so an IRI object fell to the literal branch BY
-// CONSTRUCTION, and `rdf:type "http://schema.org/Thing"` is not valid RDF for
-// a consumer that expects a class. The two branches cannot both match — a
+// The absolute-IRI branch exists because message.IsValidEntityID is false for
+// anything carrying a scheme: without it an IRI object would fall to the
+// literal branch BY CONSTRUCTION, and `rdf:type "http://schema.org/Thing"` is
+// not valid RDF for a consumer that expects a class. The two branches cannot both match — a
 // canonical 6-part entity ID carries no scheme, and a scheme's ":" is not a
 // legal entity-ID character.
 func classifyString(s string, opts *options) classifiedObject {

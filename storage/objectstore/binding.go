@@ -28,9 +28,8 @@ type inputBinding struct {
 // order. A JetStream input's consumer keeps the legacy name objectstore-<instance>-<subject>, so
 // a deployment binds its existing durable consumer again; when two subjects map to one legacy
 // name on one stream, each of them gets a name hashed from the instance, stream and subject,
-// which no port name or declaration order changes. Carried from the pin's
-// planObjectStoreInputBindings; resolvePorts has already checked each port's kind and its one
-// subject.
+// which no port name or declaration order changes. resolvePorts has already checked each port's
+// kind and its one subject.
 func planInputBindings(inputs []component.Port) ([]inputBinding, error) {
 	plans := make([]inputBinding, len(inputs))
 	plansByPort := make(map[string]inputBinding, len(inputs))
@@ -115,7 +114,8 @@ func planInputBindings(inputs []component.Port) ([]inputBinding, error) {
 	return plans, nil
 }
 
-// legacyConsumerName is the consumer name the pin gave a JetStream input on subject.
+// legacyConsumerName is the durable consumer name a JetStream input on subject keeps:
+// objectstore-<instance>-<subject>, the subject's dots as dashes, * as all and > as wildcard.
 func legacyConsumerName(subject string) string {
 	sanitized := strings.ReplaceAll(subject, ".", "-")
 	sanitized = strings.ReplaceAll(sanitized, "*", "all")

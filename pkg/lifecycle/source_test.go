@@ -12,11 +12,11 @@ import (
 
 // TestManagerWritesUnderTheLifecycleSource: every statement the manager sends names
 // graph.SourceLifecycle, whichever TransitionSource caused the write, and every reconcile sends
-// it as the request's source (design D15). The writes cover the create request and the three
+// it as the request's source. The writes cover the create request and the three
 // reconcile builders: a birth, two transitions caused by different TransitionSources, the attach
 // to an entity that exists without a phase, and an operator patch. The end-to-end form, that the
 // entity then holds one phase statement, is TestTransitionReplacesItsPhaseStatement, which runs
-// through graph-ingest (task 3.12).
+// through graph-ingest.
 func TestManagerWritesUnderTheLifecycleSource(t *testing.T) {
 	t.Parallel()
 	mgr, emitter, bucket := newTestManager(t)

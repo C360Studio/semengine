@@ -11,7 +11,7 @@ import (
 // cleanup that succeeded clears: the run context's cancel, the Store, the core-NATS
 // subscriptions, the JetStream consumers, and the input check while its goroutine runs.
 //
-// Calls is empty: the Component has no acquisition seam to count through (design D8), so the
+// Calls is empty: the Component has no acquisition seam to count through, so the
 // suite's "a no-op made no call" checks compare empty maps, and what a call left held is read
 // from Unresolved.
 type suiteOwner struct{ c *Component }

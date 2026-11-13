@@ -108,9 +108,9 @@ func newClusteringLogging(t *testing.T, client *natsclient.Client, raw string, h
 // calls are the only ticks and each runs at a point the test chose.
 const tickByHand = `{"detection_interval": "1h"}`
 
-// startClustering ensures ENTITY_STATES, builds graph-clustering from raw and starts it, then
-// waits for the replay of the empty bucket, so every write the test makes after it is a live write
-// (#584); the test's cleanup stops it.
+// startClustering ensures ENTITY_STATES, builds graph-clustering from raw and starts it, then waits
+// for the replay of the empty bucket, so every write the test makes after it is a live write; the
+// test's cleanup stops it.
 func startClustering(t *testing.T, client *natsclient.Client, raw string) (*Component, jetstream.KeyValue) {
 	t.Helper()
 	states := ensureEntityStates(t, client)
@@ -221,8 +221,8 @@ func envelope(ctx context.Context, client *natsclient.Client) (status graph.Inde
 // TestRefusedValueReportedNotWithheld: a live write to ENTITY_STATES whose bytes are not an entity
 // state is applied as a refused entity: the tick still publishes every group, the refused entity
 // counted in none, Health and the envelope's failed_reasons name refused_entity, and queries are
-// not withheld. A later valid write for the key is counted and clears the refusal at the next
-// tick (graph-clustering spec, "A value that does not decode"; design D1, D2).
+// not withheld. A later valid write for the key is counted and clears the refusal at the next tick
+// (graph-clustering spec, "A value that does not decode").
 func TestRefusedValueReportedNotWithheld(t *testing.T) {
 	client := fixtureClient(t)
 	c, states := startClustering(t, client, tickByHand)
@@ -325,8 +325,8 @@ func componentStacks() string {
 // published and finds nothing of it running (graph-clustering spec, "Stop leaves nothing"). The
 // must-fail owner's environment has no ENTITY_STATES, so its Start fails in the follower's Open
 // before it acquires anything. The component is one-shot, so no restart is promised. The suite
-// runs on the real clock, not in a synctest bubble: nats.go's socket read keeps a bubble's clock
-// still (notes/2.2.md).
+// runs on the real clock, not in a synctest bubble: a goroutine blocked in nats.go's socket read
+// is not durably blocked, so a bubble's clock never advances (testing/synctest package docs).
 func TestStopLeavesNothing(t *testing.T) {
 	client := fixtureClient(t)
 	ensureEntityStates(t, client)
@@ -369,7 +369,7 @@ func TestStopLeavesNothing(t *testing.T) {
 		if held := owner.Observe().Unresolved; len(held) != 0 {
 			t.Errorf("held after a nil Stop = %v, want nothing", held)
 		}
-		// A goroutine that has signalled its join is still in the dump until it exits (#490), so
+		// A goroutine that has signalled its join is still in the dump until it exits, so
 		// the scan polls; one really left behind is there until go test -timeout.
 		await(t, "no goroutine in a Component or Follower method after Stop",
 			func(context.Context) (string, error) { return componentStacks(), nil },

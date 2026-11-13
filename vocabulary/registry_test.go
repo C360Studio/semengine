@@ -220,11 +220,11 @@ func TestRegisterOverwrite(t *testing.T) {
 	assert.Equal(t, "test.rel.includes", meta.InverseOf)
 }
 
-// TestRegisterAmend_OmittedFieldsRetained is the gh#410 regression: a re-Register
-// that adds Description/IRI but OMITS the alias role must NOT strip that role.
-// The exact failure semsource hit converging pkg/fusion: re-registering
-// dc.terms.title with a description clobbered its label alias, so the NAME_INDEX
-// (and thus graph.query.byName + the GRAPH_STATUS readiness envelope) went empty.
+// TestRegisterAmend_OmittedFieldsRetained: a re-Register that adds
+// Description/IRI but OMITS the alias role must NOT strip that role. If
+// re-registering dc.terms.title with a description clobbered its label alias,
+// the NAME_INDEX (and thus graph.query.byName + the GRAPH_STATUS readiness
+// envelope) would go empty.
 func TestRegisterAmend_OmittedFieldsRetained(t *testing.T) {
 	defer SnapshotRegistry()()
 	ClearRegistry()
@@ -259,8 +259,8 @@ func TestRegisterAmend_OmittedFieldsRetained(t *testing.T) {
 }
 
 // TestRegisterAmend_WeightRetained guards the same clobber class for the
-// increment-5b ranking signals (#408): a re-Register omitting WithWeight
-// must not strip a previously-declared salience.
+// ranking signals: a re-Register omitting WithWeight must not strip a
+// previously-declared salience.
 func TestRegisterAmend_WeightRetained(t *testing.T) {
 	defer SnapshotRegistry()()
 	ClearRegistry()
@@ -369,8 +369,7 @@ func TestRegisterWithRuleOpaque(t *testing.T) {
 }
 
 // TestRegisterWithRoleAndWeight verifies the predicate-salience ranking signal
-// (ADR-062 increment 5, gh#396 / semsource ask #2) round-trips through the
-// registry: WithWeight surfaces on PredicateMetadata, and undeclared
+// (ADR-062) round-trips through the registry: WithWeight surfaces on PredicateMetadata, and undeclared
 // predicates default to weight 0.
 func TestRegisterWithWeight(t *testing.T) {
 	originalRegistry := make(map[string]PredicateMetadata)

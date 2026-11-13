@@ -104,8 +104,8 @@ func callChildren(ctx context.Context, mgr *Manager, opts ChildOptions) (got []C
 	return mgr.Children(ctx, childrenParentID, opts)
 }
 
-// TestChildrenPagesKeptChildrenWithinBoundedReads is design D6's exhaustive
-// small-scope check. Links a..f with b and d absent leave kept = a, c, e, f.
+// TestChildrenPagesKeptChildrenWithinBoundedReads is an exhaustive small-scope
+// check. Links a..f with b and d absent leave kept = a, c, e, f.
 // For every Offset and Limit in -1..7 the page equals an oracle written from
 // List's slice rule, not from Children: start = max(Offset, 0) capped at
 // len(kept); end = len(kept) when Limit <= 0, else min(start+Limit, len(kept));
@@ -170,9 +170,8 @@ func TestChildrenPagesKeptChildrenWithinBoundedReads(t *testing.T) {
 }
 
 // TestChildrenFailsOnAnUnreadableChild: a child read that fails for any reason
-// other than absence or no lifecycle phase fails the call, as List does (owner
-// question 3): a read timeout, and a link into a child workflow nobody
-// registered.
+// other than absence or no lifecycle phase fails the call, as List does: a read
+// timeout, and a link into a child workflow nobody registered.
 func TestChildrenFailsOnAnUnreadableChild(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()

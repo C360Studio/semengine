@@ -17,8 +17,7 @@ import "time"
 // private KV bucket. State changes emit through graph-ingest via
 // the standard write path; the Participant is materialized via
 // reflection-driven projection from the entity's triples (see
-// Workflow.Schema). KVBucket() and KVKey() are no longer part of
-// the contract.
+// Workflow.Schema).
 //
 // Implementations are expected to be plain data structs with these
 // methods. The projection layer round-trips Participant values

@@ -71,8 +71,7 @@ func TestStoredMessageRoundTripsThroughDecoder(t *testing.T) {
 
 // TestStoredMessageValidate: Validate accepts a canonical entity ID up to 256 bytes with a
 // reference, refuses an empty, non-canonical or 257-byte ID with the entity-ID error code, and
-// refuses a missing reference; the production marshal refuses the same message, keeping the code
-// (pin stored_message_contract_test.go).
+// refuses a missing reference; the production marshal refuses the same message, keeping the code.
 func TestStoredMessageValidate(t *testing.T) {
 	boundaryID := "a.b.c.d.e." + strings.Repeat("x", semtypes.MaxEntityIDBytes-10)
 	if len(boundaryID) != semtypes.MaxEntityIDBytes {

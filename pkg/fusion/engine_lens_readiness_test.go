@@ -89,9 +89,9 @@ func TestDeferredOnIndexNotReady(t *testing.T) {
 	}
 }
 
-// TestFatalReplyReturnsError: a fatal seed read fails the call. A
-// graph_state_reset_required reply to Entities (one poisoned seed refuses the
-// whole batch) or Resolve is Fuse's error, class and code intact.
+// TestFatalReplyReturnsError: a fatal seed read fails the call. A graph_state_reset_required
+// reply to Entities (one poisoned seed refuses the whole batch) or Resolve is Fuse's error,
+// class and code intact.
 func TestFatalReplyReturnsError(t *testing.T) {
 	seed := "acme.ops.code.repo.symbol.OnEvent"
 	cases := map[string]*fakeGraph{

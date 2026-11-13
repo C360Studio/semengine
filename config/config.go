@@ -102,7 +102,8 @@ func (sc *SafeConfig) Update(cfg *Config) error {
 // the write lock across the WHOLE clone → mutate → validate → swap sequence, so
 // two concurrent mutations cannot lose one another's change. Without this, a
 // caller doing Get() (a clone) → mutate → Update() races another doing the
-// same: each starts from the same base and the second swap clobbers the first. -race does not flag it — each Get/Update is individually locked; the
+// same: each starts from the same base and the second swap clobbers the first.
+// -race does not flag it — each Get/Update is individually locked; the
 // atomicity violation is at the compound level.
 //
 // fn receives a private deep copy it may mutate freely; returning a non-nil error

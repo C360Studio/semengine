@@ -10,6 +10,7 @@ import (
 	"io"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -116,30 +117,32 @@ func TestSearchWithheldUntilBuilt(t *testing.T) {
 	const pump = "c360.lex.test.site.pump.gated"
 	put(t, states, pump, text{name: "gated pump", offloaded: true})
 
+	// The store ignores its context and answers only on release, so the build cannot complete
+	// through the read's deadline while the requests below run.
 	release := make(chan struct{})
-	store := newFakeStore(func(ctx context.Context, _ string) (io.ReadCloser, error) {
-		select {
-		case <-release:
-			return io.NopCloser(strings.NewReader("impeller housing")), nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	var releaseOnce sync.Once
+	releaseRead := func() { releaseOnce.Do(func() { close(release) }) }
+	store := newFakeStore(func(context.Context, string) (io.ReadCloser, error) {
+		<-release
+		return io.NopCloser(strings.NewReader("impeller housing")), nil
 	})
 	stores := storeregistry.New()
 	if err := stores.Register("objectstore", store); err != nil {
 		t.Fatalf("register: %v", err)
 	}
 	startLexical(t, client, metric.NewMetricsRegistry(), stores)
+	// Registered after startLexical, so it runs before the component stops: a failed assertion
+	// below still frees the blocked read and lets Stop join it.
+	t.Cleanup(releaseRead)
 
-	// The read waits for release, which follows these requests; the read's own deadline, seconds
-	// away, is the only other way the build completes.
+	// The read waits for release, which follows these requests.
 	raw, err := ask(t, client, `{"query":"pump"}`)
 	refusal(t, "during the build", raw, err, errs.ErrorTransient, graph.ErrorCodeIndexNotReady)
 	raw, err = ask(t, client, `{"query":"pump","min_revision":1000000}`)
 	refusal(t, "during the build, behind", raw, err, errs.ErrorTransient, graph.ErrorCodeIndexNotReady)
 	raw, err = ask(t, client, `{"query":"pump","limit":101}`)
 	refusal(t, "during the build, malformed", raw, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
-	close(release)
+	releaseRead()
 
 	got := await(t, "the search answered once the build is done",
 		func(context.Context) (error, error) {

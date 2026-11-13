@@ -122,6 +122,9 @@ func TestSearchWithheldUntilBuilt(t *testing.T) {
 	release := make(chan struct{})
 	var releaseOnce sync.Once
 	releaseRead := func() { releaseOnce.Do(func() { close(release) }) }
+	// Deferred before Start so a failed Start or assertion still frees the blocked read; a defer
+	// runs before the test's cleanups, so Stop can join it.
+	defer releaseRead()
 	store := newFakeStore(func(context.Context, string) (io.ReadCloser, error) {
 		<-release
 		return io.NopCloser(strings.NewReader("impeller housing")), nil
@@ -131,9 +134,6 @@ func TestSearchWithheldUntilBuilt(t *testing.T) {
 		t.Fatalf("register: %v", err)
 	}
 	startLexical(t, client, metric.NewMetricsRegistry(), stores)
-	// Registered after startLexical, so it runs before the component stops: a failed assertion
-	// below still frees the blocked read and lets Stop join it.
-	t.Cleanup(releaseRead)
 
 	// The read waits for release, which follows these requests.
 	raw, err := ask(t, client, `{"query":"pump"}`)

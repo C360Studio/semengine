@@ -62,8 +62,8 @@ func watchConsumers(ctx context.Context, client *natsclient.Client) (int, error)
 // TestGraphLexicalLifecycleSuite runs the lifecycle suite on graph-lexical. Every owner is a fresh
 // component on one client of the package's shared server. The must-fail owner's environment has
 // no ENTITY_STATES, so its Start fails in the follower's Open, before it acquires anything, and
-// the cleanup the failed Start runs succeeds; graph-lexical's start acquires nothing it can fail
-// to release, so the branch where that cleanup fails has no case here. graph-lexical is one-shot
+// the cleanup the failed Start runs succeeds; this factory fails before any later step, such as
+// the query subscription, so the branch where that cleanup fails has no case here. graph-lexical is one-shot
 // (a Start after Stop is refused), so no restart is promised.
 func TestGraphLexicalLifecycleSuite(t *testing.T) {
 	client := fixtureClient(t)

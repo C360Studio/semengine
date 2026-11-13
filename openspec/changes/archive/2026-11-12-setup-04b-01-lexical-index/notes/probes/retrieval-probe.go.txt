@@ -1,0 +1,465 @@
+package embedding
+
+// Throwaway review experiment. Not for merge.
+
+import (
+	"context"
+	"fmt"
+	"math"
+	"math/rand"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+	"testing"
+	"unicode"
+)
+
+type section struct {
+	path, heading, body string
+}
+
+func loadSections(t *testing.T, root string) []section {
+	var out []section
+	seenBody := map[string]bool{}
+	err := filepath.WalkDir(root, func(p string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			if n := d.Name(); n == "node_modules" || n == ".git" {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(p, ".md") {
+			return nil
+		}
+		data, err := os.ReadFile(p)
+		if err != nil {
+			return err
+		}
+		var heading string
+		var body strings.Builder
+		flush := func() {
+			b := strings.TrimSpace(body.String())
+			body.Reset()
+			if heading == "" || len(strings.Fields(b)) < 30 || seenBody[b] {
+				return
+			}
+			if len(b) > 4000 {
+				b = b[:4000]
+				if i := strings.LastIndexByte(b, ' '); i > 0 {
+					b = b[:i]
+				}
+			}
+			seenBody[b] = true
+			rel, _ := filepath.Rel(root, p)
+			out = append(out, section{path: rel, heading: heading, body: b})
+		}
+		fence := false
+		for _, line := range strings.Split(string(data), "\n") {
+			if strings.HasPrefix(strings.TrimSpace(line), "```") {
+				fence = !fence
+			}
+			if !fence && strings.HasPrefix(line, "#") {
+				h := strings.TrimLeft(line, "#")
+				if strings.HasPrefix(h, " ") {
+					flush()
+					heading = strings.TrimSpace(h)
+					continue
+				}
+			}
+			body.WriteString(line)
+			body.WriteByte('\n')
+		}
+		flush()
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// refBM25 is a plain inverted-index BM25 (Lucene's idf, k1 1.2, b 0.75) over the embedder's own tokens.
+type refBM25 struct {
+	postings map[string][]posting
+	docLen   []int
+	avg      float64
+}
+type posting struct{ doc, tf int }
+
+func newRef(tokens [][]string) *refBM25 {
+	r := &refBM25{postings: map[string][]posting{}, docLen: make([]int, len(tokens))}
+	total := 0
+	for d, toks := range tokens {
+		r.docLen[d] = len(toks)
+		total += len(toks)
+		tf := map[string]int{}
+		for _, tk := range toks {
+			tf[tk]++
+		}
+		for tk, n := range tf {
+			r.postings[tk] = append(r.postings[tk], posting{d, n})
+		}
+	}
+	r.avg = float64(total) / float64(len(tokens))
+	return r
+}
+
+func (r *refBM25) scores(query []string) []float64 {
+	const k1, b = 1.2, 0.75
+	s := make([]float64, len(r.docLen))
+	seen := map[string]bool{}
+	n := float64(len(r.docLen))
+	for _, q := range query {
+		if seen[q] {
+			continue
+		}
+		seen[q] = true
+		ps := r.postings[q]
+		if len(ps) == 0 {
+			continue
+		}
+		df := float64(len(ps))
+		idf := math.Log(1 + (n-df+0.5)/(df+0.5))
+		for _, p := range ps {
+			tf := float64(p.tf)
+			s[p.doc] += idf * tf * (k1 + 1) / (tf + k1*(1-b+b*float64(r.docLen[p.doc])/r.avg))
+		}
+	}
+	return s
+}
+
+// rankOf is the 1-based rank of target, ties broken by index; 0 when target scores 0.
+func rankOf(scores []float64, target int) int {
+	ts := scores[target]
+	if ts <= 0 {
+		return 0
+	}
+	rank := 1
+	for i, s := range scores {
+		if s > ts || (s == ts && i < target) {
+			rank++
+		}
+	}
+	return rank
+}
+
+func topK(scores []float64, k int) []int {
+	idx := make([]int, 0, len(scores))
+	for i, s := range scores {
+		if s > 0 {
+			idx = append(idx, i)
+		}
+	}
+	sort.Slice(idx, func(a, b int) bool {
+		if scores[idx[a]] != scores[idx[b]] {
+			return scores[idx[a]] > scores[idx[b]]
+		}
+		return idx[a] < idx[b]
+	})
+	if len(idx) > k {
+		idx = idx[:k]
+	}
+	return idx
+}
+
+type tally struct {
+	n, r1, r10 int
+	mrr        float64
+	positives  int // docs scoring above 0, summed over queries
+	overlap    int // top-10 overlap with the reference, summed
+	refTop     int
+}
+
+func (t *tally) add(scores []float64, target int, refTop []int) {
+	t.n++
+	if r := rankOf(scores, target); r > 0 {
+		t.mrr += 1 / float64(r)
+		if r == 1 {
+			t.r1++
+		}
+		if r <= 10 {
+			t.r10++
+		}
+	}
+	for _, s := range scores {
+		if s > 0 {
+			t.positives++
+		}
+	}
+	if refTop != nil {
+		in := map[int]bool{}
+		for _, d := range topK(scores, 10) {
+			in[d] = true
+		}
+		for _, d := range refTop {
+			if in[d] {
+				t.overlap++
+			}
+		}
+		t.refTop += len(refTop)
+	}
+}
+
+func (t *tally) String() string {
+	n := float64(t.n)
+	s := fmt.Sprintf("R@1 %5.1f%%  R@10 %5.1f%%  MRR %.3f  docs>0/query %7.0f",
+		100*float64(t.r1)/n, 100*float64(t.r10)/n, t.mrr/n, float64(t.positives)/n)
+	if t.refTop > 0 {
+		s += fmt.Sprintf("  top10 overlap with real BM25 %4.1f%%", 100*float64(t.overlap)/float64(t.refTop))
+	}
+	return s
+}
+
+func cosScores(q []float32, docs [][]float32) []float64 {
+	s := make([]float64, len(docs))
+	for i, d := range docs {
+		var dot float64
+		for j, v := range q {
+			if v != 0 {
+				dot += float64(v) * float64(d[j])
+			}
+		}
+		s[i] = dot // both sides are unit vectors or zero
+	}
+	return s
+}
+
+// substringScores is graph-query's local search rule (processor/graph-query/localsearch.go): terms are
+// the lowercased whitespace fields, each once; 0.5 per term found as a substring; over the term count;
+// a match needs 0.3.
+func substringScores(query string, lowered []string) []float64 {
+	var terms []string
+	seen := map[string]bool{}
+	for _, f := range strings.Fields(strings.ToLower(query)) {
+		if !seen[f] {
+			seen[f] = true
+			terms = append(terms, f)
+		}
+	}
+	s := make([]float64, len(lowered))
+	for i, text := range lowered {
+		total := 0.0
+		for _, term := range terms {
+			if strings.Contains(text, term) {
+				total += 0.5
+			}
+		}
+		if v := total / float64(len(terms)); v >= 0.3 {
+			s[i] = v
+		}
+	}
+	return s
+}
+
+func rawWords(text string) []string {
+	return strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) })
+}
+
+func TestReviewExperiment(t *testing.T) {
+	ctx := context.Background()
+	secs := loadSections(t, "../..")
+	rng := rand.New(rand.NewSource(1))
+	rng.Shuffle(len(secs), func(i, j int) { secs[i], secs[j] = secs[j], secs[i] })
+	if max := 8000; len(secs) > max {
+		secs = secs[:max]
+	}
+	if os.Getenv("SHORT") != "" {
+		for i := range secs {
+			if f := strings.Fields(secs[i].body); len(f) > 20 {
+				secs[i].body = strings.Join(f[:20], " ")
+			}
+		}
+	}
+	tok := NewBM25Embedder(BM25Config{})
+	tokens := make([][]string, len(secs))
+	lowered := make([]string, len(secs))
+	headingCount := map[string]int{}
+	for i, s := range secs {
+		tokens[i] = tok.tokenize(s.body)
+		lowered[i] = strings.ToLower(s.body)
+		headingCount[strings.ToLower(s.heading)]++
+	}
+	ref := newRef(tokens)
+
+	// Known-item queries: a heading unique in the corpus with at least three distinct tokens; the
+	// answer is the section under it. The heading itself is not in the document.
+	var queries []int
+	for i, s := range secs {
+		distinct := map[string]bool{}
+		for _, tk := range tok.tokenize(s.heading) {
+			distinct[tk] = true
+		}
+		if headingCount[strings.ToLower(s.heading)] == 1 && len(distinct) >= 3 {
+			queries = append(queries, i)
+		}
+	}
+	if len(queries) > 500 {
+		queries = queries[:500]
+	}
+	t.Logf("corpus: %d sections, %d distinct tokens, avg %.0f tokens; %d known-item queries",
+		len(secs), len(ref.postings), ref.avg, len(queries))
+
+	refTops := make([][]int, len(queries))
+	var refTally, containTally tally
+	for qi, target := range queries {
+		q := tok.tokenize(secs[target].heading)
+		sc := ref.scores(q)
+		refTops[qi] = topK(sc, 10)
+		refTally.add(sc, target, nil)
+	}
+	_ = containTally
+	t.Logf("%-46s %s", "real BM25 (inverted index)", refTally.String())
+
+	embedAll := func(e *BM25Embedder, order []int) [][]float32 {
+		vecs := make([][]float32, len(secs))
+		for _, i := range order {
+			v, err := e.Generate(ctx, []string{secs[i].body})
+			if err != nil {
+				t.Fatal(err)
+			}
+			vecs[i] = v[0]
+		}
+		return vecs
+	}
+	natural := make([]int, len(secs))
+	for i := range natural {
+		natural[i] = i
+	}
+	run := func(name string, qe *BM25Embedder, vecs [][]float32, wrap func(string) string) [][]int {
+		var tl tally
+		tops := make([][]int, len(queries))
+		for qi, target := range queries {
+			text := secs[target].heading
+			if wrap != nil {
+				text = wrap(text)
+			}
+			qv, err := qe.GenerateQuery(ctx, []string{text})
+			if err != nil {
+				t.Fatal(err)
+			}
+			sc := cosScores(qv[0], vecs)
+			tops[qi] = topK(sc, 10)
+			tl.add(sc, target, refTops[qi])
+		}
+		t.Logf("%-46s %s", name, tl.String())
+		return tops
+	}
+
+	for _, dim := range []int{384, 4096} {
+		e := NewBM25Embedder(BM25Config{Dimensions: dim})
+		vecs := embedAll(e, natural)
+		tops := run(fmt.Sprintf("shipped embedder, %d dims", dim), e, vecs, nil)
+		if dim != 384 {
+			continue
+		}
+		run("  same vectors, query after a restart", NewBM25Embedder(BM25Config{Dimensions: dim}), vecs, nil)
+		run("  same, question phrasing", e, vecs, func(h string) string { return "what is the " + h + "?" })
+
+		// Same corpus ingested in another order.
+		other := append([]int(nil), natural...)
+		rand.New(rand.NewSource(2)).Shuffle(len(other), func(i, j int) { other[i], other[j] = other[j], other[i] })
+		e2 := NewBM25Embedder(BM25Config{Dimensions: dim})
+		tops2 := run("  same corpus, another ingest order", e2, embedAll(e2, other), nil)
+		changedTop1, changedSet := 0, 0
+		for qi := range queries {
+			if len(tops[qi]) > 0 && len(tops2[qi]) > 0 && tops[qi][0] != tops2[qi][0] {
+				changedTop1++
+			}
+			a := map[int]bool{}
+			for _, d := range tops[qi] {
+				a[d] = true
+			}
+			for _, d := range tops2[qi] {
+				if !a[d] {
+					changedSet++
+					break
+				}
+			}
+		}
+		t.Logf("    ingest order alone changed the top hit for %d of %d queries, the top-10 set for %d",
+			changedTop1, len(queries), changedSet)
+
+		// Statistics learned from the whole corpus first, then every vector computed against them.
+		e3 := NewBM25Embedder(BM25Config{Dimensions: dim})
+		embedAll(e3, natural)
+		full := make([][]float32, len(secs))
+		for i := range secs {
+			v, _ := e3.GenerateQuery(ctx, []string{secs[i].body})
+			full[i] = v[0]
+		}
+		run("  vectors rebuilt against final statistics", e3, full, nil)
+
+		// Words that are in no document.
+		vocab := ref.postings
+		positives, queriesWithHits, maxSim := 0, 0, 0.0
+		const nonsense = 200
+		for i := 0; i < nonsense; i++ {
+			var words []string
+			for len(words) < 2 {
+				b := make([]byte, 7)
+				for j := range b {
+					b[j] = byte('a' + rng.Intn(26))
+				}
+				w := "q" + string(b) + "x"
+				if _, ok := vocab[stem(w)]; !ok {
+					words = append(words, w)
+				}
+			}
+			qv, _ := e.GenerateQuery(ctx, []string{strings.Join(words, " ")})
+			sc := cosScores(qv[0], vecs)
+			n := 0
+			for _, s := range sc {
+				if s > 0 {
+					n++
+					maxSim = math.Max(maxSim, s)
+				}
+			}
+			positives += n
+			if n > 0 {
+				queriesWithHits++
+			}
+		}
+		t.Logf("  made-up words in no document: %d of %d queries returned hits; %.0f docs above 0 on average (%.1f%% of the corpus); best similarity %.2f",
+			queriesWithHits, nonsense, float64(positives)/nonsense, 100*float64(positives)/nonsense/float64(len(secs)), maxSim)
+	}
+
+	var sub, subQ tally
+	for qi, target := range queries {
+		sub.add(substringScores(secs[target].heading, lowered), target, refTops[qi])
+		subQ.add(substringScores("what is the "+secs[target].heading+"?", lowered), target, refTops[qi])
+	}
+	t.Logf("%-46s %s", "graph-query substring rule, whole corpus", sub.String())
+	t.Logf("%-46s %s", "  same, question phrasing", subQ.String())
+
+	// Stemmer: a word and its plural should share a stem.
+	raw := map[string]bool{}
+	for _, s := range secs {
+		for _, w := range rawWords(s.body) {
+			raw[w] = true
+		}
+	}
+	pairs, split := 0, 0
+	var examples []string
+	var words []string
+	for w := range raw {
+		words = append(words, w)
+	}
+	sort.Strings(words)
+	for _, w := range words {
+		if len(w) < 4 || !raw[w+"s"] || stopwords[w] {
+			continue
+		}
+		pairs++
+		if stem(w) != stem(w+"s") {
+			split++
+			if len(examples) < 12 {
+				examples = append(examples, fmt.Sprintf("%s→%s / %ss→%s", w, stem(w), w, stem(w+"s")))
+			}
+		}
+	}
+	t.Logf("stemmer: %d of %d singular/plural pairs in the corpus get different stems, e.g. %s", split, pairs, strings.Join(examples, "; "))
+}

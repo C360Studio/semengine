@@ -1,0 +1,72 @@
+package embedding
+
+import (
+	"math/rand"
+	"strings"
+	"testing"
+	"unicode"
+)
+
+// sStem is Harman's plural-only stemmer.
+func sStem(w string) string {
+	n := len(w)
+	switch {
+	case n > 4 && strings.HasSuffix(w, "ies") && !strings.HasSuffix(w, "eies") && !strings.HasSuffix(w, "aies"):
+		return w[:n-3] + "y"
+	case n > 3 && strings.HasSuffix(w, "es") && !strings.HasSuffix(w, "aes") && !strings.HasSuffix(w, "ees") && !strings.HasSuffix(w, "oes"):
+		return w[:n-1]
+	case n > 3 && strings.HasSuffix(w, "s") && !strings.HasSuffix(w, "us") && !strings.HasSuffix(w, "ss"):
+		return w[:n-1]
+	}
+	return w
+}
+
+func tokens(text string, stemmer func(string) string, stop bool) []string {
+	var out []string
+	for _, w := range strings.FieldsFunc(strings.ToLower(text), func(r rune) bool { return !unicode.IsLetter(r) && !unicode.IsNumber(r) }) {
+		if stop && stopwords[w] {
+			continue
+		}
+		out = append(out, stemmer(w))
+	}
+	return out
+}
+
+func TestReviewTokenizers(t *testing.T) {
+	secs := loadSections(t, "../..")
+	rng := rand.New(rand.NewSource(1))
+	rng.Shuffle(len(secs), func(i, j int) { secs[i], secs[j] = secs[j], secs[i] })
+	secs = secs[:8000]
+	headingCount := map[string]int{}
+	for _, s := range secs {
+		headingCount[strings.ToLower(s.heading)]++
+	}
+	var queries []int
+	for i, s := range secs {
+		if headingCount[strings.ToLower(s.heading)] == 1 && len(strings.Fields(s.heading)) >= 3 && len(queries) < 1500 {
+			queries = append(queries, i)
+		}
+	}
+	id := func(w string) string { return w }
+	for _, v := range []struct {
+		name string
+		stem func(string) string
+		stop bool
+	}{
+		{"shipped stemmer, stopwords", stem, true},
+		{"no stemming, stopwords", id, true},
+		{"plural-only stemmer, stopwords", sStem, true},
+		{"plural-only stemmer, no stopword list", sStem, false},
+	} {
+		toks := make([][]string, len(secs))
+		for i, s := range secs {
+			toks[i] = tokens(s.body, v.stem, v.stop)
+		}
+		ref := newRef(toks)
+		var tl tally
+		for _, target := range queries {
+			tl.add(ref.scores(tokens(secs[target].heading, v.stem, v.stop)), target, nil)
+		}
+		t.Logf("%-40s %s", v.name, tl.String())
+	}
+}

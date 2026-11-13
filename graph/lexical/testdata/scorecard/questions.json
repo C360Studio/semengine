@@ -1,0 +1,312 @@
+{
+ "version": 1,
+ "corpus": "corpus.jsonl.gz: 2,000 sections of this repository's Markdown, frozen",
+ "grading": "see README.md",
+ "questions": [
+  {
+   "id": "P01",
+   "band": "phrase",
+   "args": {
+    "query": "\"go test -race\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?i)(^|[^\\pL\\pN])go[^\\pL\\pN]+test[^\\pL\\pN]+race([^\\pL\\pN]|$)",
+   "why": "A quoted flag stays whole: exactly the sections holding go, test and race next to each other in one field."
+  },
+  {
+   "id": "P02",
+   "band": "phrase",
+   "args": {
+    "query": "\"task verify\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?i)(^|[^\\pL\\pN])task[^\\pL\\pN]+verify([^\\pL\\pN]|$)",
+   "why": "A two-word command as a phrase: exactly the sections holding it."
+  },
+  {
+   "id": "P03",
+   "band": "phrase",
+   "args": {
+    "query": "\"-count=1\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?:(?:^|[^\\pL\\pN])[cC]|\\p{Ll}C)ounts?[^\\pL\\pN]+1(?:[^\\pL\\pN]|$)",
+   "why": "A quoted flag with a value: quoting keeps the leading - from excluding. The words count and 1 also stand next to each other in counts: [1 and in ErrorCount` +1, which the identifier split and the plural rule hold as count 1."
+  },
+  {
+   "id": "P04",
+   "band": "phrase",
+   "args": {
+    "query": "\"graph.ingest.query\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?i)(^|[^\\pL\\pN])graph[^\\pL\\pN]+ingest[^\\pL\\pN]+query([^\\pL\\pN]|$)",
+   "why": "A dotted subject as a phrase: its three parts in order."
+  },
+  {
+   "id": "P05",
+   "band": "phrase",
+   "args": {
+    "query": "\"time.Sleep\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?i)(^|[^\\pL\\pN])time[^\\pL\\pN]+sleep([^\\pL\\pN]|$)",
+   "why": "A dotted Go name as a phrase."
+  },
+  {
+   "id": "P06",
+   "band": "phrase",
+   "args": {
+    "query": "\"t.Parallel\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?i)(^|[^\\pL\\pN])t[^\\pL\\pN]+parallel([^\\pL\\pN]|$)",
+   "why": "A one-letter part is a word, so the phrase needs it."
+  },
+  {
+   "id": "P07",
+   "band": "phrase",
+   "args": {
+    "query": "\"retry classified\"",
+    "limit": 0
+   },
+   "expect_hits_match": "(?i)retry[^\\pL\\pN]*classified",
+   "why": "The parts of RequestWithRetryClassified are held as words; with is a stopword, so retry and classified stand next to each other."
+  },
+  {
+   "id": "P08",
+   "band": "phrase",
+   "args": {
+    "query": "\"quantum entanglement subsystem\""
+   },
+   "expect_no_hits": true,
+   "why": "A phrase no section holds finds nothing."
+  },
+  {
+   "id": "I01",
+   "band": "identifier",
+   "twin": "P07",
+   "args": {
+    "query": "withretry"
+   },
+   "expect_no_hits": true,
+   "why": "A joined identifier is not held: withRetry is held as retry alone, so its run-together spelling finds nothing."
+  },
+  {
+   "id": "I02",
+   "band": "identifier",
+   "args": {
+    "query": "RequestWithRetryClassified"
+   },
+   "expect_top_all": [
+    "RequestWithRetryClassified"
+   ],
+   "why": "An identifier typed whole is split as the text was, so the sections naming it rank first."
+  },
+  {
+   "id": "I03",
+   "band": "identifier",
+   "args": {
+    "query": "ValidateEntityID"
+   },
+   "expect_any": [
+    "ValidateEntityID"
+   ],
+   "why": "An identifier typed whole finds the sections naming it."
+  },
+  {
+   "id": "I04",
+   "band": "identifier",
+   "twin": "I03",
+   "args": {
+    "query": "validate entity id"
+   },
+   "expect_any": [
+    "ValidateEntityID"
+   ],
+   "why": "The words of an identifier, typed apart, find the sections naming it."
+  },
+  {
+   "id": "X01",
+   "band": "exclusion",
+   "twin": "X02",
+   "args": {
+    "query": "retry backoff -test",
+    "limit": 0
+   },
+   "expect_none": [
+    "_test.go"
+   ],
+   "expect_ids": [
+    "c360.semengine.pkg.markdown.section.s0058",
+    "c360.semengine.pkg.markdown.section.s1260"
+   ],
+   "expect_no_ids": [
+    "c360.semengine.openspec.markdown.section.s0033",
+    "c360.semengine.openspec.markdown.section.s0717"
+   ],
+   "why": "An excluded word removes rather than demotes: no section holding test survives, so no hit names a _test.go file."
+  },
+  {
+   "id": "X02",
+   "band": "exclusion",
+   "args": {
+    "query": "retry backoff",
+    "limit": 0
+   },
+   "expect_any": [
+    "_test.go"
+   ],
+   "expect_ids": [
+    "c360.semengine.openspec.markdown.section.s0033",
+    "c360.semengine.openspec.markdown.section.s0717",
+    "c360.semengine.pkg.markdown.section.s0058",
+    "c360.semengine.pkg.markdown.section.s1260"
+   ],
+   "why": "Without the exclusion the sections naming _test.go are found, so X01 removes something."
+  },
+  {
+   "id": "X03",
+   "band": "exclusion",
+   "twin": "X04",
+   "args": {
+    "query": "natsfixture -\"t.Parallel\"",
+    "limit": 0
+   },
+   "expect_none": [
+    "t.Parallel"
+   ],
+   "why": "An excluded phrase removes every section holding it."
+  },
+  {
+   "id": "X04",
+   "band": "exclusion",
+   "args": {
+    "query": "natsfixture",
+    "limit": 0
+   },
+   "expect_any": [
+    "t.Parallel"
+   ],
+   "why": "Without the exclusion some hits hold t.Parallel, so X03 removes something."
+  },
+  {
+   "id": "X05",
+   "band": "exclusion",
+   "twin": "P01",
+   "args": {
+    "query": "go test -race",
+    "limit": 0
+   },
+   "expect_no_ids": [
+    "c360.semengine.openspec.markdown.section.s0061",
+    "c360.semengine.openspec.markdown.section.s0063"
+   ],
+   "why": "Unquoted, a single leading - excludes: a section holding go test -race is removed."
+  },
+  {
+   "id": "X06",
+   "band": "exclusion",
+   "twin": "X05",
+   "args": {
+    "query": "go test --race",
+    "limit": 0
+   },
+   "expect_ids": [
+    "c360.semengine.openspec.markdown.section.s0061",
+    "c360.semengine.openspec.markdown.section.s0063"
+   ],
+   "why": "A double - is text, not an exclusion: the same sections are found."
+  },
+  {
+   "id": "W01",
+   "band": "plural",
+   "args": {
+    "query": "caches",
+    "limit": 0
+   },
+   "expect_ids": [
+    "c360.semengine.openspec.markdown.section.s0005"
+   ],
+   "why": "A plural query finds a section holding only the singular."
+  },
+  {
+   "id": "W02",
+   "band": "plural",
+   "args": {
+    "query": "indexes",
+    "limit": 0
+   },
+   "expect_ids": [
+    "c360.semengine.openspec.markdown.section.s0005"
+   ],
+   "why": "A plural in es after x finds a section holding only index."
+  },
+  {
+   "id": "W03",
+   "band": "plural",
+   "args": {
+    "query": "index",
+    "limit": 0
+   },
+   "expect_ids": [
+    "c360.semengine.openspec.markdown.section.s1516"
+   ],
+   "why": "A singular query finds the one section holding only indexes."
+  },
+  {
+   "id": "S01",
+   "band": "scope",
+   "args": {
+    "query": "natsfixture",
+    "limit": 0,
+    "scope": [
+     "c360.semengine.docs"
+    ]
+   },
+   "expect_ids": [
+    "c360.semengine.docs.markdown.section.s0923"
+   ],
+   "expect_no_ids": [
+    "c360.semengine.openspec.markdown.section.s0003"
+   ],
+   "why": "Scope keeps hits under its prefix: the docs section is found, an openspec section holding the word is not."
+  },
+  {
+   "id": "N01",
+   "band": "negative",
+   "args": {
+    "query": "zzquuxfrobnicator"
+   },
+   "expect_no_hits": true,
+   "why": "A word no section holds finds nothing."
+  },
+  {
+   "id": "R01",
+   "band": "refused",
+   "args": {
+    "query": "the and of"
+   },
+   "expect_error": "empty",
+   "why": "A query of stopwords alone has nothing to search for."
+  },
+  {
+   "id": "R02",
+   "band": "refused",
+   "args": {
+    "query": "retr*"
+   },
+   "expect_error": "reserved",
+   "why": "A trailing * is kept for a later prefix form."
+  },
+  {
+   "id": "R03",
+   "band": "refused",
+   "args": {
+    "query": "name:retry"
+   },
+   "expect_error": "reserved",
+   "why": "A field prefix is kept for a later field-scoped form."
+  }
+ ]
+}

@@ -1,0 +1,8 @@
+go test ./graph/embedding -run TestReviewAndQueries -v -count=1   (commit 2853486d, a scratch copy from git archive,
+  with retrieval-probe.go.txt and tokenizer-probe-2.go.txt beside and-query-probe.go.txt; go1.26.11 darwin/arm64)
+
+1500 known-item queries; the answer holds every query word for 98 (6.5%)
+
+The same 1,500 queries as tokenizer-probe, tokenized with the 30-word list and the probe's plural+es stemmer (see
+tokenizer-probe-2.log; not the shipped rules): if every plain word were required, at most 6.5% of these questions
+could find their answer at all.

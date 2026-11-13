@@ -1,0 +1,113 @@
+package embedding
+
+import (
+	"bufio"
+	"compress/gzip"
+	"encoding/json"
+	"math"
+	"os"
+	"testing"
+)
+
+type refBM25 struct {
+	postings map[string][]posting
+	docLen   []int
+	avg      float64
+}
+type posting struct{ doc, tf int }
+func newRef(tokens [][]string) *refBM25 {
+	r := &refBM25{postings: map[string][]posting{}, docLen: make([]int, len(tokens))}
+	total := 0
+	for d, toks := range tokens {
+		r.docLen[d] = len(toks)
+		total += len(toks)
+		tf := map[string]int{}
+		for _, tk := range toks {
+			tf[tk]++
+		}
+		for tk, n := range tf {
+			r.postings[tk] = append(r.postings[tk], posting{d, n})
+		}
+	}
+	r.avg = float64(total) / float64(len(tokens))
+	return r
+}
+func (r *refBM25) scores(query []string) []float64 {
+	const k1, b = 1.2, 0.75
+	s := make([]float64, len(r.docLen))
+	seen := map[string]bool{}
+	n := float64(len(r.docLen))
+	for _, q := range query {
+		if seen[q] {
+			continue
+		}
+		seen[q] = true
+		ps := r.postings[q]
+		if len(ps) == 0 {
+			continue
+		}
+		df := float64(len(ps))
+		idf := math.Log(1 + (n-df+0.5)/(df+0.5))
+		for _, p := range ps {
+			tf := float64(p.tf)
+			s[p.doc] += idf * tf * (k1 + 1) / (tf + k1*(1-b+b*float64(r.docLen[p.doc])/r.avg))
+		}
+	}
+	return s
+}
+func rankOf(scores []float64, target int) int {
+	ts := scores[target]
+	if ts <= 0 {
+		return 0
+	}
+	rank := 1
+	for i, s := range scores {
+		if s > ts || (s == ts && i < target) {
+			rank++
+		}
+	}
+	return rank
+}
+
+func TestRefOnScorecard(t *testing.T) {
+	dir := os.Getenv("SC")
+	f, _ := os.Open(dir + "/corpus.jsonl.gz")
+	zr, _ := gzip.NewReader(f)
+	sc := bufio.NewScanner(zr)
+	sc.Buffer(nil, 1<<20)
+	tok := NewBM25Embedder(BM25Config{})
+	var toks [][]string
+	idx := map[string]int{}
+	for sc.Scan() {
+		var m map[string]string
+		_ = json.Unmarshal(sc.Bytes(), &m)
+		idx[m["id"]] = len(toks)
+		text := m["body"]
+		if os.Getenv("WITHNAME") != "" {
+			text = m["name"] + "\n" + text
+		}
+		toks = append(toks, tok.tokenize(text))
+	}
+	var qs []struct{ Query, ID string }
+	b, _ := os.ReadFile(dir + "/known.json")
+	_ = json.Unmarshal(b, &qs)
+	ref := newRef(toks)
+	var r1, r10 int
+	var mrr float64
+	for _, q := range qs {
+		r := rankOf(ref.scores(tok.tokenize(q.Query)), idx[q.ID])
+		if r > 0 {
+			mrr += 1 / float64(r)
+			if r == 1 {
+				r1++
+			}
+			if r <= 10 {
+				r10++
+			}
+		}
+	}
+	n := float64(len(qs))
+	t.Logf("probe reference BM25 (embedder tokens) withname=%q: R@1 %5.1f%%  R@10 %5.1f%%  MRR %.3f  n=%d docs=%d",
+		os.Getenv("WITHNAME"), 100*float64(r1)/n, 100*float64(r10)/n, mrr/n, len(qs), len(toks))
+	_ = math.Log
+}

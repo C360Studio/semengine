@@ -67,6 +67,7 @@ var d11Targets = []struct{ dir, kind string }{
 	{"graph/clustering", "unit"},
 	{"pkg/fusion", "unit"},
 	{"pkg/fusion/fusionnats", "unit"},
+	{"graph/lexical", "unit"},
 }
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced

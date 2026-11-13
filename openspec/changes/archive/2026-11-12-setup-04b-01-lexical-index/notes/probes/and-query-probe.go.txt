@@ -1,0 +1,43 @@
+package embedding
+
+import (
+	"math/rand"
+	"strings"
+	"testing"
+)
+
+// TestReviewAndQueries measures how often a known-item query's answer holds every query word,
+// which is the most an all-words-required query could reach.
+func TestReviewAndQueries(t *testing.T) {
+	secs := loadSections(t, "../..")
+	rng := rand.New(rand.NewSource(1))
+	rng.Shuffle(len(secs), func(i, j int) { secs[i], secs[j] = secs[j], secs[i] })
+	secs = secs[:8000]
+	headingCount := map[string]int{}
+	for _, s := range secs {
+		headingCount[strings.ToLower(s.heading)]++
+	}
+	stopList = stop30
+	n, all := 0, 0
+	for _, s := range secs {
+		if headingCount[strings.ToLower(s.heading)] != 1 || len(strings.Fields(s.heading)) < 3 || n >= 1500 {
+			continue
+		}
+		n++
+		held := map[string]bool{}
+		for _, w := range tokens(s.body, esStem, true) {
+			held[w] = true
+		}
+		ok := true
+		for _, w := range tokens(s.heading, esStem, true) {
+			if !held[w] {
+				ok = false
+				break
+			}
+		}
+		if ok {
+			all++
+		}
+	}
+	t.Logf("%d known-item queries; the answer holds every query word for %d (%.1f%%)", n, all, 100*float64(all)/float64(n))
+}

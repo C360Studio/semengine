@@ -1,0 +1,134 @@
+package scratchtok
+
+import (
+	"strings"
+	"unicode"
+)
+
+var stop = map[string]bool{}
+
+func init() {
+	for _, w := range strings.Fields("the a an and or but in on at to for of with by from as is was are be has have had do does did will would could should") {
+		stop[w] = true
+	}
+}
+
+const maxBytes = 32
+
+func isWord(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
+
+// splitIdent splits at lower-to-upper and before the last capital of a capital run followed by lower case.
+func splitIdent(run string) []string {
+	rs := []rune(run)
+	var out []string
+	start := 0
+	for i := 1; i < len(rs); i++ {
+		a, b := rs[i-1], rs[i]
+		next := rune(0)
+		if i+1 < len(rs) {
+			next = rs[i+1]
+		}
+		if (unicode.IsLower(a) && isCap(b)) || (isCap(a) && isCap(b) && unicode.IsLower(next)) {
+			out = append(out, string(rs[start:i]))
+			start = i
+		}
+	}
+	return append(out, string(rs[start:]))
+}
+
+// isCap reports a capital: a letter that lower-casing changes. A letter with no lower-case form is not one, so
+// tokenizing lower-cased words never splits them again.
+func isCap(r rune) bool { return unicode.ToLower(r) != r }
+
+func endsAfterSibilant(stem string) bool {
+	return strings.HasSuffix(stem, "ss") || strings.HasSuffix(stem, "x") || strings.HasSuffix(stem, "ch") || strings.HasSuffix(stem, "sh")
+}
+
+func Fold(w string) string {
+	n := len(w)
+	switch {
+	case n > 4 && strings.HasSuffix(w, "es") && endsAfterSibilant(w[:n-2]):
+		return w[:n-2]
+	case n > 3 && strings.HasSuffix(w, "e") && endsAfterSibilant(w[:n-1]):
+		return w[:n-1]
+	case n > 4 && strings.HasSuffix(w, "ies") && !strings.HasSuffix(w, "eies") && !strings.HasSuffix(w, "aies"):
+		return w[:n-3] + "y"
+	case n > 3 && strings.HasSuffix(w, "es") && !strings.HasSuffix(w, "aes") && !strings.HasSuffix(w, "ees") && !strings.HasSuffix(w, "oes"):
+		return w[:n-1]
+	case n > 3 && strings.HasSuffix(w, "s") && !strings.HasSuffix(w, "us") && !strings.HasSuffix(w, "ss"):
+		return w[:n-1]
+	}
+	return w
+}
+
+func Tokens(text string) []string {
+	var out []string
+	for _, run := range strings.FieldsFunc(text, func(r rune) bool { return !isWord(r) }) {
+		for _, part := range splitIdent(run) {
+			// Lower-casing can add a combining mark (U+0130 becomes i + U+0307), so split again.
+			for _, w := range strings.FieldsFunc(strings.ToLower(part), func(r rune) bool { return !isWord(r) }) {
+				f := Fold(w)
+				if stop[w] || stop[f] || len(f) > maxBytes {
+					continue
+				}
+				out = append(out, f)
+			}
+		}
+	}
+	return out
+}
+
+// ---- tok_test.go ----
+
+package scratchtok
+
+import (
+	"reflect"
+	"strings"
+	"testing"
+)
+
+func TestWitnesses(t *testing.T) {
+	cases := map[string]string{
+		"withRetry HTTPServer graph.query.status docker compose down -v pump-7 Services": "retry http server graph query status docker compose down v pump 7 service",
+		"wills does haves ands ares thes fors withs":                                    "",
+		"withRetry not found":                                                           "retry not found",
+		"TestComponentManagerStopAfterProviderFailureDoesNotWaitForUnlaunchedSupervisor 8b99efe9c66a4faa4fa509f9f62cc6bad8392128": "test component manager stop after provider failure not wait unlaunched supervisor",
+	}
+	for in, want := range cases {
+		got := strings.Join(Tokens(in), " ")
+		if got != want {
+			t.Errorf("Tokens(%q) = %q, want %q", in, got, want)
+		}
+	}
+	same := [][2]string{{"service", "services"}, {"query", "queries"}, {"class", "classes"}, {"match", "matches"}, {"box", "boxes"}, {"hash", "hashes"}, {"cache", "caches"}, {"index", "indexes"}, {"process", "processes"}, {"address", "addresses"}}
+	for _, p := range same {
+		if !reflect.DeepEqual(Tokens(p[0]), Tokens(p[1])) {
+			t.Errorf("%v do not fold together: %v %v", p, Tokens(p[0]), Tokens(p[1]))
+		}
+	}
+	apart := [][2]string{{"bus", "buses"}, {"status", "statuses"}, {"cookie", "cookies"}}
+	for _, p := range apart {
+		if reflect.DeepEqual(Tokens(p[0]), Tokens(p[1])) {
+			t.Errorf("%v fold together", p)
+		}
+	}
+}
+
+func FuzzTokens(f *testing.F) {
+	for _, s := range []string{"withRetry", "wills does", "İstanbul", "ǅemal", "HTTPServer", "a.b-c", "Straße", "ﬁle", "ΣΑΣ", "x́y"} {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, s string) {
+		ws := Tokens(s)
+		for _, w := range ws {
+			if w == "" || len(w) > maxBytes || strings.ToLower(w) != w || strings.IndexFunc(w, func(r rune) bool { return !isWord(r) }) >= 0 {
+				t.Fatalf("Tokens(%q) gave bad word %q", s, w)
+			}
+		}
+		again := Tokens(strings.Join(ws, " "))
+		if !reflect.DeepEqual(ws, again) && !(len(ws) == 0 && len(again) == 0) {
+			t.Fatalf("Tokens(%q) = %q; again %q", s, ws, again)
+		}
+	})
+}

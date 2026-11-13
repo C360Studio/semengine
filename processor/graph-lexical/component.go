@@ -256,23 +256,20 @@ func (c *Component) deliver(_ context.Context, e follower.Entry) {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does nothing,
-// and a Stop whose context ends first returns that context's error and keeps what is left for the
-// next Stop.
+// and any non-nil Stop on a started component starts every teardown step, waits for them only as
+// long as its context allows, and keeps what has not finished for the next Stop.
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start. It drains the query subscriptions first, so no handler is running. Then it ends
-// the run context and joins the follower's Run and the body path, so nothing more is delivered
-// or read. A read in flight ends by its own deadline at the latest. A ctx that ends first returns
-// its error with the handles kept, and the next Stop resumes.
+// partial start. It starts every query subscription's drain and ends the run context whatever ctx
+// says, so the follower and the body path stop even when ctx has already ended, then waits up to
+// ctx for them to return. A read in flight ends by its own deadline at the latest. A ctx that ends
+// before everything has returned gives its error with the handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
 	// Drain returns once every running handler has returned.
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
@@ -281,8 +278,10 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-c.stopped:
 		case <-ctx.Done():
-			return ctx.Err()
 		}
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	c.runCancel, c.stopped, c.subscriptions = nil, nil, nil
 	return nil

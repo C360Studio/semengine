@@ -111,3 +111,31 @@ func TestGraphLexicalLifecycleSuite(t *testing.T) {
 			func(n int) bool { return n == 0 })
 	})
 }
+
+// TestStopWithEndedContextEndsTheRunAndRetries checks that a Stop whose context has already ended
+// still ends the run context, so the follower and the body path stop, and that it keeps its
+// handles so a later Stop with a live context joins and releases them. A component manager hands
+// every remaining component an ended context once a shared stop budget is spent.
+func TestStopWithEndedContextEndsTheRunAndRetries(t *testing.T) {
+	client := fixtureClient(t)
+	ensureEntityStates(t, client)
+	c := startLexical(t, client, metric.NewMetricsRegistry(), nil)
+	stopped := c.stopped
+
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
+	if err := c.Stop(ended); !errors.Is(err, context.Canceled) {
+		t.Fatalf("Stop(ended) = %v, want context.Canceled", err)
+	}
+	// stopped closes once the follower's Run and the body path have returned, which they do only
+	// after the run context ends; go test -timeout is the deadline.
+	<-stopped
+	if held := (suiteOwner{c}).Observe().Unresolved; len(held) == 0 {
+		t.Fatalf("Stop(ended) released its handles; a later Stop has nothing to join")
+	}
+
+	stopComponent(t, c)
+	if held := (suiteOwner{c}).Observe().Unresolved; len(held) != 0 {
+		t.Fatalf("held after a live Stop = %v, want nothing", held)
+	}
+}

@@ -16,12 +16,12 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// minLocalSearchScore is the score an entity needs to match: the pin's 0.3 (graphrag.go), a constant
-// here, since min_text_relevance stays refused (design D5).
+// minLocalSearchScore is the score an entity needs to match: a constant, since min_text_relevance
+// stays refused.
 const minLocalSearchScore = 0.3
 
-// decodeLocalSearchRequest decodes strictly and checks every field, before any read (design D4). It
-// returns the query's terms: lowercased, split on white space, each once, in the order first typed.
+// decodeLocalSearchRequest decodes strictly and checks every field, before any read. It returns the
+// query's terms: lowercased, split on white space, each once, in the order first typed.
 func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, []string, error) {
 	var request graph.LocalSearchRequest
 	if err := decodeStrict(data, &request); err != nil {
@@ -42,7 +42,7 @@ func decodeLocalSearchRequest(data []byte) (graph.LocalSearchRequest, []string, 
 }
 
 // checkedSearchTerms is searchTerms, refusing a query that holds no term or more than
-// graph.MaxSearchTerms: the check localSearch and the text tier share (design D3).
+// graph.MaxSearchTerms: the check localSearch and the text tier share.
 func checkedSearchTerms(query string) ([]string, error) {
 	terms := searchTerms(query)
 	if len(terms) == 0 {
@@ -54,9 +54,10 @@ func checkedSearchTerms(query string) ([]string, error) {
 	return terms, nil
 }
 
-// searchTerms splits query as the pin did (graphrag.go:2327), then removes repeats: at the pin a repeated
-// term weighed twice, so how a query was typed changed who matched (design D4). It stops at the first
-// distinct term over graph.MaxSearchTerms, so a long query costs a bounded scan, never a quadratic one.
+// searchTerms lowercases query and splits it on white space, then removes repeats: a repeated term
+// would weigh twice, so how a query is typed would change who matches. It stops at the first
+// distinct term over graph.MaxSearchTerms, so a long query costs a bounded scan, never a quadratic
+// one.
 func searchTerms(query string) []string {
 	var terms []string
 	for term := range strings.FieldsSeq(strings.ToLower(query)) {
@@ -89,9 +90,9 @@ func decodeSearchEntity(raw json.RawMessage) (searchEntity, error) {
 	return entity, nil
 }
 
-// score is the pin's text score (graphrag.go:2360-2397): per term, 1.0 when it equals the ID's type
-// position, else 0.5 when it is within a predicate or a string value, all lowercased; the sum over the
-// term count. An ID that does not parse has no type, as at the pin.
+// score is the text score: per term, 1.0 when it equals the ID's type position, else 0.5 when it is
+// within a predicate or a string value, all lowercased; the sum over the term count. An ID that
+// does not parse has no type.
 func (e searchEntity) score(terms []string) float64 {
 	if len(terms) == 0 {
 		return 0
@@ -124,8 +125,8 @@ func (e searchEntity) score(terms []string) float64 {
 }
 
 // label is the first non-empty string value, in triple order, of the first of predicates the entity
-// holds one for (design D4): predicates is the label set, most salient first (labelOrder). An entity
-// with none has no label.
+// holds one for: predicates is the label set, most salient first (labelOrder). An entity with none
+// has no label.
 func (e searchEntity) label(predicates []string) string {
 	for _, predicate := range predicates {
 		for _, triple := range e.Triples {
@@ -152,9 +153,9 @@ func compareRanked(a, b rankedEntity) int {
 	return cmp.Or(cmp.Compare(b.score, a.score), cmp.Compare(a.id, b.id))
 }
 
-// rankEntities returns the page's entities scoring at least minLocalSearchScore, best first, ties by
-// entity ID, each labelled from labels (nil for no label), and the number of distinct entities read.
-// An ID the page repeats (#512) is read once, its first copy. An entity that does not decode is
+// rankEntities returns the page's entities scoring at least minLocalSearchScore, best first, ties
+// by entity ID, each labelled from labels (nil for no label), and the number of distinct entities
+// read. An ID the page repeats is read once, its first copy. An entity that does not decode is
 // refused, not skipped.
 func rankEntities(page []json.RawMessage, terms, labels []string) ([]rankedEntity, int, error) {
 	seen := make(map[string]bool, len(page))
@@ -176,8 +177,8 @@ func rankEntities(page []json.RawMessage, terms, labels []string) ([]rankedEntit
 	return matches, len(seen), nil
 }
 
-// localSearchAnswer is the answer text (design D5), {n} being the entities in the reply. A record's
-// summary already states its member count and themes, so they are written only when it has none.
+// localSearchAnswer is the answer text, {n} being the entities in the reply. A record's summary
+// already states its member count and themes, so they are written only when it has none.
 func localSearchAnswer(data graph.LocalSearchData) string {
 	answer := fmt.Sprintf("Found %d matching entities among %d read from %s.",
 		len(data.Entities), data.EntitiesScanned, data.CommunityID)
@@ -191,9 +192,9 @@ func localSearchAnswer(data graph.LocalSearchData) string {
 	return answer
 }
 
-// fitLocalSearch encodes data, with its answer, keeping the most of its best entities whose encoding is at
-// most limit bytes; leaving any out sets EntitiesTruncated (design D5). It also reports whether the
-// encoded answer is truncated. It refuses when even no entities do not fit.
+// fitLocalSearch encodes data, with its answer, keeping the most of its best entities whose
+// encoding is at most limit bytes; leaving any out sets EntitiesTruncated. It also reports whether
+// the encoded answer is truncated. It refuses when even no entities do not fit.
 func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.LocalSearchData) ([]byte, error)) ([]byte, bool, error) {
 	all := data.Entities
 	encoded, cut, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {
@@ -206,10 +207,10 @@ func fitLocalSearch(data graph.LocalSearchData, limit int, encode func(graph.Loc
 	return encoded, data.EntitiesTruncated || cut, err
 }
 
-// fitFirst returns encodeFirst(n) for the largest n up to count whose encoding is at most limit bytes,
-// and whether that n is below count. An encoding shrinks as items are left out, so n is found by
-// bisection. It refuses when even encodeFirst(0) does not fit. localSearch and the text search share
-// it (design D4).
+// fitFirst returns encodeFirst(n) for the largest n up to count whose encoding is at most limit
+// bytes, and whether that n is below count. An encoding shrinks as items are left out, so n is
+// found by bisection. It refuses when even encodeFirst(0) does not fit. localSearch and the text
+// search share it.
 func fitFirst(count, limit int, encodeFirst func(n int) ([]byte, error)) ([]byte, bool, error) {
 	encoded, err := encodeFirst(count)
 	if err != nil {
@@ -240,14 +241,14 @@ func fitFirst(count, limit int, encodeFirst func(n int) ([]byte, error)) ([]byte
 }
 
 // localSearch answers from the record of entity_id's group at level, then one page of the group
-// (design D2, D5, D6). Every check of the request comes before any read. A view that is missing,
-// catching up, lost or stopped refuses index_not_ready, transient, without an error in Health. With no
-// record, the entity is read: when it exists, the group is not yet indexed; when it does not, the
-// entity verb's refusal is the answer, since no index state makes it exist. An unreadable record is
-// refused transient internal naming its key, and counts as an error. min_revision is compared with the
-// record's entity_revision, the reply's indexed_revision, before the page is read, so the page reflects
-// at least as much as the revision claimed. A request is one input and at most one error, as for the
-// other composed verbs.
+// Every check of the request comes before any read. A view that is missing, catching up, lost or
+// stopped refuses index_not_ready, transient, without an error in Health. With no record, the
+// entity is read: when it exists, the group is not yet indexed; when it does not, the entity verb's
+// refusal is the answer, since no index state makes it exist. An unreadable record is refused
+// transient internal naming its key, and counts as an error. min_revision is compared with the
+// record's entity_revision, the reply's indexed_revision, before the page is read, so the page
+// reflects at least as much as the revision claimed. A request is one input and at most one error,
+// as for the other composed verbs.
 func (c *Component) localSearch(entitySubject, prefixSubject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))

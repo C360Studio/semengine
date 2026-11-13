@@ -43,27 +43,28 @@
 // ends the view. semengine_graph_query_search_truncated_total counts localSearch and text search answers
 // that were cut short.
 //
-// globalSearch, and searchGraph, which is the same handler under a second name with the same data, choose
-// one strategy from the question and answer with it. A question of one word is an
-// entity reference, resolved as entityByAlias resolves it (the alias verb, else a valid entity ID) and
-// answered with the entity verb's reply. Any longer question is classified once by the keyword tier of
-// graph/query, and a strategy answers only when its hint is the question's only hint: a path from a
-// start (the pathSearch walk, both directions, depth 3, 100 entities), a time range (the time-range verb)
-// or an area (the bounds verb). Two of those, an entity beside a zone or area, an impossible number, a
-// count or other aggregation, and path words, a similarity or a ranking beside a start, a time range or an
-// area are refused invalid_request, and a named path start that names no entity is entity_not_found. Every
-// other question is the text strategy: no hint, path words with no start, a similarity or a ranking alone,
-// and a one-word name that names no entity. It scores the COMMUNITY_INDEX records at the request's level
-// against the question's words, reads one page of each of the best five scoring above 0, and replies with
-// the matching entities (id, label, score, the entity as graph-ingest sent it), the groups read, the hints it
-// could not apply (unhonoured_hints) and a plain answer. The matches are a sample, and entities_truncated says
-// so. Its indexed_revision is the highest entity_revision among the level's readable records. A view that is
-// not usable, or a level with no record, is transient index_not_ready; some unreadable records are an
-// answer that says so, one Health error and one Warn. A refusal from the alias or entity verb reaches the
-// caller as it arrived. Until change 7 brings their responders, the time-range and bounds strategies are
-// refused transient internal, naming the subject. The keyword classifier's limits stay its own and are
-// tracked in #535: "from A to B" walks from A, and the refusal of a second place can be wrong for a
-// hyphenated word such as "real-time".
+// globalSearch, and searchGraph, which is the same handler under a second name with the same data,
+// choose one strategy from the question and answer with it. A question of one word is an entity
+// reference, resolved as entityByAlias resolves it (the alias verb, else a valid entity ID) and
+// answered with the entity verb's reply. Any longer question is classified once by the keyword tier
+// of graph/query, and a strategy answers only when its hint is the question's only hint: a path
+// from a start (the pathSearch walk, both directions, depth 3, 100 entities), a time range (the
+// time-range verb) or an area (the bounds verb). Two of those, an entity beside a zone or area, an
+// impossible number, a count or other aggregation, and path words, a similarity or a ranking beside
+// a start, a time range or an area are refused invalid_request, and a named path start that names
+// no entity is entity_not_found. Every other question is the text strategy: no hint, path words
+// with no start, a similarity or a ranking alone, and a one-word name that names no entity. It
+// scores the COMMUNITY_INDEX records at the request's level against the question's words, reads one
+// page of each of the best five scoring above 0, and replies with the matching entities (id, label,
+// score, the entity as graph-ingest sent it), the groups read, the hints it could not apply
+// (unhonoured_hints) and a plain answer. The matches are a sample, and entities_truncated says so.
+// Its indexed_revision is the highest entity_revision among the level's readable records. A view
+// that is not usable, or a level with no record, is transient index_not_ready; some unreadable
+// records are an answer that says so, one Health error and one Warn. A refusal from the alias or
+// entity verb reaches the caller as it arrived. Until their responders are in the tree, the
+// time-range and bounds strategies are refused transient internal, naming the subject. The keyword
+// classifier's limits stay its own: "from A to B" walks from A, and the refusal of a second place
+// can be wrong for a hyphenated word such as "real-time".
 //
 // An empty configuration is enough. The one thing a configuration may set is query_timeout_ms, the
 // deadline on the reply to each downstream request in milliseconds, default 15000. It does not end a

@@ -40,11 +40,10 @@ func stubPrefix(t *testing.T, client *natsclient.Client, more *atomic.Bool) {
 	})
 }
 
-// TestTruncatedSearchIsCounted: each localSearch, globalSearch or searchGraph answer cut short adds one to
-// semengine_graph_query_search_truncated_total for the verb asked, read as a literal value from the
-// injected registry, and an answer that is whole, or a request refused, adds none (step 3 design D6;
-// step 5 design D4). A nil registry registers nothing on Prometheus' global registry, and the searches
-// still answer.
+// TestTruncatedSearchIsCounted: each localSearch, globalSearch or searchGraph answer cut short adds
+// one to semengine_graph_query_search_truncated_total for the verb asked, read as a literal value
+// from the injected registry, and an answer that is whole, or a request refused, adds none. A nil
+// registry registers nothing on Prometheus' global registry, and the searches still answer.
 func TestTruncatedSearchIsCounted(t *testing.T) {
 	const request = `{"entity_id":"` + drone1 + `","query":"drone"}`
 
@@ -80,7 +79,7 @@ func TestTruncatedSearchIsCounted(t *testing.T) {
 		}
 	})
 
-	// searchGraph is globalSearch's handler under its own name, counted under that name (design D7).
+	// searchGraph is globalSearch's handler under its own name, counted under that name.
 	for _, verb := range []string{"globalSearch", "searchGraph"} {
 		t.Run(verb, func(t *testing.T) {
 			client := fixtureClient(t)

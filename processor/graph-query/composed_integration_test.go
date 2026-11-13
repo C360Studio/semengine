@@ -200,11 +200,11 @@ func requireRefusal(t *testing.T, reply []byte, err error, class errs.ErrorClass
 }
 
 // spyOnEntityVerb watches every request the entity verb receives, on the connection every component
-// here shares. The returned check fails if one arrived. It sends a marker on the same connection and
-// reads what the spy saw first: NATS orders one connection's messages, so a request graph-query sent
-// before it replied reaches the spy before the marker. That order, at the pinned versions, is shown by
-// the "second request" row in notes/3.3.md; across versions it is not promised here. The marker is
-// refused, which nothing reads.
+// here shares. The returned check fails if one arrived. It sends a marker on the same connection
+// and reads what the spy saw first: NATS orders one connection's messages, so a request graph-query
+// sent before it replied reaches the spy before the marker. That order is shown at the pinned
+// versions by TestEntityByAlias, which fails through this spy when graph-query sends a request it
+// must not; across versions it is not promised here. The marker is refused, which nothing reads.
 func spyOnEntityVerb(t *testing.T, client *natsclient.Client) func() {
 	t.Helper()
 	subject := verbRow(t, graph.ResponderGraphIngest, "entity").Subject
@@ -226,10 +226,10 @@ func spyOnEntityVerb(t *testing.T, client *natsclient.Client) func() {
 	}
 }
 
-// TestEntityByAlias: the alias verb is asked first and its refusals reach the caller; a holder is read,
-// an unheld valid ID is read as itself, an unheld non-ID is not found, and the reply wraps the entity
-// verb's JSON with the alias reply's revision (design D4, ADR-114). Real ingest and index where a
-// real one can produce the case; stubs for the rows D4 names, and for reply bytes no real ingest
+// TestEntityByAlias: the alias verb is asked first and its refusals reach the caller; a holder is
+// read, an unheld valid ID is read as itself, an unheld non-ID is not found, and the reply wraps
+// the entity verb's JSON with the alias reply's revision (ADR-114). Real ingest and index where a
+// real one can produce the case; stubs for the other cases, and for reply bytes no real ingest
 // sends.
 func TestEntityByAlias(t *testing.T) {
 	t.Run("real ingest and index", testEntityByAliasReal)
@@ -571,7 +571,8 @@ func TestRelationshipsEnvelopeKeepsIndexRevision(t *testing.T) {
 }
 
 // TestRelationshipsRefusesUnknownDirection: a direction that is not exactly outgoing or incoming is
-// invalid_request and no index verb receives a request; the pin read all of these as outgoing.
+// invalid_request and no index verb receives a request: reading any of these as outgoing would
+// silently answer another question, half the links for "both" or none.
 func TestRelationshipsRefusesUnknownDirection(t *testing.T) {
 	client := fixtureClient(t)
 	startComponent(t, client, `{}`)

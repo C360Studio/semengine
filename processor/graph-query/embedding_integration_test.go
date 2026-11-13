@@ -21,8 +21,8 @@ import (
 // TestSemanticForwardsMinRevision: graph-query's semantic verb forwards its request, min_revision
 // included, unchanged to a real graph-embedding, and passes its answer and its refusal back. The
 // embedding verbs claim no ENTITY_STATES revision, so a min_revision above 0 is refused class
-// invalid, invalid_request, never answered, and 0 is answered with indexed_revision 0 (change 5
-// design D4; graph-embedding spec, "The embedding verbs claim no revision"; graph-query spec, the
+// invalid, invalid_request, never answered, and 0 is answered with indexed_revision 0
+// (graph-embedding spec, "The embedding verbs claim no revision"; graph-query spec, the
 // derived-index reads receive min_revision unchanged).
 func TestSemanticForwardsMinRevision(t *testing.T) {
 	client := fixtureClient(t)

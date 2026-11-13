@@ -11,8 +11,8 @@ import (
 )
 
 // defaultQueryTimeoutMs is above graph-ingest's 10 s budget on batch and prefix
-// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's 30 s
-// budget for a request handler (design D7).
+// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's
+// 30 s budget for a request handler.
 const defaultQueryTimeoutMs = 15000
 
 // maxQueryTimeoutMs is the largest millisecond count a time.Duration holds; one more wraps negative.
@@ -89,8 +89,7 @@ func (c *Config) Validate() error {
 }
 
 // ApplyDefaults sets default values. A configuration with no ports takes DefaultConfig's; a ports
-// block that is present is used as written, never merged with the defaults (ruling K, #91 comment
-// 6062681355).
+// block that is present is used as written, never merged with the defaults.
 func (c *Config) ApplyDefaults() {
 	if c.QueryTimeoutMs == 0 {
 		c.QueryTimeoutMs = defaultQueryTimeoutMs

@@ -85,8 +85,8 @@ func TestNameAndBodyRoles(t *testing.T) {
 }
 
 // TestDocumentCap: the cap applies to Body only, inline values first and the offloaded body after
-// them, and cuts at the last whitespace in the back half of the cap, else at the cap; Name is never cut, even when it alone is longer
-// than the cap; the cut is reported.
+// them, and cuts at the last whitespace in the back half of the cap, else at the cap; Name is never
+// cut, even when it alone is longer than the cap; the cut is reported.
 //
 // Requirement: entity-text/The text cap cuts the body's tail and says so
 func TestDocumentCap(t *testing.T) {

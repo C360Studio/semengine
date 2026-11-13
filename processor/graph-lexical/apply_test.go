@@ -215,6 +215,7 @@ func TestWithBodyMatchesRule(t *testing.T) {
 		{"inline below the cap", []string{"abc"}, "defgh ijk"},
 		{"inline at the cap", []string{"abcdefghij"}, "klm"},
 		{"inline past the cap", []string{"abcde fghijkl"}, "mno"},
+		{"inline cut back to a space, with room for the body", []string{"abcdefg hijklmn"}, "x"},
 		{"no inline text", nil, "abcde fghijkl"},
 		{"no body", []string{"abc"}, ""},
 		{"two inline values", []string{"ab", "cd"}, "efghij"},

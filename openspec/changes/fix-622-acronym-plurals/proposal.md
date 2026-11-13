@@ -1,6 +1,6 @@
 # Proposal: fix-622-acronym-plurals
 
-Approved-by:
+Approved-by: cglusky (2026-11-13) sha256:5ac000fd360e
 
 Track: `quick`. Capability modified: `lexical-search` (two existing requirements; no requirement added).
 

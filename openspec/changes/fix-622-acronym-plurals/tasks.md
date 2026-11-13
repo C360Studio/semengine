@@ -6,10 +6,9 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md` and `no
 
 ## 1. Proposal
 
-- [ ] 1.1 Architect proposal and spec delta (`proposal.md`, `specs/lexical-search/spec.md`, `notes/probes/`): rule S
+- [x] 1.1 Architect proposal and spec delta (`proposal.md`, `specs/lexical-search/spec.md`, `notes/probes/`): rule S
   in the splitter, rule F in plural rule 5, with corpus and scorecard counts. `task spec:check` and
-  `task docs:check` pass; the owner rules on Rulings item 1 and fills `Approved-by:`.
-  Hold: OPEN-Q proposal awaits owner approval
+  `task docs:check` pass; the owner ruled option (a) and approved 2026-11-13 (`sha256:5ac000fd360e`).
 
 ## 2. Code
 

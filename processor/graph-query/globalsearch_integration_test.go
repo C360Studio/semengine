@@ -65,8 +65,8 @@ func requireTextSearched(t *testing.T, question string, reply []byte, err error)
 	}
 }
 
-// requireNotFound holds a named start's miss (design D1, D7): entity_not_found, class invalid, as
-// entityByAlias answers it.
+// requireNotFound holds a named start's miss: entity_not_found, class invalid, as entityByAlias
+// answers it.
 func requireNotFound(t *testing.T, question string, reply []byte, err error, want string) {
 	t.Helper()
 	requireRefusal(t, reply, err, errs.ErrorInvalid, graph.ErrorCodeEntityNotFound)
@@ -75,10 +75,10 @@ func requireNotFound(t *testing.T, question string, reply []byte, err error, wan
 	}
 }
 
-// TestGlobalSearchEntity: a one-token question is read through the shared resolver (design D3) and
-// answered with the entity verb's reply bytes, under the alias reply's revision (design D4). A holder
-// is read, and a valid ID nobody holds is read as itself. Real ingest and index, then stubs for the
-// literal requests and bytes no real ingest sends.
+// TestGlobalSearchEntity: a one-token question is read through the shared resolver and answered
+// with the entity verb's reply bytes, under the alias reply's revision. A holder is read, and a
+// valid ID nobody holds is read as itself. Real ingest and index, then stubs for the literal
+// requests and bytes no real ingest sends.
 func TestGlobalSearchEntity(t *testing.T) {
 	t.Run("real ingest and index", func(t *testing.T) {
 		stack := startStack(t)
@@ -136,11 +136,11 @@ func TestGlobalSearchEntity(t *testing.T) {
 	})
 }
 
-// TestGlobalSearchOneWordIsAReference: a one-word question is resolved as an entity reference before
-// any classification, so trigger words inside an ID or alias are not read as hints (design D1, spec "A
-// one-word question is an entity reference"). Each word below is one the keyword tier reads as a time
-// range (today), a path (zone-a, connector-7) or a hint no strategy honours (link, most, max, total).
-// The IDs carry the reviewer's segments under the authority graph-ingest runs with here.
+// TestGlobalSearchOneWordIsAReference: a one-word question is resolved as an entity reference
+// before any classification, so trigger words inside an ID or alias are not read as hints (spec "A
+// one-word question is an entity reference"). Each word below is one the keyword tier reads as a
+// time range (today), a path (zone-a, connector-7) or a hint no strategy honours (link, most, max,
+// total). The IDs carry these words as segments, under the authority graph-ingest runs with here.
 func TestGlobalSearchOneWordIsAReference(t *testing.T) {
 	stack := startStack(t)
 	const (
@@ -173,10 +173,10 @@ func TestGlobalSearchOneWordIsAReference(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchPath: a path question is answered by step 2's walk from the resolved start, in both
-// directions, to depth 3 and 100 entities (design D4): the reply's path is pathSearch's data for the
-// same request, and the literal walk below. Stubbed, the requests are literal, min_revision reaches the
-// alias read and each hop, and the revision is the walk's, not the alias reply's.
+// TestGlobalSearchPath: a path question is answered by the path search's walk from the resolved
+// start, in both directions, to depth 3 and 100 entities: the reply's path is pathSearch's data for
+// the same request, and the literal walk below. Stubbed, the requests are literal, min_revision
+// reaches the alias read and each hop, and the revision is the walk's, not the alias reply's.
 func TestGlobalSearchPath(t *testing.T) {
 	t.Run("real ingest and index", func(t *testing.T) {
 		stack := startStack(t)
@@ -264,11 +264,9 @@ func TestGlobalSearchPath(t *testing.T) {
 
 // TestGlobalSearchPassesAliasRefusals: a refusal from the alias verb, or from the entity verb other
 // than its entity_not_found, reaches the caller with its class, code, detail and message, for both
-// strategies, and nothing more is asked (design D3, ADR-114). The pin's resolver dropped every one and
-// fell through to another strategy (pin:entity_resolver.go). The entity verb's fatal refusal carries
-// the pin's TestHandleGlobalSearchDoesNotFallbackAfterAuthoritativePoison and
-// TestEntityLookupStrategyDoesNotFallThroughAfterAuthoritativePoison (query_error_class_test.go:152-220
-// at 8b99efe9): a refusal that is authoritative is never permission to answer some other way.
+// strategies, and nothing more is asked (ADR-114). The entity verb's fatal refusal is among them: a
+// refusal that is authoritative is never permission to answer some other way, such as another
+// strategy.
 func TestGlobalSearchPassesAliasRefusals(t *testing.T) {
 	questions := []string{`{"query":"shared-1"}`, `{"query":"what is connected to shared-1"}`}
 
@@ -367,7 +365,7 @@ func TestGlobalSearchPassesAliasRefusals(t *testing.T) {
 
 // TestGlobalSearchUnknownWordIsSearched: a one-word reference that names no entity, no alias holder
 // and no valid ID, is searched as text, never entity_not_found, asks nothing of the entity verb and
-// counts no error (design D1; spec, "An unknown reference").
+// counts no error (spec, "An unknown reference").
 func TestGlobalSearchUnknownWordIsSearched(t *testing.T) {
 	stack := startIngestAndIndex(t)
 	seedWordRecord(t, stack.client, "forklift")
@@ -383,9 +381,9 @@ func TestGlobalSearchUnknownWordIsSearched(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchUnknownIDIsSearched: a one-word reference that is a valid ID with no record, or an
-// alias whose holder is gone, is searched as text once the entity verb answers entity_not_found, and
-// counts no error (design D1; spec, "An unknown reference").
+// TestGlobalSearchUnknownIDIsSearched: a one-word reference that is a valid ID with no record, or
+// an alias whose holder is gone, is searched as text once the entity verb answers entity_not_found,
+// and counts no error (spec, "An unknown reference").
 func TestGlobalSearchUnknownIDIsSearched(t *testing.T) {
 	t.Run("real ingest and index", func(t *testing.T) {
 		stack := startIngestAndIndex(t)
@@ -421,9 +419,9 @@ func TestGlobalSearchUnknownIDIsSearched(t *testing.T) {
 
 // TestGlobalSearchUnknownPathStart: a path question whose named start names no entity is
 // entity_not_found, as entityByAlias answers it, never an empty walk and never a text search, which
-// would drop the walk (design D1, D7). A start that is no alias and no ID asks nothing of the entity
-// verb; a holder whose entity is gone passes the entity verb's refusal as it was sent, with no hop
-// asked. Neither counts an error.
+// would drop the walk. A start that is no alias and no ID asks nothing of the entity verb; a holder
+// whose entity is gone passes the entity verb's refusal as it was sent, with no hop asked. Neither
+// counts an error.
 func TestGlobalSearchUnknownPathStart(t *testing.T) {
 	t.Run("real ingest and index", func(t *testing.T) {
 		stack := startIngestAndIndex(t)
@@ -467,11 +465,9 @@ func TestGlobalSearchUnknownPathStart(t *testing.T) {
 	})
 }
 
-// TestZoneQuestionNeverAnswersEmpty: #479 item 3. The keyword tier reads "the area of the plant" as a
-// path from area-of (notes/probes/step4-tree-probe.log); no entity holds that alias, so the named start
-// is entity_not_found (design D1, D7). A started pin component fell through to its community search: it
-// built the cache before the responders (pin:component.go:556), so the empty pathrag answer
-// (pin:graphrag.go:475-489) ran only without a cache, outside a successful Start.
+// TestZoneQuestionNeverAnswersEmpty: the keyword tier reads "the area of the plant" as a path from
+// area-of; no entity holds that alias, so the named start is entity_not_found, never an empty walk
+// and never a community search, on a started component.
 func TestZoneQuestionNeverAnswersEmpty(t *testing.T) {
 	stack := startStack(t)
 	stack.awaitIndexed(t, stack.create(t, drone1, aliased("held-1")))
@@ -479,13 +475,12 @@ func TestZoneQuestionNeverAnswersEmpty(t *testing.T) {
 	requireNotFound(t, "the area of the plant", raw, err, "not found: area-of")
 }
 
-// TestGlobalSearchRefusesADroppedPlace: a path question that also names a zone ("what is connected to
-// sensor-001 in zone-b") names two places, and the keyword tier reads one start, so the question is
-// refused invalid_request naming both, never answered as the walk from one (PR #530 review, #535).
-// Two zones written with spaces ("zone a in zone b") are refused the same way, each clause alone
-// answered first (PR #530 re-review), and so is a full ID with no hyphenated segment beside a zone
-// (owner ruling 2026-11-07). The zone alone is still answered, from its own holder. Real ingest,
-// index and query.
+// TestGlobalSearchRefusesADroppedPlace: a path question that also names a zone ("what is connected
+// to sensor-001 in zone-b") names two places, and the keyword tier reads one start, so the question
+// is refused invalid_request naming both, never answered as the walk from one. Two zones written
+// with spaces ("zone a in zone b") are refused the same way, each clause alone answered first, and
+// so is a full ID with no hyphenated segment beside a zone. The zone alone is still answered, from
+// its own holder. Real ingest, index and query.
 func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 	stack := startStack(t)
 	stack.create(t, drone2)
@@ -524,7 +519,7 @@ func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 			}
 		})
 	}
-	// PR #530 re-review: two zones written with spaces, each answered alone above.
+	// Two zones written with spaces, each answered alone above.
 	t.Run("zone a in zone b", func(t *testing.T) {
 		raw, err := stack.askGlobal(t, `{"query":"what is connected to zone a in zone b"}`)
 		requireRefusal(t, raw, err, errs.ErrorInvalid, graph.ErrorCodeInvalidRequest)
@@ -533,9 +528,9 @@ func TestGlobalSearchRefusesADroppedPlace(t *testing.T) {
 			t.Errorf("message = %q, want invalid request ending %q", msg, want)
 		}
 	})
-	// Owner ruling 2026-11-07: a full ID with no hyphenated segment beside a zone is a second place.
-	// The ID alone is answered as its entity and "what is in zone b" alone above, so the refusal is
-	// not an unread name.
+	// A full ID with no hyphenated segment beside a zone is a second place. The ID alone is
+	// answered as its entity and "what is in zone b" alone above, so the refusal is not an unread
+	// name.
 	t.Run("full ID in zone b", func(t *testing.T) {
 		raw, err := stack.askGlobal(t, fmt.Sprintf(`{"query":%q}`, drone1))
 		if err != nil {
@@ -602,9 +597,8 @@ func requireCounts(t *testing.T, c *Component, messages, errorCount int64) {
 // TestGlobalSearchTemporal: a time-range question asks graph.temporal.query.range with a
 // graph.TemporalRangeRequest, start_time and end_time in RFC 3339, limit 100 and the request's
 // min_revision, and answers with the responder's TemporalData as it came, truncated included, under
-// the responder's revision (design D4). A responder's refusal reaches the caller with its class,
-// code and detail, as at the pin (query_error_class_test.go:570-594), and is no error of
-// graph-query's; a reply with no results or no truncated is.
+// the responder's revision. A responder's refusal reaches the caller with its class, code and
+// detail, and is no error of graph-query's; a reply with no results or no truncated is.
 func TestGlobalSearchTemporal(t *testing.T) {
 	const reply = `{"data":{"results":[{"entity_id":"` + drone1 + `"}],"truncated":true},"indexed_revision":42,` +
 		`"producer":"graph-index-temporal","timestamp":"2026-11-07T00:00:00Z"}`
@@ -707,10 +701,10 @@ func brokenReplies(t *testing.T, subject, question, producer string) {
 
 // TestGlobalSearchSpatial: an area question asks graph.spatial.query.bounds with a
 // graph.SpatialBoundsRequest, the classifier's box and limit 100, and answers with the responder's
-// SpatialData as it came, truncated included, under the responder's revision (design D4). 111 km of
-// 0,0 is one degree each way, exactly, so the request is a literal. A responder's refusal reaches the
-// caller with its class, code and detail, as at the pin (query_error_class_test.go:596-621), and is
-// no error of graph-query's; a reply with no results or no truncated is.
+// SpatialData as it came, truncated included, under the responder's revision. 111 km of 0,0 is one
+// degree each way, exactly, so the request is a literal. A responder's refusal reaches the caller
+// with its class, code and detail, and is no error of graph-query's; a reply with no results or no
+// truncated is.
 func TestGlobalSearchSpatial(t *testing.T) {
 	const reply = `{"data":{"results":[{"entity_id":"` + drone1 + `","lat":0.5,"lon":-0.25}],"truncated":true},` +
 		`"indexed_revision":42,"producer":"graph-index-spatial","timestamp":"2026-11-07T00:00:00Z"}`
@@ -743,9 +737,9 @@ func TestGlobalSearchSpatial(t *testing.T) {
 	brokenReplies(t, subject, "what is within 111km of 0,0", "graph-index-spatial")
 }
 
-// TestGlobalSearchNoResponders: with no responder on the time-range or bounds verb, as in this tree
-// until change 7, each question is refused transient internal naming that verb's subject, and counts
-// one request and one error (design D4; spec "Requests are counted for operators").
+// TestGlobalSearchNoResponders: with no responder on the time-range or bounds verb, each question
+// is refused transient internal naming that verb's subject, and counts one request and one error
+// (spec "Requests are counted for operators").
 func TestGlobalSearchNoResponders(t *testing.T) {
 	stack := graphStack{client: fixtureClient(t)}
 	c := startComponent(t, stack.client, `{}`)

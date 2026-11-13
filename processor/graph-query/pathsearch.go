@@ -22,10 +22,10 @@ const (
 	directionBoth     = "both"
 )
 
-// pathSearch answers the entities and edges within a request's reach (design D2, D3): it reads the
-// start through the entity verb, then walks breadth first through the index. Counted as entityByAlias
-// is: a request is one input however many requests it makes, and at most one error, since any failed
-// read ends the walk.
+// pathSearch answers the entities and edges within a request's reach: it reads the start through
+// the entity verb, then walks breadth first through the index. Counted as entityByAlias is: a
+// request is one input however many requests it makes, and at most one error, since any failed read
+// ends the walk.
 func (c *Component) pathSearch(entitySubject, outgoingSubject, incomingSubject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
@@ -97,8 +97,8 @@ func (c *Component) readPathStart(ctx context.Context, subject, entityID string)
 type pathHop func(ctx context.Context, entityID, direction string) ([]graph.RelationshipEdge, uint64, error)
 
 // indexHop is the walk's hop in production: the index's outgoing or incoming verb, carrying
-// minRevision. Whatever ends the hop keeps its class, code and detail, and its message names the hop's
-// entity, so a caller can find a hub too large to answer (design D3).
+// minRevision. Whatever ends the hop keeps its class, code and detail, and its message names the
+// hop's entity, so a caller can find a hub too large to answer.
 func (c *Component) indexHop(outgoingSubject, incomingSubject string, minRevision uint64) pathHop {
 	return func(ctx context.Context, entityID, direction string) ([]graph.RelationshipEdge, uint64, error) {
 		request, err := json.Marshal(struct {
@@ -134,8 +134,8 @@ func namingHop(entityID string, err error) error {
 // failure ends the walk with no partial answer.
 //
 // Filling the limit does not end the walk: truncated must be exact, so the walk goes on reading the
-// entities it holds, and stops at the first unseen entity it has no room for. Each entity is read at
-// most once per direction, which is the bound on requests (design D4).
+// entities it holds, and stops at the first unseen entity it has no room for. Each entity is read
+// at most once per direction, which is the bound on requests.
 func walkPaths(ctx context.Context, request graph.PathSearchRequest, hop pathHop) (graph.PathSearchData, uint64, error) {
 	limit := request.MaxNodes
 	if limit == 0 {

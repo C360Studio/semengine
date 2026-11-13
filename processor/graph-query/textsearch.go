@@ -14,26 +14,24 @@ import (
 	"github.com/c360studio/semengine/pkg/graphview"
 )
 
-// maxTextGroups is the most groups the text tier reads for one question (ruling 2; design D2).
+// maxTextGroups is the most groups the text tier reads for one question.
 const maxTextGroups = 5
 
-// A group record's score weights (design D2): the pin's ScoreWeightSummary and ScoreWeightKeyword
-// (pin:graphrag.go:2416-2470).
+// A group record's score weights: a summary match counts more than a keyword match.
 const (
 	summaryTermScore = 2.0
 	keywordTermScore = 1.5
 )
 
-// textPastUnreadable is the Warn an answer past unreadable community records logs (design D6), and
+// textPastUnreadable is the Warn an answer past unreadable community records logs, and
 // textPastUnreadableReason why answering is safe.
 const (
 	textPastUnreadable       = "text search answered past unreadable community records"
 	textPastUnreadableReason = "community records are independent, and the answer reads only the readable ones"
 )
 
-// textResult is what the text tier read for one question (design D2, D3, D5), from which globalText
-// builds the reply. Its records and bytes are the view's and the pages', read only, and live as long
-// as the request.
+// textResult is what the text tier read for one question, from which globalText builds the reply.
+// Its records and bytes are the view's and the pages', read only, and live as long as the request.
 type textResult struct {
 	groups     []clustering.Community // the records read, best first
 	matches    []rankedEntity         // their pages' matches, best first, ties by ID
@@ -45,10 +43,10 @@ type textResult struct {
 
 // searchText reads the community records at the request's level once, refuses before any page read
 // what it cannot answer, then reads one prefix page of each group textGroups chooses and ranks its
-// entities as localSearch does (design D2, D3, D5). Its refusals, in order: more than
-// graph.MaxSearchTerms terms is invalid_request; a view it cannot read or a level with no record,
-// readable or not, is transient index_not_ready; every record unreadable is transient internal, one
-// error; a min_revision above the mark is transient revision_not_reached naming it.
+// entities as localSearch does. Its refusals, in order: more than graph.MaxSearchTerms terms is
+// invalid_request; a view it cannot read or a level with no record, readable or not, is transient
+// index_not_ready; every record unreadable is transient internal, one error; a min_revision above
+// the mark is transient revision_not_reached naming it.
 func (c *Component) searchText(ctx context.Context, prefixSubject string, request graph.GlobalSearchRequest, levelPrefix string) (textResult, error) {
 	terms, err := checkedSearchTerms(request.Query)
 	if err != nil {
@@ -90,9 +88,9 @@ func (c *Component) searchText(ctx context.Context, prefixSubject string, reques
 	return result, nil
 }
 
-// levelRecords lists view's records under levelPrefix, sorted by key, and counts the unreadable ones,
-// in one read (design D2, D8). No view, a view catching up, lost or stopped, and a level holding no
-// record, readable or not, are transient index_not_ready, counting no error.
+// levelRecords lists view's records under levelPrefix, sorted by key, and counts the unreadable
+// ones, in one read. No view, a view catching up, lost or stopped, and a level holding no record,
+// readable or not, are transient index_not_ready, counting no error.
 func levelRecords(view *communityView, levelPrefix string) ([]graphview.KeyedEntry[clustering.Community], int, error) {
 	if view == nil {
 		return nil, 0, communityNotReady(errors.New("no view of " + graph.BucketCommunityIndex))
@@ -108,8 +106,8 @@ func levelRecords(view *communityView, levelPrefix string) ([]graphview.KeyedEnt
 }
 
 // textGroups returns up to maxTextGroups of records scoring above 0 over terms, best first, ties by
-// key (design D2). A record scoring 0 is never read: the pin read the first five whatever they scored
-// (inventory P1).
+// key. A record scoring 0 is never read, so the groups read are the ones the question matches, not
+// the first five by key.
 func textGroups(records []graphview.KeyedEntry[clustering.Community], terms []string) []clustering.Community {
 	type scored struct {
 		key    string
@@ -132,9 +130,9 @@ func textGroups(records []graphview.KeyedEntry[clustering.Community], terms []st
 	return groups
 }
 
-// groupScore is the pin's group score (pin:graphrag.go:2416-2470) over terms, which searchTerms has
-// lowercased and made distinct: summaryTermScore for each term contained in the record's statistical
-// summary, and keywordTermScore for each keyword and term where one contains the other, lowercased.
+// groupScore is the group score over terms, which searchTerms has lowercased and made distinct:
+// summaryTermScore for each term contained in the record's statistical summary, and
+// keywordTermScore for each keyword and term where one contains the other, lowercased.
 func groupScore(record clustering.Community, terms []string) float64 {
 	summary := strings.ToLower(record.StatisticalSummary)
 	score := 0.0
@@ -153,7 +151,7 @@ func groupScore(record clustering.Community, terms []string) float64 {
 }
 
 // labelOrder is the label set DiscoverLabelPredicates returns, most salient first: the lowest
-// priority number, ties by predicate name (design D4).
+// priority number, ties by predicate name.
 func labelOrder(priorities map[string]int) []string {
 	order := make([]string, 0, len(priorities))
 	for predicate := range priorities {
@@ -166,8 +164,8 @@ func labelOrder(priorities map[string]int) []string {
 }
 
 // textSearchData is the reply's result for what the text tier read at level, with the hints the
-// question carried that it did not honour (design D4), before the fit and the answer. Groups,
-// matches and hints are never null: an empty list says none.
+// question carried that it did not honour, before the fit and the answer. Groups, matches and hints
+// are never null: an empty list says none.
 func textSearchData(result textResult, level int, unhonoured []string) graph.TextSearchData {
 	groups := make([]graph.TextSearchGroup, 0, len(result.groups))
 	for _, group := range result.groups {
@@ -193,8 +191,8 @@ func textSearchData(result textResult, level int, unhonoured []string) graph.Tex
 	}
 }
 
-// textSearchAnswer is the answer text (design D4), {n} being the matches in the reply: the counts, or
-// that no group matched; that it is a sample when it is; each group's summary, or its member count and
+// textSearchAnswer is the answer text, {n} being the matches in the reply: the counts, or that no
+// group matched; that it is a sample when it is; each group's summary, or its member count and
 // first five keywords when it has none; the hints not honoured; the records that could not be read.
 func textSearchAnswer(data graph.TextSearchData) string {
 	var sentences []string
@@ -227,9 +225,9 @@ func textSearchAnswer(data graph.TextSearchData) string {
 	return strings.Join(sentences, " ")
 }
 
-// fitTextSearch encodes data, with its answer, keeping the most of its best matches whose encoding is
-// at most limit bytes; leaving any out sets EntitiesTruncated, as fitLocalSearch does (design D4). It
-// also reports whether the encoded answer is truncated, and refuses when even no matches do not fit.
+// fitTextSearch encodes data, with its answer, keeping the most of its best matches whose encoding
+// is at most limit bytes; leaving any out sets EntitiesTruncated, as fitLocalSearch does. It also
+// reports whether the encoded answer is truncated, and refuses when even no matches do not fit.
 func fitTextSearch(data graph.TextSearchData, limit int, encode func(graph.TextSearchData) ([]byte, error)) ([]byte, bool, error) {
 	all := data.Matches
 	encoded, cut, err := fitFirst(len(all), limit, func(n int) ([]byte, error) {

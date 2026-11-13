@@ -48,10 +48,8 @@ func askUnstarted(t *testing.T, request string) (*Component, []byte, error) {
 	return c, reply, err
 }
 
-// TestGlobalSearchRoutesByHints proves design D1's table, option (a), through the keyword classifier,
-// one row per table line, with D1's ordinary-word questions. It carries the pin's strategy reports
-// (slice_e_contract_test.go:21-192 at 8b99efe9: each answer names the strategy that answered), renamed:
-// pathrag is path, entity_lookup is entity. The options each question gets are in notes/3.1.md.
+// TestGlobalSearchRoutesByHints proves the route table through the keyword classifier, one row per
+// table line, with ordinary-word questions. Each row names the strategy that answers it.
 func TestGlobalSearchRoutesByHints(t *testing.T) {
 	answered := []struct {
 		question   string
@@ -60,16 +58,16 @@ func TestGlobalSearchRoutesByHints(t *testing.T) {
 		unhonoured []string
 	}{
 		{"what is connected to sensor-001", "path", "sensor-001", nil},
-		// The tree's keyword tier reads a zone phrase as a path start and no predicate (PR #475); the
-		// start names no entity here, which the resolver answers entity_not_found (design D1, D7).
+		// The keyword tier reads a zone phrase as a path start and no predicate; the start names no
+		// entity here, which the resolver answers entity_not_found.
 		{"the area of the plant", "path", "area-of", nil},
 		{"what changed in the last 2 hours", "temporal", "", nil},
 		{"what is within 5km of 40.7,-74.0", "spatial", "", nil},
 		{"sensor-001", "entity", "sensor-001", nil},
 		{"  acme.ops.robotics.gcs.drone.001\t", "entity", "acme.ops.robotics.gcs.drone.001", nil},
-		// One token is an entity reference, read before any hint; one naming no entity is searched as
-		// text by the resolver's miss. The keyword tier would read these words as a time range, a path,
-		// a count or a ranking (design D1).
+		// One token is an entity reference, read before any hint; one naming no entity is searched
+		// as text by the resolver's miss. The keyword tier would read these words as a time range,
+		// a path, a count or a ranking.
 		{"forklift", "entity", "forklift", nil},
 		{"acme.plant.today.sensor.temp.001", "entity", "acme.plant.today.sensor.temp.001", nil},
 		{"acme.plant.zone-a.sensor.temp.001", "entity", "acme.plant.zone-a.sensor.temp.001", nil},
@@ -120,7 +118,7 @@ func TestGlobalSearchRoutesByHints(t *testing.T) {
 	}
 
 	// A count or other aggregation is refused, with or without other hints: a list of matches over
-	// sampled pages would invite the reader to count a sample (design D1).
+	// sampled pages would invite the reader to count a sample.
 	refused := []struct {
 		question string
 		want     string
@@ -177,11 +175,11 @@ func TestGlobalSearchRoutesByHints(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchHintBesideAFilter proves design D1's second column: a text-routed hint (path words
-// with no start, a similarity or a ranking) beside a filter, or a start carrying path predicates, is
-// refused invalid_request naming both, never answered by the text tier with the filter dropped nor by
-// the filter's strategy with the hint dropped. The handler asks nothing downstream: the component
-// holds no connection, and the refusal is not the text tier's index_not_ready.
+// TestGlobalSearchHintBesideAFilter proves that a text-routed hint (path words with no start, a
+// similarity or a ranking) beside a filter, or a start carrying path predicates, is refused
+// invalid_request naming both, never answered by the text tier with the filter dropped nor by the
+// filter's strategy with the hint dropped. The handler asks nothing downstream: the component holds
+// no connection, and the refusal is not the text tier's index_not_ready.
 func TestGlobalSearchHintBesideAFilter(t *testing.T) {
 	cases := []struct {
 		question string
@@ -224,8 +222,9 @@ func TestGlobalSearchHintBesideAFilter(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchRefusesTwoFilters proves that two or three of path, time range and area are refused
-// invalid_request naming each, whatever other hints the question holds (design D1, spec "Two filters").
+// TestGlobalSearchRefusesTwoFilters proves that two or three of path, time range and area are
+// refused invalid_request naming each, whatever other hints the question holds (spec "Two
+// filters").
 func TestGlobalSearchRefusesTwoFilters(t *testing.T) {
 	cases := []struct {
 		question string
@@ -255,8 +254,8 @@ func TestGlobalSearchRefusesTwoFilters(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchRefusesImpossibleNumbers proves the classifier's refusal of an out-of-range number
-// reaches the caller as invalid_request naming the phrase (owner, #479; design D1).
+// TestGlobalSearchRefusesImpossibleNumbers proves the classifier's refusal of an out-of-range
+// number reaches the caller as invalid_request naming the phrase.
 func TestGlobalSearchRefusesImpossibleNumbers(t *testing.T) {
 	cases := []struct {
 		question string
@@ -276,9 +275,10 @@ func TestGlobalSearchRefusesImpossibleNumbers(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchEndedClassification proves that a classification with no result and no error, which
-// the chain returns once the request's context has ended (graph/query/classifier_chain.go:91-93), is
-// refused transient internal, never read as a question with no hints (design D1).
+// TestGlobalSearchEndedClassification proves that a classification with no result and no error,
+// which the chain returns once the request's context has ended
+// (graph/query/classifier_chain.go:91-93), is refused transient internal, never read as a question
+// with no hints.
 func TestGlobalSearchEndedClassification(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -318,9 +318,9 @@ func TestGlobalSearchEndedClassification(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchRefusesHintsItCannotRead proves the typed read fails closed (design D1): a hint
-// global search does not know, or one of another type, is refused, never read as absent. The keyword
-// tier sends neither; another tier's options would.
+// TestGlobalSearchRefusesHintsItCannotRead proves the typed read fails closed: a hint global search
+// does not know, or one of another type, is refused, never read as absent. The keyword tier sends
+// neither; another tier's options would.
 func TestGlobalSearchRefusesHintsItCannotRead(t *testing.T) {
 	cases := []struct {
 		options map[string]any
@@ -347,8 +347,8 @@ func TestGlobalSearchRefusesHintsItCannotRead(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchRequestKeys proves design D2's request keys: query, min_revision and level (0 to 2,
-// omitted 0) decode; a blank query, a level outside 0 to 2, any other key (the pin's max_communities,
+// TestGlobalSearchRequestKeys proves the request keys: query, min_revision and level (0 to 2,
+// omitted 0) decode; a blank query, a level outside 0 to 2, any other key (such as max_communities,
 // summarize_threshold, include_*) by name, and bytes after the request are refused.
 func TestGlobalSearchRequestKeys(t *testing.T) {
 	for _, tc := range []struct {

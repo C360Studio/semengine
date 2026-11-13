@@ -131,8 +131,8 @@ func prefixesOf(t *testing.T, bodies []string) []string {
 
 // TestTextTierReadsAtMostFiveGroups: seven groups at level 0 match the question and one does not;
 // exactly five prefix requests are made, one per group, for the five best, best first, ties by key,
-// each at the maximum limit (ruling 2; spec, "Seven matching groups"). A counting subscriber on the
-// prefix verb reads every request.
+// each at the maximum limit (spec, "Seven matching groups"). A counting subscriber on the prefix
+// verb reads every request.
 func TestTextTierReadsAtMostFiveGroups(t *testing.T) {
 	stack := startCommunityStack(t)
 	// Scores for "pump valve": e 7, c 4, g 3.5, a 3, b 2, f 2, d 1.5, h 0; b's key is before f's.
@@ -165,8 +165,9 @@ func TestTextTierReadsAtMostFiveGroups(t *testing.T) {
 	}
 }
 
-// TestTextTierSkipsUnmatchedGroups: P1's seven records, none matching "pump": no group, no match, no
-// prefix request, and no error (spec, "No group matches").
+// TestTextTierSkipsUnmatchedGroups: the seven records of TestTextTierScore's "no record scores"
+// case, none matching "pump": no group, no match, no prefix request, and no error (spec, "No group
+// matches").
 func TestTextTierSkipsUnmatchedGroups(t *testing.T) {
 	stack := startCommunityStack(t)
 	for i := range 7 {
@@ -194,8 +195,8 @@ func TestTextTierSkipsUnmatchedGroups(t *testing.T) {
 }
 
 // TestTextTierRefusesAnEmptyLevel: with records at level 0 only, a level-1 question is transient
-// index_not_ready, before any page read and counting no error; after a level-1 write the same request
-// answers (spec, "An empty level"; ruling 3).
+// index_not_ready, before any page read and counting no error; after a level-1 write the same
+// request answers (spec, "An empty level").
 func TestTextTierRefusesAnEmptyLevel(t *testing.T) {
 	stack := startCommunityStack(t)
 	key, value := literalRecord(t, "a", 3, "pump station", "pump")
@@ -265,7 +266,7 @@ func matchesOf(data graph.TextSearchData) []string {
 // TestTextTierMatchesEqualAFilter: the matches of the groups read are the entities an independent
 // filter, written here, keeps from their pages, as graph-ingest sent them, merged across groups by
 // score then ID, and a group not read adds none; no page had more, so the result is not cut (spec,
-// "Groups that fit a page"; design D3).
+// "Groups that fit a page").
 func TestTextTierMatchesEqualAFilter(t *testing.T) {
 	stack := startCommunityStack(t)
 	title := func(text string) [2]string { return [2]string{"dc.terms.title", text} }
@@ -335,8 +336,8 @@ func TestTextTierMarksACutPage(t *testing.T) {
 }
 
 // TestTextTierRevision: the text tier's revision is the highest entity_revision among the level's
-// records; a min_revision above it is transient revision_not_reached naming it, before any page read
-// and counting no error, and one at it answers (spec, "A revision not reached"; design D5).
+// records; a min_revision above it is transient revision_not_reached naming it, before any page
+// read and counting no error, and one at it answers (spec, "A revision not reached").
 func TestTextTierRevision(t *testing.T) {
 	stack := startCommunityStack(t)
 	stack.write(t, drone1, [2]string{"dc.terms.title", "zeta"})
@@ -364,8 +365,8 @@ func TestTextTierRevision(t *testing.T) {
 }
 
 // TestTextTierRevisionIgnoresUnreadable: an unreadable record that holds a higher entity_revision
-// never counts toward the mark: the mark is the readable record's, a min_revision above it is refused
-// before any page read, and one at it answers with the unreadable record counted (design D5).
+// never counts toward the mark: the mark is the readable record's, a min_revision above it is
+// refused before any page read, and one at it answers with the unreadable record counted.
 func TestTextTierRevisionIgnoresUnreadable(t *testing.T) {
 	stack := startCommunityStack(t)
 	// Key p holds q's record, at 99: DecodeCommunity refuses it.
@@ -389,9 +390,9 @@ func TestTextTierRevisionIgnoresUnreadable(t *testing.T) {
 	}
 }
 
-// TestTextTierAllUnreadable: when every record at the level is unreadable, the question is transient
-// internal naming the count, one error in Health, before any page read; no 0 stands for the unknown
-// revision (spec, "Every record unreadable"; design D5).
+// TestTextTierAllUnreadable: when every record at the level is unreadable, the question is
+// transient internal naming the count, one error in Health, before any page read; no 0 stands for
+// the unknown revision (spec, "Every record unreadable").
 func TestTextTierAllUnreadable(t *testing.T) {
 	stack := startCommunityStack(t)
 	putRecord(t, stack.records, "1.c360.test.x", `{}`)
@@ -472,11 +473,11 @@ func startTextReply(t *testing.T, client *natsclient.Client) (*Component, func()
 	return c, asked
 }
 
-// TestTextTierReply: a free-text question's reply, as literal JSON: strategy text and text alone; the
-// groups read, best first, with their record fields; the matches best first, ties by ID, each with its
-// label (none for an entity with no label predicate), score and bytes as the page sent them; the counts
-// and the answer, under the level's highest revision, counting no error (design D4; spec, "A text
-// answer", "The text reply declares what it could not read").
+// TestTextTierReply: a free-text question's reply, as literal JSON: strategy text and text alone;
+// the groups read, best first, with their record fields; the matches best first, ties by ID, each
+// with its label (none for an entity with no label predicate), score and bytes as the page sent
+// them; the counts and the answer, under the level's highest revision, counting no error (spec, "A
+// text answer", "The text reply declares what it could not read").
 func TestTextTierReply(t *testing.T) {
 	client := fixtureClient(t)
 	c, asked := startTextReply(t, client)
@@ -508,9 +509,9 @@ func TestTextTierReply(t *testing.T) {
 	}
 }
 
-// TestGlobalSearchTextQuestion: a free-text question is answered by the text tier naming no hint, and
-// one whose only hint is path words with no start names it, in unhonoured_hints and in the answer
-// (design D1, option (a); spec, "A free-text question", "Trigger words in free text").
+// TestGlobalSearchTextQuestion: a free-text question is answered by the text tier naming no hint,
+// and one whose only hint is path words with no start names it, in unhonoured_hints and in the
+// answer (spec, "A free-text question", "Trigger words in free text").
 func TestGlobalSearchTextQuestion(t *testing.T) {
 	client := fixtureClient(t)
 	startTextReply(t, client)
@@ -538,7 +539,7 @@ func TestGlobalSearchTextQuestion(t *testing.T) {
 
 // TestTextTierFitsMaxPayload: a text reply over the connection's max_payload keeps the most of its
 // best matches that fit, sets entities_truncated, says it is a sample and counts one truncated
-// globalSearch (design D4; spec, "Text matches are the pages' entities as stored, best first").
+// globalSearch (spec, "Text matches are the pages' entities as stored, best first").
 func TestTextTierFitsMaxPayload(t *testing.T) {
 	const limit = 8192
 	// Own server: a small max_payload, which the shared server does not have.
@@ -635,8 +636,8 @@ func (w *warnCapture) snapshot() []warnRecord {
 // TestTextTierPoisonIsDeclared: an answer past an unreadable record at the level says so in
 // unreadable_groups, counts one error in Health and logs one Warn naming the verb, the level, the
 // count and why answering is safe; after a valid write to that key the answer counts none and logs
-// nothing (design D6; spec, "A corrupt record"). The handler logs and counts before it replies, so
-// each read below is ordered after the reply it follows.
+// nothing (spec, "A corrupt record"). The handler logs and counts before it replies, so each read
+// below is ordered after the reply it follows.
 func TestTextTierPoisonIsDeclared(t *testing.T) {
 	client := fixtureClient(t)
 	kv, _ := communityRecords(t, client)

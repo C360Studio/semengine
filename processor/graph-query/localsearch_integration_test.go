@@ -245,8 +245,8 @@ func searchSuccess(t *testing.T, raw []byte, err error) (wireEnvelope, graph.Loc
 	return envelope, data
 }
 
-// TestLocalSearchReadsOnePage: beside real graph-ingest, a request with a record is one prefix request
-// for the record's group at the maximum limit, and no entity read (ruling 2; spec, "A group larger
+// TestLocalSearchReadsOnePage: beside real graph-ingest, a request with a record is one prefix
+// request for the record's group at the maximum limit, and no entity read (spec, "A group larger
 // than a page", "A group that fits a page", "The reply's fields").
 func TestLocalSearchReadsOnePage(t *testing.T) {
 	stack := startCommunityStack(t)
@@ -342,9 +342,9 @@ func TestLocalSearchReadsTheAskedLevel(t *testing.T) {
 	}
 }
 
-// TestLocalSearchReadsItsWriteBack: a write W to an entity of the group is refused revision_not_reached
-// with the record's revision until the group's next tick, then answers at or above W (spec, "Reading
-// a write back through a group"; design D2).
+// TestLocalSearchReadsItsWriteBack: a write W to an entity of the group is refused
+// revision_not_reached with the record's revision until the group's next tick, then answers at or
+// above W (spec, "Reading a write back through a group").
 func TestLocalSearchReadsItsWriteBack(t *testing.T) {
 	stack := startCommunityStack(t)
 	before := stack.write(t, drone1)
@@ -379,10 +379,10 @@ func TestLocalSearchReadsItsWriteBack(t *testing.T) {
 	}
 }
 
-// TestLocalSearchRefusals: with no record an existing entity is index_not_ready after one entity read,
-// an absent one gets the entity verb's refusal as it arrived; an unreadable record is refused
+// TestLocalSearchRefusals: with no record an existing entity is index_not_ready after one entity
+// read, an absent one gets the entity verb's refusal as it arrived; an unreadable record is refused
 // internal naming its key, counted in Health, until a valid write heals it (spec, "No record", "An
-// unreadable record"; design D6).
+// unreadable record").
 func TestLocalSearchRefusals(t *testing.T) {
 	stack := startCommunityStack(t)
 	stack.write(t, drone1)
@@ -465,8 +465,8 @@ func TestLocalSearchRefusals(t *testing.T) {
 	})
 }
 
-// TestLocalSearchRefusesBadRequests: with the view ready, each bad request is invalid_request naming
-// its field, with no downstream request and no error counted (spec, "A bad request"; design D4).
+// TestLocalSearchRefusesBadRequests: with the view ready, each bad request is invalid_request
+// naming its field, with no downstream request and no error counted (spec, "A bad request").
 func TestLocalSearchRefusesBadRequests(t *testing.T) {
 	client := fixtureClient(t)
 	withCommunityRecord(t, client)
@@ -528,7 +528,7 @@ func TestLocalSearchEntitiesPassUnchanged(t *testing.T) {
 
 // TestLocalSearchFitsMaxPayload: on a broker whose max_payload a page fits but the reply would not,
 // the lowest-ranked matches are left out until the reply fits, entities_truncated is set and the
-// answer counts what was kept (spec, "A reply over the payload limit"; design D5).
+// answer counts what was kept (spec, "A reply over the payload limit").
 func TestLocalSearchFitsMaxPayload(t *testing.T) {
 	const limit = 8192
 	// Own server: a small max_payload, which the shared server does not have.
@@ -669,9 +669,9 @@ func TestLocalSearchRefusesAfterWatchLoss(t *testing.T) {
 	}
 }
 
-// TestLocalSearchDuringBlockedTick: with one group's next record written and another's not, as a tick
-// held between two writes leaves the bucket, each group answers at once from its latest record (spec,
-// "During a tick"; ruling 3). Only clustering's fake holds a real tick, so the next record is written
+// TestLocalSearchDuringBlockedTick: with one group's next record written and another's not, as a
+// tick held between two writes leaves the bucket, each group answers at once from its latest record
+// (spec, "During a tick"). Only clustering's fake holds a real tick, so the next record is written
 // straight to the bucket.
 func TestLocalSearchDuringBlockedTick(t *testing.T) {
 	client := fixtureClient(t)
@@ -725,8 +725,8 @@ func TestStopEndsTheCommunityView(t *testing.T) {
 		if c.communities.Load() == nil {
 			t.Fatal("no view held while it answers")
 		}
-		// Errorf, not Fatalf: a Stop that reports a watch it could not stop releases everything, and
-		// the next Stop returns nil (owner ruling Q4, #9 comment 6278986482).
+		// Errorf, not Fatalf: a Stop that reports a watch it could not stop releases everything,
+		// and the next Stop returns nil.
 		if err := c.Stop(t.Context()); err != nil {
 			t.Errorf("Stop: %v", err)
 		}
@@ -821,8 +821,8 @@ func newLogged(t *testing.T, client *natsclient.Client) (*Component, *logCapture
 }
 
 // TestCommunityViewLogsEachNewFailureOnce: the supervisor warns on its first failure, logs the same
-// failure again at Debug, and warns again when the failure changes or follows a view that opened, so a
-// deployment with no COMMUNITY_INDEX writer is not one Warn every 5 s (a departure from the pin).
+// failure again at Debug, and warns again when the failure changes or follows a view that opened,
+// so a deployment with no COMMUNITY_INDEX writer is not one Warn every 5 s.
 func TestCommunityViewLogsEachNewFailureOnce(t *testing.T) {
 	client := fixtureClient(t)
 	c, logs := newLogged(t, client)

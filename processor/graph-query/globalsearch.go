@@ -15,7 +15,7 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// Global search's strategies (design D1, D4): the names a reply's strategy field carries.
+// Global search's strategies: the names a reply's strategy field carries.
 const (
 	strategyEntity   = "entity"
 	strategyPath     = "path"
@@ -24,23 +24,21 @@ const (
 	strategyText     = "text"
 )
 
-// The hints the text tier answers past, named in its reply's unhonoured_hints in this order
-// (design D1, option (a)).
+// The hints the text tier answers past, named in its reply's unhonoured_hints in this order.
 const (
 	hintPath       = "path"
 	hintSimilarity = "similarity"
 	hintRanking    = "ranking"
 )
 
-// The path strategy's walk (design D4): the pin's depth and node limit, both directions, every
-// predicate, since the keyword tier names none.
+// The path strategy's walk: a fixed depth and node limit, both directions, every predicate, since
+// the keyword tier names none.
 const (
 	globalPathDepth = 3
 	globalPathNodes = 100
 )
 
-// globalIndexLimit is the most results the temporal and spatial strategies ask for (design D4): the
-// pin's.
+// globalIndexLimit is the most results the temporal and spatial strategies ask for.
 const globalIndexLimit = 100
 
 // globalSearchSubjects are the verbs global search reads: the alias and entity verbs through the
@@ -50,13 +48,13 @@ type globalSearchSubjects struct {
 	alias, entity, outgoing, incoming, temporal, spatial, prefix string
 }
 
-// globalSearch answers a question with the one strategy its hints choose (design D1, D4). A request
-// is one input however many requests it makes, and at most one error: ask and brokenReply count
-// theirs, the text tier counts a level whose every record is unreadable, an answer past unreadable
-// records, or a reply it cannot fit, and a classification that could not be read counts here. A
-// caller's invalid_request, a responder's refusal, a named start's entity_not_found and the text
-// tier's index_not_ready and revision_not_reached count none. verb is the verb's name in
-// graph.QueryVerbs, which the text tier's truncation counter and Warn carry.
+// globalSearch answers a question with the one strategy its hints choose. A request is one input
+// however many requests it makes, and at most one error: ask and brokenReply count theirs, the text
+// tier counts a level whose every record is unreadable, an answer past unreadable records, or a
+// reply it cannot fit, and a classification that could not be read counts here. A caller's
+// invalid_request, a responder's refusal, a named start's entity_not_found and the text tier's
+// index_not_ready and revision_not_reached count none. verb is the verb's name in graph.QueryVerbs,
+// which the text tier's truncation counter and Warn carry.
 func (c *Component) globalSearch(verb string, subjects globalSearchSubjects) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))
@@ -90,9 +88,9 @@ func (c *Component) globalSearch(verb string, subjects globalSearchSubjects) que
 	}
 }
 
-// resolveGlobal reads a question's reference through the shared resolver, asking the alias verb with
-// the request's min_revision. A reference that names no entity returns the ID "", for the caller to
-// decide: a one-word reference is searched as text, a named start is entity_not_found (design D1, D7).
+// resolveGlobal reads a question's reference through the shared resolver, asking the alias verb
+// with the request's min_revision. A reference that names no entity returns the ID "", for the
+// caller to decide: a one-word reference is searched as text, a named start is entity_not_found.
 func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) (string, uint64, error) {
 	aliasRequest, err := json.Marshal(struct {
 		Alias string `json:"alias"`
@@ -104,9 +102,9 @@ func (c *Component) resolveGlobal(ctx context.Context, subjects globalSearchSubj
 	return c.resolveReference(ctx, subjects.alias, aliasRequest, reference)
 }
 
-// globalEntity answers with the entity verb's reply bytes for the resolved reference, under the alias
-// reply's revision. A reference that names no entity, or an entity_not_found from the entity verb (a
-// valid ID with no record, or a holder since deleted), is searched as text (design D1); any other
+// globalEntity answers with the entity verb's reply bytes for the resolved reference, under the
+// alias reply's revision. A reference that names no entity, or an entity_not_found from the entity
+// verb (a valid ID with no record, or a holder since deleted), is searched as text; any other
 // refusal reaches the caller.
 func (c *Component) globalEntity(ctx context.Context, verb string, subjects globalSearchSubjects, reference string, request graph.GlobalSearchRequest, levelPrefix string) ([]byte, error) {
 	id, revision, err := c.resolveGlobal(ctx, subjects, reference, request.MinRevision)
@@ -130,10 +128,10 @@ func (c *Component) globalEntity(ctx context.Context, verb string, subjects glob
 	return envelope(c, subjects.entity, revision, graph.GlobalSearchData{Strategy: strategyEntity, Entity: json.RawMessage(entity)})
 }
 
-// globalPath answers with step 2's walk from the resolved start, as pathSearch answers it for the
-// same request, under the walk's revision. A start that names no entity is entity_not_found, as
-// entityByAlias answers it, and a start with no record is the entity verb's refusal as it came: a text
-// search would drop the walk (design D1, D7).
+// globalPath answers with the path search's walk from the resolved start, as pathSearch answers it
+// for the same request, under the walk's revision. A start that names no entity is
+// entity_not_found, as entityByAlias answers it, and a start with no record is the entity verb's
+// refusal as it came: a text search would drop the walk.
 func (c *Component) globalPath(ctx context.Context, subjects globalSearchSubjects, reference string, minRevision uint64) ([]byte, error) {
 	id, _, err := c.resolveGlobal(ctx, subjects, reference, minRevision)
 	if err != nil {
@@ -157,9 +155,9 @@ func (c *Component) globalPath(ctx context.Context, subjects globalSearchSubject
 }
 
 // globalTemporal answers with what the time-range verb returns for the question's range, truncated
-// included, under that reply's revision (design D4); a reply missing results or truncated is
-// refused, one error. Until a responder serves the verb (change 7), ask refuses transient internal
-// naming it and counts the error.
+// included, under that reply's revision; a reply missing results or truncated is refused, one
+// error. Until a responder serves the verb, ask refuses transient internal naming it and counts the
+// error.
 func (c *Component) globalTemporal(ctx context.Context, subject string, span query.TimeRange, minRevision uint64) ([]byte, error) {
 	request, err := json.Marshal(graph.TemporalRangeRequest{
 		StartTime: span.Start, EndTime: span.End, Limit: globalIndexLimit,
@@ -187,9 +185,9 @@ func (c *Component) globalTemporal(ctx context.Context, subject string, span que
 }
 
 // globalSpatial answers with what the bounds verb returns for the question's area, truncated
-// included, under that reply's revision (design D4); a reply missing results or truncated is
-// refused, one error. Until a responder serves the verb (change 7), ask refuses transient internal
-// naming it and counts the error.
+// included, under that reply's revision; a reply missing results or truncated is refused, one
+// error. Until a responder serves the verb, ask refuses transient internal naming it and counts the
+// error.
 func (c *Component) globalSpatial(ctx context.Context, subject string, area query.SpatialBounds, minRevision uint64) ([]byte, error) {
 	request, err := json.Marshal(graph.SpatialBoundsRequest{
 		North: area.North, South: area.South, East: area.East, West: area.West, Limit: globalIndexLimit,
@@ -227,15 +225,15 @@ func truncatedAbsent(raw []byte) bool {
 	return json.Unmarshal(raw, &keys) != nil || keys.Data.Truncated == nil
 }
 
-// globalText is the text tier (design D2-D6): searchText's refusals reach the caller as it returns
-// them; otherwise the reply, fit to max_payload, under the level's mark. levelPrefix is the asked
-// level's key prefix, from decodeGlobalSearchRequest, and unhonoured the route's hints the text tier
-// does not honour. verb is the verb asked, which the truncation counter and the Warn name.
+// globalText is the text tier: searchText's refusals reach the caller as it returns them; otherwise
+// the reply, fit to max_payload, under the level's mark. levelPrefix is the asked level's key
+// prefix, from decodeGlobalSearchRequest, and unhonoured the route's hints the text tier does not
+// honour. verb is the verb asked, which the truncation counter and the Warn name.
 //
-// An answer past unreadable records is a declared degrade (design D6): records are independent and
-// the answer reads only the readable ones, so it answers, sets unreadable_groups, counts one error
-// and logs one Warn. Both come only once the reply is encoded, so a request that fails to fit counts
-// the fit's one error alone.
+// An answer past unreadable records is a declared degrade: records are independent and the answer
+// reads only the readable ones, so it answers, sets unreadable_groups, counts one error and logs
+// one Warn. Both come only once the reply is encoded, so a request that fails to fit counts the
+// fit's one error alone.
 func (c *Component) globalText(ctx context.Context, verb, prefixSubject string, request graph.GlobalSearchRequest, levelPrefix string, unhonoured []string) ([]byte, error) {
 	result, err := c.searchText(ctx, prefixSubject, request, levelPrefix)
 	if err != nil {
@@ -283,7 +281,7 @@ type globalRoute struct {
 	unhonoured []string
 }
 
-// questionHints is the typed read of a keyword classification's Options (design D1).
+// questionHints is the typed read of a keyword classification's Options.
 type questionHints struct {
 	path           bool // path words, with or without a start
 	pathStart      string
@@ -298,8 +296,8 @@ type questionHints struct {
 }
 
 // decodeGlobalSearchRequest decodes strictly, refusing any key but query, min_revision and level by
-// name (design D2), a blank query and a level outside 0 to 2. It returns the level's key prefix,
-// which only the text tier reads; LevelPrefix owns which levels exist.
+// name, a blank query and a level outside 0 to 2. It returns the level's key prefix, which only the
+// text tier reads; LevelPrefix owns which levels exist.
 func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, string, error) {
 	var request graph.GlobalSearchRequest
 	if err := decodeStrict(data, &request); err != nil {
@@ -315,10 +313,10 @@ func decodeGlobalSearchRequest(data []byte) (graph.GlobalSearchRequest, string, 
 	return request, levelPrefix, nil
 }
 
-// routeGlobalSearch chooses the strategy that answers question (design D1). A one-word question is an
-// entity reference, read before any hint: the keyword patterns find trigger words inside IDs and
-// aliases (today, zone-a, link, max, most). Any other question is classified once with the keyword
-// tier. Every refusal comes before any downstream request: two filters, an impossible number, an
+// routeGlobalSearch chooses the strategy that answers question. A one-word question is an entity
+// reference, read before any hint: the keyword patterns find trigger words inside IDs and aliases
+// (today, zone-a, link, max, most). Any other question is classified once with the keyword tier.
+// Every refusal comes before any downstream request: two filters, an impossible number, an
 // aggregation or a text-routed hint beside a filter is invalid_request, and a classification ended
 // with ctx is transient internal, which the caller counts as an error.
 func routeGlobalSearch(ctx context.Context, question string) (globalRoute, error) {
@@ -392,12 +390,12 @@ func readHints(options map[string]any) (questionHints, error) {
 	return hints, nil
 }
 
-// chooseRoute is design D1's table, option (a), for a question of more than one word. Two filters are
-// refused first, since the caller can fix the question, then an aggregation, which no strategy
-// computes. A filter (a path start, a time range or an area) answers only alone: beside a text-routed
-// hint (path words with no start, a similarity or a ranking), or a start beside path predicates, it is
-// refused naming both, since either strategy would drop the other. The rest is the text tier's, each
-// text-routed hint named.
+// chooseRoute chooses the route for a question of more than one word. Two filters are refused
+// first, since the caller can fix the question, then an aggregation, which no strategy computes. A
+// filter (a path start, a time range or an area) answers only alone: beside a text-routed hint
+// (path words with no start, a similarity or a ranking), or a start beside path predicates, it is
+// refused naming both, since either strategy would drop the other. The rest is the text tier's,
+// each text-routed hint named.
 func chooseRoute(hints questionHints) (globalRoute, error) {
 	var filters []string
 	if hints.pathStart != "" {

@@ -24,16 +24,16 @@ import (
 // requestTimeout outlasts every wait these tests expect; a caller hitting it fails loudly.
 const requestTimeout = time.Minute
 
-// forward is one row of design D1's table: a verb graph-query serves, the row that answers it, and a
-// request it accepts.
+// forward is one row of the forward table: a verb graph-query serves, the row that answers it, and
+// a request it accepts.
 type forward struct {
 	verb, downstream graph.QueryVerb
 	request          []byte
 }
 
-// forwardRows reads design D1's table, written out here as the test's own statement of it, and finds
-// each row in graph.QueryVerbs. The order is the table's: a row of another responder shares a name,
-// and semantic forwards to a row of another name. A forward does not read its request.
+// forwardRows reads the forward table, written out here as the test's own statement of it, and
+// finds each row in graph.QueryVerbs. The order is the table's: a row of another responder shares a
+// name, and semantic forwards to a row of another name. A forward does not read its request.
 func forwardRows(t *testing.T) []forward {
 	t.Helper()
 	var rows []forward

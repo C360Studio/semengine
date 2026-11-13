@@ -39,11 +39,11 @@ func groupIDs(groups []clustering.Community) []string {
 }
 
 // TestTextTierScore: a record gains 2.0 for each term in its statistical summary and 1.5 for each
-// keyword and term where one contains the other, all lowercased, over the question's distinct terms;
-// up to five records scoring above 0 are read, best first, ties by key (design D2; spec, "The text tier
-// reads at most five matching groups, one page each"). It carries the step 5 pin probe's records (P1,
-// P2, notes/probes/step5-pin-probe.log) with the pin's order corrected: the pin kept records scoring 0
-// and its unstable sort left ties in input order.
+// keyword and term where one contains the other, all lowercased, over the question's distinct
+// terms; up to five records scoring above 0 are read, best first, ties by key (spec, "The text tier
+// reads at most five matching groups, one page each"). Its "no record scores" case holds records
+// that all score 0, none of which is read, and its "ties by key" case gives ties out of key order,
+// which are read by key.
 func TestTextTierScore(t *testing.T) {
 	t.Run("the rule's cases", func(t *testing.T) {
 		for _, tc := range []struct {
@@ -59,7 +59,7 @@ func TestTextTierScore(t *testing.T) {
 			{"each term and each keyword", clustering.Community{
 				StatisticalSummary: "pump and valve", Keywords: []string{"pump", "pumps", "valve"},
 			}, "pump valve", 2.0 + 2.0 + 1.5 + 1.5 + 1.5},
-			// The pin weighed a repeated term twice (inventory R6); the terms are distinct here.
+			// A repeated term would weigh twice; the terms are distinct here.
 			{"a repeated term counts once", clustering.Community{StatisticalSummary: "pump", Keywords: []string{"pump"}}, "pump Pump", 3.5},
 		} {
 			if got := groupScore(tc.record, searchTerms(tc.query)); got != tc.score {
@@ -72,8 +72,8 @@ func TestTextTierScore(t *testing.T) {
 		a := clustering.Community{ID: "a", StatisticalSummary: "pump station", Keywords: []string{"pump"}}
 		b := clustering.Community{ID: "b", StatisticalSummary: "valve station", Keywords: []string{"pu"}}
 		c := clustering.Community{ID: "c", StatisticalSummary: "valve", Keywords: []string{"valve", "pumps"}}
-		// a scores 3.5 for "pump" and b, c 1.5 each; all three 1.5 for "pumps". The pin's orders were
-		// [a c b], [a c b] and [c b a], input order c, b, a.
+		// a scores 3.5 for "pump" and b, c 1.5 each; all three 1.5 for "pumps". The input order is
+		// c, b, a, so a sort that leaves ties in input order fails.
 		for _, query := range []string{"pump", "pump pump", "pumps"} {
 			got := groupIDs(textGroups(records(c, b, a), searchTerms(query)))
 			if want := []string{"a", "b", "c"}; !slices.Equal(got, want) {
@@ -113,10 +113,10 @@ func TestTextTierScore(t *testing.T) {
 	})
 }
 
-// TestTextTierTermLimit: more than graph.MaxSearchTerms distinct terms is the caller's invalid_request,
-// refused before the community view is read, so it wins over index_not_ready; at the limit the
-// question reaches the view, which this component, never started, does not have (design D2, D3;
-// spec, "The text tier refuses an index it cannot read").
+// TestTextTierTermLimit: more than graph.MaxSearchTerms distinct terms is the caller's
+// invalid_request, refused before the community view is read, so it wins over index_not_ready; at
+// the limit the question reaches the view, which this component, never started, does not have
+// (spec, "The text tier refuses an index it cannot read").
 func TestTextTierTermLimit(t *testing.T) {
 	words := strings.Fields("alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec")
 	atLimit := strings.Join(words[:graph.MaxSearchTerms], " ")
@@ -152,8 +152,8 @@ func (s silentSource) WatchAll(ctx context.Context, _ ...jetstream.WatchOpt) (je
 	return s.watch, nil
 }
 
-// TestTextTierRefusesAViewCatchingUp: a community view that is running but has not finished its replay
-// is index_not_ready, transient, as is no view and a view that has stopped (design D2; spec, "The text
+// TestTextTierRefusesAViewCatchingUp: a community view that is running but has not finished its
+// replay is index_not_ready, transient, as is no view and a view that has stopped (spec, "The text
 // tier refuses an index it cannot read"). The view runs in a synctest bubble on a watch the test
 // holds silent; synctest.Wait returns once Run is blocked on that watch.
 func TestTextTierRefusesAViewCatchingUp(t *testing.T) {
@@ -196,16 +196,15 @@ func TestTextTierRefusesAViewCatchingUp(t *testing.T) {
 
 // TestMatchLabel: a match's label is the first non-empty string value, in triple order, of its most
 // salient label predicate, the lowest priority number, ties by predicate name; with none it has no
-// label (design D4; spec, "A match's label is its most salient label predicate"). It carries the
-// pin's label cases that survive D4 (entity_digest_labels_test.go at 8b99efe9): a title is the label;
-// an entity with no title had its ID's instance there, and has no label here.
+// label (spec, "A match's label is its most salient label predicate"). A title is the label; an
+// entity with no title has no label, never its ID's instance.
 func TestMatchLabel(t *testing.T) {
 	const (
 		title     = "dc.terms.title"
 		preferred = "acme.label.preferred"
 		alpha     = "acme.label.alpha"
 		zeta      = "acme.label.zeta"
-		// display is the pin's agentic display-name predicate (#31), which no label set here holds.
+		// display is an agentic display-name predicate, which no label set here holds.
 		display = "agent.identity.display-name"
 	)
 	order := labelOrder(map[string]int{title: 1, preferred: 0, zeta: 2, alpha: 2})
@@ -253,7 +252,7 @@ func TestMatchLabel(t *testing.T) {
 }
 
 // TestTextTierAnswer: the answer is a plain text built from the reply's fields, one sentence per
-// condition, each a literal here (design D4; spec, "A cut answer says so").
+// condition, each a literal here (spec, "A cut answer says so").
 func TestTextTierAnswer(t *testing.T) {
 	match := graph.TextSearchMatch{ID: "acme.ops.src.docs.note.a", Score: 0.5, Entity: []byte(`{}`)}
 	data := graph.TextSearchData{
@@ -291,8 +290,8 @@ func TestTextTierAnswer(t *testing.T) {
 }
 
 // TestTextTierFitKeepsTheBestThatFit: over max_payload the lowest-ranked matches are left out and
-// entities_truncated set, as localSearch fits (design D4). Every limit from the reply with no match
-// to the whole reply is checked against a scan written here: the most matches, first to last, whose
+// entities_truncated set, as localSearch fits. Every limit from the reply with no match to the
+// whole reply is checked against a scan written here: the most matches, first to last, whose
 // encoding fits.
 func TestTextTierFitKeepsTheBestThatFit(t *testing.T) {
 	// Each entity is longer than the sample sentence a cut adds, so leaving one out shrinks the reply.

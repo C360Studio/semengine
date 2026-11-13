@@ -77,9 +77,9 @@ func TestLifecycleBeforeStart(t *testing.T) {
 }
 
 // TestShutdownFailureKeepsAWatchCleanupFailure: once the run context has ended, the cancellation
-// alone, a view that never opened, or a watch lost as it ended is a clean end, and a view's Run that
-// joined a failure to stop its watch to the cancellation (graphview.View.Run, kvwatch.Stop) is a
-// failure that keeps both errors (#527).
+// alone, a view that never opened, or a watch lost as it ended is a clean end, and a view's Run
+// that joined a failure to stop its watch to the cancellation (graphview.View.Run, kvwatch.Stop) is
+// a failure that keeps both errors.
 func TestShutdownFailureKeepsAWatchCleanupFailure(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -109,7 +109,7 @@ func TestShutdownFailureKeepsAWatchCleanupFailure(t *testing.T) {
 }
 
 // TestHandlerForNamesAnUnservedVerb: a verb with no handler is a failure naming the verb and its
-// subject (design D7), which subscribeQueries returns from Start; a verb with one gets that handler.
+// subject, which subscribeQueries returns from Start; a verb with one gets that handler.
 func TestHandlerForNamesAnUnservedVerb(t *testing.T) {
 	verb := graph.QueryVerb{Name: "unserved", Subject: "graph.query.unserved", Responder: graph.ResponderGraphQuery}
 

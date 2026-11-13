@@ -13,9 +13,8 @@ import (
 	"github.com/c360studio/semengine/pkg/graphview"
 )
 
-// communityRecheck is how long the community supervisor waits before it opens COMMUNITY_INDEX again,
-// after the bucket was missing or a view ended: the pin's recheck_interval default
-// (pin:processor/graph-query/component.go:100-103), not configurable (design D3).
+// communityRecheck is how long the community supervisor waits before it opens COMMUNITY_INDEX
+// again, after the bucket was missing or a view ended. It is not configurable.
 const communityRecheck = 5 * time.Second
 
 // communityView is graph-query's view of COMMUNITY_INDEX, one record per group key.
@@ -25,17 +24,17 @@ type communityView = graphview.View[clustering.Community]
 const communityUnavailable = "community view unavailable; localSearch and the text search refuse index_not_ready until it opens again"
 
 // superviseCommunities runs views of COMMUNITY_INDEX until ctx, the run context, ends: it opens the
-// bucket through the catalog's reader, which never creates it, runs one view until it returns, waits
-// communityRecheck and opens again, as the pin did (pin:component.go:710-750). A missing bucket and a
-// lost watch are the same case: the key stays refused until a new view has caught up (design D3).
+// bucket through the catalog's reader, which never creates it, runs one view until it returns,
+// waits communityRecheck and opens again. A missing bucket and a lost watch are the same case: the
+// key stays refused until a new view has caught up.
 //
-// Each failure is logged, at Warn when it is the first, differs from the last one logged, or follows a
-// view that opened, and at Debug otherwise. The pin warned on every retry; before
-// graph-clustering's first tick has written COMMUNITY_INDEX, that is one Warn every 5 s in every
+// Each failure is logged, at Warn when it is the first, differs from the last one logged, or
+// follows a view that opened, and at Debug otherwise. A Warn on every retry would, before
+// graph-clustering's first tick has written COMMUNITY_INDEX, be one Warn every 5 s in every
 // deployment.
 //
 // Once ctx ends it returns nil, or the error of the view's Run when that says more than the
-// cancellation (shutdownFailure), which cleanup hands to Stop's caller (#527).
+// cancellation (shutdownFailure), which cleanup hands to Stop's caller.
 func (c *Component) superviseCommunities(ctx context.Context) error {
 	var last string
 	for {

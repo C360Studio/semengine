@@ -108,19 +108,18 @@ func NewBM25Embedder(cfg BM25Config) *BM25Embedder {
 
 // GenerateQuery embeds query-side text. BM25 is a symmetric bag-of-words model —
 // there is no query/document asymmetry, so the returned vector is what Generate
-// would produce for the same text against the same statistics (gh#438).
+// would produce for the same text against the same statistics.
 //
-// It is READ-ONLY over the corpus statistics (gh#619). Searching is not
-// observing a document: folding the query's terms into docCount/termDocCount and
-// its (typically 2-4 token) length into avgDocLength shifted the IDF weights and
+// It is READ-ONLY over the corpus statistics. Searching is not observing a
+// document: folding the query's terms into docCount/termDocCount and its
+// (typically 2-4 token) length into avgDocLength would shift the IDF weights and
 // the length-normalization denominator for every document embedded afterwards,
-// so a graph's rankings drifted as a function of how many times it had been
-// searched. Generate remains the only mutator.
+// so a graph's rankings would drift as a function of how many times it had been
+// searched. Generate is the only mutator.
 //
 // This does NOT make BM25 a correct lexical index — the statistics are still
-// process-local, unpersisted, and order-dependent across restarts. That is the
-// open decision in gh#619 (real index over an immutable snapshot vs. a stateless
-// hashed TF vector); this only stops searches from corrupting the corpus.
+// process-local, unpersisted, and order-dependent across restarts. Read-only
+// queries only stop searches from corrupting the corpus.
 func (b *BM25Embedder) GenerateQuery(ctx context.Context, texts []string) ([][]float32, error) {
 	return b.embed(ctx, texts, false)
 }

@@ -27,7 +27,7 @@ import (
 )
 
 // brokenInstance is the storage instance of a store whose every read fails, so the Worker fails
-// the entity content_error (text extraction failed), the tier-0 Worker failure design D5 names.
+// the entity content_error (text extraction failed), the Worker failure tier 0 can produce.
 const brokenInstance = "broken"
 
 type brokenStore struct{ storage.StreamableStore }
@@ -99,7 +99,7 @@ func (h *harness) awaitFailed(t *testing.T, what string, want map[string]uint64)
 }
 
 // TestQueriesWithheldUntilReady: both verbs ask the follower's QueryReady before they answer
-// (graph-embedding spec, "The embedding verbs are withheld until they can answer"; design D5).
+// (graph-embedding spec, "The embedding verbs are withheld until they can answer").
 // Each refusal is read while the state that causes it is held by the test, so it is not timing.
 func TestQueriesWithheldUntilReady(t *testing.T) {
 	t.Run("before the first build", func(t *testing.T) {
@@ -163,8 +163,8 @@ func TestQueriesWithheldUntilReady(t *testing.T) {
 	})
 }
 
-// TestWorkerFailureAnswersAndCounts: under F2 a Worker failure does not withhold an answer
-// (graph-embedding spec, "A document whose text cannot be extracted"; design D5): both verbs
+// TestWorkerFailureAnswersAndCounts: a Worker failure does not withhold an answer
+// (graph-embedding spec, "A document whose text cannot be extracted"): both verbs
 // answer from the other vectors with failed_records 1, while Health and the published status keep
 // reading the failure, degraded. A failure that arrives before the first build is refused with the
 // build, and once the build completes the verbs answer past it with no other change.
@@ -224,7 +224,7 @@ func TestWorkerFailureAnswersAndCounts(t *testing.T) {
 // TestHealthNamesLostCacheWatch: when EMBEDDING_INDEX is deleted under a running component, the
 // vector cache's Run returns while the run context is live: Health names the loss until the
 // process restarts and both verbs refuse index_not_ready (graph-embedding spec, "A lost cache
-// watch is a stuck state"; design D5). Nothing rebinds the watch: with the bucket recreated and
+// watch is a stuck state"). Nothing rebinds the watch: with the bucket recreated and
 // a record written to it, the loss is still named and the verbs still refuse. The loss latches
 // whether or not the first build is complete.
 func TestHealthNamesLostCacheWatch(t *testing.T) {
@@ -333,7 +333,7 @@ func noResponders(t *testing.T, client *natsclient.Client, what string) {
 }
 
 // TestNoResponderAfterStop: before Start and after Stop returns nothing answers either verb's
-// subject (design D5), and a request in flight when Stop begins is answered: Stop drains the
+// subject, and a request in flight when Stop begins is answered: Stop drains the
 // query subscriptions before it ends the run context, and returns only after the handler has.
 func TestNoResponderAfterStop(t *testing.T) {
 	t.Run("idle", func(t *testing.T) {

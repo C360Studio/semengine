@@ -26,15 +26,15 @@ func seedFailedRecord(t *testing.T, s *Storage, entityID, sourceText, reason str
 	}
 }
 
-// TestHandleKVEntry_SaveFailedPersistenceMissIsNonTerminal is the #613 F2 worker-side
-// statement: when generation fails AND the failure cannot be durably recorded (SaveFailed's
-// revision CAS never converges — a persistence MISS), handleKVEntry must return
+// TestHandleKVEntry_SaveFailedPersistenceMissIsNonTerminal is the worker-side statement of
+// an unrecorded failure: when generation fails AND the failure cannot be durably recorded
+// (SaveFailed's revision CAS never converges — a persistence MISS), handleKVEntry must return
 // terminal==false so the readiness watermark does NOT advance over a record that is still
 // durably pending. Recovery rides re-delivery. This mirrors saveAndNotify's retry-exhaustion
 // handling; the deadlock-avoidance property is preserved for failures that DID durably record.
 //
-// Fails without the fix because markFailed's non-superseded/non-gone error path still
-// reported a terminal OutcomeSkipped, advancing the watermark over the pending record.
+// It fails if markFailed's non-superseded/non-gone error path reports a terminal
+// OutcomeSkipped, which would advance the watermark over the pending record.
 func TestHandleKVEntry_SaveFailedPersistenceMissIsNonTerminal(t *testing.T) {
 	t.Parallel()
 	// In a bubble, so the KVStore's retry backoff runs on the fake clock.
@@ -76,14 +76,14 @@ func TestHandleKVEntry_SaveFailedPersistenceMissIsNonTerminal(t *testing.T) {
 	})
 }
 
-// TestHandleKVEntry_FailedRecordReprocessGatedByPhase is the #613 F3 statement that the
+// TestHandleKVEntry_FailedRecordReprocessGatedByPhase is the statement that the
 // snapshot-vs-live phase, captured at dequeue and passed as an immutable parameter, gates
 // FAILED-record reprocessing: a failed record classified snapshot IS re-embedded, one
 // classified live is SKIPPED (the hot-loop guard). The two are asserted deterministically
 // against handleKVEntry directly, independent of the goroutine scheduling.
 //
-// Fails without the fix because handleKVEntry re-read the shared snapshotComplete flag
-// (defaulting false in a bare Worker), so the live case would reprocess too.
+// It fails if handleKVEntry reads a shared snapshot-complete flag instead of its parameter
+// (that flag defaults to false in a bare Worker), so the live case would reprocess too.
 func TestHandleKVEntry_FailedRecordReprocessGatedByPhase(t *testing.T) {
 	t.Parallel()
 	ctx := t.Context()
@@ -131,7 +131,7 @@ func TestHandleKVEntry_FailedRecordReprocessGatedByPhase(t *testing.T) {
 	})
 }
 
-// TestFailedRecordRecoveredByHop1RepublishBackstop proves the #613 F3 backstop: even if a
+// TestFailedRecordRecoveredByHop1RepublishBackstop proves the phase gate's backstop: even if a
 // failed snapshot record were misclassified as live and skipped (the residual sub-instruction
 // window between the channel receive and the phase load), it is NOT stranded — hop-1
 // re-delivers the entity from ENTITY_STATES on restart and re-writes a fresh StatusPending
@@ -156,7 +156,7 @@ func TestFailedRecordRecoveredByHop1RepublishBackstop(t *testing.T) {
 	require.False(t, terminal)
 	require.Equal(t, 0, gen.count())
 
-	// BACKSTOP: hop-1's re-SavePending writes a fresh pending record (a LIVE pending write).
+	// BACKSTOP: hop 1's SavePendingGuarded writes a fresh pending record (a LIVE pending write).
 	require.NoError(t, pendingText(ctx, s, entityID, "", "text", 6))
 	pendingEntry, err := index.Get(ctx, entityID)
 	require.NoError(t, err)
@@ -272,7 +272,7 @@ func (*contextCapturingEmbedder) Model() string   { return "m" }
 func (*contextCapturingEmbedder) Dimensions() int { return 3 }
 func (*contextCapturingEmbedder) Close() error    { return nil }
 
-// TestFailedSnapshotRecordReprocessed_MultiWorker is the finding's deterministic multi-worker
+// TestFailedSnapshotRecordReprocessed_MultiWorker is the deterministic multi-worker
 // (>1 worker) statement: a failed record delivered in the restart snapshot is reprocessed
 // through the real Run -> Watch -> keyed-pool path. The sentinel is delivered only AFTER
 // the reprocessing terminal is observed, so the phase captured at dequeue is unambiguously
@@ -314,14 +314,14 @@ func TestFailedSnapshotRecordReprocessed_MultiWorker(t *testing.T) {
 	require.Equal(t, 1, gen.count())
 }
 
-// TestColdStartIdenticalContentCollapsesToOneGenerate is the #630 cold-start statement: when
+// TestColdStartIdenticalContentCollapsesToOneGenerate is the cold-start statement: when
 // the embedder has not resolved its vector width (Dimensions()==0), DedupKey withholds a
 // durable key, so generateShared receives "". Even then a burst of K workers holding
 // byte-identical content must collapse to ONE paid Generate call via a stable in-process
 // singleflight key derived from the content (width excluded).
 //
-// Fails without the fix because generateShared bypassed the singleflight for an empty key and
-// called the embedder directly, issuing one paid call per worker at cold start.
+// It fails if generateShared bypasses the singleflight for an empty key and calls the
+// embedder directly, which issues one paid call per worker at cold start.
 func TestColdStartIdenticalContentCollapsesToOneGenerate(t *testing.T) {
 	t.Parallel()
 	synctest.Test(t, func(t *testing.T) {

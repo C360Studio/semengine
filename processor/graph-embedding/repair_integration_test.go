@@ -18,7 +18,7 @@ import (
 )
 
 // The failures below are made on the test's NATS server the way an operator's stream edit would,
-// with no hook in the component (#186):
+// with no hook in the component:
 //
 //   - ENTITY_STATES reads fail once its stream stops allowing direct gets: the component's
 //     handle was bound with direct gets on, so nats.go keeps sending them and gets no responder.
@@ -116,8 +116,7 @@ type status struct {
 // the entity is stranded: its revision drains, it is counted failed, and no terminal outcome from
 // the Worker clears it, at a revision above every delivered one or at the highest revision (the
 // Worker's drain of an unreadable record). A hop-1 convergence (the repair lane, a new delivery or a
-// coalesced batch) clears it once the read answers (design D3; pin TestObsoleteTerminal_CannotClearStranding_PendingWriteSite and
-// _TombstoneSite).
+// coalesced batch) clears it once the read answers.
 func TestStrandedWithoutRevisionClearsOnlyOnConvergence(t *testing.T) {
 	client := fixtureClient(t)
 	h := startEmbedding(t, client, `{}`, nil)
@@ -166,11 +165,10 @@ func TestStrandedWithoutRevisionClearsOnlyOnConvergence(t *testing.T) {
 }
 
 // TestRepairConvergesStranded: the repair lane retries each of hop 1's three failures and only
-// those (design D3; pin TestFailedDelete_MarksStrandedAndRepairs,
-// TestRepairScope_EmbedderSideReasonNotReDriven). A read that succeeds while the pending write
-// after it fails marks the entity again, now for the write. A tombstone whose record delete fails
-// is marked at its revision; when the repair pass finds the entity absent and the delete
-// succeeds, the entity converges. The Worker's failure of an entity is not retried.
+// those. A read that succeeds while the pending write after it fails marks the entity again, now
+// for the write. A tombstone whose record delete fails is marked at its revision; when the repair
+// pass finds the entity absent and the delete succeeds, the entity converges. The Worker's failure
+// of an entity is not retried.
 func TestRepairConvergesStranded(t *testing.T) {
 	client := fixtureClient(t)
 	h := startEmbedding(t, client, `{}`, nil)
@@ -220,11 +218,10 @@ func TestRepairConvergesStranded(t *testing.T) {
 }
 
 // TestStartSeedsFailedMap: the failed records EMBEDDING_INDEX holds at Start are counted once
-// Start returns, with their reasons, and the first envelope carries them (design D3, "Seeded from
-// Storage.ScanFailed"); with none, nothing is counted. The seeded entity is not in ENTITY_STATES,
-// so nothing delivered changes its record. The Worker retries a failed record it finds at Start;
-// the record's body is in the gated store, so the retry waits there while the seed is checked
-// (review R3 at stop 2), and once let go it clears the failure.
+// Start returns, with their reasons, and the first envelope carries them; with none, nothing is
+// counted. The seeded entity is not in ENTITY_STATES, so nothing delivered changes its record.
+// The Worker retries a failed record it finds at Start; the record's body is in the gated store,
+// so the retry waits there while the seed is checked, and once let go it clears the failure.
 func TestStartSeedsFailedMap(t *testing.T) {
 	t.Run("failed records", func(t *testing.T) {
 		client := fixtureClient(t)
@@ -276,12 +273,11 @@ func TestStartSeedsFailedMap(t *testing.T) {
 	})
 }
 
-// TestLateFailureAfterAbsenceNotCounted: review finding R1 at stop 2. The Worker's failure of an
-// entity is stored, and its callback has not run when the tombstone ends the entity and a batch
-// extracted before the tombstone reads it absent. The callback then arrives: it is older than
-// the tombstone, so it is not counted, and nothing is left that could clear it. The calls are
-// the production ones, made in an order the lanes allow; the Worker is held on another entity
-// so it does not touch this one.
+// TestLateFailureAfterAbsenceNotCounted: the Worker's failure of an entity is stored, and its
+// callback has not run when the tombstone ends the entity and a batch extracted before the
+// tombstone reads it absent. The callback then arrives: it is older than the tombstone, so it is
+// not counted, and nothing is left that could clear it. The calls are the production ones, made
+// in an order the lanes allow; the Worker is held on another entity so it does not touch this one.
 func TestLateFailureAfterAbsenceNotCounted(t *testing.T) {
 	store := newGatedStore()
 	h := startEmbedding(t, fixtureClient(t), `{"workers":1}`, store.stores(t))

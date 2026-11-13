@@ -365,7 +365,7 @@ func TestFindSimilarOrderAndLimit(t *testing.T) {
 	})
 }
 
-// TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity (pin: similarity_determinism_test.go):
+// TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity:
 // over many calls the top-k of an all-equal-similarity corpus is the same, and is the k
 // lexicographically smallest IDs.
 func TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity(t *testing.T) {
@@ -396,7 +396,7 @@ func TestFindSimilarFromCache_DeterministicTopKAtEqualSimilarity(t *testing.T) {
 	})
 }
 
-// TestFindSimilarFromCache_ScopeFilter (pin: storage_scope_test.go) guards ADR-071: keep is
+// TestFindSimilarFromCache_ScopeFilter guards ADR-071: keep is
 // applied before scoring on the cache path, so a scoped search returns only in-scope IDs; a
 // nil keep scores every cached entity.
 func TestFindSimilarFromCache_ScopeFilter(t *testing.T) {
@@ -476,7 +476,7 @@ func TestFindSimilarReadsOneMoment(t *testing.T) {
 	})
 }
 
-// TestVectorCacheInvalidationLinearizesWithActiveRead (pin: storage_cache_health_test.go): a
+// TestVectorCacheInvalidationLinearizesWithActiveRead: a
 // FindSimilar whose read was made while the cache answered returns that answer even when Run
 // stops and returns before the call does, and Run does not wait for the call; once Run has
 // returned, a new FindSimilar is refused.

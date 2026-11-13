@@ -145,11 +145,11 @@ func TestTerminalCallbackOncePerOutcome(t *testing.T) {
 	})
 }
 
-// TestCASExhaustionIsNotTerminal (the pin's TestSaveAndNotify_CASExhaustedIsNotAFailure):
-// when the generated save's compare-and-set retries run out (natsclient.ErrKVMaxRetriesExceeded,
-// TestSaveExhaustionMatchesMaxRetriesExceeded), the record stays pending, no terminal or
-// generated callback fires, and no failure is counted: marking it failed could later flip a
-// good vector at the same revision. In a bubble, so the retry backoff runs on the fake clock.
+// TestCASExhaustionIsNotTerminal: when the generated save's compare-and-set retries run out
+// (natsclient.ErrKVMaxRetriesExceeded, TestSaveExhaustionMatchesMaxRetriesExceeded), the
+// record stays pending, no terminal or generated callback fires, and no failure is counted:
+// marking it failed could later flip a good vector at the same revision. In a bubble, so the
+// retry backoff runs on the fake clock.
 func TestCASExhaustionIsNotTerminal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const id = "acme.ops.robotics.gcs.drone.cas"
@@ -191,10 +191,10 @@ func TestCASExhaustionIsNotTerminal(t *testing.T) {
 	})
 }
 
-// TestFailureWithCanceledTextIsAFailure (design D7, changed): a failure counts as the Worker
-// shutting down only when its error matches context.Canceled and the Worker's context has
-// ended. The pin searched the message for "context canceled", so a product embedder's error
-// that only mentions it was dropped as a shutdown.
+// TestFailureWithCanceledTextIsAFailure: a failure counts as the Worker shutting down only
+// when its error matches context.Canceled and the Worker's context has ended. A product
+// embedder's error whose message only mentions "context canceled" is a failure, not a
+// shutdown.
 func TestFailureWithCanceledTextIsAFailure(t *testing.T) {
 	t.Run("text only, through Run", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
@@ -263,11 +263,10 @@ func TestFailureWithCanceledTextIsAFailure(t *testing.T) {
 	})
 }
 
-// TestBothLanesEmbedIdenticalBytes (design D7, changed): with the cap unset, the same over-cap
-// text embeds identical bytes inline and by reference, and both records carry the same dedup
-// key. 2,000 repeats of "abcd " are 10,000 runes; the default cap of 8,000 cuts after the
-// 1,600th word and the word-boundary rule drops the trailing space. At the pin the inline lane
-// read a cap of 0 as unlimited and embedded all 10,000 runes.
+// TestBothLanesEmbedIdenticalBytes: with the cap unset, the same over-cap text embeds
+// identical bytes inline and by reference, and both records carry the same dedup key. 2,000
+// repeats of "abcd " are 10,000 runes; the default cap of 8,000 cuts after the 1,600th word and
+// the word-boundary rule drops the trailing space.
 func TestBothLanesEmbedIdenticalBytes(t *testing.T) {
 	text := strings.Repeat("abcd ", 2000)
 	want := strings.TrimSuffix(strings.Repeat("abcd ", 1600), " ")
@@ -332,11 +331,11 @@ func runesOf(texts []string) int {
 	return len([]rune(texts[0]))
 }
 
-// TestKeyedCallbacksFollowRevisionOrder (design D6, #107; Codex's finding 2 on PR #458): N's
-// failure is stored and its terminal callback is held until pending M is in the bucket. The
-// callbacks complete as Failed(N) then Generated(M), and M's processing starts only after N's
-// callback returned. Two lanes, so in the pin's shared-channel shape a second worker is free to
-// take M while N's callback is held (notes/3.4.md shows this test failing on that shape).
+// TestKeyedCallbacksFollowRevisionOrder: N's failure is stored and its terminal callback is
+// held until pending M is in the bucket. The callbacks complete as Failed(N) then Generated(M),
+// and M's processing starts only after N's callback returned. Two lanes, so were the lanes fed
+// from one shared channel rather than keyed by entity, a second worker would be free to take M
+// while N's callback is held, and this test fails.
 func TestKeyedCallbacksFollowRevisionOrder(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const id = "acme.ops.robotics.gcs.drone.order"
@@ -397,7 +396,7 @@ func TestKeyedCallbacksFollowRevisionOrder(t *testing.T) {
 	})
 }
 
-// TestWorkerSaveRefusedWhenNewerPendingArrives (design D6; the revision guard against hop 1):
+// TestWorkerSaveRefusedWhenNewerPendingArrives (the revision guard against hop 1):
 // N's embedding is held until hop 1 has written pending M and it is in the bucket. N's save is
 // refused, onGenerated does not fire for it, and its outcome is OutcomeDeleted; M is then
 // processed and the record ends generated at M with M's vector.
@@ -456,10 +455,10 @@ func TestWorkerSaveRefusedWhenNewerPendingArrives(t *testing.T) {
 	})
 }
 
-// TestNoTextDeleteFailureIsNotTerminal (design D3, changed): when the fenced removal of a
-// record with no text fails with an error that is neither a moved key nor a missing one, no
-// terminal callback fires, the record stays pending, and the failure is logged. The pin
-// ignored the delete's error and reported the record skipped.
+// TestNoTextDeleteFailureIsNotTerminal: when the fenced removal of a record with no text
+// fails with an error that is neither a moved key nor a missing one, no terminal callback
+// fires, the record stays pending, and the failure is logged; the delete's error is never
+// ignored with the record reported skipped.
 func TestNoTextDeleteFailureIsNotTerminal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		const id = "acme.ops.robotics.gcs.drone.notextfail"

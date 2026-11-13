@@ -28,8 +28,8 @@ const cacheBucket = "EMBEDDING_INDEX"
 
 // unsubscribeFrame is the goroutine nats.go v1.55.0 starts to unsubscribe a subscription when
 // the context it was made with ends (js.go:2072-2077), as a stack dump prints it: the module
-// path's last element escapes its dot. Measured from this package's integration run
-// (notes/3.3.md); the lost-watch test fails if it stops matching a live watch.
+// path's last element escapes its dot. Measured from this package's integration run at that
+// version; TestVectorCacheRunReportsLostWatch fails if it stops matching a live watch.
 const unsubscribeFrame = "github.com/nats-io/nats%2ego.(*js).subscribe.func3("
 
 // putRecords writes n generated records to bucket.

@@ -60,7 +60,7 @@ Tests come first. Each code task ends at a clean-tree local verification gate (`
   clients / initiates pool & coalescer shutdown) in `graph-embedding`, `graph-index`, `graph-query`, and `websocket`,
   followed by a clean retry `Stop(liveCtx)`, pass; `TestComponent_Stop_Timeout` in `graph-ingest` updated to assert
   teardown initiated and retry succeeds; `gateway/graph-gateway` lifecycle suite passes.
-- [ ] 2.4 Docs, Go doc comments, admission ledger notes, and OpenSpec archive (design Migration Plan). Premise:
+- [x] 2.4 Docs, Go doc comments, admission ledger notes, and OpenSpec archive (design Migration Plan). Premise:
   Spelling B prose in `service/README.md:54-56,153-155,275-281,463-464,811-813`,
   `service/doc.go:47-49,133-136,237-245,344-346`, `service/base.go:215-216`, `service/service_manager.go:659-660`,
   `service/component_manager_lifecycle.go:132-133,141-143,174-175`, `config/README.md:211`, `config/doc.go:94`,

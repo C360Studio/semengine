@@ -10,14 +10,13 @@ import (
 	"time"
 )
 
-// pauseOnRecord is a component logger handler, given through deps.Logger, that holds the goroutine logging one record
-// (fix-301 design D2, "The pause"). On each record whose message is msg it closes entered (on the first) and blocks
-// until Release; every other record passes at once and is dropped. graph-ingest logs the Debug record "Entity
-// ingested" after the entity write and before the applied-sequence record and the acknowledgement, on the delivery
-// work goroutine, so pausing on it holds an input applied and unacknowledged (probe 1.1, notes/1.1.md). It logs
-// "query handlers registered" and "mutation handlers registered" on Start's goroutine once those subscriptions are
-// live and before Start completes. A Stop while the pause is held waits for the held work, so a test releases the
-// pause before Stop.
+// pauseOnRecord is a component logger handler, given through deps.Logger, that holds the goroutine logging one
+// record. On each record whose message is msg it closes entered (on the first) and blocks until Release; every other
+// record passes at once and is dropped. graph-ingest logs the Debug record "Entity ingested" after the entity write
+// and before the applied-sequence record and the acknowledgement, on the delivery work goroutine, so pausing on it
+// holds an input applied and unacknowledged. It logs "query handlers registered" and "mutation handlers registered"
+// on Start's goroutine once those subscriptions are live and before Start completes. A Stop while the pause is held
+// waits for the held work, so a test releases the pause before Stop.
 type pauseOnRecord struct {
 	msg         string
 	enterOnce   sync.Once

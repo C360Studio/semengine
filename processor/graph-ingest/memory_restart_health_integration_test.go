@@ -35,7 +35,7 @@ func awaitStreamVisible(ctx context.Context, t *testing.T, client *natsclient.Cl
 	waitCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	_, err = probe.Await(waitCtx, func(ctx context.Context) (bool, error) {
-		// The lookup's error is the observation's, so a wait that runs out names it (#572).
+		// The lookup's error is the observation's, so a wait that runs out names it.
 		_, lookupErr := js.Stream(ctx, entityStream.name)
 		return lookupErr == nil, lookupErr
 	}, func(found bool) bool { return found })
@@ -43,11 +43,11 @@ func awaitStreamVisible(ctx context.Context, t *testing.T, client *natsclient.Cl
 }
 
 // TestIntegration_MemoryStreamLostAtBrokerRestartStaysUnhealthy is graph-ingest-recovery,
-// "Memory transport lost at broker restart" (design D1 case a). The memory stream and
-// graph-ingest's consumer on it do not survive the restart, and the consume loop does not
-// end, so the tick's lookup is what reads the loss: once the producer creates the stream
-// again, Health stays unhealthy and names the backlog observation, before and after a
-// message is published to it.
+// "Memory transport lost at broker restart". The memory stream and graph-ingest's
+// consumer on it do not survive the restart, and the consume loop does not end, so the
+// tick's lookup is what reads the loss: once the producer creates the stream again,
+// Health stays unhealthy and names the backlog observation, before and after a message is
+// published to it.
 func TestIntegration_MemoryStreamLostAtBrokerRestartStaysUnhealthy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()

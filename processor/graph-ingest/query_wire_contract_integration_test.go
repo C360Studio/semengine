@@ -18,13 +18,11 @@ import (
 )
 
 // TestIntegration_QueryEntityNATS_WireContract drives the registered
-// graph.ingest.query.entity handler end-to-end and asserts on both
-// the SemStreams ADR-060 headers AND the JSON body envelope. Closes the SemStreams gh#93
-// Phase 3 reviewer B1/B2 regression class — this test asserts on
-// actual wire bytes, not synthetic fakes, so body changes are caught
-// immediately.
+// graph.ingest.query.entity handler end-to-end and asserts on both the ADR-060 headers
+// AND the JSON body envelope. It asserts on actual wire bytes, not synthetic fakes, so
+// body changes are caught immediately.
 //
-// SemStreams ADR-060 PR-D wire contract (retired "error: " prefix):
+// ADR-060 wire contract (no "error: " body prefix):
 //
 //	X-Status:      error
 //	X-Error-Class: invalid | transient | fatal
@@ -51,11 +49,11 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	require.NoError(t, c.Initialize())
 	require.NoError(t, c.Start(owner.startContext(ctx)))
 
-	// The pin slept 100ms here. Start returns only once the query handlers are
-	// subscribed, so nothing was being waited for.
+	// Start returns only once the query handlers are subscribed, so the requests
+	// need no wait.
 
 	t.Run("not_found_path", func(t *testing.T) {
-		// SemStreams ADR-060 wire shape:
+		// ADR-060 wire shape:
 		//   - X-Status: error
 		//   - X-Error-Class: invalid  (so IsInvalid(err) == true at the gateway)
 		//   - X-Error-Code: entity_not_found (stable machine code for 404 routing)
@@ -114,8 +112,7 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	})
 
 	t.Run("invalid_request_path", func(t *testing.T) {
-		// SemStreams ADR-060: malformed JSON → invalid class, JSON body.
-		// Note: uses errs.Classified (no Code), so X-Error-Code is absent.
+		// ADR-060: malformed JSON → invalid class, Code invalid_request, JSON body.
 		req := []byte("this is not valid JSON {{{")
 
 		msg, err := natsClient.RequestWithHeaders(ctx, "graph.ingest.query.entity", req, nil, wireRequestTimeout)
@@ -136,8 +133,8 @@ func TestIntegration_QueryEntityNATS_WireContract(t *testing.T) {
 	})
 
 	t.Run("empty_id_path", func(t *testing.T) {
-		// Validation error before KV lookup: empty id → invalid class, JSON body.
-		// Note: uses errs.Classified (no Code), so X-Error-Code is absent.
+		// Validation error before KV lookup: empty id → invalid class, Code
+		// invalid_request, JSON body.
 		req, _ := json.Marshal(map[string]string{"id": ""})
 
 		msg, err := natsClient.RequestWithHeaders(ctx, "graph.ingest.query.entity", req, nil, wireRequestTimeout)

@@ -83,7 +83,7 @@ func (m *mockKVBucket) Get(ctx context.Context, key string) (jetstream.KeyValueE
 // errWrongLastSequence is a CAS refusal as nats.go v1.55.0 returns it from Update and
 // from Delete with LastRevision (jetstream/kv.go:1110-1115): the server's API error,
 // code 10071, wrapping jetstream.ErrKeyRevisionMismatch. natsclient reads the code,
-// never the text (#146).
+// never the text.
 func errWrongLastSequence() error {
 	apiErr := &jetstream.APIError{
 		Code: 400, ErrorCode: jetstream.JSErrCodeStreamWrongLastSequence, Description: "wrong last sequence",
@@ -241,7 +241,7 @@ func (w *mockFilteredWatcher) Stop() error {
 	return nil
 }
 
-// Keys is unused: KVStore.Keys lists through WatchFiltered (#533).
+// Keys is unused: KVStore.Keys lists through WatchFiltered.
 func (m *mockKVBucket) Keys(_ context.Context, _ ...jetstream.WatchOpt) ([]string, error) {
 	return nil, errors.New("not implemented")
 }
@@ -622,7 +622,7 @@ func TestComponent_DataFlow_ReturnsMetrics(t *testing.T) {
 	assert.Zero(t, idle.ErrorRate, "nothing failed yet")
 
 	// One mutation request through the wrapper graph-ingest subscribes is one input
-	// message (#302). The rate is over wall-clock uptime, so only its movement is asserted.
+	// message. The rate is over wall-clock uptime, so only its movement is asserted.
 	_, err := meteredRoute(t, comp, "graph.mutation.entity.create")(ctx, mustCanonicalJSON(t, graph.CreateEntityRequest{
 		Entity:  canonicalMutationEntity(canonicalEntityA),
 		Triples: []message.Triple{canonicalTriple(canonicalEntityA, "test.state.value", "ready")},
@@ -652,10 +652,10 @@ func TestComponent_Initialize_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestComponent_Initialize_InvalidConfig: the factory is the one configuration check
-// (design D6). It refuses a configuration Config.Validate refuses, here a ports block with
-// no input port (a configuration with no ports block takes the default ports, ruling K),
-// and Initialize after a valid construction succeeds without checking again.
+// TestComponent_Initialize_InvalidConfig: the factory is the one configuration check. It
+// refuses a configuration Config.Validate refuses, here a ports block with no input port
+// (a configuration with no ports block takes the default ports), and Initialize after a
+// valid construction succeeds without checking again.
 func TestComponent_Initialize_InvalidConfig(t *testing.T) {
 	config := DefaultConfig()
 	config.Ports.Inputs = nil
@@ -814,7 +814,7 @@ func TestComponent_CreateEntity_EmptyID(t *testing.T) {
 
 // TestComponent_CreateEntity_RefusesNilContext: a nil context is refused as invalid
 // at the call, before any processing or storage, for an entity the same call stores
-// under a real context (checkpoint 3 M1; developer contract § Context ownership).
+// under a real context (developer contract § Context ownership).
 func TestComponent_CreateEntity_RefusesNilContext(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	entity := canonicalMutationEntity(canonicalEntityA)
@@ -942,7 +942,7 @@ func TestComponent_RespectsContext_Timeout(t *testing.T) {
 	err := comp.Start(ctx)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
-	// The pin read comp.lifecycleUsed here; the guard keeps its state (design D22).
+	// The lifecycle guard, not the component, keeps whether it was used.
 	assertGuardUnused(t, comp)
 }
 

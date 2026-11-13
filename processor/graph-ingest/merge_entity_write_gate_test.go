@@ -1,14 +1,12 @@
 package graphingest
 
-// merge_entity_write_gate_test.go — SemStreams gh#562 write-cost follow-up. MergeEntity
-// no longer runs its own full contract pass over the incoming candidate; the
-// MarshalEntityState write gate inside the CAS closure is the single
-// authoritative full-contract pass per committed candidate (both branches
-// marshal a superset of the incoming triples). These tests pin the preserved
-// invariant: an invalid candidate NEVER commits, on either closure branch, and
-// the failure blames the CALLER's candidate (not resident state — no
-// graph-state-reset classification, no poison latch) when the stored entity is
-// canonical.
+// merge_entity_write_gate_test.go: mergeEntityOnLane runs no full contract pass of its own
+// over the incoming candidate; the MarshalEntityState write gate inside the CAS closure
+// is the single authoritative full-contract pass per committed candidate (both branches
+// marshal a superset of the incoming triples). These tests pin the invariant: an
+// invalid candidate NEVER commits, on either closure branch, and the failure blames the
+// CALLER's candidate (not resident state — no graph-state-reset classification, no
+// poison latch) when the stored entity is canonical.
 
 import (
 	"context"

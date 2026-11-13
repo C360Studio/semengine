@@ -55,10 +55,10 @@ func batchQuery(ctx context.Context, t *testing.T, c *Component, ids ...string) 
 	return resp
 }
 
-// TestIntegration_UnconfirmedAppendInvalidatesCache is task 2.1 (#174; design D1). A batch query
-// caches entity E; an append whose update the bucket stores is answered with nats.ErrTimeout, so
-// graph-ingest sees an error for a write that stood. The next batch query must return the
-// appended statement, not the entry cached before the write.
+// TestIntegration_UnconfirmedAppendInvalidatesCache: a batch query caches entity E; an append
+// whose update the bucket stores is answered with nats.ErrTimeout, so graph-ingest sees an error
+// for a write that stood. The next batch query must return the appended statement, not the entry
+// cached before the write.
 func TestIntegration_UnconfirmedAppendInvalidatesCache(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -103,12 +103,11 @@ func TestIntegration_UnconfirmedAppendInvalidatesCache(t *testing.T) {
 		"a batch query after an append that stood must not be served the entry cached before it")
 }
 
-// TestIntegration_UnconfirmedDeleteClearsPoison is task 2.1 (#174; design D1). Entity E is
-// stored as a value graph-ingest refuses and recorded in the poison inventory; the operator's
-// repair, a delete at its revision, is stored by the bucket and answered with nats.ErrTimeout.
-// The inventory must no longer hold E, read through DebugStatus, and Health must be healthy:
-// the failed delete adds to the error count, which Health reports and does not read (design
-// D3, task 3.1).
+// TestIntegration_UnconfirmedDeleteClearsPoison: entity E is stored as a value graph-ingest
+// refuses and recorded in the poison inventory; the operator's repair, a delete at its
+// revision, is stored by the bucket and answered with nats.ErrTimeout. The inventory must no
+// longer hold E, read through DebugStatus, and Health must be healthy: the failed delete adds
+// to the error count, which Health reports and does not read.
 func TestIntegration_UnconfirmedDeleteClearsPoison(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

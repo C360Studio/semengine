@@ -123,7 +123,7 @@ func TestLaneGuard_UpdateAtCapDoesNotEvict(t *testing.T) {
 }
 
 // TestLaneGuard_RefusedKeysAreBounded: a key is reported new once, again after it is forgotten,
-// and the set of refused keys never holds more than the lane's capacity (design D21).
+// and the set of refused keys never holds more than the lane's capacity.
 func TestLaneGuard_RefusedKeysAreBounded(t *testing.T) {
 	g := newLaneGuard(2)
 	if !g.markRefused("a") || g.markRefused("a") {
@@ -187,7 +187,7 @@ func TestIngestGuardStale_MemoryTierAndFirstSeen(t *testing.T) {
 }
 
 // A different stream for the same entity must NOT be judged against another
-// stream's sequence (independent per-stream sequence spaces — round-2 fix).
+// stream's sequence (independent per-stream sequence spaces).
 func TestIngestGuardStale_PerStreamIndependence(t *testing.T) {
 	c := createTestComponent(t)
 	c.ingestGuardMem = []*laneGuard{newLaneGuard(16)}
@@ -333,7 +333,7 @@ func TestProcessIngest_DirtyStoredStateNaksAndInventoriesPerEntity(t *testing.T)
 			require.True(t, errors.As(err, &stateErr), "dirty persisted state must retain its typed reset error")
 			assert.Equal(t, tt.resetReason, stateErr.Reason)
 			assert.Equal(t, tt.entityID, stateErr.EntityID, "RMW classification must stamp the entity ID")
-			// D8: resident poison is the ENVIRONMENT's fault — Nak so the valid
+			// Resident poison is the ENVIRONMENT's fault — Nak so the valid
 			// arrival survives the repair window, never Term (permanent loss).
 			assert.True(t, msg.nak.Load(), "resident poison must Nak for redelivery after repair")
 			assert.False(t, msg.term.Load(), "resident poison must not destroy the valid arrival")
@@ -424,9 +424,9 @@ func settledAs(msg *keyedIngestTestMsg) string {
 	return "mixed"
 }
 
-// TestProcessIngest_DecisionsSettleAsBefore holds design D8, "Long apply": an input's application
-// returns a decision, and the delivery helper settles it once, as processIngest settled each branch
-// before it ran through the helper. An applied input has aged the readiness view by the time it is
+// TestProcessIngest_DecisionsSettleAsBefore holds graph-ingest-recovery, "Settlement order": an
+// input's application returns a decision, and the delivery helper settles it once, each branch as
+// processIngest decides it. An applied input has aged the readiness view by the time it is
 // acknowledged; a stale redelivery, and an input left for redelivery, do not age it. The branches
 // that terminate, and resident poison, are held by the tests above.
 func TestProcessIngest_DecisionsSettleAsBefore(t *testing.T) {

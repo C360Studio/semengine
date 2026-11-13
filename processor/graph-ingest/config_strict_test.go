@@ -12,9 +12,9 @@ import (
 
 // TestCreateGraphIngestRefusesUnknownKey: a configuration carrying a key graph-ingest
 // does not define is refused at construction, naming the key; the same configuration
-// without it builds (design D6, Config (b); component-registration, "Misspelled key").
-// The keys are a misspelling (ingest_lane) and a key graph-ingest no longer has
-// (enable_type_siblings, dropped with sibling edges by ruling G, #91 comment 6062681355).
+// without it builds (component-registration, "Misspelled key"). The keys are a
+// misspelling (ingest_lane) and a key an older configuration may still carry
+// (enable_type_siblings; graph-ingest writes no sibling edges).
 func TestCreateGraphIngestRefusesUnknownKey(t *testing.T) {
 	valid, err := json.Marshal(DefaultConfig())
 	if err != nil {
@@ -52,9 +52,8 @@ func TestCreateGraphIngestRefusesUnknownKey(t *testing.T) {
 // subject, stream, connection, file or store. An output port that names any other
 // destination would be reported by DeclarePorts and OutputPorts while nothing is written
 // there, so configuration validation refuses it as invalid, naming the port, whether it
-// replaces the ENTITY_STATES output or sits beside it (checkpoint 3 H2, PR #93 comment
-// 6099921473). Every kind an output port may have is listed; the one accepted is the
-// default, a kv-write port on ENTITY_STATES.
+// replaces the ENTITY_STATES output or sits beside it. Every kind an output port may
+// have is listed; the one accepted is the default, a kv-write port on ENTITY_STATES.
 func TestConfigRefusesOutputsGraphIngestDoesNotWrite(t *testing.T) {
 	unwritten := map[string]component.Portable{
 		"kv-write on another bucket": component.KVWritePort{Bucket: "OTHER"},
@@ -116,7 +115,7 @@ func TestConfigRefusesOutputsGraphIngestDoesNotWrite(t *testing.T) {
 // TestConfigRefusesDeclaredConsumerName: graph-ingest names each JetStream input's durable
 // consumer from its subject (consume.go), so a declared consumer_name would be dropped without a
 // word. Configuration validation refuses it as invalid, naming the port and the key, on every
-// path that validates (#442; graph-ingest-recovery, "A declared consumer name is refused").
+// path that validates (graph-ingest-recovery, "A declared consumer name is refused").
 func TestConfigRefusesDeclaredConsumerName(t *testing.T) {
 	config := DefaultConfig()
 	inputs := append([]component.PortDefinition(nil), config.Ports.Inputs...)

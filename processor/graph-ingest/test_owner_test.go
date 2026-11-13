@@ -33,7 +33,7 @@ func TestGraphIngestTestOwnerControlledStopPreservesAuthority(t *testing.T) {
 	}}
 	component := createTestComponent(t)
 	component.subscriptions = []graphIngestCoreSubscription{drain}
-	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
+	startGuardAcquiringNothing(t, component) // the guard is in use, as a started component's is
 	owner := newGraphIngestTestOwner(component)
 	startCtx = owner.startContext(opCtx)
 	if err := owner.stop(opCtx); err != nil {
@@ -58,7 +58,7 @@ func TestGraphIngestTestOwnerFailedAttemptIsNotRetried(t *testing.T) {
 	drain := &graphIngestTestDrain{drain: func(context.Context) error { return want }}
 	component := createTestComponent(t)
 	component.subscriptions = []graphIngestCoreSubscription{drain}
-	leaveGuardCleanupPending(t, component) // the pin set lifecycleUsed and cleanupPending (design D22)
+	leaveGuardCleanupPending(t, component) // the guard is used, with its cleanup still pending
 	owner := newGraphIngestTestOwner(component)
 	if err := owner.stop(opCtx); !errors.Is(err, want) {
 		t.Fatalf("concrete Stop error = %v, want %v", err, want)
@@ -83,7 +83,7 @@ func TestGraphIngestTestOwnerCanceledOperationKeepsFreshTerminalAuthority(t *tes
 	}}
 	component := createTestComponent(t)
 	component.subscriptions = []graphIngestCoreSubscription{drain}
-	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
+	startGuardAcquiringNothing(t, component) // the guard is in use, as a started component's is
 	owner := newGraphIngestTestOwner(component)
 	owner.startContext(operationCtx)
 	cancelOperation()

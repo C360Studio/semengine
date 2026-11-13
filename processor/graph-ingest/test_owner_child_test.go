@@ -120,7 +120,7 @@ func TestGraphIngestOwnerChildFixture(t *testing.T) {
 	}}
 	component := createTestComponent(t)
 	component.subscriptions = []graphIngestCoreSubscription{drain}
-	startGuardAcquiringNothing(t, component) // the pin set lifecycleUsed: true (design D22)
+	startGuardAcquiringNothing(t, component) // the guard is in use, as a started component's is
 	owner := newGraphIngestTestOwner(component)
 	startCtx = owner.startContext(operationCtx)
 	switch mode {

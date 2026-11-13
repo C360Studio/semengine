@@ -145,8 +145,8 @@ func TestComponent_HandleQueryPrefix_Success(t *testing.T) {
 }
 
 func TestComponent_HandleQueryPrefix_ReturnsFullEntities(t *testing.T) {
-	// This test specifically verifies that the response contains full entity data
-	// not just entity IDs (the bug that was fixed)
+	// This test specifically verifies that the response contains full entity data not
+	// just entity IDs
 	comp := createTestComponentWithMockKV(t, withAuthority("c360", "platform"))
 	ctx := context.Background()
 
@@ -194,9 +194,9 @@ func TestComponent_HandleQueryPrefix_ReturnsFullEntities(t *testing.T) {
 
 	// Verify it's a full entity with all data
 	assert.Equal(t, entity.ID, resp.Entities[0].ID)
-	// 2 user triples + the SemStreams ADR-054 entity.indexing.profile stamp (appended at
-	// creation). No producer declared a profile here, so it defaults to the
-	// control floor; the user triples keep their original leading order.
+	// 2 user triples + the entity.indexing.profile stamp (appended at creation). No
+	// producer declared a profile here, so it defaults to the control floor; the user
+	// triples keep their original leading order.
 	assert.Len(t, resp.Entities[0].Triples, 3, "should have 2 user triples + the indexing-profile stamp")
 	assert.Equal(t, "robotics.status.armed", resp.Entities[0].Triples[0].Predicate)
 	profile, ok := resp.Entities[0].GetPropertyValue(vocabulary.EntityIndexingProfile)

@@ -91,8 +91,8 @@ func TestConfigValidateMutationProviderRefusals(t *testing.T) {
 			want:   malformedMutations,
 		},
 		{
-			// Ruled on #323 (Q1): any one subject on graph.mutation. makes a
-			// port a member, so this second member beside the provider is refused.
+			// Any one subject on graph.mutation. makes a port a member, so this
+			// second member beside the provider is refused.
 			name: "jetstream input with one graph.mutation subject",
 			config: configWith(entityStream, valid, component.PortDefinition{
 				Name: "events",

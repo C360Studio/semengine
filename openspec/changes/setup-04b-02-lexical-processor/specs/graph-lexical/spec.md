@@ -5,9 +5,9 @@
 ### Requirement: The index follows ENTITY_STATES and is rebuilt on every start
 
 graph-lexical SHALL follow `ENTITY_STATES` through `graph/follower` under the readiness key `graph-lexical`, apply
-each delivered entity to its in-memory `lexical.Index` in delivery order, and ignore a delivery at or below the
-revision it last applied for that key. It SHALL report a revision complete only after the index holds it. After a
-start it SHALL hold exactly the live entities with text, whatever was written or deleted before.
+each delivered entity's inline text to its in-memory `lexical.Index` in delivery order, and ignore a delivery at or
+below the revision the index holds for that key. After a start it SHALL hold exactly the live entities with text,
+whatever was written or deleted before.
 
 #### Scenario: A restart rebuilds the index
 
@@ -24,6 +24,23 @@ start it SHALL hold exactly the live entities with text, whatever was written or
 
 - **WHEN** an entity is deleted and its tombstone's revision is indexed
 - **THEN** no search returns it (`TestDeleteRemovesEntity`)
+
+### Requirement: A revision completes only once its text is in the index
+
+graph-lexical SHALL report a revision complete only after the index holds it and, for an entity with an offloaded
+body, after that body is indexed or has reached a state below. A body read for a revision SHALL be indexed only if
+the index still holds that revision for the key when the read returns; otherwise it SHALL be dropped.
+
+#### Scenario: A body read that returns after a newer delivery
+
+- **WHEN** a body read for revision R is in flight and a delivery of the same key at R+1 is applied before it returns
+- **THEN** the index holds R+1's text and never R's body (`TestStaleBodyReadDropped`)
+
+#### Scenario: Any history of deliveries, deletes and body reads
+
+- **WHEN** a generated history interleaves deliveries, deletes, body outcomes and late read returns over a few keys
+- **THEN** after each step every live key holds its latest revision's inline text, plus that revision's body only
+  if that read succeeded, as a reference model says (`TestPropApplyMatchesModel`, seed and checks recorded)
 
 ### Requirement: The search verb answers only once the index has caught up
 
@@ -48,8 +65,9 @@ reply would carry it SHALL refuse transient `revision_not_reached` with that rev
 
 A reply SHALL be a `graph.QueryResponse` from producer `graph-lexical` whose `indexed_revision` is a lower bound on
 what it reflects, holding `graph.LexicalSearchData`: `results`, at most `limit` hits ordered by score then entity
-ID, each `entity_id` and `score`; `matched`, every match under the scope before the limit; and `unread_bodies`. A
-scope SHALL hold entity-ID prefixes, an empty list meaning every entity.
+ID, each `entity_id` and `score`; `matched`, every match under the scope before the limit; and
+`bodies_not_indexed`, the number of entities in the whole index, not the scope or the hits, whose offloaded body is
+not in the index when the reply is built.
 
 #### Scenario: The limit's range
 
@@ -57,41 +75,72 @@ scope SHALL hold entity-ID prefixes, an empty list meaning every entity.
 - **THEN** 0 means 10, 1 to 100 is used as given, and any other value is refused `invalid_request`
   (`TestSearchLimitRange`)
 
-#### Scenario: Better matches outside the scope
-
-- **WHEN** a scoped search with limit 1 runs while better matches lie outside the scope
-- **THEN** the hit is the best inside the scope and `matched` counts every match inside it
-  (`TestSearchScopeLimitMatched`)
-
 #### Scenario: A refused query
 
 - **WHEN** `lexical.ParseQuery` refuses the query, here `pump*`
 - **THEN** it is refused `invalid_request`, the message naming the rule, here reserved syntax
   (`TestSearchRefusesParseErrors`)
 
-### Requirement: An offloaded body is read with a bound, and an unread one is declared
+### Requirement: A search is scoped by entity-ID prefix before the limit
 
-For an entity whose `StorageRef` names a registered store, graph-lexical SHALL index the body read through
-`graph/entitytext` after its inline text. A body not read (no store registered, a read error, or the read's
-deadline) SHALL leave the entity indexed on its inline text, counted in `unread_bodies` and in the readiness
-envelope under `body_unread`, without withholding the verb, and SHALL be read again on a later repair pass until it
-reads or the entity changes.
+A scope SHALL hold entity-ID prefixes, an empty list meaning every entity, and SHALL be applied before the limit.
+
+#### Scenario: Better matches outside the scope
+
+- **WHEN** a scoped search with limit 1 runs while better matches lie outside the scope
+- **THEN** the hit is the best inside the scope and `matched` counts every match inside it
+  (`TestSearchScopeLimitMatched`)
+
+### Requirement: An offloaded body is read on one path with a bound
+
+For an entity whose `StorageRef` names a store, graph-lexical SHALL read the body through `graph/entitytext` on one
+body path that the follower never waits for, and index it after the inline text. A body not in the index SHALL be in
+one of four states, `queued`, `unread`, `missing` or `no store`, each counted in `bodies_not_indexed` and in a gauge
+by state, none withholding the verb.
+
+#### Scenario: A body cut at the cap
+
+- **WHEN** an entity's body is longer than `max_text_len`
+- **THEN** its words past the cap are not found, its name's words are, and the cut gauge counts it
+  (`TestBodyCutAtCap`)
+
+### Requirement: Each body state is retried and reported by its cause
+
+`queued` SHALL mean not yet read. `unread` (a read error or deadline, or its store stalled) SHALL be retried by every
+repair pass and reported as the failure `body_unread`, so the readiness key reads degraded and `Health` names it.
+`missing` (the store answers `storage.ErrObjectNotFound`) SHALL not be retried until the entity changes and is not a
+failure. `no store` (no store registered under the instance) SHALL be looked up again on every repair pass and is not
+a failure.
 
 #### Scenario: A store that fails, then recovers
 
 - **WHEN** an entity's body cannot be read at start and its store later serves it
-- **THEN** a search for a body-only word misses it with `unread_bodies` 1, and finds it with `unread_bodies` 0 after
-  the next repair pass (`TestUnreadBodyCountedThenRepaired`)
+- **THEN** a search for a body-only word misses it, `bodies_not_indexed` is 1 and the key reads degraded, and after
+  the next repair pass it is found, `bodies_not_indexed` is 0 and the key reads ready
+  (`TestUnreadBodyCountedThenRepaired`)
 
-#### Scenario: A store that blocks until its context ends
+#### Scenario: A body that is gone, and a store that is not registered
 
-- **WHEN** a store's read blocks until its context ends
-- **THEN** the initial build still completes and the entity is counted in `unread_bodies` (`TestHungStoreBounded`)
+- **WHEN** one entity's body is missing from its store and another names an instance no store is registered under
+- **THEN** both are counted, `missing` and `no store`, the key reads ready and `Health` is healthy
+  (`TestMissingAndUnresolvedBodies`)
+
+### Requirement: A store that stalls is skipped until the next repair pass
+
+After a read reaches its deadline on a store, graph-lexical SHALL not read that store again until the next repair
+pass, and its queued entities SHALL complete as `unread`. Repair passes SHALL not overlap.
+
+#### Scenario: Many entities on a store that blocks
+
+- **WHEN** 10,000 entities have bodies on a store whose reads block until their context ends
+- **THEN** the initial build completes within one read deadline of the inline replay, every one of them counted
+  `unread` (`TestBlockingStoreBoundsFirstBuild`, under `testing/synctest`)
 
 ### Requirement: Configuration is strict and tier 0
 
 graph-lexical SHALL refuse at construction an unknown config key, naming it, SHALL take `text_suffixes` and
-`max_text_len` with graph-embedding's meaning (`graph/entitytext`), and SHALL import no model or provider module.
+`max_text_len` with graph-embedding's meaning (`graph/entitytext`), `max_text_len` defaulting to 16,000 characters,
+and SHALL import no model or provider module.
 
 #### Scenario: Unknown key and imports
 

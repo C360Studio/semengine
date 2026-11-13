@@ -1,0 +1,207 @@
+// Probe for setup-04b-02-lexical-processor (design read findings 2 and 6), run outside the repository.
+//
+// Part A: NATS object store reads at nats.go v1.55.0 against the repo's pinned image: the time of a healthy read
+// at passage size, and what a read does when the server stops answering (docker pause) under a context deadline,
+// and under a plain cancel with no deadline.
+// Part B: a KV WatchAll whose reader is slow while a burst of writes lands: are all revisions delivered, in order,
+// and does the watch stay open?
+package main
+
+import (
+	"bytes"
+	"context"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/nats-io/nats.go"
+	"github.com/nats-io/nats.go/jetstream"
+	"github.com/testcontainers/testcontainers-go"
+	"github.com/testcontainers/testcontainers-go/wait"
+)
+
+const image = "nats:2.15.0-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4"
+
+func must(err error) {
+	if err != nil {
+		panic(err)
+	}
+}
+
+func main() {
+	ctx := context.Background()
+	c, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
+		ContainerRequest: testcontainers.ContainerRequest{
+			Image: image, Cmd: []string{"-js"}, ExposedPorts: []string{"4222/tcp"},
+			Name:       "semengine-lexprobe",
+			WaitingFor: wait.ForLog("Server is ready"),
+		},
+		Started: true,
+	})
+	must(err)
+	defer func() { _ = c.Terminate(context.Background()) }()
+	host, err := c.Host(ctx)
+	must(err)
+	port, err := c.MappedPort(ctx, "4222/tcp")
+	must(err)
+	url := fmt.Sprintf("nats://%s:%s", host, port.Port())
+	nc, err := nats.Connect(url)
+	must(err)
+	defer nc.Close()
+	js, err := jetstream.New(nc)
+	must(err)
+	fmt.Println("nats.go", nats.Version, "server", nc.ConnectedServerVersion())
+
+	partA(ctx, js, c.GetContainerID())
+	partB(ctx, js)
+}
+
+func partA(ctx context.Context, js jetstream.JetStream, id string) {
+	os_, err := js.CreateObjectStore(ctx, jetstream.ObjectStoreConfig{Bucket: "PROBE_CONTENT"})
+	must(err)
+	for _, size := range []int{2000, 6000} {
+		const n = 1000
+		body := bytes.Repeat([]byte("word "), size/5)
+		for i := range n {
+			_, err := os_.PutBytes(ctx, fmt.Sprintf("b%d-%d", size, i), body)
+			must(err)
+		}
+		var times []time.Duration
+		for i := range n {
+			start := time.Now()
+			r, err := os_.Get(ctx, fmt.Sprintf("b%d-%d", size, i))
+			must(err)
+			data, err := io.ReadAll(r)
+			must(err)
+			_ = r.Close()
+			times = append(times, time.Since(start))
+			if len(data) != len(body) {
+				panic("short read")
+			}
+		}
+		slices.Sort(times)
+		var sum time.Duration
+		for _, t := range times {
+			sum += t
+		}
+		fmt.Printf("A healthy read, %d bytes, %d sequential Get+ReadAll: mean %v p50 %v p99 %v max %v\n",
+			size, n, sum/time.Duration(n), times[n/2], times[n*99/100], times[n-1])
+	}
+
+	docker := func(args ...string) {
+		out, err := exec.Command("docker", args...).CombinedOutput()
+		if err != nil {
+			panic(fmt.Sprintf("docker %v: %v %s", args, err, out))
+		}
+	}
+
+	// A1: Get issued while the server is paused, under a 2 s deadline.
+	docker("pause", id)
+	dctx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	start := time.Now()
+	r, err := os_.Get(dctx, "b2000-1")
+	if err == nil {
+		_, err = io.ReadAll(r)
+	}
+	cancel()
+	fmt.Printf("A1 Get while paused, 2s deadline: returned after %v, err=%v\n", time.Since(start).Round(time.Millisecond), err)
+	docker("unpause", id)
+
+	// A2: Get returns a reader, then the server pauses, then ReadAll under the deadline.
+	// A large object so the read is still in flight when the pause lands.
+	big := bytes.Repeat([]byte("x"), 32<<20)
+	_, err = os_.PutBytes(ctx, "big", big)
+	must(err)
+	dctx, cancel = context.WithTimeout(ctx, 3*time.Second)
+	r, err = os_.Get(dctx, "big")
+	must(err)
+	buf := make([]byte, 128<<10)
+	_, err = r.Read(buf)
+	must(err)
+	docker("pause", id)
+	start = time.Now()
+	_, err = io.ReadAll(r)
+	cancel()
+	fmt.Printf("A2 read in flight when paused, 3s deadline: returned after %v, err=%v\n", time.Since(start).Round(time.Millisecond), err)
+	docker("unpause", id)
+
+	// A3: as A2 but no deadline, cancelled 1 s after the pause.
+	cctx, ccancel := context.WithCancel(ctx)
+	r, err = os_.Get(cctx, "big")
+	must(err)
+	_, err = r.Read(buf)
+	must(err)
+	docker("pause", id)
+	time.AfterFunc(time.Second, ccancel)
+	start = time.Now()
+	_, err = io.ReadAll(r)
+	fmt.Printf("A3 read in flight when paused, no deadline, cancel after 1s: returned after %v, err=%v\n", time.Since(start).Round(time.Millisecond), err)
+	docker("unpause", id)
+	ccancel()
+
+	// A4: Get of a key that does not exist.
+	_, err = os_.Get(ctx, "absent")
+	fmt.Printf("A4 Get of an absent key: errors.Is ErrObjectNotFound=%v err=%v\n", err != nil && strings.Contains(err.Error(), "not found"), err)
+	_ = os.Stdout.Sync()
+}
+
+func partB(ctx context.Context, js jetstream.JetStream) {
+	kv, err := js.CreateKeyValue(ctx, jetstream.KeyValueConfig{Bucket: "PROBE_STATES"})
+	must(err)
+	const preload, burst = 5000, 20000
+	for i := range preload {
+		_, err := kv.Put(ctx, fmt.Sprintf("k%d", i), []byte("v"))
+		must(err)
+	}
+	w, err := kv.WatchAll(ctx)
+	must(err)
+	defer func() { _ = w.Stop() }()
+
+	go func() {
+		// The burst lands while the reader is slow.
+		for i := range burst {
+			if _, err := kv.Put(ctx, fmt.Sprintf("k%d", i%7000), []byte("v2")); err != nil {
+				fmt.Println("B put error:", err)
+				return
+			}
+		}
+	}()
+
+	var last uint64
+	got, gaps, outOfOrder, snapshotEnd := 0, 0, 0, false
+	start := time.Now()
+	deadline := time.After(3 * time.Minute)
+	want := uint64(preload + burst)
+	for last < want {
+		select {
+		case e, ok := <-w.Updates():
+			if !ok {
+				fmt.Printf("B updates channel CLOSED after %d entries, last revision %d\n", got, last)
+				return
+			}
+			if e == nil {
+				snapshotEnd = true
+				continue
+			}
+			got++
+			rev := e.Revision()
+			if rev <= last {
+				outOfOrder++
+			} else if last != 0 && rev != last+1 && snapshotEnd {
+				gaps++
+			}
+			last = rev
+			time.Sleep(time.Millisecond) // the slow Deliver
+		case <-deadline:
+			fmt.Printf("B timed out: %d entries, last revision %d of %d\n", got, last, want)
+			return
+		}
+	}
+	fmt.Printf("B slow reader (1 ms per entry), %d preloaded + %d burst puts: %d entries in %v, last revision %d, "+
+		"live-phase revision gaps %d, out of order %d, channel open\n",
+		preload, burst, got, time.Since(start).Round(time.Millisecond), last, gaps, outOfOrder)
+}

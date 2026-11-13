@@ -1,0 +1,12 @@
+# objectstore-watch-probe, run 2026-11-12 on darwin/arm64 (Apple M3 Pro), Docker Desktop 29.9.3
+# go1.26.11, nats.go v1.55.0, testcontainers-go v0.44.0, image nats:2.15.0-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4
+# command: TESTCONTAINERS_RYUK_DISABLED=true ./natsprobe.bin (testcontainers banner lines removed)
+nats.go 1.55.0 server 2.15.0
+A healthy read, 2000 bytes, 1000 sequential Get+ReadAll: mean 463.182µs p50 429.209µs p99 1.069667ms max 5.166875ms
+A healthy read, 6000 bytes, 1000 sequential Get+ReadAll: mean 418.547µs p50 412.375µs p99 653.708µs max 808.25µs
+A1 Get while paused, 2s deadline: returned after 2.002s, err=context deadline exceeded
+A2 read in flight when paused, 3s deadline: returned after 2.967s, err=nats: timeout
+A3 read in flight when paused, no deadline, cancel after 1s: returned after 4.952s, err=context canceled
+A4 Get of an absent key: errors.Is ErrObjectNotFound=true err=nats: object not found
+B slow reader (1 ms per entry), 5000 preloaded + 20000 burst puts: 25000 entries in 31.231s, last revision 25000, live-phase revision gaps 0, out of order 0, channel open
+# note: the A4 label "errors.Is ErrObjectNotFound" is a misnomer in the source; the check is strings.Contains(err.Error(), "not found")

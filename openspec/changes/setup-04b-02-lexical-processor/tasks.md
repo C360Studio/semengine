@@ -16,12 +16,16 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   graph-embedding's at `processor/graph-embedding/hop1.go:228` with defaults `config.go:27` and cap `config.go:23`,
   its body read at `graph/embedding/worker.go:744` with no deadline (inventory §2a; #551); `storage` reaches no NATS
   module (`go list -deps ./storage | grep -c nats-io` is 0); the NATS object store's read returns at its context's
-  deadline at nats.go v1.55.0 (`notes/probes/objectstore-watch-probe.log`, A1 and A2). Accept:
+  deadline at nats.go v1.55.0, with `nats: timeout`, which wraps no context error
+  (`notes/probes/objectstore-watch-probe.log`, A1 and A2); a body read failure fails the record `content_error`
+  (`graph/embedding/worker.go:417-421`). The fakes in `TestBodyReadDeadline` and `TestHungStoreFreesWorkerLane`
+  wait for their context, then return an error that wraps no context error (A2's shape). Accept:
   `TestEmbeddingTextUnchanged` written and passing against today's extractor before the move, then after;
   `TestNameAndBodyRoles`, `TestDocumentCap`, `TestBodyReadDeadline` (synctest), `TestBodyReadOutcomes`,
-  `TestEntityTextImportsNoNATS` and its sensitivity check pass; graph-embedding's existing tests pass unchanged; a
-  mutant that selects label predicates in `Values` and one that cuts Name are each shown to fail. PR body:
-  `Closes #551`.
+  `TestHungStoreFreesWorkerLane` (synctest), `TestEntityTextImportsNoNATS` and its sensitivity check pass;
+  graph-embedding's existing tests pass unchanged; a mutant that selects label predicates in `Values`, one that
+  cuts Name, and one that decides the deadline with `errors.Is(err, context.DeadlineExceeded)` are each shown to
+  fail. PR body: `Closes #551`.
 - [ ] 2.2 PR B. Index memory before real data (design D7, #623). Premise: about 60 B per held word, 9.5 KB per
   entity at 157 words (#623; inventory §2c); the word-number layout measured 472 B per 20-word entity
   (`openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/probes/sequence-probe.log`); SemSource's
@@ -36,13 +40,15 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   (`processor/graph-clustering/component.go:192-203`, `:276`); `lexical.Index` holds no revision
   (`graph/lexical/index.go:80-84`); the shell and run-context rules (inventory §6). Generated checks are used, not
   examples alone, because two paths write one key and the order of their outcomes is the risk (design D2). Accept:
-  `TestStaleBodyReadDropped` (the named witness), then `TestPropApplyMatchesModel` against the reference model, seed
-  and completed checks in `notes/2.3.md`; `TestRestartRebuildsSameAnswers`, `TestOlderDeliveryIgnored`,
+  `TestStaleBodyReadDropped` (the named witness, the floor passing the dropped revision), then
+  `TestPropApplyMatchesModel` against the reference model, which also checks that every delivered revision
+  completes, seed and completed checks in `notes/2.3.md`; `TestRestartRebuildsSameAnswers`, `TestOlderDeliveryIgnored`,
   `TestDeleteRemovesEntity`, `TestConfigRefusesUnknownKey`, `TestIndexGauges`, the `lifecycle-suite` run through
   the component's adapter, and `TestGraphLexicalImportsNoProviderModule` (added to
   `internal/harness/contract/embeddingprovider_test.go`, with the sensitivity loop) pass;
   `readiness.KeyGraphLexical` is declared; a mutant that applies a body read whatever the key's revision, one that
-  drops the delivery guard, and one that calls `Complete` before `Put` are each shown to fail.
+  drops the delivery guard, one that calls `Complete` before `Put`, and one that never completes a dropped read's
+  revision are each shown to fail.
 - [ ] 2.4 PR C. The body path (design D5). Premise: SemSource offloads every passage and code body (inventory §9);
   a missing object is `storage.ErrObjectNotFound`, not transient (`storage/objectstore/store.go:148-153`); store
   providers start and register before other components (`service/component_manager_lifecycle.go:37-54`, `:123`);
@@ -50,8 +56,10 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   (10,000 entities, synctest), `TestUnreadBodyCountedThenRepaired`, `TestMissingAndUnresolvedBodies` and
   `TestBodyCutAtCap` pass; `TestUnreadBodyCountedThenRepaired` and `TestMissingAndUnresolvedBodies` also run as
   integration tests against an objectstore component on the shared NATS server, while the blocking case stays a
-  unit test with a store that blocks until its context ends, since no harness holds the server down (#574); a
-  mutant that keeps reading a stalled store, and one that retries a missing body, are each shown to fail.
+  unit test with a store that waits for its context and then returns its own error (A2's shape), since no harness
+  holds the server down (#574); a mutant that keeps reading a stalled store, one that stalls only on a context
+  error, and one that retries a missing body are each shown to fail. `TestBodyCutAtCap` checks the gauge and the
+  one warning line.
 - [ ] 2.5 PR C. The verb (design D4). Premise: subjects only in `graph/query_verbs.go` and the guard reads the table
   (inventory §3); graph-index's `min_revision` order (`openspec/specs/graph-index/spec.md:240-245`). Accept: the
   row, `graph.LexicalSearchRequest`, `graph.LexicalSearchData` and `graph.LexicalHit`;
@@ -65,8 +73,12 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   one NATS server, inline and with bodies in an object store, and records time to the first answer; the result is
   compared with the budget the owner set and posted on #10.
 - [ ] 2.7 PR C. Smoke (design D8; #628 first item). Premise: the composition lists, factories and `indexKeys`
-  (`internal/smoke/stack_integration_test.go:150-152`, `:177-185`; inventory §4). Accept:
-  `TestSmoke_OneConfigAnswers` and `TestSmoke_StackRestartKeepsAnswers` hold the `composed-stack` deltas; a mutant
+  (`internal/smoke/stack_integration_test.go:150-152`, `:177-185`; inventory §4); the running-broker test counts
+  seven components (`openspec/specs/composed-stack/spec.md:77-90`). Accept: `TestSmoke_OneConfigAnswers`,
+  `TestSmoke_StackRestartKeepsAnswers`, `TestSmoke_BrokerRestartBetweenRuns` and
+  `TestSmoke_BrokerRestartUnderRunningStack` hold the `composed-stack` deltas (eight components, graph-lexical's key,
+  no lost feed); `TestSmoke_KillMidIngestKeepsAcknowledgedWrites` waits on graph-lexical's key through `indexKeys`,
+  its requirement unchanged because it names no keys; a mutant
   that skips the delete in the component is shown to fail the smoke check; the graph-only and no-embedder tests pass
   unchanged. PR body: `Addresses #628`.
 

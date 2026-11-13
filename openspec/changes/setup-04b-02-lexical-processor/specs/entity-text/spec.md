@@ -42,12 +42,23 @@ caller, which counts it. For `Values` it SHALL apply as graph-embedding applies 
 
 `graph/entitytext` SHALL read an offloaded body only from the store registered under its `StorageReference`'s
 instance, at most enough bytes for the cap, under a context derived from the caller's that ends 10 seconds after
-the read starts, and SHALL return an error that says the deadline passed when it ends first. A store that does not
-honour its context is not bounded by this.
+the read starts. A store that does not honour its context is not bounded by this.
 
-#### Scenario: A store that blocks until its context ends
+#### Scenario: A read under its deadline
 
-- **WHEN** the store's read blocks until its context ends
+- **WHEN** a body is read from a store that answers at once
+- **THEN** the store saw a context whose deadline is 10 seconds after the read began (`TestBodyReadDeadline`, under
+  `testing/synctest`)
+
+### Requirement: The read's own context decides that the deadline passed
+
+When the read's context has ended by the time the store returns, the read SHALL return an error that says the
+deadline passed, whatever error the store returned. The NATS object store returns `nats: timeout` at its deadline,
+which wraps no context error (`notes/probes/objectstore-watch-probe.log`, A2).
+
+#### Scenario: A store that waits for its context, then returns its own error
+
+- **WHEN** the store's read blocks until its context ends and then returns an error that wraps no context error
 - **THEN** the read returns a deadline error 10 seconds after it began (`TestBodyReadDeadline`, under
   `testing/synctest`)
 

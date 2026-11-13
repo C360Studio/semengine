@@ -29,18 +29,21 @@ whatever was written or deleted before.
 
 graph-lexical SHALL report a revision complete only after the index holds it and, for an entity with an offloaded
 body, after that body is indexed or has reached a state below. A body read for a revision SHALL be indexed only if
-the index still holds that revision for the key when the read returns; otherwise it SHALL be dropped.
+the index still holds that revision for the key when the read returns; otherwise it SHALL be dropped, and the
+revision it was read for SHALL be complete.
 
 #### Scenario: A body read that returns after a newer delivery
 
 - **WHEN** a body read for revision R is in flight and a delivery of the same key at R+1 is applied before it returns
-- **THEN** the index holds R+1's text and never R's body (`TestStaleBodyReadDropped`)
+- **THEN** the index holds R+1's text and never R's body, and the follower's floor passes R
+  (`TestStaleBodyReadDropped`)
 
 #### Scenario: Any history of deliveries, deletes and body reads
 
 - **WHEN** a generated history interleaves deliveries, deletes, body outcomes and late read returns over a few keys
 - **THEN** after each step every live key holds its latest revision's inline text, plus that revision's body only
-  if that read succeeded, as a reference model says (`TestPropApplyMatchesModel`, seed and checks recorded)
+  if that read succeeded, as a reference model says, and every delivered revision has completed once its outcome
+  is in (`TestPropApplyMatchesModel`, seed and checks recorded)
 
 ### Requirement: The search verb answers only once the index has caught up
 
@@ -101,13 +104,14 @@ by state, none withholding the verb.
 #### Scenario: A body cut at the cap
 
 - **WHEN** an entity's body is longer than `max_text_len`
-- **THEN** its words past the cap are not found, its name's words are, and the cut gauge counts it
-  (`TestBodyCutAtCap`)
+- **THEN** its words past the cap are not found, its name's words are, the cut gauge counts it, and the first cut
+  since start is logged once at warning level, naming the entity and the cap (`TestBodyCutAtCap`)
 
 ### Requirement: Each body state is retried and reported by its cause
 
-`queued` SHALL mean not yet read. `unread` (a read error or deadline, or its store stalled) SHALL be retried by every
-repair pass and reported as the failure `body_unread`, so the readiness key reads degraded and `Health` names it.
+`queued` SHALL mean not yet read. `unread` (any read failure but a missing object, or its store stalled) SHALL be
+retried by every repair pass and reported as the failure `body_unread`, so the readiness key reads degraded and
+`Health` names it.
 `missing` (the store answers `storage.ErrObjectNotFound`) SHALL not be retried until the entity changes and is not a
 failure. `no store` (no store registered under the instance) SHALL be looked up again on every repair pass and is not
 a failure.
@@ -127,12 +131,15 @@ a failure.
 
 ### Requirement: A store that stalls is skipped until the next repair pass
 
-After a read reaches its deadline on a store, graph-lexical SHALL not read that store again until the next repair
-pass, and its queued entities SHALL complete as `unread`. Repair passes SHALL not overlap.
+After any read on a store fails, other than with a missing object, graph-lexical SHALL not read that store again
+until the next repair pass, and its queued entities SHALL complete as `unread`, whatever error the store returned
+(the NATS object store returns `nats: timeout` at its deadline, not a context error). Repair passes SHALL not
+overlap.
 
 #### Scenario: Many entities on a store that blocks
 
-- **WHEN** 10,000 entities have bodies on a store whose reads block until their context ends
+- **WHEN** 10,000 entities have bodies on a store whose reads block until their context ends, then return an error
+  that wraps no context error
 - **THEN** the initial build completes within one read deadline of the inline replay, every one of them counted
   `unread` (`TestBlockingStoreBoundsFirstBuild`, under `testing/synctest`)
 

@@ -3,7 +3,7 @@
 Approved-by:
 
 Track: `design`. Capabilities added: `graph-lexical`, `entity-text`. Modified: `graph-transport-boundary`,
-`composed-stack`.
+`composed-stack`, `graph-embedding`.
 
 ## Why
 

@@ -47,3 +47,33 @@ scores, for the same entities.
   graph-lexical keys reach their revision, the lead's level-0 record's `entity_revision` reaches it, graph-ingest's
   reads not degraded, and the answers and record set equal those before the stop plus the new writes
   (`TestSmoke_StackRestartKeepsAnswers`)
+
+### Requirement: A broker restart between runs keeps the answers
+
+With file storage, a stack started after the NATS server restarted SHALL reach ready with the same answers, community
+answers included.
+
+#### Scenario: Restart the broker while the stack is stopped
+
+- **WHEN** the stack stops, the NATS server restarts on the same URL, and the stack boots again
+- **THEN** after a new entity and an edit are published, the graph-index, graph-embedding, graph-clustering and
+  graph-lexical keys reach their revision, the lead's level-0 record's `entity_revision` reaches it, graph-ingest's
+  reads not degraded, with the same answers plus the new writes (`TestSmoke_BrokerRestartBetweenRuns`)
+
+### Requirement: A running stack recovers from a broker restart
+
+With file storage, a stack that keeps running while the NATS server restarts on the same URL SHALL reach ready again
+without a process restart, and SHALL apply what is published after the restart. Because of the restart, no
+`GRAPH_STATUS` envelope SHALL report a lost feed or `reset_required`, graph-lexical's included, and
+`/components/health` SHALL list all eight components by name, each healthy (graph-embedding's `embedding worker
+watch lost` included).
+
+#### Scenario: Restart the broker under the running stack
+
+- **WHEN** the NATS server restarts while the stack runs, and a second batch, an edit and a delete are published after
+- **THEN** the graph-index, graph-embedding, graph-clustering and graph-lexical keys reach their revision and
+  graph-ingest's reads not degraded, the lead's level-0 record's `entity_revision` reaches it, with answers,
+  `localSearch` and graph-lexical's `search` included, that include them, no envelope reports a lost feed or
+  `reset_required`, and `/components/health` lists graph-ingest, graph-index, graph-embedding, graph-clustering,
+  graph-lexical, graph-query, graph-gateway and websocket, a total of 8, each healthy
+  (`TestSmoke_BrokerRestartUnderRunningStack`)

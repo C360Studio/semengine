@@ -1,6 +1,6 @@
 # Proposal: setup-04b-02-lexical-processor
 
-Approved-by:
+Approved-by: cglusky (2026-11-13) <https://github.com/C360Studio/semengine/issues/10#issuecomment-6852149945> sha256:b77705e387aa
 
 Track: `design`. Capabilities added: `graph-lexical`, `entity-text`. Modified: `graph-transport-boundary`,
 `composed-stack`, `graph-embedding`.

@@ -6,9 +6,10 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
 
 ## 1. Design
 
-- [ ] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/`): placement, mechanism, the
+- [x] 1.1 Architect inventory and design (`inventory.md`, `design.md`, `notes/probes/`): placement, mechanism, the
   text rule, the verb, readiness and bodies, the word-record extension point, memory, smoke. Pre-owner design review
-  passes; the owner fills `Approved-by:`. Hold: owner approval (OPEN-Q)
+  passes; the owner fills `Approved-by:`. Approved 2026-11-13 (#10 comment 6852149945): first-build budget 60 s for
+  32,000 offloaded entities, default cap 16,000 characters.
 
 ## 2. Code
 

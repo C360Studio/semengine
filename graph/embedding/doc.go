@@ -48,9 +48,4 @@
 // Callbacks for different entities are unordered. The package promises nothing about the order
 // the watch delivers entries in; the revision checks in Storage are what keep an older save from
 // replacing a newer generated record.
-//
-// # Where this differs from SemStreams
-//
-// The package is a port of SemStreams' graph/embedding without its HTTP embedder. The changes
-// are listed in the admission ledger row for graph/embedding.
 package embedding

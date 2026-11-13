@@ -27,7 +27,7 @@ func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]
 }
 
 // subscribeQueries subscribes to the subject of every verb the table in graph declares for
-// graph-embedding, and to nothing else (design D1). A declared verb with no handler here fails
+// graph-embedding, and to nothing else. A declared verb with no handler here fails
 // Start. Each subscription is recorded as it is made, so a Start that fails part way drains the
 // ones already made.
 func (c *Component) subscribeQueries(ctx context.Context) error {
@@ -52,10 +52,10 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 	return nil
 }
 
-// handleSearch answers the entities whose vectors best match a text query (design D3). Every
+// handleSearch answers the entities whose vectors best match a text query. Every
 // entry check runs before the query is embedded: the request decodes strictly, min_revision is 0,
 // the limit is in range, the query is not blank, and each scope prefix is well formed. No fixed
-// timeout: the request's context bounds the work (design D1).
+// timeout: the request's context bounds the work.
 func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, error) {
 	var req graph.SemanticRequest
 	if err := decodeRequest(data, &req); err != nil {
@@ -105,7 +105,7 @@ func (c *Component) handleSearch(ctx context.Context, data []byte) ([]byte, erro
 }
 
 // handleSimilar answers the entities whose vectors are most like a given entity's, never the
-// entity itself (design D3). The source vector is read from EMBEDDING_INDEX, as at the pin.
+// entity itself. The source vector is read from EMBEDDING_INDEX, not the cache.
 func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, error) {
 	var req graph.SimilarRequest
 	if err := decodeRequest(data, &req); err != nil {
@@ -124,9 +124,8 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 	}
 	record, err := c.storage.GetEmbedding(ctx, req.EntityID)
 	if err != nil {
-		// An undecodable source record stays class invalid with no code, as at the pin
-		// (pin:graph/embedding/storage.go:520-521): graph-clustering counts it toward its abort
-		// rather than reading it as "no neighbours".
+		// An undecodable source record stays class invalid with no code, as GetEmbedding returns
+		// it: graph-clustering counts it toward its abort rather than reading it as "no neighbours".
 		if errs.IsInvalid(err) {
 			return nil, err
 		}
@@ -144,7 +143,7 @@ func (c *Component) handleSimilar(ctx context.Context, data []byte) ([]byte, err
 }
 
 // queryReady refuses a request the verbs cannot answer truthfully now, after its entry checks and
-// before any read (design D5): the follower's QueryReady (a latched reset fatal, a lost feed, an
+// before any read: the follower's QueryReady (a latched reset fatal, a lost feed, an
 // incomplete first build or a held hop-1 failure transient index_not_ready), then a lost vector
 // cache watch, transient index_not_ready. similar reads its source from the bucket before the
 // cache, so the lost watch is refused here rather than left to the cache.
@@ -173,7 +172,7 @@ func (c *Component) workerFailures() int {
 }
 
 // rank returns the cache's best matches for query, up to limit, keeping only those scoring above
-// 0 (design D3): a zero vector, a stopword-only query's, scores every entity 0, and a 0 is no
+// 0: a zero vector, a stopword-only query's, scores every entity 0, and a 0 is no
 // match. The cache sorts the full match set before the limit and scores only the entities keep
 // accepts, so dropping the zeros after the limit loses no positive hit: they sort last. results
 // is never nil, so it encodes as [].
@@ -196,7 +195,7 @@ func (c *Component) rank(exclude string, query []float32, keep func(string) bool
 }
 
 // decodeRequest decodes data into req strictly: a key req does not define is refused naming it,
-// and so is any data after the JSON object (design D1).
+// and so is any data after the JSON object.
 func decodeRequest(data []byte, req any) error {
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -210,7 +209,7 @@ func decodeRequest(data []byte, req any) error {
 }
 
 // checkCommon refuses a min_revision above 0 and a limit outside 0 to graph.MaxSimilarityLimit,
-// and returns the limit to use: 0 means graph.DefaultSimilarityLimit (design D3, D4). A refused
+// and returns the limit to use: 0 means graph.DefaultSimilarityLimit. A refused
 // min_revision is class invalid, so no caller retries it.
 func checkCommon(minRevision uint64, limit int) (int, error) {
 	if minRevision > 0 {
@@ -227,7 +226,7 @@ func checkCommon(minRevision uint64, limit int) (int, error) {
 }
 
 // reply is a successful reply: data in the graph.QueryResponse envelope, producer
-// graph-embedding, at indexed_revision 0, which claims nothing (design D4).
+// graph-embedding, at indexed_revision 0, which claims nothing.
 func reply[T any](data T) ([]byte, error) {
 	response, err := graph.NewQueryResponse(graph.ResponderGraphEmbedding, 0, data)
 	if err != nil {

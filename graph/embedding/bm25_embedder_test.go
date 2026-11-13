@@ -59,7 +59,7 @@ func TestBM25Embedder_Generate(t *testing.T) {
 }
 
 // TestBM25Embedder_GenerateQuerySymmetric: BM25 has no query/document asymmetry, so
-// GenerateQuery must produce the same vector as Generate for the same text (gh#438).
+// GenerateQuery must produce the same vector as Generate for the same text.
 func TestBM25Embedder_GenerateQuerySymmetric(t *testing.T) {
 	embedder := NewBM25Embedder(BM25Config{Dimensions: 384})
 	ctx := t.Context()
@@ -522,19 +522,19 @@ func TestBM25Embedder_NaturalLanguageQuerySimilarity(t *testing.T) {
 	}
 }
 
-// TestBM25Embedder_GenerateQueryIsReadOnly pins gh#619: a semantic search must not
-// ingest the user's query as a corpus document.
+// TestBM25Embedder_GenerateQueryIsReadOnly: a semantic search must not ingest the
+// user's query as a corpus document.
 //
-// Pre-fix, GenerateQuery delegated straight to Generate, so every search did
-// docCount++, folded the query's terms into termDocCount, and dragged
-// avgDocLength toward the length of a 2-4 token query — shifting both the IDF
-// weights and the length-normalization denominator for every document embedded
-// afterwards. A graph's rankings drifted as a function of how often it had been
-// searched. The existing tests missed this because they assert dimensionality
-// and single-instance determinism, neither of which the mutation disturbs.
+// If GenerateQuery delegated straight to Generate, every search would do
+// docCount++, fold the query's terms into termDocCount, and drag avgDocLength
+// toward the length of a 2-4 token query — shifting both the IDF weights and the
+// length-normalization denominator for every document embedded afterwards, so a
+// graph's rankings would drift as a function of how often it had been searched.
+// The other tests here cannot catch that: they assert dimensionality and
+// single-instance determinism, neither of which that delegation disturbs.
 //
-// This does NOT claim BM25's statistics are now correct — they remain
-// process-local and unpersisted. That is the open decision in gh#619.
+// This does NOT claim BM25's statistics are correct — they remain process-local
+// and unpersisted.
 func TestBM25Embedder_GenerateQueryIsReadOnly(t *testing.T) {
 	ctx := t.Context()
 
@@ -598,8 +598,8 @@ func TestBM25Embedder_GenerateQueryIsReadOnly(t *testing.T) {
 	}
 }
 
-// TestBM25Embedder_GenerateStillLearns guards the other side of the gh#619 split:
-// only GenerateQuery went read-only. Generate remains the corpus mutator, because
+// TestBM25Embedder_GenerateStillLearns guards the other side of the read-only
+// query: only GenerateQuery is read-only. Generate is the corpus mutator, because
 // the ingest path's incremental IDF is what makes the vectors useful at all.
 func TestBM25Embedder_GenerateStillLearns(t *testing.T) {
 	ctx := t.Context()
@@ -619,7 +619,7 @@ func TestBM25Embedder_GenerateStillLearns(t *testing.T) {
 	}
 }
 
-// TestBM25RefusesNilContext (#468): Generate and GenerateQuery refuse a nil context with an
+// TestBM25RefusesNilContext: Generate and GenerateQuery refuse a nil context with an
 // invalid-input error before any work, for empty and non-empty input alike; the corpus
 // statistics are untouched.
 func TestBM25RefusesNilContext(t *testing.T) {

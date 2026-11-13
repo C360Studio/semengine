@@ -182,7 +182,7 @@ func TestFetchText_ResolveErrorMetricOnReadFailure(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error when a resolved store fails to open")
 	}
-	// A resolved-but-failed fetch is the distinct M1 class, NOT a plain failure.
+	// A resolved-but-failed fetch is its own class (IncContentResolveError), NOT a plain failure.
 	if m.resolveErr != 1 {
 		t.Fatalf("resolveErr = %d, want 1 (must count resolve errors distinctly)", m.resolveErr)
 	}

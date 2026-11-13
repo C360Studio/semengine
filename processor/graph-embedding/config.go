@@ -17,18 +17,17 @@ const embedderBM25 = "bm25"
 // the Worker intends.
 const defaultWorkers = 5
 
-// maxSourceTextLenBM25 is the text cap for BM25 when max_text_len is unset (pin
-// component.go:226). The Worker's own default, 8,000, is the pin's neural cap, so the
-// component always passes this value instead.
+// maxSourceTextLenBM25 is the text cap for BM25 when max_text_len is unset. The Worker's own
+// default, 8,000, is the cap for other embedders, so the component always passes this value
+// instead.
 const maxSourceTextLenBM25 = 4000
 
-// defaultTextSuffixes are the predicate suffixes embedded when text_suffixes is unset (pin
-// component.go:2059).
+// defaultTextSuffixes are the predicate suffixes embedded when text_suffixes is unset.
 var defaultTextSuffixes = []string{".title", ".content", ".description", ".summary", ".text", ".name", ".body",
 	".abstract", ".subject"}
 
 // Config holds configuration for graph-embedding component. Decoding is strict: a key it
-// does not define, batch_size among them, is refused (design D4).
+// does not define, batch_size among them, is refused.
 type Config struct {
 	Ports *component.PortConfig `json:"ports" schema:"type:ports,description:Port configuration,category:basic"`
 	// EmbedderType is the embedder; at tier 0 only bm25 is accepted, and empty means bm25.
@@ -80,8 +79,7 @@ func (c *Config) Validate() error {
 	if c.MaxTextLen < 0 {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate", "max_text_len cannot be negative")
 	}
-	// An unbounded cap would overflow the offloaded lane's byte budget and permit a huge read
-	// (pin #628 FIX 2).
+	// An unbounded cap would overflow the offloaded lane's byte budget and permit a huge read.
 	if c.MaxTextLen > embedding.MaxSourceTextLenCeiling {
 		return errs.WrapInvalid(errs.ErrInvalidConfig, "Config", "Validate",
 			fmt.Sprintf("max_text_len exceeds the maximum of %d characters", embedding.MaxSourceTextLenCeiling))
@@ -91,8 +89,8 @@ func (c *Config) Validate() error {
 
 // validateInputs accepts the inputs graph-embedding reads: the follower's watch of every
 // ENTITY_STATES key with no history, required, and store reads for offloaded bodies. Any
-// other input would advertise a feed nothing reads, so it is refused naming the port (#424,
-// as graph-index).
+// other input would advertise a feed nothing reads, so it is refused naming the port, as
+// graph-index refuses one.
 func validateInputs(definitions []component.PortDefinition) error {
 	watched := false
 	for _, definition := range definitions {
@@ -142,7 +140,7 @@ func (c *Config) ApplyDefaults() {
 		c.StartupInterval = 500 // 500ms
 	}
 	// A configuration with no ports takes DefaultConfig's; a ports block that is present is
-	// used as written, never merged with the defaults (ruling K, #91 comment 6062681355).
+	// used as written, never merged with the defaults.
 	if c.Ports == nil {
 		c.Ports = DefaultConfig().Ports
 	}

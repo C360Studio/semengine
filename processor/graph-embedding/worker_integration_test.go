@@ -139,11 +139,11 @@ func stacksIn(frame string) string {
 const followerFrame = "follower.(*Follower)"
 
 // stackBound is the real-clock failure bound on a goroutine leaving the stack dump after it told
-// its joiner it was done (#490).
+// its joiner it was done (natsfixture.AwaitNoStacks).
 const stackBound = time.Minute
 
 // TestStopJoinsWorker: Start runs the Worker (hop 2) under the run context, and Stop returns
-// only after its Run has (design D2; ADR-113). The Worker is held inside a body read that waits,
+// only after its Run has (ADR-113). The Worker is held inside a body read that waits,
 // after Stop ends the run context, for the test to let it go. Stop has not returned once the
 // follower's goroutines, which Stop joins first, are gone; it returns nil once the read is let
 // go, and by then the read has returned. A Run that ends because Stop ended the run context is
@@ -187,7 +187,7 @@ func TestStopJoinsWorker(t *testing.T) {
 
 // TestHealthNamesLostWorkerWatch: when EMBEDDING_INDEX is deleted under a running component,
 // nats.go closes the Worker's watch, its Run returns while the run context is live, and the loss
-// is logged as an error and named by Health, not healthy (design D2). Nothing rebinds the watch:
+// is logged as an error and named by Health, not healthy. Nothing rebinds the watch:
 // with the bucket recreated and a new pending record written to it, Health still names it.
 func TestHealthNamesLostWorkerWatch(t *testing.T) {
 	client := fixtureClient(t)
@@ -255,9 +255,9 @@ func TestPendingRecordBeforeStartIsEmbedded(t *testing.T) {
 	h.awaitIndexed(t, "the pre-Start revision indexed", rev)
 }
 
-// TestWorkerExclusionCountedAfterRestart: review finding R2 at stop 2. A pending record an
-// earlier process left on the offloaded lane names a store this process has not registered, as
-// after a restart without that storage component. The Worker embeds the identity text alone and
+// TestWorkerExclusionCountedAfterRestart: a pending record an earlier process left on the
+// offloaded lane names a store this process has not registered, as after a restart without that
+// storage component. The Worker embeds the identity text alone and
 // counts the excluded body on the component's content_unresolved_total, as hop 1 counts its own.
 // A coalescing window longer than the test keeps hop 1 from reading the entity, so the only
 // exclusion is the Worker's.

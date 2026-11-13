@@ -91,7 +91,7 @@ func TestGraphLexicalLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "feeds"}
+		want := []string{"run cancel", "stopped"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}

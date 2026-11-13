@@ -4,7 +4,7 @@
 The `graph/lexical` package is tier 0's word index: an in-memory index over each entity's name and body text that
 ranks matches with BM25F, needs no external provider, and imports no NATS client. This capability states how text
 becomes words, how a query is read (plain words, quoted phrases, `-` exclusions, reserved syntax), how matches are
-scoped and ranked, and the scorecard floor the ranking must hold. No component fills an index from live data yet.
+scoped and ranked, and the scorecard floor the ranking must hold. The `processor/graph-lexical` component fills an index from live data.
 
 ## Requirements
 

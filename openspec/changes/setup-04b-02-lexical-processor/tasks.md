@@ -85,7 +85,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
 
 ## 3. Land
 
-- [ ] 3.1 PR C. Docs (design D9). Premise: `graph/lexical/README.md:9-11` says no component fills an index; its "Who
+- [x] 3.1 PR C. Docs (design D9). Premise: `graph/lexical/README.md:9-11` says no component fills an index; its "Who
   word search helps" section. Accept: `processor/graph-lexical/README.md` states the verb, config, the four body
   states, the cap and its cut gauge, file paths, memory and restart cost, and says in plain words that sensor or
   drone telemetry and other entities without text gain nothing from word search and are reached by structure;

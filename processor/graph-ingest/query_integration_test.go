@@ -17,9 +17,7 @@ import (
 )
 
 // TestIntegration_QueryHandlers tests query handlers with real NATS JetStream.
-// Only the production-wire (NATS-suffixed) handlers are exercised here;
-// the former msg-style handlers (handleQueryEntity, handleQueryBatch) were
-// deleted as part of SemStreams gh#164 part 1 dead-code cleanup.
+// Only the production-wire (NATS-suffixed) handlers are exercised here.
 func TestIntegration_QueryHandlers(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -46,9 +44,8 @@ func TestIntegration_QueryHandlers(t *testing.T) {
 	require.NoError(t, component.Initialize())
 	require.NoError(t, component.Start(owner.startContext(ctx)))
 
-	// The pin slept 100ms here "for component to be ready". Start returns only once
-	// the buckets are provisioned and the query handlers are subscribed, so nothing
-	// was being waited for.
+	// Start returns only once the buckets are provisioned and the query handlers
+	// are subscribed, so the queries need no wait.
 
 	// Create test entities
 	entities := []*graph.EntityState{
@@ -100,7 +97,7 @@ func TestIntegration_QueryHandlers(t *testing.T) {
 		require.NoError(t, err)
 
 		// The batch handler is classified (natsclient's RPC error contract), so it is
-		// called with RequestClassified; the pin used Request, which decodes an error
+		// called with RequestClassified; a plain Request would decode an error
 		// reply's body as if it were a success.
 		responseData, err := natsClient.RequestClassified(ctx, batchSubject, requestJSON, wireRequestTimeout)
 		require.NoError(t, err)

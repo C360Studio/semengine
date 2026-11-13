@@ -36,18 +36,17 @@ func run(m *testing.M) int {
 	return code
 }
 
-// fixtureClientTimeout is the fixture client's request timeout, the value the pin's
-// NewTestClient family used.
+// fixtureClientTimeout is the fixture client's request timeout.
 const fixtureClientTimeout = 15 * time.Second
 
-// wireRequestTimeout bounds one request a test sends the component over the broker. The
-// pin's query and gate tests used 2s or 5s; docs/testing.md ("Porting a test from
-// SemStreams") asks a real-clock failure bound of a broker wait to be at least ten seconds.
+// wireRequestTimeout bounds one request a test sends the component over the broker:
+// docs/testing.md ("Porting a test from SemStreams") asks a real-clock failure bound of a
+// broker wait to be at least ten seconds.
 const wireRequestTimeout = 10 * time.Second
 
-// openFixtureClient opens a natsclient.Client the way the pin's NewTestClient built it: no
-// reconnects, no health monitor. It is the open function this package gives
-// natsfixture.Open (design D3), which bounds it and closes it on cleanup.
+// openFixtureClient opens a natsclient.Client with no reconnects and no health monitor. It
+// is the open function this package gives natsfixture.Open, which bounds it and closes it
+// on cleanup.
 func openFixtureClient(ctx context.Context, url string) (*natsclient.Client, func(context.Context) error, error) {
 	client, err := natsclient.NewClient(url,
 		natsclient.WithTimeout(fixtureClientTimeout),
@@ -66,8 +65,7 @@ func openFixtureClient(ctx context.Context, url string) (*natsclient.Client, fun
 	return client, client.Close, nil
 }
 
-// fixtureStream is a stream the fixture creates and owns: the pin's
-// natsclient.TestStreamConfig.
+// fixtureStream is a stream the fixture creates and owns.
 type fixtureStream struct {
 	name     string
 	subjects []string
@@ -76,8 +74,7 @@ type fixtureStream struct {
 // entityStream is the ENTITY stream on entity.> that DefaultConfig's input port reads.
 var entityStream = fixtureStream{name: "ENTITY", subjects: []string{"entity.>"}}
 
-// newFixtureClient replaces the pin's natsclient.NewTestClient(t, WithKV(),
-// WithStreams(streams...)) (design D3): the package's shared broker reset for t, a client
+// newFixtureClient returns, for t, the package's shared broker reset for t, a client
 // connected through natsfixture.Open, and the streams created on it. The client's Close
 // runs on cleanup under a bounded context before the reset's connection check.
 func newFixtureClient(t *testing.T, streams ...fixtureStream) *natsclient.Client {
@@ -96,11 +93,9 @@ func newFixtureClient(t *testing.T, streams ...fixtureStream) *natsclient.Client
 }
 
 // startBatchTestComponent starts graph-ingest with its default configuration on a
-// fixture broker under the c360.test authority. At the pin it is in
-// batch_integration_test.go:23-50, which a later stage ports; it moves here with its
-// first ported reader (keyed_ingest_integration_test.go). The pin slept 100ms after
-// Start; nothing was waited for, because Start returns only once start has
-// provisioned the buckets and bound the consumers and handlers, so the sleep is gone.
+// fixture broker under the c360.test authority. Nothing more is waited for after
+// Start: Start returns only once start has provisioned the buckets and bound the
+// consumers and handlers.
 func startBatchTestComponent(ctx context.Context, t *testing.T) (*Component, *graphIngestTestOwner) {
 	t.Helper()
 
@@ -127,12 +122,8 @@ func startBatchTestComponent(ctx context.Context, t *testing.T) (*Component, *gr
 
 // startPrefixTestComponent starts graph-ingest with its default configuration on a
 // fixture broker under the authority opts give, and returns its client for prefix
-// queries. At the pin it is in query_prefix_integration_test.go:22-52, which a later
-// stage ports; it moves here with its first ported readers
-// (cache_coherence_integration_test.go, cache_stale_repopulation_integration_test.go).
-// The pin slept 100ms after Start "to allow subscriptions to stabilise"; Start returns
-// only once the query handlers are subscribed, so the sleep is gone, as in
-// startBatchTestComponent.
+// queries. Start returns only once the query handlers are subscribed, so nothing more
+// is waited for, as in startBatchTestComponent.
 func startPrefixTestComponent(ctx context.Context, t *testing.T, opts ...testComponentOption) (*Component, *natsclient.Client, *graphIngestTestOwner) {
 	t.Helper()
 
@@ -157,9 +148,7 @@ func startPrefixTestComponent(ctx context.Context, t *testing.T, opts ...testCom
 }
 
 // seedPrefixEntity writes a minimal entity to the KV bucket through CreateEntity so
-// it shows up in prefix queries. It moves here from the pin's
-// query_prefix_integration_test.go:54-68 with startPrefixTestComponent; the pin's
-// Version: 1 is gone (design D15).
+// it shows up in prefix queries.
 func seedPrefixEntity(t *testing.T, ctx context.Context, c *Component, id string) {
 	t.Helper()
 	entity := &graph.EntityState{

@@ -20,19 +20,16 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// The six tests in this file skipped in the pin's component_test.go ("requires real
-// NATS connection - move to integration tests", :578-596, :638-650, :662-677,
-// :679-690, :701-715, :944-961). They run here against a broker of their own, with no
-// skip (harness-boundaries, "No skipped or hidden tests"). Each of the pin's two sleeps
-// is replaced by a wait on what the test observes, and each Stop runs under a bounded
+// The tests in this file need a real NATS connection. They run against a broker of
+// their own, with no skip (harness-boundaries, "No skipped or hidden tests"). Each
+// waits on what it observes rather than sleeping, and each Stop runs under a bounded
 // context (task cleanup-roots:check).
 
 // componentTestTimeout bounds each test's operations against the broker.
 const componentTestTimeout = 30 * time.Second
 
-// startableComponent stands in for the pin's createTestComponent here: graph-ingest with
-// its default configuration, built on a fixture broker that holds the ENTITY stream,
-// and not yet initialized.
+// startableComponent is graph-ingest with its default configuration, built on a fixture
+// broker that holds the ENTITY stream, and not yet initialized.
 func startableComponent(t *testing.T) *Component {
 	t.Helper()
 	natsClient := newFixtureClient(t, entityStream)
@@ -53,9 +50,8 @@ func TestComponent_Health_Running(t *testing.T) {
 	require.NoError(t, comp.Initialize())
 	require.NoError(t, comp.Start(owner.startContext(ctx)))
 
-	// The pin slept 100ms here to "allow time for component to become healthy". The
-	// test waits for that instead: the first Health that reports healthy, with uptime
-	// past Start.
+	// The test waits for the component to become healthy: the first Health that
+	// reports healthy, with uptime past Start.
 	health, err := probe.Await(ctx,
 		func(context.Context) (component.HealthStatus, error) { return comp.Health(), nil },
 		func(h component.HealthStatus) bool { return h.Healthy && h.Uptime > 0 })
@@ -107,11 +103,9 @@ func TestComponent_Stop_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestComponent_Stop_Timeout: the pin stopped under context.Background(), beside a
-// comment promising a very short timeout, and asserted nothing ("should either succeed
-// quickly or timeout gracefully"). Here the timeout is one already past. Such a Stop
-// returns its context's error and releases nothing, and the next Stop, given time,
-// completes the shutdown (design D13; internal/lifecycleguard's Stop).
+// TestComponent_Stop_Timeout: a Stop whose timeout is already past returns its
+// context's error and releases nothing, and the next Stop, given time, completes the
+// shutdown (internal/lifecycleguard's Stop).
 func TestComponent_Stop_Timeout(t *testing.T) {
 	comp := startableComponent(t)
 
@@ -130,9 +124,7 @@ func TestComponent_Stop_Timeout(t *testing.T) {
 	assert.Equal(t, "stopped", comp.Health().Status)
 }
 
-// TestComponent_StartContextEndStopsNothing replaces the pin's
-// TestComponent_RespectsContext_Cancellation, which asserted the old rule: that ending
-// Start's context ends the component's work. Under ADR-113 the Start context bounds Start
+// TestComponent_StartContextEndStopsNothing: under ADR-113 the Start context bounds Start
 // only. After Start returns and its context is cancelled, the component still ingests an
 // entity from its input stream into ENTITY_STATES and answers an entity query; only Stop
 // ends its work, and Stop joins the status loop. The oracle is the bucket itself, read

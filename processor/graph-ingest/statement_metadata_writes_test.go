@@ -1,11 +1,11 @@
 package graphingest
 
-// Statement metadata on the mutation and in-process lanes (design D15, #98; task 4.8): a write
-// carrying a statement without a Source or a Timestamp is refused, a create or stream merge
-// carrying no statement is refused, and a reconcile names its source and carries no other. Each
-// refusal is invalid_request and stores nothing. The writes go through the lanes' production
-// entries: the canonical mutation handlers, and the CreateEntity hierarchy inference calls; the
-// stream lane's merge, where the rule is a second line, is called directly.
+// Statement metadata on the mutation and in-process lanes: a write carrying a statement without
+// a Source or a Timestamp is refused, a create or stream merge carrying no statement is
+// refused, and a reconcile names its source and carries no other. Each refusal is
+// invalid_request and stores nothing. The writes go through the lanes' production entries: the
+// canonical mutation handlers, and the CreateEntity hierarchy inference calls; the stream
+// lane's merge, where the rule is a second line, is called directly.
 
 import (
 	"bytes"
@@ -131,9 +131,9 @@ func TestWriteRefusesStatementWithoutSourceOrTimestamp(t *testing.T) {
 		{"stream merge without source", streamMerge(inProcess, noSource(inProcess)), []string{"triple[1]", "source"}},
 		{"stream merge without timestamp", streamMerge(inProcess, noTimestamp(inProcess)), []string{"triple[1]", "timestamp"}},
 		{"stream merge with no statement", streamMerge(), nil},
-		// A birth stores a repeated statement once (checkpoint 3 H1), and the rule runs on the
-		// statements as the caller gave them, before the repeat is dropped, so the index is the
-		// caller's: the statement without a source is the request's third.
+		// A birth stores a repeated statement once, and the rule runs on the statements as the
+		// caller gave them, before the repeat is dropped, so the index is the caller's: the
+		// statement without a source is the request's third.
 		{"mutation create, a repeat before a statement without source", mutationCreate(inProcess, inProcess, noSource(inProcess)), []string{"triple[2]", "source"}},
 		{"in-process create, a repeat before a statement without source", inProcessCreate(inProcess, inProcess, noSource(inProcess)), []string{"triple[2]", "source"}},
 		{"stream merge, a repeat before a statement without source", streamMerge(inProcess, inProcess, noSource(inProcess)), []string{"triple[2]", "source"}},

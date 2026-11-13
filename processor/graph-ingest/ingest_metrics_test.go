@@ -6,11 +6,11 @@ import (
 	dto "github.com/prometheus/client_model/go"
 )
 
-// TestIngestHistograms_RecordSamples verifies the SemStreams gh#480 processing-duration and
-// ingest-lag histograms are built with the component and record observations. The
-// consume closure (setupJetStreamConsumer) observes the lag and applyIngest the duration;
-// this guards the metric objects themselves (nil registry: built, registered
-// nowhere, design D4). Sample count is read via dto.Metric.Write, as at the pin.
+// TestIngestHistograms_RecordSamples verifies the processing-duration and ingest-lag
+// histograms are built with the component and record observations. The consume closure
+// (setupJetStreamConsumer) observes the lag and applyIngest the duration; this guards the
+// metric objects themselves (nil registry: built, registered nowhere). Sample count is read
+// via dto.Metric.Write.
 func TestIngestHistograms_RecordSamples(t *testing.T) {
 	sampleCount := func(t *testing.T, h interface{ Write(*dto.Metric) error }) uint64 {
 		t.Helper()
@@ -21,8 +21,7 @@ func TestIngestHistograms_RecordSamples(t *testing.T) {
 		return m.GetHistogram().GetSampleCount()
 	}
 
-	// The component's own collectors (design D4; the pin read process-wide
-	// singletons through getters). The >= before+1 shape is the pin's.
+	// The component's own collectors.
 	c, err := newUnstartedGraphIngest(t, nil, nil)
 	if err != nil {
 		t.Fatalf("CreateGraphIngest: %v", err)

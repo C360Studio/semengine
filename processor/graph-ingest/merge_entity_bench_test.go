@@ -1,13 +1,11 @@
 package graphingest
 
-// merge_entity_bench_test.go — SemStreams gh#562 follow-up: write-path contract-validation
-// cost on the per-key-serialized ingest hot path (SemStreams ADR-072).
+// merge_entity_bench_test.go measures what contract validation costs on the
+// per-key-serialized ingest hot path.
 //
-// semboids' firehose attribution (SemStreams gh#562, 2026-07-18): MergeEntity's write path
-// runs multiple full contract passes per mutation — the explicit
-// ValidateEntityStateContract on the candidate at the top of MergeEntity plus
-// the MarshalEntityState write gate re-validating the committed output — and
-// the merged-result pass is O(all resident triples) on accumulating entities.
+// MergeEntity validates each committed candidate once, in the
+// MarshalEntityState write gate, and that pass over the merged result is O(all
+// resident triples) on accumulating entities.
 //
 // BenchmarkMergeEntityCycle measures the full MergeEntity RMW closure cycle
 // against the in-package mock KV bucket (no network): trusted decode + merge +
@@ -20,9 +18,10 @@ package graphingest
 //
 // BenchmarkEntityContractValidation isolates the contract-validation share of
 // one cycle by calling the validation directly on the same shapes: full_N is
-// one ValidateEntityStateContract pass over an N-triple entity. Before the SemStreams gh#562 write-cost fix, one merge cycle pays
-// full_delta (top-of-MergeEntity pass) + full_merged (MarshalEntityState
-// write gate); the create branch pays full_candidate twice the same way.
+// one ValidateEntityStateContract pass over an N-triple entity. One merge cycle
+// pays full_merged (the MarshalEntityState write gate); a separate pass over
+// the incoming candidate at the top of MergeEntity would add full_delta, and a
+// second full_candidate on the create branch.
 import (
 	"context"
 	"fmt"

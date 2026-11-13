@@ -16,20 +16,18 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// SemStreams ADR-060: meteredCanonicalMutation wraps every graph-mutation request handler and
-// meters rejections by subject + reason. Under SemStreams ADR-060, a hard rejection
-// surfaces as (nil body, *errs.ClassifiedError) on the error channel —
-// there is no longer an in-body Success/ErrorCode path for single-entity
-// mutations. Partial-batch success is still a (body, nil) reply with
-// FailedSubjects populated. The metric is process-global, so these tests
-// use UNIQUE per-case subjects to keep their label series isolated.
+// meteredCanonicalMutation wraps every graph-mutation request handler and meters rejections
+// by subject + reason. Under ADR-060, a hard rejection surfaces as (nil body,
+// *errs.ClassifiedError) on the error channel — there is no in-body Success/ErrorCode path
+// for single-entity mutations. Partial-batch success is still a (body, nil) reply with
+// FailedSubjects populated. Each case uses a UNIQUE subject, so its label series is its own.
 
 func TestMeteredCanonicalMutation_MetersRejectionByErrorCode(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.errorcode"
 
-	// SemStreams ADR-060: a hard rejection is (nil, *ClassifiedError); the handler
-	// returns the typed error, not an in-body Success=false.
+	// ADR-060: a hard rejection is (nil, *ClassifiedError); the handler returns the typed
+	// error, not an in-body Success=false.
 	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
 		operation: graphmutation.AppendTriples, subject: subj,
 		handler: func(_ context.Context, _ []byte) ([]byte, error) {
@@ -58,7 +56,7 @@ func TestMeteredCanonicalMutation_SuccessDoesNotMeter(t *testing.T) {
 	wrapped := comp.meteredCanonicalMutation(canonicalMutationRoute{
 		operation: graphmutation.AppendTriples, subject: subj,
 		handler: func(_ context.Context, _ []byte) ([]byte, error) {
-			// SemStreams ADR-060: any (body, nil) reply is a success body.
+			// ADR-060: any (body, nil) reply is a success body.
 			data, _ := json.Marshal(graph.AppendTriplesResponse{Results: []graph.AppendSubjectResult{{
 				EntityID: "a.b.c.d.e.f", Outcome: graph.MutationApplied, KVRevision: 1,
 			}}})
@@ -76,10 +74,8 @@ func TestMeteredCanonicalMutation_SuccessDoesNotMeter(t *testing.T) {
 	assert.InDelta(t, before, after, 0.0001, "a success must not be metered as a rejection")
 }
 
-// TestMeteredMutation_EmptyCodeIsInternal verifies that a non-nil handler error
-// with an empty ClassifiedError.Code (or a plain error) falls through to the
-// "internal" label — the SemStreams ADR-060 equivalent of the retired "unclassified" path
-// (the old in-body ErrorCode="" route no longer exists).
+// TestMeteredMutation_EmptyCodeIsInternal verifies that a non-nil handler error with an
+// empty ClassifiedError.Code (or a plain error) falls through to the "internal" label.
 func TestMeteredCanonicalMutation_EmptyCodeIsInternal(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)
 	const subj = "test.mutation.metric.emptycode"

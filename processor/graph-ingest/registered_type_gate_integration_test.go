@@ -26,9 +26,8 @@ import (
 
 const gateCreateSubject = "graph.mutation.entity.create"
 
-// gateRequestType and gateLessonType stand in for the agentic samples the pin used,
-// agentic.request.v1 (trace floor) and agentic.agent_lesson.v1 (content floor): design
-// D2 replaces them with test-registered types with the same indexing profile. They are
+// gateRequestType and gateLessonType are test-registered types with a trace floor and
+// a content floor, so the gate is tested without an agentic payload. They are
 // registered through payloadregistry.Registration directly, because
 // payloadfixture.RegisterTestType registers no floor.
 var (
@@ -36,9 +35,8 @@ var (
 	gateLessonType  = message.Type{Domain: "test", Category: "lesson", Version: "v1"}
 )
 
-// gateTestRegistry replaces the pin's payloadbuiltins.NewTestRegistry (design D2): the
-// per-package RegisterPayloads graph-ingest's fixture registry uses, and the two
-// floored stand-ins above.
+// gateTestRegistry holds the per-package RegisterPayloads graph-ingest's fixture
+// registry uses, and the two floored stand-ins above.
 func gateTestRegistry(t *testing.T) *payloadregistry.Registry {
 	t.Helper()
 	reg := payloadfixture.NewWithSubset(t, message.RegisterPayloads, inference.RegisterPayloads)
@@ -108,8 +106,7 @@ func TestCreateRejectsUnregisteredMessageType(t *testing.T) {
 	defer cancelOperation()
 	c, nc, owner := startGateTestComponent(ctx, t, gateTestRegistry(t), false, withAuthority("c360", "test"))
 	defer owner.finish(ctx, t)
-	// The pin read getMutationRejectionsMetric(nil); the counter is the component's
-	// own now (design D4), as is the indexing-profile counter below.
+	// The counter is the component's own, as is the indexing-profile counter below.
 	counter := c.mutationRejections.WithLabelValues(gateCreateSubject, graph.ErrorCodeMessageTypeUnregistered)
 	before := testutil.ToFloat64(counter)
 
@@ -170,8 +167,6 @@ func TestFloorComesFromRegistration(t *testing.T) {
 		assert.InDelta(t, before, testutil.ToFloat64(counter), 0.0001, "a registered floor is not a gap")
 	})
 
-	// The pin's subtest was "a framework mutation-lane type takes its registered floor",
-	// with agentic.agent_lesson.v1; its stand-in is a test type (design D2).
 	t.Run("a registered content floor is stamped without a metric", func(t *testing.T) {
 		counter := c.indexingProfileDefault.WithLabelValues(gateLessonType.Key())
 		before := testutil.ToFloat64(counter)

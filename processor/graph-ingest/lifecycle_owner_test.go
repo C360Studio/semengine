@@ -22,9 +22,9 @@ import (
 // The tests in this file, and the Stop tests in discoverable_reads_test.go,
 // entity_cache_stop_test.go and test_owner_integration_test.go, put a running component's
 // handles in place by hand, except its JetStream input: cleanup waits for that through
-// natsclient's WaitConsumerHandlers, which refuses a handle its client did not return
-// (#441), so the input is a real consumer on the package's fixture server, bound as Start
-// binds it. A consume callback held on the poison warning stands for a consumer still open.
+// natsclient's WaitConsumerHandlers, which refuses a handle its client did not return, so
+// the input is a real consumer on the package's fixture server, bound as Start binds it.
+// A consume callback held on the poison warning stands for a consumer still open.
 
 // newFixtureInputComponent builds graph-ingest with its default configuration on a client
 // of its own on the package's fixture server, with a logger that holds the goroutine
@@ -131,7 +131,7 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("construct keyed pool: %v", err)
 	}
-	if err := pool.SubmitBlocking(t.Context(), "entity", ingestWork{}); err != nil { // Submit is gone (design D6)
+	if err := pool.SubmitBlocking(t.Context(), "entity", ingestWork{}); err != nil {
 		t.Fatalf("submit work: %v", err)
 	}
 	<-processEntered
@@ -158,7 +158,7 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 	}
 	coreSub := &graphIngestLifecycleCoreSubscription{drainSeen: make(chan struct{})}
 	owner.subscriptions = []graphIngestCoreSubscription{coreSub}
-	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)
+	startGuardAcquiringNothing(t, owner) // the guard is in use, as a started component's is
 
 	stopResult := make(chan error, 1)
 	go func() { stopResult <- owner.Stop(ctx) }()
@@ -194,19 +194,19 @@ func TestLifecycleOwnerRunningStopPreservesEffectSettlementOrder(t *testing.T) {
 }
 
 // TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop proves graph-ingest's
-// branch of lifecycle-suite, "Failed start whose own cleanup fails" (design D7.3), which
-// the suite's failed-start check does not judge: a Start that fails after acquiring
-// resources, and whose own cleanup then fails too, returns both failures, keeps what it
-// could not release on record, and a later Stop that can complete the cleanup returns nil
-// and leaves nothing. What is held is read through the suite's adapter, suiteOwner.
+// branch of lifecycle-suite, "Failed start whose own cleanup fails", which the suite's
+// failed-start check does not judge: a Start that fails after acquiring resources, and
+// whose own cleanup then fails too, returns both failures, keeps what it could not
+// release on record, and a later Stop that can complete the cleanup returns nil and
+// leaves nothing. What is held is read through the suite's adapter, suiteOwner.
 //
-// The guard is reached through its Start (design D22): a start function that binds the
-// input and fails, and a rollback that is the component's own release under a context
-// that has already ended, as a rollback budget that expires before the input's callbacks
-// return would leave it. The guard runs the one cleanup Start was given, so that cleanup
-// fails on its first call, the rollback, and runs release with the later Stop's context
-// after that. As storage/objectstore's TestFailedCleanupRetainsInputsForLaterStop does,
-// the input is a real consumer bound as Start binds it.
+// The guard is reached through its Start: a start function that binds the input and
+// fails, and a rollback that is the component's own release under a context that has
+// already ended, as a rollback budget that expires before the input's callbacks return
+// would leave it. The guard runs the one cleanup Start was given, so that cleanup fails
+// on its first call, the rollback, and runs release with the later Stop's context after
+// that. As storage/objectstore's TestFailedCleanupRetainsInputsForLaterStop does, the
+// input is a real consumer bound as Start binds it.
 func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -267,15 +267,13 @@ func TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop(t *testing.T
 	}
 }
 
-// TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay is the pin's
-// TestLifecycleOwnerRunningDeadlineIsTerminalWithoutReplay, inverted (design D22): a
-// running owner whose Stop context ends while it waits for the input's callback keeps its
-// handles, and the next Stop runs cleanup again and returns its result. At the pin the
-// failed Stop cleared the handles and the next Stop returned nil with the consumer still
-// open; under design D13 only a cleanup that succeeded clears them. The failed Stop
-// records its Drain (drainIssued), so the next one does not issue it again; a second
-// Drain on a real handle changes nothing this test can see (notes/2.2.md of
-// fix-441-graph-ingest-stop-join).
+// TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay: a running owner whose Stop
+// context ends while it waits for the input's callback keeps its handles, and the next
+// Stop runs cleanup again and returns its result. Only a cleanup that succeeded clears
+// the handles, so a failed Stop never leaves the next Stop returning nil with the
+// consumer still open. The failed Stop records its Drain (drainIssued), so the next one
+// does not issue it again; a second Drain on a real handle has no effect this test can
+// see, so a cleanup that drained again would still pass here.
 func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -285,7 +283,7 @@ func TestLifecycleOwnerRunningDeadlineKeepsCleanupWithoutReplay(t *testing.T) {
 	}
 	owner.cancel = func() {}
 	bindHeldInput(ctx, ctx, t, owner, pause)
-	startGuardAcquiringNothing(t, owner) // the pin set lifecycleUsed: true (design D22)
+	startGuardAcquiringNothing(t, owner) // the guard is in use, as a started component's is
 	stopCtx, expire := context.WithCancel(ctx)
 	stopResult := make(chan error, 1)
 	go func() { stopResult <- owner.Stop(stopCtx) }()

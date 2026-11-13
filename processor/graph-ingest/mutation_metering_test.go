@@ -40,8 +40,8 @@ func meteredRoute(t *testing.T, c *Component, subject string) mutationHandler {
 }
 
 // TestRefusedMutationMetersAndLogsOnce: a refused mutation request counts once on the
-// rejection series, once on the outcome series, and logs one WARN line (#303; design D1).
-// Every label is spelled out here, not taken from the constants the code uses.
+// rejection series, once on the outcome series, and logs one WARN line. Every label is
+// spelled out here, not taken from the constants the code uses.
 func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 	staleRevision := func(t *testing.T, c *Component) uint64 {
 		t.Helper()
@@ -204,8 +204,8 @@ func TestRefusedMutationMetersAndLogsOnce(t *testing.T) {
 }
 
 // TestMutationOutcomeCountedAtTheDecision: each successful mutation request counts its
-// reply's outcome once, and an append counts once per subject (design D1). The wanted counts
-// come from the requests the test sends, and every label is spelled out.
+// reply's outcome once, and an append counts once per subject. The wanted counts come from
+// the requests the test sends, and every label is spelled out.
 func TestMutationOutcomeCountedAtTheDecision(t *testing.T) {
 	c, bucket := createTestComponentWithMockKVBucket(t, withAuthority("acme", "ops"))
 	ctx := context.Background()

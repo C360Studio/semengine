@@ -62,12 +62,12 @@ func (b *foreignWriteBucket) Update(ctx context.Context, key string, value []byt
 	return b.FaultKV.Update(ctx, key, value, revision)
 }
 
-// TestIntegration_TypedClientPreservesCommitAmbiguity is task 4.1 (#20; design D8, row "#20 (Q7)";
-// projection-mutation, "Commit ambiguity is preserved"). graph-ingest's query and mutation handlers
-// are served on a fixture broker over the fixture's ENTITY_STATES, wrapped in a FaultKV, and the
-// typed projection.MutationClient calls them over the wire. An update the bucket applied while
-// graph-ingest saw a timeout reaches the caller as commit-unknown; once the fault is cleared, a
-// revision conflict the bucket refused and an entity not found reach it as not committed.
+// TestIntegration_TypedClientPreservesCommitAmbiguity (projection-mutation, "Commit ambiguity is
+// preserved"): graph-ingest's query and mutation handlers are served on a fixture broker over the
+// fixture's ENTITY_STATES, wrapped in a FaultKV, and the typed projection.MutationClient calls them
+// over the wire. An update the bucket applied while graph-ingest saw a timeout reaches the caller
+// as commit-unknown; once the fault is cleared, a revision conflict the bucket refused and an
+// entity not found reach it as not committed.
 //
 // The handlers are subscribed after the bucket is set, as TestIntegration_PrefixQuery_
 // IndivisibleEntityTooLarge does, so the subscription goroutines start after the write to
@@ -86,13 +86,13 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	require.NoError(t, err)
 	bucket := &foreignWriteBucket{FaultKV: natsfixture.NewFaultKV(entityStates)}
 	comp.entityBucket = client.NewKVStore(bucket)
-	// The entity query cache Start would build, so the unconfirmed update is shown to invalidate it
-	// (#174; design D1).
+	// The entity query cache Start would build, so the unconfirmed update is shown to invalidate
+	// it.
 	entityCache, err := cache.NewSimple[graph.EntityState]()
 	require.NoError(t, err)
 	comp.entityCache = entityCache
 	t.Cleanup(func() { _ = entityCache.Close() })
-	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+	// The test stands in for a Start that completed, so the handlers serve.
 	comp.startCompleted.Store(true)
 	require.NoError(t, comp.setupQueryHandlers(ctx))
 	require.NoError(t, comp.setupMutationHandlers(ctx))
@@ -189,15 +189,14 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 	assert.Equal(t, graph.ErrorCodeEntityNotFound, mutationErr.Code)
 }
 
-// TestIntegration_OversizedResponseAfterCommitIsCommitUnknown is task 4.16, the defect #173
-// describes (Codex interim review R1, PR #93 comment 6112098987; projection-mutation, "Commit
-// ambiguity is preserved"). A reconcile commits, and its success response, which echoes the
+// TestIntegration_OversizedResponseAfterCommitIsCommitUnknown (projection-mutation, "Commit
+// ambiguity is preserved"): a reconcile commits, and its success response, which echoes the
 // request's RequestID beside the stored entity, is larger than the broker's payload limit, so
 // natsclient answers with its class-invalid response_too_large reply in its place. The typed client
 // reads that reply as commit-unknown: the write stands.
 func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
-	// The bound covers the fixture's setup as well as the requests: in Codex's probe a 30-second
-	// bound ran out before the reconcile was sent.
+	// The bound covers the fixture's setup as well as the requests: a 30-second bound has been
+	// seen to run out before the reconcile was sent.
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancelOperation()
 	t.Cleanup(vocabulary.SnapshotRegistry())
@@ -210,7 +209,7 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 	entityStates, err := kvcatalog.EnsureCatalogBucket(ctx, client, graph.BucketEntityStates)
 	require.NoError(t, err)
 	comp.entityBucket = client.NewKVStore(entityStates)
-	// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+	// The test stands in for a Start that completed, so the handlers serve.
 	comp.startCompleted.Store(true)
 	require.NoError(t, comp.setupQueryHandlers(ctx))
 	require.NoError(t, comp.setupMutationHandlers(ctx))
@@ -270,10 +269,10 @@ func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
 	assert.Equal(t, projection.MutationCommitUnknown, mutationErr.Kind)
 }
 
-// lostReplyBucket is the entity bucket of TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown,
-// adapted from Codex's probe (PR #93 comment 6112098987, R2). Once armed, its next Update is stored
-// by the real bucket, the stored bytes are kept, another writer then changes the key (interfere),
-// and the caller sees nats.ErrTimeout: a write that stood and whose reply was lost.
+// lostReplyBucket is the entity bucket of TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown.
+// Once armed, its next Update is stored by the real bucket, the stored bytes are kept, another writer
+// then changes the key (interfere), and the caller sees nats.ErrTimeout: a write that stood and whose
+// reply was lost.
 type lostReplyBucket struct {
 	jetstream.KeyValue
 	interfere func(ctx context.Context, real jetstream.KeyValue, key string) error
@@ -306,13 +305,12 @@ func (b *lostReplyBucket) stored() []byte {
 	return b.written
 }
 
-// TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown is task 4.18 (Codex interim review R2,
-// PR #93 comment 6112098987; owner ruling, #91 comment 6112779037; projection-mutation, "Commit
-// ambiguity is preserved"). An append's update is stored and its reply is lost, and another writer
+// TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown (projection-mutation, "Commit
+// ambiguity is preserved"): an append's update is stored and its reply is lost, and another writer
 // then deletes the entity or stores a value graph-ingest refuses (an entity under another ID). The
 // receipt reports commit-unknown: the append's write stood, and a refusal of the entity as it is
-// now says nothing about it. The handlers are subscribed after the bucket is set (notes/4.1.md,
-// choice 5).
+// now says nothing about it. The handlers are subscribed after the bucket is set, as in
+// TestIntegration_TypedClientPreservesCommitAmbiguity.
 func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 	const (
 		id    = "c360.test.mutation.system.widget.unconfirmed"
@@ -349,7 +347,7 @@ func TestIntegration_AppendAfterUnconfirmedWriteIsCommitUnknown(t *testing.T) {
 			require.NoError(t, err)
 			bucket := &lostReplyBucket{KeyValue: entityStates, interfere: tc.interfere}
 			comp.entityBucket = client.NewKVStore(bucket)
-			// The test stands in for a Start that completed, so the handlers serve (checkpoint 3 B2).
+			// The test stands in for a Start that completed, so the handlers serve.
 			comp.startCompleted.Store(true)
 			require.NoError(t, comp.setupQueryHandlers(ctx))
 			require.NoError(t, comp.setupMutationHandlers(ctx))

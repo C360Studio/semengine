@@ -43,15 +43,14 @@ func startLongApplyIngest(ctx context.Context, t *testing.T, client *natsclient.
 }
 
 // TestIntegration_Settlement_LongApplyIsNotRedelivered holds graph-ingest-recovery, "Settlement order", scenario
-// "Long apply" (design D8, "Long apply"; task 4.4 part 2): an input whose application starts at once and outlasts the
-// consumer's acknowledgement wait is not delivered again while it is applied. graph-ingest's consumer has a 2-second
-// wait; the application is held after its entity write and before its applied-sequence record, by graph-ingest's
-// logger handler pausing on "Entity ingested" (fix-301 design D2, "The pause"). The oracle that says the wait has
-// passed is a consumer of the test's own on the same stream and subject, with the same wait, created once the
-// application is held: by the time it has delivered the input three times, at least two of its waits have passed
-// since graph-ingest's delivery, and both consumers' timers run on one server. graph-ingest's consumer must then show
-// one delivery, none redelivered, and one acknowledgement pending. Once released, the input is acknowledged after one
-// delivery and the graph is as one application left it.
+// "Long apply": an input whose application starts at once and outlasts the consumer's acknowledgement wait is not
+// delivered again while it is applied. graph-ingest's consumer has a 2-second wait; the application is held after its
+// entity write and before its applied-sequence record, by graph-ingest's logger handler pausing on "Entity ingested".
+// The oracle that says the wait has passed is a consumer of the test's own on the same stream and subject, with the
+// same wait, created once the application is held: by the time it has delivered the input three times, at least two
+// of its waits have passed since graph-ingest's delivery, and both consumers' timers run on one server.
+// graph-ingest's consumer must then show one delivery, none redelivered, and one acknowledgement pending. Once
+// released, the input is acknowledged after one delivery and the graph is as one application left it.
 func TestIntegration_Settlement_LongApplyIsNotRedelivered(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancelOperation()

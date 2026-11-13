@@ -11,9 +11,9 @@ import (
 // TestInputLaneNaksAfterFailedStartRollback: a Start that builds the ingest pool and an input
 // lane, then fails, is rolled back by release, which ends the lane's submit context and shuts
 // its pool down. A consumer whose setup failed is not recorded for the rollback to drain, so
-// its callback can still run (checkpoint 3 B2). An input that reaches the lane then, one that
-// decodes and would otherwise be applied, is Nak'd so the server redelivers it: it is never
-// acked or terminated, nothing is stored, and nothing panics.
+// its callback can still run. An input that reaches the lane then, one that decodes and would
+// otherwise be applied, is Nak'd so the server redelivers it: it is never acked or
+// terminated, nothing is stored, and nothing panics.
 func TestInputLaneNaksAfterFailedStartRollback(t *testing.T) {
 	const entityID = "c360.test.robotics.gcs.drone.straddle"
 	c, _ := createTestComponentWithMockKVBucket(t, withAuthority("c360", "test"))

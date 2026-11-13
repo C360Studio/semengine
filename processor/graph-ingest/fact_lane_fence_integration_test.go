@@ -15,11 +15,9 @@ import (
 )
 
 // The Graphable lane's poison outcome through the real consume closure and a
-// broker (design D8 Q13; graph-ingest-recovery, "A failing payload is poison, not
-// a redelivery loop"). Carried from SemStreams PR #1437 at 0ea823a6
-// (processor/graph-ingest/fact_lane_fence_integration_test.go), on the test-
-// registered fence payload in place of agentic's LoopExecutionEntity; the PR
-// asserted an ack-drop, the spec requires a termination.
+// broker (graph-ingest-recovery, "A failing payload is poison, not a redelivery
+// loop"), on the test-registered fence payload. The spec requires a termination,
+// not an ack-drop.
 
 // TestIntegration_FactLane_InvalidPayloadIsTerminated publishes a payload its own
 // Validate refuses (at the PR, a LoopExecutionEntity whose loop_id cannot form an

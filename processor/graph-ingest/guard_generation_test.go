@@ -1,11 +1,11 @@
 package graphingest
 
 // The applied-sequence record is generation-aware (graph-ingest-recovery, "Replay protection uses
-// the generation read before the bind"; design D8 row #15, task 4.3). A stream deleted and created
-// again starts a new generation whose sequences restart at 1, so a sequence is compared only with the
-// last one applied from the same generation. The scenario "Stream recreated with lower sequences" runs
-// on a broker in guard_generation_integration_test.go; these tests drive processIngest and the
-// consumer setup directly.
+// the generation read before the bind"). A stream deleted and created again starts a new generation
+// whose sequences restart at 1, so a sequence is compared only with the last one applied from the
+// same generation. The scenario "Stream recreated with lower sequences" runs on a broker in
+// guard_generation_integration_test.go; these tests drive processIngest and the consumer setup
+// directly.
 
 import (
 	"bytes"
@@ -167,7 +167,7 @@ func TestGuardRecordIsPerGeneration(t *testing.T) {
 	}
 }
 
-// TestNoGuardBucketLogsAndCountsFirstSeenInputs holds the degrade of design D8: a component with no
+// TestNoGuardBucketLogsAndCountsFirstSeenInputs holds a declared degrade: a component with no
 // applied-sequence bucket, which only one built without Start can be, applies each input it has not
 // seen as first seen, and logs and counts each one. An input the lane's cache has seen is judged
 // there, and is neither logged nor counted.

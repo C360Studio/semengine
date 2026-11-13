@@ -17,10 +17,10 @@ import (
 	"github.com/c360studio/semengine/natsclient"
 )
 
-// Add-lane deduplication (SemStreams gh#697 / gh#713). These drive the PRODUCTION
-// KVStore.UpdateWithRetryRead loop over a CAS-capable mock bucket, so the
-// declined write, the revision arithmetic, and the response shape are all
-// exercised the way the NATS handlers exercise them.
+// Add-lane deduplication. These drive the PRODUCTION KVStore.UpdateWithRetryRead
+// loop over a CAS-capable mock bucket, so the declined write, the revision
+// arithmetic, and the response shape are all exercised the way the NATS handlers
+// exercise them.
 
 const dedupSubject = "c360.platform.robotics.mav1.drone.001"
 
@@ -37,8 +37,7 @@ func dedupTriple(subject string) message.Triple {
 }
 
 // seedDedupEntity creates an entity holding one statement of another predicate (a create
-// carries at least one, design D15) and returns the component and the entity's revision after
-// creation.
+// carries at least one) and returns the component and the entity's revision after creation.
 func seedDedupEntity(t *testing.T, id string) (*Component, uint64) {
 	t.Helper()
 	comp := createTestComponentWithMockKV(t)
@@ -77,7 +76,7 @@ func appendDedupTriple(ctx context.Context, t *testing.T, comp *Component, tripl
 	require.Empty(t, result.FailedSubjects)
 }
 
-// Task 3.1 + the zero-write requirement: a duplicate add commits NOTHING.
+// The zero-write requirement: a duplicate add commits NOTHING.
 func TestAddTriple_DuplicateSuppressed_NoRevisionAdvance(t *testing.T) {
 	comp, _ := seedDedupEntity(t, dedupSubject)
 	ctx := context.Background()
@@ -103,7 +102,7 @@ func TestAddTriple_DuplicateSuppressed_NoRevisionAdvance(t *testing.T) {
 		"the suppression must be observable on the add lane")
 }
 
-// Task 1.5 at the lane level: the three excluded fields must not defeat
+// At the lane level, the three excluded fields must not defeat
 // suppression, because every real producer varies at least Timestamp.
 func TestAddTriple_ExcludedFieldsDoNotDefeatSuppression(t *testing.T) {
 	expiry := time.Now().Add(time.Hour)
@@ -192,8 +191,8 @@ func TestAddTriple_ConcurrentIdenticalAppendsStoreOneTuple(t *testing.T) {
 		"%d concurrent identical appends must store exactly one copy", writers)
 }
 
-// Task 4.1/4.3: a fully-duplicate batch is success with nothing written and no
-// failed subjects — a previously impossible response state.
+// A fully-duplicate batch is success with nothing written and no failed
+// subjects.
 func TestAddTriples_FullyDuplicateBatchReportsZeroWrittenAndNoFailures(t *testing.T) {
 	comp, _ := seedDedupEntity(t, dedupSubject)
 	ctx := context.Background()
@@ -223,8 +222,8 @@ func TestAddTriples_FullyDuplicateBatchReportsZeroWrittenAndNoFailures(t *testin
 	assert.Equal(t, 2, countDedupTriples(stored, batch[0].Predicate))
 }
 
-// Task 4.1: a partially duplicate batch commits exactly the new tuples and
-// advances the revision exactly once.
+// A partially duplicate batch commits exactly the new tuples and advances
+// the revision exactly once.
 func TestAddTriples_PartialDuplicateCommitsOnlyTheNewTuples(t *testing.T) {
 	comp, _ := seedDedupEntity(t, dedupSubject)
 	ctx := context.Background()
@@ -251,7 +250,7 @@ func TestAddTriples_PartialDuplicateCommitsOnlyTheNewTuples(t *testing.T) {
 	assert.Equal(t, 2, countDedupTriples(stored, first.Predicate))
 }
 
-// Task 2.2: repeats WITHIN one request collapse, preserving first-input order.
+// Repeats WITHIN one request collapse, preserving first-input order.
 func TestAddTriples_WithinRequestDuplicatesCollapsePreservingOrder(t *testing.T) {
 	comp, _ := seedDedupEntity(t, dedupSubject)
 	ctx := context.Background()
@@ -284,12 +283,12 @@ func TestAddTriples_WithinRequestDuplicatesCollapsePreservingOrder(t *testing.T)
 		order, "survivor order must follow first appearance in the request")
 }
 
-// Task 3.2: a suppression counted into allAbsences misclassifies a mixed batch.
-// Here subject A is wholly duplicate (suppressed, NOT a failure) and subject B
-// is absent (a genuine SemStreams ADR-055 rejection). The aggregated error must still
-// carry ErrKVKeyNotFound so the handler replies entity_not_found; if the
-// suppression were treated as a failure, allAbsences would flip false and the
-// classification would be lost.
+// A suppression counted into allAbsences misclassifies a mixed batch. Here subject A
+// is wholly duplicate (suppressed, NOT a failure) and subject B is absent (a genuine
+// SemStreams ADR-055 rejection). The aggregated error must still carry
+// ErrKVKeyNotFound so the handler replies entity_not_found; if the suppression were
+// treated as a failure, allAbsences would flip false and the classification would be
+// lost.
 func TestAddTriples_SuppressionDoesNotMisclassifyMixedBatch(t *testing.T) {
 	comp, _ := seedDedupEntity(t, dedupSubject)
 	ctx := context.Background()
@@ -405,7 +404,7 @@ func TestAddTriple_PreExistingStoredDuplicatesAreKeptAndStillSuppress(t *testing
 	triple := dedupTriple(dedupSubject)
 
 	// Write the poisoned-by-history shape directly: two identical stored copies. It is planted in
-	// the bucket, since a create stores each statement once (checkpoint 3 H1).
+	// the bucket, since a create stores each statement once.
 	entity := &graph.EntityState{
 		ID:          dedupSubject,
 		MessageType: testEntityType(),

@@ -1,12 +1,11 @@
 //go:build integration
 
-// Task 2.5 (entity-id-segment-semantics, slice B): the deployment-authority
-// gate. ADR-102 decision 5 — every graph boundary enforces the deployment's own
-// org.platform on the candidate SUBJECT identity, on every lane, before any KV
-// I/O, unless the write arrived on an input port the operator declared
-// "import": true. `@id` OBJECTS are never authority-checked, so a local entity
-// may cite an imported one. An import is a read-only mirror (ruled O-12(a)): no
-// local lane mutates a foreign subject.
+// The deployment-authority gate. ADR-102 decision 5 — every graph boundary
+// enforces the deployment's own org.platform on the candidate SUBJECT identity,
+// on every lane, before any KV I/O, unless the write arrived on an input port
+// the operator declared "import": true. `@id` OBJECTS are never
+// authority-checked, so a local entity may cite an imported one. An import is a
+// read-only mirror: no local lane mutates a foreign subject.
 //
 // These drive the assembled component against real NATS: the JetStream consume
 // closure -> keyed pool -> processIngest for the fact lane, and the
@@ -65,7 +64,8 @@ const (
 	authorityImportStream  = "IMPORT_ENTITY"
 	authorityImportSubject = "import.entity."
 
-	// The two mutation lanes review round 1 (HIGH-2) found uncovered.
+	// The reconcile and delete mutation lanes, each guarded by its own
+	// authority gate.
 	authorityReconcileSubject = "graph.mutation.entity.reconcile"
 	authorityDeleteSubject    = "graph.mutation.entity.delete"
 )
@@ -370,8 +370,8 @@ func TestHierarchySkipsForeignAuthority(t *testing.T) {
 }
 
 // TestAuthorityGateRejectsAnnotationOfImportedSubject — an import is a
-// READ-ONLY mirror (ruled O-12(a)). A triple.append from a local lane naming
-// the imported subject is refused and the import's revision does not move.
+// READ-ONLY mirror. A triple.append from a local lane naming the imported
+// subject is refused and the import's revision does not move.
 func TestAuthorityGateRejectsAnnotationOfImportedSubject(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -411,12 +411,10 @@ func TestAuthorityGateRejectsAnnotationOfImportedSubject(t *testing.T) {
 // TestAuthorityGateRejectsReconcileOfImportedSubject closes the lane with the
 // LEAST margin for error: handleCanonicalReconcile writes straight through
 // entityBucket.Update and never enters mergeEntityOnLane, so its own gate is
-// the ONLY thing between a local reconcile and mutation of an imported mirror
-// — there is no backstop behind it. It is also the lane pkg/lifecycle.Manager
+// the ONLY thing between a local reconcile and mutation of an imported mirror —
+// there is no backstop behind it. It is also the lane pkg/lifecycle.Manager
 // writes through, so an unguarded reconcile would let any lifecycle participant
 // attach itself to a peer's entity.
-//
-// Deleting that gate previously left both suites green (review HIGH-2).
 func TestAuthorityGateRejectsReconcileOfImportedSubject(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -471,14 +469,13 @@ func TestAuthorityGateRejectsReconcileOfImportedSubject(t *testing.T) {
 // rather than coincidence: absence IS reachable and IS reported on this lane, so
 // the foreign answer is not "no entity here" wearing a different code.
 //
-// What this does NOT show — and an earlier revision of this comment, and of the
-// scenario naming it, both claimed it did — is that no KV read occurred. A gate
-// that fetched the state FIRST and then authorized, discarding the fetch result
-// when the authority check fails, would satisfy every assertion below.
-// "Before any KV I/O" (ADR-102 d5) is a code-level invariant: authorizeSubject
-// precedes readEntity in every canonical handler. What this test defends
-// is the regression that actually threatens that invariant — moving the
-// authorization after the fetch and letting not-found win — which it kills.
+// What this does NOT show is that no KV read occurred. A gate that fetched the
+// state FIRST and then authorized, discarding the fetch result when the
+// authority check fails, would satisfy every assertion below. "Before any KV
+// I/O" (ADR-102 d5) is a code-level invariant: authorizeSubject precedes
+// readEntity in every canonical handler. What this test defends is the
+// regression that actually threatens that invariant — moving the authorization
+// after the fetch and letting not-found win — which it kills.
 func TestAuthorityGateRefusesForeignReconcileRegardlessOfExistence(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -530,8 +527,7 @@ func TestAuthorityGateRefusesForeignReconcileRegardlessOfExistence(t *testing.T)
 // TestAuthorityGateRejectsDeleteOfImportedSubject pins the delete lane. An
 // import is a read-only MIRROR, not local property: reclaiming a peer's entity
 // is as much a mutation as annotating it, and the mirror must outlive any local
-// decision about it. Deleting BOTH delete-lane gates previously left the suites
-// green (review HIGH-2).
+// decision about it.
 func TestAuthorityGateRejectsDeleteOfImportedSubject(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -568,23 +564,24 @@ func TestAuthorityGateRejectsDeleteOfImportedSubject(t *testing.T) {
 		"the import must still exist at its original revision after the refused delete")
 }
 
-// TestAuthorityGateMetersDirectPersistenceRejectionsOnEveryDirectSeam closes
-// review finding 4. The requirement covers direct persistence in the same
-// breath as the other two lanes — "on every lane — Graphable fact arrival,
-// every graph.mutation.> operation, and direct persistence" — and then says
-// each rejection is metered exactly once and loudly logged. The direct guards
-// previously only returned the classified error: a framework component calling
-// CreateEntity or MergeEntity in-process with a foreign subject was refused
-// correctly and invisibly, so an operator's `mutation_rejections` panel and
-// their log stream both read as if nothing had been refused.
+// TestAuthorityGateMetersDirectPersistenceRejectionsOnEveryDirectSeam: the
+// requirement covers direct persistence in the same breath as the other two
+// lanes — "on every lane — Graphable fact arrival, every graph.mutation.>
+// operation, and direct persistence" — and then says each rejection is metered
+// exactly once and loudly logged. A direct guard that only returned the
+// classified error would refuse a framework component calling CreateEntity
+// in-process with a foreign subject correctly and invisibly, so an operator's
+// `mutation_rejections` panel and their log stream would both read as if
+// nothing had been refused.
 //
 // It enumerates the direct seams from the guard sites rather than from the two
-// public methods, because two of the four are reached through a shared body and
-// a test covering only the public pair would leave them open: the batch-append
-// body and the delete body both carry their own guard.
+// entry methods (CreateEntity and mergeEntityOnLane), because two of the four
+// are reached through a shared body and a test covering only that pair would
+// leave them open: the batch-append body and the delete body both carry their
+// own guard.
 //
 // The counter belongs to the component and every subtest adds to it, so every
-// assertion is a DELTA. (At the pin it was process-wide, behind a sync.Once.)
+// assertion is a DELTA.
 func TestAuthorityGateMetersDirectPersistenceRejectionsOnEveryDirectSeam(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()
@@ -609,8 +606,6 @@ func TestAuthorityGateMetersDirectPersistenceRejectionsOnEveryDirectSeam(t *test
 		{name: "CreateEntity", call: func() error {
 			return h.component.CreateEntity(h.ctx, foreignEntity())
 		}},
-		// The pin called MergeEntity, a one-line wrapper over this call that
-		// design D6 removes.
 		{name: "mergeEntityOnLane", call: func() error {
 			return h.component.mergeEntityOnLane(h.ctx, foreignEntity(), false)
 		}},

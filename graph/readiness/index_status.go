@@ -47,7 +47,7 @@ type IndexStatusInputs struct {
 //     now-OldestUnappliedAt with a 1ms floor.
 //
 // The staleness subtraction is the one place a NATS server commit time meets the
-// local clock; under skew it is off by the skew, which ADR-083 D3 accepts.
+// local clock; under skew it is off by the skew, which ADR-083 decision 3 accepts.
 func ComputeIndexStatus(in IndexStatusInputs) graph.IndexStatusResponse {
 	ready := in.Target > 0 && in.Indexed >= in.Target
 	var lag uint64
@@ -93,20 +93,18 @@ type BacklogStatusInputs struct {
 	// Only the total is monotone with respect to real outstanding work. Do not
 	// "simplify" this to NumPending: that under-reports by the whole in-process lane
 	// queue (up to defaultIngestLanes(8) x ingestLaneQueueDepth(256) = 2048 messages
-	// held delivered-but-unacked), which is precisely the backlog SemStreams gh#712
-	// tripped over.
+	// held delivered-but-unacked).
 	//
 	// WHY NOT THE ACK FLOOR: measured 2026-07-30 against both deployed NATS versions
 	// (2.10, 2.12), AckFloor.Stream does not advance past a MaxDeliver-exhausted
 	// message, then jumps PAST it on the next unrelated ack — reading
 	// permanently-not-caught-up while idle and falsely-covered under traffic. It never
-	// means "everything at or below this is durable". See the SemStreams change's
-	// design.md D0.
+	// means "everything at or below this is durable".
 	//
 	// HONESTY BOUNDARY: Outstanding == 0 means NO OUTSTANDING WORK, not EVERYTHING WAS
 	// APPLIED. A MaxDeliver-parked message leaves BOTH counters (measured), so it is
 	// invisible here. Caught-up is a backlog claim and cannot license an absence
-	// claim; operator visibility for parked messages is SemStreams gh#742.
+	// claim; parked messages need an operator signal of their own.
 	Outstanding uint64
 	// BootstrapComplete is the producer's own initial-build latch. It is an INPUT, not
 	// a projection: what constitutes the initial build differs per producer (a drained
@@ -118,11 +116,11 @@ type BacklogStatusInputs struct {
 	BootstrapScope uint64
 	// ObservationFailed reports that the producer could not read its own backlog (a
 	// consumer.Info() failure). It projects to degraded AND forces Ready false,
-	// mirroring graph-index's precedent for a failed target read
-	// (pin: processor/graph-index/watermark.go:69-80): a backend fault cannot honestly
-	// confirm caught-up, and "building" would read as ordinary progress rather than a
-	// fault. See the divergence note in ComputeBacklogStatus for why this is stronger
-	// than the revision-lag projection's FailedCount handling.
+	// mirroring the revision-lag follower's failed target read (graph/follower): a
+	// backend fault cannot honestly confirm caught-up, and "building" would read as
+	// ordinary progress rather than a fault. See the divergence note in
+	// ComputeBacklogStatus for why this is stronger than the revision-lag projection's
+	// FailedCount handling.
 	//
 	// Outstanding may still be a PARTIAL sum when this is set (some consumers read,
 	// one failed). That partial is kept on Lag as an honest lower bound rather than
@@ -157,11 +155,11 @@ type BacklogStatusInputs struct {
 //
 // IndexedRevision and TargetRevision are DELIBERATELY NOT SET, and both are omitempty
 // so they stay off the wire. Those fields are contractually in the ENTITY_STATES KV
-// revision space — ADR-084 D3 pins them as comparable to a caller's kv_revision by a
-// test. A backlog producer consumes multiple streams whose sequence spaces are
+// revision space — ADR-084 decision 3 pins them as comparable to a caller's kv_revision
+// by a test. A backlog producer consumes multiple streams whose sequence spaces are
 // independent, so there is no single scalar revision to report; writing a stream
-// sequence into a KV-revision field would silently corrupt every read-your-writes
-// check in the system. A test asserts their absence on the wire.
+// sequence into a KV-revision field would silently corrupt every read-your-writes check
+// in the system. A test asserts their absence on the wire.
 //
 // The gate's PRODUCER INVARIANT (Ready == true implies BootstrapComplete == true) holds
 // here by construction: BootstrapComplete is a conjunct of Ready.
@@ -177,8 +175,8 @@ func ComputeBacklogStatus(in BacklogStatusInputs) graph.IndexStatusResponse {
 	//     projecting Ready from it is a fail-open on exactly the field that licenses
 	//     callers to stop waiting.
 	//
-	// graph-index's analogous failed-target-read path returns Ready: false with
-	// State: degraded (pin: processor/graph-index/watermark.go:69-80); this matches it.
+	// The revision-lag follower's analogous failed-target-read path returns Ready: false
+	// with State: degraded (graph/follower); this matches it.
 	ready := in.Outstanding == 0 && in.BootstrapComplete && !in.ObservationFailed
 	state := graph.IndexStateBuilding
 	switch {

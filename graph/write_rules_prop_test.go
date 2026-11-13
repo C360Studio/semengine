@@ -11,8 +11,8 @@ import (
 	"github.com/c360studio/semengine/message"
 )
 
-// Requirement: graph-entity-writes/One rule per write mode and Timestamp orders a replace (design D15, with "within
-// one write, statements equal in every field count once")
+// Requirement: graph-entity-writes/One rule per write mode and Timestamp orders a replace (with "within one write,
+// statements equal in every field count once")
 //
 // TestPropReplaceBySourceMatchesModel draws a stored entity and an arrival from one small pool of statements, so one
 // write often repeats a statement, carries two sources or predicates at once, ties a timestamp, or arrives older than

@@ -64,8 +64,8 @@ func (h *recordingHandler) warnMentioning(bucket string) bool {
 	return false
 }
 
-// TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL reproduces the
-// SemStreams #610/#611 shape end-to-end through the real backstop: a derived catalog bucket
+// TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL drives a foreign TTL
+// end-to-end through the real backstop: a derived catalog bucket
 // (EMBEDDING_INDEX) is pre-created with a foreign 7-day TTL and a stored key —
 // the inactive-in-this-composition class the backstop exists for — then
 // EnsureCatalogRetentionClean strips the TTL in place, WARNs naming the bucket,
@@ -116,11 +116,10 @@ func TestIntegration_EnsureCatalogRetentionClean_StripsForeignTTL(t *testing.T) 
 }
 
 // TestIntegration_EnsureCatalogRetentionClean_IgnoresOrphanedEmbeddingsCache pins
-// the adopter-facing consequence of the EMBEDDINGS_CACHE bucket's removal from
-// the catalog: an orphaned KV_EMBEDDINGS_CACHE
-// bucket left behind by a pre-deletion deployment is inert — no longer in the
-// owned set, so the backstop neither strips nor reports it, and operators may
-// delete it manually at leisure.
+// that a bucket outside the catalog is inert: an orphaned KV_EMBEDDINGS_CACHE
+// bucket left behind by an earlier deployment is not in the owned set, so the
+// backstop neither strips nor reports it, and operators may delete it manually
+// at leisure.
 func TestIntegration_EnsureCatalogRetentionClean_IgnoresOrphanedEmbeddingsCache(t *testing.T) {
 	const orphanedCache = "EMBEDDINGS_CACHE"
 	ctx := t.Context()
@@ -231,8 +230,7 @@ func TestIntegration_EnsureCatalogRetentionClean_StripsGraphStatusTTL_PreservesH
 }
 
 // TestIntegration_OrderedCreateRace_SeamReconcilesAtAcquisition proves the
-// create-race class the retired post-start sweep pass existed for is closed by
-// the acquisition SEAM, earlier and more precisely: the pre-start backstop
+// create race is closed by the acquisition SEAM: the pre-start backstop
 // SKIPS the absent guarded bucket (no create), a competing process then wins
 // the create with a foreign TTL, and the owner's seam acquisition reconciles
 // the adopted-dirty bucket AT ACQUISITION — TTL stripped in place, WARN naming

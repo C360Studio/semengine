@@ -19,10 +19,8 @@
 // The Watcher reads one producer's key from another process and holds the last
 // envelope, so a read needs no NATS round trip. It judges freshness by when each value
 // arrived, never by comparing the producer's clock with its own (ADR-083 Decision 2).
-// Nothing in SemEngine reads a Watcher
-// yet: it is kept for its reader at the SemStreams pin, graph-clustering. Fusion reads
-// no status (ADR-109 D1): pkg/fusion/fusionnats sees readiness as index_not_ready on
-// each reply.
+// Nothing in SemEngine reads a Watcher yet. Fusion reads no status (ADR-109 Decision
+// 1): pkg/fusion/fusionnats sees readiness as index_not_ready on each reply.
 //
 // The key names live here, for producers and readers both, so the two cannot drift
 // onto different names. The envelope type stays in graph, so a reader of GRAPH_STATUS
@@ -84,8 +82,8 @@ const (
 	// consumer still vouch for the status reading it is holding, or has the producer
 	// gone quiet? That is a transport-liveness question, and it is what
 	// Reading.Fresh answers and what the health gate fails closed on. It is NOT
-	// the retired view-age concept (how far behind ENTITY_STATES the index itself is);
-	// view age is reported on IndexStatusResponse.StalenessMs and gates nothing.
+	// view age (how far behind ENTITY_STATES the index itself is); view age is
+	// reported on IndexStatusResponse.StalenessMs and gates nothing.
 	freshnessMultiplier = 3
 	// rebindDelay is how long the watcher waits before re-opening the bucket
 	// or watch after a failure. Well under the freshness window, so a transient
@@ -246,13 +244,13 @@ func (w *Watcher) Read() Reading {
 // returns nil once something has arrived (fresh or not — Read is what judges that) and
 // ctx.Err() otherwise.
 //
-// It is for a consumer that binds the watch lazily, on its first gate decision, as
-// fusion's NATS client does at the SemStreams pin: without a bounded wait, that first decision would
-// fail closed only because the watch had not delivered yet. Waiting once at bind, with
-// a bounded context, delays only the first gated call; every later call is a local
-// read. Callers must wait AT MOST once: with no producer deployed nothing will
-// ever arrive, and a per-call wait would turn the standalone deployment into a
-// per-call stall. A nil context returns an error, even after an envelope has arrived.
+// It is for a consumer that binds the watch lazily, on its first gate decision: without
+// a bounded wait, that first decision would fail closed only because the watch had not
+// delivered yet. Waiting once at bind, with a bounded context, delays only the first
+// gated call; every later call is a local read. Callers must wait AT MOST once: with no
+// producer deployed nothing will ever arrive, and a per-call wait would turn the
+// standalone deployment into a per-call stall. A nil context returns an error, even
+// after an envelope has arrived.
 func (w *Watcher) WaitForFirst(ctx context.Context) error {
 	if ctx == nil {
 		return errors.New("readiness: nil context")

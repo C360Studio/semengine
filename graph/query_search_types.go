@@ -96,8 +96,8 @@ type TemporalData struct {
 
 // TemporalRangeRequest is the time-range verb's request (graph.temporal.query.range): the entities
 // that changed from StartTime to EndTime, at most Limit of them. The times are RFC 3339 on the wire,
-// under start_time and end_time; SemStreams spelled them startTime and endTime. A responder decodes it
-// strictly, refusing an unknown key by name, and reads min_revision as every derived-index verb does.
+// under start_time and end_time, never startTime and endTime. A responder decodes it strictly,
+// refusing an unknown key by name, and reads min_revision as every derived-index verb does.
 type TemporalRangeRequest struct {
 	StartTime time.Time `json:"start_time"`
 	EndTime   time.Time `json:"end_time"`

@@ -304,8 +304,7 @@ func TestIntegration_StorageReport_StableSizeUnderChurnReportsZeroGrowth(t *test
 	// resource has a bound for a projection to target, which is what lets this
 	// test distinguish "measured, and not growing" from "unbounded, so nothing
 	// to project". It is generous enough never to be reached — a ceiling
-	// rejects a replacement before compaction reclaims the superseded revision,
-	// which is the measurement that retired this capability's predecessor.
+	// rejects a replacement before compaction reclaims the superseded revision.
 	churn, err := client.CreateKeyValueBucket(ctx, jetstream.KeyValueConfig{
 		Bucket:   churned,
 		History:  1,

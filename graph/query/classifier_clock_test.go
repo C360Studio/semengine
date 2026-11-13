@@ -12,8 +12,8 @@ import (
 )
 
 // TestTimeRangesFromOneInstant: every range of a question comes from the one
-// instant the keyword tier is given, in that instant's zone (#479 item 1,
-// design D5). Each expected start and end is written out by hand.
+// instant the keyword tier is given, in that instant's zone. Each expected
+// start and end is written out by hand.
 func TestTimeRangesFromOneInstant(t *testing.T) {
 	newYork, err := time.LoadLocation("America/New_York")
 	require.NoError(t, err)
@@ -84,8 +84,8 @@ func TestTimeRangesFromOneInstant(t *testing.T) {
 			wantEnd:   utc(2026, 2, 28, 23, 59, 59, 999999999),
 		},
 		{
-			// The month ends one nanosecond before the next starts, like today, this week and this year
-			// (the pin cut off its last second).
+			// The month ends one nanosecond before the next starts, like today, this week and this year,
+			// so its last second is inside it.
 			name:      "this month in February",
 			query:     "readings this month",
 			now:       utc(2026, 2, 15, 8, 0, 0, 0),
@@ -122,8 +122,7 @@ func TestTimeRangesFromOneInstant(t *testing.T) {
 
 // TestOutOfRangeNumbersAreRefused: a question whose number breaks its bound
 // gets no result and an invalid-input error naming the phrase from the chain,
-// and no such hint from the keyword tier (#479 item 2, design D6 option A).
-// Inventory Q3's cases are the first rows.
+// and no such hint from the keyword tier.
 func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 	refused := []struct {
 		query  string
@@ -222,7 +221,7 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 		}
 	})
 
-	// Pole clamping is geometry, not a refusal (design D6).
+	// Pole clamping is geometry, not a refusal.
 	boxes := []struct {
 		query string
 		want  SpatialBounds
@@ -252,7 +251,7 @@ func TestOutOfRangeNumbersAreRefused(t *testing.T) {
 }
 
 // TestOutOfRangeRefusedWithoutKeywordTier: the refusal does not depend on the
-// keyword tier being composed (#479 item 2). With no keyword classifier, and
+// keyword tier being composed. With no keyword classifier, and
 // with later tiers that would answer, the chain gives no result, an
 // invalid-input error naming the phrase, and asks no later tier.
 func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
@@ -261,7 +260,7 @@ func TestOutOfRangeRefusedWithoutKeywordTier(t *testing.T) {
 		{"sensors within 5km of 95,10", "within 5km of 95,10", "latitude"},
 		{"events in the last -1 hours", "last -1 hours", "at least 1"},
 	}
-	// Each question gets an example tier holding the pin's iot examples and
+	// Each question gets an example tier holding the iot examples and
 	// the question word for word, so that tier would answer it (checked below).
 	const threshold = 0.7
 	domainsFor := func(query string) []*DomainExamples {

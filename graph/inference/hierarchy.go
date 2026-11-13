@@ -47,8 +47,8 @@ type HierarchyInference struct {
 	store EntityStore
 
 	// platform is the deployment's own authority, positions 1-2 of every
-	// identity this deployment may mint (ADR-102 d5), from graph-ingest's
-	// deps.Platform.
+	// identity this deployment may mint (ADR-102 decision 5), from
+	// graph-ingest's deps.Platform.
 	platform types.PlatformMeta
 
 	// Logger for observability
@@ -104,22 +104,19 @@ func isContainerEntity(entityID string) bool {
 //     the entity.
 //
 // It writes nothing to a container that exists, so a container's stored value
-// does not change when a member is born: there is no inverse contains edge
-// (ruling M, #91 comment 6080973822; #145), and membership is read from the
-// forward edges on each member. Nor does it write a sibling edge between
-// entities of one type (ruling G, #91 comment 6062681355). The
-// hierarchy.*.contains predicates and vocabulary.HierarchyTypeSibling stay
-// registered in vocabulary.
+// does not change when a member is born: there is no inverse contains edge, and
+// membership is read from the forward edges on each member. Nor does it write a
+// sibling edge between entities of one type. The hierarchy.*.contains
+// predicates and vocabulary.HierarchyTypeSibling stay registered in vocabulary.
 //
 // Every statement it returns or writes, a new container's type statement
 // included, names graph.SourceHierarchy as its source and carries at, the time
-// of the write that triggered the inference, never the clock (design D15). A
-// zero at is refused.
+// of the write that triggered the inference, never the clock. A zero at is
+// refused.
 //
 // If any part fails (a container's birth), it returns every failure joined and
-// no statements, so the caller refuses the birth (design D21). Containers born
-// before the failure are found by the next attempt, which births only those
-// still absent.
+// no statements, so the caller refuses the birth. Containers born before the
+// failure are found by the next attempt, which births only those still absent.
 //
 // It returns no statements, and writes nothing, for an invalid entity ID, a
 // container, or an entity carrying a FOREIGN authority (an imported mirror,
@@ -157,9 +154,9 @@ func (h *HierarchyInference) AddToContainers(ctx context.Context, entityID strin
 		return nil, nil
 	}
 
-	// The taxonomy and source containers' membership predicates keep the names
-	// of the retired order, hierarchy.system.member and hierarchy.domain.member
-	// (ADR-102 §B.4, H7).
+	// The taxonomy and source containers' membership predicates keep names from
+	// an older order of the ID positions, hierarchy.system.member and
+	// hierarchy.domain.member.
 	levels := [...]struct {
 		containerID string
 		predicate   string
@@ -188,8 +185,8 @@ func (h *HierarchyInference) AddToContainers(ctx context.Context, entityID strin
 }
 
 // hierarchyTriple builds one hierarchy statement: graph-ingest's hierarchy
-// producer as its source and the triggering time at, never the clock (design
-// D15). Structural inference has perfect confidence.
+// producer as its source and the triggering time at, never the clock.
+// Structural inference has perfect confidence.
 func hierarchyTriple(subject, predicate string, object any, at time.Time) message.Triple {
 	return message.Triple{
 		Subject:    subject,
@@ -211,7 +208,7 @@ func buildTypeContainerID(eid semtypes.EntityID) string {
 
 // buildTaxonomyContainerID creates a 6-part container ID from the level-4
 // taxonomy prefix plus two padding tokens. Its membership predicate is
-// hierarchy.system.member, the retired order's name for it (H7).
+// hierarchy.system.member, a name from an older order of the ID positions.
 // Output: org.platform.system.domain.group.container
 func buildTaxonomyContainerID(eid semtypes.EntityID) string {
 	return eid.TaxonomyPrefix() + ".group.container"
@@ -219,7 +216,7 @@ func buildTaxonomyContainerID(eid semtypes.EntityID) string {
 
 // buildSourceContainerID creates a 6-part container ID from the level-3 source
 // prefix plus three padding tokens. Its membership predicate is
-// hierarchy.domain.member, the retired order's name for it (H7).
+// hierarchy.domain.member, a name from an older order of the ID positions.
 // Output: org.platform.system.group.container.level
 func buildSourceContainerID(eid semtypes.EntityID) string {
 	return eid.SourcePrefix() + ".group.container.level"
@@ -243,10 +240,10 @@ func (h *HierarchyInference) ensureContainerAndReturnEdge(ctx context.Context, e
 // born earlier or by another writer a moment ago, and leaves it untouched. It keeps
 // no record of which containers exist: each call asks storage, so a container
 // deleted since an earlier birth is created again, and a birth delivered again
-// commits what the first attempt did (#130, design D21).
+// commits what the first attempt did.
 func (h *HierarchyInference) ensureContainerExists(ctx context.Context, containerID string, at time.Time) error {
 	// Create minimal container entity, stamped with the registered framework
-	// type so it passes graph-ingest's registered-type gate (ADR-103, O-16 (a)).
+	// type so it passes graph-ingest's registered-type gate (SemStreams ADR-103).
 	containerEntity := &gtypes.EntityState{
 		ID:          containerID,
 		MessageType: HierarchyContainerMessageType(),

@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-// TestIndexStatesReturnsACopy holds design D6: IndexStates lists the four wire
+// TestIndexStatesReturnsACopy: IndexStates lists the four wire
 // states of the readiness envelope, and a caller that changes the slice it got
 // back cannot change what the next caller gets. The readiness gate's allow-list
 // and the one-hot state gauge both read this list.
@@ -35,8 +35,8 @@ func TestIndexStatesReturnsACopy(t *testing.T) {
 // and checks which keys the encoding carries. A case that names an envelope
 // instead of a wire value starts from that envelope's own encoding, so it also
 // proves the envelope survives a round trip. Decoding a wire value first is what
-// lets a case show that keys the type does not define (the pin's legacy fields)
-// do not come back out.
+// lets a case show that keys the type does not define (legacy fields such as
+// phase and last_synced) do not come back out.
 //
 // Requirement: graph-transport-boundary/The readiness envelope carries no legacy fields
 func TestIndexStatusResponseWire(t *testing.T) {
@@ -61,7 +61,7 @@ func TestIndexStatusResponseWire(t *testing.T) {
 				"failed_count":   float64(5),
 				"failed_reasons": map[string]any{"connection_refused": float64(4), "content_error": float64(1)},
 			},
-			// The envelope has no first-failure time (owner, PR #550 comment 6716972354).
+			// The envelope has no first-failure time.
 			absent: []string{"first_failure_at"},
 		},
 		{

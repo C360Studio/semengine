@@ -12,11 +12,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// TestAddToContainersReportsEveryFailure holds design D21: AddToContainers
-// returns an error when any part of the inference fails (a container's birth,
-// the one write it makes) and returns no statements with it, so graph-ingest can
-// refuse the birth. Each container is failed on its own while the other two
-// succeed, so a statement returned beside the error shows.
+// TestAddToContainersReportsEveryFailure: AddToContainers returns an error when
+// any part of the inference fails (a container's birth, the one write it makes)
+// and returns no statements with it, so graph-ingest can refuse the birth. Each
+// container is failed on its own while the other two succeed, so a statement
+// returned beside the error shows.
 func TestAddToContainersReportsEveryFailure(t *testing.T) {
 	const entityID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
 	injected := errors.New("injected failure")
@@ -43,10 +43,10 @@ func TestAddToContainersReportsEveryFailure(t *testing.T) {
 	}
 }
 
-// TestAddToContainersStampsSourceAndTime holds design D15: every statement
-// the inference derives (the membership edges it returns and each new
-// container's type statement) names graph-ingest's hierarchy producer as its
-// source and carries the triggering time it was given, never the clock.
+// TestAddToContainersStampsSourceAndTime: every statement the inference derives
+// (the membership edges it returns and each new container's type statement)
+// names graph-ingest's hierarchy producer as its source and carries the
+// triggering time it was given, never the clock.
 func TestAddToContainersStampsSourceAndTime(t *testing.T) {
 	const entityID = "c360.semstreams-hierarchy-test.sensor.environmental.temperature.temp-001"
 	at := time.Date(2025, 3, 4, 5, 6, 7, 8, time.UTC)

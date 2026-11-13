@@ -12,20 +12,21 @@ import (
 )
 
 // EnsureCatalogRetentionClean is the PRE-START LEGACY-DRIFT BACKSTOP for the
-// framework KV catalog's no-lifecycle buckets (SemStreams ADR-068 D1). It has exactly ONE
-// honest job: a catalog bucket unused by the current composition never has its
-// acquisition seam called — e.g. an EMBEDDING_INDEX left behind by a prior
-// semantic deploy when booting a statistical configuration — so one boot-time
-// pass over the catalog strips prior-boot/out-of-band retention dirt (or fails
-// boot closed) for those inactive buckets.
+// framework KV catalog's no-lifecycle buckets (SemStreams ADR-068 decision 1).
+// It has exactly ONE honest job: a catalog bucket unused by the current
+// composition never has its acquisition seam called — e.g. an EMBEDDING_INDEX
+// left behind by a prior semantic deploy when booting a statistical
+// configuration — so one boot-time pass over the catalog strips
+// prior-boot/out-of-band retention dirt (or fails boot closed) for those
+// inactive buckets.
 //
 // Everything else is the seam's job, not this pass's: every active component
 // acquires its buckets through natsclient.EnsureFrameworkBucket inside its own
 // Start — create-or-open, reconcile to the declared policy, verify, fail that
 // Start closed — which covers prior-boot dirt AND this boot's create-races AND
-// post-boot dynamic re-acquisition, at the moment of acquisition. There is no
-// post-start sweep pass anymore; deleting it is safe precisely because its
-// justified class (created-dirty during this boot) is reconciled at creation.
+// post-boot dynamic re-acquisition, at the moment of acquisition. No post-start
+// sweep runs: its one class, a bucket created dirty during this boot, is
+// reconciled at creation.
 //
 // Scope: only descriptors declared no-lifecycle. A bounded-ttl bucket's TTL is
 // its declared contract (the seam converges to it; this pass must not strip

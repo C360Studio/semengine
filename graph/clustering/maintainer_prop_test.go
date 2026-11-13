@@ -17,8 +17,8 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The generated checks of design D5 (task 2.3). The reference model is written from the
-// community-grouping spec and design D2, never from maintainer.go or terms.go:
+// The generated checks of the maintainer. The reference model is written from the
+// community-grouping spec, never from maintainer.go or terms.go:
 //
 //   - an entity's groups are its ID's first four, three and two dot-separated positions,
 //     split here on '.'; its type is the fifth position;
@@ -30,12 +30,12 @@ import (
 //   - a refused value (nil state, unparseable ID, mismatched state ID) contributes nothing
 //     and names the entity in Tick's *IncompleteError until a valid upsert or a delete;
 //   - a record holds the member count, the MaxKeywords most common types and words (ties
-//     lexical), the pin's summary template, and the MaxRepEntities smallest members with
+//     lexical), the summary template, and the MaxRepEntities smallest members with
 //     words; a group with no members has no record;
 //   - a record's entity_revision is the highest revision among the applied upserts and
 //     deletes of entities whose IDs parse into the group, held, refused or not; a group
-//     that is removed takes its mark with it (task 2.1, "A record names the latest entity
-//     write it reflects").
+//     that is removed takes its mark with it (community-grouping spec, "A record names the
+//     latest entity write it reflects").
 
 // propIDs are the valid entity IDs a history draws from: two deployments, two sources,
 // two domains, two types and two instances, so every level holds several groups.

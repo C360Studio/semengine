@@ -2,26 +2,55 @@
 
 Approved-by:
 
-Track: `design`. Draft: inventory and design to follow in this change.
+Track: `design`. Capabilities added: `graph-lexical`, `entity-text`. Modified: `graph-transport-boundary`,
+`composed-stack`.
 
 ## Why
 
-Change 1 (`setup-04b-01-lexical-index`, PR #615) put a real word index on `main` as the package `graph/lexical`, but
-nothing in production feeds or reads it. This is the second of four changes in the plan on epic #10 (comment
+Change 1 (`setup-04b-01-lexical-index`, PR #615) put a real word index on `main` as `graph/lexical`, but nothing in
+production feeds or reads it (inventory §1). This is the second of four changes in the plan on epic #10 (comment
 6833147079): a processor that follows `ENTITY_STATES`, rebuilds the index on every start, as graph-index does, and
-serves the search verb.
+serves the search verb. No vector bucket, dedup bucket or worker pool at tier 0.
 
 ## What Changes
 
-To be settled by the design. From the plan: a processor that keeps a `graph/lexical` index current from
-`ENTITY_STATES`, rebuilt on every start, and answers a search request; no vector bucket, dedup bucket or worker pool
-at tier 0.
+- New component `graph-lexical` (`processor/graph-lexical`): a `graph/follower` plug-in that applies each delivered
+  entity to an in-memory `lexical.Index`, publishes readiness under its own `GRAPH_STATUS` key, and answers one new
+  verb, `graph.lexical.query.search`: scoped, limited, ranked, with the match count before the limit and the
+  revision the answer reflects.
+- One text rule for every component: new package `graph/entitytext` says which of an entity's values are its name
+  and which its body, reads an offloaded body with a bounded wait, and caps the text. graph-embedding moves onto it
+  with the same bytes, so its vectors do not change.
+- Offloaded bodies are read on every start; a body that cannot be read is indexed without it, counted in the reply,
+  and read again later. A stored per-entity word record, which would spare that read, is shown as an extension
+  point and not built.
+- The index's memory is measured before it holds real data, and its private layout is changed if the measurement
+  says so (#623).
+- The composed smoke test runs the new component and checks its search through a delete and a restart (#628, first
+  item).
+- Docs say plainly that entities without text, such as sensor or drone telemetry, gain nothing from word search.
 
 ## Non-goals
 
 graph-query's local and global search and the question router (change 3); removal of `BM25Embedder`, the substring
-scorers and `EmbeddingClassifier` (change 4); the query parser questions on #624.
+scorers and `EmbeddingClassifier`, and fusion's natural-language resolve at tier 0 (change 4); the query parser
+questions on #624; a stored index or the per-entity word record; tokenizer changes (#622).
+
+## Impact
+
+New: `graph/entitytext`, `processor/graph-lexical`, one row in `graph/query_verbs.go`, one key in
+`graph/readiness`, request and reply types in `graph`. Changed: graph-embedding reads text through
+`graph/entitytext` (no change in what it embeds); `graph/lexical` internals (layout only); `internal/smoke`;
+`AGENTS.md` and `.agents/rules-index.md` (the reserved-subject row gains `graph.lexical.query.*`). No consumer answer
+changes: `semantic`, `similar` and fusion are untouched. A product that wants word search registers one more
+component (`graph-lexical`).
+
+## Retires
+
+`Closes #623` (task 2.2), `Closes #551` (task 2.1: the shared body read has a deadline). `Addresses #628` (its first
+item; changes 3 and 4 carry the rest).
 
 ## Rulings
 
-Covered (owner, 2026-11-12, #10 comment 6833147079): the four-change plan and its shape.
+Covered (owner, 2026-11-12, #10 comment 6833147079): the four-change plan, its shape, and starting without a
+per-entity token record provided the base leaves room to add one. Open for the owner: design questions 1 to 3.

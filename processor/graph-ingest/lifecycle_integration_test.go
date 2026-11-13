@@ -25,14 +25,6 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// The pin ran these tests on one NATS client shared through TestMain
-// (natsclient.NewSharedTestClient), terminated with no deadline. natsfixture.Open
-// takes the test (design D3), so each test here opens a broker of its own, which its
-// cleanup stops under a bounded context. The pin's TestMain also registered four test
-// predicates for merge_entity_integration_test.go, which a later stage ports, and
-// checked the owner-child request first; TestGraphIngestOwnerChildFixture checks that
-// request itself.
-
 // createTestComponentForLifecycle creates a test instance for lifecycle testing.
 func createTestComponentForLifecycle(t *testing.T) *Component {
 	t.Helper()
@@ -80,11 +72,10 @@ func TestGraphIngest_OneShotLifecycleAgainstNATS(t *testing.T) {
 // connected to one fixture broker that holds the ENTITY stream. The must-fail owner's
 // client dials a listener that closes every connection before the handshake, so Start
 // fails on its connection, before the component binds anything, and the cleanup Start
-// runs succeeds: this is the
-// "Cleanup succeeds after a failed start" scenario of lifecycle-suite's "Failed start
-// whose own cleanup fails". The branch where that cleanup fails is
-// TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop's. graph-ingest is
-// one-shot (design D13: a Start after Stop is refused), so no restart is promised.
+// runs succeeds: this is the "Cleanup succeeds after a failed start" scenario of
+// lifecycle-suite's "Failed start whose own cleanup fails". The branch where that
+// cleanup fails is TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop's.
+// graph-ingest is one-shot (a Start after Stop is refused), so no restart is promised.
 func TestGraphIngestLifecycleSuite(t *testing.T) {
 	url := shared.Reset(t)
 	setup := natsfixture.Open(t, url, openFixtureClient)
@@ -165,10 +156,10 @@ func TestGraphIngestLifecycleSuite(t *testing.T) {
 }
 
 // TestGraphIngest_StartBoundedByItsContext: the Start context bounds startup, including
-// the consumer setup's wait for its input stream (ADR-113; design D6, T-G3). No input
-// stream exists, so that wait, which retries for about 50 s under any other context,
-// can end only by the Start context's 1 s deadline. Start must return that deadline
-// well inside 10 s and hold nothing, and Stop must then return nil.
+// the consumer setup's wait for its input stream (ADR-113). No input stream exists, so
+// that wait, which retries for about 50 s under any other context, can end only by the
+// Start context's 1 s deadline. Start must return that deadline well inside 10 s and
+// hold nothing, and Stop must then return nil.
 func TestGraphIngest_StartBoundedByItsContext(t *testing.T) {
 	configJSON, err := json.Marshal(DefaultConfig())
 	if err != nil {
@@ -196,11 +187,11 @@ func TestGraphIngest_StartBoundedByItsContext(t *testing.T) {
 	var startErr error
 	select {
 	case startErr = <-startResult:
-	// Own deadline: start-context design T-G3: Start under a 1 s deadline returns well inside 10 s; mutant M7 returns only after ~50 s.
+	// Own deadline: Start under a 1 s deadline returns well inside 10 s; a Start that ignores its context returns after ~50 s.
 	case <-bound.C:
 		t.Errorf("Start had not returned %s after its 1 s deadline", failureBound)
-		// Start's own wait is bounded by waitForStream's retry budget (about 50 s, as mutant M7
-		// showed); join it so nothing it logs outlives the test.
+		// Start's own wait is bounded by waitForStream's retry budget (about 50 s); join it so
+		// nothing it logs outlives the test.
 		startErr = <-startResult
 	}
 	if !errors.Is(startErr, context.DeadlineExceeded) {
@@ -239,11 +230,10 @@ func (h *cancelOnRecordHandler) WithGroup(string) slog.Handler      { return h }
 
 // TestGraphIngest_StartFailsWhenItsContextEndsAfterHandlerSetup: a Start context that ends
 // after the last request registration succeeded, while setup is still running, fails
-// Start, which holds nothing, and a later Stop returns nil (ADR-113; design
-// natsclient-handler-root D2, T6). The component's logger, given through deps.Logger,
-// cancels the Start context when it handles "mutation handlers registered", which
-// setupMutationHandlers logs after its last registration and before it returns. It passes
-// on the base too: it guards start's final check of its context (mutant M7).
+// Start, which holds nothing, and a later Stop returns nil (ADR-113). The component's
+// logger, given through deps.Logger, cancels the Start context when it handles "mutation
+// handlers registered", which setupMutationHandlers logs after its last registration and
+// before it returns. It guards start's final check of its context.
 func TestGraphIngest_StartFailsWhenItsContextEndsAfterHandlerSetup(t *testing.T) {
 	startCtx, cancelStart := context.WithCancel(t.Context())
 	defer cancelStart()
@@ -280,7 +270,7 @@ func TestGraphIngest_StartFailsWhenItsContextEndsAfterHandlerSetup(t *testing.T)
 // refusingBrokerURL returns the NATS URL of a loopback listener that stays bound for the
 // test's life and closes every connection it accepts before sending the server's INFO, so
 // a client's Connect to it fails on the handshake. A port that was bound and released can
-// be handed to another process, whose broker would accept the dial (#89). The listener is
+// be handed to another process, whose broker would accept the dial. The listener is
 // closed, and its accept loop joined, on cleanup.
 func refusingBrokerURL(t *testing.T) string {
 	t.Helper()
@@ -312,12 +302,12 @@ const relayDialTimeout = 5 * time.Second
 
 // brokerRelay forwards loopback connections to the package's shared broker until the
 // test cuts it, so a client's connection drops and every reconnect is refused while the
-// broker keeps running (design D2). It exists because natsfixture.Restart stops and
-// starts the container in one call, so it cannot hold the broker down while Start runs,
-// and an embedded server brought back would reuse a port it released, which another
-// process may have bound in between (#89). Like refusingBrokerURL, its listener stays
-// bound for the test's life. Its cleanup closes the listener and every connection and
-// joins its goroutines.
+// broker keeps running. It exists because natsfixture.Restart stops and starts the
+// container in one call, so it cannot hold the broker down while Start runs, and an
+// embedded server brought back would reuse a port it released, which another process
+// may have bound in between. Like refusingBrokerURL, its listener stays bound for the
+// test's life. Its cleanup closes the listener and every connection and joins its
+// goroutines.
 type brokerRelay struct {
 	listener net.Listener
 	upstream string // the shared broker's host:port
@@ -448,8 +438,8 @@ const statusBound = 10 * time.Second
 
 // openReconnectingClient opens a natsclient.Client with natsclient's reconnect default
 // (unlimited reconnects), a short reconnect wait and no health monitor, so only nats.go's
-// own disconnect and reconnect move its status (design D2). natsfixture.Open bounds it
-// and closes it on cleanup.
+// own disconnect and reconnect move its status. natsfixture.Open bounds it and closes it
+// on cleanup.
 func openReconnectingClient(ctx context.Context, url string) (*natsclient.Client, func(context.Context) error, error) {
 	client, err := natsclient.NewClient(url,
 		natsclient.WithReconnectWait(reconnectWait),
@@ -507,8 +497,8 @@ func awaitStatus(ctx context.Context, client *natsclient.Client, want natsclient
 }
 
 // cutUntilReconnecting cuts the relay and waits until the client reports Reconnecting:
-// observed, not predicted, since nats.go does not promise when it notices the cut
-// (design D4). It registers nothing; the caller restores.
+// observed, not predicted, since nats.go does not promise when it notices the cut. It
+// registers nothing; the caller restores.
 func cutUntilReconnecting(t *testing.T, relay *brokerRelay, client *natsclient.Client) {
 	t.Helper()
 	relay.Cut()
@@ -519,8 +509,8 @@ func cutUntilReconnecting(t *testing.T, relay *brokerRelay, client *natsclient.C
 
 // restoreUntilConnected restores the relay and waits until the client reports Connected
 // again. Every test that cuts defers it: Close drains, and a drain on a reconnecting
-// connection fails at the pinned nats.go (design D2), so the client's cleanup would fail
-// a correct implementation if the client were still reconnecting.
+// connection can fail (nats.go does not promise otherwise), so the client's cleanup
+// would fail a correct implementation if the client were still reconnecting.
 func restoreUntilConnected(t *testing.T, relay *brokerRelay, client *natsclient.Client) {
 	t.Helper()
 	relay.Restore()
@@ -530,12 +520,11 @@ func restoreUntilConnected(t *testing.T, relay *brokerRelay, client *natsclient.
 }
 
 // TestGraphIngest_StartWaitsForAReconnectingClient: Start given a client that nats.go is
-// reconnecting waits for the connection instead of failing (#291; design D1, D2 T1).
-// The relay is cut and the client observed Reconnecting before Start runs. Start must
-// not return within a 1 s observation window, during which no connection is possible;
-// the window only lets Start reach its connect step before the restore, and no correct
-// Start can return inside it. After the restore Start must return nil, Stop must return
-// nil and nothing is held.
+// reconnecting waits for the connection instead of failing. The relay is cut and the
+// client observed Reconnecting before Start runs. Start must not return within a 1 s
+// observation window, during which no connection is possible; the window only lets Start
+// reach its connect step before the restore, and no correct Start can return inside it.
+// After the restore Start must return nil, Stop must return nil and nothing is held.
 func TestGraphIngest_StartWaitsForAReconnectingClient(t *testing.T) {
 	owner, client, relay := newRelayedComponent(t)
 	defer restoreUntilConnected(t, relay, client) // registered first: a failed cut still restores
@@ -546,8 +535,9 @@ func TestGraphIngest_StartWaitsForAReconnectingClient(t *testing.T) {
 	startResult := make(chan error, 1)
 	go func() { startResult <- owner.Start(startCtx) }()
 
-	// observationWindow is listed in design D2 (docs/testing.md, "Porting a test from
-	// SemStreams"): its expiry is the expected outcome, never a failure.
+	// observationWindow is an observation window where no signal exists
+	// (docs/testing.md, "Porting a test from SemStreams"): its expiry is the expected
+	// outcome, never a failure.
 	const observationWindow = time.Second
 	window := time.NewTimer(observationWindow)
 	select {
@@ -574,8 +564,8 @@ func TestGraphIngest_StartWaitsForAReconnectingClient(t *testing.T) {
 
 // TestGraphIngest_StartContextEndsWhileWaitingForReconnect: a Start context that ends
 // while Start waits for a reconnecting client fails Start with that context's error, and
-// Start holds nothing (ADR-113; design D2 T2). The relay stays cut, so no connection is
-// possible before Start's 1 s deadline. Start must return an error matching
+// Start holds nothing (ADR-113). The relay stays cut, so no connection is possible
+// before Start's 1 s deadline. Start must return an error matching
 // context.DeadlineExceeded, hold nothing, and Stop must then return nil.
 func TestGraphIngest_StartContextEndsWhileWaitingForReconnect(t *testing.T) {
 	owner, client, relay := newRelayedComponent(t)

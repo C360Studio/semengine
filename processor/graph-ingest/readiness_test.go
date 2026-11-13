@@ -5,10 +5,10 @@ import (
 	"time"
 )
 
-// TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo covers the distinction the
-// field exists for (SemStreams gh#732): a producer whose bind reads found no backlog reports scope 0,
-// which a consumer reads, with bootstrap_complete, as "there was nothing to do" rather than
-// "I might be early". A later backlog does not make it the initial build.
+// TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo covers the distinction the field
+// exists for: a producer whose bind reads found no backlog reports scope 0, which a
+// consumer reads, with bootstrap_complete, as "there was nothing to do" rather than "I
+// might be early". A later backlog does not make it the initial build.
 func TestBootstrapScope_ZeroScopeIsAuthoritativelyNothingToDo(t *testing.T) {
 	c := createTestComponent(t)
 
@@ -95,17 +95,12 @@ func TestOldestOutstandingAt_PresenceEncoding(t *testing.T) {
 	})
 }
 
-// The pin's TestLastSyncedRFC3339 is not ported: lastSyncedRFC3339 and the
-// envelope's LastSynced go (design D16).
-
-// TestBootstrapScope_PartialBindCaptureIsDiscarded is the Codex-found regression.
-//
-// The bug: one global bootBacklogKnown flag. With two bound consumers, a SUCCESSFUL
-// bind read for A marked the aggregate captured, so a FAILED read for B did not
-// "leave the capture unclaimed" — the tick fallback could never fire, and B's initial
-// backlog was omitted forever. If A measured zero and B held work, the producer would
-// publish `bootstrap_complete && bootstrap_scope == 0`: the contract's "authoritatively
-// nothing to replay", asserted over a real initial build.
+// TestBootstrapScope_PartialBindCaptureIsDiscarded: with two bound consumers, a
+// SUCCESSFUL bind read for A must not mark the aggregate captured while a FAILED read
+// for B leaves its capture unclaimed. Otherwise the tick fallback could never fire, and
+// B's initial backlog would be omitted forever: if A measured zero and B held work, the
+// producer would publish `bootstrap_complete && bootstrap_scope == 0`: the contract's
+// "authoritatively nothing to replay", asserted over a real initial build.
 func TestBootstrapScope_PartialBindCaptureIsDiscarded(t *testing.T) {
 	c := createTestComponent(t)
 

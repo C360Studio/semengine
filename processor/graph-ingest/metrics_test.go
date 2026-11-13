@@ -20,10 +20,9 @@ import (
 // Metrics Registry Tests
 // ====================================================================================
 
-// The pin's TestGetEntitiesUpdatedMetric_NilRegistry and _ValidRegistry tested the
-// package-level getter getEntitiesUpdatedMetric and its sync.Once global. Design D4
-// removes both: each component builds its collectors and registers them on its own
-// registry. A nil registry is TestComponent_MetricsRegistry_CreateComponent below and
+// Each component builds its collectors and registers them on its own registry; no
+// package-level getter or global holds them. A nil registry is
+// TestComponent_MetricsRegistry_CreateComponent below and
 // TestGraphIngestNilRegistryRegistersNothing; a valid one is
 // TestGraphIngestMetricsRegisterOnItsRegistry.
 
@@ -48,8 +47,8 @@ func TestComponent_MetricsAtomic_MessageProcessing(t *testing.T) {
 	bytes := comp.DataFlow().Bytes
 	errorCount := comp.Health().ErrorCount
 
-	// An in-process create is not an input message (#302; design D2): DataFlow counts
-	// stream deliveries and mutation requests only.
+	// An in-process create is not an input message: DataFlow counts stream deliveries
+	// and mutation requests only.
 	require.NoError(t, comp.CreateEntity(ctx, newTestEntity("c360.platform.test.sys.type.001")))
 	assert.Equal(t, messages, comp.DataFlow().Messages, "an in-process create counts no message")
 	assert.Equal(t, bytes, comp.DataFlow().Bytes, "an in-process create counts no bytes")

@@ -1,12 +1,12 @@
 package graphingest
 
 // query_contract_guard_test.go — per-entity poison scoping at the query
-// surface (poison-response-scoping). The surface-global sticky latch is gone:
-// the boot snapshot sweep validates the resident snapshot into the per-entity
-// poison inventory and then STOPS its watcher (snapshot-then-stop, design D1);
-// refusal is per-entity and derives solely from each read's validating decode
-// of the stored bytes. These tests pin the sweep lifecycle, the per-entity
-// refusal scope, and the inversion of the old whole-surface latch behavior.
+// surface (poison-response-scoping). There is no surface-global latch: the
+// boot snapshot sweep validates the resident snapshot into the per-entity
+// poison inventory and then STOPS its watcher (snapshot-then-stop); refusal is
+// per-entity and derives solely from each read's validating decode of the
+// stored bytes. These tests pin the sweep lifecycle, the per-entity refusal
+// scope, and that one entity's poison refuses no other entity's response.
 
 import (
 	"context"
@@ -164,12 +164,11 @@ func bootSweep(t *testing.T, entries ...jetstream.KeyValueEntry) *Component {
 	return c
 }
 
-// TestBootSweepInventoriesStatementWithoutMetadata: a value holding a
-// statement with no source or no timestamp, which only a writer outside
-// graph-ingest can store, is inventoried by the boot sweep under its key at its
-// revision as missing_statement_metadata, refused as the first read of the key
-// refuses it, and the record survives the sweep's re-read of the same bytes
-// (checkpoint 3 H3).
+// TestBootSweepInventoriesStatementWithoutMetadata: a value holding a statement
+// with no source or no timestamp, which only a writer outside graph-ingest can
+// store, is inventoried by the boot sweep under its key at its revision as
+// missing_statement_metadata, refused as the first read of the key refuses it,
+// and the record survives the sweep's re-read of the same bytes.
 func TestBootSweepInventoriesStatementWithoutMetadata(t *testing.T) {
 	t.Parallel()
 
@@ -195,10 +194,10 @@ func TestBootSweepInventoriesStatementWithoutMetadata(t *testing.T) {
 	}
 }
 
-// TestBootSweepInventoriesMisKeyedValue: a value stored under one key that
-// names another entity is inventoried by the boot sweep under its key, refused
-// as the first read of the key refuses it (SemStreams gh#147), and a later valid revision
-// for the key still erases it (last revision wins).
+// TestBootSweepInventoriesMisKeyedValue: a value stored under one key that names another
+// entity is inventoried by the boot sweep under its key, refused as the first read of the
+// key refuses it, and a later valid revision for the key still erases it (last revision
+// wins).
 func TestBootSweepInventoriesMisKeyedValue(t *testing.T) {
 	t.Parallel()
 
@@ -362,7 +361,7 @@ func TestEntityStateGuardDeliberateStopDrainsToCloseWithoutMisclassification(t *
 
 // openGuardWatcher is a snapshot watcher whose update channel never closes, Stop included: the
 // state nats.go v1.55.0 leaves a watch in when its context ends, or its connection closes, between
-// Subscribe and the install of the handler that closes the channel (#456).
+// Subscribe and the install of the handler that closes the channel.
 type openGuardWatcher struct {
 	updates chan jetstream.KeyValueEntry
 	stopped chan struct{}
@@ -438,11 +437,10 @@ func TestEntityStateGuardGivesUpOnADeliveryThatNeverCloses(t *testing.T) {
 	}
 }
 
-// TestQueryDiscoveredPoisonServesConcurrentReadyResponse is the review-named
-// INVERSION of TestQueryDiscoveredPoisonBlocksConcurrentReadyResponse: with
-// the surface-global latch gone, a valid response in flight while another
-// query discovers poison now SERVES (design D2 — enforcement is per-read
-// byte-authoritative; the inventory gates nothing).
+// TestQueryDiscoveredPoisonServesConcurrentReadyResponse: with no
+// surface-global latch, a valid response in flight while another query
+// discovers poison SERVES (enforcement is per-read byte-authoritative; the
+// inventory gates nothing).
 func TestQueryDiscoveredPoisonServesConcurrentReadyResponse(t *testing.T) {
 	t.Parallel()
 
@@ -560,7 +558,7 @@ func newIngestGuardTestComponent(t *testing.T, bucket *mockKVBucket) *Component 
 
 // bucketStoreForTest uses the package's existing test client helper.
 func bucketStoreForTest(bucket jetstream.KeyValue) *natsclient.KVStore {
-	client, err := natsclient.NewClient("") // never connected; the pin named a fixed address
+	client, err := natsclient.NewClient("") // never connected
 	if err != nil {
 		panic(err)
 	}

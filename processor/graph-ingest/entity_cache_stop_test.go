@@ -13,21 +13,17 @@ import (
 	"github.com/c360studio/semengine/internal/cache"
 )
 
-// TestEntityCacheUseDuringStop proves #306's fix (design D7): a batch query and a
-// CreateEntity that use the entity query cache while Stop closes and clears it neither
-// panic nor race with the clear. The batch query reads the cache (a hit), and on its miss
-// reads the bucket and repopulates the cache; CreateEntity invalidates its key. Those are
-// the three cache uses D7 lists.
+// TestEntityCacheUseDuringStop: a batch query and a CreateEntity that use the entity query cache while Stop closes and
+// clears it neither panic nor race with the clear. The batch query reads the cache (a hit), and on its miss reads the bucket
+// and repopulates the cache; CreateEntity invalidates its key. Those are the three uses of the cache.
 //
-// The readers start once Stop is under way (its release has begun, and its cleanup waits
-// for a consume callback the test holds, so the cache is neither closed nor cleared yet),
-// and the test then lets Stop finish while they run. The input is a real consumer
-// (bindHeldInput, lifecycle_owner_test.go); the entity bucket is the mock. Nothing orders a reader's use of the cache handle
-// against Stop's clear, on purpose: a channel between them would be a happens-before
-// edge, and the race detector reports only accesses no such edge orders. Every
-// interleaving of an unsynchronized read and the clear is a race, so at the base this
-// test fails under -race whichever runs first. Run it with -race; without it the test
-// can pass at the base.
+// The readers start once Stop is under way (its release has begun, and its cleanup waits for a consume callback the test
+// holds, so the cache is neither closed nor cleared yet), and the test then lets Stop finish while they run. The input is a
+// real consumer (bindHeldInput, lifecycle_owner_test.go); the entity bucket is the mock. Nothing orders a reader's use of
+// the cache handle against Stop's clear, on purpose: a channel between them would be a happens-before edge, and the race
+// detector reports only accesses no such edge orders. Every interleaving of an unsynchronized read and the clear is a race,
+// so a Stop that clears the cache unordered against its readers fails this test under -race whichever runs first. Run it
+// with -race; without it such a Stop can pass.
 //
 // spec: graph-ingest-recovery / The entity cache stays usable through Stop
 func TestEntityCacheUseDuringStop(t *testing.T) {

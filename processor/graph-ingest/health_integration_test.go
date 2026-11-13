@@ -19,8 +19,8 @@ import (
 
 // awaitHealthAfterTick publishes a status tick now and reads Health, until done accepts it or
 // ten seconds pass. Each observation runs its own tick: the running status loop can land a
-// compute it began earlier after the test's call (design D3), and the next observation's tick
-// then overwrites it, so the wait never depends on the loop's cadence.
+// compute it began earlier after the test's call, and the next observation's tick then
+// overwrites it, so the wait never depends on the loop's cadence.
 func awaitHealthAfterTick(ctx context.Context, t *testing.T, c *Component, done func(component.HealthStatus) bool) (component.HealthStatus, error) {
 	t.Helper()
 	waitCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -52,10 +52,10 @@ func healthNamesBacklog(h component.HealthStatus, consumer string) bool {
 	return !h.Healthy && strings.Contains(h.LastError, "backlog") && strings.Contains(h.LastError, consumer)
 }
 
-// TestIntegration_HealthReadsLostConsumer is #216's test (owner, #216 comment 6249597351;
-// design D3): with graph-ingest running, its durable consumer is deleted through the
-// JetStream API, and after the next status tick Health is unhealthy and names the backlog
-// observation. It asserts unhealthy only: the consumer is not rebound (#216 stays open).
+// TestIntegration_HealthReadsLostConsumer: with graph-ingest running, its durable
+// consumer is deleted through the JetStream API, and after the next status tick Health is
+// unhealthy and names the backlog observation. It asserts unhealthy only: nothing rebinds
+// the consumer.
 func TestIntegration_HealthReadsLostConsumer(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -104,10 +104,10 @@ func healthNamesRestart(h component.HealthStatus, consumer string) bool {
 }
 
 // TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy is graph-ingest-recovery,
-// "Stream deleted and created again while the broker stays up" (#216, design D1 case d
-// then e). Deleting the stream ends graph-ingest's consume loop, and nothing binds a new
-// one, so Health stays unhealthy until the process restarts: once the stream is created
-// again, and once a consumer is created again under graph-ingest's durable name.
+// "Stream deleted and created again while the broker stays up". Deleting the stream ends
+// graph-ingest's consume loop, and nothing binds a new one, so Health stays unhealthy
+// until the process restarts: once the stream is created again, and once a consumer is
+// created again under graph-ingest's durable name.
 func TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -148,10 +148,10 @@ func TestIntegration_LoopEndedByStreamRecreatedStaysUnhealthy(t *testing.T) {
 }
 
 // TestIntegration_HealthStaysStuckAfterConsumerRecreated is graph-ingest-recovery,
-// "Consumer created again after it was deleted" (#216, design D1 case f). Deleting
-// graph-ingest's durable consumer ends its consume loop; a consumer created again with the
-// same stream, name and configuration is found by the next tick's lookup, but nothing
-// consumes from it, so Health stays unhealthy.
+// "Consumer created again after it was deleted". Deleting graph-ingest's durable consumer
+// ends its consume loop; a consumer created again with the same stream, name and
+// configuration is found by the next tick's lookup, but nothing consumes from it, so
+// Health stays unhealthy.
 func TestIntegration_HealthStaysStuckAfterConsumerRecreated(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -186,10 +186,10 @@ func TestIntegration_HealthStaysStuckAfterConsumerRecreated(t *testing.T) {
 }
 
 // TestIntegration_HealthClearsAfterConnectionInterruption is graph-ingest-recovery, "The
-// observation succeeds again" (design, Tests T5). Only graph-ingest's connection is cut,
-// through the relay: the broker, the file stream and the durable consumer stay, so the
-// consume loop survives and a failed lookup is not a lost binding. A tick under the cut
-// reads unhealthy; once the client is connected again a fresh tick reads healthy, and a
+// observation succeeds again". Only graph-ingest's connection is cut, through the relay:
+// the broker, the file stream and the durable consumer stay, so the consume loop
+// survives and a failed lookup is not a lost binding. A tick under the cut reads
+// unhealthy; once the client is connected again a fresh tick reads healthy, and a
 // message published after the restore is applied.
 func TestIntegration_HealthClearsAfterConnectionInterruption(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 90*time.Second)
@@ -239,9 +239,9 @@ func TestIntegration_HealthClearsAfterConnectionInterruption(t *testing.T) {
 	require.False(t, isClosed(loopClosed), "the consume loop ended across the relay cut")
 }
 
-// TestIntegration_HealthIgnoresErrorCount is ADR-109 Decision 2 (design D3): a processing
-// error is counted and reported as ErrorCount, and never lowers Healthy. An undecodable
-// message is published; graph-ingest terminates it and counts it.
+// TestIntegration_HealthIgnoresErrorCount holds ADR-109 Decision 2: a processing error is
+// counted and reported as ErrorCount, and never lowers Healthy. An undecodable message is
+// published; graph-ingest terminates it and counts it.
 func TestIntegration_HealthIgnoresErrorCount(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()

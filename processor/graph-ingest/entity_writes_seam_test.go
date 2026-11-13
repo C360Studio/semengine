@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// entityWriteSeamFile is the one file allowed to write graph-ingest's entity bucket (design D15).
+// entityWriteSeamFile is the one file allowed to write graph-ingest's entity bucket.
 const entityWriteSeamFile = "entity_writes.go"
 
 // entityBucketWrites are the methods of natsclient.KVStore that change a stored entity.
@@ -27,8 +27,8 @@ var entityBucketWrites = map[string]bool{
 	"DeleteAtRevision":    true,
 }
 
-// TestEntityWritesHaveOneSeam holds #100's shape: every change to a stored entity goes through one
-// write path, in entity_writes.go, where each write mode's rule is visible in one place.
+// TestEntityWritesHaveOneSeam: every change to a stored entity goes through one write path, in
+// entity_writes.go, where each write mode's rule is visible in one place.
 func TestEntityWritesHaveOneSeam(t *testing.T) {
 	entries, err := os.ReadDir(".")
 	if err != nil {

@@ -16,10 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The pin read EntityState.Version to say how often a key had been written. Design D15
-// removes Version and leaves the KV revision as the only fence, and ENTITY_STATES keeps
-// one revision per key, so these tests check what each write left in the stored state:
-// an entity's stored revision is its birth's, and every statement it holds is held once.
+// The KV revision is the only fence, and ENTITY_STATES keeps one revision per key, so
+// these tests check what each write left in the stored state: an entity's stored
+// revision is its birth's, and every statement it holds is held once.
 
 // statementCount returns how many of triples state predicate with object.
 func statementCount(triples []message.Triple, predicate string, object any) int {
@@ -116,8 +115,8 @@ func TestComponent_SynchronousHierarchy_IncludedBeforeWrite(t *testing.T) {
 			require.NoError(t, err)
 
 			// Verify entity was written once, with hierarchy triples included. The
-			// pin asserted Version == 1; with Version gone (design D15) the stored
-			// revision must be the birth's: a later write would have replaced it.
+			// stored revision must be the birth's: a later write would have
+			// replaced it.
 			assert.Equal(t, birthRevision, entry.Revision, "entity should be written once")
 			assertEachStatementOnce(t, storedEntity)
 			assert.GreaterOrEqual(t, len(storedEntity.Triples), tt.expectedTripleMin,
@@ -201,9 +200,9 @@ func TestComponent_SynchronousHierarchy_SingleWrite(t *testing.T) {
 			require.NoError(t, err)
 
 			// CRITICAL: Entity must be written once with all triples. A second write
-			// means AddTriple was called after initial write (async pattern). The pin
-			// read Version == 1; design D15 removes Version, so the stored revision
-			// must be the birth's: a later write would have replaced it.
+			// means AddTriple was called after initial write (async pattern), so the
+			// stored revision must be the birth's: a later write would have replaced
+			// it.
 			assert.Equal(t, birthRevision, entry.Revision,
 				"entity must be written once - no cascade updates allowed")
 			assertEachStatementOnce(t, storedEntity)
@@ -298,10 +297,8 @@ func TestComponent_SynchronousHierarchy_ContainerCreation(t *testing.T) {
 			// Verify container ID format
 			assert.Equal(t, tt.containerID, containerEntity.ID)
 
-			// The pin asserted Version == 1, which counted the inverse contains edge's
-			// bump on a container born at Version 0. Ruling M (#91 comment 6080973822)
-			// drops that edge: the container holds no contains edge, and membership is
-			// read from the entity's forward edge.
+			// The container holds no contains edge: membership is read from the
+			// entity's forward edge.
 			assert.Zero(t, statementCount(containerEntity.Triples, tt.contains, entityID),
 				"container should hold no %s edge: a birth writes no inverse edge", tt.contains)
 			for _, triple := range containerEntity.Triples {
@@ -369,8 +366,8 @@ func TestComponent_SynchronousHierarchy_MultipleEntitiesSameType(t *testing.T) {
 
 	t.Run("membership_read_from_each_member", func(t *testing.T) {
 		// Membership is read from the forward edge on each member, and the shared
-		// container holds no contains edge (ruling M, #91 comment 6080973822): every
-		// member names the container once, so no birth lost its membership.
+		// container holds no contains edge: every member names the container once, so
+		// no birth lost its membership.
 		typeContainerID := "c360.platform.robotics.mav1.drone.group"
 		for _, entityID := range entities {
 			entry, err := comp.entityBucket.Get(ctx, entityID)
@@ -674,7 +671,7 @@ func TestComponent_SynchronousHierarchy_ContextCancellation(t *testing.T) {
 }
 
 // ====================================================================================
-// No sibling edges - ruling G (#91 comment 6062681355)
+// No sibling edges
 // ====================================================================================
 
 // TestComponent_SynchronousHierarchy_NoSiblingEdges: three births of one type each

@@ -16,13 +16,14 @@ import (
 // TestConfigAckWaitAndHeartbeatInterval: the entity_stream port's ack_wait reaches its
 // consumer and its heartbeat_interval is read, each with graph-ingest's default when the
 // port declares none: 30 s, and a quarter of the wait in effect. A heartbeat_interval
-// above half the wait fails Start before the consumer is created (design D8, "Long
-// apply"). graph-ingest starts on the fixture broker, and the wait is read back from the
-// server's information on graph-ingest's consumer (fix-301 design D2). Ignored, the
-// consumer is created with no wait, so natsclient's own fallback applies, and no pair is
-// refused. Until an application signals progress, the interval reaches nothing Start
-// hands on, so it is read from ingestDeliveryTiming, the function setup calls, on the
-// component's own port.
+// above half the wait fails Start before the consumer is created, leaving a margin for
+// renewal before the acknowledgement wait expires. graph-ingest starts on the fixture
+// broker, and the wait is read back from the server's information on graph-ingest's
+// consumer. Ignored, the consumer is created with no wait, so natsclient's own fallback
+// applies, and no pair is refused.
+// Until an application signals progress, the interval reaches nothing Start hands on, so
+// it is read from ingestDeliveryTiming, the function setup calls, on the component's own
+// port.
 func TestConfigAckWaitAndHeartbeatInterval(t *testing.T) {
 	accepted := []struct {
 		name                      string

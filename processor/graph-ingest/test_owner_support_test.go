@@ -33,8 +33,8 @@ func (o *graphIngestTestOwner) stop(operationCtx context.Context) error {
 	}
 	o.attempted = true // A returned error or panic never grants an implicit second attempt.
 	if o.cancelStart != nil {
-		// The fixture keeps its Start context live until Stop; ADR-113 no longer needs
-		// this, and it does no harm.
+		// The fixture keeps its Start context live until Stop; ADR-113 does not
+		// require it, and it does no harm.
 		defer o.cancelStart()
 	}
 	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(operationCtx), 5*time.Second)
@@ -70,11 +70,10 @@ func (o *graphIngestTestOwner) transfer() {
 	o.transferred = true
 }
 
-// startGuardAcquiringNothing puts c's lifecycle guard where the pin's struct literal
-// put a running component (lifecycleUsed: true, running: true): one Start admitted,
-// holding something to release, so the next Stop runs c's cleanup. The guard keeps
-// its state to itself (design D22), so the state is reached through its Start, with a
-// start function that acquires nothing.
+// startGuardAcquiringNothing puts c's lifecycle guard where a running component's is:
+// one Start admitted, holding something to release, so the next Stop runs c's
+// cleanup. The guard keeps its state to itself, so the state is reached through its
+// Start, with a start function that acquires nothing.
 func startGuardAcquiringNothing(tb testing.TB, c *Component) {
 	tb.Helper()
 	if err := c.lifecycle.Initialize(); err != nil {
@@ -85,10 +84,9 @@ func startGuardAcquiringNothing(tb testing.TB, c *Component) {
 	}
 }
 
-// leaveGuardCleanupPending puts c's lifecycle guard where the pin's struct literal put
-// a component whose Start failed and whose rollback failed (lifecycleUsed: true,
-// cleanupPending: true): the guard is used, and the next Stop runs c's cleanup (design
-// D22, guard.go's Start). The guard runs the one cleanup Start was given, so that
+// leaveGuardCleanupPending puts c's lifecycle guard where a component's is whose Start
+// failed and whose rollback failed: the guard is used, and the next Stop runs c's
+// cleanup (guard.go's Start). The guard runs the one cleanup Start was given, so that
 // cleanup fails on its first call, the rollback, and runs c.release after that.
 func leaveGuardCleanupPending(tb testing.TB, c *Component) {
 	tb.Helper()
@@ -114,8 +112,8 @@ func leaveGuardCleanupPending(tb testing.TB, c *Component) {
 
 // assertGuardUnused fails the test unless c's lifecycle guard is still unused: a
 // following Start of the guard, with a start function that acquires nothing, is not
-// refused with errs.ErrAlreadyStarted. This is design D22's stand-in for the pin's read
-// of lifecycleUsed; it uses the guard up, so it is a test's last step.
+// refused with errs.ErrAlreadyStarted. The guard has no read-out, so this is the only
+// way to see its state; it uses the guard up, so it is a test's last step.
 func assertGuardUnused(tb testing.TB, c *Component) {
 	tb.Helper()
 	if err := c.lifecycle.Initialize(); err != nil {

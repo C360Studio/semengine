@@ -1,10 +1,9 @@
 //go:build integration
 
-// poison-response-scoping task 7.2 — wire-level proof of snapshot-then-stop
-// (design D1): after Start's boot snapshot sweep completes, graph-ingest holds
-// NO consumer on the ENTITY_STATES backing stream, and a post-Start entity
-// write is delivered to no graph-ingest watcher. This is the retirement of the
-// per-mutation guard fan-out semboids measured (SemStreams gh#562).
+// Wire-level proof of snapshot-then-stop: after Start's boot snapshot sweep
+// completes, graph-ingest holds NO consumer on the ENTITY_STATES backing
+// stream, and a post-Start entity write is delivered to no graph-ingest
+// watcher, so no guard fans out per mutation.
 
 package graphingest
 
@@ -65,9 +64,8 @@ func TestIntegration_NoGuardConsumerOnEntityStatesAfterStart(t *testing.T) {
 	}, 10*time.Second, 100*time.Millisecond,
 		"ENTITY_STATES must carry no graph-ingest guard consumer at steady state")
 
-	// A post-Start write commits and is delivered to NO graph-ingest watcher:
-	// the consumer count on the backing stream stays zero across the write.
-	// (The pin called MergeEntity, a wrapper over this call that design D6 removes.)
+	// A post-Start write commits and is delivered to NO graph-ingest watcher: the
+	// consumer count on the backing stream stays zero across the write.
 	require.NoError(t, c.mergeEntityOnLane(ctx, &graph.EntityState{
 		ID:          seededID,
 		MessageType: testEntityType(),

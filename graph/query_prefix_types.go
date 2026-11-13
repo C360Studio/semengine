@@ -62,8 +62,8 @@ type PrefixQueryRequest struct {
 // cursor and before any limit, so a later or byte-trimmed page names the same
 // group size as the first. A key the listing repeats is counted and served once.
 // It is true as listed, not a snapshot: under concurrent overwrites a listing can
-// omit keys (seen at nats.go v1.55.0, and not promised otherwise), so Total and the
-// pages can miss an entity.
+// omit keys (seen at nats.go v1.55.0; nats.go does not promise a snapshot), so Total
+// and the pages can miss an entity.
 //
 // NextCursor is the opaque token to pass as PrefixQueryRequest.Cursor on the
 // next call. An empty NextCursor means the result set is exhausted, and the

@@ -285,7 +285,7 @@ func stopWatch(ctx context.Context, watcher jetstream.KeyWatcher) error {
 func (f *Follower) observe(ctx context.Context, entry jetstream.KeyValueEntry, validating bool) {
 	// entry.Created() is the KV commit time. staleness_ms is now minus the commit time of the oldest
 	// delivered write not yet applied, or of the newest delivered one when none is in flight (ADR-083
-	// decision 3).
+	// decision 3, as amended).
 	if err := f.watermark.Observe(entry.Revision(), entry.Key(), entry.Created()); err != nil {
 		// The watch broke the ascending order the floor rests on, so the floor can no longer be
 		// trusted. Delivering the entry anyway keeps the plug-in's view of the write; the lost feed
@@ -468,8 +468,9 @@ func (f *Follower) compute(ctx context.Context) graph.IndexStatusResponse {
 	target, created, err := readStream(ctx, f.status)
 	f.statusMu.Unlock()
 	if err == nil && !created.Equal(f.created) {
-		// The bucket was deleted and created again: the watch, still open, reads nothing more
-		// (TestFollowerDeclaresLostFeed).
+		// The bucket was deleted and created again: the watch, still open, reads nothing more (seen at
+		// nats.go v1.54.0, not promised; the created check declares the loss either way).
+		// TestFollowerDeclaresLostFeed proves the declaration.
 		f.loseFeed("ENTITY_STATES was created again after the follower bound it")
 	}
 	if err != nil {

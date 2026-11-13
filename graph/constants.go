@@ -54,11 +54,10 @@ const (
 	// ADR-104 each member holds the create-once platform identity record, which
 	// must never be evicted and must never be forged.
 	//
-	// config.Manager is its only acquirer; processor/rule's ConfigManager writes
-	// rules.* through the key family config.Manager serves it. It is still
-	// owner-only, because ownership is about who may NOT write. A generic rule
-	// update_kv is refused for every key in every member, at load validation,
-	// action runtime, and writer acquisition.
+	// config.Manager is its only acquirer. It is still owner-only, because
+	// ownership is about who may NOT write: the rule engine, not in SemEngine
+	// yet, is to refuse a generic update_kv into any member through
+	// IsFrameworkOwnedBucket.
 	BucketSemEngineConfig = "semengine_config"
 
 	// BucketGraphStatus is the ADR-083 readiness distribution bucket. Producers

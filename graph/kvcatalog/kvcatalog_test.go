@@ -115,7 +115,7 @@ func TestKVCatalog_DeclaredPolicies(t *testing.T) {
 		return s
 	}
 
-	// Owner decision 2026-07-28: ENTITY_STATES History = 1.
+	// By owner decision, ENTITY_STATES History = 1.
 	assert.Equal(t, uint8(1), spec(graph.BucketEntityStates).History)
 	assert.Equal(t, natsclient.ClassAuthoritative, spec(graph.BucketEntityStates).Class)
 	assert.Equal(t, "graph-ingest", spec(graph.BucketEntityStates).Owner)

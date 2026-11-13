@@ -103,7 +103,7 @@ var catalog = func() []natsclient.BucketSpec {
 	// Why 10 and not the bare floor of 2
 	// (storagereport.StorageReportGrowthObservations, cross-pinned by a test in
 	// this package): depth 2 covers only the benign restart. It does NOT cover
-	// the cases the design says the projection matters most in. A crash loop or
+	// the cases the projection matters most in. A crash loop or
 	// deploy loop restarting faster than every 5 s (the shortest interval a
 	// growth rate is measured over) publishes rows too close together to
 	// measure against, and several
@@ -131,10 +131,10 @@ var catalog = func() []natsclient.BucketSpec {
 	// descriptor carrying the member's concrete name.
 	//
 	// Owner-only is not about who may write the bucket: config.Manager acquires
-	// it, and the rule engine's ConfigManager writes rules.* through the key
-	// family config.Manager serves it; neither consults this policy (the rule
-	// engine's load validation, update_kv action and writer acquisition do). It
-	// is about who may NOT. A generic update_kv into
+	// it and consults no policy. The rule engine, once in SemEngine, writes
+	// rules.* through the key family config.Manager serves and consults this
+	// policy at load validation, update_kv and writer acquisition. It is about
+	// who may NOT. A generic update_kv into
 	// platform_identity plain-Puts over the create-once record: a forged id
 	// whose org and stem match is ADOPTED on the next boot, because adoption
 	// validates grammar and byte budget and nothing else, so a rule pack could
@@ -145,8 +145,7 @@ var catalog = func() []natsclient.BucketSpec {
 	// Its retention kind is STRICT no-lifecycle: verify and refuse, never
 	// reconcile. Stripping a TTL here would be silent repair of a bucket whose
 	// identity may ALREADY have expired, which is the remint ADR-104 exists to
-	// prevent. History 5 preserves the configuration-versioning depth this
-	// bucket has always carried.
+	// prevent. History 5 keeps five versions of each configuration key.
 	semengineConfig := natsclient.BucketSpec{
 		Name:        graph.BucketSemEngineConfig,
 		Owner:       "config.Manager (configuration keys, and rules.* through the key family it serves processor/rule.ConfigManager)",

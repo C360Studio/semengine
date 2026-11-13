@@ -109,7 +109,7 @@ func exclusionDomains() []*DomainExamples {
 // TestChainKeepsExclusions: a later tier cannot restore an operation the
 // keyword tier excluded.
 func TestChainKeepsExclusions(t *testing.T) {
-	const threshold = 0.7 // one the unwanted examples clear, checked in (1)
+	const threshold = 0.7 // the unwanted examples' scores reach it; (1) checks that
 	excludedQuestions := []struct{ query, unwanted string }{
 		{"Do not count devices in error state", "Count devices in error state"},
 		{"Not devices similar to TEMP-001", "Find devices similar to TEMP-001"},

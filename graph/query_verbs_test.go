@@ -19,7 +19,7 @@ func TestQueryVerbsDeclareEachRespondersVerbs(t *testing.T) {
 	// graph-ingest's replies are bare, graph-index's are enveloped, a forward
 	// answers as the verb it forwards to, and the two verbs graph-query composes
 	// from an index reply are enveloped. The spatial and temporal verbs have no
-	// handler in the tree yet; their marks are the reply shapes they declare.
+	// handler in the tree yet; their marks are the shapes the table declares for them.
 	want := []QueryVerb{
 		{Name: "entity", Subject: "graph.ingest.query.entity", Responder: "graph-ingest",
 			Enveloped: false, Reply: reflect.TypeFor[ExactEntity]()},

@@ -24,9 +24,9 @@ import (
 // acquires its buckets through natsclient.EnsureFrameworkBucket inside its own
 // Start — create-or-open, reconcile to the declared policy, verify, fail that
 // Start closed — which covers prior-boot dirt AND this boot's create-races AND
-// post-boot dynamic re-acquisition, at the moment of acquisition. There is no
-// post-start sweep pass anymore; deleting it is safe precisely because its
-// justified class (created-dirty during this boot) is reconciled at creation.
+// post-boot dynamic re-acquisition, at the moment of acquisition. No post-start
+// sweep runs: its one class, a bucket created dirty during this boot, is
+// reconciled at creation.
 //
 // Scope: only descriptors declared no-lifecycle. A bounded-ttl bucket's TTL is
 // its declared contract (the seam converges to it; this pass must not strip

@@ -15,7 +15,7 @@ import (
 // compile time.
 var _ fusion.StoreResolver = (*storeregistry.Registry)(nil)
 
-// TestBodyResolver_LocationIndependence proves the crux of ADR-062 increment 4:
+// TestBodyResolver_LocationIndependence proves ADR-062's hydration contract:
 // ONE BodyResolver derefs handles across DIFFERENT backends, picked by the
 // handle's StorageInstance — the engine never assumes one concrete store. A
 // handle into "objectstore-primary" and a handle into "filestore-media" both

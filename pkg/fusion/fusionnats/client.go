@@ -251,11 +251,11 @@ func (c *Client) decodeEntity(id string, raw []byte) (*fusion.Entity, error) {
 //
 // The batch's responder refuses the whole batch with code
 // graph_state_reset_required when one stored entity is poisoned, naming it only
-// in text (pin ADR-079 D3). On that refusal the IDs are read one at a time
-// (entitiesAlone), so a poisoned seed is listed unhydrated error rather than
-// failing every answer it ranks in (ADR-109 D1). A refusal from the client's
-// own check of a reply carries the same code; it is returned and never starts
-// that read. A nil context is refused, even for zero IDs.
+// in text. On that refusal the IDs are read one at a time (entitiesAlone), so a
+// poisoned seed is listed unhydrated error rather than failing every answer it
+// ranks in (ADR-109). A refusal from the client's own check of a reply carries
+// the same code; it is returned and never starts that read. A nil context is
+// refused, even for zero IDs.
 func (c *Client) Entities(ctx context.Context, ids []string) (fusion.Hydration, error) {
 	if ctx == nil {
 		return fusion.Hydration{}, errors.New("fusionnats: nil context")
@@ -308,7 +308,7 @@ func (c *Client) entitiesAlone(ctx context.Context, ids []string) (fusion.Hydrat
 		raw, err := c.request(ctx, c.verbs.entity, graph.EntityRequest{ID: id})
 		if err != nil {
 			// A refusal that arrives after the caller gave up is not listed: the
-			// ended context is the answer (#580).
+			// ended context is the answer.
 			if cerr := ctx.Err(); cerr != nil {
 				return fusion.Hydration{}, cerr
 			}
@@ -347,7 +347,7 @@ func unhydratedReason(r graph.MissingReason) fusion.UnhydratedReason {
 }
 
 // reconcileHydration turns a batch reply into a total account of the requested
-// IDs, in request order (ADR-084 D6). It works by ID set, never by count: a
+// IDs, in request order (ADR-084). It works by ID set, never by count: a
 // duplicate request is one entity, reported once; an ID the reply both returns
 // and lists missing is hydrated, since the entity is held; an ID in neither list
 // is unknown, since nobody observed it missing; an entity nobody asked for is

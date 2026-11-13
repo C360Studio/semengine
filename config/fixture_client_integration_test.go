@@ -30,13 +30,11 @@ func run(m *testing.M) int {
 	return code
 }
 
-// clientTimeout is the request timeout of the fixture client, the value the pin's NewTestClient
-// family used.
+// clientTimeout is the request timeout of the fixture client.
 const clientTimeout = 15 * time.Second
 
-// fixtureClient replaces the pin's natsclient.NewTestClient(t, natsclient.WithJetStream()): it resets the
-// package's shared broker (JetStream is always on) and returns a Client connected to it, built as
-// the pin built it (no reconnects, no health monitor). natsfixture.Open bounds the connect and
+// fixtureClient resets the package's shared broker (JetStream is always on) and returns a Client
+// connected to it, with no reconnects and no health monitor. natsfixture.Open bounds the connect and
 // closes the Client on t.Cleanup before the reset's connection check runs (nats-fixture,
 // "Connected value for a package's tests").
 func fixtureClient(t *testing.T) *natsclient.Client {

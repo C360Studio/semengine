@@ -22,7 +22,7 @@ type ManagerOption func(*Manager)
 // name is derived from the deployment's declared authority pair, which only
 // the Manager holds. A second writer therefore cannot find the bucket on its
 // own. It registers its key family here and reaches the bucket through the
-// family instead. Owner ruling on #1188, 2026-09-27 (Q1 (d)).
+// family instead.
 func WithKeyFamily(family *KeyFamily) ManagerOption {
 	return func(cm *Manager) {
 		cm.families = append(cm.families, family)

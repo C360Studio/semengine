@@ -21,7 +21,7 @@ import (
 )
 
 // queryTimeout bounds each handler; predicateList, which scans every membership, gets
-// listTimeout. Both are the pin's fixed values (design D6).
+// listTimeout. Both are fixed, not configurable.
 const (
 	queryTimeout = 5 * time.Second
 	listTimeout  = 10 * time.Second
@@ -47,7 +47,7 @@ func (c *Component) queryHandlers() map[string]func(context.Context, []byte) ([]
 }
 
 // subscribeQueries subscribes to the subject of every verb the table in graph declares for
-// graph-index, and to nothing else (design D6). A declared verb with no handler here fails
+// graph-index, and to nothing else. A declared verb with no handler here fails
 // Start, as graph-ingest's does. Each subscription is recorded as it is made, so a Start
 // that fails part way drains the ones already made.
 func (c *Component) subscribeQueries(ctx context.Context) error {
@@ -72,10 +72,10 @@ func (c *Component) subscribeQueries(ctx context.Context) error {
 	return nil
 }
 
-// queryRevision refuses the query while the follower withholds readiness (QueryReady,
-// design D5) or has not reached minRevision (zero means none), and otherwise returns the
-// revision the reply carries. It is read here, before the handler's first bucket read, so
-// every revision at or below it is reflected in what the handler then reads (design D6).
+// queryRevision refuses the query while the follower withholds readiness (QueryReady) or
+// has not reached minRevision (zero means none), and otherwise returns the revision the
+// reply carries. It is read here, before the handler's first bucket read, so every revision
+// at or below it is reflected in what the handler then reads.
 func (c *Component) queryRevision(ctx context.Context, minRevision uint64) (uint64, error) {
 	f := c.follower.Load()
 	if err := f.QueryReady(ctx); err != nil {

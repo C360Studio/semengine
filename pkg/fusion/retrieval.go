@@ -11,7 +11,7 @@ import "context"
 //
 // There is no readiness read: a read whose index is not ready returns a classified
 // error with code graph.ErrorCodeIndexNotReady, and the engine reads readiness from
-// that reply (ADR-109 D1).
+// that reply (ADR-109).
 type RetrievalClient interface {
 	// Resolve maps a query to seeds, most relevant first, and reports what the
 	// search could not read. Both its argument and its result are structs rather
@@ -87,9 +87,9 @@ func SeedIDs(seeds []Seed) []string {
 // plus every requested ID that did not, with a reason.
 //
 // The two lists together account for every requested ID exactly once. That totality is
-// the point: before it, an ID whose read came back not-found was simply missing from a
-// shorter slice, and no caller could tell which one — or whether anything had gone
-// wrong at all (gh#597).
+// the point: without it, an ID whose read came back not-found would simply be missing
+// from a shorter slice, and no caller could tell which one — or whether anything had
+// gone wrong at all.
 type Hydration struct {
 	// Entities are the hydrated entities IN REQUESTED ORDER.
 	Entities []*Entity
@@ -121,9 +121,8 @@ const (
 // loaded. It is a DISTINCT type from UnhydratedReason — a body-hydration failure
 // and a seed-hydration failure are different surfaces: an Unhydrated seed produced
 // NO node at all, whereas a BodyReason rides on a node that exists and ranks; only
-// its Body is absent (gh#616, #600). The set is CLOSED and shares
-// UnhydratedReason's vocabulary value-for-value so the two failure surfaces read
-// the same on the wire.
+// its Body is absent. The set is CLOSED and shares UnhydratedReason's vocabulary
+// value-for-value so the two failure surfaces read the same on the wire.
 type BodyReason string
 
 // The closed body-hydration-reason set. Kept in lockstep with the

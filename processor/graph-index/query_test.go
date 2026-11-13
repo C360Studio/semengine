@@ -15,8 +15,7 @@ import (
 // TestQueryRefusesInvalidRequestsBeforeAnyRead: each malformed request on each verb is refused
 // with class invalid, code invalid_request. The component is built but never started, so it has
 // no follower and no buckets: a request that got past validation to the readiness check or a
-// bucket read would panic rather than return (the pin's TestQueryInvalidRequest_Integration and its
-// "...HasNoBucketIO" tests).
+// bucket read would panic rather than return.
 func TestQueryRefusesInvalidRequestsBeforeAnyRead(t *testing.T) {
 	c, err := createFromJSON(t, `{}`)
 	if err != nil {
@@ -111,8 +110,8 @@ func TestMinRevisionMalformedIsRefusedBeforeAnyRead(t *testing.T) {
 	}
 }
 
-// TestRankNameMatches (pin name_index_test.go:24-65): exact case ranks first, then lower
-// priority, then entity ID; one match per entity, its best; the limit applies after ranking.
+// TestRankNameMatches: exact case ranks first, then lower priority, then entity ID; one match
+// per entity, its best; the limit applies after ranking.
 func TestRankNameMatches(t *testing.T) {
 	got := rankNameMatches([]graph.NameIndexItem{
 		{EntityID: "test.graph.index.name.entity.pref", Name: "foo", Predicate: "skos.core.pref-label", Priority: 0},
@@ -148,7 +147,7 @@ func TestRankNameMatches(t *testing.T) {
 
 // TestRankNameMatchesExtremePriorities: priorities are plain ints with no narrower range
 // (vocabulary.WithAlias), so the lowest and highest still rank lowest first, whichever order
-// they arrive in (#429: a subtracting comparator overflows here and reverses them).
+// they arrive in (a subtracting comparator overflows here and reverses them).
 func TestRankNameMatchesExtremePriorities(t *testing.T) {
 	high, low := "acme.ops.test.system.widget.002", "acme.ops.test.system.widget.001"
 	for _, items := range [][]graph.NameIndexItem{
@@ -164,10 +163,8 @@ func TestRankNameMatchesExtremePriorities(t *testing.T) {
 
 // TestReverseReadsSkipMalformedRows: a stored INCOMING_INDEX or NAME_INDEX tail that is not
 // entity6.hex(predicate) with a canonical predicate, and a PREDICATE_INDEX key that is not
-// predicate3.entity6, is never read as a row (the pin's
-// TestPublicReverseQueriesSkipNoncanonicalPredicateRows and
-// TestPredicateQueriesRejectStoredIdentityAndNamespaceAmbiguity). Expected keys are spelled from
-// the layouts, not built by the package.
+// predicate3.entity6, is never read as a row. Expected keys are spelled from the layouts, not
+// built by the package.
 func TestReverseReadsSkipMalformedRows(t *testing.T) {
 	source := "acme.ops.test.system.widget.001"
 	hexOf := func(s string) string { return hex.EncodeToString([]byte(s)) }

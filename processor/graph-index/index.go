@@ -28,7 +28,7 @@ import (
 // which the follower reads through failedTotal to withhold readiness, and which the repair
 // loop re-drives.
 
-// indexLaneCapacity is the pool's total queue, split across the lanes (design D7).
+// indexLaneCapacity is the pool's total queue, split across the lanes.
 const indexLaneCapacity = 1000
 
 // indexWriteMaxAttempts bounds the in-place retry of an entity's required index writes.
@@ -96,7 +96,7 @@ func (c *Component) startIndexPool(poolCtx context.Context, f *follower.Follower
 		OnPanic: func(work indexWork, _ any) {
 			// The repair loop retries the entity. The revision completes, as a failed
 			// write's does: readiness is withheld by the failed set, and a revision
-			// left pending would pin the watermark after the repair (design D7).
+			// left pending would pin the watermark after the repair.
 			c.markEntityFailed(work.entityID)
 			if work.revision > 0 {
 				c.follower.Load().Complete(work.entityID, work.revision)
@@ -238,7 +238,7 @@ func retryIndexWrites(ctx context.Context, writeAll func() error) error {
 
 // markEntityFailed records that entityID's required index writes did not all succeed.
 // failedCount moves only on the first mark, so it is the set's size. ErrorCount moves with
-// it, once per entity entering the set (design D4): retries within one apply, and repair
+// it, once per entity entering the set: retries within one apply, and repair
 // passes that fail again, count nothing more. A reset that holds its entity here, a
 // noncanonical key or value, is counted by this mark and not again.
 func (c *Component) markEntityFailed(entityID string) {
@@ -429,7 +429,7 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 	plan, err := c.buildEntityIndexPlan(state, entityID)
 	if err != nil {
 		// Held like a failed write, so readiness is withheld rather than the old rows
-		// answering. A state the contract accepts always plans (design D6), so no
+		// answering. A state the contract accepts always plans, so no
 		// stored value is known to reach this.
 		c.markEntityFailed(entityID)
 		return err
@@ -437,7 +437,7 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 
 	// Re-index instrumentation, observe only: the projection is compared with the last
 	// one indexed, and stored only after the writes succeed, so a failed write never
-	// becomes the baseline (#108 measures it, design D13).
+	// becomes the baseline.
 	projection := computeIndexProjection(state, c.namePredicates, c.isAliasPredicate)
 	prev, loaded := c.lastProjections.Load(entityID)
 	c.metrics.recordReindex(loaded && prev.(string) == projection)

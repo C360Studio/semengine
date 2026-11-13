@@ -14,7 +14,7 @@ import (
 )
 
 // maxIncomingKeyBytes is the longest INCOMING_INDEX key the contract allows, 902 bytes:
-// two 256-byte IDs, two dots and the hex of a 194-byte predicate (design D6).
+// two 256-byte IDs, two dots and the hex of a 194-byte predicate.
 const maxIncomingKeyBytes = 2*semtypes.MaxEntityIDBytes + 2 + 2*vocabulary.MaxPredicateBytes
 
 // planCase is one entity with the rows the requirement says it plans: written by hand for
@@ -59,7 +59,7 @@ func newRowRoles(aliasPredicates, labelPredicates []string) rowRoles {
 
 // count adds the rows one statement plans. Each role is decided on its own rule and they
 // are summed, so a statement holding several roles (a registered predicate with an
-// entity-reference value, #540 and #542) counts every row it plans:
+// entity-reference value) counts every row it plans:
 //   - outgoing: the object is a string of entity-ID shape, at most 256 bytes, and the
 //     datatype is empty or "@id" (the rule message.Triple.IsRelationship documents);
 //   - alias: the predicate is a registered alias predicate and the value is non-empty
@@ -85,7 +85,7 @@ type fatalf interface {
 }
 
 // TestContractValidStateAlwaysPlans: every entity state UnmarshalEntityState accepts gets
-// an index plan (design D6, #428), so the failed mark on a refused plan is reached by no
+// an index plan, so the failed mark on a refused plan is reached by no
 // stored value. The generator draws six-part IDs and predicates up to and, by a drawn
 // flag, exactly at their byte bounds (256 and 194), relationships under both reference
 // spellings, ID-shaped and plain literals, and alias and name values of any bytes,
@@ -94,7 +94,7 @@ type fatalf interface {
 // rowRoles.count counts each row role on its own rule. The named witness runs first and
 // plans the longest incoming key, 902 bytes, every time; named cases then cover every
 // overlap of a registered predicate with a reference, a plain literal and an ID-shaped
-// literal (#540, #542).
+// literal.
 func TestContractValidStateAlwaysPlans(t *testing.T) {
 	defer vocabulary.SnapshotRegistry()()
 	longAlias := strings.Repeat("a", 64) + "." + strings.Repeat("b", 64) + "." + strings.Repeat("c", 64)
@@ -115,7 +115,7 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 	c.aliasPredicates = vocabulary.DiscoverAliasPredicates()
 	c.namePredicates = vocabulary.DiscoverLabelPredicates()
 	roles := newRowRoles(aliasPredicates, labelPredicates)
-	// Generic draws stay out of every registered role, the framework's own included (#542).
+	// Generic draws stay out of every registered role, the framework's own included.
 	for _, discovered := range []map[string]int{vocabulary.DiscoverAliasPredicates(), vocabulary.DiscoverLabelPredicates()} {
 		for p := range discovered {
 			if strings.HasPrefix(p, genericPredicatePrefix) {
@@ -142,11 +142,11 @@ func TestContractValidStateAlwaysPlans(t *testing.T) {
 	// A registered predicate's statement plans its alias or name row and, when its value
 	// is an entity reference, an outgoing row as well (message.Triple.IsRelationship): an
 	// ID-shaped value is a reference unless an explicit non-reference datatype makes it a
-	// literal (#540), and a registered predicate's statement can hold either value (#542).
-	// The six cases of #542's reproduction are the four #540 cases (a reference without a
-	// datatype, an ID-shaped literal) and the two plain literals; the last two cases are the
-	// framework's built-in title label (vocabulary/labels.go). The counts are written by
-	// hand; each case also checks rowRoles.count against them.
+	// literal, and a registered predicate's statement can hold either value. The first four
+	// cases are an ID-shaped value with no datatype and as a literal, the next four an
+	// explicit reference and a plain literal, and the last two the framework's built-in
+	// title label (vocabulary/labels.go). The counts are written by hand; each case also
+	// checks rowRoles.count against them.
 	for _, tc := range []struct {
 		name, predicate, object, datatype string
 		relationships, aliases, names     int

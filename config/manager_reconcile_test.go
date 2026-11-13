@@ -33,10 +33,10 @@ func componentJSON(t *testing.T, name string) []byte {
 	return data
 }
 
-// TestHandleUpdate_EngineOwnedRevisionStillNotifies is the gh#388 regression:
-// an engine-owned revision (at or below the revision applied for its key) must skip the
-// in-memory RE-APPLY but STILL notify subscribers, so a runtime add/remove
-// drives a reconcile. Before the fix, handleUpdate returned before notifying.
+// TestHandleUpdate_EngineOwnedRevisionStillNotifies: an engine-owned revision (at
+// or below the revision applied for its key) must skip the in-memory RE-APPLY but
+// STILL notify subscribers, so a runtime add/remove drives a reconcile. A
+// handleUpdate that returned before notifying would leave the add unreconciled.
 func TestHandleUpdate_EngineOwnedRevisionStillNotifies(t *testing.T) {
 	cm := newReconcileTestManager()
 	cm.appliedRev["components.doc-source-003"] = 100

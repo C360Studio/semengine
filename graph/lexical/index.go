@@ -63,12 +63,18 @@ type Result struct {
 // Index ranks the entities it holds by field-weighted BM25 over their words.
 // It is safe for concurrent use: a search sees each Put or Delete whole or
 // not at all.
+//
+// It holds each entity and each word once, under a number, and refers to them
+// everywhere else by that number: four bytes in place of a string.
 type Index struct {
-	mu       sync.RWMutex
-	entities map[string]*entity
-	// postings maps each word to the entities holding it and the word's
-	// weighted term frequency in each.
-	postings map[string]map[string]int
+	mu sync.RWMutex
+	// entityNum maps each held entity's ID to its number in entities.
+	entityNum map[string]uint32
+	entities  numbered[entity]
+	// wordNum maps each held word to its number in words. A word is held
+	// while at least one entity holds it.
+	wordNum map[string]uint32
+	words   numbered[word]
 	// totalLength is the sum of every held entity's weighted length. It is
 	// an integer, so it is exact whatever order the writes came in.
 	totalLength int
@@ -78,16 +84,50 @@ type Index struct {
 // field, which a write needs to remove the entity's postings and a phrase is
 // checked against.
 type entity struct {
-	name   []string
-	body   []string
+	id     string
+	name   []uint32
+	body   []uint32
 	length int
+}
+
+// word is one word the index holds and its postings: the entities holding it
+// and the word's weighted term frequency in each.
+type word struct {
+	text    string
+	holders map[uint32]int32
+}
+
+// numbered holds values under small numbers, reusing a removed value's number
+// for the next one added, so the numbers stay as few as the values held.
+type numbered[T any] struct {
+	// items holds each value at its number; a removed value's place holds
+	// the zero value until the number is reused.
+	items []T
+	free  []uint32
+}
+
+func (n *numbered[T]) add(v T) uint32 {
+	if last := len(n.free) - 1; last >= 0 {
+		i := n.free[last]
+		n.free = n.free[:last]
+		n.items[i] = v
+		return i
+	}
+	n.items = append(n.items, v)
+	return uint32(len(n.items) - 1)
+}
+
+func (n *numbered[T]) remove(i uint32) {
+	var zero T
+	n.items[i] = zero
+	n.free = append(n.free, i)
 }
 
 // NewIndex returns an empty index.
 func NewIndex() *Index {
 	return &Index{
-		entities: make(map[string]*entity),
-		postings: make(map[string]map[string]int),
+		entityNum: make(map[string]uint32),
+		wordNum:   make(map[string]uint32),
 	}
 }
 
@@ -106,25 +146,55 @@ func (ix *Index) Put(entityID string, doc Document) error {
 	if len(name) == 0 && len(body) == 0 {
 		return nil
 	}
-	e := &entity{name: name, body: body, length: NameWeight*len(name) + len(body)}
-	ix.entities[entityID] = e
-	ix.totalLength += e.length
-	tf := make(map[string]int, len(name)+len(body))
-	for _, w := range name {
+	e := entity{
+		id:     entityID,
+		name:   ix.number(name),
+		body:   ix.number(body),
+		length: NameWeight*len(name) + len(body),
+	}
+	tf := make(map[uint32]int32, len(e.name)+len(e.body))
+	for _, w := range e.name {
 		tf[w] += NameWeight
 	}
-	for _, w := range body {
+	for _, w := range e.body {
 		tf[w]++
 	}
+	num := ix.entities.add(e)
+	ix.entityNum[entityID] = num
+	ix.totalLength += e.length
 	for w, n := range tf {
-		holders := ix.postings[w]
-		if holders == nil {
-			holders = make(map[string]int)
-			ix.postings[w] = holders
-		}
-		holders[entityID] = n
+		ix.words.items[w].holders[num] = n
 	}
 	return nil
+}
+
+// number returns the numbers of words, numbering each word the index does
+// not yet hold. The caller holds the write lock.
+func (ix *Index) number(words []string) []uint32 {
+	nums := make([]uint32, len(words))
+	for i, w := range words {
+		n, ok := ix.wordNum[w]
+		if !ok {
+			n = ix.words.add(word{text: w, holders: make(map[uint32]int32)})
+			ix.wordNum[w] = n
+		}
+		nums[i] = n
+	}
+	return nums
+}
+
+// lookup returns the numbers of run's words, and false when the index holds
+// no entity with one of them.
+func (ix *Index) lookup(run []string) ([]uint32, bool) {
+	nums := make([]uint32, len(run))
+	for i, w := range run {
+		n, ok := ix.wordNum[w]
+		if !ok {
+			return nil, false
+		}
+		nums[i] = n
+	}
+	return nums, true
 }
 
 // Delete removes entityID. It does nothing for an entity the index does not
@@ -137,28 +207,34 @@ func (ix *Index) Delete(entityID string) {
 
 // remove drops entityID and its postings. The caller holds the write lock.
 func (ix *Index) remove(entityID string) {
-	e, ok := ix.entities[entityID]
+	num, ok := ix.entityNum[entityID]
 	if !ok {
 		return
 	}
-	for _, field := range [][]string{e.name, e.body} {
-		for _, w := range field {
-			holders := ix.postings[w]
-			delete(holders, entityID)
-			if len(holders) == 0 {
-				delete(ix.postings, w)
+	e := ix.entities.items[num]
+	for _, field := range [][]uint32{e.name, e.body} {
+		for _, n := range field {
+			w := &ix.words.items[n]
+			if w.holders == nil {
+				continue // an earlier repeat of this word removed it
+			}
+			delete(w.holders, num)
+			if len(w.holders) == 0 {
+				delete(ix.wordNum, w.text)
+				ix.words.remove(n)
 			}
 		}
 	}
 	ix.totalLength -= e.length
-	delete(ix.entities, entityID)
+	delete(ix.entityNum, entityID)
+	ix.entities.remove(num)
 }
 
 // Len is the number of entities the index holds.
 func (ix *Index) Len() int {
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
-	return len(ix.entities)
+	return len(ix.entityNum)
 }
 
 // Search scores every entity in scope that holds one of the query's plain or
@@ -183,29 +259,46 @@ func (ix *Index) Search(q Query, opts Options) (Result, error) {
 
 	ix.mu.RLock()
 	defer ix.mu.RUnlock()
-	if len(ix.entities) == 0 {
+	if len(ix.entityNum) == 0 {
 		return Result{}, nil
 	}
-	n := float64(len(ix.entities))
+	var phrases, excluded [][]uint32
+	for _, p := range q.phrases {
+		nums, ok := ix.lookup(p)
+		if !ok {
+			return Result{}, nil // no entity holds every word of this phrase
+		}
+		phrases = append(phrases, nums)
+	}
+	for _, x := range q.excluded {
+		// An excluded term with a word no entity holds removes nothing.
+		if nums, ok := ix.lookup(x); ok {
+			excluded = append(excluded, nums)
+		}
+	}
+
+	n := float64(len(ix.entityNum))
 	avgLength := float64(ix.totalLength) / n
-	scores := make(map[string]float64)
-	for _, w := range q.scored() {
-		holders := ix.postings[w]
-		if len(holders) == 0 {
+	scores := make(map[uint32]float64)
+	for _, text := range q.scored() {
+		w, ok := ix.wordNum[text]
+		if !ok {
 			continue
 		}
+		holders := ix.words.items[w].holders
 		df := float64(len(holders))
 		idf := math.Log(1 + (n-df+0.5)/(df+0.5))
-		for id, weighted := range holders {
+		for num, weighted := range holders {
 			tf := float64(weighted)
-			norm := 1 - bm25B + bm25B*float64(ix.entities[id].length)/avgLength
-			scores[id] += idf * tf * (bm25K1 + 1) / (tf + bm25K1*norm)
+			norm := 1 - bm25B + bm25B*float64(ix.entities.items[num].length)/avgLength
+			scores[num] += idf * tf * (bm25K1 + 1) / (tf + bm25K1*norm)
 		}
 	}
 
 	var hits []Hit
-	for id, score := range scores {
-		if graph.MatchesAnyIDPrefix(id, opts.Scope) && ix.admits(id, q) {
+	for num, score := range scores {
+		id := ix.entities.items[num].id
+		if graph.MatchesAnyIDPrefix(id, opts.Scope) && ix.admits(num, phrases, excluded) {
 			hits = append(hits, Hit{EntityID: id, Score: score})
 		}
 	}
@@ -222,36 +315,36 @@ func (ix *Index) Search(q Query, opts Options) (Result, error) {
 	return Result{Hits: hits, Matched: matched}, nil
 }
 
-// admits reports whether entity id holds every phrase of q and none of its
-// excluded terms. The caller holds the read lock.
-func (ix *Index) admits(id string, q Query) bool {
-	for _, p := range q.phrases {
-		if !ix.holdsRun(id, p) {
+// admits reports whether entity num holds every one of phrases and none of
+// excluded. The caller holds the read lock.
+func (ix *Index) admits(num uint32, phrases, excluded [][]uint32) bool {
+	for _, p := range phrases {
+		if !ix.holdsRun(num, p) {
 			return false
 		}
 	}
-	for _, x := range q.excluded {
-		if ix.holdsRun(id, x) {
+	for _, x := range excluded {
+		if ix.holdsRun(num, x) {
 			return false
 		}
 	}
 	return true
 }
 
-// holdsRun reports whether entity id holds run's words next to each other, in
-// order, within its Name or within its Body. The postings narrow it first, so
-// only an entity holding every word has its fields scanned.
-func (ix *Index) holdsRun(id string, run []string) bool {
+// holdsRun reports whether entity num holds run's words next to each other,
+// in order, within its Name or within its Body. The postings narrow it first,
+// so only an entity holding every word has its fields scanned.
+func (ix *Index) holdsRun(num uint32, run []uint32) bool {
 	for _, w := range run {
-		if _, ok := ix.postings[w][id]; !ok {
+		if _, ok := ix.words.items[w].holders[num]; !ok {
 			return false
 		}
 	}
-	e := ix.entities[id]
+	e := &ix.entities.items[num]
 	return containsRun(e.name, run) || containsRun(e.body, run)
 }
 
-func containsRun(field, run []string) bool {
+func containsRun(field, run []uint32) bool {
 	for i := 0; i+len(run) <= len(field); i++ {
 		if slices.Equal(field[i:i+len(run)], run) {
 			return true

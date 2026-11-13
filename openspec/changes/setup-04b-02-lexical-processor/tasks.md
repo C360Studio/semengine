@@ -61,7 +61,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   holds the server down (#574); a mutant that keeps reading a stalled store, one that stalls only on a context
   error, and one that retries a missing body are each shown to fail. `TestBodyCutAtCap` checks the gauge and the
   one warning line.
-- [ ] 2.5 PR C. The verb (design D4). Premise: subjects only in `graph/query_verbs.go` and the guard reads the table
+- [x] 2.5 PR C. The verb (design D4). Premise: subjects only in `graph/query_verbs.go` and the guard reads the table
   (inventory §3); graph-index's `min_revision` order (`openspec/specs/graph-index/spec.md:240-245`). Accept: the
   row, `graph.LexicalSearchRequest`, `graph.LexicalSearchData` and `graph.LexicalHit`;
   `TestSearchWithheldUntilBuilt`, `TestSearchMinRevisionBoundary`, `TestSearchScopeLimitMatched`,

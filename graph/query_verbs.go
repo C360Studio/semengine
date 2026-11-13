@@ -59,7 +59,8 @@ var entityVerb = QueryVerb{
 // Each entry declares its reply: graph-ingest's are bare, and graph-index's are a
 // QueryResponse whose Data is the entry's Reply, as are the derived-index verbs'
 // (search, similar, bounds, range), of which only search and similar have a responder in
-// the tree, and graph-lexical's search, which takes a LexicalSearchRequest. On graph.query.*, graph-query's forwards answer as the verb they forward to does, and
+// the tree, and graph-lexical's search, which takes a LexicalSearchRequest. On graph.query.*,
+// graph-query's forwards answer as the verb they forward to does, and
 // entityByAlias, relationships, pathSearch, summary, localSearch and globalSearch, which read index
 // replies or a community record, are enveloped from graph-query, and hierarchyStats, which reads graph-ingest
 // alone, is bare; a verb a consumer serves under graph.query.* is not in this table. A Name is

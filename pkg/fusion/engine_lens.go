@@ -44,7 +44,7 @@ const (
 	lexContains   = 8.0
 	resolveScale  = 4.0 // base score per resolve-rank position
 	ontologyScale = 1.5 // per ontology-depth level (class specificity)
-	salienceScale = 3.0 // per unit of an entity's net predicate salience (signed: boost − demotion, gh#441)
+	salienceScale = 3.0 // per unit of an entity's net predicate salience (signed: boost − demotion)
 )
 
 // ontologyClassPredicate is the stamped BFO/CCO class triple (semsource ADR-0005).

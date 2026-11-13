@@ -419,7 +419,7 @@ func (c *Component) indexEntity(ctx context.Context, entityID string, data []byt
 		}
 		c.follower.Load().Reset(reason)
 		if reason == graph.GraphStateReasonNoncanonicalEntityID {
-			c.markEntityFailed(entityID) // counts the reset (design D4)
+			c.markEntityFailed(entityID) // counts the reset
 			return fmt.Errorf("%w: %w", errAuthoritativeIdentityMismatch, err)
 		}
 		c.lifecycle.CountError() // the reset; the entity is not held, so no mark counts it

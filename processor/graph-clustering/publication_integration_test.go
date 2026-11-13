@@ -359,7 +359,7 @@ func TestPersistentPublicationFailureIsStuck(t *testing.T) {
 	}
 	t.Cleanup(func() { stopComponent(t, c) })
 	t.Cleanup(func() { close(held.done) }) // runs first: a failed test never leaves the Stop above waiting on a hold
-	awaitApplied(t, c, 0)                  // the write below is live (#584)
+	awaitApplied(t, c, 0)                  // the snapshot has ended, so the write below is delivered live
 
 	js, err := client.JetStream()
 	if err != nil {

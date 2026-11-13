@@ -608,8 +608,9 @@ func (cm *Manager) stopWatches(ctx context.Context, watchers []jetstream.KeyWatc
 	for _, watcher := range watchers {
 		wg.Go(func() {
 			if err := kvwatch.Stop(ctx, watcher); err != nil {
-				// Logged, not returned: a second unsubscribe fails, so returning it
-				// would fail every later Stop.
+				// Logged, not returned: this teardown runs on its own goroutine with
+				// no caller to return to, and release has already removed the
+				// watchers, so the manager proceeds once the teardown finishes.
 				cm.logger.Warn("Config watch did not stop; its consumer may remain on the server",
 					"bucket", cm.bucketName, "error", err)
 			}

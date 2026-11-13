@@ -69,10 +69,10 @@ func TestCreateStream_DuplicatesWindow(t *testing.T) {
 		"unset window must preserve the existing window, not reset to the server default")
 }
 
-// TestCreateStream_DuplicatesWindow_ClampedToMaxAge verifies that a window
-// larger than MaxAge is clamped down rather than aborting boot — the NATS
-// server rejects (does not clamp) an explicit window > MaxAge, so createStream
-// must clamp client-side.
+// TestCreateStream_DuplicatesWindow_ClampedToMaxAge verifies that createStream
+// clamps a window larger than MaxAge client-side, so the stream is created
+// rather than boot aborting. That the server would clamp such a window itself
+// is not promised (no probe here), so the clamp does not rely on it.
 func TestCreateStream_DuplicatesWindow_ClampedToMaxAge(t *testing.T) {
 	client := fixtureClient(t)
 	sm := NewStreamsManager(client, slog.New(slog.NewTextHandler(io.Discard, nil)))

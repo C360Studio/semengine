@@ -30,10 +30,11 @@ type Stores interface {
 // and no other, reading at most enough bytes to hold maxLen characters; the caller cuts it to the
 // cap. The read runs under a context derived from ctx that ends 10 seconds after it begins.
 //
-// When that context has ended by the time the store returns, the error wraps the context's error,
-// context.DeadlineExceeded for the deadline, whatever the store returned: a store may answer its
-// deadline with an error of its own that wraps no context error. A store that ignores its context
-// is not bounded by the deadline. A nil ctx is refused before any store is asked.
+// When the store fails and that context has ended by then, the error wraps the context's error,
+// context.DeadlineExceeded for the deadline, whatever the store's error was: a store may answer its
+// deadline with an error of its own that wraps no context error. A body the store returns whole is
+// used even if the context ended meanwhile. A store that ignores its context is not bounded by the
+// deadline. A nil ctx is refused before any store is asked.
 func ReadBody(ctx context.Context, stores Stores, ref message.StorageReference, maxLen int) (string, error) {
 	if ctx == nil {
 		return "", errs.WrapInvalid(errors.New("nil context"), "entitytext", "ReadBody", "check the context")

@@ -63,9 +63,10 @@ func (blockedReader) Close() error { return nil }
 var ref = message.StorageReference{StorageInstance: "objstore", Key: "body/1"}
 
 // TestBodyReadDeadline: a body read runs under a context that ends 10 seconds after the read
-// begins, and when that context has ended by the time the store returns, the read says the
-// deadline passed, whatever the store's error was. The stores here fail as the NATS object store
-// does at its deadline: they wait for the context, then return their own timeout.
+// begins, and when the store fails after that context has ended, the read says the deadline
+// passed, whatever the store's error was; a body the store returns whole is used even then. The
+// failing stores here fail as the NATS object store does at its deadline: they wait for the
+// context, then return their own timeout.
 //
 // Requirement: entity-text/An offloaded body is read with a deadline
 // Requirement: entity-text/The read's own context decides that the deadline passed
@@ -112,6 +113,19 @@ func TestBodyReadDeadline(t *testing.T) {
 			})
 		})
 	}
+
+	t.Run("a body returned whole after the deadline is used", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := fakeStore{open: func(ctx context.Context, _ string) (io.ReadCloser, error) {
+				<-ctx.Done()
+				return io.NopCloser(strings.NewReader("late body")), nil
+			}}
+			body, err := entitytext.ReadBody(t.Context(), stores{"objstore": store}, ref, 100)
+			if err != nil || body != "late body" {
+				t.Fatalf("ReadBody = %q, %v; want the late body", body, err)
+			}
+		})
+	})
 
 	t.Run("a caller's cancel is not a deadline", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {

@@ -54,9 +54,10 @@ the read starts. A store that does not honour its context is not bounded by this
 
 ### Requirement: The read's own context decides that the deadline passed
 
-When the read's context has ended by the time the store returns, the read SHALL return an error that says the
-deadline passed, whatever error the store returned. The NATS object store returns `nats: timeout` at its deadline,
-which wraps no context error (`notes/probes/objectstore-watch-probe.log`, A2).
+When the store fails and the read's context has ended by then, the read SHALL return an error that says the
+deadline passed, whatever error the store returned. A body the store returns whole SHALL be returned even if the
+context ended meanwhile. The NATS object store returns `nats: timeout` at its deadline, which wraps no context error
+(`notes/probes/objectstore-watch-probe.log`, A2).
 
 #### Scenario: A store that waits for its context, then returns its own error
 

@@ -615,8 +615,8 @@ func TestQueryReadsImplementReplacement(t *testing.T) {
 		}
 		armedTrue := answer[graph.PredicateData](t, h.client, "predicate",
 			map[string]string{"predicate": armed, "value": "true"}, rev)
-		if !slices.Equal(armedTrue.Entities, want.armedTrue) {
-			t.Errorf("%s: predicate %s=true = %v, want %v", step, armed, armedTrue.Entities, want.armedTrue)
+		if armedTrue.Entities == nil || !slices.Equal(armedTrue.Entities, want.armedTrue) {
+			t.Errorf("%s: predicate %s=true = %#v, want %#v", step, armed, armedTrue.Entities, want.armedTrue)
 		}
 		list := answer[graph.PredicateListData](t, h.client, "predicateList", map[string]string{}, rev)
 		if !slices.Equal(list.Predicates, want.predicates) || list.Total != len(want.predicates) {

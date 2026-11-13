@@ -27,14 +27,14 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   graph-embedding's existing tests pass unchanged; a mutant that selects label predicates in `Values`, one that
   cuts Name, and one that decides the deadline with `errors.Is(err, context.DeadlineExceeded)` are each shown to
   fail. PR body: `Closes #551`.
-- [ ] 2.2 PR B. Index memory before real data (design D7, #623). Premise: about 60 B per held word, 9.5 KB per
+- [x] 2.2 PR B. Index memory before real data (design D7, #623). Premise: about 60 B per held word, 9.5 KB per
   entity at 157 words (#623; inventory §2c); the word-number layout measured 472 B per 20-word entity
   (`openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/probes/sequence-probe.log`); SemSource's
   code bodies average about 600 characters (`notes/probes/body-size-probe.log`). Accept: the harness from #623 run
   before and after at 50,000 entities, and once at SemSource's sizes, with heap, per word, build time and the four
   search times in `notes/2.2.md`; every `graph/lexical` test, the generated checks and
-  `TestScorecardHoldsItsFloor` pass unchanged; design D7 records the figures and the entity count and text size they
-  are accepted for. PR body: `Closes #623`.
+  `TestScorecardHoldsItsFloor` pass unchanged; the figures, and the entity count and text size they are accepted
+  for, are in `notes/2.2.md`. PR body: `Closes #623`.
 - [x] 2.3 PR C. The component and its apply rule (design D1, D2). Premise: the follower plug-in contract and the
   Value-apply rule (`graph/follower/follower.go:62-88`, `:75-76`;
   `openspec/specs/entity-state-follower/spec.md:204-205`); the graph-clustering shape

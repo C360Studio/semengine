@@ -15,10 +15,10 @@ package message
 // profile ("graph visibility is storage; indexing is policy").
 //
 // Optional and additive: a payload that does not implement it falls through
-// to its consumer's own resolution order. graph-ingest reads the
-// mutation-envelope field first, then this declaration, then the fallback
-// floor registered with the message type. Absence means "let the framework
-// decide", never "no profile".
+// to its consumer's own resolution order. graph-ingest keeps a profile
+// declared on the mutation envelope or through this interface, and otherwise
+// applies the floor registered with the message type. Absence means "let the
+// framework decide", never "no profile".
 //
 // Valid return values are the four indexing profiles in the vocabulary
 // package: IndexingProfileContent, IndexingProfileControl,

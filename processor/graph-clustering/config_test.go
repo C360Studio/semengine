@@ -136,7 +136,7 @@ func entityWatch() component.PortDefinition {
 
 // TestConfigRefusesOutputPorts: graph-clustering writes COMMUNITY_INDEX itself and declares no
 // output ports, so a graph-mutation request port and a COMMUNITY_INDEX write, the outputs
-// semboids' configuration declares, are refused, as is any one of them alone.
+// semboids' configuration declares, are refused, as is a COMMUNITY_INDEX write alone.
 func TestConfigRefusesOutputPorts(t *testing.T) {
 	mutations := component.PortDefinition{Name: "graph_mutations", Config: component.NATSRequestPort{Subject: "graph.mutation.>"}}
 	communities := component.PortDefinition{Name: "communities", Config: component.KVWritePort{Bucket: graph.BucketCommunityIndex}}

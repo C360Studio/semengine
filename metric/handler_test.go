@@ -124,7 +124,8 @@ func TestServerNativeStartReportsOwnedEphemeralListener(t *testing.T) {
 
 // requireListenerClosed asks the listener itself, not its freed port: once a listener closes, any process on the
 // host may be handed that port, so a dial there can succeed on a healthy tree. SetDeadline fails with
-// net.ErrClosed only on a closed listener, and it never blocks.
+// net.ErrClosed only on a closed listener, and it never blocks (observed in Go's net package; not promised by
+// its docs).
 func requireListenerClosed(t *testing.T, listener net.Listener, message string) {
 	t.Helper()
 	tcpListener, ok := listener.(*net.TCPListener)

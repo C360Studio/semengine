@@ -252,8 +252,8 @@ func FuzzDecoderDecode(f *testing.F) {
 // own constructors, with every int64 timestamp reachable by construction (the wire is
 // milliseconds both ways); marshal refuses a source that is not valid UTF-8. Seeds sit on each
 // boundary a seconds heuristic and the representation have: 0 (the zero time), ±1, 10^12 - 1 and
-// 10^12 (where a seconds/milliseconds heuristic switches), pre-1970, and both ends of int64; of the last two sources, U+FFFD itself is valid UTF-8 and
-// \xff\xfe is not.
+// 10^12 (where a seconds/milliseconds heuristic switches), pre-1970, and both ends of int64; of
+// the last two sources, U+FFFD itself is valid UTF-8 and \xff\xfe is not.
 func FuzzDecoderRoundTrip(f *testing.F) {
 	for _, seed := range []struct {
 		source            string

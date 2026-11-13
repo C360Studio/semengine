@@ -40,8 +40,8 @@ package lifecycle
 //   - String comparison is case-sensitive byte-equal. No fold,
 //     no trim, no glob.
 //
-//     An HTTP gateway in front of Manager (ADR-047) handles
-//     query-string-to-Go-type coercion at its boundary — that
+//     A gateway in front of Manager (ADR-047) is where
+//     query-string-to-Go-type coercion belongs — that
 //     is the right place for permissive parsing of operator-supplied
 //     filter values, NOT inside Manager.List. Keeping Manager strict
 //     makes its behavior predictable from Go callers AND keeps the

@@ -158,7 +158,7 @@ func TestDeleteMissingKeySucceeds(t *testing.T) {
 	if err := s.Delete(ctx, "never/written"); err != nil {
 		t.Errorf("Delete of a never-written key = %v, want nil", err)
 	}
-	// Regression check, observed in the probe, not promised: a second delete of a deleted key.
+	// Regression check, observed at the pinned nats.go, not promised: a second delete of a deleted key.
 	mustPut(t, s, "once", "v")
 	if err := s.Delete(ctx, "once"); err != nil {
 		t.Fatalf("Delete of a written key: %v", err)

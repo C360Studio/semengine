@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The closed vocabulary, written out from design §2.3's table rather than read
+// The closed vocabulary, written out by hand rather than read
 // back from the validator. A test that enumerated the implementation could not
 // see a value dropped from it.
 

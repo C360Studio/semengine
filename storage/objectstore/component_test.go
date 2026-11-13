@@ -45,8 +45,8 @@ const (
 // TestComponentConfigRefusesUnknownKey: a configuration carrying a key the Component does not
 // define is refused at construction and by the port declarer, naming the key; the same
 // configuration without it builds (object-store spec, "A data_cache key"; component-registration
-// spec, "Unknown configuration keys are refused"). The keys are data_cache, the key the
-// object-store spec names, and a misspelling of bucket_name.
+// spec, "Unknown configuration keys are refused"). The keys are data_cache, a key older
+// configurations carry for a cache this Component does not keep, and a misspelling of bucket_name.
 func TestComponentConfigRefusesUnknownKey(t *testing.T) {
 	if _, err := buildFromJSON(t, `{"bucket_name": "CONTENT"}`); err != nil {
 		t.Fatalf("a config with bucket_name only: %v", err)
@@ -110,7 +110,7 @@ func TestComponentRefusesInputWithoutStoredOutput(t *testing.T) {
 		"no ports":      `{"ports": {}}`,
 		"stored only":   `{"ports": {"outputs": [` + storedOutput + `]}}`,
 		"input, stored": `{"ports": {"inputs": [` + writeInput + `], "outputs": [` + storedOutput + `]}}`,
-		// Pin TestNewComponentAcceptsOrdinaryWriteInputs, with the stored output it now needs.
+		// Several write inputs beside the stored output an input needs.
 		"several lanes, stored": `{"ports": {"inputs": [` +
 			`{"name": "direct_ingest", "config": {"kind": "nats", "subject": "storage.objectstore.direct"}}, ` +
 			`{"name": "store_in", "config": {"kind": "jetstream", "stream_name": "MAPPED", "subjects": ["mapped.messages"]}}` +

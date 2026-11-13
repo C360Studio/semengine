@@ -234,8 +234,8 @@ func TestLostFeedStopsPublication(t *testing.T) {
 	if err := js.DeleteKeyValue(t.Context(), graph.BucketEntityStates); err != nil {
 		t.Fatalf("delete %s: %v", graph.BucketEntityStates, err)
 	}
-	// The watch closes within two of nats.go's activity checks (measured 18 s; nats.go does not
-	// promise it).
+	// The watch was observed to close within two of nats.go's activity checks (18 s at the pinned
+	// nats.go); nats.go does not promise it, so the wait has no deadline of its own.
 	await(t, "Health naming the lost feed",
 		func(context.Context) (component.HealthStatus, error) { return c.Health(), nil },
 		func(s component.HealthStatus) bool { return strings.Contains(s.LastError, "ENTITY_STATES feed lost") })

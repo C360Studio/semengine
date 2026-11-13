@@ -18,7 +18,7 @@ import (
 // shapeGen builds a value for GenericJSONPayload.Data from fuzz bytes. Each node is chosen by one
 // byte: every accepted kind is a choice, nested map[string]any and []any to a depth of four,
 // strings and keys of raw bytes (so invalid UTF-8 arises), floats from raw bits (so NaN and the
-// infinities arise), and three kinds encoding refuses. The generator records what
+// infinities arise), and three kinds Validate refuses. The generator records what
 // it built, so the oracle reads the facts from construction, never from the message package.
 type shapeGen struct {
 	in      []byte

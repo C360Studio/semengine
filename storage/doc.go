@@ -50,9 +50,10 @@
 // No Forced Immutability:
 //
 // The Store interface allows implementations to choose mutability semantics:
-//   - NATS ObjectStore (objectstore.Store): Put() replaces the object at the key and
-//     keeps no earlier version (observed with nats.go v1.54.0,
-//     TestPutReplacesObjectAtKey; the library does not promise it)
+//   - NATS ObjectStore (objectstore.Store): Put() replaces the object at the key: a
+//     later Get returns the last bytes and List names the key once
+//     (TestPutReplacesObjectAtKey, at the pinned nats.go and NATS image; the
+//     library does not promise it)
 //   - Mutable stores (S3, SQL): Put() overwrites existing values
 //
 // This flexibility enables diverse backends while documenting behavior per

@@ -51,9 +51,10 @@ var ErrObjectNotFound = errors.New("object not found")
 type Store interface {
 	// Put stores binary data at the specified key.
 	// If the key already exists, behavior is implementation-specific:
-	//   - NATS ObjectStore (objectstore.Store) replaces the object and keeps no
-	//     earlier version. Observed with nats.go v1.54.0 and nats-server v2.15.1
-	//     (TestPutReplacesObjectAtKey); the library does not promise it.
+	//   - NATS ObjectStore (objectstore.Store) replaces the object at the key: a
+	//     later Get returns the last bytes and List names the key once
+	//     (TestPutReplacesObjectAtKey, at the pinned nats.go and NATS image); the
+	//     library does not promise it.
 	//   - Mutable stores (S3, SQL) overwrite the existing value
 	//
 	// The data parameter accepts any binary format:

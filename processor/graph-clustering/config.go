@@ -149,7 +149,7 @@ func DefaultConfig() Config {
 
 // decodeConfig decodes rawConfig strictly: a removed key is refused naming it and what replaces
 // it, then any other key Config does not define is refused naming it, and data after the object
-// is refused, as json.Unmarshal refuses it. Empty rawConfig is DefaultConfig.
+// is refused. Empty rawConfig is DefaultConfig.
 func decodeConfig(rawConfig json.RawMessage) (Config, error) {
 	if len(rawConfig) == 0 {
 		return DefaultConfig(), nil

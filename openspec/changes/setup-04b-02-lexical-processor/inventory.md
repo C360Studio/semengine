@@ -71,7 +71,7 @@ followed from `ENTITY_STATES` and rebuilt (2b), how a match is served and gated 
 - The content-role vocabulary: `message/content_storable.go:84` — `ContentRoleBody = "body"`, `:92` —
   `ContentRoleTitle = "title"` (also `ContentRoleAbstract` `:88`). The store keeps only the body role
   (`message/content_storable.go:15-17` — "objectstore.Store.StoreContent stores only the text of / the \"body\"
-  role, as raw bytes"; enforced by `storage/objectstore/content.go:73` — `func bodyOnly(cs
+  role, as raw bytes"; enforced by `storage/objectstore/content.go:72` — `func bodyOnly(cs
   message.ContentStorable) (string, error) {`), so a `StorageRef` body is the body role by construction.
 - So four current rules answer "what is an entity's text": graph-embedding's suffixes, graph-clustering's every
   string value, graph-query's predicate names plus string values, and the content roles.

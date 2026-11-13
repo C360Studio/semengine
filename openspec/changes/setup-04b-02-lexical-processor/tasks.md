@@ -68,7 +68,7 @@ failing-first output in `notes/<task>.md`. Premises cite `inventory.md` (INVENTO
   `TestSearchLimitRange`, `TestSearchRefusesParseErrors`, `TestQueryVerbsDeclareEachRespondersVerbs` (extended) and
   a served-exactly-its-verbs test pass; `AGENTS.md` § 2 and `.agents/rules-index.md` name `graph.lexical.query.*` in
   the reserved-subject row, and `task ateam:doctor` passes.
-- [ ] 2.6 PR C. First-build cost (design D5, D6; open question 1). Premise: a healthy read takes about 0.46 ms
+- [x] 2.6 PR C. First-build cost (design D5, D6; open question 1). Premise: a healthy read takes about 0.46 ms
   (`notes/probes/objectstore-watch-probe.log`); 32k offloaded entities come to about 15 s of reads by arithmetic.
   Accept: a probe, its source and log in `notes/2.6.md`, starts the component over 20,000 and 100,000 entities on
   one NATS server, inline and with bodies in an object store, and records time to the first answer; the result is

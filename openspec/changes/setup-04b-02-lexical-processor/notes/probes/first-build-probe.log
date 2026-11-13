@@ -1,0 +1,67 @@
+# first-build-probe, run 2026-11-13 on darwin/arm64 (Apple M3 Pro, 12 cores, 36 GB), Docker Desktop 29.9.3
+# go1.26.11, image nats:2.15.0-alpine@sha256:ac8f88a6494bffc2c2a5289a0ca61cb28a9145c11ba5677cf24265d07f46d8d4 (internal/harness/natsfixture/nats-image)
+# branch claude/lexical-component at 734e61631906ce98eec5d1e9fac0860189f6d9bb, probe copied to processor/graph-lexical/first_build_probe_integration_test.go
+# command per case: PROBE_ENTITIES=<n> PROBE_MODE=<inline|offloaded> go test -tags integration -run '^TestFirstBuildProbe$' -count=1 -timeout 60m -v ./processor/graph-lexical/
+# output filtered to the probe's lines (testcontainers and client log lines removed); load is the host's 1/5/15-minute load average
+# run 1
+# 2026-11-13T19:58:46Z case 20000 inline, load { 2.57 2.54 2.34 }
+    first_build_probe_integration_test.go:133: seeded 20000 entities (inline), mean body 606 B, last revision 20001, in 402ms
+    first_build_probe_integration_test.go:167: RESULT entities=20000 mode=inline start_returned=3ms first_answer=1.395s refusals=139 seed=402ms indexed_revision=20001 last_revision=20001 bodies_not_indexed=0 retry_matched=680
+--- PASS: TestFirstBuildProbe (2.13s)
+PASS
+# 2026-11-13T19:58:49Z case 20000 offloaded, load { 2.61 2.55 2.35 }
+    first_build_probe_integration_test.go:133: seeded 20000 entities (offloaded), mean body 606 B, last revision 20001, in 1.441s
+    first_build_probe_integration_test.go:167: RESULT entities=20000 mode=offloaded start_returned=3ms first_answer=9.675s refusals=967 seed=1.441s indexed_revision=20001 last_revision=20001 bodies_not_indexed=0 retry_matched=680
+--- PASS: TestFirstBuildProbe (11.29s)
+PASS
+# 2026-11-13T19:59:02Z case 32000 inline, load { 2.74 2.58 2.36 }
+    first_build_probe_integration_test.go:133: seeded 32000 entities (inline), mean body 606 B, last revision 32001, in 425ms
+    first_build_probe_integration_test.go:167: RESULT entities=32000 mode=inline start_returned=3ms first_answer=2.177s refusals=212 seed=425ms indexed_revision=32001 last_revision=32001 bodies_not_indexed=0 retry_matched=1088
+--- PASS: TestFirstBuildProbe (2.77s)
+PASS
+# 2026-11-13T19:59:06Z case 32000 offloaded, load { 2.68 2.57 2.36 }
+    first_build_probe_integration_test.go:133: seeded 32000 entities (offloaded), mean body 606 B, last revision 32001, in 2.312s
+    first_build_probe_integration_test.go:167: RESULT entities=32000 mode=offloaded start_returned=3ms first_answer=15.744s refusals=1574 seed=2.312s indexed_revision=32001 last_revision=32001 bodies_not_indexed=0 retry_matched=1088
+--- PASS: TestFirstBuildProbe (18.25s)
+PASS
+# 2026-11-13T19:59:26Z case 100000 inline, load { 3.44 2.75 2.43 }
+    first_build_probe_integration_test.go:133: seeded 100000 entities (inline), mean body 606 B, last revision 100001, in 1.413s
+    first_build_probe_integration_test.go:167: RESULT entities=100000 mode=inline start_returned=3ms first_answer=6.769s refusals=676 seed=1.413s indexed_revision=100001 last_revision=100001 bodies_not_indexed=0 retry_matched=3400
+--- PASS: TestFirstBuildProbe (8.37s)
+PASS
+# 2026-11-13T19:59:36Z case 100000 offloaded, load { 4.26 2.96 2.50 }
+    first_build_probe_integration_test.go:133: seeded 100000 entities (offloaded), mean body 606 B, last revision 100001, in 7.052s
+    first_build_probe_integration_test.go:167: RESULT entities=100000 mode=offloaded start_returned=3ms first_answer=54.206s refusals=5412 seed=7.052s indexed_revision=100001 last_revision=100001 bodies_not_indexed=0 retry_matched=3400
+--- PASS: TestFirstBuildProbe (61.48s)
+PASS
+# run 2
+# 2026-11-13T20:00:43Z case 20000 inline, load { 5.33 3.51 2.74 }
+    first_build_probe_integration_test.go:133: seeded 20000 entities (inline), mean body 606 B, last revision 20001, in 279ms
+    first_build_probe_integration_test.go:167: RESULT entities=20000 mode=inline start_returned=3ms first_answer=1.336s refusals=133 seed=279ms indexed_revision=20001 last_revision=20001 bodies_not_indexed=0 retry_matched=680
+--- PASS: TestFirstBuildProbe (1.86s)
+PASS
+# 2026-11-13T20:00:46Z case 20000 offloaded, load { 4.99 3.47 2.73 }
+    first_build_probe_integration_test.go:133: seeded 20000 entities (offloaded), mean body 606 B, last revision 20001, in 1.433s
+    first_build_probe_integration_test.go:167: RESULT entities=20000 mode=offloaded start_returned=4ms first_answer=9.896s refusals=989 seed=1.433s indexed_revision=20001 last_revision=20001 bodies_not_indexed=0 retry_matched=680
+--- PASS: TestFirstBuildProbe (11.51s)
+PASS
+# 2026-11-13T20:00:59Z case 32000 inline, load { 5.23 3.60 2.79 }
+    first_build_probe_integration_test.go:133: seeded 32000 entities (inline), mean body 606 B, last revision 32001, in 485ms
+    first_build_probe_integration_test.go:167: RESULT entities=32000 mode=inline start_returned=4ms first_answer=2.146s refusals=214 seed=485ms indexed_revision=32001 last_revision=32001 bodies_not_indexed=0 retry_matched=1088
+--- PASS: TestFirstBuildProbe (2.80s)
+PASS
+# 2026-11-13T20:01:03Z case 32000 offloaded, load { 5.23 3.60 2.79 }
+    first_build_probe_integration_test.go:133: seeded 32000 entities (offloaded), mean body 606 B, last revision 32001, in 2.247s
+    first_build_probe_integration_test.go:167: RESULT entities=32000 mode=offloaded start_returned=3ms first_answer=16.345s refusals=1634 seed=2.247s indexed_revision=32001 last_revision=32001 bodies_not_indexed=0 retry_matched=1088
+--- PASS: TestFirstBuildProbe (18.76s)
+PASS
+# 2026-11-13T20:01:23Z case 100000 inline, load { 5.20 3.69 2.84 }
+    first_build_probe_integration_test.go:133: seeded 100000 entities (inline), mean body 606 B, last revision 100001, in 1.352s
+    first_build_probe_integration_test.go:167: RESULT entities=100000 mode=inline start_returned=2ms first_answer=6.828s refusals=682 seed=1.352s indexed_revision=100001 last_revision=100001 bodies_not_indexed=0 retry_matched=3400
+--- PASS: TestFirstBuildProbe (8.36s)
+PASS
+# 2026-11-13T20:01:32Z case 100000 offloaded, load { 5.43 3.79 2.89 }
+    first_build_probe_integration_test.go:133: seeded 100000 entities (offloaded), mean body 606 B, last revision 100001, in 7.002s
+    first_build_probe_integration_test.go:167: RESULT entities=100000 mode=offloaded start_returned=3ms first_answer=50.506s refusals=5050 seed=7.002s indexed_revision=100001 last_revision=100001 bodies_not_indexed=0 retry_matched=3400
+--- PASS: TestFirstBuildProbe (57.71s)
+PASS

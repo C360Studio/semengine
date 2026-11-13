@@ -692,3 +692,71 @@ func TestSilentClientIsClosed(t *testing.T) {
 		t.Fatalf("read_timeout disconnections = %v; want 1", n)
 	}
 }
+
+// TestStopWithEndedContextClosesClientsAndCancelsSupervisorThenRetries checks that Stop handed
+// an already-expired context still closes connected WebSocket clients with 1001 and cancels the
+// applied-state view supervisor before a retry Stop joins cleanly.
+func TestStopWithEndedContextClosesClientsAndCancelsSupervisorThenRetries(t *testing.T) {
+	t.Run("subject_closes_clients", func(t *testing.T) {
+		client := fixtureClient(t)
+		o := startOutput(t, client, "ws.ended", "30s")
+		ws := dial(t, o.url(), nil, true)
+		awaitClients(t, o.c, 1)
+
+		expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(1, 0))
+		defer cancelExpired()
+		if err := o.c.Stop(expired); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Stop(expired) = %v, want context.DeadlineExceeded", err)
+		}
+
+		waitBound, cancelWait := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancelWait()
+		select {
+		case <-ws.ended:
+		case <-waitBound.Done():
+			t.Fatal("Stop(expired) did not close connected client")
+		}
+		requireClosedByStop(t, ws)
+
+		stopOutput(t, o.c)
+		if held := (suiteOwner{o.c}).Observe().Unresolved; len(held) != 0 {
+			t.Fatalf("after retry Stop the output holds %v; want nothing", held)
+		}
+	})
+
+	t.Run("applied_state_cancels_supervisor", func(t *testing.T) {
+		client := fixtureClient(t)
+		entityStates(t, client)
+		o := startApplied(t, client)
+		awaitHealthy(t, o)
+		ws := dial(t, o.url(), nil, true)
+		readSnapshot(t, ws)
+		awaitClients(t, o.c, 1)
+		supervised := o.c.supervised
+
+		expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(1, 0))
+		defer cancelExpired()
+		if err := o.c.Stop(expired); !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("Stop(expired) = %v, want context.DeadlineExceeded", err)
+		}
+
+		waitBound, cancelWait := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancelWait()
+		select {
+		case <-supervised:
+		case <-waitBound.Done():
+			t.Fatal("Stop(expired) did not cancel applied-state view supervisor")
+		}
+		select {
+		case <-ws.ended:
+		case <-waitBound.Done():
+			t.Fatal("Stop(expired) did not close applied-state client")
+		}
+		requireClosedByStop(t, ws)
+
+		stopOutput(t, o.c)
+		if held := (suiteOwner{o.c}).Observe().Unresolved; len(held) != 0 {
+			t.Fatalf("after retry Stop the output holds %v; want nothing", held)
+		}
+	})
+}

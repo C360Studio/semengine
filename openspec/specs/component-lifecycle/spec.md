@@ -6,9 +6,7 @@ The processor shell, `component.Lifecycle`: the lifecycle and the two reads ever
 component holds one as a field and delegates `Initialize`, `Start`, `Stop`, `Health` and `DataFlow` to it; the
 component keeps its own resources, run context and stuck states (`component/lifecycle_type.go`; design D1-D5 of
 `openspec/changes/archive/2026-10-26-setup-04a-04-graph-roots-processor-shell/`).
-
 ## Requirements
-
 ### Requirement: The shell admits one Start after Initialize
 
 `component.Lifecycle`'s `Initialize` SHALL return nil every time and do no I/O. A `Start` before `Initialize` SHALL
@@ -30,14 +28,21 @@ return an error and leave the shell unused, so that a `Start` after `Initialize`
 ### Requirement: The shell is running from start's return until cleanup begins
 
 A shell SHALL be running from the moment the `start` function given to `Start` returns nil until the `cleanup`
-function begins, whether for a `Stop` or a failed start's rollback. A `start` that fails or panics SHALL never make the
-shell running.
+function begins, whether for a `Stop` (under a live or already-ended non-nil context) or a failed start's rollback. A
+`start` that fails or panics SHALL never make the shell running.
 
 #### Scenario: Reads during Stop
 
 - **WHEN** `Health` is called while the cleanup of a `Stop` is held open
 - **THEN** it reports `Healthy` false and `Status` `stopped`
 - **AND** the test that verifies this is the `stop cleanup held open` row of `TestLifecycleReadsInEveryPhase`
+
+#### Scenario: Stop with an ended context begins cleanup
+
+- **WHEN** `Stop` is called on a running shell with an already-cancelled context
+- **THEN** `cleanup` runs, `Health` reports `Healthy` false and `Status` `stopped`, `Stop` returns `context.Canceled`,
+  and a subsequent `Stop` with a live context returns nil once `cleanup` succeeds
+- **AND** the test that verifies this is `TestLifecycleStopWithEndedContextBeginsCleanup`
 
 #### Scenario: A failed start
 

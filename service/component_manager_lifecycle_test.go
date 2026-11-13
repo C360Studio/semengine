@@ -10,6 +10,7 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/stretchr/testify/require"
 
@@ -491,4 +492,168 @@ func TestComponentManagerRunningStopDeregistersStoreBeforeLiveChildStop(t *testi
 
 	require.NoError(t, cm.Stop(stopContext(t)))
 	require.Equal(t, int64(1), provider.stops.Load(), "a Stop after one that returned nil called the provider")
+}
+
+// shellLifecycleComponent is a LifecycleComponent built around component.Lifecycle for testing
+// ComponentManager's interaction with real Guard/Lifecycle owners when Stop's deadline expires.
+type shellLifecycleComponent struct {
+	baseDiscoverable
+	name                 string
+	lifecycle            component.Lifecycle
+	holdCleanup          bool
+	releaseCleanupCancel context.CancelFunc
+	releaseWorker        chan struct{}
+	workerDone           chan struct{}
+	storeRegistry        *storeregistry.Registry
+	provideStore         bool
+
+	cleanups           atomic.Int64
+	storeGoneAtCleanup atomic.Bool
+}
+
+func newShellLifecycleComponent(name string, holdCleanup, provideStore bool) *shellLifecycleComponent {
+	return &shellLifecycleComponent{
+		name:          name,
+		holdCleanup:   holdCleanup,
+		provideStore:  provideStore,
+		releaseWorker: make(chan struct{}),
+		workerDone:    make(chan struct{}),
+	}
+}
+
+func (c *shellLifecycleComponent) Initialize() error { return c.lifecycle.Initialize() }
+
+func (c *shellLifecycleComponent) Start(ctx context.Context) error {
+	return c.lifecycle.Start(ctx, func(ctx context.Context) error {
+		runCtx, cancel := context.WithCancel(context.WithoutCancel(ctx))
+		c.releaseCleanupCancel = cancel
+		if !c.holdCleanup {
+			close(c.workerDone)
+			return nil
+		}
+		go func() {
+			defer close(c.workerDone)
+			<-runCtx.Done()
+			<-c.releaseWorker
+		}()
+		return nil
+	}, func(ctx context.Context) error {
+		c.cleanups.Add(1)
+		if c.provideStore && c.storeRegistry != nil {
+			_, registered := c.storeRegistry.Streamable(c.name)
+			c.storeGoneAtCleanup.Store(!registered)
+		}
+		if c.releaseCleanupCancel != nil {
+			c.releaseCleanupCancel()
+		}
+		if !c.holdCleanup {
+			return nil
+		}
+		select {
+		case <-c.workerDone:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	})
+}
+
+func (c *shellLifecycleComponent) Stop(ctx context.Context) error  { return c.lifecycle.Stop(ctx) }
+func (c *shellLifecycleComponent) Health() component.HealthStatus  { return c.lifecycle.Health() }
+func (c *shellLifecycleComponent) DataFlow() component.FlowMetrics { return c.lifecycle.DataFlow() }
+
+func (c *shellLifecycleComponent) ProvidedStores() map[string]storage.StreamableStore {
+	if !c.provideStore {
+		return nil
+	}
+	return map[string]storage.StreamableStore{c.name: lifecycleTestStore{}}
+}
+
+// TestComponentManagerStopTimeoutStillStopsRemainingComponents: when one component exhausts Stop's
+// deadline, ComponentManager still deregisters provided stores and calls Stop(ctx) on every
+// remaining started component in reverse start order, and a live retry finishes unjoined work
+// without re-running cleanups that already completed.
+//
+// spec: service-lifecycle / The component manager's Stop is the only stop and waits for a Start in progress
+func TestComponentManagerStopTimeoutStillStopsRemainingComponents(t *testing.T) {
+	providerA := newShellLifecycleComponent("timeout-a", false, true)
+	consumerB := newShellLifecycleComponent("timeout-b", true, false)
+	consumerC := newShellLifecycleComponent("timeout-c", true, false)
+	releaseWorkers := func() {
+		select {
+		case <-consumerB.releaseWorker:
+		default:
+			close(consumerB.releaseWorker)
+		}
+		select {
+		case <-consumerC.releaseWorker:
+		default:
+			close(consumerC.releaseWorker)
+		}
+	}
+
+	registry := component.NewRegistry()
+	for _, item := range []*shellLifecycleComponent{providerA, consumerB, consumerC} {
+		comp := item
+		require.NoError(t, registry.Register(component.Registration{
+			Name: comp.name, Type: types.ComponentTypeProcessor,
+			Factory: func(_ json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
+				comp.storeRegistry = deps.StoreRegistry
+				if !comp.provideStore {
+					return struct {
+						component.LifecycleComponent
+					}{comp}, nil
+				}
+				return comp, nil
+			},
+			Ports: func(json.RawMessage, string) (component.PortConfig, error) {
+				return component.PortConfigFrom(nil, nil), nil
+			},
+		}))
+	}
+	built, err := NewComponentManager(nil,
+		testComponentDependencies(t, registry, providerA.name, consumerB.name, consumerC.name))
+	require.NoError(t, err)
+	cm := built.(*ComponentManager)
+	require.NoError(t, cm.Start(t.Context()))
+	t.Cleanup(func() {
+		releaseWorkers()
+		_ = cm.Stop(stopContext(t))
+	})
+
+	_, registered := providerA.storeRegistry.Streamable(providerA.name)
+	require.True(t, registered, "provider store must be registered after Start")
+
+	shortCtx, cancelShort := context.WithTimeout(t.Context(), 30*time.Millisecond)
+	defer cancelShort()
+	err = cm.Stop(shortCtx)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+
+	// Consumer C exhausted shortCtx; consumer B and provider A must STILL have had Stop initiated!
+	require.Equal(t, int64(1), consumerC.cleanups.Load(), "consumer C cleanup must run once")
+	require.Equal(t, int64(1), consumerB.cleanups.Load(), "consumer B cleanup must initiate despite expired ctx")
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "provider A cleanup must initiate despite expired ctx")
+	require.Equal(t, "stopped", consumerB.Health().Status, "consumer B shell must clear running status")
+	require.Equal(t, "stopped", providerA.Health().Status, "provider A shell must clear running status")
+	require.True(t, providerA.storeGoneAtCleanup.Load(), "provider store must be deregistered before provider cleanup")
+	_, registered = providerA.storeRegistry.Streamable(providerA.name)
+	require.False(t, registered, "provider store must no longer be registered after timed-out Stop")
+
+	// Release held consumers and retry Stop; providerA's cleanup returned nil on the first pass
+	// (becoming terminal while returning expired ctx's error), so retry must not re-run providerA's cleanup.
+	close(consumerB.releaseWorker)
+	close(consumerC.releaseWorker)
+
+	require.NoError(t, cm.Stop(stopContext(t)))
+	require.Equal(t, int64(2), consumerC.cleanups.Load(), "consumer C retry must finish join")
+	require.Equal(t, int64(2), consumerB.cleanups.Load(), "consumer B retry must finish join")
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "provider A finished cleanup must not re-run on retry")
+
+	require.NoError(t, cm.Stop(stopContext(t)))
+	require.Equal(t, int64(1), providerA.cleanups.Load(), "terminal Stop must not re-run provider A cleanup")
+	statuses := cm.GetComponentStatus()
+	for _, name := range []string{providerA.name, consumerB.name, consumerC.name} {
+		require.Equal(t, component.StateStopped, statuses[name].State, "component %q", name)
+		require.NoError(t, statuses[name].LastError, "component %q", name)
+	}
 }

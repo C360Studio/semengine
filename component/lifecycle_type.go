@@ -83,9 +83,11 @@ func (l *Lifecycle) Start(ctx context.Context, start, cleanup func(context.Conte
 	})
 }
 
-// Stop is lifecycleguard's Stop: it runs the cleanup Start was given and returns its result. Stop
-// before Start returns nil and uses up the shell, a Stop after a successful cleanup is a no-op,
-// and a cleanup that fails stays pending for the next Stop.
+// Stop is lifecycleguard's Stop: it runs the cleanup Start was given even when ctx has already
+// ended (clearing running status before cleanup begins) so teardown always initiates and ctx bounds
+// only waits. Stop before Start returns nil and uses up the shell, a Stop after a successful
+// cleanup is a no-op, a synchronous nil cleanup under an ended ctx marks the shell terminal while
+// returning ctx.Err(), and a cleanup that fails stays pending for the next Stop.
 func (l *Lifecycle) Stop(ctx context.Context) error {
 	return l.guard.Stop(ctx)
 }

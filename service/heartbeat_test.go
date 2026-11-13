@@ -259,6 +259,8 @@ func TestHeartbeatFailedStopIsRetried(t *testing.T) {
 	defer cancelFirst()
 	require.ErrorIs(t, hb.Stop(firstCtx), context.DeadlineExceeded,
 		"a Stop whose loop cannot return reports its context's error")
+	require.NotEqual(t, StatusRunning, hb.Status(),
+		"a cut-short Stop must still initiate BaseService teardown")
 
 	secondCtx, cancelSecond := context.WithTimeout(t.Context(), stopBound)
 	defer cancelSecond()

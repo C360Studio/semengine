@@ -220,6 +220,8 @@ func TestStorageObservabilityFailedStopIsRetried(t *testing.T) {
 	defer cancelFirst()
 	require.ErrorIs(t, s.Stop(firstCtx), context.DeadlineExceeded,
 		"a Stop whose loops cannot return reports its context's error")
+	require.NotEqual(t, StatusRunning, s.Status(),
+		"a cut-short Stop must still initiate BaseService teardown")
 
 	secondCtx, cancelSecond := context.WithTimeout(t.Context(), stopBound)
 	defer cancelSecond()

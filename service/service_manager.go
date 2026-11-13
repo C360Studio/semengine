@@ -656,26 +656,24 @@ func (m *Manager) publishServiceHealth(ctx context.Context) {
 	}
 }
 
-// StopAll stops the composition. It refuses a nil context, and given a context
-// that has already ended it returns that context's error and stops nothing.
+// StopAll stops the composition. It refuses a nil context; any non-nil context
+// (live or already ended) initiates teardown and uses ctx only to bound waits.
 // Before any StartAll it stops the health listener, if one was started, and
-// returns nil; a later StartAll is refused. Otherwise it makes /readyz answer
-// NOT READY at once, stops every started service in reverse registration order
-// with ctx, then the health publisher, the health and main listeners, and the
-// metrics server last. A listener refuses new requests and StopAll waits for
-// those in flight; if ctx ends first, every connection still open is closed,
-// which ends each open request's context, and a later StopAll waits for their
-// handlers to return. StopAll returns nil only once everything is released. A
-// service whose Stop returns errs.ErrAlreadyStopped counts as stopped. Any other
-// failure is returned naming the service or listener, and the next StopAll runs
-// the whole stop again. A StopAll after one that returned nil returns nil and
-// calls nothing; one while another runs is refused as transient.
+// returns nil once released; a later StartAll is refused. Otherwise it makes
+// /readyz answer NOT READY at once, stops every started service in reverse
+// registration order with ctx, then the health publisher, the health and main
+// listeners, and the metrics server last. A listener refuses new requests and
+// StopAll waits for those in flight; if ctx ends first, every connection still
+// open is closed, which ends each open request's context, and a later StopAll
+// waits for their handlers to return. StopAll returns nil only once everything
+// is released. A service whose Stop returns errs.ErrAlreadyStopped counts as
+// stopped. Any other failure is returned naming the service or listener, and
+// the next StopAll runs the whole stop again. A StopAll after one that returned
+// nil returns nil for any non-nil context and calls nothing; one while another
+// runs is refused as transient.
 func (m *Manager) StopAll(ctx context.Context) error {
 	if ctx == nil {
 		return errs.WrapInvalid(errs.ErrInvalidData, "Manager", "StopAll", "nil context")
-	}
-	if err := ctx.Err(); err != nil {
-		return err
 	}
 	m.mu.Lock()
 	m.stopCalled = true

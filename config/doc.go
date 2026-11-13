@@ -89,10 +89,11 @@
 // nothing (ADR-113): the watches run until Stop.
 //
 // Stop(ctx) closes every channel the Manager handed out, stops every watch and
-// waits for the Manager's goroutines. It returns nil only once all of that is
-// done. If ctx ends first it returns ctx's error, and a later Stop tries again.
-// A ctx that has already ended stops nothing, so a caller on its shutdown path
-// passes a fresh bounded context, not its ended signal context:
+// waits for the Manager's goroutines. It refuses a nil ctx; any non-nil ctx
+// (live or already ended) initiates teardown at once and bounds only the join
+// wait, returning nil once all goroutines exit or ctx's error if ctx ended
+// first so a later Stop tries again. Pass a fresh bounded context on shutdown
+// so watches have a graceful drain budget:
 //
 //	stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 //	defer cancel()

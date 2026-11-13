@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/nats-io/nats.go/jetstream"
@@ -18,6 +19,7 @@ import (
 	"github.com/c360studio/semengine/component"
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/kvcatalog"
+	"github.com/c360studio/semengine/internal/dispatch"
 	"github.com/c360studio/semengine/internal/harness/lifecycletest"
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/natsclient"
@@ -274,9 +276,8 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 	defer cancel()
 	stopped := make(chan error, 1)
 	go func() { stopped <- h.c.Stop(stopCtx) }()
-	// The lifecycle refuses a context already ended without running cleanup, and reports "stopped"
-	// before it runs cleanup, so this orders the cancel after Stop has passed that check. The stuck
-	// handler holds the first drain until the cancel.
+	// component.Lifecycle reports "stopped" as soon as cleanup begins, ordering cancel after Stop
+	// entered cleanup while the stuck handler holds the first subscription drain.
 	if _, err := probe.Await(t.Context(),
 		func(context.Context) (string, error) { return h.c.Health().Status, nil },
 		func(status string) bool { return status == "stopped" }); err != nil {
@@ -285,6 +286,16 @@ func TestStopWithAStuckHandlerStopsEveryOtherVerb(t *testing.T) {
 	cancel()
 	if err := <-stopped; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Stop with a stuck handler = %v, want context.Canceled", err)
+	}
+	if err := h.c.pool.SubmitBlocking(t.Context(), "probe", indexWork{}); !errors.Is(err, dispatch.ErrStopped) {
+		t.Fatalf("pool SubmitBlocking after stuck-handler Stop = %v, want dispatch.ErrStopped", err)
+	}
+	feedBound, cancelFeedBound := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancelFeedBound()
+	select {
+	case <-h.c.feeds:
+	case <-feedBound.Done():
+		t.Fatal("Stop with a stuck handler did not cancel feeds' runCtx")
 	}
 
 	// Every drain has begun when Stop returns, but the server drops a subscription only once it has

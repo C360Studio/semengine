@@ -310,3 +310,44 @@ func TestFailedCleanupKeepsHandlesForLaterStop(t *testing.T) {
 		t.Fatalf("repeated Stop: %v", err)
 	}
 }
+
+// TestStopWithEndedContextInitiatesSupervisorShutdownAndRetries checks that Stop handed an
+// already-expired context initiates subscription drains AND cancels runCtx so the community view
+// supervisor exits before the retry Stop.
+func TestStopWithEndedContextInitiatesSupervisorShutdownAndRetries(t *testing.T) {
+	client := fixtureClient(t)
+	c := newComponent(t, client)
+	if err := c.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = c.Stop(stopCtx)
+	})
+	supervised := c.supervised
+
+	expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(1, 0))
+	defer cancelExpired()
+	if err := c.Stop(expired); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop(expired) = %v, want context.DeadlineExceeded", err)
+	}
+	if status := c.Health().Status; status != "stopped" {
+		t.Fatalf("Health().Status after Stop(expired) = %q, want stopped", status)
+	}
+
+	waitBound, cancelWait := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancelWait()
+	select {
+	case <-supervised:
+	case <-waitBound.Done():
+		t.Fatal("Stop(expired) did not cancel runCtx: community view supervisor still running")
+	}
+
+	if err := c.Stop(t.Context()); err != nil {
+		t.Fatalf("retry Stop: %v", err)
+	}
+	if held := (suiteOwner{c: c}).Observe().Unresolved; len(held) != 0 {
+		t.Fatalf("held after retry Stop = %v, want nothing", held)
+	}
+}

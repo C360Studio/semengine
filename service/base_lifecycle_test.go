@@ -96,11 +96,12 @@ func TestStartContextEndingKeepsHealthChecksRunning(t *testing.T) {
 	})
 }
 
-// TestStopWithAnEndedContextStopsNothing: a Stop given a context that has already ended returns
-// that context's error and stops nothing.
+// TestStopWithAnEndedContextBeginsCleanupAndReportsContextError: a Stop given a context that has
+// already ended initiates cleanup (stopping the health monitor) and reports that context's error; a
+// later Stop with a live context finishes the join and returns nil.
 //
 // spec: service-lifecycle / BaseService's Start bounds Start and Stop is the only stop
-func TestStopWithAnEndedContextStopsNothing(t *testing.T) {
+func TestStopWithAnEndedContextBeginsCleanupAndReportsContextError(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var calls atomic.Int64
 		var failing atomic.Bool
@@ -113,12 +114,11 @@ func TestStopWithAnEndedContextStopsNothing(t *testing.T) {
 		ended, cancel := context.WithCancel(t.Context())
 		cancel()
 		require.ErrorIs(t, s.Stop(ended), context.Canceled)
-		require.Equal(t, StatusRunning, s.Status(), "a Stop with an ended context began the stop")
+		require.NotEqual(t, StatusRunning, s.Status(), "a Stop with an ended context must initiate stop")
 
 		<-time.After(30 * time.Second)
 		synctest.Wait()
-		require.Equal(t, int64(2), calls.Load(), "health checks stopped after a Stop with an ended context")
-		require.Equal(t, StatusRunning, s.Status())
+		require.Equal(t, int64(1), calls.Load(), "health checks must stop once Stop initiated cleanup")
 
 		require.NoError(t, s.Stop(stopContext(t)))
 		require.Equal(t, StatusStopped, s.Status())

@@ -473,3 +473,63 @@ func entrySummaries(entries []MessageLogEntry) []string {
 	}
 	return summaries
 }
+
+// TestMessageLoggerStopWithEndedContextInitiatesTeardown: Stop with an already-ended context
+// fences new watch streams, closes retryStop, cancels runCancel, signals open watch streams to
+// stop, and initiates BaseService teardown rather than returning early before those steps; a live
+// retry Stop finishes the joins and returns nil.
+func TestMessageLoggerStopWithEndedContextInitiatesTeardown(t *testing.T) {
+	ml := newTestMessageLogger(t, newUnconnectedClient(t), `{"monitor_subjects":["test.>"]}`, nil)
+	require.NoError(t, ml.Start(t.Context()))
+	t.Cleanup(func() { _ = ml.Stop(stopContext(t)) })
+
+	stream, ok := ml.openWatchStream()
+	require.True(t, ok, "watch stream must open while running")
+
+	// Hold a synthetic retryDone open so joinRetry cannot complete synchronously when Stop(ended) runs.
+	heldRetryDone := make(chan struct{})
+	ml.lifecycleMu.Lock()
+	realRetryDone := ml.retryDone
+	ml.retryDone = heldRetryDone
+	ml.lifecycleMu.Unlock()
+	t.Cleanup(func() {
+		select {
+		case <-heldRetryDone:
+		default:
+			close(heldRetryDone)
+		}
+		select {
+		case <-stream.done:
+		default:
+			ml.closeWatchStream(stream)
+		}
+	})
+
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.ErrorIs(t, ml.Stop(ended), context.Canceled)
+
+	extraStream, admitted := ml.openWatchStream()
+	if admitted {
+		ml.closeWatchStream(extraStream)
+	}
+	require.False(t, admitted, "Stop(endedCtx) must fence new KV watch streams")
+
+	ml.lifecycleMu.Lock()
+	runCancelNil := ml.runCancel == nil
+	ml.lifecycleMu.Unlock()
+	require.True(t, runCancelNil, "Stop(endedCtx) must cancel and clear runCancel even when joinRetry times out")
+
+	select {
+	case <-stream.stop:
+	default:
+		t.Fatal("Stop(endedCtx) must signal open KV watch streams to stop")
+	}
+	require.NotEqual(t, StatusRunning, ml.Status(), "Stop(endedCtx) must initiate BaseService stop")
+
+	<-realRetryDone
+	close(heldRetryDone)
+	ml.closeWatchStream(stream)
+	require.NoError(t, ml.Stop(stopContext(t)))
+	require.Equal(t, StatusStopped, ml.Status())
+}

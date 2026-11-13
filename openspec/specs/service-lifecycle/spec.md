@@ -8,9 +8,7 @@ and stop them, and the helpers they share. This capability states what `BaseServ
 server promises its caller (`MaybeStartPProf` then `Shutdown`), and what `WireGraphRuntime` does before it builds
 the graph mutation client (the catalog-retention backstop, pin ADR-068 D1). The service and component managers and
 the services arrive in later pull requests of the port and extend this capability or add their own.
-
 ## Requirements
-
 ### Requirement: BaseService's Start bounds Start and Stop is the only stop
 
 `service.BaseService.Start(ctx)` SHALL refuse a nil context, a context that has already ended, a second Start and a
@@ -26,17 +24,17 @@ its health check once at Start and then every 30 seconds, and SHALL keep doing s
 
 ### Requirement: BaseService's Stop(ctx) is the only stop
 
-`Stop(ctx)` SHALL be the only stop. It SHALL refuse a nil context. Given a context that has already ended, it SHALL
-return that context's error and stop nothing. Given a live context, it SHALL report `StatusStopping`, start no further
-health check, and return nil only after the health goroutine has exited, leaving `StatusStopped` and `IsHealthy()`
-false.
+`Stop(ctx)` SHALL be the only stop and SHALL refuse a nil context. Before `Start`, or after a `Stop` joined the health
+goroutine, any non-nil `ctx` SHALL return nil. On a started unstopped `BaseService`, any non-nil `ctx` (live or ended)
+SHALL cancel the run context so no new health check starts, report `StatusStopping` until exit, wait up to `ctx`, and
+return `ctx`'s error if `ctx` ended, else nil with `StatusStopped` and `IsHealthy()` false.
 
 #### Scenario: Stop is given a context that has already ended
 
 - **WHEN** a started `BaseService`'s Stop is called with a cancelled context
-- **THEN** Stop returns `context.Canceled`, the status is still `StatusRunning`, and a following Stop with a live
-  context returns nil
-- **AND** the test that verifies this is `TestStopWithAnEndedContextStopsNothing`
+- **THEN** Stop cancels the health loop so no further health check runs, returns `context.Canceled`, and a following
+  Stop with a live context returns nil with status `StatusStopped`
+- **AND** the test that verifies this is `TestStopWithAnEndedContextBeginsCleanupAndReportsContextError`
 
 ### Requirement: BaseService's Stop can be cut short and repeated
 
@@ -183,22 +181,23 @@ test-side adapters (ADR-113).
 
 ### Requirement: The service manager's StopAll is the only stop
 
-`StopAll(ctx)` SHALL be the only stop. It SHALL refuse a nil context; given a context that has already ended it SHALL
-return that context's error and stop nothing; before any `StartAll` it SHALL return nil, stopping only a health listener
-that was started. A `StopAll` after one that returned nil SHALL return nil and stop nothing.
+`StopAll(ctx)` SHALL be the only stop and SHALL refuse a nil context. Before `StartAll` it SHALL return nil if no
+health listener started, else stop accepting on it and bound its drain wait by `ctx`. After full release, `StopAll`
+SHALL return nil and stop nothing. On a started unstopped manager, any non-nil `ctx` (live or ended) SHALL clear
+readiness, initiate teardown across all owned resources, and return `ctx`'s error if `ctx` ends first or had ended.
 
 #### Scenario: StopAll is given a context that has already ended
 
 - **WHEN** a started manager's `StopAll` is called with a cancelled context
-- **THEN** `StopAll` returns `context.Canceled`, every service is still running, and a following `StopAll` with a
-  live context returns nil
-- **AND** the test that verifies this is `TestStopAllWithAnEndedContextStopsNothing`
+- **THEN** `StopAll` calls each started service's `Stop` with that context, stops the health publisher and listeners,
+  and returns `context.Canceled`; a following `StopAll` with a live context returns nil
+- **AND** the test that verifies this is `TestStopAllWithAnEndedContextBeginsTeardownAndReportsContextError`
 
 ### Requirement: StopAll releases services, publisher, listeners and metrics server in order
 
-Given a live context, `StopAll` SHALL stop every service in reverse registration order, then the health publisher, the
-listeners and the metrics server, and return nil only when all are released; a listener SHALL stop accepting and
-`StopAll` SHALL wait for its in-flight requests.
+For any non-nil context on a started manager, `StopAll` SHALL stop every service in reverse registration order, then the
+health publisher, the listeners and the metrics server, and return nil only when all are released and `ctx` has not
+ended; a listener SHALL stop accepting and `StopAll` SHALL wait up to `ctx` for its in-flight requests.
 
 #### Scenario: Services stop in reverse registration order
 
@@ -403,10 +402,11 @@ launched component in reverse launch order; what that rollback could not stop SH
 
 ### Requirement: The component manager's Stop is the only stop and waits for a Start in progress
 
-`Stop(ctx)` SHALL be the only stop: it SHALL refuse a nil context, return an ended context's error and stop nothing, and
-otherwise stop each lifecycle component with `ctx` in reverse start order, then the health publisher and
-the base service, returning nil only when all are released. A `Stop` during `Start` SHALL wait for every
-`Start` to return, or return its own context's error first.
+`Stop(ctx)` SHALL be the only stop and SHALL refuse a nil context. Before `Start` or after full release, any non-nil
+`ctx` SHALL return nil. During `Start`, `Stop` SHALL wait up to `ctx` for `Start` to finish. Otherwise any non-nil `ctx`
+(live or ended) SHALL deregister provided stores, call `Stop(ctx)` on every started unstopped lifecycle component in
+reverse start order, and stop the health publisher and base service, returning nil only once all release and `ctx` is
+live.
 
 #### Scenario: Stop during Start
 
@@ -415,10 +415,20 @@ the base service, returning nil only when all are released. A `Stop` during `Sta
   returns nil
 - **AND** the test that verifies this is `TestStopDuringStartWaitsForComponentStarts`
 
+#### Scenario: Expired Stop context still stops remaining components
+
+- **WHEN** the last-started component blocks until `Stop`'s context expires while earlier-started components (including
+  a `StoreProvider`) are still running
+- **THEN** `Stop` still deregisters provided stores and calls `Stop` on every remaining started component in reverse
+  start order (initiating each component's cleanup while each started component returns `ctx`'s error), and once the
+  blocking component is released a second `Stop` with a live context calls `Stop` only on components whose earlier
+  `Stop` returned an error (without re-running any `component.Lifecycle` cleanup that already finished) and returns nil
+- **AND** the test that verifies this is `TestComponentManagerStopTimeoutStillStopsRemainingComponents`
+
 ### Requirement: A component whose Stop failed is stopped again
 
-A component whose `Stop` failed, or was not reached because `ctx` ended, SHALL be stopped again by the next `Stop`; one
-whose `Stop` returned nil SHALL not be called again.
+A component whose `Stop` returned an error SHALL be stopped again by the next `Stop`; one whose `Stop` returned nil
+SHALL not be called again.
 
 #### Scenario: A failed Stop is retried
 
@@ -697,10 +707,10 @@ Not covered by a test, and reviewed only:
 
 ### Requirement: The message logger's Stop drains and releases what it holds
 
-`Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop nothing. Otherwise it
-SHALL end the subscribe retry and wait for it, drain every subscription so that a message being handled when `Stop`
-begins is stored, end every open KV watch stream and wait for its KV watcher to stop, and stop the base service,
-returning nil only once all are released.
+`Stop(ctx)` SHALL refuse a nil context. For any non-nil `ctx` (live or ended), it SHALL fence new KV watch streams and,
+when started and unstopped, end the subscribe retry and wait up to `ctx` for it, initiate drain on each subscription so
+a message being handled when a live `Stop` begins is stored, cancel the run context, end open KV watch streams and wait
+for their watchers, and stop the base service, returning nil only once all release and `ctx` has not ended.
 
 #### Scenario: Stop stores the message being handled
 
@@ -713,6 +723,13 @@ returning nil only once all are released.
 - **WHEN** `Stop` runs while a KV watch stream is open
 - **THEN** `Stop` returns nil, the stream's body reaches its end and no stream is left open
 - **AND** the test that verifies this is `TestMessageLoggerStopEndsOpenWatchStreams`
+
+#### Scenario: Ended Stop context fences watches and cancels loops
+
+- **WHEN** `Stop` is called with an already-cancelled context while a subscription drain does not complete immediately
+- **THEN** `Stop` fences new watch streams, cancels the run context, ends open watch streams, initiates base-service
+  stop, and returns `context.Canceled`; a subsequent `Stop` with a live context returns nil
+- **AND** the test that verifies this is `TestMessageLoggerStopWithEndedContextInitiatesTeardown`
 
 Not covered by a test, and reviewed only:
 
@@ -944,10 +961,10 @@ Ending `Start`'s context after `Start` returned SHALL stop nothing: later collec
 
 ### Requirement: Storage observability's Stop is the only stop and can be retried
 
-`Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop nothing. Otherwise it
-SHALL end both loops, wait for them and stop the base service, returning nil only once all three are done. If its
-context ends first, `Stop` SHALL return that error and the next `Stop` SHALL wait again. A `Stop` after one that
-returned nil SHALL return nil, and a `Stop` while another runs SHALL be refused as transient.
+`Stop(ctx)` SHALL refuse a nil context, refuse a concurrent `Stop` as transient, and return nil before `Start` or after
+a `Stop` joined everything. On a started unstopped service, any non-nil `ctx` (live or ended) SHALL end both loops,
+wait up to `ctx` for them, and initiate base-service stop, returning nil only once all three finish and `ctx` has not
+ended; if `ctx` ended, `Stop` SHALL return `ctx`'s error and a later `Stop` SHALL wait again for anything unjoined.
 
 #### Scenario: A failed Stop is retried
 
@@ -1087,10 +1104,10 @@ to be composed, not started. Otherwise it SHALL start the base service, then the
 
 ### Requirement: The heartbeat's Stop is the only stop
 
-`Stop(ctx)` SHALL refuse a nil context and, given an ended context, return its error and stop nothing. Otherwise it
-SHALL end the loop, wait for it and stop the base service, returning nil only once both are done. If its context ends
-first, `Stop` SHALL return that error and the next `Stop` SHALL wait again. A `Stop` after one that returned nil SHALL
-return nil, and a `Stop` while another runs SHALL be refused as transient.
+`Stop(ctx)` SHALL refuse a nil context, refuse a concurrent `Stop` as transient, and return nil before `Start` or after
+a `Stop` joined everything. On a started unstopped service, any non-nil `ctx` (live or ended) SHALL end the loop, wait
+up to `ctx` for it, and initiate base-service stop, returning nil only once both finish and `ctx` has not ended; if
+`ctx` ended, `Stop` SHALL return `ctx`'s error and a later `Stop` SHALL wait again for anything unjoined.
 
 #### Scenario: A failed Stop is retried
 
@@ -1358,14 +1375,14 @@ context after `Start` returned SHALL stop nothing.
 
 ### Requirement: The log forwarder's Stop is the base service's
 
-`LogForwarder.Stop(ctx)` SHALL be the base service's: it SHALL refuse a nil context, return an ended context's error
-and stop nothing, and otherwise return nil once the base service has stopped; a `Stop` after one that returned nil
-SHALL return nil.
+`LogForwarder.Stop(ctx)` SHALL be the base service's: it SHALL refuse a nil context, initiate base-service teardown for
+any non-nil context on a started forwarder (returning `ctx`'s error when `ctx` ends first or had already ended, and nil
+once the base service has stopped under a live context), and return nil on any subsequent `Stop` once stopped.
 
 #### Scenario: Stop under a nil, an ended and a live context
 
 - **WHEN** a started log forwarder's `Stop` is called with a nil context, then an ended one, then a live one twice
-- **THEN** the nil context is refused, the ended one returns its error and stops nothing, and both live calls return
+- **THEN** the nil context is refused, the ended one begins teardown and returns its error, and both live calls return
   nil
 
 ### Requirement: The log forwarder forwards nothing and says so

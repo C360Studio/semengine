@@ -186,7 +186,7 @@ type frameworkStream struct {
 	fixed bool
 }
 
-// frameworkStreams returns the streams SemStreams guarantees regardless of
+// frameworkStreams returns the streams the framework guarantees regardless of
 // operator configuration, in a deterministic order.
 //
 // These are explicit declarations at a named source, not silent defaults: each
@@ -220,7 +220,7 @@ func frameworkStreams() []frameworkStream {
 // the gap loudly so an operator who set max_file_store: 10GB in the
 // framework config but didn't update nats.conf isn't left wondering
 // why stream-create fails with "insufficient storage resources" at
-// runtime (#101). Zero or unset values skip the check.
+// runtime. Zero or unset values skip the check.
 //
 // Best-effort: a failure to fetch AccountInfo (server down, JetStream
 // disabled, AccountInfo unsupported) logs at Debug and returns nil —

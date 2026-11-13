@@ -150,7 +150,7 @@ func startComponent(t *testing.T, c *Component) {
 }
 
 // stopBound is out of reach: a Stop writes every entry the pool accepted, up to indexLaneCapacity
-// of them, so how long it takes depends on the machine's load (#513). go test -timeout is the
+// of them, so how long it takes depends on the machine's load. go test -timeout is the
 // deadline that fails a Stop that never returns, and it prints every goroutine's stack.
 const stopBound = time.Hour
 
@@ -251,7 +251,7 @@ func (h *harness) value(t *testing.T, bucket, k string) string {
 	return string(entry.Value())
 }
 
-// The expected keys below are built from the layouts the design states (target.source.hex(predicate),
+// The expected keys below are built from the key layouts (target.source.hex(predicate),
 // predicate.entity, sha256(folded name).entity.hex(predicate)), not from the package's own builders.
 func hexOf(predicate string) string { return hex.EncodeToString([]byte(predicate)) }
 
@@ -384,8 +384,8 @@ func TestDataFlowCountsEachDeliveryBeforeCoalescing(t *testing.T) {
 // TestFailedWriteWithholdsReadinessAndRepairClearsIt deletes INCOMING_INDEX under the running
 // index, as an operator wiping it would, and writes an entity with an edge. Its required write
 // fails: the entity is counted unresolved, the follower names it and refuses queries, and the
-// revision still completes, so the watermark does not pin (design D11, M6). Once the bucket is back,
-// one repair pass indexes the entity and readiness returns.
+// revision still completes, so the watermark does not pin. Once the bucket is back, one repair
+// pass indexes the entity and readiness returns.
 func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	src, target := entityID(1), entityID(2)
@@ -410,7 +410,7 @@ func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 		t.Errorf("QueryReady = nil while a required write is unresolved")
 	}
 	// graph-index counts failures without reasons: its envelope carries failed_count only
-	// (design D3 of setup-04a-05-first-consumer-graph-embedding, TestGraphIndexEnvelopeUnchanged).
+	// (graph/follower's TestGraphIndexEnvelopeUnchanged).
 	published := await(t, "the unresolved write published",
 		func(ctx context.Context) (graph.IndexStatusResponse, error) { return publishedEnvelope(ctx, h.client) },
 		func(s graph.IndexStatusResponse) bool { return s.FailedCount == 1 })
@@ -436,8 +436,8 @@ func TestFailedWriteWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 
 // TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt is the failed-write test above
 // run after the bootstrap latch has set. Before the latch, QueryReady refuses an unresolved write
-// through compute as well; once latched, the failed-writes check in QueryReady is the only refusal
-// (design D11, M1). The latch is awaited as a remote reader sees it: the published envelope
+// through compute as well; once latched, the failed-writes check in QueryReady is the only refusal.
+// The latch is awaited as a remote reader sees it: the published envelope
 // reading BootstrapComplete, which is written after the follower set the latch.
 func TestFailedWriteAfterTheLatchWithholdsReadinessAndRepairClearsIt(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
@@ -503,7 +503,7 @@ func TestNoncanonicalValueLatchesResetAndHoldsItsRevision(t *testing.T) {
 }
 
 // TestErrorCountCountsOutcomesNotOperations: ErrorCount counts each entity whose required writes
-// ultimately failed and each reset, once each (design D4, #425). Failed KV operations, retries
+// ultimately failed and each reset, once each. Failed KV operations, retries
 // included, are the reconciliation metrics' to count, not ErrorCount's.
 func TestErrorCountCountsOutcomesNotOperations(t *testing.T) {
 	t.Run("one entity whose writes fail on every attempt", func(t *testing.T) {

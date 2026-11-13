@@ -65,7 +65,7 @@ func TestClassSpecificityNilParentsIsZero(t *testing.T) {
 }
 
 // TestPredicateSalience: the registered predicate's signed Weight, 0 when
-// unweighted or unregistered. Ported from the pin, with a negative weight added.
+// unweighted or unregistered, a negative weight included.
 func TestPredicateSalience(t *testing.T) {
 	t.Cleanup(vocabulary.SnapshotRegistry())
 

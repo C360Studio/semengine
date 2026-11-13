@@ -276,7 +276,7 @@ func hasTriple(e *fusion.Entity, predicate, object string) bool {
 
 // TestRealRespondersAnswer drives every RetrievalClient method over real graph-ingest, graph-index,
 // graph-embedding (bm25) and graph-query: the subjects, the request shapes and each row's reply
-// decode meet the responders this tree ships (design D3; replaces the pin's fake-handler test).
+// decode meet the responders this tree ships.
 func TestRealRespondersAnswer(t *testing.T) {
 	s := startStack(t)
 	s.seed(t)
@@ -366,9 +366,9 @@ func TestRealRespondersAnswer(t *testing.T) {
 }
 
 // TestPoisonedSeedOverRealResponders: bytes the stored-value rule refuses, Put under one key after
-// graph-ingest's Start returned, are found by the read path, not the boot sweep (pin ADR-079 D2).
-// graph-ingest refuses the whole batch for them; Entities lists the poisoned seed unhydrated error
-// and hydrates the other two in request order (design D3; fusion spec, "One poisoned seed").
+// graph-ingest's Start returned, are found by the read path, not the boot sweep. graph-ingest
+// refuses the whole batch for them; Entities lists the poisoned seed unhydrated error and hydrates
+// the other two in request order (fusion spec, "One poisoned seed").
 func TestPoisonedSeedOverRealResponders(t *testing.T) {
 	s := startStack(t)
 	s.create(t, beta, [2]string{titlePredicate, "Gadget Beta"})

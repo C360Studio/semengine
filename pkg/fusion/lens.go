@@ -9,16 +9,15 @@ import (
 )
 
 // The Lens SPI is the ONLY domain-specific surface of the deterministic fusion
-// engine (ADR-062 increment 3). The engine owns resolve / expand / rank / budget
-// / envelope; a product-supplied Lens declares which edges to walk, how to read
+// engine (ADR-062). The engine owns resolve / expand / rank / budget /
+// envelope; a product-supplied Lens declares which edges to walk, how to read
 // an entity's human-facing fields, and how to hydrate its verbatim body. One
 // engine, many lenses (code, docs, …) — the proof that fusion is a general
 // primitive, not code in disguise.
 //
-// Lifted from semsource's validated `source/fusion` Lens (rule-of-three:
-// semsource code + docs lenses, plus our research-graph retrieval). The one
-// deliberate change from semsource's shape is Hydrate's return type — see the
-// hydration contract below.
+// The shape holds for three users (semsource's code and docs lenses, plus the
+// research-graph retrieval). Hydrate returns a storage handle, not bytes — see
+// the hydration contract below.
 
 // Entity is the minimal projection a Lens reads: the entity's ID and its current
 // triples. Kept deliberately small (no graph.EntityState, no NATS) so pkg/fusion
@@ -164,11 +163,11 @@ type Lens interface {
 	// Hydrate returns a HANDLE to the entity's verbatim body — never the bytes
 	// themselves and never a filesystem read. The engine resolves the handle's
 	// StorageInstance to a registered storage.Store and reads the body with
-	// Get(Key) (ADR-062 hydration contract, increment 4). Returning a handle
-	// (not a string) is what makes fusion deployment-independent: a remote
-	// caller of a standalone fusion service (semsource ADR-0006) cannot read the
-	// service's worktree, so bodies must be addressable through a backend-
-	// agnostic store. Return (nil, nil) when the entity has no verbatim body.
+	// Get(Key) (ADR-062 hydration contract). Returning a handle (not a string)
+	// is what makes fusion deployment-independent: a remote caller of a
+	// standalone fusion service (semsource ADR-0006) cannot read the service's
+	// worktree, so bodies must be addressable through a backend- agnostic store.
+	// Return (nil, nil) when the entity has no verbatim body.
 	//
 	// Error policy (engine contract): hydration is best-effort. A non-nil error
 	// DEGRADES the response — the engine omits that node's body and continues —

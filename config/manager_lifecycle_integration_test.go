@@ -58,7 +58,7 @@ func TestConfigManager_ShutdownSequence(t *testing.T) {
 	}
 
 	// Each reader reports once it has received the initial update onChange sends, and returns
-	// only when its channel is closed. The pin slept 10ms here; the started channel replaces it.
+	// only when its channel is closed. The started channel orders the Stop after every receipt.
 	var readers sync.WaitGroup
 	started := make(chan struct{}, len(subscribers))
 	for _, ch := range subscribers {
@@ -81,8 +81,7 @@ func TestConfigManager_ShutdownSequence(t *testing.T) {
 	// Stop the manager - this should close all channels
 	stopManager(t, cm)
 
-	// Every reader returns because its channel was closed. The pin slept 10ms and checked
-	// nothing; this waits for the readers, bounded.
+	// Every reader returns because its channel was closed; this waits for the readers.
 	readersDone := make(chan struct{})
 	go func() {
 		readers.Wait()
@@ -93,7 +92,7 @@ func TestConfigManager_ShutdownSequence(t *testing.T) {
 
 // TestConfigManager_ConcurrentShutdown tests concurrent Stop calls. Concurrent Stops may be
 // refused as transient while another runs the cleanup (internal/lifecycleguard); their errors
-// are ignored as at the pin. Once they have all returned, one has released everything, so a
+// are ignored. Once they have all returned, one has released everything, so a
 // further Stop returns nil.
 func TestConfigManager_ConcurrentShutdown(t *testing.T) {
 	natsClient := fixtureClient(t)
@@ -130,8 +129,7 @@ func TestConfigManager_ConcurrentShutdown(t *testing.T) {
 		}
 	}()
 
-	// Multiple goroutines calling Stop concurrently. The pin slept 100ms for them; the wait
-	// group replaces it.
+	// Multiple goroutines calling Stop concurrently; the wait group joins them.
 	var stops sync.WaitGroup
 	for i := 0; i < 3; i++ {
 		stops.Add(1)
@@ -150,9 +148,9 @@ func TestConfigManager_ConcurrentShutdown(t *testing.T) {
 	<-drained
 }
 
-// TestStartContextEndingKeepsDelivering is P2 as a test: ending the context given to Start, after
-// Start returned, stops nothing. A put to services.x by another writer still reaches the
-// subscriber, and Stop then returns nil (design D2).
+// TestStartContextEndingKeepsDelivering: ending the context given to Start, after Start returned,
+// stops nothing. A put to services.x by another writer still reaches the subscriber, and Stop then
+// returns nil.
 //
 // spec: config-manager / Start bounds Start and Stop is the only stop
 func TestStartContextEndingKeepsDelivering(t *testing.T) {
@@ -177,10 +175,10 @@ func TestStartContextEndingKeepsDelivering(t *testing.T) {
 	require.Contains(t, up.Config.Get().Services, "x", "the put is applied after the Start context ended")
 }
 
-// TestStopWithAModelRegistryWatcherReturnsPromptly is P1 as a test: a running model.Watch does
-// not hold Stop. At the pin the forwarder waited for Stop and Stop waited for the forwarder, so
-// Stop ran out its timeout. The apply callback receiving the initial registry is the point at
-// which the forwarder has taken its first update, the condition P1 needed a 200ms sleep for.
+// TestStopWithAModelRegistryWatcherReturnsPromptly: a running model.Watch does not hold Stop. A
+// forwarder that waited for Stop while Stop waited for the forwarder would run Stop out to its
+// timeout. The apply callback receiving the initial registry is the point at which the forwarder
+// has taken its first update.
 //
 // spec: config-manager / Start bounds Start and Stop is the only stop
 func TestStopWithAModelRegistryWatcherReturnsPromptly(t *testing.T) {
@@ -224,7 +222,7 @@ func TestStopWithAModelRegistryWatcherReturnsPromptly(t *testing.T) {
 }
 
 // TestChannelsRequestedAfterStopAreClosed: onChange and WatchModelRegistry after Stop return a
-// closed channel and start nothing the Manager would have to join (design D2).
+// closed channel and start nothing the Manager would have to join.
 //
 // spec: config-manager / Start bounds Start and Stop is the only stop
 func TestChannelsRequestedAfterStopAreClosed(t *testing.T) {
@@ -243,10 +241,9 @@ func TestChannelsRequestedAfterStopAreClosed(t *testing.T) {
 	require.Empty(t, observer.Observe().Unresolved, "a channel requested after Stop must start nothing")
 }
 
-// TestSecondStartIsRefusedAsAlreadyStarted is P3 as a test. The bucket records the declared
-// identifier unsuffixed, so the identity guard that refused a second Start at the pin, by
-// accident, has nothing to refuse: only the one-shot lifecycle refuses here, before contacting
-// NATS (design D2).
+// TestSecondStartIsRefusedAsAlreadyStarted: the bucket records the declared identifier
+// unsuffixed, so the identity check has nothing to refuse and only the one-shot lifecycle refuses
+// here, before contacting NATS.
 //
 // spec: config-manager / Start bounds Start and Stop is the only stop
 func TestSecondStartIsRefusedAsAlreadyStarted(t *testing.T) {
@@ -268,7 +265,7 @@ func TestSecondStartIsRefusedAsAlreadyStarted(t *testing.T) {
 
 // TestBlockedKeyFamilyHandlerHoldsStop: a key-family handler that has not returned keeps Stop from
 // claiming everything is released. Stop returns its context's error, and a later Stop succeeds
-// once the handler returns (design D2).
+// once the handler returns.
 //
 // spec: config-manager / Start bounds Start and Stop is the only stop
 func TestBlockedKeyFamilyHandlerHoldsStop(t *testing.T) {
@@ -392,11 +389,11 @@ func requireClosed[T any](ch <-chan T) {
 // TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied: a deployment whose credentials may open
 // the watches but not delete their consumers, the same failure a broker outage gives. Each watch's
 // Stop deletes its consumer with a request nats.go v1.54.0 bounds by its own timeout, not Stop's
-// context (measured 25 s for five watches on the Codex review of PR #329). Stop must still return
+// context (measured at 25 s for five watches). Stop must still return
 // its context's error once its context ends, and a later Stop must join the teardown and return nil.
 //
 // The server is an embedded nats-server (the version go.mod pins) on an ephemeral port, not the
-// shared Docker fixture: the fixture cannot deny one subject to one user (notes/2.2.md).
+// shared Docker fixture: the fixture cannot deny one subject to one user.
 //
 // spec: config-manager / Stop(ctx) stops the Manager
 func TestStopHonoursItsDeadlineWhenAConsumerDeleteIsDenied(t *testing.T) {

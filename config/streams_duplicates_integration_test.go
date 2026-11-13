@@ -17,7 +17,7 @@ import (
 // plumbs from StreamConfig.Duplicates into the JetStream stream, that an
 // explicit window change is applied to an existing stream, and that an unset
 // window preserves the existing one rather than resetting it to the server
-// default (ADR-055 §5 "T1"; the review's existing-stream-update concern).
+// default (ADR-055 §5).
 func TestCreateStream_DuplicatesWindow(t *testing.T) {
 	client := fixtureClient(t)
 	sm := NewStreamsManager(client, slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -72,7 +72,7 @@ func TestCreateStream_DuplicatesWindow(t *testing.T) {
 // TestCreateStream_DuplicatesWindow_ClampedToMaxAge verifies that a window
 // larger than MaxAge is clamped down rather than aborting boot — the NATS
 // server rejects (does not clamp) an explicit window > MaxAge, so createStream
-// must clamp client-side (go-reviewer S1).
+// must clamp client-side.
 func TestCreateStream_DuplicatesWindow_ClampedToMaxAge(t *testing.T) {
 	client := fixtureClient(t)
 	sm := NewStreamsManager(client, slog.New(slog.NewTextHandler(io.Discard, nil)))

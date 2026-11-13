@@ -178,7 +178,7 @@ func requireRevisionNotReached(t *testing.T, verb string, err error, reached uin
 
 // TestMinRevisionBoundary: a verb compares min_revision with the revision its reply would carry,
 // after validation and readiness and before its first bucket read (spec "An unmet min_revision is
-// refused"; design D3). The expected revisions are the ones the fixture's own writes returned.
+// refused"). The expected revisions are the ones the fixture's own writes returned.
 func TestMinRevisionBoundary(t *testing.T) {
 	subject, target := entityID(1), entityID(2)
 	requests := everyVerb(subject, target)
@@ -307,7 +307,7 @@ func listedSubjects(t *testing.T, logs *logBuffer) []string {
 // TestGraphIndexServesExactlyTheDeclaredVerbs: the subjects graph-index lists as its query
 // subscriptions equal the verb table's subjects for graph-index, one subscription each, and each
 // has a responder from another connection when Start returns (graph-transport-boundary, "The
-// responder serves exactly its declared verbs"; design D6).
+// responder serves exactly its declared verbs").
 func TestGraphIndexServesExactlyTheDeclaredVerbs(t *testing.T) {
 	url := shared.Reset(t)
 	h := startIndex(t, natsfixture.Open(t, url, openClient), `{}`)
@@ -344,7 +344,7 @@ func TestGraphIndexServesExactlyTheDeclaredVerbs(t *testing.T) {
 // class transient, code index_not_ready, during the replay; the follower's floor, read after the
 // last reply, is still below the last stored revision, which shows every reply came during the
 // replay. Once the floor reaches it, the same eight requests succeed (spec "Startup-replay queries
-// get a retryable refusal"; design D5).
+// get a retryable refusal").
 func TestQueryDuringStartupReplayIsIndexNotReady(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
@@ -382,10 +382,10 @@ func TestQueryDuringStartupReplayIsIndexNotReady(t *testing.T) {
 	}
 }
 
-// TestQueryResponseCarriesIndexedRevisionAndProducer, the handler side of design D6: after a
-// write at R has been indexed, every verb's reply is the graph.QueryResponse envelope with
-// producer graph-index, a timestamp, and an indexed_revision at least R and at most the floor
-// read after the reply: the follower's watermark, not a revision of its own.
+// TestQueryResponseCarriesIndexedRevisionAndProducer: after a write at R has been indexed, every
+// verb's reply is the graph.QueryResponse envelope with producer graph-index, a timestamp, and an
+// indexed_revision at least R and at most the floor read after the reply: the follower's
+// watermark, not a revision of its own.
 func TestQueryResponseCarriesIndexedRevisionAndProducer(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	subject, target := entityID(1), entityID(2)
@@ -452,7 +452,7 @@ func replyMatchesEntry(verb graph.QueryVerb, raw []byte) error {
 
 // TestRepliesMatchTheirTableEntries: every row the verb table declares for graph-index, not a list
 // kept here, gets a real reply carrying data, and that reply has the row's shape and type
-// (graph-transport-boundary; notes/3.1-review.md shows a wrong mark fails).
+// (graph-transport-boundary).
 func TestRepliesMatchTheirTableEntries(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	subject, target := entityID(1), entityID(2)
@@ -574,7 +574,7 @@ func TestMaximumLengthIDsAndPredicatesThroughPublicReads(t *testing.T) {
 // after each step, reads it through every public read but alias: outgoing, incoming, predicate
 // (exact and by value), predicateList, predicateStats, predicateCompound and byName. Each answers
 // exactly the current state, and another entity's rows are untouched (spec "Indexes implement
-// replacement"; the pin's replacement and predicate-layout parity tests).
+// replacement").
 func TestQueryReadsImplementReplacement(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{"workers": 4}`)
 	src, other, targetA, targetB := entityID(1), entityID(2), entityID(10), entityID(11)
@@ -808,8 +808,8 @@ func TestAliasMatchFoldsCase(t *testing.T) {
 
 // TestQueriesAreRefusedWhileTheFeedIsLost: ENTITY_STATES deleted under a running graph-index
 // loses the feed; once Health names it, each of the eight verbs answers class transient, code
-// index_not_ready (spec "Queries are refused while the feed is lost"; owner ruling, PR #414
-// comment 6426254115, item 2). Before the delete the same requests succeed.
+// index_not_ready (spec "Queries are refused while the feed is lost"). Before the delete the
+// same requests succeed.
 func TestQueriesAreRefusedWhileTheFeedIsLost(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)
 	subject, target := entityID(1), entityID(2)
@@ -827,7 +827,8 @@ func TestQueriesAreRefusedWhileTheFeedIsLost(t *testing.T) {
 	if err := js.DeleteKeyValue(t.Context(), graph.BucketEntityStates); err != nil {
 		t.Fatalf("delete %s: %v", graph.BucketEntityStates, err)
 	}
-	// The watch closes within two of nats.go's activity checks (design D11, measured 18 s).
+	// A deleted bucket closes the watch within two of nats.go's activity checks, measured at
+	// 18 s; this wait proves it again at the go.mod version on every run, within waitBound.
 	await(t, "Health naming the lost feed",
 		func(context.Context) (component.HealthStatus, error) { return h.c.Health(), nil },
 		func(s component.HealthStatus) bool { return strings.Contains(s.LastError, "ENTITY_STATES feed lost") })
@@ -837,11 +838,10 @@ func TestQueriesAreRefusedWhileTheFeedIsLost(t *testing.T) {
 	}
 }
 
-// TestIntegration_KVRevisionAndIndexedRevisionShareOneSpace, ported from the pin
-// (revision_space_integration_test.go:38): the kv_revision graph-ingest's mutation reply reports
-// and the indexed_revision of graph-index's replies are one revision space, so a caller holding a
-// write's kv_revision can wait for a reply carrying at least it and read the write there. The pin
-// read the envelope from computeIndexStatus; this reads the replies callers read.
+// TestIntegration_KVRevisionAndIndexedRevisionShareOneSpace: the kv_revision graph-ingest's
+// mutation reply reports and the indexed_revision of graph-index's replies are one revision space,
+// so a caller holding a write's kv_revision can wait for a reply carrying at least it and read the
+// write there. The test reads the replies callers read.
 func TestIntegration_KVRevisionAndIndexedRevisionShareOneSpace(t *testing.T) {
 	client := fixtureClient(t)
 	js, err := client.JetStream()
@@ -949,7 +949,7 @@ func startGraphIngest(t *testing.T, client *natsclient.Client) {
 // TestMalformedIndexRowsAreSkippedLoggedAndCounted: a stored index row that is not its index's
 // layout is left out of every query that lists it, and the skip is declared: a warning names the
 // index, and query_rows_skipped_total counts it by index, while the query still answers the
-// well-formed rows (#430, #426). No graph-index writer stores such a row, so the test writes each
+// well-formed rows. No graph-index writer stores such a row, so the test writes each
 // one into its bucket directly.
 func TestMalformedIndexRowsAreSkippedLoggedAndCounted(t *testing.T) {
 	h := startIndex(t, fixtureClient(t), `{}`)

@@ -7,7 +7,7 @@ import (
 	"github.com/c360studio/semengine/pkg/fusion"
 )
 
-// Tests for design D3 (R1): a natural-language answer carries the search reply's
+// Tests that a natural-language answer carries the search reply's
 // unreadable_records and failed_records; a symbol or prefix answer carries neither.
 // refLens reads a query with a space as natural language and a bare token as a
 // symbol.

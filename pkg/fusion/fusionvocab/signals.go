@@ -1,13 +1,13 @@
 // Package fusionvocab is the production implementation of fusion.RankSignals
-// (ADR-062 increment 5, gh#396): it wires the lens engine's ranking signals onto
-// the vocabulary registry (predicate salience) and an ontology's ancestor
-// function (class specificity).
+// (ADR-062): it wires the lens engine's ranking signals onto the vocabulary
+// registry (predicate salience) and an ontology's ancestor function (class
+// specificity).
 //
 // It is a SUBPACKAGE of pkg/fusion deliberately: pkg/fusion stays free of the
 // vocabulary packages, so the engine stays deterministic and unit-testable
 // without them. It imports no ontology: the BFO/CCO hierarchy lives in semvocab,
 // which depends on SemEngine, so the caller passes semvocab's ancestor function
-// (for example cco.Parents) to New (design D6).
+// (for example cco.Parents) to New.
 package fusionvocab
 
 import (
@@ -47,7 +47,7 @@ func (s Signals) ClassSpecificity(classIRI string) float64 {
 
 // PredicateSalience returns a predicate's stored salience weight from the
 // vocabulary registry (0 when unregistered or unweighted). Signed: a negative
-// weight down-ranks (gh#441) — a faithful pass-through of PredicateMetadata.Weight.
+// weight down-ranks — a faithful pass-through of PredicateMetadata.Weight.
 func (Signals) PredicateSalience(predicate string) float64 {
 	if meta := vocabulary.GetPredicateMetadata(predicate); meta != nil {
 		return meta.Weight

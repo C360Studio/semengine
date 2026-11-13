@@ -3,7 +3,10 @@
 base: `8262d000` (`claude/lexical-processor`, `origin/main` `f8bdf8b7` plus the claim commit). Inventory only: no
 target state, options or recommendation. Each pin is `` `path:line` — `text` ``, read in this run on the worktree
 `/Users/coby/Code/c360/semengine/.worktrees/claude-lexical-processor`. Sister pins are SemSource at `4ca2072c`
-(its `main`, `gh api repos/C360Studio/semsource/commits/main`), read in the local checkout, whose `HEAD` is that SHA.
+(its `main`), each file read with
+`gh api repos/C360Studio/semsource/contents/<path>?ref=4ca2072c5d9d6bf4ec5ad76dc33b92d61c1614c1`
+(docs/inventory-scope.md rule 4). Round 2: revises round 1 (commit `51ba4495`, sha256 `638ccbf4…f2f5`) for the
+inventory review at that commit.
 Terms: a *plug-in* is the code a `graph/follower` owner supplies (ADR-108 D5); *apply Value* means a plug-in builds
 its state from `follower.Entry.Value`, *re-read* means it reads `ENTITY_STATES` again at apply time; an *offloaded
 body* is text held in an object store and named by `EntityState.StorageRef`.
@@ -11,8 +14,8 @@ body* is text held in an object store and named by `EntityState.StorageRef`.
 Question (docs/inventory-scope.md rule 1): what exists that a processor feeding `graph/lexical` from `ENTITY_STATES`
 and serving a search verb touches, duplicates or must not break, and who outside the repo carries its surface.
 Repositories read: this one; SemSource (consumer, tier 0: its search and readiness reads, body offload, corpus
-facts); semconnect, semteams, semboids, semsparql only for one grep (§9). SemStreams: not read; no pin package is
-carried (§8).
+facts); the other consumers only for a negative that round 2 could not re-measure (§9). SemStreams: not read;
+no pin package is carried (§8).
 
 ## 1. The claimed gap
 
@@ -37,14 +40,14 @@ followed from `ENTITY_STATES` and rebuilt (2b), how a match is served and gated 
 
 - graph-embedding's extractor: `processor/graph-embedding/hop1.go:228` — `func (c *Component) extractText(state
   *graph.EntityState) string {`: string values whose predicate ends in a configured suffix, relationships skipped,
-  joined by one space (`:249` — `return strings.Join(parts, " ")`). No name/body split: one string.
+  joined by one space (`:244` — `return strings.Join(parts, " ")`). No name/body split: one string.
 - Its suffixes: `processor/graph-embedding/config.go:27` — `var defaultTextSuffixes = []string{".title", ".content",
   ".description", ".summary", ".text", ".name", ".body",`; a non-empty `text_suffixes` replaces them
   (`config.go:135-136`).
 - Its cap: `processor/graph-embedding/config.go:23` — `const maxSourceTextLenBM25 = 4000` (characters), cut at a
   word by `graph/embedding/worker.go:701` — `func truncateAtWord(text string, maxLen int) string {`.
 - Offloaded body: `processor/graph-embedding/hop1.go:152` — `case state.StorageRef != nil &&
-  c.storeRegistered(state.StorageRef.StorageInstance):` keeps identity text only (`:158` — `record.IdentityText =
+  c.storeRegistered(state.StorageRef.StorageInstance):` keeps identity text only (`:159` — `record.IdentityText =
   c.extractText(&state)`); the body is fetched later, off the follower goroutine, by the Worker
   (`graph/embedding/worker.go:744` — `func (w *Worker) fetchTextFromStorage(ctx context.Context, ref *StorageRef)
   (text string, bodyTruncated bool, err error) {`, read capped at `:770` — `data, err :=
@@ -59,17 +62,56 @@ followed from `ENTITY_STATES` and rebuilt (2b), how a match is served and gated 
   (`processor/graph-index/index.go:88` — `c.namePredicates = vocabulary.DiscoverLabelPredicates()`) and graph-query
   (`processor/graph-query/component.go:185` — `c.labelPredicates = labelOrder(vocabulary.DiscoverLabelPredicates())`);
   the suffixes `.name`/`.title`; fusion's product-supplied `Label`.
+- graph-clustering's words: `graph/clustering/terms.go:57` — `func entityWords(state *graph.EntityState)
+  []string {`: every non-relationship string value, no suffix filter, its own tokenizer (`:28` — `func
+  extractWords(text string) []string {`) and stopwords (`:16`); predicate names and the ID add none (`:55-56`).
+- graph-query's local-search text: `processor/graph-query/localsearch.go:95` — `func (e searchEntity) score(terms
+  []string) float64 {` matches each term against every predicate name and every string value, lower-cased
+  (`:103-110`), plus the ID's type.
+- The content-role vocabulary: `message/content_storable.go:84` — `ContentRoleBody = "body"`, `:92` —
+  `ContentRoleTitle = "title"` (also `ContentRoleAbstract` `:88`). The store keeps only the body role
+  (`message/content_storable.go:15-17` — "objectstore.Store.StoreContent stores only the text of / the \"body\"
+  role, as raw bytes"; enforced by `storage/objectstore/content.go:73` — `func bodyOnly(cs
+  message.ContentStorable) (string, error) {`), so a `StorageRef` body is the body role by construction.
+- So four current rules answer "what is an entity's text": graph-embedding's suffixes, graph-clustering's every
+  string value, graph-query's predicate names plus string values, and the content roles.
 - What `graph/lexical` wants: `graph/lexical/index.go:37-39` — `type Document struct {` / `Name string` /
-  `Body string`. No current extractor produces that split. Change 1 left the mapping here:
+  `Body string`. No current extractor produces that split; the content roles name one (title, body) for payloads
+  that use them. Change 1 left the mapping here:
   `openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/design.md:174` — `2. Change 2: which predicates
   feed Name and Body, including file paths for R3; and a per-entity word cap, chosen by`.
 
 ### 2b. Following `ENTITY_STATES` and rebuilding on start
 
-- The one follower: `graph/follower/follower.go:138` — `func Open(ctx context.Context, cfg Config) (*Follower,
-  error) {`; `Config` at `:62-88` (`Deliver`, `Failed`, `Withhold`, `Key`). Three plug-ins:
-  `processor/graph-index/component.go:236`, `processor/graph-embedding/component.go:256`,
-  `processor/graph-clustering/component.go:192` — `f, err := follower.Open(ctx, follower.Config{`.
+- Two primitives keep in-process state current from one KV watch with a ready-after-replay gate
+  (`git grep -n 'WatchAll\|graphview.New\|follower.Open' -- '*.go' ':!*_test.go'`; `storagereport` watches its
+  own bucket and is not in the class):
+  - `graph/follower`: `graph/follower/follower.go:138` — `func Open(ctx context.Context, cfg Config) (*Follower,
+    error) {`; watch at `:229` — `watcher, err := f.reader.WatchAll(ctx)`; `Config` at `:62-88` (`Deliver`,
+    `Failed`, `Withhold`, `Key`). Three plug-ins: `processor/graph-index/component.go:236`,
+    `processor/graph-embedding/component.go:256`, `processor/graph-clustering/component.go:192` — `f, err :=
+    follower.Open(ctx, follower.Config{`.
+  - `pkg/graphview` (ADR-081): `pkg/graphview/view.go:163` — `func New[T any](source WatcherSource, decode
+    DecodeFunc[T], opts ...Option) (*View[T], error) {`, "ONE WatchAll feeding one validated in-memory current-state
+    projection" (`pkg/graphview/doc.go:1-3`); readers refused before the replay and after a loss
+    (`pkg/graphview/errors.go:12-15` — `ErrNotReady`); hooks `OnApply`, `OnCaughtUp`, `OnWatcherLost`, `OnPoison`
+    (`view.go:55-65`). Its one `ENTITY_STATES` user: `output/websocket/state.go:109` — `reader, err :=
+    kvcatalog.OpenCatalogReader(ctx, c.natsClient, graph.BucketEntityStates)`, `:113` — `view, err :=
+    graphview.New(reader, c.decodeState, graphview.WithHooks(graphview.Hooks{`. graph-embedding's `VectorCache` is a
+    graphview over `EMBEDDING_INDEX` (`graph/embedding/vector_cache.go:64` — `view, err :=
+    graphview.New(indexSource{c.storage.index}, decodeVector)`).
+  - What each gives a word index (read, not chosen):
+
+    | | `graph/follower` | `pkg/graphview` |
+    | --- | --- | --- |
+    | Readiness key | publishes a `GRAPH_STATUS` envelope per key (`follower.go:342`) | none |
+    | Revision | floor watermark of completed revisions, `Indexed()` (`:369`) | highest applied, `Applied()` (`view.go:392`) and per-key revision (`Get`, `:403`) |
+    | Reset | latched, fatal `graph_state_reset_required` (`:364`, `:414-416`) | none; a bad value poisons its key (`view.go:614-615`) |
+    | Repair | the plug-in's own lane; follower reads its `Failed` count | none |
+    | Loss | lost feed latched, `QueryReady` refuses (`:318`, `:418-419`); out-of-order delivery and a re-created stream declared (`:1-17`) | fails closed on watch loss only (`view.go:247`); assumes revision-ascending order (`:628`) |
+    | Held state | none; the plug-in holds its own | a copy of each decoded `T` per key |
+    | Readers | `QueryReady`, `Stuck`, the envelope | `Get`, `List`, `SnapshotAndSubscribe` with deltas |
+
 - Rebuild on start, every plug-in: the follower's snapshot-then-live watch (spec `entity-state-follower`
   "The initial build completes at the snapshot's revision", `openspec/specs/entity-state-follower/spec.md:75`).
   graph-index rewrites its five buckets from the replay (#108, open: "Every restart rebuilds all five index buckets
@@ -86,7 +128,7 @@ followed from `ENTITY_STATES` and rebuilt (2b), how a match is served and gated 
   - Apply Value inline, on the follower's goroutine: graph-clustering (`processor/graph-clustering/component.go:276`
     — `if err = graph.UnmarshalEntityState(e.Key, e.Value, &state); err != nil {`), with a per-key revision guard in
     `graph/clustering/maintainer.go:130` — `if revision <= old.revision {`.
-  - The rule that binds the second style: `openspec/specs/entity-state-follower/spec.md:200-205` — "a plug-in that
+  - The rule that binds the second style: `openspec/specs/entity-state-follower/spec.md:204-205` — "a plug-in that
     applies `Value` SHALL ignore a delivery at or below the revision it last applied for that key". ADR-108's
     amendment allows it for a plug-in with one apply path and no repair lane (`docs/adr/108-processor-shell.md:13-18`).
 - `graph/lexical.Index` holds no revision: `graph/lexical/index.go:80-84` (`type entity struct {` / `name []string`
@@ -149,8 +191,12 @@ followed from `ENTITY_STATES` and rebuilt (2b), how a match is served and gated 
 - Callers of the text verb: `pkg/fusion/fusionnats/client.go:153` — `raw, err := c.request(ctx, c.verbs.semantic,
   graph.SemanticRequest{Query: query, Limit: limit, Scope: scope})`, row looked up by name `semantic` on
   `graph-query` (`:42`); seeds carry `Similarity` with `HasSimilarity: true` (`:164`), copied to
-  `fusion.Node.Similarity` (`pkg/fusion/engine_lens.go:259-262`). Fusion defers on `index_not_ready`
-  (`openspec/specs/fusion/spec.md:10-14`) and passes on `unreadable_records`/`failed_records` (`:67-70`).
+  `fusion.Node.Similarity` (`pkg/fusion/engine_lens.go:259-262`). Fusion documents the scale:
+  `pkg/fusion/retrieval.go:57` — `// Semantic resolve reports cosine similarity; symbol and prefix report none.`; and
+  puts it on its public wire as `pkg/fusion/contract.go:129` — ``Similarity *float64 `json:"similarity,omitempty"` ``,
+  present when `IncludeScores` is set (`:120-122`): an exported field of a public package's reply. Fusion
+  defers on `index_not_ready` (`openspec/specs/fusion/spec.md:10-14`) and passes on
+  `unreadable_records`/`failed_records` (`:67-70`).
 - What change 3 consumes (plan, #10 comment 6833147079, item 3): "Local search is the index scoped to the group's ID
   prefix; global search is the index over everything, with hits then grouped by community". So it reads: a scoped
   search (prefix list), a limit, a ranked total order, and a pre-limit match count for `EntitiesTruncated`
@@ -172,7 +218,18 @@ followed from `ENTITY_STATES` and rebuilt (2b), how a match is served and gated 
 - Restart in the composed stack: every restart test runs `checkAnswers`, which runs `checkSearch`
   (`internal/smoke/smoke_integration_test.go:313` — `checkSearch(t, o, s, f, w, deleted)`), which waits on one
   `semantic` answer as its ordering event (`:517-534`) and requires `EmbedderType` `bm25` (`:535` —
-  `if got.data.EmbedderType != "bm25" || ...`).
+  `if got.data.EmbedderType != "bm25" || ...`). The restart tests call it at `:841`, `:1001`, `:1065`, `:1114`.
+- Other smoke surfaces a new component or a tier-0 NL answer edits:
+  - The full composition: `internal/smoke/stack_integration_test.go:150-151` (components list) and `:152` —
+    `indexKeys: []string{readiness.KeyGraphIndex, readiness.KeyGraphEmbedding, readiness.KeyGraphClustering},`,
+    which `awaitIndexed` waits on (`:734`); the factories `:177-185` (`var componentFactories =
+    map[string]func(*component.Registry) error{`); the config `stackConfig` (`:74-101`).
+  - The graph-only composition: `:156-162` (`components: []string{"graph-index", "graph-ingest", "graph-query"},`).
+  - The no-embedder test that proves `composed-stack` `:93-98`: `internal/smoke/noembedder_integration_test.go:181-191`
+    asserts an NL question is refused `not_enabled` naming `semantic`. A tier-0 NL answer without graph-embedding
+    changes this test and that requirement together.
+  - The fixture's entities have names only, no body and no `StorageRef`, and no object store is composed
+    (`internal/smoke/smoke_integration_test.go:92-107`, `stack_integration_test.go:74-101`).
 
 ## 5. Adjacent claims
 
@@ -198,7 +255,7 @@ smoke, search, StorageRef, offloaded, embedder, readiness, rebuild; hits read.
 | #551 | offloaded-body fetch has no deadline | applies to any body fetch this processor makes |
 | #602 | replies carry the `ENTITY_STATES` generation | applies if the verb claims a revision |
 | #489 | tier 1 provider and its tier-0 fallback test | "losing the provider degrades to tier 0 with search intact" (`docs/setup-plan.md:79-80`) |
-| #477 | `pkg/graphview` adoption | `VectorCache` is a listed site; a new in-memory projection is the same shape |
+| #477 | `pkg/graphview` adoption | `VectorCache` is a graphview; graphview is the second projection mechanism (§2b) |
 | #564 | graph-embedding false "work not drained" warning | none unless placed in graph-embedding |
 | #606 | port-history comment clean-up, batches 6 (`processor/graph-embedding` + `graph/embedding`), 7 (`processor/graph-index`), 8 (`graph/follower`, `graph/lexical`), 10 (`internal/smoke`) unopened | file overlap when those batches open |
 | #619, #621 | stale cover-check count; repository-map rows | a new package adds a cover target and a map row |
@@ -241,17 +298,29 @@ and #350, #484-#487, #502, #535, #554, #571, #590, #604, #605, #625.
   its declared verbs (`graph-transport-boundary` `:84-88`).
 - Tests: no sleeps, no own deadlines, integration under plain `-tags integration`, a shared NATS through the reset,
   oracles shown able to fail.
+- Tier-0 provider guard: each tier-0 processor is held by a contract test to import no model or provider code
+  (`internal/harness/contract/embeddingprovider_test.go:51-53` graph-embedding, `:63-65` graph-clustering; the
+  sensitivity loop names both packages, `:79` — `for _, pkg := range []string{"./processor/graph-embedding",
+  "./processor/graph-clustering"} {`). A new tier-0 processor has the same obligation.
 - Ledger: no pin source, so no admission-ledger row (change 1 inventory §6); a new package is a
   `scripts/cover-check.sh` target only when added.
 
 ## 7. Problem shape and the collision table
 
-Shape: an in-memory projection of `ENTITY_STATES`, rebuilt from the follower's replay on every start, read by scoped,
-limited, ranked request/reply queries gated on that replay. Closest instances: graph-clustering (in-memory,
-apply-Value, rebuilt on start; serves no verb, publishes records to `COMMUNITY_INDEX`) and graph-embedding's
-`VectorCache` (`graph/embedding/vector_cache.go:105` — `func (c *VectorCache) FindSimilar(...`: in-memory, serves the
-verb, but built from `EMBEDDING_INDEX`, not `ENTITY_STATES`). No instance in the tree both follows `ENTITY_STATES`
-into memory and serves a verb from it.
+Shape: an in-memory projection of `ENTITY_STATES`, rebuilt from a replay on every start, read by scoped, limited,
+ranked request/reply queries gated on that replay. Closest instances:
+
+- `output/websocket` (`output/websocket/state.go:109-115`): a `pkg/graphview` over `ENTITY_STATES`, gated on the
+  replay (`OnCaughtUp`) and on loss (`OnWatcherLost`), serving clients from memory; it holds the stored bytes per key
+  and answers no request/reply verb and publishes no readiness key.
+- graph-clustering: a follower plug-in, in-memory, apply-Value, rebuilt on start; serves no verb, publishes records
+  to `COMMUNITY_INDEX`.
+- graph-embedding's `VectorCache`: a `pkg/graphview` (`graph/embedding/vector_cache.go:64`) over `EMBEDDING_INDEX`,
+  not `ENTITY_STATES`, serving the `search` verb (`:105` — `func (c *VectorCache) FindSimilar(...`); graph-embedding
+  gates the verb on both its follower and the view (`processor/graph-embedding/query.go:151-161`).
+
+No instance both projects `ENTITY_STATES` into memory and serves a request/reply verb from it. The two mechanisms
+that keep such a projection are compared in §2b.
 
 The collision table is triggered: the change adds a communication primitive (a verb or a responder) and a readiness
 producer.
@@ -259,14 +328,14 @@ producer.
 | Dimension | Evidence |
 | --- | --- |
 | Semantic class | Ranked entities whose text matches a query, at tier 0 |
-| Owners | graph-embedding (`search`, `similar`); graph-query (`localSearch`, `globalSearch`, `searchGraph`, forwards `semantic`/`similar`); fusion `lexicalScore` (one display name); graph-index `byName` (whole-name key, `processor/graph-index/name_index.go:27`); graph-clustering keywords (`graph/clustering/terms.go:28`) |
+| Owners | graph-embedding (`search`, `similar`; served from a graphview, `vector_cache.go:64`); graph-query (`localSearch`, `globalSearch`, `searchGraph`, forwards `semantic`/`similar`); fusion `lexicalScore` (one display name); graph-index `byName` (whole-name key, `processor/graph-index/name_index.go:27`); graph-clustering keywords (`graph/clustering/terms.go:28`). Projection mechanisms: `graph/follower` (three plug-ins) and `pkg/graphview` (`output/websocket/state.go:113` on `ENTITY_STATES`, `vector_cache.go:64` on `EMBEDDING_INDEX`) |
 | Catalogs | Verb table `graph/query_verbs.go:65-130`; derived buckets `graph/kvcatalog/kvcatalog.go:186-187` (`EMBEDDING_INDEX`, `EMBEDDING_DEDUP`, owner `graph-embedding`); no lexical bucket (plan: none at tier 0) |
 | Status | `GRAPH_STATUS` keys `graph/readiness/watcher.go:50-65`; `Health` stuck states per component; `SemanticData.UnreadableRecords`/`FailedRecords`; SemSource reads `graph-embedding` as "semantic index" (§9) |
-| Lifecycle | Rebuilt on every start (all three followers); graph-embedding keeps vectors across restarts in `EMBEDDING_INDEX`; nothing removes a projection but restart |
+| Lifecycle | Rebuilt on every start: the three follower plug-ins and both graphviews (a view runs once, `graph-view-subscription` "A view runs once"; its owner replaces it with a new one, `pkg/graphview/doc.go`); graph-embedding keeps vectors across restarts in `EMBEDDING_INDEX`; nothing removes a projection but restart |
 | Ownership | Each follower plug-in one per process; no lease or partition; an in-memory index is per process, so two processes hold two copies. How two responders on one subject share requests was not examined (same for graph-index and graph-embedding today) |
-| Readers | graph-query forwards; `fusionnats` (`semantic`); SemSource fusion NL and `graph_search`; `internal/smoke` |
+| Readers | graph-query forwards; `fusionnats` (`semantic`); SemSource fusion NL and `graph_search`; `internal/smoke`; websocket clients through its graphview (`Get`, `SnapshotAndSubscribe`, `view.go:403`, `:480`) |
 | Writers | graph-ingest is the only `ENTITY_STATES` writer (AGENTS.md § 2); the index's only writer would be its follower plug-in |
-| Recovery | Follower: lost feed latched until restart, reset fatal, degraded after 30 s with no completion (`graph/follower/follower.go:89-96`); graph-embedding repair lane `hop1.go:289`; graph-index repair loop; graph-clustering none |
+| Recovery | Follower: lost feed latched until restart, reset fatal, degraded after 30 s with no completion (`graph/follower/follower.go:89-96`); graph-embedding repair lane `hop1.go:289`; graph-index repair loop; graph-clustering none. graphview: fails closed on watch loss only (`view.go:247`), poisons a bad key (`:614-615`), no reset, no repair, no order or stream-generation check; websocket records loss as `appliedLost` (`state.go:115`) |
 
 ## 8. Pin decision records
 
@@ -279,20 +348,22 @@ Surfaces reached from outside: the search verb's subject and reply, a component 
 key, and what a word search finds. The adopters: SemSource (its composition root and its tools), a product's `main`
 (#570), a config author.
 
-SemSource facts at `4ca2072c`:
+SemSource facts at `4ca2072c`, every pin read with `gh api ...?ref=` (header):
 
 - It already builds on SemEngine: `go.mod:36` — `github.com/c360studio/semengine
   v0.1.0-alpha.4.0.20261112145006-7bf638643b98`; it registers SemEngine factories by hand
-  (`cmd/semsource/run.go:314-322`, `"graph-embedding":  graphembedding.Register,` at `:317`). `docs/setup-plan.md:420-423`
-  ("its mainline stays on SemStreams until tier 1") no longer matches SemSource `main`.
+  (`cmd/semsource/run.go:314-322`, `"graph-embedding":  graphembedding.Register,` at `:317`).
+  `docs/setup-plan.md:429-430` ("its mainline stays on SemStreams until tier 1") no longer matches SemSource `main`.
 - It composes graph-embedding with `bm25` by default (`run.go:768` — `embedderType := "bm25"`), turns semantic off
-  only for `none` (`:789-790` — `graphQueryConfig["embedding_enabled"] = false`), and restates the default suffixes
-  plus `.signature`, `.comment` because a list replaces the defaults (`run.go:874-886`).
+  only for `none` (`:789-790` — `graphQueryConfig["embedding_enabled"] = false`), and restates all nine default
+  suffixes (`.abstract` and `.subject` included, as in `processor/graph-embedding/config.go:27-28`) and adds only
+  `.signature` and `.comment`, because a list replaces the defaults (`run.go:874-886`).
 - Its NL path: lenses route any query with white space to NL (`source/fusion/lens/code/code.go:35-39`,
   `source/fusion/lens/docs/docs.go:53-66`), which is `graph.query.semantic` through fusion. Its `graph_search` tool
-  sends `graph.query.searchGraph` (`processor/mcp-gateway/query_tools.go:107`). No SemSource code reads a
-  similarity value or applies a score threshold (`grep -rn -i similarity` over `processor`, `source`: comments
-  only).
+  sends `graph.query.searchGraph` (`processor/mcp-gateway/query_tools.go:107`). No SemSource production code reads a
+  similarity value or sets `IncludeScores`: GitHub code search on its default branch (not bound to a ref) finds
+  `include_scores` only in `test/setup03a/qualification_test.go` and `HasSimilarity` in
+  `processor/code-context/exact_seed.go`, whose one hit (`:32`, read at the ref) is a comment, plus two test files.
 - Its readiness reads name graph-embedding as the semantic index: `internal/graphstatus/reader.go:37-38` —
   `// KeyGraphEmbedding is the semantic index: it backs code_search.` / `KeyGraphEmbedding = "graph-embedding"`;
   read at `processor/source-manifest/workbench_capabilities.go:31`, `:293` and `processor/mcp-gateway/tools.go:144`.
@@ -303,15 +374,15 @@ SemSource facts at `4ca2072c`:
   Inline text is the title and, for code, `code.doc.signature`/`code.doc.comment`. Passage bounds: ceiling 2,000
   bytes, hard max 6,000 (`docs/design/text-ingestion-and-retrieval.md:64`). Corpora: 21.6k entities (Go
   dogfood) and 32k (`:152`).
-- Other consumers: `grep -rln` for the search subjects, `graph-embedding` and `ResolveModeNL` over semconnect
-  (`dff1265`), semteams (`c8571b34`), semboids (`37dbdb0`), semsparql (`e7f827c`) finds one semteams script
-  (`scripts/measure-semengine-port-ledger.go`), no production caller.
+- Other consumers (semconnect, semteams, semboids, semsparql): not measured in round 2. Round 1's negative (no
+  production caller of the search verbs) came from local checkouts, against rule 4; the `gh api` code search that
+  would replace it hit GitHub's code-search rate limit. No premise in this inventory depends on it.
 
 The four questions, for the adopter as SemSource's developer or a product `main` author today:
 
 1. **What must they know?** (a) A new component type exists, must be registered in `main` and given a config block
-   (SemSource registers each factory by hand, `run.go:314-322`). (b) Which predicates are text, and whether that is
-   graph-embedding's `text_suffixes` or a second list. (c) That an offloaded body is indexed only when a store is
+   (SemSource registers each factory by hand, `run.go:314-322`). (b) Which predicates are text: four rules answer that
+   today (§2a), and a word index would add or pick one. (c) That an offloaded body is indexed only when a store is
    registered for its `StorageInstance`. (d) Which verb answers NL at tier 0, and whether `embedding_enabled` still
    gates it. (e) Which readiness key now means "search is ready" (SemSource reads `graph-embedding`). (f) That a
    score is no longer a similarity in [0, 1] if the reply keeps `SimilarityHit`.
@@ -321,7 +392,9 @@ The four questions, for the adopter as SemSource's developer or a product `main`
    processor answers the same `semantic` verb SemSource already sends, their callers change answer with no code
    change.
 3. **Where do they find out?** Registration: boot error (`requireRegisteredFactories`, `run.go:309-312` comment). A
-   missing store: log line and counter. Readiness meaning: doc at best. Score scale: nowhere (no reader today).
+   missing store: log line and counter. Readiness meaning: doc at best. Score scale: a framework doc
+   (`pkg/fusion/retrieval.go:57`, "cosine similarity"), which goes false if a BM25F score reaches `Similarity`; no
+   consumer reads it today.
 4. **What should they have to know?** At most: register it. The gaps between 1 and 4 are (b), (c), (d), (e).
 
 Prediction to observe: whether to fetch a body is decided today by the caller predicting a store registration

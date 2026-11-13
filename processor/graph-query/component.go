@@ -194,27 +194,22 @@ func (c *Component) start(ctx context.Context) error {
 }
 
 // Stop stops the component through the shell, which runs cleanup: Stop before Start does nothing,
-// and a Stop whose context ends first returns that context's error and keeps what is left for the
-// next Stop.
+// and any non-nil Stop on a started component initiates every teardown step, bounds drain/join
+// waits by ctx, and keeps unjoined handles for the next Stop if ctx ends first.
 func (c *Component) Stop(ctx context.Context) error {
 	return c.lifecycle.Stop(ctx)
 }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start. It drains every subscription first: Drain returns once every running handler of
-// that subscription has returned. One handler that outlasts ctx does not keep the other verbs
-// serving: each drain is begun whatever the one before returned. Then it ends the run context and
-// waits for the supervisor, which returns after the view's Run has. A ctx that ends first returns
-// its error with the handles kept; the handles are cleared only once all of them are released, and
-// a repeated Drain rejoins the first. A supervisor whose view could not stop its watch is reported
-// once, by the Stop that joined it.
+// partial start. It initiates every subscription drain and ends the run context without returning
+// early on an earlier ctx error, then waits up to ctx for the community view supervisor. A ctx
+// that ends before all joins complete returns its error with the handles kept, and a repeated
+// Drain rejoins the first. A supervisor whose view could not stop its watch is reported once, by
+// the Stop that joined all handles.
 func (c *Component) cleanup(ctx context.Context) error {
-	var failures []error
+	var cleanupErr error
 	for _, sub := range c.subscriptions {
-		failures = append(failures, sub.Drain(ctx))
-	}
-	if err := errors.Join(failures...); err != nil {
-		return err
+		cleanupErr = errors.Join(cleanupErr, sub.Drain(ctx))
 	}
 	if c.runCancel != nil {
 		c.runCancel()
@@ -223,8 +218,11 @@ func (c *Component) cleanup(ctx context.Context) error {
 		select {
 		case <-c.supervised:
 		case <-ctx.Done():
-			return ctx.Err()
+			cleanupErr = errors.Join(cleanupErr, ctx.Err())
 		}
+	}
+	if err := errors.Join(cleanupErr, ctx.Err()); err != nil {
+		return err
 	}
 	// Read after supervised closed. A view that could not stop its watch is reported by this Stop
 	// only: the supervisor has returned and there is nothing to retry, so the handles are cleared

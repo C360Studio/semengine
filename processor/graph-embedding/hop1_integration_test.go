@@ -598,3 +598,39 @@ func (r *heldReader) Get(ctx context.Context, key string) (jetstream.KeyValueEnt
 	})
 	return entry, err
 }
+
+// TestStopWithEndedContextInitiatesTeardownAndRetries checks that Stop handed an already-expired
+// context still initiates subscription drains, cancels the run context so feeds/repairs/worker/cache
+// exit, and initiates coalescer shutdown, returning DeadlineExceeded while keeping handles so a
+// retry Stop with a live context joins cleanly.
+func TestStopWithEndedContextInitiatesTeardownAndRetries(t *testing.T) {
+	client := fixtureClient(t)
+	h := startEmbedding(t, client, `{"coalesce_ms": 50}`, nil)
+	feeds, repairs, worked, cached := h.c.feeds, h.c.repairs, h.c.worked, h.c.cached
+
+	expired, cancelExpired := context.WithDeadline(t.Context(), time.Unix(1, 0))
+	defer cancelExpired()
+	if err := h.c.Stop(expired); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("Stop(expired) = %v, want context.DeadlineExceeded", err)
+	}
+	if status := h.c.Health().Status; status != "stopped" {
+		t.Fatalf("Health().Status after Stop(expired) = %q, want stopped", status)
+	}
+
+	waitBound, cancelWait := context.WithTimeout(t.Context(), 2*time.Second)
+	defer cancelWait()
+	for name, done := range map[string]<-chan struct{}{
+		"feeds": feeds, "repairs": repairs, "worked": worked, "cached": cached,
+	} {
+		select {
+		case <-done:
+		case <-waitBound.Done():
+			t.Fatalf("Stop(expired) did not cancel runCtx: %s goroutine still running", name)
+		}
+	}
+
+	stopComponent(t, h.c)
+	if h.c.subscriptions != nil || h.c.coalescer != nil || h.c.runCancel != nil {
+		t.Fatalf("handles still retained after retry Stop: subs=%v coalescer=%v", h.c.subscriptions, h.c.coalescer)
+	}
+}

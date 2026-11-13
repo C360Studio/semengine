@@ -207,9 +207,9 @@ every call after the first with `errs.ErrAlreadyStarted`, including a call after
 again. Once `Start` has returned, ending its `ctx` stops nothing; the watches run until `Stop` (ADR-113).
 
 `Stop(ctx)` closes every channel the `Manager` handed out, stops every watch and waits for the `Manager`'s goroutines.
-It returns `nil` only when all of that is done. If `ctx` ends first it returns `ctx`'s error, and a later `Stop` tries
-again. A `ctx` that has already ended stops nothing, which is why the example builds a fresh bounded context instead
-of passing the signal context that is ending the program.
+It refuses a `nil` `ctx`. On any non-nil `ctx` (live or already ended) it initiates teardown at once and uses `ctx`
+only to bound the wait for goroutines to exit, returning `nil` once all are joined or `ctx`'s error if `ctx` ended
+first so a later `Stop` can finish waiting. Pass a fresh bounded context on shutdown so watches have time to drain.
 
 ### Platform identity
 

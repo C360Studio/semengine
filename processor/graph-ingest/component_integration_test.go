@@ -103,9 +103,9 @@ func TestComponent_Stop_Success(t *testing.T) {
 	assert.NoError(t, err)
 }
 
-// TestComponent_Stop_Timeout: a Stop whose timeout is already past returns its
-// context's error and releases nothing, and the next Stop, given time, completes the
-// shutdown (internal/lifecycleguard's Stop).
+// TestComponent_Stop_Timeout: a Stop whose timeout is already past initiates teardown,
+// clears running status, and returns its context's error while keeping unjoined handles,
+// and the next Stop, given time, completes the shutdown.
 func TestComponent_Stop_Timeout(t *testing.T) {
 	comp := startableComponent(t)
 
@@ -116,7 +116,7 @@ func TestComponent_Stop_Timeout(t *testing.T) {
 	defer cancelExpired()
 	err := comp.Stop(expired)
 	require.ErrorIs(t, err, context.DeadlineExceeded, "a Stop out of time reports its deadline")
-	assert.Equal(t, "running", comp.Health().Status, "a Stop out of time releases nothing")
+	assert.Equal(t, "stopped", comp.Health().Status, "a Stop out of time initiates teardown and clears running status")
 
 	ctx, cancel := context.WithTimeout(t.Context(), componentTestTimeout)
 	defer cancel()

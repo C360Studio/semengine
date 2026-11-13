@@ -212,12 +212,13 @@ func (s *BaseService) start(ctx context.Context) error {
 	return nil
 }
 
-// Stop stops the service. It refuses a nil ctx, and given a ctx that has
-// already ended it returns that context's error and stops nothing. Otherwise it
-// reports StatusStopping, starts no further health check, and returns nil once
-// the health goroutine has exited, leaving StatusStopped. If ctx ends while it
-// waits it returns that error, and a later Stop waits again. Stop before Start,
-// and a Stop after one that returned nil, return nil.
+// Stop stops the service. It refuses a nil ctx. On a started service any
+// non-nil ctx (live or already ended) initiates teardown: it reports
+// StatusStopping, cancels the health monitor's run context, and bounds only the
+// wait for the goroutine to exit, returning nil once joined (leaving
+// StatusStopped) or ctx's error if ctx ends before the join completes so a
+// later Stop waits again. Stop before Start, and a Stop after one that joined
+// everything, return nil for any non-nil ctx.
 func (s *BaseService) Stop(ctx context.Context) error {
 	return s.lifecycle.Stop(ctx)
 }

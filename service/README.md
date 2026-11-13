@@ -49,10 +49,11 @@ or ended `ctx`, a second `Start`, and a `Start` after any `Stop` (`errs.ErrAlrea
 once: build a new one to start again. Once `Start` has returned, ending its `ctx` stops nothing; `Stop` is the only
 stop (ADR-113).
 
-`Stop(ctx)` reports `StatusStopping`, starts no further health check, and returns `nil` once the health goroutine has
-exited, leaving `StatusStopped` and `IsHealthy()` false. If `ctx` ends while it waits, `Stop` returns `ctx`'s error
-and a later `Stop` waits again. A `ctx` that has already ended stops nothing: `Stop` returns its error at once and the
-service keeps running. So give `Stop` a fresh bounded context, never the signal context that is ending the program:
+`Stop(ctx)` refuses a `nil` `ctx`. On a started service any non-nil `ctx` (live or already ended) initiates teardown:
+it reports `StatusStopping`, cancels the health monitor's run context, and bounds only the wait for the health
+goroutine to exit, returning `nil` once joined (leaving `StatusStopped` and `IsHealthy()` false) or `ctx`'s error if
+`ctx` ended first so a later `Stop` waits again. Pass `Stop` a fresh bounded context so the goroutine has time to
+join cleanly instead of returning an already-ended signal context's error:
 
 ```go
 stopCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -62,8 +63,9 @@ if err := svc.Stop(stopCtx); err != nil {
 }
 ```
 
-A `Stop` after one that returned `nil` returns `nil`. A `Stop` while another `Stop` is still waiting is refused as a
-transient error (`errs.IsTransient`). `Stop` before `Start` returns `nil`, and the service then refuses to start.
+A `Stop` after one that joined everything returns `nil` for any non-nil `ctx`. A `Stop` while another `Stop` is still
+waiting is refused as a transient error (`errs.IsTransient`). `Stop` before `Start` returns `nil`, and the service then
+refuses to start.
 
 A service that relied on the end of its `Start` context to stop its health loop, as SemStreams' `BaseService`
 allowed, now calls `Stop`.
@@ -150,10 +152,11 @@ refuses new requests and `StopAll` waits for those in flight. If `ctx` ends firs
 still open and returns `ctx`'s error, and a later `StopAll` waits again for the handlers that are still running. So a
 service that serves a long-lived response, such as a stream, ends it in its own `Stop`.
 
-A `StopAll` given a context that has already ended stops nothing: give it a fresh bounded context, never the signal
-context that is ending the program. A service whose `Stop` returns `errs.ErrAlreadyStopped` counts as stopped. Any
-other failure is returned naming the service, and the next `StopAll` runs the whole stop again. A `StopAll` after one
-that returned `nil` returns `nil`; one while another runs is refused as transient.
+`StopAll` refuses a `nil` context; any non-nil context (live or already ended) initiates teardown across every started
+service and listener, using `ctx` only to bound graceful drain and join waits. Pass a fresh bounded context so services
+and listeners have time to drain. A service whose `Stop` returns `errs.ErrAlreadyStopped` counts as stopped. Any other
+failure is returned naming the service, and the next `StopAll` runs the whole stop again. A `StopAll` after one that
+joined everything returns `nil` for any non-nil context; one while another runs is refused as transient.
 
 `StartHealthListener(ctx, port)` binds a second listener that serves only `/health` and `/healthz`, for container
 probes that want a port apart from `http_port`. Call it before `StartAll` and probes work while a slow boot runs.
@@ -272,16 +275,17 @@ component it launched, the failing ones included, in reverse start order. A comp
 after `ctx` ended counts as failed. If the rollback fails too, its error is joined into `Start`'s and the next `Stop`
 runs it again.
 
-`Stop(ctx)` is the only stop. It refuses a `nil` `ctx`. Given an ended `ctx` it returns that error and stops nothing,
-so give it a fresh bounded context, never the signal context that is ending the program. Before any `Start` it returns
-`nil`, and a later `Start` is refused. Otherwise it marks the stop begun (`/readyz` answers `503 NOT READY` from then),
-stops each started component with `ctx` in reverse start order (just before a provider's own `Stop`, it removes that
-provider's stores from the store registry), then ends the manager's own loops and its base service. It returns `nil`
-only once everything is released. A component whose `Stop` failed, or was not reached because `ctx` ended, is stopped
-again by the next `Stop`; one whose `Stop` returned `nil` is not called again. A `Stop` after one that returned `nil`
-returns `nil`, and a `Stop` while another runs is refused as transient. A `Stop` that arrives while `Start` is still
-running waits for every component's `Start` to return, or returns its own context's error first; if that `Start`
-failed, it then stops only what the rollback left. A caller cuts a slow boot short only by ending the context it gave `Start`.
+`Stop(ctx)` is the only stop. It refuses a `nil` `ctx`; any non-nil `ctx` (live or already ended) initiates teardown
+and uses `ctx` only to bound waits, so pass a fresh bounded context on shutdown to give components drain time. Before
+any `Start` it returns `nil`, and a later `Start` is refused. Otherwise it marks the stop begun (`/readyz` answers
+`503 NOT READY` from then), stops each started component with `ctx` in reverse start order (removing each provider's
+stores from the store registry before its `Stop`, even when `ctx` has already ended), then ends the manager's own loops
+and its base service. It returns `nil` only once everything is released. A component whose `Stop` failed (including one
+cut short by `ctx`) is stopped again by the next `Stop`; one whose `Stop` returned `nil` is not called again. A `Stop`
+after one that joined everything returns `nil` for any non-nil `ctx`, and a `Stop` while another runs is refused as
+transient. A `Stop` that arrives while `Start` is still running waits for every component's `Start` to return, or
+returns its own context's error first; if that `Start` failed, it then stops only what the rollback left. A caller cuts
+a slow boot short only by ending the context it gave `Start`.
 
 ### Reading status during and after Stop
 
@@ -460,11 +464,12 @@ every 100 ms until it succeeds. While any subject is unsubscribed:
   Health checks run every 30 seconds, so the change shows within one interval of the failure and again within one
   interval of the retry succeeding. On a normal boot the first check runs before any subscribe and is healthy.
 
-`Stop(ctx)` is the only stop. It refuses a nil `ctx`; given an ended `ctx` it returns that error and stops nothing.
-Otherwise it ends the retry, drains every subscription (a message being handled when `Stop` begins is stored), ends
-every open KV watch stream, and stops the base service, returning nil once all are released. If `ctx` ends first, or a
-drain fails, `Stop` returns the error and leaves what is left for the next `Stop`. A `Stop` after one that returned nil
-returns nil; a `Stop` while another runs is refused as transient. Messages published after `Stop` are not stored.
+`Stop(ctx)` is the only stop. It refuses a nil `ctx`. On any non-nil `ctx` (live or already ended) it fences new KV
+watch streams, ends the retry, initiates drain on every subscription (a message being handled when `Stop` begins is
+stored), closes every open KV watch stream, and stops the base service, using `ctx` only to bound waits and returning
+nil once all are released. If `ctx` ends first, or a drain fails, `Stop` returns the error and leaves what is left for
+the next `Stop`. A `Stop` after one that joined everything returns nil for any non-nil `ctx`; a `Stop` while another
+runs is refused as transient. Messages published after `Stop` are not stored.
 
 ### What `/stats` reports
 
@@ -808,9 +813,9 @@ stopped, 2 running), as the other services do.
 
 `Start(ctx)` refuses a nil or ended `ctx`, a second `Start` and a `Start` after any `Stop` (`errs.ErrAlreadyStarted`);
 a refused `Start` holds nothing. It starts no goroutine of its own; the one the base service runs is its health check.
-`ctx` bounds `Start` only; ending it afterwards stops nothing. `Stop(ctx)` is the base service's, and the only stop: it
-refuses a nil `ctx`, returns an ended `ctx`'s error and stops nothing, and otherwise returns nil once the base service
-has stopped; a `Stop` after one that returned nil returns nil.
+`ctx` bounds `Start` only; ending it afterwards stops nothing. `Stop(ctx)` is the base service's, and the only stop:
+it refuses a nil `ctx`, returns nil before `Start`, and once started stops the base service on any non-nil `ctx`
+(returning `ctx.Err()` if `ctx` had ended, or nil otherwise); a later `Stop` returns nil.
 
 ### Not ported
 

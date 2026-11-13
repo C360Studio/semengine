@@ -129,19 +129,21 @@ func (cm *ComponentManager) runComponentStart(
 	return nil
 }
 
-// Stop is the only stop (ADR-113). It refuses a nil ctx, and given
-// an ended ctx it returns that context's error and stops nothing. Before any
-// Start it returns nil and a later Start is refused. A Stop during Start waits
-// for every component's Start to return (or returns ctx's error first); if
-// Start failed, it then stops only what Start's rollback left.
+// Stop is the only stop (ADR-113). It refuses a nil ctx; any non-nil ctx (live
+// or already ended) initiates teardown and bounds only waits. Before any Start
+// it returns nil and a later Start is refused. A Stop during Start waits for
+// every component's Start to return (or returns ctx's error first if Start is
+// still running); if Start failed, it then stops only what Start's rollback
+// left.
 //
 // Otherwise it marks the stop begun (/readyz answers NOT READY from then), stops
 // each started component with ctx in reverse start order, removing a provider's
-// stores before its Stop, then ends the supervisor and stops the base service.
-// It returns nil only once all are released. A component whose Stop failed, or
-// was not reached because ctx ended, is stopped again by the next Stop; one
-// whose Stop returned nil is not called again. A Stop after one that returned
-// nil returns nil and calls nothing; a Stop while another runs is refused as
+// stores before its Stop even when ctx has already ended, then ends the
+// supervisor and stops the base service. It returns nil only once all are
+// released. A component whose Stop failed (including one whose cleanup was cut
+// short by ctx) is stopped again by the next Stop; one whose Stop returned nil
+// is not called again. A Stop after one that returned nil returns nil for any
+// non-nil ctx and calls nothing; a Stop while another runs is refused as
 // transient.
 func (cm *ComponentManager) Stop(ctx context.Context) error {
 	return cm.lifecycle.Stop(ctx)
@@ -171,18 +173,15 @@ func (cm *ComponentManager) cleanup(ctx context.Context) error {
 
 // stopComponents stops every component whose Start was invoked and whose Stop
 // has not returned nil, in reverse start order, on the caller's stack, and
-// stores each outcome on its record before calling the next Stop. Once ctx
-// ends, no further Stop is called; each component left is named in the error.
+// stores each outcome on its record before calling the next Stop. Even when ctx
+// has already ended, every remaining component has its stores deregistered and
+// its Stop(ctx) called so teardown initiates across the entire composition.
 func (cm *ComponentManager) stopComponents(ctx context.Context) error {
 	var failures []error
 	for i := len(cm.components) - 1; i >= 0; i-- {
 		record := cm.components[i]
 		lifecycle, ok := component.AsLifecycleComponent(record.component)
 		if current := record.current(); !ok || !current.startInvoked || current.stopped {
-			continue
-		}
-		if err := ctx.Err(); err != nil {
-			failures = append(failures, componentStopError(record.name, err))
 			continue
 		}
 

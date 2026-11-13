@@ -498,12 +498,13 @@ func TestServiceManager_RegisterInstance_DuplicateRejected(t *testing.T) {
 	}
 }
 
-// TestStopAllWithAnEndedContextStopsNothing: a started manager's StopAll given a cancelled context
-// returns context.Canceled, calls no service's Stop and leaves the main listener serving; a
-// following StopAll with a live context returns nil: such a stop is not final.
+// TestStopAllWithAnEndedContextBeginsTeardownAndReportsContextError: a started manager's StopAll
+// given a cancelled context initiates teardown on every started service, the health publisher, and
+// the HTTP listener while returning context.Canceled; a following StopAll with a live context
+// finishes any remaining joins and returns nil.
 //
 // spec: service-lifecycle / The service manager's StartAll bounds StartAll
-func TestStopAllWithAnEndedContextStopsNothing(t *testing.T) {
+func TestStopAllWithAnEndedContextBeginsTeardownAndReportsContextError(t *testing.T) {
 	spy := &stopSpyService{MockService: MockService{name: "spy", status: StatusRunning, healthy: true}}
 	manager := startedManagerWith(t, spy)
 	url := observedManagerHTTPURL(t, manager)
@@ -511,17 +512,11 @@ func TestStopAllWithAnEndedContextStopsNothing(t *testing.T) {
 	ended, cancel := context.WithCancel(t.Context())
 	cancel()
 	require.ErrorIs(t, manager.StopAll(ended), context.Canceled)
-	require.Zero(t, spy.stopCalls.Load(), "a StopAll with an ended context stopped a service")
-	require.True(t, publisherRunning(manager), "a StopAll with an ended context stopped the health publisher")
-	status, body, err := httpGet(t.Context(), url+"/healthz")
-	require.NoError(t, err, "a StopAll with an ended context stopped the main listener")
-	require.Equal(t, http.StatusOK, status)
-	require.Equal(t, "OK", body)
+	require.EqualValues(t, 1, spy.stopCalls.Load(), "StopAll with an ended context must initiate service Stop")
+	requireListenerReleased(t, strings.TrimPrefix(url, "http://"))
 
 	require.NoError(t, manager.StopAll(stopContext(t)))
-	require.EqualValues(t, 1, spy.stopCalls.Load())
 	require.False(t, publisherRunning(manager))
-	requireListenerReleased(t, strings.TrimPrefix(url, "http://"))
 }
 
 // blockingHealthService is a Service whose Health blocks, once armed, until released, so a /health

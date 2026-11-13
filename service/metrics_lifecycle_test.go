@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c360studio/semengine/metric"
+	"github.com/c360studio/semengine/pkg/errs"
 )
 
 // TestMetricsStartReportsServerBindFailureBeforeReturning: Start given the port of a listener the
@@ -27,4 +29,20 @@ func TestMetricsStartReportsServerBindFailureBeforeReturning(t *testing.T) {
 	require.Nil(t, m.server, "a failed bind left the service holding a server")
 	require.Equal(t, StatusStopped, m.Status())
 	require.NoError(t, m.Stop(stopContext(t)))
+}
+
+// TestMetricsStopWithEndedContextFencesServerClaim: any non-nil Stop (including an ended context)
+// fences lifecycleCalled so neither a later manager server claim nor Start is admitted.
+func TestMetricsStopWithEndedContextFencesServerClaim(t *testing.T) {
+	svc, err := NewMetrics(json.RawMessage(`{"port":9090,"path":"/metrics"}`),
+		&Dependencies{MetricsRegistry: metric.NewMetricsRegistry()})
+	require.NoError(t, err)
+	m := svc.(*Metrics)
+
+	ended, cancel := context.WithCancel(t.Context())
+	cancel()
+	require.NoError(t, m.Stop(ended))
+	_, err = m.claimManagerServer()
+	require.Error(t, err, "claimManagerServer must be refused after Stop(endedCtx)")
+	require.ErrorIs(t, m.Start(t.Context()), errs.ErrAlreadyStarted)
 }

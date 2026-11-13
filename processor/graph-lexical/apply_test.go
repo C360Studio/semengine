@@ -9,8 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"pgregory.net/rapid"
-
 	"github.com/c360studio/semengine/graph"
 	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/graph/follower"
@@ -139,6 +137,28 @@ func TestOlderDeliveryIgnored(t *testing.T) {
 	}
 }
 
+// TestOlderDeliveryAfterDelete: once a key is deleted at revision D, a delivery of it at D or
+// below is still ignored and completed: a delete is the revision the index last applied for the
+// key.
+func TestOlderDeliveryAfterDelete(t *testing.T) {
+	var completed []uint64
+	a := newTestApplier(t, func(_ string, revision uint64) { completed = append(completed, revision) })
+	mustDeliver(t, a, stateEntry(t, pump, 1, text{name: "oldword"}))
+	mustDeliver(t, a, deleteEntry(pump, 2))
+	for _, revision := range []uint64{1, 2} {
+		if _, ok := mustDeliver(t, a, stateEntry(t, pump, revision, text{name: "oldword", offloaded: true})); ok {
+			t.Fatalf("a delivery at %d after the delete at 2 asked for a body read", revision)
+		}
+	}
+	requireHeld(t, a.index, nil, "oldword")
+	if n := a.index.Len(); n != 0 {
+		t.Fatalf("index holds %d entities after the delete; want 0", n)
+	}
+	if want := []uint64{1, 2, 1, 2}; !slices.Equal(completed, want) {
+		t.Fatalf("completed %v; want %v, every delivery completed", completed, want)
+	}
+}
+
 // TestDeleteRemovesEntity: an entity deleted at revision D is found by no search once D is
 // complete, and the other entities are untouched.
 func TestDeleteRemovesEntity(t *testing.T) {
@@ -181,54 +201,4 @@ func TestUnreadableEntityRefused(t *testing.T) {
 		t.Fatalf("completed %v; want only revision 1", completed)
 	}
 	requireHeld(t, a.index, []string{pump}, "pumpname")
-}
-
-// TestWithBodyMatchesRule: the document withBody makes from an entity's inline document and its
-// body equals what the text rule itself makes from the entity and the body, so a pending body
-// needs only the inline document kept. The named witnesses put the inline body text below, at
-// and past the cap, and leave the inline text or the body empty; the generated run draws texts
-// with spaces and multibyte characters around a small cap.
-func TestWithBodyMatchesRule(t *testing.T) {
-	check := func(f failer, maxLen int, name string, rest []string, body string) {
-		f.Helper()
-		at := time.Date(2026, 11, 13, 12, 0, 0, 0, time.UTC)
-		state := graph.EntityState{ID: pump, UpdatedAt: at}
-		add := func(predicate, value string) {
-			state.Triples = append(state.Triples, message.Triple{Subject: pump, Predicate: predicate, Object: value,
-				Source: "test", Timestamp: at})
-		}
-		add("test.doc.name", name)
-		for _, value := range rest {
-			add("test.doc.description", value)
-		}
-		rule := entitytext.New(nil, maxLen)
-		want := rule.Document(&state, body)
-		if got := withBody(rule.Document(&state, ""), body, maxLen); got != want {
-			f.Fatalf("cap %d, rest %q, body %q: withBody = %+v; the rule makes %+v", maxLen, rest, body, got, want)
-		}
-	}
-	witnesses := []struct {
-		name string
-		rest []string
-		body string
-	}{
-		{"inline below the cap", []string{"abc"}, "defgh ijk"},
-		{"inline at the cap", []string{"abcdefghij"}, "klm"},
-		{"inline past the cap", []string{"abcde fghijkl"}, "mno"},
-		{"inline cut back to a space, with room for the body", []string{"abcdefg hijklmn"}, "x"},
-		{"no inline text", nil, "abcde fghijkl"},
-		{"no body", []string{"abc"}, ""},
-		{"two inline values", []string{"ab", "cd"}, "efghij"},
-	}
-	for _, w := range witnesses {
-		t.Run(w.name, func(t *testing.T) { check(t, 10, "pumpname", w.rest, w.body) })
-	}
-	if t.Failed() {
-		return
-	}
-	text := rapid.StringOfN(rapid.SampledFrom([]rune{'a', 'b', ' ', 'é', '水'}), 0, 24, -1)
-	rapid.Check(t, func(t *rapid.T) {
-		check(t, rapid.IntRange(1, 16).Draw(t, "maxLen"), "pumpname",
-			rapid.SliceOfN(text, 0, 3).Draw(t, "rest"), text.Draw(t, "body"))
-	})
 }

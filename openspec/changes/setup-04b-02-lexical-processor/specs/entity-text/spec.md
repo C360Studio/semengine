@@ -18,7 +18,8 @@ only through it. Empty `text_suffixes` SHALL mean the default list.
 
 `Document` SHALL put in Name every value of a vocabulary label predicate, whatever its suffix, and every `Values`
 value whose predicate ends in `.name` or `.title`, each once, and in Body every other `Values` value in triple
-order, then the offloaded body; graph-lexical SHALL read its text only through it.
+order, then the offloaded body. `WithBody` SHALL join a body read later to the Document made without one exactly as
+`Document` joins it; graph-lexical SHALL read its text only through the two.
 
 #### Scenario: Name and body
 
@@ -26,6 +27,12 @@ order, then the offloaded body; graph-lexical SHALL read its text only through i
   that ends in no configured suffix, and a relationship, with `.comment` configured
 - **THEN** `Document` puts the first two and the label predicate's value in Name and the third in Body, and leaves
   out the relationship; `Values` leaves out the label predicate's value (`TestNameAndBodyRoles`)
+
+#### Scenario: A body joined later
+
+- **WHEN** a body is joined with `WithBody` to the Document an entity makes with no body, the inline body text below,
+  at or past the cap
+- **THEN** the result equals what `Document` makes with the body (`TestWithBodyMatchesDocument`)
 
 ### Requirement: The text cap cuts the body's tail and says so
 

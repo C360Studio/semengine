@@ -340,14 +340,14 @@ func (h *history) checkAll() {
 	}
 }
 
-// drawStep draws a step the history can take now: an older delivery only of a live key, a return
-// only while a read is out.
+// drawStep draws a step the history can take now: an older delivery only of a key with a revision
+// applied, live or deleted, a return only while a read is out.
 func (h *history) drawStep(t *rapid.T) step {
 	s := step{key: rapid.IntRange(0, len(propKeys)-1).Draw(t, "key")}
 	switch kind := rapid.IntRange(0, 9).Draw(t, "kind"); {
 	case kind == 5:
 		s.kind = stepDelete
-	case kind == 6 && h.keys[propKeys[s.key]].live:
+	case kind == 6 && h.keys[propKeys[s.key]].revision > 0:
 		s.kind = stepOlder
 		s.older = rapid.Uint64Range(1, h.keys[propKeys[s.key]].revision).Draw(t, "older")
 		s.offloaded = rapid.Bool().Draw(t, "offloaded")
@@ -422,6 +422,10 @@ func TestPropApplyMatchesModel(t *testing.T) {
 			{kind: stepDeliver, key: 0, name: true}, deliverOffloaded(1),
 			{kind: stepOlder, key: 0, older: 1, offloaded: true}, {kind: stepOlder, key: 1, older: 1},
 			{kind: stepReturn, read: 0},
+		}},
+		{"older delivery after a delete", []step{
+			{kind: stepDeliver, key: 0, name: true}, {kind: stepDelete, key: 0},
+			{kind: stepOlder, key: 0, older: 1}, {kind: stepOlder, key: 0, older: 2, offloaded: true},
 		}},
 		{"a write with no text", []step{
 			{kind: stepDeliver, key: 0, name: true}, {kind: stepDeliver, key: 0},

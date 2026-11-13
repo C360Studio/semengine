@@ -73,8 +73,8 @@ type Document struct {
 // Document splits the entity's text into a name and a body. Name is every string value of a
 // vocabulary label predicate, whatever its suffix, and every text value whose predicate ends in
 // .name or .title, each value once and in triple order. Body is every other text value in triple
-// order, then body, the entity's offloaded body ("" for none). The cap cuts Body's tail as Truncate
-// does and never cuts Name.
+// order, then body, the entity's offloaded body ("" for none), joined as WithBody joins it. The cap
+// cuts Body's tail as Truncate does and never cuts Name.
 func (r Rule) Document(state *graph.EntityState, body string) Document {
 	var names, rest []string
 	for _, triple := range state.Triples {
@@ -92,12 +92,27 @@ func (r Rule) Document(state *graph.EntityState, body string) Document {
 			rest = append(rest, value)
 		}
 	}
-	if body != "" {
-		rest = append(rest, body)
+	return r.WithBody(r.capped(strings.Join(names, " "), strings.Join(rest, " ")), body)
+}
+
+// WithBody returns doc, a Document this rule made with no offloaded body, with body joined to it
+// as Document joins one: after the other body text, a space between, the whole cut at the rule's
+// cap. A caller that reads the body later keeps doc and not the entity. A doc already cut is
+// returned as it is: the cap falls inside its body text, so body would only follow the cut.
+func (r Rule) WithBody(doc Document, body string) Document {
+	if doc.Cut || body == "" {
+		return doc
 	}
-	full := strings.Join(rest, " ")
-	capped := Truncate(full, r.maxLen)
-	return Document{Name: strings.Join(names, " "), Body: capped, Cut: len(capped) < len(full)}
+	if doc.Body != "" {
+		body = doc.Body + " " + body
+	}
+	return r.capped(doc.Name, body)
+}
+
+// capped is the Document of name and body with body cut at the rule's cap.
+func (r Rule) capped(name, body string) Document {
+	cut := Truncate(body, r.maxLen)
+	return Document{Name: name, Body: cut, Cut: len(cut) < len(body)}
 }
 
 // literal returns a triple's value when it is a non-empty string that is not a relationship.

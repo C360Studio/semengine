@@ -68,7 +68,7 @@ func readState(err error) bodyState {
 // does not hold.
 type applier struct {
 	rule     entitytext.Rule
-	maxLen   int // the rule's cap: a body read is cut at it, and it is named when a body is first cut
+	maxLen   int // the rule's cap, named when a body is first cut
 	index    *lexical.Index
 	complete func(key string, revision uint64)
 	metrics  *lexicalMetrics
@@ -76,7 +76,7 @@ type applier struct {
 
 	// mu orders the two writers: a revision check and the write it allows happen as one step.
 	mu     sync.Mutex
-	held   map[string]*held // by key, every entity written and not deleted since start
+	held   map[string]*held // by key, every key delivered since start; a deleted key keeps only its revision
 	words  int              // the words the index holds, every occurrence counted
 	bodies [len(bodyStateNames)]int
 	cuts   int // held entities whose body is cut at the cap
@@ -96,25 +96,11 @@ type held struct {
 }
 
 // pending is what an offloaded body still to be read needs, and no more of the entity's state:
-// the document of the entity's inline text, which the body joins, and where the body is.
+// the document of the entity's inline text, which Rule.WithBody joins the body to, and where the
+// body is.
 type pending struct {
 	inline entitytext.Document
 	ref    message.StorageReference
-}
-
-// withBody is inline, the document Rule.Document makes with no body, joined by body as
-// Rule.Document joins it: after the inline body text, then cut at maxLen. An inline body already
-// cut stays as it is, since the cap falls inside it and the body would follow the cut.
-func withBody(inline entitytext.Document, body string, maxLen int) entitytext.Document {
-	if inline.Cut || body == "" {
-		return inline
-	}
-	full := body
-	if inline.Body != "" {
-		full = inline.Body + " " + body
-	}
-	capped := entitytext.Truncate(full, maxLen)
-	return entitytext.Document{Name: inline.Name, Body: capped, Cut: len(capped) < len(full)}
 }
 
 // newApplier returns an applier over an empty index that completes revisions through complete
@@ -152,7 +138,7 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 	}
 	if e.Deleted {
 		a.index.Delete(e.Key)
-		a.forget(e.Key)
+		a.remove(e.Key, e.Revision)
 		a.report()
 		a.complete(e.Key, e.Revision)
 		return bodyRead{}, false, nil
@@ -201,7 +187,7 @@ func (a *applier) bodyDone(read bodyRead, body string, err error) {
 		case bodyNone:
 			// put refuses only an ID that is not canonical, and this key's was accepted when its
 			// inline text was put.
-			_, _ = a.put(read.key, read.revision, withBody(h.waiting.inline, body, a.maxLen))
+			_, _ = a.put(read.key, read.revision, a.rule.WithBody(h.waiting.inline, body))
 			a.setBody(h, bodyNone, nil)
 		case bodyMissing:
 			a.setBody(h, s, nil)
@@ -287,18 +273,22 @@ func (a *applier) setBody(h *held, s bodyState, waiting *pending) {
 	a.report()
 }
 
-// forget drops what is held for key.
-func (a *applier) forget(key string) {
-	if h, ok := a.held[key]; ok {
-		if h.body != bodyNone {
-			a.bodies[h.body]--
-		}
-		a.words -= h.words
-		if h.cut {
-			a.cuts--
-		}
-		delete(a.held, key)
+// remove drops what is held for key but revision, the delete's, so a delivery of key at or below
+// the delete is still ignored. Each deleted key keeps that one revision until restart.
+func (a *applier) remove(key string, revision uint64) {
+	h, ok := a.held[key]
+	if !ok {
+		h = &held{}
+		a.held[key] = h
 	}
+	if h.body != bodyNone {
+		a.bodies[h.body]--
+	}
+	a.words -= h.words
+	if h.cut {
+		a.cuts--
+	}
+	*h = held{revision: revision}
 }
 
 // logFirst logs msg at warning level for read's entity, once since start: *done records it.

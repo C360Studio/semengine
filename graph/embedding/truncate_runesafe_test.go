@@ -8,16 +8,15 @@ import (
 	"github.com/c360studio/semengine/storage"
 )
 
-// TestTruncate_CrossLaneEquivalence is the #628 FIX 1 core statement: identical
+// TestTruncate_CrossLaneEquivalence is the cross-lane core statement: identical
 // over-cap content must embed the SAME bytes and derive the SAME hop-2 dedup key
 // whether it arrives inline (SourceText) or offloaded (StorageRef → store), so the
 // two lanes cannot diverge into different vectors and different dedup keys for one
-// piece of content (gh#627).
+// piece of content.
 //
-// Fails without the fix because the offloaded lane byte-cut to exactly `limit` bytes
-// in fetchTextFromStorage and never reached getSourceText's word-boundary branch,
-// while the inline lane word-boundary-cut — so the two lanes returned different
-// strings for identical content.
+// It fails if the offloaded lane byte-cuts to exactly `limit` bytes in
+// fetchTextFromStorage instead of using the inline lane's word-boundary cut — the two
+// lanes would then return different strings for identical content.
 func TestTruncate_CrossLaneEquivalence(t *testing.T) {
 	t.Parallel()
 
@@ -58,13 +57,13 @@ func TestTruncate_CrossLaneEquivalence(t *testing.T) {
 	}
 }
 
-// TestTruncate_MultibyteIsRuneSafe covers the multibyte half of #628 FIX 1: a cap that
+// TestTruncate_MultibyteIsRuneSafe covers the multibyte half of the cross-lane cut: a cap that
 // lands mid-rune must not sever a multibyte rune. The result must be valid UTF-8, cut
 // on a rune boundary, and honor characters (not bytes).
 //
-// Fails without the fix because truncateAtWord did text[:maxLen] on BYTES, slicing a
-// 3-byte CJK / 4-byte emoji rune into invalid UTF-8 — so DedupKey then hashed bytes
-// that differ from the string the embedder receives.
+// It fails if truncateAtWord does text[:maxLen] on BYTES, slicing a 3-byte CJK /
+// 4-byte emoji rune into invalid UTF-8 — so DedupKey would hash bytes that differ
+// from the string the embedder receives.
 func TestTruncate_MultibyteIsRuneSafe(t *testing.T) {
 	t.Parallel()
 
@@ -105,8 +104,8 @@ func TestTruncate_MultibyteIsRuneSafe(t *testing.T) {
 // unicode.IsSpace, not a literal ASCII " ". A non-breaking space (U+00A0) separating
 // words must be recognized as a boundary.
 //
-// Fails without the fix because strings.LastIndex(truncated, " ") only ever matched a
-// literal ASCII space, so a NBSP-delimited body hard-cut mid-"word" instead.
+// It fails if the boundary search is strings.LastIndex(truncated, " "), which matches
+// only a literal ASCII space, so a NBSP-delimited body would hard-cut mid-"word".
 func TestTruncate_UnicodeWhitespaceWordBoundary(t *testing.T) {
 	t.Parallel()
 

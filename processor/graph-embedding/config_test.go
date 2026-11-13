@@ -68,9 +68,9 @@ func mustCreate(t *testing.T, raw string) *Component {
 
 // TestConfigRefusesUnknownKey: a configuration carrying a key graph-embedding does not
 // define is refused at construction and by port declaration, naming the key; the same
-// configuration without it builds (design D4; graph-embedding spec, "A removed key").
-// batch_size is the key SemSource sends, which the pin read nowhere; cache_ttl is the key
-// the pin refused by a targeted probe; "worker" is a misspelling.
+// configuration without it builds (graph-embedding spec, "A removed key"). batch_size is
+// a key SemSource sends that nothing here reads; cache_ttl is a cache setting with no reader;
+// "worker" is a misspelling.
 func TestConfigRefusesUnknownKey(t *testing.T) {
 	raw, err := json.Marshal(DefaultConfig())
 	if err != nil {
@@ -105,9 +105,9 @@ func TestConfigRefusesDataAfterTheObject(t *testing.T) {
 	}
 }
 
-// TestConfigRefusesHTTPEmbedder: at tier 0 the only embedder is bm25; http, the pin's
+// TestConfigRefusesHTTPEmbedder: at tier 0 the only embedder is bm25; http, a
 // provider-backed embedder, and any other value are refused at construction naming the
-// value and tier 0 (design D4; graph-embedding spec, "The HTTP embedder at tier 0").
+// value and tier 0 (graph-embedding spec, "The HTTP embedder at tier 0").
 func TestConfigRefusesHTTPEmbedder(t *testing.T) {
 	for _, value := range []string{"http", "openai"} {
 		t.Run(value, func(t *testing.T) {
@@ -138,7 +138,7 @@ func TestConfigEmbedderType(t *testing.T) {
 }
 
 // TestConfigWorkers: workers is the embedding worker count; absent or 0 is 5, the Worker's
-// own default (pin component.go:240); a set value is kept; a negative one is refused.
+// own default; a set value is kept; a negative one is refused.
 func TestConfigWorkers(t *testing.T) {
 	for raw, want := range map[string]int{`{}`: 5, `{"workers": 0}`: 5, `{"workers": 3}`: 3} {
 		if c := mustCreate(t, raw); c.config.Workers != want {
@@ -150,10 +150,10 @@ func TestConfigWorkers(t *testing.T) {
 	}
 }
 
-// TestConfigMaxTextLen: max_text_len caps the text embedded; absent or 0 is bm25's 4,000
-// (pin maxSourceTextLenBM25), resolved at construction so every reader sees one value; a
-// set value up to embedding.MaxSourceTextLenCeiling is kept; a negative value or one past
-// the ceiling is refused (pin max_text_len_bound_test.go).
+// TestConfigMaxTextLen: max_text_len caps the text embedded; absent or 0 is bm25's 4,000,
+// resolved at construction so every reader sees one value; a set value up to
+// embedding.MaxSourceTextLenCeiling is kept; a negative value or one past the ceiling is
+// refused.
 func TestConfigMaxTextLen(t *testing.T) {
 	for raw, want := range map[string]int{
 		`{}`:                        4000,
@@ -176,8 +176,8 @@ func TestConfigMaxTextLen(t *testing.T) {
 }
 
 // TestConfigTextSuffixes: text_suffixes names the predicate suffixes whose values are
-// embedded; absent or empty is the pin's nine (component.go:2059), resolved at
-// construction; a set list is kept as written.
+// embedded; absent or empty is the nine defaults, resolved at construction; a set list is
+// kept as written.
 func TestConfigTextSuffixes(t *testing.T) {
 	pinDefaults := []string{".title", ".content", ".description", ".summary", ".text", ".name", ".body",
 		".abstract", ".subject"}
@@ -193,7 +193,7 @@ func TestConfigTextSuffixes(t *testing.T) {
 }
 
 // TestConfigStartupWait: the wait for ENTITY_STATES defaults to 30 attempts 500 ms apart,
-// and set values are kept (pin ApplyDefaults).
+// and set values are kept.
 func TestConfigStartupWait(t *testing.T) {
 	c := mustCreate(t, `{}`)
 	if c.config.StartupAttempts != 30 || c.config.StartupInterval != 500 {
@@ -247,8 +247,8 @@ func TestConfigWithoutPortsTakesDefaultPorts(t *testing.T) {
 }
 
 // TestConfigPresentPortsUsedAsWritten: a ports block that is present is used as written,
-// never merged with the defaults (ruling K, #91 comment 6062681355): one input is one input,
-// and an empty input list is refused rather than filled in (the pin filled it).
+// never merged with the defaults: one input is one input, and an empty input list is
+// refused rather than filled in.
 func TestConfigPresentPortsUsedAsWritten(t *testing.T) {
 	raw := defaultConfigWith(t, "ports", map[string]any{"inputs": []component.PortDefinition{entityWatch()}})
 	if inputs := mustCreate(t, raw).InputPorts(); len(inputs) != 1 || inputs[0].Name != "entity_watch" {
@@ -261,7 +261,7 @@ func TestConfigPresentPortsUsedAsWritten(t *testing.T) {
 }
 
 // TestConfigRefusesOutputs: graph-embedding writes its buckets itself and declares no
-// output ports; a declared output is refused (pin component_test.go:203).
+// output ports; a declared output is refused.
 func TestConfigRefusesOutputs(t *testing.T) {
 	raw := defaultConfigWith(t, "ports", map[string]any{
 		"inputs":  []component.PortDefinition{entityWatch()},
@@ -274,8 +274,8 @@ func TestConfigRefusesOutputs(t *testing.T) {
 
 // TestConfigRefusesInputsTheFollowerDoesNotRead: an input is the follower's full watch of
 // ENTITY_STATES or a store read for offloaded bodies; anything else is refused naming the
-// port, so a composition never advertises a feed graph-embedding does not read (#424, as
-// graph-index). A configuration with no ENTITY_STATES watch is refused too.
+// port, so a composition never advertises a feed graph-embedding does not read, as
+// graph-index refuses one. A configuration with no ENTITY_STATES watch is refused too.
 func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 	cases := map[string]component.Portable{
 		"another bucket": component.KVWatchPort{Bucket: "OTHER_STATES"},
@@ -309,8 +309,7 @@ func TestConfigRefusesInputsTheFollowerDoesNotRead(t *testing.T) {
 
 // TestStoreReadInputAdmitsStoreRegistry: the injected store registry, through which
 // offloaded bodies are read (ADR-063), is kept only when a store-read input is declared;
-// without one the component holds none, and no store-read port is invented (pin
-// inputports_federation_test.go).
+// without one the component holds none, and no store-read port is invented.
 func TestStoreReadInputAdmitsStoreRegistry(t *testing.T) {
 	registry := storeregistry.New()
 	c, err := createWithDeps(t, `{}`, component.Dependencies{StoreRegistry: registry})

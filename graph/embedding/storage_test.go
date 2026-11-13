@@ -17,8 +17,8 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// savePending writes a pending record through the one pending write the package
-// carries (the pin's tests used the dropped SavePending as setup).
+// savePending writes a pending record through the package's one pending write,
+// SavePendingGuarded.
 func savePending(t *testing.T, s *Storage, entityID, contentHash string, sourceRevision uint64) {
 	t.Helper()
 	saved, err := s.SavePendingGuarded(t.Context(), &Record{
@@ -458,11 +458,10 @@ func (k *conflictKV) Update(context.Context, string, []byte, uint64) (uint64, er
 	return 0, jetstream.ErrKeyExists
 }
 
-// TestSaveExhaustionMatchesMaxRetriesExceeded (design D3, changed): when every
-// compare-and-set conflicts, each read-modify-write gives up after the KVStore's own
-// budget (MaxRetries+1 attempts) with an error matching
-// natsclient.ErrKVMaxRetriesExceeded, and the stored record is unchanged. At the pin
-// the budget was the package's own 3 and the error ErrCASExhausted.
+// TestSaveExhaustionMatchesMaxRetriesExceeded: when every compare-and-set conflicts,
+// each read-modify-write gives up after the KVStore's own budget (MaxRetries+1
+// attempts) with an error matching natsclient.ErrKVMaxRetriesExceeded, and the stored
+// record is unchanged.
 func TestSaveExhaustionMatchesMaxRetriesExceeded(t *testing.T) {
 	t.Parallel()
 	const (
@@ -534,7 +533,7 @@ type deleteKV struct {
 
 func (k *deleteKV) Delete(context.Context, string, ...jetstream.KVDeleteOpt) error { return k.err }
 
-// TestDeleteAtRevisionOutcomes (design D3, the no-text removal): the fenced removal
+// TestDeleteAtRevisionOutcomes (the no-text removal): the fenced removal
 // reports removed when the delete succeeds, nothing removed and no error when the key
 // moved or is gone, and the error otherwise. The real server's fence is driven by
 // TestRevisionGuardHistoryMatchesModel; this pins the mapping of each answer.
@@ -572,8 +571,7 @@ func TestDeleteAtRevisionOutcomes(t *testing.T) {
 
 // TestSaveDedup_RecordsVectorSpace: a dedup record carries the model and dimensions of
 // its vector, and a second save from the same vector space leaves the stored record as
-// it was, writing nothing (design D3, changed: the pin rewrote it to append an entity
-// ID to the dropped EntityIDs field).
+// it was, writing nothing.
 func TestSaveDedup_RecordsVectorSpace(t *testing.T) {
 	t.Parallel()
 	dedup := newMemKV()
@@ -746,7 +744,7 @@ func TestScanFailed_NormalizesReasonAndSeedsRevision(t *testing.T) {
 }
 
 // TestDerivedReasons_NotInPersistedFailureEnum: the derived-write reasons are in-memory
-// only, so the persisted-failure enum collapses them to reasonUnknown (#625 at the pin).
+// only, so the persisted-failure enum collapses them to reasonUnknown.
 func TestDerivedReasons_NotInPersistedFailureEnum(t *testing.T) {
 	t.Parallel()
 	for _, reason := range []string{ReasonDeleteFailed, ReasonPendingWriteFailed, ReasonEntityReadFailed} {
@@ -848,7 +846,7 @@ func (k *countingKV) Delete(ctx context.Context, key string, opts ...jetstream.K
 	return k.memKV.Delete(ctx, key, opts...)
 }
 
-// TestStorageRefusesInvalidIdentityBeforeAnyBucketCall (#467): every entity-ID entry point
+// TestStorageRefusesInvalidIdentityBeforeAnyBucketCall: every entity-ID entry point
 // refuses an ID that is not a literal six-part entity ID, and every dedup-key entry point
 // a key that is not a literal KV key, with an invalid-input error and no bucket call. A
 // valid input reaches the bucket, so the count can tell the two apart.

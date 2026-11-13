@@ -54,11 +54,11 @@ type EmbedderIdentity struct {
 // yet (a remote embedder resolves it from its first response) and gets NO key.
 // "" is the package's established "dedup disabled for this record" signal, which
 // both hops already honour: it is stored as the pending record's ContentHash and
-// getOrGenerateEmbedding generates unconditionally for it. The alternative of
-// keying on a placeholder width is what split EMBEDDING_DEDUP into two disjoint
-// keyspaces per embedder; omitting Dimensions from the key instead would be worse
-// still, since keys would then collide across models of different width — exactly
-// what folding identity into the key was meant to prevent. The cost is redundant
+// getOrGenerateEmbedding generates unconditionally for it. Keying on a
+// placeholder width instead would split EMBEDDING_DEDUP into two disjoint
+// keyspaces per embedder; omitting Dimensions from the key would be worse still,
+// since keys would then collide across models of different width — exactly what
+// folding identity into the key prevents. The cost is redundant
 // embeds during the brief unresolved window, once per process.
 func DedupKey(id EmbedderIdentity, text string) string {
 	if id.Dimensions <= 0 {
@@ -84,7 +84,7 @@ func DedupKey(id EmbedderIdentity, text string) string {
 }
 
 // InProcessDedupKey derives a STABLE process-local key for collapsing concurrent
-// byte-identical embedder calls (#630), EXCLUDING the learned Dimensions.
+// byte-identical embedder calls, EXCLUDING the learned Dimensions.
 //
 // Unlike DedupKey it ALWAYS returns a key — even before the embedder has resolved
 // its vector width (a remote embedder reports Dimensions()==0 until its first response).

@@ -46,11 +46,11 @@ func isNotReady(err error) bool {
 	return errors.As(err, &refusal) && refusal.Code == graph.ErrorCodeIndexNotReady
 }
 
-// awaitAnswer sends body on verb until it is answered and done accepts the reply, and returns
-// that reply. The vector cache applies EMBEDDING_INDEX after the Worker's write lands in the bucket
-// (design D4), so a test reads what it wrote through the reply that ends this wait. A refusal
-// index_not_ready (the cache has not applied its first snapshot) is asked again; any other
-// refusal fails the test at once.
+// awaitAnswer sends body on verb until it is answered and done accepts the reply, and returns that
+// reply. The vector cache applies EMBEDDING_INDEX after the Worker's write lands in the bucket, so
+// a test reads what it wrote through the reply that ends this wait. A refusal index_not_ready (the
+// cache has not applied its first snapshot) is asked again; any other refusal fails the test at
+// once.
 func awaitAnswer[T any](t *testing.T, h *harness, verb, body string, done func(graph.QueryResponse[T]) bool) asked[T] {
 	t.Helper()
 	got := await(t, fmt.Sprintf("%s %s answered", verb, body), func(ctx context.Context) (asked[T], error) {
@@ -135,9 +135,9 @@ func numbered(prefix string, from, to int) []string {
 
 // TestVerbsServeTableSubjects: graph-embedding serves search and similar on the subjects their
 // verb table rows name, each reaching its own handler, and holds one subscription per row and no
-// other (design D1; graph-embedding spec, "The embedding verbs are served from Start until
-// Stop"). Each request is one only its verb's handler refuses as it does: search names the blank
-// query, similar the missing entity_id.
+// other (graph-embedding spec, "The embedding verbs are served from Start until Stop"). Each
+// request is one only its verb's handler refuses as it does: search names the blank query,
+// similar the missing entity_id.
 func TestVerbsServeTableSubjects(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	names := map[string]string{"search": "query", "similar": "entity_id"}
@@ -167,7 +167,7 @@ func TestVerbsServeTableSubjects(t *testing.T) {
 
 // TestSearchAnswersEnveloped: an answer is a graph.QueryResponse from graph-embedding with
 // indexed_revision 0, a min_revision of 0 is answered, and results is a JSON array, never null,
-// on both verbs (design D1, D4). The index holds one generated record, so search's "zebra" and
+// on both verbs. The index holds one generated record, so search's "zebra" and
 // similar's lone source each have no hit.
 func TestSearchAnswersEnveloped(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
@@ -199,12 +199,12 @@ func TestSearchAnswersEnveloped(t *testing.T) {
 }
 
 // TestSearchLimitEdges: on both verbs a limit of 0 means 10, 1 and 100 are used as sent, and 101
-// and -1 are refused invalid_request naming limit and the bound, never clamped (design D3). 101
+// and -1 are refused invalid_request naming limit and the bound, never clamped. 101
 // entities share one title, so every one is a hit and only the limit bounds the answer.
 //
 // The wait is on similar to the first entity answering 100 neighbours: its source read needs the
 // first entity generated in the bucket, and 100 neighbours other than it are every other entity in
-// the cache, so all 101 vectors are in before the one-shot checks (#561). A search capped at 100
+// the cache, so all 101 vectors are in before the one-shot checks. A search capped at 100
 // answering 100 would not order that: it is satisfied with one vector still outstanding.
 func TestSearchLimitEdges(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
@@ -234,7 +234,7 @@ func TestSearchLimitEdges(t *testing.T) {
 
 // TestSearchQueryEdges: a blank query is refused, and a hit always scores above 0: a query of
 // stopwords only embeds to the zero vector, which scores every entity 0, and answers no hit; a
-// query sharing no term with an entity does not return it (design D3). Two widget entities and
+// query sharing no term with an entity does not return it. Two widget entities and
 // three gadget entities are indexed, so a limit of 10 would hold every one of them.
 func TestSearchQueryEdges(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
@@ -263,7 +263,7 @@ func TestSearchQueryEdges(t *testing.T) {
 // TestSearchScopeEdges: a malformed scope prefix is refused invalid_request and leaves the
 // embedder's statistics as they were (the same search answers the same scores after it); an empty
 // scope element matches every entity; a scope matching nothing answers no hit; a scope keeps only
-// the entities under it (design D3).
+// the entities under it.
 func TestSearchScopeEdges(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	team := numbered("acme.ops.team.system.doc", 1, 2)
@@ -299,7 +299,7 @@ func TestSearchScopeEdges(t *testing.T) {
 // TestSimilarEdges: similar refuses a malformed entity_id invalid_request; an entity with no
 // record, a pending record, a failed record or a generated record with no vector class invalid,
 // code embedding_unavailable; an undecodable source record class invalid with no code; and the
-// entity named is never its own hit (design D3). The Worker's one lane is held, after the two
+// entity named is never its own hit. The Worker's one lane is held, after the two
 // widget entities are generated, so the third entity's record stays pending.
 func TestSimilarEdges(t *testing.T) {
 	store := newGatedStore()
@@ -357,8 +357,7 @@ func TestSimilarEdges(t *testing.T) {
 }
 
 // TestTopKAtTie: when more entities tie on similarity than the limit admits, the hits kept are the
-// smallest entity IDs among the tied, on every call, on both verbs (design D3; the pin's
-// similar_determinism_integration_test.go:31, ported to the verbs). Twenty entities share one
+// smallest entity IDs among the tied, on every call, on both verbs. Twenty entities share one
 // one-word title, so each vector is the same unit vector and every similarity is exactly 1; they
 // are written in reverse order, so neither the bucket's order nor the view's is the answer.
 func TestTopKAtTie(t *testing.T) {
@@ -383,10 +382,9 @@ func TestTopKAtTie(t *testing.T) {
 }
 
 // TestScopedSearch: a scope filters the candidates before they are ranked and limited, so a scoped
-// search returns the best in-scope entities even when out-of-scope ones score higher (ADR-071;
-// design D3; the pin's scope_integration_test.go:25, ported to the verb). The code entities match
-// the query exactly; the docs entities share one of its terms only, so they score lower, and a
-// limit of 2 cut before the scope would leave nothing in scope.
+// search returns the best in-scope entities even when out-of-scope ones score higher (ADR-071).
+// The code entities match the query exactly; the docs entities share one of its terms only, so
+// they score lower, and a limit of 2 cut before the scope would leave nothing in scope.
 func TestScopedSearch(t *testing.T) {
 	h := startEmbedding(t, fixtureClient(t), `{}`, nil)
 	code := []string{

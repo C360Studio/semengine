@@ -34,8 +34,8 @@ func TestSubjectAdmitsOnlyFourCanonicalOperations(t *testing.T) {
 	}
 }
 
-// The port's interface identity is an outward-facing name: flow configs spell it, and #69
-// ruled every such name semengine (design D9).
+// The port's interface identity is an outward-facing name: flow configs spell it, and every such
+// name is spelled semengine.
 func TestInterfaceTypeNamesSemEngine(t *testing.T) {
 	if InterfaceType != "semengine.graph.mutation" {
 		t.Fatalf("InterfaceType = %q, want %q", InterfaceType, "semengine.graph.mutation")

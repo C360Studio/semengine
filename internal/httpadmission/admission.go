@@ -3,8 +3,8 @@
 //
 // net/http stops tracking a handler once its connection is closed: after
 // http.Server.Close, a later Shutdown returns nil at once while the handler still
-// runs (setup-04a-03-boot-service-manager design D2, probe C3 on #353). A server
-// that must not report itself stopped while a handler runs wraps its handler with
+// runs (measured on Go 1.26.9; net/http does not promise it). A server that must
+// not report itself stopped while a handler runs wraps its handler with
 // Requests.Wrap, closes admission when its stop begins, and waits with
 // Requests.Wait. metric.Server and the service manager's listeners use it.
 package httpadmission

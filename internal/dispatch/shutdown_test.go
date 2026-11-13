@@ -11,9 +11,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// KeyedPool takes the Shutdown(ctx) shape (background-work spec; design D5): its lanes run the
-// caller's Process, so stopping waits on work the pool does not control, and the wait is bounded
-// by the caller's context alone. Each test runs in a synctest bubble, so the bubble returning
+// KeyedPool takes the Shutdown(ctx) shape (background-work spec): its lanes run the caller's
+// Process, so stopping waits on work the pool does not control, and the wait is bounded by the
+// caller's context alone. Each test runs in a synctest bubble, so the bubble returning
 // proves no lane or coordinator goroutine is left running.
 
 // TestKeyedPoolShutdownWithoutDeadlineWaitsForJoin: given a context with no deadline, Shutdown
@@ -151,9 +151,8 @@ type processCall struct {
 	ctxErr error
 }
 
-// TestSubmitAfterRunCancelIsProcessed (#131's reproduction): once the context NewKeyedPool was
-// given has ended, an item SubmitBlocking accepts still reaches Process, with that ended
-// context, and Shutdown returns nil.
+// TestSubmitAfterRunCancelIsProcessed: once the context NewKeyedPool was given has ended, an item
+// SubmitBlocking accepts still reaches Process, with that ended context, and Shutdown returns nil.
 func TestSubmitAfterRunCancelIsProcessed(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		run, cancel := context.WithCancel(context.Background())

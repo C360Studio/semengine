@@ -64,13 +64,13 @@ func run(m *testing.M) int {
 	return code
 }
 
-// stackConfig is the one configuration the seven-component stack boots from (design D2), as a
-// product would write it. The child fills the placeholders from its environment: the NATS URL and
-// the three ports the test picked (design D4), and graph-ingest's configuration, {} (its defaults)
-// unless the test passes one. Every other component takes its defaults, except that
-// graph-embedding runs BM25 only, graph-clustering publishes the changed groups every second rather
-// than every 30 s, so a community wait lasts about a second, and the websocket output streams
-// applied ENTITY_STATES on the loopback port the test picked.
+// stackConfig is the one configuration the seven-component stack boots from, as a product would
+// write it. The child fills the placeholders from its environment: the NATS URL and the three ports
+// the test picked, and graph-ingest's configuration, {} (its defaults) unless the test passes one.
+// Every other component takes its defaults, except that graph-embedding runs BM25 only,
+// graph-clustering publishes the changed groups every second rather than every 30 s, so a community
+// wait lasts about a second, and the websocket output streams applied ENTITY_STATES on the loopback
+// port the test picked.
 const stackConfig = `{
   "version": "1.0.0",
   "platform": {"org": "c360", "id": "smoke", "type": "test", "environment": "test"},
@@ -197,7 +197,7 @@ const (
 	// envIngestConfig is graph-ingest's configuration, JSON; unset means its defaults.
 	envIngestConfig = "SMOKE_INGEST_CONFIG"
 	// envHold names, by its last two ID positions, the one entity whose application the child
-	// holds for good (design D6, case 2); unset holds nothing.
+	// holds for good (the "Kill mid-ingest" test); unset holds nothing.
 	envHold = "SMOKE_HOLD"
 )
 
@@ -206,11 +206,11 @@ const stackHelper = "smoke-stack"
 
 // stopBudget bounds each of the child's three stops. A stop is terminal work, so it gets its own
 // finite authority; at an hour it is an unreachable fallback, so a stop that hangs ends at go test
-// -timeout instead of passing as an error the test reads (docs/testing.md, #500).
+// -timeout instead of passing as an error the test reads (docs/testing.md).
 const stopBudget = time.Hour
 
 // requestTimeout is one request's reply timeout, which natsclient requires. At an hour it is an
-// unreachable fallback: a reply that never comes ends at go test -timeout (docs/testing.md, #500).
+// unreachable fallback: a reply that never comes ends at go test -timeout (docs/testing.md).
 const requestTimeout = time.Hour
 
 // ingestConsumer is graph-ingest's durable consumer on the ENTITY stream's entity.> subject.
@@ -256,9 +256,9 @@ func TestHelperProcess(t *testing.T) {
 	})
 }
 
-// runStack is the composition root (design D2): what a product's main does, in order. It boots
-// the composition envComposition names from its configuration, creates the ready file, waits for
-// SIGTERM and stops everything it started, each stop under its own budget.
+// runStack is the composition root: what a product's main does, in order. It boots the composition
+// envComposition names from its configuration, creates the ready file, waits for SIGTERM and stops
+// everything it started, each stop under its own budget.
 func runStack(ctx context.Context) (result error) {
 	terminated := make(chan os.Signal, 1)
 	signal.Notify(terminated, syscall.SIGTERM)
@@ -388,8 +388,8 @@ func runStack(ctx context.Context) (result error) {
 // graph-ingest's "Entity ingested" record for the entity whose ID ends in suffix, which
 // ingestEntity logs after the entity's write and before its applied-sequence record and its
 // acknowledgement (processor/graph-ingest/ingest.go, keyed_ingest.go), never returns. The lane
-// applying that input stays there until the test kills the process: the hold of design D6, case 2,
-// as settlement_integration_test.go's pauseOnRecord, never released. The suffix is the ID's fixed
+// applying that input stays there until the test kills the process: the "Kill mid-ingest" hold, as
+// settlement_integration_test.go's pauseOnRecord, never released. The suffix is the ID's fixed
 // positions 3 to 6; positions 1 and 2 are the deployment's, which config.Manager establishes after
 // the logger exists. An empty suffix holds nothing.
 type holdOnIngested struct {
@@ -447,7 +447,7 @@ type stack struct {
 // freePort picks a port for the ServiceManager or the metrics server and releases it.
 func freePort(t *testing.T) int {
 	t.Helper()
-	// Every address: the ServiceManager and the metrics server bind ":"+port (design D4).
+	// Every address: the ServiceManager and the metrics server bind ":"+port.
 	listener, err := net.Listen("tcp", ":0")
 	if err != nil {
 		t.Fatalf("pick a port: %v", err)
@@ -460,7 +460,7 @@ func freePort(t *testing.T) int {
 }
 
 // freeLoopbackPort picks a port for the websocket output, which binds 127.0.0.1, in that family,
-// and releases it (design "Tests"; #390).
+// and releases it.
 func freeLoopbackPort(t *testing.T) int {
 	t.Helper()
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
@@ -655,7 +655,7 @@ func (o observer) readConsumer(ctx context.Context) (consumerState, error) {
 }
 
 // awaitAcknowledged waits until graph-ingest's consumer has acknowledged every input up to seq:
-// graph-ingest's own ordering event for the batch (design D5). It returns what it read last.
+// graph-ingest's own ordering event for the batch. It returns what it read last.
 func (o observer) awaitAcknowledged(t *testing.T, s stack, seq uint64) consumerState {
 	t.Helper()
 	return await(t, s, fmt.Sprintf("graph-ingest to acknowledge up to sequence %d", seq), o.readConsumer,
@@ -725,11 +725,11 @@ func latched(status graph.IndexStatusResponse) string {
 	return ""
 }
 
-// awaitIndexed is the rest of design D5's order, after the acknowledgement or a mutation's reply:
-// the ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one,
-// not degraded; then the envelope of each index the composition runs (graph-index, and
-// graph-embedding and graph-clustering where they are configured) at or above that revision; then,
-// where the websocket output is configured, a client it accepts streamed through that revision
+// awaitIndexed is the rest of the wait order, after the acknowledgement or a mutation's reply: the
+// ENTITY_STATES revision, read now; graph-ingest's envelope, once this child has written one, not
+// degraded; then the envelope of each index the composition runs (graph-index, and graph-embedding
+// and graph-clustering where they are configured) at or above that revision; then, where the
+// websocket output is configured, a client it accepts streamed through that revision
 // (awaitStreamed). It returns the revision. A latched state fails at once, naming it.
 func (o observer) awaitIndexed(t *testing.T, s stack) uint64 {
 	t.Helper()
@@ -790,8 +790,8 @@ func get(t *testing.T, s stack, port int, path string) (string, int, []byte) {
 }
 
 // send sends one request to the stack's server on port, dialled at the IPv6 loopback: on a Mac,
-// 127.0.0.1:<port> can belong to another program that bound IPv4 only (design D4, #390). It
-// returns the URL, the status and the body.
+// 127.0.0.1:<port> can belong to another program that bound IPv4 only. It returns the URL, the
+// status and the body.
 func send(t *testing.T, s stack, port int, method, path string, body []byte) (string, int, []byte) {
 	t.Helper()
 	if !s.process.Alive() {
@@ -858,11 +858,12 @@ func requireComponentsHealthy(t *testing.T, s stack) {
 	}
 }
 
-// reindexMetric is graph-index's re-index counter (#108's instrument), by result.
+// reindexMetric is graph-index's re-index counter, by result.
 const reindexMetric = "semengine_graph_index_reindex_events_total"
 
 // readReindexCounter returns the reindexMetric series the stack's metrics server reports, one line
-// each. The counter is recorded, never asserted (design D4, #108).
+// each. The counter is logged, never asserted: it measures rebuild-on-restart, and no behaviour
+// depends on it yet.
 func readReindexCounter(t *testing.T, s stack) []string {
 	t.Helper()
 	url, code, body := get(t, s, s.metricsPort, "/metrics")

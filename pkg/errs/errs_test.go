@@ -131,10 +131,10 @@ func TestClassify(t *testing.T) {
 		{"connection timeout", ErrConnectionTimeout, ErrorTransient},
 		{"invalid config", ErrInvalidConfig, ErrorFatal},
 		{"invalid data", ErrInvalidData, ErrorInvalid},
-		// An unclassified error is fatal (owner ruling 1, #167 comment 6191970843).
+		// An unclassified error is fatal.
 		{"bare error", errors.New("boom"), ErrorFatal},
 		{"classified error", &ClassifiedError{Class: ErrorFatal, Err: fmt.Errorf("test")}, ErrorFatal},
-		// Text never decides the class (ruling N, #146): an unclassified error with no
+		// Text never decides the class: an unclassified error with no
 		// listed sentinel takes the default, whatever its words, and a wrapped sentinel decides.
 		{"timeout and transient words in message only", errors.New("transient timeout reading c360.ops.robotics.gcs.drone.001"), ErrorFatal},
 		{"invalid sentinel beside transient words", fmt.Errorf("network timeout: %w", ErrInvalidData), ErrorInvalid},
@@ -154,7 +154,7 @@ func TestClassify(t *testing.T) {
 }
 
 // TestClassifiedErrorWithoutClass pins that a ClassifiedError literal that leaves
-// Class unset is not retryable (#258): the zero class names no class, so Classify
+// Class unset is not retryable: the zero class names no class, so Classify
 // gives it the unclassified default, fatal, even over a transient sentinel.
 func TestClassifiedErrorWithoutClass(t *testing.T) {
 	var unset ErrorClass
@@ -343,7 +343,7 @@ func TestWrapClassifiedPreservesMachineContract(t *testing.T) {
 
 // TestWrapClassified_NilInnerAlwaysReturnsNil verifies that WrapTransient,
 // WrapFatal, and WrapInvalid return nil whenever err is nil regardless of
-// whether action is empty or non-empty (#218), matching Wrap and Classified.
+// whether action is empty or non-empty, matching Wrap and Classified.
 func TestWrapClassified_NilInnerAlwaysReturnsNil(t *testing.T) {
 	tests := []struct {
 		name     string

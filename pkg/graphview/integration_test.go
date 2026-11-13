@@ -2,7 +2,7 @@
 
 // Integration tests for pkg/graphview on a real NATS KV bucket and a real
 // WatchAll (ordered consumer, end-of-replay nil marker, tombstone delivery),
-// on the package's shared server through the reset (design D6, #195). The
+// on the package's shared server through the reset. The
 // coherence burden lives in the unit suite on the fake source; these tests
 // prove the composed path, the join of nats.go's watch delivery and the loss
 // of a watch whose bucket is deleted.
@@ -43,8 +43,8 @@ func run(m *testing.M) int {
 }
 
 // waitBound bounds each wait on the server or on Run in these tests. The longest is the lost watch
-// after a delete: nats.go closed the update channel about 20 s after the delete at v1.54.0 (probe
-// G6, PR #476 comment 6522730160; not promised), so the bound leaves room under load.
+// after a delete: nats.go closed the update channel about 20 s after the delete at v1.54.0 (not
+// promised), so the bound leaves room under load.
 const waitBound = 60 * time.Second
 
 // viewBucket is the bucket these tests watch; the shared server is reset before each test.
@@ -149,7 +149,7 @@ func decodeITRecord(key string, value []byte, _ EntryMeta) (*itRecord, bool, err
 	return &rec, true, nil
 }
 
-// TestIntegration_GraphViewOverRealBucket is the pin's real-bucket test on Run: bootstrap from
+// TestIntegration_GraphViewOverRealBucket drives Run over a real bucket: bootstrap from
 // stored entries, caught-up on the real end-of-replay marker, snapshot and subscribe, live
 // create, update and delete converging with no revision falling, point reads coherent with the
 // stream, and a fresh attach snapshotting the converged state. Ending Run's context then returns
@@ -300,8 +300,8 @@ func TestRunLeavesNoWatchDelivery(t *testing.T) {
 }
 
 // TestRunReportsLostWatch (spec "The bucket is deleted"): when the bucket is deleted under a live
-// Run, nats.go closes the watch's update channel (about 20 s after the delete at v1.54.0, probe
-// G6; not promised); Run returns on its own, its context still live, with an error matching
+// Run, nats.go closes the watch's update channel (about 20 s after the delete at v1.54.0; not
+// promised); Run returns on its own, its context still live, with an error matching
 // ErrWatcherLost, not the context's. The attached subscription closes with ErrWatcherLost, reads
 // refuse, and nats.go's watch delivery has ended.
 func TestRunReportsLostWatch(t *testing.T) {

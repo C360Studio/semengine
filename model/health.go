@@ -16,7 +16,8 @@ const (
 	// StatusClosed is the healthy state; requests flow normally.
 	StatusClosed EndpointStatus = iota
 	// StatusOpen rejects requests until the cooldown elapses. Callers
-	// (typically agentic-model's fallback chain) skip Open endpoints.
+	// (typically agentic-model's fallback chain, not in SemEngine yet) skip
+	// Open endpoints.
 	StatusOpen
 	// StatusHalfOpen lets a single probe through to test recovery.
 	// While in this state, additional concurrent calls are still
@@ -40,8 +41,9 @@ func (s EndpointStatus) String() string {
 }
 
 // ErrorKind classifies a failed request for breaker accounting and
-// metrics. Mirrors the categories agentic-model already records via
-// recordRequestError so health policies and metrics agree on shape.
+// metrics. Mirrors the categories agentic-model (not in SemEngine yet)
+// records via recordRequestError so health policies and metrics agree on
+// shape.
 type ErrorKind string
 
 const (
@@ -106,9 +108,9 @@ type HealthStats struct {
 }
 
 // HealthPolicy tracks per-endpoint failure state and decides which
-// endpoints are eligible to receive traffic. agentic-model consults
-// IsHealthy when iterating its fallback chain and reports each request
-// outcome via RecordResult.
+// endpoints are eligible to receive traffic. agentic-model (not in
+// SemEngine yet) consults IsHealthy when iterating its fallback chain and
+// reports each request outcome via RecordResult.
 //
 // Implementations must be safe for concurrent use. The default
 // in-process implementation is RollingWindowBreaker (model/breaker.go);
@@ -164,9 +166,10 @@ func (alwaysHealthyPolicy) RecordResult(string, Result) {}
 // circuit-breaker state before routing) can take this richer interface
 // instead of plumbing the policy and registry separately.
 //
-// agentic-model wraps its (registry, policy) pair into one of these
-// for callers that want the combined shape; raw *Registry instances
-// don't satisfy it, but ComposeHealth(r, p) returns one.
+// agentic-model (not in SemEngine yet) wraps its (registry, policy) pair
+// into one of these for callers that want the combined shape; raw
+// *Registry instances don't satisfy it, but ComposeHealth(r, p) returns
+// one.
 type HealthAwareRegistry interface {
 	RegistryReader
 	HealthPolicy

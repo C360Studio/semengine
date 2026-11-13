@@ -31,7 +31,7 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// The fixed inputs (design D5). Expected answers are written from these, never from a reply.
+// The fixed inputs. Expected answers are written from these, never from a reply.
 const (
 	producerSource = "smoke-producer"
 	namePredicate  = "fleet.identity.name" // ends in .name, so graph-embedding embeds it
@@ -234,10 +234,10 @@ func requireRefusal(t *testing.T, what string, reply []byte, err error, code, te
 	}
 }
 
-// checkAnswers is the one oracle (design D5): every answer the stack gives about w, read after the
-// ordered waits. revision is the ENTITY_STATES revision awaitIndexed read after the last write, which
-// the community checks wait on. deleted are IDs the stack must no longer hold. s is the running
-// stack, which the search and community checks' waits watch.
+// checkAnswers is the one oracle: every answer the stack gives about w, read after the ordered
+// waits. revision is the ENTITY_STATES revision awaitIndexed read after the last write, which the
+// community checks wait on. deleted are IDs the stack must no longer hold. s is the running stack,
+// which the search and community checks' waits watch.
 func checkAnswers(t *testing.T, o observer, s stack, f fixture, w want, revision uint64, deleted ...string) {
 	t.Helper()
 	lead := f.id(drone1)
@@ -362,7 +362,7 @@ func checkSummary(t *testing.T, summary graph.SummaryData, w want) {
 	}
 }
 
-// checkEmbeddingRecords reads EMBEDDING_INDEX, a declared read beside the public paths (design D5):
+// checkEmbeddingRecords reads EMBEDDING_INDEX, a declared read beside the public paths:
 // one generated record per live entity, made from the entity's current revision as the entity verb
 // read it (revisions), and no other record.
 func checkEmbeddingRecords(t *testing.T, o observer, revisions map[string]uint64) {
@@ -498,11 +498,11 @@ func hitIDs(hits []graph.SimilarityHit) []string {
 	return out
 }
 
-// checkSearch checks graph-embedding's verbs through graph-query, semantic and similar (design
-// D9). The BM25 embedder's statistics live in memory and depend on the order documents arrive,
-// so a restart changes scores (graph/embedding/bm25_embedder.go:119-123). No check reads a score,
-// a vector or the order of two hits with positive scores: what holds through a restart is which
-// entities score above 0, those whose name shares a word with the query, and the reply drops a 0.
+// checkSearch checks graph-embedding's verbs through graph-query, semantic and similar. The BM25
+// embedder's statistics live in memory and depend on the order documents arrive, so a restart
+// changes scores (graph/embedding/bm25_embedder.go:119-123). No check reads a score, a vector or
+// the order of two hits with positive scores: what holds through a restart is which entities score
+// above 0, those whose name shares a word with the query, and the reply drops a 0.
 func checkSearch(t *testing.T, o observer, s stack, f fixture, w want, deleted []string) {
 	t.Helper()
 	inputs := slices.Collect(maps.Values(w))
@@ -801,11 +801,11 @@ func (o observer) deleteEntity(t *testing.T, id string) {
 }
 
 // checkWritesAfterRestart publishes one new entity and one edit to a restarted stack, waits on the
-// order design D5 sets after them, and checks the answers: before plus the two writes. It returns
-// what the stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
+// ordered waits after them, and checks the answers: before plus the two writes. It returns what the
+// stack now answers. The waits read the ENTITY_STATES revision after the two writes, so the
 // graph-index, graph-embedding and graph-clustering envelopes and the community record an earlier
-// process left, at a lower revision, cannot pass them; the new entity's record and the edit's record at its new revision are ones no earlier
-// process can have written (design D6).
+// process left, at a lower revision, cannot pass them; the new entity's record and the edit's
+// record at its new revision are ones no earlier process can have written.
 func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, before want) want {
 	t.Helper()
 	o.publish(t, f.newDrone())
@@ -819,9 +819,9 @@ func checkWritesAfterRestart(t *testing.T, o observer, s stack, f fixture, befor
 	return after
 }
 
-// TestSmoke_StackRestartKeepsAnswers holds composed-stack, "Stop and start the stack" (design D6,
-// case 1): the stack stops on SIGTERM, a new process boots from the same configuration on the same
-// server, and it answers what the first one did plus what is published after the restart.
+// TestSmoke_StackRestartKeepsAnswers holds composed-stack, "Stop and start the stack": the stack
+// stops on SIGTERM, a new process boots from the same configuration on the same server, and it
+// answers what the first one did plus what is published after the restart.
 func TestSmoke_StackRestartKeepsAnswers(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -890,7 +890,7 @@ func killIngestConfig(t *testing.T) string {
 }
 
 // appliedRecord reads graph-ingest's applied-sequence record for id on the ENTITY stream, a declared
-// read beside the public paths (design D5). It reports whether the record exists.
+// read beside the public paths. It reports whether the record exists.
 func (o observer) appliedRecord(t *testing.T, id string) bool {
 	t.Helper()
 	kv, err := o.js.KeyValue(t.Context(), graph.BucketGraphIngestAppliedSeq)
@@ -908,12 +908,12 @@ func (o observer) appliedRecord(t *testing.T, id string) bool {
 	return true
 }
 
-// TestSmoke_KillMidIngestKeepsAcknowledgedWrites holds composed-stack, "Kill mid-ingest" (design D6,
-// case 2): the first process holds graph-ingest on one input, after its entity write and before its
-// applied-sequence record and acknowledgement, and is killed there; a new process boots from the
-// same configuration. Every input the ENTITY stream acknowledged then answers with each statement
-// once, the held input among them, and the index and embedding records catch up, including the
-// writes published after the new process booted.
+// TestSmoke_KillMidIngestKeepsAcknowledgedWrites holds composed-stack, "Kill mid-ingest": the first
+// process holds graph-ingest on one input, after its entity write and before its applied-sequence
+// record and acknowledgement, and is killed there; a new process boots from the same configuration.
+// Every input the ENTITY stream acknowledged then answers with each statement once, the held input
+// among them, and the index and embedding records catch up, including the writes published after
+// the new process booted.
 func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 	url := shared.Reset(t)
 	o := newObserver(t, url)
@@ -1006,7 +1006,7 @@ func TestSmoke_KillMidIngestKeepsAcknowledgedWrites(t *testing.T) {
 
 // brokerBudget bounds the own server's Start and Restart, which require a bounded context. At an
 // hour it is an unreachable fallback: a broker that never comes back ends at go test -timeout
-// (docs/testing.md, #500).
+// (docs/testing.md).
 const brokerBudget = time.Hour
 
 // restartBrokerKeepingURL restarts the NATS server and requires its URL unchanged, as
@@ -1027,9 +1027,9 @@ func restartBrokerKeepingURL(t *testing.T, broker *natsfixture.Fixture) {
 }
 
 // TestSmoke_BrokerRestartBetweenRuns holds composed-stack, "Restart the broker while the stack is
-// stopped" (design D6, case 3): the stack stops on SIGTERM, the NATS server restarts on the same
-// URL with its file storage, and a new process boots from the same configuration and answers what
-// the first one did plus what is published after the restart.
+// stopped": the stack stops on SIGTERM, the NATS server restarts on the same URL with its file
+// storage, and a new process boots from the same configuration and answers what the first one did
+// plus what is published after the restart.
 func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 	// Own server: restarts the NATS server between the two boots, which the shared one must not.
 	broker := natsfixture.New(t)
@@ -1083,10 +1083,10 @@ func TestSmoke_BrokerRestartBetweenRuns(t *testing.T) {
 }
 
 // TestSmoke_BrokerRestartUnderRunningStack holds composed-stack, "Restart the broker under the
-// running stack" (design D6, case 4): the NATS server restarts on the same URL with its file
-// storage while the stack keeps running, and the same process, never restarted, applies a new
-// entity, an edit and a delete published after it, answers what it did before plus those writes,
-// and lists its seven components healthy, with no envelope reporting a lost feed or reset_required.
+// running stack": the NATS server restarts on the same URL with its file storage while the stack
+// keeps running, and the same process, never restarted, applies a new entity, an edit and a delete
+// published after it, answers what it did before plus those writes, and lists its seven components
+// healthy, with no envelope reporting a lost feed or reset_required.
 func TestSmoke_BrokerRestartUnderRunningStack(t *testing.T) {
 	// Own server: restarts the NATS server under the running stack, which the shared one must not.
 	broker := natsfixture.New(t)

@@ -9,10 +9,10 @@ import (
 	"time"
 )
 
-// FuzzConfigUnmarshalJSON: Config.UnmarshalJSON decodes outside bytes (task 3.6a, Codex F5). The
-// invariants come from the decoder's documented contract (a duration is a duration string or
-// integer nanoseconds; an unknown key is refused), checked with the standard library, never with
-// the decoder's own helpers:
+// FuzzConfigUnmarshalJSON: Config.UnmarshalJSON decodes outside bytes. The invariants come from
+// the decoder's documented contract (a duration is a duration string or integer nanoseconds; an
+// unknown key is refused), checked with the standard library, never with the decoder's own
+// helpers:
 //
 //   - it never panics;
 //   - an accepted document holds only Config's keys (enabled, strategy, max_size, ttl,

@@ -11,7 +11,7 @@ import (
 )
 
 // TestEntityIDKeyOrderIsSystemBeforeDomain pins the canonical order
-// org.platform.system.domain.type.instance (ADR-102 d1): the typed struct
+// org.platform.system.domain.type.instance (ADR-102 decision 1): the typed struct
 // serializes in that order and parsing assigns every field from its named
 // position.
 func TestEntityIDKeyOrderIsSystemBeforeDomain(t *testing.T) {
@@ -74,8 +74,8 @@ func TestTaxonomyAcrossSourcesIsPatternNotPrefix(t *testing.T) {
 }
 
 // TestMaxAuthorityPairBytesDerivesFromLongestFamily pins that the authority
-// pair budget falls out of the framework identity family table (ADR-102
-// amends ADR-076 d2) and is never hand-copied: the rule trigger family
+// pair budget falls out of the framework identity family table (ADR-102) and
+// is never hand-copied: the rule trigger family
 // (`rules.graph.trigger.` + 64 hex + two separators = 86 bytes) binds today.
 func TestMaxAuthorityPairBytesDerivesFromLongestFamily(t *testing.T) {
 	t.Parallel()

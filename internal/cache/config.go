@@ -254,12 +254,11 @@ func (c *Config) UnmarshalJSON(data []byte) error {
 		Alias: (*Alias)(c),
 	}
 
-	// A key Config does not have is refused, never silently ignored (owner ruling, #9 comment
-	// 5968830525).
+	// A key Config does not have is refused, never silently ignored.
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()
 	// Decode into the struct itself, not the pointer to it: a JSON null then leaves aux as it is
-	// instead of setting it to nil (at the pin, Unmarshal(&aux) on null panicked below).
+	// instead of setting it to nil (Unmarshal(&aux) on null would leave aux nil and panic below).
 	if err := dec.Decode(aux); err != nil {
 		return err
 	}

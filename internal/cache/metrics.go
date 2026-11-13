@@ -66,8 +66,8 @@ func newCacheMetrics(registry *metric.MetricsRegistry, prefix string) (*cacheMet
 	}
 
 	// Register through RegisterOrGet and keep the collectors it returns: a second cache under
-	// the same prefix shares the first cache's collectors, so both caches' writes are gathered
-	// (design D9). The collectors are interface-typed; RegisterOrGet compares the concrete type.
+	// the same prefix shares the first cache's collectors, so both caches' writes are gathered.
+	// The collectors are interface-typed; RegisterOrGet compares the concrete type.
 	var err error
 	if m.hits, err = metric.RegisterOrGet(registry, prefix, "cache_hits", m.hits); err != nil {
 		return nil, err

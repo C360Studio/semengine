@@ -136,7 +136,7 @@ func (f StreamFacts) HeartbeatInterval() string { return f.heartbeatInterval }
 func (f StreamFacts) MaxAckPending() int { return f.maxAckPending }
 
 // Import reports whether the operator declared this port an import lane — the
-// one place a foreign org.platform is admitted (ADR-102 d5). False is the
+// one place a foreign org.platform is admitted (ADR-102 decision 5). False is the
 // fail-closed default for every port that does not say otherwise.
 func (f StreamFacts) Import() bool { return f.importLane }
 
@@ -150,8 +150,7 @@ func (f NetworkFacts) Host() string { return f.host }
 func (f NetworkFacts) Port() int { return f.port }
 
 // transport is the socket type a listener for this port opens: UDP for the
-// protocol label "udp" in any letter case, TCP for every other label (owner
-// rulings, #328).
+// protocol label "udp" in any letter case, TCP for every other label.
 func (f NetworkFacts) transport() string {
 	if strings.EqualFold(f.protocol, "udp") {
 		return "udp"
@@ -161,7 +160,7 @@ func (f NetworkFacts) transport() string {
 
 // clashes reports whether listeners for f and other cannot both bind: the same
 // transport and port, and a wildcard host on either side, one IP address in two
-// spellings, or the same host text. Host names are not resolved (probe, #328).
+// spellings, or the same host text. Host names are not resolved.
 func (f NetworkFacts) clashes(other NetworkFacts) bool {
 	if f.transport() != other.transport() || f.port != other.port {
 		return false
@@ -177,8 +176,8 @@ func (f NetworkFacts) clashes(other NetworkFacts) bool {
 }
 
 // hostAddr returns the IP address a host spells, unmapping an IPv4-mapped IPv6
-// address and dropping any IPv6 zone (owner ruling, #339); for a host name it
-// returns the zero Addr.
+// address and dropping any IPv6 zone; for a host name it returns the zero
+// Addr.
 func hostAddr(host string) netip.Addr {
 	addr, err := netip.ParseAddr(host)
 	if err != nil {

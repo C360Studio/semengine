@@ -27,7 +27,7 @@ func (o suiteOwner) Start(ctx context.Context) error { return o.start(ctx) }
 func (o suiteOwner) Stop(ctx context.Context) error { return o.c.Stop(ctx) }
 
 // Observe reports what the gateway retains: the HTTP requests it admitted and has not returned
-// from. It holds no NATS state and runs no goroutine of its own (design D5).
+// from. It holds no NATS state and runs no goroutine of its own.
 // TestStopWaitsForInFlightRequest shows a started gateway reporting one.
 func (o suiteOwner) Observe() lifecycletest.Observation {
 	var held []string

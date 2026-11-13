@@ -16,7 +16,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Background-work shapes (design D7; the background-work capability). Each test that starts work
+// Background-work shapes (the background-work capability spec). Each test that starts work
 // runs inside synctest.Test: the bubble returns only once every goroutine started in it has
 // exited, so a test that returns proves nothing was left running. The work is started with a
 // context only the failure path cancels, never t.Context(): the bubble cancels t.Context() before
@@ -80,8 +80,8 @@ func TestCoalescingSetShutdownLeavesNothingRunning(t *testing.T) {
 }
 
 // TestCoalescingSetNilContextRefusedAtTheCall: NewCoalescingSet returns an error, so a nil context
-// is refused with one, as NewTTL refuses it (design D7: an error where the entry returns one), and
-// no goroutine starts.
+// is refused with one, as NewTTL refuses it (an entry point that returns an error refuses with
+// it), and no goroutine starts.
 func TestCoalescingSetNilContextRefusedAtTheCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		var fired bool
@@ -258,8 +258,8 @@ func TestCacheConstructorsReturnNilCacheOnError(t *testing.T) {
 // promises thread safety), and every call returns only once the cleanup goroutine has exited.
 // The oracle is the goroutine's own done channel, read the moment each Close returns; a close of
 // an already closed channel panics and fails the run. Rounds repeat because the race between the
-// callers' check and close is narrow (Codex's probe: 73 TTL and 85 hybrid panics in 2,000 rounds
-// of 32 callers at a7dbf9d).
+// callers' check and close is narrow (an unjoined check and close measured 73 TTL and 85 hybrid
+// panics in 2,000 rounds of 32 callers).
 func TestCacheConcurrentCloseJoinsEveryCaller(t *testing.T) {
 	const rounds, callers = 2000, 32
 	for _, strategy := range []Strategy{StrategyTTL, StrategyHybrid} {

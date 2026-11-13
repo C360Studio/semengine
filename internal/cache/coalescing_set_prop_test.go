@@ -13,10 +13,10 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The generated check for CoalescingSet (task 3.6): histories of Add, Remove, RemovePrefix,
-// Drain, window ticks and Shutdown, compared after every step with a reference model the test
-// owns. The model is written from the set's documented contract (coalescing_set.go doc comments
-// and design D7), never from its code:
+// The generated check for CoalescingSet: histories of Add, Remove, RemovePrefix, Drain, window
+// ticks and Shutdown, compared after every step with a reference model the test owns. The model is
+// written from the set's documented contract (coalescing_set.go doc comments and the
+// background-work spec), never from its code:
 //
 //   - the set holds each pending key once; Add reports whether the key was newly inserted, Remove
 //     whether it was pending, RemovePrefix how many pending keys had the prefix, and PendingCount

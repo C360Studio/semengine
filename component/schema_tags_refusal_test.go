@@ -33,10 +33,10 @@ type refusedArrayItem struct {
 	Items []refusedItem `json:"items" schema:"type:array,description:Items"`
 }
 
-// TestGenerateConfigSchemaPanicsOnRefusedTag pins issue #281: a schema tag
-// ParseSchemaTag refuses is a programming error, so schema generation panics
-// with a message naming the struct type, the field and the tag, instead of
-// leaving the field out of the schema without a word.
+// TestGenerateConfigSchemaPanicsOnRefusedTag: a schema tag ParseSchemaTag
+// refuses is a programming error, so schema generation panics with a message
+// naming the struct type, the field and the tag, instead of leaving the field
+// out of the schema without a word.
 func TestGenerateConfigSchemaPanicsOnRefusedTag(t *testing.T) {
 	const tag = "type:number,description:Ratio"
 	tests := []struct {

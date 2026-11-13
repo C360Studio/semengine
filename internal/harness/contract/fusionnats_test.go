@@ -11,7 +11,7 @@ const fusionNATSRule = "(composed-stack › The graph stack answers fusion witho
 
 // fusionNATSForbidden are the module packages pkg/fusion/fusionnats must not reach: the embedding
 // index and its component, which a stack without an embedder does not build, and the readiness
-// watch fusionnats no longer uses (fusion spec, "No readiness import").
+// watch, which fusionnats does not use (fusion spec, "No readiness import").
 var fusionNATSForbidden = []string{"graph/embedding", "processor/graph-embedding", "graph/readiness"}
 
 // TestFusionNATSImportsNoEmbedding holds the rule that pkg/fusion/fusionnats builds into a stack

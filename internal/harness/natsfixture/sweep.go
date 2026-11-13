@@ -19,9 +19,9 @@ const (
 	// (no t.Cleanup runs after SIGINT or a -timeout) is found by it, never by its name.
 	testLabel = "org.c360studio.semengine.test"
 	// sweepAge is how long ago Docker must have created a labelled container before the sweep
-	// removes it (owner ruling, #205 comment 6132995614): three times go test's default 10-minute
-	// -timeout, so a run under that timeout has ended before its containers qualify. Age is the only
-	// test: a run with a longer or disabled -timeout gets no protection while it is still going.
+	// removes it: three times go test's default 10-minute -timeout, so a run under that timeout has
+	// ended before its containers qualify. Age is the only test: a run with a longer or disabled
+	// -timeout gets no protection while it is still going.
 	sweepAge = 30 * time.Minute
 )
 

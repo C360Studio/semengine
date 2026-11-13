@@ -17,7 +17,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/probe"
 )
 
-// failpoint names one lifecycle defect the refowner double can exhibit (design S3).
+// failpoint names one lifecycle defect the refowner double can exhibit.
 type failpoint string
 
 const (
@@ -155,7 +155,7 @@ func (o *refowner) Stop(ctx context.Context) error {
 		case abortStopDropsCause:
 			// The defect under test is only the dropped cause. Keep the worker for a later Stop, as
 			// the clean path does: marking the owner stopped here without joining would also let the
-			// next Stop return nil ahead of the worker's exit (issue #40).
+			// next Stop return nil ahead of the worker's exit.
 			o.mu.Unlock()
 			return nil
 		}
@@ -246,8 +246,8 @@ func newRefowner(t *testing.T, fp failpoint, restartable bool) *refowner {
 // that the double then holds nothing, and joins every worker the double started before it returns.
 //
 // A Stop that signalled its worker and returned nil claims a join: the requirement is checked
-// before finalize waits, so a Stop that returned ahead of its worker's exit (issue #40) is reported,
-// not rescued. A double whose Stop never signalled its worker (stopReturnsNilWithWorkerRunning's
+// before finalize waits, so a Stop that returned ahead of its worker's exit is reported, not
+// rescued. A double whose Stop never signalled its worker (stopReturnsNilWithWorkerRunning's
 // declared defect) has that worker ended through its run context and joined first; the assertion
 // then holds for it too, with no exemption.
 func finalize(t *testing.T, o *refowner) {
@@ -451,8 +451,8 @@ func TestEachFailpointTripsExactlyItsCheck(t *testing.T) {
 	}
 }
 
-// TestAbortStopThenFinishJoinsWorker forces issue #40's interleaving instead of waiting for the
-// scheduler to produce it: a Stop given an ended context has returned without signalling the worker,
+// TestAbortStopThenFinishJoinsWorker forces one interleaving instead of waiting for the scheduler
+// to produce it: a Stop given an ended context has returned without signalling the worker,
 // then finalize's Stop runs and signals it, and the worker is held before it closes workerDone. In a
 // synctest bubble, Wait returns only once every goroutine is durably blocked, so whether that Stop
 // has returned is decided by the double's code, not by timing: a Stop that returned while the worker
@@ -511,12 +511,13 @@ func TestAbortStopThenFinishJoinsWorker(t *testing.T) {
 	}
 }
 
-// TestFinalizeReportsWorkerHeldAfterSignal holds finalize's order. The double is left as issue
-// #40's Stop leaves it: the worker has been signalled and the owner marked stopped, but the worker
-// is held before it closes workerDone. finalize must report that worker, which it can only do if
-// its assertion comes before its last join, and must not return while the worker is held, which it
-// can only do if that join is there. In the bubble, Wait returns once every goroutine is durably
-// blocked, so whether the verdict has returned is decided by finalize's code, not by timing.
+// TestFinalizeReportsWorkerHeldAfterSignal holds finalize's order. The double is left in the state
+// a Stop that skips its join leaves: the worker has been signalled and the owner marked stopped,
+// but the worker is held before it closes workerDone. finalize must report that worker, which it
+// can only do if its assertion comes before its last join, and must not return while the worker is
+// held, which it can only do if that join is there. In the bubble, Wait returns once every
+// goroutine is durably blocked, so whether the verdict has returned is decided by finalize's code,
+// not by timing.
 func TestFinalizeReportsWorkerHeldAfterSignal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		o := newRefowner(t, clean, false)
@@ -525,7 +526,7 @@ func TestFinalizeReportsWorkerHeldAfterSignal(t *testing.T) {
 		if err := o.Start(t.Context()); err != nil {
 			t.Fatalf("Start = %v", err)
 		}
-		// What #40's Stop did: signal the worker and mark the owner stopped without the join.
+		// What a Stop that skips its join does: signal the worker and mark the owner stopped.
 		o.mu.Lock()
 		o.stopOnce.Do(func() { close(o.stopCh) })
 		o.running, o.stopped = false, true

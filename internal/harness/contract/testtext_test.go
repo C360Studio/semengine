@@ -304,7 +304,7 @@ func TestNoReachCheckAfterGeneratedRunSensitivity(t *testing.T) {
 	}
 	clean := map[string]string{
 		"x/x_test.go": "package x\n\n" +
-			// Witnesses before the run, failing on any; after it, only logging (the #498 shape).
+			// Witnesses before the run, failing on any; after it, only logging.
 			"func TestWitness(t *testing.T) {\n\tfor _, w := range witnesses {\n\t\tif !holds(w) {\n\t\t\tt.Fatalf(\"witness %v\", w)\n\t\t}\n\t}\n" +
 			"\texplored := 0\n\t" + rapidCheckCall + "t, func(rt *rapid.T) {\n\t\texplored++\n" +
 			// Assertions inside the property are its own.

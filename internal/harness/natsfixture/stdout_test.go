@@ -20,8 +20,8 @@ func stdout(cmd *exec.Cmd) (string, error) {
 	return strings.TrimSpace(string(out)), err
 }
 
-// #229: a command that succeeds and writes a warning to standard error, as `docker run -d` does
-// when it pulls the image first, still yields only the ID it wrote to standard output.
+// A command that succeeds and writes a warning to standard error, as `docker run -d` does when it
+// pulls the image first, still yields only the ID it wrote to standard output.
 func TestStdoutIgnoresWarningsOnSuccess(t *testing.T) {
 	got, err := stdout(exec.CommandContext(t.Context(), "sh", "-c",
 		`echo "Unable to find image 'nats:latest' locally" >&2; echo 4f2a9c`))

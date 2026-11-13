@@ -189,7 +189,7 @@ func TestFloorComesFromRegistration(t *testing.T) {
 	})
 }
 
-// TestHierarchyContainerBirthCarriesRegisteredType (O-16 (a)): a container born
+// TestHierarchyContainerBirthCarriesRegisteredType: a container born
 // by graph-ingest's own in-process lane carries graph.hierarchy_container.v1 and
 // the unknown-label metric does not fire.
 func TestHierarchyContainerBirthCarriesRegisteredType(t *testing.T) {

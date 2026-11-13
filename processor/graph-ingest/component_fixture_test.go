@@ -152,7 +152,7 @@ func testDependencies(tb testing.TB, natsClient *natsclient.Client, opts ...test
 // fixture keeps a heterogeneous table's rows and their component in lockstep
 // instead of duplicating the pair in every row.
 //
-// It is a test convenience and nothing else: ADR-102 d2 forbids exactly this
+// It is a test convenience and nothing else: ADR-102 (decision 2) forbids exactly this
 // read-back on any minting path, which is why no production code does it.
 func authorityOfFixture(tb testing.TB, entityID string) testComponentOption {
 	tb.Helper()
@@ -166,7 +166,7 @@ func authorityOfFixture(tb testing.TB, entityID string) testComponentOption {
 // seedEntityState writes an entity straight into ENTITY_STATES, as a mirror of
 // what an import lane would have produced. A fixture needs it only for an
 // entity under a FOREIGN authority: the in-process write paths are
-// authority-bound (ADR-102 d5), and correctly so — an in-process create under a
+// authority-bound (ADR-102, decision 5), and correctly so — an in-process create under a
 // peer's pair would be the framework minting under a foreign authority. The
 // import lane itself is exercised end-to-end by
 // TestImportLaneAcceptsForeignRejectsLocalClaim; here it is only a seed.

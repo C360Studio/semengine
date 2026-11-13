@@ -28,8 +28,9 @@ func (h recordHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
 func (h recordHandler) WithGroup(string) slog.Handler      { return h }
 
 // TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire: a panic in the callback does not
-// end the process, since the set is a helper inside a service, not a root process. It is logged at error level with the batch size and counted on the registry named by
-// WithCoalescingMetrics, the batch is dropped, and the next batch still reaches the callback.
+// end the process, since the set is a helper inside a service, not a root process. It is logged
+// at error level with the batch size and counted on the registry named by WithCoalescingMetrics,
+// the batch is dropped, and the next batch still reaches the callback.
 // Oracles: the log record, the series gathered from the registry and the later batch, each
 // received under a bound.
 func TestCoalescingSet_CallbackPanicIsRecoveredAndLaterBatchesFire(t *testing.T) {

@@ -27,8 +27,8 @@ type Watcher interface {
 //
 // This exists for external library consumers that maintain their own
 // *Registry alongside the SemEngine runtime. Components in a composition
-// don't use it: a factory that declares component.DepModelRegistry gets
-// the model registry selected at boot, and a later model_registry write
+// don't use it: every component receives the model registry selected at
+// boot in Dependencies.ModelRegistry, and a later model_registry write
 // takes a process restart.
 //
 // Watch never panics; nil watcher or nil apply returns immediately.

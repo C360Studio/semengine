@@ -69,8 +69,8 @@ func WithCoalescingMetrics(registry *metric.MetricsRegistry, prefix string) Coal
 // error, and a panic counter the registry refuses with a transient error, as the cache
 // constructors return a metrics-registration error; in each case no goroutine starts. A panic in
 // the callback is recovered: the set is a helper inside a service, not a root process. The batch
-// the callback was handed is dropped, the panic is logged at error level with the batch size and counted when WithCoalescingMetrics names a
-// registry, and later batches still fire.
+// the callback was handed is dropped, the panic is logged at error level with the batch size and
+// counted when WithCoalescingMetrics names a registry, and later batches still fire.
 func NewCoalescingSet(
 	ctx context.Context, window time.Duration, callback func([]string), opts ...CoalescingOption,
 ) (*CoalescingSet, error) {

@@ -553,7 +553,8 @@ func startReader(w *Watermark) (r *freeReader, readAt func() reading, reads *int
 // TestWatermark_RetentionTracksInFlight checks retention without reading any field of the
 // watermark: a million revisions observed and completed must not grow the live heap, with
 // nothing else in flight and with one revision stuck below them. One retained 8-byte entry per
-// completion would grow it by about 8 MB; the bound is 1 MiB.
+// completion would grow it by about 8 MB; the bound is 1 MiB: code that retains nothing measured
+// about 0 bytes of growth (1,864 under -race).
 //
 // spec: revision-watermark / Retained state tracks in-flight work
 func TestWatermark_RetentionTracksInFlight(t *testing.T) {

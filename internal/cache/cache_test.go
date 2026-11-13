@@ -524,9 +524,10 @@ func TestStatistics(t *testing.T) {
 
 // TestConcurrentSetDeleteStatsCurrentSizeMatchesSize proves that after concurrent Set and Delete
 // bursts settle across all four strategies, stats.CurrentSize() always equals int64(cache.Size()),
-// and stats.MaxSize() is at least stats.CurrentSize(). It fails if simpleCache or ttlCache
-// releases c.mu before calling c.stats.UpdateSize(size): an earlier mutation's UpdateSize could
-// then overwrite a later mutation's UpdateSize out of order.
+// and stats.MaxSize() is at least stats.CurrentSize(). It is meant to catch simpleCache or
+// ttlCache releasing c.mu before c.stats.UpdateSize(size), a race it hits by chance, not on every
+// run: an earlier mutation's UpdateSize could then overwrite a later mutation's UpdateSize out of
+// order.
 func TestConcurrentSetDeleteStatsCurrentSizeMatchesSize(t *testing.T) {
 	const (
 		rounds  = 250

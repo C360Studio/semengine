@@ -30,14 +30,15 @@ type Factory func(rawConfig json.RawMessage, deps Dependencies) (Discoverable, e
 type PortDeclarer func(rawConfig json.RawMessage, instanceName string) (PortConfig, error)
 
 // Dependency identifiers used by Registration.Dependencies. Components
-// declare these at registration to opt into framework-driven behavior
-// (e.g., receiving the model registry selected at boot). Kept as typed
+// declare these at registration to state which boot dependencies they
+// consume; nothing reads the declaration, and every component receives
+// Dependencies.ModelRegistry, the registry selected at boot. Kept as typed
 // constants so refactors are compiler-checked.
 const (
-	// DepModelRegistry signals that a component consumes
-	// Dependencies.ModelRegistry at construction or run time. Components
-	// that declare this consume the model registry selected at boot.
-	// Later model_registry writes require process restart.
+	// DepModelRegistry states that a component consumes
+	// Dependencies.ModelRegistry at construction or run time, the model
+	// registry selected at boot. Later model_registry writes require process
+	// restart.
 	DepModelRegistry = "model-registry"
 )
 
@@ -750,10 +751,5 @@ func clonePortFacts(facts PortFacts) PortFacts {
 	return clone
 }
 
-// Note: Component registration functions have been removed.
-// Components now use explicit Register(*Registry) methods for registration.
-//
-// Payload registration moved to the payloadregistry package
-// (alongside PayloadRegistration, PayloadRegistry, the global
-// singleton, and Register/Create/Build helpers). Migration is a
-// straightforward import-path swap; the surface is preserved.
+// Components register through their package's Register(*Registry); payload
+// types register in payloadregistry.

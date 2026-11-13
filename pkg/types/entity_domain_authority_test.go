@@ -8,8 +8,9 @@ import (
 
 // TestFrameworkEntityDomainsIsTheClosedReservedSet pins the framework-reserved
 // domain vocabulary {agent, ops, graph} (ADR-102 decision 4). The entity-ID
-// corpus audit's (not in SemEngine yet) domain_unregistered rule consults it beside the registered delegations, so a
-// token silently entering or leaving this set changes what the corpus accepts.
+// corpus audit's (not in SemEngine yet) domain_unregistered rule consults it
+// beside the registered delegations, so a token silently entering or leaving
+// this set changes what the corpus accepts.
 // The gated-DAG family re-slots UNDER `agent`; `gateddag` is not itself
 // reserved.
 func TestFrameworkEntityDomainsIsTheClosedReservedSet(t *testing.T) {

@@ -17,7 +17,8 @@ package platform
 // Accessed as platform.Config to match the convention used by sibling
 // leaf packages (pkg/security/config.go: security.Config). The
 // config-package alias config.PlatformConfig serves package config's own
-// call sites.
+// call sites and the tests that build a config.Config (composition,
+// service and others).
 //
 // Six-part federated entity IDs are anchored on Org and ID: they are
 // positions 1-2 of every identity this deployment mints

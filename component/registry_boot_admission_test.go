@@ -376,7 +376,9 @@ func requireInvalidRefusal(t *testing.T, err error, want string) {
 // TestRegistryRefusesNetworkClaimsThatCannotBothBind: two listeners that
 // cannot both bind are refused, whichever comes first and within one
 // component. Which pairs cannot both bind was measured with Go 1.26.9 on
-// macOS 26.5.2 and Linux 7.0.14 (not promised).
+// macOS 26.5.2 and Linux 7.0.14 (not promised). A pair is refused on every
+// system when either measured system refuses the second bind; macOS binds a
+// TCP wildcard beside a specific host, Linux does not.
 func TestRegistryRefusesNetworkClaimsThatCannotBothBind(t *testing.T) {
 	rows := []networkClaimRow{
 		{"R1 http and websocket on one TCP port",

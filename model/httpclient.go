@@ -65,7 +65,7 @@ const FrameworkDefaultHTTP2PingTimeout = 5 * time.Second
 type HTTPClientOptions struct {
 	// Timeout sets http.Client.Timeout (overall request deadline). Zero
 	// preserves Go's default (no timeout) — appropriate when the caller
-	// drives cancellation via context (the agentic-model pattern). Set
+	// drives cancellation via context. Set
 	// only when the caller does NOT manage ctx deadlines itself.
 	Timeout time.Duration
 	// IdleConnTimeout bounds idle pooled connection lifetime. Empty
@@ -151,7 +151,8 @@ func NewHTTPClient(opts HTTPClientOptions) *http.Client {
 
 // HTTPClientOptionsFromEndpoint builds HTTPClientOptions from an EndpointConfig,
 // translating the three Transport-tuning fields. The Timeout field is left
-// zero — agentic-model and graph/llm both manage request deadlines via context.
+// zero for callers that manage request deadlines via context (agentic-model
+// and graph/llm, neither in SemEngine yet).
 func HTTPClientOptionsFromEndpoint(ep *EndpointConfig) HTTPClientOptions {
 	if ep == nil {
 		return HTTPClientOptions{}

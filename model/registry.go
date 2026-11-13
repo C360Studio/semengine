@@ -15,25 +15,35 @@ import (
 // Capability name constants for registry-based endpoint resolution.
 // Custom capabilities beyond these can be used with Resolve() directly.
 const (
-	// CapabilitySummarization is used by the agentic loop for context compaction.
+	// CapabilitySummarization names the capability for context compaction;
+	// the agentic loop that resolves it is not in SemEngine yet.
 	CapabilitySummarization = "summarization"
-	// CapabilityCommunitySummary is used by graph-clustering for LLM community summaries.
+	// CapabilityCommunitySummary names the capability for LLM community
+	// summaries; graph-clustering's summary worker that resolves it is not
+	// in SemEngine yet.
 	CapabilityCommunitySummary = "community_summary"
-	// CapabilityEmbedding is used by graph-embedding for HTTP embedding services.
+	// CapabilityEmbedding names the capability for HTTP embedding services;
+	// graph-embedding's HTTP embedder that resolves it is not in SemEngine
+	// yet.
 	CapabilityEmbedding = "embedding"
-	// CapabilityQueryClassification is used by graph-query for LLM-based query classification.
+	// CapabilityQueryClassification names the capability for LLM-based query
+	// classification; graph-query's LLM client that resolves it is not in
+	// SemEngine yet.
 	CapabilityQueryClassification = "query_classification"
-	// CapabilityAnswerSynthesis is used by graph-query to synthesize natural language
-	// answers from community summaries and entity digests in globalSearch responses.
+	// CapabilityAnswerSynthesis names the capability that synthesizes natural
+	// language answers from community summaries and entity digests in
+	// globalSearch responses; graph-query's LLM client that resolves it is
+	// not in SemEngine yet.
 	CapabilityAnswerSynthesis = "answer_synthesis"
-	// CapabilityIntentClassification is used by agentic-dispatch to classify
-	// every incoming user message into an intent (new_task / continue / signal /
-	// question / meta) before routing. The most-frequent user-facing LLM call
-	// in the system. Unbound deployments fall back to defaults.model.
+	// CapabilityIntentClassification names the capability that classifies
+	// every incoming user message into an intent (new_task / continue /
+	// signal / question / meta) before routing; agentic-dispatch, which
+	// resolves it, is not in SemEngine yet. Unbound deployments fall back to
+	// defaults.model.
 	CapabilityIntentClassification = "intent_classification"
-	// CapabilityAnomalyReview is used by graph/inference's ReviewWorker to
-	// classify suggested missing relationships as approve/reject. Unbound
-	// deployments fall back to the community_summary endpoint.
+	// CapabilityAnomalyReview names the capability that classifies suggested
+	// missing relationships as approve/reject; graph/inference's
+	// ReviewWorker, which resolves it, is not in SemEngine yet.
 	CapabilityAnomalyReview = "anomaly_review"
 	// CapabilityResearchRouting is used by the route_search component (not
 	// in SemEngine yet) to make a single structured-emit routing decision
@@ -124,8 +134,8 @@ func ResolveEndpointWithConfig(reg RegistryReader, capability string) (*Resolved
 //     and answer_synthesis take longer than query_classification's small
 //     JSON output) so there's no single global default.
 //
-// Order matches processor/agentic-model/component.go:resolveTimeout
-// (per-task → endpoint → capability → component → fallback) so an operator
+// Order matches agentic-model's resolveTimeout (not in SemEngine yet;
+// per-task → endpoint → capability → component → fallback) so an operator
 // who sets endpoint.request_timeout to give a slow endpoint headroom sees
 // consistent behaviour across the framework. Synchronous-gateway capabilities
 // (graph-query) and worker-loop capabilities (graph-clustering) have no
@@ -257,14 +267,14 @@ type EndpointConfig struct {
 	// For provider="ollama", this value is NOT forwarded to the server —
 	// Ollama's /v1/chat/completions layer rejects per-request num_ctx by
 	// design. Pre-build a Modelfile with PARAMETER num_ctx <N> and point
-	// endpoint.model at the derived name. See
-	// docs/operations/04-ollama-setup.md. On first request to an Ollama
-	// endpoint, agentic-model probes /api/show and WARNs once if the
-	// model's num_ctx is below this value.
+	// endpoint.model at the derived name. On first request to an Ollama
+	// endpoint, agentic-model (not in SemEngine yet) probes /api/show and
+	// WARNs once if the model's num_ctx is below this value.
 	//
 	// For all other providers this value is used only for summarization
 	// routing (picking the largest-context endpoint) and context-budget
-	// math in agentic-loop — the provider determines the actual window.
+	// math in agentic-loop (not in SemEngine yet) — the provider determines
+	// the actual window.
 	MaxTokens int `json:"max_tokens"`
 	// MaxOutputTokens is the per-request output cap forwarded as the
 	// OpenAI-compatible `max_tokens` field on chat completions. It is used
@@ -319,8 +329,8 @@ type EndpointConfig struct {
 	MaxConcurrent int `json:"max_concurrent,omitempty"`
 	// RequestTimeout caps a single LLM request to this endpoint.
 	// Go duration string (e.g. "45s", "5m"). Empty means no per-endpoint cap;
-	// the capability or component-level timeout applies. See agentic-model
-	// Timeout Resolution for the full precedence chain.
+	// the capability or component-level timeout applies.
+	// ResolveCapabilityTimeout documents the full precedence chain.
 	RequestTimeout string `json:"request_timeout,omitempty"`
 	// IdleConnTimeout bounds how long a pooled HTTP connection stays idle
 	// before the client closes it. Go duration string (e.g. "30s"). Empty
@@ -364,8 +374,8 @@ type CapabilityConfig struct {
 	// Timeout caps a single LLM request routed via this capability.
 	// Go duration string (e.g. "45s", "5m"). Empty means no per-capability
 	// cap; the component-level timeout applies. Endpoint and task timeouts
-	// take precedence over this value. See agentic-model Timeout Resolution
-	// for the full precedence chain.
+	// take precedence over this value. ResolveCapabilityTimeout documents
+	// the full precedence chain.
 	Timeout string `json:"timeout,omitempty"`
 }
 
@@ -467,9 +477,9 @@ func (r *Registry) Validate() error {
 // is well-formed enough to be used downstream as part of an entity ID.
 // Bad names — empty, dot-bearing, or non-alphanumeric — pass JSON
 // unmarshal cleanly but later panic when agentic.ModelEndpointEntityID
-// constructs a 6-part ID from them at agentic-loop Start. Catching the
-// problem at config-load time instead surfaces a clear error before any
-// component starts.
+// (not in SemEngine yet) constructs a 6-part ID from them at agentic-loop
+// Start. Catching the problem at config-load time instead surfaces a clear
+// error before any component starts.
 //
 // Allowed characters mirror message.IsValidEntityID's per-part rules:
 // ASCII letters, digits, hyphen, underscore. Non-empty.

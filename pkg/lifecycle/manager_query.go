@@ -33,7 +33,7 @@ import (
 //
 // Participants come back in entity-ID order, each at most once, so
 // Offset and Limit page a stable order. nats.go promises neither the
-// order nor the uniqueness of a key listing (#534), so List sorts the
+// order nor the uniqueness of a key listing, so List sorts the
 // keys and removes repeats before it reads any entity.
 //
 // The key listing completes before any entity is read. When it does not
@@ -191,7 +191,7 @@ func (m *Manager) Watch(ctx context.Context, workflow string, onParticipant func
 // key whose latest revision is a tombstone — so a Deleted may arrive
 // during initial values too. Either way treat Deleted as "ensure absent"
 // (idempotent), never "remove a row I saw upserted." Lets an observer
-// learn of reclaims without a parallel raw KV watch (gh#497).
+// learn of reclaims without a parallel raw KV watch.
 //
 // onEvent runs on the caller's goroutine, and WatchEvents returns as Watch
 // does, its error carrying a failure to stop the watch when there is one.

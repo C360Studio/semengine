@@ -50,10 +50,9 @@ package message
 //   - PROJECTED VALUES FEED SUBJECT TEMPLATES. `$message.*` resolves in action
 //     subjects and reasons as well as in conditions, so anything exposed here
 //     can end up as a NATS subject token. Dotted values (`model`) and RFC3339
-//     nano timestamps are now reliably available where they used to arrive only
-//     by accident — which also means an exposed field with a `.` or a space in
-//     it becomes a malformed subject. Prefer exposing tokens a subject can
-//     carry.
+//     nano timestamps arrive intact — which also means an exposed field with a
+//     `.` or a space in it becomes a malformed subject. Prefer exposing tokens a
+//     subject can carry.
 type RuleReadable interface {
 	// RuleFields returns this payload's declared rule-readable fields.
 	// A nil or empty map is a valid answer meaning "nothing to match on" —

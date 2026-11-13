@@ -117,9 +117,9 @@ func TestAppendIdentityKey_ObjectCanonicalizationMatchesNumericWidening(t *testi
 		"a numeric object and its decimal string are not the same fact")
 }
 
-// Task 1.4: the key is length-prefixed, so no field content can be arranged to
-// collide with a different field split. A dot- or pipe-joined key would fail
-// every case here — this is the gh#741 raw-key-collision class.
+// The key is length-prefixed, so no field content can be arranged to collide
+// with a different field split. A dot- or pipe-joined key would fail every case
+// here — this is the raw-key-collision class.
 func TestAppendIdentityKey_NoCollisionAcrossFieldBoundaries(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -338,8 +338,8 @@ func mustMarshalString(t *testing.T, v any) string {
 // normalization diverges: the raw value encodes as 9007199254740993, while the
 // same value read back out of ENTITY_STATES has been through JSON's float64
 // and encodes as 9007199254740992. Two keys for one fact means a producer
-// replaying that triple re-appends it on every restart — gh#713's failure mode
-// surviving for one value class.
+// replaying that triple re-appends it on every restart — the duplicate-append
+// failure the identity key exists to prevent, surviving for one value class.
 func TestAppendIdentityKey_ScalarKeysMatchTheirPersistedForm(t *testing.T) {
 	persistedForm := func(object any) any {
 		encoded, err := json.Marshal(object)

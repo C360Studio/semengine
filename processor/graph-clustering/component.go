@@ -24,9 +24,9 @@ import (
 // key names graph-clustering once: its registration, its logger and its GRAPH_STATUS key.
 const key = readiness.KeyGraphClustering
 
-// The Failed reasons graph-clustering names itself (design D2): reasonRefusedEntity for entities
-// the last tick that reported them left out of the records, reasonPublicationFailed while the last
-// tick's publication failed.
+// The Failed reasons graph-clustering names itself: reasonRefusedEntity for entities the last tick
+// that reported them left out of the records, reasonPublicationFailed while the last tick's
+// publication failed.
 const (
 	reasonRefusedEntity     = "refused_entity"
 	reasonPublicationFailed = "publication_failed"
@@ -199,7 +199,7 @@ func (c *Component) start(ctx context.Context) error {
 		Deliver:         c.deliver,
 		Failed:          c.failed,
 		// A refused entity is left out of its groups' records; the others still publish, so no
-		// failure withholds anything (design D2).
+		// failure withholds anything.
 		Withhold: func() int64 { return 0 },
 	})
 	if err != nil {
@@ -262,10 +262,10 @@ func (c *Component) runTicks(ctx context.Context, tick func(context.Context)) {
 
 // deliver is the follower's Deliver, on its Run goroutine: it applies the delivered value at its
 // revision to the maintainer, then completes the revision at once, so the graph-clustering key's
-// indexed revision counts what the maintainer holds, not what is published (design D1). A value
-// that does not decode is applied as a refused entity, which contributes nothing to its groups;
-// the next tick counts it under refused_entity. The maintainer ignores a delivery at or below the
-// revision it last applied for the key.
+// indexed revision counts what the maintainer holds, not what is published. A value that does not
+// decode is applied as a refused entity, which contributes nothing to its groups; the next tick
+// counts it under refused_entity. The maintainer ignores a delivery at or below the revision it
+// last applied for the key.
 func (c *Component) deliver(_ context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
 	var err error
@@ -316,8 +316,8 @@ func (c *Component) failed() (int64, map[string]uint64) {
 // tick runs one publication: none while the follower's QueryReady refuses (the replay not yet
 // applied, a lost feed, a latched reset), so no record is built from a partial replay or a broken
 // feed; otherwise the maintainer's bootstrap is ended, its changed groups are published, and the
-// outcome is kept for Failed (design D2). A tick the run context ends is not an outcome: Stop is
-// under way, and the work stays pending in the maintainer.
+// outcome is kept for Failed. A tick the run context ends is not an outcome: Stop is under way, and
+// the work stays pending in the maintainer.
 func (c *Component) tick(ctx context.Context) {
 	if err := c.follower.Load().QueryReady(ctx); err != nil {
 		return

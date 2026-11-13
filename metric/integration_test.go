@@ -211,7 +211,8 @@ func TestMetricsIntegration_MultipleServicesWithUniqueMetrics(t *testing.T) {
 	require.NoError(t, err)
 
 	// The second service's keys differ but its descriptors are the first's: a cross-key alias is
-	// refused (design D9). At the pin it succeeded and stored a collector Prometheus never gathered.
+	// refused: Prometheus' Register refuses a second collector with the same descriptor, so a
+	// stored candidate would be a collector nothing gathers.
 	err = service2.RegisterMetrics(registry)
 	require.Error(t, err, "the same descriptor under another service's key must be refused")
 	assert.True(t, errs.IsFatal(err))

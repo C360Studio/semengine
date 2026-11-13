@@ -14,7 +14,7 @@ import (
 	"github.com/nats-io/nats.go/jetstream"
 )
 
-// The watch shape (design D5; background-work, "Nothing left behind, nil refused"): Watch and
+// The watch shape (background-work, "Nothing left behind, nil refused"): Watch and
 // WatchEvents call the caller's function on the caller's goroutine and return once the watch has
 // ended, so nothing they started is left running. Each test runs in a synctest bubble with the
 // watch's context still live when the bubble's function returns: a goroutine left behind is

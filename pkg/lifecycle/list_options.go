@@ -40,8 +40,8 @@ package lifecycle
 //   - String comparison is case-sensitive byte-equal. No fold,
 //     no trim, no glob.
 //
-//     HTTP gateway components (PR 3 of the ADR-047 bundle) handle
-//     query-string-to-Go-type coercion at the gateway boundary — that
+//     A gateway in front of Manager (ADR-047) is where
+//     query-string-to-Go-type coercion belongs — that
 //     is the right place for permissive parsing of operator-supplied
 //     filter values, NOT inside Manager.List. Keeping Manager strict
 //     makes its behavior predictable from Go callers AND keeps the
@@ -58,19 +58,16 @@ package lifecycle
 // — file when an operator demonstrates the bottleneck) trigger the
 // v2 secondary index work; the API stays stable across the migration.
 //
-// # Dropped from v1 surface — UpdatedAfter time.Time
+// # No UpdatedAfter filter
 //
-// An earlier draft exposed UpdatedAfter for incremental pagination
-// of large active sets ("show me changes since T"). It was removed
-// before v1 ship because plumbing the per-entity revision timestamp
-// from the kvStore layer into the filter chain required widening
-// kvStore.Get's return signature to leak store-layer concerns
-// (CreatedAt) into the Participant model. Apps that need
-// since-timestamp pagination today should store their own
-// LastUpdatedAt unix-timestamp field on the state struct and Match
-// against it. v2 secondary indexing will add the filter back as a
-// first-class API when an operator demonstrates the need; the API
-// stays additive across that migration.
+// ListOptions has no UpdatedAfter filter for incremental pagination
+// of large active sets ("show me changes since T"). Filtering on it
+// would need each entity's revision timestamp, a store-layer concern
+// the Participant model does not carry. Apps that need
+// since-timestamp pagination store their own LastUpdatedAt
+// unix-timestamp field on the state struct and Match against it. A
+// first-class filter can be added when an operator demonstrates the
+// need; the API stays additive.
 type ListOptions struct {
 	// Phase filters to instances whose current phase equals this
 	// value. Empty string means any phase.

@@ -13,9 +13,9 @@ import (
 	"github.com/c360studio/semengine/pkg/errs"
 )
 
-// handleCore writes one core-NATS input message into store. The input is at-most-once (owner
-// ruling 2): core NATS keeps nothing to redeliver, so a refused or failed write is logged and
-// counted, and the message is gone.
+// handleCore writes one core-NATS input message into store. The input is at-most-once: core NATS
+// keeps nothing to redeliver, so a refused or failed write is logged and counted, and the message
+// is gone.
 func (c *Component) handleCore(ctx context.Context, store *Store, msg *nats.Msg) {
 	c.lifecycle.CountInput(len(msg.Data))
 	if err := c.write(ctx, store, msg.Data); err != nil {
@@ -65,7 +65,7 @@ func (c *Component) handleJetStream(ctx context.Context, store *Store, msg jetst
 // StoredMessage carrying the body's reference. Data that does not decode, a payload that is not
 // ContentStorable and a payload StoreContent refuses are invalid; a failed store or publish is
 // transient. A failed publish leaves the body stored and unreferenced: on a JetStream input the
-// redelivery stores it again under a new key (design D4).
+// redelivery stores it again under a new key.
 func (c *Component) write(ctx context.Context, store *Store, data []byte) error {
 	msg, err := c.decoder.Decode(data)
 	if err != nil {
@@ -97,8 +97,8 @@ func (c *Component) write(ctx context.Context, store *Store, data []byte) error 
 	return nil
 }
 
-// The NAK delays of the settlement table (design D4, the pin's): 30 seconds before retrying a
-// failed write, 5 seconds when the handler's context ended. They are not configurable.
+// The NAK delays of the settlement table: 30 seconds before retrying a failed write, 5 seconds
+// when the handler's context ended. They are not configurable.
 const (
 	transientNakDelay = 30 * time.Second
 	shutdownNakDelay  = 5 * time.Second

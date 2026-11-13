@@ -142,7 +142,7 @@ func IsValidIndexingProfile(s string) bool {
 	}
 }
 
-// Predicate Object Datatypes (ADR-107, gh#1267)
+// Predicate Object Datatypes (ADR-107)
 // The closed vocabulary a predicate declares for its object values. It names
 // the PRAGMATIC type of the object, never the Go type of the value: the Go
 // type is something the serializer observes directly, and a value read back
@@ -177,7 +177,7 @@ const (
 // object datatypes. The empty string is not one of them: registration accepts
 // it as "no datatype declared" rather than as a value.
 //
-// Unexported deliberately (gh#1267 owner ruling: "in package"). ADR-106 freezes
+// Unexported deliberately. ADR-106 freezes
 // this Tier 1 package's surface, so a membership helper adopters never asked
 // for is a permanent bill for a fact the seven exported constants already
 // carry. Callers outside this package compare against those constants.
@@ -194,8 +194,8 @@ func isValidDataType(s string) bool {
 // validateDataType reports whether a declared datatype is one the registry
 // accepts: a canonical value, or absent.
 //
-// The framework normalizes nothing (gh#1267, owner ruling 2026-09-09, option
-// (d) no-legacy). There is deliberately no alias or legacy-spelling map here:
+// The framework normalizes nothing. There is deliberately no alias or
+// legacy-spelling map here:
 // a normalizer on a Tier 1 frozen package is an undated permanent bridge, and
 // the whole adopter story is migration instead —
 // docs/operations/migration-predicate-datatype.md carries the family-wide
@@ -204,7 +204,7 @@ func isValidDataType(s string) bool {
 //
 // The empty string is accepted: an absent datatype is a legitimate
 // registration shape (three sister repositories register nothing but a
-// predicate name), and #1277 tracks closing the framework's own bare set.
+// predicate name).
 func validateDataType(declared string) error {
 	if declared == "" || isValidDataType(declared) {
 		return nil
@@ -238,7 +238,7 @@ const (
 	ContentClassificationTag = "content.classification.tag"
 )
 
-// NOTE: SemStreams is a framework - applications should define their own domain-specific
+// NOTE: SemEngine is a framework - applications should define their own domain-specific
 // vocabulary in their own packages and register predicates using the vocabulary registry.
 
 // PredicateMetadata provides semantic information about each predicate
@@ -264,7 +264,7 @@ type PredicateMetadata struct {
 	// nothing is normalized — what is declared here is what every reader
 	// observes. Absent is legal.
 	// RDF export honors the declaration, and ignores it for any triple whose
-	// observed value contradicts it (gh#1267, ADR-107).
+	// observed value contradicts it (ADR-107).
 	DataType string
 
 	// Units carries human-readable measurement units, as free-form
@@ -275,15 +275,13 @@ type PredicateMetadata struct {
 	// silent: a field that looks typed, sits beside DataType which IS honored,
 	// and is frozen into a released surface reads as a promise the system does
 	// not keep. When a consumer is named it arrives with its own change; a
-	// closed vocabulary is deliberately not invented ahead of one (gh#1267 Q4,
-	// tracked on gh#1264).
+	// closed vocabulary is deliberately not invented ahead of one.
 	Units string
 
 	// Range carries a human-readable description of valid values, as free-form
 	// DOCUMENTATION on the declaration. Examples: "0-100", "-90 to 90",
 	// "positive" — three incompatible grammars, which is why no framework path
-	// validates, normalizes, interprets, or honors it. See Units (gh#1267 Q4,
-	// tracked on gh#1264).
+	// validates, normalizes, interprets, or honors it. See Units.
 	Range string
 
 	// Domain identifies which domain owns this predicate
@@ -347,7 +345,7 @@ type PredicateMetadata struct {
 
 	// Weight is the predicate's salience weight for ranking, SIGNED: positive =
 	// more salient (boost), 0 = unweighted (neutral), negative = down-rank
-	// (demote, gh#441). Lets a ranker prefer entities carrying salient facts, or
+	// (demote). Lets a ranker prefer entities carrying salient facts, or
 	// push down structurally-identifiable noise (tests, generated code, mocks)
 	// that carries the same boosted predicates as the real thing, without
 	// hard-coding a per-product table.

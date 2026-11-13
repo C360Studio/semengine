@@ -122,9 +122,8 @@ func (g *GenericJSONPayload) Validate() error {
 // names its type and its path, such as data.a[2].b; so is a string or map key
 // that is not valid UTF-8, and a map or list that contains itself.
 func (g *GenericJSONPayload) MarshalJSON() ([]byte, error) {
-	// Only the ruled kinds are accepted (#9 comments 5972117486 and 5972208367), so encoding/json
-	// runs no custom method and writes every string as it is; invalid UTF-8 is refused rather than
-	// written as U+FFFD (#9 comment 5970334875).
+	// Only the kinds listed above are accepted, so encoding/json runs no custom method and writes
+	// every string as it is; invalid UTF-8 is refused rather than written as U+FFFD.
 	if err := (shapeCheck{onPath: map[shapeKey]bool{}}).check(g.Data, "data"); err != nil {
 		return nil, errs.WrapInvalid(err, "GenericJSONPayload", "MarshalJSON", "data")
 	}

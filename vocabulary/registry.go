@@ -123,7 +123,7 @@ func WithDescription(desc string) Option {
 // the accepted set. Nothing is normalized: a legacy spelling is refused like
 // any other non-canonical value, and the adopter migrates
 // (docs/operations/migration-predicate-datatype.md). Declaring nothing is
-// legal (gh#1267, ADR-107).
+// legal (ADR-107).
 //
 // Example:
 //
@@ -142,7 +142,7 @@ func WithDataType(dataType string) Option {
 // No framework path validates, normalizes, interprets, or honors the value —
 // unlike WithDataType, which is honored at export. Saying so is a smaller
 // promise than the field's presence beside DataType currently implies, and it
-// is one the framework actually keeps (gh#1267 Q4, tracked on gh#1264).
+// is one the framework actually keeps.
 func WithUnits(units string) Option {
 	return func(m *PredicateMetadata) {
 		m.Units = units
@@ -154,7 +154,7 @@ func WithUnits(units string) Option {
 // incompatible grammars, which is why nothing parses it.
 //
 // No framework path validates, normalizes, interprets, or honors the value.
-// See WithUnits (gh#1267 Q4, tracked on gh#1264).
+// See WithUnits.
 func WithRange(valueRange string) Option {
 	return func(m *PredicateMetadata) {
 		m.Range = valueRange
@@ -257,7 +257,7 @@ func WithSymmetric(symmetric bool) Option {
 // prefer entities carrying salient facts — or push down structurally-
 // identifiable noise (tests, generated code, mocks) that carries the same
 // boosted predicates as the real thing — without a per-product weight table
-// (ADR-062 increment 5, semsource ask #2; negative weights gh#441). The fusion
+// (ADR-062). The fusion
 // ranker folds an entity's strongest boost and strongest demotion together, so
 // a negative weight is a bounded reordering, never an exclusion.
 //
@@ -276,15 +276,15 @@ func WithWeight(weight float64) Option {
 //
 // The predicate name must follow three-level dotted notation: domain.category.property
 //
-// AMEND semantics (gh#410): a re-Register of an already-registered predicate
+// AMEND semantics: a re-Register of an already-registered predicate
 // starts from the EXISTING metadata, then applies the given options. Options
 // override every field they set; fields the re-Register OMITS are RETAINED, not
 // cleared. This lets a product attach its own Description/IRI to a
 // framework-registered predicate WITHOUT silently stripping the framework's
 // declared roles (e.g. a WithAlias(AliasTypeLabel, …) on dc.terms.title, which
 // the NAME_INDEX / graph.query.byName / fusion-readiness path depends on). A
-// first registration starts from a zero struct, so single-registration behavior
-// is unchanged.
+// first registration starts from a zero struct, so it holds only the options it
+// is given.
 //
 // Amend cannot CLEAR a field by omitting its option; pass the explicit zero
 // (WithRuleOpaque(false), WithWeight(0), WithDescription(""), …) to clear one.
@@ -309,7 +309,7 @@ func Register(name string, opts ...Option) {
 
 	// Seed from the existing registration when present (zero value if absent), so
 	// options amend rather than replace — a re-Register that omits a field keeps
-	// the previously-declared value instead of silently dropping it (gh#410).
+	// the previously-declared value instead of silently dropping it.
 	meta := predicateRegistry[name]
 	meta.Projection = cloneProjectionSpec(meta.Projection)
 	meta.Name = name
@@ -332,7 +332,7 @@ func Register(name string, opts ...Option) {
 // checked without racing another registration.
 //
 // It is the ONE enforcement seam for the closed datatype vocabulary
-// (ADR-107, gh#1267): Register reaches it after applying every option.
+// (ADR-107): Register reaches it after applying every option.
 //
 // It refuses a non-canonical datatype rather than rewriting one, so what an
 // adopter declared is what the registry stores. Nothing here normalizes, which

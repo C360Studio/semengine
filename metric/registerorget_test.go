@@ -59,7 +59,7 @@ func sameKey[C prometheus.Collector](name string, newC func() C, write func(C)) 
 	}
 }
 
-// Test 1 (design D9).
+// A second registration under a held key, matching it, returns the held collector.
 func TestRegisterOrGetSameKeyReturnsCanonicalCollector(t *testing.T) {
 	t.Run("Counter", sameKey("d9_counter_total",
 		func() prometheus.Counter {
@@ -86,7 +86,7 @@ func TestRegisterOrGetSameKeyReturnsCanonicalCollector(t *testing.T) {
 		}, func(h *prometheus.HistogramVec) { h.WithLabelValues("x").Observe(1) }))
 }
 
-// Test 2 (design D9): a gauge satisfies prometheus.Counter, so the type check is on the exact
+// A gauge satisfies prometheus.Counter, so the type check is on the exact
 // concrete type; same name and help give the two the same descriptor.
 func TestRegisterOrGetRefusesSameKeyOfAnotherType(t *testing.T) {
 	r := NewMetricsRegistry()
@@ -102,7 +102,7 @@ func TestRegisterOrGetRefusesSameKeyOfAnotherType(t *testing.T) {
 	require.Equal(t, []float64{5}, gatheredSeries(t, r, "d9_kind"), "the canonical gauge is untouched")
 }
 
-// Test 3 (design D9).
+// A candidate for a held key with other help text is refused.
 func TestRegisterOrGetRefusesSameKeyWithDifferentHelp(t *testing.T) {
 	r := NewMetricsRegistry()
 	first, err := RegisterOrGet(r, "svc", "m",
@@ -118,8 +118,8 @@ func TestRegisterOrGetRefusesSameKeyWithDifferentHelp(t *testing.T) {
 }
 
 // A held key met by a candidate of the same concrete type, name and help but other label names is
-// refused (the metric-registry delta, task 1.1). TestPropRegisterOrGetHistory cannot reach this
-// case: its generator fixes the label names by kind.
+// refused. TestPropRegisterOrGetHistory cannot reach this case: its generator fixes the label
+// names by kind.
 func TestRegisterOrGetRefusesSameKeyWithDifferentLabelNames(t *testing.T) {
 	r := NewMetricsRegistry()
 	first, err := RegisterOrGet(r, "svc", "k",
@@ -135,7 +135,7 @@ func TestRegisterOrGetRefusesSameKeyWithDifferentLabelNames(t *testing.T) {
 	require.Equal(t, []float64{4}, gatheredSeries(t, r, "d9_labels"), "the canonical gauge is untouched")
 }
 
-// Test 4 (design D9).
+// A nil candidate is refused.
 func TestRegisterOrGetRefusesNilCandidates(t *testing.T) {
 	r := NewMetricsRegistry()
 	var typedNil *prometheus.GaugeVec
@@ -156,7 +156,7 @@ func TestRegisterOrGetRefusesNilCandidates(t *testing.T) {
 	require.False(t, r.Unregister("svc", "nil-interface"), "nothing is stored for a refused candidate")
 }
 
-// Test 5 (design D9): the same descriptor under a second key.
+// The same descriptor under a second key is refused.
 func TestRegisterOrGetRefusesCrossKeyAlias(t *testing.T) {
 	r := NewMetricsRegistry()
 	a, err := RegisterOrGet(r, "svc", "k1",
@@ -172,7 +172,7 @@ func TestRegisterOrGetRefusesCrossKeyAlias(t *testing.T) {
 	require.Equal(t, []float64{1}, gatheredSeries(t, r, "d9_alias_total"), "k1's series survives, with k1's write")
 }
 
-// Test 6 (design D9): a core metric owns its descriptor.
+// A core metric owns its descriptor.
 func TestRegisterOrGetRefusesCoreMetricCollision(t *testing.T) {
 	r := NewMetricsRegistry()
 	r.CoreMetrics().ServiceStatus.WithLabelValues("core").Set(2)
@@ -187,7 +187,7 @@ func TestRegisterOrGetRefusesCoreMetricCollision(t *testing.T) {
 	require.Equal(t, []float64{2}, gatheredSeries(t, r, "semengine_service_status"))
 }
 
-// Test 7 (design D9): a collector registered directly through PrometheusRegistry owns its
+// A collector registered directly through PrometheusRegistry owns its
 // descriptor too.
 func TestRegisterOrGetRefusesDirectRegistrationCollision(t *testing.T) {
 	r := NewMetricsRegistry()
@@ -203,8 +203,8 @@ func TestRegisterOrGetRefusesDirectRegistrationCollision(t *testing.T) {
 	require.Equal(t, []float64{1}, gatheredSeries(t, r, "d9_direct_total"))
 }
 
-// Test 8 (design D9), generalising the pin's registry_test.go:188: concurrent registrations of
-// one key all receive the one canonical collector, and every write through it is gathered.
+// Concurrent registrations of one key all receive the one canonical collector, and every write
+// through it is gathered.
 func TestRegisterOrGetConcurrentCallersShareOneCollector(t *testing.T) {
 	r := NewMetricsRegistry()
 	const workers = 24

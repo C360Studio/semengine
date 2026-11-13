@@ -184,9 +184,9 @@ func deadPort(t *testing.T) string {
 
 // A failure in a phase after the container exists removes it, names the phase and the container,
 // writes the container's log to the test log once, and leaves Stop nothing to do (nats-fixture ›
-// "Failure after the container exists", "A missing mapped port fails Start"). The fixture's one
-// test seam, the mapped-port read, drives both rows: it fails the read, or it reports a port
-// nothing listens on, so the real connect fails.
+// "Failure after the container exists", "A missing mapped port fails Start"). The fixture's
+// per-fixture test seam, the mapped-port read, drives both rows: it fails the read, or it reports
+// a port nothing listens on, so the real connect fails.
 func TestS1_1PartialStartupCleanup(t *testing.T) {
 	for _, tc := range []struct {
 		phase string

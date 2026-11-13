@@ -185,8 +185,8 @@ var (
 
 // broadCleanupViolations is the broad-cleanup check. Removal is only ever by observed ID or exact
 // label; every Compose invocation must name the SemEngine project it acts on, since an unnamed
-// project takes the directory name (as the Compose documentation states) and can be another
-// repository's stack: `up` would join it and `down` would remove it.
+// project is named after its project directory (Compose's documented default, not probed here)
+// and can be another repository's stack: `up` would join it and `down` would remove it.
 func broadCleanupViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string

@@ -101,9 +101,10 @@ func TestPortStatusOffline(t *testing.T) {
 			t.Errorf("offline stdout must not claim local files are %q:\n%s", unwanted, r.stdout)
 		}
 	}
-	// The internal/tlsutil ledger row defers pkg/acme and its ACME loaders to the first-consumer
-	// change, so the scoreboard counts pkg/acme there and not against the floor. The remaining list
-	// is printed only for short lists, so the check reads each change's package total.
+	// The internal/tlsutil ledger row drops pkg/acme and its ACME loaders until a consumer needs
+	// ACME, and the scoreboard counts pkg/acme under the first-consumer change, not against the
+	// floor. The remaining list is printed only for short lists, so the check reads each change's
+	// package total.
 	floor := between(r.stdout, "1. setup-04a-01-floor", "2. setup-04a-02-ingest-kernel")
 	consumer := between(r.stdout, "5. setup-04a-05-first-consumer", "6. setup-04a-06-rule-core")
 	if !strings.Contains(floor, "/15 ") || strings.Contains(floor, "pkg/acme") {

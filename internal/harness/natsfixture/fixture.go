@@ -76,7 +76,8 @@ type Fixture struct {
 	errorf func(format string, args ...any)
 	logf   func(format string, args ...any) // the test log, for a failed Start's container log
 	// readPort reads the container's mapped client port: readMappedPort, or a test's replacement
-	// that fails the mapped-port phase. It is the fixture's one test seam.
+	// that fails the mapped-port phase. It is the fixture's one per-fixture test seam; pickPort is
+	// the package-level one.
 	readPort func(context.Context, testcontainers.Container) (string, error)
 
 	mu sync.Mutex // guards everything below; never held across a Docker or NATS call

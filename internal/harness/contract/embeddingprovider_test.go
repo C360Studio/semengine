@@ -52,8 +52,8 @@ func TestGraphEmbeddingImportsNoProviderModule(t *testing.T) {
 	requireNoDirectModelProvider(t, "./processor/graph-embedding", graphEmbeddingProviderRule)
 }
 
-// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names, an
-// owner ruling: tier 0 builds without the LLM plumbing.
+// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names: tier
+// 0 builds without the LLM plumbing, so it needs no external provider.
 const llmPlumbingRule = "(#32 › tier 0 builds without the LLM plumbing)"
 
 // TestGraphClusteringImportsNoProviderModule holds processor/graph-clustering to graph-embedding's

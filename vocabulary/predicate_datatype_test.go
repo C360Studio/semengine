@@ -70,6 +70,9 @@ func TestValidateDataTypeRefusesEveryRetiredLegacySpelling(t *testing.T) {
 		if !strings.Contains(err.Error(), legacy) {
 			t.Errorf("refusal of %q does not name the offending value: %v", legacy, err)
 		}
+		if !strings.Contains(err.Error(), "vocabulary/README.md") || !strings.Contains(err.Error(), "WithDataType") {
+			t.Errorf("refusal of %q does not point to vocabulary/README.md WithDataType: %v", legacy, err)
+		}
 		if isValidDataType(legacy) {
 			t.Errorf("isValidDataType(%q) = true, but a legacy spelling is never canonical", legacy)
 		}
@@ -232,6 +235,9 @@ func TestRegistrationRefusalNamesTheValueAndTheVocabulary(t *testing.T) {
 			if !strings.Contains(msg, canonical) {
 				t.Errorf("%s: refusal does not name accepted value %q: %s", name, canonical, msg)
 			}
+		}
+		if !strings.Contains(msg, "vocabulary/README.md") || !strings.Contains(msg, "WithDataType") {
+			t.Errorf("%s: refusal does not point to vocabulary/README.md WithDataType: %s", name, msg)
 		}
 	}
 

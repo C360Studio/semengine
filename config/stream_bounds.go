@@ -170,7 +170,7 @@ func resolveStreamDeclarations(cfg *Config, _ *slog.Logger) ([]streamDeclaration
 	for _, name := range slices.Sorted(maps.Keys(cfg.Streams)) {
 		source := fmt.Sprintf("config.streams[%q]", name)
 		if _, isFixed := fixed[name]; isFixed {
-			return nil, fmt.Errorf("%w: %s must not declare %q; remove the declaration and allow SemStreams to provision its fixed policy",
+			return nil, fmt.Errorf("%w: %s must not declare %q; remove the declaration and allow SemEngine to provision its fixed policy",
 				errFixedFrameworkStreamCollision, source, name)
 		}
 		if err := checkOrdinaryStream(name, source); err != nil {

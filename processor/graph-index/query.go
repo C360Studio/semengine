@@ -346,7 +346,7 @@ func (c *Component) predicateEntities(ctx context.Context, predicate string) ([]
 // deleted since the membership was read is left out; any other read failure fails the
 // whole query rather than answer part of it.
 func (c *Component) entitiesWithValue(ctx context.Context, entityIDs []string, predicate, value string, limit int) ([]string, error) {
-	var matched []string
+	matched := []string{}
 	for _, entityID := range entityIDs {
 		if err := ctx.Err(); err != nil {
 			return nil, err

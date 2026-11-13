@@ -122,7 +122,7 @@ func WithDescription(desc string) Option {
 // but any value outside the closed vocabulary panics at registration, naming
 // the accepted set. Nothing is normalized: a legacy spelling is refused like
 // any other non-canonical value, and the adopter migrates
-// (docs/operations/migration-predicate-datatype.md). Declaring nothing is
+// (see WithDataType in vocabulary/README.md). Declaring nothing is
 // legal (ADR-107).
 //
 // Example:

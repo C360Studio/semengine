@@ -14,6 +14,11 @@
 // degraded and Health names it until a repair pass, every 30 seconds, reads the body. A read that
 // fails on a store skips that store until the next pass.
 //
+// The index answers graph.lexical.query.search (graph.LexicalSearchRequest, replying
+// graph.LexicalSearchData in a graph.QueryResponse) from Start until Stop. It refuses transient
+// index_not_ready until the initial build is applied and while the feed is lost, and answers
+// min_revision against the follower's floor as graph-index does. No body state withholds it.
+//
 // A composition registers the factory with Register and creates the component through the
 // component manager, with a configuration that Config describes.
 package graphlexical

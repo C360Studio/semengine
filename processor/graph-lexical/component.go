@@ -55,6 +55,9 @@ type Component struct {
 	// under; stopped closes once both have returned.
 	runCancel context.CancelFunc
 	stopped   chan struct{}
+	// subscriptions are the query request subscriptions, one per verb the table in graph declares
+	// for graph-lexical.
+	subscriptions []*natsclient.Subscription
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-lexical: the ports CreateGraphLexical will
@@ -166,9 +169,9 @@ func (c *Component) Initialize() error { return c.lifecycle.Initialize() }
 // context and a second Start are refused, the second with errs.ErrAlreadyStarted, and a Start that
 // fails is rolled back through cleanup. A component with no NATS client is refused first.
 //
-// ctx bounds Start only: the wait for ENTITY_STATES runs under it. The follower's watch runs
-// under a run context start creates and cleanup ends, so ending ctx after Start returned stops
-// nothing (ADR-113).
+// ctx bounds Start only: the wait for ENTITY_STATES and the query subscriptions run under it. The
+// follower's watch runs under a run context start creates and cleanup ends, so ending ctx after
+// Start returned stops nothing (ADR-113). The search verb is served from Start until Stop.
 func (c *Component) Start(ctx context.Context) error {
 	if c.natsClient == nil {
 		return errs.WrapFatal(errs.ErrNoConnection, "Component", "Start", "NATS client is required")
@@ -176,8 +179,8 @@ func (c *Component) Start(ctx context.Context) error {
 	return c.lifecycle.Start(ctx, c.start, c.cleanup)
 }
 
-// start opens the follower and builds the applier, then starts what Stop joins. Nothing it
-// acquires before the run context needs releasing.
+// start opens the follower and builds the applier, starts what Stop joins, then subscribes to
+// the query verbs. Nothing it acquires before the run context needs releasing.
 func (c *Component) start(ctx context.Context) error {
 	f, err := follower.Open(ctx, follower.Config{
 		Client:          c.natsClient,
@@ -217,7 +220,9 @@ func (c *Component) start(ctx context.Context) error {
 			c.logger.Warn("ENTITY_STATES watch did not stop cleanly", slog.Any("error", err))
 		}
 	}()
-	return nil
+	// Last, so a request is served only once everything a handler reads is set; a failed
+	// subscription is the last step that can fail, and its rollback drains those made.
+	return c.subscribeQueries(ctx)
 }
 
 // failed is the follower's Failed, the applier's unread bodies. The follower is published to
@@ -256,10 +261,19 @@ func (c *Component) deliver(_ context.Context, e follower.Entry) {
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start: it ends the run context and joins the follower's Run and the body path, so
-// nothing more is delivered or read. A read in flight ends by its own deadline at the latest. A
-// ctx that ends first returns its error with the handles kept, and the next Stop resumes.
+// partial start. It drains the query subscriptions first, so no handler is running. Then it ends
+// the run context and joins the follower's Run and the body path, so nothing more is delivered
+// or read. A read in flight ends by its own deadline at the latest. A ctx that ends first returns
+// its error with the handles kept, and the next Stop resumes.
 func (c *Component) cleanup(ctx context.Context) error {
+	// Drain returns once every running handler has returned.
+	var failures []error
+	for _, sub := range c.subscriptions {
+		failures = append(failures, sub.Drain(ctx))
+	}
+	if err := errors.Join(failures...); err != nil {
+		return err
+	}
 	if c.runCancel != nil {
 		c.runCancel()
 	}
@@ -270,6 +284,6 @@ func (c *Component) cleanup(ctx context.Context) error {
 			return ctx.Err()
 		}
 	}
-	c.runCancel, c.stopped = nil, nil
+	c.runCancel, c.stopped, c.subscriptions = nil, nil, nil
 	return nil
 }

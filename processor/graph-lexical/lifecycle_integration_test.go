@@ -35,6 +35,9 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.stopped != nil {
 		held = append(held, "stopped")
 	}
+	if len(o.c.subscriptions) > 0 {
+		held = append(held, "query subscriptions")
+	}
 	return lifecycletest.Observation{Unresolved: held}
 }
 
@@ -91,7 +94,7 @@ func TestGraphLexicalLifecycleSuite(t *testing.T) {
 		if err := owner.Start(t.Context()); err != nil {
 			t.Fatalf("Start: %v", err)
 		}
-		want := []string{"run cancel", "stopped"}
+		want := []string{"run cancel", "stopped", "query subscriptions"}
 		if held := owner.Observe().Unresolved; !slices.Equal(held, want) {
 			t.Errorf("held while started = %v, want %v", held, want)
 		}

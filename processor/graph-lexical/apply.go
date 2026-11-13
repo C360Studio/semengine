@@ -231,6 +231,18 @@ func (a *applier) failed() (int64, map[string]uint64) {
 	return int64(n), map[string]uint64{failureBodyUnread: uint64(n)}
 }
 
+// notIndexed is the number of held entities whose offloaded body the index does not hold, in any
+// state.
+func (a *applier) notIndexed() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := 0
+	for _, count := range a.bodies {
+		n += count
+	}
+	return n
+}
+
 // put replaces key's text with doc at revision and returns what is held for key; the body's state
 // is the caller's to set. A refused ID is returned as the state contract's noncanonical-ID error,
 // with nothing changed.

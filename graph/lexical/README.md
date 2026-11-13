@@ -110,6 +110,10 @@ so is any word longer than 32 bytes, which in practice is hex such as a commit h
 `TestScorecardHoldsItsFloor` asks 500 known-item questions (each has one right section as its answer) of 2,000
 sections of this repository's own Markdown, frozen under `testdata/scorecard/`. The index puts the right answer in
 the first ten hits for 56.0% of them, and the test fails below 55.0%. A plain BM25 ranker over the body alone,
-using the tier-0 embedder's tokenizer, scored 52.6% on the same questions when the package was measured; that
-ranker is not kept in the tree. The figures say how the index does on this repository's prose, not on any other
-text.
+using the tier-0 embedder's tokenizer, scored 52.6% on the same questions. That ranker is not part of the
+package or its tests; its source and how to rerun it are in
+[`2.4-reference.go.txt`][refsrc] and [`2.4.md`][refrun]. The figures say how the index does on this repository's
+prose, not on any other text.
+
+[refsrc]: ../../openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/2.4-reference.go.txt
+[refrun]: ../../openspec/changes/archive/2026-11-12-setup-04b-01-lexical-index/notes/2.4.md

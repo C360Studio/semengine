@@ -32,8 +32,8 @@ func (o suiteOwner) Observe() lifecycletest.Observation {
 	if o.c.runCancel != nil {
 		held = append(held, "run cancel")
 	}
-	if o.c.feeds != nil {
-		held = append(held, "feeds")
+	if o.c.stopped != nil {
+		held = append(held, "stopped")
 	}
 	return lifecycletest.Observation{Unresolved: held}
 }
@@ -66,7 +66,7 @@ func TestGraphLexicalLifecycleSuite(t *testing.T) {
 	client := fixtureClient(t)
 	ensureEntityStates(t, client)
 	factory := func() lifecycletest.Owner {
-		return suiteOwner{newLexical(t, client, `{}`, metric.NewMetricsRegistry())}
+		return suiteOwner{newLexical(t, client, `{}`, metric.NewMetricsRegistry(), nil)}
 	}
 	mustFail := func() lifecycletest.Owner {
 		js, err := client.JetStream()
@@ -78,7 +78,7 @@ func TestGraphLexicalLifecycleSuite(t *testing.T) {
 			t.Fatalf("delete %s: %v", graph.BucketEntityStates, err)
 		}
 		return suiteOwner{newLexical(t, client, `{"startup_attempts": 1, "startup_interval_ms": 1}`,
-			metric.NewMetricsRegistry())}
+			metric.NewMetricsRegistry(), nil)}
 	}
 	lifecycletest.Run(t, factory, mustFail, lifecycletest.Promise{})
 

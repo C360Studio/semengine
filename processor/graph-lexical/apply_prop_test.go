@@ -10,8 +10,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"pgregory.net/rapid"
 
+	"github.com/c360studio/semengine/graph/entitytext"
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/internal/revlag"
+	"github.com/c360studio/semengine/storage"
 )
 
 // TestStaleBodyReadDropped: a body read for revision R that returns after the same key's R+1 is
@@ -69,19 +71,27 @@ const (
 	stepDelete                  // a delete of the key at the next revision
 	stepOlder                   // a delivery of the key at a revision it already passed
 	stepReturn                  // a body read that is out returns
+	stepRepair                  // a repair pass asks again for the bodies left unread or with no store
 )
+
+// outcomeErrs are the errors a failed read returns, by the state it leaves the body in.
+var outcomeErrs = map[bodyState]error{
+	bodyUnread:  errors.New("store failed"),
+	bodyMissing: fmt.Errorf("open: %w", storage.ErrObjectNotFound),
+	bodyNoStore: fmt.Errorf("%w: %q", entitytext.ErrNoStore, "elsewhere"),
+}
 
 // step is one step of a history. A delivery's words are unique to its key and revision, so a
 // search for one says exactly which revision's text the index holds.
 type step struct {
-	kind       stepKind
-	key        int
-	name       bool   // stepDeliver: the entity has a name
-	inline     bool   // stepDeliver: the entity has inline text besides its name
-	offloaded  bool   // stepDeliver, stepOlder: the entity's body is offloaded
-	older      uint64 // stepOlder: the revision delivered, at or below the key's
-	read       int    // stepReturn: which outstanding read returns, by position
-	readFailed bool   // stepReturn: the read failed
+	kind      stepKind
+	key       int
+	name      bool      // stepDeliver: the entity has a name
+	inline    bool      // stepDeliver: the entity has inline text besides its name
+	offloaded bool      // stepDeliver, stepOlder: the entity's body is offloaded
+	older     uint64    // stepOlder: the revision delivered, at or below the key's
+	read      int       // stepReturn: which outstanding read returns, by position
+	outcome   bodyState // stepReturn: bodyNone for a body read, else the state its failure leaves
 }
 
 // keyModel is what the requirement says the index holds for one key.
@@ -89,7 +99,15 @@ type keyModel struct {
 	live     bool
 	revision uint64 // the latest revision applied, delete or write
 	expected []string
-	words    []string // every word any delivery of the key carried
+	words    []string  // every word any delivery of the key carried
+	body     bodyState // where the latest revision's offloaded body stands
+	bodyWord string    // the word the latest revision's offloaded body holds
+}
+
+// awaitsRead reports whether the model's latest revision still takes a body read: one not yet
+// read, or left unread or with no store.
+func (m *keyModel) awaitsRead() bool {
+	return m.body == bodyQueued || m.body == bodyUnread || m.body == bodyNoStore
 }
 
 // delivery is one delivered revision: when it was delivered and when its outcome was in (its
@@ -176,16 +194,20 @@ func (h *history) run(s step) {
 			d.outcomeAt = -1
 		}
 		h.deliveries = append(h.deliveries, d)
+		m.body, m.bodyWord = bodyNone, ""
+		if s.offloaded {
+			m.body, m.bodyWord = bodyQueued, word("b")
+		}
 		read, ok := mustDeliver(h.f, h.a, stateEntry(h.f, key, h.revision, t))
 		if ok != s.offloaded || (ok && (read.key != key || read.revision != h.revision)) {
 			h.f.Fatalf("delivery of %s at %d (offloaded %t) asked for read %+v, %t", key, h.revision, s.offloaded, read, ok)
 		}
 		if ok {
-			h.reads = append(h.reads, outstanding{read: read, body: word("b")})
+			h.reads = append(h.reads, outstanding{read: read, body: m.bodyWord})
 		}
 	case stepDelete:
 		h.revision++
-		m.live, m.revision, m.expected = false, h.revision, nil
+		m.live, m.revision, m.expected, m.body = false, h.revision, nil, bodyNone
 		h.deliveries = append(h.deliveries, delivery{key: key, revision: h.revision, at: h.at, outcomeAt: h.at})
 		mustDeliver(h.f, h.a, deleteEntry(key, h.revision))
 	case stepOlder:
@@ -200,18 +222,35 @@ func (h *history) run(s step) {
 		h.reads = slices.Delete(h.reads, s.read, s.read+1)
 		key = o.read.key
 		m = h.keys[key]
-		if m.live && m.revision == o.read.revision && !s.readFailed {
-			m.expected = append(m.expected, o.body)
+		if m.live && m.revision == o.read.revision && m.awaitsRead() {
+			m.body = s.outcome
+			if s.outcome == bodyNone {
+				m.expected = append(m.expected, o.body)
+			}
 		}
 		for i := range h.deliveries {
 			if d := &h.deliveries[i]; d.key == key && d.revision == o.read.revision && d.outcomeAt < 0 {
 				d.outcomeAt = h.at
 			}
 		}
-		if s.readFailed {
-			h.a.bodyDone(o.read, "", errors.New("store failed"))
-		} else {
+		if s.outcome == bodyNone {
 			h.a.bodyDone(o.read, o.body, nil)
+		} else {
+			h.a.bodyDone(o.read, "", outcomeErrs[s.outcome])
+		}
+	case stepRepair:
+		var want, got []string
+		for _, k := range propKeys {
+			if m := h.keys[k]; m.live && (m.body == bodyUnread || m.body == bodyNoStore) {
+				want = append(want, fmt.Sprintf("%s@%d", k, m.revision))
+			}
+		}
+		for _, read := range h.a.retries() {
+			got = append(got, fmt.Sprintf("%s@%d", read.key, read.revision))
+			h.reads = append(h.reads, outstanding{read: read, body: h.keys[read.key].bodyWord})
+		}
+		if slices.Sort(got); !slices.Equal(got, want) {
+			h.f.Fatalf("after step %d a repair pass asked for %v; want %v", h.at, got, want)
 		}
 	}
 	h.checkKey(key, fmt.Sprintf("after step %d", h.at))
@@ -235,15 +274,28 @@ func (h *history) checkKey(key, when string) {
 	}
 }
 
-// checkSize requires the index's entity count and both gauges to match the model.
+// checkSize requires the index's entity count, the size gauges, the body gauges and the
+// failures reported to match the model.
 func (h *history) checkSize() {
 	h.f.Helper()
 	entities, words := 0, 0
+	var bodies [len(bodyStateNames)]int
 	for _, m := range h.keys {
 		if m.live && len(m.expected) > 0 {
 			entities++
 			words += len(m.expected)
 		}
+		if m.live {
+			bodies[m.body]++
+		}
+	}
+	for s := bodyQueued; s < bodyState(len(bodyStateNames)); s++ {
+		if g := testutil.ToFloat64(h.a.metrics.bodies.WithLabelValues(bodyStateNames[s])); g != float64(bodies[s]) {
+			h.f.Fatalf("after step %d bodies_not_indexed{state=%q} reads %v; want %d", h.at, bodyStateNames[s], g, bodies[s])
+		}
+	}
+	if n, _ := h.a.failed(); n != int64(bodies[bodyUnread]) {
+		h.f.Fatalf("after step %d Failed reports %d; want %d unread", h.at, n, bodies[bodyUnread])
 	}
 	if n := h.a.index.Len(); n != entities {
 		h.f.Fatalf("after step %d the index holds %d entities; want %d", h.at, n, entities)
@@ -299,10 +351,13 @@ func (h *history) drawStep(t *rapid.T) step {
 		s.kind = stepOlder
 		s.older = rapid.Uint64Range(1, h.keys[propKeys[s.key]].revision).Draw(t, "older")
 		s.offloaded = rapid.Bool().Draw(t, "offloaded")
+	case kind == 7 && rapid.IntRange(0, 2).Draw(t, "repair") == 0:
+		s.kind = stepRepair
 	case kind >= 7 && len(h.reads) > 0:
 		s.kind = stepReturn
 		s.read = rapid.IntRange(0, len(h.reads)-1).Draw(t, "read")
-		s.readFailed = rapid.Bool().Draw(t, "readFailed")
+		s.outcome = rapid.SampledFrom([]bodyState{bodyNone, bodyNone, bodyUnread, bodyMissing, bodyNoStore}).
+			Draw(t, "outcome")
 	default:
 		s.kind = stepDeliver
 		s.name = rapid.Bool().Draw(t, "name")
@@ -346,7 +401,22 @@ func TestPropApplyMatchesModel(t *testing.T) {
 			{kind: stepReturn, read: 1}, {kind: stepReturn, read: 0},
 		}},
 		{"read fails", []step{
-			deliverOffloaded(0), {kind: stepReturn, read: 0, readFailed: true},
+			deliverOffloaded(0), {kind: stepReturn, read: 0, outcome: bodyUnread},
+		}},
+		{"unread body read at the repair pass", []step{
+			deliverOffloaded(0), {kind: stepReturn, read: 0, outcome: bodyUnread},
+			{kind: stepRepair}, {kind: stepReturn, read: 0},
+		}},
+		{"no store, then a store at the repair pass", []step{
+			deliverOffloaded(0), {kind: stepReturn, read: 0, outcome: bodyNoStore},
+			{kind: stepRepair}, {kind: stepReturn, read: 0},
+		}},
+		{"missing body not asked for again", []step{
+			deliverOffloaded(0), {kind: stepReturn, read: 0, outcome: bodyMissing}, {kind: stepRepair},
+		}},
+		{"repair read returns after a newer delivery", []step{
+			deliverOffloaded(0), {kind: stepReturn, read: 0, outcome: bodyUnread},
+			{kind: stepRepair}, deliverOffloaded(0), {kind: stepReturn, read: 0}, {kind: stepReturn, read: 0},
 		}},
 		{"older deliveries", []step{
 			{kind: stepDeliver, key: 0, name: true}, deliverOffloaded(1),

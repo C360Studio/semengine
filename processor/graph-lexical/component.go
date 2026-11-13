@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -22,9 +23,6 @@ import (
 // key names graph-lexical once: its registration, its logger and its GRAPH_STATUS key.
 const key = readiness.KeyGraphLexical
 
-// errBodyNotRead is the outcome every offloaded body is given while no body path reads them.
-var errBodyNotRead = errors.New("graph-lexical: offloaded bodies are not read")
-
 var _ component.Discoverable = (*Component)(nil)
 
 // Component implements the graph-lexical processor.
@@ -40,19 +38,23 @@ type Component struct {
 	// rule is the text rule, built once at construction, when the vocabulary's label predicates
 	// are read.
 	rule entitytext.Rule
+	// stores finds the store an offloaded body names; nil when the dependencies carry no store
+	// registry, so every body has no store.
+	stores entitytext.Stores
 
 	// lifecycle is the lifecycle state, Health and DataFlow (component.Lifecycle, ADR-108).
 	lifecycle component.Lifecycle
 
-	// start sets the follower and the applier before the follower's Run begins.
+	// start sets the follower, the applier and the body path before the follower's Run begins.
 	follower atomic.Pointer[follower.Follower] // read by Health at any time
 	apply    *applier
+	bodies   *bodyPath
 
 	// The handles start records for cleanup, which clears them once it has released them all.
-	// runCancel ends the one run context (ADR-113) the follower's Run runs under; feeds closes
-	// once that Run has returned.
+	// runCancel ends the one run context (ADR-113) the follower's Run and the body path run
+	// under; stopped closes once both have returned.
 	runCancel context.CancelFunc
-	feeds     chan struct{}
+	stopped   chan struct{}
 }
 
 // DeclarePorts is the component.PortDeclarer for graph-lexical: the ports CreateGraphLexical will
@@ -90,6 +92,7 @@ func resolveConfig(rawConfig json.RawMessage) (Config, []component.Port, error) 
 
 // CreateGraphLexical is the factory function for graph-lexical components. It opens no
 // connection. It reads the vocabulary's label predicates, so a product registers its own first.
+// Offloaded bodies are read from the stores in deps.StoreRegistry, looked up at each read.
 func CreateGraphLexical(rawConfig json.RawMessage, deps component.Dependencies) (component.Discoverable, error) {
 	if deps.NATSClient == nil {
 		return nil, errs.WrapInvalid(errs.ErrInvalidConfig, "CreateGraphLexical", "factory", "NATSClient required")
@@ -102,6 +105,11 @@ func CreateGraphLexical(rawConfig json.RawMessage, deps component.Dependencies) 
 	if err != nil {
 		return nil, errs.Wrap(err, "CreateGraphLexical", "factory", "register metrics")
 	}
+	// A nil *storeregistry.Registry in the interface would be a non-nil Stores that panics.
+	var stores entitytext.Stores
+	if deps.StoreRegistry != nil {
+		stores = deps.StoreRegistry
+	}
 	return &Component{
 		config:          config,
 		inputs:          inputs,
@@ -110,6 +118,7 @@ func CreateGraphLexical(rawConfig json.RawMessage, deps component.Dependencies) 
 		metricsRegistry: deps.MetricsRegistry,
 		metrics:         metrics,
 		rule:            entitytext.New(config.TextSuffixes, config.MaxTextLen),
+		stores:          stores,
 	}, nil
 }
 
@@ -178,7 +187,9 @@ func (c *Component) start(ctx context.Context) error {
 		StartupAttempts: c.config.StartupAttempts,
 		StartupInterval: time.Duration(c.config.StartupInterval) * time.Millisecond,
 		Deliver:         c.deliver,
-		Failed:          func() (int64, map[string]uint64) { return 0, nil },
+		Failed:          c.failed,
+		// No body state withholds the verb: an unread body reads degraded and the rest answer.
+		Withhold: func() int64 { return 0 },
 	})
 	if err != nil {
 		return errs.Wrap(err, "Component", "Start", "open the ENTITY_STATES follower")
@@ -188,16 +199,20 @@ func (c *Component) start(ctx context.Context) error {
 	if err := ctx.Err(); err != nil {
 		return errs.Wrap(err, "Component", "Start", "context ended during startup")
 	}
-	c.apply = newApplier(c.rule, f.Complete, c.metrics)
+	c.apply = newApplier(c.rule, c.config.MaxTextLen, f.Complete, c.metrics, c.logger)
+	c.bodies = newBodyPath(c.apply, c.stores, c.config.MaxTextLen, c.logger)
 	c.follower.Store(f)
 
 	// The one run context: Start's values without its cancellation, ended only by cleanup.
 	runCtx, runCancel := context.WithCancel(context.WithoutCancel(ctx))
 	c.runCancel = runCancel
-	feeds := make(chan struct{})
-	c.feeds = feeds
+	stopped := make(chan struct{})
+	c.stopped = stopped
 	go func() {
-		defer close(feeds)
+		defer close(stopped)
+		var bodies sync.WaitGroup
+		bodies.Go(func() { c.bodies.run(runCtx) })
+		defer bodies.Wait()
 		if err := f.Run(runCtx); err != nil {
 			c.logger.Warn("ENTITY_STATES watch did not stop cleanly", slog.Any("error", err))
 		}
@@ -205,10 +220,16 @@ func (c *Component) start(ctx context.Context) error {
 	return nil
 }
 
+// failed is the follower's Failed, the applier's unread bodies. The follower is published to
+// Health, and runs, only after start has built the applier.
+func (c *Component) failed() (int64, map[string]uint64) {
+	return c.apply.failed()
+}
+
 // deliver is the follower's Deliver, on its Run goroutine. It does no I/O: the applier puts the
-// entry's inline text and completes its revision, or names the offloaded body to read. A value
-// that is not a canonical entity state latches the follower's reset, and its revision stays
-// pending.
+// entry's inline text and completes its revision, or names the offloaded body, which goes to the
+// body path to read. A value that is not a canonical entity state latches the follower's reset,
+// and its revision stays pending.
 func (c *Component) deliver(_ context.Context, e follower.Entry) {
 	c.lifecycle.CountInput(e.Bytes)
 	read, ok, err := c.apply.deliver(e)
@@ -225,9 +246,7 @@ func (c *Component) deliver(_ context.Context, e follower.Entry) {
 		return
 	}
 	if ok {
-		// shortcut: an offloaded body is not read, so its entity is indexed by its inline text
-		// only; upgrade when the body path reads bodies off the follower's goroutine.
-		c.apply.bodyDone(read, "", errBodyNotRead)
+		c.bodies.enqueue(read)
 	}
 }
 
@@ -237,20 +256,20 @@ func (c *Component) deliver(_ context.Context, e follower.Entry) {
 func (c *Component) Stop(ctx context.Context) error { return c.lifecycle.Stop(ctx) }
 
 // cleanup releases what start acquired, for a Stop or a failed Start's rollback, tolerating a
-// partial start: it ends the run context and joins the follower's Run, so nothing more is
-// delivered. A ctx that ends first returns its error with the handles kept, and the next Stop
+// partial start: it ends the run context and joins the follower's Run and the body path, so
+// nothing more is delivered or read. A read in flight ends by its own deadline at the latest. A ctx that ends first returns its error with the handles kept, and the next Stop
 // resumes.
 func (c *Component) cleanup(ctx context.Context) error {
 	if c.runCancel != nil {
 		c.runCancel()
 	}
-	if c.feeds != nil {
+	if c.stopped != nil {
 		select {
-		case <-c.feeds:
+		case <-c.stopped:
 		case <-ctx.Done():
 			return ctx.Err()
 		}
 	}
-	c.runCancel, c.feeds = nil, nil
+	c.runCancel, c.stopped = nil, nil
 	return nil
 }

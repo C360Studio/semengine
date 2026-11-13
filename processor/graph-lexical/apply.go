@@ -1,6 +1,8 @@
 package graphlexical
 
 import (
+	"errors"
+	"log/slog"
 	"sync"
 
 	"github.com/c360studio/semengine/graph"
@@ -8,6 +10,7 @@ import (
 	"github.com/c360studio/semengine/graph/follower"
 	"github.com/c360studio/semengine/graph/lexical"
 	"github.com/c360studio/semengine/message"
+	"github.com/c360studio/semengine/storage"
 )
 
 // bodyRead is an offloaded body to read: the entity's key, the revision whose state names the
@@ -16,6 +19,44 @@ type bodyRead struct {
 	key      string
 	revision uint64
 	ref      message.StorageReference
+}
+
+// bodyState is where an entity's offloaded body stands while the index does not hold it.
+type bodyState int
+
+const (
+	bodyNone    bodyState = iota // no offloaded body, or it is in the index
+	bodyQueued                   // not yet read
+	bodyUnread                   // a read failed, other than with a missing object, or its store was skipped
+	bodyMissing                  // the store has no such object
+	bodyNoStore                  // no store is registered under the body's storage instance
+)
+
+// bodyStateNames are the states' names on the bodies_not_indexed gauge.
+var bodyStateNames = [...]string{
+	bodyQueued:  "queued",
+	bodyUnread:  "unread",
+	bodyMissing: "missing",
+	bodyNoStore: "no_store",
+}
+
+// failureBodyUnread is the failure reason an unread body is reported under.
+const failureBodyUnread = "body_unread"
+
+// readState is the state a body read's outcome leaves the body in: in the index when err is nil,
+// missing for a missing object, no store for an unregistered instance, and unread for any other
+// failure, whatever its cause.
+func readState(err error) bodyState {
+	switch {
+	case err == nil:
+		return bodyNone
+	case errors.Is(err, storage.ErrObjectNotFound):
+		return bodyMissing
+	case errors.Is(err, entitytext.ErrNoStore):
+		return bodyNoStore
+	default:
+		return bodyUnread
+	}
 }
 
 // applier keeps the word index in step with ENTITY_STATES. Two paths write one key: deliver, on
@@ -27,33 +68,44 @@ type bodyRead struct {
 // does not hold.
 type applier struct {
 	rule     entitytext.Rule
+	maxLen   int // the rule's cap, named when a body is first cut
 	index    *lexical.Index
 	complete func(key string, revision uint64)
 	metrics  *lexicalMetrics
+	logger   *slog.Logger
 
 	// mu orders the two writers: a revision check and the write it allows happen as one step.
-	mu    sync.Mutex
-	held  map[string]*held // by key, every entity written and not deleted since start
-	words int              // the words the index holds, every occurrence counted
+	mu     sync.Mutex
+	held   map[string]*held // by key, every entity written and not deleted since start
+	words  int              // the words the index holds, every occurrence counted
+	bodies [len(bodyStateNames)]int
+	cuts   int // held entities whose body is cut at the cap
+	// logged records the first cut, missing body and unregistered store since start, each logged once.
+	logged struct{ cut, missing, noStore bool }
 }
 
 // held is what the applier knows of one key.
 type held struct {
 	revision uint64
 	words    int
-	// waiting is the state whose offloaded body is being read for revision, so the body joins
-	// that state's text when it returns; nil when no read is out for revision.
+	cut      bool
+	body     bodyState
+	// waiting is the state whose offloaded body is still to be read for revision, so the body
+	// joins that state's text when it is read; nil when no read is wanted.
 	waiting *graph.EntityState
 }
 
 // newApplier returns an applier over an empty index that completes revisions through complete
-// and reports the index's size on metrics.
-func newApplier(rule entitytext.Rule, complete func(key string, revision uint64), metrics *lexicalMetrics) *applier {
+// and reports the index's size on metrics. maxLen is rule's cap.
+func newApplier(rule entitytext.Rule, maxLen int, complete func(key string, revision uint64),
+	metrics *lexicalMetrics, logger *slog.Logger) *applier {
 	a := &applier{
 		rule:     rule,
+		maxLen:   maxLen,
 		index:    lexical.NewIndex(),
 		complete: complete,
 		metrics:  metrics,
+		logger:   logger,
 		held:     make(map[string]*held),
 	}
 	a.report()
@@ -62,8 +114,9 @@ func newApplier(rule entitytext.Rule, complete func(key string, revision uint64)
 
 // deliver applies one delivered entry. A delivery at or below the key's held revision changes
 // nothing and is completed. A delete removes the entity and is completed. A write puts the
-// entity's inline text and is completed, unless its state names an offloaded body: then deliver
-// returns the read to make, and the revision completes when bodyDone takes the read's outcome.
+// entity's inline text and is completed, unless its state names an offloaded body: then the body
+// is queued, deliver returns the read to make, and the revision completes when bodyDone takes the
+// read's outcome.
 //
 // A value that is not a canonical entity state is refused with the *graph.StateContractError
 // the decoder returned, nothing is applied, and the revision is not completed: state the index
@@ -91,34 +144,87 @@ func (a *applier) deliver(e follower.Entry) (bodyRead, bool, error) {
 		return bodyRead{}, false, err
 	}
 	if state.StorageRef == nil {
+		a.setBody(h, bodyNone, nil)
 		a.complete(e.Key, e.Revision)
 		return bodyRead{}, false, nil
 	}
-	h.waiting = &state
+	a.setBody(h, bodyQueued, &state)
 	return bodyRead{key: e.Key, revision: e.Revision, ref: *state.StorageRef}, true, nil
 }
 
+// wanted reports whether read is still to be made: its key is still at read's revision and its
+// body still waits to be read. A read no longer wanted has its revision completed, as a dropped
+// read's is.
+func (a *applier) wanted(read bodyRead) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if h, ok := a.held[read.key]; ok && h.revision == read.revision && h.waiting != nil {
+		return true
+	}
+	a.complete(read.key, read.revision)
+	return false
+}
+
 // bodyDone takes the outcome of read: the body, or the error that kept it from being read. The
-// body joins its state's text only if the key is still at read's revision; a key that moved on
-// or was deleted drops it. A failed read leaves the inline text. The read's revision completes
-// either way.
+// outcome applies only if the key is still at read's revision; a key that moved on or was
+// deleted drops it. A body read joins its state's text; a failed read leaves the inline text and
+// puts the body in the state readState names, keeping what a retry needs unless the body is
+// missing. The read's revision completes either way.
 func (a *applier) bodyDone(read bodyRead, body string, err error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if h, ok := a.held[read.key]; ok && h.revision == read.revision && h.waiting != nil {
-		state := h.waiting
-		h.waiting = nil
-		if err == nil {
+		switch s := readState(err); s {
+		case bodyNone:
 			// put refuses only an ID that is not canonical, and this key's was accepted when its
 			// inline text was put.
-			_, _ = a.put(read.key, read.revision, a.rule.Document(state, body))
+			_, _ = a.put(read.key, read.revision, a.rule.Document(h.waiting, body))
+			a.setBody(h, bodyNone, nil)
+		case bodyMissing:
+			a.setBody(h, s, nil)
+			a.logFirst(&a.logged.missing, "offloaded body missing from its store; the entity is indexed without it",
+				read, err)
+		case bodyNoStore:
+			a.setBody(h, s, h.waiting)
+			a.logFirst(&a.logged.noStore, "no store registered for an offloaded body; looked up again each repair pass",
+				read, err)
+		default:
+			a.setBody(h, s, h.waiting)
 		}
 	}
 	a.complete(read.key, read.revision)
 }
 
-// put replaces key's text with doc at revision and returns what is held for key. A refused ID is
-// returned as the state contract's noncanonical-ID error, with nothing changed.
+// retries returns a read, at the held revision, of every body left unread or with no store.
+func (a *applier) retries() []bodyRead {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.bodies[bodyUnread]+a.bodies[bodyNoStore] == 0 {
+		return nil
+	}
+	var reads []bodyRead
+	for key, h := range a.held {
+		if h.body == bodyUnread || h.body == bodyNoStore {
+			reads = append(reads, bodyRead{key: key, revision: h.revision, ref: *h.waiting.StorageRef})
+		}
+	}
+	return reads
+}
+
+// failed is the follower's Failed: the bodies left unread, under one reason.
+func (a *applier) failed() (int64, map[string]uint64) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	n := a.bodies[bodyUnread]
+	if n == 0 {
+		return 0, nil
+	}
+	return int64(n), map[string]uint64{failureBodyUnread: uint64(n)}
+}
+
+// put replaces key's text with doc at revision and returns what is held for key; the body's state
+// is the caller's to set. A refused ID is returned as the state contract's noncanonical-ID error,
+// with nothing changed.
 func (a *applier) put(key string, revision uint64, doc entitytext.Document) (*held, error) {
 	if err := a.index.Put(key, lexical.Document{Name: doc.Name, Body: doc.Body}); err != nil {
 		return nil, &graph.StateContractError{Reason: graph.GraphStateReasonNoncanonicalEntityID, EntityID: key, Err: err}
@@ -130,21 +236,66 @@ func (a *applier) put(key string, revision uint64, doc entitytext.Document) (*he
 		a.held[key] = h
 	}
 	a.words += words - h.words
-	h.revision, h.words, h.waiting = revision, words, nil
+	switch {
+	case doc.Cut && !h.cut:
+		a.cuts++
+	case !doc.Cut && h.cut:
+		a.cuts--
+	}
+	if doc.Cut && !a.logged.cut {
+		a.logged.cut = true
+		a.logger.Warn("entity text cut at max_text_len; words past it are not indexed",
+			slog.String("entity", key), slog.Int("max_text_len", a.maxLen))
+	}
+	h.revision, h.words, h.cut = revision, words, doc.Cut
 	a.report()
 	return h, nil
+}
+
+// setBody puts h's body in state s, waiting on the state waiting names, and reports it.
+func (a *applier) setBody(h *held, s bodyState, waiting *graph.EntityState) {
+	if h.body != bodyNone {
+		a.bodies[h.body]--
+	}
+	if s != bodyNone {
+		a.bodies[s]++
+	}
+	h.body, h.waiting = s, waiting
+	a.report()
 }
 
 // forget drops what is held for key.
 func (a *applier) forget(key string) {
 	if h, ok := a.held[key]; ok {
+		if h.body != bodyNone {
+			a.bodies[h.body]--
+		}
 		a.words -= h.words
+		if h.cut {
+			a.cuts--
+		}
 		delete(a.held, key)
 	}
 }
 
-// report sets the size gauges to what the index holds.
+// logFirst logs msg at warning level for read's entity, once since start: *done records it.
+func (a *applier) logFirst(done *bool, msg string, read bodyRead, err error) {
+	if *done {
+		return
+	}
+	*done = true
+	a.logger.Warn(msg, slog.String("entity", read.key), slog.String("storage_instance", read.ref.StorageInstance),
+		slog.Any("error", err))
+}
+
+// report sets the gauges to what the index holds and the bodies it does not.
 func (a *applier) report() {
 	a.metrics.entities.Set(float64(a.index.Len()))
 	a.metrics.words.Set(float64(a.words))
+	a.metrics.cut.Set(float64(a.cuts))
+	for s, name := range bodyStateNames {
+		if name != "" {
+			a.metrics.bodies.WithLabelValues(name).Set(float64(a.bodies[s]))
+		}
+	}
 }

@@ -8,6 +8,12 @@
 // the index holds for its key is ignored. A revision is reported applied only once the index
 // holds its text.
 //
+// An entity whose body is offloaded to a store is indexed by its inline text at once, and by its
+// body once the one goroutine that reads every body has read it. A body the index does not hold
+// is queued, unread, missing or has no store. Only unread is a failure: the readiness key reads
+// degraded and Health names it until a repair pass, every 30 seconds, reads the body. A read that
+// fails on a store skips that store until the next pass.
+//
 // A composition registers the factory with Register and creates the component through the
 // component manager, with a configuration that Config describes.
 package graphlexical

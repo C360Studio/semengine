@@ -1,8 +1,10 @@
 package graphlexical
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"slices"
 	"testing"
 	"time"
@@ -22,10 +24,12 @@ type failer interface {
 }
 
 // text is what one delivered entity says: its name, the inline text that is not its name, and
-// whether its body is offloaded to a store.
+// whether its body is offloaded to a store. An offloaded body is under instance, "objectstore"
+// when empty, at bodyKey, the entity's key and "/body" when empty.
 type text struct {
-	name, inline string
-	offloaded    bool
+	name, inline      string
+	offloaded         bool
+	instance, bodyKey string
 }
 
 // stateEntry is the follower entry for key at revision, carrying an entity state that says t:
@@ -42,7 +46,8 @@ func stateEntry(f failer, key string, revision uint64, t text) follower.Entry {
 		}
 	}
 	if t.offloaded {
-		state.StorageRef = &message.StorageReference{StorageInstance: "objectstore", Key: key + "/body"}
+		state.StorageRef = &message.StorageReference{StorageInstance: cmp.Or(t.instance, "objectstore"),
+			Key: cmp.Or(t.bodyKey, key+"/body")}
 	}
 	value, err := json.Marshal(state)
 	if err != nil {
@@ -93,7 +98,7 @@ func newTestApplier(f failer, complete func(key string, revision uint64)) *appli
 	if err != nil {
 		f.Fatalf("newLexicalMetrics: %v", err)
 	}
-	return newApplier(entitytext.New(nil, defaultMaxTextLen), complete, metrics)
+	return newApplier(entitytext.New(nil, defaultMaxTextLen), defaultMaxTextLen, complete, metrics, slog.New(slog.DiscardHandler))
 }
 
 // mustDeliver delivers e and fails on a refusal; it returns the body read the delivery asks for.

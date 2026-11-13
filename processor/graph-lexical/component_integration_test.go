@@ -23,6 +23,7 @@ import (
 	"github.com/c360studio/semengine/internal/harness/probe"
 	"github.com/c360studio/semengine/metric"
 	"github.com/c360studio/semengine/natsclient"
+	"github.com/c360studio/semengine/storage/storeregistry"
 )
 
 // shared is this package's NATS server. It starts at the first reset; TestMain removes it after the tests.
@@ -74,11 +75,12 @@ func ensureEntityStates(t *testing.T, client *natsclient.Client) jetstream.KeyVa
 }
 
 // newLexical builds an initialized, unstarted graph-lexical from raw through CreateGraphLexical,
-// on registry, logging nowhere.
-func newLexical(t *testing.T, client *natsclient.Client, raw string, registry *metric.MetricsRegistry) *Component {
+// on registry, reading bodies from stores (nil for none), logging nowhere.
+func newLexical(t *testing.T, client *natsclient.Client, raw string, registry *metric.MetricsRegistry,
+	stores *storeregistry.Registry) *Component {
 	t.Helper()
 	built, err := CreateGraphLexical(json.RawMessage(raw), component.Dependencies{
-		NATSClient: client, MetricsRegistry: registry, Logger: slog.New(slog.DiscardHandler),
+		NATSClient: client, MetricsRegistry: registry, StoreRegistry: stores, Logger: slog.New(slog.DiscardHandler),
 	})
 	if err != nil {
 		t.Fatalf("CreateGraphLexical: %v", err)
@@ -103,10 +105,12 @@ func stopComponent(t *testing.T, c *Component) {
 	}
 }
 
-// startLexical builds graph-lexical on registry and starts it; the test's cleanup stops it.
-func startLexical(t *testing.T, client *natsclient.Client, registry *metric.MetricsRegistry) *Component {
+// startLexical builds graph-lexical on registry, reading bodies from stores (nil for none), and
+// starts it; the test's cleanup stops it.
+func startLexical(t *testing.T, client *natsclient.Client, registry *metric.MetricsRegistry,
+	stores *storeregistry.Registry) *Component {
 	t.Helper()
-	c := newLexical(t, client, `{}`, registry)
+	c := newLexical(t, client, `{}`, registry, stores)
 	if err := c.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -222,7 +226,7 @@ func TestRestartRebuildsSameAnswers(t *testing.T) {
 		return got
 	}
 
-	first := newLexical(t, client, `{}`, metric.NewMetricsRegistry())
+	first := newLexical(t, client, `{}`, metric.NewMetricsRegistry(), nil)
 	if err := first.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
@@ -230,7 +234,7 @@ func TestRestartRebuildsSameAnswers(t *testing.T) {
 	before := answers(first)
 	stopComponent(t, first)
 
-	second := startLexical(t, client, metric.NewMetricsRegistry())
+	second := startLexical(t, client, metric.NewMetricsRegistry(), nil)
 	awaitApplied(t, second, last)
 	after := answers(second)
 	for query, want := range before {
@@ -246,7 +250,7 @@ func TestIndexGauges(t *testing.T) {
 	client := fixtureClient(t)
 	states := ensureEntityStates(t, client)
 	registry := metric.NewMetricsRegistry()
-	c := startLexical(t, client, registry)
+	c := startLexical(t, client, registry, nil)
 
 	put(t, states, "c360.lex.test.site.pump.a", text{name: "alpha pump", inline: "north"}) // 3 words
 	put(t, states, "c360.lex.test.site.pump.b", text{name: "bravo valve"})                 // 2 words

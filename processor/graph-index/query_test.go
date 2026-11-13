@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/c360studio/semengine/graph"
@@ -205,5 +206,29 @@ func TestReverseReadsSkipMalformedRows(t *testing.T) {
 	wantMalformed := []string{"test.link.to.far." + source, "test.link.to.acme.ops.test.system.widget"}
 	if !slices.Equal(malformed, wantMalformed) {
 		t.Errorf("malformed keys = %q, want %q", malformed, wantMalformed)
+	}
+}
+
+// TestEntitiesWithValueEmptyResultEncodesEmptyArray: when no entity matches a predicate value
+// filter, PredicateData marshals "entities":[] rather than "entities":null, matching an
+// unfiltered predicate query with no matches.
+func TestEntitiesWithValueEmptyResultEncodesEmptyArray(t *testing.T) {
+	c, err := createFromJSON(t, `{}`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := c.entitiesWithValue(context.Background(), nil, "test.state.armed", "true", 0)
+	if err != nil {
+		t.Fatalf("entitiesWithValue: %v", err)
+	}
+	if got == nil {
+		t.Fatal("entitiesWithValue returned nil slice, want empty non-nil []string{}")
+	}
+	raw, err := reply(1, graph.PredicateData{Entities: limited(got, 0)})
+	if err != nil {
+		t.Fatalf("reply: %v", err)
+	}
+	if !strings.Contains(string(raw), `"entities":[]`) {
+		t.Fatalf("reply JSON = %s, want \"entities\":[]", raw)
 	}
 }

@@ -95,8 +95,8 @@ func TestConfidenceAndContextNeverOrder(t *testing.T) {
 	}
 }
 
-// Requirement: graph-entity-writes/One rule per write mode (design D15: within one write, statements equal in every
-// field count once)
+// Requirement: graph-entity-writes/One rule per write mode (within one write, statements equal in every field count
+// once)
 func TestReplaceCountsEqualStatementsOnce(t *testing.T) {
 	x := stmt(predP, "A", t0, 10.0)
 	y := stmt(predP, "A", t0, 11.0)

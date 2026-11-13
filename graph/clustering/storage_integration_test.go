@@ -29,8 +29,7 @@ func sampleCommunities() []*Community {
 	}
 }
 
-// TestSaveAndGetAllCommunities ports the pin's TestIntegration_SaveAndGetCommunity and
-// TestIntegration_CommunitySummaryFields: every field of a saved record reads back.
+// TestSaveAndGetAllCommunities: every field of a saved record reads back.
 func TestSaveAndGetAllCommunities(t *testing.T) {
 	_, storage := communityBucket(t)
 	want := sampleCommunities()
@@ -49,8 +48,8 @@ func TestSaveAndGetAllCommunities(t *testing.T) {
 	}
 }
 
-// TestCommunityKeyFormat ports the pin's TestIntegration_KeyFormatConsumerCompatibility:
-// a record's key is {level}.{group ID}, and no entity mapping key is written.
+// TestCommunityKeyFormat: a record's key is {level}.{group ID}, the format consumers
+// read, and no entity mapping key is written.
 func TestCommunityKeyFormat(t *testing.T) {
 	_, storage := communityBucket(t)
 	for _, c := range sampleCommunities() {
@@ -68,8 +67,8 @@ func TestCommunityKeyFormat(t *testing.T) {
 	}
 }
 
-// TestRemoveCommunity ports the pin's TestIntegration_DeleteCommunity: a removed record is
-// gone, and removing a key that is not there is not an error.
+// TestRemoveCommunity: a removed record is gone, and removing a key that is not there is
+// not an error.
 func TestRemoveCommunity(t *testing.T) {
 	_, storage := communityBucket(t)
 	c := sampleCommunities()[0]
@@ -99,7 +98,7 @@ func TestGetAllCommunitiesEmptyBucket(t *testing.T) {
 }
 
 // TestGetAllCommunitiesFailsOnCorruptEntry: an entry that is not a group record fails the
-// read, naming its key; the pin skipped it (storage.go:291-299).
+// read, naming its key, rather than being skipped.
 func TestGetAllCommunitiesFailsOnCorruptEntry(t *testing.T) {
 	foreign, err := json.Marshal(sampleCommunities()[1])
 	if err != nil {
@@ -139,7 +138,7 @@ func TestGetAllCommunitiesFailsOnCorruptEntry(t *testing.T) {
 }
 
 // TestGetAllReportsCancel: a cancelled context returns the context's error, never an
-// empty answer; the pin returned nil, nil (storage.go:276-279).
+// empty answer.
 func TestGetAllReportsCancel(t *testing.T) {
 	_, storage := communityBucket(t)
 	for _, c := range sampleCommunities() {

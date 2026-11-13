@@ -96,7 +96,7 @@ func TestComputeBacklogStatus_ObservationFailureCannotReportReady(t *testing.T) 
 func TestComputeBacklogStatus_LagIsOutstandingMessages(t *testing.T) {
 	// 2048 is the in-process lane-queue ceiling (8 lanes x 256 depth). Those messages
 	// are delivered-but-unacked, so they live in NumAckPending and are invisible to
-	// NumPending alone — the under-report SemStreams gh#712 tripped over.
+	// NumPending alone, which would under-report the backlog.
 	got := ComputeBacklogStatus(BacklogStatusInputs{Outstanding: 2048, BootstrapComplete: true})
 	if got.Lag != 2048 {
 		t.Errorf("Lag = %d, want 2048", got.Lag)
@@ -106,12 +106,12 @@ func TestComputeBacklogStatus_LagIsOutstandingMessages(t *testing.T) {
 	}
 }
 
-// TestComputeBacklogStatus_RevisionFieldsAbsentOnWire is task 3.6's guard, asserted
-// at the projection.
+// TestComputeBacklogStatus_RevisionFieldsAbsentOnWire guards that a backlog producer
+// writes no revision fields, asserted at the projection.
 //
 // IndexedRevision/TargetRevision are contractually in the ENTITY_STATES KV revision
-// space (ADR-084 D3 pins them comparable to a caller's kv_revision by a test). A
-// backlog producer consumes multiple streams with independent sequence spaces, so it
+// space (ADR-084 decision 3 pins them comparable to a caller's kv_revision by a test).
+// A backlog producer consumes multiple streams with independent sequence spaces, so it
 // has no such scalar; writing a stream sequence there would silently corrupt every
 // read-your-writes check in the system. Asserted on the WIRE, not just the struct,
 // because omitempty is what keeps them off it.
@@ -211,7 +211,7 @@ func TestComputeBacklogStatus_ReadyImpliesBootstrapComplete(t *testing.T) {
 	}
 }
 
-// TestBootstrapScope_GateVerdictInvariant is task 2.3 — the guard that stops
+// TestBootstrapScope_GateVerdictInvariant is the guard that stops
 // BootstrapScope from becoming a threshold knob.
 //
 // The field exists so a consumer can distinguish "finished an EMPTY initial build"

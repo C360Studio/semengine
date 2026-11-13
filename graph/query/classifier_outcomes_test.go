@@ -29,7 +29,7 @@ func (c *countingLLMClient) ClassifyQuery(ctx context.Context, _ string) (string
 // productExamples, so the chain reaches its later tiers.
 const noHintQuery = "tell me about the pumps"
 
-// defaultResult is design D4's default result, written out from the design.
+// defaultResult is the chain's default result, written out by hand.
 func defaultResult() *ClassificationResult {
 	return &ClassificationResult{Tier: 0, Intent: "", Options: map[string]any{}, Confidence: 1.0}
 }
@@ -41,8 +41,8 @@ func endedContext(t *testing.T) context.Context {
 	return ctx
 }
 
-// TestChainEndedContextReturnsNil: design D4's nil-context and ended-context
-// rows. A chain never answers the default result for an ended context.
+// TestChainEndedContextReturnsNil: a nil context and an ended context yield nil.
+// A chain never answers the default result for an ended context.
 func TestChainEndedContextReturnsNil(t *testing.T) {
 	t.Run("nil context", func(t *testing.T) {
 		chain := NewClassifierChain(NewKeywordClassifier(), createTestEmbeddingClassifier(t))
@@ -79,7 +79,7 @@ func TestChainEndedContextReturnsNil(t *testing.T) {
 }
 
 // TestChainLLMFailureGivesDefault: an LLM error under a live context yields the
-// default result (design D4).
+// default result.
 func TestChainLLMFailureGivesDefault(t *testing.T) {
 	client := &countingLLMClient{respond: func(context.Context) (string, error) {
 		return "", errors.New("provider unavailable")
@@ -202,10 +202,10 @@ var copyTestQueries = []string{
 }
 
 // TestResultEditsDoNotReachClassifier: a caller that edits what it was handed
-// changes no later result (design D4; S9). Each subtest drives an edited
-// classifier and an untouched control built from identical examples through
-// the same query sequence. Both learn from the queries through Generate (#96),
-// so the corpus drift is the same on both and any difference is the edit's.
+// changes no later result. Each subtest drives an edited classifier and an
+// untouched control built from identical examples through the same query
+// sequence. Classifying a query leaves a classifier as it was (FindBestMatch
+// embeds with the read-only GenerateQuery), so any difference is the edit's.
 func TestResultEditsDoNotReachClassifier(t *testing.T) {
 	t.Run("FindBestMatch", func(t *testing.T) {
 		edited := mustNewEmbeddingClassifier(t, copyTestDomains(), 0.3)
@@ -257,7 +257,7 @@ func TestResultEditsDoNotReachClassifier(t *testing.T) {
 }
 
 // TestZoneQueryAddsNoPredicate: a zone or area phrase keeps its path intent and
-// start node and adds no predicate filter (design D5).
+// start node and adds no predicate filter.
 func TestZoneQueryAddsNoPredicate(t *testing.T) {
 	tests := []struct {
 		query     string
@@ -332,7 +332,7 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 	// The oracle is the iot file's options as encoding/json decodes them.
 	assert.Equal(t, map[string]any{"metric": "temperature"}, got.Options)
 	// The score's oracle is a control classifier built from the same domains and asked the same
-	// question first, so both have the same Generate history (#96).
+	// question.
 	control, err := NewEmbeddingClassifier(t.Context(), domains, threshold)
 	require.NoError(t, err)
 	match, wantScore := control.FindBestMatch(t.Context(), question)
@@ -343,7 +343,7 @@ func TestEmbeddingClassifierAsAProduct(t *testing.T) {
 
 // TestChainRefusesAnEntityBesideAZone: a question naming an entity reference and a zone or area
 // phrase names two places, and the keyword tier answers a path from only one of them, so the chain
-// refuses it naming both, with or without path words (PR #530 review). A zone alone and a start
+// refuses it naming both, with or without path words. A zone alone and a start
 // alone classify as before, and a reference that holds a zone word ("sensor-zone-1", "zone-b"
 // itself) is one place.
 func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
@@ -355,10 +355,10 @@ func TestChainRefusesAnEntityBesideAZone(t *testing.T) {
 		{"show the path from pump-42 in area north", "pump-42", "area-north"},
 		{"show sensor-001 in zone-b", "sensor-001", "zone-b"},
 		{"status of sensor-001 in zone-b", "sensor-001", "zone-b"},
-		// Zone names written with a space are places too (PR #530 re-review).
+		// Zone names written with a space are places too.
 		{"what is connected to zone a in zone b", "zone-a", "zone-b"},
 		{"what is in zone a near area b", "area-b", "zone-a"},
-		// A full ID with no hyphenated segment is a place too (owner ruling 2026-11-07).
+		// A full ID with no hyphenated segment is a place too.
 		{"what is connected to c360.test.x.y.z.001 in zone b", "c360.test.x.y.z.001", "zone-b"},
 		{"show c360.test.x.y.z.001 in zone-b", "c360.test.x.y.z.001", "zone-b"},
 		{"in zone b, what is connected to c360.test.x.y.z.001?", "c360.test.x.y.z.001", "zone-b"},

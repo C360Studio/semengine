@@ -55,7 +55,7 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 //   - T3: the LLM classifier's result, when it is composed and succeeds
 //   - Default: T0 with no hints and confidence 1.0
 //
-// The keyword tier's outcome decides whether the later tiers are asked (#95):
+// The keyword tier's outcome decides whether the later tiers are asked:
 //
 //	Keyword outcome                    Chain result
 //	any hint                           tier 0, those hints
@@ -67,7 +67,7 @@ func NewClassifierChain(keyword *KeywordClassifier, embedding *EmbeddingClassifi
 // answers in the caller's own words, which no framework rule can read, so the chain does not ask
 // it. The cost: a question whose only operation is excluded gets no tier 1 or tier 3 answer.
 //
-// A question with an out-of-range number is refused (#479 item 2): no result and an invalid-input
+// A question with an out-of-range number is refused: no result and an invalid-input
 // error (errs.IsInvalid) naming the phrase and the bound it broke. The bounds: "last N hours" and
 // "last N days" need N of at least 1 and N hours or days within a time.Duration (about 292
 // years), so a negative N is refused; "within R of lat,lon" needs lat in [-90, 90], lon in
@@ -96,7 +96,7 @@ func (c *ClassifierChain) ClassifyQuery(ctx context.Context, query string) (*Cla
 		return nil, nil
 	}
 
-	// A question with an out-of-range number is refused whichever tiers are composed (#479 item 2).
+	// A question with an out-of-range number is refused whichever tiers are composed.
 	if err := numbersOutOfRange(query); err != nil {
 		return nil, errs.WrapInvalid(err, "ClassifierChain", "ClassifyQuery", "read the question's numbers")
 	}

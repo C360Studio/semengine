@@ -689,8 +689,7 @@ func TestRepresentativesWithoutScan(t *testing.T) {
 
 // TestTickCost: after the first tick, a tick reads nothing from COMMUNITY_INDEX and writes
 // only the changed groups' records; an unchanged graph writes nothing, and the same value
-// at a newer revision writes only that entity's groups, whose entity_revision rose
-// (design D1, "Costs").
+// at a newer revision writes only that entity's groups, whose entity_revision rose.
 func TestTickCost(t *testing.T) {
 	m, kv := newTestMaintainer(t)
 	var ids []string

@@ -14,7 +14,7 @@ import (
 )
 
 // TestQueryEmbeddingIsReadOnly proves that classifying a query leaves the example classifier
-// as it was (#96, design D3): the score for a question does not depend on the questions asked
+// as it was: the score for a question does not depend on the questions asked
 // before it. The oracle is a second classifier built from the same examples that is asked
 // nothing else.
 func TestQueryEmbeddingIsReadOnly(t *testing.T) {
@@ -114,7 +114,7 @@ func quoteJSON(t *testing.T, s string) string {
 
 // TestTierOneHintsAreTyped proves that tier 1 gives a known hint the Go type tiers 0 and 3
 // give it, keeps a caller's own names unchanged, keeps its own copies, and refuses an
-// impossible hint at construction (#478, design D4).
+// impossible hint at construction.
 func TestTierOneHintsAreTyped(t *testing.T) {
 	const question = "Show sensor readings for the north site"
 

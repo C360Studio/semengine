@@ -20,7 +20,7 @@ import (
 // It uses BM25 vectors only (graph/embedding's BM25Embedder, no external service), and its
 // examples are fixed at construction: construction embeds them as documents with Generate, which
 // builds the corpus statistics, and FindBestMatch embeds each query with the read-only
-// GenerateQuery, so a query's score does not depend on the queries classified before it (#96).
+// GenerateQuery, so a query's score does not depend on the queries classified before it.
 //
 // Safe for concurrent FindBestMatch calls: neither the examples nor the corpus statistics are
 // written after construction.
@@ -240,8 +240,7 @@ func typedOption(name string, value any) (any, error) {
 	return typed, nil
 }
 
-// checkOption refuses the impossible values tier 3 and the keyword tier never give: the checks of
-// design D4 (#478).
+// checkOption refuses the impossible values tier 3 and the keyword tier never give.
 func checkOption(name string, o *SearchOptions) error {
 	switch name {
 	case "strategy":

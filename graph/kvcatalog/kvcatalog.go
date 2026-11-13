@@ -8,8 +8,8 @@
 //     OpenCatalogReader, which readers call;
 //   - EnsureCatalogRetentionClean, the pre-start retention backstop;
 //   - IsFrameworkOwnedBucket and FrameworkOwnedWriteRefusal, the write-guard
-//     pair the rule engine's update_kv guard reads (the rule engine is ported
-//     in change 6).
+//     pair the rule engine's update_kv guard reads (the rule engine is not in
+//     SemEngine yet).
 //
 // The BucketSpec type and the Ensure/Open acquisition seam live in
 // natsclient/kvspec.go and name no bucket. The bucket names are the graph
@@ -26,8 +26,8 @@
 // IsFrameworkOwnedBucket reads Write == WriteOwnerOnly; the pre-start legacy-drift backstop
 // (EnsureCatalogRetentionClean) filters Retention.Kind == RetentionNoLifecycle.
 // There is no parallel hand-maintained list to forget a member from. That no
-// other non-test file names a catalog bucket in a string literal is review
-// only in SemEngine.
+// other non-test file names a catalog bucket in a string literal is enforced
+// by review only.
 //
 // Owner enforcement is call-site selection: owners call
 // natsclient.EnsureFrameworkBucket with their descriptor, readers call
@@ -77,20 +77,19 @@ var catalog = func() []natsclient.BucketSpec {
 
 	entityStates := owned(graph.BucketEntityStates, "graph-ingest",
 		"Entity state storage for graph-ingest", natsclient.ClassAuthoritative)
-	// Owner decision 2026-07-28, corrected 2026-08-05: History 1 bounds
-	// per-revision storage on the authoritative, all-entity hot bucket. Lifecycle
-	// operator history is a fixed occurrence-record window carried in each
-	// participant's current value; it does not consume KV revision history.
-	// Deploys where the retired tool-registration create won the boot race with
-	// History 3 are reconciled down at acquisition, and the seam WARNs naming
-	// both values.
+	// By owner decision, History 1 bounds per-revision storage on the
+	// authoritative, all-entity hot bucket. Lifecycle operator history is a fixed
+	// occurrence-record window carried in each participant's current value; it
+	// does not consume KV revision history. A bucket another path created with a
+	// different History is reconciled to 1 at acquisition, and the seam WARNs
+	// naming both values.
 	entityStates.History = 1
 
 	graphStatus := owned(graph.BucketGraphStatus, "graph-index/graph-embedding/graph-ingest/rule (readiness producers)",
 		"ADR-083 readiness envelopes, one key per producer (operational component status, not graph data)",
 		natsclient.ClassOperational)
 	// Readiness replay depth: enough replay for a late-binding consumer to see
-	// recent envelopes (was readiness.BucketHistory before the catalog owned it).
+	// recent envelopes.
 	graphStatus.History = 3
 
 	storageReport := owned(graph.BucketStorageReport, "storage inventory collector",
@@ -104,7 +103,7 @@ var catalog = func() []natsclient.BucketSpec {
 	// Why 10 and not the bare floor of 2
 	// (storagereport.StorageReportGrowthObservations, cross-pinned by a test in
 	// this package): depth 2 covers only the benign restart. It does NOT cover
-	// the cases the design says the projection matters most in. A crash loop or
+	// the cases the projection matters most in. A crash loop or
 	// deploy loop restarting faster than every 5 s (the shortest interval a
 	// growth rate is measured over) publishes rows too close together to
 	// measure against, and several
@@ -121,22 +120,21 @@ var catalog = func() []natsclient.BucketSpec {
 	// account resource, and no retention needed to hold that line.
 	storageReport.History = 10
 
-	// The runtime configuration bucket family entered the catalog for its
-	// RETENTION guarantee — ADR-104 made each member the home of the
-	// create-once platform identity record, and an evicted identity is
-	// reminted as a second authority ADR-102 d7 forbids ever reconciling — and
-	// it is OWNER-ONLY for the same reason one level up.
+	// The runtime configuration bucket family is in the catalog for its
+	// RETENTION guarantee — under ADR-104 each member is the home of the
+	// create-once platform identity record, and an evicted identity is reminted
+	// as a second authority ADR-102 decision 7 forbids ever reconciling — and it
+	// is OWNER-ONLY for the same reason one level up.
 	//
 	// The row is a NAME FAMILY (see SpecFor): each deployment's bucket is
-	// "semengine_config_<org>_<stem>" (SemStreams #1188), and SpecFor resolves every
-	// member to this descriptor carrying the member's concrete name.
+	// "semengine_config_<org>_<stem>", and SpecFor resolves every member to this
+	// descriptor carrying the member's concrete name.
 	//
 	// Owner-only is not about who may write the bucket: config.Manager acquires
-	// it, and processor/rule's ConfigManager writes rules.* through the key
-	// family config.Manager serves it; neither consults this policy
-	// (at the pin IsFrameworkOwnedBucket has three call sites, all in
-	// processor/rule: load validation, the update_kv action and its writer
-	// acquisition). It is about who may NOT. A generic update_kv into
+	// it and consults no policy. The rule engine, once in SemEngine, writes
+	// rules.* through the key family config.Manager serves and consults this
+	// policy at load validation, update_kv and writer acquisition. It is about
+	// who may NOT. A generic update_kv into
 	// platform_identity plain-Puts over the create-once record: a forged id
 	// whose org and stem match is ADOPTED on the next boot, because adoption
 	// validates grammar and byte budget and nothing else, so a rule pack could
@@ -147,8 +145,7 @@ var catalog = func() []natsclient.BucketSpec {
 	// Its retention kind is STRICT no-lifecycle: verify and refuse, never
 	// reconcile. Stripping a TTL here would be silent repair of a bucket whose
 	// identity may ALREADY have expired, which is the remint ADR-104 exists to
-	// prevent. History 5 preserves the configuration-versioning depth this
-	// bucket has always carried.
+	// prevent. History 5 keeps five versions of each configuration key.
 	semengineConfig := natsclient.BucketSpec{
 		Name:        graph.BucketSemEngineConfig,
 		Owner:       "config.Manager (configuration keys, and rules.* through the key family it serves processor/rule.ConfigManager)",
@@ -205,7 +202,7 @@ var catalog = func() []natsclient.BucketSpec {
 //
 // The runtime configuration row is the one family: its Name is a PREFIX, and
 // every "<Name>_<suffix>" with a nonempty suffix is a member, named per
-// deployment by config.BucketName (SemStreams #1188). The bare prefix is not a member.
+// deployment by config.BucketName. The bare prefix is not a member.
 func SpecFor(name string) (natsclient.BucketSpec, bool) {
 	for _, spec := range catalog {
 		if spec.Name == graph.BucketSemEngineConfig {
@@ -271,7 +268,7 @@ func resolve(name, operation string) (natsclient.BucketSpec, error) {
 // readers. The underlying write-capable JetStream handle is never exposed.
 // It has no Keys: list a catalog bucket with natsclient.FilteredKeys(ctx,
 // reader, ">"), which fails a listing cut short instead of returning the keys
-// so far (#533).
+// so far.
 type CatalogReader interface {
 	Get(ctx context.Context, key string) (jetstream.KeyValueEntry, error)
 	Watch(ctx context.Context, keys string, opts ...jetstream.WatchOpt) (jetstream.KeyWatcher, error)

@@ -1,31 +1,30 @@
 package graph
 
-// IndexStatusResponse is the wire shape of the readiness envelope (SemStreams gh#397,
-// enriched by ADR-066, distributed as GRAPH_STATUS KV state by ADR-083). At the
-// SemStreams pin pkg/fusion read it before every answer; here fusion reads not-ready
-// from each query reply instead and decodes no envelope (ADR-109 D1).
+// IndexStatusResponse is the wire shape of the readiness envelope (ADR-066),
+// distributed as GRAPH_STATUS KV state (ADR-083). Fusion decodes no envelope: it
+// reads not-ready from each query reply instead (ADR-109 decision 1).
 //
 // Ready reports COVERAGE: every committed ENTITY_STATES revision <= the query-time
-// target has been applied (revision-lag, ADR-066), not merely "indexing started" (the
-// old sticky NAME_INDEX-non-empty signal that fired minutes before the index was
-// populated, SemStreams gh#431). It guarantees revision coverage, not last-writer-wins freshness
-// under same-key churn (ADR-066 §1 Scope boundary).
+// target has been applied (revision-lag, ADR-066), not merely "indexing started" (a
+// NAME_INDEX-non-empty signal fires minutes before the index is populated). It
+// guarantees revision coverage, not last-writer-wins freshness under same-key churn
+// (ADR-066 §1 Scope boundary).
 //
-// Ready LICENSES NOTHING ABOUT ABSENCE (ADR-084). It once carried an "only Ready
-// permits an authoritative not-found" contract; that is retired, because coverage
-// cannot answer the question — an index caught up to every revision ever committed
-// still knows nothing about a source that never published. No consumer may treat an
-// empty result as an authoritative not-found under ANY envelope state.
+// Ready LICENSES NOTHING ABOUT ABSENCE (ADR-084). It never permits an authoritative
+// not-found, because coverage cannot answer the question — an index caught up to
+// every revision ever committed still knows nothing about a source that never
+// published. No consumer may treat an empty result as an authoritative not-found
+// under ANY envelope state.
 //
-// Nor does Ready == false withhold a response any more: reads gate on HEALTH (State
-// plus BootstrapComplete), and a healthy index that is merely behind serves while
+// Nor does Ready == false withhold a response: reads gate on HEALTH (State plus
+// BootstrapComplete), and a healthy index that is merely behind serves while
 // reporting StalenessMs. Under continuous write Ready is false essentially always,
-// which is what made it a poor proxy for soundness. Its remaining jobs are a caught-up
-// fast path for the freshness question, and being the value a caller compares its own
+// which makes it a poor proxy for soundness. Its remaining jobs are a caught-up fast
+// path for the freshness question, and being the value a caller compares its own
 // revision against via IndexedRevision — the one sound per-entity check.
 //
-// IndexedRevision is the one spelling of the revision; the pin's phase, revision
-// and last_synced fields are not carried. The readiness computation that fills
+// IndexedRevision is the one spelling of the revision; the envelope has no phase,
+// revision or last_synced field. The readiness computation that fills
 // this envelope is in graph/readiness, so a reader of GRAPH_STATUS needs no NATS
 // import.
 type IndexStatusResponse struct {
@@ -39,7 +38,7 @@ type IndexStatusResponse struct {
 	// in the current process lifetime: enumeration of ENTITY_STATES plus replay up to
 	// the enumeration-time target, including the authoritatively-empty 0/0 outcome. It
 	// stays true once set and resets to false on restart, so a restart into a format
-	// cutover re-gates (ADR-084 D2).
+	// cutover re-gates (ADR-084 decision 2).
 	//
 	// For a backlog producer it means its boot work finished, not that the backlog it
 	// bound onto (BootstrapScope) was worked off: graph-ingest's boot work is its
@@ -47,17 +46,16 @@ type IndexStatusResponse struct {
 	// (ADR-109 Decision 3). Whether a backlog stands is Ready's and Lag's to say.
 	//
 	// It exists because health is otherwise not evaluable from the wire: an index
-	// halfway through a SemStreams gh#474 cutover reports State=building with a plausible Lag,
+	// halfway through a format cutover reports State=building with a plausible Lag,
 	// indistinguishable from an index that is merely behind. Ready cannot answer it
 	// (a caught-up index is bootstrapped, but a bootstrapped index under write is not
 	// caught up) and TargetRevision==0 cannot either (it is false during a cutover and
-	// wrongly deferred the empty graph).
+	// would defer the empty graph).
 	//
 	// NOT omitempty, and absent reads FALSE — fail closed. An envelope from a
-	// pre-ADR-084 producer therefore defers every health gate until the lockstep
-	// upgrade lands; that is the accepted migration cost, and the explicit `false` on
-	// the wire keeps "old producer" distinguishable from "not yet bootstrapped" in a
-	// `nats kv get GRAPH_STATUS <producer>` dump.
+	// producer that does not send the field therefore defers every health gate, and
+	// the explicit `false` on the wire keeps that producer distinguishable from "not
+	// yet bootstrapped" in a `nats kv get GRAPH_STATUS <producer>` dump.
 	BootstrapComplete bool `json:"bootstrap_complete"`
 	// IndexedRevision is the low-water-of-pending watermark: every delivered
 	// ENTITY_STATES revision <= this has been applied and nothing <= it is still
@@ -76,24 +74,22 @@ type IndexStatusResponse struct {
 	// FailedCount / FailedReasons are the bounded failure detail a producer that
 	// tracks per-entity failures carries on a DEGRADED envelope so an operator can
 	// tell a whole-dependency outage from a few persistently-failing entities
-	// WITHOUT any unbounded per-entity list on the watched key (SemStreams #613).
+	// WITHOUT any unbounded per-entity list on the watched key.
 	//
 	// Both are additive and omitempty: a producer with no failures emits neither,
 	// and graph-index, which counts failures without reasons, emits FailedCount
 	// only. FailedReasons is bounded to a fixed reason enum (a handful of keys),
 	// keeping the watched key compact on the hot KV path. FailedCount is echoed from
 	// the projection input (it also drives State=degraded); FailedReasons is set by
-	// the producer after the projection. There is no first-failure time (owner, PR
-	// #550 comment 6716972354).
+	// the producer after the projection. There is no first-failure time.
 	FailedCount   uint64            `json:"failed_count,omitempty"`
 	FailedReasons map[string]uint64 `json:"failed_reasons,omitempty"`
 	// StalenessMs is the AGE OF THE VIEW in milliseconds (ADR-083): now minus the
 	// KV commit time of the oldest delivered ENTITY_STATES revision the index has
 	// not yet applied, or of the newest delivered one when none is in flight. It is
 	// the view-rate consumer's tolerance unit because it is invariant to write rate
-	// and coalesce_ms, where a revision count is not
-	// (SemStreams gh#590: the correct revision bound shifted 2-4x with the coalesce dial
-	// alone).
+	// and coalesce_ms, where a revision count is not (a correct revision bound shifts
+	// 2-4x with the coalesce dial alone).
 	//
 	// PRESENCE ENCODING — 0 does NOT mean "zero staleness". It means the value
 	// carries no information: either Ready is true (no staleness to report) or the
@@ -121,17 +117,17 @@ type IndexStatusResponse struct {
 	// unit would be a fiction, and every consumer reads it alongside the key it asked
 	// for, so it already knows whose unit it is.
 	//
-	// It exists for exactly one distinction, which is NOT recoverable from the wire
-	// today for any producer: `BootstrapComplete && BootstrapScope == 0` is
-	// "authoritatively nothing to do" — the producer finished its initial build and
-	// the build was empty — as opposed to "finished a build that had work in it".
-	// SemStreams gh#732 raises this: a consumer waiting for a bootstrap replay cannot otherwise
-	// tell an empty-by-truth replay from one it observed too early.
+	// It exists for exactly one distinction, which no other field carries for any
+	// producer: `BootstrapComplete && BootstrapScope == 0` is "authoritatively
+	// nothing to do" — the producer finished its initial build and the build was
+	// empty — as opposed to "finished a build that had work in it". A consumer
+	// waiting for a bootstrap replay cannot otherwise tell an empty-by-truth replay
+	// from one it observed too early.
 	//
 	// THE GATE MUST NOT READ IT. readiness.EvaluateReadinessGate does not look at this
 	// field and must never start: the moment a verdict depends on a magnitude, this
-	// becomes a threshold knob and readiness stops being a health question (ADR-085 deleted
-	// max_staleness for the same reason). A test pins the gate's verdict as identical
+	// becomes a threshold knob and readiness stops being a health question (ADR-085
+	// refuses a max_staleness knob for the same reason). A test pins the gate's verdict as identical
 	// across two envelopes differing only in this field.
 	//
 	// IT LICENSES NOTHING ABOUT ABSENCE. Scope 0 says the initial build found nothing
@@ -145,8 +141,8 @@ type IndexStatusResponse struct {
 // know, and the readiness gate defers on it.
 type IndexState string
 
-// Index readiness states. pkg/fusion's copy of them at the SemStreams pin
-// (IndexState) is not carried: fusion reads no envelope (ADR-109 D1).
+// Index readiness states. Fusion keeps no copy of them: it reads no envelope
+// (ADR-109 decision 1).
 const (
 	IndexStateBuilding      IndexState = "building"
 	IndexStateReady         IndexState = "ready"

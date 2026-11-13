@@ -8,8 +8,8 @@ import (
 )
 
 // aggregationCase is one question and the exact result the keyword-only chain
-// must give for it. The expected hints are written by hand from issue #94's
-// table and design D1, never derived from the classifier.
+// must give for it. The expected hints are written by hand, never derived from
+// the classifier.
 type aggregationCase struct {
 	name  string
 	query string
@@ -44,7 +44,7 @@ func runAggregationCases(t *testing.T, cases []aggregationCase) {
 }
 
 // TestAggregationFieldBinding: the field is the first word after the trigger,
-// skipping an optional "of" and "the"; fields are the caller's words (#94, D1).
+// skipping an optional "of" and "the"; fields are the caller's words.
 func TestAggregationFieldBinding(t *testing.T) {
 	runAggregationCases(t, []aggregationCase{
 		{"R17 mean of a field", "Compute the arithmetic mean of pressure", agg(AggregationAvg, "pressure")},
@@ -65,7 +65,7 @@ func TestAggregationFieldBinding(t *testing.T) {
 
 // TestOrdinaryAggregationPhrases: "the number of" counts, numeric extremum
 // phrases give min or max with their field, and descriptive mentions activate
-// nothing (#94, D1).
+// nothing.
 func TestOrdinaryAggregationPhrases(t *testing.T) {
 	runAggregationCases(t, []aggregationCase{
 		{"R14 the number of", "Return the number of sensors", agg(AggregationCount, "")},

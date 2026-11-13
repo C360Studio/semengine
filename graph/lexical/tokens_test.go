@@ -51,6 +51,11 @@ func TestTokens(t *testing.T) {
 			want: []string{"id", "id", "url", "cpu", "uuid", "id"},
 		},
 		{
+			name: "one capital before the s is not an acronym plural",
+			text: "kBs",
+			want: []string{"k", "bs"},
+		},
+		{
 			name: "a capital run before a word is unchanged",
 			text: "HTTPServer",
 			want: []string{"http", "server"},

@@ -83,9 +83,26 @@ pump*: reserved syntax
 `Tokens` splits text at everything that is not a letter or a digit, so `graph.query.status` gives `graph`,
 `query` and `status`, and `pump-7` gives `pump` and `7`. A run also splits where an identifier changes case:
 `withRetry` splits into `with` and `retry`, `HTTPServer` into `http` and `server`. The joined form is not kept, so
-`withretry` finds nothing; search for `retry` or `withRetry`. Words are lower-cased and plurals folded to the
-singular (`services` to `service`). A short list of stop words (`the`, `and`, `with` and the like) is dropped, and
-so is any word longer than 32 bytes, which in practice is hex such as a commit hash.
+`withretry` finds nothing; search for `retry` or `withRetry`. An acronym in the plural keeps its capitals together:
+a run that ends in a lower-case `s` right after two or more capitals drops the `s`, so `IDs` gives `id`, `URLs` gives
+`url` and `UUIDs` gives `uuid`. This applies only at the end of a run; `EntityIDsByType` gives `entity`, `i`, `ds`
+and `type`, because inside a run the same letters are as often an acronym followed by a word, as in
+`EntityIDIsTerminated`.
+
+Words are lower-cased and plurals folded to the singular (`services` to `service`, `ids` to `id`, `prs` to `pr`).
+The plain rule drops a final `s`, but not `us` or `ss`, from a word of 3 bytes or more, so `os` and `ms` keep theirs
+and `bus` and `class` stay as written. Because the rule cannot tell a plural from a word that only ends in `s`, it
+also joins some words that are not plurals:
+
+- `its` meets `it`;
+- a three-letter acronym ending in `s` meets its first two letters: `TLS` gives `tl`, `CAS` (compare-and-swap)
+  meets `CA` (certificate authority), and `ios` meets Go's `io`;
+- a duration meets its bare number (`10s` and `10`);
+- a two-letter stop word with an `s` is dropped like the stop word: `ins` goes with `in`, and `DOS` gives no word,
+  so a query of only `DOS` is refused with `ErrEmptyQuery`.
+
+A short list of stop words (`the`, `and`, `with` and the like) is dropped, and so is any word longer than 32 bytes
+after folding, which in practice is hex such as a commit hash.
 
 ## Query rules
 

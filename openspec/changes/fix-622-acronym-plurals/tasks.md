@@ -25,7 +25,7 @@ in `notes/<task>.md` or `task mutate:check`. Premises cite `proposal.md` and `no
   Generated checks: the laws the change must keep (folding twice equals folding once; tokenizing the joined words
   gives them back) are already `TestPropFoldIsIdempotent` and `FuzzTokens`; the acronym rule adds no new law, so the
   table of examples suffices.
-- [ ] 2.2 Implement rules S and F in `graph/lexical/tokens.go`; update the `Tokens`, `splitIdentifier` and `fold`
+- [x] 2.2 Implement rules S and F in `graph/lexical/tokens.go`; update the `Tokens`, `splitIdentifier` and `fold`
   comments, the sentence in `graph/lexical/doc.go:5-7` on when a query word and an indexed word agree (it must name
   acronym plurals and the merges rule F adds), and the README's "How text becomes words", naming the merges rule F
   adds and stating the length limits in bytes (plain words, no history). Accept: 2.1's tests pass;

@@ -12,8 +12,8 @@ import (
 	"pgregory.net/rapid"
 )
 
-// The generated history check of design D6 (task 2.3; spec "Snapshot and changes form one
-// history", scenario "A generated history"; ADR-081 G1, G2, G4, G6). Rapid draws a replay prefix
+// The generated history check (spec "Snapshot and changes form one history", scenario "A
+// generated history"; ADR-081 G1, G2, G4, G6). Rapid draws a replay prefix
 // of writes and a live history of writes, attaches of both kinds, unsubscribes and ticks. The
 // history runs against a view over the fake watch and against a reference model the test owns:
 // the last operation per key, written from the generated operations alone and never read back

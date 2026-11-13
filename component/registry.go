@@ -31,8 +31,8 @@ type PortDeclarer func(rawConfig json.RawMessage, instanceName string) (PortConf
 
 // Dependency identifiers used by Registration.Dependencies. Components
 // declare these at registration to opt into framework-driven behavior
-// (e.g., restart when a named runtime dependency changes). Kept as
-// typed constants so refactors are compiler-checked.
+// (e.g., receiving the model registry selected at boot). Kept as typed
+// constants so refactors are compiler-checked.
 const (
 	// DepModelRegistry signals that a component consumes
 	// Dependencies.ModelRegistry at construction or run time. Components
@@ -251,7 +251,7 @@ func (r *Registry) prepareComponent(
 	if err != nil {
 		return preparedComponent{}, errs.Wrap(err, "Registry", operation, "capture declaration")
 	}
-	// P1 parity: the static declaration must equal what the constructed
+	// Parity: the static declaration must equal what the constructed
 	// component reports, port for port. A disagreement is a lying declarer or
 	// a drifted constructor; either fails admission here, naming the factory,
 	// the instance, and the first differing port.
@@ -629,7 +629,7 @@ func captureComponentDeclaration(
 }
 
 // checkSelfClash refuses two exclusive claims of one component that clash: a
-// socket that both reads and writes is one port, not two (#324, #328).
+// socket that both reads and writes is one port, not two.
 func checkSelfClash(instanceName string, inputFacts, outputFacts []PortFacts) error {
 	claims := exclusiveClaims(inputFacts, outputFacts)
 	for i, claim := range claims {

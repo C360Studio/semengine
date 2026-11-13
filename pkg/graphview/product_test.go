@@ -1,6 +1,6 @@
 package graphview_test
 
-// Product-shaped tests of the kept symbols no repository code reads yet (design D3): each
+// Product-shaped tests of the kept symbols no repository code reads yet: each
 // calls the package the way a product built on SemEngine would, through its exported surface
 // only. Their contract lines are ADR-081 Decision 3 (Subscribe), Decision 6 (List,
 // KeyedEntry) and ADR-085 Decision 5 (Applied, Snapshot.Revision, Snapshot.AppliedAt); the
@@ -94,7 +94,7 @@ func nextBatch(t *testing.T, sub *graphview.Subscription[string]) []graphview.De
 }
 
 // TestProductSubscribeTriggersOnChange: a trigger-shaped consumer attaches with Subscribe
-// (ADR-081 D3) once the view has caught up, and receives the changes after its attach, not
+// (ADR-081 Decision 3) once the view has caught up, and receives the changes after its attach, not
 // the ones before it. Before the replay ends Subscribe returns ErrNotReady; a second Run
 // returns ErrAlreadyStarted; after the stop the subscription closes with ErrViewStopped and
 // Subscribe returns it.
@@ -126,7 +126,7 @@ func TestProductSubscribeTriggersOnChange(t *testing.T) {
 	})
 }
 
-// TestProductListPagesByKey: List (ADR-081 D6) returns the keys under a prefix sorted by key,
+// TestProductListPagesByKey: List (ADR-081 Decision 6) returns the keys under a prefix sorted by key,
 // the whole match set sorted before the limit, as KeyedEntry values with their revisions; Get
 // of an absent key returns ErrKeyNotFound.
 func TestProductListPagesByKey(t *testing.T) {
@@ -157,7 +157,7 @@ func TestProductListPagesByKey(t *testing.T) {
 	})
 }
 
-// TestProductCurrencyReport: Applied (ADR-085 D5) reports the newest applied revision and its
+// TestProductCurrencyReport: Applied (ADR-085 Decision 5) reports the newest applied revision and its
 // server write time, zero before anything is applied; a write the decode leaves out still
 // advances it; a snapshot carries the same pair in Revision and AppliedAt.
 func TestProductCurrencyReport(t *testing.T) {

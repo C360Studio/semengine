@@ -257,12 +257,11 @@ func newEntityIDContractError(code, reason string, detail map[string]any) error 
 }
 
 // Prefix levels are named methods, not a level vocabulary: a prefix of length
-// n means exactly the level named for n (ADR-102 d6), and grouping by a
+// n means exactly the level named for n (ADR-102 decision 6), and grouping by a
 // non-prefix combination — a taxonomy across sources — is an exact-arity
-// wildcard pattern or KV filter, never a prefix. The exported level constants
-// and EntityID.PrefixLevel(n) that once accompanied these were deleted by the
-// owner ruling of 2026-08-28: they had no consumer. ADR-099/#606 re-adds a
-// level vocabulary when it has one.
+// wildcard pattern or KV filter, never a prefix. There are no exported level
+// constants and no EntityID.PrefixLevel(n): they had no consumer. A level
+// vocabulary is added when one has a consumer.
 
 // DeploymentPrefix returns the two-position prefix org.platform.
 func (eid EntityID) DeploymentPrefix() string {

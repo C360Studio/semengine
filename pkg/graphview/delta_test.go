@@ -152,7 +152,7 @@ func TestSlowSubscriberBackpressure(t *testing.T) {
 // TestPoisonSurfacedNotDelivered (G6): a decode failure surfaces as a typed
 // per-key poison signal in the delta lane and on point reads; the value is
 // never delivered as an upsert; other keys keep flowing; a later canonical
-// write heals the key (per-entity poison, ADR-079 semantics); snapshots
+// write heals the key (per-entity poison, SemStreams ADR-079 semantics); snapshots
 // carry the poison record so late attachers can drive their latches.
 func TestPoisonSurfacedNotDelivered(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {

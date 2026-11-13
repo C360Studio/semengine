@@ -16,10 +16,9 @@ import (
 // HTTP/2 multiplexing + TLS session resumption, so the cost of
 // occasional reconnects is negligible.
 //
-// Tightened from Go's net/http default (90s) in beta.43 after the
-// long tail of stale-pooled-conn wedges semspec/semteams hit through
-// beta.34-42. A higher value can still be set per-endpoint via
-// EndpointConfig.IdleConnTimeout.
+// Tighter than Go's net/http default (90s): stale pooled connections
+// wedged LLM requests at that default. A higher value can still be set
+// per-endpoint via EndpointConfig.IdleConnTimeout.
 const FrameworkDefaultIdleConnTimeout = 30 * time.Second
 
 // FrameworkDefaultMaxIdleConnsPerHost caps the idle pool per host.
@@ -50,10 +49,9 @@ const FrameworkDefaultHTTP2PingTimeout = 5 * time.Second
 // HTTPClientOptions configures the *http.Client used by OpenAI-compatible
 // clients in the framework.
 //
-// Beta.43 reframed the field semantics: framework defaults now
-// preempt Go's net/http defaults on three fields (IdleConnTimeout,
-// MaxIdleConnsPerHost, HTTP/2 PING) because the long tail of
-// stale-pooled-conn wedges through beta.34-42 proved the Go defaults
+// Framework defaults preempt Go's net/http defaults on three fields
+// (IdleConnTimeout, MaxIdleConnsPerHost, HTTP/2 PING) because stale
+// pooled connections wedged LLM requests under the Go defaults, which
 // are too forgiving for the LLM-gateway class. Operator-configured
 // values still override the framework defaults, so per-endpoint
 // tuning continues to work — and the tightened defaults mean the

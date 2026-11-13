@@ -1,4 +1,4 @@
-// Package errs provides standardized error handling patterns for SemStreams components.
+// Package errs provides standardized error handling patterns for SemEngine components.
 //
 // # Overview
 //

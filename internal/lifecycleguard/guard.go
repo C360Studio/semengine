@@ -1,9 +1,8 @@
-// Package lifecycleguard is the one-shot owner-lifecycle state a SemEngine component composes
-// (SemStreams issue 1411; design D13 of setup-04a-02-ingest-kernel). It admits one Start, refuses
-// a second, makes Stop safe before, during and after Start, and keeps a cleanup that failed, in a
-// rollback or in a Stop, pending for the next Stop. It owns that state and nothing else: what the
-// component acquires and releases stays in the functions it passes in, and a failed Start is rolled
-// back through pkg/lifecyclecleanup.
+// Package lifecycleguard is the one-shot owner-lifecycle state a SemEngine component composes. It
+// admits one Start, refuses a second, makes Stop safe before, during and after Start, and keeps a
+// cleanup that failed, in a rollback or in a Stop, pending for the next Stop. It owns that state
+// and nothing else: what the component acquires and releases stays in the functions it passes in,
+// and a failed Start is rolled back through pkg/lifecyclecleanup.
 //
 // The owner gives its cleanup once, to Start. A failed Start's rollback and every Stop run that
 // one function.
@@ -100,8 +99,9 @@ func (g *Guard) Start(ctx context.Context, start, cleanup func(context.Context) 
 //
 // A cleanup that panics is not recovered, and it leaves the guard stuck: after a panic in a Stop's
 // cleanup every later Stop is refused as concurrent, and after a panic in a failed Start's rollback
-// every later Stop waits until its own context ends. This is the open defect #309; no caller
-// triggers it today.
+// every later Stop waits until its own context ends. A cleanup must not panic. The guard does not
+// recover one because no caller's cleanup can panic and nothing recovers a panic around Stop, so a
+// panicking cleanup ends the process before a later Stop could see the stuck state.
 func (g *Guard) Stop(ctx context.Context) error {
 	if ctx == nil {
 		return nilContextError("Stop")

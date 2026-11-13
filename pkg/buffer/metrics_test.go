@@ -15,7 +15,7 @@ import (
 // metric.RegisterOrGet on the injected registry, under the semengine namespace with the
 // prefix as the component label; a second buffer under one prefix shares the first one's
 // collectors; and a registry that already holds another collector type under one of the
-// buffer's keys refuses construction (design R2).
+// buffer's keys refuses construction.
 //
 // Oracle: the operation counts below are fixed by the script each buffer runs, counted by
 // hand: capacity 2 under DropOldest, writes 1, 2, 3 (3 evicts 1: one overflow, one drop),
@@ -110,8 +110,8 @@ func TestNewCircularBufferRefusedReturnsNil(t *testing.T) {
 }
 
 // TestReadBatchCountsReadMetric: semengine_buffer_reads_total counts every item removed,
-// whether by Read or ReadBatch (#589). Two buffers share one prefix, so the gathered series
-// is the sum of both buffers' reads.
+// whether by Read or ReadBatch. Two buffers share one prefix, so the gathered series is the
+// sum of both buffers' reads.
 //
 // Oracle: the script each buffer runs, counted by hand: capacity 4, writes 1, 2, 3, 4; Read
 // removes 1; ReadBatch(0) removes nothing; ReadBatch(2) removes 2 and 3; ReadBatch(10), larger

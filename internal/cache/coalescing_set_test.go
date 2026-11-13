@@ -1,8 +1,8 @@
-// Written for SemStreams by its Tester Agent (CoalescingSet: windowed batch deduplication for
-// async coordination). Repaired for SemEngine (design D8, R1a): every test runs inside a synctest
-// bubble, where the set's ticker uses a fake clock that advances only when every goroutine in the
-// bubble is blocked. A test moves the clock with <-time.After and settles the bubble with
-// synctest.Wait before it asserts; t.Parallel cannot be called inside a bubble, so it is gone.
+// Tests of CoalescingSet: windowed batch deduplication for async coordination. Every test runs
+// inside a synctest bubble, where the set's ticker uses a fake clock that advances only when every
+// goroutine in the bubble is blocked. A test moves the clock with <-time.After and settles the
+// bubble with synctest.Wait before it asserts; t.Parallel cannot be called inside a bubble, so none
+// calls it.
 
 package cache
 
@@ -90,7 +90,7 @@ func TestCoalescingSet_CallbackFiresAfterWindow(t *testing.T) {
 		set.Add("entity-2")
 
 		// Callback should not fire immediately: 10 ms into the bubble's clock, with every goroutine
-		// settled, nothing has been delivered (design D8, the coalescing_set_test.go:92 row).
+		// settled, nothing has been delivered.
 		<-time.After(10 * time.Millisecond)
 		synctest.Wait()
 		select {
@@ -145,8 +145,8 @@ func TestCoalescingSet_BatchCleared(t *testing.T) {
 		synctest.Wait()
 
 		// Verify first batch received. The batch is read under the lock and asserted after it is
-		// released: at the pin a failed require here held the lock, the next callback blocked on
-		// it, and the deferred Close waited forever.
+		// released: a failed require under the lock would hold it, the next callback would block on
+		// it, and the deferred Close would wait forever.
 		mu.Lock()
 		first := firstBatch
 		mu.Unlock()
@@ -604,9 +604,9 @@ func newTestCoalescingSet(
 }
 
 // TestCoalescingSet_NilCallbackRefusedAtTheCall: a nil callback is refused with an invalid-argument
-// error at the call, before the goroutine starts (the background-work shape of a nil context,
-// design D7; Codex F1). At the pin a nil callback was accepted and each batch was dropped. Oracle:
-// the error, and no run goroutine in the bubble's stack dump.
+// error at the call, before the goroutine starts (the background-work shape of a nil context).
+// Accepting it would drop every batch without a word. Oracle: the error, and no run goroutine in
+// the bubble's stack dump.
 func TestCoalescingSet_NilCallbackRefusedAtTheCall(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		// Cancelled only as the test ends, after the count: it releases a goroutine a regression

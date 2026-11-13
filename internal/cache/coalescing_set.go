@@ -68,9 +68,8 @@ func WithCoalescingMetrics(registry *metric.MetricsRegistry, prefix string) Coal
 // or when Shutdown is called. A nil ctx or a nil callback is refused with an invalid-argument
 // error, and a panic counter the registry refuses with a transient error, as the cache
 // constructors return a metrics-registration error; in each case no goroutine starts. A panic in
-// the callback is recovered: the set is a helper inside a service, not a root process (owner
-// ruling, #9 comment 5994720412 item 3). The batch the callback was handed is dropped, the panic
-// is logged at error level with the batch size and counted when WithCoalescingMetrics names a
+// the callback is recovered: the set is a helper inside a service, not a root process. The batch
+// the callback was handed is dropped, the panic is logged at error level with the batch size and counted when WithCoalescingMetrics names a
 // registry, and later batches still fire.
 func NewCoalescingSet(
 	ctx context.Context, window time.Duration, callback func([]string), opts ...CoalescingOption,
@@ -258,9 +257,9 @@ func (c *CoalescingSet) fireBatch() {
 	c.runCallback(keys)
 }
 
-// runCallback calls the callback and recovers a panic in it (owner ruling, #9 comment 5994720412
-// item 3). The batch has already left the pending set, so it is dropped: the drop is declared by
-// the error log, which names the batch size, and by the panic counter.
+// runCallback calls the callback and recovers a panic in it: the set is a helper inside a service,
+// not a root process. The batch has already left the pending set, so it is dropped: the drop is
+// declared by the error log, which names the batch size, and by the panic counter.
 func (c *CoalescingSet) runCallback(keys []string) {
 	defer func() {
 		if r := recover(); r != nil {

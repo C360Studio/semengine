@@ -182,7 +182,7 @@ func BenchmarkTTLCleanup(b *testing.B) {
 	}
 
 	// Wait for items to expire: observe that no key is live any more, instead of sleeping past
-	// the TTL (design D8, R1b; the bound is a failure bound only).
+	// the TTL (the bound is a failure bound only).
 	ctx, cancel := context.WithTimeout(b.Context(), 10*time.Second)
 	defer cancel()
 	if _, err := probe.Await(ctx, func(context.Context) (int, error) {

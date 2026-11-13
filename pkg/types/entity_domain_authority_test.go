@@ -7,8 +7,8 @@ import (
 )
 
 // TestFrameworkEntityDomainsIsTheClosedReservedSet pins the framework-reserved
-// domain vocabulary {agent, ops, graph} (ADR-102 d4, ruled O-9). The audit's
-// domain_unregistered rule consults it beside the registered delegations, so a
+// domain vocabulary {agent, ops, graph} (ADR-102 decision 4). The entity-ID
+// corpus audit's (not in SemEngine yet) domain_unregistered rule consults it beside the registered delegations, so a
 // token silently entering or leaving this set changes what the corpus accepts.
 // The gated-DAG family re-slots UNDER `agent`; `gateddag` is not itself
 // reserved.
@@ -25,8 +25,8 @@ func TestFrameworkEntityDomainsIsTheClosedReservedSet(t *testing.T) {
 }
 
 // TestReservedInstanceTokensIsTheClosedContainerSet pins the hierarchy-container
-// padding tokens reserved in the instance position until gh606 retires
-// containers. graph/inference/hierarchy.go reads it to recognize a container
+// padding tokens reserved in the instance position while hierarchy containers
+// exist. graph/inference/hierarchy.go reads it to recognize a container
 // entity, and the audit's instance_reserved rule reads it to reject a producer
 // that mints one.
 func TestReservedInstanceTokensIsTheClosedContainerSet(t *testing.T) {
@@ -40,13 +40,12 @@ func TestReservedInstanceTokensIsTheClosedContainerSet(t *testing.T) {
 	assert.False(t, IsReservedInstanceToken(""))
 }
 
-// TestEntityDomainDelegationIsADeclarationNotAPolicy pins what survives the
-// owner ruling of 2026-08-28. EntityDomainDelegation is a declaration the
-// entity-ID corpus audit AST-scans for its registered set; the
-// EntityDomainAuthority/Authorize policy that once consumed it is deleted,
-// because two producers sharing one domain is permitted and there was nothing
-// left to authorize. The type therefore has no constructor and no validation
-// of its own — its only reader is the audit, over source text.
+// TestEntityDomainDelegationIsADeclarationNotAPolicy: EntityDomainDelegation
+// is a declaration the entity-ID corpus audit (not in SemEngine yet) AST-scans
+// for its registered set, not an authorization policy: two producers sharing
+// one domain is permitted, so there is nothing to authorize. The type
+// therefore has no constructor and no validation of its own — its only reader
+// is the audit, over source text.
 func TestEntityDomainDelegationIsADeclarationNotAPolicy(t *testing.T) {
 	t.Parallel()
 

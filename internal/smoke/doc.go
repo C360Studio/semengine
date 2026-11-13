@@ -1,7 +1,7 @@
 // Package smoke is a test-only package: its integration tests boot the tier-0 graph stack the way a
 // product's own main would, from one JSON configuration through config.Manager, ServiceManager and
-// ComponentManager, in a child process, and check what a consumer can read of it (openspec change
-// test-557-composed-stack-smoke, capability composed-stack).
+// ComponentManager, in a child process, and check what a consumer can read of it (spec
+// composed-stack).
 //
 // The stack is graph-ingest, graph-index, graph-embedding (BM25, no provider), graph-clustering,
 // graph-query, graph-gateway and an applied-state websocket output on one NATS server. The test is

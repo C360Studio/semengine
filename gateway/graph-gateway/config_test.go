@@ -51,9 +51,8 @@ func requireRefusedNaming(t *testing.T, raw, want string) {
 	}
 }
 
-// TestConfigRefusesRemovedKeys: every key the pin's Config read (pin gateway/graph-gateway/component.go:73-84)
-// but ports is refused at construction and by DeclarePorts, naming the key, with and without a ports
-// block, as is a key no version defined.
+// TestConfigRefusesRemovedKeys: every removed key listed below is refused at construction and by
+// DeclarePorts, naming the key, with and without a ports block, as is a key no version defined.
 func TestConfigRefusesRemovedKeys(t *testing.T) {
 	for _, entry := range []struct{ key, value string }{
 		{"graphql_path", `"/graphql"`},
@@ -113,9 +112,8 @@ func TestConfigRefusesExtraPorts(t *testing.T) {
 	}
 }
 
-// TestConfigTimeoutDefaultAndRange: query_timeout_ms defaults to the pin's 60000 (design D5), zero
-// means that default, a value is kept, and a negative one or one past a duration is refused naming
-// the key.
+// TestConfigTimeoutDefaultAndRange: query_timeout_ms defaults to 60000, zero means that default, a
+// value is kept, and a negative one or one past a duration is refused naming the key.
 func TestConfigTimeoutDefaultAndRange(t *testing.T) {
 	for raw, want := range map[string]int{
 		``:                        60000,

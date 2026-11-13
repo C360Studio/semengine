@@ -233,8 +233,8 @@ func (p *KeyedPool[W]) lane(ctx context.Context, idx int, ch chan keyedItem[W]) 
 	}
 }
 
-// runOne invokes Process for one item with panic recovery (ADR-072
-// H2): a panic in Process must not crash the host or wedge the lane.
+// runOne invokes Process for one item with panic recovery (SemStreams
+// ADR-072): a panic in Process must not crash the host or wedge the lane.
 // The recovered panic is logged, the composer's OnPanic disposition is
 // invoked, and the lane goroutine continues to the next item.
 func (p *KeyedPool[W]) runOne(ctx context.Context, lane int, item keyedItem[W]) {

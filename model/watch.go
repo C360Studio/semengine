@@ -3,7 +3,7 @@ package model
 import "context"
 
 // Watcher is the minimal surface model.Watch needs to subscribe to KV-
-// driven registry updates. semstreams's config.Manager satisfies it via
+// driven registry updates. SemEngine's config.Manager satisfies it via
 // WatchModelRegistry(). External consumers can adapt other config
 // sources by implementing the same one-method interface.
 //
@@ -26,10 +26,10 @@ type Watcher interface {
 //	go model.Watch(ctx, cfgMgr, holder.Store)
 //
 // This exists for external library consumers that maintain their own
-// *Registry alongside the semstreams runtime. semstreams components
-// (components in flow configs) don't need it — ComponentManager
-// restarts them automatically when their factory declares
-// component.DepModelRegistry. See docs/operations for the full guide.
+// *Registry alongside the SemEngine runtime. Components in a composition
+// don't use it: a factory that declares component.DepModelRegistry gets
+// the model registry selected at boot, and a later model_registry write
+// takes a process restart.
 //
 // Watch never panics; nil watcher or nil apply returns immediately.
 func Watch(ctx context.Context, watcher Watcher, apply func(*Registry)) {

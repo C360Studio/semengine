@@ -11,11 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The pin's config loader refused a min_version other than "1.2" or "1.3" at boot (pin
-// config/config.go:324-326, :348-350, :358-364). SemEngine has no config loader yet, so the
-// loaders refuse it themselves rather than build a TLS 1.2 floor nobody asked for (owner
-// ruling, #9 comment 5985900154, item 3). The closed set has three accepted spellings, so
-// named examples cover it: each accepted one, and refused near-misses of each.
+// The config package refuses a min_version other than "1.2" or "1.3" at boot, and the loaders
+// here refuse it themselves too, rather than build a TLS 1.2 floor nobody asked for from a
+// configuration that did not pass through config. The closed set has three accepted spellings,
+// so named examples cover it: each accepted one, and refused near-misses of each.
 var unknownTLSVersions = []string{"1.1", "1.0", "1.4", "invalid", "1.3 ", " 1.2", "TLS1.3", "tls1.2", "13"}
 
 var acceptedTLSVersions = []struct {

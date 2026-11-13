@@ -101,7 +101,7 @@ func TestSchemaRefusesUnknownFieldNamingIt(t *testing.T) {
 	}{
 		{name: "unknown field", want: "edges",
 			query: `{ pathSearch(startEntity: "a", direction: "outgoing", maxDepth: 1) { edges { from } } }`},
-		// Owner ruling 2026-11-10 (#567): trajectory is not served by this gateway.
+		// trajectory is not served by this gateway.
 		{name: "trajectory", want: "trajectory", query: `{ trajectory(loopId: "x") { steps } }`},
 		{name: "unknown argument", want: "revision", query: `{ entity(id: "x", revision: 2) { kvRevision } }`},
 		{name: "missing argument", want: "id", query: `{ entity { kvRevision } }`},
@@ -259,7 +259,7 @@ func TestReplyNotFittingSchemaNamesPath(t *testing.T) {
 }
 
 // TestExecutedQueryKeepsData checks the encoded body: an executed query answers a data entry even when every root
-// field is skipped, and a request refused before execution answers none (#591).
+// field is skipped, and a request refused before execution answers none.
 func TestExecutedQueryKeepsData(t *testing.T) {
 	cases := []struct {
 		name, query, want string

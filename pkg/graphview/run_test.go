@@ -51,8 +51,8 @@ func TestRunLeavesNothingBehind(t *testing.T) {
 // context's end and the closed channel ready, and picks either. On 200 fresh
 // views each must report a stop: OnWatcherLost never fires, a subscription with
 // a live context closes with ErrViewStopped, and Run returns context.Canceled.
-// A close counted as a loss whatever the context (the pin's shape, view.go:200-202)
-// fails here with near certainty: each view picks the closed channel half the time.
+// Code that counts a close as a loss whatever the context fails here with near
+// certainty: each view picks the closed channel half the time.
 func TestRunContextEndIsAStop(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		for i := range 200 {

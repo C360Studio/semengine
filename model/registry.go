@@ -33,26 +33,24 @@ const (
 	CapabilityIntentClassification = "intent_classification"
 	// CapabilityAnomalyReview is used by graph/inference's ReviewWorker to
 	// classify suggested missing relationships as approve/reject. Unbound
-	// deployments fall back to the community_summary endpoint (the legacy
-	// piggyback behavior preserved for backward compatibility).
+	// deployments fall back to the community_summary endpoint.
 	CapabilityAnomalyReview = "anomaly_review"
-	// CapabilityResearchRouting is used by the route_search component
-	// (ADR-045 Phase 1 PR 3) to make a single structured-emit routing
-	// decision per research operation: one of synthesize_directly /
-	// retighten / walk_seeds / decompose. First of the three research
-	// LLM-wrapping capabilities; PR 5 introduces
-	// CapabilityResearchAssessment and CapabilityResearchSynthesis as
-	// separate capabilities so operators can route each stage
-	// independently.
+	// CapabilityResearchRouting is used by the route_search component (not
+	// in SemEngine yet) to make a single structured-emit routing decision
+	// per research operation: one of synthesize_directly / retighten /
+	// walk_seeds / decompose. First of the three research LLM-wrapping
+	// capabilities; CapabilityResearchAssessment and
+	// CapabilityResearchSynthesis are separate capabilities so operators
+	// can route each stage independently.
 	CapabilityResearchRouting = "research_routing"
 	// CapabilityResearchAssessment is used by the assess_sufficiency
-	// component (ADR-045 Phase 1 PR 5) to decide whether the
+	// component (not in SemEngine yet) to decide whether the
 	// execute_subqueries evidence is sufficient to synthesize from, or
 	// whether the refine loop should retry with sharper sub-queries.
 	// Second of the three research LLM-wrapping capabilities.
 	CapabilityResearchAssessment = "research_assessment"
 	// CapabilityResearchSynthesis is used by the synthesize_answer
-	// component (ADR-045 Phase 1 PR 5) to compose the chain's terminal
+	// component (not in SemEngine yet) to compose the chain's terminal
 	// natural-language answer from the evidence array. Third of the
 	// three research LLM-wrapping capabilities; operators can route
 	// synthesis to a stronger model than routing/assessment when the
@@ -96,9 +94,8 @@ func ResolveEndpoint(reg RegistryReader, capability string) (*ResolvedEndpoint, 
 //
 // Use this helper when constructing an HTTP client that should respect
 // EndpointConfig's transport tuning. ResolveEndpoint's intentionally minimal
-// return shape silently strips those fields — direct callers of
-// ResolveEndpoint historically dropped per-endpoint keepalive/timeout config
-// (semspec smoke-#10 keepalive bug, community_summary 300s dead config).
+// return shape silently strips those fields, so a direct caller of
+// ResolveEndpoint loses the per-endpoint keepalive and timeout config.
 //
 // If ResolveEndpoint succeeds the resolved name maps to a non-nil
 // EndpointConfig — the resolution chain guarantees this. A nil EndpointConfig
@@ -196,11 +193,12 @@ func ResolveCapabilityTimeout(reg RegistryReader, capability string, defaultTime
 // INVARIANT: name-keyed model-registry lookups on the accounting/limit/aux paths
 // MUST resolve capabilities through this helper (or reg.Resolve) before the
 // lookup, matching the model CALL path's capability→endpoint resolution
-// (agentic-model resolveEndpoint). A loop spawned with a capability name
-// (coordinator/developer/reviewer) carries that capability into these lookups; a
-// raw Endpoints[name]/GetEndpoint(name)/GetMaxTokens(name) lookup MISSES on a
-// capability and silently returns wrong/zero endpoint accounting or limits — the
-// #584 (cost-usd) / #594 (max_tokens) bug class.
+// (agentic-model's resolveEndpoint, not in SemEngine yet). A loop spawned with
+// a capability name (coordinator/developer/reviewer) carries that capability
+// into these lookups; a raw
+// Endpoints[name]/GetEndpoint(name)/GetMaxTokens(name) lookup MISSES on a
+// capability and silently returns wrong/zero endpoint accounting or limits — a
+// wrong cost or a zero max_tokens, for example.
 //
 // Resolution is a strict superset of the raw lookup it replaces, so a real
 // endpoint name is unaffected:
@@ -237,19 +235,18 @@ type EndpointConfig struct {
 	// `provider: "openai"` plus the appropriate URL; we deliberately do
 	// not fragment this enum by adding vllm/sparky/localai as distinct
 	// providers (every OpenAI-compat runtime takes the same wire shape).
-	// See ADR-034.
+	// See SemStreams ADR-034.
 	//
 	// The two genuine outliers worth keeping distinct from "openai" are
-	// "ollama" (Ollama-native quirks; future /api/chat path tracked under
-	// ADR-034 chunk 3b) and "anthropic" (different API surface, not
-	// OpenAI-compat). "openrouter" is OpenAI-compat but kept distinct
-	// for the multi-model proxy routing semantics.
+	// "ollama" (Ollama-native quirks) and "anthropic" (different API
+	// surface, not OpenAI-compat). "openrouter" is OpenAI-compat but kept
+	// distinct for the multi-model proxy routing semantics.
 	Provider string `json:"provider"`
 	// URL is the API endpoint. Required for ollama/openai/openrouter, optional for anthropic.
 	URL string `json:"url,omitempty"`
 	// Model is the model identifier sent to the provider.
 	Model string `json:"model"`
-	// QueryPrefix is used ONLY by the embedding capability (gh#438): the query
+	// QueryPrefix is used ONLY by the embedding capability: the query
 	// instruction prepended to query-side text for asymmetric retrieval models
 	// (arctic-embed, BGE, E5) — e.g. "Represent this sentence for searching relevant
 	// passages: ". Documents are embedded raw. Ignored by non-embedding capabilities
@@ -347,11 +344,10 @@ type EndpointConfig struct {
 	DisableKeepAlives bool `json:"disable_keepalives,omitempty"`
 	// WireBackend selects the HTTP client implementation for this endpoint.
 	// "" or "sdk" (default) uses the sashabaranov/go-openai SDK client.
-	// "wire" uses the framework-owned model/wire client (ADR-037). The
-	// flag is per-endpoint to support calendar-soak rollouts: operators
-	// flip Gemini to "wire" first while other providers stay on SDK.
-	// Retired in Phase 3 once every adapter has soaked on "wire" for
-	// the calendar minimums in ADR-037.
+	// "wire" uses the framework-owned model/wire client (SemStreams ADR-037;
+	// not in SemEngine yet). The flag is per-endpoint to support
+	// calendar-soak rollouts: operators flip Gemini to "wire" first while
+	// other providers stay on SDK.
 	WireBackend string `json:"wire_backend,omitempty"`
 }
 
@@ -528,10 +524,10 @@ func validateEndpoint(name string, ep *EndpointConfig) error {
 	validProviders := map[string]bool{
 		"anthropic": true, "ollama": true, "openai": true, "openrouter": true,
 		// "gemini" is the explicit-adapter route for Gemini endpoints —
-		// engages GeminiAdapter (ADR-037 chunk 8) for the 3.x preview
-		// thought_signature flow. Gemini 2.5 stable still works through
-		// the "openai" umbrella; pick "gemini" when you need the
-		// per-tool_call Extras translation.
+		// engages GeminiAdapter (SemStreams ADR-037; not in SemEngine yet)
+		// for the 3.x preview thought_signature flow. Gemini 2.5 stable
+		// still works through the "openai" umbrella; pick "gemini" when you
+		// need the per-tool_call Extras translation.
 		"gemini": true,
 	}
 	if ep.Provider != "" && !validProviders[ep.Provider] {
@@ -655,7 +651,7 @@ func (r *Registry) GetCapability(name string) *CapabilityConfig {
 
 // GetMaxTokens returns the context window size for an endpoint name, or for a
 // capability (resolved to its preferred endpoint via ResolveEndpointName so a
-// capability-named loop gets its real endpoint's window, not 0 — the #594 fix).
+// capability-named loop gets its real endpoint's window, not 0).
 // Returns 0 if the name resolves to no configured endpoint.
 func (r *Registry) GetMaxTokens(name string) int {
 	ep, ok := r.Endpoints[ResolveEndpointName(r, name)]

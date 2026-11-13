@@ -12,11 +12,10 @@ import (
 	"github.com/c360studio/semengine/vocabulary"
 )
 
-// The typed client's half of design D11's tests for pkg/projection (task 5.2): each write sends its
-// canonical request and reads its reply, a mutation error keeps the reply's code and detail (and its
-// class when the reply proves nothing was written; a commit-unknown error is fatal), and a group or
-// statement the contract does not allow is refused before any request. The wire is a double that
-// answers each request as the test names.
+// The typed client's request tests: each write sends its canonical request and reads its reply, a
+// mutation error keeps the reply's code and detail (and its class when the reply proves nothing was
+// written; a commit-unknown error is fatal), and a group or statement the contract does not allow
+// is refused before any request. The wire is a double that answers each request as the test names.
 
 // canonicalMetadata is the caller's provenance every write below sends.
 var canonicalMetadata = MutationMetadata{
@@ -81,8 +80,8 @@ func TestCreateSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 // subject carrying its statements, filled from the metadata, and the metadata's trace and request
 // IDs. An applied or unchanged reply is verified at the reply's revision; an entity-not-found
 // reply is a not-committed not-found error with that code, since nothing was written. A reply
-// with an outcome graph-ingest never sends proves nothing, so it is commit-unknown and fatal
-// (design D4; the wire client refuses the reply).
+// with an outcome graph-ingest never sends proves nothing, so it is commit-unknown and fatal (the
+// wire client refuses the reply).
 func TestAppendSendsItsCanonicalRequestAndReadsTheReply(t *testing.T) {
 	contract := projectionTestContract(t)
 	tests := []struct {

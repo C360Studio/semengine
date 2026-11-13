@@ -122,7 +122,7 @@ func read(t *testing.T, l *component.Lifecycle, deadline <-chan struct{}, stuck 
 	}
 }
 
-// wantHealth is the design's D4 table for one Health read.
+// wantHealth is the expected Health read for one history.
 func wantHealth(now time.Time, running bool, uptime time.Duration, errorCount int, stuck string) component.HealthStatus {
 	h := component.HealthStatus{LastCheck: now, ErrorCount: errorCount, Status: "stopped"}
 	switch {
@@ -251,8 +251,9 @@ func TestLifecycleOwnerPassesTheLifecycleSuite(t *testing.T) {
 
 // Every history the shell can be in, read with and without stuck states (an empty one among
 // them), with and without counted errors, and before and after counted inputs; every field of
-// both reads is compared with the design's D4 table. Examples suffice: the reads depend only on
-// which of these nine histories the shell is in and on the inputs, and the table lists all nine.
+// both reads is compared with the expected read (wantHealth for Health). Examples suffice: the
+// reads depend only on which of these nine histories the shell is in and on the inputs, and the
+// rows below list all nine.
 //
 // spec: component-lifecycle / The shell is running from start's return until cleanup begins
 // spec: component-lifecycle / Health reads running and the stuck states it is given

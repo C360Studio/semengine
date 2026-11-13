@@ -17,11 +17,11 @@ import (
 	semtypes "github.com/c360studio/semengine/pkg/types"
 )
 
-// TestClassifyMutationErrorMapsEachOutcome holds the mapping to design D1's table, one row per
-// table line and per pre-write refusal code. The expected values are written from the table, not
-// read from the code: a classified reply whose code graph-ingest sends only before it writes is not
-// committed with the reply's class; a request that was not delivered is not committed and
-// transient; anything else is commit-unknown and fatal.
+// TestClassifyMutationErrorMapsEachOutcome holds the commit mapping, one row per outcome and per
+// pre-write refusal code. The expected values are written from the rule, not read from the code: a
+// classified reply whose code graph-ingest sends only before it writes is not committed with the
+// reply's class; a request that was not delivered is not committed and transient; anything else is
+// commit-unknown and fatal.
 func TestClassifyMutationErrorMapsEachOutcome(t *testing.T) {
 	detail := map[string]any{"entity_id": "c360.platform.test.system.widget.one"}
 	reply := func(class errs.ErrorClass, code string) error {

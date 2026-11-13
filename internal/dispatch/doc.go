@@ -19,7 +19,7 @@
 //
 // Use it when two items with the same key must never be processed out
 // of order or at the same time, as graph-ingest needs for one entity's
-// updates (ADR-072, in SemStreams).
+// updates (SemStreams ADR-072).
 //
 //	pool, err := dispatch.NewKeyedPool(ctx, dispatch.KeyedConfig[ingestWork]{
 //	    Lanes:           lanes,

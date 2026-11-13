@@ -2,10 +2,10 @@ package component
 
 import "testing"
 
-// TestGetConsumerConfig_MaxAckPending closes the gh#480 plumbing gap: a
-// max_ack_pending set on a JetStreamPort MUST reach the extracted ConsumerConfig
-// (which graph-ingest then maps into StreamConsumerConfig). Before this change
-// there was no field at all, so the value was silently unreachable.
+// TestGetConsumerConfig_MaxAckPending: a max_ack_pending set on a JetStreamPort
+// MUST reach the extracted ConsumerConfig (which graph-ingest then maps into
+// StreamConsumerConfig); a value dropped on the way would be silently
+// unreachable.
 func TestGetConsumerConfig_MaxAckPending(t *testing.T) {
 	tests := []struct {
 		name string

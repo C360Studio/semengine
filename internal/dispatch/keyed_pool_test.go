@@ -85,7 +85,7 @@ func TestKeyedPool_ProcessUsesConstructorContext(t *testing.T) {
 	})
 }
 
-// --- Config validation (task 1.1) ---
+// --- Config validation ---
 
 func TestKeyedPool_RejectsNilContext(t *testing.T) {
 	_, err := NewKeyedPool[string](nil, validKeyedConfig())
@@ -112,7 +112,7 @@ func TestKeyedPool_RejectsBadConfig(t *testing.T) {
 	}
 }
 
-// --- Ordering: same key serial in submit order (task 1.5) ---
+// --- Ordering: same key serial in submit order ---
 
 func TestKeyedPool_SameKeyOrdered(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -135,7 +135,7 @@ func TestKeyedPool_SameKeyOrdered(t *testing.T) {
 	})
 }
 
-// --- Same key always lands on the same lane (task 1.5 / shard-safety) ---
+// --- Same key always lands on the same lane (shard safety) ---
 
 func TestKeyedPool_SameKeySameLane(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestKeyedPool_SameKeySameLane(t *testing.T) {
 	})
 }
 
-// --- Concurrency: distinct keys run in parallel across lanes (task 1.5) ---
+// --- Concurrency: distinct keys run in parallel across lanes ---
 
 func TestKeyedPool_DifferentKeysConcurrent(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -189,7 +189,7 @@ func TestKeyedPool_DifferentKeysConcurrent(t *testing.T) {
 	})
 }
 
-// --- Backpressure: a full lane blocks SubmitBlocking (task 1.5) ---
+// --- Backpressure: a full lane blocks SubmitBlocking ---
 
 func TestKeyedPool_Backpressure(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestKeyedPool_Backpressure(t *testing.T) {
 	})
 }
 
-// --- Graceful drain: Shutdown finishes buffered work (task 1.5) ---
+// --- Graceful drain: Shutdown finishes buffered work ---
 
 func TestKeyedPool_ShutdownDrains(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -260,7 +260,7 @@ func TestKeyedPool_ShutdownDrains(t *testing.T) {
 	})
 }
 
-// --- Shutdown/submit race: an accepted submit is never stranded (Codex P1) ---
+// --- Shutdown/submit race: an accepted submit is never stranded ---
 
 func TestKeyedPool_ShutdownSubmitRace(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -306,7 +306,7 @@ func TestKeyedPool_ShutdownSubmitRace(t *testing.T) {
 		close(stop)
 		wg.Wait()
 
-		// Contract (Codex P1): once Shutdown begins draining, no submit returns
+		// Contract: once Shutdown begins draining, no submit returns
 		// success unless that item is guaranteed processed before Shutdown completes.
 		// So every nil-returning submit must have been processed — no stranded
 		// accepted work.
@@ -326,7 +326,7 @@ func TestKeyedPool_SubmitAfterShutdown(t *testing.T) {
 	})
 }
 
-// --- Panic recovery: lane survives, disposition invoked (task 1.5, H2) ---
+// --- Panic recovery: lane survives, disposition invoked ---
 
 func TestKeyedPool_PanicRecovery(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -367,7 +367,7 @@ func TestKeyedPool_PanicRecovery(t *testing.T) {
 	})
 }
 
-// --- Metrics move (task 2.2) ---
+// --- Metrics move ---
 
 func TestKeyedPool_MetricsMove(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
@@ -400,8 +400,8 @@ func TestKeyedPool_MetricsMove(t *testing.T) {
 }
 
 // TestKeyedPoolWritesTheRegisteredCollector: two pools with one name on one registry share each
-// collector (design D4). The second pool writes the collector metric.RegisterOrGet returned, not
-// its own candidate, so the registry gathers both pools' work.
+// collector. The second pool writes the collector metric.RegisterOrGet returned, not its own
+// candidate, so the registry gathers both pools' work.
 func TestKeyedPoolWritesTheRegisteredCollector(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reg := metric.NewMetricsRegistry()
@@ -429,8 +429,8 @@ func TestKeyedPoolWritesTheRegisteredCollector(t *testing.T) {
 }
 
 // TestKeyedPoolReturnsARegistrationRefusal: when the registry refuses one of the pool's
-// collectors, NewKeyedPool returns the refusal and no pool; at the pin the refusal was dropped.
-// The bubble returning shows no lane was started.
+// collectors, NewKeyedPool returns the refusal and no pool, never drops it. The bubble returning
+// shows no lane was started.
 func TestKeyedPoolReturnsARegistrationRefusal(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		reg := metric.NewMetricsRegistry()

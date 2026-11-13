@@ -9,10 +9,10 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// minWordBytes is the shortest word, as at the pin (summarizer.go:483).
+// minWordBytes is the shortest word.
 const minWordBytes = 3
 
-// stopWords are dropped from a value's words; the pin's list (summarizer.go:474-479).
+// stopWords are dropped from a value's words.
 var stopWords = map[string]bool{
 	"the": true, "a": true, "an": true, "and": true, "or": true, "but": true,
 	"in": true, "on": true, "at": true, "to": true, "for": true, "of": true,
@@ -53,7 +53,7 @@ func isWordByte(b byte) bool {
 // entityWords returns what an entity contributes to its groups' keywords: its
 // MaxEntityTerms most frequent words, most frequent first, ties broken lexically. Words
 // come only from string values; the ID's positions, predicate names and the object of a
-// relationship (another entity's ID) add none, unlike the pin (summarizer.go:136-163).
+// relationship (another entity's ID) add none.
 func entityWords(state *graph.EntityState) []string {
 	counts := map[string]int{}
 	for _, triple := range state.Triples {
@@ -99,8 +99,8 @@ func newCommunity(level int, id string, memberCount int, revision uint64, typeCo
 	}
 }
 
-// summarize is the pin's summary template (summarizer.go:388-461): the member count, up
-// to three types with their counts, and up to five keywords.
+// summarize is the summary template: the member count, up to three types with their
+// counts, and up to five keywords.
 func summarize(memberCount int, types []string, typeCounts map[string]int, keywords []string) string {
 	var summary strings.Builder
 	fmt.Fprintf(&summary, "Community of %d entities", memberCount)

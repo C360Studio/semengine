@@ -8,12 +8,7 @@ import (
 	"github.com/c360studio/semengine/graph"
 )
 
-// The ComputeIndexStatus tests are ported from pin:graph/index_status_test.go:17-205,
-// keeping their oracles. The pin's Revision string field is not ported (#110 item 1):
-// where the pin checked it, these tests check IndexedRevision and TargetRevision, the
-// one spelling of the revision.
-
-// TestComputeIndexStatus_Staleness pins the age-of-view projection (ADR-083 D3),
+// TestComputeIndexStatus_Staleness pins the age-of-view projection (ADR-083 decision 3),
 // including the presence encoding that keeps an absent staleness from reading as a
 // perfectly fresh view in a bounded-staleness gate.
 func TestComputeIndexStatus_Staleness(t *testing.T) {
@@ -81,7 +76,7 @@ func TestComputeIndexStatus_Staleness(t *testing.T) {
 }
 
 // TestComputeIndexStatus_PreExistingFieldsUnchanged pins Ready, State, Lag and the two
-// revisions for each input shape the pin's graph-index produced.
+// revisions for each input shape a revision-lag producer emits.
 func TestComputeIndexStatus_PreExistingFieldsUnchanged(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -130,9 +125,8 @@ func TestComputeIndexStatus_PreExistingFieldsUnchanged(t *testing.T) {
 			wantTarget:  100,
 		},
 		{
-			// Not a pin case: the spec's "never below zero" for a floor above the
-			// target, which the watermark does not produce but the projection must not
-			// wrap around on.
+			// The spec's "never below zero" for a floor above the target, which the
+			// watermark does not produce but the projection must not wrap around on.
 			name:        "floor above target has no lag",
 			in:          IndexStatusInputs{Indexed: 120, Target: 100},
 			wantReady:   true,

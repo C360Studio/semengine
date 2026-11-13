@@ -10,7 +10,7 @@ import (
 )
 
 // TestStateContractError_ErrorRendering pins the rendered message with and
-// without the additive EntityID stamp (poison-response-scoping D4). The code
+// without the additive EntityID stamp. The code
 // and reason lead in every shape so operators and log greps stay stable.
 func TestStateContractError_ErrorRendering(t *testing.T) {
 	cause := errors.New("boom")
@@ -94,7 +94,7 @@ func TestStateContractError_JSONShape(t *testing.T) {
 // TestStateContractError_EntityIDSurvivesClassification asserts the stamped
 // entity ID stays reachable via errors.As through the shared classification
 // wrapper and additional fmt wrapping — the property aggregate reads and the
-// poison inventory rely on (poison-response-scoping D4/D5).
+// poison inventory rely on.
 func TestStateContractError_EntityIDSurvivesClassification(t *testing.T) {
 	stamped := &StateContractError{
 		Reason:   GraphStateReasonNoncanonicalPredicate,

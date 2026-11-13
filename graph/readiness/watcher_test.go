@@ -191,8 +191,9 @@ func TestWatcher_CurrentValueIsFreshOnBind(t *testing.T) {
 	})
 }
 
-// TestWatcher_FreshnessExpiresAtThreeHeartbeats pins the D2 window. The bubble's clock
-// moves only by the test's own wait, so the age is exact rather than a timing race.
+// TestWatcher_FreshnessExpiresAtThreeHeartbeats pins the freshness window (ADR-083
+// Decision 2). The bubble's clock moves only by the test's own wait, so the age is exact
+// rather than a timing race.
 func TestWatcher_FreshnessExpiresAtThreeHeartbeats(t *testing.T) {
 	const heartbeat = 5 * time.Second
 	tests := []struct {
@@ -600,8 +601,8 @@ func TestWaitForFirst(t *testing.T) {
 
 // TestWatcherRunReturnsContextErrorAndLeavesNothingRunning: Run returns ctx.Err()
 // once its context ends, whether it is consuming a watch or waiting to rebind after a
-// failed open, and leaves no goroutine and no open KV watch behind (design D5;
-// background-work, "Run returns when its context ends" and "Stopped inside a bubble").
+// failed open, and leaves no goroutine and no open KV watch behind (background-work,
+// "Run returns when its context ends" and "Stopped inside a bubble").
 // synctest.Test fails if a goroutine started in the bubble is still blocked when the
 // function returns, so its return is the proof that nothing is left running.
 func TestWatcherRunReturnsContextErrorAndLeavesNothingRunning(t *testing.T) {
@@ -707,14 +708,10 @@ func TestWatcher_RunValidatesWiring(t *testing.T) {
 	}
 }
 
-// TestFreshnessWindow pins the ENVELOPE-liveness window, which is the concept that
-// survived the view-age deletion and is easy to confuse with it. It answers "can this
-// consumer still vouch for the status reading it holds", not "how far behind is the
-// index" — the former gates (Reading.Fresh, fail closed), the latter never does.
-//
-// The satisfiability-floor rules that used to live beside it (MinBoundedStaleness,
-// ValidateStalenessBound) are gone with the tolerance they constrained: with no
-// view-age bound to declare, there is no bound that can be unsatisfiable.
+// TestFreshnessWindow pins the ENVELOPE-liveness window, which is easy to confuse with
+// view age. It answers "can this consumer still vouch for the status reading it holds",
+// not "how far behind is the index" — the former gates (Reading.Fresh, fail closed), the
+// latter never does.
 func TestFreshnessWindow(t *testing.T) {
 	if got, want := freshnessWindow(2*time.Second), 6*time.Second; got != want {
 		t.Errorf("freshnessWindow(2s) = %s, want %s (three heartbeats)", got, want)
@@ -722,8 +719,7 @@ func TestFreshnessWindow(t *testing.T) {
 }
 
 // TestWaitForFirstRefusesNilContext: a nil context is refused with an error, never a
-// panic in the caller's goroutine, whether or not an envelope has already arrived
-// (readiness-nil-context D1).
+// panic in the caller's goroutine, whether or not an envelope has already arrived.
 func TestWaitForFirstRefusesNilContext(t *testing.T) {
 	var nilCtx context.Context
 

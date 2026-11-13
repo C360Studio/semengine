@@ -314,7 +314,7 @@ func TestFindBestMatch_ContextTimeout(t *testing.T) {
 	c := mustNewEmbeddingClassifier(t, domains, 0.5)
 
 	// A deadline already in the past: the context has ended before the call,
-	// with no wait (the pin slept past a 1ns timeout).
+	// with no wait.
 	ctx, cancel := context.WithDeadline(t.Context(), time.Now().Add(-time.Second))
 	defer cancel()
 
@@ -372,8 +372,8 @@ func TestFindBestMatch_MultipleMatches(t *testing.T) {
 }
 
 // TestFindBestMatch_PreservesOptions tests that matched example options are preserved: a
-// caller's own name unchanged and a known name as its typed value. The pin's version gave
-// time_range the word "week", which construction now refuses (#478, design D4).
+// caller's own name unchanged and a known name as its typed value. A time_range given as the
+// word "week" is refused at construction, so the example gives it a start and an end.
 func TestFindBestMatch_PreservesOptions(t *testing.T) {
 	week := &TimeRange{
 		Start: time.Date(2026, 3, 2, 0, 0, 0, 0, time.UTC),

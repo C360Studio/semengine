@@ -10,9 +10,8 @@ import (
 // producer.
 //
 // Set is the single projection site, so a field added to IndexStatusResponse cannot be
-// wired in one producer and forgotten in another. At the SemStreams pin, two producers
-// each built their own set, and both left out bootstrap_complete, the field
-// EvaluateReadinessGate reads.
+// wired in one producer and forgotten in another (such as bootstrap_complete, the field
+// EvaluateReadinessGate reads).
 type Gauges struct {
 	subsystem string
 
@@ -38,8 +37,7 @@ const metricNamespace = "semengine"
 // same subsystem.
 //
 // The emitted metric NAMES are an external contract (ADR-066): dashboards and operator
-// alerts read them. They are the names the SemStreams pin emits, and a test compares
-// them against the live registry.
+// alerts read them, and a test compares them against the live registry.
 func NewGauges(subsystem string) *Gauges {
 	return &Gauges{
 		subsystem: subsystem,

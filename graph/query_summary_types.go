@@ -79,8 +79,8 @@ type EntityTypeSummary struct {
 // would spin for ever.
 type SummaryData struct {
 	// TotalEntities is the number of distinct keys in the listing: the whole group as listed, before
-	// the cursor and any limit. A listing under concurrent overwrites can omit keys, so it is not a
-	// snapshot count (#512).
+	// the cursor and any limit. A listing under concurrent overwrites can omit keys (seen at nats.go
+	// v1.55.0, and not promised otherwise), so it is not a snapshot count.
 	TotalEntities int `json:"total_entities"`
 
 	// EntitiesScanned is the rows on this page. The type counts count those rows alone.

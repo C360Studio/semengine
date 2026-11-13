@@ -2,7 +2,7 @@ package graph
 
 import "github.com/c360studio/semengine/pkg/errs"
 
-// Stable failure codes carried by *errs.ClassifiedError.Code (SemStreams ADR-060). A caller
+// Stable failure codes carried by *errs.ClassifiedError.Code (ADR-060). A caller
 // reads one with errors.As(err, &ce) and ce.Code; revision_mismatch also matches
 // errs.ErrRevisionMismatch through errors.Is.
 //
@@ -12,8 +12,8 @@ import "github.com/c360studio/semengine/pkg/errs"
 // internal; the exact reader emits invalid_request and internal; index_not_ready
 // comes from natsclient's OpenFrameworkBucket and pkg/lifecycle's queries.
 // embedding_unavailable is emitted by processor/graph-embedding's similar verb.
-// not_enabled is sent by processor/graph-query's semantic and similar verbs. Nothing
-// here emits resource_exhausted: its emitters are pin packages not ported yet.
+// not_enabled is sent by processor/graph-query's semantic and similar verbs.
+// resource_exhausted is emitted by processor/graph-index's name verb.
 // graph-ingest counts each refused canonical mutation on graph_mutation_outcomes_total
 // under its code, or internal when it carries none.
 const (
@@ -62,22 +62,19 @@ const (
 
 	// ErrorCodeResourceExhausted indicates a query would exceed a server-side read
 	// budget — e.g. a byName lookup on a name shared by more entities than the
-	// hydration cap (SemStreams gh#474 Codex P2a interim guard). The caller should narrow the
-	// query rather than retry unchanged; the full hot-key NAME redesign is SemStreams gh#381.
+	// hydration cap. The caller should narrow the query rather than retry unchanged.
 	ErrorCodeResourceExhausted = "resource_exhausted"
 
 	// ErrorCodeIndexNotReady indicates a query arrived while the serving index was not
 	// SOUND to read from — the responder or its watcher is unavailable, the index is
 	// degraded by an unresolved required write, or it has not finished its initial
-	// build. The motivating case is the breaking composite-key format cutover on an
-	// in-place upgrade (SemStreams gh#474 Codex P1d), where old aggregate keys are inert and the
-	// new keyset is still materialising: serving it would advertise a smaller graph
-	// than exists.
+	// build. While a keyset is still materialising, serving it would advertise a
+	// smaller graph than exists.
 	//
-	// NOT emitted for ordinary revision lag (narrowed by ADR-084). A healthy index that
-	// is merely behind SERVES, reporting its view age as staleness_ms on the readiness
-	// envelope, because coverage was never evidence of soundness and gating on it made
-	// every write burst look like a fault (SemStreams #592). Probe health with
+	// NOT emitted for ordinary revision lag (ADR-084). A healthy index that is merely
+	// behind SERVES, reporting its view age as staleness_ms on the readiness envelope,
+	// because coverage is not evidence of soundness and gating on it would make every
+	// write burst look like a fault. Probe health with
 	// `nats kv get GRAPH_STATUS graph-index` and read `state` + `bootstrap_complete` —
 	// NOT the `ready` bit, which answers coverage and is false on any busy index.
 	//
@@ -95,12 +92,11 @@ const (
 	// this one source entity simply has no vector yet (e.g. an aggregation/group
 	// entity never projected through the embedder). Class is ErrorInvalid.
 	//
-	// Emitted by graph-embedding's handleQuerySimilarNATS. The semantic-edge cache
-	// (B2 §7) recognizes it as a definitive "this entity has no semantic neighbors"
-	// and fails open to an empty set, distinct from a malformed / unknown reply which
-	// it must count toward its coverage-threshold abort rather than cache as a hollow
-	// empty (SemStreams #662 / Codex P1#2). Consumers classify by this stable code, never by the
-	// message text.
+	// Emitted by graph-embedding's similar verb (handleSimilar). A caller may read it
+	// as a definitive "this entity has no semantic neighbors" and fail open to an
+	// empty set, distinct from a malformed / unknown reply, which it should count as
+	// a failure rather than cache as a hollow empty. Consumers classify by this stable
+	// code, never by the message text.
 	ErrorCodeEmbeddingUnavailable = "embedding_unavailable"
 
 	// ErrorCodeNotEnabled indicates the composition turned the verb off: graph-query

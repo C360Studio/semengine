@@ -7,9 +7,8 @@ import (
 )
 
 // The readiness gate. It is one function so that every consumer gates by the same
-// rules: at the SemStreams pin, four consumers once had four gates, and a transport
-// failure in one of them read in the logs like an index that was not ready (SemStreams
-// gh#590).
+// rules: separate gates per consumer drift apart, and a transport failure in one of them
+// reads in the logs like an index that is not ready.
 //
 // It asks ONE question, HEALTH (ADR-085 Decision 1): is this index sound to read from?
 // Fresh status, an interpretable state, no hard stop, initial build complete. No
@@ -49,10 +48,10 @@ const (
 	// coverage, so an uninterpretable State cannot be waved through as "not degraded".
 	DeferUnrecognizedState DeferReason = "unrecognized_state"
 	// DeferBootstrapIncomplete is a producer that has not finished its initial build
-	// in this process lifetime, such as an index halfway through a format cutover
-	// (SemStreams gh#474), where the keyset is half-built and a plausible small Lag
-	// is actively misleading. TargetRevision==0 cannot stand in for it: that is false
-	// during a cutover, and true for an empty graph whose build has finished.
+	// in this process lifetime, such as an index halfway through a format cutover, where
+	// the keyset is half-built and a plausible small Lag is actively misleading.
+	// TargetRevision==0 cannot stand in for it: that is false during a cutover, and true
+	// for an empty graph whose build has finished.
 	DeferBootstrapIncomplete DeferReason = "bootstrap_incomplete"
 )
 
@@ -96,8 +95,8 @@ func DeferReasons() []DeferReason {
 //     read as "not degraded, therefore healthy".
 //  3. Hard stops (degraded, reset_required) defer.
 //  4. An incomplete initial build defers likewise. This guards against reading an
-//     index halfway through a format cutover (SemStreams gh#474), and is why
-//     bootstrap_complete is on the wire.
+//     index halfway through a format cutover, and is why bootstrap_complete is on the
+//     wire.
 //  5. Everything else proceeds, however far behind the view is. Lag is not a fault; it
 //     is a property of the answer, carried on graph.IndexStatusResponse.StalenessMs for the
 //     consumer to stamp on its output.

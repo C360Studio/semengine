@@ -274,7 +274,7 @@ func TestAttack_LargeEntityBurst(t *testing.T) {
 // one type, one after another, each ask storage for the type's three containers
 // through the create; the first creates them and every later birth's create is
 // refused because they exist, so three creates commit. The inference keeps
-// nothing per birth (#130).
+// nothing per birth.
 func TestAttack_ManyBirthsOfOneTypeCreateThreeContainers(t *testing.T) {
 	store := newFakeStore()
 

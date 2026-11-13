@@ -12,12 +12,13 @@ import (
 )
 
 // EnsureCatalogRetentionClean is the PRE-START LEGACY-DRIFT BACKSTOP for the
-// framework KV catalog's no-lifecycle buckets (SemStreams ADR-068 D1). It has exactly ONE
-// honest job: a catalog bucket unused by the current composition never has its
-// acquisition seam called — e.g. an EMBEDDING_INDEX left behind by a prior
-// semantic deploy when booting a statistical configuration — so one boot-time
-// pass over the catalog strips prior-boot/out-of-band retention dirt (or fails
-// boot closed) for those inactive buckets.
+// framework KV catalog's no-lifecycle buckets (SemStreams ADR-068 decision 1).
+// It has exactly ONE honest job: a catalog bucket unused by the current
+// composition never has its acquisition seam called — e.g. an EMBEDDING_INDEX
+// left behind by a prior semantic deploy when booting a statistical
+// configuration — so one boot-time pass over the catalog strips
+// prior-boot/out-of-band retention dirt (or fails boot closed) for those
+// inactive buckets.
 //
 // Everything else is the seam's job, not this pass's: every active component
 // acquires its buckets through natsclient.EnsureFrameworkBucket inside its own

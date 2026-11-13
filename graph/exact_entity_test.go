@@ -78,8 +78,8 @@ func TestExactEntityReaderReturnsValidatedEntityAndRevision(t *testing.T) {
 	if exact.Entity == nil || exact.Entity.ID != entityID || exact.KVRevision != 17 {
 		t.Fatalf("exact = %#v", exact)
 	}
-	// The reply's entity carries a stale "version" key (a value written by the pin);
-	// the revision reported is the KV revision, and the key is ignored on decode.
+	// The reply's entity carries a stale "version" key, a field the type does not
+	// define; the revision reported is the KV revision, and the key is ignored on decode.
 }
 
 func TestExactEntityReaderRejectsZeroRevisionAndMismatchedEntity(t *testing.T) {
@@ -108,9 +108,9 @@ func newTestExactEntityReader(t *testing.T, requester exactEntityRequesterFunc) 
 }
 
 // A negative timeout would give every request a context that has already
-// expired, so each read would fail while the caller's context is live (#151).
-// The constructor refuses it. Zero
-// stays valid and reaches the requester as zero, whose own default applies (D16).
+// expired, so each read would fail while the caller's context is live. The
+// constructor refuses it. Zero stays valid and reaches the requester as zero,
+// whose own default applies.
 func TestNewExactEntityReaderRefusesNegativeTimeoutAndPassesZeroThrough(t *testing.T) {
 	const entityID = "acme.ops.robotics.gcs.drone.001"
 	var timeouts []time.Duration

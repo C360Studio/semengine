@@ -57,7 +57,7 @@ const (
 	// config.Manager is its only acquirer. It is still owner-only, because
 	// ownership is about who may NOT write: the rule engine, not in SemEngine
 	// yet, is to refuse a generic update_kv into any member through
-	// IsFrameworkOwnedBucket.
+	// kvcatalog.IsFrameworkOwnedBucket.
 	BucketSemEngineConfig = "semengine_config"
 
 	// BucketGraphStatus is the ADR-083 readiness distribution bucket. Producers

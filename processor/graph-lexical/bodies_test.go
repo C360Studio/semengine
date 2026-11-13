@@ -76,6 +76,16 @@ func serving(body func(key string) string) *fakeStore {
 	})
 }
 
+// yielding is a read that gives way to other goroutines before each chunk.
+type yielding struct{ r io.Reader }
+
+func (y yielding) Read(p []byte) (int, error) {
+	runtime.Gosched()
+	return y.r.Read(p)
+}
+
+func (yielding) Close() error { return nil }
+
 // blockedReader is a read in flight that blocks until the context its stream was opened under
 // ends, then fails with the store's own timeout, as the NATS object store does.
 type blockedReader struct{ ctx context.Context }
@@ -366,9 +376,13 @@ func TestBodyCutAtCap(t *testing.T) {
 // TestDeliveriesAndBodyReadsConcurrent: deliveries arrive on one goroutine while the body path
 // reads on another and a third reads the failure count, as the follower's heartbeat does. Once
 // the floor reaches the last revision, every key holds its last revision's name and body and no
-// earlier revision's words. Run under -race.
+// earlier revision's words. Run under -race. Each read, and each delivery, gives way to the other
+// goroutines, as a read or a watch waiting on the network does, so deliveries land while reads
+// are out, even on one CPU.
 func TestDeliveriesAndBodyReadsConcurrent(t *testing.T) {
-	store := serving(func(key string) string { return key })
+	store := newFakeStore(func(_ context.Context, key string) (io.ReadCloser, error) {
+		return yielding{strings.NewReader(key)}, nil
+	})
 	r := newRig(t, newFakeStores(map[string]storage.StreamableStore{"objectstore": store}), defaultMaxTextLen)
 
 	keys := []string{pump, valve, "c360.lex.test.doc.drain.c"}
@@ -399,6 +413,7 @@ func TestDeliveriesAndBodyReadsConcurrent(t *testing.T) {
 				want[key] = append(want[key], tx.bodyKey)
 			}
 			r.deliver(stateEntry(t, key, revision, tx))
+			runtime.Gosched()
 		}
 	}
 	r.awaitFloor(revision)

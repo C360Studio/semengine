@@ -195,8 +195,8 @@ func TestIntegration_TypedClientPreservesCommitAmbiguity(t *testing.T) {
 // natsclient answers with its class-invalid response_too_large reply in its place. The typed client
 // reads that reply as commit-unknown: the write stands.
 func TestIntegration_OversizedResponseAfterCommitIsCommitUnknown(t *testing.T) {
-	// The bound covers the fixture's setup as well as the requests: a 30-second bound has been
-	// seen to run out before the reconcile was sent.
+	// The bound covers the fixture's setup (a broker start) as well as the requests, so it is
+	// well above one request's bound.
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancelOperation()
 	t.Cleanup(vocabulary.SnapshotRegistry())

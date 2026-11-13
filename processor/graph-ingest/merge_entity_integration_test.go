@@ -36,7 +36,7 @@ func newSeedEntity(id string, triples ...message.Triple) *graph.EntityState {
 }
 
 // TestIntegration_MergeEntity_FirstWriteCreatesAtomically pins the
-// fresh-entity case: MergeEntity on an absent ID writes the entity
+// fresh-entity case: mergeEntityOnLane on an absent ID writes the entity
 // verbatim, like CreateEntity but without the upsert footgun.
 func TestIntegration_MergeEntity_FirstWriteCreatesAtomically(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
@@ -60,7 +60,7 @@ func TestIntegration_MergeEntity_FirstWriteCreatesAtomically(t *testing.T) {
 }
 
 // TestIntegration_MergeEntity_SecondWriteMergesTriples pins merge over replace:
-// when an entity already exists, MergeEntity MERGES the new triples per (predicate,
+// when an entity already exists, mergeEntityOnLane MERGES the new triples per (predicate,
 // source) set (each set the arrival carries replaces the stored set of the same
 // key, preserving non-conflicting existing triples). A full-replace Put would wipe
 // the first set of triples. This test uses DISTINCT predicates across the two
@@ -255,7 +255,7 @@ func TestIntegration_StreamIngest_DoesNotClobber(t *testing.T) {
 // key absent (revision 0).
 //
 // Setup: spin up a component with EnableHierarchy=true; call
-// MergeEntity twice with the same entity ID; assert hierarchy
+// mergeEntityOnLane twice with the same entity ID; assert hierarchy
 // triples appear exactly once in the final merged state.
 func TestIntegration_MergeEntity_HierarchyDoesNotDuplicate(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)

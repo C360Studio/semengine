@@ -50,7 +50,7 @@ func TestComponent_HierarchyInference_ConfigDefaults(t *testing.T) {
 // container is deleted through graph-ingest's own delete, the next birth of
 // that type creates the container again and is born with its container edge. A
 // record of existing containers would answer for the deleted one, and the
-// entity would be born without hierarchy.
+// container would not be created again.
 func TestComponent_HierarchyContainerDeletedIsBornAgain(t *testing.T) {
 	ctx, cancelOperation := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancelOperation()

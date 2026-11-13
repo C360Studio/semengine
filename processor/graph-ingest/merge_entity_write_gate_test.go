@@ -1,6 +1,6 @@
 package graphingest
 
-// merge_entity_write_gate_test.go: MergeEntity runs no full contract pass of its own
+// merge_entity_write_gate_test.go: mergeEntityOnLane runs no full contract pass of its own
 // over the incoming candidate; the MarshalEntityState write gate inside the CAS closure
 // is the single authoritative full-contract pass per committed candidate (both branches
 // marshal a superset of the incoming triples). These tests pin the invariant: an

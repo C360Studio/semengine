@@ -240,7 +240,7 @@ func TestIntegration_ReadinessEnvelope_BacklogIsNotReady(t *testing.T) {
 }
 
 // TestIntegration_ReadinessEnvelope_NoStreamingPortIsHonestlyCaughtUp covers the
-// mutation-only deployment shape. It is NOT an edge case: a mutation-only
+// mutation-only deployment shape. It is a supported deployment shape: a mutation-only
 // graph-ingest declares its only input port as type "nats" (core NATS request/reply
 // for graph_mutations), which setupSubscriptions skips — so it binds zero jetstream
 // consumers and has no backlog to be behind on.
@@ -302,14 +302,11 @@ func itoa(n int) string {
 // The observable consequence is this: at the instant the producer first reports
 // caught-up, every published entity must already be readable in ENTITY_STATES.
 //
-// It does not force a write failure and assert that NumPending + NumAckPending stays
-// above zero while it fails. That assumes write failures are RETRYABLE, and they are
-// mostly not: poisoned resident state and a deleted RMW target both produce TERMINAL
-// dispositions (Term), so the message leaves both counters once the server has the Term
-// and outstanding work correctly returns to zero. Asserting "stays > 0" would assert
-// something false about this component. It also observes the documented honesty boundary
-// live: lag == 0 means no outstanding work, NOT that every message was applied — a
-// terminated message is simply gone.
+// It does not force a write failure. A refused write (poisoned resident state, or an
+// entity deleted under the merge) is Nak'd and stays outstanding until it is redelivered,
+// so the test proves durability from the caught-up instant instead. It also observes the
+// documented honesty boundary live: lag == 0 means no outstanding work, NOT that every
+// message was applied — a terminated poison payload is simply gone.
 //
 // IT DELIBERATELY DOES NOT ASSERT ON THE ACK FLOOR: nothing here reads it, and it would
 // pass for the wrong reason under MaxDeliver exhaustion.

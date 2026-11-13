@@ -3,11 +3,11 @@ package graphingest
 // merge_entity_bench_test.go measures what contract validation costs on the
 // per-key-serialized ingest hot path.
 //
-// MergeEntity validates each committed candidate once, in the
+// mergeEntityOnLane validates each committed candidate once, in the
 // MarshalEntityState write gate, and that pass over the merged result is O(all
 // resident triples) on accumulating entities.
 //
-// BenchmarkMergeEntityCycle measures the full MergeEntity RMW closure cycle
+// BenchmarkMergeEntityCycle measures the full mergeEntityOnLane RMW closure cycle
 // against the in-package mock KV bucket (no network): trusted decode + merge +
 // contract validation + JSON encode + CAS write. Two representative cases:
 //
@@ -20,7 +20,7 @@ package graphingest
 // one cycle by calling the validation directly on the same shapes: full_N is
 // one ValidateEntityStateContract pass over an N-triple entity. One merge cycle
 // pays full_merged (the MarshalEntityState write gate); a separate pass over
-// the incoming candidate at the top of MergeEntity would add full_delta, and a
+// the incoming candidate at the top of mergeEntityOnLane would add full_delta, and a
 // second full_candidate on the create branch.
 import (
 	"context"
@@ -127,7 +127,7 @@ func seedResidentEntity(b *testing.B, bucket *mockKVBucket, resident *graph.Enti
 	bucket.mu.Unlock()
 }
 
-// BenchmarkMergeEntityCycle measures one full MergeEntity RMW cycle
+// BenchmarkMergeEntityCycle measures one full mergeEntityOnLane RMW cycle
 // (trusted decode + predicate-level merge + contract validation + JSON encode
 // + CAS write) against the mock KV bucket.
 func BenchmarkMergeEntityCycle(b *testing.B) {

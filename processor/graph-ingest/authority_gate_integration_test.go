@@ -472,7 +472,7 @@ func TestAuthorityGateRejectsReconcileOfImportedSubject(t *testing.T) {
 // What this does NOT show is that no KV read occurred. A gate that fetched the
 // state FIRST and then authorized, discarding the fetch result when the
 // authority check fails, would satisfy every assertion below. "Before any KV
-// I/O" (ADR-102 d5) is a code-level invariant: authorizeSubject precedes
+// I/O" (ADR-102, decision 5) is a code-level invariant: authorizeSubject precedes
 // readEntity in every canonical handler. What this test defends is the
 // regression that actually threatens that invariant — moving the authorization
 // after the fetch and letting not-found win — which it kills.

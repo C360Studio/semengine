@@ -20,8 +20,8 @@ import (
 // A payload that fails validation or panics in its own code on the Graphable
 // lane is poison: counted, logged with its payload type and subject, and
 // terminated, never returned for redelivery (graph-ingest-recovery, "A failing
-// payload is poison, not a redelivery loop"), on a payload type the test
-// registers, as a product registers its own.
+// payload is poison, not a redelivery loop"). The test drives it with a
+// payload type it registers, as a product registers its own.
 
 // fenceTestMode selects how a decoded fenceTestPayload misbehaves. It travels
 // on the wire, so the decoded copy carries it.

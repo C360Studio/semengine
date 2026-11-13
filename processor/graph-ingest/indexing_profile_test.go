@@ -201,8 +201,7 @@ func TestIndexingProfile_ReArrival_DoesNotAccumulateOrReProfile(t *testing.T) {
 		"re-arrival must keep the create-time profile and stay single-valued")
 }
 
-// --- SemStreams ADR-054 invariant: the structural graph is NEVER gated by profile
-// ---
+// --- SemStreams ADR-054 invariant: the structural graph is NEVER gated by profile ---
 
 func TestIndexingProfile_StructuralGraphNeverGated_TraceEntityStaysQueryable(t *testing.T) {
 	comp := createTestComponentWithMockKV(t)

@@ -16,8 +16,8 @@ import (
 // TestConfigAckWaitAndHeartbeatInterval: the entity_stream port's ack_wait reaches its
 // consumer and its heartbeat_interval is read, each with graph-ingest's default when the
 // port declares none: 30 s, and a quarter of the wait in effect. A heartbeat_interval
-// above half the wait fails Start before the consumer is created (graph-ingest-recovery,
-// "Settlement order"). graph-ingest starts on the fixture broker, and the wait is read
+// above half the wait fails Start before the consumer is created, so the in-progress
+// signal always arrives inside the wait. graph-ingest starts on the fixture broker, and the wait is read
 // back from the server's information on graph-ingest's consumer. Ignored, the consumer
 // is created with no wait, so natsclient's own fallback applies, and no pair is refused.
 // Until an application signals progress, the interval reaches nothing Start hands on, so

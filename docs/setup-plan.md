@@ -427,7 +427,7 @@ simultaneous BM25/neural operation. Hybrid retrieval needs separate design. Meas
 Qualify each slice on a SemSource integration branch built wholly on SemEngine; the SemSource owner owns that branch
 and its per-tier compositions. No binary imports both modules: their Go types are distinct, and both would claim
 `GRAPH`, `ENTITY_STATES`, `graph.ingest.>`, and `graph.mutation.>`. SemSource's mainline builds on SemEngine
-(owner ruling, #10 comment 6852149945); its shipped MVP uses semembed, so tier 1 (slice 04C) is where that
+(owner ruling, 2026-11-13); its shipped MVP uses semembed, so tier 1 (slice 04C) is where that
 embedding path is replaced. Tier 0 is a usable lower tier.
 
 #### Slice 04A: tier-0 graph foundation (provisional)

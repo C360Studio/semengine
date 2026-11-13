@@ -1,3 +1,5 @@
+# lexical-search Delta
+
 ## ADDED Requirements
 
 ### Requirement: A processor keeps the word index current from ENTITY_STATES

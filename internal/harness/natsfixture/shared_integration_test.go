@@ -271,7 +271,7 @@ func TestSharedServerAndReset(t *testing.T) {
 
 		rec.runCleanups()
 		// The error names the connection left open and what it subscribed to, so a failure says
-		// whose it was (#493, #573).
+		// whose it was.
 		if len(rec.errors) != 1 || !strings.Contains(rec.errors[0], "1 client connection") ||
 			!strings.Contains(rec.errors[0], fmt.Sprintf("cid=%d name=\"leaked-by-test\"", leakedID)) ||
 			!strings.Contains(rec.errors[0], "[leaked.by.test]") {

@@ -9,12 +9,12 @@ import (
 // embeddingProviderRule is the requirement every violation names.
 const embeddingProviderRule = "(embedding-index › Tier 0 imports no provider code)"
 
-// openAIModule is the provider SDK the pin's excluded http_embedder.go imported.
+// openAIModule is the OpenAI provider SDK, which tier 0 code never reaches.
 const openAIModule = "github.com/sashabaranov/go-openai"
 
 // TestEmbeddingImportsNoProviderModule holds the rule that graph/embedding builds at tier 0:
 // it reaches neither the OpenAI SDK nor the module's model package, directly or through a
-// package it imports (#35).
+// package it imports.
 //
 // Requirement: embedding-index/Tier 0 imports no provider code
 func TestEmbeddingImportsNoProviderModule(t *testing.T) {
@@ -26,9 +26,9 @@ func TestEmbeddingImportsNoProviderModule(t *testing.T) {
 // queryProviderRule is the requirement every graph/query violation names.
 const queryProviderRule = "(query-classification › Tier 0 classification imports no provider code)"
 
-// TestQueryImportsNoProviderModule holds the rule that graph/query builds at tier 0: without the
-// pin's LLM client adapter it reaches neither the OpenAI SDK nor the module's model package,
-// directly or through a package it imports. It reuses the embedding guard's listing and reader;
+// TestQueryImportsNoProviderModule holds the rule that graph/query builds at tier 0: it reaches
+// neither the OpenAI SDK nor the module's model package, directly or through a package it imports.
+// It reuses the embedding guard's listing and reader;
 // TestEmbeddingImportsNoProviderModuleSensitivity shows that reader can fail.
 //
 // Requirement: query-classification/Tier 0 classification imports no provider code
@@ -42,8 +42,8 @@ func TestQueryImportsNoProviderModule(t *testing.T) {
 const graphEmbeddingProviderRule = "(graph-embedding › Tier-0 config)"
 
 // TestGraphEmbeddingImportsNoProviderModule holds the rule that processor/graph-embedding builds at
-// tier 0 without the pin's HTTP embedder (design D6): it does not import the module's model
-// package, and it reaches the OpenAI SDK through nothing it imports.
+// tier 0 without an HTTP embedder: it does not import the module's model package, and it reaches
+// the OpenAI SDK through nothing it imports.
 // model is held to graph-embedding's own imports because component reaches it for every
 // component (component.Dependencies' ModelRegistry), with no provider code behind it at tier 0.
 //
@@ -52,14 +52,14 @@ func TestGraphEmbeddingImportsNoProviderModule(t *testing.T) {
 	requireNoDirectModelProvider(t, "./processor/graph-embedding", graphEmbeddingProviderRule)
 }
 
-// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names: the
-// owner's ruling 2 on #32 (PR #582 comment 6768832111), tier 0 builds without the LLM plumbing.
+// llmPlumbingRule is the rule every processor/graph-clustering and tree-wide violation names, an
+// owner ruling: tier 0 builds without the LLM plumbing.
 const llmPlumbingRule = "(#32 › tier 0 builds without the LLM plumbing)"
 
 // TestGraphClusteringImportsNoProviderModule holds processor/graph-clustering to graph-embedding's
 // guard: it does not import the module's model package, and it reaches the OpenAI SDK through
-// nothing it imports. The pin's clustering imported graph/llm for its LLM summarizer and anomaly
-// review; neither is carried (setup-04a-07 design D4, D5).
+// nothing it imports. graph-clustering has no LLM summarizer or anomaly review, the code that would
+// need graph/llm.
 func TestGraphClusteringImportsNoProviderModule(t *testing.T) {
 	requireNoDirectModelProvider(t, "./processor/graph-clustering", llmPlumbingRule)
 }
@@ -119,8 +119,8 @@ func directModelProviderPaths(module, pkg, rule string, direct, deps []string) [
 }
 
 // TestTreeImportsNoProviderPlumbing holds the module, every package go list ./... builds, to the
-// owner's ruling on #32: tier 0 builds without the LLM plumbing. Nothing reaches the pin's LLM
-// client (graph/llm), its wire types (model/wire) or the OpenAI SDK, directly or through a package
+// owner ruling that tier 0 builds without the LLM plumbing. Nothing reaches the LLM client
+// (graph/llm), its wire types (model/wire) or the OpenAI SDK, directly or through a package
 // it imports. Neither graph/llm nor model/wire is in the tree; this guards their return.
 // It replaces no per-package guard: those also forbid model, which component reaches for every
 // component (TestGraphEmbeddingImportsNoProviderModule), so the tree-wide listing cannot.

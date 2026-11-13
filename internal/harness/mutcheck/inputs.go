@@ -217,7 +217,7 @@ func lookup(environ []string, key string) (string, bool) {
 }
 
 // goEnv reads the caller's GOFLAGS as go env prints it in the program's environment, so a value
-// set with go env -w counts (design D15, P22), and the Go version.
+// set with go env -w counts, and the Go version.
 func goEnv(ctx context.Context, root string, environ []string) (string, string, error) {
 	cmd := command(ctx, root, environ, "go", "env", "-json", "GOFLAGS", "GOVERSION")
 	var stderr bytes.Buffer
@@ -234,7 +234,7 @@ func goEnv(ctx context.Context, root string, environ []string) (string, string, 
 }
 
 // checkGoflags refuses a GOFLAGS that sets an overlay, which the program's own would conflict
-// with, or coverage, under which Go builds the target from the file on disk (design P16, P17).
+// with, or coverage, under which Go builds the target from the file on disk.
 func checkGoflags(goflags string) error {
 	fields, err := splitQuoted(goflags)
 	if err != nil {

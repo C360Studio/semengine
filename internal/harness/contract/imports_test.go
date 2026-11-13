@@ -11,9 +11,8 @@ import (
 	"testing"
 )
 
-// T-B1: production code stays free of test machinery. SemStreams' natsclient and component
-// packages import testing and testcontainers from production files (natsclient/test_client.go:10,16;
-// component/lifecycle_test_suite.go:11,14-15 at 5457b345); this keeps SemEngine from repeating it.
+// Production code stays free of test machinery: no production file imports testing,
+// testcontainers or the harness, so a test library never ships in a production build.
 func TestImportGraph(t *testing.T) {
 	root := repoRoot(t)
 	requireNoViolations(t, "import graph", importViolations(t, root, repoFiles(t, root)))
@@ -47,8 +46,8 @@ func TestImportGraphSensitivity(t *testing.T) {
 	}
 }
 
-// The rehomed test helpers (task 2.8) import testing, so T-B1 admits them only under
-// internal/harness/: the same files planted at their pin paths, outside the harness, are refused.
+// The test helpers under internal/harness/ import testing, so the import-graph check admits them
+// only there: the same files planted at paths outside the harness are refused.
 func TestImportGraphRejectsHarnessHelpersOutsideTheHarness(t *testing.T) {
 	root := repoRoot(t)
 	helpers := map[string]string{
@@ -78,7 +77,7 @@ func TestImportGraphRejectsHarnessHelpersOutsideTheHarness(t *testing.T) {
 
 // forbiddenInProduction names what a non-test file outside internal/harness may not import: the
 // harness itself and the test libraries it is built from. vocabulary/pack.go is the one production
-// file permitted to import gopkg.in/yaml.v3 to decode declarative YAML vocabulary packs (#234).
+// file permitted to import gopkg.in/yaml.v3 to decode declarative YAML vocabulary packs.
 func forbiddenInProduction(file, path string) bool {
 	if path == "gopkg.in/yaml.v3" && file == "vocabulary/pack.go" {
 		return false
@@ -96,8 +95,8 @@ func forbiddenInProduction(file, path string) bool {
 	return false
 }
 
-// importViolations is the T-B1 check. It parses imports without evaluating build constraints, so a
-// file behind a tag (integration, tools, an OS) is checked too.
+// importViolations is the import-graph check. It parses imports without evaluating build
+// constraints, so a file behind a tag (integration, tools, an OS) is checked too.
 func importViolations(t *testing.T, root string, files []string) []string {
 	t.Helper()
 	var violations []string

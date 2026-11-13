@@ -37,15 +37,8 @@ const (
 // blocks drops the mode line of a rendered profile, so profiles can be concatenated.
 func blocks(p string) string { return strings.TrimPrefix(p, "mode: atomic\n") }
 
-// d11Targets are the coverage targets setup-04a-02 design D11 adds (task 5.2d), and those later
-// changes add (simplify-04a-13 design D2: natsclient/storagereport; setup-04a-03-boot-config-manager
-// design D5: config; setup-04a-03-boot-service-base design D7: service; port-composition: composition;
-// setup-04a-04-graph-roots-objectstore-store design D9: storage/objectstore;
-// setup-04a-04-graph-roots-embedding design D8: graph/embedding;
-// setup-04a-04-graph-roots-graphview task 4.3: pkg/graphview;
-// setup-04a-04-graph-roots-clustering task 4.4: graph/clustering;
-// setup-04a-05-fusion task 3.1: pkg/fusion; setup-04a-05-fusionnats task 3.3: pkg/fusion/fusionnats),
-// each with the profile scripts/cover-check.sh measures it from.
+// d11Targets are the coverage targets scripts/cover-check.sh enforces beyond the harness packages
+// and message, payloadregistry and natsclient, each with the profile the script measures it from.
 var d11Targets = []struct{ dir, kind string }{
 	{"processor/graph-ingest", "merged"},
 	{"graph", "merged"},
@@ -72,9 +65,9 @@ var d11Targets = []struct{ dir, kind string }{
 
 // TestCoverCheckSensitivity: scripts/cover-check.sh (task cover:check) fails when any enforced
 // package is below 80% or missing from its profile, and passes at 80%: the three harness packages;
-// message, payloadregistry and natsclient (setup-04a-01-floor task 5.4), which lie outside
-// internal/harness; and the d11Targets list. natsclient and its merged targets are measured
-// from the unit and integration profiles merged, its unit targets from the unit profile alone.
+// message, payloadregistry and natsclient, which lie outside internal/harness; and the d11Targets
+// list. natsclient and its merged targets are measured from the unit and integration profiles
+// merged, its unit targets from the unit profile alone.
 // Blocks repeated across a merged profile count once, covered if any copy was.
 func TestCoverCheckSensitivity(t *testing.T) {
 	script := filepath.Join(repoRoot(t), "scripts", "cover-check.sh")
@@ -95,7 +88,7 @@ func TestCoverCheckSensitivity(t *testing.T) {
 	harnessUnitOK := profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", eighty...))
 	portedUnitOK := blocks(profile(module+"message", eighty...)) + blocks(profile(module+"payloadregistry", eighty...))
 	natsclientOK := blocks(profile(module+"natsclient", eighty...))
-	// d11Unit renders D11's targets into a unit profile at 80%, but for skip (left out) and
+	// d11Unit renders d11Targets into a unit profile at 80%, but for skip (left out) and
 	// below (at 70%).
 	d11Unit := func(skip, below string) string {
 		var b strings.Builder
@@ -144,7 +137,7 @@ func TestCoverCheckSensitivity(t *testing.T) {
 		{"probe below", profile(harness+"lifecycletest", eighty...) + blocks(profile(harness+"probe", [2]int{1, 1}, [2]int{1, 0})) + portedUnitOK + natsclientOK + d11OK, fixtureOK, "probe 50.0%"},
 		{"lifecycletest missing", strings.Replace(unitOK, "lifecycletest", "other", -1), fixtureOK, "lifecycletest: no statements"},
 		{"natsfixture only in the unit profile", unitOK + blocks(fixtureOK), profile(harness+"probe", eighty...), "natsfixture: no statements"},
-		// Packages outside internal/harness (task 5.4), written before the script read them.
+		// Packages outside internal/harness.
 		{"message below", harnessUnitOK + blocks(profile(module+"message", [2]int{7, 1}, [2]int{3, 0})) + blocks(profile(module+"payloadregistry", eighty...)) + natsclientOK + d11OK, fixtureOK, "message 70.0%"},
 		{"payloadregistry missing", harnessUnitOK + blocks(profile(module+"message", eighty...)) + natsclientOK + d11OK, fixtureOK, "payloadregistry: no statements"},
 		{"natsclient below in both profiles", harnessUnitOK + portedUnitOK + blocks(profile(module+"natsclient", [2]int{7, 1}, [2]int{3, 0})) + d11OK, fixtureOK, "natsclient 70.0%"},
@@ -157,9 +150,9 @@ func TestCoverCheckSensitivity(t *testing.T) {
 			}
 		})
 	}
-	// Design D11's targets (task 5.2d), written before the script read them: each fails below the
-	// floor and when absent from both profiles, and is read from the profile its kind names: a merged
-	// target found only in the integration profile is measured, a unit target there is not.
+	// The d11Targets: each fails below the floor and when absent from both profiles, and is read
+	// from the profile its kind names: a merged target found only in the integration profile is
+	// measured, a unit target there is not.
 	others := harnessUnitOK + portedUnitOK + natsclientOK
 	for _, tg := range d11Targets {
 		t.Run(tg.dir+" below", func(t *testing.T) {

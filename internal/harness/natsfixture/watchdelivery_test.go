@@ -9,7 +9,7 @@ import (
 )
 
 // TestAwaitNoStacksPassesOnceTheGoroutineIsGone: a goroutine still in the dump on the first
-// reads, gone on a later one, is not reported as left behind (#490).
+// reads, gone on a later one, is not reported as left behind.
 func TestAwaitNoStacksPassesOnceTheGoroutineIsGone(t *testing.T) {
 	reads := 0
 	scan := func() string {

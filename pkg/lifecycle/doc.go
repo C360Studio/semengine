@@ -102,7 +102,7 @@
 //     failure leaves the entity terminal-but-present, reclaimable by a later
 //     Despawn.
 //
-// Reclaim is NOT derived-index GC (gh#433/ADR-068): Despawn removes the entity
+// Reclaim is NOT derived-index GC (ADR-068): Despawn removes the entity
 // but does not clean PREDICATE/NAME/ALIAS/CONTEXT/spatial/embedding index rows.
 //
 // To observe reclaims, use Manager.WatchEvents (the delete-visible sibling of

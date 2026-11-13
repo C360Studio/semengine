@@ -25,10 +25,10 @@ func (s *stubSubscription) Drain(ctx context.Context) error {
 }
 
 // TestFailedCleanupRetainsInputsForLaterStop proves the Component's branch of lifecycle-suite,
-// "Failed start whose own cleanup fails" (design D8), which the suite's failed-start check does not
-// judge: a Start that fails after binding its inputs, and whose own cleanup then fails too,
-// returns both failures and keeps the inputs on record, and a later Stop with a fresh finite
-// context returns nil and leaves nothing.
+// "Failed start whose own cleanup fails", which the suite's failed-start check does not judge: a
+// Start that fails after binding its inputs, and whose own cleanup then fails too, returns both
+// failures and keeps the inputs on record, and a later Stop with a fresh finite context returns nil
+// and leaves nothing.
 //
 // The guard is reached through its Start, as graph-ingest's
 // TestLifecycleOwnerFailedCleanupRetainsExactHandlesForLaterStop does: a start function that
@@ -38,8 +38,8 @@ func (s *stubSubscription) Drain(ctx context.Context) error {
 // the rollback, and runs release with the later Stop's context after that.
 //
 // The JetStream input is a real consumer, bound as start binds it: cleanup waits for its handlers
-// through natsclient's WaitConsumerHandlers, which knows only handles its client returned (design
-// D11), so a stub consume loop would be refused.
+// through natsclient's WaitConsumerHandlers, which knows only handles its client returned, so a
+// stub consume loop would be refused.
 func TestFailedCleanupRetainsInputsForLaterStop(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()

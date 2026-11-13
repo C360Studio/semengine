@@ -6,7 +6,7 @@ package vocabulary
 // AliasTypeLabel, which CanResolveToEntityID()==false — so the ALIAS_INDEX
 // deliberately excludes them (a display name is ambiguous as an identity), while
 // the NAME_INDEX keys on exactly this set for name→ranked-IDs lookup
-// (graph.query.byName, gh#376 ask #5).
+// (graph.query.byName).
 //
 // The framework registers the one cross-product convention it knows is emitted
 // (dc.terms.title). Products register their own label predicates the same way —

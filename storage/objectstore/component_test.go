@@ -45,8 +45,8 @@ const (
 // TestComponentConfigRefusesUnknownKey: a configuration carrying a key the Component does not
 // define is refused at construction and by the port declarer, naming the key; the same
 // configuration without it builds (object-store spec, "A data_cache key"; component-registration
-// spec, "Unknown configuration keys are refused"). The keys are data_cache, which the pin read
-// and this port does not carry (design D6), and a misspelling of bucket_name.
+// spec, "Unknown configuration keys are refused"). The keys are data_cache, the key the
+// object-store spec names, and a misspelling of bucket_name.
 func TestComponentConfigRefusesUnknownKey(t *testing.T) {
 	if _, err := buildFromJSON(t, `{"bucket_name": "CONTENT"}`); err != nil {
 		t.Fatalf("a config with bucket_name only: %v", err)
@@ -72,8 +72,8 @@ func TestComponentConfigRefusesUnknownKey(t *testing.T) {
 }
 
 // TestComponentRefusesOutputOtherThanStored: an output port other than stored is refused at
-// construction, naming it, since nothing publishes on it; events, the pin's port, is the case the
-// spec names (object-store spec, "An events output").
+// construction, naming it, since nothing publishes on it; events is the case the spec names
+// (object-store spec, "An events output").
 func TestComponentRefusesOutputOtherThanStored(t *testing.T) {
 	for _, name := range []string{"events", "archive"} {
 		t.Run(name, func(t *testing.T) {
@@ -90,10 +90,9 @@ func TestComponentRefusesOutputOtherThanStored(t *testing.T) {
 	}
 }
 
-// TestComponentRefusesInputWithoutStoredOutput: a configuration with an input and no stored
-// output is refused naming stored, since every body would be stored and announced to nobody
-// (design D3); a Component with no input needs no stored output (object-store spec, "An input with
-// no stored output").
+// TestComponentRefusesInputWithoutStoredOutput: a configuration with an input and no stored output
+// is refused naming stored, since every body would be stored and announced to nobody; a Component
+// with no input needs no stored output (object-store spec, "An input with no stored output").
 func TestComponentRefusesInputWithoutStoredOutput(t *testing.T) {
 	for name, raw := range map[string]string{
 		"no outputs": `{"ports": {"inputs": [` + writeInput + `]}}`,
@@ -125,10 +124,9 @@ func TestComponentRefusesInputWithoutStoredOutput(t *testing.T) {
 	}
 }
 
-// TestComponentRefusesUnsupportedInputs: an input named api (the pin's removed request lane), a
-// request-reply input, two ports of one name, a port on two subjects and a JetStream input that
-// declares consumer_name are refused at construction, each naming the port (pin
-// TestNewComponentRejectsRemovedRequestAPIInputs).
+// TestComponentRefusesUnsupportedInputs: an input named api (a request lane the Component does not
+// have), a request-reply input, two ports of one name, a port on two subjects and a JetStream input
+// that declares consumer_name are refused at construction, each naming the port.
 func TestComponentRefusesUnsupportedInputs(t *testing.T) {
 	for _, tc := range []struct{ name, inputs, want string }{
 		{"api name", `{"name": "api", "config": {"kind": "nats", "subject": "storage.objectstore.write"}}`, `"api"`},
@@ -136,7 +134,7 @@ func TestComponentRefusesUnsupportedInputs(t *testing.T) {
 		{"duplicate name", writeInput + `, {"name": "write", "config": {"kind": "nats", "subject": "storage.other"}}`, `"write"`},
 		{"two subjects", `{"name": "store_in", "config": {"kind": "jetstream", "stream_name": "MAPPED", ` +
 			`"subjects": ["mapped.a", "mapped.b"]}}`, `"store_in"`},
-		// The binding plan names the durable consumer; a declared name would be dropped (#438).
+		// The binding plan names the durable consumer; a declared name would be dropped.
 		{"consumer name", `{"name": "store_in", "config": {"kind": "jetstream", "stream_name": "MAPPED", ` +
 			`"subjects": ["mapped.messages"], "consumer_name": "mine"}}`, `"store_in" declares consumer_name`},
 	} {
@@ -152,7 +150,7 @@ func TestComponentRefusesUnsupportedInputs(t *testing.T) {
 // TestDeclarePortsMatchesComponentPorts: the registered port declarer reports exactly the ports
 // the built Component reports, for the default and for a configured set; the defaults are the
 // write input, the stored output carrying storage.stored.v1, and store-provide for the one
-// instance name objectstore (design D6, D7).
+// instance name objectstore.
 func TestDeclarePortsMatchesComponentPorts(t *testing.T) {
 	for name, raw := range map[string]string{
 		"default": `{}`,
@@ -201,8 +199,8 @@ func TestDeclarePortsMatchesComponentPorts(t *testing.T) {
 }
 
 // TestRegisterRegistersObjectstore: Register adds the objectstore factory as a storage component
-// whose schema lists bucket_name and ports and nothing the port does not carry, and a second
-// Register on the same registry is refused.
+// whose schema lists bucket_name and ports and nothing else, and a second Register on the same
+// registry is refused.
 func TestRegisterRegistersObjectstore(t *testing.T) {
 	reg := registration(t)
 	if reg.Type != types.ComponentTypeStorage {

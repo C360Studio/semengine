@@ -412,7 +412,8 @@ func TestManager_RoundTripCreateGetTransition(t *testing.T) {
 }
 
 // TestManager_ListPagesEntityIDOrderEachOnce lists over a key snapshot that repeats a key and
-// is out of key order, as nats.go's listing may be on a busy bucket (#534).
+// is out of key order, as nats.go's listing may be on a busy bucket: nats.go promises neither
+// the order nor the uniqueness of a key listing.
 func TestManager_ListPagesEntityIDOrderEachOnce(t *testing.T) {
 	t.Parallel()
 	mgr, _, bucket := newTestManager(t)
@@ -1039,13 +1040,13 @@ func TestManager_GetRawReturnsAllTriples(t *testing.T) {
 
 // TestManager_TransitionReplacesPhaseTripleNotAppend guards the
 // replace-not-append invariant: Transition must REMOVE the prior phase
-// triple, leaving exactly one. The earlier naive-append behavior left
-// [planning, flying, completed]; extractTripleScalar (last-match) kept
-// Manager.Get correct, but the rule engine's GetFieldValue reads
-// FIRST-match → it saw the stale "planning" and phase guards never
-// re-fired (semteams autoresearch 4a). With the fix, both read paths
-// see the same single value. Single-valued for every predicate
-// Transition writes (phase + audit), not just phase.
+// triple, leaving exactly one. An appending Transition would leave
+// [planning, flying, completed]; extractTripleScalar (last-match) would
+// keep Manager.Get correct, but the rule engine's GetFieldValue reads
+// FIRST-match → it would see the stale "planning" and phase guards would
+// never re-fire. Replacing keeps both read paths on the same single
+// value. Single-valued for every predicate Transition writes (phase +
+// audit), not just phase.
 func TestManager_TransitionReplacesPhaseTripleNotAppend(t *testing.T) {
 	t.Parallel()
 	mgr, _, bucket := newTestManager(t)
@@ -1073,7 +1074,7 @@ func TestManager_TransitionReplacesPhaseTripleNotAppend(t *testing.T) {
 		t.Fatalf("expected exactly 1 mission.lifecycle.phase triple after Create+2 Transitions (replace, not append), got %d: %+v", len(phaseTriples), phaseTriples)
 	}
 	// The single triple must be the latest phase — so first-match
-	// (rule engine) and last-match (Manager) now agree.
+	// (rule engine) and last-match (Manager) agree.
 	if got, _ := phaseTriples[0].Object.(string); got != "completed" {
 		t.Errorf("phase triple object = %q, want completed (both read paths must agree)", got)
 	}
@@ -1086,10 +1087,9 @@ func TestManager_TransitionReplacesPhaseTripleNotAppend(t *testing.T) {
 	}
 }
 
-// TestManager_ConcurrentCreateOnlyOneWins exercises B2 — atomic
-// create-or-fail. With ExpectedRevision=0's prior broken semantics
-// two concurrent Creates would silently both succeed and double-stamp
-// the phase triple.
+// TestManager_ConcurrentCreateOnlyOneWins exercises atomic
+// create-or-fail: without it two concurrent Creates would silently both
+// succeed and double-stamp the phase triple.
 func TestManager_ConcurrentCreateOnlyOneWins(t *testing.T) {
 	t.Parallel()
 	mgr, _, _ := newTestManager(t)
@@ -1163,7 +1163,7 @@ func TestWorkflowValidateRejectsNoncanonicalDeclaredPredicate(t *testing.T) {
 	}
 }
 
-// TestWorkflow_ValidateDisjointness pins gh#234 — a single-valued predicate
+// TestWorkflow_ValidateDisjointness pins that a single-valued predicate
 // (phase, audit, or scalar projection field) that collides with a
 // cardinality-many predicate (child-link or reference) is rejected at Register,
 // since Manager.Transition's RemoveTriples would otherwise delete the
@@ -1255,7 +1255,7 @@ func TestManager_DiffSkipsZeroValueOnMissingPredicate(t *testing.T) {
 	}
 }
 
-// --- Despawn / DespawnWith (gh#497) ---
+// --- Despawn / DespawnWith ---
 
 func TestManager_Despawn_ReclaimsAtExactRevisionAndRejectsAbsence(t *testing.T) {
 	t.Parallel()
@@ -1313,7 +1313,7 @@ func TestManager_Despawn_RejectsPatternMismatch(t *testing.T) {
 // TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch: a six-part ID the workflow's
 // glob would accept but that is not a valid entity ID (a segment starting with '-') is refused by
 // Despawn and DespawnWith the way Create refuses it, as ErrEntityIDPatternMismatch, and no
-// delete is sent (design D4).
+// delete is sent.
 func TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch(t *testing.T) {
 	t.Parallel()
 	const malformed = "c360.platform1.gcs.lifecycle.mission.-bad"
@@ -1343,7 +1343,7 @@ func TestManager_DespawnRefusesAMalformedEntityIDAsAPatternMismatch(t *testing.T
 
 // TestManager_CompleteFollowsDeclaredEdgeOrder: when several terminal phases are reachable,
 // Complete and DespawnWith pick the first one in the current phase's declared out-edges, not the
-// first by name, and still log the ambiguity (design D5, owner question 2). The fixture declares
+// first by name, and still log the ambiguity. The fixture declares
 // "flying": {"completed", "aborted"}, so edge order says completed and name order says aborted.
 func TestManager_CompleteFollowsDeclaredEdgeOrder(t *testing.T) {
 	t.Parallel()
@@ -1511,12 +1511,11 @@ func TestManager_DespawnWith_PartialFailureRecoverableViaDespawn(t *testing.T) {
 	}
 }
 
-// TestCreate_RefusesEntityIDOutsideTheWorkflowPattern pins gh#814's first
-// blocking finding, measured against real NATS during review: an out-of-pattern
-// create COMMITS, returns success, is readable by Get — and is invisible to
-// List and Watch (both filter by the pattern) and unreclaimable by Despawn
-// (which refuses a non-matching ID). The surface reports a birth it cannot then
-// discover or remove.
+// TestCreate_RefusesEntityIDOutsideTheWorkflowPattern pins Create's pattern
+// gate. Without it an out-of-pattern create COMMITS, returns success, is
+// readable by Get — and is invisible to List and Watch (both filter by the
+// pattern) and unreclaimable by Despawn (which refuses a non-matching ID). The
+// surface would report a birth it cannot then discover or remove.
 //
 // Owner-lease enforcement does not cover this: an out-of-pattern write is
 // UNCLAIMED rather than stale, so the lease check passes it through.
@@ -1554,17 +1553,17 @@ func TestCreate_AcceptsEntityIDInsideThePattern(t *testing.T) {
 }
 
 // TestMustExistLanes_DoNotAutoVivify pins the no-auto-vivify contract at the
-// PRODUCTION seam. The gateway test that carried this claim exercised a
-// hand-written fake and could not observe the real Manager at all.
+// PRODUCTION seam. A gateway test against a hand-written fake cannot observe
+// the real Manager at all.
 //
 // MEASURED, and stated precisely because the obvious claim would be wrong:
 // disabling BOTH guards in Manager.UpdateFromOperator does NOT flip this test.
 // That is not a hole — the emit layer enforces must-exist independently
 // (graph-ingest's update handler, mirrored by the fake emitter), so the
-// invariant survives the Manager's guards being removed. Review reported the
-// surviving mutation as "nothing guards the invariant"; the sharper reading is
-// that the Manager's checks are a second line that buys a clearer error, and the
-// contract itself is held one layer down.
+// invariant survives the Manager's guards being removed. The surviving
+// mutation does not mean nothing guards the invariant: the Manager's checks are
+// a second line that buys a clearer error, and the contract itself is held one
+// layer down.
 //
 // So this test deliberately pins the OBSERVABLE contract — an absent entity
 // yields ErrEntityNotFound and nothing is created — rather than any one layer's
@@ -1625,20 +1624,20 @@ func TestRegister_RejectsSchemaThatIsNotAParticipant(t *testing.T) {
 }
 
 // notAParticipant has the lifecycle tags parseSchemaType requires but no
-// Participant methods — the exact shape Register previously accepted.
+// Participant methods — a shape Register must refuse.
 type notAParticipant struct {
 	ID     string `json:"entity_id" lifecycle:"id"`
 	PhaseF string `json:"phase" lifecycle:"phase,predicate=mission.lifecycle.phase"`
 }
 
-// TestCreateFromOperator_ProjectsTheCausalResponseNotALaterRead pins the remedy
-// for the "a committed birth can report as 500" blocker.
+// TestCreateFromOperator_ProjectsTheCausalResponseNotALaterRead pins that the
+// returned instance is projected from the create response, not from a read
+// after it, so a committed birth is never reported as a failure because a later
+// read failed.
 //
 // The distinguishing fixture matters: the create RESPONSE carries a value the
-// stored entity does not, so a post-hoc Get cannot produce it. Without this, the
-// causal projection and the read it replaced are indistinguishable — review
-// mutation-proved exactly that by swapping the projection back to a Get and
-// keeping the whole suite green.
+// stored entity does not, so a post-hoc Get cannot produce it. Without it, the
+// causal projection and a post-hoc Get are indistinguishable to the tests.
 func TestCreateFromOperator_ProjectsTheCausalResponseNotALaterRead(t *testing.T) {
 	mgr, emitter, _ := newTestManager(t)
 	ctx := context.Background()
@@ -1670,7 +1669,7 @@ func TestCreateFromOperator_ProjectsTheCausalResponseNotALaterRead(t *testing.T)
 //
 // The two selectors genuinely diverge, because Register deliberately permits
 // Name != Participant.Workflow() so a partial migration's cross-owner overlap
-// does not brick. Re-deriving let a request routed as one workflow write with
+// does not brick. Re-deriving would let a request routed as one workflow write with
 // another's pattern, transitions, owner token, and audit predicates — and, with
 // only the alias registered, fail a valid advertised route with a false
 // not-found. That second case is what this test drives.
@@ -1714,7 +1713,7 @@ func TestCreateFromOperator_RejectsUnknownFields(t *testing.T) {
 }
 
 // TestCreateFromOperator_RejectsTrailingContent pins that the initial state is
-// exactly one JSON value (#152). A json.Decoder reads one value and ignores what
+// exactly one JSON value. A json.Decoder reads one value and ignores what
 // follows, so without a check a second value, unknown field included, is
 // dropped behind a success. Trailing whitespace is not content and is accepted.
 func TestCreateFromOperator_RejectsTrailingContent(t *testing.T) {
@@ -1796,7 +1795,6 @@ func (r *scriptedExactReader) ReadExactEntity(context.Context, string) (*graph.E
 // after a revision mismatch fails: the caller gets the reread's own error, with
 // its chain and class. A failed read has established neither a concurrent
 // attach nor unrelated contention, so reporting either one would be a guess.
-// Re-review 6049038706 (PR #93), HIGH pkg/lifecycle/manager.go:432.
 func TestCreateAttachKeepsAFailedReread(t *testing.T) {
 	const id = "c360.platform1.gcs.lifecycle.mission.attach-failed-read"
 	fatal := errs.ClassifiedCodeDetail(errs.ErrorFatal, "poisoned_entity",
@@ -1906,11 +1904,10 @@ func TestCreateAttachRereadDecidesTheOutcome(t *testing.T) {
 	}
 }
 
-// TestUpdateRetriesExhaustedIsTransient pins design D3 of simplify-04a-04-errs-classify: an
-// exhausted CAS retry budget is retryable contention, so the error a write returns when every
-// attempt met a revision mismatch is transient by errs.Classify and errs.IsTransient. Both read
-// the class ErrUpdateRetriesExhausted carries: an unclassified error would be fatal. Create's
-// attach path is TestCreateAttachRereadDecidesTheOutcome.
+// TestUpdateRetriesExhaustedIsTransient pins that an exhausted CAS retry budget is retryable
+// contention, so the error a write returns when every attempt met a revision mismatch is transient
+// by errs.Classify and errs.IsTransient. Both read the class ErrUpdateRetriesExhausted carries: an
+// unclassified error would be fatal. Create's attach path is TestCreateAttachRereadDecidesTheOutcome.
 func TestUpdateRetriesExhaustedIsTransient(t *testing.T) {
 	const id = "c360.platform1.gcs.lifecycle.mission.exhausted"
 	exhaust := func(t *testing.T) map[string]error {
@@ -1984,8 +1981,7 @@ func listCutShort(t *testing.T, cut func(cancel context.CancelFunc, listing *fak
 }
 
 // TestListContextCancelledMidListingIsAnError: a List whose context is cancelled after one key and
-// before the listing's end marker returns no participants and an error matching context.Canceled
-// (design D3 test 2(i)).
+// before the listing's end marker returns no participants and an error matching context.Canceled.
 func TestListContextCancelledMidListingIsAnError(t *testing.T) {
 	t.Parallel()
 	participants, err := listCutShort(t, func(cancel context.CancelFunc, _ *fakeListing) { cancel() })
@@ -1998,8 +1994,7 @@ func TestListContextCancelledMidListingIsAnError(t *testing.T) {
 }
 
 // TestListWatchClosedBeforeEndMarkerIsAnError: a List whose listing closes after one key and before
-// its end marker, with the context live, returns no participants and an error (design D3 test
-// 2(ii)).
+// its end marker, with the context live, returns no participants and an error.
 func TestListWatchClosedBeforeEndMarkerIsAnError(t *testing.T) {
 	t.Parallel()
 	participants, err := listCutShort(t, func(_ context.CancelFunc, listing *fakeListing) { listing.end() })

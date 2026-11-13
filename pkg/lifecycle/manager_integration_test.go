@@ -47,14 +47,11 @@ func run(m *testing.M) int {
 	return code
 }
 
-// clientTimeout is the request timeout of the fixture client, the value the pin's NewTestClient
-// family used.
+// clientTimeout is the request timeout of the fixture client.
 const clientTimeout = 15 * time.Second
 
-// fixtureClient replaces the pin's natsclient.NewTestClient(t,
-// natsclient.WithKVBuckets(graph.BucketEntityStates)): it resets the package's shared broker and
-// returns a Client connected to it, built as the pin built it (no reconnects, no health monitor),
-// with ENTITY_STATES created in the default configuration, as that option created it.
+// fixtureClient resets the package's shared broker and returns a Client connected to it, with no
+// reconnects and no health monitor, and with ENTITY_STATES created in the default configuration.
 // natsfixture.Open bounds the connect and closes the Client on t.Cleanup before the reset's
 // connection check runs (nats-fixture, "Connected value for a package's tests").
 func fixtureClient(t *testing.T) *natsclient.Client {
@@ -230,7 +227,7 @@ func startExactEntityResponder(t *testing.T, client *natsclient.Client, kv jetst
 
 // TestIntegration_Despawn_RemovesEntity proves Manager.Despawn round-trips the
 // real graph.mutation.entity.delete wire and reclaims the entity: a subsequent
-// Get returns ErrEntityNotFound (gh#497, task 4.2).
+// Get returns ErrEntityNotFound.
 func TestIntegration_Despawn_RemovesEntity(t *testing.T) {
 	client := fixtureClient(t)
 	ctx := context.Background()
@@ -328,10 +325,10 @@ func requireNextParticipant(t *testing.T, ch <-chan Participant, wantID string) 
 	require.Equal(t, wantID, p.EntityID())
 }
 
-// TestIntegration_WatchEvents_DeliversUpsertAndDelete proves the new
+// TestIntegration_WatchEvents_DeliversUpsertAndDelete proves the
 // delete-visible surface: WatchEvents delivers Upserted on create and Deleted
-// on reclaim, while the existing upsert-only Watch delivers the upsert but NOT
-// the delete (gh#497, tasks 3.4 + 4.3).
+// on reclaim, while the upsert-only Watch delivers the upsert but NOT the
+// delete.
 func TestIntegration_WatchEvents_DeliversUpsertAndDelete(t *testing.T) {
 	client := fixtureClient(t)
 	ctx, cancel := context.WithCancel(context.Background())
@@ -542,13 +539,13 @@ func TestListLeavesNoListerAfterAReadError(t *testing.T) {
 	}
 }
 
-// TestIntegration_CreateFromOperator_BirthLane drives gh#814's create lane
-// against the real graph-mutation wire: an operator-supplied JSON initial
-// state becomes a committed, readable, transitionable instance.
+// TestIntegration_CreateFromOperator_BirthLane drives the create lane against
+// the real graph-mutation wire: an operator-supplied JSON initial state becomes
+// a committed, readable, transitionable instance.
 //
-// This is the half the gateway's own tests cannot prove — they run against a
-// fake manager, so they pin the HTTP contract while this pins that the decode
-// → Create → read-back path actually round-trips through KV.
+// An HTTP gateway's tests run against a fake manager, so they pin the HTTP
+// contract; this test pins that the decode → Create → read-back path actually
+// round-trips through KV.
 func TestIntegration_CreateFromOperator_BirthLane(t *testing.T) {
 	client := fixtureClient(t)
 	ctx := context.Background()
@@ -592,21 +589,18 @@ func TestIntegration_CreateFromOperator_BirthLane(t *testing.T) {
 	//
 	// The full acceptance — fresh volume → create via the public route →
 	// transition → restart → bounded history intact in the current entity — is an
-	// e2e-level obligation against a running stack (it is also semdragon's
-	// beta.159 replay path). Tracked as the coverage gap on gh#814 rather than
-	// simulated here.
+	// e2e-level obligation against a running stack, not simulated here.
 }
 
 // TestIntegration_CreateFromOperator_IsCreateOrFail proves a duplicate is
 // refused and does not clobber.
 //
-// SCOPE, corrected after review: this does NOT reach the CAS create-or-fail arm.
-// The first create Puts the entity, so the second create's pre-read finds it and
-// returns ErrAlreadyExists from the hasTriple check long before the emitter —
-// mutation-proved by review, which disabled the emitter's ErrAlreadyExists
-// classification and kept everything green. Reaching that arm needs a responder
-// returning a classified graph.ErrorCodeEntityExists, which this harness does
-// not have. What this test pins is the operator-visible contract: duplicate
+// SCOPE: this does NOT reach the CAS create-or-fail arm. The first create Puts
+// the entity, so the second create's pre-read finds it and returns
+// ErrAlreadyExists from the hasTriple check long before the emitter — disabling
+// the emitter's ErrAlreadyExists classification keeps this test green. Reaching
+// that arm needs a responder returning a classified graph.ErrorCodeEntityExists,
+// which this harness does not have. What this test pins is the operator-visible contract: duplicate
 // refused, original intact.
 func TestIntegration_CreateFromOperator_IsCreateOrFail(t *testing.T) {
 	client := fixtureClient(t)
@@ -658,7 +652,7 @@ func TestIntegration_CreateFromOperator_RejectsUndeclaredInitialPhase(t *testing
 
 // TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses: the
 // integration exact-read responder refuses each stored value graph-ingest's
-// stored-value rule refuses, and the refusal reaches Get over the wire (#199).
+// stored-value rule refuses, and the refusal reaches Get over the wire.
 func TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses(t *testing.T) {
 	client := fixtureClient(t)
 	ctx := t.Context()
@@ -679,7 +673,7 @@ func TestIntegration_ExactReadResponderRefusesWhatGraphIngestRefuses(t *testing.
 
 // TestIntegration_ReconcileResponderRefusesWhatGraphIngestRefuses: the
 // integration reconcile responder refuses to write over each stored value
-// graph-ingest's stored-value rule refuses, and leaves it unchanged (#199).
+// graph-ingest's stored-value rule refuses, and leaves it unchanged.
 func TestIntegration_ReconcileResponderRefusesWhatGraphIngestRefuses(t *testing.T) {
 	client := fixtureClient(t)
 	ctx := t.Context()

@@ -481,7 +481,7 @@ func labels(m *dto.Metric) string {
 	return strings.Join(parts, ",")
 }
 
-// historyChecks bounds TestStoreHistoryMatchesModel's generated runs (design D9) unless the
+// historyChecks bounds TestStoreHistoryMatchesModel's generated runs unless the
 // command line or RAPID_CHECKS asks for another count.
 const historyChecks = 50
 

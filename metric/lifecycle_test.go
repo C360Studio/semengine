@@ -17,7 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// serverOwner adapts Server to the lifecycle suite (design D3). It reads the four things a
+// serverOwner adapts Server to the lifecycle suite. It reads the four things a
 // started Server retains: the listener, the http.Server, the serve goroutine, which Server holds
 // through the serveDone channel until Stop has consumed its result, and the requests its handler
 // admitted and has not returned from, with the metrics collection each one runs.
@@ -107,7 +107,7 @@ func TestServerServesAfterStartContextEnds(t *testing.T) {
 	require.Empty(t, owner.Observe().Unresolved, "after a Stop returned nil")
 }
 
-// TestServerAbortStopReportsContext is metric-abort-stop-reports-context (design D3). On an idle
+// TestServerAbortStopReportsContext is metric-abort-stop-reports-context. On an idle
 // server Shutdown returns nil even when its context has ended, so Stop then reaches a select whose
 // two cases, the serve result and ctx.Done, can both be ready. The test makes both ready on purpose
 // by replacing serveDone with a channel already holding a result; the select then picks either
@@ -145,7 +145,7 @@ func TestServerAbortStopReportsContext(t *testing.T) {
 	}
 }
 
-// TestServerForcedStopJoinsServeWithoutTimer is metric-forced-join-without-timer (design D3). Once
+// TestServerForcedStopJoinsServeWithoutTimer is metric-forced-join-without-timer. Once
 // Stop has force-closed the server and listener, Serve returns, so Stop waits for the serve result
 // itself and not for a fixed bound. Inside the bubble the serve result is withheld while the fake
 // clock moves well past any such bound: Stop must still be waiting, and must return once the

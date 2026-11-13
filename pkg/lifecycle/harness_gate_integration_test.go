@@ -65,11 +65,10 @@ func gateWorkflow() Workflow {
 	}
 }
 
-// ingestClient replaces the pin's natsclient.NewTestClient(t, natsclient.WithKV(),
-// natsclient.WithStreams(ENTITY on entity.>)) (design D3): the package's shared broker reset for t,
-// a client opened with openClient through natsfixture.Open (which bounds the connect and closes the
-// client on t.Cleanup before the reset's connection check), and the ENTITY stream graph-ingest's
-// default input port reads. graph-ingest creates ENTITY_STATES itself.
+// ingestClient resets the package's shared broker for t, opens a client with openClient through
+// natsfixture.Open (which bounds the connect and closes the client on t.Cleanup before the reset's
+// connection check), and creates the ENTITY stream graph-ingest's default input port reads.
+// graph-ingest creates ENTITY_STATES itself.
 func ingestClient(t *testing.T) *natsclient.Client {
 	t.Helper()
 	client := natsfixture.Open(t, shared.Reset(t), openClient)
@@ -85,10 +84,9 @@ func ingestClient(t *testing.T) *natsclient.Client {
 
 // startGraphIngest starts a real graph-ingest with its default configuration on client, under
 // the c360.platform1 authority, its payload registry holding only lifecycle.RegisterPayloads
-// (design D2) and its collectors on metrics (design D4). It returns the function that stops it.
-// The caller defers that function, so Stop runs while ctx, Start's authority, is still live and
-// before the client closes; the pin's t.Cleanup ran Stop under an unbounded
-// context.Background() after the test's context had ended.
+// and its collectors on metrics. It returns the function that stops it. The caller defers that
+// function, so Stop runs while ctx, Start's authority, is still live and before the client closes,
+// never under an unbounded context after the test's context has ended.
 func startGraphIngest(ctx context.Context, t *testing.T, client *natsclient.Client, metrics *metric.MetricsRegistry) (stop func()) {
 	t.Helper()
 	configJSON, err := json.Marshal(graphingest.DefaultConfig())
@@ -117,8 +115,8 @@ func startGraphIngest(ctx context.Context, t *testing.T, client *natsclient.Clie
 
 // unregisteredRejections sums graph-ingest's
 // mutation_rejections_total{reason="message_type_unregistered"} across subjects, gathered from
-// the registry graph-ingest was built with. The pin gathered from prometheus.DefaultGatherer,
-// which graph-ingest no longer registers on (design D4), and matched the semstreams_ name (#69).
+// the registry graph-ingest was built with; graph-ingest registers nothing on
+// prometheus.DefaultGatherer.
 func unregisteredRejections(t *testing.T, metrics *metric.MetricsRegistry) float64 {
 	t.Helper()
 	families, err := metrics.PrometheusRegistry().Gather()

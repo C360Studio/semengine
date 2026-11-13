@@ -1,6 +1,6 @@
 package message
 
-// Message represents the core message interface for the SemStreams platform.
+// Message represents the core message interface for the SemEngine platform.
 // Messages are the fundamental unit of data flow, carrying typed payloads
 // with metadata through the semantic event mesh.
 //

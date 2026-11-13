@@ -46,9 +46,8 @@ type StorageReference struct {
 //  3. A graph consumer receives the Storable with both semantics and reference
 //  4. Consumers can access full data via StorageReference when needed
 //
-// SemEngine has no graph package yet. In SemStreams, where this file comes
-// from, EntityID and Triples are also the methods of graph.Graphable, so a
-// Storable there satisfies that interface too.
+// EntityID and Triples are also the methods of graph.Graphable, so a Storable
+// satisfies that interface too.
 //
 // Example implementation:
 //

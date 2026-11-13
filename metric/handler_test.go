@@ -80,8 +80,8 @@ func newBlockingCollector() *blockingCollector {
 }
 
 // failureBound bounds a wait, and an operation the test expects to succeed, that a correct server
-// finishes sooner; it is reached only when the server is wrong. Design D8 R1b sizes it at 10 s at
-// least, because the lanes run under -race -cpu 1.
+// finishes sooner; it is reached only when the server is wrong. It is 10 s at least, because the
+// lanes run under -race -cpu 1.
 const failureBound = 10 * time.Second
 
 func testServerGET(t *testing.T, address string, client *http.Client) (*http.Response, error) {
@@ -123,7 +123,7 @@ func TestServerNativeStartReportsOwnedEphemeralListener(t *testing.T) {
 }
 
 // requireListenerClosed asks the listener itself, not its freed port: once a listener closes, any process on the
-// host may be handed that port, so a dial there can succeed on a healthy tree (#88). SetDeadline fails with
+// host may be handed that port, so a dial there can succeed on a healthy tree. SetDeadline fails with
 // net.ErrClosed only on a closed listener, and it never blocks.
 func requireListenerClosed(t *testing.T, listener net.Listener, message string) {
 	t.Helper()
@@ -468,7 +468,7 @@ func TestServerServesHealthOverRealHTTP(t *testing.T) {
 	require.True(t, errors.Is(err, context.Canceled) || errors.Is(err, errs.ErrAlreadyStarted))
 }
 
-// The root page is outward-facing: it names SemEngine, never SemStreams (#69).
+// The root page is outward-facing: it names SemEngine, never SemStreams.
 func TestServerRootPageNamesSemEngine(t *testing.T) {
 	server := NewServer(9090, "/metrics", NewMetricsRegistry(), security.Config{})
 	require.NoError(t, server.StartWithListener(t.Context(), boundServerListener(t)))

@@ -10,7 +10,7 @@ import (
 
 // TestManagerWithoutClientRefusesNATSWork: a manager built with no NATS client and nothing
 // injected registers workflows and answers definition queries, and every call that needs NATS
-// fails with the one no-client error, without a panic (design D2, owner question 1).
+// fails with the one no-client error, without a panic.
 func TestManagerWithoutClientRefusesNATSWork(t *testing.T) {
 	t.Parallel()
 	mgr := NewManager(nil, nil)

@@ -173,7 +173,7 @@ func (m *BaseMessage) MarshalJSON() ([]byte, error) {
 	}
 
 	// encoding/json would write each invalid byte as U+FFFD, putting a different source on the wire
-	// with no error; refuse it (owner ruling 2, semengine #9). Checked here, not at construction,
+	// with no error; refuse it. Checked here, not at construction,
 	// because NewBaseMessage returns no error and WithMeta accepts any Meta.
 	source := m.meta.Source()
 	if !utf8.ValidString(source) {
@@ -247,8 +247,8 @@ func (m *BaseMessage) UnmarshalJSON(data []byte) error {
 	m.msgType = wire.Type
 
 	// Unmarshal metadata - create a DefaultMeta from the wire format.
-	// Timestamps are read strictly as the integer milliseconds MarshalJSON writes (owner ruling 7,
-	// semengine #9): no seconds heuristic, no other forms.
+	// Timestamps are read strictly as the integer milliseconds MarshalJSON writes: no seconds
+	// heuristic, no other forms.
 	var source string
 	createdAt, err := wireMillis(wire.Meta, "created_at")
 	if err != nil {

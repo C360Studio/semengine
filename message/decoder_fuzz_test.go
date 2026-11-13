@@ -65,7 +65,7 @@ type oracleCount struct {
 // unmarshalNumbers is the standard library's exact reading of a core.json.v1 body: it refuses
 // malformed JSON, non-whitespace bytes after the value, and a value that does not fit v's shape,
 // and keeps every number as a json.Number holding its literal, so an integer beyond 2^53 and a
-// literal beyond float64's range such as 1e400 keep their exact value (Codex F30, F41).
+// literal beyond float64's range such as 1e400 keep their exact value.
 //
 // Syntax and trailing bytes are checked by json.Unmarshal into a json.RawMessage, which copies
 // the bytes and converts no number; decoding into an `any` would narrow each number to float64
@@ -110,7 +110,7 @@ func numberLiterals(data []byte) map[string]bool {
 
 // checkNumberLiterals fails unless every number in the decoded tree v is a json.Number whose text
 // is a number literal written in raw, so a decode that narrows or rewrites a number is caught
-// without trusting any decoder's reading of it (Codex F41).
+// without trusting any decoder's reading of it.
 func checkNumberLiterals(t *testing.T, raw []byte, v any) {
 	t.Helper()
 	literals := numberLiterals(raw)
@@ -153,10 +153,9 @@ func fuzzRegistry(tb testing.TB) *payloadregistry.Registry {
 	return reg
 }
 
-// FuzzDecoderDecode: Decoder.Decode decodes outside bytes (task 3.6b, Codex F8). The rules come
-// from the decoder's documented contract and owner ruling 7 (#9 comment 5969522395), and are
-// checked against the standard library's decode of the same bytes into oracleEnvelope (design D7,
-// "Generated checks for message"):
+// FuzzDecoderDecode: Decoder.Decode decodes outside bytes. The rules come from the decoder's
+// documented contract (timestamps are integer milliseconds, nothing else), and are checked
+// against the standard library's decode of the same bytes into oracleEnvelope:
 //
 //   - it never panics;
 //   - it accepts exactly when the envelope decodes, its type is core.json.v1 or test.count.v1
@@ -185,7 +184,7 @@ func FuzzDecoderDecode(f *testing.F) {
 		`{"id":"m-3","type":{"domain":"core","category":"json","version":"v1"},"payload":null,"meta":null}`,
 		`{"id":"m-4","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"k":1}},` +
 			`"meta":{"source":7,"created_at":null,"extra":[1],"Created_At":"x"}}`,
-		// numbers beyond float64's range or precision keep their literal (Codex F41)
+		// numbers beyond float64's range or precision keep their literal
 		`{"id":"m-4a","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"n":1e400}}}`,
 		`{"id":"m-4b","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"n":-1e400}}}`,
 		`{"id":"m-4c","type":{"domain":"core","category":"json","version":"v1"},"payload":{"data":{"n":1e-400}}}`,
@@ -250,11 +249,10 @@ func FuzzDecoderDecode(f *testing.F) {
 }
 
 // FuzzDecoderRoundTrip: decode(marshal(m)) == m in full for a message built through the package's
-// own constructors, with every int64 timestamp reachable by construction (owner ruling 7: the wire
-// is milliseconds both ways); marshal refuses a source that is not valid UTF-8 (owner ruling 2,
-// #9 comment 5969776736). Seeds sit on each boundary the old heuristic and the representation
-// have: 0 (the zero time), ±1, 10^12 - 1 and 10^12 (the old seconds/milliseconds switch),
-// pre-1970, and both ends of int64; of the last two sources, U+FFFD itself is valid UTF-8 and
+// own constructors, with every int64 timestamp reachable by construction (the wire is
+// milliseconds both ways); marshal refuses a source that is not valid UTF-8. Seeds sit on each
+// boundary a seconds heuristic and the representation have: 0 (the zero time), ±1, 10^12 - 1 and
+// 10^12 (where a seconds/milliseconds heuristic switches), pre-1970, and both ends of int64; of the last two sources, U+FFFD itself is valid UTF-8 and
 // \xff\xfe is not.
 func FuzzDecoderRoundTrip(f *testing.F) {
 	for _, seed := range []struct {
@@ -293,8 +291,8 @@ func FuzzDecoderRoundTrip(f *testing.F) {
 			}
 		}
 		encoded, err := json.Marshal(built)
-		// JSON text is UTF-8, so a source that is not is refused, never written altered (owner
-		// ruling 2, #9 comment 5969776736). The oracle is the standard library's utf8 package.
+		// JSON text is UTF-8, so a source that is not is refused, never written altered. The
+		// oracle is the standard library's utf8 package.
 		if !utf8.ValidString(source) {
 			if err == nil {
 				t.Fatalf("marshal of source %q succeeded: %s", source, encoded)
@@ -337,14 +335,13 @@ func (p *anyTypePayload) UnmarshalJSON(data []byte) error {
 }
 
 // FuzzDecoderStrings: every string message encodes either reaches the wire unchanged or is
-// refused, never rewritten (owner ruling, #9 comment 5970334875, extending ruling 2 of #9
-// comment 5969776736). The expected outcomes come from the standard library's utf8 and strings
-// packages and the documented grammar, never from the message package:
+// refused, never rewritten. The expected outcomes come from the standard library's utf8 and
+// strings packages and the documented grammar, never from the message package:
 //
 //   - Type.Validate accepts a type exactly when each component is non-empty, holds no "." and is
 //     valid UTF-8;
 //   - marshalling a message of that type is refused, with an invalid-data error, exactly when
-//     Type.Validate refuses the type (design D2). An encoded type is registered and decoded,
+//     Type.Validate refuses the type. An encoded type is registered and decoded,
 //     giving the same message in full;
 //   - a core.json.v1 payload holding the generated key and value at the top level, in a nested
 //     map and in a list is refused, alone and in its envelope, exactly when the key or the value
@@ -548,9 +545,9 @@ func checkPreserved(t *testing.T, data []byte, got *message.BaseMessage, want or
 }
 
 // FuzzGenericJSONPayloadUnmarshalJSON: GenericJSONPayload.UnmarshalJSON decodes outside bytes
-// (task 3.6b, Codex F8). It never panics, it refuses exactly the malformed input, trailing data
-// and wrong shapes unmarshalNumbers refuses for {"data": object}, and it keeps exactly the data
-// unmarshalNumbers decodes, each number at its literal (Codex F41).
+// It never panics, it refuses exactly the malformed input, trailing data and wrong shapes
+// unmarshalNumbers refuses for {"data": object}, and it keeps exactly the data unmarshalNumbers
+// decodes, each number at its literal.
 func FuzzGenericJSONPayloadUnmarshalJSON(f *testing.F) {
 	for _, seed := range []string{
 		// accepted

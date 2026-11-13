@@ -117,8 +117,8 @@ func TestStoreContentRefusesInvalidEntityIDBeforeWriting(t *testing.T) {
 }
 
 // TestStoreContentRefusesNonBodyRoleAliasedToBody names the body's own field under a second,
-// non-body role: that role carries non-empty content, so the owner ruling (PR #432 comment
-// 6447702631) refuses it as it would a separate field (#433).
+// non-body role: that role carries non-empty content, so StoreContent refuses it as it would a
+// separate field.
 func TestStoreContentRefusesNonBodyRoleAliasedToBody(t *testing.T) {
 	objects := &okObjects{}
 	s := &Store{objects: objects}
@@ -140,7 +140,7 @@ func TestStoreContentRefusesNonBodyRoleAliasedToBody(t *testing.T) {
 }
 
 // TestRefusalsCountAsOperationErrors drives each operation's refusals through the public call and
-// reads the gathered counter: every returned error counts once, refused input included (D7, #434).
+// reads the gathered counter: every returned error counts once, refused input included.
 func TestRefusalsCountAsOperationErrors(t *testing.T) {
 	registry := metric.NewMetricsRegistry()
 	m, err := newStoreMetrics(registry, "CONTENT")
@@ -258,9 +258,9 @@ func TestNilRegistryRecordsNothing(t *testing.T) {
 	m.recordError("get", &failed)
 }
 
-// TestRetentionGuardFailsClosed is the pin's TestReconcileNoLifecycleRetention fatal case: a
-// stream update that does not take (real NATS always takes it, so a fake stands in for the
-// denial) leaves the retention binding, and the guard fails with a fatal retention error.
+// TestRetentionGuardFailsClosed is reconcileNoLifecycleRetention's fatal case: a stream update that
+// does not take (real NATS always takes it, so a fake stands in for the denial) leaves the
+// retention binding, and the guard fails with a fatal retention error.
 func TestRetentionGuardFailsClosed(t *testing.T) {
 	js := &deniedUpdateJS{info: jetstream.StreamInfo{Config: jetstream.StreamConfig{
 		Name: natsclient.ObjectStoreStreamPrefix + "CONTENT", MaxAge: 24 * time.Hour, MaxBytes: -1,

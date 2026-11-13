@@ -248,7 +248,7 @@ func TestRegisterPackAndAtomicOnFailure(t *testing.T) {
 		assert.Nil(t, GetPredicateMetadata("review.prefix.pred"))
 	}
 
-	// Malformed Turtle IRIREF namespaces and predicate IRIs are rejected (#237).
+	// Malformed Turtle IRIREF namespaces and predicate IRIs are rejected.
 	for _, badNS := range []string{"", "https://bad.example/>", "https://bad.example/<", `https://bad.example/"`, "not-an-iri", ":noscheme"} {
 		require.Error(t, (PrefixSpec{Prefix: "badns", Namespace: badNS}).Validate(), "expected error for invalid namespace %q", badNS)
 		err := RegisterPack(PackSpec{
@@ -263,7 +263,7 @@ func TestRegisterPackAndAtomicOnFailure(t *testing.T) {
 		assert.Nil(t, GetPredicateMetadata("review.bad.namespace"))
 	}
 
-	// Incompatible supplied alias_priority without is_alias or alias_type is rejected (#251).
+	// Incompatible supplied alias_priority without is_alias or alias_type is rejected.
 	aliasPriorityPack, err := LoadPackJSON(strings.NewReader(`{"name":"alias-pack","predicates":[{"name":"review.alias.priority","alias_priority":42}]}`))
 	require.NoError(t, err)
 	require.Error(t, RegisterPack(aliasPriorityPack))

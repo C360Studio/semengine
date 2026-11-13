@@ -411,7 +411,7 @@ func TestWriteJSONLD_BFOPredicatePreservesExpandedIRI(t *testing.T) {
 
 // expandJSONLDLiteral converts a single-triple JSON-LD property value (decoded
 // with json.Decoder.UseNumber) into its W3C JSON-LD 1.1 RDF literal (lexical,
-// datatypeIRI) pair as an independent test oracle (#252).
+// datatypeIRI) pair as an independent test oracle.
 func expandJSONLDLiteral(t *testing.T, ctx map[string]any, val any) (string, string) {
 	t.Helper()
 	switch v := val.(type) {

@@ -14,13 +14,14 @@ var canonicalDataTypeDomain = []string{
 	"string", "entity_id", "int", "float", "bool", "datetime", "json",
 }
 
-// retiredLegacySpellings are the ten spellings an earlier draft of this change
-// normalized. Owner ruling 2026-09-09 (gh#1267, option (d) no-legacy) deleted
-// that map, so every one of them is now refused at registration and the
-// adopter migrates instead. They are pinned here as their own corpus, apart
-// from the never-accepted samples below, because these are the values whose
-// treatment the ruling REVERSED — a regression that quietly reintroduced the
-// map would still refuse a Go struct name while accepting these again.
+// retiredLegacySpellings are ten common non-canonical spellings of the
+// canonical values (float64 for float, time.Time for datetime, and so on).
+// The framework normalizes nothing, so every one of them is refused at
+// registration and the adopter migrates instead. They are pinned here as their
+// own corpus, apart from the never-accepted samples below, because these are
+// the values a normalizing map would accept — a regression that quietly
+// introduced such a map would still refuse a Go struct name while accepting
+// these.
 var retiredLegacySpellings = []string{
 	"float64", "number", "double", "time.Time", "timestamp",
 	"int64", "array", "entity_ref", "reference", "boolean",
@@ -54,8 +55,8 @@ func TestValidateDataTypeAcceptsTheClosedVocabulary(t *testing.T) {
 	}
 }
 
-// TestValidateDataTypeRefusesEveryRetiredLegacySpelling pins the owner's
-// no-legacy ruling at the seam that enforces it. The framework normalizes
+// TestValidateDataTypeRefusesEveryRetiredLegacySpelling pins the no-legacy
+// rule at the seam that enforces it. The framework normalizes
 // nothing: a value that is not canonical is refused, whatever it once meant.
 //
 // spec: predicate-contract / A declared predicate datatype comes from one closed pragmatic vocabulary
@@ -153,10 +154,10 @@ func TestRegistrationStoresTheDeclaredValueUnchanged(t *testing.T) {
 	}
 }
 
-// TestRegistrationRefusesALegacySpelling pins the no-legacy ruling
-// at the registration seam rather than at the validator: before the ruling,
-// each of these calls succeeded and silently stored a different value than
-// the one written.
+// TestRegistrationRefusesALegacySpelling pins the no-legacy rule at the
+// registration seam rather than at the validator: with a normalizer, each of
+// these calls would succeed and silently store a different value than the one
+// written.
 //
 // spec: predicate-contract / A declared predicate datatype comes from one closed pragmatic vocabulary
 func TestRegistrationRefusesALegacySpelling(t *testing.T) {
@@ -176,8 +177,8 @@ func TestRegistrationRefusesALegacySpelling(t *testing.T) {
 	}
 }
 
-// TestAmendingReRegistrationKeepsTheInheritedValue pins the amend path
-// (gh#410): Register seeds from the existing registration, so a
+// TestAmendingReRegistrationKeepsTheInheritedValue pins the amend path:
+// Register seeds from the existing registration, so a
 // re-registration that never mentions the datatype re-validates an inherited
 // value. That inherited value must still pass the validator, or every amending
 // registration in the family panics on a datatype it did not set.

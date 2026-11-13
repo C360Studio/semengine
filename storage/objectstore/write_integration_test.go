@@ -234,7 +234,7 @@ func decodeStored(t *testing.T, data []byte) *StoredMessage {
 // TestWriteLaneStoresBodyAndEmitsReference: a document on the core-NATS write input is stored
 // through StoreContent, and the StoredMessage on the stored output carries its entity, its
 // triples and a reference, stamped objectstore, that opens to the body through the Store the
-// Component provides (object-store spec, "A document on the write input"; design D3).
+// Component provides (object-store spec, "A document on the write input").
 func TestWriteLaneStoresBodyAndEmitsReference(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -282,9 +282,9 @@ func TestWriteLaneStoresBodyAndEmitsReference(t *testing.T) {
 }
 
 // TestStartContextEndKeepsBothLanesWriting: after Start returned, its context is cancelled, and a
-// document is then published on a core-NATS input and on a JetStream input; both bodies are
-// stored (object-store spec, "Both lanes after the Start context ended"; design D5). At the pin
-// both lanes wrote under a child of the Start context and stopped storing here (inventory probe 2).
+// document is then published on a core-NATS input and on a JetStream input; both bodies are stored
+// (object-store spec, "Both lanes after the Start context ended"): neither lane writes under a
+// child of the Start context.
 func TestStartContextEndKeepsBothLanesWriting(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -323,12 +323,12 @@ func TestStartContextEndKeepsBothLanesWriting(t *testing.T) {
 	}
 }
 
-// TestWriteLaneRefusals: each message the lane refuses (bytes that do not decode, a payload that
-// is not ContentStorable, a document with content other than its body, a document with an
-// invalid entity ID), on a core-NATS input and on a JetStream input, stores nothing, is logged at
-// error level naming why, and raises ErrorCount by one; on JetStream the delivery is terminated,
-// which the server announces with its MSG_TERMINATED advisory, and never redelivered (object-store
-// spec, "Each refusal on each lane"; design D4, owner ruling 2).
+// TestWriteLaneRefusals: each message the lane refuses (bytes that do not decode, a payload that is
+// not ContentStorable, a document with content other than its body, a document with an invalid
+// entity ID), on a core-NATS input and on a JetStream input, stores nothing, is logged at error
+// level naming why, and raises ErrorCount by one; on JetStream the delivery is terminated, which
+// the server announces with its MSG_TERMINATED advisory, and never redelivered (object-store spec,
+// "Each refusal on each lane").
 func TestWriteLaneRefusals(t *testing.T) {
 	cases := []struct {
 		name, logs string
@@ -413,12 +413,12 @@ func TestWriteLaneRefusals(t *testing.T) {
 	}
 }
 
-// TestStoredEmitFailureNaksThenRedeliveryStores is the one cross-delivery history (design D4,
-// D9): the stored output is a JetStream stream the test deletes, so the first delivery's body is
-// stored but its reference cannot be published, and the delivery is NAKed, counted and logged.
-// With the stream back, the redelivery (after the 30-second transient delay) stores the body again
-// under a new key and publishes its reference: one acknowledged delivery, two objects, exactly one
-// referenced (object-store spec, "The reference cannot be published").
+// TestStoredEmitFailureNaksThenRedeliveryStores is the one cross-delivery history: the stored
+// output is a JetStream stream the test deletes, so the first delivery's body is stored but its
+// reference cannot be published, and the delivery is NAKed, counted and logged. With the stream
+// back, the redelivery (after the 30-second transient delay) stores the body again under a new key
+// and publishes its reference: one acknowledged delivery, two objects, exactly one referenced
+// (object-store spec, "The reference cannot be published").
 func TestStoredEmitFailureNaksThenRedeliveryStores(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 120*time.Second)
 	defer cancel()

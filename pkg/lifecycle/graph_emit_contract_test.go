@@ -106,7 +106,7 @@ func TestMutationAmbiguousReplyReturnsCommitUnknownAfterOneAttempt(t *testing.T)
 				if requester.subject != operation.subject {
 					t.Fatalf("subject = %q, want %q", requester.subject, operation.subject)
 				}
-				// A write that may have committed is never retryable (design D2). No reply came
+				// A write that may have committed is never retryable. No reply came
 				// back, so there is no reply code to carry: Code stays empty.
 				if mutationErr.Class != errs.ErrorFatal || mutationErr.Code != "" {
 					t.Errorf("class %q, code %q; want fatal with no code", mutationErr.Class, mutationErr.Code)
@@ -134,7 +134,7 @@ func TestMutationAmbiguousReplyReturnsCommitUnknownAfterOneAttempt(t *testing.T)
 
 // TestNoRespondersIsTransientAndNotCommitted pins the lifecycle half of the projection-mutation
 // requirement "One mapping from a mutation request's error to its commit state": no responder took
-// the request, or natsclient refused it before sending (design D1, #268), so nothing was written
+// the request, or natsclient refused it before sending, so nothing was written
 // and the Class field is transient. Only the field is promised; the raw error it wraps is
 // unclassified.
 func TestNoRespondersIsTransientAndNotCommitted(t *testing.T) {
@@ -261,7 +261,7 @@ func TestEmitMappingsKeepTheClassifiedCause(t *testing.T) {
 // TestInternalReplyIsCommitUnknownAndNotRetryable: graph-ingest's transient internal reply can
 // follow a write the bucket did not confirm, so for every lifecycle write it is commit-unknown and
 // fatal, never retryable, and is not reported as ErrEmitFailed (projection-mutation spec, "A
-// lifecycle write answered after a possible write"; #257).
+// lifecycle write answered after a possible write").
 func TestInternalReplyIsCommitUnknownAndNotRetryable(t *testing.T) {
 	t.Parallel()
 	for _, operation := range emitWriteOperations() {

@@ -254,7 +254,8 @@ func (c *Component) readEntity(ctx context.Context, entitySubject, id string) ([
 // relationships answers an entity's links in the one direction asked for, sending the request's
 // bytes unchanged to that direction's verb, so min_revision and any field graph-query does not know
 // reach the index. Any other direction, or none, is refused before a request goes out: reading it
-// as outgoing would silently give half the links. Counted as entityByAlias is.
+// as outgoing would silently answer another question, half the links for "both" or none. Counted
+// as entityByAlias is.
 func (c *Component) relationships(outgoingSubject, incomingSubject string) queryHandler {
 	return func(ctx context.Context, data []byte) ([]byte, error) {
 		c.lifecycle.CountInput(len(data))

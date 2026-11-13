@@ -571,8 +571,8 @@ func TestRelationshipsEnvelopeKeepsIndexRevision(t *testing.T) {
 }
 
 // TestRelationshipsRefusesUnknownDirection: a direction that is not exactly outgoing or incoming is
-// invalid_request and no index verb receives a request: reading any of these as outgoing would give
-// half the links.
+// invalid_request and no index verb receives a request: reading any of these as outgoing would
+// silently answer another question, half the links for "both" or none.
 func TestRelationshipsRefusesUnknownDirection(t *testing.T) {
 	client := fixtureClient(t)
 	startComponent(t, client, `{}`)

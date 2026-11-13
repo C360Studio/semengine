@@ -15,7 +15,7 @@ import (
 
 // countPage is one prefix page: its IDs, which the count verbs read, and its rows as sent, which
 // local search ranks. total is the group as listed, each ID once, and an ID may be missing from it
-// under concurrent overwrites.
+// under concurrent overwrites: nats.go does not promise a listing names every key then.
 type countPage struct {
 	ids        []string
 	rows       []json.RawMessage // each row as the page sent it, in the page's order, beside its ID in ids

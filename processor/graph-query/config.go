@@ -11,8 +11,8 @@ import (
 )
 
 // defaultQueryTimeoutMs is above graph-ingest's 10 s budget on batch and prefix
-// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's 30
-// s budget for a request handler.
+// (processor/graph-ingest/query.go), so the slowest forward can finish, and inside natsclient's
+// 30 s budget for a request handler.
 const defaultQueryTimeoutMs = 15000
 
 // maxQueryTimeoutMs is the largest millisecond count a time.Duration holds; one more wraps negative.

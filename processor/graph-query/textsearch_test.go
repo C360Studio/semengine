@@ -41,8 +41,9 @@ func groupIDs(groups []clustering.Community) []string {
 // TestTextTierScore: a record gains 2.0 for each term in its statistical summary and 1.5 for each
 // keyword and term where one contains the other, all lowercased, over the question's distinct
 // terms; up to five records scoring above 0 are read, best first, ties by key (spec, "The text tier
-// reads at most five matching groups, one page each"). Its P1 case holds records that all score 0,
-// none of which is read, and its P2 case ties given out of key order, which are read by key.
+// reads at most five matching groups, one page each"). Its "no record scores" case holds records
+// that all score 0, none of which is read, and its "ties by key" case gives ties out of key order,
+// which are read by key.
 func TestTextTierScore(t *testing.T) {
 	t.Run("the rule's cases", func(t *testing.T) {
 		for _, tc := range []struct {

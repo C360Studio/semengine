@@ -165,8 +165,9 @@ func TestTextTierReadsAtMostFiveGroups(t *testing.T) {
 	}
 }
 
-// TestTextTierSkipsUnmatchedGroups: the seven records of TestTextTierScore's P1 case, none matching
-// "pump": no group, no match, no prefix request, and no error (spec, "No group matches").
+// TestTextTierSkipsUnmatchedGroups: the seven records of TestTextTierScore's "no record scores"
+// case, none matching "pump": no group, no match, no prefix request, and no error (spec, "No group
+// matches").
 func TestTextTierSkipsUnmatchedGroups(t *testing.T) {
 	stack := startCommunityStack(t)
 	for i := range 7 {

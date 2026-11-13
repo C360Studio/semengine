@@ -140,7 +140,8 @@ func TestGlobalSearchEntity(t *testing.T) {
 // before any classification, so trigger words inside an ID or alias are not read as hints (spec "A
 // one-word question is an entity reference"). Each word below is one the keyword tier reads as a
 // time range (today), a path (zone-a, connector-7) or a hint no strategy honours (link, most, max,
-// total). The IDs carry these words as segments, under the authority graph-ingest runs with here.
+// total). Four IDs carry these words as segments, under the authority graph-ingest runs with here,
+// and three aliases carry the rest.
 func TestGlobalSearchOneWordIsAReference(t *testing.T) {
 	stack := startStack(t)
 	const (
